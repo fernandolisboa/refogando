@@ -43,4 +43,25 @@ describe('/api/health — integração pela porta mais alta', () => {
     const json = (await res.json()) as { echoed: string }
     expect(json.echoed).toBe('arroz')
   })
+
+  it('POST com corpo não-JSON degrada para mensagem vazia (200)', async () => {
+    const res = await POST(
+      new Request('http://localhost/api/health', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: 'isto não é json',
+      }),
+    )
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { echoed: string; id: number }
+    expect(json.echoed).toBe('')
+    expect(json.id).toBe(1)
+  })
+
+  it('POST sem campo message trata como string vazia (200)', async () => {
+    const res = await POST(postJson({ outra: 'coisa' }))
+    expect(res.status).toBe(200)
+    const json = (await res.json()) as { echoed: string }
+    expect(json.echoed).toBe('')
+  })
 })

@@ -32,6 +32,16 @@ describe('fundação: extensões + FTS por idioma no Postgres descartável', () 
     expect(en.v.length).toBeGreaterThan(0)
   })
 
+  it('FTS unaccent-aware: to_tsvector(unaccent(...)) combinados (camada precisa, ADR-0008)', async () => {
+    const [row] = await sql<{ v: string }[]>`
+      select to_tsvector('portuguese', unaccent('Açúcar Mascavo'))::text as v
+    `
+    // unaccent rodou ANTES do to_tsvector (lexema 'acuc', stem português sem acento)
+    expect(row.v).toContain('acuc')
+    expect(row.v).not.toContain('ç')
+    expect(row.v).not.toContain('ú')
+  })
+
   it('pgvector aceita o tipo vector', async () => {
     const [row] = await sql<{ v: string }[]>`select '[1,2,3]'::vector::text as v`
     expect(row.v).toBe('[1,2,3]')

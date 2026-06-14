@@ -4,11 +4,24 @@ import * as schema from './schema'
 
 export type Database = PostgresJsDatabase<typeof schema>
 
-/** TLS é decidido pela própria connection string (sslmode). Só ligamos `require`
- * defensivamente para hosts gerenciados que possam omitir sslmode na URL; nunca
- * passamos `ssl:false` quando a URL pede TLS (isso sobrescreveria e quebraria). */
-function needsSsl(url: string): boolean {
-  return /sslmode=require/.test(url) || /\.neon\.tech/.test(url)
+/**
+ * TLS por host. Endpoint remoto/gerenciado → TLS COM verificação de certificado e
+ * hostname (`rejectUnauthorized:true`, equivale a `verify-full`): só criptografar
+ * sem verificar (o `ssl:'require'` do postgres.js, que faz `rejectUnauthorized:false`)
+ * deixaria a conexão vulnerável a MITM. Nunca rebaixamos — só local sem sslmode
+ * explícito (container/dev) dispensa TLS.
+ */
+function sslFor(url: string): false | { rejectUnauthorized: boolean } {
+  let host = ''
+  try {
+    host = new URL(url).hostname
+  } catch {
+    // URL malformada: cai no ramo remoto seguro (verifica TLS).
+  }
+  const isLocal =
+    host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')
+  if (isLocal && !/sslmode=(require|verify-ca|verify-full)/.test(url)) return false
+  return { rejectUnauthorized: true }
 }
 
 /** Poolers em modo transação (PgBouncer/Neon -pooler) não suportam prepared
@@ -27,7 +40,7 @@ export function makeSql(url: string, opts: SqlOptions = {}): Sql {
   return postgres(url, {
     max: opts.max ?? 10,
     prepare: !isPooler(url),
-    ssl: needsSsl(url) ? 'require' : undefined,
+    ssl: sslFor(url),
     onnotice: () => {},
   })
 }

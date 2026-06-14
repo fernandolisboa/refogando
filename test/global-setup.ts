@@ -69,7 +69,19 @@ export default async function setup({ provide }: GlobalSetupContext) {
 
     const admin = makeSql(adminUrl, { max: 1 })
     try {
-      await admin.unsafe(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`)
+      // Sweep best-effort de órfãos de execuções anteriores que morreram (SIGKILL/
+      // crash). Sem FORCE: um banco em uso por um run concorrente não dropa (erro
+      // engolido) — só órfãos sem sessão somem. Nomes vêm do catálogo + padrão fixo.
+      const orphans = await admin<{ datname: string }[]>`
+        select datname from pg_database where datname like 'refogando_test_%'
+      `
+      for (const o of orphans) {
+        try {
+          await admin.unsafe(`DROP DATABASE IF EXISTS "${o.datname}"`)
+        } catch {
+          // em uso por outro run: deixa quieto.
+        }
+      }
       await admin.unsafe(`CREATE DATABASE "${dbName}"`)
     } finally {
       await admin.end({ timeout: 5 })
@@ -90,6 +102,9 @@ export default async function setup({ provide }: GlobalSetupContext) {
   }
 
   // Migra o banco descartável (extensões unaccent/vector + tabelas) com max:1.
+  // Se a migração falhar, o Vitest ainda não registrou o teardown (só registra
+  // após setup() resolver) — então limpamos aqui mesmo antes de re-lançar, senão
+  // o banco recém-criado fica órfão.
   const migrationSql = makeSql(appUrl, { max: 1 })
   try {
     await runMigrations(migrationSql)
@@ -100,14 +115,21 @@ export default async function setup({ provide }: GlobalSetupContext) {
     if (external && !current_database.startsWith('refogando_test_')) {
       throw new Error(`migrei o banco errado: ${current_database}`)
     }
-  } finally {
-    await migrationSql.end({ timeout: 10 })
+  } catch (err) {
+    await migrationSql.end({ timeout: 5 }).catch(() => {})
+    if (dropThrowawayDb) await dropThrowawayDb().catch(() => {})
+    if (container) await container.stop().catch(() => {})
+    throw err
   }
+  await migrationSql.end({ timeout: 10 })
 
   provide('databaseUrl', appUrl)
 
   return async () => {
-    if (dropThrowawayDb) await dropThrowawayDb()
-    if (container) await container.stop()
+    try {
+      if (dropThrowawayDb) await dropThrowawayDb()
+    } finally {
+      if (container) await container.stop()
+    }
   }
 }
