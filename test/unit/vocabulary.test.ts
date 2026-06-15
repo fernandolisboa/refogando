@@ -5,11 +5,13 @@ import {
   DIFICULDADE,
   PORCOES,
   RESTRICOES,
+  UNIDADES,
   isCategoria,
   isCozinha,
   isDificuldadeValida,
   isPorcoesValidas,
   isRestricao,
+  isUnidade,
   vocabularioCulinario,
 } from '@/domain/vocabulary'
 
@@ -60,5 +62,35 @@ describe('Vocabulário culinário — kernel (fonte única)', () => {
     expect(isCategoria('italiana')).toBe(false) // cozinha não é categoria
     // Categoria não vaza para dentro do kernel de Briefing/Busca.
     expect(Object.values(vocabularioCulinario)).not.toContain(CATEGORIAS)
+  })
+
+  it('pertencimento de Unidade (enum-do-kernel, ADR-0012)', () => {
+    expect(isUnidade('g')).toBe(true)
+    expect(isUnidade('colher_de_sopa')).toBe(true)
+    expect(isUnidade('a_gosto')).toBe(true)
+    expect(isUnidade('q_b')).toBe(true)
+    expect(isUnidade('quilograma')).toBe(false) // não é a forma canônica (é 'kg')
+    expect(isUnidade('')).toBe(false)
+  })
+
+  it('UNIDADES contém as unidades canônicas esperadas', () => {
+    for (const u of [
+      'g',
+      'kg',
+      'ml',
+      'l',
+      'colher_de_sopa',
+      'colher_de_cha',
+      'xicara',
+      'unidade',
+      'dente',
+      'fatia',
+      'pitada',
+      'a_gosto',
+      'q_b',
+    ]) {
+      expect((UNIDADES as readonly string[]).includes(u)).toBe(true)
+    }
+    expect(UNIDADES).toHaveLength(13)
   })
 })

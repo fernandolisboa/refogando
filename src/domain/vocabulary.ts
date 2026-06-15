@@ -86,6 +86,28 @@ export type Categoria = (typeof CATEGORIAS)[number]
  */
 export type Tag = string
 
+/**
+ * Unidade de medida do ingrediente: conjunto controlado (enum-do-kernel, ADR-0012).
+ * O texto verbatim da cauda longa vive em `recipe_ingredient.raw_text`; este enum
+ * cobre as unidades canônicas. `a_gosto`/`q_b` são as não-mensuráveis usuais.
+ */
+export const UNIDADES = [
+  'g',
+  'kg',
+  'ml',
+  'l',
+  'colher_de_sopa',
+  'colher_de_cha',
+  'xicara',
+  'unidade',
+  'dente',
+  'fatia',
+  'pitada',
+  'a_gosto',
+  'q_b',
+] as const
+export type Unidade = (typeof UNIDADES)[number]
+
 // ── Validadores PUROS ──────────────────────────────────────────────────────────
 
 export function isCozinha(value: string): value is Cozinha {
@@ -98,6 +120,10 @@ export function isRestricao(value: string): value is Restricao {
 
 export function isCategoria(value: string): value is Categoria {
   return (CATEGORIAS as readonly string[]).includes(value)
+}
+
+export function isUnidade(value: string): value is Unidade {
+  return (UNIDADES as readonly string[]).includes(value)
 }
 
 function naFaixa(value: number, faixa: FaixaNumerica): boolean {

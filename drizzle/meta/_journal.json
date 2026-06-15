@@ -8,6 +8,13 @@
       "when": 1781473820620,
       "tag": "0000_parched_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781483057549,
+      "tag": "0001_curved_black_cat",
+      "breakpoints": true
     }
   ]
 }
