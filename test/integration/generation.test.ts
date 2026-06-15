@@ -26,6 +26,7 @@ import {
   cannedRefusal,
   cannedMaxTokens,
   cannedParseFailed,
+  makeBriefing,
 } from '../helpers/generation'
 
 /**
@@ -97,7 +98,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'ok@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
     const json = (await res.json()) as { outcome: string; recipeId: string; advisory: string | null }
     expect(json.outcome).toBe('success')
@@ -153,7 +154,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'deg@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedDegraded({}, 'ajustei a receita')))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
     const json = (await res.json()) as { outcome: string; recipeId: string }
     expect(json.outcome).toBe('degraded')
@@ -205,7 +206,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
       new FakeClaudeClient(undefined, cannedImpossible('Não dá pra fazer bolo só com água.')),
     )
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(200)
     const json = (await res.json()) as { outcome: string; advisory: string | null }
     expect(json.outcome).toBe('impossible')
@@ -232,7 +233,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'ref@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedRefusal()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(502)
     await expect(res.json()).resolves.toMatchObject({ error: 'geracao_invalida' })
 
@@ -244,7 +245,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'maxtok@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedMaxTokens()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(502)
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
@@ -253,7 +254,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'parse@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedParseFailed()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(502)
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
@@ -263,7 +264,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     // modelKind success mas porcoes=99 (PORCOES max=50) → classify devolve invalid.
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess({ porcoes: 99 })))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(502)
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
@@ -283,7 +284,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     {
       const { headers } = await seedSessionHeaders({ email: 'struct@gen.test' })
       setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
-      const res = await post({ mode: 'structured' }, headers)
+      const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
       expect(res.status).toBe(201)
       const { recipeId } = (await res.json()) as { recipeId: string }
       const [rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
@@ -295,11 +296,11 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'twoattempts@gen.test' })
 
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
-    const ok = await post({ mode: 'structured' }, headers)
+    const ok = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(ok.status).toBe(201)
 
     setClaudeClient(new FakeClaudeClient(undefined, cannedImpossible()))
-    const imp = await post({ mode: 'structured' }, headers)
+    const imp = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(imp.status).toBe(200)
 
     // 2 generations: uma com recipe_id setado (success), outra NULL (impossible).
@@ -330,7 +331,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'badporcoes@gen.test' })
     setClaudeClient(new ExplodingClaudeClient())
 
-    const res = await post({ mode: 'structured', porcoes: 999 }, headers)
+    const res = await post({ mode: 'conversation', porcoes: 999 }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'porcoes_fora_de_faixa' })
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
@@ -340,7 +341,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'baddif@gen.test' })
     setClaudeClient(new ExplodingClaudeClient())
 
-    const res = await post({ mode: 'structured', dificuldade: 99 }, headers)
+    const res = await post({ mode: 'conversation', dificuldade: 99 }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'dificuldade_fora_de_faixa' })
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
@@ -370,7 +371,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'model@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
     const { recipeId } = (await res.json()) as { recipeId: string }
 
@@ -383,7 +384,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { headers } = await seedSessionHeaders({ email: 'defmodel@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
 
-    const res = await post({ mode: 'structured' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
     const { recipeId } = (await res.json()) as { recipeId: string }
 
@@ -409,7 +410,7 @@ describe('GET /api/creation-sessions/[id] — retomada', () => {
     })
     const [cs] = await getDb()
       .insert(creationSession)
-      .values({ userId, mode: 'structured', recipeId })
+      .values({ userId, mode: 'conversation', recipeId })
       .returning({ id: creationSession.id })
 
     const res = await getSession(cs.id, headers)
@@ -429,7 +430,7 @@ describe('GET /api/creation-sessions/[id] — retomada', () => {
 
     const [cs] = await getDb()
       .insert(creationSession)
-      .values({ userId: aId, mode: 'structured', recipeId: null })
+      .values({ userId: aId, mode: 'conversation', recipeId: null })
       .returning({ id: creationSession.id })
 
     const res = await getSession(cs.id, bHeaders)
@@ -461,7 +462,7 @@ describe('GET /api/recipes/[id] — gating de ownership/visibility (#8)', () => 
 
     // Gera de verdade pela porta alta: Receita privada com dono = user A.
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
-    const genRes = await post({ mode: 'structured' }, aHeaders)
+    const genRes = await post({ mode: 'structured', briefing: makeBriefing() }, aHeaders)
     expect(genRes.status).toBe(201)
     const { recipeId } = (await genRes.json()) as { recipeId: string }
 

@@ -28,16 +28,26 @@ export type RestrictionNotice = { kind: 'contradicao'; restricao: Restricao; ale
 export type RestrictionDecision = { avisos: RestrictionNotice[] }
 
 /**
- * Normaliza um token de alérgeno para casar contra o mapa: minúsculas + remoção de
- * acentos (NFD + descarte de diacríticos) + trim. Mesma função usada para SEMEAR as
- * chaves do mapa e para o token incoming, garantindo simetria de comparação.
+ * Normaliza um token textual para comparação por igualdade canônica: NFD + descarte
+ * de diacríticos (acentos) + minúsculas + trim. Fonte ÚNICA de normalização de texto
+ * do domínio — usada para SEMEAR as chaves do mapa de alérgenos, para o token incoming
+ * (via `normalizeAllergen`), e reusada pelo dedup de BriefingItem por `raw_text` em
+ * `briefing.ts` (mesma simetria de comparação, sem duplicar a lógica).
  */
-function normalizeAllergen(token: string): string {
+export function normalizeText(token: string): string {
   return token
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase()
     .trim()
+}
+
+/**
+ * Normaliza um token de alérgeno para casar contra o mapa. Delega a `normalizeText`
+ * (fonte única) — mantém o nome de domínio do motor de Aviso sem reimplementar a regra.
+ */
+function normalizeAllergen(token: string): string {
+  return normalizeText(token)
 }
 
 /**
