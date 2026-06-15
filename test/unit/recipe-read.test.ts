@@ -33,8 +33,8 @@ const enReliableDiffering: TranslationRow = {
 }
 
 const ingredients: IngredientItem[] = [
-  { ordem: 0, quantidade: '2.500', unidade: 'xicara', rawText: null },
-  { ordem: 1, quantidade: null, unidade: 'a_gosto', rawText: 'a gosto' },
+  { ordem: 0, quantidade: '2.500', unidade: 'xicara', rawText: null, alergenos: null },
+  { ordem: 1, quantidade: null, unidade: 'a_gosto', rawText: 'a gosto', alergenos: null },
 ]
 
 function recipeRow(over: Partial<RecipeRow> = {}): RecipeRow {
@@ -274,5 +274,51 @@ describe('resolveRecipeView — vista completa', () => {
     expect(ptView.name).toBe('Feijoada')
     expect(enView.name).toBe('Feijoada (Black Bean Stew)')
     expect(enView.name).not.toBe(ptView.name)
+  })
+
+  // Fixture com contradição: item com alérgeno `trigo` numa Receita marcada `sem_gluten`.
+  const ingredientsComTrigo: IngredientItem[] = [
+    { ordem: 0, quantidade: '500', unidade: 'g', rawText: null, alergenos: ['trigo'] },
+  ]
+
+  it('U-view-1: contradição (trigo + sem_gluten) ⇒ avisos PRESENTE, com mensagem renderizada com o rótulo amigável', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ restricoes: ['sem_gluten'] }),
+        ingredients: ingredientsComTrigo,
+        requestLocale: 'pt-BR',
+      }),
+    )
+    expect(view.avisos).toBeDefined()
+    expect(view.avisos).toHaveLength(1)
+    const aviso = view.avisos![0]
+    // Códigos repassados 1:1 do motor.
+    expect(aviso.kind).toBe('contradicao')
+    expect(aviso.restricao).toBe('sem_gluten')
+    expect(aviso.alergeno).toBe('trigo')
+    // Mensagem REALMENTE renderizada: contém o RÓTULO amigável "sem glúten", não o código cru.
+    expect(aviso.mensagem).toContain('sem glúten')
+    expect(aviso.mensagem).not.toContain('sem_gluten')
+    expect(aviso.mensagem).toContain('trigo')
+    // Não é fallback de placeholder não-interpolado.
+    expect(aviso.mensagem).not.toContain('{restricao}')
+    expect(aviso.mensagem).not.toContain('{alergeno}')
+  })
+
+  it('U-view-2: alergenos NÃO vaza em view.ingredients (guarda do Omit)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ restricoes: ['sem_gluten'] }),
+        ingredients: ingredientsComTrigo,
+        requestLocale: 'pt-BR',
+      }),
+    )
+    expect('alergenos' in view.ingredients[0]).toBe(false)
+    expect(Object.keys(view.ingredients[0]).sort()).toEqual([
+      'ordem',
+      'quantidade',
+      'rawText',
+      'unidade',
+    ])
   })
 })

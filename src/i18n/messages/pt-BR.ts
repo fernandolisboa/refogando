@@ -2,11 +2,31 @@
  * Catálogo de chrome em pt-BR (issue #4). `Messages = typeof ptBR` ancora o shape;
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
+import type { Restricao } from '@/domain/vocabulary'
+
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
   nav: { home: 'Início', recipes: 'Receitas', signIn: 'Entrar', signOut: 'Sair' },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   system: { loading: 'Carregando…', error: 'Algo deu errado.', notFound: 'Não encontrado.' },
+  // Aviso de restrição (#7): template interpolado por `String.replace` ({restricao}/{alergeno}),
+  // sem ICU. `mensagem` nasce na vista, renderizada no requestLocale.
+  aviso: {
+    contradicao: 'Marcada como {restricao}, mas contém {alergeno} — declarado, não verificado.',
+  },
+  // Rótulo amigável por valor do enum RESTRICOES (#7). Adjetivos no feminino concordam com
+  // o sujeito "Receita" do template. `satisfies Record<Restricao, string>` trava drift do enum
+  // (chave faltante/extra/typo) no site de definição.
+  restricaoLabel: {
+    sem_gluten: 'sem glúten',
+    sem_lactose: 'sem lactose',
+    vegano: 'vegana',
+    vegetariano: 'vegetariana',
+    sem_acucar: 'sem açúcar',
+    low_carb: 'low carb',
+    sem_oleaginosas: 'sem oleaginosas',
+    sem_frutos_do_mar: 'sem frutos do mar',
+  } satisfies Record<Restricao, string>,
 } as const
 
 /**

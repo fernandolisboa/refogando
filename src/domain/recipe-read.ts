@@ -15,9 +15,12 @@
  *    (array vazio ⇒ chave AUSENTE — distingue "sem restrição" de "presente").
  *  - `resolveRecipeView`: selo `origin` + `schemaVersion` + invariantes
  *    (porcoes/dificuldade/ingredientes) IDÊNTICOS qualquer que seja o `requestLocale`.
- *
- * Sem campo de `aviso`/alerta de contradição: isso é ADR-0004, dono é a #7, FORA
- * de escopo aqui.
+ *  - `avisos` (#7, ADR-0004): a vista anexa `avisos?` SÓ quando há ≥ 1 contradição
+ *    óbvia entre o dado oportunista de alérgeno e uma restrição declarada (mesma regra
+ *    "ausente ≠ vazio" das facetas/`restricoes`). O motor PURO `decideRestrictionNotices`
+ *    decide os CÓDIGOS (locale-neutros); a vista mapeia cada código → `AvisoView`,
+ *    repassando os códigos 1:1 e adicionando a frase `mensagem` já renderizada no
+ *    `requestLocale`. NUNCA bloqueia/suprime/gateia nada (Aviso é leitura, não verificação).
  */
 
 import {
@@ -27,6 +30,13 @@ import {
   type TranslationProvenance,
   type Visibility,
 } from '@/domain/recipe'
+import {
+  decideRestrictionNotices,
+  type RestrictionNotice,
+} from '@/domain/recipe-restrictions'
+import { isRestricao, type Restricao } from '@/domain/vocabulary'
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
+import { MESSAGES } from '@/i18n/messages'
 
 /** Linha de Receita conforme retorna de `db.select().from(recipe)`. */
 export type RecipeRow = {
@@ -55,16 +65,28 @@ export type TranslationRow = {
 }
 
 /**
- * Item de ingrediente — parte das INVARIANTES (não traduzido na #3). `quantidade`
- * é `numeric(10,3)` e VOLTA COMO STRING do driver: mantém-se string (ex. `'2.500'`),
- * nunca número.
+ * Item de ingrediente conforme o LOADER projeta (entrada de `resolveRecipeView`) —
+ * parte das INVARIANTES (não traduzido na #3). `quantidade` é `numeric(10,3)` e VOLTA
+ * COMO STRING do driver: mantém-se string (ex. `'2.500'`), nunca número.
+ *
+ * `alergenos` (#7) é REQUERIDO: o loader SEMPRE o projeta via LEFT JOIN na tabela PAI
+ * `ingredient` (`null` quando a FK é nula/sem dado, ou um `string[]`). É dado de
+ * decisão do motor de Aviso — NUNCA sai na vista (ver `IngredientView`, que o omite).
  */
 export type IngredientItem = {
   ordem: number
   quantidade: string | null
   unidade: string | null
   rawText: string | null
+  alergenos: string[] | null
 }
+
+/**
+ * Item de ingrediente como sai na VISTA serializada: `IngredientItem` SEM `alergenos`.
+ * O dado de alérgeno é insumo do motor de Aviso (decisão), não conteúdo da vista —
+ * o `Omit` garante em compile-time que ele NUNCA vaza em `view.ingredients`.
+ */
+export type IngredientView = Omit<IngredientItem, 'alergenos'>
 
 export type ResolveInput = {
   recipe: RecipeRow
@@ -95,6 +117,20 @@ export type TranslationFlags = {
   stale: boolean
 }
 
+/**
+ * Aviso de contradição como sai na VISTA (#7): os CÓDIGOS do domínio
+ * (`kind`/`restricao`/`alergeno`, repassados 1:1 do `RestrictionNotice`) MAIS a frase
+ * `mensagem` já renderizada no `requestLocale`. DISTINTO do `RestrictionNotice` (que é
+ * só códigos, locale-neutro): a vista é quem adiciona o texto localizado. Expor os
+ * códigos permite a UI estilizar/agrupar sem re-parsear a `mensagem`.
+ */
+export type AvisoView = {
+  kind: 'contradicao'
+  restricao: Restricao
+  alergeno: string
+  mensagem: string
+}
+
 export type RecipeView = {
   id: string
   name: string
@@ -104,8 +140,10 @@ export type RecipeView = {
   facets: RecipeFacets
   porcoes: number | null
   dificuldade: number | null
-  ingredients: ReadonlyArray<IngredientItem>
+  ingredients: ReadonlyArray<IngredientView>
   translations: ReadonlyArray<TranslationFlags>
+  /** Avisos de contradição — AUSENTE quando vazio (ausente ≠ "verificado OK"). */
+  avisos?: AvisoView[]
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
@@ -212,9 +250,35 @@ export function resolveFacets(input: {
 }
 
 /**
+ * Renderiza cada `RestrictionNotice` (códigos, locale-neutro) → `AvisoView` (códigos +
+ * frase localizada). PURO: o catálogo `MESSAGES` é constante importada (não I/O).
+ *
+ * O `requestLocale` é estreitado por `isSupportedLocale`; locale desconhecido cai em
+ * `DEFAULT_LOCALE` — mesma política "nunca tela quebrada" de `resolveLocale`. A restrição
+ * vira RÓTULO amigável localizado (`restricaoLabel`, cobre todo o enum — sem chave
+ * faltante); o token de alérgeno é interpolado CRU (free-text, sem vocabulário de
+ * rótulos — limitação menor conhecida, §D3). Interpolação por `String.replace`, sem ICU.
+ */
+function renderAvisos(notices: ReadonlyArray<RestrictionNotice>, requestLocale: string): AvisoView[] {
+  const locale = isSupportedLocale(requestLocale) ? requestLocale : DEFAULT_LOCALE
+  const msgs = MESSAGES[locale]
+  return notices.map((n) => {
+    const label = msgs.restricaoLabel[n.restricao]
+    // Replacers como FUNÇÃO (não string): o 2º arg-string de String.replace interpreta
+    // `$&`, `$\``, `$'`, `$$`, `$n` como diretivas; a função devolve o valor literal, sem
+    // substituição — protege contra um `$` no token de alérgeno/rótulo corromper a frase.
+    const mensagem = msgs.aviso.contradicao
+      .replace('{restricao}', () => label)
+      .replace('{alergeno}', () => n.alergeno)
+    return { kind: n.kind, restricao: n.restricao, alergeno: n.alergeno, mensagem }
+  })
+}
+
+/**
  * Vista completa: nome + corpo + selo `origin` SEMPRE + facetas + invariantes
- * (porcoes/dificuldade/ingredientes) + `schemaVersion` + flags de tradução (display).
- * As invariantes e o selo são IDÊNTICOS qualquer que seja o `requestLocale`.
+ * (porcoes/dificuldade/ingredientes) + `schemaVersion` + flags de tradução (display) +
+ * `avisos?` (anexado SÓ quando há contradição). As invariantes e o selo são IDÊNTICOS
+ * qualquer que seja o `requestLocale`; só `name`/`body`/`avisos.mensagem` variam por locale.
  */
 export function resolveRecipeView(input: ResolveInput): RecipeView {
   const name = resolveName({
@@ -234,6 +298,15 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     restricoes: input.recipe.restricoes,
   })
 
+  // Aviso de restrição (#7): o motor PURO decide os CÓDIGOS; a vista os renderiza no
+  // requestLocale. `restricoes` vem como `string[]` do loader — filtra por `isRestricao`
+  // (defensivo, sem `as`) antes de passar ao motor, que só conhece valores do enum.
+  const decision = decideRestrictionNotices({
+    restricoes: input.recipe.restricoes.filter(isRestricao),
+    items: input.ingredients.map((i) => ({ alergenos: i.alergenos })),
+  })
+  const avisos = renderAvisos(decision.avisos, input.requestLocale)
+
   return {
     id: input.recipe.id,
     name,
@@ -243,12 +316,20 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     facets,
     porcoes: input.recipe.porcoes,
     dificuldade: input.recipe.dificuldade,
-    ingredients: input.ingredients,
+    // Projeta SEM `alergenos`: insumo de decisão, não conteúdo da vista (Omit guard).
+    ingredients: input.ingredients.map(({ ordem, quantidade, unidade, rawText }) => ({
+      ordem,
+      quantidade,
+      unidade,
+      rawText,
+    })),
     translations: input.translations.map((t) => ({
       locale: t.locale,
       provenance: t.provenance,
       reliable: isTranslationReliable(t.provenance),
       stale: t.stale,
     })),
+    // Ausente ≠ vazio: anexa `avisos` SÓ quando há ≥ 1 (espelha `resolveFacets.restricoes`).
+    ...(avisos.length > 0 ? { avisos } : {}),
   }
 }
