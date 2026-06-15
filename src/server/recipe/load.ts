@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeTranslation, recipeIngredient, recipeTag, tag } from '@/db/schema'
+import { recipe, recipeTranslation, recipeIngredient, recipeTag, tag, ingredient } from '@/db/schema'
 import type { RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
 
 /**
@@ -35,8 +35,13 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
         quantidade: recipeIngredient.quantidade,
         unidade: recipeIngredient.unidade,
         rawText: recipeIngredient.rawText,
+        // alérgenos vêm da tabela PAI via LEFT JOIN — null quando a FK é nula
+        // (item raw-text-only) ou quando o ingredient casado não tem dado de
+        // alérgeno. N:1 por FK única (ingredient.id PK), então não infla linhas.
+        alergenos: ingredient.alergenos,
       })
       .from(recipeIngredient)
+      .leftJoin(ingredient, eq(recipeIngredient.ingredientId, ingredient.id))
       .where(eq(recipeIngredient.recipeId, id))
       .orderBy(recipeIngredient.ordem, recipeIngredient.id),
     db
