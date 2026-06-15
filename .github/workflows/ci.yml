@@ -1,0 +1,48 @@
+# Roda typecheck + lint + test em todo PR pra main e em todo push na main.
+# NAO roda `npm run build` (next build): desnecessário pros checks e evitaria ter
+# que prover env/secrets.
+#
+# Diferença vs. outros repos: aqui o `test` SOBE um Postgres real. O harness de
+# integração (test/global-setup.ts) é provider-neutro e auto-detect:
+#   - SEM TEST_DATABASE_URL  → sobe um container pgvector/pgvector:pg17 via
+#     Testcontainers (precisa de Docker — já presente no runner ubuntu-latest).
+#     É o caminho zero-config que usamos aqui: nenhum secret necessário.
+#   - COM TEST_DATABASE_URL   → usa esse Postgres (cria um banco descartável,
+#     migra, roda, dropa). Útil se um dia quisermos um service container.
+# Vitest seta NODE_ENV=test, e src/lib/auth.ts só exige BETTER_AUTH_SECRET fora
+# de teste — por isso o test passa sem nenhuma variável de ambiente.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancela runs antigos do mesmo PR/branch quando chega um push novo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
