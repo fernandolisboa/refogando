@@ -1,0 +1,35 @@
+# TEMPORÁRIO — NÃO deve ser mergeado (removido antes do merge deste PR).
+# Valida, dentro do Actions, que o secret NEON_API_KEY e a variable
+# NEON_PROJECT_ID funcionam: bate na API do Neon e lista as branches do projeto.
+# Serve também pra conferir o naming das preview branches (esperado:
+# `preview/<git-branch>`), que é o que o workflow de cleanup assume.
+# Nunca imprime a chave.
+name: _neon-creds-check (temp)
+
+on: pull_request
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bater na API do Neon com as credenciais do repo
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEON_API_KEY:-}" ]; then echo "::error::secret NEON_API_KEY ausente no repo"; exit 1; fi
+          if [ -z "${NEON_PROJECT_ID:-}" ]; then echo "::error::variable NEON_PROJECT_ID ausente no repo"; exit 1; fi
+          code=$(curl -sS -o /tmp/resp.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            -H "Accept: application/json" \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches")
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Credenciais inválidas ou project_id errado (HTTP $code)"
+            jq '.' /tmp/resp.json 2>/dev/null || cat /tmp/resp.json
+            exit 1
+          fi
+          echo "Branches no projeto ${NEON_PROJECT_ID}:"
+          jq -r '.branches[] | "- \(.name)  [\(.id)]  default=\(.default)"' /tmp/resp.json
+          echo "Total de branches: $(jq '.branches | length' /tmp/resp.json)"
