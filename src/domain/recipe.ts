@@ -67,3 +67,17 @@ export function isTranslationProvenance(v: string): v is TranslationProvenance {
 export function isTranslationReliable(p: TranslationProvenance): boolean {
   return p === 'escrita_por_pessoa' || p === 'automatica_revisada'
 }
+
+// ── Seção da Busca (#6): regra PURA de seccionamento por origin ─────────────────
+
+/** Seção da Busca: Catálogo (origin `catalog`) vs. Comunidade (o resto). */
+export type SearchSection = 'catalogo' | 'comunidade'
+
+/**
+ * Classifica a seção da Busca a partir do `origin`: `catalog` ⇒ Catálogo; o resto
+ * (`ai_chat`/`ai_structured`/`user_edited`) ⇒ Comunidade. PURO — fonte única da
+ * regra de seção no TS (o SQL espelha a MESMA regra para particionar o ranking).
+ */
+export function classifySection(origin: Origin): SearchSection {
+  return origin === 'catalog' ? 'catalogo' : 'comunidade'
+}
