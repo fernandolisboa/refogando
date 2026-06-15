@@ -25,6 +25,7 @@ import {
   TRANSLATION_PROVENANCES,
   SCHEMA_VERSION_RECEITA,
 } from '@/domain/recipe'
+import { ROLES } from '@/domain/user'
 
 /**
  * Espinha canônica da Receita (issue #3). Drizzle é a fonte única de verdade do
@@ -47,6 +48,9 @@ export const visibilityEnum = pgEnum('visibility', VISIBILIDADES)
 export const resultKindEnum = pgEnum('result_kind', RESULT_KINDS)
 export const lineageKindEnum = pgEnum('lineage_kind', LINEAGE_KINDS)
 export const translationProvenanceEnum = pgEnum('translation_provenance', TRANSLATION_PROVENANCES)
+// Papel de Usuário (issue #5). Fonte única: ROLES de @/domain/user. Sem `visitante`
+// (Visitante = ausência de sessão/conta — ADR-0011).
+export const roleEnum = pgEnum('role', ROLES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -68,7 +72,10 @@ export const recipe = pgTable(
     origin: originEnum('origin').notNull(),
     visibility: visibilityEnum('visibility').notNull().default('private'),
     resultKind: resultKindEnum('result_kind').notNull().default('success'),
-    ownerId: uuid('owner_id'),
+    // FK → users.id, ON DELETE restrict (D5): rede de segurança contra hard-delete
+    // acidental (nunca dispara — não há hard-delete). owner_id continua NULLABLE
+    // (NULL = catálogo/sistema — ADR-0011, inegociável).
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'restrict' }),
     originalLocale: text('original_locale').notNull(),
     cozinha: cozinhaEnum('cozinha'),
     categoria: categoriaEnum('categoria'),
@@ -86,6 +93,12 @@ export const recipe = pgTable(
   (t) => [
     check('recipe_playful_private_chk', sql`${t.resultKind} <> 'playful' OR ${t.visibility} = 'private'`),
     index('recipe_restricoes_gin').using('gin', t.restricoes),
+    // Índice parcial na FK owner_id: cobre o RESTRICT e queries por owner sem
+    // seq-scan. Parcial WHERE owner_id IS NOT NULL — a maioria do catálogo tem
+    // owner_id=NULL, então o índice fica enxuto (só Receitas com dono).
+    index('recipe_owner_id_idx')
+      .on(t.ownerId)
+      .where(sql`${t.ownerId} IS NOT NULL`),
   ],
 )
 
@@ -192,4 +205,100 @@ export const recipeEmbedding = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [primaryKey({ columns: [t.recipeId, t.locale] })],
+)
+
+// ── Identidade + auth (issue #5, ADR-0010/0011) ────────────────────────────────
+//
+// `users` (plural — única exceção justificada à convenção singular: evita colisão
+// com a palavra reservada `user` do Postgres). Tabela de identidade ÚNICA, com
+// `role` (gerenciado pelo plugin admin), `locale` (additionalField) e `deletedAt`
+// (additionalField, soft-delete). PKs/FKs em uuid para casar com recipe.owner_id e
+// com a geração no banco (Better Auth com generateId:false ⇒ DB preenche via
+// uuid().defaultRandom()).
+
+export const users = pgTable(
+  'users',
+  {
+    // uuid gerado pelo Postgres (C1): Better Auth com generateId:false NÃO envia id;
+    // o DB preenche via defaultRandom() (= gen_random_uuid()). Casa com recipe.owner_id.
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    email: text('email').notNull(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    image: text('image'),
+    // Papel gerenciado pelo plugin admin; pgEnum dá integridade no banco (C6).
+    role: roleEnum('role').notNull().default('usuario'),
+    // Preferência de apresentação (D1, #4.AC5/#5.AC4). text livre BCP-47, NULLABLE.
+    locale: text('locale'),
+    // Soft delete (D4): só a coluna agora; máscara/endpoint deferidos.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).
+    // A APLICAÇÃO de ban segue deferida (ADR-0007); aqui são colunas inertes
+    // (default false / null) — nada lê para gating agora.
+    banned: boolean('banned').notNull().default(false),
+    banReason: text('ban_reason'),
+    banExpires: timestamp('ban_expires', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('users_email_uq').on(t.email)],
+)
+
+export const session = pgTable(
+  'session',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex('session_token_uq').on(t.token)],
+)
+
+export const account = pgTable('account', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  accountId: text('account_id').notNull(),
+  providerId: text('provider_id').notNull(),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+  scope: text('scope'),
+  idToken: text('id_token'),
+  password: text('password'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const verification = pgTable('verification', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+// ── Config de aplicação (#5.AC2 — modelo default) ──────────────────────────────
+//
+// Singleton: só pode existir a linha id=true (CHECK app_config_singleton_chk torna o
+// singleton garantia de banco, não só convenção de PK). `default_model` é text livre
+// (não enum): o conjunto válido é detalhe de runtime; o handler valida por allowlist.
+export const appConfig = pgTable(
+  'app_config',
+  {
+    id: boolean('id').primaryKey().default(true),
+    defaultModel: text('default_model').notNull().default('claude-opus-4-8'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [check('app_config_singleton_chk', sql`${t.id}`)],
 )
