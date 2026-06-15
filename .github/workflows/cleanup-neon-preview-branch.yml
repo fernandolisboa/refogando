@@ -1,0 +1,31 @@
+# Deleta a Neon preview branch que a integração Vercel-Managed cria por PR
+# (naming `preview/<git-branch>`) assim que o PR fecha/merge. Evita o acúmulo de
+# preview branches que estoura o limite do plano Neon (~10) e faz o deploy da
+# Vercel falhar rápido (o `drizzle-kit migrate` do build não conecta).
+#
+# Requer no repo (Settings → Secrets and variables → Actions):
+#   - secret   NEON_API_KEY      (a chave de API do Neon)
+#   - variable NEON_PROJECT_ID   (o Project ID do Neon — não é secreto)
+#
+# Roda com o arquivo já presente na branch default (main), então só pega os
+# PRs que fecharem DEPOIS deste merge. As preview branches já acumuladas no
+# Neon antes deste merge precisam de uma limpeza manual única (painel do Neon).
+#
+# Reversível: Vercel + Neon são a stack escolhida (ver ADR-0010), mas com baixo
+# lock-in. Se um dia trocar de provider, apague este workflow e remova a
+# integração Vercel/Neon — nada do código de produto depende dele.
+name: Cleanup Neon preview branch
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-preview-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/${{ github.head_ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
