@@ -1,0 +1,278 @@
+import { describe, expect, it } from 'vitest'
+import {
+  resolveBody,
+  resolveFacets,
+  resolveName,
+  resolveRecipeView,
+  type IngredientItem,
+  type RecipeRow,
+  type ResolveInput,
+  type TranslationRow,
+} from '@/domain/recipe-read'
+
+// ── Fixtures puros ───────────────────────────────────────────────────────────
+
+const ptOriginal: TranslationRow = {
+  locale: 'pt-BR',
+  titulo: 'Feijoada',
+  descricao: 'Ensopado de feijão preto com carnes.',
+  passos: ['Demolhe o feijão.', 'Cozinhe as carnes.'],
+  notas: 'Sirva com arroz.',
+  provenance: 'escrita_por_pessoa',
+  stale: false,
+}
+
+const enReliableDiffering: TranslationRow = {
+  locale: 'en-US',
+  titulo: 'Black Bean Stew',
+  descricao: null, // parcial → cai no original
+  passos: null,
+  notas: null,
+  provenance: 'automatica_revisada', // confiável
+  stale: false,
+}
+
+const ingredients: IngredientItem[] = [
+  { ordem: 0, quantidade: '2.500', unidade: 'xicara', rawText: null },
+  { ordem: 1, quantidade: null, unidade: 'a_gosto', rawText: 'a gosto' },
+]
+
+function recipeRow(over: Partial<RecipeRow> = {}): RecipeRow {
+  return {
+    id: 'r-1',
+    origin: 'catalog',
+    visibility: 'private',
+    resultKind: 'success',
+    originalLocale: 'pt-BR',
+    cozinha: 'brasileira',
+    categoria: 'prato_principal',
+    restricoes: ['sem_gluten'],
+    porcoes: 6,
+    dificuldade: 3,
+    schemaVersion: 1,
+    ...over,
+  }
+}
+
+function input(over: Partial<ResolveInput> = {}): ResolveInput {
+  return {
+    recipe: recipeRow(),
+    translations: [ptOriginal, enReliableDiffering],
+    ingredients,
+    tags: ['festiva'],
+    requestLocale: 'en-US',
+    ...over,
+  }
+}
+
+// ── resolveName ──────────────────────────────────────────────────────────────
+
+describe('resolveName — original primário, tradução assistiva', () => {
+  it('AC#1 positivo: tradução confiável e diferente ⇒ "Original (Tradução)"', () => {
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enReliableDiffering],
+    })
+    expect(name).toBe('Feijoada (Black Bean Stew)')
+  })
+
+  it('AC#1 negativo: tradução não revisada ⇒ original NU, sem vazar texto', () => {
+    const enUnreliable: TranslationRow = {
+      ...enReliableDiffering,
+      titulo: 'Black Bean Stew',
+      provenance: 'automatica_nao_revisada',
+    }
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enUnreliable],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('(')
+    expect(name).not.toContain('Black Bean Stew')
+  })
+
+  it('AC#2 mesmo locale: requestLocale === originalLocale ⇒ original sem parênteses', () => {
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'pt-BR',
+      translations: [ptOriginal, enReliableDiffering],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('(')
+  })
+
+  it('AC#2 redundante: tradução confiável IGUAL ao original ⇒ sem parênteses', () => {
+    const enEqual: TranslationRow = {
+      ...enReliableDiffering,
+      titulo: 'Feijoada', // igual ao original
+      provenance: 'automatica_revisada',
+    }
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enEqual],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('(')
+  })
+
+  it('sem tradução do locale pedido ⇒ original nu', () => {
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'fr-FR',
+      translations: [ptOriginal, enReliableDiffering],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('(')
+  })
+
+  it('nunca emite parênteses vazios', () => {
+    const enBlank: TranslationRow = {
+      ...enReliableDiffering,
+      titulo: '',
+      provenance: 'automatica_revisada',
+    }
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enBlank],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('()')
+  })
+
+  it('tradução confiável com titulo só-espaços ⇒ original NU, sem `(   )`', () => {
+    const enWhitespace: TranslationRow = {
+      ...enReliableDiffering,
+      titulo: '   ',
+      provenance: 'automatica_revisada',
+    }
+    const name = resolveName({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enWhitespace],
+    })
+    expect(name).toBe('Feijoada')
+    expect(name).not.toContain('(')
+  })
+})
+
+// ── resolveBody ──────────────────────────────────────────────────────────────
+
+describe('resolveBody — fallback por campo para a fonte', () => {
+  it('AC#1 corpo: tradução parcial cai nos campos do original', () => {
+    const body = resolveBody({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enReliableDiffering],
+    })
+    expect(body.descricao).toBe('Ensopado de feijão preto com carnes.')
+    expect(body.passos).toEqual(['Demolhe o feijão.', 'Cozinhe as carnes.'])
+    expect(body.notas).toBe('Sirva com arroz.')
+  })
+
+  it('usa o valor do locale pedido quando presente', () => {
+    const enFull: TranslationRow = {
+      ...enReliableDiffering,
+      descricao: 'Black bean and pork stew.',
+      passos: ['Soak the beans.'],
+      notas: 'Serve with rice.',
+    }
+    const body = resolveBody({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enFull],
+    })
+    expect(body.descricao).toBe('Black bean and pork stew.')
+    expect(body.passos).toEqual(['Soak the beans.'])
+    expect(body.notas).toBe('Serve with rice.')
+  })
+
+  it('campo ausente em ambos ⇒ null, nunca string vazia', () => {
+    const ptMinimal: TranslationRow = {
+      locale: 'pt-BR',
+      titulo: 'Água',
+      descricao: null,
+      passos: null,
+      notas: null,
+      provenance: 'escrita_por_pessoa',
+      stale: false,
+    }
+    const body = resolveBody({
+      originalLocale: 'pt-BR',
+      requestLocale: 'en-US',
+      translations: [ptMinimal],
+    })
+    expect(body.descricao).toBeNull()
+    expect(body.passos).toBeNull()
+    expect(body.notas).toBeNull()
+  })
+})
+
+// ── resolveFacets ────────────────────────────────────────────────────────────
+
+describe('resolveFacets — restricoes ausente quando vazio (AC#3)', () => {
+  it('restricoes vazio ⇒ chave AUSENTE; cozinha/categoria/tags presentes', () => {
+    const facets = resolveFacets({
+      cozinha: 'brasileira',
+      categoria: 'prato_principal',
+      tags: ['festiva'],
+      restricoes: [],
+    })
+    expect('restricoes' in facets).toBe(false)
+    expect(facets.cozinha).toBe('brasileira')
+    expect(facets.categoria).toBe('prato_principal')
+    expect(facets.tags).toEqual(['festiva'])
+  })
+
+  it('restricoes não-vazio ⇒ chave PRESENTE', () => {
+    const facets = resolveFacets({
+      cozinha: 'brasileira',
+      categoria: 'prato_principal',
+      tags: [],
+      restricoes: ['sem_gluten', 'vegano'],
+    })
+    expect('restricoes' in facets).toBe(true)
+    expect(facets.restricoes).toEqual(['sem_gluten', 'vegano'])
+  })
+})
+
+// ── resolveRecipeView ────────────────────────────────────────────────────────
+
+describe('resolveRecipeView — vista completa', () => {
+  it('AC#4: a vista sempre carrega origin (selo) e schemaVersion', () => {
+    const view = resolveRecipeView(input())
+    expect(view.origin).toBe('catalog')
+    expect(view.schemaVersion).toBe(1)
+  })
+
+  it('AC#3 na vista: restricoes vazio omite a chave das facetas', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ restricoes: [] }) }))
+    expect('restricoes' in view.facets).toBe(false)
+    expect(view.facets.cozinha).toBe('brasileira')
+    expect(view.facets.categoria).toBe('prato_principal')
+  })
+
+  it('AC#5: invariantes (porcoes/dificuldade/ingredientes) idênticas entre locales', () => {
+    const ptView = resolveRecipeView(input({ requestLocale: 'pt-BR' }))
+    const enView = resolveRecipeView(input({ requestLocale: 'en-US' }))
+
+    // Invariantes idênticas qualquer que seja o requestLocale.
+    expect(enView.porcoes).toBe(ptView.porcoes)
+    expect(enView.dificuldade).toBe(ptView.dificuldade)
+    expect(enView.ingredients).toEqual(ptView.ingredients)
+    expect(enView.origin).toBe(ptView.origin)
+    expect(enView.schemaVersion).toBe(ptView.schemaVersion)
+
+    // quantidade permanece STRING de escala-3 (não número).
+    expect(ptView.ingredients[0].quantidade).toBe('2.500')
+    expect(typeof ptView.ingredients[0].quantidade).toBe('string')
+
+    // ... enquanto o nome DIFERE entre locales.
+    expect(ptView.name).toBe('Feijoada')
+    expect(enView.name).toBe('Feijoada (Black Bean Stew)')
+    expect(enView.name).not.toBe(ptView.name)
+  })
+})
