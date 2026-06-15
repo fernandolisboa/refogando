@@ -11,6 +11,7 @@ import {
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance } from '@/domain/recipe'
+import { seedUser } from './users'
 
 /**
  * Fábricas de seed da Receita (issue #3). Inserem PAIS antes de filhos e devolvem
@@ -317,4 +318,199 @@ export async function seedRecipeNoRestriction(): Promise<{ recipeId: string }> {
   await linkRecipeTag(recipeId, tagId)
 
   return { recipeId }
+}
+
+// ── Matriz composta da Busca (issue #6, §4.1) ───────────────────────────────────
+
+export type SearchMatrixIds = {
+  A: string // catálogo private-default + owner NULL, pt-BR "Chili de carne" (pessoa)
+  B: string // ai_chat public owned, pt-BR "Chili vegano" (pessoa)
+  C: string // user_edited public owned, original en-US confiável + pt-BR auto-não-revisada
+  C2: string // user_edited public owned, original pt-BR automatica_nao_revisada
+  C3: string // user_edited public owned, original en-US não-revisado + pt-BR confiável
+  D: string // ai_structured PRIVATE owned (barrada pelo gate)
+  E: string // ai_chat playful (barrada pelo gate + exclusão explícita)
+  F: string // catálogo "Biscoito de açúcar" (unaccent + stemming)
+  F2: string // catálogo "Bolo de acucar" (título ARMAZENADO sem acento — sentido inverso do unaccent)
+  G: string // catálogo "Bolo de cenoura" (controle: não casa "chili")
+  ownerId: string // dono U das Receitas de Comunidade
+  tituloCEnUS: string // titulo en-US original de C (asserção AC6 cross-locale)
+}
+
+/**
+ * Semeia a matriz mínima da Busca (§4.1) que exercita TODOS os 6 ACs com uma busca
+ * por "chili" (e variações de acento/plural). Reusa os átomos `seedRecipe`/
+ * `seedTranslation`/`seedUser`. Devolve os ids semeados para os testes asserirem
+ * pertencimento POR id (PKs não-determinísticos).
+ *
+ * Pontos sutis (C/C2/C3 dissecam `autoTranslationSignal` = base de `resolveName`,
+ * NÃO o parêntese):
+ *  - C  → base = original en-US confiável (pt-BR não-revisada NÃO anexada) ⇒ SEM sinal;
+ *         a LINHA pt-BR casa o FTS (config portuguese) ⇒ cross-locale recall (AC6).
+ *  - C2 → base = original pt-BR automatica_nao_revisada ⇒ COM sinal.
+ *  - C3 → base = original en-US não-revisado + parêntese pt-BR confiável ⇒ COM sinal
+ *         (o parêntese confiável NÃO limpa o sinal).
+ *
+ * Receitas de Comunidade visíveis têm dono ⇒ precisam `visibility='public'` para
+ * passar o gate (owner NULL OR public). Catálogo usa owner NULL + visibility DEFAULT
+ * de banco (private) — NÃO passar visibility='public': prova o gate owner-NULL (AC1).
+ */
+export async function seedSearchMatrix(): Promise<SearchMatrixIds> {
+  const ownerId = await seedUser({ email: `busca-owner-${crypto.randomUUID()}@ex.com` })
+
+  // A — catálogo: owner NULL + visibility DEFAULT (private). Visível via gate owner-NULL.
+  const A = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: A,
+    locale: 'pt-BR',
+    titulo: 'Chili de carne',
+    descricao: 'Ensopado apimentado de carne moída e feijão.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // B — Comunidade pública (ai_chat), dono U.
+  const B = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: B,
+    locale: 'pt-BR',
+    titulo: 'Chili vegano',
+    descricao: 'Versão sem carne, com cogumelos.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // C — cross-locale SEM sinal: original en-US confiável + pt-BR auto-não-revisada,
+  // ambas casam "chili". Base = original en-US confiável ⇒ sinal FALSE.
+  const tituloCEnUS = 'Texas Chili'
+  const C = await seedRecipe({
+    origin: 'user_edited',
+    originalLocale: 'en-US',
+    visibility: 'public',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: C,
+    locale: 'en-US',
+    titulo: tituloCEnUS,
+    descricao: 'Slow-cooked beef chili.',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedTranslation({
+    recipeId: C,
+    locale: 'pt-BR',
+    titulo: 'Chili do Texas',
+    descricao: 'Chili de carne cozido devagar.',
+    provenance: 'automatica_nao_revisada',
+  })
+
+  // C2 — sinal POSITIVO (primeira classe): original pt-BR automatica_nao_revisada.
+  // Base = próprio original pt-BR não-revisado (mesmo locale) ⇒ sinal TRUE.
+  const C2 = await seedRecipe({
+    origin: 'user_edited',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: C2,
+    locale: 'pt-BR',
+    titulo: 'Chili secreto da vovó',
+    descricao: 'Receita de chili não revisada.',
+    provenance: 'automatica_nao_revisada',
+  })
+
+  // C3 — sinal POSITIVO COMPOSTO: original en-US não-revisado + tradução pt-BR
+  // confiável (titulo diferente). Base = original en-US não-revisado ⇒ sinal TRUE
+  // (o parêntese pt-BR confiável NÃO limpa o sinal).
+  const C3 = await seedRecipe({
+    origin: 'user_edited',
+    originalLocale: 'en-US',
+    visibility: 'public',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: C3,
+    locale: 'en-US',
+    titulo: 'Smoky chili pot',
+    descricao: 'Unreviewed original.',
+    provenance: 'automatica_nao_revisada',
+  })
+  await seedTranslation({
+    recipeId: C3,
+    locale: 'pt-BR',
+    titulo: 'Chili defumado na panela',
+    descricao: 'Tradução pt-BR revisada e confiável.',
+    provenance: 'automatica_revisada',
+  })
+
+  // D — Comunidade PRIVATE com dono ⇒ barrada pelo gate (casa "chili" mas não passa).
+  const D = await seedRecipe({
+    origin: 'ai_structured',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: D,
+    locale: 'pt-BR',
+    titulo: 'Chili secreto',
+    descricao: 'Privado, não deve aparecer.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // E — playful (private + dono) ⇒ barrada pelo gate E pela exclusão explícita.
+  const E = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    resultKind: 'playful',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: E,
+    locale: 'pt-BR',
+    titulo: 'Chili impossível',
+    descricao: 'Resultado lúdico, não deve aparecer.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F — catálogo unaccent + stemming: "Biscoito de açúcar" + descrição com "açúcar".
+  // owner NULL + visibility DEFAULT (private) ⇒ visível via gate owner-NULL.
+  const F = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: F,
+    locale: 'pt-BR',
+    titulo: 'Biscoito de açúcar',
+    descricao: 'Biscoitos amanteigados cobertos de açúcar.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F2 — catálogo unaccent SENTIDO INVERSO: título ARMAZENADO sem acento ("acucar").
+  // Prova que uma query ACENTUADA ('açúcar') acha um valor armazenado SEM acento —
+  // a direção que F (armazenado acentuado) sozinho não demonstra. owner NULL +
+  // visibility DEFAULT (private) ⇒ visível via gate owner-NULL.
+  const F2 = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: F2,
+    locale: 'pt-BR',
+    titulo: 'Bolo de acucar',
+    descricao: 'Bolo simples coberto de acucar.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // G — catálogo CONTROLE: "Bolo de cenoura" NÃO casa "chili".
+  const G = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: G,
+    locale: 'pt-BR',
+    titulo: 'Bolo de cenoura',
+    descricao: 'Bolo fofinho de cenoura com cobertura de chocolate.',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  return { A, B, C, C2, C3, D, E, F, F2, G, ownerId, tituloCEnUS }
 }

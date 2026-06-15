@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   primaryKey,
   check,
+  customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
@@ -71,6 +72,18 @@ export const strengthEnum = pgEnum('strength', STRENGTHS)
  * visibility, result_kind, locale). A espinha canônica da Receita nasce na #3.
  * Existe só para o route handler de saúde tocar um Postgres real pela porta mais alta.
  */
+/**
+ * Tipo `tsvector` mínimo (issue #6, busca FTS). A coluna `search_vector` é GERADA
+ * STORED no banco (migração 0005) e read-only do ponto de vista da app — nunca a
+ * inserimos. customType só precisa do `dataType()` para o typecheck/queries; o DDL
+ * de verdade vive em drizzle/0005_busca_fts.sql (fonte única do aplicado).
+ */
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'tsvector'
+  },
+})
+
 export const ping = pgTable('ping', {
   id: serial('id').primaryKey(),
   message: text('message').notNull(),
@@ -130,8 +143,18 @@ export const recipeTranslation = pgTable(
     stale: boolean('stale').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Coluna GERADA STORED (issue #6): FTS por linha, cada uma na própria config de
+    // idioma via recipe_ts_config(locale). generatedAlwaysAs marca a coluna como
+    // read-only ⇒ omitida de $inferInsert (seedTranslation/persist seguem válidos).
+    // A expressão aqui ESPELHA drizzle/0005_busca_fts.sql (fonte única do DDL aplicado).
+    searchVector: tsvector('search_vector').generatedAlwaysAs(
+      sql`to_tsvector(recipe_ts_config(locale), immutable_unaccent(coalesce(titulo, '') || ' ' || coalesce(descricao, '')))`,
+    ),
   },
-  (t) => [uniqueIndex('recipe_translation_recipe_locale_uq').on(t.recipeId, t.locale)],
+  (t) => [
+    uniqueIndex('recipe_translation_recipe_locale_uq').on(t.recipeId, t.locale),
+    index('recipe_translation_search_vector_gin').using('gin', t.searchVector),
+  ],
 )
 
 export const ingredient = pgTable(
