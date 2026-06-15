@@ -259,7 +259,10 @@ export function resolveFacets(input: {
  * faltante); o token de alérgeno é interpolado CRU (free-text, sem vocabulário de
  * rótulos — limitação menor conhecida, §D3). Interpolação por `String.replace`, sem ICU.
  */
-function renderAvisos(notices: ReadonlyArray<RestrictionNotice>, requestLocale: string): AvisoView[] {
+export function renderAvisos(
+  notices: ReadonlyArray<RestrictionNotice>,
+  requestLocale: string,
+): AvisoView[] {
   const locale = isSupportedLocale(requestLocale) ? requestLocale : DEFAULT_LOCALE
   const msgs = MESSAGES[locale]
   return notices.map((n) => {

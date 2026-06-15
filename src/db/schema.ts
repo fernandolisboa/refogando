@@ -28,6 +28,7 @@ import {
 } from '@/domain/recipe'
 import { GENERATION_OUTCOMES } from '@/domain/generation'
 import { ROLES } from '@/domain/user'
+import { STRENGTHS } from '@/domain/briefing'
 
 /**
  * Espinha canônica da Receita (issue #3). Drizzle é a fonte única de verdade do
@@ -58,6 +59,10 @@ export const generationOutcomeEnum = pgEnum('generation_outcome', GENERATION_OUT
 // Papel de Usuário (issue #5). Fonte única: ROLES de @/domain/user. Sem `visitante`
 // (Visitante = ausência de sessão/conta — ADR-0011).
 export const roleEnum = pgEnum('role', ROLES)
+// Força do BriefingItem (issue #11). Fonte única: STRENGTHS de @/domain/briefing —
+// `strength` é conceito do Briefing, não do kernel bidirecional de vocabulary.ts
+// (espelha creationModeEnum importando de recipe.ts). ÚNICO enum novo da #11.
+export const strengthEnum = pgEnum('strength', STRENGTHS)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -310,6 +315,51 @@ export const appConfig = pgTable(
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],
 )
 
+// ── Briefing de geração (issue #11, ADR-0006/0009) ─────────────────────────────
+//
+// O Briefing é a ENTRADA estruturada da criação (o "pedido"), persistido como
+// PROVENIÊNCIA distinta da Receita entregue. `briefing` guarda os escalares; cada
+// `briefing_item` é um ingrediente com `strength` (força). SEM `categoria` (CONTEXT.md
+// proíbe Categoria/Tag no Briefing). A posse vive na `creation_session` (que tem
+// `user_id`); o Briefing é pendurado na sessão via `creation_session.briefing_id`.
+export const briefing = pgTable('briefing', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  cozinha: cozinhaEnum('cozinha'),
+  // Espelha recipe.restricoes: array NOT NULL default '{}' (nunca null; vazio = sem restrição).
+  restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
+  // NULLABLE (opcionais no pedido, como em recipe).
+  porcoes: integer('porcoes'),
+  dificuldade: integer('dificuldade'),
+  observacoes: text('observacoes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const briefingItem = pgTable(
+  'briefing_item',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Item é parte-de do briefing (espelha recipe_ingredient.recipe_id): ON DELETE cascade.
+    briefingId: uuid('briefing_id')
+      .notNull()
+      .references(() => briefing.id, { onDelete: 'cascade' }),
+    // FK opcional ao canônico (espelha recipe_ingredient.ingredient_id): canônico some →
+    // item vira raw-text-only. Catálogo ADIADO → normalmente NULL nesta fatia.
+    ingredientId: uuid('ingredient_id').references(() => ingredient.id, { onDelete: 'set null' }),
+    // Força do item. NOT NULL SEM default (decisão #3): o app sempre envia; o default de
+    // UX 'preferred' mora no cliente, não no banco.
+    strength: strengthEnum('strength').notNull(),
+    // raw_text é NULLABLE no DDL (espelha recipe_ingredient.raw_text), mas o domínio puro
+    // GARANTE rawText OU ingredientId (item_sem_identidade). Sem catálogo é o portador do nome.
+    rawText: text('raw_text'),
+    // numeric(10,3) → trafega string|null, NUNCA number (espelha recipe_ingredient.quantidade).
+    quantidade: numeric('quantidade', { precision: 10, scale: 3 }),
+    unidade: unidadeEnum('unidade'),
+    ordem: integer('ordem').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('briefing_item_briefing_id_idx').on(t.briefingId)],
+)
+
 // ── Kernel de geração (issue #8, ADR-0006/0009) ────────────────────────────────
 //
 // `creation_session`: scaffold mínimo do episódio de criação. ref FRACA session→recipe
@@ -327,10 +377,22 @@ export const creationSession = pgTable(
     // ref FRACA session→recipe (nunca o reverso). NULLABLE, ON DELETE set null.
     // SEM unicidade agora (deixa espaço p/ #20 regeneração).
     recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'set null' }),
+    // Aponta pro Briefing (issue #11; a sessão aponta pro briefing, nunca o reverso —
+    // ADR-0006). NULLABLE (conversation não tem briefing). ON DELETE set null: ref fraca
+    // (espelha recipe_id) — briefing some, a sessão (registro durável do episódio) sobrevive.
+    briefingId: uuid('briefing_id').references(() => briefing.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('creation_session_user_id_idx').on(t.userId)],
+  (t) => [
+    index('creation_session_user_id_idx').on(t.userId),
+    // mode=structured EXIGE briefing (AC2). CHECK simples na própria tabela (espelha
+    // recipe_playful_private_chk); a rede de banco contra structured-sem-briefing.
+    check(
+      'creation_session_structured_briefing_chk',
+      sql`${t.mode} <> 'structured' OR ${t.briefingId} IS NOT NULL`,
+    ),
+  ],
 )
 
 export const generation = pgTable(
