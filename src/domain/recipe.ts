@@ -22,6 +22,10 @@ export type Visibility = (typeof VISIBILIDADES)[number]
 export const RESULT_KINDS = ['success', 'degraded', 'playful'] as const
 export type ResultKind = (typeof RESULT_KINDS)[number]
 
+// ── Modo de criação da Session (ADR-0006): conversa (#12) ou estruturado (#11) ──
+export const CREATION_MODES = ['conversation', 'structured'] as const
+export type CreationMode = (typeof CREATION_MODES)[number]
+
 // ── Linhagem: como a Receita derivou de um pai ─────────────────────────────────
 export const LINEAGE_KINDS = ['regenerated', 'edited'] as const
 export type LineageKind = (typeof LINEAGE_KINDS)[number]
@@ -46,6 +50,10 @@ export function isVisibility(v: string): v is Visibility {
 
 export function isResultKind(v: string): v is ResultKind {
   return (RESULT_KINDS as readonly string[]).includes(v)
+}
+
+export function isCreationMode(v: string): v is CreationMode {
+  return (CREATION_MODES as readonly string[]).includes(v)
 }
 
 export function isLineageKind(v: string): v is LineageKind {

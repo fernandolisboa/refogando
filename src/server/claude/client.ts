@@ -1,31 +1,123 @@
 /**
  * Seam ÚNICO e mockável para o cliente do Claude (Anthropic).
  *
- * Na fundação (#2) a interface é deliberadamente mínima — só `echo` — o suficiente
- * para provar que toda chamada ao Claude passa por uma interface e que o teste pode
- * trocá-la por um dublê determinístico sem tocar a rede.
+ * Na fundação (#2) a interface era mínima — só `echo` — o suficiente para provar
+ * que toda chamada ao Claude passa por uma interface e que o teste pode trocá-la por
+ * um dublê determinístico sem tocar a rede.
  *
- * A issue #8 (dona do kernel de geração) ESTENDE esta interface com o método de
- * geração, já com a forma real: structured outputs via schema canônico, taxonomia
- * de resultado (success/degraded/playful) e comentário consultivo FORA da Receita
- * (ADR-0009). Não declaramos esse método agora para não congelar a forma errada.
+ * A issue #8 (dona do kernel de geração) ESTENDE esta interface com `generateRecipe`,
+ * já com a forma real: structured outputs via schema canônico (`RecipeGenSchema` +
+ * `zodOutputFormat`), e o RESULTADO CRU DA FRONTEIRA (`GenerationOutput`) que o kernel
+ * puro `classify` (em `@/domain/generation`) mapeia para a taxonomia. O comentário
+ * consultivo (`advisory`) trafega FORA da Receita (ADR-0009).
+ *
+ * `GenerationOutput` vive no DOMÍNIO (`@/domain/generation`) e é importado AQUI (server
+ * → domínio), nunca o contrário: mantém a fronteira sem cheiro de domínio→server.
  */
-export interface ClaudeClient {
-  echo(text: string): Promise<string>
+
+import Anthropic from '@anthropic-ai/sdk'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+
+import type { GenerationOutput } from '@/domain/generation'
+import { RecipeGenSchema } from '@/domain/recipe-gen-schema'
+
+/**
+ * Forma da entrada da geração (em #8, mínima: o prompt já montado vive a montante).
+ * #11/#12 montam o prompt; #8 só transporta. `model` é resolvido de
+ * `app_config.default_model` na rota.
+ */
+export type GenerationInput = {
+  systemPrompt: string
+  userPrompt: string
+  model: string
 }
 
-/** Implementação real. Em #2 `echo` é puro (sem rede); o SDK Anthropic entra na #8. */
+export interface ClaudeClient {
+  echo(text: string): Promise<string>
+  generateRecipe(input: GenerationInput): Promise<GenerationOutput>
+}
+
+// Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
+// bastante para uma Receita completa; estourar → stop_reason 'max_tokens'.
+const MAX_TOKENS = 4096
+
+/**
+ * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
+ * outputs (`messages.parse` + `zodOutputFormat(RecipeGenSchema)`).
+ */
 export class RealClaudeClient implements ClaudeClient {
   async echo(text: string): Promise<string> {
     return text
   }
+
+  async generateRecipe(input: GenerationInput): Promise<GenerationOutput> {
+    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (o teste
+    // injeta FakeClaudeClient via setClaudeClient).
+    const client = new Anthropic()
+
+    try {
+      const params = {
+        model: input.model,
+        max_tokens: MAX_TOKENS,
+        system: input.systemPrompt,
+        messages: [{ role: 'user' as const, content: input.userPrompt }],
+        output_config: { format: zodOutputFormat(RecipeGenSchema) },
+        // SEM prefill, SEM temperature custom, SEM thinking: claude-opus-4-8 rejeita
+        // prefill/temperature com structured outputs (landmine §11).
+      }
+
+      let message = await client.messages.parse(params)
+
+      // Branch por stop_reason (NÃO stop_details — esse é só metadado de categoria).
+      if (message.stop_reason === 'refusal') return { kind: 'refusal' }
+      // Uma resposta de saída estruturada TRUNCADA lança dentro de messages.parse e é
+      // pega no catch como parse_failed; este branch só trata o sinal max_tokens
+      // SEM truncamento do structured output.
+      if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
+
+      // Repair mínimo: se o parser não produziu saída, re-chama UMA vez com a mesma
+      // entrada. Ainda null → parse_failed.
+      if (message.parsed_output === null) {
+        message = await client.messages.parse(params)
+        if (message.stop_reason === 'refusal') return { kind: 'refusal' }
+        if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
+        if (message.parsed_output === null) return { kind: 'parse_failed' }
+      }
+
+      const parsed = message.parsed_output
+      // `receita` já é null para impossible (regra de app no schema flat); sem ternário.
+      return {
+        kind: 'object',
+        recipe: parsed.receita,
+        advisory: parsed.advisory,
+        modelKind: parsed.kind,
+      }
+    } catch {
+      // Qualquer erro de rede/SDK/validação → parse_failed. Nunca vaza stack; nunca
+      // vira Receita parcial.
+      return { kind: 'parse_failed' }
+    }
+  }
 }
 
-/** Dublê determinístico para testes. Por padrão ecoa; aceita uma resposta custom. */
+/**
+ * Dublê determinístico para testes. `echo` ecoa (ou aplica `reply`); `generateRecipe`
+ * devolve o `GenerationOutput` enlatado no construtor — cada teste injeta UMA classe.
+ */
 export class FakeClaudeClient implements ClaudeClient {
-  constructor(private readonly reply: (text: string) => string = (text) => text) {}
+  constructor(
+    private readonly reply: (text: string) => string = (text) => text,
+    private readonly canned?: GenerationOutput,
+  ) {}
 
   async echo(text: string): Promise<string> {
     return this.reply(text)
+  }
+
+  async generateRecipe(): Promise<GenerationOutput> {
+    if (!this.canned) {
+      throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
+    }
+    return this.canned
   }
 }
