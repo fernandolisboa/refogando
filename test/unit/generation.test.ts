@@ -1,0 +1,255 @@
+import { describe, expect, it } from 'vitest'
+import {
+  GENERATION_OUTCOMES,
+  classify,
+  type GenerationOutput,
+} from '@/domain/generation'
+import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
+import { CREATION_MODES, isCreationMode } from '@/domain/recipe'
+
+// Receita "miolo" válida (faixas in-range) para os branches success|degraded|playful.
+// `porcoes`/`dificuldade` dentro de PORCOES {1,50} / DIFICULDADE {1,5}.
+function makeReceita(overrides: Partial<ReceitaGenT> = {}): ReceitaGenT {
+  return {
+    titulo: 'Risoto de funghi',
+    descricao: null,
+    passos: ['Refogar a cebola', 'Adicionar o arroz'],
+    notas: null,
+    originalLocale: 'pt-BR',
+    cozinha: 'italiana',
+    categoria: 'prato_principal',
+    restricoes: [],
+    porcoes: 4,
+    dificuldade: 3,
+    ingredientes: [{ rawText: '1 xícara de arroz arbóreo', quantidade: '1', unidade: 'xicara' }],
+    ...overrides,
+  }
+}
+
+describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
+  it('refusal → {outcome:"invalid"}', () => {
+    expect(classify({ kind: 'refusal' })).toEqual({ outcome: 'invalid' })
+  })
+
+  it('max_tokens → {outcome:"invalid"}', () => {
+    expect(classify({ kind: 'max_tokens' })).toEqual({ outcome: 'invalid' })
+  })
+
+  it('parse_failed → {outcome:"invalid"}', () => {
+    expect(classify({ kind: 'parse_failed' })).toEqual({ outcome: 'invalid' })
+  })
+
+  it('object + modelKind "impossible" → {outcome:"impossible", advisory} (sem recipe)', () => {
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe: null,
+      advisory: 'Não dá para fazer bolo sem nenhum ingrediente.',
+      modelKind: 'impossible',
+    }
+    const result = classify(out)
+    expect(result).toEqual({
+      outcome: 'impossible',
+      advisory: 'Não dá para fazer bolo sem nenhum ingrediente.',
+    })
+    // O branch impossible NÃO carrega recipe.
+    expect(result).not.toHaveProperty('recipe')
+  })
+
+  it('object + "impossible" com advisory null ainda classifica como impossible', () => {
+    expect(
+      classify({ kind: 'object', recipe: null, advisory: null, modelKind: 'impossible' }),
+    ).toEqual({ outcome: 'impossible', advisory: null })
+  })
+
+  it('object + "success" (faixas válidas) → {outcome:"success", recipe, advisory}', () => {
+    const recipe = makeReceita()
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe,
+      advisory: 'Use queijo parmesão fresco.',
+      modelKind: 'success',
+    }
+    expect(classify(out)).toEqual({
+      outcome: 'success',
+      recipe,
+      advisory: 'Use queijo parmesão fresco.',
+    })
+  })
+
+  it('object + "degraded" (faixas válidas) → {outcome:"degraded", recipe, advisory}', () => {
+    const recipe = makeReceita()
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe,
+      advisory: null,
+      modelKind: 'degraded',
+    }
+    expect(classify(out)).toEqual({ outcome: 'degraded', recipe, advisory: null })
+  })
+
+  it('object + "playful" (faixas válidas) → {outcome:"playful", recipe, advisory}', () => {
+    const recipe = makeReceita()
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe,
+      advisory: 'Receita divertida — não leve a sério.',
+      modelKind: 'playful',
+    }
+    expect(classify(out)).toEqual({
+      outcome: 'playful',
+      recipe,
+      advisory: 'Receita divertida — não leve a sério.',
+    })
+  })
+
+  it('faixas nos limites (porcoes=1/50, dificuldade=1/5) são válidas', () => {
+    const baixo = classify({
+      kind: 'object',
+      recipe: makeReceita({ porcoes: 1, dificuldade: 1 }),
+      advisory: null,
+      modelKind: 'success',
+    })
+    expect(baixo.outcome).toBe('success')
+    const alto = classify({
+      kind: 'object',
+      recipe: makeReceita({ porcoes: 50, dificuldade: 5 }),
+      advisory: null,
+      modelKind: 'success',
+    })
+    expect(alto.outcome).toBe('success')
+  })
+
+  it('object + "success" com porcoes fora de faixa (99) → invalid (NÃO clampa)', () => {
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe: makeReceita({ porcoes: 99 }),
+      advisory: 'qualquer coisa',
+      modelKind: 'success',
+    }
+    expect(classify(out)).toEqual({ outcome: 'invalid' })
+  })
+
+  it('object + "success" com porcoes abaixo da faixa (0) → invalid', () => {
+    expect(
+      classify({
+        kind: 'object',
+        recipe: makeReceita({ porcoes: 0 }),
+        advisory: null,
+        modelKind: 'success',
+      }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('object + "success" com dificuldade fora de faixa (9) → invalid (NÃO clampa)', () => {
+    const out: GenerationOutput = {
+      kind: 'object',
+      recipe: makeReceita({ dificuldade: 9 }),
+      advisory: null,
+      modelKind: 'success',
+    }
+    expect(classify(out)).toEqual({ outcome: 'invalid' })
+  })
+
+  it('object + "playful" com dificuldade fora de faixa também → invalid', () => {
+    expect(
+      classify({
+        kind: 'object',
+        recipe: makeReceita({ dificuldade: 0 }),
+        advisory: null,
+        modelKind: 'playful',
+      }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('object + "success" com recipe null (viola contrato) → invalid', () => {
+    expect(
+      classify({ kind: 'object', recipe: null, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('quantidade "a gosto" (não-numérica) num ingrediente → invalid (NÃO chega ao DB)', () => {
+    const recipe = makeReceita({
+      ingredientes: [{ rawText: 'sal a gosto', quantidade: 'a gosto', unidade: 'a_gosto' }],
+    })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('quantidade "2,5" (vírgula-decimal) → invalid', () => {
+    const recipe = makeReceita({
+      ingredientes: [{ rawText: '2,5 xícaras', quantidade: '2,5', unidade: 'xicara' }],
+    })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('quantidade "" (string vazia) → invalid', () => {
+    const recipe = makeReceita({
+      ingredientes: [{ rawText: 'arroz', quantidade: '', unidade: 'xicara' }],
+    })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('quantidade numérica válida ("2.500") e null preservam o outcome do modelo', () => {
+    const recipe = makeReceita({
+      ingredientes: [
+        { rawText: '2.5 xícaras de farinha', quantidade: '2.500', unidade: 'xicara' },
+        { rawText: 'sal a gosto', quantidade: null, unidade: 'a_gosto' },
+      ],
+    })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'success', recipe, advisory: null })
+  })
+
+  it('originalLocale "" (vazio) → invalid (NÃO persiste lixo)', () => {
+    const recipe = makeReceita({ originalLocale: '' })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('originalLocale "xx" (não-suportado) → invalid', () => {
+    const recipe = makeReceita({ originalLocale: 'xx' })
+    expect(
+      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
+    ).toEqual({ outcome: 'invalid' })
+  })
+
+  it('originalLocale suportado ("en-US") preserva o outcome do modelo', () => {
+    const recipe = makeReceita({ originalLocale: 'en-US' })
+    expect(
+      classify({ kind: 'object', recipe, advisory: 'nota', modelKind: 'degraded' }),
+    ).toEqual({ outcome: 'degraded', recipe, advisory: 'nota' })
+  })
+})
+
+describe('GENERATION_OUTCOMES — taxonomia de 5 valores (alimenta o pgEnum)', () => {
+  it('contém exatamente success/degraded/playful/impossible/invalid', () => {
+    expect(GENERATION_OUTCOMES).toEqual([
+      'success',
+      'degraded',
+      'playful',
+      'impossible',
+      'invalid',
+    ])
+  })
+})
+
+describe('CREATION_MODES / isCreationMode — guard de modo de criação', () => {
+  it('CREATION_MODES é conversation/structured', () => {
+    expect(CREATION_MODES).toEqual(['conversation', 'structured'])
+  })
+
+  it('isCreationMode: pertencimento', () => {
+    for (const m of CREATION_MODES) expect(isCreationMode(m)).toBe(true)
+    expect(isCreationMode('conversation')).toBe(true)
+    expect(isCreationMode('structured')).toBe(true)
+    expect(isCreationMode('telepatia')).toBe(false)
+    expect(isCreationMode('')).toBe(false)
+  })
+})

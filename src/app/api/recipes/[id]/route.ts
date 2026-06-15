@@ -1,66 +1,61 @@
 import { eq } from 'drizzle-orm'
+import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
-import { recipe, recipeTranslation, recipeIngredient, recipeTag, tag } from '@/db/schema'
+import { recipe } from '@/db/schema'
+import { isUuid, parseRequestLocale } from '@/server/http/params'
+import { loadRecipeRows } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
 
 /**
- * Leitura localizada da Receita (issue #3). Route fino: lê a espinha + traduções +
- * ingredientes + tags do Postgres e delega a montagem da view ao módulo PURO
- * `resolveRecipeView` (sem DB). `?locale` escolhe o idioma pedido (padrão pt-BR).
+ * Leitura localizada da Receita (issue #3). Route fino: carrega a espinha +
+ * traduções + ingredientes + tags via `loadRecipeRows` (loader de servidor
+ * compartilhado — DRY com a retomada da #8) e delega a montagem da view ao módulo
+ * PURO `resolveRecipeView` (sem DB). `?locale` escolhe o idioma pedido (padrão
+ * DEFAULT_LOCALE). SOMENTE leitura — sem write/edit aqui.
  *
- * Usa `db.select()` explícito (NÃO a relational query API): joins enxutos, sem
- * acoplar o route ao grafo de relações. SOMENTE leitura — sem write/edit aqui.
+ * Gating de leitura (ADR-0011): catálogo/sistema (owner_id NULL) e Receitas `public`
+ * são legíveis por qualquer um (sem auth — preserva os testes da #3). Receita com
+ * dono + `private` (cobre toda geração da #8 e as playful) só é legível pelo próprio
+ * dono; sem sessão OU dono diferente → 404 not_found (NÃO 401/403 — não vaza
+ * existência). Leitura moderada por papel (Curador/Admin) é #18, FORA de escopo.
  */
 
-const DEFAULT_LOCALE = 'pt-BR'
-
-// `id` cai numa coluna uuid: um valor malformado faz o Postgres lançar 22P02 (e o
-// route 500ar, vazando SQL). Curto-circuitamos para o MESMO not_found — malformado é
-// indistinguível de ausente na superfície da API.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await params
-  if (!UUID_RE.test(id)) return Response.json({ error: 'not_found' }, { status: 404 })
-
-  const requestLocale = new URL(request.url).searchParams.get('locale') ?? DEFAULT_LOCALE
+  if (!isUuid(id)) return Response.json({ error: 'not_found' }, { status: 404 })
 
   const db = getDb()
 
-  const [row] = await db.select().from(recipe).where(eq(recipe.id, id))
-  if (!row) return Response.json({ error: 'not_found' }, { status: 404 })
+  // Gating barato ANTES de carregar a view: lê só owner_id + visibility. Receita
+  // ausente cai no mesmo not_found (malformado/ausente/sem-acesso indistinguíveis).
+  const [gate] = await db
+    .select({ ownerId: recipe.ownerId, visibility: recipe.visibility })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
 
-  // As três leituras seguintes são independentes entre si: em paralelo.
-  const [translations, ingredients, tags] = await Promise.all([
-    db.select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id)),
-    db
-      .select({
-        ordem: recipeIngredient.ordem,
-        quantidade: recipeIngredient.quantidade,
-        unidade: recipeIngredient.unidade,
-        rawText: recipeIngredient.rawText,
-      })
-      .from(recipeIngredient)
-      .where(eq(recipeIngredient.recipeId, id))
-      .orderBy(recipeIngredient.ordem, recipeIngredient.id),
-    db
-      .select({ nome: tag.nome })
-      .from(recipeTag)
-      .innerJoin(tag, eq(recipeTag.tagId, tag.id))
-      .where(eq(recipeTag.recipeId, id))
-      .orderBy(tag.nome),
-  ])
+  // Pública/catálogo (owner_id NULL = sistema, ADR-0011) → legível por qualquer um.
+  // Caso contrário (com dono + private) exige ser o próprio dono; senão 404 (não vaza
+  // existência — mesma forma da rota de retomada em creation-sessions/[id]).
+  const isPublicRead = gate.ownerId == null || gate.visibility === 'public'
+  if (!isPublicRead) {
+    const g = await requireSession(request)
+    if (!g.ok || g.session.user.id !== gate.ownerId) {
+      return Response.json({ error: 'not_found' }, { status: 404 })
+    }
+  }
 
-  const view = resolveRecipeView({
-    recipe: row,
-    translations,
-    ingredients,
-    tags: tags.map((t) => t.nome),
-    requestLocale,
-  })
+  const requestLocale = parseRequestLocale(request)
+
+  const rows = await loadRecipeRows(db, id)
+  if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
+
+  const view = resolveRecipeView({ ...rows, requestLocale })
 
   return Response.json(view)
 }

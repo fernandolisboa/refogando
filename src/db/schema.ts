@@ -23,8 +23,10 @@ import {
   RESULT_KINDS,
   LINEAGE_KINDS,
   TRANSLATION_PROVENANCES,
+  CREATION_MODES,
   SCHEMA_VERSION_RECEITA,
 } from '@/domain/recipe'
+import { GENERATION_OUTCOMES } from '@/domain/generation'
 import { ROLES } from '@/domain/user'
 
 /**
@@ -48,6 +50,11 @@ export const visibilityEnum = pgEnum('visibility', VISIBILIDADES)
 export const resultKindEnum = pgEnum('result_kind', RESULT_KINDS)
 export const lineageKindEnum = pgEnum('lineage_kind', LINEAGE_KINDS)
 export const translationProvenanceEnum = pgEnum('translation_provenance', TRANSLATION_PROVENANCES)
+// Kernel de geração (issue #8). Modo da Session (ADR-0006) + taxonomia de resultado
+// (5 valores, auditável). Fonte única: CREATION_MODES (recipe.ts) + GENERATION_OUTCOMES
+// (generation.ts). `result_kind` segue congelado em success|degraded|playful.
+export const creationModeEnum = pgEnum('creation_mode', CREATION_MODES)
+export const generationOutcomeEnum = pgEnum('generation_outcome', GENERATION_OUTCOMES)
 // Papel de Usuário (issue #5). Fonte única: ROLES de @/domain/user. Sem `visitante`
 // (Visitante = ausência de sessão/conta — ADR-0011).
 export const roleEnum = pgEnum('role', ROLES)
@@ -301,4 +308,53 @@ export const appConfig = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],
+)
+
+// ── Kernel de geração (issue #8, ADR-0006/0009) ────────────────────────────────
+//
+// `creation_session`: scaffold mínimo do episódio de criação. ref FRACA session→recipe
+// (nunca o reverso), NULLABLE, SEM unicidade (deixa espaço p/ #20 regeneração).
+// `generation`: uma linha por tentativa (success|degraded|playful|impossible). Carrega
+// o Comentário consultivo FORA da Receita (advisory_comment) + schema_version + model.
+export const creationSession = pgTable(
+  'creation_session',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    mode: creationModeEnum('mode').notNull(),
+    // ref FRACA session→recipe (nunca o reverso). NULLABLE, ON DELETE set null.
+    // SEM unicidade agora (deixa espaço p/ #20 regeneração).
+    recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('creation_session_user_id_idx').on(t.userId)],
+)
+
+export const generation = pgTable(
+  'generation',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creationSessionId: uuid('creation_session_id')
+      .notNull()
+      .references(() => creationSession.id, { onDelete: 'cascade' }),
+    // NULLABLE: NULL para impossible (não há Receita). ON DELETE set null.
+    recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'set null' }),
+    outcome: generationOutcomeEnum('outcome').notNull(),
+    // Comentário consultivo FORA da Receita (ADR-0009).
+    advisoryComment: text('advisory_comment'),
+    model: text('model').notNull(),
+    schemaVersion: integer('schema_version').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('generation_creation_session_id_idx').on(t.creationSessionId),
+    // Índice parcial na FK recipe_id (espelha recipe_owner_id_idx): a maioria das
+    // linhas impossible tem recipe_id NULL, então o índice fica enxuto.
+    index('generation_recipe_id_idx')
+      .on(t.recipeId)
+      .where(sql`${t.recipeId} IS NOT NULL`),
+  ],
 )
