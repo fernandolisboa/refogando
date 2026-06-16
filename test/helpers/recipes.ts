@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import {
   recipe,
@@ -831,5 +832,337 @@ export async function seedIngredientSearchMatrix(): Promise<IngredientSearchMatr
     alho,
     cebolaRoxa,
     cebolaRoxaDefeated,
+  }
+}
+
+// ── Matriz composta das Facetas + Perfil culinário (issue #10, §3.1) ─────────────
+
+/**
+ * Cria/RESOLVE a Tag por nome NORMALIZADO (lower+trim — `tag.nome` é único) e a liga à
+ * Receita. Idempotente quanto à Tag: várias Receitas podem compartilhar o MESMO nome (ex.
+ * 'Leve' em F_jpDoce/F_thLeve/F_playful) sem violar `tag_nome_uq`. Devolve o tag id.
+ */
+export async function seedRecipeTag(recipeId: string, nome: string): Promise<string> {
+  const normalized = nome.toLowerCase().trim()
+  const existing = await getDb()
+    .select({ id: tag.id })
+    .from(tag)
+    .where(eq(tag.nome, normalized))
+    .limit(1)
+  const tagId = existing[0]?.id ?? (await seedTag(nome))
+  await linkRecipeTag(recipeId, tagId)
+  return tagId
+}
+
+export type FacetMatrixIds = {
+  F_jpDoce: string // catalog japonesa/sobremesa, dific 2, tag 'Leve', "Curry doce..."
+  F_jpPrato: string // catalog japonesa/prato, [vegano], dific 4, "Curry de legumes..."
+  F_brDoce: string // catalog brasileira/sobremesa, [sem_gluten,sem_lactose], "Curry doce baiano..."
+  F_itPrato: string // ai_chat public italiana/prato, [vegetariano], "Curry italiano..."
+  F_thLeve: string // catalog tailandesa/prato, tags Leve+Saudável+baixa-caloria, "Curry de coco..."
+  F_xxSaud: string // catalog francesa/prato, tag 'Saudável' (sem 'leve'), "Ratatouille..."
+  F_nullNums: string // catalog indiana/prato, [vegano,sem_gluten], dific NULL, porcoes NULL
+  F_multiR: string // catalog mexicana/prato, [vegano,sem_gluten], "Tacos de jaca"
+  F_oneR: string // catalog mexicana/prato, [vegano], "Tacos de cogumelo"
+  F_tagDefeated: string // catalog portuguesa/prato, tag 'saudavelx' (sem-ponte)
+  F_decoy: string // catalog francesa/prato, dific 5, título "Prato asiático leve da casa"
+  F_playful: string // ai_chat playful (private,owned) japonesa/sobremesa, tag 'Leve'
+  F_priv: string // ai_structured private (owned) japonesa/sobremesa, tag 'Leve'
+  ownerId: string // dono U das Receitas de Comunidade/private
+}
+
+/**
+ * Semeia a matriz das FACETAS (#10) — cada Receita pensada para travar um AC e seus
+ * controles negativos NÃO-vacuamente-verdes. Reusa as fábricas atômicas; devolve os ids
+ * para asserção por PERTENCIMENTO (PKs não-determinísticos).
+ *
+ * Pontos LOAD-BEARING (ver plano §3.1):
+ *  - 'curry' fixado no TÍTULO dos alvos do AC1 (F_jpDoce/F_jpPrato/F_itPrato/F_brDoce/
+ *    F_thLeve) ⇒ a positiva `search('curry',{cozinha:japonesa})` não é vácua.
+ *  - Os alvos da LENTE (AC3, F_thLeve/F_jpDoce) têm título SEM "asiático"/"leve" ⇒ o
+ *    recall vem da faceta resolvida, não do FTS. F_decoy tem "asiático leve" no título mas
+ *    cozinha NÃO-asiática + dific 5 ⇒ NÃO aparece em `search('asiático e leve')`.
+ *  - Tags em SURFACE FORM não-folded ('Leve'/'Saudável' acentuada/'baixa-caloria'
+ *    hifenada): seedTag só faz lower+trim ⇒ armazena 'saudável'/'baixa-caloria' ⇒ o fold
+ *    SQL `lower(immutable_unaccent(replace(...)))` é load-bearing. F_tagDefeated tem
+ *    'saudavelx' (sem-ponte) ⇒ `?tag=saudavel` NÃO o traz (igualdade normalizada exata).
+ *  - F_playful/F_priv casam cozinha=japonesa mas NUNCA aparecem (gate AND-combinado no
+ *    ramo faceta-only). F_nullNums tem dific/porcoes NULL (cai fora de qualquer faixa).
+ *
+ * Gate: catálogo = owner NULL + visibility DEFAULT (private) ⇒ visível via gate owner-NULL;
+ * comunidade visível = dono + visibility='public'.
+ */
+export async function seedFacetMatrix(): Promise<FacetMatrixIds> {
+  const ownerId = await seedUser({ email: `facetas-owner-${crypto.randomUUID()}@ex.com` })
+
+  // F_jpDoce — AC1 alvo japonês+curry; AC3 alvo (tag 'Leve' p/ a lente). Catálogo.
+  const F_jpDoce = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'japonesa',
+    categoria: 'sobremesa',
+    restricoes: [],
+    dificuldade: 2,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_jpDoce,
+    locale: 'pt-BR',
+    titulo: 'Curry doce de feijão azuki',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_jpDoce, 'Leve')
+
+  // F_jpPrato — AC1 estreita por categoria/restrição. Catálogo.
+  const F_jpPrato = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'japonesa',
+    categoria: 'prato_principal',
+    restricoes: ['vegano'],
+    dificuldade: 4,
+    porcoes: 2,
+  })
+  await seedTranslation({
+    recipeId: F_jpPrato,
+    locale: 'pt-BR',
+    titulo: 'Curry de legumes no missô',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F_brDoce — controle: casa 'curry' mas NÃO é cozinha asiática. Catálogo.
+  const F_brDoce = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'brasileira',
+    categoria: 'sobremesa',
+    restricoes: ['sem_gluten', 'sem_lactose'],
+    dificuldade: 1,
+    porcoes: 8,
+  })
+  await seedTranslation({
+    recipeId: F_brDoce,
+    locale: 'pt-BR',
+    titulo: 'Curry doce baiano de coco',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_brDoce, 'classico')
+
+  // F_itPrato — comunidade visível (ai_chat public, dono); controle de cozinha (casa 'curry').
+  const F_itPrato = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    ownerId,
+    cozinha: 'italiana',
+    categoria: 'prato_principal',
+    restricoes: ['vegetariano'],
+    dificuldade: 3,
+    porcoes: 6,
+  })
+  await seedTranslation({
+    recipeId: F_itPrato,
+    locale: 'pt-BR',
+    titulo: 'Curry italiano de grão-de-bico',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_itPrato, 'rapido')
+
+  // F_thLeve — AC3 alvo "asiático e leve" via lente (tag 'Leve' p/ a lente casar);
+  // 'Saudável'/'baixa-caloria' p/ o fold de acento/hífen. Catálogo. Título SEM
+  // "asiático"/"leve" (recall via faceta resolvida, não FTS).
+  const F_thLeve = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'tailandesa',
+    categoria: 'prato_principal',
+    restricoes: [],
+    dificuldade: 1,
+    porcoes: 2,
+  })
+  await seedTranslation({
+    recipeId: F_thLeve,
+    locale: 'pt-BR',
+    titulo: 'Curry de coco da casa',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_thLeve, 'Leve')
+  await seedRecipeTag(F_thLeve, 'Saudável')
+  await seedRecipeTag(F_thLeve, 'baixa-caloria')
+
+  // F_xxSaud — AC2 OR de tag: SÓ 'Saudável' (sem 'leve'). Catálogo.
+  const F_xxSaud = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'francesa',
+    categoria: 'prato_principal',
+    restricoes: [],
+    dificuldade: 2,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_xxSaud,
+    locale: 'pt-BR',
+    titulo: 'Ratatouille de forno',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_xxSaud, 'Saudável')
+
+  // F_nullNums — TRAVA NULL handling (dific/porcoes NULL ⇒ cai fora de qualquer faixa).
+  const F_nullNums = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'indiana',
+    categoria: 'prato_principal',
+    restricoes: ['vegano', 'sem_gluten'],
+    dificuldade: null,
+    porcoes: null,
+  })
+  await seedTranslation({
+    recipeId: F_nullNums,
+    locale: 'pt-BR',
+    titulo: 'Dal de lentilha',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F_multiR — AC2 restrição AND-contém-todas (vegano E sem_gluten). Catálogo.
+  const F_multiR = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'mexicana',
+    categoria: 'prato_principal',
+    restricoes: ['vegano', 'sem_gluten'],
+    dificuldade: 2,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_multiR,
+    locale: 'pt-BR',
+    titulo: 'Tacos de jaca',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F_oneR — AC2 controle: vegano só, NÃO sem_gluten (prova @> contém-todas vs && overlap).
+  const F_oneR = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'mexicana',
+    categoria: 'prato_principal',
+    restricoes: ['vegano'],
+    dificuldade: 2,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_oneR,
+    locale: 'pt-BR',
+    titulo: 'Tacos de cogumelo',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // F_tagDefeated — AC2 controle de isolamento de fold (espelha cebolaRoxaDefeated):
+  // surface 'saudavelx' (já sem acento, NÃO é 'saudavel', sem ponte) ⇒ NÃO casa ?tag=saudavel.
+  const F_tagDefeated = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'portuguesa',
+    categoria: 'prato_principal',
+    restricoes: [],
+    dificuldade: 3,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_tagDefeated,
+    locale: 'pt-BR',
+    titulo: 'Bacalhau à brás',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_tagDefeated, 'saudavelx')
+
+  // F_decoy — AC3 controle: título contém "asiático leve" mas cozinha não-asiática,
+  // dific 5 (fora do max:2 da lente), tags sem 'leve'/'saudavel'. NÃO aparece em
+  // `search('asiático e leve')` (faceta-only; nenhum FTS roda — a lente consumiu os tokens).
+  const F_decoy = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    cozinha: 'francesa',
+    categoria: 'prato_principal',
+    restricoes: [],
+    dificuldade: 5,
+    porcoes: 4,
+  })
+  await seedTranslation({
+    recipeId: F_decoy,
+    locale: 'pt-BR',
+    titulo: 'Prato asiático leve da casa',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_decoy, 'gourmet')
+
+  // F_playful — gate-control: casa cozinha=japonesa/tag 'Leve' mas NUNCA aparece (playful).
+  const F_playful = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    resultKind: 'playful',
+    ownerId,
+    cozinha: 'japonesa',
+    categoria: 'sobremesa',
+    restricoes: [],
+    dificuldade: 1,
+    porcoes: 2,
+  })
+  await seedTranslation({
+    recipeId: F_playful,
+    locale: 'pt-BR',
+    titulo: 'Curry de unicórnio',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_playful, 'Leve')
+
+  // F_priv — gate-control: private COM dono; casa cozinha=japonesa/tag 'Leve' mas NUNCA aparece.
+  const F_priv = await seedRecipe({
+    origin: 'ai_structured',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    ownerId,
+    cozinha: 'japonesa',
+    categoria: 'sobremesa',
+    restricoes: [],
+    dificuldade: 1,
+    porcoes: 2,
+  })
+  await seedTranslation({
+    recipeId: F_priv,
+    locale: 'pt-BR',
+    titulo: 'Curry secreto',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeTag(F_priv, 'Leve')
+
+  return {
+    F_jpDoce,
+    F_jpPrato,
+    F_brDoce,
+    F_itPrato,
+    F_thLeve,
+    F_xxSaud,
+    F_nullNums,
+    F_multiR,
+    F_oneR,
+    F_tagDefeated,
+    F_decoy,
+    F_playful,
+    F_priv,
+    ownerId,
   }
 }

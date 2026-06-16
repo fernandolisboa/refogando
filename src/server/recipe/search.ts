@@ -1,6 +1,7 @@
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import type { SearchHitRow } from '@/domain/recipe-search-read'
+import { type EffectiveFacets, isFacetsEmpty } from '@/domain/facet-params'
 
 /**
  * Loader FTS multi-row da Busca (issue #6, §3.4; estendido pela #9, §3.1). Diverge de
@@ -42,9 +43,71 @@ import type { SearchHitRow } from '@/domain/recipe-search-read'
 export const MAX_QUERY_LEN = 256
 const SECTION_CAP = 50
 
+/**
+ * Predicados de faceta (#10) AND-combinados no WHERE do `visible`. NUNCA interpolam:
+ * tudo via `sql.param` (bind seguro). Eixo vazio ⇒ no-op (guarda de `cardinality(...)=0`
+ * ou bound NULL) — preserva o reduce-to-#6/#9 (facets vazio ⇒ todos no-op). Restrição usa
+ * `@>` (acerta o GIN, contém-TODAS); Cozinha/Categoria/Tag usam OR dentro do eixo;
+ * faixas numéricas são NULL-safe (NULL na coluna cai fora — UNKNOWN, intencional, AC5).
+ *
+ * O lado-tabela da Tag é folded no SQL com o MESMO fold de #9
+ * (`lower(immutable_unaccent(replace(nome,'-',' ')))`); os valores do param já vêm folded
+ * por `foldIntent` em JS — os dois lados coincidem.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentario) — terminaria o
+ * `sql\`...\``. Os comentarios explicativos ficam AQUI no TS, fora do template.
+ */
+function facetPredicates(facets: EffectiveFacets): SQL {
+  const cozinhas = facets.cozinhas
+  const categorias = facets.categorias
+  const restricoes = facets.restricoes
+  const tags = facets.tags
+  const difMin = facets.dificuldade?.min ?? null
+  const difMax = facets.dificuldade?.max ?? null
+  const porMin = facets.porcoes?.min ?? null
+  const porMax = facets.porcoes?.max ?? null
+
+  return sql`
+    AND (
+      cardinality(${sql.param(cozinhas)}::cozinha[]) = 0
+      OR r.cozinha = ANY (${sql.param(cozinhas)}::cozinha[])
+    )
+    AND (
+      cardinality(${sql.param(categorias)}::categoria[]) = 0
+      OR r.categoria = ANY (${sql.param(categorias)}::categoria[])
+    )
+    AND (
+      cardinality(${sql.param(restricoes)}::restricao[]) = 0
+      OR r.restricoes @> ${sql.param(restricoes)}::restricao[]
+    )
+    AND (${difMin}::int IS NULL OR r.dificuldade >= ${difMin}::int)
+    AND (${difMax}::int IS NULL OR r.dificuldade <= ${difMax}::int)
+    AND (${porMin}::int IS NULL OR r.porcoes >= ${porMin}::int)
+    AND (${porMax}::int IS NULL OR r.porcoes <= ${porMax}::int)
+    AND (
+      cardinality(${sql.param(tags)}::text[]) = 0
+      OR EXISTS (
+        SELECT 1
+        FROM recipe_tag rtg
+        JOIN tag tg ON tg.id = rtg.tag_id
+        WHERE rtg.recipe_id = r.id
+          AND lower(immutable_unaccent(replace(tg.nome, '-', ' '))) = ANY (
+            ${sql.param(tags)}::text[]
+          )
+      )
+    )
+  `
+}
+
 export async function searchRecipes(
   db: Database,
-  args: { q: string; terms: string[]; mode: 'any' | 'all'; requestLocale: string },
+  args: {
+    q: string
+    terms: string[]
+    mode: 'any' | 'all'
+    requestLocale: string
+    facets: EffectiveFacets
+  },
 ): Promise<SearchHitRow[]> {
   // Cap de entrada: truncar (nao rejeitar). O curto-circuito de estado neutro
   // (q vazio/so-espacos) vive no ROUTE; aqui, q vazio => websearch_to_tsquery
@@ -52,6 +115,7 @@ export async function searchRecipes(
   const q = args.q.slice(0, MAX_QUERY_LEN)
   const requestLocale = args.requestLocale
   const terms = args.terms
+  const facets = args.facets
   // Hardening no ponto de consumo: com terms=[] o ramo 'all' (ov.overlap = 0 sobre o
   // FULL OUTER JOIN) zeraria TODA linha so-titulo (ov.overlap=NULL). Um caller direto
   // que passe {terms:[], mode:'all'} cairia nessa armadilha; forcamos 'any'. No-op para
@@ -59,6 +123,50 @@ export async function searchRecipes(
   const mode = terms.length === 0 ? 'any' : args.mode
   // N e conhecido em JS; inlinado (bindado) onde o gate 'all' precisa dele.
   const n = terms.length
+
+  // #10 faceta-only: ha facetas E o q efetivo NAO tem letra/digito (nem titulo nem
+  // ingrediente podem casar => `combined` esta garantidamente vazio). Cobre q=''
+  // (lente consumiu tudo), q=',,,' (parseSearchTerms=[]) e q='!!!' (terms.length=1 mas
+  // FTS nao casa). Quando true, `visible` le de `recipe r` direto com sinais de texto
+  // CONSTANTES (overlap=0, title_match=false, title_rank=0) => sort reduz a recipe_id
+  // (faceta NAO e rank). Senao, le de `combined` (caminho #6/#9).
+  const facetOnly = !isFacetsEmpty(facets) && !/[\p{L}\p{N}]/u.test(q)
+
+  // Predicados de faceta AND-combinados no gate. Eixo vazio => no-op (reduce-to-#6/#9).
+  const facetSql = facetPredicates(facets)
+
+  // Fonte do `visible`: faceta-only le de `recipe r` (sinais de texto constantes); o
+  // caminho #6/#9 le de `combined c JOIN recipe r`. O resto da cadeia e identico.
+  const visibleSource = facetOnly
+    ? sql`
+      SELECT
+        r.id AS recipe_id,
+        r.origin AS origin,
+        r.original_locale AS original_locale,
+        0 AS overlap,
+        false AS title_match,
+        0 AS title_rank,
+        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
+      FROM recipe r
+      WHERE r.result_kind <> 'playful'
+        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        ${facetSql}
+    `
+    : sql`
+      SELECT
+        r.id AS recipe_id,
+        r.origin AS origin,
+        r.original_locale AS original_locale,
+        c.overlap AS overlap,
+        c.title_match AS title_match,
+        c.title_rank AS title_rank,
+        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
+      FROM combined c
+      JOIN recipe r ON r.id = c.recipe_id
+      WHERE r.result_kind <> 'playful'
+        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        ${facetSql}
+    `
 
   const rows = await db.execute<SearchHitRow>(sql`
     WITH params AS (
@@ -190,21 +298,13 @@ export async function searchRecipes(
       -- isPublicRead): owner NULL (catalogo/sistema, ADR-0011) OU visibility=public.
       -- Catalogo nasce private (default DB) mas owner_id NULL => legivel. Private de
       -- usuario (owned) nunca passa. playful excluido explicitamente. Secao por origin.
-      -- Le de combined (#9): carrega overlap/title_match/title_rank para o ORDER BY.
-      SELECT
-        r.id AS recipe_id,
-        r.origin AS origin,
-        r.original_locale AS original_locale,
-        c.overlap AS overlap,
-        c.title_match AS title_match,
-        c.title_rank AS title_rank,
-        -- a coluna section dirige SO a particao/cap do ROW_NUMBER por secao; o
-        -- agrupamento (fonte da verdade) e classifySection(origin) em buildSearchResponse.
-        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
-      FROM combined c
-      JOIN recipe r ON r.id = c.recipe_id
-      WHERE r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
+      -- #10: predicados de faceta AND-combinados com o gate (nunca o afrouxam; o ramo
+      -- OR-NULL preservado). A coluna section dirige SO a particao/cap do ROW_NUMBER; o
+      -- agrupamento (fonte da verdade) e classifySection(origin) em buildSearchResponse.
+      -- Fonte (montada no TS em visibleSource): faceta-only le de recipe r (sinais de
+      -- texto CONSTANTES); senao de combined JOIN recipe (caminho #6/#9). O gate canonico
+      -- e re-incluido em AMBOS os ramos (faceta nunca afrouxa o gate).
+      ${visibleSource}
     ),
     numbered AS (
       -- #6 (tail) + #9 rank: ranking SO DENTRO DA SECAO + cap. Sort-key primaria
