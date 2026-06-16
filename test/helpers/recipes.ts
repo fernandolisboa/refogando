@@ -514,3 +514,322 @@ export async function seedSearchMatrix(): Promise<SearchMatrixIds> {
 
   return { A, B, C, C2, C3, D, E, F, F2, G, ownerId, tituloCEnUS }
 }
+
+// ── Matriz composta da Busca por Ingrediente (issue #9, §4.1) ───────────────────
+
+export type IngredientSearchMatrixIds = {
+  R_cross: string // catálogo en-US: Item frango escrito em inglês; título sem token-ingrediente
+  R_all: string // catálogo: frango + limao + alho (Itens canônicos)
+  R_partial2: string // comunidade pública: frango + limao (SEM alho)
+  R_raw: string // catálogo: só raw_text 'manjericão fresco' (ingredient_id NULL)
+  R_qty: string // catálogo: Item frango com quantidade '2.500' + unidade kg, rawText NULL
+  R_cebola: string // catálogo: Item cebolaRoxa (nome 'cebola-roxa' + alias hifenizado)
+  R_cebolaDefeated: string // catálogo: Item cebolaRoxaDefeated (nome 'cebolaroxa', sem ponte)
+  R_titleBoth: string // catálogo: UM Item frango; título casa o ?q= inteiro 'frango,limão'
+  R_both: string // catálogo: Item frango (canônico) + rawText 'frango caipira' + Item alho
+  R_titleOnly: string // catálogo: SEM Item alho; só título contém 'alho'
+  R_titleIng: string // catálogo: Item alho E título contém 'alho'
+  R_playful: string // comunidade playful: Item frango (barrada pelo gate)
+  R_private: string // comunidade private owned: Item frango (barrada pelo gate)
+  ownerId: string // dono U das Receitas de Comunidade
+  // Ids canônicos (para variantes set-null / asserções diretas):
+  frango: string
+  limao: string
+  alho: string
+  cebolaRoxa: string
+  cebolaRoxaDefeated: string
+}
+
+/**
+ * Semeia a matriz mínima da Busca por INGREDIENTE (§4.1) que exercita os 5 ACs com um
+ * conjunto de buscas. Montada a partir das fábricas atômicas (`seedRecipe`/
+ * `seedTranslation`/`seedIngredient`/`seedIngredientTranslation`/`seedRecipeIngredient`/
+ * `seedUser`). Devolve TODOS os ids para asserção por PERTENCIMENTO (PKs
+ * não-determinísticos). `seedSearchMatrix` (#6) semeia ZERO ingredientes — esta é nova.
+ *
+ * INVARIANTE DE TÍTULO (load-bearing): os títulos NÃO contêm NENHUM token que stemize a
+ * um nome de ingrediente semeado, para que o SINAL DE INGREDIENTE seja o que traz a
+ * Receita (evita que o título resolva por acaso e mascare o eixo de ingrediente).
+ * EXCEÇÕES INTENCIONAIS (únicas fixtures cujo título carrega termos da query, de
+ * propósito): R_titleOnly / R_titleIng (sort-key primária) e R_titleBoth (all-vs-any).
+ *
+ * Gate: catálogo = owner NULL + visibility DEFAULT de banco (private) → visível via gate
+ * owner-NULL; comunidade visível = dono + visibility='public'. R_playful/R_private são
+ * controles de gate (NUNCA aparecem).
+ *
+ * Canônicos com translations/aliases ALL-LOCALE (a resolução varre TODOS os locales, sem
+ * filtro por requestLocale — base do AC1 cross-locale):
+ *  - frango  → pt-BR nome 'frango' alias ['galinha']; en-US nome 'chicken'.
+ *  - limao   → pt-BR nome 'limão' alias ['lima']; en-US nome 'lime' alias ['lemon'].
+ *  - alho    → pt-BR nome 'alho'; en-US nome 'garlic'.
+ *  - cebolaRoxa (AC5 LOAD-BEARING) → pt-BR nome 'cebola-roxa' (forma hifenizada, NÃO
+ *    'cebola roxa') alias ['cebola-roxa']; en-US nome 'red onion'. O ÚNICO token que
+ *    dobra para a query 'cebola roxa' (com espaço) vive na forma hifenizada → a query só
+ *    resolve este canônico VIA replace('-',' '). Se o fold hífen→espaço fosse removido,
+ *    nenhum lado normalizar-igualaria 'cebola roxa' e o AC5 ficaria vermelho.
+ *  - cebolaRoxaDefeated (AC5 isolamento) → pt-BR nome 'cebolaroxa' (sem hífen e sem
+ *    espaço — nada dobra para 'cebola roxa'), SEM alias-ponte. Existe só para o AC5
+ *    negativo: 'cebola roxa' NÃO o traz.
+ */
+export async function seedIngredientSearchMatrix(): Promise<IngredientSearchMatrixIds> {
+  const ownerId = await seedUser({ email: `busca-ing-owner-${crypto.randomUUID()}@ex.com` })
+
+  // ── Canônicos (ALL-LOCALE) ──────────────────────────────────────────────────
+  const frango = await seedIngredient({ slug: `frango-${crypto.randomUUID()}` })
+  await seedIngredientTranslation({
+    ingredientId: frango,
+    locale: 'pt-BR',
+    nome: 'frango',
+    aliases: ['galinha'],
+  })
+  await seedIngredientTranslation({ ingredientId: frango, locale: 'en-US', nome: 'chicken' })
+
+  const limao = await seedIngredient({ slug: `limao-${crypto.randomUUID()}` })
+  await seedIngredientTranslation({
+    ingredientId: limao,
+    locale: 'pt-BR',
+    nome: 'limão',
+    aliases: ['lima'],
+  })
+  await seedIngredientTranslation({
+    ingredientId: limao,
+    locale: 'en-US',
+    nome: 'lime',
+    aliases: ['lemon'],
+  })
+
+  const alho = await seedIngredient({ slug: `alho-${crypto.randomUUID()}` })
+  await seedIngredientTranslation({ ingredientId: alho, locale: 'pt-BR', nome: 'alho' })
+  await seedIngredientTranslation({ ingredientId: alho, locale: 'en-US', nome: 'garlic' })
+
+  // cebolaRoxa — AC5 load-bearing: forma de superfície HIFENIZADA dos dois lados (nome E
+  // alias). 'cebola roxa' (espaço) só resolve via replace('-',' ').
+  const cebolaRoxa = await seedIngredient({ slug: `cebola-roxa-${crypto.randomUUID()}` })
+  await seedIngredientTranslation({
+    ingredientId: cebolaRoxa,
+    locale: 'pt-BR',
+    nome: 'cebola-roxa',
+    aliases: ['cebola-roxa'],
+  })
+  await seedIngredientTranslation({ ingredientId: cebolaRoxa, locale: 'en-US', nome: 'red onion' })
+
+  // cebolaRoxaDefeated — AC5 isolamento: 'cebolaroxa' (sem hífen/espaço), SEM ponte.
+  const cebolaRoxaDefeated = await seedIngredient({ slug: `cebolaroxa-${crypto.randomUUID()}` })
+  await seedIngredientTranslation({
+    ingredientId: cebolaRoxaDefeated,
+    locale: 'pt-BR',
+    nome: 'cebolaroxa',
+  })
+
+  // ── Receitas ────────────────────────────────────────────────────────────────
+
+  // R_cross — AC1 cross-locale. original en-US; Item ligado ao canônico frango mas
+  // ESCRITO EM INGLÊS no raw_text ('chicken thighs'); título en-US SEM token que stemize
+  // a um nome de ingrediente semeado (nem 'chicken'/'frango'). owner NULL + visibility
+  // DEFAULT (private) → visível via gate owner-NULL.
+  const R_cross = await seedRecipe({ origin: 'catalog', originalLocale: 'en-US', ownerId: null })
+  await seedTranslation({
+    recipeId: R_cross,
+    locale: 'en-US',
+    titulo: 'Grilled thighs over coals',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_cross, ingredientId: frango, ordem: 0, rawText: 'chicken thighs' })
+
+  // R_all — AC2: três Itens canônicos (frango, limao, alho), todos rawText=NULL.
+  const R_all = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_all,
+    locale: 'pt-BR',
+    titulo: 'Marmita completa do dia',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_all, ingredientId: frango, ordem: 0 })
+  await seedRecipeIngredient({ recipeId: R_all, ingredientId: limao, ordem: 1 })
+  await seedRecipeIngredient({ recipeId: R_all, ingredientId: alho, ordem: 2 })
+
+  // R_partial2 — AC2: frango + limao (SEM alho). Comunidade pública (ai_chat), dono U.
+  const R_partial2 = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: R_partial2,
+    locale: 'pt-BR',
+    titulo: 'Prato rápido da semana',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_partial2, ingredientId: frango, ordem: 0 })
+  await seedRecipeIngredient({ recipeId: R_partial2, ingredientId: limao, ordem: 1 })
+
+  // R_raw — AC3 degradação: UM Item SÓ raw_text 'manjericão fresco', ingredient_id=NULL.
+  // Sem canônico → só acha por FTS sobre raw_text.
+  const R_raw = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_raw,
+    locale: 'pt-BR',
+    titulo: 'Molho verde da casa',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({
+    recipeId: R_raw,
+    ingredientId: null,
+    ordem: 0,
+    rawText: 'manjericão fresco',
+  })
+
+  // R_qty — AC4: Item frango com quantidade '2.500' + unidade kg e rawText=NULL. O
+  // rawText DEVE ser NULL (NÃO improvisar '2.5 kg de frango' — isso rotearia 2.5/kg pela
+  // CTE de degradação raw_text, sempre-ligada, quebrando a negação do AC4).
+  const R_qty = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_qty,
+    locale: 'pt-BR',
+    titulo: 'Assado de domingo',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({
+    recipeId: R_qty,
+    ingredientId: frango,
+    ordem: 0,
+    quantidade: '2.500',
+    unidade: 'kg',
+  })
+
+  // R_cebola — AC5: UM Item cebolaRoxa, rawText=NULL; título sem token 'cebola' nu.
+  // rawText NULL (senão a degradação sempre-ligada poderia trazê-la via 'cebola' no
+  // raw_text, mascarando o negativo do AC5).
+  const R_cebola = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_cebola,
+    locale: 'pt-BR',
+    titulo: 'Salada da horta crocante',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_cebola, ingredientId: cebolaRoxa, ordem: 0 })
+
+  // R_cebolaDefeated — AC5 isolamento: UM Item cebolaRoxaDefeated, rawText=NULL; título
+  // sem 'cebola' nu. 'cebola roxa' NÃO o traz (o fold só salva quem tem hífen/espaço).
+  const R_cebolaDefeated = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+  })
+  await seedTranslation({
+    recipeId: R_cebolaDefeated,
+    locale: 'pt-BR',
+    titulo: 'Conserva agridoce do pote',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_cebolaDefeated, ingredientId: cebolaRoxaDefeated, ordem: 0 })
+
+  // R_titleBoth — EXTRA all-vs-any. EXCEÇÃO à invariante de título: título
+  // 'Frango com limão na brasa' FTS-casa o ?q= INTEIRO 'frango,limão' (vírgula→AND, então
+  // o título PRECISA conter AMBOS). Exatamente UM Item ligado ao canônico frango; SEM Item
+  // limao, SEM 'limão' no raw_text → overlap=1, N=2. Em 'all' EXCLUI (título não supre o
+  // termo faltante); em 'any' INCLUI.
+  const R_titleBoth = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_titleBoth,
+    locale: 'pt-BR',
+    titulo: 'Frango com limão na brasa',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_titleBoth, ingredientId: frango, ordem: 0 })
+
+  // R_both — EXTRA dedup canônico↔raw_text. DOIS Itens: um ligado ao canônico frango E com
+  // rawText='frango caipira' (frango satisfeito por AMBOS os sinais), e outro ligado a
+  // alho. Título sem 'frango'/'alho' nu. Para 'frango,alho' em 'all': frango conta UMA vez
+  // (UNION + COUNT DISTINCT) → overlap=2=N → INCLUI.
+  const R_both = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_both,
+    locale: 'pt-BR',
+    titulo: 'Panela caipira da roça',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({
+    recipeId: R_both,
+    ingredientId: frango,
+    ordem: 0,
+    rawText: 'frango caipira',
+  })
+  await seedRecipeIngredient({ recipeId: R_both, ingredientId: alho, ordem: 1 })
+
+  // R_titleOnly — EXTRA sort-key primária. EXCEÇÃO à invariante: título contém 'alho' mas
+  // NENHUM Item alho → (overlap=0 + title=1)=1. Mesma seção (catálogo/owner-NULL) que
+  // R_titleIng.
+  const R_titleOnly = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_titleOnly,
+    locale: 'pt-BR',
+    titulo: 'Pão de alho na chapa',
+    provenance: 'escrita_por_pessoa',
+  })
+
+  // R_titleIng — EXTRA sort-key primária. EXCEÇÃO à invariante: título contém 'alho' E há
+  // UM Item alho → (overlap=1 + title=1)=2 → outranks R_titleOnly mesmo com ts_rank menor.
+  const R_titleIng = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({
+    recipeId: R_titleIng,
+    locale: 'pt-BR',
+    titulo: 'Frango ao alho e óleo',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_titleIng, ingredientId: alho, ordem: 0 })
+
+  // R_playful — controle de gate: playful (private + dono) ⇒ NUNCA aparece.
+  const R_playful = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    resultKind: 'playful',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: R_playful,
+    locale: 'pt-BR',
+    titulo: 'Experimento lúdico da cozinha',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_playful, ingredientId: frango, ordem: 0 })
+
+  // R_private — controle de gate: private COM dono ⇒ NUNCA aparece.
+  const R_private = await seedRecipe({
+    origin: 'ai_structured',
+    originalLocale: 'pt-BR',
+    visibility: 'private',
+    ownerId,
+  })
+  await seedTranslation({
+    recipeId: R_private,
+    locale: 'pt-BR',
+    titulo: 'Receita guardada do caderno',
+    provenance: 'escrita_por_pessoa',
+  })
+  await seedRecipeIngredient({ recipeId: R_private, ingredientId: frango, ordem: 0 })
+
+  return {
+    R_cross,
+    R_all,
+    R_partial2,
+    R_raw,
+    R_qty,
+    R_cebola,
+    R_cebolaDefeated,
+    R_titleBoth,
+    R_both,
+    R_titleOnly,
+    R_titleIng,
+    R_playful,
+    R_private,
+    ownerId,
+    frango,
+    limao,
+    alho,
+    cebolaRoxa,
+    cebolaRoxaDefeated,
+  }
+}
