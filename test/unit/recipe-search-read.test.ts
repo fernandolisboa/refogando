@@ -234,3 +234,30 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
     }
   })
 })
+
+// ── #10: `consulta` ADITIVA omitida quando a lente não resolveu ─────────────────
+
+describe('buildSearchResponse — consulta (facetas resolvidas, #10)', () => {
+  it('SEM 3º arg ⇒ chave `consulta` AUSENTE (estado neutro byte-a-byte)', () => {
+    const body = buildSearchResponse([], 'pt-BR')
+    expect(body).toEqual({ catalogo: [], comunidade: [] })
+    expect('consulta' in body).toBe(false)
+  })
+
+  it('3º arg undefined ⇒ chave `consulta` AUSENTE (não emitida como undefined)', () => {
+    const body = buildSearchResponse([], 'pt-BR', undefined)
+    expect('consulta' in body).toBe(false)
+  })
+
+  it('COM `consulta` ⇒ chave presente, ecoada verbatim', () => {
+    const consulta = { cozinhas: ['japonesa'], dificuldade: { max: 2 } }
+    const body = buildSearchResponse([], 'pt-BR', consulta)
+    expect(body.consulta).toEqual(consulta)
+  })
+
+  it('`consulta` presente convive com os hits agrupados', () => {
+    const body = buildSearchResponse([hit()], 'pt-BR', { tags: ['leve'] })
+    expect(body.catalogo).toHaveLength(1)
+    expect(body.consulta).toEqual({ tags: ['leve'] })
+  })
+})

@@ -52,10 +52,32 @@ export type SearchResult = {
   autoTranslationSignal: boolean
 }
 
-/** DTO da Busca: duas seções nomeadas, Catálogo primeiro. */
+/**
+ * Facetas RESOLVIDAS pelo Perfil culinário a partir do `?q=` difuso (#10, AC3/AC4).
+ * Termos do CONTEXT.md: "Consulta"/"facetas resolvidas" — NUNCA "filtros aplicados"/
+ * "tags(genérico)"/"query". É EDITÁVEL pelo cliente (default, não filtro travado): a UI
+ * a apresenta como Consulta e re-GETa com `?cozinha=...` explícito ao editá-la. Só as
+ * chaves que a lente resolveu aparecem.
+ */
+export type FacetasResolvidasDTO = {
+  cozinhas?: string[]
+  categorias?: string[]
+  tags?: string[]
+  restricoes?: string[]
+  dificuldade?: { min?: number; max?: number }
+  porcoes?: { min?: number; max?: number }
+}
+
+/**
+ * DTO da Busca: duas seções nomeadas, Catálogo primeiro. `consulta` é ADITIVA e
+ * OPCIONAL — presente SÓ quando o Perfil culinário resolveu intenção difusa do `?q=`;
+ * a chave é OMITIDA (não emitida) caso contrário (preserva o estado neutro
+ * `{catalogo:[],comunidade:[]}` byte-a-byte).
+ */
 export type SearchResponse = {
   catalogo: SearchResult[]
   comunidade: SearchResult[]
+  consulta?: FacetasResolvidasDTO
 }
 
 /** Campos que `resolveName` nunca lê de uma `TranslationRow` ao resolver o NOME —
@@ -121,10 +143,16 @@ export function displayedProvenance(hit: SearchHitRow): TranslationProvenance | 
  * - `autoTranslationSignal`: `!isTranslationReliable(displayedProvenance)` — rastreia
  *   a proveniência da linha-BASE (nome-primário), não o parêntese. Edge ambos-NULL
  *   (sem tradução exibível) ⇒ hit OMITIDO (não empurra result de título em branco).
+ *
+ * `consulta` (#10): facetas RESOLVIDAS pela lente, ADITIVA. Quando passada (≠ undefined),
+ * é ECOADA como `response.consulta`; quando ausente, a CHAVE é OMITIDA de vez (não emitida
+ * como `undefined`) — robusto contra `toStrictEqual` e contra a comparação `toEqual` do
+ * estado neutro de #6/#9 (`{catalogo:[],comunidade:[]}`).
  */
 export function buildSearchResponse(
   hits: ReadonlyArray<SearchHitRow>,
   requestLocale: string,
+  consulta?: FacetasResolvidasDTO,
 ): SearchResponse {
   // Política "nunca tela quebrada": locale não suportado cai em DEFAULT_LOCALE.
   // Redundante quando o route já canonicaliza via `resolveLocale`, mas mantido para
@@ -155,6 +183,11 @@ export function buildSearchResponse(
       autoTranslationSignal,
     }
     response[classifySection(hit.origin)].push(result)
+  }
+
+  // Aditivo (#10): só adiciona a CHAVE quando a lente resolveu intenção difusa.
+  if (consulta !== undefined) {
+    response.consulta = consulta
   }
 
   return response

@@ -1,8 +1,20 @@
 import { getDb } from '@/server/deps'
 import { resolveLocale } from '@/i18n/locale'
 import { searchRecipes, MAX_QUERY_LEN } from '@/server/recipe/search'
-import { buildSearchResponse } from '@/domain/recipe-search-read'
+import {
+  buildSearchResponse,
+  type FacetasResolvidasDTO,
+} from '@/domain/recipe-search-read'
 import { parseSearchTerms, parseMatchMode, stripControlChars } from '@/domain/search-terms'
+import {
+  parseFacetParams,
+  isFacetsEmpty,
+  type EffectiveFacets,
+} from '@/domain/facet-params'
+import {
+  resolveCulinaryProfile,
+  type FacetasResolvidas,
+} from '@/domain/culinary-profile'
 
 /**
  * Busca precisa (issue #6): FTS Postgres + unaccent, seccionada por origem.
@@ -21,6 +33,41 @@ import { parseSearchTerms, parseMatchMode, stripControlChars } from '@/domain/se
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 
+/**
+ * Converte as facetas RESOLVIDAS pela lente em `EffectiveFacets` validada. O mapa é
+ * código confiável (literais de enum corretos por construção), mas re-passamos pelo MESMO
+ * parse de borda (`parseFacetParams`) para a borda ficar uniforme e as faixas/tags virem
+ * na forma que o loader consome. Tags já vêm folded da lente; `parseFacetParams` re-aplica
+ * `foldIntent` (idempotente sobre valor já folded).
+ */
+function facetasFromResolution(facetas: FacetasResolvidas): EffectiveFacets {
+  const params: Record<string, string> = {}
+  if (facetas.cozinhas?.length) params.cozinha = facetas.cozinhas.join(',')
+  if (facetas.categorias?.length) params.categoria = facetas.categorias.join(',')
+  if (facetas.tags?.length) params.tag = facetas.tags.join(',')
+  if (facetas.restricoes?.length) params.restricao = facetas.restricoes.join(',')
+  if (facetas.dificuldade?.min !== undefined) params.dificuldade_min = String(facetas.dificuldade.min)
+  if (facetas.dificuldade?.max !== undefined) params.dificuldade_max = String(facetas.dificuldade.max)
+  if (facetas.porcoes?.min !== undefined) params.porcoes_min = String(facetas.porcoes.min)
+  if (facetas.porcoes?.max !== undefined) params.porcoes_max = String(facetas.porcoes.max)
+  return parseFacetParams((k) => (k in params ? params[k] : null))
+}
+
+/**
+ * Projeta as facetas resolvidas para o DTO `consulta` (só as chaves presentes).
+ * CONTEXT.md: "Consulta"/"facetas resolvidas".
+ */
+function toFacetasResolvidasDTO(facetas: FacetasResolvidas): FacetasResolvidasDTO {
+  const dto: FacetasResolvidasDTO = {}
+  if (facetas.cozinhas?.length) dto.cozinhas = [...facetas.cozinhas]
+  if (facetas.categorias?.length) dto.categorias = [...facetas.categorias]
+  if (facetas.tags?.length) dto.tags = [...facetas.tags]
+  if (facetas.restricoes?.length) dto.restricoes = [...facetas.restricoes]
+  if (facetas.dificuldade !== undefined) dto.dificuldade = { ...facetas.dificuldade }
+  if (facetas.porcoes !== undefined) dto.porcoes = { ...facetas.porcoes }
+  return dto
+}
+
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const rawQ = url.searchParams.get('q') ?? ''
@@ -37,8 +84,39 @@ export async function GET(request: Request): Promise<Response> {
   // tab/newline→espaço é inócuo p/ busca; query só-controle colapsa em '' → neutro.
   // `stripControlChars` (search-terms.ts) define a classe C0 UMA vez, com a forma
   // VISÍVEL \x00-\x1f, mantendo este arquivo text-diffável.
-  const q = stripControlChars(rawQ).trim()
-  if (q.length === 0) {
+  const q0 = stripControlChars(rawQ).trim()
+
+  // #10: facetas EXPLÍCITAS da URL (validadas/degradadas na borda; valor inválido NUNCA
+  // 400/500, vira sem-filtro). Bindar string crua em coluna enum dispararia 22P02→500.
+  const explicitFacets = parseFacetParams((k) => url.searchParams.get(k))
+
+  // #10 lente Perfil culinário (AC4): SÓ roda quando NÃO há faceta explícita na URL.
+  // Havendo qualquer faceta explícita, a lente é suprimida e as explícitas honradas
+  // verbatim (modela a UI editando a Consulta e re-GETando com ?cozinha= explícito).
+  const useLens = isFacetsEmpty(explicitFacets)
+  const lens = useLens ? resolveCulinaryProfile(q0) : null
+
+  // Facetas EFETIVAS: explícitas verbatim OU resolvidas pela lente.
+  const facets: EffectiveFacets =
+    lens?.resolved === true ? facetasFromResolution(lens.facetas) : explicitFacets
+
+  // q efetivo: q-restante da lente quando a lente rodou; senão q0. Quando a lente roda mas
+  // NÃO resolve (resolved=false), remainingQuery devolve q0 VERBATIM (vírgulas byte-a-byte)
+  // ⇒ q idêntico ao de #9 ⇒ reduce-to-#9 intacto. Quando resolve, os termos restantes
+  // voltam re-juntados por ', ' (parseSearchTerms re-splita por vírgula).
+  const q = lens ? lens.remainingQuery : q0
+
+  // Consulta a ECOAR (Fork A): só quando a lente resolveu intenção difusa. undefined
+  // (NÃO {}) quando não resolveu ⇒ buildSearchResponse OMITE a chave (estado neutro).
+  const consulta: FacetasResolvidasDTO | undefined =
+    lens?.resolved === true ? toFacetasResolvidasDTO(lens.facetas) : undefined
+
+  // #10: guarda do early-return neutro. Só dispara quando NÃO há NADA para buscar NEM
+  // filtrar (nem texto NEM faceta). NÃO reusar o seletor `facetOnly` do loader: este
+  // testa "ausência de sinal de texto" (cobre ?q=,,, e ?q=!!!), estritamente mais largo
+  // que q.length===0 — são dois testes distintos.
+  const hasFacets = !isFacetsEmpty(facets)
+  if (q.length === 0 && !hasFacets) {
     return Response.json({ catalogo: [], comunidade: [] })
   }
 
@@ -56,7 +134,13 @@ export async function GET(request: Request): Promise<Response> {
   const effectiveMode = terms.length === 0 ? 'any' : mode
 
   const db = getDb()
-  const hits = await searchRecipes(db, { q, terms, mode: effectiveMode, requestLocale })
-  const body = buildSearchResponse(hits, requestLocale)
+  const hits = await searchRecipes(db, {
+    q,
+    terms,
+    mode: effectiveMode,
+    requestLocale,
+    facets,
+  })
+  const body = buildSearchResponse(hits, requestLocale, consulta)
   return Response.json(body)
 }
