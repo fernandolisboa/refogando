@@ -9,7 +9,12 @@ export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'AI recipes, in pt-BR and en-US' },
   nav: { home: 'Home', recipes: 'Recipes', signIn: 'Sign in', signOut: 'Sign out' },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
-  system: { loading: 'Loading…', error: 'Something went wrong.', notFound: 'Not found.' },
+  system: {
+    loading: 'Loading…',
+    error: 'Something went wrong.',
+    notFound: 'Not found.',
+    retry: 'Try again',
+  },
   // Aviso de restrição (#7): mesma substância traduzida (ADR-0001), não byte-idêntica.
   // Placeholders {restricao}/{alergeno} idênticos ao pt-BR (interpolação compartilhada).
   aviso: {

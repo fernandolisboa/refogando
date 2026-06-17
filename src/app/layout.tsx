@@ -1,8 +1,10 @@
+import './globals.css'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { cookies, headers } from 'next/headers'
 import { LocaleProvider } from '@/i18n/provider'
-import { LocaleSwitcher } from '@/i18n/locale-switcher'
+import { SiteHeader } from '@/components/site-header'
+import { SiteFooter } from '@/components/site-footer'
 import { resolveLocale } from '@/i18n/locale'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 
@@ -24,12 +26,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   })
   return (
     <html lang={initialLocale}>
-      <body>
+      <body className="flex min-h-svh flex-col">
         <LocaleProvider initialLocale={initialLocale}>
-          <header>
-            <LocaleSwitcher />
-          </header>
-          {children}
+          <SiteHeader />
+          {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
+              então mantém um único landmark main por documento. */}
+          <div className="flex flex-1 flex-col">{children}</div>
+          <SiteFooter />
         </LocaleProvider>
       </body>
     </html>
