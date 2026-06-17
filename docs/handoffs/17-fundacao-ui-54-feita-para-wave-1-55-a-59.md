@@ -64,9 +64,13 @@ Os 8 passos, **cada um num subagente fresco** (`Agent` pra um passo; `Workflow` 
 - **Check do Vercel falha no PR** (não-bloqueante; `gh pr checks` retorna exit 1 por causa dele) — o **gate real** é o check **`checks`** do GitHub Actions (typecheck+lint+test). **"Fecha #N" NÃO auto-fecha** no GitHub (keyword PT não reconhecida) — use **`Closes #N`** em inglês no corpo do PR, ou `gh issue close` na mão (como foi com #54).
 - **`AskUserQuestion` perde texto ao rejeitar** — perguntas abertas em **chat**.
 
-## Deploy / Vercel (em apuração nesta sessão)
+## Deploy / Vercel (diagnosticado — causa-raiz confirmada e reproduzida)
 
-O deploy da Vercel está **falhando**; uma investigação foi disparada em paralelo. **Hipótese forte:** faltam **env vars na Vercel** (`BETTER_AUTH_SECRET` ≥32 chars — o build lança sem ele; e provavelmente `DATABASE_URL`/Neon). Se confirmado como config de dashboard (não código), é **ação do usuário** na Vercel (não dá pra setar daqui). _[Atualizar esta seção com a conclusão: causa-raiz, se foi corrigido em código, ou o nº da issue de follow-up.]_
+**Causa-raiz:** o `next build` da Vercel falha em "Collecting page data" porque **`BETTER_AUTH_SECRET` NÃO está setado nas env vars da Vercel**. `src/lib/auth.ts:31-33` lê o secret em nível de módulo (fora do `buildAuth()` memoizado) e **lança** assim que o build importa um route que puxa `@/lib/auth` (o 1º é `/api/admin/roles`), com `NODE_ENV=production` e sem secret (invariante E4, **intencional**). **Não é código** (não é Tailwind/#54 — as falhas predatam a #54; `DATABASE_URL` não é gate de build, `getDb()` é lazy). **Categoria: config de dashboard** → **ação do usuário na Vercel**, não dá pra setar daqui.
+
+**Desbloqueio (o usuário faz):** Vercel → Project → Settings → Environment Variables, em **Production E Preview**: `BETTER_AUTH_SECRET` = `openssl rand -base64 32` (sozinho destrava o build); conferir `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) da integração Neon; somar `ANTHROPIC_API_KEY` (e `BETTER_AUTH_URL`) pro runtime. Redeploy.
+
+**Gap registrado → follow-up [issue #68]:** o CI nunca roda `next build`, então falhas só-de-build ficam invisíveis até a Vercel; a #68 propõe somar um build smoke-check (env dummy) ao CI. Reforça o gotcha: prefixe toda build local com `BETTER_AUTH_SECRET=<32+ chars> npm run build`.
 
 ## Ler primeiro (no repo / GitHub — não duplicado aqui)
 
