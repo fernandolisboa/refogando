@@ -8,7 +8,12 @@ export const ptBR = {
   app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
   nav: { home: 'Início', recipes: 'Receitas', signIn: 'Entrar', signOut: 'Sair' },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
-  system: { loading: 'Carregando…', error: 'Algo deu errado.', notFound: 'Não encontrado.' },
+  system: {
+    loading: 'Carregando…',
+    error: 'Algo deu errado.',
+    notFound: 'Não encontrado.',
+    retry: 'Tentar de novo',
+  },
   // Aviso de restrição (#7): template interpolado por `String.replace` ({restricao}/{alergeno}),
   // sem ICU. `mensagem` nasce na vista, renderizada no requestLocale.
   aviso: {

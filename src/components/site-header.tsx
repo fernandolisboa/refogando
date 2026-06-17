@@ -1,0 +1,44 @@
+'use client'
+/**
+ * Header do shell (issue #54). Wordmark da marca + navegação (messages.nav) + seletor
+ * de locale + slot de auth (placeholder). Client component porque toda a chrome lê
+ * `useLocale()` e troca de idioma em runtime (#4.AC1). Não chama endpoint de Receita
+ * (#4.AC4 — isolamento).
+ *
+ * Barra com `min-h-16` (não altura fixa) + `flex-wrap`: cresce em vez de cortar quando a
+ * wordmark + nav + o <select> de locale (rótulo longo "Português (Brasil)") + o botão não
+ * cabem numa linha no mobile. Um menu de disclosure entra quando a nav crescer.
+ */
+import Link from 'next/link'
+import { useLocale } from '@/i18n/provider'
+import { Container } from '@/components/container'
+import { LocaleSwitcher } from '@/i18n/locale-switcher'
+import { AuthSlot } from '@/components/auth-slot'
+
+export function SiteHeader() {
+  const { messages } = useLocale()
+  return (
+    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
+      <Container className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2">
+        <Link
+          href="/"
+          className="font-display text-2xl font-semibold tracking-tight text-brand-ink"
+        >
+          {messages.app.name}
+        </Link>
+        <nav className="flex items-center gap-5 text-sm font-medium text-muted">
+          <Link href="/" className="transition-colors hover:text-fg">
+            {messages.nav.home}
+          </Link>
+          <Link href="/recipes" className="transition-colors hover:text-fg">
+            {messages.nav.recipes}
+          </Link>
+        </nav>
+        <div className="ml-auto flex items-center gap-3">
+          <LocaleSwitcher />
+          <AuthSlot />
+        </div>
+      </Container>
+    </header>
+  )
+}
