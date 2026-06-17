@@ -77,8 +77,12 @@ Kernel de enums compartilhado (cozinha, dificuldade, restrição, porções) usa
 _Avoid_: tags (vago); filtros (só vale pra busca).
 
 **Busca / Consulta**:
-Busca = o ato de **encontrar** receitas existentes por nome, ingrediente ou perfil. Consulta = o conjunto de parâmetros (termo + facetas resolvidas). Opera sobre o que já existe — **nunca cria**; no máximo ranqueia/interpreta.
+Busca = o ato de **encontrar** receitas existentes por nome, ingrediente ou perfil. Consulta = o conjunto de parâmetros (termo + facetas resolvidas). Opera sobre o que já existe — **nunca cria**; no máximo ranqueia/interpreta. Na UI, a Busca **é a home** (`/`): o app é descoberta-first.
 _Avoid_: Filtro (para a ação completa); Pesquisa (usar Busca); Find.
+
+**Convenção de URL (idioma das rotas)**:
+As rotas de página e de dados usam **inglês**, uma só convenção em todo o app — para não divergir (`receitas` vs `recipes`). O caminho canônico de detalhe da Receita é **`/recipes/:recipeId`** (App Router: `src/app/recipes/[id]/page.tsx`), casando com o nav do header e com a API (`/api/recipes/:id`). A Busca (#56) já linka para ele; a página de detalhe vem na #57. O item de nav `/recipes` no header é placeholder pré-existente (404 hoje); a listagem/browse virá em fatia futura, na MESMA convenção de URL.
+_Avoid_: `/receitas` (português) ou duas convenções de idioma de URL coexistindo.
 
 **Reputação do autor / shadow-ban** (parado):
 Direção registrada para o futuro, **não construída**: se abuso real aparecer, autores que reincidem em declarações erradas após correção de admin podem ter receitas públicas suprimidas. Fora de escopo enquanto o app se mantém leve (ver ADR-0007).
