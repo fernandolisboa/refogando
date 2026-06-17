@@ -157,10 +157,15 @@ export async function linkRecipeTag(recipeId: string, tagId: string): Promise<vo
   await getDb().insert(recipeTag).values({ recipeId, tagId })
 }
 
-/** Linha de embedding DORMENTE: embedding fica NULL na #3. */
+/**
+ * Linha de embedding. Default DORMENTE (embedding NULL, como nasce na #3); #14 passa
+ * `embedding` (1536-dim) para semear a camada semântica. O vetor DEVE ter 1536 dims
+ * (casar `vector(1536)`), senão o Postgres rejeita (`expected 1536 dimensions, not N`).
+ */
 export async function seedEmbedding(input: {
   recipeId: string
   locale: string
+  embedding?: number[] | null
   model?: string | null
   stale?: boolean
 }): Promise<void> {
@@ -169,7 +174,7 @@ export async function seedEmbedding(input: {
     .values({
       recipeId: input.recipeId,
       locale: input.locale,
-      embedding: null,
+      embedding: input.embedding ?? null,
       model: input.model ?? null,
       stale: input.stale,
     })
