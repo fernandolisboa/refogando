@@ -131,6 +131,21 @@ export type AvisoView = {
   mensagem: string
 }
 
+/**
+ * Aviso de tradução obsoleta como sai na VISTA (#23, AC3): a tradução do `requestLocale`
+ * está marcada `stale` (o original mudou depois da tradução). Traz a `mensagem` leve já
+ * renderizada no requestLocale + o rótulo "ver o original" + os locales. A UI lincа o
+ * "ver o original" pro GET com `?locale=originalLocale` (NÃO embutimos o corpo original).
+ * AUSENTE quando se vê a origem (`requestLocale === originalLocale`) — a origem nunca é
+ * sinalizada (alinha com `resolveName` Branch 1).
+ */
+export type StaleNotice = {
+  locale: string
+  originalLocale: string
+  mensagem: string
+  verOriginalLabel: string
+}
+
 export type RecipeView = {
   id: string
   name: string
@@ -144,6 +159,8 @@ export type RecipeView = {
   translations: ReadonlyArray<TranslationFlags>
   /** Avisos de contradição — AUSENTE quando vazio (ausente ≠ "verificado OK"). */
   avisos?: AvisoView[]
+  /** Aviso de tradução obsoleta — AUSENTE salvo quando a tradução pedida é stale e ≠ origem. */
+  staleNotice?: StaleNotice
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
@@ -278,6 +295,31 @@ export function renderAvisos(
 }
 
 /**
+ * Aviso de tradução obsoleta (#23, AC3): PURO, renderiza a frase + o rótulo no
+ * requestLocale. Devolve `undefined` SALVO quando a tradução de `requestLocale` existe,
+ * está `stale` E `requestLocale !== originalLocale` (a origem NUNCA é sinalizada — alinha
+ * com `resolveName` Branch 1). `loc` cai em `DEFAULT_LOCALE` se o requestLocale não for
+ * suportado (mesma guarda de `renderAvisos`, "nunca tela quebrada").
+ */
+export function renderStaleNotice(input: {
+  originalLocale: string
+  requestLocale: string
+  translations: ReadonlyArray<TranslationRow>
+}): StaleNotice | undefined {
+  if (input.requestLocale === input.originalLocale) return undefined
+  const requested = findTranslation(input.translations, input.requestLocale)
+  if (!requested || !requested.stale) return undefined
+  const loc = isSupportedLocale(input.requestLocale) ? input.requestLocale : DEFAULT_LOCALE
+  const msgs = MESSAGES[loc]
+  return {
+    locale: input.requestLocale,
+    originalLocale: input.originalLocale,
+    mensagem: msgs.traducao.staleAviso,
+    verOriginalLabel: msgs.traducao.verOriginal,
+  }
+}
+
+/**
  * Vista completa: nome + corpo + selo `origin` SEMPRE + facetas + invariantes
  * (porcoes/dificuldade/ingredientes) + `schemaVersion` + flags de tradução (display) +
  * `avisos?` (anexado SÓ quando há contradição). As invariantes e o selo são IDÊNTICOS
@@ -310,6 +352,13 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
   })
   const avisos = renderAvisos(decision.avisos, input.requestLocale)
 
+  // Aviso de tradução obsoleta (#23, AC3): só quando a tradução pedida é stale e ≠ origem.
+  const staleNotice = renderStaleNotice({
+    originalLocale: input.recipe.originalLocale,
+    requestLocale: input.requestLocale,
+    translations: input.translations,
+  })
+
   return {
     id: input.recipe.id,
     name,
@@ -334,5 +383,7 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     })),
     // Ausente ≠ vazio: anexa `avisos` SÓ quando há ≥ 1 (espelha `resolveFacets.restricoes`).
     ...(avisos.length > 0 ? { avisos } : {}),
+    // Ausente quando a tradução pedida não é stale (ou é a origem) — espelha `avisos?`.
+    ...(staleNotice ? { staleNotice } : {}),
   }
 }

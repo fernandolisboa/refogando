@@ -14,6 +14,13 @@ export const ptBR = {
   aviso: {
     contradicao: 'Marcada como {restricao}, mas contém {alergeno} — declarado, não verificado.',
   },
+  // Ciclo de vida da tradução (#23, AC3): aviso leve de tradução obsoleta + rótulo
+  // "ver o original". Renderizados na vista (recipe-read.ts) no requestLocale — só
+  // quando a tradução pedida é stale E difere da origem (a origem nunca é sinalizada).
+  traducao: {
+    staleAviso: 'Esta tradução pode estar desatualizada em relação ao original.',
+    verOriginal: 'Ver o original',
+  },
   // Rótulo amigável por valor do enum RESTRICOES (#7). Adjetivos no feminino concordam com
   // o sujeito "Receita" do template. `satisfies Record<Restricao, string>` trava drift do enum
   // (chave faltante/extra/typo) no site de definição.

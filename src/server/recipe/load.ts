@@ -59,3 +59,32 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     tags: tags.map((t) => t.nome),
   }
 }
+
+/**
+ * Loader FOCADO do write-path de tradução (issue #23, perf): o `ensureTranslation` só
+ * precisa de `recipe.originalLocale` + as linhas de `recipe_translation` daquele recipe
+ * — NÃO dos ingredientes (LEFT JOIN) nem das tags (JOIN) que `loadRecipeRows` carrega
+ * para montar a view. Mesma semântica de existência: Receita inexistente ⇒ `null`.
+ */
+export type RecipeTranslationContext = {
+  originalLocale: string
+  translations: TranslationRow[]
+}
+
+export async function loadRecipeTranslationContext(
+  db: Database,
+  id: string,
+): Promise<RecipeTranslationContext | null> {
+  const [row] = await db
+    .select({ originalLocale: recipe.originalLocale })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  if (!row) return null
+
+  const translations = await db
+    .select()
+    .from(recipeTranslation)
+    .where(eq(recipeTranslation.recipeId, id))
+
+  return { originalLocale: row.originalLocale, translations }
+}

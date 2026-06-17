@@ -1,12 +1,14 @@
 import { makeDb, makeSql, type Database } from '@/db/client'
 import { RealClaudeClient, type ClaudeClient } from '@/server/claude/client'
 import { RealEmbedder, type Embedder } from '@/server/embedding/embedder'
+import { RealTranslator, type Translator } from '@/server/translation/translator'
 
 /**
- * Raiz de composição (DI) da fundação. Três seams com um dono cada:
+ * Raiz de composição (DI) da fundação. Quatro seams com um dono cada:
  *  - getDb()           → Postgres (Drizzle)
  *  - getClaudeClient() → seam do Claude
  *  - getEmbedder()     → seam de embedding
+ *  - getTranslator()   → seam de tradução automática (issue #23)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
@@ -19,6 +21,8 @@ let claudeOverride: ClaudeClient | null = null
 let lazyClaude: ClaudeClient | null = null
 let embedderOverride: Embedder | null = null
 let lazyEmbedder: Embedder | null = null
+let translatorOverride: Translator | null = null
+let lazyTranslator: Translator | null = null
 
 export function getDb(): Database {
   if (dbOverride) return dbOverride
@@ -58,6 +62,16 @@ export function setEmbedder(embedder: Embedder): void {
   embedderOverride = embedder
 }
 
+export function getTranslator(): Translator {
+  if (translatorOverride) return translatorOverride
+  if (!lazyTranslator) lazyTranslator = new RealTranslator()
+  return lazyTranslator
+}
+
+export function setTranslator(translator: Translator): void {
+  translatorOverride = translator
+}
+
 /**
  * Limpa overrides dos seams entre testes. NÃO mexe no banco (setDb persiste por
  * arquivo de teste) nem derruba o pool.
@@ -65,4 +79,5 @@ export function setEmbedder(embedder: Embedder): void {
 export function resetDeps(): void {
   claudeOverride = null
   embedderOverride = null
+  translatorOverride = null
 }

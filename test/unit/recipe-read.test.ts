@@ -9,6 +9,7 @@ import {
   type ResolveInput,
   type TranslationRow,
 } from '@/domain/recipe-read'
+import { MESSAGES } from '@/i18n/messages'
 
 // ── Fixtures puros ───────────────────────────────────────────────────────────
 
@@ -320,5 +321,82 @@ describe('resolveRecipeView — vista completa', () => {
       'rawText',
       'unidade',
     ])
+  })
+})
+
+// ── #23 AC3: staleNotice (aviso de tradução obsoleta) ──────────────────────────
+
+/** Tradução en-US STALE (origem mudou depois): provoca o aviso. */
+const enStale: TranslationRow = {
+  locale: 'en-US',
+  titulo: 'Black Bean Stew',
+  descricao: null,
+  passos: null,
+  notas: null,
+  provenance: 'automatica_revisada',
+  stale: true,
+}
+
+describe('resolveRecipeView — staleNotice #23 (AC3)', () => {
+  it('AC3: tradução pedida stale ⇒ staleNotice RENDERIZADO (pt-BR)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ originalLocale: 'pt-BR' }),
+        translations: [ptOriginal, enStale],
+        requestLocale: 'en-US',
+      }),
+    )
+    expect(view.staleNotice).toEqual({
+      locale: 'en-US',
+      originalLocale: 'pt-BR',
+      // TEXTO renderizado (não a chave) — impede a chave i18n de C9 de morrer.
+      mensagem: MESSAGES['en-US'].traducao.staleAviso,
+      verOriginalLabel: MESSAGES['en-US'].traducao.verOriginal,
+    })
+    // A tradução stale AINDA aparece (legível): name + body não somem.
+    expect(view.name.length).toBeGreaterThan(0)
+  })
+
+  it('AC3: a frase renderizada bate o catálogo NOS DOIS locales (chaves vivas)', () => {
+    // requestLocale pt-BR, original en-US (inverso): a tradução pt-BR é stale.
+    const ptStale: TranslationRow = { ...ptOriginal, stale: true }
+    const enOriginal: TranslationRow = { ...enStale, stale: false, provenance: 'escrita_por_pessoa' }
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ originalLocale: 'en-US' }),
+        translations: [enOriginal, ptStale],
+        requestLocale: 'pt-BR',
+      }),
+    )
+    expect(view.staleNotice?.mensagem).toBe(MESSAGES['pt-BR'].traducao.staleAviso)
+    expect(view.staleNotice?.verOriginalLabel).toBe(MESSAGES['pt-BR'].traducao.verOriginal)
+  })
+
+  it('AC3: origem nunca sinalizada — requestLocale === originalLocale ⇒ AUSENTE', () => {
+    // Origem pt-BR automatica_nao_revisada E stale: mesmo assim, sem aviso (vê-se a origem).
+    const ptStaleUnreviewed: TranslationRow = {
+      ...ptOriginal,
+      provenance: 'automatica_nao_revisada',
+      stale: true,
+    }
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ originalLocale: 'pt-BR' }),
+        translations: [ptStaleUnreviewed],
+        requestLocale: 'pt-BR',
+      }),
+    )
+    expect(view.staleNotice).toBeUndefined()
+  })
+
+  it('controle negativo: tradução pedida NÃO-stale ⇒ staleNotice AUSENTE', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ originalLocale: 'pt-BR' }),
+        translations: [ptOriginal, { ...enStale, stale: false }],
+        requestLocale: 'en-US',
+      }),
+    )
+    expect(view.staleNotice).toBeUndefined()
   })
 })
