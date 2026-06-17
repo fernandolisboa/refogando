@@ -32,7 +32,7 @@ export type VisibilityChangeResult =
  * defensivo) e devolvemos o primeiro definido — rede caso o embrulho mude. Provado
  * contra o Postgres real no micro-spike de §4 antes de confiar no catch.
  */
-function pgCode(err: unknown): string | undefined {
+export function pgCode(err: unknown): string | undefined {
   const causeCode = (err as { cause?: { code?: unknown } } | null)?.cause?.code
   if (typeof causeCode === 'string') return causeCode
   const topCode = (err as { code?: unknown } | null)?.code
