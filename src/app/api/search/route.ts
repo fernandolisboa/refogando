@@ -1,6 +1,7 @@
-import { getDb } from '@/server/deps'
+import { getDb, getEmbedder } from '@/server/deps'
 import { resolveLocale } from '@/i18n/locale'
 import { searchRecipes, MAX_QUERY_LEN } from '@/server/recipe/search'
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import {
   buildSearchResponse,
   type FacetasResolvidasDTO,
@@ -133,14 +134,44 @@ export async function GET(request: Request): Promise<Response> {
   // (ov.overlap=NULL no FULL OUTER JOIN). Forçar 'any' preserva o comportamento #6 puro.
   const effectiveMode = terms.length === 0 ? 'any' : mode
 
+  // #14: embeda o q efetivo numa etapa SEPARADA, ANTES do loader, com try/catch CIRÚRGICO
+  // só no embed. NÃO embeda q vazio (preserva o neutro byte-a-byte) nem o caminho
+  // faceta-only (q sem letra/dígito → o loader já trata queryVector como no-op). Capa q a
+  // MAX_QUERY_LEN antes do embed (custo/anti-fan-out). Embedder lança ⇒ queryVector=null
+  // ⇒ degradação graciosa (só-precisa). Erro de DB do loader NÃO é capturado aqui (500).
+  // Consequência consciente: até o cliente real plugar, getEmbedder() devolve RealEmbedder,
+  // que lança ⇒ toda Busca degrada silenciosamente pra só-precisa.
+  let queryVector: number[] | null = null
+  if (q.length > 0) {
+    try {
+      queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN))
+    } catch {
+      queryVector = null
+    }
+    // #14: saída MALFORMADA do embedder (dimensão errada OU elemento não-finito —
+    // NaN/Infinity) tem o MESMO destino que o embedder lançar: degradação graciosa.
+    // Um vetor de dimensão != EMBEDDING_DIMENSIONS ou com NaN/Infinity, se bindado, faria
+    // o cast `::vector` estourar 500 FORA deste try/catch (o loader não captura) — o que
+    // quebraria o contrato AC4/US42. Validar aqui e zerar queryVector roteia pro caminho
+    // só-precisa (idêntico ao do embedder lançando). NÃO logar como erro fatal.
+    if (
+      queryVector !== null &&
+      (queryVector.length !== EMBEDDING_DIMENSIONS ||
+        !queryVector.every((x) => Number.isFinite(x)))
+    ) {
+      queryVector = null
+    }
+  }
+
   const db = getDb()
-  const hits = await searchRecipes(db, {
+  const { hits, sugestoes } = await searchRecipes(db, {
     q,
     terms,
     mode: effectiveMode,
     requestLocale,
     facets,
+    queryVector,
   })
-  const body = buildSearchResponse(hits, requestLocale, consulta)
+  const body = buildSearchResponse(hits, requestLocale, consulta, sugestoes)
   return Response.json(body)
 }

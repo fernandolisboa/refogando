@@ -261,3 +261,53 @@ describe('buildSearchResponse — consulta (facetas resolvidas, #10)', () => {
     expect(body.consulta).toEqual({ tags: ['leve'] })
   })
 })
+
+describe('buildSearchResponse — sugestoes (US38, #14)', () => {
+  it('SEM 4º arg ⇒ chave `sugestoes` AUSENTE (estado neutro byte-a-byte)', () => {
+    const body = buildSearchResponse([], 'pt-BR')
+    expect(body).toEqual({ catalogo: [], comunidade: [] })
+    expect('sugestoes' in body).toBe(false)
+  })
+
+  it('4º arg [] ⇒ chave `sugestoes` OMITIDA (não emitida como [])', () => {
+    const body = buildSearchResponse([hit()], 'pt-BR', undefined, [])
+    expect('sugestoes' in body).toBe(false)
+  })
+
+  it('COM vizinhos ⇒ `sugestoes` presente, projeção de 4 campos (sem cosseno/score)', () => {
+    const neighbor = hit({ recipe_id: 'SN', original_titulo: 'Risoto', origin: 'catalog' })
+    const body = buildSearchResponse([], 'pt-BR', undefined, [neighbor])
+    expect(body.sugestoes).toHaveLength(1)
+    const s = body.sugestoes?.[0]
+    // EXATAMENTE 4 campos — nenhum vazamento de cosseno/score/matchKind.
+    expect(Object.keys(s ?? {}).sort()).toEqual([
+      'autoTranslationSignal',
+      'displayedTitle',
+      'origin',
+      'recipeId',
+    ])
+    expect(s?.recipeId).toBe('SN')
+    expect(s?.displayedTitle).toBe('Risoto')
+  })
+
+  it('vizinho sem título exibível é PULADO (nunca tela quebrada)', () => {
+    const blank = hit({
+      recipe_id: 'X',
+      original_titulo: null,
+      original_provenance: null,
+      requested_titulo: null,
+      requested_provenance: null,
+    })
+    const body = buildSearchResponse([], 'pt-BR', undefined, [blank])
+    // todos pulados ⇒ array vazio ⇒ chave OMITIDA.
+    expect('sugestoes' in body).toBe(false)
+  })
+
+  it('`sugestoes` convive com seções e `consulta`', () => {
+    const neighbor = hit({ recipe_id: 'SN', original_titulo: 'Caldo verde' })
+    const body = buildSearchResponse([hit()], 'pt-BR', { tags: ['leve'] }, [neighbor])
+    expect(body.catalogo).toHaveLength(1)
+    expect(body.consulta).toEqual({ tags: ['leve'] })
+    expect(body.sugestoes).toHaveLength(1)
+  })
+})
