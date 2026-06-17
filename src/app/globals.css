@@ -29,10 +29,12 @@
   --color-muted: oklch(0.505 0.025 55); /* texto secundário (AA no creme) */
   --color-border: oklch(0.9 0.012 85);
   --color-brand: oklch(0.62 0.17 40); /* páprica — decorativo / texto grande */
-  --color-brand-strong: oklch(0.515 0.155 38); /* botões/links — branco em cima passa AA */
+  --color-brand-strong: oklch(0.515 0.155 38); /* FUNDO de botão — branco em cima passa AA */
   --color-on-brand: oklch(1 0 0); /* texto sobre brand-strong */
-  --color-accent: oklch(0.58 0.11 150); /* erva — selo do Catálogo (curado) */
+  --color-brand-ink: oklch(0.515 0.155 38); /* TEXTO de marca (wordmark/link) — papel distinto do fundo */
+  --color-accent: oklch(0.58 0.11 150); /* erva — selo do Catálogo (origin=catalog) */
   --color-accent-strong: oklch(0.5 0.11 152); /* erva como texto (AA no creme) */
+  --color-accent-surface: oklch(0.95 0.04 150); /* superfície tingida de erva pro selo */
   --color-aviso-fg: oklch(0.47 0.1 72); /* aviso de restrição — âmbar (não vermelho) */
   --color-aviso-bg: oklch(0.93 0.06 80);
   --color-ring: oklch(0.515 0.155 38); /* foco visível */
@@ -66,8 +68,10 @@
     --color-brand: oklch(0.78 0.13 45); /* links/decorativo no escuro */
     --color-brand-strong: oklch(0.515 0.155 38); /* botão — branco em cima, igual */
     --color-on-brand: oklch(1 0 0);
+    --color-brand-ink: oklch(0.78 0.13 45); /* texto de marca no escuro = 8.61:1 (era 2.97 quando reusava brand-strong) */
     --color-accent: oklch(0.74 0.12 150);
     --color-accent-strong: oklch(0.74 0.12 150);
+    --color-accent-surface: oklch(0.3 0.05 150);
     --color-aviso-fg: oklch(0.86 0.1 80);
     --color-aviso-bg: oklch(0.3 0.06 75);
     --color-ring: oklch(0.78 0.13 45);
@@ -83,7 +87,13 @@
     color: var(--color-fg);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
-    min-height: 100svh;
+    /* min-height fica na utility min-h-svh do <body> (layout.tsx) — fonte única. */
+  }
+  /* Títulos com quebra balanceada (evita a "viúva" de uma palavra na última linha). */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
   }
   /* Foco visível consistente (a11y) — usado pelo teclado, não no clique. */
   :focus-visible {
@@ -91,8 +101,9 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
+  /* Seleção estável nos dois modos: branco sobre brand-strong (fundo fixo) = 6.05:1. */
   ::selection {
-    background-color: var(--color-brand);
+    background-color: var(--color-brand-strong);
     color: var(--color-on-brand);
   }
   @media (prefers-reduced-motion: reduce) {

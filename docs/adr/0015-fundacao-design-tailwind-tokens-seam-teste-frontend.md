@@ -16,7 +16,7 @@ Até a issue #54 o app não tinha camada de apresentação: só a casca de i18n 
 
 **Identidade:** quente e apetitosa (refogado = base aromática) — terracota de páprica (`--color-brand`) + verde de erva (`--color-accent`, reservado ao **selo do Catálogo curado**, distinguindo confiança de Comunidade), sobre creme/massa morno. Explicitamente **não** o cinza-azulado genérico de IA.
 
-**Acessibilidade é constraint de token.** Todos os pares fg/bg miram **WCAG AA** (≥4.5:1 corpo, ≥3:1 grande/UI) e foram **verificados por cálculo OKLCH→sRGB→contraste** antes de fixados (ex.: branco sobre `--color-brand-strong` = 6.05:1; texto secundário no creme = 5.67:1). O botão primário usa **branco sobre brand-strong escuro nos dois modos** (texto escuro sobre brand claro reprovava). Foco visível via `:focus-visible` com `--color-ring`.
+**Acessibilidade é constraint de token.** Todos os pares fg/bg miram **WCAG AA** (≥4.5:1 corpo, ≥3:1 grande/UI) e foram **verificados por cálculo OKLCH→sRGB→contraste** antes de fixados (ex.: branco sobre `--color-brand-strong` = 6.05:1; texto secundário no creme = 5.67:1). O botão primário usa **branco sobre brand-strong escuro nos dois modos** (texto escuro sobre brand claro reprovava). **Papéis de cor de marca são separados** pra não reprovar no dark: `--color-brand-strong` é **FUNDO** de botão; `--color-brand-ink` é **TEXTO** de marca (wordmark/links) — terracota escura no claro (5.79:1), terracota clara no escuro (8.61:1). A seleção (`::selection`) usa o fundo fixo brand-strong + branco (6.05:1 nos dois modos). Foco visível via `:focus-visible` com `--color-ring`.
 
 **Dark mode** sobrescreve as custom properties num `@media (prefers-color-scheme: dark) { :root { … } }` **fora do `@theme`** — porque o `@theme` do Tailwind v4 emite os tokens como `:root` **estáticos**; pôr os valores dark dentro dele não alterna. Overriding a custom property cascateia pras utilities (`bg-bg` etc.). Pares dark re-verificados em AA.
 
@@ -44,5 +44,5 @@ Playwright fica **deferido** como opção local/não-gating: quando o CI ganhar 
 ## Consequências
 
 - As telas #55–#63 herdam um sistema de tokens AA, um shell responsivo e um seam de teste de UI — e devem ser construídas com `/impeccable`.
-- Convenções pra downstream: cards usam `--color-surface` + `--radius-lg` + `--shadow-sm`; o **selo** de proveniência usa `--color-accent` (Catálogo) vs neutro (Comunidade); estados vazios/erro usam tom morno, não alarmante.
+- Convenções pra downstream: superfícies de UI (painel/cartão visual) usam `--color-surface` + `--radius-lg` + `--shadow-sm` — componentes de **domínio** não se chamam Card/RecipeCard (usar nomes de Receita, CONTEXT.md). O **selo de proveniência** colore por **Proveniência**: `--color-accent`/`--color-accent-surface` só para `origin=catalog` (curado/editorial) vs neutro para `ai_*`/`user_edited`; **popularidade/Comunidade é eixo separado (Visibilidade) e NUNCA colore o selo de confiança**. Elevação tem dois passos (`--shadow-sm` chips/cards, `--shadow-md` popovers/menus). Estados vazios/erro usam tom morno, não alarmante.
 - Reversível: trocar Tailwind ou o seam de teste não toca domínio/seam de servidor.

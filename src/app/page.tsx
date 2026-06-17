@@ -6,23 +6,21 @@
  * #55–#59 (busca, ver receita, criar, salvar/publicar).
  */
 import { useLocale } from '@/i18n/provider'
+import { Container } from '@/components/container'
 
 export default function Home() {
   const { messages } = useLocale()
   return (
-    <main className="mx-auto max-w-page px-4 py-20 sm:px-6 sm:py-28">
+    <Container as="main" className="py-20 sm:py-28">
       <div className="max-w-2xl">
-        <span
-          aria-hidden
-          className="inline-block h-1.5 w-12 rounded-full bg-brand"
-        />
+        <span aria-hidden className="inline-block h-1.5 w-12 rounded-full bg-brand" />
         <h1 className="mt-6 font-display text-5xl font-semibold tracking-tight text-fg sm:text-6xl">
           {messages.app.name}
         </h1>
-        <p className="mt-5 text-lg leading-relaxed text-muted sm:text-xl">
+        <p className="mt-5 max-w-prose text-lg leading-relaxed text-muted sm:text-xl">
           {messages.app.tagline}
         </p>
       </div>
-    </main>
+    </Container>
   )
 }

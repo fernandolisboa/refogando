@@ -5,22 +5,24 @@
  * `useLocale()` e troca de idioma em runtime (#4.AC1). Não chama endpoint de Receita
  * (#4.AC4 — isolamento).
  *
- * Nav enxuta (2 itens) cabe inline em mobile; um menu de disclosure entra quando a
- * navegação crescer (fatias futuras).
+ * Barra com `min-h-16` (não altura fixa) + `flex-wrap`: cresce em vez de cortar quando a
+ * wordmark + nav + o <select> de locale (rótulo longo "Português (Brasil)") + o botão não
+ * cabem numa linha no mobile. Um menu de disclosure entra quando a nav crescer.
  */
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
+import { Container } from '@/components/container'
 import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { AuthSlot } from '@/components/auth-slot'
 
 export function SiteHeader() {
   const { messages } = useLocale()
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-page flex-wrap items-center gap-x-6 gap-y-2 px-4 sm:px-6">
+    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
+      <Container className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2">
         <Link
           href="/"
-          className="font-display text-2xl font-semibold tracking-tight text-brand-strong"
+          className="font-display text-2xl font-semibold tracking-tight text-brand-ink"
         >
           {messages.app.name}
         </Link>
@@ -36,7 +38,7 @@ export function SiteHeader() {
           <LocaleSwitcher />
           <AuthSlot />
         </div>
-      </div>
+      </Container>
     </header>
   )
 }
