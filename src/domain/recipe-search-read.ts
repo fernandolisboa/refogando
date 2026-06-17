@@ -139,22 +139,6 @@ export function displayedProvenance(hit: SearchHitRow): TranslationProvenance | 
 }
 
 /**
- * Agrupa os hits nas seções nomeadas, projetando cada um para `SearchResult`.
- *
- * - Seção: RE-DERIVADA de `origin` via `classifySection` (NÃO confia na ordem entre
- *   seções), mas a ordem DENTRO de cada seção (o ranking vindo do SQL `ORDER BY
- *   section, rn`) é PRESERVADA — empurra na ordem de iteração, nunca re-ordena.
- * - `displayedTitle`: `resolveName` (#3) sobre as traduções `requested`/`original`.
- * - `autoTranslationSignal`: `!isTranslationReliable(displayedProvenance)` — rastreia
- *   a proveniência da linha-BASE (nome-primário), não o parêntese. Edge ambos-NULL
- *   (sem tradução exibível) ⇒ hit OMITIDO (não empurra result de título em branco).
- *
- * `consulta` (#10): facetas RESOLVIDAS pela lente, ADITIVA. Quando passada (≠ undefined),
- * é ECOADA como `response.consulta`; quando ausente, a CHAVE é OMITIDA de vez (não emitida
- * como `undefined`) — robusto contra `toStrictEqual` e contra a comparação `toEqual` do
- * estado neutro de #6/#9 (`{catalogo:[],comunidade:[]}`).
- */
-/**
  * Projeta UM hit para `SearchResult` (4 campos), aplicando `resolveName` (#3) e o
  * `autoTranslationSignal`. Devolve `null` quando o hit não tem título exibível (sem
  * tradução em `requested`/`original`) — defesa "nunca tela quebrada". Reusado pelas
@@ -179,6 +163,25 @@ function projectResult(hit: SearchHitRow, locale: string): SearchResult | null {
   }
 }
 
+/**
+ * Agrupa os hits nas seções nomeadas, projetando cada um para `SearchResult`.
+ *
+ * - Seção: RE-DERIVADA de `origin` via `classifySection` (NÃO confia na ordem entre
+ *   seções), mas a ordem DENTRO de cada seção (o ranking vindo do SQL `ORDER BY
+ *   section, rn`) é PRESERVADA — empurra na ordem de iteração, nunca re-ordena.
+ * - `displayedTitle`: `resolveName` (#3) sobre as traduções `requested`/`original`.
+ * - `autoTranslationSignal`: `!isTranslationReliable(displayedProvenance)` — rastreia
+ *   a proveniência da linha-BASE (nome-primário), não o parêntese. Edge ambos-NULL
+ *   (sem tradução exibível) ⇒ hit OMITIDO (não empurra result de título em branco).
+ *
+ * `consulta` (#10): facetas RESOLVIDAS pela lente, ADITIVA. Quando passada (≠ undefined),
+ * é ECOADA como `response.consulta`; quando ausente, a CHAVE é OMITIDA de vez (não emitida
+ * como `undefined`) — robusto contra `toStrictEqual` e contra a comparação `toEqual` do
+ * estado neutro de #6/#9 (`{catalogo:[],comunidade:[]}`).
+ *
+ * `sugestoes` (#14, Fork C): vizinhos semânticos (US38), ADITIVA. Mesma omissão de chave
+ * que `consulta` quando `sugestoesHits` é undefined/vazio.
+ */
 export function buildSearchResponse(
   hits: ReadonlyArray<SearchHitRow>,
   requestLocale: string,

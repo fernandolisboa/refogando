@@ -65,6 +65,42 @@ function vectorLiteral(v: number[]): string {
 }
 
 /**
+ * Corpo SELECT da CTE `semantic` (#14, Fork B) COMPARTILHADO (O1): candidatos por cosseno,
+ * gate canônico replicado IDÊNTICO ao de `visible`, secção por origin, fallback de locale
+ * via DISTINCT ON. Reusado pela query principal (loader) E pela query de sugestões (US38)
+ * para que o gate canônico, o operador `<=>`, e a chave de prioridade de locale do
+ * `DISTINCT ON` NÃO derivem entre as duas cópias. Recebe o literal pgvector bindado, o
+ * requestLocale e o SQL de faceta (re-aplicado — faceta é FILTRO, nunca afrouxa).
+ *
+ * v1 (consciente): com `DISTINCT ON (re.recipe_id)` forçando `recipe_id` como chave-líder
+ * do ORDER BY e SEM LIMIT, o planner faz um SCAN de distância COMPLETO — o índice HNSW NÃO
+ * é exercitado neste caminho de leitura (tabelas minúsculas; exploração do HNSW por top-k
+ * fica deferida). O índice é mandado pelo Fork B/ADR-0008 e future-proofs o crescimento.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentário) — terminaria o
+ * `sql\`...\``. Comentários explicativos ficam AQUI no TS, fora do template.
+ */
+function semanticSelectSql(litVec: string, requestLocale: string, facetSql: SQL): SQL {
+  return sql`
+      SELECT DISTINCT ON (re.recipe_id)
+        re.recipe_id AS recipe_id,
+        (1 - (re.embedding <=> ${sql.param(litVec)}::vector)) AS cosine_sim,
+        r.origin AS origin,
+        r.original_locale AS original_locale,
+        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
+      FROM recipe_embedding re
+      JOIN recipe r ON r.id = re.recipe_id
+      WHERE re.embedding IS NOT NULL
+        AND r.result_kind <> 'playful'
+        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        ${facetSql}
+      ORDER BY re.recipe_id,
+        (re.locale = ${requestLocale}) DESC,
+        (re.embedding <=> ${sql.param(litVec)}::vector) ASC
+  `
+}
+
+/**
  * Predicados de faceta (#10) AND-combinados no WHERE do `visible`. NUNCA interpolam:
  * tudo via `sql.param` (bind seguro). Eixo vazio ⇒ no-op (guarda de `cardinality(...)=0`
  * ou bound NULL) — preserva o reduce-to-#6/#9 (facets vazio ⇒ todos no-op). Restrição usa
@@ -178,29 +214,13 @@ export async function searchRecipes(
   // !hasVector (ramo semantico elidido).
   const litVec = hasVector ? vectorLiteral(args.queryVector as number[]) : ''
 
-  // CTE semantica (#14, Fork B): candidatos por cosseno, gate canonico replicado
-  // IDENTICO ao de visible, secao por origin, fallback de locale via DISTINCT ON. Facetas
-  // re-aplicadas (faceta e FILTRO, nunca afrouxa). Montada SO quando hasVector; senao
-  // fragmento vazio (CTE elidida) => LEFT JOIN some, bucket 2 some, cosine_sim constante 0.
+  // CTE semantica (#14, Fork B): corpo SELECT COMPARTILHADO (semanticSelectSql, O1) reusado
+  // pela query principal E pela de sugestoes (gate/operador/locale nao derivam entre as
+  // duas). Montada SO quando hasVector; senao fragmento vazio (CTE elidida) => LEFT JOIN
+  // some, bucket 2 some, cosine_sim constante 0.
   const semanticCteSql = hasVector
     ? sql`
-    , semantic AS (
-      SELECT DISTINCT ON (re.recipe_id)
-        re.recipe_id AS recipe_id,
-        (1 - (re.embedding <=> ${sql.param(litVec)}::vector)) AS cosine_sim,
-        r.origin AS origin,
-        r.original_locale AS original_locale,
-        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
-      FROM recipe_embedding re
-      JOIN recipe r ON r.id = re.recipe_id
-      WHERE re.embedding IS NOT NULL
-        AND r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
-        ${facetSql}
-      ORDER BY re.recipe_id,
-        (re.locale = ${requestLocale}) DESC,
-        (re.embedding <=> ${sql.param(litVec)}::vector) ASC
-    )`
+    , semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql)})`
     : sql``
 
   // Coluna de similaridade no visible: COALESCE(s.cosine_sim,0) (NULL-safe) quando ha
@@ -214,9 +234,27 @@ export async function searchRecipes(
     : sql``
 
   // Bucket 2 (so-semanticos) UNIDO a fonte do visible SO quando hasVector E HA >=1
-  // precisa (EXISTS combined). Quando ZERO precisa, o EXISTS e falso => bucket 2 elide-se
-  // sozinho => main query vazia => o TS roda a query de sugestoes (US38). Sem precisa,
-  // os so-semanticos nunca poluem as secoes; com precisa, entram ABAIXO via tiering.
+  // precisa VISIVEL (EXISTS combined APOS o gate canonico). Quando ZERO precisa visivel, o
+  // EXISTS e falso => bucket 2 elide-se sozinho => main query vazia => o TS roda a query de
+  // sugestoes (US38). Sem precisa, os so-semanticos nunca poluem as secoes; com precisa,
+  // entram ABAIXO via tiering.
+  //
+  // M1 (gate na ativacao do bucket 2): `combined` e o conjunto de precisa ANTES do gate
+  // canonico de leitura (o gate so e aplicado depois, em `visible`/`semantic`). Um EXISTS
+  // cru sobre `combined` ativaria o bucket 2 mesmo quando a unica precisa e uma Receita
+  // PRIVADA do dono cujo titulo casa o ?q= -- mas essa Receita e barrada pelo gate e nao
+  // aparece em secao nenhuma, entao um vizinho semantico PUBLICO forte vazaria pra uma
+  // secao em vez de ir pra `sugestoes?` (US38). Empurrar o gate canonico DENTRO do EXISTS
+  // (mesma grafia IDENTICA do gate de `visible`/`semantic`) faz a ativacao depender da
+  // precisa VISIVEL: sem precisa visivel, bucket 2 elide-se => hits vazio => o vizinho vai
+  // corretamente pra `sugestoes?`.
+  //
+  // S2 (filtro de NaN): um embedding de norma-zero faz o `<=>` devolver NaN, e `cosine_sim`
+  // (= 1 - NaN) vira NaN. NaN PASSA pelo `>= SEMANTIC_MIN_SIM` e ordena PRIMEIRO sob
+  // `cosine_sim DESC` (Postgres ranqueia NaN acima de todo finito; COALESCE(...,0) NAO o
+  // captura). ATENCAO: em Postgres `NaN = NaN` e TRUE (float8) -- entao `x = x` NAO filtra
+  // NaN. O teste correto e `cosine_sim <> 'NaN'::float8` (FALSE p/ NaN => excluido; TRUE p/
+  // finito => mantido).
   const bucket2Sql = hasVector
     ? sql`
       UNION ALL
@@ -231,7 +269,13 @@ export async function searchRecipes(
         s.section AS section
       FROM semantic s
       WHERE s.cosine_sim >= ${SEMANTIC_MIN_SIM}
-        AND EXISTS (SELECT 1 FROM combined)
+        AND s.cosine_sim <> 'NaN'::float8
+        AND EXISTS (
+          SELECT 1 FROM combined c
+          JOIN recipe r ON r.id = c.recipe_id
+          WHERE r.result_kind <> 'playful'
+            AND (r.owner_id IS NULL OR r.visibility = 'public')
+        )
         AND NOT EXISTS (SELECT 1 FROM combined c WHERE c.recipe_id = s.recipe_id)
     `
     : sql``
@@ -452,27 +496,15 @@ export async function searchRecipes(
     return { hits, sugestoes: [] }
   }
 
+  // Query de sugestoes (US38): a MESMA CTE semantic compartilhada (semanticSelectSql, O1)
+  // + cap por secao. S2: `s.cosine_sim <> 'NaN'::float8` descarta NaN (norma-zero), que de
+  // outro modo passaria o limiar e ordenaria primeiro sob `cosine_sim DESC` (em Postgres
+  // `NaN = NaN` e TRUE, entao `x = x` NAO filtraria).
   const sugestoesRows = await db.execute<SearchHitRow>(sql`
     WITH params AS (
       SELECT ${requestLocale}::text AS req_locale
     ),
-    semantic AS (
-      SELECT DISTINCT ON (re.recipe_id)
-        re.recipe_id AS recipe_id,
-        (1 - (re.embedding <=> ${sql.param(litVec)}::vector)) AS cosine_sim,
-        r.origin AS origin,
-        r.original_locale AS original_locale,
-        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
-      FROM recipe_embedding re
-      JOIN recipe r ON r.id = re.recipe_id
-      WHERE re.embedding IS NOT NULL
-        AND r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
-        ${facetSql}
-      ORDER BY re.recipe_id,
-        (re.locale = ${requestLocale}) DESC,
-        (re.embedding <=> ${sql.param(litVec)}::vector) ASC
-    ),
+    semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql)}),
     numbered AS (
       SELECT
         s.recipe_id AS recipe_id,
@@ -485,6 +517,7 @@ export async function searchRecipes(
         ) AS rn
       FROM semantic s
       WHERE s.cosine_sim >= ${SEMANTIC_MIN_SIM}
+        AND s.cosine_sim <> 'NaN'::float8
     )
     ${displayTailSql(sql`n.rn <= ${SEMANTIC_CAP}`, sql`n.section, n.rn`)}
   `)

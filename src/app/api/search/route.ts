@@ -1,6 +1,7 @@
 import { getDb, getEmbedder } from '@/server/deps'
 import { resolveLocale } from '@/i18n/locale'
 import { searchRecipes, MAX_QUERY_LEN } from '@/server/recipe/search'
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import {
   buildSearchResponse,
   type FacetasResolvidasDTO,
@@ -145,6 +146,19 @@ export async function GET(request: Request): Promise<Response> {
     try {
       queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN))
     } catch {
+      queryVector = null
+    }
+    // #14: saída MALFORMADA do embedder (dimensão errada OU elemento não-finito —
+    // NaN/Infinity) tem o MESMO destino que o embedder lançar: degradação graciosa.
+    // Um vetor de dimensão != EMBEDDING_DIMENSIONS ou com NaN/Infinity, se bindado, faria
+    // o cast `::vector` estourar 500 FORA deste try/catch (o loader não captura) — o que
+    // quebraria o contrato AC4/US42. Validar aqui e zerar queryVector roteia pro caminho
+    // só-precisa (idêntico ao do embedder lançando). NÃO logar como erro fatal.
+    if (
+      queryVector !== null &&
+      (queryVector.length !== EMBEDDING_DIMENSIONS ||
+        !queryVector.every((x) => Number.isFinite(x)))
+    ) {
       queryVector = null
     }
   }

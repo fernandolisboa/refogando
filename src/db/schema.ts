@@ -32,6 +32,14 @@ import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
 
 /**
+ * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
+ * coluna `recipe_embedding.embedding` (`vector(EMBEDDING_DIMENSIONS)`) — fonte única que
+ * o route reusa para validar a saída do embedder antes de bindar (uma saída de dimensão
+ * errada faria o cast `::vector` estourar 500; o route degrada em vez disso).
+ */
+export const EMBEDDING_DIMENSIONS = 1536
+
+/**
  * Espinha canônica da Receita (issue #3). Drizzle é a fonte única de verdade do
  * schema (ADR-0009). Convenções: prop camelCase em JS + nome snake_case explícito
  * em DB; timestamps `withTimezone` com `defaultNow().notNull()`. Enums vêm do kernel
@@ -234,7 +242,7 @@ export const recipeEmbedding = pgTable(
       .notNull()
       .references(() => recipe.id, { onDelete: 'cascade' }),
     locale: text('locale').notNull(),
-    embedding: vector('embedding', { dimensions: 1536 }),
+    embedding: vector('embedding', { dimensions: EMBEDDING_DIMENSIONS }),
     model: text('model'),
     stale: boolean('stale').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
