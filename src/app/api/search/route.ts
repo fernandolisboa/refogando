@@ -134,12 +134,13 @@ export async function GET(request: Request): Promise<Response> {
   const effectiveMode = terms.length === 0 ? 'any' : mode
 
   const db = getDb()
-  const hits = await searchRecipes(db, {
+  const { hits } = await searchRecipes(db, {
     q,
     terms,
     mode: effectiveMode,
     requestLocale,
     facets,
+    queryVector: null,
   })
   const body = buildSearchResponse(hits, requestLocale, consulta)
   return Response.json(body)

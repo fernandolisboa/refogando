@@ -5,7 +5,9 @@ import { makeSql } from '@/db/client'
 import { getDb, setEmbedder } from '@/server/deps'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
 import { embedTranslation, EMBEDDING_MODEL } from '@/server/embedding/recompute'
+import { searchRecipes } from '@/server/recipe/search'
 import { recipeEmbedding } from '@/db/schema'
+import { EMPTY_FACETS } from '@/domain/facet-params'
 import { seedRecipe, seedTranslation, seedEmbedding } from '../helpers/recipes'
 
 /**
@@ -186,5 +188,96 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
     expect(row.stale).toBe(true) // sinal preservado pra retry
     expect(row.model).toBe('old') // não tocado
     expect(row.cos).toBeCloseTo(0.1, 4) // vetor intacto
+  })
+})
+
+describe('camada semântica #14 — fusão híbrida no loader (Fork A)', () => {
+  // Helper: catálogo com título dado + embedding de cosseno `cos` vs a query (e1).
+  async function seedCatalogWithEmbedding(titulo: string, cos: number | null): Promise<string> {
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo, provenance: 'escrita_por_pessoa' })
+    if (cos !== null) {
+      await seedEmbedding({ recipeId, locale: 'pt-BR', embedding: vecCos(cos), model: EMBEDDING_MODEL })
+    }
+    return recipeId
+  }
+
+  function indexOf(hits: { recipe_id: string }[], id: string): number {
+    return hits.findIndex((h) => h.recipe_id === id)
+  }
+
+  it('AC2: piso da precisa — A (exato, cosseno fraco) ACIMA de B (só-semântico, cosseno forte)', async () => {
+    const db = getDb()
+    // A: título casa "Bolo" (FTS hit, bucket 1) mas cosseno FRACO (0.20).
+    const A = await seedCatalogWithEmbedding('Bolo de fubá', 0.2)
+    // B: título SEM "Bolo" (zero FTS) mas cosseno FORTE (0.90) — só-semântico, bucket 2.
+    const B = await seedCatalogWithEmbedding('Torta de limão', 0.9)
+
+    // Controle negativo OBSERVÁVEL (S5): cos(B) > cos(A) via SQL cru, ANTES da asserção de
+    // ordem — prova que B é semanticamente mais perto e MESMO ASSIM A vem primeiro.
+    const [{ cosA }] = await sql<{ cosA: number }[]>`
+      SELECT 1 - (embedding <=> ${lit(QUERY_VEC)}::vector) AS "cosA"
+      FROM recipe_embedding WHERE recipe_id = ${A}`
+    const [{ cosB }] = await sql<{ cosB: number }[]>`
+      SELECT 1 - (embedding <=> ${lit(QUERY_VEC)}::vector) AS "cosB"
+      FROM recipe_embedding WHERE recipe_id = ${B}`
+    expect(Number(cosB)).toBeGreaterThan(Number(cosA))
+
+    const { hits, sugestoes } = await searchRecipes(db, {
+      q: 'Bolo',
+      terms: ['Bolo'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+    })
+    const iA = indexOf(hits, A)
+    const iB = indexOf(hits, B)
+    expect(iA).toBeGreaterThanOrEqual(0) // A presente (bucket 1)
+    expect(iB).toBeGreaterThanOrEqual(0) // B presente (bucket 2, mesma seção catálogo)
+    expect(iA).toBeLessThan(iB) // piso da precisa: A ACIMA de B, apesar do cosseno
+    // Solda omissão (O1): há precisa ⇒ sem sugestões (chave omitida no DTO).
+    expect(sugestoes).toEqual([])
+  })
+
+  it('AC1: desempate por cosseno LOAD-BEARING dentro do bucket 1 (M2)', async () => {
+    const db = getDb()
+    // Dois hits de precisa na MESMA seção, sinal de precisa IDÊNTICO (só title_match de
+    // "Sopa"), cossenos diferentes 0.70 vs 0.50 → só a 3ª chave (cosine_sim DESC) desempata.
+    const HI = await seedCatalogWithEmbedding('Sopa de tomate', 0.7)
+    const LO = await seedCatalogWithEmbedding('Sopa de cebola', 0.5)
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Sopa',
+      terms: ['Sopa'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+    })
+    const iHi = indexOf(hits, HI)
+    const iLo = indexOf(hits, LO)
+    expect(iHi).toBeGreaterThanOrEqual(0)
+    expect(iLo).toBeGreaterThanOrEqual(0)
+    // Chaves 1 e 2 empatam ⇒ a asserção só passa se cosine_sim DESC estiver viva.
+    expect(iHi).toBeLessThan(iLo)
+  })
+
+  it('AC: degradação no loader (queryVector=null) ⇒ sem sugestões, só precisa', async () => {
+    const db = getDb()
+    const A = await seedCatalogWithEmbedding('Bolo de fubá', 0.2)
+    await seedCatalogWithEmbedding('Torta de limão', 0.9) // só-semântico: sem queryVector, não entra
+
+    const { hits, sugestoes } = await searchRecipes(db, {
+      q: 'Bolo',
+      terms: ['Bolo'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+    })
+    expect(indexOf(hits, A)).toBeGreaterThanOrEqual(0)
+    expect(hits).toHaveLength(1) // só o hit de precisa; bucket 2 elidido
+    expect(sugestoes).toEqual([])
   })
 })
