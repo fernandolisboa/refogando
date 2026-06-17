@@ -10,6 +10,7 @@ import { GET } from '@/app/api/search/route'
 import { recipeEmbedding } from '@/db/schema'
 import { EMPTY_FACETS } from '@/domain/facet-params'
 import { seedRecipe, seedTranslation, seedEmbedding } from '../helpers/recipes'
+import { seedUser } from '../helpers/users'
 
 type SearchResult = {
   recipeId: string
@@ -215,9 +216,14 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
 })
 
 describe('camada semântica #14 — fusão híbrida no loader (Fork A)', () => {
-  // Helper: catálogo com título dado + embedding de cosseno `cos` vs a query (e1).
-  async function seedCatalogWithEmbedding(titulo: string, cos: number | null): Promise<string> {
-    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+  // Helper: catálogo com título dado + embedding de cosseno `cos` vs a query (e1). `id`
+  // opcional pina o PK (p/ ordenar tiebreaks deterministicamente — O4).
+  async function seedCatalogWithEmbedding(
+    titulo: string,
+    cos: number | null,
+    id?: string,
+  ): Promise<string> {
+    const recipeId = await seedRecipe({ id, origin: 'catalog', originalLocale: 'pt-BR' })
     await seedTranslation({ recipeId, locale: 'pt-BR', titulo, provenance: 'escrita_por_pessoa' })
     if (cos !== null) {
       await seedEmbedding({ recipeId, locale: 'pt-BR', embedding: vecCos(cos), model: EMBEDDING_MODEL })
@@ -267,8 +273,14 @@ describe('camada semântica #14 — fusão híbrida no loader (Fork A)', () => {
     const db = getDb()
     // Dois hits de precisa na MESMA seção, sinal de precisa IDÊNTICO (só title_match de
     // "Sopa"), cossenos diferentes 0.70 vs 0.50 → só a 3ª chave (cosine_sim DESC) desempata.
-    const HI = await seedCatalogWithEmbedding('Sopa de tomate', 0.7)
-    const LO = await seedCatalogWithEmbedding('Sopa de cebola', 0.5)
+    // O4 (determinismo): pinamos os PKs de forma que LO.id < HI.id lexicalmente. Assim o
+    // último tiebreak `recipe_id` (ASC) colocaria LO ACIMA de HI — o OPOSTO do esperado.
+    // Logo, se a chave `cosine_sim DESC` for DROPADA, a ordem cai pra recipe_id e a asserção
+    // `iHi < iLo` falha DETERMINISTICAMENTE (não ~50% como com UUIDs aleatórios).
+    const HI_ID = '00000000-0000-4000-8000-0000000000b2' // > LO_ID
+    const LO_ID = '00000000-0000-4000-8000-0000000000a1' // < HI_ID
+    const HI = await seedCatalogWithEmbedding('Sopa de tomate', 0.7, HI_ID)
+    const LO = await seedCatalogWithEmbedding('Sopa de cebola', 0.5, LO_ID)
 
     const { hits } = await searchRecipes(db, {
       q: 'Sopa',
@@ -282,7 +294,8 @@ describe('camada semântica #14 — fusão híbrida no loader (Fork A)', () => {
     const iLo = indexOf(hits, LO)
     expect(iHi).toBeGreaterThanOrEqual(0)
     expect(iLo).toBeGreaterThanOrEqual(0)
-    // Chaves 1 e 2 empatam ⇒ a asserção só passa se cosine_sim DESC estiver viva.
+    // Chaves 1 e 2 empatam; recipe_id (LO < HI) ordenaria LO acima ⇒ a asserção só passa se
+    // cosine_sim DESC estiver viva (HI cos 0.70 > LO cos 0.50).
     expect(iHi).toBeLessThan(iLo)
   })
 
@@ -395,37 +408,29 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
     expect(sugIds(body)).toContain(SL) // alcançada por fallback de locale
   })
 
-  it('AC5 (prioridade requestLocale, O3): usa o embedding do locale pedido, não o mais próximo', async () => {
+  it('AC5 (prioridade requestLocale, O3): a chave de locale do DISTINCT ON é LOAD-BEARING', async () => {
     injectQueryEmbedder()
-    // Receita com DOIS embeddings: pt-BR (cos 0.60) e en-US MAIS próximo (cos 0.95).
-    // O DISTINCT ON deve escolher o de pt-BR (requestLocale), não o en-US mais próximo.
+    // Receita com DOIS embeddings CRUZANDO o limiar 0.50: pt-BR (requestLocale) cos 0.40
+    // (ABAIXO) e en-US cos 0.95 (ACIMA). A chave `(re.locale = requestLocale) DESC` do
+    // DISTINCT ON faz a CTE escolher a linha pt-BR (0.40 < 0.50) ⇒ R é EXCLUÍDA de
+    // sugestoes. Se essa chave fosse REMOVIDA, o DISTINCT ON cairia no menor distância
+    // (en-US 0.95) e R apareceria ERRADAMENTE ⇒ a asserção falha na mutação da chave.
     const R = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
     await seedTranslation({ recipeId: R, locale: 'pt-BR', titulo: 'Quindim', provenance: 'escrita_por_pessoa' })
     await seedTranslation({ recipeId: R, locale: 'en-US', titulo: 'Coconut Custard', provenance: 'escrita_por_pessoa' })
-    await seedEmbedding({ recipeId: R, locale: 'pt-BR', embedding: vecCos(0.6), model: EMBEDDING_MODEL })
+    await seedEmbedding({ recipeId: R, locale: 'pt-BR', embedding: vecCos(0.4), model: EMBEDDING_MODEL })
     await seedEmbedding({ recipeId: R, locale: 'en-US', embedding: vecCos(0.95), model: EMBEDDING_MODEL })
 
-    const { hits } = await searchRecipes(getDb(), {
-      q: 'hjkl',
-      terms: ['hjkl'],
-      mode: 'any',
-      requestLocale: 'pt-BR',
-      facets: EMPTY_FACETS,
-      queryVector: QUERY_VEC,
-    })
-    // Sem precisa ⇒ hits vazio; a sugestão carrega a receita. Provamos o requestLocale via
-    // o cosseno escolhido pelo DISTINCT ON: query crua espelhando a CTE semantic.
-    expect(hits).toHaveLength(0)
-    const [{ chosen }] = await sql<{ chosen: number }[]>`
-      SELECT cosine_sim AS chosen FROM (
-        SELECT DISTINCT ON (re.recipe_id)
-          (1 - (re.embedding <=> ${lit(QUERY_VEC)}::vector)) AS cosine_sim
-        FROM recipe_embedding re
-        WHERE re.recipe_id = ${R} AND re.embedding IS NOT NULL
-        ORDER BY re.recipe_id, (re.locale = 'pt-BR') DESC,
-          (re.embedding <=> ${lit(QUERY_VEC)}::vector) ASC
-      ) t`
-    expect(Number(chosen)).toBeCloseTo(0.6, 4) // do pt-BR, NÃO o 0.95 do en-US
+    // Controle: um vizinho pt-BR forte garante que sugestoes ESTÁ presente (a asserção de
+    // exclusão de R não é vácua por ausência total de sugestões).
+    const NB = await seedNeighbor('Brigadeiro', 0.9)
+
+    const { body } = await searchBody('hjkl', 'pt-BR')
+    expect(secIds(body)).toHaveLength(0) // sem precisa ⇒ seções vazias
+    expect(sugIds(body)).toContain(NB) // sugestoes presente (controle não-vácuo)
+    // R EXCLUÍDA: o DISTINCT ON pegou a linha pt-BR (0.40 < 0.50), via a chave de locale.
+    // Sem essa chave, pegaria en-US (0.95) e R apareceria — esta asserção quebra na mutação.
+    expect(sugIds(body)).not.toContain(R)
   })
 
   it('AC5 (bucket-1, O2): fallback de locale dirige o cosseno no ramo COM precisa', async () => {
@@ -450,5 +455,76 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
       SELECT 1 - (embedding <=> ${lit(QUERY_VEC)}::vector) AS cos
       FROM recipe_embedding WHERE recipe_id = ${SF}`
     expect(Number(cos)).toBeCloseTo(0.7, 4) // fallback de locale ⇒ cosseno ≠ 0
+  })
+
+  it('M1: precisa só-PRIVADA (gated-out) ⇒ vizinho público vai pra sugestoes, não pra seção', async () => {
+    injectQueryEmbedder()
+    const ownerId = await seedUser({ email: `m1-owner-${crypto.randomUUID()}@ex.com` })
+    // Receita PRIVADA do dono cujo TÍTULO casa "Segredo" (combined não-vazio ANTES do gate),
+    // mas barrada pelo gate canônico (visibility=private + owner_id) ⇒ NÃO aparece.
+    const PRIV = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      ownerId,
+    })
+    await seedTranslation({ recipeId: PRIV, locale: 'pt-BR', titulo: 'Segredo da casa', provenance: 'escrita_por_pessoa' })
+    // Vizinho PÚBLICO de catálogo, cosseno forte, título SEM casar "Segredo".
+    const NB = await seedNeighbor('Brigadeiro de colher', 0.9)
+
+    const { status, body } = await searchBody('Segredo', 'pt-BR')
+    expect(status).toBe(200)
+    // Sem precisa VISÍVEL ⇒ seções vazias; a única precisa (PRIV) é gated-out.
+    expect(secIds(body)).toHaveLength(0)
+    expect(secIds(body)).not.toContain(PRIV) // privada nunca vaza
+    // O vizinho vai pra sugestoes (US38), não pra uma seção (M1: bucket 2 não ativou porque
+    // a precisa visível é zero).
+    expect('sugestoes' in body).toBe(true)
+    expect(sugIds(body)).toContain(NB)
+    expect(secIds(body)).not.toContain(NB)
+  })
+
+  it('S1: embedder com saída MALFORMADA (não-finita / dimensão errada) ⇒ 200 + só-precisa', async () => {
+    // Precisa via título "Bolo" + um vizinho forte que NÃO deve aparecer se degradar.
+    const P = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: P, locale: 'pt-BR', titulo: 'Bolo de laranja', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: P, locale: 'pt-BR', embedding: vecCos(0.2), model: EMBEDDING_MODEL })
+    await seedNeighbor('Mousse de maracujá', 0.95)
+
+    // (i) Vetor com elemento NÃO-FINITO (NaN) — bindado cru, o cast ::vector estouraria 500.
+    const nan = vecCos(0.9)
+    nan[0] = NaN
+    setEmbedder(new FakeEmbedder(DIM, () => nan))
+    const a = await searchBody('Bolo')
+    expect(a.status).toBe(200) // degradou (não 500)
+    expect(secIds(a.body)).toContain(P) // só-precisa
+    expect('sugestoes' in a.body).toBe(false) // sem camada semântica
+
+    // (ii) Vetor de DIMENSÃO errada (não 1536).
+    resetDeps()
+    setEmbedder(new FakeEmbedder(DIM, () => [1, 0, 0]))
+    const b = await searchBody('Bolo')
+    expect(b.status).toBe(200)
+    expect(secIds(b.body)).toContain(P)
+    expect('sugestoes' in b.body).toBe(false)
+  })
+
+  it('S2: embedding de norma-zero (cosseno NaN) NÃO ranqueia acima de um match genuíno', async () => {
+    injectQueryEmbedder()
+    // Vizinho de NORMA-ZERO: cosseno = 1 - (vetor <=> query) = NaN. Sem o filtro
+    // `s.cosine_sim = s.cosine_sim`, NaN passaria o limiar E ordenaria PRIMEIRO (Postgres
+    // ranqueia NaN acima de todo finito) sob cosine_sim DESC.
+    const ZERO = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: ZERO, locale: 'pt-BR', titulo: 'Item ruidoso', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: ZERO, locale: 'pt-BR', embedding: new Array<number>(DIM).fill(0), model: EMBEDDING_MODEL })
+    // Match genuíno forte.
+    const GOOD = await seedNeighbor('Pavê de chocolate', 0.9)
+
+    const { body } = await searchBody('lkjhg')
+    const sug = sugIds(body)
+    expect(sug).toContain(GOOD) // o match genuíno aparece
+    expect(sug).not.toContain(ZERO) // o norma-zero (NaN) é filtrado
+    // E NUNCA ranqueia acima do match genuíno (defensivo, caso ambos passassem).
+    expect(sug[0]).toBe(GOOD)
   })
 })

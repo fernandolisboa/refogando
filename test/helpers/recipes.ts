@@ -27,6 +27,7 @@ import { seedUser } from './users'
 // ── Fábricas atômicas ───────────────────────────────────────────────────────────
 
 export async function seedRecipe(input: {
+  id?: string // pino opcional do PK (default defaultRandom); usado p/ ordenar tiebreaks deterministicamente
   origin: Origin
   originalLocale: string
   visibility?: Visibility
@@ -44,6 +45,7 @@ export async function seedRecipe(input: {
   const [row] = await getDb()
     .insert(recipe)
     .values({
+      ...(input.id !== undefined ? { id: input.id } : {}),
       origin: input.origin,
       originalLocale: input.originalLocale,
       visibility: input.visibility,
