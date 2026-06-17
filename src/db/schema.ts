@@ -239,7 +239,17 @@ export const recipeEmbedding = pgTable(
     stale: boolean('stale').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.recipeId, t.locale] })],
+  // HNSW para a camada semântica (#14, ADR-0008): cosseno via vector_cosine_ops
+  // (obrigatório p/ o planner usar <=>). PARCIAL (embedding IS NOT NULL): a maioria
+  // das linhas nasce embedding NULL (degradação/pré-recompute) e um índice sobre NULL
+  // não tem uso. A DDL é a fonte da verdade (drizzle/0006_hnsw_recipe_embedding.sql,
+  // escrita à mão — drizzle-kit não gera HNSW); este espelho mantém o schema TS honesto.
+  (t) => [
+    primaryKey({ columns: [t.recipeId, t.locale] }),
+    index('recipe_embedding_embedding_hnsw')
+      .using('hnsw', t.embedding.op('vector_cosine_ops'))
+      .where(sql`${t.embedding} IS NOT NULL`),
+  ],
 )
 
 // ── Identidade + auth (issue #5, ADR-0010/0011) ────────────────────────────────
