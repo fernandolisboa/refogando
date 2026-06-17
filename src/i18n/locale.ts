@@ -17,8 +17,12 @@ const CANONICAL_BY_LOWER: Record<string, Locale> = Object.fromEntries(
 /**
  * Devolve a forma canônica de um locale suportado, casando case-insensitive
  * (ex.: 'EN-US' → 'en-US', 'pt-br' → 'pt-BR'). `null` se não suportado.
+ *
+ * EXPORTADA (issue #23): as rotas de tradução validam E canonizam o locale do path com
+ * ela — `isSupportedLocale` é case-insensitive, então persistir/ler o path cru partiria
+ * a chave UNIQUE(recipe_id, locale). Sempre o canônico (`'EN-US'` → `'en-US'`).
  */
-function canonicalLocale(v: string): Locale | null {
+export function canonicalLocale(v: string): Locale | null {
   return CANONICAL_BY_LOWER[v.toLowerCase()] ?? null
 }
 

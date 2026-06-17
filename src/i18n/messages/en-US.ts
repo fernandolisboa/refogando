@@ -15,6 +15,12 @@ export const enUS: Messages = {
   aviso: {
     contradicao: 'Marked {restricao}, but contains {alergeno} — declared, not verified.',
   },
+  // Ciclo de vida da tradução (#23, AC3): mesma substância traduzida (ADR-0001, não
+  // byte-idêntica). Renderizados na vista no requestLocale (aviso de stale + ver-original).
+  traducao: {
+    staleAviso: 'This translation may be out of date compared to the original.',
+    verOriginal: 'View the original',
+  },
   // Rótulo amigável por valor do enum RESTRICOES (#7), traduzido por locale.
   // `satisfies Record<Restricao, string>` trava drift do enum no site de definição.
   restricaoLabel: {

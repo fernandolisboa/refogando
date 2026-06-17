@@ -45,4 +45,14 @@ describe('Catálogos de chrome — paridade pt-BR / en-US (#4.AC1, T3)', () => {
     expect(MESSAGES['pt-BR']).toBe(ptBR)
     expect(MESSAGES['en-US']).toBe(enUS)
   })
+
+  // #23 (C9): chaves novas de tradução (aviso de stale + ver-o-original) presentes e
+  // não-vazias nos DOIS locales (a paridade recursiva acima já pega faltantes; aqui o
+  // teste explícito documenta o contrato). O *render* (chave→texto) é provado em C4.
+  it('#23 — traducao.staleAviso/verOriginal presentes e não-vazias nos dois locales', () => {
+    for (const loc of ['pt-BR', 'en-US'] as const) {
+      expect(MESSAGES[loc].traducao.staleAviso.trim().length).toBeGreaterThan(0)
+      expect(MESSAGES[loc].traducao.verOriginal.trim().length).toBeGreaterThan(0)
+    }
+  })
 })
