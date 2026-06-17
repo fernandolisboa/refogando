@@ -1,6 +1,9 @@
-# Roda typecheck + lint + test em todo PR pra main e em todo push na main.
-# NAO roda `npm run build` (next build): desnecessário pros checks e evitaria ter
-# que prover env/secrets.
+# Roda typecheck + lint + build + test em todo PR pra main e em todo push na main.
+# O step `Build` (next build) roda com um BETTER_AUTH_SECRET DUMMY (não-secreto) só pra
+# pegar falhas que só aparecem no build — throws em import-time (ex.: a invariante de
+# src/lib/auth.ts) e erros só-de-build — ANTES do deploy na Vercel, em vez de o CI ficar
+# verde e a Vercel falhar. O build NÃO precisa de DATABASE_URL (getDb é lazy). Ver #68.
+# (NÃO pega erro de config da Vercel tipo Framework Preset — esse é coletado no deploy.)
 #
 # Diferença vs. outros repos: aqui o `test` SOBE um Postgres real. O harness de
 # integração (test/global-setup.ts) é provider-neutro e auto-detect:
@@ -43,6 +46,14 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Build (smoke-check)
+        # Secret DUMMY não-secreto: src/lib/auth.ts exige a var presente fora de teste;
+        # sem ela o `next build` lança em "Collecting page data". DATABASE_URL não é
+        # necessária no build (getDb é lazy). Roda antes do Test (lento) pra falhar rápido.
+        env:
+          BETTER_AUTH_SECRET: dummy_ci_build_secret_0123456789_abcdef
+        run: npm run build
 
       - name: Test
         run: npm test
