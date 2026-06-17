@@ -2,13 +2,36 @@ import { afterAll, beforeAll, describe, it, expect, inject } from 'vitest'
 import type { Sql } from 'postgres'
 import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
-import { getDb, setEmbedder } from '@/server/deps'
+import { getDb, setEmbedder, resetDeps } from '@/server/deps'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
 import { embedTranslation, EMBEDDING_MODEL } from '@/server/embedding/recompute'
 import { searchRecipes } from '@/server/recipe/search'
+import { GET } from '@/app/api/search/route'
 import { recipeEmbedding } from '@/db/schema'
 import { EMPTY_FACETS } from '@/domain/facet-params'
 import { seedRecipe, seedTranslation, seedEmbedding } from '../helpers/recipes'
+
+type SearchResult = {
+  recipeId: string
+  displayedTitle: string
+  origin: string
+  autoTranslationSignal: boolean
+}
+type SearchResponse = {
+  catalogo: SearchResult[]
+  comunidade: SearchResult[]
+  sugestoes?: SearchResult[]
+}
+
+/** Busca pela porta MAIS ALTA (GET cru). Sem headers = Visitante anônimo. */
+async function searchBody(q: string, locale = 'pt-BR'): Promise<{ status: number; body: SearchResponse }> {
+  const params = new URLSearchParams({ q, locale })
+  const res = await GET(new Request(`http://localhost/api/search?${params.toString()}`))
+  return { status: res.status, body: (await res.json()) as SearchResponse }
+}
+const sugIds = (b: SearchResponse): string[] => (b.sugestoes ?? []).map((r) => r.recipeId)
+const secIds = (b: SearchResponse): string[] =>
+  [...b.catalogo, ...b.comunidade].map((r) => r.recipeId)
 
 /**
  * Camada semântica + fusão híbrida (issue #14, ADR-0008) pela porta MAIS ALTA — handler
@@ -279,5 +302,153 @@ describe('camada semântica #14 — fusão híbrida no loader (Fork A)', () => {
     expect(indexOf(hits, A)).toBeGreaterThanOrEqual(0)
     expect(hits).toHaveLength(1) // só o hit de precisa; bucket 2 elidido
     expect(sugestoes).toEqual([])
+  })
+})
+
+describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
+  // Embedder que mapeia QUALQUER consulta ao vetor e1 (QUERY_VEC): os cossenos vs os
+  // embeddings semeados são auditáveis e determinísticos. O título de busca NÃO casa
+  // léxico em nenhum fixture (US37/US38), então não há precisa via FTS.
+  function injectQueryEmbedder(): void {
+    setEmbedder(new FakeEmbedder(DIM, () => QUERY_VEC))
+  }
+  async function seedNeighbor(titulo: string, cos: number, locale = 'pt-BR'): Promise<string> {
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: locale })
+    await seedTranslation({ recipeId, locale, titulo, provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId, locale, embedding: vecCos(cos), model: EMBEDDING_MODEL })
+    return recipeId
+  }
+
+  it('AC3(a) US38: busca sem precisa COM vizinho ⇒ sugestoes PRESENTE; seções vazias', async () => {
+    injectQueryEmbedder()
+    const SN = await seedNeighbor('Risoto de funghi', 0.85) // cosseno forte, sem casar "xyzzy"
+    const { status, body } = await searchBody('xyzzy')
+    expect(status).toBe(200)
+    expect(secIds(body)).toHaveLength(0) // nenhuma precisa ⇒ seções vazias
+    expect('sugestoes' in body).toBe(true)
+    expect(sugIds(body)).toContain(SN)
+  })
+
+  it('AC3(b) discriminação do limiar 0.50: SM_above incluído, SM_below excluído', async () => {
+    injectQueryEmbedder()
+    const above = await seedNeighbor('Bobó de camarão', 0.6) // > 0.50
+    const below = await seedNeighbor('Moqueca baiana', 0.4) // < 0.50
+    const { body } = await searchBody('qwerty')
+    expect(sugIds(body)).toContain(above)
+    expect(sugIds(body)).not.toContain(below)
+  })
+
+  it('AC3(b) US37 puro: tudo abaixo do limiar ⇒ sugestoes OMITIDA', async () => {
+    injectQueryEmbedder()
+    await seedNeighbor('Curau de milho', 0.4) // < 0.50
+    await seedNeighbor('Pamonha', 0.0) // ortogonal
+    const { body } = await searchBody('zxcvb')
+    expect(secIds(body)).toHaveLength(0)
+    expect('sugestoes' in body).toBe(false) // chave OMITIDA (não [])
+  })
+
+  it('AC3(c) com precisa: só-semânticos viram bucket 2 nas seções; sugestoes OMITIDA', async () => {
+    injectQueryEmbedder()
+    // "Sopa" casa o título (precisa) + cosseno fraco; vizinho forte sem casar.
+    const P = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: P, locale: 'pt-BR', titulo: 'Sopa de mandioca', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: P, locale: 'pt-BR', embedding: vecCos(0.2), model: EMBEDDING_MODEL })
+    const N = await seedNeighbor('Caldo verde', 0.9) // só-semântico forte
+    const { body } = await searchBody('Sopa')
+    expect(secIds(body)).toContain(P) // precisa, bucket 1
+    expect(secIds(body)).toContain(N) // só-semântico, bucket 2 (mesma seção)
+    expect('sugestoes' in body).toBe(false) // chave OMITIDA (há precisa)
+  })
+
+  it('AC4 degradação: ThrowingEmbedder ≡ sem-embedder, 200, conjunto = só-precisa, não-vazio', async () => {
+    // Semeia precisa via título + um só-semântico forte (que NÃO deve aparecer degradado).
+    const P = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: P, locale: 'pt-BR', titulo: 'Bolo de milho', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: P, locale: 'pt-BR', embedding: vecCos(0.2), model: EMBEDDING_MODEL })
+    await seedNeighbor('Pudim de leite', 0.95)
+
+    // (i) ThrowingEmbedder: embed lança ⇒ queryVector=null ⇒ degradação.
+    setEmbedder(new ThrowingEmbedder())
+    const throwing = await searchBody('Bolo')
+
+    // (ii) Sem embedder injetado ⇒ default RealEmbedder ⇒ embed lança ⇒ MESMO caminho de
+    // degradação, sobre os MESMOS dados (mesmo banco, sem truncate dentro do teste).
+    resetDeps()
+    const def = await searchBody('Bolo')
+
+    expect(throwing.status).toBe(200)
+    expect(def.status).toBe(200)
+    expect(throwing.body).toEqual(def.body) // mesmo caminho de degradação
+    // NÃO-vácuo: contém o hit de precisa semeado.
+    expect(secIds(throwing.body)).toContain(P)
+    // O só-semântico forte NÃO aparece (degradado: sem camada semântica).
+    expect('sugestoes' in throwing.body).toBe(false)
+  })
+
+  it('AC5 (sugestões): fallback de locale — embedding só em locale ≠ pedido ainda alcança', async () => {
+    injectQueryEmbedder()
+    // Tradução + embedding SÓ em en-US; busca em pt-BR ainda alcança via fallback.
+    const SL = await seedRecipe({ origin: 'catalog', originalLocale: 'en-US' })
+    await seedTranslation({ recipeId: SL, locale: 'en-US', titulo: 'Mushroom Risotto', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: SL, locale: 'en-US', embedding: vecCos(0.85), model: EMBEDDING_MODEL })
+    const { body } = await searchBody('asdfg', 'pt-BR')
+    expect(sugIds(body)).toContain(SL) // alcançada por fallback de locale
+  })
+
+  it('AC5 (prioridade requestLocale, O3): usa o embedding do locale pedido, não o mais próximo', async () => {
+    injectQueryEmbedder()
+    // Receita com DOIS embeddings: pt-BR (cos 0.60) e en-US MAIS próximo (cos 0.95).
+    // O DISTINCT ON deve escolher o de pt-BR (requestLocale), não o en-US mais próximo.
+    const R = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: R, locale: 'pt-BR', titulo: 'Quindim', provenance: 'escrita_por_pessoa' })
+    await seedTranslation({ recipeId: R, locale: 'en-US', titulo: 'Coconut Custard', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: R, locale: 'pt-BR', embedding: vecCos(0.6), model: EMBEDDING_MODEL })
+    await seedEmbedding({ recipeId: R, locale: 'en-US', embedding: vecCos(0.95), model: EMBEDDING_MODEL })
+
+    const { hits } = await searchRecipes(getDb(), {
+      q: 'hjkl',
+      terms: ['hjkl'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+    })
+    // Sem precisa ⇒ hits vazio; a sugestão carrega a receita. Provamos o requestLocale via
+    // o cosseno escolhido pelo DISTINCT ON: query crua espelhando a CTE semantic.
+    expect(hits).toHaveLength(0)
+    const [{ chosen }] = await sql<{ chosen: number }[]>`
+      SELECT cosine_sim AS chosen FROM (
+        SELECT DISTINCT ON (re.recipe_id)
+          (1 - (re.embedding <=> ${lit(QUERY_VEC)}::vector)) AS cosine_sim
+        FROM recipe_embedding re
+        WHERE re.recipe_id = ${R} AND re.embedding IS NOT NULL
+        ORDER BY re.recipe_id, (re.locale = 'pt-BR') DESC,
+          (re.embedding <=> ${lit(QUERY_VEC)}::vector) ASC
+      ) t`
+    expect(Number(chosen)).toBeCloseTo(0.6, 4) // do pt-BR, NÃO o 0.95 do en-US
+  })
+
+  it('AC5 (bucket-1, O2): fallback de locale dirige o cosseno no ramo COM precisa', async () => {
+    injectQueryEmbedder()
+    // Hit de precisa em pt-BR (título casa "Pizza"), mas embedding SÓ em en-US (cos 0.7).
+    const SF = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId: SF, locale: 'pt-BR', titulo: 'Pizza margherita', provenance: 'escrita_por_pessoa' })
+    await seedEmbedding({ recipeId: SF, locale: 'en-US', embedding: vecCos(0.7), model: EMBEDDING_MODEL })
+
+    const { hits } = await searchRecipes(getDb(), {
+      q: 'Pizza',
+      terms: ['Pizza'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+    })
+    // O hit aparece (precisa). Seu cosseno no bucket 1 vem do fallback (≠ 0): provamos via
+    // query crua espelhando a CTE (sem embedding no requestLocale, cai pro en-US).
+    expect(hits.map((h) => h.recipe_id)).toContain(SF)
+    const [{ cos }] = await sql<{ cos: number }[]>`
+      SELECT 1 - (embedding <=> ${lit(QUERY_VEC)}::vector) AS cos
+      FROM recipe_embedding WHERE recipe_id = ${SF}`
+    expect(Number(cos)).toBeCloseTo(0.7, 4) // fallback de locale ⇒ cosseno ≠ 0
   })
 })

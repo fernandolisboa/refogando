@@ -78,6 +78,11 @@ export type SearchResponse = {
   catalogo: SearchResult[]
   comunidade: SearchResult[]
   consulta?: FacetasResolvidasDTO
+  /** "Talvez você queira" (#14, US38): vizinhos semânticos quando a busca por nome NÃO
+   * casa exato. ADITIVA e OPCIONAL — presente SÓ quando há expansão semântica sem precisa;
+   * a chave é OMITIDA senão (preserva o estado neutro byte-a-byte). Mesmos 4 campos de
+   * SearchResult — NUNCA score/cosseno/matchKind. */
+  sugestoes?: SearchResult[]
 }
 
 /** Campos que `resolveName` nunca lê de uma `TranslationRow` ao resolver o NOME —
@@ -149,10 +154,36 @@ export function displayedProvenance(hit: SearchHitRow): TranslationProvenance | 
  * como `undefined`) — robusto contra `toStrictEqual` e contra a comparação `toEqual` do
  * estado neutro de #6/#9 (`{catalogo:[],comunidade:[]}`).
  */
+/**
+ * Projeta UM hit para `SearchResult` (4 campos), aplicando `resolveName` (#3) e o
+ * `autoTranslationSignal`. Devolve `null` quando o hit não tem título exibível (sem
+ * tradução em `requested`/`original`) — defesa "nunca tela quebrada". Reusado pelas
+ * seções E pelas sugestões (#14) para a projeção não derivar entre os dois caminhos.
+ */
+function projectResult(hit: SearchHitRow, locale: string): SearchResult | null {
+  const translations = hitTranslations(hit, locale)
+  if (translations.length === 0) return null
+  const displayedTitle = resolveName({
+    originalLocale: hit.original_locale,
+    requestLocale: locale,
+    translations,
+  })
+  const baseProvenance = displayedProvenance(hit)
+  const autoTranslationSignal =
+    baseProvenance == null ? true : !isTranslationReliable(baseProvenance)
+  return {
+    recipeId: hit.recipe_id,
+    displayedTitle,
+    origin: hit.origin,
+    autoTranslationSignal,
+  }
+}
+
 export function buildSearchResponse(
   hits: ReadonlyArray<SearchHitRow>,
   requestLocale: string,
   consulta?: FacetasResolvidasDTO,
+  sugestoesHits?: ReadonlyArray<SearchHitRow>,
 ): SearchResponse {
   // Política "nunca tela quebrada": locale não suportado cai em DEFAULT_LOCALE.
   // Redundante quando o route já canonicaliza via `resolveLocale`, mas mantido para
@@ -162,32 +193,30 @@ export function buildSearchResponse(
   const response: SearchResponse = { catalogo: [], comunidade: [] }
 
   for (const hit of hits) {
-    const translations = hitTranslations(hit, locale)
-    // Defesa "nunca tela quebrada": hit com requested_* E original_* NULL não tem
-    // título exibível — pula em vez de empurrar um result de título em branco.
-    // Inalcançável em produção (persist.ts sempre insere a tradução do original na tx).
-    if (translations.length === 0) continue
-    const displayedTitle = resolveName({
-      originalLocale: hit.original_locale,
-      requestLocale: locale,
-      translations,
-    })
-    const baseProvenance = displayedProvenance(hit)
-    const autoTranslationSignal =
-      baseProvenance == null ? true : !isTranslationReliable(baseProvenance)
-
-    const result: SearchResult = {
-      recipeId: hit.recipe_id,
-      displayedTitle,
-      origin: hit.origin,
-      autoTranslationSignal,
-    }
+    // Defesa "nunca tela quebrada": hit sem título exibível é PULADO (não empurra um
+    // result de título em branco). Inalcançável em produção (persist.ts sempre insere a
+    // tradução do original na tx).
+    const result = projectResult(hit, locale)
+    if (result === null) continue
     response[classifySection(hit.origin)].push(result)
   }
 
   // Aditivo (#10): só adiciona a CHAVE quando a lente resolveu intenção difusa.
   if (consulta !== undefined) {
     response.consulta = consulta
+  }
+
+  // Aditivo (#14, Fork C): só adiciona a CHAVE `sugestoes` quando há vizinhos semânticos
+  // exibíveis. Quando `sugestoesHits` é undefined/vazio (caso comum: há precisa, ou
+  // degradação), a chave é OMITIDA → preserva o `toEqual` do estado neutro e o
+  // reduce-to-#6/#9/#10 byte-a-byte. Mesmos 4 campos — NUNCA cosseno/score.
+  if (sugestoesHits !== undefined && sugestoesHits.length > 0) {
+    const sugestoes: SearchResult[] = []
+    for (const hit of sugestoesHits) {
+      const result = projectResult(hit, locale)
+      if (result !== null) sugestoes.push(result)
+    }
+    if (sugestoes.length > 0) response.sugestoes = sugestoes
   }
 
   return response
