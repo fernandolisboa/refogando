@@ -2,7 +2,7 @@
  * Catálogo de chrome em pt-BR (issue #4). `Messages = typeof ptBR` ancora o shape;
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
-import type { Restricao } from '@/domain/vocabulary'
+import type { Categoria, Cozinha, Restricao } from '@/domain/vocabulary'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
@@ -39,6 +39,56 @@ export const ptBR = {
     sem_oleaginosas: 'sem oleaginosas',
     sem_frutos_do_mar: 'sem frutos do mar',
   } satisfies Record<Restricao, string>,
+  // Tela de Busca (#56): título, campo, estados (inicial/vazio), seções e selos de
+  // proveniência por item. Os rótulos de SELO ("Do catálogo"/"Da comunidade") são
+  // distintos dos de SEÇÃO ("Catálogo"/"Comunidade") de propósito — desambigua heading
+  // de etiqueta de item e lê melhor.
+  busca: {
+    titulo: 'Buscar receitas',
+    placeholder: 'Digite um prato, ingrediente ou estilo culinário',
+    buscar: 'Buscar',
+    dicaInicial: 'Comece digitando um prato, ingrediente ou estilo que você curte — ou use os filtros.',
+    semResultado: 'Nenhuma receita encontrada. Tente outro termo ou ajuste os filtros.',
+    secaoCatalogo: 'Catálogo',
+    secaoComunidade: 'Comunidade',
+    seloCatalogo: 'Do catálogo',
+    seloComunidade: 'Da comunidade',
+    traducaoAutomatica: 'tradução automática',
+    talvezQueira: 'Talvez você queira',
+    consultaLabel: 'Você está buscando:',
+    filtroCozinha: 'Cozinha',
+    filtroCategoria: 'Categoria',
+    filtroRestricao: 'Restrição',
+  },
+  // Rótulo amigável por valor do enum COZINHAS (#56). `satisfies Record<Cozinha, string>`
+  // trava drift do enum (chave faltante/extra/typo) no site de definição.
+  cozinhaLabel: {
+    italiana: 'Italiana',
+    japonesa: 'Japonesa',
+    brasileira: 'Brasileira',
+    baiana: 'Baiana',
+    mineira: 'Mineira',
+    mexicana: 'Mexicana',
+    chinesa: 'Chinesa',
+    indiana: 'Indiana',
+    tailandesa: 'Tailandesa',
+    francesa: 'Francesa',
+    arabe: 'Árabe',
+    portuguesa: 'Portuguesa',
+    mediterranea: 'Mediterrânea',
+    peruana: 'Peruana',
+  } satisfies Record<Cozinha, string>,
+  // Rótulo amigável por valor do enum CATEGORIAS (#56).
+  categoriaLabel: {
+    entrada: 'Entrada',
+    prato_principal: 'Prato principal',
+    sobremesa: 'Sobremesa',
+    bebida: 'Bebida',
+    molho: 'Molho',
+    acompanhamento: 'Acompanhamento',
+    lanche: 'Lanche',
+    cafe_da_manha: 'Café da manhã',
+  } satisfies Record<Categoria, string>,
 } as const
 
 /**
