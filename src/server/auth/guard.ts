@@ -53,8 +53,11 @@ export async function requireSession(req: Request): Promise<GuardResult> {
 export async function requireRole(req: Request, min: Role): Promise<GuardResult> {
   const r = await requireSession(req)
   if (!r.ok) return r
-  // decideRole é fail-closed: papel null/desconhecido → forbidden (E11), nunca allow.
-  if (decideRole(r.session.user.role, min) === 'forbidden') {
+  // FAIL-CLOSED (#51): só `allow` passa. `requireSession` já tratou ausência de sessão (401),
+  // então um papel `null`/desconhecido que chega aqui é um usuário AUTENTICADO com papel fora
+  // de `ROLES` → decideRole devolve `unauthenticated`/`forbidden`; QUALQUER coisa que não seja
+  // `allow` vira 403. (Barrar só em `forbidden` era fail-OPEN: `null` → `unauthenticated` passava.)
+  if (decideRole(r.session.user.role, min) !== 'allow') {
     return { ok: false, response: Response.json({ error: 'papel_insuficiente' }, { status: 403 }) }
   }
   return r

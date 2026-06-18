@@ -11,6 +11,11 @@ import { recipe, recipeTranslation } from '@/db/schema'
  * ownership. SÓ receita da COMUNIDADE (pública OU owner_id NULL) — curador NÃO toca
  * conteúdo PRIVADO de usuário (isso é #18, must-fix de escopo ADR-0011): 404 leak-safe.
  *
+ * #18 (moderação): uma Receita removida do pool pelo Curador (`moderation_removed_at`) saiu
+ * do pool SEM tocar `visibility` (AC3) — o gate de comunidade aqui exige também
+ * `moderation_removed_at IS NULL`, senão o Curador poderia des-sinalizar a tradução de uma
+ * Receita já moderada. Espelha a cláusula de moderação de `recipe-pool.ts` (404 leak-safe).
+ *
  * NÃO toca `stale` nem re-embeda (proveniência ≠ conteúdo); só bump `updatedAt`. O WHERE
  * com `provenance = 'automatica_nao_revisada'` protege contra rebaixar `escrita_por_pessoa`
  * e torna o flip idempotente (já-revisada ⇒ 0 linhas afetadas, ainda 200).
@@ -34,12 +39,18 @@ export async function POST(
   const db = getDb()
 
   // GATE de comunidade (ADR-0011): curador NÃO toca receita privada (isso é #18). 404 leak-safe.
+  // #18: nem Receita removida do pool pela moderação (saiu do pool sem tocar visibility, AC3).
   const [gate] = await db
-    .select({ ownerId: recipe.ownerId, visibility: recipe.visibility })
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+    })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
-  const isCommunity = gate.ownerId == null || gate.visibility === 'public'
+  const isCommunity =
+    (gate.ownerId == null || gate.visibility === 'public') && gate.moderationRemovedAt == null
   if (!isCommunity) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Confirma a existência da LINHA (404 leak-safe, separado do efeito idempotente).

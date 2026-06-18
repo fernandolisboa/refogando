@@ -18,6 +18,12 @@ import { resolveRecipeView } from '@/domain/recipe-read'
  * sem 22P02/500); `canonicalLocale` valida E canoniza ('EN-US'→'en-US', null⇒404); a
  * sessão ANTES de tocar o DB; o gate de acesso devolve 404 (NUNCA 401/403 por existência).
  * O `targetLocale` e o `requestLocale` da view são SEMPRE o canônico (nunca o path cru).
+ *
+ * #18 (moderação): uma Receita removida do pool pelo Curador deixa de ser conteúdo de
+ * comunidade — um não-dono não a lê NEM dispara `ensureTranslation` (que geraria/embedaria
+ * conteúdo moderado em outro locale, vazando a Receita em AMBOS os locales — viola AC4). O
+ * dono mantém acesso à própria linha privada (AC3), mas SEM gerar tradução de conteúdo
+ * moderado. Remover-do-pool NÃO toca `visibility` (ver recipe-pool.ts).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -38,18 +44,28 @@ export async function POST(
 
   const db = getDb()
 
-  // Gate de acesso (ADR-0011): catálogo (owner NULL) OU pública OU dono. Senão 404.
+  // Gate de acesso (ADR-0011 + #18): catálogo (owner NULL) OU pública OU dono — MAS uma
+  // Receita removida do pool pela moderação (#18) NÃO é comunidade para não-donos (o dono
+  // mantém acesso à própria linha privada, AC3). Senão 404 leak-safe.
   const [gate] = await db
-    .select({ ownerId: recipe.ownerId, visibility: recipe.visibility })
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+    })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
+  const removed = gate.moderationRemovedAt != null
   const canAccess =
-    gate.ownerId == null || gate.visibility === 'public' || gate.ownerId === g.session.user.id
+    (!removed && (gate.ownerId == null || gate.visibility === 'public')) ||
+    gate.ownerId === g.session.user.id
   if (!canAccess) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Gera a tradução on-demand (idempotente; degrada graciosamente se o translator falhar).
-  await ensureTranslation(db, id, locale)
+  // #18: PULA quando a Receita está removida do pool — não gerar/embedar conteúdo moderado
+  // (o dono que ainda lê recebe a view com o que já existe, sem efeito de tradução).
+  if (!removed) await ensureTranslation(db, id, locale)
 
   // Devolve a view localizada no locale CANÔNICO (mesma máquina de leitura da #3).
   const rows = await loadRecipeRows(db, id)

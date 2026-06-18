@@ -11,9 +11,11 @@ import {
   recipeEmbedding,
   recipeVote,
   recipeFavorite,
+  report,
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance } from '@/domain/recipe'
+import type { ReportStatus } from '@/domain/report'
 import { seedUser } from './users'
 
 /**
@@ -198,6 +200,51 @@ export async function seedVote(input: { userId: string; recipeId: string }): Pro
 /** Insere uma linha de favorito crua (issue #16). Mesma forma/contrato de `seedVote`. */
 export async function seedFavorite(input: { userId: string; recipeId: string }): Promise<void> {
   await getDb().insert(recipeFavorite).values({ userId: input.userId, recipeId: input.recipeId })
+}
+
+// ── Moderação reativa: Report + remoção do pool (issue #18) ─────────────────────
+
+/**
+ * Insere uma linha de Report crua (issue #18). `reporterId` DEVE ser um id REAL de
+ * Usuário (FK validada). Default status='pending' (entra na fila). Devolve o report id.
+ */
+export async function seedReport(input: {
+  recipeId: string
+  reporterId: string
+  reason?: string
+  status?: ReportStatus
+}): Promise<string> {
+  const [row] = await getDb()
+    .insert(report)
+    .values({
+      recipeId: input.recipeId,
+      reporterId: input.reporterId,
+      reason: input.reason ?? 'motivo de teste',
+      status: input.status,
+    })
+    .returning({ id: report.id })
+  return row.id
+}
+
+/**
+ * Marca a Receita como REMOVIDA do pool por moderação (issue #18), via UPDATE direto das 3
+ * colunas — testa os gates de pool isoladamente, sem passar pelos routes. Respeita o CHECK
+ * recipe_moderation_consistency_chk: seta moderation_removed_at E moderated_by juntos. NÃO
+ * toca `visibility` (remover-do-pool ≠ despublicar, AC3). `curatorId` deve ser id real.
+ */
+export async function seedRemovedFromPool(input: {
+  recipeId: string
+  curatorId: string
+  reason?: string
+}): Promise<void> {
+  await getDb()
+    .update(recipe)
+    .set({
+      moderationRemovedAt: new Date(),
+      moderationReason: input.reason ?? 'removida em teste',
+      moderatedBy: input.curatorId,
+    })
+    .where(eq(recipe.id, input.recipeId))
 }
 
 // ── Catálogo composto: Feijoada (origin catalog) ────────────────────────────────

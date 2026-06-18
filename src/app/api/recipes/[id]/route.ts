@@ -17,7 +17,12 @@ import { resolveRecipeView } from '@/domain/recipe-read'
  * são legíveis por qualquer um (sem auth — preserva os testes da #3). Receita com
  * dono + `private` (cobre toda geração da #8 e as playful) só é legível pelo próprio
  * dono; sem sessão OU dono diferente → 404 not_found (NÃO 401/403 — não vaza
- * existência). Leitura moderada por papel (Curador/Admin) é #18, FORA de escopo.
+ * existência).
+ *
+ * #18 (moderação): uma Receita removida do pool pelo Curador (moderation_removed_at) sai
+ * da leitura pública (anônimo/não-dono → 404), SEM tocar `visibility` — o Owner CONTINUA
+ * dono da linha privada (lê/gerencia a própria, sem voteCount). Remover-do-pool ≠
+ * despublicar; as duas dimensões são ortogonais (ver recipe-pool.ts).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -34,7 +39,12 @@ export async function GET(
   // Gating barato ANTES de carregar a view: lê só owner_id + visibility. Receita
   // ausente cai no mesmo not_found (malformado/ausente/sem-acesso indistinguíveis).
   const [gate] = await db
-    .select({ ownerId: recipe.ownerId, visibility: recipe.visibility })
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      // #18: removida do pool pela moderação sai da leitura pública (não-dono → 404).
+      moderationRemovedAt: recipe.moderationRemovedAt,
+    })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
@@ -43,10 +53,16 @@ export async function GET(
   // Caso contrário (com dono + private) exige ser o próprio dono; senão 404 (não vaza
   // existência — mesma forma da rota de retomada em creation-sessions/[id]).
   //
+  // #18: uma Receita removida do pool NÃO é leitura pública (isPublicRead=false) — anônimo/
+  // não-dono cai no ramo privado → 404 (não vaza). O Owner da própria removida cai no ramo
+  // privado, confirma ownership e lê a linha privada (200, SEM voteCount — fora do pool).
+  // Remover-do-pool NÃO toca `visibility` (≠ despublicar, AC3).
+  //
   // `viewerId` (#59) habilita os campos de gestão (`canManage`/`visibility`/`resultKind`)
   // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
   // parcimônia: nunca lemos a sessão no tráfego anônimo quente (a Busca linka direto pra cá).
-  const isPublicRead = gate.ownerId == null || gate.visibility === 'public'
+  const isPublicRead =
+    (gate.ownerId == null || gate.visibility === 'public') && gate.moderationRemovedAt == null
   const requestLocale = parseRequestLocale(request)
 
   let viewerId: string | undefined
