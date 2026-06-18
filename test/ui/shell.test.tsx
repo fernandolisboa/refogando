@@ -15,6 +15,20 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// O AuthSlot agora chama useSession; sem mock o hook tentaria buscar /api/auth/get-session
+// (quebraria no jsdom). Mock com o shape COMPLETO de useSession (Visitante: data=null), pra
+// as asserções de "Entrar"/"Sign in" do header seguirem válidas e o contrato tipado bater.
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => ({
+    data: null,
+    error: null,
+    isPending: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+  }),
+  signOut: vi.fn(),
+}))
+
 import { LocaleProvider } from '@/i18n/provider'
 import { SiteHeader } from '@/components/site-header'
 

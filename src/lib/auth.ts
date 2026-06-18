@@ -5,6 +5,7 @@ import { getDb } from '@/server/deps'
 import * as schema from '@/db/schema'
 import { ac, roles } from '@/lib/auth-permissions'
 import { DEFAULT_ROLE } from '@/domain/user'
+import { isGoogleConfigured } from '@/server/auth/google'
 
 /**
  * Instância Better Auth (issue #5, ADR-0010/0011). Route handlers, NÃO Server Actions
@@ -21,10 +22,6 @@ import { DEFAULT_ROLE } from '@/domain/user'
  * NODE_ENV==='test', garantindo o MESMO secret e config de adapter — getSession valida
  * cookies mintados por testUtils sem alinhar secret entre instâncias.
  */
-const googleId = process.env.GOOGLE_CLIENT_ID
-const googleSecret = process.env.GOOGLE_CLIENT_SECRET
-const hasGoogle = Boolean(googleId && googleSecret)
-
 // E4 — fail-closed: BETTER_AUTH_SECRET é OBRIGATÓRIA fora de teste. O DEFAULT_SECRET
 // do Better Auth é público e a lib só lança sozinha em production; aqui falhamos cedo
 // em qualquer ambiente não-teste (dev incluso).
@@ -34,6 +31,12 @@ if (!authSecret && process.env.NODE_ENV !== 'test') {
 }
 
 function buildAuth() {
+  // hasGoogle deriva da MESMA fonte que as pages de autenticação (isGoogleConfigured) —
+  // o botão Google na UI e o provider no servidor nunca divergem. Lido aqui dentro de
+  // buildAuth (deferido), não no module-load.
+  const googleId = process.env.GOOGLE_CLIENT_ID
+  const googleSecret = process.env.GOOGLE_CLIENT_SECRET
+  const hasGoogle = isGoogleConfigured()
   return betterAuth({
     baseURL: process.env.BETTER_AUTH_URL, // resolvido em runtime; opcional em dev
     secret: authSecret,

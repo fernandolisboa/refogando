@@ -123,6 +123,28 @@ export const ptBR = {
     tags: 'Tags',
     avisoTitulo: 'Aviso de restrição',
   },
+  // Telas de autenticação (#55): entrar / criar conta. Objeto PLANO (folhas string) —
+  // o TIPO `Messages` exige um nível de namespace. Guarda só o CONTEXTUAL das telas; o
+  // que é idêntico ao header REUSA `nav.signIn`/`nav.signOut` (não duplicar — ADR-0001).
+  // Erros traduzidos por CHAVE (mapErrorToKey casa `error.code` do Better Auth, nunca o
+  // status); NUNCA exibir a mensagem crua do servidor.
+  auth: {
+    criarConta: 'Criar conta',
+    nome: 'Nome',
+    email: 'Email',
+    senha: 'Senha',
+    senhaDica: 'Mínimo de 8 caracteres',
+    enviando: 'Enviando…',
+    continuarComGoogle: 'Continuar com o Google',
+    ou: 'ou',
+    jaTemConta: 'Já tem uma conta?',
+    semConta: 'Ainda não tem conta?',
+    erroCredencialInvalida: 'Email ou senha incorretos.',
+    erroEmailEmUso: 'Este email já está cadastrado.',
+    erroSenhaCurta: 'A senha precisa ter pelo menos 8 caracteres.',
+    erroRede: 'Não foi possível conectar. Tente de novo.',
+    erroGenerico: 'Não foi possível concluir. Tente de novo.',
+  },
 } as const
 
 /**
