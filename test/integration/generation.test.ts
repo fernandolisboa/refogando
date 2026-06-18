@@ -83,6 +83,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: o input devia ter sido rejeitado ANTES da geração')
   }
+  async *streamConversation(): AsyncIterable<string> {
+    throw new Error('seam tocado: streamConversation não devia ser chamado')
+  }
 }
 
 /** Contagens cruas das três tabelas tocáveis (porta alta, sem ORM). */
@@ -170,11 +173,13 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(gen.advisoryComment).toBe('ajustei a receita')
   })
 
-  it('PLAYFUL → 201; result_kind playful, SEMPRE privada', async () => {
+  // PLAYFUL via conversation foi MIGRADO p/ conversation-stream.test.ts (frame terminal +
+  // DB). Aqui mantemos a cobertura PLAYFUL pela rota structured.
+  it('PLAYFUL (structured) → 201; result_kind playful, SEMPRE privada', async () => {
     const { headers } = await seedSessionHeaders({ email: 'play@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedPlayful()))
 
-    const res = await post({ mode: 'conversation' }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
     const json = (await res.json()) as { outcome: string; recipeId: string }
     expect(json.outcome).toBe('playful')
@@ -269,27 +274,16 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
 
-  it('origin por mode: conversation ⇒ ai_chat; structured ⇒ ai_structured', async () => {
-    // conversation → ai_chat
-    {
-      const { headers } = await seedSessionHeaders({ email: 'conv@gen.test' })
-      setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
-      const res = await post({ mode: 'conversation' }, headers)
-      expect(res.status).toBe(201)
-      const { recipeId } = (await res.json()) as { recipeId: string }
-      const [rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
-      expect(rec.origin).toBe('ai_chat')
-    }
-    // structured → ai_structured
-    {
-      const { headers } = await seedSessionHeaders({ email: 'struct@gen.test' })
-      setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
-      const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
-      expect(res.status).toBe(201)
-      const { recipeId } = (await res.json()) as { recipeId: string }
-      const [rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
-      expect(rec.origin).toBe('ai_structured')
-    }
+  // origin conversation ⇒ ai_chat foi MIGRADO p/ conversation-stream.test.ts. Aqui só a
+  // metade structured ⇒ ai_structured (free_text ⇒ ai_free_text vive em generation-postgen).
+  it('origin por mode: structured ⇒ ai_structured', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'struct@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+    const [rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
+    expect(rec.origin).toBe('ai_structured')
   })
 
   it('uma linha de generation por tentativa: SUCCESS depois IMPOSSIBLE ⇒ 2 linhas', async () => {
@@ -327,23 +321,16 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
 
-  it('input do usuário fora de faixa (porcoes) → 400 ANTES do seam (fake estoura se tocado)', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'badporcoes@gen.test' })
+  // As validações de faixa do TOPO do body (porcoes/dificuldade) eram do antigo caminho
+  // conversation — que MIGROU para POST /api/conversations/stream (#12). Aqui esta rota
+  // agora REJEITA conversation com 400 modo_invalido determinístico, ANTES do seam.
+  it('mode conversation → 400 modo_invalido (migrou para a rota de stream; seam intocado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-rejected@gen.test' })
     setClaudeClient(new ExplodingClaudeClient())
 
-    const res = await post({ mode: 'conversation', porcoes: 999 }, headers)
+    const res = await post({ mode: 'conversation' }, headers)
     expect(res.status).toBe(400)
-    await expect(res.json()).resolves.toMatchObject({ error: 'porcoes_fora_de_faixa' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
-  })
-
-  it('input do usuário fora de faixa (dificuldade) → 400 ANTES do seam', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'baddif@gen.test' })
-    setClaudeClient(new ExplodingClaudeClient())
-
-    const res = await post({ mode: 'conversation', dificuldade: 99 }, headers)
-    expect(res.status).toBe(400)
-    await expect(res.json()).resolves.toMatchObject({ error: 'dificuldade_fora_de_faixa' })
+    await expect(res.json()).resolves.toMatchObject({ error: 'modo_invalido' })
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
   })
 

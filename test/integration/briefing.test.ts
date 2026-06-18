@@ -53,6 +53,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: o briefing devia ter sido rejeitado ANTES da geração')
   }
+  async *streamConversation(): AsyncIterable<string> {
+    throw new Error('seam tocado: streamConversation não devia ser chamado')
+  }
 }
 
 /** Shape parcial da resposta 201 do modo estruturado (avisos AUSENTE quando sem contradição). */

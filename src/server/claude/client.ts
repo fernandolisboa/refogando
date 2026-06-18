@@ -19,6 +19,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import type { GenerationOutput } from '@/domain/generation'
+import type { TranscriptMessage } from '@/domain/transcript'
 import { RecipeGenSchema } from '@/domain/recipe-gen-schema'
 
 /**
@@ -30,16 +31,43 @@ export type GenerationInput = {
   systemPrompt: string
   userPrompt: string
   model: string
+  // OPCIONAL (back-compat: todos os call sites de #8/#11/#88 seguem compilando). #12 passa
+  // o `req.signal`: se o cliente HTTP desconecta antes da destilação, o abort propaga ao SDK
+  // e a chamada (parse) é cancelada — não se queima quota gerando p/ um cliente que sumiu.
+  signal?: AbortSignal
+}
+
+/**
+ * Entrada do streaming da conversa (#12, ADR-0009 — DUAS chamadas distintas ao Claude). A
+ * 1ª (esta) STREAMA texto token-a-token; a 2ª (DESTILAÇÃO) reusa `generateRecipe` VERBATIM
+ * (single-shot, structured output). `transcript` é a Transcrição validada; `systemPrompt` é
+ * o de conversa (NÃO o de destilação — esse vive na chamada `generateRecipe`).
+ */
+export type ConversationStreamInput = {
+  systemPrompt: string
+  transcript: ReadonlyArray<TranscriptMessage>
+  model: string
+  // OPCIONAL: o `req.signal` da rota. Em disconnect, o abort propaga ao SDK e o stream é
+  // cancelado — o servidor para de consumir o stream do LLM (e a destilação é pulada).
+  signal?: AbortSignal
 }
 
 export interface ClaudeClient {
   echo(text: string): Promise<string>
   generateRecipe(input: GenerationInput): Promise<GenerationOutput>
+  // Streaming conversacional: rende deltas de texto. A conclusão do iterável é o sinal
+  // terminal (SEM sentinela). #12 só consome o texto; thinking NÃO é rendido.
+  streamConversation(input: ConversationStreamInput): AsyncIterable<string>
 }
 
 // Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
 // bastante para uma Receita completa; estourar → stop_reason 'max_tokens'.
 const MAX_TOKENS = 4096
+
+// Modelo default em código quando `app_config.default_model` (linha singleton) está
+// ausente. FONTE ÚNICA: ambas as rotas de geração (/api/generations e
+// /api/conversations/stream) resolvem o modelo de app_config e caem AQUI no default.
+export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8'
 
 /**
  * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
@@ -66,7 +94,9 @@ export class RealClaudeClient implements ClaudeClient {
         // prefill/temperature com structured outputs (landmine §11).
       }
 
-      let message = await client.messages.parse(params)
+      // O `signal` (opcional) propaga o abort do cliente HTTP ao SDK: se a requisição
+      // já foi abortada, a chamada estoura e cai no catch (parse_failed) sem queimar quota.
+      let message = await client.messages.parse(params, { signal: input.signal })
 
       // Branch por stop_reason (NÃO stop_details — esse é só metadado de categoria).
       if (message.stop_reason === 'refusal') return { kind: 'refusal' }
@@ -78,7 +108,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Repair mínimo: se o parser não produziu saída, re-chama UMA vez com a mesma
       // entrada. Ainda null → parse_failed.
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params)
+        message = await client.messages.parse(params, { signal: input.signal })
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
         if (message.parsed_output === null) return { kind: 'parse_failed' }
@@ -98,6 +128,32 @@ export class RealClaudeClient implements ClaudeClient {
       return { kind: 'parse_failed' }
     }
   }
+
+  async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
+    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste.
+    const client = new Anthropic()
+
+    const stream = client.messages.stream(
+      {
+        model: input.model,
+        max_tokens: MAX_TOKENS,
+        system: input.systemPrompt,
+        messages: input.transcript.map((m) => ({ role: m.role, content: m.content })),
+        // Adaptive thinking; só rendemos TEXTO (thinking_delta é ignorado abaixo).
+        thinking: { type: 'adaptive' },
+      },
+      // `signal` (opcional): em disconnect do cliente HTTP, o abort cancela o stream do SDK.
+      { signal: input.signal },
+    )
+
+    // Rende SÓ os deltas de TEXTO (content_block_delta / text_delta). A conclusão do
+    // iterável é o sinal terminal — sem sentinela.
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield event.delta.text
+      }
+    }
+  }
 }
 
 /**
@@ -105,9 +161,14 @@ export class RealClaudeClient implements ClaudeClient {
  * devolve o `GenerationOutput` enlatado no construtor — cada teste injeta UMA classe.
  */
 export class FakeClaudeClient implements ClaudeClient {
+  // `cannedTokens` é o TERCEIRO arg OPCIONAL (após reply, canned) — NUNCA reordenar: o 3º
+  // arg é OPCIONAL e vem DEPOIS de (reply, canned) para que os call sites de 2 args
+  // existentes continuem compilando. Os tokens são rendidos por `streamConversation`; a
+  // destilação que segue usa `canned` via `generateRecipe`.
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
+    private readonly cannedTokens?: string[],
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -119,5 +180,15 @@ export class FakeClaudeClient implements ClaudeClient {
       throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
     }
     return this.canned
+  }
+
+  async *streamConversation(input?: ConversationStreamInput): AsyncIterable<string> {
+    // Rende cada token enlatado e RETORNA (conclusão = terminal, sem sentinela). Entre
+    // os yields, checa o `signal?.aborted` para ser abortável (o teste de disconnect aborta
+    // após o 1º token e espera que o loop pare aqui, pulando a destilação).
+    for (const token of this.cannedTokens ?? []) {
+      if (input?.signal?.aborted) return
+      yield token
+    }
   }
 }
