@@ -108,6 +108,19 @@ export type ResolveInput = {
    * `recipe.ownerId`. NUNCA altera nome/corpo/facetas/avisos — leitura é idêntica p/ todos.
    */
   viewerId?: string
+  /**
+   * Estado social (#16) — campos ADITIVOS opcionais que o SERVER (que conhece sessão+pool)
+   * calcula e passa. `resolveRecipeView` apenas PROJETA (não decide gate/pool):
+   *  - `voteCount`: agregado PÚBLICO. O server só o passa quando a Receita está no POOL
+   *    (isPublicRead) — omitido em owned-private (necessariamente 0, irrelevante, e não é
+   *    conteúdo de pool). Quando `undefined`, a vista OMITE `voteCount`.
+   *  - `viewerVoted`/`viewerFavorited`: estado do PRÓPRIO viewer. O server só os carrega
+   *    quando há `viewerId`. A projeção é gateada por `viewerId != null` (viewer-self,
+   *    distinto de canManage que é owner-only): anônimo ⇒ ausentes.
+   */
+  voteCount?: number
+  viewerVoted?: boolean
+  viewerFavorited?: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -187,6 +200,21 @@ export type RecipeView = {
   visibility?: Visibility
   /** Desfecho da geração — presente SÓ quando `canManage` (gateia o caso playful no toggle). */
   resultKind?: ResultKind
+  /**
+   * Contagem de votos (#16, ADR-0003) — agregado PÚBLICO (Popularidade). Presente SÓ
+   * quando a Receita está no POOL (o server só passa `voteCount` para receitas legíveis
+   * publicamente); AUSENTE em owned-private (mesma regra "ausente ≠ vazio" — omitido, não
+   * 0). NÃO é gateado por ownership: anônimo no pool VÊ a contagem.
+   */
+  voteCount?: number
+  /**
+   * Estado do PRÓPRIO viewer (#16) — `viewerVoted`/`viewerFavorited`. Presentes SÓ quando
+   * há `viewerId` (ator autenticado vê SÓ o próprio estado); AUSENTES para anônimo. Saem
+   * JUNTOS. NÃO gateados por ownership (viewer-self, distinto de canManage owner-only): um
+   * usuário logado vê seu próprio voto/favorito mesmo na Receita de outro / no Catálogo.
+   */
+  viewerVoted?: boolean
+  viewerFavorited?: boolean
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
@@ -424,6 +452,19 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           canManage: true,
           visibility: input.recipe.visibility,
           resultKind: input.recipe.resultKind,
+        }
+      : {}),
+    // Social (#16): `voteCount` agregado PÚBLICO, presente só quando o server o passou
+    // (i.e. a Receita está no pool) — espelha a regra "ausente ≠ vazio". Independente de
+    // viewerId/ownership.
+    ...(input.voteCount != null ? { voteCount: input.voteCount } : {}),
+    // Estado do PRÓPRIO viewer (#16): presente SÓ com viewerId (viewer-self, NÃO
+    // owner-only). Os DOIS saem juntos; default false (server passa só quando logado).
+    // ADITIVO e estruturalmente incapaz de tocar `avisos` (AC4/ADR-0004).
+    ...(input.viewerId != null
+      ? {
+          viewerVoted: input.viewerVoted ?? false,
+          viewerFavorited: input.viewerFavorited ?? false,
         }
       : {}),
   }

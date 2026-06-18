@@ -50,6 +50,13 @@
       "when": 1781571000000,
       "tag": "0006_hnsw_recipe_embedding",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781784540054,
+      "tag": "0007_flawless_spitfire",
+      "breakpoints": true
     }
   ]
 }

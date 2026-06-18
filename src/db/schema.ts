@@ -461,3 +461,54 @@ export const generation = pgTable(
       .where(sql`${t.recipeId} IS NOT NULL`),
   ],
 )
+
+// ── Social: Voto + Favorito (issue #16, ADR-0003) ──────────────────────────────
+//
+// Relações PURAS (sem payload): cada linha é "este Usuário votou/favoritou esta
+// Receita". Estrutura IDÊNTICA entre as duas, espelhando recipeTag/recipeEmbedding:
+//  - PK composta (user_id, recipe_id): satisfaz AC1 (votar 2× = UM voto — a re-inserção
+//    colide na PK) E cobre o lookup leak-safe "este viewer votou?" (EXISTS por PK).
+//    Desfazer = DELETE da linha (sem updatedAt/deletedAt — voto/favorito são descartáveis).
+//  - FK ON DELETE cascade em AMBAS (sem órfãos): apagar Usuário ou Receita limpa os votos.
+//    Despublicar é UPDATE de visibility, NUNCA DELETE ⇒ os votos PERSISTEM (AC5).
+//  - índice btree em recipe_id: cobre COUNT(*) WHERE recipe_id=? (a Popularidade) e o
+//    LEFT JOIN agregado na Busca da Comunidade.
+//
+// NÃO há CHECK de não-autovoto (owner_id mora em `recipe`, não aqui; um CHECK cross-table
+// exigiria trigger). O não-autovoto é imposto no SERVIDOR (src/server/recipe/social.ts via
+// src/domain/vote.ts) — `applyVote` é o ÚNICO escritor de recipe_vote e o único a chamar
+// `decideVote`. Qualquer FUTURO escritor de voto DEVE chamar `decideVote` (risco residual
+// documentado, sem rede de banco).
+export const recipeVote = pgTable(
+  'recipe_vote',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.recipeId] }),
+    index('recipe_vote_recipe_id_idx').on(t.recipeId),
+  ],
+)
+
+export const recipeFavorite = pgTable(
+  'recipe_favorite',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.recipeId] }),
+    index('recipe_favorite_recipe_id_idx').on(t.recipeId),
+  ],
+)

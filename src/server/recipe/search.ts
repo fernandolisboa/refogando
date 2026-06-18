@@ -2,6 +2,7 @@ import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import type { SearchHitRow } from '@/domain/recipe-search-read'
 import { type EffectiveFacets, isFacetsEmpty } from '@/domain/facet-params'
+import type { SortMode } from '@/domain/sort-params'
 
 /**
  * Loader FTS multi-row da Busca (issue #6, §3.4; estendido pela #9, §3.1). Diverge de
@@ -176,6 +177,13 @@ export async function searchRecipes(
     requestLocale: string
     facets: EffectiveFacets
     queryVector: number[] | null
+    /**
+     * Ordenação da Busca da COMUNIDADE (#16, ADR-0003). 'popularidade' re-ranqueia a
+     * Comunidade por vote_count DENTRO do tier de exatidão (NUNCA acima — ADR-0008);
+     * 'relevancia' (default) é o ranking híbrido de hoje, byte-a-byte. O Catálogo é
+     * editorial e IGNORA sort (a chave de popularidade é gateada por section='comunidade').
+     */
+    sort?: SortMode
   },
 ): Promise<SearchLoaderResult> {
   // Cap de entrada: truncar (nao rejeitar). O curto-circuito de estado neutro
@@ -192,6 +200,12 @@ export async function searchRecipes(
   const mode = terms.length === 0 ? 'any' : args.mode
   // N e conhecido em JS; inlinado (bindado) onde o gate 'all' precisa dele.
   const n = terms.length
+
+  // #16: alterna a CHAVE de Popularidade no ORDER BY do `numbered`. Fragmento booleano SQL
+  // (true/false) — NÃO um param de runtime que vaze: sob 'relevancia' o CASE colapsa a
+  // constante 0 e o ORDER BY cai BYTE-A-BYTE no de hoje (#14). A chave entra DEPOIS do
+  // bucket de exatidao e SO para section='comunidade' (Catalogo intocado — ADR-0003).
+  const isPopularidade = args.sort === 'popularidade' ? sql`true` : sql`false`
 
   // #10 faceta-only: ha facetas E o q efetivo NAO tem letra/digito (nem titulo nem
   // ingrediente podem casar => `combined` esta garantidamente vazio). Cobre q=''
@@ -255,6 +269,18 @@ export async function searchRecipes(
   // captura). ATENCAO: em Postgres `NaN = NaN` e TRUE (float8) -- entao `x = x` NAO filtra
   // NaN. O teste correto e `cosine_sim <> 'NaN'::float8` (FALSE p/ NaN => excluido; TRUE p/
   // finito => mantido).
+  // #16 (bucket 2): mesma gate por sort que `visible`. O alias de join e `s` (semantic), nao
+  // `r`, entao a copia inline do JOIN agregado e da coluna nao reusa voteCountJoinSql/
+  // voteCountColSql (que falam de `r`/`vc`). Sob relevancia a coluna e a constante 0 e o JOIN
+  // some — aridade do UNION ALL mantida (a coluna vote_count na MESMA posicao em todo ramo).
+  const bucket2VoteCountColSql =
+    args.sort === 'popularidade' ? sql`COALESCE(vc.vote_count, 0)` : sql`0`
+  const bucket2VoteCountJoinSql =
+    args.sort === 'popularidade'
+      ? sql`LEFT JOIN (
+        SELECT recipe_id, COUNT(*) AS vote_count FROM recipe_vote GROUP BY recipe_id
+      ) vc ON vc.recipe_id = s.recipe_id`
+      : sql``
   const bucket2Sql = hasVector
     ? sql`
       UNION ALL
@@ -266,8 +292,10 @@ export async function searchRecipes(
         false AS title_match,
         0::double precision AS title_rank,
         s.cosine_sim AS cosine_sim,
-        s.section AS section
+        s.section AS section,
+        ${bucket2VoteCountColSql} AS vote_count
       FROM semantic s
+      ${bucket2VoteCountJoinSql}
       WHERE s.cosine_sim >= ${SEMANTIC_MIN_SIM}
         AND s.cosine_sim <> 'NaN'::float8
         AND EXISTS (
@@ -284,6 +312,30 @@ export async function searchRecipes(
   // 0); o caminho #6/#9 le de `combined c JOIN recipe r` + cosine via LEFT JOIN semantic
   // (NULL-safe) e (quando hasVector) o bucket 2 de so-semanticos. O gate canonico e as
   // facetas re-incluidos em AMBOS os ramos (faceta nunca afrouxa o gate).
+  // #16: agregado de votos por Receita, juntado por LEFT JOIN em CADA ramo de `visible`
+  // (mesma posicao de coluna em TODOS os SELECTs do UNION ALL — senao a aridade quebra).
+  // Subquery agregada (nao correlacionada) reusada nos tres ramos via o mesmo fragmento.
+  //
+  // PERF (#16, gate por sort): a coluna vote_count SO e consumida na chave de Popularidade
+  // do ORDER BY, gateada por `${isPopularidade}`. Sob sort=relevancia (default, e TODO o
+  // Catalogo — que nunca usa Popularidade) a chave colapsa a constante 0 e vote_count NAO e
+  // projetado (displayTailSql so projeta recipe_id/origin/original_locale/section). O ORDER
+  // BY colapsa, mas o JOIN agregado NAO — ele executaria de qualquer jeito, varrendo a
+  // recipe_vote INTEIRA (sem WHERE) a cada Busca pra produzir um valor descartado. Entao so
+  // emitimos o LEFT JOIN agregado + a coluna real quando sort=popularidade; senao a coluna e
+  // a constante `0 AS vote_count` e o JOIN some. A aridade do UNION ALL fica intacta (todos
+  // os ramos emitem a coluna vote_count, so que constante 0 quando inerte).
+  const voteCountJoinSql =
+    args.sort === 'popularidade'
+      ? sql`LEFT JOIN (
+        SELECT recipe_id, COUNT(*) AS vote_count FROM recipe_vote GROUP BY recipe_id
+      ) vc ON vc.recipe_id = r.id`
+      : sql``
+  // Expressao da coluna vote_count nos ramos do `visible` (facetOnly + combined): COUNT
+  // coalescido quando ha o JOIN (popularidade); constante 0 quando o JOIN some (relevancia).
+  const voteCountColSql =
+    args.sort === 'popularidade' ? sql`COALESCE(vc.vote_count, 0)` : sql`0`
+
   const visibleSource = facetOnly
     ? sql`
       SELECT
@@ -294,8 +346,10 @@ export async function searchRecipes(
         false AS title_match,
         0::double precision AS title_rank,
         0::double precision AS cosine_sim,
-        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
+        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
+        ${voteCountColSql} AS vote_count
       FROM recipe r
+      ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
         ${facetSql}
@@ -309,10 +363,12 @@ export async function searchRecipes(
         c.title_match AS title_match,
         c.title_rank AS title_rank,
         ${cosineSelectSql} AS cosine_sim,
-        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
+        CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
+        ${voteCountColSql} AS vote_count
       FROM combined c
       JOIN recipe r ON r.id = c.recipe_id
       ${semanticJoinSql}
+      ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
         ${facetSql}
@@ -474,6 +530,16 @@ export async function searchRecipes(
           PARTITION BY visible.section
           ORDER BY
             (visible.overlap + CASE WHEN visible.title_match THEN 1 ELSE 0 END > 0) DESC,
+            -- #16: Popularidade entra DEPOIS do bucket de exatidao e SO na Comunidade
+            -- (Catalogo intocado, ADR-0003). Sob sort=relevancia (isPopularidade=false) o
+            -- CASE rende a constante 0 (chave inerte) e o ORDER BY colapsa byte-a-byte no de
+            -- hoje. COALESCE(vote_count,0) ja vem do visible (coluna coalescida); o ELSE 0
+            -- mantem o tipo int em ambos os ramos (evita NULLS-FIRST do DESC).
+            CASE
+              WHEN visible.section = 'comunidade' AND ${isPopularidade}
+              THEN COALESCE(visible.vote_count, 0)
+              ELSE 0
+            END DESC,
             (visible.overlap + CASE WHEN visible.title_match THEN 1 ELSE 0 END) DESC,
             visible.cosine_sim DESC,
             visible.title_rank DESC,

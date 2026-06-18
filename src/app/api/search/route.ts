@@ -7,6 +7,7 @@ import {
   type FacetasResolvidasDTO,
 } from '@/domain/recipe-search-read'
 import { parseSearchTerms, parseMatchMode, stripControlChars } from '@/domain/search-terms'
+import { parseSort } from '@/domain/sort-params'
 import {
   parseFacetParams,
   isFacetsEmpty,
@@ -163,6 +164,10 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
 
+  // #16: ordenacao da Comunidade. Borda PERMISSIVA (degrada p/ 'relevancia', nunca 400).
+  // So afeta a chave condicional do ORDER BY na Comunidade; o Catalogo ignora (ADR-0003).
+  const sort = parseSort(url.searchParams.get('sort'))
+
   const db = getDb()
   const { hits, sugestoes } = await searchRecipes(db, {
     q,
@@ -171,6 +176,7 @@ export async function GET(request: Request): Promise<Response> {
     requestLocale,
     facets,
     queryVector,
+    sort,
   })
   const body = buildSearchResponse(hits, requestLocale, consulta, sugestoes)
   return Response.json(body)

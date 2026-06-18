@@ -3,7 +3,7 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
-import { loadRecipeRows } from '@/server/recipe/load'
+import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
 
 /**
@@ -60,23 +60,36 @@ export async function GET(
     }
     viewerId = g.session.user.id
     rows = await loadRecipeRows(db, id)
-  } else if (gate.ownerId != null && request.headers.get('cookie') != null) {
-    // Ramo público COM dono: só vale descobrir o requester quando há cookie (pula anônimo
-    // puro — perf). Catálogo (ownerId null) nunca tem dono ⇒ nunca canManage. Lê só
-    // `g.ok`/`g.session`; JAMAIS `g.response` (leitura pública permanece anônima-friendly,
-    // nunca vira 401/404 aqui). A sessão NÃO gateia a carga (a leitura é sempre permitida),
-    // então sobrepomos `requireSession` e `loadRecipeRows` — colapsa o round-trip serial no
-    // caminho QUENTE do logado vindo da Busca (sem custo extra de latência).
+  } else if (request.headers.get('cookie') != null) {
+    // Ramo público COM cookie (com OU sem dono — #16): só vale descobrir o requester quando
+    // há cookie (pula o anônimo puro — perf). Antes (#59) este ramo exigia `ownerId != null`,
+    // o que NUNCA resolvia o viewerId no Catálogo (ownerId NULL); mas Catálogo É
+    // votável/favoritável (#16), então um logado que favoritou no Catálogo precisa ver
+    // `viewerFavorited` no detalhe. Resolver a sessão sempre que houver cookie corrige isso.
+    // Lê só `g.ok`/`g.session`; JAMAIS `g.response` (leitura pública permanece
+    // anônima-friendly, nunca vira 401/404 aqui). A sessão NÃO gateia a carga ⇒ sobrepomos
+    // `requireSession` e `loadRecipeRows` (colapsa o round-trip serial do logado quente).
     const [g, loaded] = await Promise.all([requireSession(request), loadRecipeRows(db, id)])
     if (g.ok) viewerId = g.session.user.id
     rows = loaded
   } else {
-    // Ramo público anônimo (sem cookie) ou catálogo: nenhuma sessão a resolver.
+    // Ramo público anônimo (sem cookie) ou catálogo anônimo: nenhuma sessão a resolver.
     rows = await loadRecipeRows(db, id)
   }
   if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
 
-  const view = resolveRecipeView({ ...rows, requestLocale, viewerId })
+  // Estado social (#16): `voteCount` SÓ no pool (isPublicRead) — omitido em owned-private;
+  // `viewerVoted`/`viewerFavorited` SÓ quando há viewerId. Junto ao caminho já paralelo.
+  const social = await loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead })
+
+  const view = resolveRecipeView({
+    ...rows,
+    requestLocale,
+    viewerId,
+    voteCount: social.voteCount,
+    viewerVoted: social.viewerVoted,
+    viewerFavorited: social.viewerFavorited,
+  })
 
   return Response.json(view)
 }
