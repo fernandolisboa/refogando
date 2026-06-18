@@ -31,18 +31,20 @@ vi.mock('@/lib/auth-client', () => ({
 
 import { LocaleProvider } from '@/i18n/provider'
 import { SiteHeader } from '@/components/site-header'
+import { SiteFooter } from '@/components/site-footer'
 
 /**
  * Seam de teste de FRONTEND (issue #54) — prova, acima da seam de servidor e sem
  * browser/Postgres, que: (1) a chrome renderiza no locale inicial; (2) trocar o seletor
- * de idioma faz TODA a chrome acompanhar (#4.AC1), agora dentro do shell de design.
+ * de idioma (agora no footer) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
  */
-describe('SiteHeader — troca de locale cascateia na chrome', () => {
+describe('Shell — troca de locale (seletor no footer) cascateia na chrome', () => {
   it('renderiza pt-BR e segue pro en-US ao trocar o seletor', async () => {
     const user = userEvent.setup()
     render(
       <LocaleProvider initialLocale="pt-BR">
         <SiteHeader />
+        <SiteFooter />
       </LocaleProvider>,
     )
 
@@ -51,13 +53,14 @@ describe('SiteHeader — troca de locale cascateia na chrome', () => {
     expect(within(nav).getByText('Início')).toBeInTheDocument()
     expect(within(nav).getByText('Receitas')).toBeInTheDocument()
     expect(screen.getByText('Entrar')).toBeInTheDocument()
+    // O seletor de idioma agora vive no footer (único combobox da chrome).
     const select = screen.getByRole('combobox') as HTMLSelectElement
     expect(select.value).toBe('pt-BR')
 
     // Troca o idioma no seletor.
     await user.selectOptions(select, 'en-US')
 
-    // A chrome inteira acompanha — nav, slot de auth e o valor do seletor.
+    // A chrome inteira (header + footer) acompanha — nav, slot de auth e o valor do seletor.
     expect(select.value).toBe('en-US')
     expect(within(nav).getByText('Home')).toBeInTheDocument()
     expect(within(nav).getByText('Recipes')).toBeInTheDocument()
