@@ -1,6 +1,15 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeTranslation, recipeIngredient, recipeTag, tag, ingredient } from '@/db/schema'
+import {
+  recipe,
+  recipeTranslation,
+  recipeIngredient,
+  recipeTag,
+  tag,
+  ingredient,
+  recipeVote,
+  recipeFavorite,
+} from '@/db/schema'
 import type { RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
 
 /**
@@ -87,4 +96,68 @@ export async function loadRecipeTranslationContext(
     .where(eq(recipeTranslation.recipeId, id))
 
   return { originalLocale: row.originalLocale, translations }
+}
+
+/**
+ * Estado SOCIAL leak-safe da Receita (#16): o agregado público `voteCount` e o estado do
+ * PRÓPRIO viewer (`viewerVoted`/`viewerFavorited`). O chamador (GET route) decide O QUE
+ * pedir conforme o gate de leitura:
+ *  - `includeVoteCount`: só quando a Receita está no POOL (isPublicRead). Em owned-private
+ *    NÃO pedir (o agregado não é conteúdo de pool) ⇒ `voteCount: undefined`.
+ *  - `viewerId`: quando presente, carrega `viewerVoted`/`viewerFavorited` (EXISTS por
+ *    (userId, id) nas duas tabelas). Ausente ⇒ ambos `undefined` (anônimo).
+ *
+ * As leituras pedidas são independentes ⇒ disparadas em paralelo. Retorna só o que foi
+ * pedido (campos não pedidos ficam `undefined`).
+ */
+export type SocialState = {
+  voteCount?: number
+  viewerVoted?: boolean
+  viewerFavorited?: boolean
+}
+
+export async function loadSocialState(
+  db: Database,
+  input: { id: string; viewerId?: string; includeVoteCount: boolean },
+): Promise<SocialState> {
+  const { id, viewerId, includeVoteCount } = input
+
+  const tasks: Array<Promise<void>> = []
+  const out: SocialState = {}
+
+  if (includeVoteCount) {
+    tasks.push(
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(recipeVote)
+        .where(eq(recipeVote.recipeId, id))
+        .then(([r]) => {
+          out.voteCount = r?.count ?? 0
+        }),
+    )
+  }
+
+  if (viewerId != null) {
+    tasks.push(
+      db
+        .select({ one: sql<number>`1` })
+        .from(recipeVote)
+        .where(and(eq(recipeVote.userId, viewerId), eq(recipeVote.recipeId, id)))
+        .limit(1)
+        .then((rows) => {
+          out.viewerVoted = rows.length > 0
+        }),
+      db
+        .select({ one: sql<number>`1` })
+        .from(recipeFavorite)
+        .where(and(eq(recipeFavorite.userId, viewerId), eq(recipeFavorite.recipeId, id)))
+        .limit(1)
+        .then((rows) => {
+          out.viewerFavorited = rows.length > 0
+        }),
+    )
+  }
+
+  await Promise.all(tasks)
+  return out
 }

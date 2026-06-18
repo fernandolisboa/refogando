@@ -9,6 +9,8 @@ import {
   tag,
   recipeTag,
   recipeEmbedding,
+  recipeVote,
+  recipeFavorite,
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance } from '@/domain/recipe'
@@ -180,6 +182,22 @@ export async function seedEmbedding(input: {
       model: input.model ?? null,
       stale: input.stale,
     })
+}
+
+// ── Social: Voto + Favorito (issue #16) ─────────────────────────────────────────
+
+/**
+ * Insere uma linha de voto crua (issue #16). O `userId` DEVE ser um id REAL de Usuário
+ * (ex. o devolvido por `seedSessionHeaders`/`seedUser`) — a FK p/ users.id é validada.
+ * Idempotente por PK composta; não usa ON CONFLICT (o seed assume linha nova).
+ */
+export async function seedVote(input: { userId: string; recipeId: string }): Promise<void> {
+  await getDb().insert(recipeVote).values({ userId: input.userId, recipeId: input.recipeId })
+}
+
+/** Insere uma linha de favorito crua (issue #16). Mesma forma/contrato de `seedVote`. */
+export async function seedFavorite(input: { userId: string; recipeId: string }): Promise<void> {
+  await getDb().insert(recipeFavorite).values({ userId: input.userId, recipeId: input.recipeId })
 }
 
 // ── Catálogo composto: Feijoada (origin catalog) ────────────────────────────────
