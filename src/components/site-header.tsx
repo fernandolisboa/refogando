@@ -35,6 +35,9 @@ export function SiteHeader() {
           <Link href="/create" className="transition-colors hover:text-fg">
             {messages.nav.create}
           </Link>
+          <Link href="/conversation" className="transition-colors hover:text-fg">
+            {messages.nav.conversar}
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <AuthSlot />
