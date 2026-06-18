@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -400,5 +400,239 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(screen.getByRole('button', { name: M.tentarCarregarNovamente })).toBeInTheDocument()
     // CRÍTICO: NÃO exibe a mensagem de "impossível" (que induziria reenvio → geração duplicada).
     expect(screen.queryByText(M.resultadoImpossivel)).toBeNull()
+  })
+})
+
+/**
+ * Modo prompt aberto (#88) — texto livre → Receita. O mesmo componente, com uma alternância
+ * de modo (`SortToggle` reusado) e um ramo de entrada por `textarea`. O backend aceita
+ * `mode:'free_text'` em `POST /api/generations` e devolve o MESMO shape do estruturado, então
+ * o pipeline de resultado/erro/avisos é o COMPARTILHADO (reusa `baseView`/`mockFetch`).
+ */
+describe('CreateStructuredExperience — prompt aberto (#88)', () => {
+  /** Clica no botão "Prompt aberto" do grupo de alternância de modo. */
+  async function irParaPromptAberto(user: ReturnType<typeof userEvent.setup>) {
+    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    await user.click(within(grupo).getByRole('button', { name: M.modoPromptAberto }))
+  }
+
+  it('F1 — alternância preserva o ramo oposto + a11y (aria-pressed, heading única)', async () => {
+    const user = userEvent.setup()
+    renderCreate()
+
+    // Modo estruturado (default): textarea de texto livre AUSENTE, campos presentes.
+    expect(screen.queryByLabelText(M.textareaLabel)).toBeNull()
+    const inputs = screen.getAllByRole('textbox')
+    await user.type(inputs[0], 'feijão')
+
+    // Troca para prompt aberto via o grupo de alternância.
+    await irParaPromptAberto(user)
+
+    // Textarea + placeholder presentes; campos estruturados sumiram.
+    const textarea = screen.getByLabelText(M.textareaLabel)
+    expect(textarea).toBeInTheDocument()
+    expect(textarea).toHaveAttribute('placeholder', M.textareaPlaceholder)
+    expect(screen.queryByText(M.legendaIngredientes)).toBeNull()
+
+    // aria-pressed: 'Prompt aberto' ativo, 'Estruturado' inativo.
+    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    expect(within(grupo).getByRole('button', { name: M.modoPromptAberto })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(grupo).getByRole('button', { name: M.modoEstruturado })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+
+    // Volta para estruturado: o trabalho 'feijão' está preservado (sem perda) e o aria-pressed inverte.
+    await user.click(within(grupo).getByRole('button', { name: M.modoEstruturado }))
+    expect(screen.getByDisplayValue('feijão')).toBeInTheDocument()
+    expect(within(grupo).getByRole('button', { name: M.modoEstruturado })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(grupo).getByRole('button', { name: M.modoPromptAberto })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+
+    // Invariante: exatamente UM heading nível 1 em todo o fluxo.
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+
+  it('F2 — POST body { mode:free_text, freeText } (SEM locale) + sucesso', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-7', advisory: null } },
+      recipes: { status: 200, body: baseView({ id: 'r-7' }) },
+    })
+    renderCreate()
+
+    await irParaPromptAberto(user)
+    const textarea = screen.getByLabelText(M.textareaLabel)
+    await user.type(textarea, '  bolo de cenoura sem glúten  ')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    // Sucesso: mensagem + Receita montada (heading pelo nome).
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: baseView().name })).toBeInTheDocument()
+
+    // Body do POST no shape real: mode='free_text', freeText TRIMADO, e SEM `locale` (código morto).
+    const postCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/generations'))!
+    const sent = JSON.parse((postCall[1] as RequestInit).body as string)
+    expect(sent.mode).toBe('free_text')
+    expect(sent.freeText).toBe('bolo de cenoura sem glúten')
+    expect(sent).not.toHaveProperty('locale')
+    expect(sent).not.toHaveProperty('briefing')
+  })
+
+  it('F3 — aviso de restrição (âmbar) vindo do GET, também no prompt aberto', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-8', advisory: null } },
+      recipes: {
+        status: 200,
+        body: baseView({
+          id: 'r-8',
+          avisos: [
+            {
+              kind: 'contradicao',
+              restricao: 'sem_gluten',
+              alergeno: 'trigo',
+              mensagem: 'Marcada como sem glúten, mas contém trigo — declarado, não verificado.',
+            },
+          ],
+          facets: { cozinha: 'italiana', categoria: null, tags: [], restricoes: ['sem_gluten'] },
+        }),
+      },
+    })
+    renderCreate()
+
+    await irParaPromptAberto(user)
+    await user.type(screen.getByLabelText(M.textareaLabel), 'pão sem glúten com farinha de trigo')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    const note = await screen.findByRole('note')
+    expect(note).toHaveTextContent(
+      'Marcada como sem glúten, mas contém trigo — declarado, não verificado.',
+    )
+    expect(note).toHaveClass('bg-aviso-bg')
+  })
+
+  it('F4 — texto curto: botão desabilitado + submit programático cai em erroTextoVazio neutro, sem fetch', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({ generations: { status: 201, body: {} } })
+    const { container } = renderCreate()
+
+    await irParaPromptAberto(user)
+    await user.type(screen.getByLabelText(M.textareaLabel), 'oi') // < FREE_TEXT_MIN (10)
+
+    // UX: o botão Gerar está desabilitado (< mínimo).
+    expect(screen.getByRole('button', { name: M.gerar })).toBeDisabled()
+
+    // Botão disabled ⇒ user.click é no-op; disparar o submit do form exercita o ramo `free_text_vazio`.
+    const form = container.querySelector('form')!
+    fireEvent.submit(form)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(M.erroTextoVazio)
+    expect(alert.className).not.toMatch(/aviso/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('F5 — texto longo: ultrapassa o limite → erroTextoMuitoLongo neutro, sem fetch', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({ generations: { status: 201, body: {} } })
+    renderCreate()
+
+    await irParaPromptAberto(user)
+    // fireEvent.change ignora maxLength e é instantâneo (user.type de 2001 chars seria lento).
+    const textarea = screen.getByLabelText(M.textareaLabel)
+    fireEvent.change(textarea, { target: { value: 'a'.repeat(2001) } })
+
+    // Sinal PROATIVO antes do submit: ao passar o teto, a textarea fica aria-invalid (o
+    // contador também muda, mas aria-invalid é a âncora acessível verificável).
+    expect(textarea).toHaveAttribute('aria-invalid', 'true')
+
+    // >= MIN ⇒ botão habilitado; o limite máximo é barrado pela validação leve no submit.
+    const gerar = screen.getByRole('button', { name: M.gerar })
+    expect(gerar).toBeEnabled()
+    await user.click(gerar)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(M.erroTextoMuitoLongo)
+    expect(alert.className).not.toMatch(/aviso/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('F9 — erro de um modo NÃO vaza para o outro: alternar de modo descarta o alerta', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({ generations: { status: 201, body: {} } })
+    const { container } = renderCreate()
+
+    // Dispara um erro no modo prompt aberto (texto curto + submit programático).
+    await irParaPromptAberto(user)
+    await user.type(screen.getByLabelText(M.textareaLabel), 'oi') // < FREE_TEXT_MIN
+    fireEvent.submit(container.querySelector('form')!)
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroTextoVazio)
+
+    // Alternar para Estruturado deve DESCARTAR o alerta (a mensagem era do ramo free_text).
+    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    await user.click(within(grupo).getByRole('button', { name: M.modoEstruturado }))
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    // Nenhum fetch foi disparado em todo o fluxo (guards retornam antes da rede).
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('F6 — impossible no prompt aberto: mensagem clara sem Receita, sem GET, heading única', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 200, body: { outcome: 'impossible', advisory: 'Isso não é comida.' } },
+    })
+    renderCreate()
+
+    await irParaPromptAberto(user)
+    await user.type(screen.getByLabelText(M.textareaLabel), 'uma receita de tijolos cozidos')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    expect(await screen.findByText(M.resultadoImpossivel)).toBeInTheDocument()
+    expect(screen.getByText(/Isso não é comida\./)).toBeInTheDocument()
+    // Sem Receita: criar.titulo permanece <h1> e é o único heading nível 1.
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent(M.titulo)
+    // NUNCA chamou o GET de Receita.
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+  })
+
+  it('F7 — sanidade do estruturado: o refator do submit não quebrou #58', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } },
+      recipes: { status: 200, body: baseView() },
+    })
+    renderCreate()
+
+    await fillBriefing(user) // permanece no modo estruturado (default)
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+    const postCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/generations'))!
+    const sent = JSON.parse((postCall[1] as RequestInit).body as string)
+    expect(sent.mode).toBe('structured')
+    expect(sent.briefing.itens[0]).toMatchObject({ rawText: 'feijão' })
+  })
+
+  it('F8 — en-US: rótulos de modo e da textarea seguem o locale', async () => {
+    const user = userEvent.setup()
+    renderCreate('en-US')
+
+    const grupo = screen.getByRole('group', { name: enUS.criar.modoLegenda })
+    expect(within(grupo).getByRole('button', { name: enUS.criar.modoEstruturado })).toBeInTheDocument()
+    await user.click(within(grupo).getByRole('button', { name: enUS.criar.modoPromptAberto }))
+
+    expect(screen.getByLabelText(enUS.criar.textareaLabel)).toBeInTheDocument()
   })
 })

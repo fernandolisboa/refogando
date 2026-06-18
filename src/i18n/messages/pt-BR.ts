@@ -155,6 +155,16 @@ export const ptBR = {
   criar: {
     titulo: 'Criar receita',
     descricao: 'Monte um pedido por campos e a IA gera a receita.',
+    descricaoPromptAberto: 'Descreva a receita que você quer e a IA gera para você.',
+    modoLegenda: 'Modo de criação',
+    modoEstruturado: 'Estruturado',
+    modoPromptAberto: 'Prompt aberto',
+    textareaLabel: 'Sua ideia de receita',
+    textareaPlaceholder:
+      'Ex.: um curry vegano de grão-de-bico, rápido e sem pimenta, para 4 pessoas.',
+    erroTextoVazio:
+      'Escreva um pouco mais sobre a receita que você quer (mínimo de 10 caracteres).',
+    erroTextoMuitoLongo: 'Sua descrição está muito longa. Use no máximo 2000 caracteres.',
     precisaEntrar: 'Entre na sua conta para criar receitas.',
     legendaIngredientes: 'Ingredientes',
     ingrediente: 'Ingrediente',

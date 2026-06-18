@@ -138,6 +138,15 @@ export const enUS: Messages = {
   criar: {
     titulo: 'Create a recipe',
     descricao: 'Build a request by fields and the AI generates the recipe.',
+    descricaoPromptAberto: 'Describe the recipe you want and the AI generates it for you.',
+    modoLegenda: 'Creation mode',
+    modoEstruturado: 'Structured',
+    modoPromptAberto: 'Open prompt',
+    textareaLabel: 'Your recipe idea',
+    textareaPlaceholder:
+      'e.g. a quick vegan chickpea curry, no chili, for 4 people.',
+    erroTextoVazio: 'Write a bit more about the recipe you want (at least 10 characters).',
+    erroTextoMuitoLongo: 'Your description is too long. Use at most 2000 characters.',
     precisaEntrar: 'Sign in to create recipes.',
     legendaIngredientes: 'Ingredients',
     ingrediente: 'Ingredient',

@@ -1,7 +1,13 @@
 'use client'
 /**
- * Tela CRIAR estruturada (#58) — o cérebro client com TODO o estado e os fetches. Monta
- * o Briefing por campos e gera a Receita.
+ * Tela CRIAR (#58 estruturada + #88 prompt aberto) — o cérebro client com TODO o estado e
+ * os fetches. DOIS modos de entrada que CONVERGEM para o MESMO resultado:
+ *  - Estruturado (#58): monta o Briefing por campos.
+ *  - Prompt aberto (#88): uma `textarea` de texto livre. O backend aceita `mode:'free_text'`
+ *    em `POST /api/generations` (valida comprimento, monta o prompt, persiste
+ *    `origin='ai_free_text'`) e devolve o MESMO shape `{ outcome, recipeId, advisory, avisos? }`.
+ * Por isso o pipeline de resultado/erro/avisos é COMPARTILHADO (nenhum componente novo). O
+ * nome `...Structured` ficou impreciso, mas renomear espalharia o diff sem ganho — mantido.
  *
  * ADR-0010: a UI consome os ROUTE HANDLERS via `fetch` — NÃO Server Actions. NÃO
  * reimplementa regra de domínio: a validação leve abaixo é só UX (evita round-trip óbvio);
@@ -31,13 +37,24 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary, btnSecondary } from '@/components/button'
+import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
 import { COZINHAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import type { RecipeView, AvisoView } from '@/domain/recipe-read'
 import type { Messages } from '@/i18n/messages'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { RecipeDetailView } from './recipe-detail-view'
+import { SortToggle } from './sort-toggle'
+
+/** Modo de entrada da tela: por campos (#58) ou texto livre (#88). */
+type Mode = 'structured' | 'free_text'
+
+/**
+ * Limites do texto livre — UX LEVE (espelham as constantes do servidor; o handler revalida
+ * TUDO). Ambos medidos sobre `freeText.trim().length`. `FREE_TEXT_MAX` == `OBSERVACOES_MAX`.
+ */
+const FREE_TEXT_MIN = 10
+const FREE_TEXT_MAX = 2000
 
 /** Rascunho de UM item do Briefing no formulário. `strength` NASCE 'required' (o servidor
  *  exige uma força válida em todo item). `ingredientId` nunca é exposto (catálogo ADIADO). */
@@ -75,6 +92,10 @@ function mapErroMensagem(m: Messages['criar'], errorKey: string): string {
       return m.erroDificuldade
     case 'observacoes_muito_longas':
       return m.erroObservacoesLongas
+    case 'free_text_vazio':
+      return m.erroTextoVazio
+    case 'free_text_muito_longo':
+      return m.erroTextoMuitoLongo
     case 'ingrediente_inexistente':
     case 'item_sem_identidade':
     case 'unidade_invalida':
@@ -98,6 +119,15 @@ export function CreateStructuredExperience() {
   const { locale, messages } = useLocale()
   const m = messages.criar
   const session = useSession()
+
+  // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
+  // estruturado e o `freeText` coexistem; só "Criar outra receita" zera ambos (mantém o modo).
+  // MAS o estado de ERRO é efêmero por modo: a mensagem é específica do ramo que a disparou
+  // (ex.: `free_text_vazio`), então alternar de modo a DESCARTA (ver `trocarModo`) — senão
+  // ela vazaria pro outro ramo, onde não faz sentido. Só error/errorKey vazam (o resultado
+  // some no `!isResult`); os campos/freeText são preservados de propósito.
+  const [mode, setMode] = useState<Mode>('structured')
+  const [freeText, setFreeText] = useState('')
 
   const [cozinha, setCozinha] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
@@ -134,6 +164,18 @@ export function CreateStructuredExperience() {
     setRestricoes((prev) =>
       prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
     )
+  }
+
+  // Troca de modo: preserva o trabalho dos dois ramos (campos + freeText), mas DESCARTA o
+  // estado de erro do ramo anterior — a mensagem é específica daquele modo e não deve vazar
+  // pro outro. Sem isso, um `free_text_vazio` continuaria visível embaixo do formulário
+  // estruturado (e vice-versa).
+  function trocarModo(next: Mode) {
+    setMode(next)
+    if (status === 'error') {
+      setErrorKey(null)
+      setStatus('idle')
+    }
   }
 
   // Itens com texto preenchido (campo-mínimo-de-item: `ingredientId` é sempre null aqui,
@@ -180,6 +222,7 @@ export function CreateStructuredExperience() {
     setDificuldade('')
     setObservacoes('')
     setItens([novoItem()])
+    setFreeText('')
   }
 
   function voltarParaIdle({ limpar }: { limpar: boolean }) {
@@ -222,29 +265,20 @@ export function CreateStructuredExperience() {
     setStatus('result')
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if (status === 'loading') return // evita re-entrada / geração duplicada (duplo-clique)
-    setErrorKey(null)
-
-    // Validação leve (UX) — o servidor revalida tudo.
-    if (itensComTexto.length === 0 && temLinhaParcial) {
-      setErrorKey('erroIngrediente')
-      setStatus('error')
-      return
-    }
-    if (briefingVazio) {
-      setErrorKey('briefing_vazio')
-      setStatus('error')
-      return
-    }
-
+  /**
+   * Núcleo COMPARTILHADO pelos dois modos: posta o `body` em `/api/generations` (cru, sem
+   * `?locale=` — o servidor lê `locale` SÓ da query da URL; os avisos vêm localizados do GET
+   * via `carregarReceita`), trata 400/não-ok/parse e converge para o resultado. Idêntico para
+   * estruturado e prompt aberto (simetria). O `freeText` e o Briefing NÃO viajam juntos: cada
+   * modo monta o seu próprio `body`.
+   */
+  async function enviar(body: unknown) {
     setStatus('loading')
     try {
       const res = await fetch('/api/generations', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(buildBody()),
+        body: JSON.stringify(body),
       })
 
       if (res.status === 400) {
@@ -279,6 +313,44 @@ export function CreateStructuredExperience() {
     }
   }
 
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (status === 'loading') return // evita re-entrada / geração duplicada (duplo-clique)
+    setErrorKey(null)
+
+    if (mode === 'free_text') {
+      // Validação leve (UX) sobre o texto TRIMADO — espelha o servidor. > MAX é alcançável
+      // (o textarea dá folga de maxLength) e barrado aqui com mensagem clara.
+      const texto = freeText.trim()
+      if (texto.length < FREE_TEXT_MIN) {
+        setErrorKey('free_text_vazio')
+        setStatus('error')
+        return
+      }
+      if (texto.length > FREE_TEXT_MAX) {
+        setErrorKey('free_text_muito_longo')
+        setStatus('error')
+        return
+      }
+      await enviar({ mode: 'free_text', freeText: texto })
+      return
+    }
+
+    // Validação leve (UX) — o servidor revalida tudo.
+    if (itensComTexto.length === 0 && temLinhaParcial) {
+      setErrorKey('erroIngrediente')
+      setStatus('error')
+      return
+    }
+    if (briefingVazio) {
+      setErrorKey('briefing_vazio')
+      setStatus('error')
+      return
+    }
+
+    await enviar(buildBody())
+  }
+
   // Foco no swap form↔resultado (a11y): quando o status muda para 'result' (ou volta a
   // 'idle'/'error'), o heading do estado novo recebe o foco para o teclado não cair no <body>.
   useEffect(() => {
@@ -311,6 +383,9 @@ export function CreateStructuredExperience() {
   }))
 
   const isResult = status === 'result'
+  // Texto livre ACIMA do teto (a folga do maxLength permite 2001–2200): sinaliza o erro de
+  // forma proativa no contador + aria-invalid, antes do submit.
+  const freeTextOver = freeText.trim().length > FREE_TEXT_MAX
   const temReceita = isResult && view != null
   // `criar.titulo` cede o `<h1>` para o nome da Receita só quando ela está na tela.
   const Titulo = temReceita ? 'h2' : 'h1'
@@ -328,8 +403,30 @@ export function CreateStructuredExperience() {
         >
           {m.titulo}
         </Titulo>
-        {!isResult && <p className="max-w-[60ch] text-muted">{m.descricao}</p>}
+        {!isResult && (
+          <p className="max-w-[60ch] text-muted">
+            {mode === 'free_text' ? m.descricaoPromptAberto : m.descricao}
+          </p>
+        )}
       </div>
+
+      {/* Alternância de modo (#88) — REUSO do `SortToggle` (segmented control puro: par
+          ativo/inativo com padding idêntico ⇒ sem salto; `role="group"` + rótulo visível +
+          `aria-pressed`). Fica FORA do `<form>`/`<fieldset disabled>` do loading: trocar de
+          modo durante a geração é benigno (não dispara fetch; o submit do ramo certo já está
+          travado pelo fieldset). Some no resultado. */}
+      {!isResult && (
+        <SortToggle<Mode>
+          value={mode}
+          onChange={trocarModo}
+          options={[
+            { key: 'structured', label: m.modoEstruturado },
+            { key: 'free_text', label: m.modoPromptAberto },
+          ]}
+          groupLabel={m.modoLegenda}
+          labelId="create-mode-label"
+        />
+      )}
 
       {/* Formulário — visível em idle/loading/error; some no resultado. */}
       {!isResult && (
@@ -341,6 +438,8 @@ export function CreateStructuredExperience() {
             disabled={status === 'loading'}
             className="flex min-w-0 flex-col gap-8 border-0 p-0 disabled:opacity-60"
           >
+          {mode === 'structured' ? (
+            <>
           {/* Ingredientes */}
           <fieldset className="flex flex-col gap-4">
             <legend className="mb-1 text-sm font-medium text-fg">{m.legendaIngredientes}</legend>
@@ -494,6 +593,41 @@ export function CreateStructuredExperience() {
               className={`${inputCls} resize-y`}
             />
           </label>
+            </>
+          ) : (
+            /* Ramo PROMPT ABERTO (#88) — uma `textarea` de texto livre. `maxLength` com FOLGA
+               (`+200`): permite o usuário REAL exceder `FREE_TEXT_MAX` e ver `erroTextoMuitoLongo`
+               (com o limite cru, esse ramo seria UI morta para humanos). Contador NEUTRO
+               (`text-muted`, nunca âmbar — âmbar é EXCLUSIVO do Aviso de restrição). Label
+               associada por `htmlFor`/`id` (NÃO embrulhando a textarea) — assim o nome acessível
+               da textarea é SÓ o rótulo, sem o texto do contador vazar para dentro dele. */
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="free-text" className="text-sm font-medium text-fg">
+                {m.textareaLabel}
+              </label>
+              <textarea
+                id="free-text"
+                rows={6}
+                value={freeText}
+                onChange={(e) => setFreeText(e.target.value)}
+                placeholder={m.textareaPlaceholder}
+                maxLength={FREE_TEXT_MAX + 200}
+                aria-describedby="free-text-contador"
+                aria-invalid={freeTextOver || undefined}
+                className={`${fieldClassName} resize-y`}
+              />
+              {/* Contador NEUTRO no caso normal; ao ULTRAPASSAR o teto (2001–2200, a folga do
+                  maxLength) ele antecipa o estado de erro com peso/cor de FG — NUNCA âmbar
+                  (reservado ao Aviso de restrição) nem vermelho. Assim o ceiling deixa de ser
+                  feedback só-pós-submit. */}
+              <span
+                id="free-text-contador"
+                className={freeTextOver ? 'text-xs font-medium text-fg' : 'text-xs text-muted'}
+              >
+                {freeText.trim().length}/{FREE_TEXT_MAX}
+              </span>
+            </div>
+          )}
 
           {/* Erro de validação/técnico — neutro (NÃO âmbar), espelha auth-form. */}
           {status === 'error' && errorKey != null && (
@@ -509,6 +643,10 @@ export function CreateStructuredExperience() {
             <button
               type="submit"
               aria-busy={status === 'loading'}
+              disabled={
+                status === 'loading' ||
+                (mode === 'free_text' && freeText.trim().length < FREE_TEXT_MIN)
+              }
               className={`${btnPrimary} disabled:opacity-70`}
             >
               {status === 'loading' ? m.gerando : m.gerar}
