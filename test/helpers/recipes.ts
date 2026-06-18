@@ -15,6 +15,7 @@ import {
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance } from '@/domain/recipe'
+import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ReportStatus } from '@/domain/report'
 import { seedUser } from './users'
 
@@ -44,6 +45,10 @@ export async function seedRecipe(input: {
   dificuldade?: number | null
   parentRecipeId?: string | null
   lineageKind?: LineageKind | null
+  // Diff DERIVADO congelado (#17): JSONB nullable, settável para semear uma DERIVADA já forkada
+  // (assim #21/#61 testam leitura/exibição de uma derivada existente sem chamar a rota). A coluna
+  // é `$type<DerivedDiff>` — o seed aceita a forma congelada do domínio.
+  derivedDiff?: DerivedDiff | null
   schemaVersion?: number
 }): Promise<string> {
   const [row] = await getDb()
@@ -62,6 +67,7 @@ export async function seedRecipe(input: {
       dificuldade: input.dificuldade ?? null,
       parentRecipeId: input.parentRecipeId ?? null,
       lineageKind: input.lineageKind ?? null,
+      derivedDiff: input.derivedDiff ?? null,
       schemaVersion: input.schemaVersion,
     })
     .returning({ id: recipe.id })

@@ -60,6 +60,17 @@ export const ptBR = {
     filtroCategoria: 'Categoria',
     filtroRestricao: 'Restrição',
   },
+  // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
+  // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são
+  // chrome da UI #61 (render dos arrays/campos do `derivedDiff`); o Aviso é o sinal pós-fork.
+  derivada: {
+    adicionado: 'Adicionado',
+    removido: 'Removido',
+    quantidadeAlterada: 'Quantidade alterada',
+    restricaoAlterada: 'Restrição alterada',
+    copiaTitulo: 'Criando uma cópia',
+    copiaAviso: 'Você está editando uma receita que não é sua — vamos criar uma cópia sua.',
+  },
   // Rótulo amigável por valor do enum COZINHAS (#56). `satisfies Record<Cozinha, string>`
   // trava drift do enum (chave faltante/extra/typo) no site de definição.
   cozinhaLabel: {

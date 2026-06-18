@@ -78,6 +78,13 @@
       "when": 1781816445482,
       "tag": "0010_great_thing",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781825887682,
+      "tag": "0011_legal_kid_colt",
+      "breakpoints": true
     }
   ]
 }

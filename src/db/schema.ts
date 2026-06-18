@@ -9,6 +9,7 @@ import {
   numeric,
   boolean,
   timestamp,
+  jsonb,
   vector,
   index,
   uniqueIndex,
@@ -28,6 +29,7 @@ import {
   SCHEMA_VERSION_RECEITA,
 } from '@/domain/recipe'
 import { GENERATION_OUTCOMES } from '@/domain/generation'
+import type { DerivedDiff } from '@/domain/recipe-diff'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
 import { REPORT_STATUSES } from '@/domain/report'
@@ -129,6 +131,15 @@ export const recipe = pgTable(
       onDelete: 'set null',
     }),
     lineageKind: lineageKindEnum('lineage_kind'),
+    // Diff DERIVADO congelado (issue #17): forma apresentacional versionada
+    // (`decideDerivedDiff` → recipe-diff.ts) computada UMA vez no fork e ARMAZENADA — NUNCA
+    // recomputada na leitura (história 289: apagar a base anula parent_recipe_id e um diff
+    // recomputado sumiria). NULLABLE, SEM default, SEM CHECK de propósito: um NOT NULL/default
+    // quebraria os INSERTs de persistGeneration/createCatalogRecipe (que não derivam). SÓ as
+    // linhas lineageKind='edited' o carregam — invariante de ROTA/DOMÍNIO (derive.ts), não DB.
+    // `$type<DerivedDiff>` tipa a leitura/escrita do jsonb (o driver devolve `unknown` cru);
+    // a forma é a `DerivedDiff` congelada de recipe-diff.ts (domínio puro, sem ciclo de import).
+    derivedDiff: jsonb('derived_diff').$type<DerivedDiff>(),
     // ── Estado de MODERAÇÃO (issue #18, ADR-0003/0011) ────────────────────────────
     // Remover-do-pool pelo Curador é exclusão LÓGICA de moderação, DISTINTA de
     // despublicar (que toca `visibility`, #13). As 3 colunas são a SAÍDA do pool por
