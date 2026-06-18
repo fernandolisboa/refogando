@@ -14,3 +14,10 @@ export const btnPrimary = `${base} bg-brand-strong px-4 py-2 text-on-brand shado
 export const btnPrimarySm = `${base} bg-brand-strong px-3.5 py-1.5 text-on-brand shadow-sm hover:opacity-90`
 
 export const btnSecondary = `${base} border border-border bg-surface px-4 py-2 text-fg hover:border-brand-ink`
+
+/**
+ * Variante compacta do secundário (ex.: segmented control / toggle de ordenação). Mesma
+ * identidade visual de `btnSecondary`, só o tamanho casa com `btnPrimarySm` (`px-3.5 py-1.5`)
+ * — para um par ativo(`btnPrimarySm`)↔inativo(`btnSecondarySm`) não SALTAR ao alternar a seleção.
+ */
+export const btnSecondarySm = `${base} border border-border bg-surface px-3.5 py-1.5 text-fg hover:border-brand-ink`

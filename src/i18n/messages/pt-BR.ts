@@ -214,6 +214,24 @@ export const ptBR = {
     erroNaoEncontrada: 'Não foi possível encontrar esta receita.',
     erroGenerico: 'Não foi possível mudar a visibilidade. Tente de novo.',
   },
+  comunidade: {
+    titulo: 'Comunidade',
+    votar: 'Votar',
+    votado: 'Votado',
+    // Plural composto no componente via `.replace('{n}', …)` (folhas do tipo `Messages` são
+    // string — função quebraria o tipo e a paridade). Precedente: `aviso.contradicao`.
+    votos: '{n} votos',
+    voto: '{n} voto',
+    favoritar: 'Favoritar',
+    favoritado: 'Favoritado',
+    ordenarPor: 'Ordenar a Comunidade por',
+    toggleRelevancia: 'Relevância',
+    togglePopularidade: 'Popularidade',
+    convidaEntrarVoto: 'Entrar para votar',
+    convidaEntrarFavorito: 'Entrar para favoritar',
+    erroVoto: 'Não foi possível votar. Tente de novo.',
+    erroFavorito: 'Não foi possível favoritar. Tente de novo.',
+  },
 } as const
 
 /**

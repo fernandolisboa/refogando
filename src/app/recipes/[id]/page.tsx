@@ -18,6 +18,7 @@ import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 import { RecipeVisibilityControls } from '@/components/recipe/recipe-visibility-controls'
 import type { RecipeView } from '@/domain/recipe-read'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
@@ -68,6 +69,23 @@ export default async function RecipeDetailPage({
   return (
     <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
       <RecipeDetailView view={view} m={messages} />
+      {/* Controles de Engajamento da Comunidade (#62) — voto + favorito. Gate pela presença
+          do AGREGADO DE POOL (`voteCount`), NÃO pelo estado do viewer: a rota só emite
+          `voteCount` quando a Receita está no POOL (isPublicRead). Em owned-private a rota
+          AINDA define `viewerVoted`/`viewerFavorited` (gateados por viewerId, não por pool),
+          então gatear por esses campos faria os controles aparecerem numa Receita fora do
+          pool — e o botão Favoritar sempre falharia 404 (`applyFavorite` aplica o gate de
+          pool). `voteCount != null` é o ÚNICO sinal de "está no pool". `canManage` coexiste
+          (dono no pool vê a própria contagem). Page fina: o campo já chega na view (ADR-0010). */}
+      {view.voteCount != null && (
+        <RecipeEngagementControls
+          recipeId={view.id}
+          initialVoteCount={view.voteCount}
+          initialViewerVoted={view.viewerVoted}
+          initialViewerFavorited={view.viewerFavorited}
+          canManage={view.canManage ?? false}
+        />
+      )}
       {/* Controles de Visibilidade SÓ pro dono (#59) — a rota gateia canManage/visibility/
           resultKind ao dono; o servidor reimpõe ownership/playful. Sem chamada extra a DB:
           o ownership chega na própria view (page segue orquestrador fino, ADR-0010). */}

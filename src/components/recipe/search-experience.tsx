@@ -20,7 +20,10 @@ import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { SearchSection } from './search-section'
+import { SortToggle } from './sort-toggle'
 import type { BadgeLabels } from './recipe-result-item'
+
+type Sort = 'relevancia' | 'popularidade'
 
 type Status = 'idle' | 'loading' | 'done' | 'error'
 
@@ -34,6 +37,10 @@ export function SearchExperience() {
   const [cozinha, setCozinha] = useState<string[]>([])
   const [categoria, setCategoria] = useState<string[]>([])
   const [restricao, setRestricao] = useState<string[]>([])
+  // Ordenação da Comunidade (#62). `relevancia` é o default; só vai à URL quando difere
+  // (espelha o estilo de `q`/facetas). Mudar `sort` re-monta `doSearch` ⇒ o effect
+  // debounced re-busca. O servidor reordena SÓ a Comunidade (Catálogo é editorial, ADR-0003).
+  const [sort, setSort] = useState<Sort>('relevancia')
   const [data, setData] = useState<SearchResponse | null>(null)
   const [status, setStatus] = useState<Status>('idle')
 
@@ -68,6 +75,7 @@ export function SearchExperience() {
     if (cozinha.length > 0) url.searchParams.set('cozinha', cozinha.join(','))
     if (categoria.length > 0) url.searchParams.set('categoria', categoria.join(','))
     if (restricao.length > 0) url.searchParams.set('restricao', restricao.join(','))
+    if (sort === 'popularidade') url.searchParams.set('sort', 'popularidade')
 
     setStatus('loading')
     try {
@@ -84,7 +92,7 @@ export function SearchExperience() {
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao])
+  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -188,6 +196,21 @@ export function SearchExperience() {
           selected={restricao}
           onToggle={toggle(setRestricao)}
         />
+
+        {/* Ordenação da Comunidade (#62). Vive JUNTO do form (gateada por `hasCriteria`),
+            NÃO dentro da seção Comunidade: `SearchSection` se omite quando volta vazia, o
+            que faria o toggle DESAPARECER e prender o usuário em Popularidade. Aqui ele é
+            SEMPRE alcançável quando há busca ativa. Aplica-se só à Comunidade (o backend
+            ignora `sort` no Catálogo editorial); o rótulo deixa isso explícito. */}
+        {hasCriteria && (
+          <SortToggle
+            value={sort}
+            onChange={setSort}
+            relevanciaLabel={messages.comunidade.toggleRelevancia}
+            popularidadeLabel={messages.comunidade.togglePopularidade}
+            groupLabel={messages.comunidade.ordenarPor}
+          />
+        )}
       </div>
 
       {/* Consulta resolvida (#10) — eco READ-ONLY nesta fatia (Decisão 6). Mostra o que a
