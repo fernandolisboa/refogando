@@ -1,46 +1,39 @@
 'use client'
 
 /**
- * Toggle de ordenação Relevância ↔ Popularidade da Comunidade (#62). Componente CONTROLADO
- * e PURO — sem `fetch` nem locale próprio: recebe rótulos e callback do pai (análogo a
- * como `FacetFieldset` recebe estado/callback de `SearchExperience`).
+ * Segmented control PURO de N opções — controlado, sem `fetch` nem locale próprio: recebe
+ * as opções (rótulos já localizados), o valor atual e o callback do pai (análogo a como
+ * `FacetFieldset` recebe estado/callback). Usado por: ordenação Relevância ↔ Popularidade
+ * da Comunidade (#62) e alternância de modo de criação Estruturado ↔ Prompt aberto (#88).
  *
- * Par de botões num `role="group"`: ativo `btnPrimarySm`, inativo `btnSecondarySm` (ambos
+ * Botões num `role="group"`: ativo `btnPrimarySm`, inativo `btnSecondarySm` (ambos
  * `px-3.5 py-1.5` ⇒ padding idêntico, sem SALTO de layout ao alternar a seleção). Só
- * tokens neutros/brand já AA-verificados; NUNCA accent (Catálogo) nem âmbar (Aviso) —
- * Popularidade é eixo de descoberta, não de confiança (ADR-0015).
+ * tokens neutros/brand já AA-verificados; NUNCA accent (Catálogo) nem âmbar (Aviso).
+ *
+ * `labelId` parametriza o id do rótulo visível (alvo do `aria-labelledby`) para não
+ * cristalizar um id duplicado quando dois toggles convivem — cada call-site passa um id
+ * único (`'sort-toggle-label'` na busca, `'create-mode-label'` na criação).
  */
 import { btnPrimarySm, btnSecondarySm } from '@/components/button'
 
-type SortOption = 'relevancia' | 'popularidade'
-
-export function SortToggle({
+export function SortToggle<T extends string>({
   value,
   onChange,
-  relevanciaLabel,
-  popularidadeLabel,
+  options,
   groupLabel,
+  labelId = 'sort-toggle-label',
 }: {
-  value: SortOption
-  onChange: (sort: SortOption) => void
-  relevanciaLabel: string
-  popularidadeLabel: string
+  value: T
+  onChange: (value: T) => void
+  options: ReadonlyArray<{ key: T; label: string }>
   groupLabel: string
+  labelId?: string
 }) {
-  const options: ReadonlyArray<{ key: SortOption; label: string }> = [
-    { key: 'relevancia', label: relevanciaLabel },
-    { key: 'popularidade', label: popularidadeLabel },
-  ]
-
   return (
-    <div
-      role="group"
-      aria-labelledby="sort-toggle-label"
-      className="flex flex-wrap items-center gap-2"
-    >
+    <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-2">
       {/* O texto VISÍVEL é a ÚNICA fonte do nome acessível do grupo (via aria-labelledby) —
           sem duplicar a string num aria-label, que o leitor de tela anunciaria duas vezes. */}
-      <span id="sort-toggle-label" className="text-sm text-muted">
+      <span id={labelId} className="text-sm text-muted">
         {groupLabel}
       </span>
       <div className="flex flex-wrap gap-2">

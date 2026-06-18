@@ -206,9 +206,12 @@ export function SearchExperience() {
           <SortToggle
             value={sort}
             onChange={setSort}
-            relevanciaLabel={messages.comunidade.toggleRelevancia}
-            popularidadeLabel={messages.comunidade.togglePopularidade}
+            options={[
+              { key: 'relevancia', label: messages.comunidade.toggleRelevancia },
+              { key: 'popularidade', label: messages.comunidade.togglePopularidade },
+            ]}
             groupLabel={messages.comunidade.ordenarPor}
+            labelId="sort-toggle-label"
           />
         )}
       </div>
