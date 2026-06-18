@@ -94,6 +94,7 @@ function semanticSelectSql(litVec: string, requestLocale: string, facetSql: SQL)
       WHERE re.embedding IS NOT NULL
         AND r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ORDER BY re.recipe_id,
         (re.locale = ${requestLocale}) DESC,
@@ -303,6 +304,7 @@ export async function searchRecipes(
           JOIN recipe r ON r.id = c.recipe_id
           WHERE r.result_kind <> 'playful'
             AND (r.owner_id IS NULL OR r.visibility = 'public')
+            AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         )
         AND NOT EXISTS (SELECT 1 FROM combined c WHERE c.recipe_id = s.recipe_id)
     `
@@ -352,6 +354,7 @@ export async function searchRecipes(
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
     `
     : sql`
@@ -371,6 +374,7 @@ export async function searchRecipes(
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ${bucket2Sql}
     `
@@ -459,6 +463,7 @@ export async function searchRecipes(
       WHERE ri.raw_text IS NOT NULL
         AND r2.result_kind <> 'playful'
         AND (r2.owner_id IS NULL OR r2.visibility = 'public')
+        AND r2.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         AND to_tsvector(
               recipe_ts_config(r2.original_locale),
               immutable_unaccent(ri.raw_text)

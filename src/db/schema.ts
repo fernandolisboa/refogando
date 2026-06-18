@@ -30,6 +30,7 @@ import {
 import { GENERATION_OUTCOMES } from '@/domain/generation'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
+import { REPORT_STATUSES } from '@/domain/report'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -72,6 +73,9 @@ export const roleEnum = pgEnum('role', ROLES)
 // `strength` é conceito do Briefing, não do kernel bidirecional de vocabulary.ts
 // (espelha creationModeEnum importando de recipe.ts). ÚNICO enum novo da #11.
 export const strengthEnum = pgEnum('strength', STRENGTHS)
+// Status do Report (issue #18). Fonte única: REPORT_STATUSES de @/domain/report
+// (pending/resolved/rejected). Espelha roleEnum/strengthEnum importando do kernel.
+export const reportStatusEnum = pgEnum('report_status', REPORT_STATUSES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -119,12 +123,32 @@ export const recipe = pgTable(
       onDelete: 'set null',
     }),
     lineageKind: lineageKindEnum('lineage_kind'),
+    // ── Estado de MODERAÇÃO (issue #18, ADR-0003/0011) ────────────────────────────
+    // Remover-do-pool pelo Curador é exclusão LÓGICA de moderação, DISTINTA de
+    // despublicar (que toca `visibility`, #13). As 3 colunas são a SAÍDA do pool por
+    // moderação (gate de pool ganha `AND moderation_removed_at IS NULL` — ver
+    // recipe-pool.ts). Denormalizadas na recipe (não tabela) porque o gate é predicado
+    // SQL repetido em ~7 lugares — `moderation_removed_at IS NULL` casa byte-a-byte com
+    // `result_kind <> 'playful'`. Nullable/default NULL: a maioria das Receitas nunca é
+    // moderada. `moderated_by` ON DELETE set null: apagar o Curador NÃO ressuscita a
+    // Receita (o registro "removido" persiste; a proveniência da 1ª remoção é preservada).
+    moderationRemovedAt: timestamp('moderation_removed_at', { withTimezone: true }),
+    moderationReason: text('moderation_reason'),
+    moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
     schemaVersion: integer('schema_version').notNull().default(SCHEMA_VERSION_RECEITA),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check('recipe_playful_private_chk', sql`${t.resultKind} <> 'playful' OR ${t.visibility} = 'private'`),
+    // Consistência de moderação (#18): removed_at e moderated_by setados JUNTOS ou ambos
+    // NULL (rede de banco contra remoção sem proveniência). `moderation_reason` fica FORA
+    // do CHECK (texto livre) mas é exigido não-vazio na borda do route (decideModerationReason).
+    // Ortogonal a recipe_playful_private_chk (este só acopla result_kind/visibility).
+    check(
+      'recipe_moderation_consistency_chk',
+      sql`(${t.moderationRemovedAt} IS NULL) = (${t.moderatedBy} IS NULL)`,
+    ),
     index('recipe_restricoes_gin').using('gin', t.restricoes),
     // Índice parcial na FK owner_id: cobre o RESTRICT e queries por owner sem
     // seq-scan. Parcial WHERE owner_id IS NOT NULL — a maioria do catálogo tem
@@ -132,6 +156,10 @@ export const recipe = pgTable(
     index('recipe_owner_id_idx')
       .on(t.ownerId)
       .where(sql`${t.ownerId} IS NOT NULL`),
+    // Índice parcial nas Receitas removidas (#18): enxuto (a maioria é NULL).
+    index('recipe_moderation_removed_idx')
+      .on(t.moderationRemovedAt)
+      .where(sql`${t.moderationRemovedAt} IS NOT NULL`),
   ],
 )
 
@@ -510,5 +538,43 @@ export const recipeFavorite = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.recipeId] }),
     index('recipe_favorite_recipe_id_idx').on(t.recipeId),
+  ],
+)
+
+// ── Moderação reativa: Report (issue #18, ADR-0003/0011) ───────────────────────
+//
+// ENTRADA da moderação: qualquer Usuário autenticado reporta uma Receita do POOL; a linha
+// entra na FILA do Curador (status='pending'). O Report mira a RECEITA (recipe_id, não o
+// locale): a moderação tem identidade única entre pt-BR/en-US (AC4 — uma decisão afeta a
+// Receita em TODOS os locales). Estrutura espelha recipeVote/recipeFavorite (FK cascade ao
+// recipe/users), mas COM payload (reason/status/resolução) — não é relação pura.
+//
+// MÚLTIPLOS reports por Receita são permitidos (a fila agrega; a 1ª remoção preserva a
+// proveniência — ver moderation.ts). Dedup por (recipe,reporter) é followup, não-AC.
+export const report = pgTable(
+  'report',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Motivo verbatim (i18n visível mora na UI #63). Exigido não-vazio na borda do route
+    // via decideModerationReason; aqui NOT NULL é a rede de banco.
+    reason: text('reason').notNull(),
+    status: reportStatusEnum('status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Resolução (Curador que removeu/manteve). Nullable enquanto pending. resolvedBy ON
+    // DELETE set null: apagar o Curador NÃO apaga o registro de resolução.
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    // Agrupamento por Receita + filtro de status (quantos pending por Receita).
+    index('report_recipe_status_idx').on(t.recipeId, t.status),
+    // Fila do Curador: pending ordenada por data de criação.
+    index('report_status_created_idx').on(t.status, t.createdAt),
   ],
 )

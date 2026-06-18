@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeVote, recipeFavorite } from '@/db/schema'
 import { decideVote } from '@/domain/vote'
+import { eligibleForPool } from '@/domain/recipe-pool'
 
 /**
  * Núcleo com efeito de Voto + Favorito (issue #16, ADR-0003). Espelha o estilo de
@@ -24,7 +25,12 @@ import { decideVote } from '@/domain/vote'
  * concorrência (duas chamadas paralelas pela porta de produção colidem no ON CONFLICT).
  */
 
-type Gate = { ownerId: string | null; visibility: string; resultKind: string }
+type Gate = {
+  ownerId: string | null
+  visibility: string
+  resultKind: string
+  moderationRemovedAt: Date | null
+}
 
 export type VoteResult =
   | { kind: 'ok'; voteCount: number; viewerVoted: boolean } // 200
@@ -47,14 +53,17 @@ async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
       ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
+      // #18: a dimensão de moderação entra no gate de pool. Removida do pool pelo Curador
+      // ⇒ não-votável/favoritável (quem favoritou deixa de ver, igual despublicar, AC3).
+      moderationRemovedAt: recipe.moderationRemovedAt,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return null // inexistente
-  // Elegibilidade de POOL: Catálogo (owner NULL) OU pública, E não-playful. Fora do pool
-  // ⇒ trata como not_found (não vaza existência, espelha o GET).
-  const inPool = (gate.ownerId == null || gate.visibility === 'public') && gate.resultKind !== 'playful'
-  return inPool ? gate : null
+  // Elegibilidade de POOL (recipe-pool.ts): Catálogo (owner NULL) OU pública, não-playful, E
+  // não-removida por moderação (#18). Fora do pool ⇒ trata como not_found (não vaza
+  // existência, espelha o GET).
+  return eligibleForPool(gate) ? gate : null
 }
 
 /** COUNT(*) de votos da Receita (a Popularidade no detalhe). */

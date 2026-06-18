@@ -57,6 +57,13 @@
       "when": 1781784540054,
       "tag": "0007_flawless_spitfire",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781791571659,
+      "tag": "0008_premium_masked_marvel",
+      "breakpoints": true
     }
   ]
 }
