@@ -6,7 +6,7 @@ import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
-  nav: { home: 'Início', recipes: 'Receitas', signIn: 'Entrar', signOut: 'Sair' },
+  nav: { home: 'Início', recipes: 'Receitas', create: 'Criar', signIn: 'Entrar', signOut: 'Sair' },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   system: {
     loading: 'Carregando…',
@@ -144,6 +144,62 @@ export const ptBR = {
     erroSenhaCurta: 'A senha precisa ter pelo menos 8 caracteres.',
     erroRede: 'Não foi possível conectar. Tente de novo.',
     erroGenerico: 'Não foi possível concluir. Tente de novo.',
+  },
+  // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
+  // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)
+  // — `system` só cobre loading/error/notFound/retry, insuficiente aqui. Termos seguem
+  // CONTEXT.md: Briefing/pedido, força (required/preferred), Aviso (toque leve, âmbar só
+  // via RestrictionWarning), comentário consultivo (advisory) fora do objeto Receita,
+  // playful distinto e não publicável. Erros traduzidos por CHAVE (mapErroMensagem casa o
+  // código de validação do handler), nunca a mensagem crua do servidor.
+  criar: {
+    titulo: 'Criar receita',
+    descricao: 'Monte um pedido por campos e a IA gera a receita.',
+    precisaEntrar: 'Entre na sua conta para criar receitas.',
+    legendaIngredientes: 'Ingredientes',
+    ingrediente: 'Ingrediente',
+    adicionarIngrediente: 'Adicionar ingrediente',
+    removerIngrediente: 'Remover ingrediente',
+    ingredientePlaceholder: 'Ex.: 1 cebola grande',
+    quantidade: 'Quantidade',
+    quantidadePlaceholder: 'Ex.: 2',
+    unidade: 'Unidade',
+    unidadeNenhuma: 'Sem unidade',
+    forca: 'Força',
+    forcaObrigatorio: 'Obrigatório',
+    forcaPreferido: 'Preferido',
+    cozinha: 'Cozinha',
+    cozinhaNenhuma: 'Qualquer cozinha',
+    legendaRestricoes: 'Restrições alimentares',
+    porcoes: 'Porções',
+    dificuldade: 'Dificuldade (1 a 5)',
+    observacoes: 'Observações',
+    observacoesPlaceholder: 'Ex.: sem pimenta, bem dourado',
+    gerar: 'Gerar receita',
+    gerando: 'Gerando receita…',
+    resultadoSucesso: 'Receita pronta.',
+    resultadoDegradado: 'Geramos a receita, mas não foi possível atender tudo o que você pediu.',
+    playfulTitulo: 'Essa foi uma brincadeira.',
+    playfulNota:
+      'A IA respondeu no humor. Fica salva só no seu espaço privado e não pode ser publicada.',
+    consultoria: 'A IA comentou',
+    resultadoImpossivel: 'Não deu para criar uma receita com esse pedido.',
+    erroCarregarReceita:
+      'A receita foi criada e está no seu espaço, mas não conseguimos carregá-la agora. Tente de novo.',
+    tentarCarregarNovamente: 'Tentar carregar de novo',
+    tentarNovamente: 'Ajustar e tentar de novo',
+    criarOutra: 'Criar outra receita',
+    salvar: 'Salvar receita',
+    salvarEmBreve: 'Salvar estará disponível na próxima etapa.',
+    erroGeracao: 'Não foi possível gerar a receita. Tente de novo.',
+    erroConexao: 'Não foi possível conectar. Tente de novo.',
+    erroBriefingVazio:
+      'Adicione ao menos um ingrediente, uma cozinha, uma restrição ou uma observação.',
+    erroPorcoes: 'As porções devem ficar entre 1 e 50.',
+    erroDificuldade: 'A dificuldade deve ficar entre 1 e 5.',
+    erroObservacoesLongas: 'As observações estão muito longas.',
+    erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
+    erroCampos: 'Verifique os campos preenchidos.',
   },
 } as const
 

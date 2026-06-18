@@ -33,6 +33,9 @@ export function SiteHeader() {
           <Link href="/recipes" className="transition-colors hover:text-fg">
             {messages.nav.recipes}
           </Link>
+          <Link href="/create" className="transition-colors hover:text-fg">
+            {messages.nav.create}
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <LocaleSwitcher />
