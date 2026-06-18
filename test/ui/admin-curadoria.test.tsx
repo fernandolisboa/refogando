@@ -56,7 +56,9 @@ describe('CatalogCuration (#63 AC3)', () => {
     mockFetch({ 'GET /api/curate/promotion': { ok: true, status: 200, body: onePromotion() } })
     renderCuradoria()
     expect(await screen.findByText('alho')).toBeInTheDocument()
-    expect(screen.getByText(/5/)).toBeInTheDocument()
+    // Contagem de aparições do ingrediente recorrente. Ancorado no rótulo "Aparições: 5" —
+    // /5/ cru agora colidiria com o label "Dificuldade (1 a 5)" do form de criação (#85).
+    expect(screen.getByText(new RegExp(`${M.aparicoes}: 5`))).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: M.titulo })).toBeInTheDocument()
   })
 

@@ -10,12 +10,13 @@
  *
  * O backend exige `{ translations:[{ locale, nome }] }`; o MVP coerente usa o `rawText`
  * recorrente como `nome` no locale ATUAL (form completo de tradução = polish). Subseção B é
- * info-only: a criação estruturada de Receita de catálogo entra num próximo passo (a rota
- * existe, mas o form é grande e não há AC aqui). Cores: só neutros/brand AA; sem âmbar/accent.
+ * o form de criação estruturada de Receita de catálogo (`CatalogRecipeForm`, `POST
+ * /api/curate/recipes`, #85). Cores: só neutros/brand AA; sem âmbar/accent.
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { btnPrimarySm, btnSecondarySm } from '@/components/button'
+import { CatalogRecipeForm } from './catalog-recipe-form'
 
 type PromotionItem = { rawText: string; count: number }
 
@@ -153,16 +154,8 @@ export function CatalogCuration() {
         </div>
       </div>
 
-      {/* Subseção B é info-only (a criação estruturada de Receita de catálogo entra depois).
-          Tratamento de "em breve": h3 rebaixado (não compete com a subseção funcional acima) e
-          aviso neutro emoldurado — o mesmo vocabulário dos avisos neutros do console — para
-          ler como decisão de design, não como pendência esquecida. */}
-      <div className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium text-muted">{m.criarReceitaTitulo}</h3>
-        <p className="max-w-prose rounded-md border border-border bg-bg px-3 py-2 text-sm text-muted">
-          {m.criarReceitaInfo}
-        </p>
-      </div>
+      {/* Subseção B — form de criação estruturada de Receita de catálogo (#85). */}
+      <CatalogRecipeForm />
     </section>
   )
 }
