@@ -3,8 +3,10 @@ import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setClaudeClient } from '@/server/deps'
-import type { ClaudeClient } from '@/server/claude/client'
+import type { ClaudeClient, ConversationStreamInput } from '@/server/claude/client'
 import { FakeClaudeClient } from '@/server/claude/client'
+import type { GenerationOutput } from '@/domain/generation'
+import { POST } from '@/app/api/conversations/stream/route'
 import { persistGeneration } from '@/server/generation/persist'
 import { recipe, recipeTranslation, recipeIngredient, creationSession, generation, appConfig } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
@@ -351,6 +353,75 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
     const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
     expect(gen.model).toBe('claude-sonnet-4-6')
+  })
+
+  it('ABORT: cliente desconecta após o 1º token → loop para; generateRecipe NÃO roda; nada persiste; sem terminal', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-abort@gen.test' })
+
+    const controller = new AbortController()
+    // Cliente instrumentado e DETERMINÍSTICO: rende o 1º token, depois ESPERA o abort do
+    // request antes de tentar o 2º — ao ver `signal.aborted`, RETORNA (loop encerra). Sem
+    // essa espera, o producer poderia enfileirar todos os tokens antes do reader abortar
+    // (enqueue não bloqueia). `generateRecipe` SINALIZA se a destilação for tocada (não deve).
+    // `streamFinished` resolve quando o generator completa → ponto de sincronia determinístico.
+    let recipeCalled = false
+    let resolveFinished!: () => void
+    const streamFinished = new Promise<void>((r) => {
+      resolveFinished = r
+    })
+    class AbortProbeClient implements ClaudeClient {
+      async echo(text: string): Promise<string> {
+        return text
+      }
+      async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
+        try {
+          yield 't1 '
+          // Espera o request ser abortado (o teste aborta após ler o 1º token), depois para.
+          await new Promise<void>((resolve) => {
+            if (input.signal?.aborted) return resolve()
+            input.signal?.addEventListener('abort', () => resolve(), { once: true })
+          })
+          if (input.signal?.aborted) return
+          yield 't2 ' // inalcançável quando abortado — prova de que o loop parou.
+        } finally {
+          resolveFinished()
+        }
+      }
+      async generateRecipe(): Promise<GenerationOutput> {
+        recipeCalled = true
+        return cannedSuccess()
+      }
+    }
+    setClaudeClient(new AbortProbeClient())
+
+    // Request COM signal de abort (o que a porta HTTP faz num disconnect real).
+    const req = new Request('http://localhost/api/conversations/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ transcript: makeTranscript() }),
+      signal: controller.signal,
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+
+    // Lê o 1º frame (token), ABORTA (cliente desconecta), e PARA de ler — um cliente
+    // desconectado não lê mais. A rota não emite terminal nem fecha o stream p/ um request
+    // abortado (não há cliente p/ receber), então não se drena o reader: usa-se `streamFinished`.
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    const { value } = await reader.read()
+    const firstLine = decoder.decode(value).trim().split('\n')[0]
+    const firstFrame = JSON.parse(firstLine) as { type: string; text?: string }
+    expect(firstFrame).toEqual({ type: 'token', text: 't1 ' })
+
+    controller.abort()
+    await streamFinished // o generator encerrou (RETORNOU no abort, sem chegar ao 't2 ').
+
+    // Destilação pulada e NADA persistido (a rota viu signal.aborted e retornou).
+    expect(recipeCalled).toBe(false)
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+
+    await reader.cancel() // libera o lock; o request abortado não tem cliente p/ o resto.
   })
 })
 

@@ -1,5 +1,6 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript } from '@/domain/transcript'
@@ -50,8 +51,6 @@ import { persistGeneration } from '@/server/generation/persist'
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
 
-const DEFAULT_MODEL = 'claude-opus-4-8'
-
 // Frames do contrato NDJSON. O {type:'recipe'} espelha o 201 de /api/generations.
 type TerminalFrame =
   | {
@@ -89,7 +88,14 @@ export async function POST(req: Request): Promise<Response> {
 
   // 4. Modelo de app_config (default em código quando a linha singleton está ausente).
   const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+
+  // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
+  // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também
+  // ao seam, para cancelar a chamada do SDK em voo. Backpressure: o stream de tokens é
+  // limitado por max_tokens → não há buffering ilimitado p/ um cliente lento conectado; só o
+  // disconnect importa, e o abort acima é o conserto correto e suficiente.
+  const signal = req.signal
 
   // requestLocale é lido AGORA (Request ainda disponível) — o Aviso é renderizado no locale.
   const requestLocale = parseRequestLocale(req)
@@ -103,10 +109,18 @@ export async function POST(req: Request): Promise<Response> {
           systemPrompt: SYSTEM_PROMPT_DISTILLATION,
           transcript,
           model,
+          signal,
         })
         for await (const text of tokens) {
+          // Disconnect do cliente: para o loop ANTES de enfileirar. Sem cliente p/ receber, o
+          // stream do seam é cancelado (via `signal`) e a destilação é pulada — nada persiste.
+          if (signal.aborted) return
           controller.enqueue(ndjsonLine({ type: 'token', text }))
         }
+
+        // Abortado durante/ao fim do stream: NÃO roda a destilação (2ª chamada ao Claude) nem
+        // persiste — um request abortado não tem cliente p/ receber um frame terminal.
+        if (signal.aborted) return
 
         // 2ª chamada (ADR-0009): DESTILAÇÃO single-shot a partir da Transcrição (VERBATIM
         // o generateRecipe de #8). A estrutura nasce da SAÍDA do RecipeGenSchema.
@@ -115,6 +129,7 @@ export async function POST(req: Request): Promise<Response> {
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,
           model,
+          signal,
         })
         const result = classify(out)
 
@@ -155,10 +170,22 @@ export async function POST(req: Request): Promise<Response> {
         controller.enqueue(ndjsonLine(terminal))
         controller.close()
       } catch (err) {
-        // Erro durante o stream (ex.: seam estourou). Não há terminal: o cliente trata a
-        // ausência de frame terminal como aviso/retomada (queda de stream). Erra o stream.
+        // Abort do cliente em voo (o seam estoura com AbortError): não é falha real, é
+        // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu.
+        if (signal.aborted) return
+        // Erro durante o stream (ex.: seam estourou). Loga no servidor ANTES de errar o
+        // stream — sem isso a falha é invisível em produção. Sanitizado: tag + mensagem/stack,
+        // NUNCA a API key, nem o conteúdo da Transcrição.
+        console.error('[conversations/stream] falha no stream:', err)
+        // Não há terminal: o cliente trata a ausência de frame terminal como aviso/retomada
+        // (queda de stream). Erra o stream.
         controller.error(err)
       }
+    },
+    cancel() {
+      // Cliente desconectou (cancelou a leitura do stream). `req.signal` já está abortado; o
+      // loop em `start` checa `signal.aborted` e o seam recebe o `signal`, então o trabalho do
+      // LLM para e a destilação é pulada. Nada a fazer aqui além de honrar o cancelamento.
     },
   })
 

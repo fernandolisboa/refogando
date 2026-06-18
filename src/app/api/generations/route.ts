@@ -1,6 +1,7 @@
 import { inArray } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { classify } from '@/domain/generation'
@@ -55,8 +56,6 @@ import {
  */
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
-
-const DEFAULT_MODEL = 'claude-opus-4-8'
 
 // Faixa de comprimento do texto livre (#88, decisão reversível). A validação roda ANTES
 // do seam, em AMBAS as bordas:
@@ -165,7 +164,7 @@ export async function POST(req: Request): Promise<Response> {
 
   // Modelo de app_config (default em código quando a linha singleton está ausente).
   const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
   // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
   // só restam free_text → ai_free_text e structured → ai_structured.
   const origin: PersistOrigin = mode === 'free_text' ? 'ai_free_text' : 'ai_structured'
