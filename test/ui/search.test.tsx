@@ -256,3 +256,133 @@ describe('SearchExperience (#56)', () => {
     expect(screen.getByText('Feijoada')).toBeInTheDocument()
   })
 })
+
+const MC = ptBR.comunidade
+
+/** Catálogo + Comunidade semeados (estado conhecido para os testes de ordenação). */
+function seededResponse(): SearchResponse {
+  return {
+    catalogo: [
+      { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false },
+    ],
+    comunidade: [
+      { recipeId: 'r2', displayedTitle: 'Strogonoff', origin: 'ai_chat', autoTranslationSignal: false },
+    ],
+  }
+}
+
+describe('SearchExperience — ordenação da Comunidade (#62)', () => {
+  it('T-sort-A — toggle PRESENTE quando há critério; default Relevância (vive junto do form)', async () => {
+    stubFetchOk(seededResponse())
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    // O grupo de ordenação vive junto do form (não dentro da seção Comunidade).
+    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    expect(group).toBeInTheDocument()
+    const relBtn = within(group).getByRole('button', { name: MC.toggleRelevancia })
+    const popBtn = within(group).getByRole('button', { name: MC.togglePopularidade })
+    expect(relBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(popBtn).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('T-sort-A2 — toggle AUSENTE sem critério (gateado por hasCriteria)', async () => {
+    const fetchMock = stubFetchOk({ catalogo: [], comunidade: [] })
+    renderSearch()
+
+    await screen.findByText(M.dicaInicial)
+    // Espera a janela do debounce elapsar (mesma técnica do T3) antes do assert negativo.
+    await new Promise((r) => setTimeout(r, 400))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByRole('group', { name: MC.ordenarPor })).not.toBeInTheDocument()
+  })
+
+  it('T-sort-B — clicar Popularidade dispara ?sort=popularidade (re-fetch)', async () => {
+    const fetchMock = stubFetchOk(seededResponse())
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    // Default Relevância: a URL NÃO carrega sort=.
+    expect(lastFetchUrl(fetchMock)).not.toContain('sort=')
+    const callsAntes = fetchMock.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+
+    // Vence o debounce (300ms): só então a URL nova fica disponível.
+    await vi.waitFor(() => {
+      expect(lastFetchUrl(fetchMock)).toContain('sort=popularidade')
+    })
+    // Houve re-fetch (não foi a URL da busca anterior).
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAntes)
+  })
+
+  it('T-sort-D — toggle PERSISTE com Comunidade vazia (vive FORA do SearchSection)', async () => {
+    // Decisão de design: o SortToggle vive JUNTO do form (gateado por hasCriteria), NÃO
+    // dentro do SearchSection da Comunidade — que se OMITE quando a lista volta vazia. Se o
+    // toggle morasse lá dentro, ele DESAPARECERIA ao Popularidade trazer Comunidade vazia,
+    // prendendo o usuário em Popularidade sem volta. Aqui: catálogo cheio + comunidade vazia
+    // + sort=popularidade ⇒ o grupo ordenarPor SEGUE presente e Relevância re-busca sem sort=.
+    // Mutation-verified: mover o toggle para dentro do SearchSection faria este teste falhar.
+    const fetchMock = stubFetchOk({
+      catalogo: [
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false },
+      ],
+      comunidade: [],
+    })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
+    // Comunidade vazia: o SearchSection dela se omite (sem heading órfão).
+    expect(
+      screen.queryByRole('heading', { name: M.secaoComunidade, level: 2 }),
+    ).not.toBeInTheDocument()
+
+    // Vai a Popularidade (re-busca) — a Comunidade segue vazia.
+    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+    await vi.waitFor(() => {
+      expect(lastFetchUrl(fetchMock)).toContain('sort=popularidade')
+    })
+
+    // O grupo de ordenação CONTINUA presente apesar da Comunidade vazia.
+    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    expect(group).toBeInTheDocument()
+    const callsAposPop = fetchMock.mock.calls.length
+
+    // Clicar Relevância re-busca SEM sort= (o usuário não fica preso em Popularidade).
+    await user.click(within(group).getByRole('button', { name: MC.toggleRelevancia }))
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAposPop)
+    })
+    expect(lastFetchUrl(fetchMock)).not.toContain('sort=')
+  })
+
+  it('T-sort-C — voltar a Relevância remove sort= (re-fetch)', async () => {
+    const fetchMock = stubFetchOk(seededResponse())
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+    await vi.waitFor(() => {
+      expect(lastFetchUrl(fetchMock)).toContain('sort=popularidade')
+    })
+    const callsAposPop = fetchMock.mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: MC.toggleRelevancia }))
+    // Espera um re-fetch NOVO (a contagem aumenta) — sem isso confundiria com a URL inicial.
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAposPop)
+    })
+    expect(lastFetchUrl(fetchMock)).not.toContain('sort=')
+  })
+})
