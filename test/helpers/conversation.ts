@@ -23,7 +23,7 @@ export type NdjsonFrame =
       avisos?: { kind: string; restricao: string; alergeno: string; mensagem: string }[]
     }
   | { type: 'impossible'; advisory: string | null }
-  | { type: 'error'; error: 'geracao_invalida' }
+  | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
 
 /** Transcrição "pedido" válida por default (multi-turno, última fala do usuário). */
 export function makeTranscript(overrides?: TranscriptMessage[]): TranscriptMessage[] {
