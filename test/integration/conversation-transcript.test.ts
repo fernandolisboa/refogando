@@ -4,6 +4,8 @@ import { eq, asc } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setClaudeClient } from '@/server/deps'
 import { FakeClaudeClient } from '@/server/claude/client'
+import type { ClaudeClient } from '@/server/claude/client'
+import type { GenerationOutput } from '@/domain/generation'
 import { POST as POST_CREATE } from '@/app/api/creation-sessions/route'
 import { GET as GET_SESSION } from '@/app/api/creation-sessions/[id]/route'
 import { DELETE as DELETE_TRANSCRIPT } from '@/app/api/creation-sessions/[id]/transcript/route'
@@ -434,6 +436,91 @@ describe('Contratos de ON DELETE (FK)', () => {
     // Falas sobrevivem (presas à Session, não à Receita).
     const msgs = await getDb().select().from(transcriptMessage).where(eq(transcriptMessage.creationSessionId, cs.id))
     expect(msgs.length).toBe(1)
+  })
+})
+
+describe('Concorrência de seq — UNIQUE(creation_session_id, seq) é a rede (23505)', () => {
+  it('DB-level: INSERT cru duplicado em (creation_session_id, seq) ⇒ PostgresError 23505', async () => {
+    // Prova determinística do backstop: duas falas concorrentes na MESMA Session que
+    // calculassem o mesmo `seq` baterem no índice UNIQUE → 23505 (o que a rota traduz no
+    // frame {type:'error',error:'conflito_concorrente'}). Aqui exercitamos só o índice, cru.
+    const { userId } = await seedSessionHeaders({ email: 'cs-seqdup@conv.test' })
+    const [cs] = await getDb()
+      .insert(creationSession)
+      .values({ userId, mode: 'conversation', recipeId: null })
+      .returning({ id: creationSession.id })
+
+    await sql`INSERT INTO transcript_message (creation_session_id, role, content, seq)
+             VALUES (${cs.id}, 'user', 'primeira', 0)`
+    let err: unknown
+    try {
+      await sql`INSERT INTO transcript_message (creation_session_id, role, content, seq)
+               VALUES (${cs.id}, 'assistant', 'colisão no mesmo seq', 0)`
+    } catch (e) {
+      err = e
+    }
+    expect((err as { code?: string }).code).toBe('23505')
+
+    // A 1ª fala sobreviveu; a colisão foi rejeitada (nada de duplicata).
+    const msgs = await getDb()
+      .select()
+      .from(transcriptMessage)
+      .where(eq(transcriptMessage.creationSessionId, cs.id))
+    expect(msgs.length).toBe(1)
+  })
+
+  it('route-level: corrida de append na MESMA Session → o perdedor emite {type:error,conflito_concorrente} (nunca close mudo)', async () => {
+    // Determinístico via BARREIRA: a colisão de seq só ocorre quando duas tx leem o MESMO max
+    // antes de qualquer INSERT commitar. Um probe ClaudeClient prende as DUAS chamadas até
+    // ambas terem aberto o stream; só então ambas seguem para o append (que lê max=−1 → next=0)
+    // e UMA perde no UNIQUE(creation_session_id, seq) → 23505 → frame conflito_concorrente.
+    const { headers } = await seedSessionHeaders({ email: 'cs-seqcollide@conv.test' })
+    const { sessionId } = (await (await createSession(headers)).json()) as { sessionId: string }
+
+    // Barreira de 2 participantes: cada streamConversation rende 1 token, sinaliza chegada e
+    // espera o par antes de COMPLETAR (o append da rota roda só após o iterável terminar).
+    let arrived = 0
+    let releaseBoth!: () => void
+    const bothArrived = new Promise<void>((r) => {
+      releaseBoth = r
+    })
+    class BarrierClient implements ClaudeClient {
+      async echo(t: string): Promise<string> {
+        return t
+      }
+      async generateRecipe(): Promise<GenerationOutput> {
+        return cannedSuccess()
+      }
+      async *streamConversation(): AsyncIterable<string> {
+        yield 'tok'
+        if (++arrived === 2) releaseBoth()
+        await bothArrived // ambas só completam (→ append) quando as duas chegaram.
+      }
+    }
+    setClaudeClient(new BarrierClient())
+
+    // Duas chamadas concorrentes à MESMA Session: ambas leem max=−1 (next=0) antes de commitar.
+    const [r1, r2] = await Promise.all([
+      collectNdjson(await postStream({ sessionId, transcript: makeTranscript() }, headers)),
+      collectNdjson(await postStream({ sessionId, transcript: makeTranscript() }, headers)),
+    ])
+
+    const terminals = [r1.at(-1)!, r2.at(-1)!]
+    // NUNCA close mudo: ambas têm frame terminal. Uma venceu (recipe), a outra perdeu o seq e
+    // recebeu o frame LIMPO conflito_concorrente (em vez de stream sem terminal).
+    const conflicts = terminals.filter(
+      (t) => t.type === 'error' && t.error === 'conflito_concorrente',
+    )
+    const recipes = terminals.filter((t) => t.type === 'recipe')
+    expect(conflicts.length).toBe(1)
+    expect(recipes.length).toBe(1)
+
+    // A vencedora gravou EXATAMENTE 2 falas (seq 0,1); a perdedora reverteu (tx atômica).
+    const msgs = await getDb()
+      .select()
+      .from(transcriptMessage)
+      .where(eq(transcriptMessage.creationSessionId, sessionId))
+    expect(msgs.length).toBe(2)
   })
 })
 

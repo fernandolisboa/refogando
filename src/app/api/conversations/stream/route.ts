@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
+import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
@@ -46,6 +47,8 @@ import { persistGeneration } from '@/server/generation/persist'
  *        o 201 de /api/generations; devolve recipeId, NÃO o corpo da Receita)
  *      {type:'impossible',advisory}                        (hard-stop honesto, sem Receita)
  *      {type:'error',error:'geracao_invalida'}             (INVALID)
+ *      {type:'error',error:'conflito_concorrente'}         (corrida de append na MESMA Session
+ *        bateu no UNIQUE(creation_session_id, seq) → 23505; frame limpo em vez de close mudo)
  *
  * ASSIMETRIA DE TRANSPORTE (NÃO "consertar"): o caminho structured devolve HTTP 502 para
  * INVALID, mas aqui a destilação SEMPRE roda DEPOIS do stream abrir → os headers JÁ foram
@@ -68,7 +71,7 @@ type TerminalFrame =
       avisos?: ReturnType<typeof renderAvisos>
     }
   | { type: 'impossible'; advisory: string | null }
-  | { type: 'error'; error: 'geracao_invalida' }
+  | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
 
 const encoder = new TextEncoder()
 
@@ -88,6 +91,13 @@ function ndjsonLine(frame: { type: 'token'; text: string } | TerminalFrame): Uin
  *
  * O índice UNIQUE(creation_session_id, seq) é a rede contra dupla atribuição (23505).
  * Devolve o `sessionId` resolvido (threado em persistGeneration como existingSessionId).
+ *
+ * CONTRATO: roda numa ÚNICA transação (resolve a Session + anexa as 2 falas + bumpa
+ * updated_at, tudo ou nada). O CHAMADOR detém o contrato de abort/posse — esta função NÃO
+ * checa `signal.aborted` (o `start` faz isso antes de chamá-la) nem (re)autentica o caller.
+ * Dois appends concorrentes na MESMA Session colidem no UNIQUE(creation_session_id, seq):
+ * o perdedor estoura 23505, que o `start` traduz no frame terminal {type:'error',
+ * error:'conflito_concorrente'} (sem auto-retry — fora de escopo).
  */
 async function ensureSessionAndAppendTurn(input: {
   ownerId: string
@@ -198,9 +208,10 @@ export async function POST(req: Request): Promise<Response> {
           controller.enqueue(ndjsonLine({ type: 'token', text }))
         }
 
-        // Abortado durante/ao fim do stream: NÃO roda a destilação (2ª chamada ao Claude) nem
-        // persiste — um request abortado não tem cliente p/ receber um frame terminal. (Nada
-        // de Transcrição persiste tampouco: o append abaixo só roda se NÃO abortado.)
+        // Aborts MID-stream já foram tratados pelo early-return DENTRO do loop de tokens
+        // acima. Este check pós-loop guarda o que vem DEPOIS: o append da Transcrição, a
+        // destilação (2ª chamada ao Claude) e a persistência — nada disso roda se o cliente
+        // sumiu (sem cliente p/ receber o frame terminal; nada de Transcrição persiste).
         if (signal.aborted) return
 
         // #15: PERSISTE as 2 falas novas (turno do Usuário + resposta do Assistente) e resolve
@@ -213,6 +224,11 @@ export async function POST(req: Request): Promise<Response> {
           userTurn: transcript[transcript.length - 1],
           assistantText,
         })
+
+        // Abortado DURANTE o append (cliente sumiu enquanto a tx rodava): não queima a 2ª
+        // chamada ao Claude (destilação). As 2 falas já commitadas são o turno real e ficam
+        // — a retomada re-destila a partir delas. (Espelha o pre-append abort acima.)
+        if (signal.aborted) return
 
         // 2ª chamada (ADR-0009): DESTILAÇÃO single-shot a partir da Transcrição (VERBATIM
         // o generateRecipe de #8). A estrutura nasce da SAÍDA do RecipeGenSchema.
@@ -278,6 +294,15 @@ export async function POST(req: Request): Promise<Response> {
         // Abort do cliente em voo (o seam estoura com AbortError): não é falha real, é
         // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu.
         if (signal.aborted) return
+        // Corrida de append na MESMA Session: dois requests concorrentes batem no UNIQUE
+        // (creation_session_id, seq) → 23505. Em vez de um close MUDO (que o cliente lê como
+        // queda de stream ambígua), emite um frame terminal LIMPO e determinístico e fecha.
+        // NÃO há auto-retry (fora de escopo — o cliente decide se reenvia o turno).
+        if (pgCode(err) === '23505') {
+          controller.enqueue(ndjsonLine({ type: 'error', error: 'conflito_concorrente' }))
+          controller.close()
+          return
+        }
         // Erro durante o stream (ex.: seam estourou). Loga no servidor ANTES de errar o
         // stream — sem isso a falha é invisível em produção. Sanitizado: tag + mensagem/stack,
         // NUNCA a API key, nem o conteúdo da Transcrição.

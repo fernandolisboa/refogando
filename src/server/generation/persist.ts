@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import {
   recipe,
@@ -72,7 +72,10 @@ export type PersistGenerationInput = {
   // Presente → REUSA a sessão (UPDATE em vez de INSERT): success/degraded/playful gravam
   // recipe_id + updated_at; impossible só bumpa updated_at (recipe_id segue NULL). A
   // generation é SEMPRE inserida (múltiplas por sessão são permitidas — re-destilação). A
-  // posse é provada pelo ROUTE antes de chegar aqui (param DB-shaped, não auth-shaped).
+  // posse é provada pelo ROUTE antes de chegar aqui, mas a persistência TAMBÉM se auto-verifica
+  // (defense-in-depth, fail-closed): confere `user_id === ownerId` e escopa todo UPDATE por
+  // ownerId — um existingSessionId não-possuído NUNCA anexa geração/Receita à sessão alheia
+  // (estoura erro interno; só dispara num bug do route, nunca em fluxo normal).
   // Ausente → comportamento legado: INSERE uma nova creation_session (modo stateless de #12,
   // e o caminho lazy-create do stream quando o cliente não manda sessionId).
   existingSessionId?: string
@@ -123,6 +126,30 @@ async function insertBriefing(
   return createdBriefing.id
 }
 
+/**
+ * #15 — guarda de posse fail-closed para o caminho `existingSessionId`. SELECT da sessão
+ * por (id, user_id=ownerId) DENTRO da tx; se não achar (não-possuída ou inexistente), ESTOURA
+ * — assim uma sessão alheia NUNCA recebe geração/Receita anexada e a tx inteira reverte.
+ * O route já prova a posse antes de chamar `persistGeneration`; isto é defense-in-depth, então
+ * o erro só dispara num bug de programação (nunca em fluxo normal) — daí o `throw`, não um
+ * insert silencioso numa sessão estranha. NÃO é exportado (detalhe interno da persistência).
+ */
+async function assertOwnedSession(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0],
+  sessionId: string,
+  ownerId: string,
+): Promise<void> {
+  const [owned] = await tx
+    .select({ id: creationSession.id })
+    .from(creationSession)
+    .where(and(eq(creationSession.id, sessionId), eq(creationSession.userId, ownerId)))
+  if (!owned) {
+    throw new Error(
+      `persistGeneration: existingSessionId não-possuído ou inexistente (defense-in-depth fail-closed)`,
+    )
+  }
+}
+
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
@@ -142,10 +169,13 @@ export async function persistGeneration(
         // #15: RETOMA a sessão (criada no começo da conversa). impossible NÃO entrega Receita
         // → recipe_id segue NULL; só bumpa updated_at (last-activity, ADR-0006). NÃO INSERE
         // uma 2ª sessão (senão um impossible numa conversa retomada duplicaria a sessão).
+        // Defense-in-depth (fail-closed): confere posse ANTES de tocar a sessão — um
+        // existingSessionId não-possuído estoura (bug do route, nunca fluxo normal).
+        await assertOwnedSession(tx, existingSessionId, ownerId)
         await tx
           .update(creationSession)
           .set({ updatedAt: sql`now()` })
-          .where(eq(creationSession.id, existingSessionId))
+          .where(and(eq(creationSession.id, existingSessionId), eq(creationSession.userId, ownerId)))
         sessionId = existingSessionId
       } else {
         const [session] = await tx
@@ -228,10 +258,13 @@ export async function persistGeneration(
       // (UPDATE recipe_id + updated_at). NÃO INSERE uma 2ª sessão. briefing_id NÃO é tocado:
       // conversation não tem briefing (pedido é null aqui), e re-destilar não reescreve o
       // pedido original. A generation abaixo é sempre INSERIDA (múltiplas por sessão).
+      // Defense-in-depth (fail-closed): confere posse ANTES de anexar a Receita — um
+      // existingSessionId não-possuído estoura (bug do route, nunca fluxo normal).
+      await assertOwnedSession(tx, existingSessionId, ownerId)
       await tx
         .update(creationSession)
         .set({ recipeId: createdRecipe.id, updatedAt: sql`now()` })
-        .where(eq(creationSession.id, existingSessionId))
+        .where(and(eq(creationSession.id, existingSessionId), eq(creationSession.userId, ownerId)))
       sessionId = existingSessionId
     } else {
       const [session] = await tx

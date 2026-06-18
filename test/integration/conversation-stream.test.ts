@@ -8,7 +8,7 @@ import { FakeClaudeClient } from '@/server/claude/client'
 import type { GenerationOutput } from '@/domain/generation'
 import { POST } from '@/app/api/conversations/stream/route'
 import { persistGeneration } from '@/server/generation/persist'
-import { recipe, recipeTranslation, recipeIngredient, creationSession, generation, appConfig } from '@/db/schema'
+import { recipe, recipeTranslation, recipeIngredient, creationSession, generation, transcriptMessage, appConfig } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
 import {
   cannedSuccess,
@@ -351,6 +351,64 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     expect(c.transcript).toBe(2)
   })
 
+  it('#15 IDOR: B POSTa com o sessionId REAL de A → lazy-create p/ B; a Session de A fica INTACTA', async () => {
+    // User A: uma Session REAL própria, com Receita anexada e 2 falas (turno real).
+    const { userId: aId } = await seedSessionHeaders({ email: 'conv-idor-a@gen.test' })
+    const db = getDb()
+    const aRecipeId = (
+      await db
+        .insert(recipe)
+        .values({
+          origin: 'ai_chat',
+          visibility: 'private',
+          resultKind: 'success',
+          ownerId: aId,
+          originalLocale: 'pt-BR',
+        })
+        .returning({ id: recipe.id })
+    )[0].id
+    const [aSession] = await db
+      .insert(creationSession)
+      .values({ userId: aId, mode: 'conversation', recipeId: aRecipeId })
+      .returning({ id: creationSession.id })
+    await db.insert(transcriptMessage).values([
+      { creationSessionId: aSession.id, role: 'user', content: 'segredo de A', seq: 0 },
+      { creationSessionId: aSession.id, role: 'assistant', content: 'resposta a A', seq: 1 },
+    ])
+
+    // User B POSTa um turno passando o sessionId REAL de A (tentativa de IDOR).
+    const { userId: bId, headers: bHeaders } = await seedSessionHeaders({ email: 'conv-idor-b@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens(['oi'])))
+    const res = await postStream({ transcript: makeTranscript(), sessionId: aSession.id }, bHeaders)
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1].type).toBe('recipe')
+
+    // (1) B teve sucesso e ganhou uma Session NOVA própria (lazy-create fallback, posse fail-closed).
+    const bSessions = await db.select().from(creationSession).where(eq(creationSession.userId, bId))
+    expect(bSessions.length).toBe(1)
+    expect(bSessions[0].id).not.toBe(aSession.id)
+    const bMsgs = await db
+      .select()
+      .from(transcriptMessage)
+      .where(eq(transcriptMessage.creationSessionId, bSessions[0].id))
+    expect(bMsgs.length).toBe(2)
+
+    // (2) A INTACTA: mesmo recipe_id, MESMAS 2 falas (conteúdo/seq), sem falas novas.
+    const [aAfter] = await db.select().from(creationSession).where(eq(creationSession.id, aSession.id))
+    expect(aAfter.recipeId).toBe(aRecipeId)
+    const aMsgs = await sql<{ role: string; content: string; seq: number }[]>`
+      SELECT role, content, seq FROM transcript_message WHERE creation_session_id = ${aSession.id} ORDER BY seq`
+    expect(aMsgs).toEqual([
+      { role: 'user', content: 'segredo de A', seq: 0 },
+      { role: 'assistant', content: 'resposta a A', seq: 1 },
+    ])
+
+    // DUAS Sessions no total (A + a nova de B), 4 falas (2 de A + 2 de B).
+    const c = await counts()
+    expect(c.session).toBe(2)
+    expect(c.transcript).toBe(4)
+  })
+
   it('model resolvido de app_config.default_model → vai pra generation.model (default opus quando ausente)', async () => {
     // default ausente.
     {
@@ -521,6 +579,82 @@ describe('persistGeneration — existingSessionId RETOMA a sessão (#15, REAL)',
       .where(eq(creationSession.id, first!.creationSessionId))
     // impossible UPDATE-only NÃO toca recipe_id: segue apontando p/ a Receita da 1ª destilação.
     expect(cs.recipeId).toBe(recipeBefore)
+  })
+
+  it('impossible-após-impossible com existingSessionId → recipe_id segue NULL; 1 Session, 2ª generation', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'conv-reuse-impimp@gen.test' })
+
+    // 1ª destilação IMPOSSIBLE cria a Session SEM Receita (recipe_id NULL).
+    const first = await persistGeneration({
+      result: { outcome: 'impossible', advisory: 'não dá (1)' },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+    })
+    expect(first!.recipeId).toBeNull()
+    const c1 = await counts()
+    expect(c1.session).toBe(1)
+    expect(c1.recipe).toBe(0)
+    expect(c1.generation).toBe(1)
+
+    // 2ª IMPOSSIBLE NA mesma Session: NÃO cria 2ª Session, recipe_id segue NULL, 2ª generation.
+    const second = await persistGeneration({
+      result: { outcome: 'impossible', advisory: 'não dá (2)' },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+      existingSessionId: first!.creationSessionId,
+    })
+    expect(second!.creationSessionId).toBe(first!.creationSessionId)
+    expect(second!.recipeId).toBeNull()
+
+    const c2 = await counts()
+    expect(c2.session).toBe(1) // ainda UMA Session
+    expect(c2.recipe).toBe(0) // nunca nasceu Receita
+    expect(c2.generation).toBe(2) // 2ª generation existe
+    const [cs] = await getDb()
+      .select()
+      .from(creationSession)
+      .where(eq(creationSession.id, first!.creationSessionId))
+    expect(cs.recipeId).toBeNull() // recipe_id permanece NULL após o 2º impossible
+  })
+
+  it('defense-in-depth: existingSessionId de OUTRO Usuário → ESTOURA e NÃO muta a sessão alheia (nem insere generation)', async () => {
+    // Sessão de A (criada pela própria destilação de A).
+    const { userId: aId } = await seedSessionHeaders({ email: 'conv-persist-idor-a@gen.test' })
+    const aGen = await persistGeneration({
+      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: 'dica de A' },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: aId,
+      model: 'claude-opus-4-8',
+    })
+    const aSessionId = aGen!.creationSessionId
+    const before = await counts()
+
+    // B tenta persistir uma geração anexando a Session de A (só dispara num bug do route).
+    const { userId: bId } = await seedSessionHeaders({ email: 'conv-persist-idor-b@gen.test' })
+    await expect(
+      persistGeneration({
+        result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: 'tentativa de B' },
+        mode: 'conversation',
+        origin: 'ai_chat',
+        ownerId: bId,
+        model: 'claude-opus-4-8',
+        existingSessionId: aSessionId,
+      }),
+    ).rejects.toThrow(/não-possuído|nao-possuido|fail-closed/i)
+
+    // Sessão de A INTACTA: recipe_id e dono inalterados; NENHUMA generation nova (tx reverteu).
+    const db = getDb()
+    const [aAfter] = await db.select().from(creationSession).where(eq(creationSession.id, aSessionId))
+    expect(aAfter.userId).toBe(aId)
+    expect(aAfter.recipeId).toBe(aGen!.recipeId)
+    // Contagens globais inalteradas (a Receita de B até pode ter sido inserida na tx, mas a tx
+    // reverteu inteira ao estourar — nada persiste). generation segue só a de A.
+    expect(await counts()).toEqual(before)
   })
 })
 
