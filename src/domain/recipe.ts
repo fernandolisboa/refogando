@@ -11,7 +11,7 @@
  */
 
 // ── Origin: selo de proveniência da Receita (imutável — ADR-0002) ──────────────
-export const ORIGENS = ['catalog', 'ai_chat', 'ai_structured', 'user_edited'] as const
+export const ORIGENS = ['catalog', 'ai_chat', 'ai_structured', 'ai_free_text', 'user_edited'] as const
 export type Origin = (typeof ORIGENS)[number]
 
 // ── Visibilidade ───────────────────────────────────────────────────────────────
@@ -22,8 +22,9 @@ export type Visibility = (typeof VISIBILIDADES)[number]
 export const RESULT_KINDS = ['success', 'degraded', 'playful'] as const
 export type ResultKind = (typeof RESULT_KINDS)[number]
 
-// ── Modo de criação da Session (ADR-0006): conversa (#12) ou estruturado (#11) ──
-export const CREATION_MODES = ['conversation', 'structured'] as const
+// ── Modo de criação da Session (ADR-0006): conversa (#12), estruturado (#11) ou ──
+// ── prompt aberto / free_text (#88) ─────────────────────────────────────────────
+export const CREATION_MODES = ['conversation', 'structured', 'free_text'] as const
 export type CreationMode = (typeof CREATION_MODES)[number]
 
 // ── Linhagem: como a Receita derivou de um pai ─────────────────────────────────
@@ -75,7 +76,7 @@ export type SearchSection = 'catalogo' | 'comunidade'
 
 /**
  * Classifica a seção da Busca a partir do `origin`: `catalog` ⇒ Catálogo; o resto
- * (`ai_chat`/`ai_structured`/`user_edited`) ⇒ Comunidade. PURO — fonte única da
+ * (`ai_chat`/`ai_structured`/`ai_free_text`/`user_edited`) ⇒ Comunidade. PURO — fonte única da
  * regra de seção no TS (o SQL espelha a MESMA regra para particionar o ranking).
  */
 export function classifySection(origin: Origin): SearchSection {
