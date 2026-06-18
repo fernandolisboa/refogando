@@ -189,8 +189,7 @@ export const ptBR = {
     tentarCarregarNovamente: 'Tentar carregar de novo',
     tentarNovamente: 'Ajustar e tentar de novo',
     criarOutra: 'Criar outra receita',
-    salvar: 'Salvar receita',
-    salvarEmBreve: 'Salvar estará disponível na próxima etapa.',
+    verReceita: 'Ver receita',
     erroGeracao: 'Não foi possível gerar a receita. Tente de novo.',
     erroConexao: 'Não foi possível conectar. Tente de novo.',
     erroBriefingVazio:
@@ -200,6 +199,20 @@ export const ptBR = {
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',
+  },
+  visibilidade: {
+    titulo: 'Visibilidade',
+    privadaBadge: 'Privada',
+    publicaBadge: 'Pública',
+    privadaDescricao: 'Só você vê esta receita.',
+    publicaDescricao: 'Esta receita está no acervo da comunidade.',
+    publicar: 'Publicar',
+    despublicar: 'Despublicar',
+    atualizando: 'Atualizando…',
+    playfulBloqueio: 'Receitas de zoeira ficam privadas e não podem ser publicadas.',
+    erroPlayful: 'Esta receita de zoeira não pode ser publicada.',
+    erroNaoEncontrada: 'Não foi possível encontrar esta receita.',
+    erroGenerico: 'Não foi possível mudar a visibilidade. Tente de novo.',
   },
 } as const
 

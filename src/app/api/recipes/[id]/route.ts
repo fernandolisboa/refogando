@@ -42,20 +42,41 @@ export async function GET(
   // Pública/catálogo (owner_id NULL = sistema, ADR-0011) → legível por qualquer um.
   // Caso contrário (com dono + private) exige ser o próprio dono; senão 404 (não vaza
   // existência — mesma forma da rota de retomada em creation-sessions/[id]).
+  //
+  // `viewerId` (#59) habilita os campos de gestão (`canManage`/`visibility`/`resultKind`)
+  // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
+  // parcimônia: nunca lemos a sessão no tráfego anônimo quente (a Busca linka direto pra cá).
   const isPublicRead = gate.ownerId == null || gate.visibility === 'public'
+  const requestLocale = parseRequestLocale(request)
+
+  let viewerId: string | undefined
+  let rows: Awaited<ReturnType<typeof loadRecipeRows>>
   if (!isPublicRead) {
+    // Ramo privado: a sessão GATEIA se vale carregar — só pagamos `loadRecipeRows` depois
+    // de confirmar que o requester é o dono (sequencial de propósito: não carregar sem acesso).
     const g = await requireSession(request)
     if (!g.ok || g.session.user.id !== gate.ownerId) {
       return Response.json({ error: 'not_found' }, { status: 404 })
     }
+    viewerId = g.session.user.id
+    rows = await loadRecipeRows(db, id)
+  } else if (gate.ownerId != null && request.headers.get('cookie') != null) {
+    // Ramo público COM dono: só vale descobrir o requester quando há cookie (pula anônimo
+    // puro — perf). Catálogo (ownerId null) nunca tem dono ⇒ nunca canManage. Lê só
+    // `g.ok`/`g.session`; JAMAIS `g.response` (leitura pública permanece anônima-friendly,
+    // nunca vira 401/404 aqui). A sessão NÃO gateia a carga (a leitura é sempre permitida),
+    // então sobrepomos `requireSession` e `loadRecipeRows` — colapsa o round-trip serial no
+    // caminho QUENTE do logado vindo da Busca (sem custo extra de latência).
+    const [g, loaded] = await Promise.all([requireSession(request), loadRecipeRows(db, id)])
+    if (g.ok) viewerId = g.session.user.id
+    rows = loaded
+  } else {
+    // Ramo público anônimo (sem cookie) ou catálogo: nenhuma sessão a resolver.
+    rows = await loadRecipeRows(db, id)
   }
-
-  const requestLocale = parseRequestLocale(request)
-
-  const rows = await loadRecipeRows(db, id)
   if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
 
-  const view = resolveRecipeView({ ...rows, requestLocale })
+  const view = resolveRecipeView({ ...rows, requestLocale, viewerId })
 
   return Response.json(view)
 }

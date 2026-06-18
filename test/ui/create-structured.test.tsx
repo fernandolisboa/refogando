@@ -155,7 +155,7 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(h1s[0]).toHaveTextContent(M.titulo)
   })
 
-  it('T2 — SUCCESS: submeter → loading desabilitado → GET busca a Receita → RecipeDetailView + CTA salvar', async () => {
+  it('T2 — SUCCESS: submeter → loading desabilitado → GET busca a Receita → RecipeDetailView + CTA "Ver receita"', async () => {
     const user = userEvent.setup()
     const d = deferred()
     const fetchMock = mockFetch({
@@ -185,9 +185,9 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent(baseView().name)
 
-    // CTA Salvar presente e DESABILITADO (a ação real é #59).
-    const salvar = screen.getByRole('button', { name: M.salvar })
-    expect(salvar).toBeDisabled()
+    // CTA "Ver receita" é um LINK que navega pro detalhe (#59) — não escreve nada.
+    const verReceita = screen.getByRole('link', { name: M.verReceita })
+    expect(verReceita).toHaveAttribute('href', '/recipes/r-1')
 
     // Corpo da Receita lido CRU: o ingrediente aparece (trava ausência de .view/.recipe).
     expect(screen.getByText(/feijão/)).toBeInTheDocument()

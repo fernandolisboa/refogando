@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { GET } from '@/app/api/recipes/[id]/route'
 import {
   seedFeijoadaCatalog,
+  seedRecipe,
   seedRecipeNoRestriction,
   seedRecipeUnorderedIngredients,
+  seedTranslation,
 } from '../helpers/recipes'
+import { seedSessionHeaders } from '../helpers/users'
 
 /**
  * Leitura localizada da Receita pela porta mais alta — o handler GET (issue #3).
@@ -15,6 +18,14 @@ import {
 function get(id: string, locale?: string): Promise<Response> {
   const qs = locale ? `?locale=${encodeURIComponent(locale)}` : ''
   return GET(new Request(`http://localhost/api/recipes/${id}${qs}`), {
+    params: Promise.resolve({ id }),
+  })
+}
+
+/** GET COM headers de sessão (#59) — exercita a resolução de `viewerId` no ramo público. */
+function getAs(id: string, headers: Headers, locale?: string): Promise<Response> {
+  const qs = locale ? `?locale=${encodeURIComponent(locale)}` : ''
+  return GET(new Request(`http://localhost/api/recipes/${id}${qs}`, { headers }), {
     params: Promise.resolve({ id }),
   })
 }
@@ -144,5 +155,69 @@ describe('GET /api/recipes/[id] — leitura localizada', () => {
 
     // Nome e corpo, por outro lado, DIFEREM entre locales.
     expect(en.name).not.toBe(pt.name)
+  })
+})
+
+describe('GET /api/recipes/[id] — campos de gestão gateados ao dono (#59)', () => {
+  type ManageView = {
+    canManage?: boolean
+    visibility?: string
+    resultKind?: string
+  }
+
+  // N1 — não-regressão anônima: leitor anônimo de receita de CATÁLOGO (sem cookie) ⇒ 200 e
+  // NENHUM campo de gestão (não-vazamento + prova de que o ramo público não virou 401).
+  it('N1: leitor anônimo de catálogo ⇒ 200 e SEM canManage/visibility/resultKind', async () => {
+    const { recipeId } = await seedFeijoadaCatalog()
+
+    const res = await get(recipeId, 'pt-BR')
+    expect(res.status).toBe(200)
+    const view = (await res.json()) as ManageView
+    expect(view).not.toHaveProperty('canManage')
+    expect(view).not.toHaveProperty('visibility')
+    expect(view).not.toHaveProperty('resultKind')
+  })
+
+  // N2 — dono lê a PRÓPRIA receita PÚBLICA: única porta por onde canManage chega à page de
+  // detalhe via GET (não via publish/unpublish). 200 + os três campos de gestão presentes.
+  it('N2: dono lê própria receita pública ⇒ canManage=true + visibility + resultKind', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'owner-get-pub@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      resultKind: 'success',
+      ownerId: userId,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+
+    const res = await getAs(id, headers, 'pt-BR')
+    expect(res.status).toBe(200)
+    const view = (await res.json()) as ManageView
+    expect(view.canManage).toBe(true)
+    expect(view.visibility).toBe('public')
+    expect(view.resultKind).toBe('success')
+  })
+
+  // N3 — não-dono AUTENTICADO lê pública alheia: a guarda de cookie dispara getSession, mas
+  // viewerId !== ownerId ⇒ 200 e SEM campos de gestão (não vaza "gerida por você" a terceiro).
+  it('N3: não-dono autenticado lê pública alheia ⇒ 200 e SEM canManage', async () => {
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'owner-get-other@ex.com' })
+    const { headers: intruderHeaders } = await seedSessionHeaders({ email: 'intruder-get@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      resultKind: 'success',
+      ownerId,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+
+    const res = await getAs(id, intruderHeaders, 'pt-BR')
+    expect(res.status).toBe(200)
+    const view = (await res.json()) as ManageView
+    expect(view).not.toHaveProperty('canManage')
+    expect(view).not.toHaveProperty('visibility')
+    expect(view).not.toHaveProperty('resultKind')
   })
 })

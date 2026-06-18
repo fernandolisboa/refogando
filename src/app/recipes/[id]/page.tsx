@@ -18,6 +18,7 @@ import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { RecipeVisibilityControls } from '@/components/recipe/recipe-visibility-controls'
 import type { RecipeView } from '@/domain/recipe-read'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
@@ -67,6 +68,16 @@ export default async function RecipeDetailPage({
   return (
     <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
       <RecipeDetailView view={view} m={messages} />
+      {/* Controles de Visibilidade SÓ pro dono (#59) — a rota gateia canManage/visibility/
+          resultKind ao dono; o servidor reimpõe ownership/playful. Sem chamada extra a DB:
+          o ownership chega na própria view (page segue orquestrador fino, ADR-0010). */}
+      {view.canManage && view.visibility && view.resultKind && (
+        <RecipeVisibilityControls
+          recipeId={view.id}
+          initialVisibility={view.visibility}
+          resultKind={view.resultKind}
+        />
+      )}
     </Container>
   )
 }

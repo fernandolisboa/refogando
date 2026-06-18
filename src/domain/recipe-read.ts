@@ -51,6 +51,14 @@ export type RecipeRow = {
   porcoes: number | null
   dificuldade: number | null
   schemaVersion: number
+  /**
+   * Dono da Receita (#59) — `null` para catálogo/sistema (ADR-0011). OPCIONAL no tipo:
+   * `loadRecipeRows` faz `select().from(recipe)` (SELECT *) e JÁ o traz em runtime; deixá-lo
+   * opcional poupa as fixtures puras (`recipeRow()` em testes) de mudar. Insumo de
+   * `canManage` — NUNCA sai na vista; compara-se contra `viewerId` (decisão de ownership da
+   * camada de servidor, que conhece a sessão).
+   */
+  ownerId?: string | null
 }
 
 /** Linha de tradução conforme `db.select().from(recipeTranslation)`. */
@@ -94,6 +102,12 @@ export type ResolveInput = {
   ingredients: ReadonlyArray<IngredientItem>
   tags: ReadonlyArray<string>
   requestLocale: string
+  /**
+   * Id do requester (#59) — OPCIONAL; ausente = leitor anônimo (leitura pública/catálogo).
+   * Só habilita os campos de gestão (`canManage`/`visibility`/`resultKind`) quando casa com
+   * `recipe.ownerId`. NUNCA altera nome/corpo/facetas/avisos — leitura é idêntica p/ todos.
+   */
+  viewerId?: string
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -161,6 +175,18 @@ export type RecipeView = {
   avisos?: AvisoView[]
   /** Aviso de tradução obsoleta — AUSENTE salvo quando a tradução pedida é stale e ≠ origem. */
   staleNotice?: StaleNotice
+  /**
+   * Campos de GESTÃO (#59) — a mesma regra "ausente ≠ vazio" das facetas/avisos. Os TRÊS
+   * saem JUNTOS e SÓ quando o requester é o dono (`viewerId === recipe.ownerId`); para
+   * leitor anônimo / não-dono / catálogo ficam AUSENTES (zero vazamento — o contrato de
+   * leitura pública fica IDÊNTICO ao atual: nem `visibility` nem `resultKind` vazam).
+   * A UI renderiza os controles de Visibilidade SÓ sob `canManage`.
+   */
+  canManage?: boolean
+  /** Visibilidade atual — presente SÓ quando `canManage` (dono). */
+  visibility?: Visibility
+  /** Desfecho da geração — presente SÓ quando `canManage` (gateia o caso playful no toggle). */
+  resultKind?: ResultKind
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
@@ -359,6 +385,13 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     translations: input.translations,
   })
 
+  // Gestão (#59): o requester é o dono? Catálogo (ownerId null) ⇒ nunca; anônimo
+  // (viewerId ausente) ⇒ nunca. Quando dono, os TRÊS campos de gestão saem juntos.
+  const canManage =
+    input.viewerId != null &&
+    input.recipe.ownerId != null &&
+    input.recipe.ownerId === input.viewerId
+
   return {
     id: input.recipe.id,
     name,
@@ -385,5 +418,13 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     ...(avisos.length > 0 ? { avisos } : {}),
     // Ausente quando a tradução pedida não é stale (ou é a origem) — espelha `avisos?`.
     ...(staleNotice ? { staleNotice } : {}),
+    // Gestão (#59): os TRÊS campos saem JUNTOS e SÓ p/ o dono — leitura pública intacta.
+    ...(canManage
+      ? {
+          canManage: true,
+          visibility: input.recipe.visibility,
+          resultKind: input.recipe.resultKind,
+        }
+      : {}),
   }
 }

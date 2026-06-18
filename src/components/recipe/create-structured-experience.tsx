@@ -583,10 +583,14 @@ export function CreateStructuredExperience() {
               <RecipeDetailView view={view} m={messages} />
 
               <div className="flex flex-wrap items-center gap-3">
-                {/* Salvar é placeholder desabilitado (a ação real é a #59). */}
-                <button type="button" disabled className={`${btnPrimary} disabled:opacity-50`}>
-                  {m.salvar}
-                </button>
+                {/* A Receita JÁ está persistida (private). "Ver receita" só NAVEGA pro
+                    detalhe (#59), onde moram os controles de Visibilidade — não escreve nada
+                    (glossário: salvar ≠ navegar). */}
+                {result.recipeId && (
+                  <Link href={`/recipes/${result.recipeId}`} className={btnPrimary}>
+                    {m.verReceita}
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={() => voltarParaIdle({ limpar: true })}
@@ -595,7 +599,6 @@ export function CreateStructuredExperience() {
                   {m.criarOutra}
                 </button>
               </div>
-              <p className="text-sm text-muted">{m.salvarEmBreve}</p>
             </>
           )
         )}
