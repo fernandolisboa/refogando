@@ -79,7 +79,10 @@ describe('AdminConsole — render por papel (#63 AC5)', () => {
     // Admin-only AUSENTE do DOM (escondido), não só desabilitado.
     expect(screen.queryByRole('heading', { name: A.configTitulo })).toBeNull()
     expect(screen.queryByRole('heading', { name: A.papeisTitulo })).toBeNull()
-    expect(screen.queryByRole('combobox')).toBeNull() // sem select de modelo/papel
+    // Sem os selects admin-only de modelo/papel (a Curadoria, visível ao Curador, tem os
+    // próprios selects do form de criação — por isso miramos os admin-only por nome).
+    expect(screen.queryByRole('combobox', { name: A.modeloLabel })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: A.papelLabel })).toBeNull()
   })
 
   it('AccessDenied: título + link de volta ao início', () => {
