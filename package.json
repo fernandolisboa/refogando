@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "grant-role": "node --env-file=.env.local scripts/grant-role.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.104.1",

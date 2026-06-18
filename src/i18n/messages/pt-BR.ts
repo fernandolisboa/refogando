@@ -5,7 +5,7 @@
 import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 
 export const ptBR = {
-  app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
+  app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
   nav: { home: 'Início', recipes: 'Receitas', create: 'Criar', signIn: 'Entrar', signOut: 'Sair' },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   system: {
