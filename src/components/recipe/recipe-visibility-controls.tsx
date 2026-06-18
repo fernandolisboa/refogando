@@ -1,0 +1,141 @@
+'use client'
+
+/**
+ * Controles de Visibilidade (#59) — bloco de gestão do DONO: estado atual (privada/pública)
+ * + toggle publicar/despublicar. Irmão do `RecipeDetailView` (que continua PURO, sem hooks):
+ * a page de detalhe renderiza isto SÓ quando `view.canManage` (dono).
+ *
+ * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/publish` e `.../unpublish`
+ * via `fetch` (NÃO Server Action). O servidor é a verdade — impõe ownership e o invariante
+ * playful; isto é AFORDÂNCIA: espelha 422/404 que a rota devolve, não reimplementa domínio.
+ *
+ * Cores: só tokens já AA-verificados na #54. ÂMBAR é PROIBIDO aqui (ADR-0004: âmbar é
+ * EXCLUSIVO do Aviso de restrição) — estado, nota playful e erro usam tokens NEUTROS.
+ * O badge de estado é subordinado ao `<h2>` + descrição (não se confunde com o selo de
+ * proveniência Catálogo/Comunidade do header, que diferencia por accent).
+ */
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import type { ResultKind, Visibility } from '@/domain/recipe'
+import type { RecipeView } from '@/domain/recipe-read'
+import { useLocale } from '@/i18n/provider'
+import { btnPrimary, btnSecondary } from '@/components/button'
+
+/** Chaves de erro tratadas no toggle — mapeadas para a mensagem localizada neutra. */
+type ErrorKey = 'playful_nao_publicavel' | 'not_found' | 'erroGenerico'
+
+export function RecipeVisibilityControls({
+  recipeId,
+  initialVisibility,
+  resultKind,
+}: {
+  recipeId: string
+  initialVisibility: Visibility
+  resultKind: ResultKind
+}) {
+  const { messages } = useLocale()
+  const m = messages.visibilidade
+  const router = useRouter()
+
+  const [visibility, setVisibility] = useState<Visibility>(initialVisibility)
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorKey, setErrorKey] = useState<ErrorKey | null>(null)
+
+  const isPublic = visibility === 'public'
+  const isPlayful = resultKind === 'playful'
+  // Playful nunca pode publicar (ADR-0013); despublicar é sempre OK, mas um playful nunca
+  // está público, logo o botão só fica desabilitado no caminho de publicar.
+  const publicarBloqueado = isPlayful && !isPublic
+
+  async function handleToggle() {
+    if (isLoading) return
+    setIsLoading(true)
+    setErrorKey(null)
+    const endpoint = isPublic ? 'unpublish' : 'publish'
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/${endpoint}`, { method: 'POST' })
+      if (res.status === 422) {
+        setErrorKey('playful_nao_publicavel')
+        return
+      }
+      if (res.status === 404) {
+        setErrorKey('not_found')
+        return
+      }
+      if (!res.ok) {
+        setErrorKey('erroGenerico')
+        return
+      }
+      const updated = (await res.json()) as RecipeView
+      // A view do dono traz `visibility`; fallback defensivo p/ o alvo do toggle.
+      setVisibility(updated.visibility ?? (isPublic ? 'private' : 'public'))
+      // Relê a page server (status reflete em qualquer outra parte derivada da rota).
+      router.refresh()
+    } catch {
+      setErrorKey('erroGenerico')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const erroMensagem =
+    errorKey === 'playful_nao_publicavel'
+      ? m.erroPlayful
+      : errorKey === 'not_found'
+        ? m.erroNaoEncontrada
+        : errorKey === 'erroGenerico'
+          ? m.erroGenerico
+          : null
+
+  const botaoLabel = isLoading ? m.atualizando : isPublic ? m.despublicar : m.publicar
+  // Despublicar é a ação menos destacada (secundária); publicar é o CTA primário.
+  const botaoClasse = isPublic ? btnSecondary : btnPrimary
+
+  return (
+    <section
+      aria-labelledby="visibilidade-titulo"
+      className="flex flex-col gap-3 rounded-md border border-border bg-surface px-4 py-3"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 id="visibilidade-titulo" className="font-display text-lg font-semibold text-fg">
+          {m.titulo}
+        </h2>
+        <p className="font-medium text-fg">{isPublic ? m.publicaBadge : m.privadaBadge}</p>
+        <p className="max-w-[60ch] text-sm text-muted">
+          {isPublic ? m.publicaDescricao : m.privadaDescricao}
+        </p>
+      </div>
+
+      {isPlayful && (
+        <p
+          id="visibilidade-playful-nota"
+          className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg"
+        >
+          {m.playfulBloqueio}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleToggle}
+          disabled={isLoading || publicarBloqueado}
+          aria-busy={isLoading}
+          aria-describedby={publicarBloqueado ? 'visibilidade-playful-nota' : undefined}
+          className={`${botaoClasse} disabled:opacity-70`}
+        >
+          {botaoLabel}
+        </button>
+      </div>
+
+      {erroMensagem && (
+        <p
+          role="alert"
+          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+        >
+          {erroMensagem}
+        </p>
+      )}
+    </section>
+  )
+}

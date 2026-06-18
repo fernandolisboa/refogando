@@ -89,9 +89,11 @@ export async function applyVisibilityTransition(input: {
     }
   }
 
-  // 5. Monta a view atualizada (mesma forma do GET, mesmo locale).
+  // 5. Monta a view atualizada (mesma forma do GET, mesmo locale). `viewerId: userId`
+  //    (sempre o dono neste ponto) ⇒ a resposta JÁ traz canManage/visibility/resultKind
+  //    atualizados, então a UI seta o estado direto da resposta + router.refresh() (#59).
   const rows = await loadRecipeRows(db, id)
   if (!rows) return { kind: 'not_found' } // corrida improvável; mantém o contrato
-  const view = resolveRecipeView({ ...rows, requestLocale })
+  const view = resolveRecipeView({ ...rows, requestLocale, viewerId: userId })
   return { kind: 'ok', view }
 }
