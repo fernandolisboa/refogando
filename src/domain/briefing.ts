@@ -22,6 +22,7 @@ import {
 } from '@/domain/vocabulary'
 import { normalizeText } from '@/domain/recipe-restrictions'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
+import type { TranscriptMessage } from '@/domain/transcript'
 
 // ── Fonte única do enum `strength` (força do item) ─────────────────────────────
 // Vai aqui, não em vocabulary.ts: `strength` é conceito do Briefing, não do kernel
@@ -292,6 +293,35 @@ export function buildBriefingPrompt(b: Briefing): { systemPrompt: string; userPr
  */
 export function buildFreeTextPrompt(freeText: string): { systemPrompt: string; userPrompt: string } {
   return { systemPrompt: SYSTEM_PROMPT_BRIEFING, userPrompt: freeText.trim() }
+}
+
+// ── Montagem DESTILAÇÃO (modo conversa) → { systemPrompt, userPrompt } (#12) ─────
+// systemPrompt da destilação: COMPARTILHA a 1ª linha canônica de `SYSTEM_PROMPT_BRIEFING`,
+// mas DROPA as frases de briefing/força — a conversa não tem conceito de Briefing nem de
+// força "required"/"preferred". A destilação reusa o MESMO `RecipeGenSchema` de saída via
+// `generateRecipe`; só a ENTRADA muda. NÃO pode usar `SYSTEM_PROMPT_BRIEFING` (instruiria o
+// modelo sobre força, irrelevante e enganoso aqui).
+export const SYSTEM_PROMPT_DISTILLATION = [
+  'Você gera receitas de cozinha no schema canônico.',
+  'A entrada é uma conversa entre o Usuário e o Assistente; destile a receita pretendida.',
+].join(' ')
+
+function rotuloFala(role: TranscriptMessage['role']): string {
+  return role === 'user' ? 'Usuário' : 'Assistente'
+}
+
+/**
+ * PURO e determinístico (testável byte-a-byte): serializa a Transcrição como linhas
+ * rotuladas por papel ('Usuário: …' / 'Assistente: …'), na ordem original. NÃO injeta
+ * nada além da própria Transcrição (sem dados de outra sessão). Usa
+ * `SYSTEM_PROMPT_DISTILLATION` (NÃO o de briefing). A QUALIDADE da prosa não é critério —
+ * o teste asserta ESTRUTURA (papéis presentes, última fala do usuário), não o estilo.
+ */
+export function buildConversationPrompt(
+  transcript: ReadonlyArray<TranscriptMessage>,
+): { systemPrompt: string; userPrompt: string } {
+  const userPrompt = transcript.map((m) => `${rotuloFala(m.role)}: ${m.content}`).join('\n')
+  return { systemPrompt: SYSTEM_PROMPT_DISTILLATION, userPrompt }
 }
 
 // ── Costura para o Aviso (AC5) — montar `items` para o motor #7 ─────────────────

@@ -67,6 +67,11 @@ export type PersistGenerationInput = {
   model: string
   briefing?: PersistBriefing // NOVO — presente SSE mode === 'structured'
   freeText?: string // Texto livre CRU (#88) — presente SSE mode === 'free_text'
+  // STUB (#12): id de uma creation_session já existente, para REUSAR no modo conversa
+  // multi-tentativa. Em #12 é um NO-OP: ausente OU presente, AMBOS os branches ainda
+  // INSEREM uma nova creation_session (comportamento de hoje, inalterado). O caminho de
+  // UPDATE (retomar a sessão existente) chega em #15 — NÃO implementar aqui.
+  existingSessionId?: string
 }
 
 export type PersistGenerationResult = {

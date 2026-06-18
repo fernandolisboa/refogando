@@ -7,9 +7,12 @@ import {
   dedupeBriefing,
   isBriefingVazio,
   buildBriefingPrompt,
+  buildConversationPrompt,
+  SYSTEM_PROMPT_DISTILLATION,
   briefingItemsParaAviso,
 } from '@/domain/briefing'
 import type { Briefing, BriefingItem } from '@/domain/briefing'
+import type { TranscriptMessage } from '@/domain/transcript'
 import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
 
 /**
@@ -324,6 +327,45 @@ describe('buildBriefingPrompt — determinístico', () => {
     expect(userPrompt).not.toContain('Cozinha:')
     expect(userPrompt).not.toContain('Porções:')
     expect(userPrompt).not.toContain('Restrições:')
+  })
+})
+
+describe('buildConversationPrompt — determinístico (#12)', () => {
+  function turn(role: TranscriptMessage['role'], content: string): TranscriptMessage {
+    return { role, content }
+  }
+
+  it('SYSTEM_PROMPT_DISTILLATION compartilha a 1ª linha mas NÃO fala de briefing/força', () => {
+    expect(SYSTEM_PROMPT_DISTILLATION).toContain('Você gera receitas de cozinha no schema canônico.')
+    expect(SYSTEM_PROMPT_DISTILLATION.toLowerCase()).not.toContain('briefing')
+    expect(SYSTEM_PROMPT_DISTILLATION.toLowerCase()).not.toContain('força')
+    expect(SYSTEM_PROMPT_DISTILLATION).not.toContain('required')
+    expect(SYSTEM_PROMPT_DISTILLATION).not.toContain('preferred')
+  })
+
+  it('usa SYSTEM_PROMPT_DISTILLATION (não o de briefing)', () => {
+    const { systemPrompt } = buildConversationPrompt([turn('user', 'quero um bolo')])
+    expect(systemPrompt).toBe(SYSTEM_PROMPT_DISTILLATION)
+  })
+
+  it('userPrompt serializa cada fala com rótulo de papel, na ordem', () => {
+    const { userPrompt } = buildConversationPrompt([
+      turn('user', 'quero um bolo'),
+      turn('assistant', 'de que sabor?'),
+      turn('user', 'chocolate'),
+    ])
+    expect(userPrompt).toContain('Usuário: quero um bolo')
+    expect(userPrompt).toContain('Assistente: de que sabor?')
+    expect(userPrompt).toContain('Usuário: chocolate')
+    // Ordem preservada: a última fala (usuário) aparece DEPOIS da do assistente.
+    expect(userPrompt.indexOf('Usuário: chocolate')).toBeGreaterThan(
+      userPrompt.indexOf('Assistente: de que sabor?'),
+    )
+  })
+
+  it('é determinístico (mesma entrada → byte-a-byte igual)', () => {
+    const t: TranscriptMessage[] = [turn('user', 'arroz'), turn('assistant', 'ok'), turn('user', 'com queijo')]
+    expect(buildConversationPrompt(t)).toEqual(buildConversationPrompt(t))
   })
 })
 

@@ -19,6 +19,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import type { GenerationOutput } from '@/domain/generation'
+import type { TranscriptMessage } from '@/domain/transcript'
 import { RecipeGenSchema } from '@/domain/recipe-gen-schema'
 
 /**
@@ -32,9 +33,24 @@ export type GenerationInput = {
   model: string
 }
 
+/**
+ * Entrada do streaming da conversa (#12, ADR-0009 — DUAS chamadas distintas ao Claude). A
+ * 1ª (esta) STREAMA texto token-a-token; a 2ª (DESTILAÇÃO) reusa `generateRecipe` VERBATIM
+ * (single-shot, structured output). `transcript` é a Transcrição validada; `systemPrompt` é
+ * o de conversa (NÃO o de destilação — esse vive na chamada `generateRecipe`).
+ */
+export type ConversationStreamInput = {
+  systemPrompt: string
+  transcript: ReadonlyArray<TranscriptMessage>
+  model: string
+}
+
 export interface ClaudeClient {
   echo(text: string): Promise<string>
   generateRecipe(input: GenerationInput): Promise<GenerationOutput>
+  // Streaming conversacional: rende deltas de texto. A conclusão do iterável é o sinal
+  // terminal (SEM sentinela). #12 só consome o texto; thinking NÃO é rendido.
+  streamConversation(input: ConversationStreamInput): AsyncIterable<string>
 }
 
 // Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
@@ -98,6 +114,28 @@ export class RealClaudeClient implements ClaudeClient {
       return { kind: 'parse_failed' }
     }
   }
+
+  async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
+    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste.
+    const client = new Anthropic()
+
+    const stream = client.messages.stream({
+      model: input.model,
+      max_tokens: MAX_TOKENS,
+      system: input.systemPrompt,
+      messages: input.transcript.map((m) => ({ role: m.role, content: m.content })),
+      // Adaptive thinking; só rendemos TEXTO (thinking_delta é ignorado abaixo).
+      thinking: { type: 'adaptive' },
+    })
+
+    // Rende SÓ os deltas de TEXTO (content_block_delta / text_delta). A conclusão do
+    // iterável é o sinal terminal — sem sentinela.
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield event.delta.text
+      }
+    }
+  }
 }
 
 /**
@@ -105,9 +143,13 @@ export class RealClaudeClient implements ClaudeClient {
  * devolve o `GenerationOutput` enlatado no construtor — cada teste injeta UMA classe.
  */
 export class FakeClaudeClient implements ClaudeClient {
+  // `cannedTokens` é o TERCEIRO arg OPCIONAL (após reply, canned) — NUNCA reordenar: os
+  // ~36 call sites de 2 args devem seguir compilando. Os tokens são rendidos por
+  // `streamConversation`; a destilação que segue usa `canned` via `generateRecipe`.
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
+    private readonly cannedTokens?: string[],
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -119,5 +161,12 @@ export class FakeClaudeClient implements ClaudeClient {
       throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
     }
     return this.canned
+  }
+
+  async *streamConversation(): AsyncIterable<string> {
+    // Rende cada token enlatado e RETORNA (conclusão = terminal, sem sentinela).
+    for (const token of this.cannedTokens ?? []) {
+      yield token
+    }
   }
 }

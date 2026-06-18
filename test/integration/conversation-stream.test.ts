@@ -1,0 +1,392 @@
+import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import type { Sql } from 'postgres'
+import { eq } from 'drizzle-orm'
+import { makeSql } from '@/db/client'
+import { getDb, setClaudeClient } from '@/server/deps'
+import type { ClaudeClient } from '@/server/claude/client'
+import { FakeClaudeClient } from '@/server/claude/client'
+import { persistGeneration } from '@/server/generation/persist'
+import { recipe, recipeTranslation, recipeIngredient, creationSession, generation, appConfig } from '@/db/schema'
+import { seedSessionHeaders } from '../helpers/users'
+import {
+  cannedSuccess,
+  cannedDegraded,
+  cannedPlayful,
+  cannedImpossible,
+  cannedRefusal,
+  cannedMaxTokens,
+  cannedParseFailed,
+} from '../helpers/generation'
+import { makeTranscript, cannedTokens, postStream, collectNdjson } from '../helpers/conversation'
+
+/**
+ * Contrato do modo conversa (#12) pela porta mais alta — POST /api/conversations/stream
+ * contra o Postgres real, com o seam do Claude trocado por
+ * `FakeClaudeClient(undefined, canned, cannedTokens)`. `setup.ts` faz `resetDeps()` +
+ * `truncateAll` antes de cada teste.
+ *
+ * WIRE = NDJSON: zero-ou-mais {type:'token'} durante o stream, depois EXATAMENTE UM frame
+ * terminal ({type:'recipe'} | {type:'impossible'} | {type:'error'}). O frame {type:'recipe'}
+ * ESPELHA o 201 de POST /api/generations ({outcome,recipeId,advisory,avisos?}).
+ *
+ * ASSIMETRIA DE TRANSPORTE (documentada na rota): o caminho structured devolve 502 para
+ * INVALID, mas na conversa a destilação roda DEPOIS do stream abrir → INVALID NÃO pode usar
+ * status HTTP (headers já enviados) → é SEMPRE o frame in-band {type:'error'}.
+ */
+
+let sql: Sql
+
+beforeAll(() => {
+  sql = makeSql(inject('databaseUrl'))
+})
+
+afterAll(async () => {
+  await sql?.end({ timeout: 5 })
+})
+
+/** Cliente que ESTOURA se o seam for tocado — prova o corte ANTES de abrir o stream. */
+class ExplodingClaudeClient implements ClaudeClient {
+  async echo(): Promise<string> {
+    throw new Error('ExplodingClaudeClient.echo não devia ser chamado')
+  }
+  async generateRecipe(): Promise<never> {
+    throw new Error('seam tocado: generateRecipe não devia ser chamado')
+  }
+  async *streamConversation(): AsyncIterable<string> {
+    throw new Error('seam tocado: a validação devia ter cortado ANTES de abrir o stream')
+  }
+}
+
+/** Contagens cruas das três tabelas tocáveis (porta alta, sem ORM). */
+async function counts(): Promise<{ recipe: number; session: number; generation: number }> {
+  const [r] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM recipe`
+  const [s] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM creation_session`
+  const [g] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM generation`
+  return { recipe: r.n, session: s.n, generation: g.n }
+}
+
+describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
+  it('SUCCESS: streama tokens em ordem, depois {type:recipe}; persiste recipe privada ai_chat + sessão + generation', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-ok@gen.test' })
+    setClaudeClient(
+      new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens(['Vou ', 'pensar…'])),
+    )
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/x-ndjson')
+
+    const frames = await collectNdjson(res)
+    // ≥1 token, em ordem, antes do terminal.
+    const tokens = frames.filter((f) => f.type === 'token')
+    expect(tokens.length).toBeGreaterThanOrEqual(1)
+    expect(tokens.map((f) => (f.type === 'token' ? f.text : ''))).toEqual(['Vou ', 'pensar…'])
+
+    // EXATAMENTE um frame terminal, e é o último.
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('recipe')
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    expect(terminal.outcome).toBe('success')
+    expect(terminal.recipeId).toBeTruthy()
+    expect(terminal.advisory).toBe('Dica: use arroz do dia anterior.')
+
+    // Recipe: privada, origin ai_chat, result_kind success, dono = caller.
+    const db = getDb()
+    const [rec] = await db.select().from(recipe).where(eq(recipe.id, terminal.recipeId!))
+    expect(rec.origin).toBe('ai_chat')
+    expect(rec.visibility).toBe('private')
+    expect(rec.resultKind).toBe('success')
+    expect(rec.ownerId).toBe(userId)
+
+    // Translation + ingredientes persistidos.
+    const [tr] = await db
+      .select()
+      .from(recipeTranslation)
+      .where(eq(recipeTranslation.recipeId, terminal.recipeId!))
+    expect(tr.titulo).toBe('Arroz de forno')
+    const ings = await db
+      .select()
+      .from(recipeIngredient)
+      .where(eq(recipeIngredient.recipeId, terminal.recipeId!))
+    expect(ings.length).toBe(2)
+
+    // creation_session(mode='conversation') + generation(advisory set, recipe_id set).
+    const [cs] = await db.select().from(creationSession).where(eq(creationSession.userId, userId))
+    expect(cs.mode).toBe('conversation')
+    expect(cs.recipeId).toBe(terminal.recipeId)
+    const [gen] = await db.select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
+    expect(gen.recipeId).toBe(terminal.recipeId)
+    expect(gen.advisoryComment).toBe('Dica: use arroz do dia anterior.')
+  })
+
+  it('DEGRADED → {type:recipe,outcome:degraded}; result_kind degraded; advisory na generation', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-deg@gen.test' })
+    setClaudeClient(
+      new FakeClaudeClient(undefined, cannedDegraded({}, 'ajustei a receita'), cannedTokens()),
+    )
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('recipe')
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    expect(terminal.outcome).toBe('degraded')
+
+    const db = getDb()
+    const [rec] = await db.select().from(recipe).where(eq(recipe.id, terminal.recipeId!))
+    expect(rec.resultKind).toBe('degraded')
+    const [gen] = await db.select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
+    expect(gen.outcome).toBe('degraded')
+    expect(gen.advisoryComment).toBe('ajustei a receita')
+  })
+
+  // MIGRADO de generation.test.ts:177 (PLAYFUL via mode:'conversation' → 201) — agora frame terminal.
+  it('PLAYFUL (migrado) → {type:recipe,outcome:playful}; recipe SEMPRE privada', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-play@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedPlayful(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('recipe')
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    expect(terminal.outcome).toBe('playful')
+
+    const db = getDb()
+    const [rec] = await db.select().from(recipe).where(eq(recipe.id, terminal.recipeId!))
+    expect(rec.resultKind).toBe('playful')
+    expect(rec.visibility).toBe('private')
+  })
+
+  // MIGRADO de generation.test.ts:272-282 (origin por mode: conversation ⇒ ai_chat).
+  it('origin por mode (migrado): receita destilada → recipe.origin === ai_chat', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-origin@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    const [rec] = await getDb().select().from(recipe).where(eq(recipe.id, terminal.recipeId!))
+    expect(rec.origin).toBe('ai_chat')
+  })
+
+  it('IMPOSSIBLE → {type:impossible}; ZERO recipe; creation_session(conversation)+generation(recipe_id NULL)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-imp@gen.test' })
+    setClaudeClient(
+      new FakeClaudeClient(undefined, cannedImpossible('Não dá pra fazer bolo só com água.'), cannedTokens()),
+    )
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('impossible')
+    if (terminal.type !== 'impossible') throw new Error('terminal não é impossible')
+    expect(terminal.advisory).toBe('Não dá pra fazer bolo só com água.')
+
+    // ZERO recipe; mas HÁ episódio de criação.
+    const c = await counts()
+    expect(c.recipe).toBe(0)
+    const db = getDb()
+    const [cs] = await db.select().from(creationSession).where(eq(creationSession.userId, userId))
+    expect(cs.mode).toBe('conversation')
+    expect(cs.recipeId).toBeNull()
+    const [gen] = await db.select().from(generation).where(eq(generation.creationSessionId, cs.id))
+    expect(gen.recipeId).toBeNull()
+    expect(gen.outcome).toBe('impossible')
+    expect(gen.advisoryComment).toBe('Não dá pra fazer bolo só com água.')
+  })
+
+  it('INVALID via refusal → {type:error,geracao_invalida} IN-BAND (não 502); ZERO persistido', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-ref@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedRefusal(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    // Headers JÁ enviados (stream aberto) → 200, erro vai NO CORPO.
+    expect(res.status).toBe(200)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal).toEqual({ type: 'error', error: 'geracao_invalida' })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  it('INVALID via max_tokens → {type:error}; nada persistido', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-maxtok@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedMaxTokens(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  it('INVALID via parse_failed → {type:error}; nada persistido', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-parse@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedParseFailed(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  it('INVALID via porcoes fora-de-faixa na saída destilada → {type:error}; nada (classify não clampa)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-range@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess({ porcoes: 99 }), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  // MIGRADO de generation-postgen.test.ts:90 (87c conversation com receita contraditória).
+  it('Aviso pós-geração (migrado): receita destilada sem_lactose + leite → terminal {type:recipe} com avisos; recipe persiste', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-aviso@gen.test' })
+    setClaudeClient(
+      new FakeClaudeClient(
+        undefined,
+        cannedSuccess({
+          restricoes: ['sem_lactose'],
+          ingredientes: [{ rawText: 'leite integral', quantidade: '500.000', unidade: 'ml' }],
+        }),
+        cannedTokens(),
+      ),
+    )
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('recipe')
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    expect(terminal.avisos).toBeDefined()
+    expect(terminal.avisos).toHaveLength(1)
+    expect(terminal.avisos![0].restricao).toBe('sem_lactose')
+    expect(terminal.avisos![0].alergeno).toBe('leite')
+
+    // Não-bloqueante: a Receita persiste.
+    expect(terminal.recipeId).toBeTruthy()
+    expect((await counts()).recipe).toBe(1)
+  })
+
+  it('anon (sem headers) → 401 JSON ANTES do stream; o seam NUNCA é tocado; nada criado', async () => {
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await postStream({ transcript: makeTranscript() })
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  it('transcript inválido (vazio / última não-user / mensagem grande / falas demais) → 400 JSON ANTES do stream', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-badtx@gen.test' })
+    setClaudeClient(new ExplodingClaudeClient())
+
+    // vazio
+    const r1 = await postStream({ transcript: [] }, headers)
+    expect(r1.status).toBe(400)
+    await expect(r1.json()).resolves.toMatchObject({ error: 'transcript_vazio' })
+
+    // última fala não é do usuário
+    const r2 = await postStream(
+      { transcript: [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'olá' }] },
+      headers,
+    )
+    expect(r2.status).toBe(400)
+    await expect(r2.json()).resolves.toMatchObject({ error: 'ultima_fala_nao_usuario' })
+
+    // mensagem grande demais
+    const r3 = await postStream(
+      { transcript: [{ role: 'user', content: 'a'.repeat(2001) }] },
+      headers,
+    )
+    expect(r3.status).toBe(400)
+    await expect(r3.json()).resolves.toMatchObject({ error: 'mensagem_muito_longa' })
+
+    // falas demais
+    const tooMany = Array.from({ length: 101 }, () => ({ role: 'user' as const, content: 'oi' }))
+    const r4 = await postStream({ transcript: tooMany }, headers)
+    expect(r4.status).toBe(400)
+    await expect(r4.json()).resolves.toMatchObject({ error: 'transcript_muito_longo' })
+
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+  })
+
+  it('forward-compat: body.sessionId é IGNORADO em #12 (não muda o resultado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-sid@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+
+    const res = await postStream(
+      { transcript: makeTranscript(), sessionId: '00000000-0000-0000-0000-000000000000' },
+      headers,
+    )
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1].type).toBe('recipe')
+    // Uma nova sessão é INSERIDA normalmente (sessionId ignorado).
+    expect((await counts()).session).toBe(1)
+  })
+
+  it('model resolvido de app_config.default_model → vai pra generation.model (default opus quando ausente)', async () => {
+    // default ausente.
+    {
+      const { headers } = await seedSessionHeaders({ email: 'conv-defmodel@gen.test' })
+      setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+      const res = await postStream({ transcript: makeTranscript() }, headers)
+      const frames = await collectNdjson(res)
+      const terminal = frames[frames.length - 1]
+      if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+      const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
+      expect(gen.model).toBe('claude-opus-4-8')
+    }
+  })
+
+  it('model resolvido de app_config: linha presente → generation.model casa', async () => {
+    await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-sonnet-4-6' })
+    const { headers } = await seedSessionHeaders({ email: 'conv-model@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
+    expect(gen.model).toBe('claude-sonnet-4-6')
+  })
+})
+
+describe('persistGeneration — existingSessionId é NO-OP STUB em #12', () => {
+  it('passar existingSessionId ainda INSERE exatamente UMA nova creation_session (#15 preenche o UPDATE)', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'conv-stub@gen.test' })
+
+    // Cria a 1ª sessão (success) — uma creation_session existe.
+    const first = await persistGeneration({
+      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: null },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+    })
+    expect(first).not.toBeNull()
+    expect((await counts()).session).toBe(1)
+
+    // Passar o id da 1ª sessão como existingSessionId NÃO retoma: INSERE outra (no-op em #12).
+    const second = await persistGeneration({
+      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: null },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+      existingSessionId: first!.creationSessionId,
+    })
+    expect(second).not.toBeNull()
+    // Agora há DUAS sessões: a 2ª chamada INSERIU em vez de fazer UPDATE.
+    expect((await counts()).session).toBe(2)
+  })
+})
+
+// Receita "miolo" válida do builder canned (success sempre carrega recipe não-null).
+function cannedSuccessRecipe() {
+  const out = cannedSuccess()
+  if (out.kind !== 'object' || out.recipe === null) throw new Error('cannedSuccess sem recipe')
+  return out.recipe
+}

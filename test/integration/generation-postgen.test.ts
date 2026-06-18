@@ -42,6 +42,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: a validação devia ter cortado ANTES da geração')
   }
+  async *streamConversation(): AsyncIterable<string> {
+    throw new Error('seam tocado: streamConversation não devia ser chamado')
+  }
 }
 
 type AvisoView = { kind: string; restricao: string; alergeno: string; mensagem: string }
@@ -86,28 +89,8 @@ describe('POST /api/generations — Aviso pós-geração (#87)', () => {
     expect(c.recipe).toBe(1)
   })
 
-  // 87c — aplicado a TODOS os modos: conversation com receita contraditória dispara Aviso.
-  it('87c: conversation com receita gerada contraditória → 201 + aviso (antes não tinha Aviso nenhum)', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'postgen-conv@gen.test' })
-    setClaudeClient(
-      new FakeClaudeClient(
-        undefined,
-        cannedSuccess({
-          restricoes: ['sem_lactose'],
-          ingredientes: [{ rawText: 'leite integral', quantidade: '500.000', unidade: 'ml' }],
-        }),
-      ),
-    )
-
-    const res = await post({ mode: 'conversation' }, headers)
-    expect(res.status).toBe(201)
-    const json = (await res.json()) as GenResponse
-
-    expect(json.avisos).toBeDefined()
-    expect(json.avisos).toHaveLength(1)
-    expect(json.avisos![0].restricao).toBe('sem_lactose')
-    expect(json.avisos![0].alergeno).toBe('leite')
-  })
+  // 87c em conversation foi MIGRADO p/ conversation-stream.test.ts: o aviso pós-geração agora
+  // viaja no frame terminal {type:'recipe'}.avisos (não num 201). O 87c free_text segue abaixo.
 
   // 87b — união determinística: pré-geração (FK 'trigo') E pós-geração (rawText 'wheat
   // flour') contradizem sem_gluten → 1 aviso, alergeno do PRÉ-geração ('trigo') vence.

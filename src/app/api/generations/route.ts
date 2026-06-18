@@ -3,7 +3,6 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
-import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
 import { classify } from '@/domain/generation'
 import {
   parseBriefing,
@@ -37,8 +36,10 @@ import {
  * Status: success|degraded|playful → 201 (Receita privada criada); impossible → 200
  * (hard-stop honesto, sem Receita); invalid → 502 (falha upstream, NÃO persiste nada).
  *
- * Três modos de ENTRADA (#11/#12/#88):
- *  - `conversation`: caminho de #8 — placeholders + faixas top-level do body.
+ * Dois modos de ENTRADA tratados AQUI (#11/#88). O modo `conversation` (#12) NÃO vive
+ * mais aqui: ele STREAMA NDJSON e roda a destilação DEPOIS de abrir o stream (não cabe num
+ * 201/502 com headers já enviados), então mudou-se para POST /api/conversations/stream.
+ * Esta rota dá um 400 `modo_invalido` explícito para `conversation` (sem cair no seam):
  *  - `structured`: monta um Briefing ANINHADO (`body.briefing`) e gera no MESMO
  *    `RecipeGenSchema` de saída — #11 muda só a ENTRADA. O Briefing é validado
  *    (shape + faixas + campo-mínimo) ANTES do seam, persistido como proveniência
@@ -56,11 +57,6 @@ import {
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
 
 const DEFAULT_MODEL = 'claude-opus-4-8'
-
-// Placeholder mínimo do caminho `conversation` (#12 substitui pelo prompt de verdade).
-// `structured` monta o prompt a partir do Briefing (buildBriefingPrompt).
-const SYSTEM_PROMPT = 'Você gera receitas de cozinha no schema canônico.'
-const USER_PROMPT = 'Gere uma receita.'
 
 // Faixa de comprimento do texto livre (#88, decisão reversível). A validação roda ANTES
 // do seam, em AMBAS as bordas:
@@ -80,8 +76,6 @@ export async function POST(req: Request): Promise<Response> {
 
   const body = (await req.json().catch(() => ({}))) as {
     mode?: unknown
-    porcoes?: unknown
-    dificuldade?: unknown
     briefing?: unknown
     freeText?: unknown
   }
@@ -92,14 +86,21 @@ export async function POST(req: Request): Promise<Response> {
   }
   const mode = body.mode
 
-  // Prompt + Briefing montado: dependem do modo. `briefing` só existe em structured.
-  let systemPrompt = SYSTEM_PROMPT
-  let userPrompt = USER_PROMPT
+  // conversation (#12) NÃO é tratado aqui: streaming/destilação vivem em
+  // POST /api/conversations/stream. 400 determinístico ANTES do seam (sem cair no Claude).
+  if (mode === 'conversation') {
+    return Response.json({ error: 'modo_invalido' }, { status: 400 })
+  }
+
+  // Prompt + Briefing montado: dependem do modo. `briefing` só existe em structured. Ambos
+  // os modos restantes (structured/free_text) sempre atribuem os dois prompts.
+  let systemPrompt = ''
+  let userPrompt = ''
   let briefing: Briefing | null = null
   // Texto livre CRU (#88): definido SÓ em free_text; persistido como proveniência.
   let freeText: string | undefined
   // Mapa alérgenos-por-ingrediente: subproduto do SELECT antecipado (structured), usado
-  // no Aviso (§4.4). Vazio em conversation.
+  // no Aviso (§4.4). Vazio em free_text.
   const alergMap = new Map<string, string[] | null>()
 
   if (mode === 'structured') {
@@ -160,29 +161,14 @@ export async function POST(req: Request): Promise<Response> {
     const prompt = buildFreeTextPrompt(freeText)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
-  } else {
-    // conversation (#12): faixas do TOPO do body, ANTES do seam (E6 — em structured o
-    // topo é IGNORADO; as faixas vivem dentro do briefing).
-    if (
-      body.porcoes != null &&
-      (typeof body.porcoes !== 'number' || !isPorcoesValidas(body.porcoes))
-    ) {
-      return Response.json({ error: 'porcoes_fora_de_faixa' }, { status: 400 })
-    }
-    if (
-      body.dificuldade != null &&
-      (typeof body.dificuldade !== 'number' || !isDificuldadeValida(body.dificuldade))
-    ) {
-      return Response.json({ error: 'dificuldade_fora_de_faixa' }, { status: 400 })
-    }
   }
 
   // Modelo de app_config (default em código quando a linha singleton está ausente).
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_MODEL
-  // Mapa exaustivo dos 3 modos (#88): sem isso, free_text cairia no else → origin errado.
-  const origin: PersistOrigin =
-    mode === 'conversation' ? 'ai_chat' : mode === 'free_text' ? 'ai_free_text' : 'ai_structured'
+  // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
+  // só restam free_text → ai_free_text e structured → ai_structured.
+  const origin: PersistOrigin = mode === 'free_text' ? 'ai_free_text' : 'ai_structured'
 
   const out = await getClaudeClient().generateRecipe({
     systemPrompt,
