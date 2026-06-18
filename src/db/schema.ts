@@ -31,6 +31,7 @@ import { GENERATION_OUTCOMES } from '@/domain/generation'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
 import { REPORT_STATUSES } from '@/domain/report'
+import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -76,6 +77,11 @@ export const strengthEnum = pgEnum('strength', STRENGTHS)
 // Status do Report (issue #18). Fonte única: REPORT_STATUSES de @/domain/report
 // (pending/resolved/rejected). Espelha roleEnum/strengthEnum importando do kernel.
 export const reportStatusEnum = pgEnum('report_status', REPORT_STATUSES)
+// Papel da fala na Transcrição durável (issue #15). Fonte única: TRANSCRIPT_ROLES de
+// @/domain/transcript (user/assistant) — espelha roleEnum/strengthEnum importando do
+// kernel. DB type 'transcript_role', DISTINTO de roleEnum (DB type 'role', papéis de
+// Usuário): o TS id é `transcriptRoleEnum`, NUNCA `roleEnum` (já em uso ~linha 71).
+export const transcriptRoleEnum = pgEnum('transcript_role', TRANSCRIPT_ROLES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -491,6 +497,31 @@ export const generation = pgTable(
     index('generation_recipe_id_idx')
       .on(t.recipeId)
       .where(sql`${t.recipeId} IS NOT NULL`),
+  ],
+)
+
+// ── Transcrição durável da conversa (issue #15, ADR-0006/0009) ─────────────────
+//
+// `transcript_message`: 1-N com `creation_session`. Cada linha é UMA fala ({role,content})
+// com `seq` monotônico ATRIBUÍDO PELO SERVIDOR (coalesce(max(seq),-1)+1 na mesma tx) — nunca
+// vindo do cliente. UNIQUE(creation_session_id, seq) é a rede de banco contra dupla atribuição
+// (23505). ON DELETE cascade: apagar a sessão limpa as falas (a Receita — ref FRACA — sobrevive).
+// Apagar a Transcrição (route dedicada de #15) NÃO apaga a Receita; é DELETE direto destas linhas.
+export const transcriptMessage = pgTable(
+  'transcript_message',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    creationSessionId: uuid('creation_session_id')
+      .notNull()
+      .references(() => creationSession.id, { onDelete: 'cascade' }),
+    role: transcriptRoleEnum('role').notNull(),
+    content: text('content').notNull(),
+    seq: integer('seq').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Ordena por (sessão, seq) E é a rede UNIQUE contra dupla atribuição de seq na mesma sessão.
+    uniqueIndex('transcript_message_session_seq_idx').on(t.creationSessionId, t.seq),
   ],
 )
 

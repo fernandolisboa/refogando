@@ -1,3 +1,4 @@
+import { eq, sql } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import {
   recipe,
@@ -67,10 +68,13 @@ export type PersistGenerationInput = {
   model: string
   briefing?: PersistBriefing // NOVO — presente SSE mode === 'structured'
   freeText?: string // Texto livre CRU (#88) — presente SSE mode === 'free_text'
-  // STUB (#12): id de uma creation_session já existente, para REUSAR no modo conversa
-  // multi-tentativa. Em #12 é um NO-OP: ausente OU presente, AMBOS os branches ainda
-  // INSEREM uma nova creation_session (comportamento de hoje, inalterado). O caminho de
-  // UPDATE (retomar a sessão existente) chega em #15 — NÃO implementar aqui.
+  // #15 (REAL): id de uma creation_session já existente, criada no COMEÇO da conversa.
+  // Presente → REUSA a sessão (UPDATE em vez de INSERT): success/degraded/playful gravam
+  // recipe_id + updated_at; impossible só bumpa updated_at (recipe_id segue NULL). A
+  // generation é SEMPRE inserida (múltiplas por sessão são permitidas — re-destilação). A
+  // posse é provada pelo ROUTE antes de chegar aqui (param DB-shaped, não auth-shaped).
+  // Ausente → comportamento legado: INSERE uma nova creation_session (modo stateless de #12,
+  // e o caminho lazy-create do stream quando o cliente não manda sessionId).
   existingSessionId?: string
 }
 
@@ -122,7 +126,7 @@ async function insertBriefing(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId } = input
 
   // Erro de sistema puro: não é episódio de criação → nada é gravado (§6). O Briefing
   // também NÃO nasce em invalid (ADR-0006).
@@ -133,14 +137,27 @@ export async function persistGeneration(
       // Briefing ANTES da creation_session (FK briefing_id). O pedido sobrevive à
       // entrega impossible (AC4).
       const briefingId = pedido ? await insertBriefing(tx, pedido) : null
-      const [session] = await tx
-        .insert(creationSession)
-        .values({ userId: ownerId, mode, recipeId: null, briefingId, freeText: freeText ?? null })
-        .returning({ id: creationSession.id })
+      let sessionId: string
+      if (existingSessionId) {
+        // #15: RETOMA a sessão (criada no começo da conversa). impossible NÃO entrega Receita
+        // → recipe_id segue NULL; só bumpa updated_at (last-activity, ADR-0006). NÃO INSERE
+        // uma 2ª sessão (senão um impossible numa conversa retomada duplicaria a sessão).
+        await tx
+          .update(creationSession)
+          .set({ updatedAt: sql`now()` })
+          .where(eq(creationSession.id, existingSessionId))
+        sessionId = existingSessionId
+      } else {
+        const [session] = await tx
+          .insert(creationSession)
+          .values({ userId: ownerId, mode, recipeId: null, briefingId, freeText: freeText ?? null })
+          .returning({ id: creationSession.id })
+        sessionId = session.id
+      }
       const [gen] = await tx
         .insert(generation)
         .values({
-          creationSessionId: session.id,
+          creationSessionId: sessionId,
           recipeId: null,
           outcome: 'impossible',
           advisoryComment: result.advisory,
@@ -152,7 +169,7 @@ export async function persistGeneration(
         recipeId: null,
         briefingId,
         generationId: gen.id,
-        creationSessionId: session.id,
+        creationSessionId: sessionId,
         outcome: 'impossible',
       }
     })
@@ -205,15 +222,29 @@ export async function persistGeneration(
     // Receita entregue (AC4): tabelas separadas, a sessão aponta para AMBOS.
     const briefingId = pedido ? await insertBriefing(tx, pedido) : null
 
-    const [session] = await tx
-      .insert(creationSession)
-      .values({ userId: ownerId, mode, recipeId: createdRecipe.id, briefingId, freeText: freeText ?? null })
-      .returning({ id: creationSession.id })
+    let sessionId: string
+    if (existingSessionId) {
+      // #15: RETOMA a sessão (criada no começo da conversa) → ANEXA a Receita destilada
+      // (UPDATE recipe_id + updated_at). NÃO INSERE uma 2ª sessão. briefing_id NÃO é tocado:
+      // conversation não tem briefing (pedido é null aqui), e re-destilar não reescreve o
+      // pedido original. A generation abaixo é sempre INSERIDA (múltiplas por sessão).
+      await tx
+        .update(creationSession)
+        .set({ recipeId: createdRecipe.id, updatedAt: sql`now()` })
+        .where(eq(creationSession.id, existingSessionId))
+      sessionId = existingSessionId
+    } else {
+      const [session] = await tx
+        .insert(creationSession)
+        .values({ userId: ownerId, mode, recipeId: createdRecipe.id, briefingId, freeText: freeText ?? null })
+        .returning({ id: creationSession.id })
+      sessionId = session.id
+    }
 
     const [gen] = await tx
       .insert(generation)
       .values({
-        creationSessionId: session.id,
+        creationSessionId: sessionId,
         recipeId: createdRecipe.id,
         outcome: result.outcome,
         advisoryComment: result.advisory,
@@ -226,7 +257,7 @@ export async function persistGeneration(
       recipeId: createdRecipe.id,
       briefingId,
       generationId: gen.id,
-      creationSessionId: session.id,
+      creationSessionId: sessionId,
       outcome: result.outcome,
     }
   })

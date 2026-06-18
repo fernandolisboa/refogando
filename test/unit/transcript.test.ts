@@ -4,6 +4,7 @@ import {
   TRANSCRIPT_MESSAGE_MAX,
   TRANSCRIPT_MAX_MESSAGES,
   parseTranscript,
+  nextSeq,
   type TranscriptMessage,
 } from '@/domain/transcript'
 import { OBSERVACOES_MAX } from '@/domain/briefing'
@@ -126,5 +127,22 @@ describe('parseTranscript — erros (devolve o PRIMEIRO)', () => {
     // Força a última a ser do usuário (índice par garante; ajusta se o teto for par).
     exact[exact.length - 1] = { role: 'user', content: 'final do usuário' }
     expect(parseTranscript(exact).ok).toBe(true)
+  })
+})
+
+describe('nextSeq — atribuição PURA de seq (#15)', () => {
+  it('lista vazia → 0 (1ª fala)', () => {
+    expect(nextSeq([])).toBe(0)
+  })
+  it('max + 1 (sequência contígua)', () => {
+    expect(nextSeq([0, 1, 2, 3])).toBe(4)
+  })
+  it('max + 1 independe da ordem ou de buracos', () => {
+    expect(nextSeq([3, 0, 2])).toBe(4)
+    expect(nextSeq([0, 5])).toBe(6)
+  })
+  it('um único elemento → ele + 1', () => {
+    expect(nextSeq([0])).toBe(1)
+    expect(nextSeq([7])).toBe(8)
   })
 })

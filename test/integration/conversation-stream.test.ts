@@ -59,12 +59,14 @@ class ExplodingClaudeClient implements ClaudeClient {
   }
 }
 
-/** Contagens cruas das três tabelas tocáveis (porta alta, sem ORM). */
-async function counts(): Promise<{ recipe: number; session: number; generation: number }> {
+/** Contagens cruas das tabelas tocáveis (porta alta, sem ORM). `transcript` (#15) cobre as
+ * falas duráveis: cada chamada bem-sucedida grava 2 (turno do Usuário + resposta do Assistente). */
+async function counts(): Promise<{ recipe: number; session: number; generation: number; transcript: number }> {
   const [r] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM recipe`
   const [s] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM creation_session`
   const [g] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM generation`
-  return { recipe: r.n, session: s.n, generation: g.n }
+  const [t] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM transcript_message`
+  return { recipe: r.n, session: s.n, generation: g.n, transcript: t.n }
 }
 
 describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
@@ -119,6 +121,18 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     const [gen] = await db.select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
     expect(gen.recipeId).toBe(terminal.recipeId)
     expect(gen.advisoryComment).toBe('Dica: use arroz do dia anterior.')
+
+    // #15: EXATAMENTE uma Session (lazy-create + destilação anexa por UPDATE, não 2ª INSERT)
+    // e 2 falas duráveis (turno do Usuário + resposta do Assistente) com seq 0,1.
+    const c = await counts()
+    expect(c.session).toBe(1)
+    expect(c.transcript).toBe(2)
+    const msgs = await sql<{ role: string; content: string; seq: number }[]>`
+      SELECT role, content, seq FROM transcript_message WHERE creation_session_id = ${cs.id} ORDER BY seq`
+    expect(msgs).toEqual([
+      { role: 'user', content: 'arroz de forno com queijo', seq: 0 },
+      { role: 'assistant', content: 'Vou pensar…', seq: 1 },
+    ])
   })
 
   it('DEGRADED → {type:recipe,outcome:degraded}; result_kind degraded; advisory na generation', async () => {
@@ -186,9 +200,13 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     if (terminal.type !== 'impossible') throw new Error('terminal não é impossible')
     expect(terminal.advisory).toBe('Não dá pra fazer bolo só com água.')
 
-    // ZERO recipe; mas HÁ episódio de criação.
+    // ZERO recipe; mas HÁ episódio de criação. #15: UMA Session (impossible só bumpa
+    // updated_at, recipe_id segue NULL — NÃO cria 2ª), 1 generation, 2 falas.
     const c = await counts()
     expect(c.recipe).toBe(0)
+    expect(c.session).toBe(1)
+    expect(c.generation).toBe(1)
+    expect(c.transcript).toBe(2)
     const db = getDb()
     const [cs] = await db.select().from(creationSession).where(eq(creationSession.userId, userId))
     expect(cs.mode).toBe('conversation')
@@ -209,37 +227,39 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     const frames = await collectNdjson(res)
     const terminal = frames[frames.length - 1]
     expect(terminal).toEqual({ type: 'error', error: 'geracao_invalida' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    // #15: nenhuma generation/Receita (INVALID não é episódio de criação), mas a Session e
+    // as 2 falas do turno JÁ foram gravadas (a conversa aconteceu; só a destilação falhou).
+    expect(await counts()).toEqual({ recipe: 0, session: 1, generation: 0, transcript: 2 })
   })
 
-  it('INVALID via max_tokens → {type:error}; nada persistido', async () => {
+  it('INVALID via max_tokens → {type:error}; sem generation/Receita; Session+Transcrição persistem', async () => {
     const { headers } = await seedSessionHeaders({ email: 'conv-maxtok@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedMaxTokens(), cannedTokens()))
 
     const res = await postStream({ transcript: makeTranscript() }, headers)
     const frames = await collectNdjson(res)
     expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 1, generation: 0, transcript: 2 })
   })
 
-  it('INVALID via parse_failed → {type:error}; nada persistido', async () => {
+  it('INVALID via parse_failed → {type:error}; sem generation/Receita; Session+Transcrição persistem', async () => {
     const { headers } = await seedSessionHeaders({ email: 'conv-parse@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedParseFailed(), cannedTokens()))
 
     const res = await postStream({ transcript: makeTranscript() }, headers)
     const frames = await collectNdjson(res)
     expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 1, generation: 0, transcript: 2 })
   })
 
-  it('INVALID via porcoes fora-de-faixa na saída destilada → {type:error}; nada (classify não clampa)', async () => {
+  it('INVALID via porcoes fora-de-faixa na saída destilada → {type:error}; sem generation (classify não clampa)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'conv-range@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess({ porcoes: 99 }), cannedTokens()))
 
     const res = await postStream({ transcript: makeTranscript() }, headers)
     const frames = await collectNdjson(res)
     expect(frames[frames.length - 1]).toEqual({ type: 'error', error: 'geracao_invalida' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 1, generation: 0, transcript: 2 })
   })
 
   // MIGRADO de generation-postgen.test.ts:90 (87c conversation com receita contraditória).
@@ -277,7 +297,7 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     const res = await postStream({ transcript: makeTranscript() })
     expect(res.status).toBe(401)
     await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0, transcript: 0 })
   })
 
   it('transcript inválido (vazio / última não-user / mensagem grande / falas demais) → 400 JSON ANTES do stream', async () => {
@@ -311,21 +331,24 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     expect(r4.status).toBe(400)
     await expect(r4.json()).resolves.toMatchObject({ error: 'transcript_muito_longo' })
 
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0, transcript: 0 })
   })
 
-  it('forward-compat: body.sessionId é IGNORADO em #12 (não muda o resultado)', async () => {
+  it('#15: sessionId inexistente/não-uuid → lazy-create (NÃO escreve em sessão alheia)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'conv-sid@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
 
+    // Um uuid que não existe (e portanto não é do caller) → fallback p/ lazy-create.
     const res = await postStream(
       { transcript: makeTranscript(), sessionId: '00000000-0000-0000-0000-000000000000' },
       headers,
     )
     const frames = await collectNdjson(res)
     expect(frames[frames.length - 1].type).toBe('recipe')
-    // Uma nova sessão é INSERIDA normalmente (sessionId ignorado).
-    expect((await counts()).session).toBe(1)
+    // UMA Session nova (lazy-create), e NÃO a do uuid fornecido (que não existe).
+    const c = await counts()
+    expect(c.session).toBe(1)
+    expect(c.transcript).toBe(2)
   })
 
   it('model resolvido de app_config.default_model → vai pra generation.model (default opus quando ausente)', async () => {
@@ -419,17 +442,17 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
 
     // Destilação pulada e NADA persistido (a rota viu signal.aborted e retornou).
     expect(recipeCalled).toBe(false)
-    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0 })
+    expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0, transcript: 0 })
 
     await reader.cancel() // libera o lock; o request abortado não tem cliente p/ o resto.
   })
 })
 
-describe('persistGeneration — existingSessionId é NO-OP STUB em #12', () => {
-  it('passar existingSessionId ainda INSERE exatamente UMA nova creation_session (#15 preenche o UPDATE)', async () => {
-    const { userId } = await seedSessionHeaders({ email: 'conv-stub@gen.test' })
+describe('persistGeneration — existingSessionId RETOMA a sessão (#15, REAL)', () => {
+  it('success com existingSessionId → UPDATE recipe_id na MESMA sessão (não cria 2ª) + nova generation', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'conv-reuse@gen.test' })
 
-    // Cria a 1ª sessão (success) — uma creation_session existe.
+    // Cria a 1ª sessão (success) — uma creation_session existe, com sua Receita.
     const first = await persistGeneration({
       result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: null },
       mode: 'conversation',
@@ -440,9 +463,9 @@ describe('persistGeneration — existingSessionId é NO-OP STUB em #12', () => {
     expect(first).not.toBeNull()
     expect((await counts()).session).toBe(1)
 
-    // Passar o id da 1ª sessão como existingSessionId NÃO retoma: INSERE outra (no-op em #12).
+    // Re-destilar passando existingSessionId RETOMA: UPDATE de recipe_id na MESMA sessão.
     const second = await persistGeneration({
-      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: null },
+      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: 'nova dica' },
       mode: 'conversation',
       origin: 'ai_chat',
       ownerId: userId,
@@ -450,8 +473,54 @@ describe('persistGeneration — existingSessionId é NO-OP STUB em #12', () => {
       existingSessionId: first!.creationSessionId,
     })
     expect(second).not.toBeNull()
-    // Agora há DUAS sessões: a 2ª chamada INSERIU em vez de fazer UPDATE.
-    expect((await counts()).session).toBe(2)
+    // AINDA UMA sessão (UPDATE, não INSERT), e é a MESMA; mas DUAS generation (múltiplas/sessão).
+    expect((await counts()).session).toBe(1)
+    expect(second!.creationSessionId).toBe(first!.creationSessionId)
+    expect((await counts()).generation).toBe(2)
+    const db = getDb()
+    const [cs] = await db
+      .select()
+      .from(creationSession)
+      .where(eq(creationSession.id, first!.creationSessionId))
+    // recipe_id passou a apontar para a Receita da 2ª destilação.
+    expect(cs.recipeId).toBe(second!.recipeId)
+  })
+
+  it('impossible com existingSessionId → só bumpa updated_at (recipe_id segue NULL); não cria 2ª sessão', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'conv-reuse-imp@gen.test' })
+
+    // 1ª destilação success cria a sessão com Receita.
+    const first = await persistGeneration({
+      result: { outcome: 'success', recipe: cannedSuccessRecipe(), advisory: null },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+    })
+    expect((await counts()).session).toBe(1)
+
+    // Re-destilar impossible NA mesma sessão: NÃO cria 2ª, recipe_id segue o que estava (não NULL
+    // — impossible não zera recipe_id, só não o atualiza; o caminho impossible deixa recipe_id como está).
+    const recipeBefore = first!.recipeId
+    const second = await persistGeneration({
+      result: { outcome: 'impossible', advisory: 'não dá' },
+      mode: 'conversation',
+      origin: 'ai_chat',
+      ownerId: userId,
+      model: 'claude-opus-4-8',
+      existingSessionId: first!.creationSessionId,
+    })
+    expect(second!.creationSessionId).toBe(first!.creationSessionId)
+    expect(second!.recipeId).toBeNull()
+    expect((await counts()).session).toBe(1)
+    expect((await counts()).generation).toBe(2)
+    const db = getDb()
+    const [cs] = await db
+      .select()
+      .from(creationSession)
+      .where(eq(creationSession.id, first!.creationSessionId))
+    // impossible UPDATE-only NÃO toca recipe_id: segue apontando p/ a Receita da 1ª destilação.
+    expect(cs.recipeId).toBe(recipeBefore)
   })
 })
 

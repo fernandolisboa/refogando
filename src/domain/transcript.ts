@@ -1,5 +1,5 @@
 /**
- * Transcrição da conversa — domínio PURO (issue #12, modo conversa).
+ * Transcrição da conversa — domínio PURO (issue #12/#15, modo conversa).
  *
  * A Transcrição é a ENTRADA do modo `conversation`: uma lista alternada de falas do
  * Usuário e do Assistente, terminando SEMPRE numa fala do Usuário (é a vez do Usuário
@@ -8,14 +8,15 @@
  * PURO/TOTAL/SEM THROW e sem DB: espelha o estilo `parseBriefing` de `briefing.ts`
  * (discriminated union, primeiro erro vence, faixas validadas no app).
  *
- * NÃO há pgEnum de `role` aqui: a tabela de mensagens só nasce em #15. O teto por
- * mensagem reusa `OBSERVACOES_MAX` (fonte única de #11) — mesma faixa simétrica que o
- * texto livre e as observações já adotam.
+ * #15: `TRANSCRIPT_ROLES` vira o KERNEL do pgEnum `transcript_role` (a tabela durável
+ * `transcript_message` nasce agora) — fonte única, espelhando como `STRENGTHS`/`ROLES`
+ * alimentam `schema.ts`. O teto por mensagem reusa `OBSERVACOES_MAX` (fonte única de #11)
+ * — mesma faixa simétrica que o texto livre e as observações já adotam.
  */
 
 import { OBSERVACOES_MAX } from '@/domain/briefing'
 
-// ── Papéis da fala (sem pgEnum — a tabela chega em #15) ─────────────────────────
+// ── Papéis da fala (KERNEL do pgEnum `transcript_role`, #15) ────────────────────
 export const TRANSCRIPT_ROLES = ['user', 'assistant'] as const
 export type TranscriptRole = (typeof TRANSCRIPT_ROLES)[number]
 function isTranscriptRole(value: string): value is TranscriptRole {
@@ -87,4 +88,15 @@ export function parseTranscript(raw: unknown): TranscriptParse {
   }
 
   return { ok: true, transcript: messages }
+}
+
+// ── Atribuição de `seq` (PURA, #15) ──────────────────────────────────────────────
+/**
+ * Próximo `seq` monotônico a partir dos `seq` já existentes de uma sessão. Total/puro:
+ * lista vazia → 0 (1ª mensagem); senão `max + 1`. É a forma pura por trás do
+ * `coalesce(max(seq),-1)+1` que o route executa DENTRO da transação — o índice UNIQUE
+ * `(creation_session_id, seq)` é a rede de banco contra qualquer atribuição em corrida.
+ */
+export function nextSeq(existing: readonly number[]): number {
+  return existing.length === 0 ? 0 : Math.max(...existing) + 1
 }
