@@ -625,4 +625,101 @@ describe('ConversationExperience (#60)', () => {
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent(enUS.conversa.titulo)
   })
+
+  it('C18 — RETOMADA falhou (GET 404): mensagem clara + saída pra nova conversa, sem crash', async () => {
+    // 404 (Session inexistente/expirada ou de outro dono) → não um chat vazio quebrado.
+    mockFetch({ resume: { status: 404, body: { error: 'not_found' } } })
+    renderConversation('pt-BR', 'sess-inexistente')
+
+    expect(await screen.findByText(M.retomarFalhou)).toBeInTheDocument()
+    // Caminho de saída para uma conversa NOVA (sem id).
+    expect(screen.getByRole('link', { name: M.novaConversa })).toHaveAttribute('href', '/conversation')
+    // Não renderizou o chat (sem input) e não quebrou (heading nível 1 presente).
+    expect(screen.queryByLabelText(M.inputLabel)).toBeNull()
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent(M.titulo)
+  })
+
+  it('C19 — "Nova conversa" zera transcript, sessionId, input e volta ao estado inicial', async () => {
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    const fetchMock = mockFetch({
+      stream: ctrl,
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+      recipes: { status: 200, body: baseView() },
+    })
+    renderConversation()
+
+    await enviar(user, 'feijão')
+    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl.close()
+    await screen.findByText(M.resultadoSucesso)
+    // Há conversa + Receita: o botão "Nova conversa" aparece.
+
+    await user.click(screen.getByRole('button', { name: M.novaConversa }))
+
+    // Volta ao estado inicial: transcript vazio, sem Receita, input limpo.
+    await waitFor(() => expect(screen.getByText(M.conversaVazia)).toBeInTheDocument())
+    expect(screen.queryByText('feijão')).toBeNull()
+    expect(screen.queryByText(M.resultadoSucesso)).toBeNull()
+    expect(screen.getByLabelText(M.inputLabel)).toHaveValue('')
+    // titulo voltou a ser o único <h1> (a Receita saiu da tela).
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent(M.titulo)
+
+    // Próximo turno cria uma Session NOVA (sessionId foi zerado) → 2º POST de createSession.
+    const ctrl2 = makeStreamController()
+    fetchMock.mockImplementation(async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0])
+      const init = args[1] as RequestInit | undefined
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (url.includes('/api/conversations/stream')) {
+        return { ok: true, status: 200, body: ctrl2.stream } as unknown as Response
+      }
+      if (url.includes('/api/creation-sessions') && method === 'POST') {
+        return makeJson({ status: 201, body: { sessionId: 'sess-2' } })
+      }
+      if (url.includes('/api/recipes/')) return makeJson({ status: 200, body: baseView() })
+      throw new Error(`fetch não mockado: ${method} ${url}`)
+    })
+    await enviar(user, 'de novo')
+    ctrl2.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl2.close()
+    await screen.findByText(M.resultadoSucesso)
+    const created = fetchMock.mock.calls.filter((c) => {
+      const i = c[1] as RequestInit | undefined
+      return String(c[0]).includes('/api/creation-sessions') && (i?.method ?? '') === 'POST'
+    })
+    // 1 createSession antes do reset + 1 depois (id foi zerado) = 2.
+    expect(created.length).toBe(2)
+  })
+
+  it('C20 — APAGAR falha (DELETE não-ok): erro mostrado e a transcrição PERMANECE', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      resume: {
+        status: 200,
+        body: {
+          session: { id: 'sess-x', mode: 'conversation', recipeId: 'r-1' },
+          recipe: baseView({ id: 'r-1' }),
+          transcript: [{ role: 'user', content: 'apaga isso' }],
+          advisory: null,
+        },
+      },
+      del: { status: 500, body: { error: 'boom' } },
+    })
+    renderConversation('pt-BR', 'sess-x')
+
+    await screen.findByText('apaga isso')
+    await user.click(screen.getByRole('button', { name: M.apagarTranscricao }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: M.apagarConfirmar }))
+
+    // Erro de apagar mostrado DENTRO do diálogo; o diálogo continua aberto.
+    expect(await within(dialog).findByText(M.apagarErro)).toBeInTheDocument()
+    // A transcrição PERMANECE (apagar falhou → nada foi zerado).
+    expect(screen.getByText('apaga isso')).toBeInTheDocument()
+  })
 })

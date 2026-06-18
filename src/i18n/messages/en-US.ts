@@ -223,6 +223,7 @@ export const enUS: Messages = {
     quedaTitulo: 'The connection dropped before finishing.',
     quedaNota: 'Your conversation is saved. You can resume and try again.',
     retomar: 'Resume conversation',
+    retomarFalhou: 'This conversation was not found or has expired.',
     verReceita: 'View and publish recipe',
     novaConversa: 'New conversation',
     apagarTranscricao: 'Delete conversation',

@@ -107,10 +107,32 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
   // Retomada (#15): GET /api/creation-sessions/[id] reidrata transcript + Receita + advisory.
   const [resuming, setResuming] = useState<boolean>(Boolean(resumeSessionId))
 
+  // Retomada falhou (404 do GET — Session inexistente/expirada ou não-pertencente): em vez de
+  // um chat vazio/quebrado, mostra uma mensagem clara + saída para uma conversa nova.
+  const [resumeFailed, setResumeFailed] = useState(false)
+
   // Foco no swap de estado (a11y): o foco do teclado não pode cair no <body> quando a região
   // de resultado troca. Movemos o foco para o heading do estado novo.
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  // Diálogo de apagar (#15): container (p/ trap de Tab) + elemento que o abriu (p/ devolver o
+  // foco ao fechar). Sem isso o foco do teclado fica preso atrás do modal.
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const deleteTriggerRef = useRef<HTMLElement | null>(null)
+
+  // Ciclo de vida do stream (espelha search-experience.tsx): o AbortController da requisição
+  // de stream em voo (cancelado no unmount) e um flag de montagem para guardar TODO setState
+  // do loop — sem isso, navegar para fora no meio do stream vaza "setState em componente
+  // desmontado". `mountedRef` é true do mount ao unmount; o cleanup effect aborta+desmarca.
+  const abortRef = useRef<AbortController | null>(null)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      abortRef.current?.abort()
+    }
+  }, [])
 
   const inFlight = status === 'streaming' || status === 'distilling'
 
@@ -123,8 +145,10 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
         const r = await fetch(
           `/api/creation-sessions/${resumeSessionId}?locale=${encodeURIComponent(locale)}`,
         )
+        // 404 (Session inexistente/expirada ou de OUTRO dono) → não há o que reidratar: sinaliza
+        // a falha de retomada (mostra mensagem clara + saída) em vez de um chat vazio quebrado.
         if (!r.ok) {
-          if (!cancelled) setResuming(false)
+          if (!cancelled) setResumeFailed(true)
           return
         }
         const data = (await r.json()) as {
@@ -135,6 +159,8 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
         if (cancelled) return
         const msgs = (data.transcript ?? []).map((t) => ({ role: t.role, content: t.content }))
         setTranscript(msgs)
+        // Guard: `resultKind` SÓ existe quando há Receita. Retomada PRÉ-destilação tem
+        // `recipe=null` (conversa em andamento, ainda sem desfecho) — não reconstrói `outcome`.
         if (data.recipe) {
           setView(data.recipe)
           // Reconstrói o desfecho a partir de `resultKind` da Receita (a view do dono o traz).
@@ -146,7 +172,8 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
           setStatus('result')
         }
       } catch {
-        if (!cancelled) setResuming(false)
+        // Rede/parse: mesma falha de retomada (mensagem clara, não um chat vazio).
+        if (!cancelled) setResumeFailed(true)
       } finally {
         if (!cancelled) setResuming(false)
       }
@@ -164,6 +191,16 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
       headingRef.current?.focus()
     }
   }, [status])
+
+  // Diálogo de apagar — gestão de foco (a11y): ao FECHAR, devolve o foco ao elemento que abriu
+  // (o foco-on-OPEN é via `autoFocus` no botão primário). O trap de Tab e o Escape ficam no
+  // `onKeyDown` do container do diálogo (abaixo).
+  const fecharDialogo = () => {
+    setDeleteOpen(false)
+    setDeleteError(false)
+    deleteTriggerRef.current?.focus()
+    deleteTriggerRef.current = null
+  }
 
   /**
    * Garante um sessionId para uma conversa NOVA: POST /api/creation-sessions → `{sessionId}`.
@@ -201,6 +238,7 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
       )
       if (r.ok) {
         const v = (await r.json()) as RecipeView
+        // Merge defensivo (ADR-0004): se o frame trouxe avisos e o GET não, preserva-os.
         setView(v.avisos ? v : { ...v, avisos: distill.avisos })
         setLoadFailed(false)
       } else {
@@ -261,20 +299,27 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
    */
   async function streamFrom(t: ChatMessage[], id: string | null) {
     let sawTerminal = false
+    // AbortController por chamada (espelha search-experience): aborta o anterior em voo (re-
+    // destilar/retomar) e o cleanup do unmount aborta o atual. Passado como `signal` ao fetch.
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
     try {
       const res = await fetch('/api/conversations/stream', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ transcript: t, sessionId: id ?? undefined }),
+        signal: controller.signal,
       })
 
       // Falhas PRÉ-stream (401 auth / 400 shape): JSON normal, sem corpo de stream → queda.
       if (!res.ok || !res.body) {
-        setStatus('dropped')
+        if (mountedRef.current) setStatus('dropped')
         return
       }
 
-      const reader = res.body.getReader()
+      reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
       let assistantText = ''
@@ -293,9 +338,14 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
           try {
             frame = JSON.parse(line)
           } catch {
-            continue // linha malformada: ignora (defensivo)
+            // Linha COMPLETA mas inválida: ignora (defensivo). Avisa no dev p/ visibilidade.
+            console.warn('[conversation] linha NDJSON malformada:', line)
+            continue
           }
           if (!isFrame(frame)) continue
+          // Componente desmontou no meio do stream: pára de aplicar estado (evita setState em
+          // componente desmontado). O `finally` libera o reader.
+          if (!mountedRef.current) return
           if (frame.type === 'token') {
             assistantText += frame.text
             setLiveAssistant(assistantText)
@@ -312,17 +362,24 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
 
       // Stream fechou SEM frame terminal → QUEDA (distinta do frame de erro). A fala parcial do
       // Assistente vira fala fixa (não some), mas a destilação não concluiu.
-      if (!sawTerminal) {
+      if (!sawTerminal && mountedRef.current) {
         if (assistantText) setTranscript([...t, { role: 'assistant', content: assistantText }])
         setLiveAssistant('')
         setStatus('dropped')
       }
-    } catch {
-      // Erro de rede / leitura abortada: trata como queda (retomar/tentar de novo).
-      if (!sawTerminal) {
+    } catch (err) {
+      // ABORT NOSSO (unmount/navegação/re-destilar): NÃO é queda nem erro — só pára. Distingue
+      // de uma queda de conexão real (que cai no `dropped`). O guard de montagem já torna isso
+      // inócuo no unmount, mas o teste explícito protege um futuro caller que aborte em voo.
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      // Erro de rede / leitura interrompida de verdade: trata como queda (retomar/tentar).
+      if (!sawTerminal && mountedRef.current) {
         setLiveAssistant('')
         setStatus('dropped')
       }
+    } finally {
+      // Libera o stream em QUALQUER saída (sucesso, queda, abort, erro).
+      reader?.cancel().catch(() => {})
     }
   }
 
@@ -388,6 +445,7 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
     try {
       const r = await fetch(`/api/creation-sessions/${sessionId}/transcript`, { method: 'DELETE' })
       if (!r.ok) {
+        // Falha → mantém o diálogo aberto com a mensagem de erro (o foco fica no diálogo).
         setDeleteError(true)
         return
       }
@@ -395,6 +453,10 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
       setLiveAssistant('')
       setErrorKey(null)
       setDeleteOpen(false)
+      // O botão que abriu o diálogo SOME (transcript zerado) → devolver foco a ele perderia o
+      // foco no <body>; manda para o heading do estado resultante (a11y).
+      deleteTriggerRef.current = null
+      headingRef.current?.focus()
       // MANTÉM `view`/`result` (a Receita continua salva) + o link de salvar.
       if (view) setStatus('result')
       else setStatus('idle')
@@ -437,6 +499,21 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
       </div>
     )
   }
+  // Retomada falhou (404/rede): mensagem clara + caminho para uma conversa NOVA (NÃO um chat
+  // vazio que parece quebrado). `/conversation` é a entrada limpa de conversa nova (sem id).
+  if (resumeFailed) {
+    return (
+      <div className="mx-auto flex max-w-sm flex-col gap-4">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
+        <p role="alert" className="text-muted">
+          {m.retomarFalhou}
+        </p>
+        <Link href="/conversation" className={btnPrimary}>
+          {m.novaConversa}
+        </Link>
+      </div>
+    )
+  }
 
   const temReceita = view != null
   // `conversa.titulo` cede o `<h1>` para o nome da Receita só quando ela está na tela.
@@ -448,7 +525,11 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
         <Titulo
           ref={headingRef}
           tabIndex={-1}
-          className="font-display text-3xl font-semibold tracking-tight text-fg outline-none sm:text-4xl"
+          // Foco PROGRAMÁTICO (swap de estado) dispara `:focus`, NÃO `:focus-visible` (este é só
+          // teclado) → o outline global não aparece. Sem indicador, o usuário de teclado fica
+          // perdido. Anel visível explícito com o token de foco (--color-ring), em vez de
+          // `outline-none` mudo. `rounded-sm` casa o offset com o estilo global de foco.
+          className="rounded-sm font-display text-3xl font-semibold tracking-tight text-fg outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg sm:text-4xl"
         >
           {m.titulo}
         </Titulo>
@@ -487,11 +568,16 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
           )}
         </ol>
 
-        {/* Indicador de fase em voo (sutil, neutro). */}
-        {status === 'streaming' && liveAssistant === '' && (
-          <p className="text-sm text-muted">{m.pensando}</p>
-        )}
-        {status === 'distilling' && <p className="text-sm text-muted">{m.destilando}</p>}
+        {/* Indicador de fase em voo (sutil, neutro). A região `role="status"` + `aria-live`
+            PRÉ-existe no DOM (sempre montada, o conteúdo troca) p/ o leitor de tela ANUNCIAR a
+            troca de fase (pensando → destilando); regiões live inseridas junto do conteúdo não
+            são anunciadas por muitos leitores. Vazia → some visualmente (sem nó de texto). */}
+        <div role="status" aria-live="polite" className="min-h-0">
+          {status === 'streaming' && liveAssistant === '' && (
+            <p className="text-sm text-muted">{m.pensando}</p>
+          )}
+          {status === 'distilling' && <p className="text-sm text-muted">{m.destilando}</p>}
+        </div>
       </section>
 
       {/* Entrada — sempre disponível (multi-turno); travada durante o turno em voo via fieldset. */}
@@ -515,13 +601,23 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
               type="submit"
               aria-busy={inFlight}
               disabled={inFlight || input.trim() === ''}
-              className={`${btnPrimary} disabled:opacity-70`}
+              // Cue de desabilitado ALÉM da opacidade (que sozinha é fraca p/ baixa visão):
+              // cursor de bloqueio + borda neutra dão um sinal não-baseado-em-opacidade.
+              className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
             >
               {inFlight ? m.enviando : m.enviar}
             </button>
-            {/* Apagar conversa (#15) — só quando há conversa E uma Session segurada. */}
+            {/* Apagar conversa (#15) — só quando há conversa E uma Session segurada. Guarda o
+                botão que abriu o diálogo p/ devolver-lhe o foco ao fechar (a11y). */}
             {sessionId && transcript.length > 0 && (
-              <button type="button" onClick={() => setDeleteOpen(true)} className={btnSecondary}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  deleteTriggerRef.current = e.currentTarget
+                  setDeleteOpen(true)
+                }}
+                className={btnSecondary}
+              >
                 {m.apagarTranscricao}
               </button>
             )}
@@ -630,14 +726,42 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
         )}
       </div>
 
-      {/* Diálogo de confirmação de APAGAR (IRREVERSÍVEL, #15/#60). Modal acessível leve:
-          role="dialog" + aria-modal + foco gerenciado pelo navegador via o botão primário. */}
+      {/* Diálogo de confirmação de APAGAR (IRREVERSÍVEL, #15/#60). Modal acessível:
+          role="dialog" + aria-modal + aria-labelledby/describedby; Escape fecha; Tab faz trap
+          dentro do diálogo; foco entra no botão primário (autoFocus) e VOLTA ao gatilho ao
+          fechar (via fecharDialogo). */}
       {deleteOpen && (
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="apagar-titulo"
           aria-describedby="apagar-aviso"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              fecharDialogo()
+              return
+            }
+            // Trap de Tab: mantém o foco dentro do diálogo enquanto aberto (ciclo entre o 1º e
+            // o último controle focável). Sem isso o Tab vaza para o conteúdo atrás do modal.
+            if (e.key === 'Tab') {
+              const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+              )
+              if (!focusables || focusables.length === 0) return
+              const first = focusables[0]
+              const last = focusables[focusables.length - 1]
+              const active = document.activeElement
+              if (e.shiftKey && active === first) {
+                e.preventDefault()
+                last.focus()
+              } else if (!e.shiftKey && active === last) {
+                e.preventDefault()
+                first.focus()
+              }
+            }
+          }}
           className="fixed inset-0 z-50 flex items-center justify-center bg-fg/40 p-4"
         >
           <div className="flex w-full max-w-sm flex-col gap-4 rounded-md border border-border bg-bg p-5 shadow-lg">
@@ -656,18 +780,12 @@ export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: 
               </p>
             )}
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setDeleteOpen(false)
-                  setDeleteError(false)
-                }}
-                className={btnSecondary}
-              >
+              <button type="button" onClick={fecharDialogo} className={btnSecondary}>
                 {m.apagarCancelar}
               </button>
               <button
                 type="button"
+                autoFocus
                 onClick={() => void confirmarApagar()}
                 className={btnPrimary}
               >

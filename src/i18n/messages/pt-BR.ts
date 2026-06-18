@@ -242,6 +242,7 @@ export const ptBR = {
     quedaTitulo: 'A conexão caiu antes de terminar.',
     quedaNota: 'Sua conversa está salva. Você pode retomar e tentar de novo.',
     retomar: 'Retomar conversa',
+    retomarFalhou: 'Esta conversa não foi encontrada ou expirou.',
     verReceita: 'Ver e publicar receita',
     novaConversa: 'Nova conversa',
     apagarTranscricao: 'Apagar conversa',
