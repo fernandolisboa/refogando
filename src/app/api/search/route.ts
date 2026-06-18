@@ -113,12 +113,17 @@ export async function GET(request: Request): Promise<Response> {
   const consulta: FacetasResolvidasDTO | undefined =
     lens?.resolved === true ? toFacetasResolvidasDTO(lens.facetas) : undefined
 
+  // #98 browse-all: `?browse=1` pede a página /recipes para "listar tudo" (Catálogo +
+  // Comunidade) SEM texto nem faceta. Aceita só o literal '1' (contrato de URL estreito;
+  // qualquer outro valor degrada para o comportamento neutro de hoje).
+  const browse = url.searchParams.get('browse') === '1'
+
   // #10: guarda do early-return neutro. Só dispara quando NÃO há NADA para buscar NEM
-  // filtrar (nem texto NEM faceta). NÃO reusar o seletor `facetOnly` do loader: este
-  // testa "ausência de sinal de texto" (cobre ?q=,,, e ?q=!!!), estritamente mais largo
-  // que q.length===0 — são dois testes distintos.
+  // filtrar (nem texto NEM faceta) E NÃO é browse (#98). NÃO reusar o seletor `facetOnly` do
+  // loader: este testa "ausência de sinal de texto" (cobre ?q=,,, e ?q=!!!), estritamente
+  // mais largo que q.length===0 — são dois testes distintos.
   const hasFacets = !isFacetsEmpty(facets)
-  if (q.length === 0 && !hasFacets) {
+  if (q.length === 0 && !hasFacets && !browse) {
     return Response.json({ catalogo: [], comunidade: [] })
   }
 
@@ -177,6 +182,7 @@ export async function GET(request: Request): Promise<Response> {
     facets,
     queryVector,
     sort,
+    browse,
   })
   const body = buildSearchResponse(hits, requestLocale, consulta, sugestoes)
   return Response.json(body)

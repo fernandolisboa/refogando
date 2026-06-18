@@ -60,6 +60,15 @@ export const ptBR = {
     filtroCategoria: 'Categoria',
     filtroRestricao: 'Restrição',
   },
+  // Tela de browse /recipes (#98): catálogo + comunidade SEM precisar buscar. Reusa
+  // `busca.*` para seções/selos/facetas/tradução automática (chrome compartilhado); só os
+  // textos próprios da tela vivem aqui. `semResultado` é distinto do de busca: aqui não há
+  // "termo" digitado, então a orientação fala só de filtros.
+  browse: {
+    titulo: 'Receitas',
+    subtitulo: 'Explore o catálogo e o que a comunidade anda cozinhando.',
+    semResultado: 'Nenhuma receita por aqui. Ajuste ou limpe os filtros.',
+  },
   // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
   // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são
   // chrome da UI #61 (render dos arrays/campos do `derivedDiff`); o Aviso é o sinal pós-fork.
