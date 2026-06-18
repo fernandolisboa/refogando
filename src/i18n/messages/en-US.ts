@@ -7,7 +7,7 @@ import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
-  nav: { home: 'Home', recipes: 'Recipes', create: 'Create', signIn: 'Sign in', signOut: 'Sign out' },
+  nav: { home: 'Home', recipes: 'Recipes', create: 'Create', conversar: 'Chat', signIn: 'Sign in', signOut: 'Sign out' },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   system: {
     loading: 'Loading…',
@@ -190,6 +190,48 @@ export const enUS: Messages = {
     erroObservacoesLongas: 'The notes are too long.',
     erroIngrediente: 'Fill in the ingredient on the lines you started.',
     erroCampos: 'Check the fields you filled in.',
+  },
+  conversa: {
+    titulo: 'Chat with the AI',
+    descricao:
+      'Chat your way to the recipe. Whenever you like, ask to distill everything into a finished recipe.',
+    precisaEntrar: 'Sign in to chat and create recipes.',
+    voce: 'You',
+    assistente: 'AI',
+    inputLabel: 'Your message',
+    inputPlaceholder: "e.g., I want a quick dinner with what's in my fridge…",
+    enviar: 'Send',
+    enviando: 'Sending…',
+    pensando: 'The AI is replying…',
+    destilando: 'Distilling the recipe…',
+    conversaVazia: 'Start the conversation: describe what you want to cook.',
+    resultadoSucesso: 'Recipe distilled from the conversation.',
+    resultadoDegradado:
+      "We distilled the recipe, but couldn't meet everything the conversation asked for.",
+    playfulTitulo: 'That one was a joke.',
+    playfulNota:
+      "The AI answered playfully. It's saved only in your private space and can't be published.",
+    consultoria: 'The AI noted',
+    resultadoImpossivel: "We couldn't distill a recipe from this conversation.",
+    erroCarregarReceita:
+      "The recipe was created and is in your space, but we couldn't load it right now. Please try again.",
+    tentarCarregarNovamente: 'Try loading again',
+    erroGeracao: "We couldn't distill the recipe right now.",
+    redestilar: 'Distill again',
+    erroConflito: 'Another action raced with this conversation. Try sending again.',
+    erroConexao: 'Could not connect. Please try again.',
+    quedaTitulo: 'The connection dropped before finishing.',
+    quedaNota: 'Your conversation is saved. You can resume and try again.',
+    retomar: 'Resume conversation',
+    verReceita: 'View and publish recipe',
+    novaConversa: 'New conversation',
+    apagarTranscricao: 'Delete conversation',
+    apagarTituloConfirma: 'Delete this conversation?',
+    apagarAviso:
+      "The conversation will be deleted permanently and can't be undone. The recipe already created stays saved.",
+    apagarConfirmar: 'Delete permanently',
+    apagarCancelar: 'Cancel',
+    apagarErro: "We couldn't delete the conversation. Try again.",
   },
   visibilidade: {
     titulo: 'Visibility',

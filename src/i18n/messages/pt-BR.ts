@@ -6,7 +6,7 @@ import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
-  nav: { home: 'Início', recipes: 'Receitas', create: 'Criar', signIn: 'Entrar', signOut: 'Sair' },
+  nav: { home: 'Início', recipes: 'Receitas', create: 'Criar', conversar: 'Conversar', signIn: 'Entrar', signOut: 'Sair' },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   system: {
     loading: 'Carregando…',
@@ -209,6 +209,48 @@ export const ptBR = {
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',
+  },
+  conversa: {
+    titulo: 'Conversar com a IA',
+    descricao:
+      'Converse para chegar na receita. Quando quiser, peça para destilar tudo numa receita pronta.',
+    precisaEntrar: 'Entre na sua conta para conversar e criar receitas.',
+    voce: 'Você',
+    assistente: 'IA',
+    inputLabel: 'Sua mensagem',
+    inputPlaceholder: 'Ex.: quero um jantar rápido com o que tenho na geladeira…',
+    enviar: 'Enviar',
+    enviando: 'Enviando…',
+    pensando: 'A IA está respondendo…',
+    destilando: 'Destilando a receita…',
+    conversaVazia: 'Comece a conversa: descreva o que você quer cozinhar.',
+    resultadoSucesso: 'Receita pronta a partir da conversa.',
+    resultadoDegradado:
+      'Destilamos a receita, mas não foi possível atender tudo o que a conversa pediu.',
+    playfulTitulo: 'Essa foi uma brincadeira.',
+    playfulNota:
+      'A IA respondeu no humor. Fica salva só no seu espaço privado e não pode ser publicada.',
+    consultoria: 'A IA comentou',
+    resultadoImpossivel: 'Não deu para destilar uma receita a partir desta conversa.',
+    erroCarregarReceita:
+      'A receita foi criada e está no seu espaço, mas não conseguimos carregá-la agora. Tente de novo.',
+    tentarCarregarNovamente: 'Tentar carregar de novo',
+    erroGeracao: 'Não foi possível destilar a receita agora.',
+    redestilar: 'Destilar de novo',
+    erroConflito: 'Outra ação concorreu com esta conversa. Tente enviar de novo.',
+    erroConexao: 'Não foi possível conectar. Tente de novo.',
+    quedaTitulo: 'A conexão caiu antes de terminar.',
+    quedaNota: 'Sua conversa está salva. Você pode retomar e tentar de novo.',
+    retomar: 'Retomar conversa',
+    verReceita: 'Ver e publicar receita',
+    novaConversa: 'Nova conversa',
+    apagarTranscricao: 'Apagar conversa',
+    apagarTituloConfirma: 'Apagar esta conversa?',
+    apagarAviso:
+      'A conversa será apagada para sempre e não dá para desfazer. A receita já criada continua salva.',
+    apagarConfirmar: 'Apagar para sempre',
+    apagarCancelar: 'Cancelar',
+    apagarErro: 'Não foi possível apagar a conversa. Tente de novo.',
   },
   visibilidade: {
     titulo: 'Visibilidade',

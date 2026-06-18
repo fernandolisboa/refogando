@@ -1,0 +1,682 @@
+'use client'
+/**
+ * Modo CONVERSA (#60) — o cérebro client do chat com streaming + destilação. Capstone do
+ * épico #53. Espelha a DISCIPLINA de `create-structured-experience.tsx` (máquina de estados,
+ * pipeline de resultado `{outcome,recipeId,advisory,avisos?}`, `carregarReceita` com 2º GET,
+ * estado `loadFailed`, merge defensivo de `avisos`, UM único `<h1>` por documento, região
+ * `aria-live` que PRÉ-existe no DOM, `<fieldset disabled>` durante o envio, guard de Visitante)
+ * — sem reinventar nada.
+ *
+ * ADR-0009/0010: a UI consome os ROUTE HANDLERS via `fetch` (NÃO Server Actions) e NÃO
+ * reimplementa domínio. O transporte é NDJSON em streaming:
+ *  - `POST /api/creation-sessions` → `{sessionId}` no INÍCIO de uma conversa NOVA (a UI segura
+ *    o id para retomar/apagar). Na retomada, o id vem da rota (`/conversation/[id]`).
+ *  - `POST /api/conversations/stream` body `{transcript, sessionId}` → ReadableStream NDJSON:
+ *    zero-ou-mais `{type:'token',text}` e DEPOIS EXATAMENTE UM terminal:
+ *      `{type:'recipe',outcome,recipeId,advisory,avisos?}` | `{type:'impossible',advisory}`
+ *      | `{type:'error',error:'geracao_invalida'|'conflito_concorrente'}`.
+ *    A cada turno a UI anexa a fala do Usuário ao transcript LOCAL e posta o transcript
+ *    INTEIRO + o sessionId segurado. A última fala É do Usuário (parseTranscript exige).
+ *  - O frame `recipe` traz só `recipeId` (NÃO o corpo) → 2º `GET /api/recipes/{id}?locale=`
+ *    para renderizar (idêntico ao `carregarReceita` da tela CRIAR).
+ *
+ * DUAS falhas DISTINTAS (NÃO conflar):
+ *  - `{type:'error'}` (frame terminal de erro) → erro de sistema neutro + CTA RE-DESTILAR.
+ *  - stream fecha SEM frame terminal (queda de conexão) → aviso de QUEDA + CTA RETOMAR/TENTAR.
+ *
+ * Salvar a Receita destilada REUSA a #59 (navega pro detalhe onde moram os controles de
+ * Visibilidade) — NUNCA re-gera (a Receita já está persistida private na destilação).
+ *
+ * Âmbar é EXCLUSIVO do Aviso de restrição (`RestrictionWarning`); banners playful/erro/sistema
+ * usam tokens NEUTROS.
+ */
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
+import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import type { RecipeView, AvisoView } from '@/domain/recipe-read'
+import { RecipeDetailView } from './recipe-detail-view'
+
+/** Uma fala do transcript LOCAL (o servidor atribui `seq`; a UI guarda role+content). */
+type ChatMessage = { role: 'user' | 'assistant'; content: string }
+
+/** Frames do contrato NDJSON (espelham o route handler). */
+type TokenFrame = { type: 'token'; text: string }
+type TerminalFrame =
+  | {
+      type: 'recipe'
+      outcome: 'success' | 'degraded' | 'playful'
+      recipeId: string | null
+      advisory: string | null
+      avisos?: AvisoView[]
+    }
+  | { type: 'impossible'; advisory: string | null }
+  | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
+type Frame = TokenFrame | TerminalFrame
+
+/** Resultado da destilação (terminal `recipe`/`impossible`), espelhando a tela CRIAR. */
+type DistillResult =
+  | {
+      outcome: 'success' | 'degraded' | 'playful'
+      recipeId: string | null
+      advisory: string | null
+      avisos?: AvisoView[]
+    }
+  | { outcome: 'impossible'; advisory: string | null }
+
+/**
+ * Estado do TURNO em voo / do último desfecho. `idle` (pronto p/ digitar), `streaming`
+ * (tokens chegando), `distilling` (loop fechou, frame terminal ainda não chegou — em prática o
+ * terminal vem logo após o último token, mas o rótulo dá feedback), `result` (terminal
+ * recipe/impossible processado), `error` (frame terminal de erro), `dropped` (stream fechou SEM
+ * terminal — queda). `streaming`/`distilling` travam o input.
+ */
+type Status = 'idle' | 'streaming' | 'distilling' | 'result' | 'error' | 'dropped'
+
+/** Type-guard de frame bem-formado lido de uma linha NDJSON. */
+function isFrame(v: unknown): v is Frame {
+  return typeof v === 'object' && v !== null && 'type' in v
+}
+
+export function ConversationExperience({ resumeSessionId }: { resumeSessionId?: string }) {
+  const { locale, messages } = useLocale()
+  const m = messages.conversa
+  const session = useSession()
+
+  // Transcrição LOCAL (cresce a cada turno). O sessionId é segurado p/ retomar/apagar: vem do
+  // POST /api/creation-sessions no 1º turno de uma conversa NOVA, ou da rota na retomada.
+  const [transcript, setTranscript] = useState<ChatMessage[]>([])
+  const [sessionId, setSessionId] = useState<string | null>(resumeSessionId ?? null)
+  const [input, setInput] = useState('')
+
+  const [status, setStatus] = useState<Status>('idle')
+  // Bolha do Assistente em construção (tokens acumulados) durante o streaming — renderizada
+  // INCREMENTALMENTE, separada do transcript commitado (só vira fala fixa quando o turno fecha).
+  const [liveAssistant, setLiveAssistant] = useState('')
+
+  const [result, setResult] = useState<DistillResult | null>(null)
+  const [view, setView] = useState<RecipeView | null>(null)
+  const [errorKey, setErrorKey] = useState<'geracao_invalida' | 'conflito_concorrente' | null>(null)
+  // Receita FOI destilada (recipeId não-null) mas o 2º GET do corpo falhou — "criada mas não
+  // carregou" (NÃO 'impossible'; reenviar duplicaria a geração). Espelha a tela CRIAR.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+
+  // Retomada (#15): GET /api/creation-sessions/[id] reidrata transcript + Receita + advisory.
+  const [resuming, setResuming] = useState<boolean>(Boolean(resumeSessionId))
+
+  // Foco no swap de estado (a11y): o foco do teclado não pode cair no <body> quando a região
+  // de resultado troca. Movemos o foco para o heading do estado novo.
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const inFlight = status === 'streaming' || status === 'distilling'
+
+  // ── Retomada (#15) ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!resumeSessionId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(
+          `/api/creation-sessions/${resumeSessionId}?locale=${encodeURIComponent(locale)}`,
+        )
+        if (!r.ok) {
+          if (!cancelled) setResuming(false)
+          return
+        }
+        const data = (await r.json()) as {
+          transcript?: ChatMessage[]
+          recipe?: RecipeView | null
+          advisory?: string | null
+        }
+        if (cancelled) return
+        const msgs = (data.transcript ?? []).map((t) => ({ role: t.role, content: t.content }))
+        setTranscript(msgs)
+        if (data.recipe) {
+          setView(data.recipe)
+          // Reconstrói o desfecho a partir de `resultKind` da Receita (a view do dono o traz).
+          const kind = data.recipe.resultKind
+          const outcome: DistillResult['outcome'] =
+            kind === 'degraded' ? 'degraded' : kind === 'playful' ? 'playful' : 'success'
+          setResult({ outcome, recipeId: data.recipe.id, advisory: data.advisory ?? null })
+          // Mostra a Receita reidratada (a região de resultado é gateada por status==='result').
+          setStatus('result')
+        }
+      } catch {
+        if (!cancelled) setResuming(false)
+      } finally {
+        if (!cancelled) setResuming(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // Só na montagem (a retomada é uma vez); `locale` é estável pela navegação.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeSessionId])
+
+  // Foco no heading quando o estado muda de forma significativa.
+  useEffect(() => {
+    if (status === 'result' || status === 'error' || status === 'dropped') {
+      headingRef.current?.focus()
+    }
+  }, [status])
+
+  /**
+   * Garante um sessionId para uma conversa NOVA: POST /api/creation-sessions → `{sessionId}`.
+   * Na retomada o id já existe (vem da rota). Falha de criação NÃO bloqueia o turno — o stream
+   * faz lazy-create da Session; mas guardamos o id quando dá, p/ retomar/apagar funcionarem.
+   */
+  async function ensureSessionId(): Promise<string | null> {
+    if (sessionId) return sessionId
+    try {
+      const r = await fetch('/api/creation-sessions', { method: 'POST' })
+      if (r.ok) {
+        const { sessionId: id } = (await r.json()) as { sessionId: string }
+        setSessionId(id)
+        return id
+      }
+    } catch {
+      // Ignora — o stream faz lazy-create; só perdemos a alça de retomar/apagar este turno.
+    }
+    return null
+  }
+
+  /**
+   * 2º GET do corpo da Receita destilada (RecipeView CRU). Merge defensivo de `avisos` (se o
+   * frame trouxe e o GET não). Falha → `loadFailed` (NÃO 'impossible'). Espelha a tela CRIAR.
+   */
+  async function carregarReceita(distill: Extract<DistillResult, { recipeId: string | null }>) {
+    if (distill.recipeId == null) {
+      setLoadFailed(true)
+      setStatus('result')
+      return
+    }
+    try {
+      const r = await fetch(
+        `/api/recipes/${distill.recipeId}?locale=${encodeURIComponent(locale)}`,
+      )
+      if (r.ok) {
+        const v = (await r.json()) as RecipeView
+        setView(v.avisos ? v : { ...v, avisos: distill.avisos })
+        setLoadFailed(false)
+      } else {
+        setView(null)
+        setLoadFailed(true)
+      }
+    } catch {
+      setView(null)
+      setLoadFailed(true)
+    }
+    setStatus('result')
+  }
+
+  /**
+   * Processa o frame terminal: ramifica por tipo (espelha o pipeline da tela CRIAR). `base` é o
+   * transcript ATÉ a fala do Usuário (sem a do Assistente); `assistantText` é a bolha acumulada.
+   *
+   * COMMIT da fala do Assistente: SÓ em terminal de SUCESSO (recipe/impossible). No frame de
+   * ERRO o transcript LOCAL fica terminando em 'user' — assim o CTA "Destilar de novo" pode
+   * re-POSTar um transcript VÁLIDO (parseTranscript exige última fala = 'user'). No servidor as
+   * 2 falas JÁ foram persistidas no turno; o local só guarda o que permite re-destilar.
+   */
+  async function handleTerminal(frame: TerminalFrame, base: ChatMessage[], assistantText: string) {
+    if (frame.type === 'error') {
+      // NÃO commita a fala do Assistente: o transcript local segue terminando em 'user'.
+      setTranscript(base)
+      setLiveAssistant('')
+      setErrorKey(frame.error)
+      setStatus('error')
+      return
+    }
+    // Terminais de sucesso: commita a fala do Assistente acumulada.
+    setTranscript([...base, { role: 'assistant', content: assistantText }])
+    setLiveAssistant('')
+    if (frame.type === 'impossible') {
+      setResult({ outcome: 'impossible', advisory: frame.advisory })
+      setView(null)
+      setStatus('result')
+      return
+    }
+    // recipe (success | degraded | playful)
+    const distill: DistillResult = {
+      outcome: frame.outcome,
+      recipeId: frame.recipeId,
+      advisory: frame.advisory,
+      avisos: frame.avisos,
+    }
+    setResult(distill)
+    setLoadFailed(false)
+    await carregarReceita(distill)
+  }
+
+  /**
+   * Núcleo do turno: anexa a fala do Usuário ao transcript LOCAL, posta o transcript INTEIRO +
+   * o sessionId, e lê o NDJSON via `getReader()` + `TextDecoder` + buffer de linhas (mantém o
+   * TAIL parcial entre reads). Tokens acumulam na bolha viva; o frame terminal ramifica. Se o
+   * stream fecha SEM terminal → estado `dropped` (queda), DISTINTO do frame de erro.
+   */
+  async function streamFrom(t: ChatMessage[], id: string | null) {
+    let sawTerminal = false
+    try {
+      const res = await fetch('/api/conversations/stream', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ transcript: t, sessionId: id ?? undefined }),
+      })
+
+      // Falhas PRÉ-stream (401 auth / 400 shape): JSON normal, sem corpo de stream → queda.
+      if (!res.ok || !res.body) {
+        setStatus('dropped')
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let assistantText = ''
+
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Divide em linhas COMPLETAS; o tail parcial (sem '\n') fica no buffer p/ o próximo read.
+        let nl: number
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nl).trim()
+          buffer = buffer.slice(nl + 1)
+          if (line === '') continue
+          let frame: unknown
+          try {
+            frame = JSON.parse(line)
+          } catch {
+            continue // linha malformada: ignora (defensivo)
+          }
+          if (!isFrame(frame)) continue
+          if (frame.type === 'token') {
+            assistantText += frame.text
+            setLiveAssistant(assistantText)
+          } else {
+            // Frame terminal: o turno do chat fechou. `handleTerminal` decide o commit da fala
+            // do Assistente (só em sucesso) e ramifica (recipe/impossible → 'result'; error →
+            // 'error'). `distilling` dá feedback enquanto o 2º GET (corpo da Receita) corre.
+            sawTerminal = true
+            setStatus('distilling')
+            await handleTerminal(frame, t, assistantText)
+          }
+        }
+      }
+
+      // Stream fechou SEM frame terminal → QUEDA (distinta do frame de erro). A fala parcial do
+      // Assistente vira fala fixa (não some), mas a destilação não concluiu.
+      if (!sawTerminal) {
+        if (assistantText) setTranscript([...t, { role: 'assistant', content: assistantText }])
+        setLiveAssistant('')
+        setStatus('dropped')
+      }
+    } catch {
+      // Erro de rede / leitura abortada: trata como queda (retomar/tentar de novo).
+      if (!sawTerminal) {
+        setLiveAssistant('')
+        setStatus('dropped')
+      }
+    }
+  }
+
+  /**
+   * Inicia um turno NOVO: anexa a fala do Usuário ao transcript LOCAL e abre o stream. Conversa
+   * NOVA garante a Session ANTES de postar (alça de retomar/apagar); na retomada o id já existe.
+   */
+  async function enviarTurno(text: string) {
+    const nextTranscript: ChatMessage[] = [...transcript, { role: 'user', content: text }]
+    setTranscript(nextTranscript)
+    setInput('')
+    setStatus('streaming')
+    setLiveAssistant('')
+    setErrorKey(null)
+    setLoadFailed(false)
+    const id = await ensureSessionId()
+    await streamFrom(nextTranscript, id)
+  }
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (inFlight) return // evita re-entrada / turno duplicado
+    const text = input.trim()
+    if (text === '') return
+    void enviarTurno(text)
+  }
+
+  // Enter envia; Shift+Enter quebra linha (convenção de chat).
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const text = input.trim()
+      if (!inFlight && text !== '') void enviarTurno(text)
+    }
+  }
+
+  /**
+   * Re-destila / retoma: reenvia o transcript ATUAL como está (a última fala já é do Usuário no
+   * caminho de erro/queda — a fala do Assistente do turno falho NÃO foi commitada após erro). É
+   * a MESMA máquina para o CTA de re-destilar (frame de erro) e o de retomar (queda).
+   */
+  function redestilar() {
+    if (inFlight || transcript.length === 0) return
+    setStatus('streaming')
+    setLiveAssistant('')
+    setErrorKey(null)
+    void (async () => {
+      const id = await ensureSessionId()
+      await streamFrom(transcript, id)
+    })()
+  }
+
+  /**
+   * Apaga a Transcrição (#15, IRREVERSÍVEL): DELETE /api/creation-sessions/[id]/transcript.
+   * Mantém a Receita renderizada + o link de salvar; só zera a conversa localmente.
+   */
+  async function confirmarApagar() {
+    if (!sessionId) {
+      setDeleteOpen(false)
+      return
+    }
+    setDeleteError(false)
+    try {
+      const r = await fetch(`/api/creation-sessions/${sessionId}/transcript`, { method: 'DELETE' })
+      if (!r.ok) {
+        setDeleteError(true)
+        return
+      }
+      setTranscript([])
+      setLiveAssistant('')
+      setErrorKey(null)
+      setDeleteOpen(false)
+      // MANTÉM `view`/`result` (a Receita continua salva) + o link de salvar.
+      if (view) setStatus('result')
+      else setStatus('idle')
+    } catch {
+      setDeleteError(true)
+    }
+  }
+
+  /** Nova conversa: zera tudo (transcript, Session, Receita) e volta pro idle. */
+  function novaConversa() {
+    setTranscript([])
+    setSessionId(null)
+    setInput('')
+    setLiveAssistant('')
+    setResult(null)
+    setView(null)
+    setErrorKey(null)
+    setLoadFailed(false)
+    setDeleteOpen(false)
+    setStatus('idle')
+    inputRef.current?.focus()
+  }
+
+  // ── Guard de sessão (Visitante não usa o chat) ──────────────────────────────
+  if (session.isPending || resuming) {
+    return (
+      <div aria-busy="true" className="text-muted">
+        {messages.system.loading}
+      </div>
+    )
+  }
+  if (session.error || !session.data) {
+    return (
+      <div className="mx-auto flex max-w-sm flex-col gap-4">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
+        <p className="text-muted">{m.precisaEntrar}</p>
+        <Link href="/sign-in" className={btnPrimary}>
+          {messages.nav.signIn}
+        </Link>
+      </div>
+    )
+  }
+
+  const temReceita = view != null
+  // `conversa.titulo` cede o `<h1>` para o nome da Receita só quando ela está na tela.
+  const Titulo = temReceita ? 'h2' : 'h1'
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-2">
+        <Titulo
+          ref={headingRef}
+          tabIndex={-1}
+          className="font-display text-3xl font-semibold tracking-tight text-fg outline-none sm:text-4xl"
+        >
+          {m.titulo}
+        </Titulo>
+        <p className="max-w-[60ch] text-muted">{m.descricao}</p>
+      </div>
+
+      {/* Histórico da conversa — falas commitadas + a bolha viva do Assistente em streaming.
+          `role="log"` + `aria-live="polite"` para que os tokens incrementais sejam anunciados
+          de forma não-intrusiva. A região PRÉ-existe (mesmo vazia). */}
+      <section aria-label={m.titulo} className="flex flex-col gap-4">
+        <ol role="log" aria-live="polite" aria-busy={inFlight} className="flex flex-col gap-4">
+          {transcript.length === 0 && liveAssistant === '' && (
+            <li className="text-muted">{m.conversaVazia}</li>
+          )}
+          {transcript.map((msg, i) => (
+            <li
+              key={i}
+              className={
+                msg.role === 'user'
+                  ? 'self-end max-w-[85%] rounded-md rounded-br-none border border-border bg-surface px-4 py-2.5'
+                  : 'self-start max-w-[85%] rounded-md rounded-bl-none border border-border bg-bg px-4 py-2.5'
+              }
+            >
+              <p className="text-xs font-medium text-muted">
+                {msg.role === 'user' ? m.voce : m.assistente}
+              </p>
+              <p className="whitespace-pre-wrap text-pretty text-fg">{msg.content}</p>
+            </li>
+          ))}
+          {/* Bolha viva do Assistente — tokens incrementais durante o streaming. */}
+          {liveAssistant !== '' && (
+            <li className="self-start max-w-[85%] rounded-md rounded-bl-none border border-border bg-bg px-4 py-2.5">
+              <p className="text-xs font-medium text-muted">{m.assistente}</p>
+              <p className="whitespace-pre-wrap text-pretty text-fg">{liveAssistant}</p>
+            </li>
+          )}
+        </ol>
+
+        {/* Indicador de fase em voo (sutil, neutro). */}
+        {status === 'streaming' && liveAssistant === '' && (
+          <p className="text-sm text-muted">{m.pensando}</p>
+        )}
+        {status === 'distilling' && <p className="text-sm text-muted">{m.destilando}</p>}
+      </section>
+
+      {/* Entrada — sempre disponível (multi-turno); travada durante o turno em voo via fieldset. */}
+      <form onSubmit={onSubmit} aria-busy={inFlight}>
+        <fieldset disabled={inFlight} className="flex flex-col gap-3 border-0 p-0 disabled:opacity-60">
+          <label htmlFor="conversa-input" className="text-sm font-medium text-fg">
+            {m.inputLabel}
+          </label>
+          <textarea
+            id="conversa-input"
+            ref={inputRef}
+            rows={3}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={m.inputPlaceholder}
+            className={`${fieldClassName} resize-y`}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              aria-busy={inFlight}
+              disabled={inFlight || input.trim() === ''}
+              className={`${btnPrimary} disabled:opacity-70`}
+            >
+              {inFlight ? m.enviando : m.enviar}
+            </button>
+            {/* Apagar conversa (#15) — só quando há conversa E uma Session segurada. */}
+            {sessionId && transcript.length > 0 && (
+              <button type="button" onClick={() => setDeleteOpen(true)} className={btnSecondary}>
+                {m.apagarTranscricao}
+              </button>
+            )}
+            {transcript.length > 0 && (
+              <button type="button" onClick={novaConversa} className={btnSecondary}>
+                {m.novaConversa}
+              </button>
+            )}
+          </div>
+        </fieldset>
+      </form>
+
+      {/* Região de RESULTADO/erro — PRÉ-existe (mesmo vazia) p/ o `aria-live` ser anunciado. O
+          conteúdo entra/sai DENTRO dela. */}
+      <div aria-live="polite" className="flex flex-col gap-6">
+        {/* Frame terminal de ERRO → erro de sistema neutro + CTA RE-DESTILAR (NÃO Receita parcial). */}
+        {status === 'error' && errorKey != null && (
+          <div className="flex flex-col gap-3">
+            <p
+              role="alert"
+              className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
+            >
+              {errorKey === 'conflito_concorrente' ? m.erroConflito : m.erroGeracao}
+            </p>
+            <div>
+              <button type="button" onClick={redestilar} className={btnSecondary}>
+                {m.redestilar}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* QUEDA de stream (sem frame terminal) — DISTINTA do frame de erro: aviso + RETOMAR. */}
+        {status === 'dropped' && (
+          <div className="flex flex-col gap-3 rounded-md border border-border bg-surface px-4 py-3">
+            <p className="font-medium text-fg">{m.quedaTitulo}</p>
+            <p className="text-sm text-muted">{m.quedaNota}</p>
+            <div>
+              <button type="button" onClick={redestilar} className={btnSecondary}>
+                {m.retomar}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Resultado da destilação. */}
+        {status === 'result' && result != null && (
+          result.outcome === 'impossible' ? (
+            <>
+              <p className="text-fg">{m.resultadoImpossivel}</p>
+              {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
+            </>
+          ) : loadFailed || view == null ? (
+            <>
+              <p className="text-fg">{m.erroCarregarReceita}</p>
+              {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatus('distilling')
+                    void carregarReceita(result)
+                  }}
+                  className={btnSecondary}
+                >
+                  {m.tentarCarregarNovamente}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Banner de desfecho — neutro (âmbar é EXCLUSIVO do Aviso de restrição). */}
+              {result.outcome === 'playful' ? (
+                <div className="flex flex-col gap-1 rounded-md border border-border bg-surface px-4 py-3">
+                  <p className="font-medium text-fg">{m.playfulTitulo}</p>
+                  <p className="text-sm text-muted">{m.playfulNota}</p>
+                </div>
+              ) : (
+                <p className="font-medium text-fg">
+                  {result.outcome === 'degraded' ? m.resultadoDegradado : m.resultadoSucesso}
+                </p>
+              )}
+
+              {/* Comentário consultivo (advisory) — FORA do objeto Receita (CONTEXT.md). */}
+              {result.advisory && (
+                <p className="max-w-[60ch] text-muted">
+                  <span className="font-medium text-fg">{m.consultoria}:</span> {result.advisory}
+                </p>
+              )}
+
+              {/* A Receita destilada — REUSO total. O `<h1>{view.name}` aqui é o ÚNICO `<h1>`.
+                  O Aviso de restrição (âmbar) sai DENTRO dela (view.avisos). */}
+              <RecipeDetailView view={view} m={messages} />
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Salvar/publicar REUSA a #59: navega pro detalhe (onde moram os controles de
+                    Visibilidade). A Receita JÁ está persistida private — NÃO re-gera. */}
+                {result.recipeId && (
+                  <Link href={`/recipes/${result.recipeId}`} className={btnPrimary}>
+                    {m.verReceita}
+                  </Link>
+                )}
+              </div>
+            </>
+          )
+        )}
+      </div>
+
+      {/* Diálogo de confirmação de APAGAR (IRREVERSÍVEL, #15/#60). Modal acessível leve:
+          role="dialog" + aria-modal + foco gerenciado pelo navegador via o botão primário. */}
+      {deleteOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="apagar-titulo"
+          aria-describedby="apagar-aviso"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-fg/40 p-4"
+        >
+          <div className="flex w-full max-w-sm flex-col gap-4 rounded-md border border-border bg-bg p-5 shadow-lg">
+            <h2 id="apagar-titulo" className="font-display text-lg font-semibold text-fg">
+              {m.apagarTituloConfirma}
+            </h2>
+            <p id="apagar-aviso" className="text-sm text-muted">
+              {m.apagarAviso}
+            </p>
+            {deleteError && (
+              <p
+                role="alert"
+                className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
+              >
+                {m.apagarErro}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteOpen(false)
+                  setDeleteError(false)
+                }}
+                className={btnSecondary}
+              >
+                {m.apagarCancelar}
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmarApagar()}
+                className={btnPrimary}
+              >
+                {m.apagarConfirmar}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
