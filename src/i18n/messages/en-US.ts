@@ -253,6 +253,7 @@ export const enUS: Messages = {
     origemCatalog: 'Catalog',
     origemAiChat: 'AI chat',
     origemAiStructured: 'Structured briefing',
+    origemAiFreeText: 'Open prompt',
     origemUserEdited: 'Edited by a person',
     tipoSucesso: 'Success',
     tipoDegradado: 'Degraded',

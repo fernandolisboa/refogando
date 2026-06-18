@@ -8,13 +8,23 @@ import { classify } from '@/domain/generation'
 import {
   parseBriefing,
   buildBriefingPrompt,
+  buildFreeTextPrompt,
   briefingItemsParaAviso,
+  OBSERVACOES_MAX,
   type Briefing,
 } from '@/domain/briefing'
-import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
+import {
+  decideRestrictionNotices,
+  decidePostGenerationRestrictionNotices,
+  type RestrictionNotice,
+} from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
-import { persistGeneration, type PersistBriefing } from '@/server/generation/persist'
+import {
+  persistGeneration,
+  type PersistBriefing,
+  type PersistOrigin,
+} from '@/server/generation/persist'
 
 /**
  * Geração por IA — rota base do contrato (issue #8, §7a; ADR-0010 route handler).
@@ -27,12 +37,20 @@ import { persistGeneration, type PersistBriefing } from '@/server/generation/per
  * Status: success|degraded|playful → 201 (Receita privada criada); impossible → 200
  * (hard-stop honesto, sem Receita); invalid → 502 (falha upstream, NÃO persiste nada).
  *
- * Dois modos de ENTRADA (#11/#12):
+ * Três modos de ENTRADA (#11/#12/#88):
  *  - `conversation`: caminho de #8 — placeholders + faixas top-level do body.
  *  - `structured`: monta um Briefing ANINHADO (`body.briefing`) e gera no MESMO
  *    `RecipeGenSchema` de saída — #11 muda só a ENTRADA. O Briefing é validado
  *    (shape + faixas + campo-mínimo) ANTES do seam, persistido como proveniência
  *    (o PEDIDO), e gera o Aviso (#7) anexado INLINE, não-bloqueante, no 201.
+ *  - `free_text` (#88): texto livre (`body.freeText`) vai praticamente CRU como
+ *    userPrompt (NÃO pré-parseado num Briefing); a estrutura nasce da SAÍDA do
+ *    schema canônico. Valida não-vazio/comprimento ANTES do seam; persiste o texto
+ *    cru como proveniência (creation_session.free_text, sem briefing).
+ *
+ * Aviso (#7/#87): o 201 anexa `avisos` INLINE, não-bloqueante. A UNIÃO determinística
+ * combina o PRÉ-geração (do Briefing, SÓ structured) com o PÓS-geração (#87, da RECEITA
+ * GERADA, em TODOS os modos), nessa ordem, deduplicando por restrição.
  */
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
@@ -44,6 +62,17 @@ const DEFAULT_MODEL = 'claude-opus-4-8'
 const SYSTEM_PROMPT = 'Você gera receitas de cozinha no schema canônico.'
 const USER_PROMPT = 'Gere uma receita.'
 
+// Faixa de comprimento do texto livre (#88, decisão reversível). A validação roda ANTES
+// do seam, em AMBAS as bordas:
+//  - MIN: recusa o que é curto demais para gerar (vazio, espaços, uma palavra solta).
+//  - MAX: teto SIMÉTRICO ao OBSERVACOES_MAX=2000 do caminho structured. Sem ele, o texto
+//    livre iria CRU pro userPrompt (custo de token ilimitado) e pra coluna text não-limitada
+//    de creation_session.free_text (abuso de armazenamento) — Next.js App Router não limita o
+//    tamanho de req.json() por padrão. O caractere é o limite real; o overhead do JSON é
+//    proporcional a ele.
+const MIN_FREE_TEXT_LENGTH = 10
+const MAX_FREE_TEXT_LENGTH = OBSERVACOES_MAX
+
 export async function POST(req: Request): Promise<Response> {
   const g = await requireSession(req)
   if (!g.ok) return g.response
@@ -54,6 +83,7 @@ export async function POST(req: Request): Promise<Response> {
     porcoes?: unknown
     dificuldade?: unknown
     briefing?: unknown
+    freeText?: unknown
   }
 
   // mode obrigatório + válido.
@@ -66,6 +96,8 @@ export async function POST(req: Request): Promise<Response> {
   let systemPrompt = SYSTEM_PROMPT
   let userPrompt = USER_PROMPT
   let briefing: Briefing | null = null
+  // Texto livre CRU (#88): definido SÓ em free_text; persistido como proveniência.
+  let freeText: string | undefined
   // Mapa alérgenos-por-ingrediente: subproduto do SELECT antecipado (structured), usado
   // no Aviso (§4.4). Vazio em conversation.
   const alergMap = new Map<string, string[] | null>()
@@ -110,6 +142,24 @@ export async function POST(req: Request): Promise<Response> {
     const prompt = buildBriefingPrompt(briefing)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
+  } else if (mode === 'free_text') {
+    // free_text (#88): valida o texto livre ANTES do seam — o seam NUNCA é tocado nesses
+    // casos. NÃO pré-parseia num Briefing (decisão de design): o texto vai praticamente CRU
+    // como userPrompt; a estrutura nasce da SAÍDA do schema canônico e a segurança vem do
+    // Aviso pós-geração (#87). `briefing` segue null. Duas bordas (sobre o texto trimado):
+    //  - não-string OU curto demais → 400 free_text_vazio.
+    //  - longo demais (> MAX, simétrico ao structured) → 400 free_text_muito_longo. Sem este
+    //    teto, custo de token e armazenamento ficariam ilimitados (req.json() sem limite).
+    if (typeof body.freeText !== 'string' || body.freeText.trim().length < MIN_FREE_TEXT_LENGTH) {
+      return Response.json({ error: 'free_text_vazio' }, { status: 400 })
+    }
+    if (body.freeText.trim().length > MAX_FREE_TEXT_LENGTH) {
+      return Response.json({ error: 'free_text_muito_longo' }, { status: 400 })
+    }
+    freeText = body.freeText.trim()
+    const prompt = buildFreeTextPrompt(freeText)
+    systemPrompt = prompt.systemPrompt
+    userPrompt = prompt.userPrompt
   } else {
     // conversation (#12): faixas do TOPO do body, ANTES do seam (E6 — em structured o
     // topo é IGNORADO; as faixas vivem dentro do briefing).
@@ -130,7 +180,9 @@ export async function POST(req: Request): Promise<Response> {
   // Modelo de app_config (default em código quando a linha singleton está ausente).
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_MODEL
-  const origin = mode === 'conversation' ? 'ai_chat' : 'ai_structured'
+  // Mapa exaustivo dos 3 modos (#88): sem isso, free_text cairia no else → origin errado.
+  const origin: PersistOrigin =
+    mode === 'conversation' ? 'ai_chat' : mode === 'free_text' ? 'ai_free_text' : 'ai_structured'
 
   const out = await getClaudeClient().generateRecipe({
     systemPrompt,
@@ -166,7 +218,7 @@ export async function POST(req: Request): Promise<Response> {
 
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.
-    await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing })
+    await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText })
     return Response.json({ outcome: 'impossible', advisory: result.advisory }, { status: 200 })
   }
 
@@ -178,11 +230,12 @@ export async function POST(req: Request): Promise<Response> {
     ownerId,
     model,
     briefing: persistBriefing,
+    freeText,
   })
 
-  // Aviso INLINE, não-bloqueante (#7), SÓ no 201 com Receita entregue (§4.4). Decidido
-  // sobre o BRIEFING (o pedido); a Receita persiste independentemente. Anexa `avisos`
-  // SÓ quando há contradição (ausente ≠ vazio — espelha a vista #7).
+  // Aviso INLINE, não-bloqueante (#7/#87), SÓ no 201 com Receita entregue (§4.4). A
+  // Receita persiste independentemente. Anexa `avisos` SÓ quando há contradição (ausente ≠
+  // vazio — espelha a vista #7).
   const responseBody: {
     outcome: typeof result.outcome
     recipeId: string | null
@@ -193,14 +246,31 @@ export async function POST(req: Request): Promise<Response> {
     recipeId: p?.recipeId ?? null,
     advisory: result.advisory,
   }
-  if (briefing) {
-    const decision = decideRestrictionNotices({
-      restricoes: briefing.restricoes,
-      items: briefingItemsParaAviso(briefing.itens, alergMap),
-    })
-    const avisos = renderAvisos(decision.avisos, parseRequestLocale(req))
-    if (avisos.length > 0) responseBody.avisos = avisos
+
+  // UNIÃO determinística (todos os modos): PRÉ-geração (do Briefing — SÓ structured, do
+  // PEDIDO) PRIMEIRO, depois PÓS-geração (#87 — da RECEITA GERADA, em TODOS os modos),
+  // dedup por restrição MANTENDO A PRIMEIRA ocorrência. Ordem fixa garante determinismo
+  // quando ambas as fontes contradizem a MESMA restrição com tokens diferentes (o token
+  // do PEDIDO/pré-geração vence). post-gen escaneia o que o LLM ENTREGOU; pre-gen, o pedido.
+  const preAvisos: RestrictionNotice[] = briefing
+    ? decideRestrictionNotices({
+        restricoes: briefing.restricoes,
+        items: briefingItemsParaAviso(briefing.itens, alergMap),
+      }).avisos
+    : []
+  const postAvisos = decidePostGenerationRestrictionNotices({
+    restricoes: result.recipe.restricoes,
+    ingredientes: result.recipe.ingredientes,
+  }).avisos
+  const vistas = new Set<string>()
+  const combinados: RestrictionNotice[] = []
+  for (const aviso of [...preAvisos, ...postAvisos]) {
+    if (vistas.has(aviso.restricao)) continue
+    vistas.add(aviso.restricao)
+    combinados.push(aviso)
   }
+  const avisos = renderAvisos(combinados, parseRequestLocale(req))
+  if (avisos.length > 0) responseBody.avisos = avisos
 
   return Response.json(responseBody, { status: 201 })
 }

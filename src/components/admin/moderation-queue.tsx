@@ -44,6 +44,7 @@ export function ModerationQueue() {
     catalog: m.origemCatalog,
     ai_chat: m.origemAiChat,
     ai_structured: m.origemAiStructured,
+    ai_free_text: m.origemAiFreeText,
     user_edited: m.origemUserEdited,
   } satisfies Record<Origin, string>
   const resultKindLabel = {

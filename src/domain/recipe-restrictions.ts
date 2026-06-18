@@ -68,6 +68,41 @@ const ALLERGEN_CONTRADICTIONS = {
   milk: ['sem_lactose', 'vegano'],
 } satisfies Record<string, Restricao[]>
 
+/**
+ * Aviso PÓS-geração (issue #87, endurecimento ADR-0004): re-checa a RECEITA GERADA
+ * contra as restrições que o PRÓPRIO LLM declarou. Diferente do pré-geração (que parte
+ * do que o usuário DECLAROU no Briefing + alérgenos de catálogo via FK), aqui os
+ * ingredientes vêm como `rawText` LIVRE, SEM ingredientId — então o alérgeno é detectado
+ * casando as PALAVRAS normalizadas do rawText contra as CHAVES de `ALLERGEN_CONTRADICTIONS`
+ * (ex.: 'farinha de trigo' → palavra 'trigo' é chave → contradiz `sem_gluten`).
+ *
+ * Match por PALAVRA, NUNCA substring: tokeniza por fronteira não-alfanumérica (cobre a
+ * pontuação que o LLM emite, ex.: 'farinha de trigo.' → ['farinha','de','trigo']) e exige
+ * IGUALDADE exata contra as chaves (assim 'triângulo' NÃO casa 'trigo', 'integral' não casa
+ * nada). Mantém SÓ as palavras que são CHAVE conhecida do mapa → o `alergeno` exibido nunca
+ * é rawText arbitrário (conjunto fechado, seguro p/ renderAvisos).
+ *
+ * DELEGA a `decideRestrictionNotices` (reusa o MESMO mapa + dedup por restrição — ADR-0009,
+ * zero duplicação de vocabulário). PURO/total/sem-throw: rawText vazio/null vira
+ * `{alergenos:null}` (ausência nunca dispara).
+ */
+export function decidePostGenerationRestrictionNotices(input: {
+  restricoes: ReadonlyArray<Restricao>
+  ingredientes: ReadonlyArray<{ rawText: string | null }>
+}): RestrictionDecision {
+  const items = input.ingredientes.map((ing) => {
+    if (ing.rawText == null) return { alergenos: null }
+    // Tokeniza por fronteira não-alfanumérica APÓS normalizar (cobre pontuação do LLM),
+    // mantendo SÓ as palavras que são chave conhecida do mapa (match por palavra, não
+    // substring; nunca ecoa rawText arbitrário).
+    const palavras = normalizeText(ing.rawText)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w !== '' && Object.hasOwn(ALLERGEN_CONTRADICTIONS, w))
+    return { alergenos: palavras }
+  })
+  return decideRestrictionNotices({ restricoes: input.restricoes, items })
+}
+
 export function decideRestrictionNotices(input: {
   restricoes: ReadonlyArray<Restricao>
   items: ReadonlyArray<{ alergenos: string[] | null }>

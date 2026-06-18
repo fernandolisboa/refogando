@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CREATION_MODES,
   LINEAGE_KINDS,
   ORIGENS,
   RESULT_KINDS,
   SCHEMA_VERSION_RECEITA,
   TRANSLATION_PROVENANCES,
   VISIBILIDADES,
+  isCreationMode,
   isLineageKind,
   isOrigin,
   isResultKind,
@@ -19,6 +21,19 @@ describe('Espinha da Receita — kernel de domínio', () => {
     for (const o of ORIGENS) expect(isOrigin(o)).toBe(true)
     expect(isOrigin('catalog')).toBe(true)
     expect(isOrigin('telepatia')).toBe(false)
+  })
+
+  // #88: o modo prompt aberto e o origin do free_text entram nos enums de domínio.
+  it('isCreationMode: reconhece free_text (modo prompt aberto, #88)', () => {
+    for (const m of CREATION_MODES) expect(isCreationMode(m)).toBe(true)
+    expect(isCreationMode('free_text')).toBe(true)
+    expect(isCreationMode('conversation')).toBe(true)
+    expect(isCreationMode('structured')).toBe(true)
+    expect(isCreationMode('telepatia')).toBe(false)
+  })
+
+  it('isOrigin: reconhece ai_free_text (proveniência do modo prompt aberto, #88)', () => {
+    expect(isOrigin('ai_free_text')).toBe(true)
   })
 
   it('isVisibility: pertencimento', () => {

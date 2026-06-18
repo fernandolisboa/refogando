@@ -241,8 +241,8 @@ describe('GENERATION_OUTCOMES — taxonomia de 5 valores (alimenta o pgEnum)', (
 })
 
 describe('CREATION_MODES / isCreationMode — guard de modo de criação', () => {
-  it('CREATION_MODES é conversation/structured', () => {
-    expect(CREATION_MODES).toEqual(['conversation', 'structured'])
+  it('CREATION_MODES é conversation/structured/free_text', () => {
+    expect(CREATION_MODES).toEqual(['conversation', 'structured', 'free_text'])
   })
 
   it('isCreationMode: pertencimento', () => {

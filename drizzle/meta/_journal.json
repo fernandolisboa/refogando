@@ -64,6 +64,13 @@
       "when": 1781791571659,
       "tag": "0008_premium_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781802596815,
+      "tag": "0009_pale_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

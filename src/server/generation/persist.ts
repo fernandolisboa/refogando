@@ -30,13 +30,15 @@ import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
  * Quando `mode === 'structured'`, `briefing` é passado e gravado na MESMA transação,
  * SEMPRE antes da `creation_session` (que carrega a FK `briefing_id`). O CHECK
  * `creation_session_structured_briefing_chk` é a rede: structured sem briefing estoura
- * 23514 e a tx inteira reverte.
+ * 23514 e a tx inteira reverte. Quando `mode === 'free_text'` (#88), `freeText` é gravado
+ * CRU em `creation_session.free_text` como proveniência (sem briefing — o CHECK só exige
+ * briefing para structured).
  *
  * `advisory` (Comentário consultivo) vive FORA da Receita, em `generation.advisory_comment`.
  * `quantidade` viaja como string|null (numeric(10,3) trafega como string), nunca number.
  */
 
-export type PersistOrigin = 'ai_chat' | 'ai_structured'
+export type PersistOrigin = 'ai_chat' | 'ai_structured' | 'ai_free_text'
 
 // O Briefing (issue #11) é a ENTRADA estruturada gravada como proveniência. Presente
 // SSE `mode === 'structured'`. `itens[].quantidade` é string|null (numeric trafega como
@@ -64,6 +66,7 @@ export type PersistGenerationInput = {
   ownerId: string
   model: string
   briefing?: PersistBriefing // NOVO — presente SSE mode === 'structured'
+  freeText?: string // Texto livre CRU (#88) — presente SSE mode === 'free_text'
 }
 
 export type PersistGenerationResult = {
@@ -114,7 +117,7 @@ async function insertBriefing(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText } = input
 
   // Erro de sistema puro: não é episódio de criação → nada é gravado (§6). O Briefing
   // também NÃO nasce em invalid (ADR-0006).
@@ -127,7 +130,7 @@ export async function persistGeneration(
       const briefingId = pedido ? await insertBriefing(tx, pedido) : null
       const [session] = await tx
         .insert(creationSession)
-        .values({ userId: ownerId, mode, recipeId: null, briefingId })
+        .values({ userId: ownerId, mode, recipeId: null, briefingId, freeText: freeText ?? null })
         .returning({ id: creationSession.id })
       const [gen] = await tx
         .insert(generation)
@@ -199,7 +202,7 @@ export async function persistGeneration(
 
     const [session] = await tx
       .insert(creationSession)
-      .values({ userId: ownerId, mode, recipeId: createdRecipe.id, briefingId })
+      .values({ userId: ownerId, mode, recipeId: createdRecipe.id, briefingId, freeText: freeText ?? null })
       .returning({ id: creationSession.id })
 
     const [gen] = await tx

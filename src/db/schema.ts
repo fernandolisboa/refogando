@@ -450,6 +450,10 @@ export const creationSession = pgTable(
     // ADR-0006). NULLABLE (conversation não tem briefing). ON DELETE set null: ref fraca
     // (espelha recipe_id) — briefing some, a sessão (registro durável do episódio) sobrevive.
     briefingId: uuid('briefing_id').references(() => briefing.id, { onDelete: 'set null' }),
+    // Texto livre CRU do modo `free_text` (#88), gravado como PROVENIÊNCIA. NULLABLE:
+    // só `free_text` o popula; conversation/structured deixam NULL (structured guarda o
+    // pedido no Briefing). NÃO entra no CHECK structured_briefing (free_text não exige briefing).
+    freeText: text('free_text'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

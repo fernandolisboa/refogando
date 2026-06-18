@@ -281,6 +281,19 @@ export function buildBriefingPrompt(b: Briefing): { systemPrompt: string; userPr
   return { systemPrompt: SYSTEM_PROMPT_BRIEFING, userPrompt: linhas.join('\n') }
 }
 
+// ── Montagem PROMPT ABERTO (free_text) → { systemPrompt, userPrompt } (#88) ─────
+/**
+ * Modo `free_text` (#88): NÃO pré-parseia o texto livre num Briefing (decisão de design
+ * tomada — sem 2º LLM). O texto vai praticamente CRU como `userPrompt`, com o MESMO
+ * systemPrompt canônico de `buildBriefingPrompt` (`SYSTEM_PROMPT_BRIEFING`, reusado
+ * in-module — fonte única do estilo de geração); a estrutura nasce da SAÍDA do
+ * RecipeGenSchema e a segurança vem do Aviso pós-geração (#87). PURO/determinístico:
+ * o handler já valida (não-vazio/comprimento) e trima ANTES de chamar.
+ */
+export function buildFreeTextPrompt(freeText: string): { systemPrompt: string; userPrompt: string } {
+  return { systemPrompt: SYSTEM_PROMPT_BRIEFING, userPrompt: freeText.trim() }
+}
+
 // ── Costura para o Aviso (AC5) — montar `items` para o motor #7 ─────────────────
 /**
  * PURO. Mapeia cada item para `{ alergenos }` que `decideRestrictionNotices` espera.
