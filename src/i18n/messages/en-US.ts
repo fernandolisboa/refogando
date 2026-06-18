@@ -115,4 +115,23 @@ export const enUS: Messages = {
     tags: 'Tags',
     avisoTitulo: 'Restriction notice',
   },
+  // Telas de autenticação (#55), mesma substância traduzida (ADR-0001, não byte-idêntica).
+  // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.
+  auth: {
+    criarConta: 'Create account',
+    nome: 'Name',
+    email: 'Email',
+    senha: 'Password',
+    senhaDica: 'At least 8 characters',
+    enviando: 'Submitting…',
+    continuarComGoogle: 'Continue with Google',
+    ou: 'or',
+    jaTemConta: 'Already have an account?',
+    semConta: 'New here?',
+    erroCredencialInvalida: 'Wrong email or password.',
+    erroEmailEmUso: 'This email is already registered.',
+    erroSenhaCurta: 'Password must be at least 8 characters.',
+    erroRede: 'Could not connect. Please try again.',
+    erroGenerico: 'Could not complete. Please try again.',
+  },
 } as const
