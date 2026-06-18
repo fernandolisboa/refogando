@@ -2,7 +2,7 @@
  * Catálogo de chrome em pt-BR (issue #4). `Messages = typeof ptBR` ancora o shape;
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
-import type { Categoria, Cozinha, Restricao } from '@/domain/vocabulary'
+import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Receitas com IA, em pt-BR e en-US' },
@@ -89,6 +89,40 @@ export const ptBR = {
     lanche: 'Lanche',
     cafe_da_manha: 'Café da manhã',
   } satisfies Record<Categoria, string>,
+  // Rótulo amigável por valor do enum UNIDADES (#57). Os valores do enum são tokens
+  // machine-readable (snake_case); este mapa os converte em texto legível na linha do
+  // ingrediente. `satisfies Record<Unidade, string>` trava drift do enum.
+  unidadeLabel: {
+    g: 'g',
+    kg: 'kg',
+    ml: 'ml',
+    l: 'l',
+    colher_de_sopa: 'colher de sopa',
+    colher_de_cha: 'colher de chá',
+    xicara: 'xícara',
+    unidade: 'unidade',
+    dente: 'dente',
+    fatia: 'fatia',
+    pitada: 'pitada',
+    a_gosto: 'a gosto',
+    q_b: 'q.b.',
+  } satisfies Record<Unidade, string>,
+  // Página de detalhe da Receita (#57): headings/rótulos da leitura localizada. Os SELOS
+  // de proveniência REUSAM busca.seloCatalogo/seloComunidade (mesmo conceito/componente
+  // ProvenanceBadge da #56) — não duplicar aqui.
+  detalhe: {
+    ingredientes: 'Ingredientes',
+    passos: 'Modo de preparo',
+    notas: 'Notas',
+    descricao: 'Descrição',
+    porcoes: 'Porções',
+    dificuldade: 'Dificuldade',
+    cozinha: 'Cozinha',
+    categoria: 'Categoria',
+    restricoes: 'Restrições',
+    tags: 'Tags',
+    avisoTitulo: 'Aviso de restrição',
+  },
 } as const
 
 /**

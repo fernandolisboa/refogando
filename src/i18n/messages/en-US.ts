@@ -2,7 +2,7 @@
  * Catálogo de chrome em en-US (issue #4). Tipado como `Messages` (= typeof ptBR):
  * o compilador exige as MESMAS chaves do pt-BR; o teste de paridade T3 confirma em runtime.
  */
-import type { Categoria, Cozinha, Restricao } from '@/domain/vocabulary'
+import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
@@ -84,4 +84,35 @@ export const enUS: Messages = {
     lanche: 'Snack',
     cafe_da_manha: 'Breakfast',
   } satisfies Record<Categoria, string>,
+  // Rótulo amigável por valor do enum UNIDADES (#57), traduzido por locale.
+  unidadeLabel: {
+    g: 'g',
+    kg: 'kg',
+    ml: 'ml',
+    l: 'l',
+    colher_de_sopa: 'tablespoon',
+    colher_de_cha: 'teaspoon',
+    xicara: 'cup',
+    unidade: 'unit',
+    dente: 'clove',
+    fatia: 'slice',
+    pitada: 'pinch',
+    a_gosto: 'to taste',
+    q_b: 'as needed',
+  } satisfies Record<Unidade, string>,
+  // Página de detalhe da Receita (#57), mesma substância traduzida (ADR-0001, não
+  // byte-idêntica). Selos de proveniência REUSAM busca.seloCatalogo/seloComunidade.
+  detalhe: {
+    ingredientes: 'Ingredients',
+    passos: 'Steps',
+    notas: 'Notes',
+    descricao: 'Description',
+    porcoes: 'Servings',
+    dificuldade: 'Difficulty',
+    cozinha: 'Cuisine',
+    categoria: 'Category',
+    restricoes: 'Restrictions',
+    tags: 'Tags',
+    avisoTitulo: 'Restriction notice',
+  },
 } as const
