@@ -1,0 +1,494 @@
+'use client'
+/**
+ * Edição IN-PLACE + Apagar a PRÓPRIA Receita (#21 UI / #61). Prefilled a partir da `RecipeView`
+ * (que a rota já resolveu no locale pedido). Edita a MESMA linha via `PATCH /api/recipes/[id]`
+ * (NUNCA forka — derivar é o fluxo da receita NÃO-própria, `DeriveExperience`). Apagar é
+ * `DELETE /api/recipes/[id]` atrás de um diálogo de irreversibilidade.
+ *
+ * ADR-0010: consome os ROUTE HANDLERS via `fetch`; o servidor é a verdade (reimpõe ownership/
+ * allowlist). Confirmação de editar PÚBLICA (história #277): quando a Receita é pública, o Salvar
+ * abre o diálogo de confirmação ANTES do PATCH (a mudança fica visível a quem favoritou).
+ *
+ * Diálogo (apagar E confirmar-pública): `role="dialog"` + `aria-modal`, fecha no Escape, foco
+ * inicial no botão primário e foco RETORNA ao gatilho ao fechar (trap simples — Tab cicla entre
+ * os dois botões do diálogo). Tokens NEUTROS (âmbar é exclusivo do Aviso de restrição, ADR-0004).
+ *
+ * Sem `<h1>` (o detalhe já o emite): o bloco abre num `<h2>`.
+ */
+import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useLocale } from '@/i18n/provider'
+import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import type { RecipeView } from '@/domain/recipe-read'
+
+/** Rascunho de UM ingrediente no formulário (espelha o create estruturado, sem força). */
+type ItemDraft = { rawText: string; quantidade: string; unidade: string }
+
+type Dialog = 'none' | 'confirmPublic' | 'confirmDelete'
+
+/** Prefill dos itens a partir da view (quantidade volta como string do numeric). */
+function itemsFromView(view: RecipeView): ItemDraft[] {
+  const items = [...view.ingredients]
+    .sort((a, b) => a.ordem - b.ordem)
+    .map((it) => ({
+      rawText: it.rawText ?? '',
+      quantidade: it.quantidade ?? '',
+      unidade: it.unidade ?? '',
+    }))
+  return items.length > 0 ? items : [{ rawText: '', quantidade: '', unidade: '' }]
+}
+
+export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: string }) {
+  const { messages } = useLocale()
+  const m = messages.edicaoPropria
+  const mc = messages.criar // reusa rótulos de campo do create
+  const router = useRouter()
+
+  const isPublic = view.visibility === 'public'
+
+  // ── Estado do formulário, prefilled da view ─────────────────────────────────
+  const [titulo, setTitulo] = useState(view.name)
+  const [descricao, setDescricao] = useState(view.body.descricao ?? '')
+  const [passos, setPassos] = useState((view.body.passos ?? []).join('\n'))
+  const [notas, setNotas] = useState(view.body.notas ?? '')
+  const [cozinha, setCozinha] = useState(view.facets.cozinha ?? '')
+  const [categoria, setCategoria] = useState(view.facets.categoria ?? '')
+  const [restricoes, setRestricoes] = useState<string[]>([...(view.facets.restricoes ?? [])])
+  const [porcoes, setPorcoes] = useState(view.porcoes != null ? String(view.porcoes) : '')
+  const [dificuldade, setDificuldade] = useState(
+    view.dificuldade != null ? String(view.dificuldade) : '',
+  )
+  const [itens, setItens] = useState<ItemDraft[]>(itemsFromView(view))
+
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [errorKey, setErrorKey] = useState<'save' | 'delete' | null>(null)
+  const [dialog, setDialog] = useState<Dialog>('none')
+
+  // Foco do diálogo: guarda o gatilho p/ devolver o foco ao fechar; foca o primário ao abrir.
+  const triggerRef = useRef<HTMLElement | null>(null)
+  const dialogPrimaryRef = useRef<HTMLButtonElement | null>(null)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (dialog !== 'none') dialogPrimaryRef.current?.focus()
+  }, [dialog])
+
+  function fecharDialogo() {
+    setDialog('none')
+    triggerRef.current?.focus()
+    triggerRef.current = null
+  }
+
+  // Escape fecha o diálogo (a11y); Tab cicla entre os dois botões (trap simples).
+  function onDialogKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      fecharDialogo()
+      return
+    }
+    if (e.key === 'Tab') {
+      const root = dialogRef.current
+      if (!root) return
+      const focusables = root.querySelectorAll<HTMLElement>('button:not([disabled])')
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+  }
+
+  function patchItem(index: number, patch: Partial<ItemDraft>) {
+    setItens((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
+  }
+  function addItem() {
+    setItens((prev) => [...prev, { rawText: '', quantidade: '', unidade: '' }])
+  }
+  function removeItem(index: number) {
+    setItens((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }
+  function toggleRestricao(value: string) {
+    setRestricoes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    )
+  }
+
+  /** Monta o body do PATCH a partir do estado atual (forma do contrato da rota). */
+  function buildPatch() {
+    const passosArr = passos
+      .split('\n')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+    const ingredientes = itens
+      .filter((it) => it.rawText.trim() !== '' || it.quantidade.trim() !== '' || it.unidade !== '')
+      .map((it) => ({
+        rawText: it.rawText.trim() === '' ? null : it.rawText.trim(),
+        quantidade: it.quantidade.trim() === '' ? null : it.quantidade.trim(),
+        unidade: it.unidade === '' ? null : it.unidade,
+      }))
+    return {
+      locale,
+      titulo: titulo.trim(),
+      descricao: descricao.trim() === '' ? null : descricao,
+      passos: passosArr.length > 0 ? passosArr : null,
+      notas: notas.trim() === '' ? null : notas,
+      cozinha: cozinha === '' ? null : cozinha,
+      categoria: categoria === '' ? null : categoria,
+      restricoes,
+      porcoes: porcoes === '' ? null : Number(porcoes),
+      dificuldade: dificuldade === '' ? null : Number(dificuldade),
+      ingredientes,
+    }
+  }
+
+  /** Executa o PATCH (chamado direto na privada; via confirmação na pública). */
+  async function salvar() {
+    if (saving) return
+    setSaving(true)
+    setErrorKey(null)
+    try {
+      const res = await fetch(`/api/recipes/${view.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(buildPatch()),
+      })
+      if (!res.ok) {
+        setErrorKey('save')
+        return
+      }
+      setDialog('none')
+      // Relê a page server (o detalhe reflete a edição + recomputa Aviso/diff de graça).
+      router.refresh()
+    } catch {
+      setErrorKey('save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (saving) return
+    // Pública (#277): confirma antes de gravar — a mudança fica visível na comunidade.
+    if (isPublic) {
+      const submitter = (e.nativeEvent as SubmitEvent).submitter
+      triggerRef.current = submitter instanceof HTMLElement ? submitter : null
+      setDialog('confirmPublic')
+      return
+    }
+    void salvar()
+  }
+
+  async function apagar() {
+    if (deleting) return
+    setDeleting(true)
+    setErrorKey(null)
+    try {
+      const res = await fetch(`/api/recipes/${view.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        setErrorKey('delete')
+        setDeleting(false)
+        return
+      }
+      // Apagada: volta para "Minhas criações" (o detalhe desta receita some).
+      router.push('/me/recipes')
+      router.refresh()
+    } catch {
+      setErrorKey('delete')
+      setDeleting(false)
+    }
+  }
+
+  const restricaoLabel = (r: string) =>
+    RESTRICOES.includes(r as (typeof RESTRICOES)[number])
+      ? messages.restricaoLabel[r as (typeof RESTRICOES)[number]]
+      : r
+
+  return (
+    <section
+      aria-labelledby="editar-titulo"
+      className="flex flex-col gap-6 rounded-md border border-border bg-surface px-4 py-4"
+    >
+      <h2 id="editar-titulo" className="font-display text-lg font-semibold text-fg">
+        {messages.minhasCriacoes.editar}
+      </h2>
+
+      <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
+          {messages.criar.titulo}
+          <input
+            type="text"
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            className={fieldClassName}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
+          {messages.detalhe.descricao}
+          <textarea
+            rows={2}
+            value={descricao}
+            onChange={(e) => setDescricao(e.target.value)}
+            className={`${fieldClassName} resize-y`}
+          />
+        </label>
+
+        {/* Ingredientes — linha por item (texto + quantidade + unidade). */}
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-1 text-sm font-medium text-fg">{mc.legendaIngredientes}</legend>
+          <ul role="list" className="flex flex-col gap-3">
+            {itens.map((item, index) => (
+              <li
+                key={index}
+                className="flex flex-col gap-2 rounded-md border border-border bg-bg p-3 sm:flex-row sm:items-end"
+              >
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-fg">
+                  {`${mc.ingrediente} ${index + 1}`}
+                  <input
+                    type="text"
+                    value={item.rawText}
+                    onChange={(e) => patchItem(index, { rawText: e.target.value })}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-24">
+                  {mc.quantidade}
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={item.quantidade}
+                    onChange={(e) => patchItem(index, { quantidade: e.target.value })}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-36">
+                  {mc.unidade}
+                  <select
+                    value={item.unidade}
+                    onChange={(e) => patchItem(index, { unidade: e.target.value })}
+                    className={fieldClassName}
+                  >
+                    <option value="">{mc.unidadeNenhuma}</option>
+                    {UNIDADES.map((u) => (
+                      <option key={u} value={u}>
+                        {messages.unidadeLabel[u]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => removeItem(index)}
+                  disabled={itens.length <= 1}
+                  aria-label={`${mc.removerIngrediente} ${index + 1}`}
+                  className={`${btnSecondary} disabled:opacity-50`}
+                >
+                  {mc.removerIngrediente}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div>
+            <button type="button" onClick={addItem} className={btnSecondary}>
+              {mc.adicionarIngrediente}
+            </button>
+          </div>
+        </fieldset>
+
+        {/* Modo de preparo (um passo por linha). */}
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
+          {messages.detalhe.passos}
+          <textarea
+            rows={4}
+            value={passos}
+            onChange={(e) => setPassos(e.target.value)}
+            className={`${fieldClassName} resize-y`}
+          />
+        </label>
+
+        {/* Cozinha + categoria. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+            {mc.cozinha}
+            <select
+              value={cozinha}
+              onChange={(e) => setCozinha(e.target.value)}
+              className={fieldClassName}
+            >
+              <option value="">{mc.cozinhaNenhuma}</option>
+              {COZINHAS.map((c) => (
+                <option key={c} value={c}>
+                  {messages.cozinhaLabel[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+            {messages.detalhe.categoria}
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              className={fieldClassName}
+            >
+              <option value="">{mc.cozinhaNenhuma}</option>
+              {CATEGORIAS.map((c) => (
+                <option key={c} value={c}>
+                  {messages.categoriaLabel[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {/* Restrições. */}
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1 text-sm font-medium text-fg">{mc.legendaRestricoes}</legend>
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {RESTRICOES.map((r) => (
+              <label key={r} className="inline-flex items-center gap-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={restricoes.includes(r)}
+                  onChange={() => toggleRestricao(r)}
+                  className="accent-brand-strong"
+                />
+                {restricaoLabel(r)}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {/* Porções + dificuldade. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+            {mc.porcoes}
+            <input
+              type="number"
+              min={PORCOES.min}
+              max={PORCOES.max}
+              value={porcoes}
+              onChange={(e) => setPorcoes(e.target.value)}
+              className={fieldClassName}
+            />
+          </label>
+          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+            {mc.dificuldade}
+            <input
+              type="number"
+              min={DIFICULDADE.min}
+              max={DIFICULDADE.max}
+              value={dificuldade}
+              onChange={(e) => setDificuldade(e.target.value)}
+              className={fieldClassName}
+            />
+          </label>
+        </div>
+
+        {/* Notas. */}
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
+          {messages.detalhe.notas}
+          <textarea
+            rows={2}
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            className={`${fieldClassName} resize-y`}
+          />
+        </label>
+
+        {errorKey === 'save' && (
+          <p
+            role="alert"
+            className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+          >
+            {messages.system.error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            aria-busy={saving}
+            className={`${btnPrimary} disabled:opacity-70`}
+          >
+            {saving ? messages.system.loading : m.editarPublicaConfirmar}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              triggerRef.current = e.currentTarget
+              setDialog('confirmDelete')
+            }}
+            className={btnSecondary}
+          >
+            {messages.minhasCriacoes.apagar}
+          </button>
+        </div>
+      </form>
+
+      {errorKey === 'delete' && (
+        <p
+          role="alert"
+          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+        >
+          {m.apagarErro}
+        </p>
+      )}
+
+      {/* Diálogo de confirmação (pública OU apagar) — role=dialog, aria-modal, Escape, trap. */}
+      {dialog !== 'none' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-fg/40 p-4">
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-titulo"
+            aria-describedby="dialog-desc"
+            onKeyDown={onDialogKeyDown}
+            className="flex w-full max-w-md flex-col gap-4 rounded-md border border-border bg-bg px-5 py-4 shadow-md"
+          >
+            <h2 id="dialog-titulo" className="font-display text-lg font-semibold text-fg">
+              {dialog === 'confirmDelete' ? m.apagarTitulo : m.editarPublicaTitulo}
+            </h2>
+            <p id="dialog-desc" className="text-sm text-muted">
+              {dialog === 'confirmDelete' ? m.apagarAviso : m.editarPublicaAviso}
+            </p>
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={fecharDialogo}
+                className={btnSecondary}
+              >
+                {dialog === 'confirmDelete' ? m.apagarCancelar : m.editarPublicaCancelar}
+              </button>
+              <button
+                ref={dialogPrimaryRef}
+                type="button"
+                onClick={dialog === 'confirmDelete' ? apagar : salvar}
+                disabled={dialog === 'confirmDelete' ? deleting : saving}
+                aria-busy={dialog === 'confirmDelete' ? deleting : saving}
+                className={`${btnPrimary} disabled:opacity-70`}
+              >
+                {dialog === 'confirmDelete'
+                  ? deleting
+                    ? m.apagando
+                    : m.apagarConfirmar
+                  : saving
+                    ? messages.system.loading
+                    : m.editarPublicaConfirmar}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}

@@ -296,6 +296,33 @@ export const enUS: Messages = {
     regenerando: 'Generating a new version…',
     semFonte: 'This recipe can’t be regenerated: the original request isn’t available.',
   },
+  // My creations (#61), same substance translated (ADR-0001, not byte-identical). Lists the
+  // owner's recipes (NEUTRAL visibility/lineage/origin badges), the owner-affordance labels on
+  // the detail (edit/delete/regenerate/view versions/create my version), and the sign-in
+  // invites for the Visitor (#22 descope: anon is read-only; any account action invites sign-in).
+  minhasCriacoes: {
+    titulo: 'My creations',
+    subtitulo: 'Everything you’ve created, newest first.',
+    vazio: "You haven't created any recipes yet.",
+    criarPrimeira: 'Create my first recipe',
+    precisaEntrar: 'Sign in to see your creations.',
+    erro: "We couldn't load your creations. Try again.",
+    semTitulo: 'Untitled recipe',
+    seloPrivada: 'Private',
+    seloPublica: 'Public',
+    seloRemovida: 'Out of the pool',
+    seloPlayful: 'Playful',
+    seloDerivada: 'Derived',
+    seloRegenerada: 'Regenerated',
+    gerenciarTitulo: 'Manage recipe',
+    editar: 'Edit',
+    apagar: 'Delete',
+    regenerar: 'Generate a new version',
+    criarMinhaVersao: 'Create my version',
+    diffTitulo: 'What changed from the original',
+    convidaEntrarTitulo: 'Sign in to do this',
+    convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',
+  },
   comunidade: {
     titulo: 'Community',
     votar: 'Vote',
