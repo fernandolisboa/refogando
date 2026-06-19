@@ -13,9 +13,10 @@ import { regenerateRecipe } from '@/server/recipe/regenerate'
  * Ordem dos guards é LOAD-BEARING (espelha derive/PATCH/o GET da #3):
  *   1. isUuid → 404 (sem tocar o DB; malformado indistinguível de ausente).
  *   2. requireSession → 401 (ANTES do DB; Visitante = zero efeito colateral).
- *   3. resolve `model` de app_config.default_model (default em código).
- *   4. regenerateRecipe (o GATE owner+origin+fonte é o 1º toque de DB, ANTES do Claude — nenhuma
- *      chamada paga numa Receita não-própria ou de origem não-regenerável).
+ *   3. resolve `model` de app_config.default_model — FAIL-SAFE: nunca erra (cai no default em
+ *      código se a linha sumir); NÃO é barreira de segurança, é só dependência de dado.
+ *   4. regenerateRecipe — a ÚNICA barreira fail-closed: o GATE owner+origin+fonte é o 1º toque de
+ *      DB, ANTES do Claude — nenhuma chamada paga numa Receita não-própria ou de origem não-regenerável.
  *
  * Mapa de saída (alinhado ao contrato de /api/generations):
  *   - success/degraded/playful → 201 { recipeId, outcome, advisory }.

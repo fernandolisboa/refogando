@@ -163,6 +163,13 @@ export async function persistGeneration(
 ): Promise<PersistGenerationResult | null> {
   const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage } = input
 
+  // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
+  // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
+  // por aqui. `regenerated` SEMPRE aponta pra predecessora. Falha fechado contra bug de chamador.
+  if (lineage && (lineage.lineageKind !== 'regenerated' || !lineage.parentRecipeId)) {
+    throw new Error("persistGeneration: lineage inválida (só 'regenerated' com parentRecipeId)")
+  }
+
   // Erro de sistema puro: não é episódio de criação → nada é gravado (§6). O Briefing
   // também NÃO nasce em invalid (ADR-0006).
   if (result.outcome === 'invalid') return null
