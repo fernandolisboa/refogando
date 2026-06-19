@@ -37,14 +37,19 @@ export function SiteHeader() {
           <Link href="/recipes" className="transition-colors hover:text-fg">
             {messages.nav.recipes}
           </Link>
-          <Link href="/create" className="transition-colors hover:text-fg">
-            {messages.nav.create}
-          </Link>
+          {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
+              leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
           {authed && (
             <Link href="/me/recipes" className="transition-colors hover:text-fg">
               {messages.minhasCriacoes.titulo}
             </Link>
           )}
+          <Link
+            href="/create"
+            className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
+          >
+            {messages.nav.create}
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <AuthSlot />
