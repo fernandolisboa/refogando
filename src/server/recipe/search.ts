@@ -57,6 +57,23 @@ const SEMANTIC_MIN_SIM = 0.5
 const SEMANTIC_CAP = 10
 
 /**
+ * Lane de TRIGRAMA (#118): recall por substring/typo no TÍTULO (pg_trgm), além do FTS.
+ * `TRGM_MIN_SIM` é o piso da similaridade trigrama (`similarity()`) no ramo fuzzy — um termo
+ * só casa por fuzzy se a similaridade com o título normalizado for >= este valor. Constante
+ * TUNÁVEL (sem migração): 'ovos' vs 'ovoss' (~0.5) e 'ovos' vs 'ovo' (~0.75) passam folgado;
+ * palavras de 4 letras genuinamente não-relacionadas tendem a ficar abaixo. O ramo
+ * ILIKE-contém NÃO é afetado por este piso (substring exata).
+ */
+const TRGM_MIN_SIM = 0.3
+/**
+ * Comprimento mínimo de termo para o predicado de trigrama (#118). 3 chars é o piso de
+ * usabilidade do índice GIN trigrama: `show_trgm` de um termo de 2 chars rende ZERO trigramas
+ * completos => o índice fica inalcançável (seqscan) e o ruído explode. Termos de 1-2 chars
+ * NÃO entram na lane de trigrama; seguem cobertos pela lane FTS.
+ */
+const TRGM_MIN_TERM_LEN = 3
+
+/**
  * Serializa o vetor-consulta para o LITERAL pgvector `'[...]'` que o cast `::vector`
  * aceita. NÃO usar `sql.param(number[])` cru: postgres-js serializa um number[] como
  * array PG `{...}` (encoder noop) e o cast `::vector` FALHA (provado no micro-spike #14).
@@ -165,6 +182,61 @@ function facetPredicates(facets: EffectiveFacets): SQL {
 }
 
 /**
+ * CTE de TRIGRAMA (#118): emite os recipe_id cujo TÍTULO casa cada termo por substring
+ * (ILIKE-contém) OU por similaridade (fuzzy/typo, pg_trgm). Fragmento de LÍDER-VÍRGULA
+ * inserido INLINE na cadeia WITH, logo APÓS `ingredient_overlap` e ANTES de `combined`
+ * (mesma técnica de montagem de `semanticCteSql`). Quando inativo (faceta-only OU nenhum
+ * termo com `trim().length >= TRGM_MIN_TERM_LEN`) devolve `sql\`\`` (vazio) — e `combined`
+ * NÃO adiciona o join de trigrama (paralelo a `hasVector` elidindo a CTE semântica).
+ *
+ * LEAK-SAFETY (#116/#118, requisito #1): junta `recipe_translation rt2` a `recipe r_tg` e
+ * aplica `viewerReadableSqlFragment('r_tg', viewerId)` — `viewerId` é BINDADO (nunca
+ * interpolado); anônimo (`viewerId` undefined) reduz ao gate de comunidade, byte-a-byte.
+ * Pré-filtra os gates de pool (`moderation_removed_at IS NULL`) e de `playful`, espelhando
+ * `ingredient_raw_hit`. Defesa-em-profundidade: o `visible` re-aplica o MESMO gate sobre
+ * `combined`, então um id privado de outro dono nunca aflora mesmo se o join fosse burlado.
+ *
+ * BIND: o termo é bindado SÓ via `${sql.param(term)}` dentro do template `sql\`...\``
+ * (idêntico a `${q}`/`${sql.param(terms)}`); o `'%' || ... || '%'`, o `ILIKE` e o
+ * `similarity(...)` são TEXTO LITERAL do template (não entrada de usuário) — sem injeção e
+ * sem wildcard-injection. NÃO usar concatenação `sql.raw(...)+sql.param(...)`.
+ *
+ * ÍNDICE: o ramo ILIKE-contém (operador `%`/LIKE family) usa o índice GIN trigrama quando o
+ * termo tem >= 3 chars; o ramo `similarity() >= piso` é um FILTER de seqscan aceito (o `>=`
+ * não usa o índice — só o operador `%` cru gateado por `set_limit` usa). A guarda
+ * TRGM_MIN_TERM_LEN garante >= 1 trigrama no ramo ILIKE => índice alcançável.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentário) — terminaria o
+ * `sql\`...\``. Comentários explicativos ficam AQUI no TS, fora do template.
+ */
+function trgmMatchedCteSql(
+  terms: string[],
+  viewerId: string | undefined,
+  active: boolean,
+): SQL {
+  if (!active) return sql``
+  const longTerms = terms.filter((t) => t.trim().length >= TRGM_MIN_TERM_LEN)
+  if (longTerms.length === 0) return sql``
+  // Um predicado por termo; AND-combinados (todos os termos longos devem casar o título).
+  const preds = longTerms.map(
+    (term) => sql`(
+        lower(immutable_unaccent(rt2.titulo)) ILIKE '%' || lower(immutable_unaccent(${sql.param(term)})) || '%'
+        OR similarity(lower(immutable_unaccent(rt2.titulo)), lower(immutable_unaccent(${sql.param(term)}))) >= ${TRGM_MIN_SIM}
+      )`,
+  )
+  return sql`
+    , trgm_matched AS (
+      SELECT DISTINCT rt2.recipe_id AS recipe_id
+      FROM recipe_translation rt2
+      JOIN recipe r_tg ON r_tg.id = rt2.recipe_id
+      WHERE r_tg.result_kind <> 'playful'
+        AND ${viewerReadableSqlFragment('r_tg', viewerId)}
+        AND r_tg.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
+        AND ${sql.join(preds, sql` AND `)}
+    )`
+}
+
+/**
  * Resultado do loader (#14): os hits das seções (precisa floor + expansão semântica em
  * bucket 2 quando há precisa) e as `sugestoes` (só-semânticos quando ZERO precisa, US38).
  * No caso comum `sugestoes` é `[]`; no caso US38 `hits` é `[]`. Mantém SearchHitRow em 8
@@ -252,6 +324,27 @@ export async function searchRecipes(
     ? sql`
     , semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql, viewerId)})`
     : sql``
+
+  // #118 lane de trigrama: ativa quando NÃO é faceta-only E há >=1 termo com
+  // trim().length >= TRGM_MIN_TERM_LEN (a CTE filtra de novo, mas a flag gateia o JOIN em
+  // `combined`). Inativa => CTE elidida (sql``) E `combined` byte-a-byte ao de hoje (sem o
+  // join de trigrama) — paralelo a hasVector elidindo a CTE semântica. terms=[] força
+  // mode='any' (acima) E desativa a lane (nenhum termo longo) => N=0 seguro.
+  const trgmActive =
+    !facetOnly && terms.some((t) => t.trim().length >= TRGM_MIN_TERM_LEN)
+  const trgmMatchedSql = trgmMatchedCteSql(terms, viewerId, trgmActive)
+  // Mudanças em `combined` SÓ quando a lane está ativa (senão byte-a-byte com o de hoje):
+  //  - chave recipe_id passa a COALESCE de 3 fontes (ranked, ingredient_overlap, trgm);
+  //  - 3o join FULL OUTER de trgm_matched;
+  //  - o ramo 'any' do gate ganha `OR tg.recipe_id IS NOT NULL` (o 'all' fica intocado:
+  //    um hit só-trigrama tem overlap=0 e NÃO satisfaz a estritude de ingrediente).
+  const combinedRecipeIdSql = trgmActive
+    ? sql`COALESCE(rk.recipe_id, ov.recipe_id, tg.recipe_id)`
+    : sql`COALESCE(rk.recipe_id, ov.recipe_id)`
+  const trgmJoinSql = trgmActive
+    ? sql`FULL OUTER JOIN trgm_matched tg ON tg.recipe_id = COALESCE(rk.recipe_id, ov.recipe_id)`
+    : sql``
+  const trgmAnyPredSql = trgmActive ? sql` OR tg.recipe_id IS NOT NULL` : sql``
 
   // Coluna de similaridade no visible: COALESCE(s.cosine_sim,0) (NULL-safe) quando ha
   // semantic; constante 0 quando degradado (CTE elidida). O LEFT JOIN tambem so existe
@@ -501,7 +594,7 @@ export async function searchRecipes(
       SELECT recipe_id, COUNT(DISTINCT term_idx) AS overlap
       FROM ingredient_signal
       GROUP BY recipe_id
-    ),
+    )${trgmMatchedSql},
     combined AS (
       -- #9: FULL OUTER JOIN titulo (ranked, #6) x overlap. NAO trocar por INNER JOIN:
       -- droparia tanto as linhas so-titulo (sem overlap) quanto as so-ingrediente (sem
@@ -509,17 +602,22 @@ export async function searchRecipes(
       --   all  => ov.overlap = N (TODOS os termos como ingrediente; titulo NAO supre)
       --   any  => pertencimento ao JOIN (rk presente OU overlap>=1; tautologia mantida
       --           por simetria com o ramo all).
+      -- #118: quando a lane de trigrama esta ativa, um 3o FULL OUTER JOIN traz os hits
+      -- so-titulo-por-trigrama (overlap=0, title_match=false, title_rank=0). O ramo 'any'
+      -- ganha OR tg.recipe_id IS NOT NULL; o 'all' fica intocado (trigrama nao supre a
+      -- estritude de ingrediente). Inativa => os fragmentos sao vazios => byte-a-byte #9.
       SELECT
-        COALESCE(rk.recipe_id, ov.recipe_id) AS recipe_id,
+        ${combinedRecipeIdSql} AS recipe_id,
         COALESCE(ov.overlap, 0)              AS overlap,
         (rk.recipe_id IS NOT NULL)           AS title_match,
         COALESCE(rk.rank, 0)                 AS title_rank
       FROM ranked rk
       FULL OUTER JOIN ingredient_overlap ov ON ov.recipe_id = rk.recipe_id
+      ${trgmJoinSql}
       WHERE
         CASE
           WHEN ${mode} = 'all' THEN ov.overlap = ${n}
-          ELSE (rk.recipe_id IS NOT NULL OR COALESCE(ov.overlap, 0) >= 1)
+          ELSE (rk.recipe_id IS NOT NULL OR COALESCE(ov.overlap, 0) >= 1${trgmAnyPredSql})
         END
     )${semanticCteSql},
     visible AS (
