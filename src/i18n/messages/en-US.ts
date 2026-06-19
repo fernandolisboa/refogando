@@ -56,13 +56,14 @@ export const enUS: Messages = {
     filtroCategoria: 'Category',
     filtroRestricao: 'Dietary restriction',
   },
-  // Tela de browse /recipes (#98), mesma substância traduzida (ADR-0001, não byte-idêntica).
-  // Reusa `busca.*` para o chrome compartilhado; só os textos próprios da tela vivem aqui.
-  browse: {
+  // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
+  // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
+  feed: {
     titulo: 'Recipes',
-    subtitulo: 'Browse the catalog and what the community is cooking up.',
-    semResultado: 'No recipes here. Adjust or clear the filters.',
-    limparFiltros: 'Clear filters',
+    subtitulo: 'What the community is cooking up, newest first.',
+    vazio: 'No recipes here yet.',
+    carregarMais: 'Load more',
+    fim: "You've reached the end.",
   },
   // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
   // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).

@@ -144,7 +144,7 @@ export function displayedProvenance(hit: SearchHitRow): TranslationProvenance | 
  * tradução em `requested`/`original`) — defesa "nunca tela quebrada". Reusado pelas
  * seções E pelas sugestões (#14) para a projeção não derivar entre os dois caminhos.
  */
-function projectResult(hit: SearchHitRow, locale: string): SearchResult | null {
+export function projectResult(hit: SearchHitRow, locale: string): SearchResult | null {
   const translations = hitTranslations(hit, locale)
   if (translations.length === 0) return null
   const displayedTitle = resolveName({
