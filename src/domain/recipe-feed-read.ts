@@ -37,6 +37,19 @@ export const FEED_MAX_LIMIT = 50
 /** Conteúdo decodificado do cursor: o par keyset (created_at, id) da última linha entregue. */
 export type FeedCursor = { createdAt: string; id: string }
 
+/** UUID canônico (id da Receita). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/**
+ * Forma TEXTO do `timestamptz` que o Postgres emite (`created_at::text`): `YYYY-MM-DD HH:MM:SS`
+ * (espaço OU 'T'), fração opcional, offset opcional (`+00`, `+00:00`, `-0300`, `Z` ou nada).
+ * Validar a FORMA aqui é o que mantém a borda permissiva: um cursor com valor que NÃO casaria
+ * o cast `::timestamptz` no SQL é rejeitado ANTES de tocar o DB (vira "começo do feed"),
+ * evitando o 500 que `'lixo'::timestamptz` dispararia (a rota não tem try/catch — é de propósito,
+ * pra erro de DB real continuar 500; só o input de URL é que NUNCA pode virar 500).
+ */
+const TIMESTAMPTZ_RE =
+  /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,9})?([+-]\d{2}(:?\d{2})?|Z)?$/
+
 /**
  * Cursor OPACO: base64 de `{c: created_at, i: id}`. O cliente o trata como string cega e o
  * devolve verbatim. Usa `btoa`/`atob` (isomórfico, sem Buffer) — o conteúdo é ASCII
@@ -65,7 +78,11 @@ export function decodeCursor(raw: string | null): FeedCursor | null {
     ) {
       const c = (parsed as { c: string }).c
       const i = (parsed as { i: string }).i
-      if (c.length > 0 && i.length > 0) return { createdAt: c, id: i }
+      // Valida o VALOR, não só a forma do objeto: `i` precisa ser UUID e `c` um timestamptz
+      // textual. Sem isto, um cursor base64 bem-formado com valor lixo (ex.: c='x', i='y')
+      // passaria e estouraria o cast `::timestamptz`/`::uuid` no loader → 500. Com a validação,
+      // cursor inválido → null → começo do feed (política permissiva da borda).
+      if (UUID_RE.test(i) && TIMESTAMPTZ_RE.test(c)) return { createdAt: c, id: i }
     }
     return null
   } catch {

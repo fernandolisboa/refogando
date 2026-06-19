@@ -54,7 +54,7 @@ export async function loadFeed(
       FROM recipe r
       WHERE r.result_kind <> 'playful'
         AND (r.owner_id IS NULL OR r.visibility = 'public')
-        AND r.moderation_removed_at IS NULL
+        AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${cursorSql}
       ORDER BY r.created_at DESC, r.id DESC
       LIMIT ${limit + 1}

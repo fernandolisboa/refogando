@@ -144,4 +144,18 @@ describe('GET /api/feed — feed cronológico (#103)', () => {
     // Cursor inválido tratado como ausente ⇒ devolve o começo (a receita aparece).
     expect(ids(body.feed)).toContain(r1)
   })
+
+  it('AC4: cursor base64 BEM-FORMADO mas com valor inválido → começo, NÃO 500 (DoS anônimo)', async () => {
+    const r1 = await seedAt('Existe', '2026-04-01T00:00:00Z')
+
+    // base64 de {"c":"not-a-timestamp","i":"not-a-uuid"}: passa o decode de FORMA, mas o valor
+    // estouraria o cast `::timestamptz`/`::uuid` se chegasse ao SQL. decodeCursor valida o VALOR
+    // ⇒ vira null ⇒ começo do feed (200), nunca 500. (O 'lixo!!!' do AC3 falha já no atob — caso
+    // distinto; este exercita o ramo forma-válida-valor-inválido.)
+    const crafted = btoa(JSON.stringify({ c: 'not-a-timestamp', i: 'not-a-uuid' }))
+    const res = await feedReq({ cursor: crafted })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as FeedResponse
+    expect(ids(body.feed)).toContain(r1)
+  })
 })

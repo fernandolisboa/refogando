@@ -144,4 +144,29 @@ describe('RecipeFeedExperience (#103)', () => {
     await screen.findByText('Feijoada')
     expect(screen.queryByText(ptBR.system.error)).not.toBeInTheDocument()
   })
+
+  it('F5 — falha ao carregar MAIS → erro visível, itens preservados, botão segue (retry)', async () => {
+    // 1ª página OK (com nextCursor); a carga seguinte falha.
+    let call = 0
+    const fetchMock = vi.fn(async () => {
+      call += 1
+      if (call === 1) {
+        return { ok: true, json: async () => ({ feed: [item('r1', 'Feijoada', 'catalog')], nextCursor: 'C1' }) }
+      }
+      throw new TypeError('network down')
+    }) as unknown as typeof fetch
+    vi.stubGlobal('fetch', fetchMock)
+
+    const user = userEvent.setup()
+    renderFeed()
+
+    await screen.findByText('Feijoada')
+    await user.click(screen.getByRole('button', { name: MF.carregarMais }))
+
+    // Falha de "carregar mais" é ANUNCIADA (não silenciosa); o item já carregado PERMANECE; e o
+    // botão segue presente para tentar de novo (não encalha).
+    await screen.findByText(ptBR.system.error)
+    expect(screen.getByText('Feijoada')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: MF.carregarMais })).toBeInTheDocument()
+  })
 })
