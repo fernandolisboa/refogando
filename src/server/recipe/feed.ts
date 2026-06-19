@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
+import { communityVisibleSqlFragment } from '@/server/recipe/visibility-sql'
 import type { FeedHitRow, FeedCursor } from '@/domain/recipe-feed-read'
 
 /**
@@ -53,7 +54,7 @@ export async function loadFeed(
         r.created_at::text AS created_at
       FROM recipe r
       WHERE r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND ${communityVisibleSqlFragment('r')}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${cursorSql}
       ORDER BY r.created_at DESC, r.id DESC

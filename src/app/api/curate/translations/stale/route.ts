@@ -1,7 +1,8 @@
-import { and, eq, or, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { recipe, recipeTranslation } from '@/db/schema'
+import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 
 /**
  * Lista de traduções obsoletas para o Curador (issue #23, AC2.2). SÓ traduções `stale`
@@ -37,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
     .where(
       and(
         eq(recipeTranslation.stale, true),
-        or(isNull(recipe.ownerId), eq(recipe.visibility, 'public')),
+        communityVisibleCondition(recipe),
         // #18: exclui Receita removida do pool pela moderação (recipe-pool.ts).
         isNull(recipe.moderationRemovedAt),
       ),

@@ -7,6 +7,7 @@ import { recipe } from '@/db/schema'
 import { ensureTranslation } from '@/server/recipe/translation'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
+import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 
 /**
  * Tradução on-demand do 2º locale (issue #23, AC1). POST dedicado (decisão congelada —
@@ -58,7 +59,7 @@ export async function POST(
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
   const removed = gate.moderationRemovedAt != null
   const canAccess =
-    (!removed && (gate.ownerId == null || gate.visibility === 'public')) ||
+    (!removed && isCommunityVisible(gate.ownerId, gate.visibility)) ||
     gate.ownerId === g.session.user.id
   if (!canAccess) return Response.json({ error: 'not_found' }, { status: 404 })
 

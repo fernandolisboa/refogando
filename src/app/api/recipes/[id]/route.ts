@@ -5,6 +5,7 @@ import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
+import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 import {
   isCozinha,
   isCategoria,
@@ -76,7 +77,7 @@ export async function GET(
   // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
   // parcimônia: nunca lemos a sessão no tráfego anônimo quente (a Busca linka direto pra cá).
   const isPublicRead =
-    (gate.ownerId == null || gate.visibility === 'public') && gate.moderationRemovedAt == null
+    isCommunityVisible(gate.ownerId, gate.visibility) && gate.moderationRemovedAt == null
   const requestLocale = parseRequestLocale(request)
 
   let viewerId: string | undefined

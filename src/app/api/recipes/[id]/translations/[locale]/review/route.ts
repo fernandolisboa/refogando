@@ -4,6 +4,7 @@ import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { canonicalLocale } from '@/i18n/locale'
 import { recipe, recipeTranslation } from '@/db/schema'
+import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 
 /**
  * Curador remove a sinalização de uma tradução automática (issue #23, AC2.1):
@@ -50,7 +51,7 @@ export async function POST(
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
   const isCommunity =
-    (gate.ownerId == null || gate.visibility === 'public') && gate.moderationRemovedAt == null
+    isCommunityVisible(gate.ownerId, gate.visibility) && gate.moderationRemovedAt == null
   if (!isCommunity) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Confirma a existência da LINHA (404 leak-safe, separado do efeito idempotente).
