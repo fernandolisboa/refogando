@@ -230,6 +230,11 @@ export const ptBR = {
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',
+    // Alternância de modo EXTERNA da tela CRIAR unificada (#104): Formulário (estruturado +
+    // prompt aberto) ↔ Conversa (chat focado). `seletorModo` é o rótulo do segmented control.
+    modoFormulario: 'Formulário',
+    modoConversa: 'Conversa',
+    seletorModo: 'Como criar',
   },
   conversa: {
     titulo: 'Conversar com a IA',
@@ -273,6 +278,24 @@ export const ptBR = {
     apagarConfirmar: 'Apagar para sempre',
     apagarCancelar: 'Cancelar',
     apagarErro: 'Não foi possível apagar a conversa. Tente de novo.',
+    // Vista FOCADA (#104): o histórico fica atrás de "Ver transcrição" (modal read-only).
+    verTranscricao: 'Ver transcrição',
+    transcricaoTitulo: 'Transcrição da conversa',
+    // Rótulo da bolha do Assistente na vista focada (resposta concisa do último par de falas).
+    respostaIA: 'Resposta da IA',
+    // Placeholders ROTATIVOS do input (só ciclam com o campo vazio e ocioso) — exemplos com o
+    // jeitão caseiro do Refogando. EXATAMENTE 8, mesmo comprimento que o array en-US (a paridade
+    // recursiva trata o array como objeto de chaves numéricas).
+    placeholders: [
+      'um bobó de camarão pra 4',
+      'sobremesa sem açúcar com banana',
+      'jantar rápido com o que tem na geladeira',
+      'feijoada vegetariana pro fim de semana',
+      'almoço leve sem glúten pra hoje',
+      'um bolo de fubá com goiabada',
+      'marmita fitness com frango e batata-doce',
+      'café da manhã reforçado pra quem treina',
+    ],
   },
   visibilidade: {
     titulo: 'Visibilidade',
@@ -499,9 +522,16 @@ export const ptBR = {
  * Assim o en-US herda exatamente as MESMAS chaves (paridade garantida pelo compilador) sem
  * ficar preso aos literais em português. As folhas em si continuam literais em `typeof ptBR`
  * para quem lê o catálogo pt-BR.
+ *
+ * Folhas-ARRAY (ex.: `conversa.placeholders`, exemplos rotativos do input, #104) viram
+ * `readonly string[]` em vez de `string` — alargadas no elemento mas mantendo a forma de lista.
+ * A paridade de COMPRIMENTO entre locales é exigida pelo teste recursivo (que trata o array
+ * como objeto de chaves numéricas), não pelo tipo.
  */
 export type Messages = {
   [Section in keyof typeof ptBR]: {
-    [Key in keyof (typeof ptBR)[Section]]: string
+    [Key in keyof (typeof ptBR)[Section]]: (typeof ptBR)[Section][Key] extends readonly string[]
+      ? readonly string[]
+      : string
   }
 }

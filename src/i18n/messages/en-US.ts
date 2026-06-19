@@ -209,6 +209,11 @@ export const enUS: Messages = {
     erroObservacoesLongas: 'The notes are too long.',
     erroIngrediente: 'Fill in the ingredient on the lines you started.',
     erroCampos: 'Check the fields you filled in.',
+    // OUTER mode toggle of the unified Create screen (#104): Form (structured + open prompt) ↔
+    // Chat (focused conversation). `seletorModo` is the segmented control's label.
+    modoFormulario: 'Form',
+    modoConversa: 'Chat',
+    seletorModo: 'How to create',
   },
   conversa: {
     titulo: 'Chat with the AI',
@@ -252,6 +257,24 @@ export const enUS: Messages = {
     apagarConfirmar: 'Delete permanently',
     apagarCancelar: 'Cancel',
     apagarErro: "We couldn't delete the conversation. Try again.",
+    // FOCUSED view (#104): the history sits behind "View transcript" (read-only modal).
+    verTranscricao: 'View transcript',
+    transcricaoTitulo: 'Conversation transcript',
+    // Label for the assistant bubble in the focused view (the latest exchange's concise reply).
+    respostaIA: 'AI reply',
+    // ROTATING input placeholders (cycle only while the field is empty and idle) — examples with
+    // the Refogando home-cooking vibe. EXACTLY 8, same length as the pt-BR array (the recursive
+    // parity check treats the array as a numeric-keyed object).
+    placeholders: [
+      'a shrimp bobó for 4',
+      'a sugar-free dessert with banana',
+      'a quick dinner with what I have in the fridge',
+      'a vegetarian feijoada for the weekend',
+      'a light gluten-free lunch for today',
+      'a cornmeal cake with guava paste',
+      'a fitness meal prep with chicken and sweet potato',
+      'a hearty breakfast for someone who works out',
+    ],
   },
   visibilidade: {
     titulo: 'Visibility',
