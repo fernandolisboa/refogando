@@ -7,7 +7,7 @@ import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
-  SYSTEM_PROMPT_DISTILLATION,
+  SYSTEM_PROMPT_CONVERSATION_STREAM,
   buildConversationPrompt,
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
@@ -195,7 +195,7 @@ export async function POST(req: Request): Promise<Response> {
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
         let assistantText = ''
         const tokens = getClaudeClient().streamConversation({
-          systemPrompt: SYSTEM_PROMPT_DISTILLATION,
+          systemPrompt: SYSTEM_PROMPT_CONVERSATION_STREAM,
           transcript,
           model,
           signal,
