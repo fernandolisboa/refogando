@@ -68,6 +68,7 @@ export const ptBR = {
     titulo: 'Receitas',
     subtitulo: 'Explore o catálogo e o que a comunidade anda cozinhando.',
     semResultado: 'Nenhuma receita por aqui. Ajuste ou limpe os filtros.',
+    limparFiltros: 'Limpar filtros',
   },
   // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
   // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são

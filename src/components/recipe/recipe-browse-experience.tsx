@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
-import { btnSecondary } from '@/components/button'
+import { btnSecondary, btnSecondarySm } from '@/components/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
@@ -173,6 +173,23 @@ export function RecipeBrowseExperience() {
           groupLabel={messages.comunidade.ordenarPor}
           labelId="browse-sort-toggle-label"
         />
+
+        {/* Limpar filtros: sem campo de texto, desmarcar faceta a faceta seria o único jeito
+            de voltar ao pool cheio — este botão dá a ação de um clique que o estado vazio
+            promete ("ajuste ou limpe os filtros"). Só aparece quando há alguma faceta ativa. */}
+        {(cozinha.length > 0 || categoria.length > 0 || restricao.length > 0) && (
+          <button
+            type="button"
+            className={`${btnSecondarySm} self-start`}
+            onClick={() => {
+              setCozinha([])
+              setCategoria([])
+              setRestricao([])
+            }}
+          >
+            {mb.limparFiltros}
+          </button>
+        )}
       </div>
 
       {/* Região de estados/resultados. `aria-live="polite"` + `aria-busy` anunciam o fim do

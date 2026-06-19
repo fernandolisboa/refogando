@@ -62,6 +62,7 @@ export const enUS: Messages = {
     titulo: 'Recipes',
     subtitulo: 'Browse the catalog and what the community is cooking up.',
     semResultado: 'No recipes here. Adjust or clear the filters.',
+    limparFiltros: 'Clear filters',
   },
   // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
   // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).

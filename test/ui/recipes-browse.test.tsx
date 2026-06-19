@@ -177,4 +177,51 @@ describe('RecipeBrowseExperience (#98)', () => {
     expect(fetchMock).toHaveBeenCalled()
     expect(screen.getByText('Feijoada')).toBeInTheDocument()
   })
+
+  it('B6 — catálogo cheio + comunidade vazia: sem heading órfão; ordenação persiste', async () => {
+    // Paridade com search.test T4: a guarda de seção vazia do SearchSection suprime o heading
+    // de Comunidade quando a lista volta vazia, e a ordenação (fora do SearchSection) persiste.
+    stubFetchOk({
+      catalogo: [
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false },
+      ],
+      comunidade: [],
+    })
+    renderBrowse()
+
+    await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
+    expect(
+      screen.queryByRole('heading', { name: M.secaoComunidade, level: 2 }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: MC.ordenarPor })).toBeInTheDocument()
+  })
+
+  it('B7 — "Limpar filtros" aparece com faceta ativa e zera os filtros (re-fetch sem cozinha)', async () => {
+    const fetchMock = stubFetchOk(pool())
+    const user = userEvent.setup()
+    renderBrowse()
+
+    await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
+    // Sem faceta ativa: o botão não existe.
+    expect(screen.queryByRole('button', { name: MB.limparFiltros })).not.toBeInTheDocument()
+
+    // Marca uma faceta → botão aparece e a URL ganha cozinha=.
+    await user.click(screen.getByLabelText(ptBR.cozinhaLabel.brasileira))
+    const limpar = await screen.findByRole('button', { name: MB.limparFiltros })
+    await vi.waitFor(() => {
+      expect(new URL(lastFetchUrl(fetchMock)).searchParams.get('cozinha')).toBe('brasileira')
+    })
+    const callsAntes = fetchMock.mock.calls.length
+
+    // Limpar → faceta desmarcada, botão some, re-fetch sem cozinha=.
+    await user.click(limpar)
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAntes)
+    })
+    expect(new URL(lastFetchUrl(fetchMock)).searchParams.get('cozinha')).toBeNull()
+    expect(screen.queryByRole('button', { name: MB.limparFiltros })).not.toBeInTheDocument()
+    expect(
+      (screen.getByLabelText(ptBR.cozinhaLabel.brasileira) as HTMLInputElement).checked,
+    ).toBe(false)
+  })
 })
