@@ -1,0 +1,215 @@
+import { and, asc, eq } from 'drizzle-orm'
+import type { Database } from '@/db/client'
+import type { ClaudeClient } from '@/server/claude/client'
+import {
+  recipe,
+  creationSession,
+  briefing as briefingTable,
+  briefingItem,
+  transcriptMessage,
+} from '@/db/schema'
+import {
+  buildBriefingPrompt,
+  buildFreeTextPrompt,
+  buildConversationPrompt,
+  type Briefing,
+  type BriefingItem,
+} from '@/domain/briefing'
+import type { TranscriptMessage } from '@/domain/transcript'
+import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
+import { classify } from '@/domain/generation'
+import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
+import { embedTranslation } from '@/server/embedding/recompute'
+
+/**
+ * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
+ * criações": regenerar uma Receita PRÓPRIA NUNCA sobrescreve — cria uma NOVA linha de
+ * `recipe` do leitor, ligada à predecessora por `parent_recipe_id`/`lineage_kind='regenerated'`.
+ * As versões anteriores ficam intactas (apagar uma intermediária só anula o ponteiro — set null;
+ * história 47/289).
+ *
+ * Fluxo (o GATE é o PRIMEIRO toque de DB, ANTES de qualquer chamada paga ao Claude):
+ *   1. SELECT da predecessora: owner_id + origin (+ a creation_session que a entregou).
+ *      - não-própria (inclui catálogo, owner_id NULL) → 404 leak-safe (NUNCA 403).
+ *      - origin não-ai_* (catalog / user_edited, a derivada de #17) → 409 sem_fonte (sem
+ *        prompt recuperável).
+ *   2. RECUPERA o prompt pela `mode` da creation_session predecessora:
+ *      - conversation → reconstrói de transcript_message (buildConversationPrompt);
+ *      - structured   → de briefing/briefing_item (buildBriefingPrompt);
+ *      - free_text    → de creation_session.free_text (buildFreeTextPrompt).
+ *      Fonte irrecuperável (transcrição apagada via #15, sessão/briefing ausente) → 409 sem_fonte,
+ *      NUNCA 500.
+ *   3. generateRecipe(prompt) → classify → mapeia:
+ *      - success/degraded/playful → INSERE a NOVA Receita (origin HERDADO, visibility private,
+ *        result_kind do classify FRESCO, lineage regenerated, derived_diff NULL) + uma nova
+ *        generation na MESMA creation_session (reusa — sem 2ª sessão) → embedTranslation (entra
+ *        na Busca, #14) → { kind:'ok', outcome, recipeId, advisory }.
+ *      - impossible → { kind:'impossible', advisory } (nada de Receita; persistido como episódio).
+ *      - invalid → { kind:'invalid' } (erro de sistema; NADA é persistido — ADR-0006).
+ *
+ * REUSO (decisão #20): estende `persistGeneration` com `lineage` opcional e reusa o caminho
+ * `existingSessionId` (insere a generation na sessão da predecessora). origin INHERITED no
+ * INSERT (PersistOrigin é ai_* — por isso #20 só regenera Receitas ai_*).
+ */
+
+// Origins ai_* que a regeneração suporta (carregam fonte de prompt recuperável). catalog e
+// user_edited (a derivada) NÃO têm fonte → 409 sem_fonte.
+const AI_ORIGINS = new Set<string>(['ai_chat', 'ai_structured', 'ai_free_text'])
+
+export type RegenerateResult =
+  | { kind: 'ok'; outcome: 'success' | 'degraded' | 'playful'; recipeId: string; advisory: string | null }
+  | { kind: 'impossible'; advisory: string | null }
+  | { kind: 'invalid' } //          erro de sistema upstream (refusal/max_tokens/parse_failed)
+  | { kind: 'not_found' } //         não-própria (404 leak-safe)
+  | { kind: 'sem_fonte' } //         origin não-ai_* OU fonte de prompt irrecuperável (409)
+
+/**
+ * Reconstrói o `{systemPrompt, userPrompt}` da predecessora pela `mode` da sua creation_session.
+ * Devolve `null` quando a fonte é IRRECUPERÁVEL (transcrição apagada, briefing/free_text ausente)
+ * — o caller mapeia para 409 sem_fonte (NUNCA 500). PURO em relação ao DB exceto pelas leituras
+ * dos registros de proveniência.
+ */
+async function recoverPrompt(
+  db: Database,
+  session: { id: string; mode: string; briefingId: string | null; freeText: string | null },
+): Promise<{ systemPrompt: string; userPrompt: string } | null> {
+  if (session.mode === 'conversation') {
+    // Reconstrói a Transcrição das falas duráveis (#15). Apagada (DELETE /transcript) → vazia →
+    // irrecuperável (409, não 500): sem falas não há o que destilar.
+    const rows = await db
+      .select({ role: transcriptMessage.role, content: transcriptMessage.content })
+      .from(transcriptMessage)
+      .where(eq(transcriptMessage.creationSessionId, session.id))
+      .orderBy(asc(transcriptMessage.seq))
+    if (rows.length === 0) return null
+    const transcript: TranscriptMessage[] = rows.map((m) => ({ role: m.role, content: m.content }))
+    return buildConversationPrompt(transcript)
+  }
+
+  if (session.mode === 'structured') {
+    // Reconstrói o Briefing dos registros de proveniência (#11). briefing_id ausente (set-null) →
+    // irrecuperável (409). Os itens vêm na ordem gravada.
+    if (session.briefingId == null) return null
+    const [b] = await db
+      .select()
+      .from(briefingTable)
+      .where(eq(briefingTable.id, session.briefingId))
+    if (!b) return null
+    const itens = await db
+      .select()
+      .from(briefingItem)
+      .where(eq(briefingItem.briefingId, session.briefingId))
+      .orderBy(asc(briefingItem.ordem), asc(briefingItem.id))
+    const briefing: Briefing = {
+      cozinha: b.cozinha as Cozinha | null,
+      // restricoes vem do pgEnum (já é Restricao[] válido no banco); o alargamento de tipo do
+      // driver é estreitado aqui sem revalidar (o enum é a rede).
+      restricoes: b.restricoes as Restricao[],
+      porcoes: b.porcoes,
+      dificuldade: b.dificuldade,
+      observacoes: b.observacoes,
+      itens: itens.map(
+        (it): BriefingItem => ({
+          ingredientId: it.ingredientId,
+          rawText: it.rawText,
+          quantidade: it.quantidade,
+          unidade: it.unidade as Unidade | null,
+          strength: it.strength,
+        }),
+      ),
+    }
+    return buildBriefingPrompt(briefing)
+  }
+
+  if (session.mode === 'free_text') {
+    // Texto livre CRU gravado como proveniência (#88). Ausente/vazio → irrecuperável (409).
+    if (session.freeText == null || session.freeText.trim() === '') return null
+    return buildFreeTextPrompt(session.freeText)
+  }
+
+  return null
+}
+
+export async function regenerateRecipe(
+  db: Database,
+  claude: ClaudeClient,
+  input: { recipeId: string; viewerId: string; model: string },
+): Promise<RegenerateResult> {
+  const { recipeId, viewerId, model } = input
+
+  // ── GATE (1º toque de DB, ANTES do Claude) — owner + origin ──────────────────────
+  const [pred] = await db
+    .select({ ownerId: recipe.ownerId, origin: recipe.origin, originalLocale: recipe.originalLocale })
+    .from(recipe)
+    .where(eq(recipe.id, recipeId))
+  // Ausente OU não-própria (inclui catálogo owner_id NULL) → 404 leak-safe (NUNCA 403).
+  if (!pred || pred.ownerId == null || pred.ownerId !== viewerId) return { kind: 'not_found' }
+  // origin não-ai_* (catalog / user_edited) → sem prompt recuperável → 409 sem_fonte.
+  if (!AI_ORIGINS.has(pred.origin)) return { kind: 'sem_fonte' }
+
+  // A creation_session que ENTREGOU esta Receita (recipe_id = predecessora) — a posse já foi
+  // provada acima. Sem sessão (ex. linha órfã) → 409 sem_fonte (não 500). Escopada por user_id
+  // (defense-in-depth: nunca recupera prompt de sessão alheia).
+  const [session] = await db
+    .select({
+      id: creationSession.id,
+      mode: creationSession.mode,
+      briefingId: creationSession.briefingId,
+      freeText: creationSession.freeText,
+    })
+    .from(creationSession)
+    .where(and(eq(creationSession.recipeId, recipeId), eq(creationSession.userId, viewerId)))
+    .orderBy(asc(creationSession.createdAt))
+    .limit(1)
+  if (!session) return { kind: 'sem_fonte' }
+
+  const prompt = await recoverPrompt(db, session)
+  if (prompt === null) return { kind: 'sem_fonte' }
+
+  // ── Claude (single-shot) → classify ──────────────────────────────────────────────
+  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model })
+  const result = classify(out)
+
+  // invalid: erro de sistema puro → NADA persiste (ADR-0006).
+  if (result.outcome === 'invalid') return { kind: 'invalid' }
+
+  // origin HERDADO da predecessora (PersistOrigin ai_*; o gate garantiu ai_*). O modo segue o da
+  // sessão predecessora (irrelevante no caminho existingSessionId — não cria 2ª sessão).
+  const origin = pred.origin as PersistOrigin
+
+  if (result.outcome === 'impossible') {
+    // impossible NÃO entrega Receita; persiste como episódio (generation na MESMA sessão).
+    await persistGeneration({
+      result,
+      mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
+      origin,
+      ownerId: viewerId,
+      model,
+      existingSessionId: session.id,
+    })
+    return { kind: 'impossible', advisory: result.advisory }
+  }
+
+  // success | degraded | playful → NOVA Receita imutável (lineage regenerated).
+  const p = await persistGeneration({
+    result,
+    mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
+    origin,
+    ownerId: viewerId,
+    model,
+    existingSessionId: session.id,
+    lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
+  })
+  // p é não-null para success/degraded/playful (persistGeneration só devolve null em invalid,
+  // já tratado acima). recipeId presente nesse caminho.
+  const newRecipeId = p?.recipeId
+  if (newRecipeId == null) {
+    // Defesa: nunca deveria ocorrer nesse caminho. Trata como erro de sistema (nada exibido).
+    return { kind: 'invalid' }
+  }
+
+  // Wire a camada semântica da NOVA Receita (#14): re-embeda o locale original p/ entrar na Busca.
+  await embedTranslation(db, newRecipeId, result.recipe.originalLocale)
+
+  return { kind: 'ok', outcome: result.outcome, recipeId: newRecipeId, advisory: result.advisory }
+}

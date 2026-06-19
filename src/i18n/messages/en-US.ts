@@ -283,6 +283,18 @@ export const enUS: Messages = {
     apagarErro: "We couldn't delete the recipe. Try again.",
     vinculoPerdido: 'The original recipe was deleted — your version is still complete, just no longer linked to it.',
   },
+  // Regeneration: new immutable version by lineage (#20). Regenerating your own recipe creates a
+  // NEW version from the same request — it never overwrites; previous versions stay saved. The
+  // labels are UI #61 chrome (lineage/versions); `semFonte` is the 409 error when the recipe has
+  // no recoverable source to regenerate from (catalog, edited by a person, or deleted conversation).
+  versao: {
+    novaVersao: 'New version',
+    versaoAnterior: 'Previous version',
+    versaoAtual: 'Current version',
+    regenerar: 'Generate a new version',
+    regenerando: 'Generating a new version…',
+    semFonte: 'This recipe can’t be regenerated: the original request isn’t available.',
+  },
   comunidade: {
     titulo: 'Community',
     votar: 'Vote',

@@ -305,6 +305,18 @@ export const ptBR = {
     apagarErro: 'Não foi possível apagar a receita. Tente de novo.',
     vinculoPerdido: 'A receita original foi apagada — sua versão continua completa, só sem o vínculo com ela.',
   },
+  // Regeneração: nova versão imutável por linhagem (#20). Regenerar a PRÓPRIA receita cria uma
+  // NOVA versão a partir do mesmo pedido — nunca sobrescreve; as versões anteriores ficam salvas.
+  // Os rótulos são chrome da UI #61 (linhagem/versões); `semFonte` é o erro 409 quando a receita
+  // não tem fonte recuperável para regenerar (catálogo, editada por pessoa, ou conversa apagada).
+  versao: {
+    novaVersao: 'Nova versão',
+    versaoAnterior: 'Versão anterior',
+    versaoAtual: 'Versão atual',
+    regenerar: 'Gerar nova versão',
+    regenerando: 'Gerando nova versão…',
+    semFonte: 'Não dá para gerar uma nova versão desta receita: o pedido original não está disponível.',
+  },
   comunidade: {
     titulo: 'Comunidade',
     votar: 'Votar',
