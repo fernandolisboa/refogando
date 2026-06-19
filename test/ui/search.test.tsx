@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -15,6 +15,34 @@ vi.mock('next/link', () => ({
     </a>
   ),
 }))
+
+// #116: a Busca agora lê useSession só para escolher a DICA INICIAL (anônimo vs logado). Sem
+// mock, o hook tentaria buscar /api/auth/get-session (quebra no jsdom). Estado MUTÁVEL por
+// teste: anônimo por padrão; o teste de cópia-logada troca para `authed()`.
+type SessionState = {
+  data: unknown
+  error: unknown
+  isPending: boolean
+  isRefetching: boolean
+  refetch: () => void
+}
+let sessionState: SessionState
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => sessionState,
+}))
+
+function anon(): SessionState {
+  return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+}
+function authed(): SessionState {
+  return {
+    data: { user: { id: 'u-1', name: 'Ana' }, session: { id: 's-1' } },
+    error: null,
+    isPending: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+  }
+}
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -55,6 +83,10 @@ function lastFetchUrl(fetchMock: ReturnType<typeof vi.fn>): string {
   const call = fetchMock.mock.calls.at(-1)
   return String(call?.[0])
 }
+
+beforeEach(() => {
+  sessionState = anon()
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -159,6 +191,17 @@ describe('SearchExperience (#56)', () => {
     // (!hasCriteria)`. Com o wait, T3 falha se o guarda for removido (mutation-verified).
     await new Promise((r) => setTimeout(r, 400))
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('T3b (#116) — LOGADO: a dica inicial reflete "suas receitas + comunidade"', async () => {
+    sessionState = authed()
+    stubFetchOk({ catalogo: [], comunidade: [] })
+    renderSearch()
+
+    // Estado inicial neutro mostra a dica AUTENTICADA (key-path idêntica entre locales),
+    // não a de comunidade.
+    await screen.findByText(M.dicaInicialLogado)
+    expect(screen.queryByText(M.dicaInicial)).not.toBeInTheDocument()
   })
 
   it('T4 — faceta aplicada na query (faceta-only, sem q espúrio)', async () => {

@@ -44,6 +44,8 @@ export const enUS: Messages = {
     placeholder: 'Type a dish, ingredient, or culinary style',
     buscar: 'Search',
     dicaInicial: 'Start typing a dish, ingredient, or style you like — or use the filters.',
+    // #116: signed-in users also search their OWN recipes (private ones included).
+    dicaInicialLogado: 'Start typing a dish, ingredient, or style — we search your recipes and the community’s.',
     semResultado: 'No recipes found. Try another term or adjust the filters.',
     secaoCatalogo: 'Catalog',
     secaoComunidade: 'Community',
@@ -61,6 +63,8 @@ export const enUS: Messages = {
   feed: {
     titulo: 'Recipes',
     subtitulo: 'What the community is cooking up, newest first.',
+    // #116: signed-in users also see their OWN recipes (private ones included) in the feed.
+    subtituloLogado: 'Your recipes and what the community is cooking up, newest first.',
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
     fim: "You've reached the end.",

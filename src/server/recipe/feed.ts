@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { communityVisibleSqlFragment } from '@/server/recipe/visibility-sql'
+import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
 import type { FeedHitRow, FeedCursor } from '@/domain/recipe-feed-read'
 
 /**
@@ -14,9 +14,11 @@ import type { FeedHitRow, FeedCursor } from '@/domain/recipe-feed-read'
  * Query auto-contida: o LIMIT vive no CTE interno `feed_rows` (só junta tradução das linhas da
  * página); o SELECT externo re-ordena (o JOIN pode embaralhar) por `created_at, id`.
  *
- * Gate de leitura CANÔNICO (espelha `recipe-pool.ts` / o `visible` da Busca, byte-a-byte):
- * `result_kind <> 'playful'` AND `(owner_id IS NULL OR visibility = 'public')` AND
- * `moderation_removed_at IS NULL`. Visitante anônimo (ADR-0011) — sem auth.
+ * Gate de leitura do VIEWER (#116, espelha o `visible` da Busca): `result_kind <> 'playful'`
+ * AND `viewerReadableSqlFragment('r', viewerId)` AND `moderation_removed_at IS NULL`. Anônimo
+ * (`viewerId` undefined, ADR-0011) ⇒ o fragmento reduz a `(owner_id IS NULL OR visibility =
+ * 'public')` — gate de pool byte-a-byte com o de antes. LOGADO ⇒ adiciona a arma
+ * `OR owner_id = <viewerId>` (BINDADO), incluindo as PRÓPRIAS Receitas (privadas inclusive).
  *
  * Keyset: `(created_at, id) < (cursor)` sob a ordem DESC pega a "próxima página" (linhas mais
  * antigas) de forma estável, sem drift de offset. `created_at` sai como `::text` canônico p/
@@ -30,9 +32,18 @@ import type { FeedHitRow, FeedCursor } from '@/domain/recipe-feed-read'
  */
 export async function loadFeed(
   db: Database,
-  args: { requestLocale: string; limit: number; cursor: FeedCursor | null },
+  args: {
+    requestLocale: string
+    limit: number
+    cursor: FeedCursor | null
+    /**
+     * Viewer LOGADO (#116): inclui as PRÓPRIAS Receitas (privadas inclusive) além do pool da
+     * comunidade. `undefined` (anônimo, ADR-0011) ⇒ só o pool — comportamento de antes.
+     */
+    viewerId?: string
+  },
 ): Promise<FeedHitRow[]> {
-  const { requestLocale, limit, cursor } = args
+  const { requestLocale, limit, cursor, viewerId } = args
 
   // Predicado keyset: vazio na 1a pagina (cursor null), inequacao de row-value depois. Bind
   // seguro via sql.param (cast ::timestamptz/::uuid; valor invalido foi descartado na borda).
@@ -54,7 +65,7 @@ export async function loadFeed(
         r.created_at::text AS created_at
       FROM recipe r
       WHERE r.result_kind <> 'playful'
-        AND ${communityVisibleSqlFragment('r')}
+        AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${cursorSql}
       ORDER BY r.created_at DESC, r.id DESC
