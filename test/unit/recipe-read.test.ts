@@ -400,3 +400,74 @@ describe('resolveRecipeView — staleNotice #23 (AC3)', () => {
     expect(view.staleNotice).toBeUndefined()
   })
 })
+
+// ── #21 (#289): vínculo perdido — a base da derivada foi apagada ────────────────
+
+/** Diff congelado mínimo (forma versionada do domínio). */
+const diffCongelado = {
+  v: 1 as const,
+  ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+  restricoes: { adicionadas: [], removidas: [] },
+  campos: {},
+}
+
+describe('resolveRecipeView — vinculoPerdido #21 (#289)', () => {
+  it('derivada do DONO com parent NULL + diff presente ⇒ vinculoPerdido=true', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({
+          ownerId: 'u-1',
+          lineageKind: 'edited',
+          parentRecipeId: null, // base apagada (FK ON DELETE set null)
+          derivedDiff: diffCongelado,
+        }),
+        viewerId: 'u-1',
+      }),
+    )
+    expect(view.vinculoPerdido).toBe(true)
+    // O diff CONTINUA presente (conteúdo completo; só o ponteiro sumiu) — #289.
+    expect(view.derivedDiff).toEqual(diffCongelado)
+  })
+
+  it('derivada do DONO com parent AINDA presente ⇒ vinculoPerdido AUSENTE', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({
+          ownerId: 'u-1',
+          lineageKind: 'edited',
+          parentRecipeId: 'base-1', // base ainda existe
+          derivedDiff: diffCongelado,
+        }),
+        viewerId: 'u-1',
+      }),
+    )
+    expect(view.vinculoPerdido).toBeUndefined()
+    expect(view.derivedDiff).toEqual(diffCongelado)
+  })
+
+  it('owner-gated: NÃO-dono não vê vinculoPerdido (espelha derivedDiff)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({
+          ownerId: 'u-1',
+          lineageKind: 'edited',
+          parentRecipeId: null,
+          derivedDiff: diffCongelado,
+        }),
+        viewerId: 'u-2', // outro
+      }),
+    )
+    expect(view.vinculoPerdido).toBeUndefined()
+    expect(view.derivedDiff).toBeUndefined()
+  })
+
+  it('receita NÃO-derivada (sem diff) ⇒ vinculoPerdido AUSENTE mesmo com parent NULL', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ ownerId: 'u-1', parentRecipeId: null, lineageKind: null, derivedDiff: null }),
+        viewerId: 'u-1',
+      }),
+    )
+    expect(view.vinculoPerdido).toBeUndefined()
+  })
+})
