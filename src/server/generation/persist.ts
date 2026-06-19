@@ -9,7 +9,7 @@ import {
   creationSession,
   generation,
 } from '@/db/schema'
-import { SCHEMA_VERSION_RECEITA, type CreationMode } from '@/domain/recipe'
+import { SCHEMA_VERSION_RECEITA, type CreationMode, type LineageKind } from '@/domain/recipe'
 import type { ClassifyResult } from '@/domain/generation'
 import type { Strength } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
@@ -79,6 +79,14 @@ export type PersistGenerationInput = {
   // Ausente → comportamento legado: INSERE uma nova creation_session (modo stateless de #12,
   // e o caminho lazy-create do stream quando o cliente não manda sessionId).
   existingSessionId?: string
+  // #20 (REGENERAÇÃO): linhagem da NOVA Receita imutável. Presente → a Receita criada nasce
+  // ligada à predecessora (`parentRecipeId`) com `lineageKind`. AUSENTE → comportamento legado
+  // (parent_recipe_id NULL, lineage_kind NULL — toda geração de #8/#11/#12/#88). Para
+  // `regenerated`, o `origin` HERDA o da predecessora (PersistOrigin é ai_* — por isso #20 só
+  // regenera Receitas ai_*) e a Receita reusa a `existingSessionId` da predecessora (sem 2ª
+  // sessão; múltiplas generations por sessão são permitidas). `derivedDiff` segue NULL aqui:
+  // regenerated NÃO carrega diff (PRD historia 292); só `edited` (a derivada de #17) o carrega.
+  lineage?: { parentRecipeId: string; lineageKind: LineageKind }
 }
 
 export type PersistGenerationResult = {
@@ -153,7 +161,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage } = input
 
   // Erro de sistema puro: não é episódio de criação → nada é gravado (§6). O Briefing
   // também NÃO nasce em invalid (ADR-0006).
@@ -221,6 +229,12 @@ export async function persistGeneration(
         restricoes: r.restricoes,
         porcoes: r.porcoes,
         dificuldade: r.dificuldade,
+        // #20: linhagem (regenerated) quando presente; ausente → NULL (toda geração legada).
+        // `origin` foi HERDADO no caller (PersistOrigin ai_*). `derived_diff` segue NULL —
+        // regenerated não carrega diff (só `edited`, em derive.ts). SÓ no INSERT (o trigger
+        // recipe_origin_immutable estoura P0001 em UPDATE de origin, nunca aqui).
+        parentRecipeId: lineage?.parentRecipeId,
+        lineageKind: lineage?.lineageKind,
         // schemaVersion: default (SCHEMA_VERSION_RECEITA).
       })
       .returning({ id: recipe.id })
