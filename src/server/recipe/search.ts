@@ -185,6 +185,13 @@ export async function searchRecipes(
      * editorial e IGNORA sort (a chave de popularidade é gateada por section='comunidade').
      */
     sort?: SortMode
+    /**
+     * Browse-all (#98): "listar tudo" sem texto NEM faceta. Quando true E sem sinal de texto,
+     * dispara o MESMO caminho do faceta-only (lê de `recipe r`), mas com `facetSql`
+     * potencialmente no-op ⇒ pool inteiro (gate de leitura canônico preservado). Default
+     * undefined/false ⇒ comportamento de hoje intacto (a home `/` nunca passa browse).
+     */
+    browse?: boolean
   },
 ): Promise<SearchLoaderResult> {
   // Cap de entrada: truncar (nao rejeitar). O curto-circuito de estado neutro
@@ -208,22 +215,31 @@ export async function searchRecipes(
   // bucket de exatidao e SO para section='comunidade' (Catalogo intocado — ADR-0003).
   const isPopularidade = args.sort === 'popularidade' ? sql`true` : sql`false`
 
-  // #10 faceta-only: ha facetas E o q efetivo NAO tem letra/digito (nem titulo nem
-  // ingrediente podem casar => `combined` esta garantidamente vazio). Cobre q=''
-  // (lente consumiu tudo), q=',,,' (parseSearchTerms=[]) e q='!!!' (terms.length=1 mas
-  // FTS nao casa). Quando true, `visible` le de `recipe r` direto com sinais de texto
-  // CONSTANTES (overlap=0, title_match=false, title_rank=0) => sort reduz a recipe_id
-  // (faceta NAO e rank). Senao, le de `combined` (caminho #6/#9).
-  const facetOnly = !isFacetsEmpty(facets) && !/[\p{L}\p{N}]/u.test(q)
+  // "Sinal de texto" ausente: o q efetivo NAO tem letra/digito (nem titulo nem ingrediente
+  // podem casar => `combined` esta garantidamente vazio). Cobre q='' (lente consumiu tudo),
+  // q=',,,' (parseSearchTerms=[]) e q='!!!' (terms.length=1 mas FTS nao casa).
+  const noTextSignal = !/[\p{L}\p{N}]/u.test(q)
+  // #10 faceta-only: ha facetas E sem sinal de texto => estreita o pool SO pelas facetas.
+  const facetOnly = !isFacetsEmpty(facets) && noTextSignal
+  // #98 browse-all: "listar tudo" — sem sinal de texto e SEM exigir faceta. So vale sem
+  // texto: com ?q= textual o browse e ignorado e a busca normal (#6/#9, combined) roda.
+  const browseAll = args.browse === true && noTextSignal
+  // Le de `recipe r` direto (sinais de texto CONSTANTES: overlap=0, title_match=false,
+  // title_rank=0 => o ORDER BY reduz a popularidade-na-Comunidade|recipe_id; faceta/browse
+  // NAO sao rank) quando faceta-only OU browse-all. Senao, le de `combined` (caminho #6/#9).
+  // Com faceta presente E browse, facetOnly ja e true (directPool true de qualquer forma);
+  // com facetas vazias E browse, facetSql colapsa a no-op => pool inteiro gateado.
+  const directPool = facetOnly || browseAll
 
   // Predicados de faceta AND-combinados no gate. Eixo vazio => no-op (reduce-to-#6/#9).
   const facetSql = facetPredicates(facets)
 
   // #14 camada semantica: so ativa quando ha vetor utilizavel. queryVector=null
-  // (degradacao por embedder lancando, ou q vazio) OU faceta-only (route nao embeda)
-  // => ramo semantico no-op => degradacao byte-identica ao ranking precisa de hoje.
+  // (degradacao por embedder lancando, ou q vazio) OU directPool (faceta-only/browse, onde
+  // o route nao embeda) => ramo semantico no-op => degradacao byte-identica ao ranking
+  // precisa de hoje.
   const hasVector =
-    !facetOnly && args.queryVector !== null && args.queryVector.length > 0
+    !directPool && args.queryVector !== null && args.queryVector.length > 0
   // Bind do vetor: STRING literal pgvector + cast ::vector (sql.param(number[]) cru
   // serializa como array PG {...} e o cast falha; provado no micro-spike). Vazio quando
   // !hasVector (ramo semantico elidido).
@@ -333,12 +349,12 @@ export async function searchRecipes(
         SELECT recipe_id, COUNT(*) AS vote_count FROM recipe_vote GROUP BY recipe_id
       ) vc ON vc.recipe_id = r.id`
       : sql``
-  // Expressao da coluna vote_count nos ramos do `visible` (facetOnly + combined): COUNT
+  // Expressao da coluna vote_count nos ramos do `visible` (directPool + combined): COUNT
   // coalescido quando ha o JOIN (popularidade); constante 0 quando o JOIN some (relevancia).
   const voteCountColSql =
     args.sort === 'popularidade' ? sql`COALESCE(vc.vote_count, 0)` : sql`0`
 
-  const visibleSource = facetOnly
+  const visibleSource = directPool
     ? sql`
       SELECT
         r.id AS recipe_id,
