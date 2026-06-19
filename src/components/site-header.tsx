@@ -11,11 +11,16 @@
  */
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
 
 export function SiteHeader() {
   const { messages } = useLocale()
+  const session = useSession()
+  // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
+  // /recipes público (feed da comunidade, #103): este link é o espaço privado do dono.
+  const authed = !session.isPending && !session.error && !!session.data
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
       <Container className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2">
@@ -38,6 +43,11 @@ export function SiteHeader() {
           <Link href="/conversation" className="transition-colors hover:text-fg">
             {messages.nav.conversar}
           </Link>
+          {authed && (
+            <Link href="/me/recipes" className="transition-colors hover:text-fg">
+              {messages.minhasCriacoes.titulo}
+            </Link>
+          )}
         </nav>
         <div className="ml-auto flex items-center gap-3">
           <AuthSlot />

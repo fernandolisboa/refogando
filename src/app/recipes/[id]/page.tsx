@@ -18,6 +18,7 @@ import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 import { RecipeVisibilityControls } from '@/components/recipe/recipe-visibility-controls'
 import type { RecipeView } from '@/domain/recipe-read'
@@ -96,6 +97,11 @@ export default async function RecipeDetailPage({
           resultKind={view.resultKind}
         />
       )}
+      {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
+          derivada); para o NÃO-dono, "Criar minha versão" (derivar) ou o convite de entrar
+          (Visitante, descope #22). O componente lê SÓ a view (server-truth) + a sessão (gating
+          de derivar). Salvar/publicar continua nos controles de Visibilidade (#59) acima. */}
+      <RecipeDetailActions view={view} locale={locale} />
     </Container>
   )
 }

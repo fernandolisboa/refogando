@@ -317,6 +317,39 @@ export const ptBR = {
     regenerando: 'Gerando nova versão…',
     semFonte: 'Não dá para gerar uma nova versão desta receita: o pedido original não está disponível.',
   },
+  // Minhas criações (#61) — a tela integradora do épico. Lista as Receitas do dono (cards com
+  // selos NEUTROS de visibilidade/linhagem/origem), os rótulos das AFORDÂNCIAS do dono no
+  // detalhe (editar/apagar/regenerar/ver versões/criar minha versão) e os CONVITES de entrar
+  // para o Visitante (descope #22: anônimo é read-only; toda ação de conta convida a entrar).
+  // Os selos REUSAM conceitos já localizados onde possível; aqui só o que é próprio da tela.
+  minhasCriacoes: {
+    titulo: 'Minhas criações',
+    subtitulo: 'Tudo o que você criou, do mais recente ao mais antigo.',
+    vazio: 'Você ainda não criou nenhuma receita.',
+    criarPrimeira: 'Criar minha primeira receita',
+    precisaEntrar: 'Entre na sua conta para ver suas criações.',
+    erro: 'Não foi possível carregar suas criações. Tente de novo.',
+    semTitulo: 'Receita sem título',
+    // Selos de estado por card (NEUTROS — âmbar é exclusivo do Aviso de restrição).
+    seloPrivada: 'Privada',
+    seloPublica: 'Pública',
+    seloRemovida: 'Fora do acervo',
+    seloPlayful: 'Zoeira',
+    seloDerivada: 'Derivada',
+    seloRegenerada: 'Regenerada',
+    // Afordâncias do dono no detalhe (aparecem só sob canManage, vindo do servidor).
+    gerenciarTitulo: 'Gerenciar receita',
+    editar: 'Editar',
+    apagar: 'Apagar',
+    regenerar: 'Gerar nova versão',
+    // CTA de derivar uma receita NÃO-própria (catálogo/pública de outra pessoa).
+    criarMinhaVersao: 'Criar minha versão',
+    // Bloco do diff da derivada (título da seção; os rótulos das linhas vêm de `derivada`).
+    diffTitulo: 'O que mudou em relação à original',
+    // Convites de entrar (gating consistente em /create, /conversation e nos botões do detalhe).
+    convidaEntrarTitulo: 'Entre para fazer isso',
+    convidaEntrarTexto: 'Crie uma conta ou entre para criar, salvar e gerenciar receitas.',
+  },
   comunidade: {
     titulo: 'Comunidade',
     votar: 'Votar',
