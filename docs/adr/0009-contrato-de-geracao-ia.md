@@ -31,3 +31,7 @@ O schema-contrato é herdado por persistência, busca, i18n e UI, e por todos os
 - `refusal` / `max_tokens` no streaming são tratados como falha honesta (cai em "inválido"), nunca como Receita parcial silenciosa.
 - A receita lúdica precisa de um marcador que **bloqueia visibilidade pública** (ADR-0003) mantendo o salvar privado.
 - Se o volume de receitas de zoeira virar problema de banco, opção futura: persistir essas **só local/on-device** (SQLite no celular, cache do navegador), fora do servidor. Deferido — não construído agora.
+
+## Adendo (#112) — A Extração de ingredientes é um SEGUNDO uso da mesma disciplina de structured output
+
+A **Extração de ingredientes** (entrada inteligente do modo Formulário) reusa a mesma disciplina deste ADR — schema flat, `messages.parse()`, reparo de uma tentativa, fallback `parse_failed` que vira erro de sistema (502, nunca lixo) — só que num schema próprio (`IngredientExtractionSchema`, com `unidade` como string nullable normalizada no app via `isUnidade`) e num **modelo BARATO dedicado** (`EXTRACTION_MODEL`, env-overridable; intencionalmente NÃO o `default_model` compartilhado da Geração). A Extração **organiza** os ingredientes que o Usuário escreveu; **não inventa nem gera a Receita** — é distinta da Geração (ver CONTEXT.md: Extração ≠ Geração).

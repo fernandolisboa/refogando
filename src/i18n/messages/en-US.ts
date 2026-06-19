@@ -209,6 +209,19 @@ export const enUS: Messages = {
     erroObservacoesLongas: 'The notes are too long.',
     erroIngrediente: 'Fill in the ingredient on the lines you started.',
     erroCampos: 'Check the fields you filled in.',
+    // Smart ingredient entry (#112): the AI ORGANIZES the ingredients you wrote in natural
+    // language into the structured rows. It does NOT invent or generate the recipe (Extraction
+    // ≠ Generation).
+    entradaInteligente: 'Write your ingredients your way',
+    entradaPlaceholder: 'e.g., 2 onions, salt to taste, a bit of parsley, 200g of cheese',
+    estruturar: 'Structure',
+    estruturando: 'Structuring…',
+    entradaDistincao:
+      "The AI organizes the ingredients you wrote — it doesn't invent or generate the recipe.",
+    erroEntradaVazia: 'Write a bit more about the ingredients (at least 10 characters).',
+    erroEntradaLonga: 'Your list is too long. Use at most 500 characters.',
+    erroEstruturacao: "Couldn't organize the ingredients right now. Please try again.",
+    itemUnidadeDesconhecida: "We didn't recognize the unit — pick one from the list.",
     // OUTER mode toggle of the unified Create screen (#104): Form (structured + open prompt) ↔
     // Chat (focused conversation). `seletorModo` is the segmented control's label.
     modoFormulario: 'Form',

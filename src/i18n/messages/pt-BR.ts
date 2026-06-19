@@ -230,6 +230,19 @@ export const ptBR = {
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',
+    // Entrada inteligente (#112): a IA ORGANIZA os ingredientes que você escreveu em texto
+    // natural nas linhas estruturadas. NÃO inventa nem gera a receita (Extração ≠ Geração).
+    entradaInteligente: 'Escreva os ingredientes do seu jeito',
+    entradaPlaceholder: 'Ex.: 2 cebolas, sal a gosto, um pouco de salsinha, 200g de queijo',
+    estruturar: 'Estruturar',
+    estruturando: 'Estruturando…',
+    entradaDistincao:
+      'A IA organiza os ingredientes que você escreveu — não inventa nem gera a receita.',
+    erroEntradaVazia:
+      'Escreva um pouco mais sobre os ingredientes (mínimo de 10 caracteres).',
+    erroEntradaLonga: 'Sua lista está muito longa. Use no máximo 500 caracteres.',
+    erroEstruturacao: 'Não foi possível organizar os ingredientes agora. Tente de novo.',
+    itemUnidadeDesconhecida: 'Não reconhecemos a unidade — escolha uma na lista.',
     // Alternância de modo EXTERNA da tela CRIAR unificada (#104): Formulário (estruturado +
     // prompt aberto) ↔ Conversa (chat focado). `seletorModo` é o rótulo do segmented control.
     modoFormulario: 'Formulário',

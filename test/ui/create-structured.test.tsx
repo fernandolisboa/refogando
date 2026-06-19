@@ -123,10 +123,22 @@ function deferred() {
   return { factory, release: (r: FetchResult) => release(r) }
 }
 
+/**
+ * Textboxes das LINHAS de ingrediente, EXCLUINDO a textarea de entrada inteligente (#112) que
+ * agora precede as linhas. Sem isso, `getAllByRole('textbox')[0]` apontaria para a entrada
+ * inteligente, não para o rawText do 1º ingrediente. Ordem após o filtro: [0]=rawText#1,
+ * [1]=quantidade#1, [2]=observações, …
+ */
+function ingredientTextboxes(): HTMLElement[] {
+  return screen
+    .getAllByRole('textbox')
+    .filter((el) => el.getAttribute('id') !== 'entrada-inteligente')
+}
+
 /** Preenche o briefing mínimo para passar a validação leve: 1 ingrediente. */
 async function fillBriefing(user: ReturnType<typeof userEvent.setup>) {
-  const inputs = screen.getAllByRole('textbox')
-  // O primeiro textbox é o rawText do primeiro ingrediente.
+  const inputs = ingredientTextboxes()
+  // O primeiro textbox de ingrediente é o rawText do primeiro ingrediente.
   await user.type(inputs[0], 'feijão')
 }
 
@@ -372,9 +384,9 @@ describe('CreateStructuredExperience (#58)', () => {
     const fetchMock = mockFetch({ generations: { status: 201, body: {} } })
     renderCreate()
 
-    // Preenche SÓ a quantidade do 1º item (rawText vazio). Textboxes em ordem:
+    // Preenche SÓ a quantidade do 1º item (rawText vazio). Textboxes de ingrediente em ordem:
     // [0]=rawText, [1]=quantidade, [2]=observações. A linha parcial deve guiar, não cair.
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = ingredientTextboxes()
     await user.type(inputs[1], '2')
     await user.click(screen.getByRole('button', { name: M.gerar }))
 
@@ -422,7 +434,7 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
 
     // Modo estruturado (default): textarea de texto livre AUSENTE, campos presentes.
     expect(screen.queryByLabelText(M.textareaLabel)).toBeNull()
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = ingredientTextboxes()
     await user.type(inputs[0], 'feijão')
 
     // Troca para prompt aberto via o grupo de alternância.

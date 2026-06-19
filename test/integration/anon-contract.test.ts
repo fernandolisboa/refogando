@@ -63,6 +63,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async *streamConversation(): AsyncIterable<string> {
     throw new Error('seam tocado: o anônimo devia ter sido cortado (401) ANTES do stream')
   }
+  async extractIngredients(): Promise<never> {
+    throw new Error('seam tocado: o anônimo devia ter sido cortado (401) ANTES da extração')
+  }
 }
 
 /** Contagens cruas das tabelas tocáveis por escrita/geração (porta alta, sem ORM). */

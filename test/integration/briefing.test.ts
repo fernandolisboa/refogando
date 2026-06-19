@@ -56,6 +56,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async *streamConversation(): AsyncIterable<string> {
     throw new Error('seam tocado: streamConversation não devia ser chamado')
   }
+  async extractIngredients(): Promise<never> {
+    throw new Error('seam tocado: extractIngredients não devia ser chamado')
+  }
 }
 
 /** Shape parcial da resposta 201 do modo estruturado (avisos AUSENTE quando sem contradição). */
