@@ -120,6 +120,10 @@ _Avoid_: Conta (como sinônimo da pessoa); "author" string única; Moderador (us
 Dois papéis sobre uma Receita. **Owner** = quem controla a linha (`owner_id`, NULL para catálogo/sistema). **Autoria** = quem é creditado na exibição/atribuição. Distintos da Proveniência (o "como surgiu").
 _Avoid_: misturar humano, IA e curadoria num campo só; assumir Owner == Autor sempre.
 
+**Handle** (@nome / endereço do perfil):
+Identificador público, único e legível do Usuário (`/u/<handle>`) — a forma como o perfil público e o crédito de Autoria são endereçados. **Sempre presente**: gerado automaticamente do nome na criação da conta (com desambiguação) e **editável** depois (vanity @nome). Minúsculo, único, com palavras reservadas barradas (rotas: `admin`, `api`, `me`, `users`…). Trocar o handle quebra links antigos (sem redirect — proporcional). Distinto do **name** (rótulo de exibição, pode repetir) e do **id** (UUID interno, nunca exibido em URL pública).
+_Avoid_: UUID na URL pública; confundir handle (endereço único) com name (display, não-único); exigir claim manual travando o signup (nasce com default automático).
+
 **Ingrediente** (canônico):
 Insumo reutilizável e **language-neutral** (id estável), nome/aliases traduzidos pela tabela de tradução, com dado de alérgeno **opcional**. Base da busca por ingrediente cross-locale. Distinto da ocorrência numa receita.
 _Avoid_: Insumo; Item (sozinho); tratar como texto livre.
@@ -131,6 +135,10 @@ _Avoid_: lista como texto solto sem quantidade estruturada; quantidade como stri
 **Receita derivada**:
 Cópia de uma Receita criada quando o usuário edita uma que não é sua (catálogo ou de outro): `origin=user_edited`, ponteiro pra base + diff do que mudou (ADR-0005). A base nunca é mutada.
 _Avoid_: editar/mutar a base compartilhada; "versão" (que é regeneração de IA).
+
+**Imagem da receita**:
+A foto ou ilustração do prato. É **language-neutral** e portanto **invariante** (como quantidade/porções): mora na Receita, **nunca** na Tradução — a mesma imagem serve todos os locales. É **entidade própria** (não URL solta na linha): uma imagem é referenciada por **uma ou mais versões** da linhagem (carregada pra frente ao editar/regenerar, **sem duplicar o arquivo**; o blob só é apagado quando nenhuma versão o referencia). Tem **proveniência própria** — `user_photo` (foto do usuário) ou `ai_generated` (gerada por IA) — eixo **distinto** da Proveniência da Receita (o "como a receita surgiu"). Opcional: receita sem imagem é o caso normal. **Moderável por si só**: o Curador pode **remover só a imagem do público** sem derrubar a receita — flag de moderação **na própria imagem** (não apaga o arquivo nem zera o `image_id`; o Owner continua vendo no privado), eixo **ortogonal e rastreável** a remover-a-receita-do-pool. Como a imagem é compartilhada entre versões, moderá-la a esconde **em toda parte** onde aparece. Imagem `ai_generated` carrega selo visível "gerada por IA" nas superfícies públicas.
+_Avoid_: tratar como conteúdo traduzível; URL solta copiada por linha; "thumbnail"/"avatar" (avatar é do Usuário, não da Receita); confundir proveniência da imagem (`user_photo`/`ai_generated`) com a Proveniência da Receita (`catalog`/`ai_*`/`user_edited`); apagar o arquivo/zerar `image_id` ao moderar (é flag, não deleção).
 
 **Embedding**:
 Vetor (pgvector) por linha de tradução que habilita a camada **semântica** da busca híbrida (ADR-0008). Re-gerado quando a tradução muda.
