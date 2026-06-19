@@ -1,0 +1,210 @@
+import { and, eq } from 'drizzle-orm'
+import type { Database } from '@/db/client'
+import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import { applyEdit } from '@/server/recipe/edit'
+import { pgCode } from '@/server/recipe/visibility'
+
+/**
+ * Edição IN-PLACE + APAGAR da PRÓPRIA Receita (issue #21).
+ *
+ * Editar a SUA receita (privada OU pública, inclusive a sua derivada) é um UPDATE da MESMA
+ * linha — NUNCA forka (o fork é #17, da receita NÃO-própria). Apagar é HARD-delete (a #21 NÃO
+ * tem soft-delete: recipe não tem deleted_at; história #157 'ON DELETE SET NULL' confirma o
+ * delete físico).
+ *
+ * Decisões congeladas (#21):
+ *  - ALLOWLIST de escrita em `recipe`: SÓ cozinha/categoria/restricoes/porcoes/dificuldade.
+ *    NUNCA toca origin (trigger recipe_origin_immutable ⇒ P0001), owner_id (dono é imutável),
+ *    nem visibility (publicar/despublicar é #13, rota própria). O SET é montado campo a campo
+ *    a partir da allowlist — uma coluna fora dela nem chega ao UPDATE.
+ *  - Tradução (titulo/descricao/passos/notas) via UPDATE de `recipe_translation` + `applyEdit`
+ *    (regra de #3: campo traduzível ⇒ locale stale + re-embed; invariante ⇒ no-op). REUSA o
+ *    helper compartilhado — nunca re-deriva quando-marcar.
+ *  - Ingredientes: editCatalogRecipe NÃO tem eixo de ingrediente, então o reescrevemos do ZERO
+ *    (delete-all-then-reinsert na forma do create.ts: quantidade string|null, ingredientId null,
+ *    ordem por índice). A FK canônica (alérgeno) NÃO é preservada na edição in-place — o leitor
+ *    reescreveu os itens; resolver Item→canônico é fluxo de catálogo, não do dono.
+ *  - Bump de updated_at em qualquer eixo que muda; o recompute (Aviso/diff) é de graça no GET.
+ *
+ * GATE da linha de tradução (espelha editCatalogRecipe): se há QUALQUER campo traduzível, o
+ * UPDATE com RETURNING vazio = linha (recipeId, locale) AUSENTE ⇒ 'translation_not_found' (route
+ * mapeia 404), ANTES de qualquer outra escrita ⇒ sem estado pela metade. Patch só de invariante/
+ * ingrediente NÃO precisa do gate de tradução.
+ *
+ * NÃO-atomicidade tolerada (espelha src/server/recipe/edit.ts e editCatalogRecipe): a composição
+ * roda transações independentes (UPDATE de tradução, UPDATE de recipe, tx de ingredientes,
+ * applyEdit). Uma falha PARCIAL é aceitável porque `stale` é MONOTÔNICO (marcar a mais nunca
+ * corrompe) e o re-embed é RETRYABLE (recompute idempotente). O único early-return —
+ * 'translation_not_found' — acontece ANTES de qualquer escrita.
+ *
+ * Autorização é OWNERSHIP, provada pelo ROUTE antes de chamar (catálogo/não-dono ⇒ 404 leak-safe,
+ * NUNCA 403, ADR-0011). Estes helpers AINDA filtram por owner_id na cláusula WHERE (E5: autoriza
+ * também na escrita — corrida + defense-in-depth).
+ */
+
+export type OwnRecipePatch = {
+  // Traduzíveis (presença = mudou):
+  titulo?: string
+  descricao?: string | null
+  passos?: string[] | null
+  notas?: string | null
+  // Categorização/invariante em `recipe` (allowlist — presença = mudou):
+  cozinha?: Cozinha | null
+  categoria?: Categoria | null
+  restricoes?: Restricao[]
+  porcoes?: number | null
+  dificuldade?: number | null
+  // Ingredientes (presença = reescreve do zero):
+  ingredientes?: ReadonlyArray<{
+    rawText: string | null
+    quantidade: string | null // numeric(10,3) ⇒ string|null, NUNCA number
+    unidade: Unidade | null
+  }>
+}
+
+export async function editOwnRecipe(
+  db: Database,
+  input: { recipeId: string; viewerId: string; locale: string; patch: OwnRecipePatch },
+): Promise<'ok' | 'translation_not_found'> {
+  const { recipeId, viewerId, locale, patch } = input
+  const changedFields: string[] = []
+  const now = new Date()
+
+  // Eixo traduzível: campos presentes em `recipe_translation`.
+  const translatablePatch: Record<string, unknown> = {}
+  if (patch.titulo !== undefined) {
+    translatablePatch.titulo = patch.titulo
+    changedFields.push('titulo')
+  }
+  if (patch.descricao !== undefined) {
+    translatablePatch.descricao = patch.descricao
+    changedFields.push('descricao')
+  }
+  if (patch.passos !== undefined) {
+    translatablePatch.passos = patch.passos
+    changedFields.push('passos')
+  }
+  if (patch.notas !== undefined) {
+    translatablePatch.notas = patch.notas
+    changedFields.push('notas')
+  }
+
+  // Eixo invariante/categorização: ALLOWLIST estrita em `recipe` (NUNCA origin/owner/visibility).
+  const recipePatch: Record<string, unknown> = {}
+  if (patch.cozinha !== undefined) {
+    recipePatch.cozinha = patch.cozinha
+    changedFields.push('cozinha')
+  }
+  if (patch.categoria !== undefined) {
+    recipePatch.categoria = patch.categoria
+    changedFields.push('categoria')
+  }
+  if (patch.restricoes !== undefined) {
+    recipePatch.restricoes = patch.restricoes
+    changedFields.push('restricoes')
+  }
+  if (patch.porcoes !== undefined) {
+    recipePatch.porcoes = patch.porcoes
+    changedFields.push('porcoes')
+  }
+  if (patch.dificuldade !== undefined) {
+    recipePatch.dificuldade = patch.dificuldade
+    changedFields.push('dificuldade')
+  }
+
+  const touchesTranslatable = Object.keys(translatablePatch).length > 0
+
+  // 1. UPDATE do conteúdo traduzível ANTES de tudo (o re-embed lê o texto novo) E como GATE da
+  //    linha de tradução numa só ida: RETURNING vazio = linha (recipeId, locale) AUSENTE ⇒
+  //    early-return ANTES de tocar recipe/ingredientes/applyEdit (sem escrita parcial).
+  if (touchesTranslatable) {
+    const updated = await db
+      .update(recipeTranslation)
+      .set({ ...translatablePatch, updatedAt: now })
+      .where(
+        and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)),
+      )
+      .returning({ id: recipeTranslation.id })
+    if (updated.length === 0) return 'translation_not_found'
+  }
+
+  // 2. UPDATE da allowlist em `recipe` (NUNCA origin/owner/visibility). Filtra por owner_id
+  //    (E5: autoriza também na escrita). Defense-in-depth: captura P0001 (origin imutável —
+  //    nunca setamos origin, então NÃO deve ocorrer) e RE-LANÇA (500 honesto, não mascara bug).
+  if (Object.keys(recipePatch).length > 0) {
+    try {
+      await db
+        .update(recipe)
+        .set({ ...recipePatch, updatedAt: now })
+        .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
+    } catch (e) {
+      if (pgCode(e) === 'P0001') throw e // origin imutável (ADR-0002) — relança, não mascara
+      throw e
+    }
+  } else if (!touchesTranslatable && patch.ingredientes === undefined) {
+    // Patch sem nenhum eixo: bump conservador de updated_at (mantém o contrato "editei = mudou").
+    await db
+      .update(recipe)
+      .set({ updatedAt: now })
+      .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
+  }
+
+  // 3. Ingredientes: delete-all-then-reinsert DO ZERO (editCatalogRecipe não tem este eixo).
+  //    Presença de `ingredientes` = reescreve a lista inteira (forma do create.ts: quantidade
+  //    string|null, ingredientId null, ordem por índice). Numa transação (atômico no eixo).
+  if (patch.ingredientes !== undefined) {
+    const ingredientes = patch.ingredientes
+    await db.transaction(async (tx) => {
+      await tx.delete(recipeIngredient).where(eq(recipeIngredient.recipeId, recipeId))
+      if (ingredientes.length > 0) {
+        await tx.insert(recipeIngredient).values(
+          ingredientes.map((it, i) => ({
+            recipeId,
+            ingredientId: null,
+            ordem: i,
+            quantidade: it.quantidade, // string|null
+            unidade: it.unidade,
+            rawText: it.rawText,
+          })),
+        )
+      }
+    })
+    // Bump updated_at também quando SÓ ingredientes mudam (eixo não-traduzível, não passa por 2).
+    if (Object.keys(recipePatch).length === 0 && !touchesTranslatable) {
+      await db
+        .update(recipe)
+        .set({ updatedAt: now })
+        .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
+    }
+  }
+
+  // 4. Regra de #3 como fonte ÚNICA de stale/re-embed. Decisão vazia (só invariante/ingrediente)
+  //    ⇒ applyStaleDecision no-op ⇒ zero stale/re-embed.
+  await applyEdit(db, { recipeId, locale, changedFields })
+
+  return 'ok'
+}
+
+/**
+ * HARD-delete da própria Receita (#21). Um único `DELETE FROM recipe WHERE id AND owner_id`:
+ *  - CASCATEIA os filhos (recipe_translation/recipe_ingredient/recipe_tag/recipe_vote/
+ *    recipe_favorite/recipe_embedding/report — todos ON DELETE cascade FROM recipe).
+ *  - SET-NULL nas refs FRACAS (parent_recipe_id de derivadas de TERCEIROS, creation_session.
+ *    recipe_id, generation.recipe_id) ⇒ uma derivada de outro SOBREVIVE com snapshot completo,
+ *    só perde o ponteiro pra base (história #157/#288).
+ *
+ * O WHERE inclui owner_id (autoriza na escrita — corrida + defense-in-depth). NÃO precisamos
+ * apagar filhos à mão (o DB cascateia). Leak-safe: o route já provou ownership (404 não-403);
+ * `deleted` cobre a corrida (some entre o gate e o DELETE) — devolve 'not_found' nesse caso.
+ */
+export async function deleteOwnRecipe(
+  db: Database,
+  input: { recipeId: string; viewerId: string },
+): Promise<'ok' | 'not_found'> {
+  const deleted = await db
+    .delete(recipe)
+    .where(and(eq(recipe.id, input.recipeId), eq(recipe.ownerId, input.viewerId)))
+    .returning({ id: recipe.id })
+  return deleted.length > 0 ? 'ok' : 'not_found'
+}

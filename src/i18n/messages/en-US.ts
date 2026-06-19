@@ -266,6 +266,23 @@ export const enUS: Messages = {
     erroNaoEncontrada: "We couldn't find this recipe.",
     erroGenerico: "We couldn't change the visibility. Try again.",
   },
+  // Edit IN-PLACE + delete your OWN recipe (#21). Same substance translated (ADR-0001, not
+  // byte-identical). Confirm editing the public one (#277), delete with irreversibility warning
+  // (#157), and the "link lost" label when a derivative's base was deleted (#289).
+  edicaoPropria: {
+    editarPublicaTitulo: 'Edit public recipe',
+    editarPublicaAviso:
+      "This recipe is public. Your changes will be visible to anyone who favorited it or is viewing it in the community.",
+    editarPublicaConfirmar: 'Save changes',
+    editarPublicaCancelar: 'Cancel',
+    apagarTitulo: 'Delete recipe',
+    apagarAviso: "Deleting is permanent: the recipe is gone for good and can't be recovered.",
+    apagarConfirmar: 'Delete forever',
+    apagarCancelar: 'Cancel',
+    apagando: 'Deleting…',
+    apagarErro: "We couldn't delete the recipe. Try again.",
+    vinculoPerdido: 'The original recipe was deleted — your version is still complete, just no longer linked to it.',
+  },
   comunidade: {
     titulo: 'Community',
     votar: 'Vote',

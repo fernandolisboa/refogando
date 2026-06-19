@@ -288,6 +288,23 @@ export const ptBR = {
     erroNaoEncontrada: 'Não foi possível encontrar esta receita.',
     erroGenerico: 'Não foi possível mudar a visibilidade. Tente de novo.',
   },
+  // Edição IN-PLACE + apagar a PRÓPRIA receita (#21). Confirmar editar a pública (história #277:
+  // a mudança fica visível a quem favoritou), apagar com aviso de irreversibilidade (#157), e o
+  // rótulo de "vínculo perdido" quando a base de uma derivada foi apagada (#289).
+  edicaoPropria: {
+    editarPublicaTitulo: 'Editar receita pública',
+    editarPublicaAviso:
+      'Esta receita é pública. Suas mudanças ficam visíveis para quem já a favoritou ou está vendo na comunidade.',
+    editarPublicaConfirmar: 'Salvar mudanças',
+    editarPublicaCancelar: 'Cancelar',
+    apagarTitulo: 'Apagar receita',
+    apagarAviso: 'Apagar é permanente: a receita some de vez e não dá para recuperar.',
+    apagarConfirmar: 'Apagar para sempre',
+    apagarCancelar: 'Cancelar',
+    apagando: 'Apagando…',
+    apagarErro: 'Não foi possível apagar a receita. Tente de novo.',
+    vinculoPerdido: 'A receita original foi apagada — sua versão continua completa, só sem o vínculo com ela.',
+  },
   comunidade: {
     titulo: 'Comunidade',
     votar: 'Votar',

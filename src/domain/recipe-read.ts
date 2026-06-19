@@ -224,6 +224,17 @@ export type RecipeView = {
    */
   derivedDiff?: DerivedDiff
   /**
+   * Vínculo com a base PERDIDO (#21, história #289) — `true` SÓ quando esta é uma derivada
+   * (`lineageKind='edited'` ⇒ `derivedDiff != null`) cuja base foi APAGADA (hard-delete da #21
+   * ⇒ FK `parent_recipe_id` virou NULL por ON DELETE set null). Sinaliza que o conteúdo
+   * CONTINUA completo (o diff congelado sobrevive — nunca recomputado), só o ponteiro pra
+   * original sumiu — para o dono "não estranhar a ausência do diff". OWNER-GATED como
+   * `derivedDiff` (sai junto com ele, sob `canManage`). DERIVADO de colunas já carregadas
+   * (parentRecipeId + derivedDiff) — NENHUMA query nova. AUSENTE ("ausente ≠ vazio") quando a
+   * base existe, quando não é derivada, ou para não-dono.
+   */
+  vinculoPerdido?: boolean
+  /**
    * Contagem de votos (#16, ADR-0003) — agregado PÚBLICO (Popularidade). Presente SÓ
    * quando a Receita está no POOL (o server só passa `voteCount` para receitas legíveis
    * publicamente); AUSENTE em owned-private (mesma regra "ausente ≠ vazio" — omitido, não
@@ -482,7 +493,13 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // derivedDiff != null). Repassado 1:1 do que o fork ARMAZENOU — NUNCA recomputado aqui
     // (história 289). Catálogo / não-dono / receita não-derivada ⇒ ausente ("ausente ≠ vazio").
     ...(canManage && input.recipe.derivedDiff != null
-      ? { derivedDiff: input.recipe.derivedDiff }
+      ? {
+          derivedDiff: input.recipe.derivedDiff,
+          // Vínculo perdido (#289): a derivada carrega diff (logo é lineageKind='edited') MAS
+          // seu parentRecipeId é NULL ⇒ a base foi apagada (FK set null). Sinaliza SÓ aqui (sai
+          // junto com o diff, owner-gated). "ausente ≠ vazio": só quando perdido (parent NULL).
+          ...(input.recipe.parentRecipeId == null ? { vinculoPerdido: true } : {}),
+        }
       : {}),
     // Social (#16): `voteCount` agregado PÚBLICO, presente só quando o server o passou
     // (i.e. a Receita está no pool) — espelha a regra "ausente ≠ vazio". Independente de
