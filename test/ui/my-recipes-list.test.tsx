@@ -49,6 +49,7 @@ function item(over: Partial<RecipeListItem> = {}): RecipeListItem {
     resultKind: 'success',
     lineageKind: null,
     updatedAt: '2026-06-18T00:00:00.000Z',
+    moderationRemovida: false,
     ...over,
   }
 }
@@ -142,6 +143,19 @@ describe('MyRecipesList (#61)', () => {
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(M.erro)
     semAmbar(container)
+  })
+
+  it('T6 — selo "fora do acervo" numa receita removida-do-pool (moderationRemovida)', async () => {
+    sessionState = authed()
+    mockRecipes([
+      item({ id: 'r-rem', name: 'Minha removida', visibility: 'public', moderationRemovida: true }),
+      item({ id: 'r-ok', name: 'Minha no acervo', visibility: 'public', moderationRemovida: false }),
+    ])
+    renderList()
+    expect(await screen.findByText('Minha removida')).toBeInTheDocument()
+    // O selo aparece exatamente uma vez (só na receita removida).
+    const selos = screen.getAllByText(M.seloRemovida)
+    expect(selos).toHaveLength(1)
   })
 
   it('T5 — en-US: título de selo traduzido', async () => {

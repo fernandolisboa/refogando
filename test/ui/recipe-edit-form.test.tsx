@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh, push }),
 }))
 
-import { LocaleProvider } from '@/i18n/provider'
+import { LocaleProvider, useLocale } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -64,7 +64,26 @@ function mockFetch(byMethod: (method: string) => FetchResult) {
 function renderForm(view: RecipeView, locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeEditForm view={view} locale={locale} />
+      <RecipeEditForm view={view} />
+    </LocaleProvider>,
+  )
+}
+
+/** Botão de teste que troca o locale do provider em runtime (espelha o rodapé). */
+function SwitchLocale({ to, label }: { to: Locale; label: string }) {
+  const { setLocale } = useLocale()
+  return (
+    <button type="button" onClick={() => setLocale(to)}>
+      {label}
+    </button>
+  )
+}
+
+function renderFormSwitchable(view: RecipeView, initialLocale: Locale, switchTo: Locale) {
+  return render(
+    <LocaleProvider initialLocale={initialLocale}>
+      <SwitchLocale to={switchTo} label="trocar-idioma" />
+      <RecipeEditForm view={view} />
     </LocaleProvider>,
   )
 }
@@ -155,5 +174,52 @@ describe('RecipeEditForm (#21/#61)', () => {
     renderForm(ownerView({ visibility: 'private' }), 'en-US')
     await user.click(screen.getByRole('button', { name: enUS.minhasCriacoes.apagar }))
     expect(within(screen.getByRole('dialog')).getByText(enUS.edicaoPropria.apagarAviso)).toBeInTheDocument()
+  })
+
+  it('T5 — PATCH usa o locale ATUAL (trocado no rodapé), não o do render inicial', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
+    // Renderiza em pt-BR (privada, salva direto) e troca para en-US no meio da edição.
+    renderFormSwitchable(ownerView({ visibility: 'private' }), 'pt-BR', 'en-US')
+
+    await user.click(screen.getByRole('button', { name: 'trocar-idioma' }))
+    // Após a troca, os rótulos vêm de en-US.
+    await user.click(screen.getByRole('button', { name: enUS.edicaoPropria.editarPublicaConfirmar }))
+
+    const call = fetchMock.mock.calls[0]
+    expect((call[1] as RequestInit).method).toBe('PATCH')
+    const sent = JSON.parse((call[1] as RequestInit).body as string)
+    // O PATCH carrega o locale ATUAL (en-US), não o estático do primeiro render.
+    expect(sent.locale).toBe('en-US')
+  })
+
+  it('T6 — PATCH que falha na pública: fecha o diálogo E mostra o alerta de erro', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 500 }))
+    renderForm(ownerView({ visibility: 'public' }))
+
+    // Pública: Salvar abre confirmação; confirmar dispara o PATCH (que falha).
+    await user.click(screen.getByRole('button', { name: M.editarPublicaConfirmar }))
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: M.editarPublicaConfirmar }),
+    )
+
+    // Diálogo fechou (overlay não esconde mais o erro) e o alerta ficou visível.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.system.error)
+  })
+
+  it('T7 — DELETE que falha: fecha o diálogo E mostra o alerta de erro', async () => {
+    const user = userEvent.setup()
+    mockFetch((method) => (method === 'DELETE' ? { status: 500 } : { status: 200 }))
+    renderForm(ownerView({ visibility: 'private' }))
+
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.apagar }))
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: M.apagarConfirmar }),
+    )
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.apagarErro)
   })
 })

@@ -95,6 +95,9 @@ describe('GET /api/me/recipes — Minhas criações (#61)', () => {
     expect(playfulItem?.resultKind).toBe('playful')
     const removidaItem = body.recipes.find((r) => r.id === removida)
     expect(removidaItem?.visibility).toBe('public') // remover-do-pool ≠ despublicar
+    expect(removidaItem?.moderationRemovida).toBe(true) // sinaliza "fora do acervo" pro dono
+    // Uma receita NÃO removida não carrega o sinal.
+    expect(body.recipes.find((r) => r.id === priv)?.moderationRemovida).toBe(false)
   })
 
   it('ordena por updated_at DESC (mais recente primeiro) e resolve o título exibido', async () => {

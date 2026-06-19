@@ -39,8 +39,11 @@ function itemsFromView(view: RecipeView): ItemDraft[] {
   return items.length > 0 ? items : [{ rawText: '', quantidade: '', unidade: '' }]
 }
 
-export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: string }) {
-  const { messages } = useLocale()
+export function RecipeEditForm({ view }: { view: RecipeView }) {
+  // O locale do PATCH é o ATUAL (o usuário pode trocar o idioma no rodapé no meio da edição —
+  // a prop estática do servidor ficaria obsoleta e o PATCH atingiria a tradução errada). Espelha
+  // como o create estruturado usa `useLocale().locale` no fetch.
+  const { locale: currentLocale, messages } = useLocale()
   const m = messages.edicaoPropria
   const mc = messages.criar // reusa rótulos de campo do create
   const router = useRouter()
@@ -134,7 +137,7 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
         unidade: it.unidade === '' ? null : it.unidade,
       }))
     return {
-      locale,
+      locale: currentLocale,
       titulo: titulo.trim(),
       descricao: descricao.trim() === '' ? null : descricao,
       passos: passosArr.length > 0 ? passosArr : null,
@@ -160,6 +163,8 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
         body: JSON.stringify(buildPatch()),
       })
       if (!res.ok) {
+        // Fecha o diálogo: senão o overlay z-50 esconde o alerta (role=alert) e trava o usuário.
+        setDialog('none')
         setErrorKey('save')
         return
       }
@@ -167,6 +172,8 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
       // Relê a page server (o detalhe reflete a edição + recomputa Aviso/diff de graça).
       router.refresh()
     } catch {
+      // Mesma razão: o erro só fica visível com o diálogo fechado.
+      setDialog('none')
       setErrorKey('save')
     } finally {
       setSaving(false)
@@ -193,6 +200,8 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
     try {
       const res = await fetch(`/api/recipes/${view.id}`, { method: 'DELETE' })
       if (!res.ok) {
+        // Fecha o diálogo: senão o overlay z-50 esconde o alerta (role=alert) e trava o usuário.
+        setDialog('none')
         setErrorKey('delete')
         setDeleting(false)
         return
@@ -201,6 +210,8 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
       router.push('/me/recipes')
       router.refresh()
     } catch {
+      // Mesma razão: o erro só fica visível com o diálogo fechado.
+      setDialog('none')
       setErrorKey('delete')
       setDeleting(false)
     }
@@ -289,7 +300,7 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
                   onClick={() => removeItem(index)}
                   disabled={itens.length <= 1}
                   aria-label={`${mc.removerIngrediente} ${index + 1}`}
-                  className={`${btnSecondary} disabled:opacity-50`}
+                  className={`${btnSecondary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-50`}
                 >
                   {mc.removerIngrediente}
                 </button>
@@ -417,7 +428,7 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
             type="submit"
             disabled={saving}
             aria-busy={saving}
-            className={`${btnPrimary} disabled:opacity-70`}
+            className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
           >
             {saving ? messages.system.loading : m.editarPublicaConfirmar}
           </button>
@@ -475,7 +486,7 @@ export function RecipeEditForm({ view, locale }: { view: RecipeView; locale: str
                 onClick={dialog === 'confirmDelete' ? apagar : salvar}
                 disabled={dialog === 'confirmDelete' ? deleting : saving}
                 aria-busy={dialog === 'confirmDelete' ? deleting : saving}
-                className={`${btnPrimary} disabled:opacity-70`}
+                className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
               >
                 {dialog === 'confirmDelete'
                   ? deleting

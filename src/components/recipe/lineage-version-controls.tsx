@@ -95,7 +95,7 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
           onClick={regenerar}
           disabled={loading}
           aria-busy={loading}
-          className={`${btnPrimary} disabled:opacity-70`}
+          className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
         >
           {loading ? m.regenerando : m.regenerar}
         </button>

@@ -38,8 +38,9 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
   // ── DONO: gestão da própria Receita ─────────────────────────────────────────
   if (view.canManage) {
     // Regenerar só faz sentido em Receita de IA (ai_chat/ai_structured/ai_free_text); o servidor
-    // 409a outras origens. `classifySection` distingue catálogo de comunidade, mas precisamos do
-    // grupo `ai_*`: usamos o prefixo do origin (catalog/user_edited NÃO são regeneráveis).
+    // 409a outras origens. A regenerabilidade é gateada DIRETO pelo grupo de origin `ai_*` (não
+    // por `classifySection`, que só separa catálogo de comunidade): catalog/user_edited NÃO são
+    // regeneráveis (ADR-0013).
     const isAi = view.origin.startsWith('ai_')
     return (
       <div className="flex flex-col gap-6">
@@ -47,7 +48,7 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
         {view.derivedDiff && (
           <RecipeDiffView diff={view.derivedDiff} vinculoPerdido={view.vinculoPerdido} />
         )}
-        <RecipeEditForm view={view} locale={locale} />
+        <RecipeEditForm view={view} />
         {isAi && <LineageVersionControls recipeId={view.id} />}
       </div>
     )

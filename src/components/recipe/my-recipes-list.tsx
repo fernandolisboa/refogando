@@ -53,6 +53,9 @@ export function MyRecipesList() {
     // Deferido (espelha o feed): o setState não pode rodar síncrono no corpo do effect
     // (cascading renders). TODOS os setState — inclusive o 'loading' inicial — vivem aqui.
     const t = setTimeout(() => {
+      // Limpa a lista do locale anterior ANTES do refetch: senão os cards do idioma antigo
+      // ficam visíveis durante a re-busca (a lista vive FORA da live region).
+      setItems([])
       setStatus('loading')
       void (async () => {
         try {
@@ -82,6 +85,8 @@ export function MyRecipesList() {
     const out: string[] = []
     if (item.resultKind === 'playful') out.push(m.seloPlayful)
     out.push(item.visibility === 'public' ? m.seloPublica : m.seloPrivada)
+    // Removida-do-pool pela moderação (#18): o dono enxerga que saiu do acervo (selo NEUTRO).
+    if (item.moderationRemovida) out.push(m.seloRemovida)
     if (item.lineageKind === 'edited') out.push(m.seloDerivada)
     if (item.lineageKind === 'regenerated') out.push(m.seloRegenerada)
     return out
@@ -117,7 +122,7 @@ export function MyRecipesList() {
             <li key={item.id}>
               <Link
                 href={`/recipes/${item.id}`}
-                className="flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-sm transition-shadow duration-150 ease-out hover:shadow-md"
+                className="flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
               >
                 <span className="font-display text-lg text-fg">{item.name}</span>
                 <span className="flex flex-wrap gap-2">

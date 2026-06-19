@@ -37,6 +37,7 @@ export async function listMyRecipes(
       lineageKind: recipe.lineageKind,
       originalLocale: recipe.originalLocale,
       updatedAt: recipe.updatedAt,
+      moderationRemovedAt: recipe.moderationRemovedAt,
     })
     .from(recipe)
     .where(eq(recipe.ownerId, ownerId))
@@ -85,6 +86,9 @@ export async function listMyRecipes(
         lineageKind: r.lineageKind,
         originalLocale: r.originalLocale,
         updatedAt: r.updatedAt.toISOString(),
+        // `moderation_removed_at NÃO NULL` ⇒ saiu do acervo público (a SELECT-projection é a
+        // única mudança; sem migração — a coluna já existe no schema).
+        moderationRemovida: r.moderationRemovedAt != null,
         translations: byRecipe.get(r.id) ?? [],
       },
       requestLocale,

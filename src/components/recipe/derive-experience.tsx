@@ -210,7 +210,7 @@ export function DeriveExperience({ view, locale }: { view: RecipeView; locale: s
                   onClick={() => removeItem(index)}
                   disabled={itens.length <= 1}
                   aria-label={`${mc.removerIngrediente} ${index + 1}`}
-                  className={`${btnSecondary} disabled:opacity-50`}
+                  className={`${btnSecondary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-50`}
                 >
                   {mc.removerIngrediente}
                 </button>
@@ -275,7 +275,7 @@ export function DeriveExperience({ view, locale }: { view: RecipeView; locale: s
             type="submit"
             disabled={saving}
             aria-busy={saving}
-            className={`${btnPrimary} disabled:opacity-70`}
+            className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
           >
             {saving ? messages.system.loading : messages.minhasCriacoes.criarMinhaVersao}
           </button>

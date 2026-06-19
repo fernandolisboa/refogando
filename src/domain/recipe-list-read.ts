@@ -30,6 +30,9 @@ export type RecipeListRow = {
   lineageKind: LineageKind | null
   originalLocale: string
   updatedAt: string
+  // Removida-do-pool pela moderação (#18). É dado do PRÓPRIO dono (query owner-scoped, sem
+  // vazamento): a lista mostra TUDO que é seu, inclusive o que saiu do acervo público.
+  moderationRemovida: boolean
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -46,6 +49,8 @@ export type RecipeListItem = {
   resultKind: ResultKind
   lineageKind: LineageKind | null
   updatedAt: string
+  // Removida-do-pool (#18): a UI renderiza um selo "fora do acervo" — só o dono vê.
+  moderationRemovida: boolean
 }
 
 /**
@@ -71,5 +76,6 @@ export function resolveRecipeListItem(
     resultKind: row.resultKind,
     lineageKind: row.lineageKind,
     updatedAt: row.updatedAt,
+    moderationRemovida: row.moderationRemovida,
   }
 }
