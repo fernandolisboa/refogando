@@ -25,11 +25,13 @@
 
 import {
   isTranslationReliable,
+  type LineageKind,
   type Origin,
   type ResultKind,
   type TranslationProvenance,
   type Visibility,
 } from '@/domain/recipe'
+import type { DerivedDiff } from '@/domain/recipe-diff'
 import {
   decideRestrictionNotices,
   type RestrictionNotice,
@@ -59,6 +61,18 @@ export type RecipeRow = {
    * camada de servidor, que conhece a sessão).
    */
   ownerId?: string | null
+  /**
+   * Linhagem da DERIVADA (#17) — OPCIONAIS no tipo (mesma razão do `ownerId` acima: o
+   * `select().from(recipe)` os traz em runtime; deixá-los opcionais poupa as fixtures puras).
+   * `ausente ≠ vazio`: `derivedDiff` ausente/`null` ⇒ a receita NÃO é uma derivada (catálogo/
+   * geração nascem `null`). Só linhas `lineageKind='edited'` carregam o diff congelado
+   * (invariante de rota — `derive.ts`). `derivedDiff` é insumo da projeção OWNER-GATED (espelha
+   * `canManage`): só o dono da derivada vê o próprio diff. `parentRecipeId` pode virar `null`
+   * quando a base é apagada (FK ON DELETE set null) — o diff ARMAZENADO sobrevive.
+   */
+  parentRecipeId?: string | null
+  lineageKind?: LineageKind | null
+  derivedDiff?: DerivedDiff | null
 }
 
 /** Linha de tradução conforme `db.select().from(recipeTranslation)`. */
@@ -200,6 +214,15 @@ export type RecipeView = {
   visibility?: Visibility
   /** Desfecho da geração — presente SÓ quando `canManage` (gateia o caso playful no toggle). */
   resultKind?: ResultKind
+  /**
+   * Diff DERIVADO congelado (#17) — a forma versionada que o fork ARMAZENOU em
+   * `recipe.derived_diff`, REPASSADA 1:1 (NUNCA recomputada na leitura — história 289: a base
+   * pode ter sido apagada, anulando `parentRecipeId`). OWNER-GATED como os campos de gestão:
+   * presente SÓ quando o requester é o dono da derivada (`canManage`) E a linha de fato carrega
+   * um diff (`derivedDiff != null`, i.e. é uma `lineageKind='edited'`). AUSENTE para anônimo /
+   * não-dono / catálogo / receitas não-derivadas (mesma regra "ausente ≠ vazio").
+   */
+  derivedDiff?: DerivedDiff
   /**
    * Contagem de votos (#16, ADR-0003) — agregado PÚBLICO (Popularidade). Presente SÓ
    * quando a Receita está no POOL (o server só passa `voteCount` para receitas legíveis
@@ -453,6 +476,13 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           visibility: input.recipe.visibility,
           resultKind: input.recipe.resultKind,
         }
+      : {}),
+    // Diff DERIVADO (#17): OWNER-GATED como a gestão (só o dono da derivada vê o próprio diff)
+    // E presente só quando a linha de fato CARREGA um diff (`lineageKind='edited'` ⇒
+    // derivedDiff != null). Repassado 1:1 do que o fork ARMAZENOU — NUNCA recomputado aqui
+    // (história 289). Catálogo / não-dono / receita não-derivada ⇒ ausente ("ausente ≠ vazio").
+    ...(canManage && input.recipe.derivedDiff != null
+      ? { derivedDiff: input.recipe.derivedDiff }
       : {}),
     // Social (#16): `voteCount` agregado PÚBLICO, presente só quando o server o passou
     // (i.e. a Receita está no pool) — espelha a regra "ausente ≠ vazio". Independente de

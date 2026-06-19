@@ -56,6 +56,16 @@ export const enUS: Messages = {
     filtroCategoria: 'Category',
     filtroRestricao: 'Dietary restriction',
   },
+  // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
+  // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).
+  derivada: {
+    adicionado: 'Added',
+    removido: 'Removed',
+    quantidadeAlterada: 'Quantity changed',
+    restricaoAlterada: 'Dietary restriction changed',
+    copiaTitulo: 'Making a copy',
+    copiaAviso: 'You’re editing a recipe that isn’t yours — we’ll make a copy for you.',
+  },
   // Rótulo amigável por valor do enum COZINHAS (#56), traduzido por locale.
   cozinhaLabel: {
     italiana: 'Italian',
