@@ -306,6 +306,21 @@ export const SYSTEM_PROMPT_DISTILLATION = [
   'A entrada é uma conversa entre o Usuário e o Assistente; destile a receita pretendida.',
 ].join(' ')
 
+/**
+ * systemPrompt da 1ª chamada do modo conversa (`streamConversation` — ADR-0009, call-1):
+ * a resposta que aparece NA TELA pro Usuário. Estende o de destilação com uma instrução de
+ * BREVIDADE pra view focada (#104): a IA responde em 1–2 linhas ("o que mudou"), não a receita
+ * inteira (que aparece à parte, via `RecipeDetailView`).
+ *
+ * NÃO mexer no `SYSTEM_PROMPT_DISTILLATION` nem no `buildConversationPrompt`: a call-2
+ * (destilação estruturada) e o regenerate (#20) precisam do prompt canônico byte-a-byte. Por
+ * isso a brevidade vive numa constante SEPARADA, usada só na call-1.
+ */
+export const SYSTEM_PROMPT_CONVERSATION_STREAM =
+  SYSTEM_PROMPT_DISTILLATION +
+  ' Responda ao Usuário em no máximo 1–2 linhas: diga o que você fez ou o que mudou nesta receita.' +
+  ' Não escreva preâmbulo nem saudação, e não liste a receita inteira — a receita completa aparece à parte.'
+
 function rotuloFala(role: TranscriptMessage['role']): string {
   return role === 'user' ? 'Usuário' : 'Assistente'
 }

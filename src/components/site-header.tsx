@@ -40,9 +40,6 @@ export function SiteHeader() {
           <Link href="/create" className="transition-colors hover:text-fg">
             {messages.nav.create}
           </Link>
-          <Link href="/conversation" className="transition-colors hover:text-fg">
-            {messages.nav.conversar}
-          </Link>
           {authed && (
             <Link href="/me/recipes" className="transition-colors hover:text-fg">
               {messages.minhasCriacoes.titulo}

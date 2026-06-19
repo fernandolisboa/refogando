@@ -52,6 +52,10 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
     const nav = screen.getByRole('navigation')
     expect(within(nav).getByText('Início')).toBeInTheDocument()
     expect(within(nav).getByText('Receitas')).toBeInTheDocument()
+    // Criar PRESENTE na nav; a entrada "Conversar" foi removida (#104 S6 — o Modo Conversa
+    // vive dentro de /create agora, não como um slot de nav próprio).
+    expect(within(nav).getByText('Criar')).toBeInTheDocument()
+    expect(within(nav).queryByText('Conversar')).not.toBeInTheDocument()
     expect(screen.getByText('Entrar')).toBeInTheDocument()
     // O seletor de idioma agora vive no footer (único combobox da chrome).
     const select = screen.getByRole('combobox') as HTMLSelectElement
@@ -64,6 +68,9 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
     expect(select.value).toBe('en-US')
     expect(within(nav).getByText('Home')).toBeInTheDocument()
     expect(within(nav).getByText('Recipes')).toBeInTheDocument()
+    // Create PRESENTE; "Chat" (a antiga entrada Conversar) AUSENTE após o locale-switch também.
+    expect(within(nav).getByText('Create')).toBeInTheDocument()
+    expect(within(nav).queryByText('Chat')).not.toBeInTheDocument()
     expect(screen.getByText('Sign in')).toBeInTheDocument()
     expect(within(nav).queryByText('Início')).not.toBeInTheDocument()
   })
