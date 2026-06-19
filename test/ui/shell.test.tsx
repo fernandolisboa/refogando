@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -18,14 +18,14 @@ vi.mock('next/link', () => ({
 // O AuthSlot agora chama useSession; sem mock o hook tentaria buscar /api/auth/get-session
 // (quebraria no jsdom). Mock com o shape COMPLETO de useSession (Visitante: data=null), pra
 // as asserções de "Entrar"/"Sign in" do header seguirem válidas e o contrato tipado bater.
+// Sessão MUTÁVEL por teste (Visitante por padrão; um teste a torna logada p/ ver "Minhas
+// criações"). `vi.hoisted` porque a factory de `vi.mock` é içada acima dos imports.
+const authMock = vi.hoisted(() => {
+  const anon = { data: null, error: null, isPending: false, isRefetching: false, refetch: () => {} }
+  return { anon, current: anon as unknown }
+})
 vi.mock('@/lib/auth-client', () => ({
-  useSession: () => ({
-    data: null,
-    error: null,
-    isPending: false,
-    isRefetching: false,
-    refetch: vi.fn(),
-  }),
+  useSession: () => authMock.current,
   signOut: vi.fn(),
 }))
 
@@ -73,5 +73,32 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
     expect(within(nav).queryByText('Chat')).not.toBeInTheDocument()
     expect(screen.getByText('Sign in')).toBeInTheDocument()
     expect(within(nav).queryByText('Início')).not.toBeInTheDocument()
+  })
+
+  afterEach(() => {
+    authMock.current = authMock.anon
+  })
+
+  it('logado: "Minhas criações" vem ANTES de "Criar" na nav (Criar é a CTA destacada por último)', () => {
+    authMock.current = {
+      data: { user: { id: 'u1', name: 'X', email: 'x@y.z', role: 'user', deletedAt: null } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: () => {},
+    }
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+      </LocaleProvider>,
+    )
+    const nav = screen.getByRole('navigation')
+    const labels = within(nav)
+      .getAllByRole('link')
+      .map((a) => a.textContent)
+    const iMinhas = labels.indexOf('Minhas criações')
+    const iCriar = labels.indexOf('Criar')
+    expect(iMinhas).toBeGreaterThanOrEqual(0)
+    expect(iCriar).toBeGreaterThan(iMinhas)
   })
 })
