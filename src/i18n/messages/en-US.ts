@@ -7,7 +7,7 @@ import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
-  nav: { home: 'Home', recipes: 'Recipes', create: 'Create', conversar: 'Chat', signIn: 'Sign in', signOut: 'Sign out' },
+  nav: { home: 'Home', recipes: 'Recipes', create: 'Create', signIn: 'Sign in', signOut: 'Sign out' },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   system: {
     loading: 'Loading…',

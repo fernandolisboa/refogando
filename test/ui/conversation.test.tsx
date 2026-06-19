@@ -6,13 +6,20 @@ import type { ReactNode } from 'react'
 import type { RecipeView } from '@/domain/recipe-read'
 
 /**
- * Teste de COMPONENTE jsdom do modo CONVERSA (#60) — o seam de frontend acima do servidor
- * (sem browser/Postgres). A novidade vs. create-structured.test.tsx: o transporte é NDJSON em
- * STREAMING. O mock de `fetch` discrimina por URL e devolve, para `/api/conversations/stream`,
- * uma Response-like cujo `body` é um ReadableStream REAL que emite chunks
- * `TextEncoder().encode(JSON.stringify(frame) + '\n')`. Os chunks são liberados por um
- * `deferred()` entre asserts (anti-vácuo) → o teste PROVA que os tokens aparecem
- * INCREMENTALMENTE (texto parcial visível ANTES do frame terminal), não só no estado final.
+ * Teste de COMPONENTE jsdom do modo CONVERSA (#60/#104) — o seam de frontend acima do servidor
+ * (sem browser/Postgres). Renderiza `ConversaFocusedView` (a VISTA FOCADA do Modo Conversa, que
+ * vive em `/create` desde #104 S7), NÃO mais o monólito `conversation-experience.tsx` (deletado).
+ *
+ * A vista é FOCADA, não um log: só o ÚLTIMO par de falas (Usuário + resposta da IA) aparece
+ * inline; o histórico COMPLETO fica atrás de "Ver transcrição" (modal read-only). As asserções
+ * que antes verificavam "todo o histórico visível inline" foram re-alvadas a essa realidade.
+ *
+ * A novidade vs. create-structured.test.tsx: o transporte é NDJSON em STREAMING. O mock de
+ * `fetch` discrimina por URL e devolve, para `/api/conversations/stream`, uma Response-like cujo
+ * `body` é um ReadableStream REAL que emite chunks `TextEncoder().encode(JSON.stringify(frame) +
+ * '\n')`. Os chunks são liberados UM A UM entre asserts (anti-vácuo) → o teste PROVA que os
+ * tokens aparecem INCREMENTALMENTE (texto parcial visível ANTES do frame terminal), não só no
+ * estado final.
  *
  * Demais stubs: `POST /api/creation-sessions` → {sessionId}; `GET /api/recipes/{id}?locale=` →
  * RecipeView CRU (2º GET); `GET /api/creation-sessions/{id}` → retomada; `DELETE
@@ -44,7 +51,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
-import { ConversationExperience } from '@/components/recipe/conversation-experience'
+import { ConversaFocusedView } from '@/components/recipe/conversa-focused-view'
 
 const M = ptBR.conversa
 
@@ -61,7 +68,7 @@ function authed(): SessionState {
 function renderConversation(locale: Locale = 'pt-BR', resumeSessionId?: string) {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <ConversationExperience resumeSessionId={resumeSessionId} />
+      <ConversaFocusedView resumeSessionId={resumeSessionId} />
     </LocaleProvider>,
   )
 }
@@ -220,7 +227,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('ConversationExperience (#60)', () => {
+describe('ConversaFocusedView (#60/#104)', () => {
   it('C1 — visitante anônimo vê o convite para entrar, não o chat', () => {
     sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
     renderConversation()
@@ -376,10 +383,10 @@ describe('ConversationExperience (#60)', () => {
 
     expect(await screen.findByText(M.resultadoImpossivel)).toBeInTheDocument()
     expect(screen.getByText(/Isso não é comida\./)).toBeInTheDocument()
-    // Sem Receita: conversa.titulo permanece <h1> e é o único heading nível 1.
-    const h1s = screen.getAllByRole('heading', { level: 1 })
-    expect(h1s).toHaveLength(1)
-    expect(h1s[0]).toHaveTextContent(M.titulo)
+    // Sem Receita: na vista FOCADA o titulo é o <h2> e NÃO há <h1> (o <h1> só entra com o nome
+    // da Receita, que aqui não existe — impossível).
+    expect(screen.getByRole('heading', { level: 2, name: M.titulo })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
   })
 
@@ -550,7 +557,8 @@ describe('ConversationExperience (#60)', () => {
     })
     renderConversation('pt-BR', 'sess-x')
 
-    // Transcrição prévia reidratada.
+    // Transcrição prévia reidratada. Na vista FOCADA só o ÚLTIMO par de falas aparece inline —
+    // aqui o transcript reidratado JÁ É esse par (user + assistant), então ambos ficam visíveis.
     expect(await screen.findByText('oi de novo')).toBeInTheDocument()
     expect(screen.getByText('oi! bem-vinda de volta')).toBeInTheDocument()
     // Receita atual reidratada (heading pelo nome) — um único <h1>.
@@ -620,10 +628,13 @@ describe('ConversationExperience (#60)', () => {
     renderConversation('en-US')
     expect(screen.getByRole('button', { name: enUS.conversa.enviar })).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.conversa.inputLabel)).toBeInTheDocument()
-    expect(screen.getByText(enUS.conversa.conversaVazia)).toBeInTheDocument()
-    const h1s = screen.getAllByRole('heading', { level: 1 })
-    expect(h1s).toHaveLength(1)
-    expect(h1s[0]).toHaveTextContent(enUS.conversa.titulo)
+    // A vista FOCADA não tem o texto de "conversa vazia" do log antigo; a descrição localizada
+    // ancora o locale sem conversa iniciada.
+    expect(screen.getByText(enUS.conversa.descricao)).toBeInTheDocument()
+    // Na vista focada autenticada SEM Receita, `titulo` é um <h2> (cede o <h1> para o nome da
+    // Receita quando ela entra); nenhum <h1> existe ainda.
+    expect(screen.getByRole('heading', { level: 2, name: enUS.conversa.titulo })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 
   it('C18 — RETOMADA falhou (GET 404): mensagem clara + saída pra nova conversa, sem crash', async () => {
@@ -632,8 +643,12 @@ describe('ConversationExperience (#60)', () => {
     renderConversation('pt-BR', 'sess-inexistente')
 
     expect(await screen.findByText(M.retomarFalhou)).toBeInTheDocument()
-    // Caminho de saída para uma conversa NOVA (sem id).
-    expect(screen.getByRole('link', { name: M.novaConversa })).toHaveAttribute('href', '/conversation')
+    // Caminho de saída para uma conversa NOVA: a entrada limpa do Modo Conversa agora é a tela
+    // CRIAR unificada (#104 S7) — `/create?mode=conversa`, NÃO o antigo `/conversation`.
+    expect(screen.getByRole('link', { name: M.novaConversa })).toHaveAttribute(
+      'href',
+      '/create?mode=conversa',
+    )
     // Não renderizou o chat (sem input) e não quebrou (heading nível 1 presente).
     expect(screen.queryByLabelText(M.inputLabel)).toBeNull()
     const h1s = screen.getAllByRole('heading', { level: 1 })
@@ -659,15 +674,17 @@ describe('ConversationExperience (#60)', () => {
 
     await user.click(screen.getByRole('button', { name: M.novaConversa }))
 
-    // Volta ao estado inicial: transcript vazio, sem Receita, input limpo.
-    await waitFor(() => expect(screen.getByText(M.conversaVazia)).toBeInTheDocument())
-    expect(screen.queryByText('feijão')).toBeNull()
+    // Volta ao estado inicial: transcript vazio, sem Receita, input limpo. A vista FOCADA não
+    // tem o texto "conversa vazia" do log antigo — provamos o reset pela AUSÊNCIA do último par
+    // de falas e da Receita, e pelo input zerado.
+    await waitFor(() => expect(screen.queryByText('feijão')).toBeNull())
     expect(screen.queryByText(M.resultadoSucesso)).toBeNull()
     expect(screen.getByLabelText(M.inputLabel)).toHaveValue('')
-    // titulo voltou a ser o único <h1> (a Receita saiu da tela).
-    const h1s = screen.getAllByRole('heading', { level: 1 })
-    expect(h1s).toHaveLength(1)
-    expect(h1s[0]).toHaveTextContent(M.titulo)
+    // Sem Receita na tela: titulo é o <h2> e não há nenhum <h1>.
+    expect(screen.getByRole('heading', { level: 2, name: M.titulo })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // "Ver transcrição" some quando não há mais conversa (transcript zerado).
+    expect(screen.queryByRole('button', { name: M.verTranscricao })).toBeNull()
 
     // Próximo turno cria uma Session NOVA (sessionId foi zerado) → 2º POST de createSession.
     const ctrl2 = makeStreamController()
@@ -721,5 +738,75 @@ describe('ConversationExperience (#60)', () => {
     expect(await within(dialog).findByText(M.apagarErro)).toBeInTheDocument()
     // A transcrição PERMANECE (apagar falhou → nada foi zerado).
     expect(screen.getByText('apaga isso')).toBeInTheDocument()
+  })
+
+  it('C21 — vista focada após ERRO: transcript termina em USER → só a bolha do Usuário, sem bolha da IA', async () => {
+    // Após um frame de erro o turno do Assistente NÃO é commitado: o transcript termina em
+    // 'user'. `lastExchange` então devolve { user, assistant: null } e a vista focada mostra
+    // SÓ a bolha do Usuário — nenhuma bolha de resposta da IA fica pendurada.
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    mockFetch({ stream: ctrl })
+    renderConversation()
+
+    await enviar(user, 'meu pedido')
+    // Stream emite um token parcial e então um frame de erro (sem terminal recipe).
+    ctrl.push({ type: 'token', text: 'rascunho parcial' })
+    await screen.findByText('rascunho parcial')
+    ctrl.push({ type: 'error', error: 'geracao_invalida' })
+    ctrl.close()
+
+    // O frame de erro chegou: a bolha viva foi descartada (turno do Assistente não commitado).
+    await screen.findByRole('alert')
+    // A bolha do Usuário do último par permanece visível…
+    expect(screen.getByText('meu pedido')).toBeInTheDocument()
+    // …e NÃO há bolha de resposta da IA: nem o texto parcial, nem o rótulo da resposta da IA.
+    expect(screen.queryByText('rascunho parcial')).toBeNull()
+    expect(screen.queryByText(M.respostaIA)).toBeNull()
+  })
+
+  it('C22 — "Ver transcrição" mostra o histórico COMPLETO multi-turno embora só o último par esteja inline', async () => {
+    const user = userEvent.setup()
+    let ctrl = makeStreamController()
+    const fetchMock = mockFetch({
+      stream: () => Promise.resolve(ctrl),
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+      recipes: { status: 200, body: baseView() },
+    })
+    renderConversation()
+
+    // Turno 1: pergunta A → resposta A.
+    await enviar(user, 'pergunta A')
+    ctrl.push({ type: 'token', text: 'resposta A' })
+    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl.close()
+    await screen.findByText(M.resultadoSucesso)
+
+    // Turno 2: pergunta B → resposta B. O par 1 é SOBRESCRITO inline (vista focada).
+    ctrl = makeStreamController()
+    await enviar(user, 'pergunta B')
+    ctrl.push({ type: 'token', text: 'resposta B' })
+    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl.close()
+    await waitFor(() => expect(screen.getAllByText(M.resultadoSucesso).length).toBeGreaterThan(0))
+
+    // INLINE: só o último par (B). O par 1 (A) NÃO está mais inline.
+    expect(screen.queryByText('pergunta A')).toBeNull()
+    expect(screen.queryByText('resposta A')).toBeNull()
+    expect(screen.getByText('pergunta B')).toBeInTheDocument()
+    expect(screen.getByText('resposta B')).toBeInTheDocument()
+
+    // "Ver transcrição" abre o modal read-only com o histórico COMPLETO (os DOIS turnos).
+    await user.click(screen.getByRole('button', { name: M.verTranscricao }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(M.transcricaoTitulo)).toBeInTheDocument()
+    expect(within(dialog).getByText('pergunta A')).toBeInTheDocument()
+    expect(within(dialog).getByText('resposta A')).toBeInTheDocument()
+    expect(within(dialog).getByText('pergunta B')).toBeInTheDocument()
+    expect(within(dialog).getByText('resposta B')).toBeInTheDocument()
+    // Sanidade: o stream foi exercido nos dois turnos.
+    expect(
+      fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/conversations/stream')),
+    ).toHaveLength(2)
   })
 })
