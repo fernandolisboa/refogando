@@ -1,4 +1,5 @@
 import { getDb } from '@/server/deps'
+import { requireSession } from '@/server/auth/guard'
 import { resolveLocale } from '@/i18n/locale'
 import { loadFeed } from '@/server/recipe/feed'
 import {
@@ -10,9 +11,14 @@ import {
 
 /**
  * Feed do /recipes (#103): GET `?cursor=&limit=&locale=`. Lista PLANA e cronológica do pool
- * (Catálogo + Comunidade), paginada por cursor keyset — scroll infinito. SEM auth (Visitante
- * anônimo, ADR-0011). Route FINO (espelha `api/search/route.ts`): canonicaliza o locale na
- * borda, delega o load ao `loadFeed` e o display ao módulo PURO `buildFeedResponse`.
+ * (Catálogo + Comunidade), paginada por cursor keyset — scroll infinito. Route FINO (espelha
+ * `api/search/route.ts`): canonicaliza o locale na borda, delega o load ao `loadFeed` e o
+ * display ao módulo PURO `buildFeedResponse`.
+ *
+ * AUTH OPCIONAL (#116): resolve a sessão SEM 401 — Visitante (ADR-0011) segue com acesso de
+ * leitura ao pool da comunidade; LOGADO recebe `viewerId` e o feed inclui também as PRÓPRIAS
+ * Receitas (privadas inclusive). `requireSession` falhando (anônimo/conta desativada) ⇒
+ * `viewerId` undefined ⇒ comportamento de antes byte-a-byte (NUNCA propaga o 401 daqui).
  *
  * Bordas PERMISSIVAS (política "nunca tela quebrada"): `limit` inválido → default; `cursor`
  * malformado → começo do feed (decodeCursor → null). Nunca 400/500 por input de URL.
@@ -34,8 +40,13 @@ export async function GET(request: Request): Promise<Response> {
   const limit = parseLimit(url.searchParams.get('limit'))
   const cursor = decodeCursor(url.searchParams.get('cursor'))
 
+  // #116: sessão OPCIONAL — anônimo (ou conta desativada) NÃO é 401 aqui, só não recebe
+  // `viewerId`. LOGADO ⇒ o feed inclui também as próprias Receitas (privadas inclusive).
+  const g = await requireSession(request)
+  const viewerId = g.ok ? g.session.user.id : undefined
+
   const db = getDb()
-  const rows = await loadFeed(db, { requestLocale, limit, cursor })
+  const rows = await loadFeed(db, { requestLocale, limit, cursor, viewerId })
   const body = buildFeedResponse(rows, requestLocale, limit)
   return Response.json(body)
 }

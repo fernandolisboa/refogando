@@ -48,6 +48,8 @@ export const ptBR = {
     placeholder: 'Digite um prato, ingrediente ou estilo culinário',
     buscar: 'Buscar',
     dicaInicial: 'Comece digitando um prato, ingrediente ou estilo que você curte — ou use os filtros.',
+    // #116: usuário LOGADO busca também nas PRÓPRIAS receitas (privadas inclusive).
+    dicaInicialLogado: 'Comece digitando um prato, ingrediente ou estilo — buscamos nas suas receitas e nas da comunidade.',
     semResultado: 'Nenhuma receita encontrada. Tente outro termo ou ajuste os filtros.',
     secaoCatalogo: 'Catálogo',
     secaoComunidade: 'Comunidade',
@@ -66,6 +68,8 @@ export const ptBR = {
   feed: {
     titulo: 'Receitas',
     subtitulo: 'O que a comunidade anda cozinhando, do mais novo ao mais antigo.',
+    // #116: usuário LOGADO vê também as PRÓPRIAS receitas (privadas inclusive) no feed.
+    subtituloLogado: 'Suas receitas e o que a comunidade anda cozinhando, do mais novo ao mais antigo.',
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',
     fim: 'Você chegou ao fim.',

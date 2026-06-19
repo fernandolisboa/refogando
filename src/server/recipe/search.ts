@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { communityVisibleSqlFragment } from '@/server/recipe/visibility-sql'
+import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
 import type { SearchHitRow } from '@/domain/recipe-search-read'
 import { type EffectiveFacets, isFacetsEmpty } from '@/domain/facet-params'
 import type { SortMode } from '@/domain/sort-params'
@@ -82,7 +82,12 @@ function vectorLiteral(v: number[]): string {
  * LANDMINE: NENHUM backtick dentro deste template (nem em comentário) — terminaria o
  * `sql\`...\``. Comentários explicativos ficam AQUI no TS, fora do template.
  */
-function semanticSelectSql(litVec: string, requestLocale: string, facetSql: SQL): SQL {
+function semanticSelectSql(
+  litVec: string,
+  requestLocale: string,
+  facetSql: SQL,
+  viewerId: string | undefined,
+): SQL {
   return sql`
       SELECT DISTINCT ON (re.recipe_id)
         re.recipe_id AS recipe_id,
@@ -94,7 +99,7 @@ function semanticSelectSql(litVec: string, requestLocale: string, facetSql: SQL)
       JOIN recipe r ON r.id = re.recipe_id
       WHERE re.embedding IS NOT NULL
         AND r.result_kind <> 'playful'
-        AND ${communityVisibleSqlFragment('r')}
+        AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ORDER BY re.recipe_id,
@@ -186,6 +191,13 @@ export async function searchRecipes(
      * editorial e IGNORA sort (a chave de popularidade é gateada por section='comunidade').
      */
     sort?: SortMode
+    /**
+     * Viewer LOGADO (#116): inclui as PRÓPRIAS Receitas (privadas inclusive) em TODO site de
+     * gate (visible/semantic/bucket2/ingredient_raw_hit), via `viewerReadableSqlFragment`.
+     * `undefined` (anônimo, ADR-0011) ⇒ os gates reduzem ao de comunidade — Busca de antes
+     * byte-a-byte. O `viewerId` é BINDADO como param em cada site (nunca interpolado).
+     */
+    viewerId?: string
   },
 ): Promise<SearchLoaderResult> {
   // Cap de entrada: truncar (nao rejeitar). O curto-circuito de estado neutro
@@ -195,6 +207,8 @@ export async function searchRecipes(
   const requestLocale = args.requestLocale
   const terms = args.terms
   const facets = args.facets
+  // #116: viewer logado (undefined = anônimo). Threaded em TODO site de gate abaixo.
+  const viewerId = args.viewerId
   // Hardening no ponto de consumo: com terms=[] o ramo 'all' (ov.overlap = 0 sobre o
   // FULL OUTER JOIN) zeraria TODA linha so-titulo (ov.overlap=NULL). Um caller direto
   // que passe {terms:[], mode:'all'} cairia nessa armadilha; forcamos 'any'. No-op para
@@ -236,7 +250,7 @@ export async function searchRecipes(
   // some, bucket 2 some, cosine_sim constante 0.
   const semanticCteSql = hasVector
     ? sql`
-    , semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql)})`
+    , semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql, viewerId)})`
     : sql``
 
   // Coluna de similaridade no visible: COALESCE(s.cosine_sim,0) (NULL-safe) quando ha
@@ -304,7 +318,7 @@ export async function searchRecipes(
           SELECT 1 FROM combined c
           JOIN recipe r ON r.id = c.recipe_id
           WHERE r.result_kind <> 'playful'
-            AND ${communityVisibleSqlFragment('r')}
+            AND ${viewerReadableSqlFragment('r', viewerId)}
             AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         )
         AND NOT EXISTS (SELECT 1 FROM combined c WHERE c.recipe_id = s.recipe_id)
@@ -354,7 +368,7 @@ export async function searchRecipes(
       FROM recipe r
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
-        AND ${communityVisibleSqlFragment('r')}
+        AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
     `
@@ -374,7 +388,7 @@ export async function searchRecipes(
       ${semanticJoinSql}
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
-        AND ${communityVisibleSqlFragment('r')}
+        AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ${bucket2Sql}
@@ -452,18 +466,20 @@ export async function searchRecipes(
       -- v1 (tabelas minusculas); #14 deve materializar to_tsvector(raw_text) UMA vez por
       -- linha (ja gated) e dar @@ em cada termo.
       -- Gate de leitura empurrado para CA (perf, preservando comportamento): r2 (recipe)
-      -- ja esta joinado aqui, entao aplicamos o MESMO gate canonico do CTE visible
-      -- (playful excluido + owner NULL OR public) ANTES do @@ caro, descartando linhas de
-      -- Receitas privadas/playful que o CTE visible dropa de qualquer jeito. overlap/rank
-      -- sao por recipe_id e as Receitas gated nunca sobrevivem a visible, logo nenhum
-      -- score de Receita visivel muda.
+      -- ja esta joinado aqui, entao aplicamos o MESMO gate do CTE visible
+      -- (viewerReadableSqlFragment: playful excluido + owner NULL OR public OR owner=viewer)
+      -- ANTES do @@ caro, descartando linhas que o CTE visible dropa de qualquer jeito.
+      -- #116 (load-bearing): o gate aqui DEVE espelhar o do CTE visible -- com viewer logado,
+      -- o visible agora deixa passar as PROPRIAS privadas, entao se este filtrasse so
+      -- comunidade um ingrediente-por-raw_text da PROPRIA privada nao casaria (overlap=0) e a
+      -- receita do dono nao apareceria por ingrediente. Mesmo viewerId BINDADO dos dois lados.
       SELECT DISTINCT ri.recipe_id AS recipe_id, t.idx AS term_idx
       FROM recipe_ingredient ri
       JOIN recipe r2 ON r2.id = ri.recipe_id
       CROSS JOIN terms t
       WHERE ri.raw_text IS NOT NULL
         AND r2.result_kind <> 'playful'
-        AND ${communityVisibleSqlFragment('r2')}
+        AND ${viewerReadableSqlFragment('r2', viewerId)}
         AND r2.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         AND to_tsvector(
               recipe_ts_config(r2.original_locale),
@@ -576,7 +592,7 @@ export async function searchRecipes(
     WITH params AS (
       SELECT ${requestLocale}::text AS req_locale
     ),
-    semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql)}),
+    semantic AS (${semanticSelectSql(litVec, requestLocale, facetSql, viewerId)}),
     numbered AS (
       SELECT
         s.recipe_id AS recipe_id,

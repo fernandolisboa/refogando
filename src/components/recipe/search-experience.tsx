@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { btnPrimary, btnSecondary } from '@/components/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
@@ -32,6 +33,12 @@ const DEBOUNCE_MS = 300
 export function SearchExperience() {
   const { locale, messages } = useLocale()
   const m = messages.busca
+
+  // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
+  // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
+  // (error / isPending) → trata como anônimo (dica de comunidade), sem travar a tela.
+  const { data: session } = useSession()
+  const dicaInicial = session ? m.dicaInicialLogado : m.dicaInicial
 
   const [q, setQ] = useState('')
   const [cozinha, setCozinha] = useState<string[]>([])
@@ -247,7 +254,7 @@ export function SearchExperience() {
 
         {/* Inicial neutro: só quando nunca houve resultado (não some pra dar lugar ao loading). */}
         {status === 'idle' && data === null && (
-          <p className="text-muted">{m.dicaInicial}</p>
+          <p className="text-muted">{dicaInicial}</p>
         )}
 
         {/* Vazio: a busca concluiu sem resultado. */}

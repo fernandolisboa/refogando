@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { btnSecondary } from '@/components/button'
 import type { SearchResult } from '@/domain/recipe-search-read'
@@ -30,6 +31,13 @@ export function RecipeFeedExperience() {
   const { locale, messages } = useLocale()
   const m = messages.busca
   const mf = messages.feed
+
+  // #116: estado de sessão SÓ para a CÓPIA (subtítulo). O `viewerId` real e o gate vivem no
+  // servidor (GET /api/feed o resolve do cookie) — a UI nunca passa id nenhum. fail-open
+  // (error / isPending) → trata como anônimo (subtítulo de comunidade), sem travar a tela.
+  const { data: session } = useSession()
+  const isAuthed = Boolean(session)
+  const subtitulo = isAuthed ? mf.subtituloLogado : mf.subtitulo
 
   const [items, setItems] = useState<SearchResult[]>([])
   const [endReached, setEndReached] = useState(false)
@@ -130,7 +138,7 @@ export function RecipeFeedExperience() {
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           {mf.titulo}
         </h1>
-        <p className="text-muted">{mf.subtitulo}</p>
+        <p className="text-muted">{subtitulo}</p>
       </div>
 
       {/* Erro da 1ª página: substitui o feed (role=alert anuncia). */}

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -14,6 +14,37 @@ vi.mock('next/link', () => ({
     </a>
   ),
 }))
+
+// #116: o feed agora lê useSession só para escolher o SUBTÍTULO (anônimo vs logado). Sem mock,
+// o hook tentaria buscar /api/auth/get-session (quebra no jsdom). Estado MUTÁVEL por teste:
+// anônimo por padrão (data=null); o teste de cópia-logada troca para `authed()`.
+type SessionState = {
+  data: unknown
+  error: unknown
+  isPending: boolean
+  isRefetching: boolean
+  refetch: () => void
+}
+let sessionState: SessionState
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => sessionState,
+}))
+
+function anon(): SessionState {
+  return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+}
+function authed(): SessionState {
+  return {
+    data: { user: { id: 'u-1', name: 'Ana' }, session: { id: 's-1' } },
+    error: null,
+    isPending: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+  }
+}
+beforeEach(() => {
+  sessionState = anon()
+})
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -168,5 +199,38 @@ describe('RecipeFeedExperience (#103)', () => {
     await screen.findByText(ptBR.system.error)
     expect(screen.getByText('Feijoada')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: MF.carregarMais })).toBeInTheDocument()
+  })
+
+  it('F6 (#116) — anônimo vê o subtítulo de COMUNIDADE; não o de "suas receitas"', async () => {
+    sessionState = anon()
+    stubFetchSequence([{ feed: [item('r1', 'Feijoada', 'catalog')], nextCursor: null }])
+    renderFeed()
+
+    await screen.findByText('Feijoada')
+    expect(screen.getByText(MF.subtitulo)).toBeInTheDocument()
+    expect(screen.queryByText(MF.subtituloLogado)).not.toBeInTheDocument()
+  })
+
+  it('F7 (#116) — LOGADO: subtítulo "suas receitas + comunidade" E a própria privada renderiza', async () => {
+    sessionState = authed()
+    // A linha PRIVADA do dono chega no payload do /api/feed (o gate do servidor a inclui p/ o
+    // viewer); a UI a renderiza como qualquer item (selo de comunidade — o DTO não carrega
+    // visibility; o importante é NÃO quebrar). Modela "private own row renders".
+    stubFetchSequence([
+      {
+        feed: [item('rPriv', 'Minha Privada', 'ai_chat'), item('rCat', 'Feijoada', 'catalog')],
+        nextCursor: null,
+      },
+    ])
+    renderFeed()
+
+    await screen.findByText('Minha Privada')
+    // Cópia autenticada (key-path idêntica entre locales).
+    expect(screen.getByText(MF.subtituloLogado)).toBeInTheDocument()
+    expect(screen.queryByText(MF.subtitulo)).not.toBeInTheDocument()
+    // A própria privada renderiza sem quebrar, com link para o detalhe canônico.
+    const priv = screen.getByText('Minha Privada').closest('li')!
+    expect(within(priv).getByRole('link')).toHaveAttribute('href', '/recipes/rPriv')
+    expect(screen.getByText('Feijoada')).toBeInTheDocument()
   })
 })

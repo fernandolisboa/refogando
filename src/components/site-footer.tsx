@@ -13,7 +13,7 @@ export function SiteFooter() {
   const { messages } = useLocale()
   return (
     <footer className="border-t border-border">
-      <Container className="flex flex-col gap-4 py-8">
+      <Container className="flex flex-col items-start gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
           <span className="font-display text-lg font-semibold text-brand-ink">
             {messages.app.name}

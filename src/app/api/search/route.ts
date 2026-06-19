@@ -1,4 +1,5 @@
 import { getDb, getEmbedder } from '@/server/deps'
+import { requireSession } from '@/server/auth/guard'
 import { resolveLocale } from '@/i18n/locale'
 import { searchRecipes, MAX_QUERY_LEN } from '@/server/recipe/search'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
@@ -23,8 +24,10 @@ import {
  * Route fino — espelha o template de `recipes/[id]/route.ts` (runtime nodejs,
  * getDb(), Response.json) e delega o display ao módulo PURO `buildSearchResponse`.
  *
- * GET `?q=` + `?locale=`. SEM auth (Visitante anônimo — ADR-0011). Rota ESTÁTICA
- * (sem params dinâmicos): lê tudo da URL.
+ * GET `?q=` + `?locale=`. AUTH OPCIONAL (#116): resolve a sessão SEM 401 — Visitante
+ * (ADR-0011) busca só o pool da comunidade; LOGADO recebe `viewerId` e a Busca inclui também
+ * as PRÓPRIAS Receitas (privadas inclusive). `requireSession` falhando (anônimo/conta
+ * desativada) ⇒ `viewerId` undefined ⇒ comportamento de antes (NUNCA propaga o 401 daqui).
  *
  * Diferença deliberada vs. `recipes/[id]/route.ts`: em vez de `parseRequestLocale`
  * (que devolve o `?locale` CRU), a Busca CANONICALIZA o locale na borda via
@@ -168,6 +171,11 @@ export async function GET(request: Request): Promise<Response> {
   // So afeta a chave condicional do ORDER BY na Comunidade; o Catalogo ignora (ADR-0003).
   const sort = parseSort(url.searchParams.get('sort'))
 
+  // #116: sessão OPCIONAL — anônimo (ou conta desativada) NÃO é 401 aqui, só não recebe
+  // `viewerId`. LOGADO ⇒ a Busca inclui também as próprias Receitas (privadas inclusive).
+  const g = await requireSession(request)
+  const viewerId = g.ok ? g.session.user.id : undefined
+
   const db = getDb()
   const { hits, sugestoes } = await searchRecipes(db, {
     q,
@@ -177,6 +185,7 @@ export async function GET(request: Request): Promise<Response> {
     facets,
     queryVector,
     sort,
+    viewerId,
   })
   const body = buildSearchResponse(hits, requestLocale, consulta, sugestoes)
   return Response.json(body)
