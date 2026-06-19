@@ -47,6 +47,8 @@ export async function GET(request: Request): Promise<Response> {
 
   const db = getDb()
   const rows = await loadFeed(db, { requestLocale, limit, cursor, viewerId })
-  const body = buildFeedResponse(rows, requestLocale, limit)
+  // #116/own-label: `viewerId` deriva `isOwn` (owner == viewer) p/ o selo "Sua receita" por item.
+  // Só o booleano `isOwn` é exposto no DTO — o `owner_id` cru NUNCA vaza pro cliente.
+  const body = buildFeedResponse(rows, requestLocale, limit, viewerId)
   return Response.json(body)
 }

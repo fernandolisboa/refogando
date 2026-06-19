@@ -47,6 +47,10 @@ export const enUS: Messages = {
     // #116: signed-in users also search their OWN recipes (private ones included).
     dicaInicialLogado: 'Start typing a dish, ingredient, or style — we search your recipes and the community’s.',
     semResultado: 'No recipes found. Try another term or adjust the filters.',
+    // #116/own-label: section of the viewer's OWN recipes (signed-in), shown FIRST. "Your recipe"
+    // selo on the own item (search and feed), in place of "From the community".
+    secaoMinhas: 'Yours',
+    seloMinha: 'Your recipe',
     secaoCatalogo: 'Catalog',
     secaoComunidade: 'Community',
     seloCatalogo: 'From the catalog',

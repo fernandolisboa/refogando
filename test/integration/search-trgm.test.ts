@@ -25,7 +25,7 @@ import { seedSessionHeaders } from '../helpers/users'
  */
 
 type Hit = { recipeId: string; displayedTitle: string; origin: string; autoTranslationSignal: boolean }
-type SearchResponse = { catalogo: Hit[]; comunidade: Hit[]; sugestoes?: Hit[] }
+type SearchResponse = { minhas: Hit[]; catalogo: Hit[]; comunidade: Hit[]; sugestoes?: Hit[] }
 
 let sql: Sql
 
@@ -51,13 +51,13 @@ async function searchBody(q: string, opts?: { headers?: Headers; match?: 'any' |
   return (await res.json()) as SearchResponse
 }
 
-/** Todos os ids (catálogo + comunidade + sugestões). */
+/** Todos os ids (minhas + catálogo + comunidade + sugestões). */
 function allIds(b: SearchResponse): string[] {
-  return [...b.catalogo, ...b.comunidade, ...(b.sugestoes ?? [])].map((h) => h.recipeId)
+  return [...b.minhas, ...b.catalogo, ...b.comunidade, ...(b.sugestoes ?? [])].map((h) => h.recipeId)
 }
 /** Só os ids das SEÇÕES (sem sugestões) — para asserir ordenação dentro da seção. */
 function sectionIds(b: SearchResponse): string[] {
-  return [...b.catalogo, ...b.comunidade].map((h) => h.recipeId)
+  return [...b.minhas, ...b.catalogo, ...b.comunidade].map((h) => h.recipeId)
 }
 
 /** Semeia uma receita de catálogo (owner NULL, sempre visível) com um título. */

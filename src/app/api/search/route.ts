@@ -122,7 +122,8 @@ export async function GET(request: Request): Promise<Response> {
   // que q.length===0 — são dois testes distintos.
   const hasFacets = !isFacetsEmpty(facets)
   if (q.length === 0 && !hasFacets) {
-    return Response.json({ catalogo: [], comunidade: [] })
+    // #116/own-label: shape neutro agora carrega a chave `minhas:[]` (3 seções).
+    return Response.json({ minhas: [], catalogo: [], comunidade: [] })
   }
 
   // #9: modo de match (permissivo — qualquer valor != 'all' vira 'any').
@@ -187,6 +188,8 @@ export async function GET(request: Request): Promise<Response> {
     sort,
     viewerId,
   })
-  const body = buildSearchResponse(hits, requestLocale, consulta, sugestoes)
+  // #116/own-label: `viewerId` deriva `isOwn` (owner == viewer) p/ separar a seção "Minhas".
+  // Só o booleano `isOwn` é exposto no DTO — o `owner_id` cru NUNCA vaza pro cliente.
+  const body = buildSearchResponse(hits, requestLocale, viewerId, consulta, sugestoes)
   return Response.json(body)
 }

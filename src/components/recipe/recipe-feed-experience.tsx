@@ -52,6 +52,9 @@ export function RecipeFeedExperience() {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   const badgeLabels: BadgeLabels = { catalogo: m.seloCatalogo, comunidade: m.seloComunidade }
+  // #116/own-label: rótulo do selo "Sua receita" — item próprio do viewer (no lugar de
+  // "Da comunidade"). Dirigido pelo booleano `isOwn` do DTO (anônimo ⇒ sempre false).
+  const ownLabel = m.seloMinha
 
   // Carrega uma página. reset=true ⇒ 1ª página (substitui a lista); senão ⇒ append.
   const loadPage = useCallback(
@@ -163,6 +166,8 @@ export function RecipeFeedExperience() {
               autoTranslationSignal={it.autoTranslationSignal}
               badgeLabels={badgeLabels}
               autoTranslationLabel={m.traducaoAutomatica}
+              isOwn={it.isOwn}
+              ownLabel={ownLabel}
             />
           ))}
         </ul>

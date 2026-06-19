@@ -51,6 +51,10 @@ export const ptBR = {
     // #116: usuário LOGADO busca também nas PRÓPRIAS receitas (privadas inclusive).
     dicaInicialLogado: 'Comece digitando um prato, ingrediente ou estilo — buscamos nas suas receitas e nas da comunidade.',
     semResultado: 'Nenhuma receita encontrada. Tente outro termo ou ajuste os filtros.',
+    // #116/own-label: seção das PRÓPRIAS Receitas do viewer (logado), mostrada PRIMEIRO. Selo
+    // "Sua receita" no item próprio (busca e feed), no lugar de "Da comunidade".
+    secaoMinhas: 'Minhas',
+    seloMinha: 'Sua receita',
     secaoCatalogo: 'Catálogo',
     secaoComunidade: 'Comunidade',
     seloCatalogo: 'Do catálogo',

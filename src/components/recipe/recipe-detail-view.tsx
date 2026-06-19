@@ -89,7 +89,7 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
     <article className="flex flex-col gap-8">
       {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota). */}
       <header className="flex flex-col gap-3">
-        <ProvenanceBadge section={section} label={badgeLabel} />
+        <ProvenanceBadge variant={section} label={badgeLabel} />
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           {view.name}
         </h1>

@@ -141,6 +141,8 @@ export function SearchExperience() {
     catalogo: m.seloCatalogo,
     comunidade: m.seloComunidade,
   }
+  // #116/own-label: rótulo do selo "Sua receita" (item próprio do viewer).
+  const ownLabel = m.seloMinha
 
   // Há resultados para mostrar SE a última busca concluída trouxe ao menos um item. Usamos
   // `data` (não `status`) para manter os resultados na tela durante um refresh (stale-
@@ -148,7 +150,8 @@ export function SearchExperience() {
   // piscar a cada tecla.
   const hasResults =
     data !== null &&
-    (data.catalogo.length > 0 ||
+    (data.minhas.length > 0 ||
+      data.catalogo.length > 0 ||
       data.comunidade.length > 0 ||
       (data.sugestoes !== undefined && data.sugestoes.length > 0))
 
@@ -270,10 +273,21 @@ export function SearchExperience() {
 
         {status !== 'error' && hasResults && data !== null && (
           <div className="flex flex-col gap-8">
+            {/* #116/own-label: "Minhas" PRIMEIRO (próprias do viewer). Vazia p/ anônimo (a guarda
+                de seção vazia do SearchSection a omite) ⇒ busca de antes byte-a-byte na UI. */}
+            <SearchSection
+              headingId="search-section-minhas"
+              heading={m.secaoMinhas}
+              badgeLabels={badgeLabels}
+              ownLabel={ownLabel}
+              autoTranslationLabel={m.traducaoAutomatica}
+              results={data.minhas}
+            />
             <SearchSection
               headingId="search-section-catalogo"
               heading={m.secaoCatalogo}
               badgeLabels={badgeLabels}
+              ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
               results={data.catalogo}
             />
@@ -281,6 +295,7 @@ export function SearchExperience() {
               headingId="search-section-comunidade"
               heading={m.secaoComunidade}
               badgeLabels={badgeLabels}
+              ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
               results={data.comunidade}
             />
@@ -289,6 +304,7 @@ export function SearchExperience() {
                 headingId="search-section-sugestoes"
                 heading={m.talvezQueira}
                 badgeLabels={badgeLabels}
+                ownLabel={ownLabel}
                 autoTranslationLabel={m.traducaoAutomatica}
                 results={data.sugestoes}
               />

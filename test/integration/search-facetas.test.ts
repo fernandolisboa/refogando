@@ -31,6 +31,7 @@ type FacetasResolvidasDTO = {
   porcoes?: { min?: number; max?: number }
 }
 type SearchResponse = {
+  minhas: SearchResult[]
   catalogo: SearchResult[]
   comunidade: SearchResult[]
   consulta?: FacetasResolvidasDTO
@@ -72,7 +73,11 @@ async function searchBody(q: string, opts: SearchOpts = {}): Promise<SearchRespo
 }
 
 const ids = (results: SearchResult[]): string[] => results.map((r) => r.recipeId)
-const allIds = (body: SearchResponse): string[] => [...ids(body.catalogo), ...ids(body.comunidade)]
+const allIds = (body: SearchResponse): string[] => [
+  ...ids(body.minhas),
+  ...ids(body.catalogo),
+  ...ids(body.comunidade),
+]
 
 let sql: Sql
 
@@ -283,10 +288,11 @@ describe('GET /api/search — Facetas + Perfil culinário (#10)', () => {
   it('AC5: faceta sem receita → seções vazias 200, sem beco', async () => {
     await seedFacetMatrix()
 
-    // nenhuma receita peruana semeada ⇒ {catalogo:[],comunidade:[]} status 200.
+    // nenhuma receita peruana semeada ⇒ {minhas:[],catalogo:[],comunidade:[]} status 200.
+    // #116/own-label: shape neutro agora carrega a chave `minhas:[]` (3 seções).
     const peruana = await search('', { locale: 'pt-BR', cozinha: 'peruana' })
     expect(peruana.status).toBe(200)
-    expect(await peruana.json()).toEqual({ catalogo: [], comunidade: [] })
+    expect(await peruana.json()).toEqual({ minhas: [], catalogo: [], comunidade: [] })
 
     // combinação impossível: japonesa + restrições que ninguém casa ⇒ vazio 200.
     const impossible = await searchBody('', {

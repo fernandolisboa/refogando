@@ -96,12 +96,14 @@ afterEach(() => {
 describe('SearchExperience (#56)', () => {
   it('T1 — buscar termo → seções + selos + links + ordem', async () => {
     const fetchMock = stubFetchOk({
+      minhas: [],
       catalogo: [
         {
           recipeId: 'r1',
           displayedTitle: 'Feijoada',
           origin: 'catalog',
           autoTranslationSignal: false,
+          isOwn: false,
         },
       ],
       comunidade: [
@@ -110,6 +112,7 @@ describe('SearchExperience (#56)', () => {
           displayedTitle: 'Strogonoff',
           origin: 'ai_chat',
           autoTranslationSignal: false,
+          isOwn: false,
         },
       ],
     })
@@ -164,7 +167,7 @@ describe('SearchExperience (#56)', () => {
   })
 
   it('T2 — busca sem resultado → estado neutro, sem erro', async () => {
-    stubFetchOk({ catalogo: [], comunidade: [] })
+    stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     const user = userEvent.setup()
     renderSearch()
 
@@ -181,7 +184,7 @@ describe('SearchExperience (#56)', () => {
   })
 
   it('T3 — estado inicial neutro NÃO chama a API', async () => {
-    const fetchMock = stubFetchOk({ catalogo: [], comunidade: [] })
+    const fetchMock = stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     renderSearch()
 
     await screen.findByText(M.dicaInicial)
@@ -195,7 +198,7 @@ describe('SearchExperience (#56)', () => {
 
   it('T3b (#116) — LOGADO: a dica inicial reflete "suas receitas + comunidade"', async () => {
     sessionState = authed()
-    stubFetchOk({ catalogo: [], comunidade: [] })
+    stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     renderSearch()
 
     // Estado inicial neutro mostra a dica AUTENTICADA (key-path idêntica entre locales),
@@ -206,12 +209,14 @@ describe('SearchExperience (#56)', () => {
 
   it('T4 — faceta aplicada na query (faceta-only, sem q espúrio)', async () => {
     const fetchMock = stubFetchOk({
+      minhas: [],
       catalogo: [
         {
           recipeId: 'r3',
           displayedTitle: 'Feijoada',
           origin: 'catalog',
           autoTranslationSignal: false,
+          isOwn: false,
         },
       ],
       comunidade: [],
@@ -239,6 +244,7 @@ describe('SearchExperience (#56)', () => {
 
   it('T5 — "Talvez você queira" (sugestoes)', async () => {
     stubFetchOk({
+      minhas: [],
       catalogo: [],
       comunidade: [],
       sugestoes: [
@@ -247,6 +253,7 @@ describe('SearchExperience (#56)', () => {
           displayedTitle: 'Risoto',
           origin: 'ai_structured',
           autoTranslationSignal: false,
+          isOwn: false,
         },
       ],
     })
@@ -282,12 +289,14 @@ describe('SearchExperience (#56)', () => {
 
     // Re-arma o mock para sucesso e clica em "Tentar de novo".
     const fetchMock = stubFetchOk({
+      minhas: [],
       catalogo: [
         {
           recipeId: 'r1',
           displayedTitle: 'Feijoada',
           origin: 'catalog',
           autoTranslationSignal: false,
+          isOwn: false,
         },
       ],
       comunidade: [],
@@ -298,6 +307,67 @@ describe('SearchExperience (#56)', () => {
     expect(fetchMock).toHaveBeenCalled()
     expect(screen.getByText('Feijoada')).toBeInTheDocument()
   })
+
+  it('T7 (#116/own-label) — seção "Minhas" PRIMEIRO + selo "Sua receita" no item próprio', async () => {
+    sessionState = authed()
+    stubFetchOk({
+      minhas: [
+        { recipeId: 'rOwn', displayedTitle: 'Minha receita', origin: 'ai_chat', autoTranslationSignal: false, isOwn: true },
+      ],
+      catalogo: [
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
+      ],
+      comunidade: [
+        { recipeId: 'r2', displayedTitle: 'Strogonoff', origin: 'ai_chat', autoTranslationSignal: false, isOwn: false },
+      ],
+    })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'receita')
+
+    // A seção "Minhas" existe e vem PRIMEIRO (antes de Catálogo e Comunidade no DOM).
+    const minhasHeading = await screen.findByRole('heading', { name: M.secaoMinhas, level: 2 })
+    const headings = screen.getAllByRole('heading', { level: 2 })
+    expect(headings[0]).toBe(minhasHeading)
+    expect(headings.map((h) => h.textContent)).toEqual([
+      M.secaoMinhas,
+      M.secaoCatalogo,
+      M.secaoComunidade,
+    ])
+
+    // O item próprio mostra o selo "Sua receita" (NÃO "Da comunidade").
+    const ownItem = screen.getByText('Minha receita').closest('li')!
+    expect(within(ownItem).getByText(M.seloMinha)).toBeInTheDocument()
+    expect(within(ownItem).queryByText(M.seloComunidade)).not.toBeInTheDocument()
+
+    // O item de comunidade genuína mantém o selo "Da comunidade".
+    const communityItem = screen.getByText('Strogonoff').closest('li')!
+    expect(within(communityItem).getByText(M.seloComunidade)).toBeInTheDocument()
+    expect(within(communityItem).queryByText(M.seloMinha)).not.toBeInTheDocument()
+  })
+
+  it('T8 (#116/own-label) — anônimo: SEM seção "Minhas" e SEM selo "Sua receita"', async () => {
+    sessionState = anon()
+    stubFetchOk({
+      minhas: [],
+      catalogo: [
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
+      ],
+      comunidade: [
+        { recipeId: 'r2', displayedTitle: 'Strogonoff', origin: 'ai_chat', autoTranslationSignal: false, isOwn: false },
+      ],
+    })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'receita')
+    await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
+
+    // `minhas` vazia ⇒ a guarda de seção vazia do SearchSection omite o heading.
+    expect(screen.queryByRole('heading', { name: M.secaoMinhas, level: 2 })).not.toBeInTheDocument()
+    expect(screen.queryByText(M.seloMinha)).not.toBeInTheDocument()
+  })
 })
 
 const MC = ptBR.comunidade
@@ -305,11 +375,12 @@ const MC = ptBR.comunidade
 /** Catálogo + Comunidade semeados (estado conhecido para os testes de ordenação). */
 function seededResponse(): SearchResponse {
   return {
+    minhas: [],
     catalogo: [
-      { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false },
+      { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
     ],
     comunidade: [
-      { recipeId: 'r2', displayedTitle: 'Strogonoff', origin: 'ai_chat', autoTranslationSignal: false },
+      { recipeId: 'r2', displayedTitle: 'Strogonoff', origin: 'ai_chat', autoTranslationSignal: false, isOwn: false },
     ],
   }
 }
@@ -333,7 +404,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
   })
 
   it('T-sort-A2 — toggle AUSENTE sem critério (gateado por hasCriteria)', async () => {
-    const fetchMock = stubFetchOk({ catalogo: [], comunidade: [] })
+    const fetchMock = stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     renderSearch()
 
     await screen.findByText(M.dicaInicial)
@@ -373,8 +444,9 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     // + sort=popularidade ⇒ o grupo ordenarPor SEGUE presente e Relevância re-busca sem sort=.
     // Mutation-verified: mover o toggle para dentro do SearchSection faria este teste falhar.
     const fetchMock = stubFetchOk({
+      minhas: [],
       catalogo: [
-        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false },
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
       ],
       comunidade: [],
     })

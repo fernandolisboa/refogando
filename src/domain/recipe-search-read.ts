@@ -42,14 +42,27 @@ export type SearchHitRow = {
   original_titulo: string | null
   original_provenance: TranslationProvenance | null
   section: SearchSection // SQL-internal (partition/cap); never read in TS — classifySection(origin) is the grouping truth
+  /**
+   * #116/own-label: dono da Receita (BINDADO server-side). LEAK-SAFETY (#116): este campo é
+   * INTERNO ao server↔domínio — `projectResult` o consome SÓ para derivar o booleano `isOwn`
+   * (`owner_id === viewerId`) e NUNCA o copia para o `SearchResult` (DTO do cliente). Catálogo/
+   * sistema tem `owner_id` NULL (nunca igual a um `viewerId` ⇒ nunca "minha").
+   */
+  owner_id: string | null
 }
 
-/** Uma linha do DTO da Busca. `ts_rank` é INTERNO — NUNCA aparece aqui. */
+/** Uma linha do DTO da Busca. `ts_rank`/`owner_id` são INTERNOS — NUNCA aparecem aqui. */
 export type SearchResult = {
   recipeId: string
   displayedTitle: string
   origin: Origin
   autoTranslationSignal: boolean
+  /**
+   * #116/own-label: a Receita é do VIEWER (`owner_id === viewerId`, derivado server-side). Único
+   * sinal de dono exposto ao cliente — NUNCA o `owner_id` de ninguém. Dirige o selo "Sua receita"
+   * (feed) e a seção "Minhas" (busca). Anônimo ⇒ sempre `false` (nenhum `owner_id` casa undefined).
+   */
+  isOwn: boolean
 }
 
 /**
@@ -69,12 +82,15 @@ export type FacetasResolvidasDTO = {
 }
 
 /**
- * DTO da Busca: duas seções nomeadas, Catálogo primeiro. `consulta` é ADITIVA e
- * OPCIONAL — presente SÓ quando o Perfil culinário resolveu intenção difusa do `?q=`;
+ * DTO da Busca: TRÊS seções nomeadas — Minhas (do viewer) primeiro, depois Catálogo, depois
+ * Comunidade. `minhas` carrega as Receitas cujo `owner_id === viewerId` (logado); anônimo ⇒
+ * `minhas` sempre `[]`. As demais classificam como sempre (`classifySection(origin)`). `consulta`
+ * é ADITIVA e OPCIONAL — presente SÓ quando o Perfil culinário resolveu intenção difusa do `?q=`;
  * a chave é OMITIDA (não emitida) caso contrário (preserva o estado neutro
- * `{catalogo:[],comunidade:[]}` byte-a-byte).
+ * `{minhas:[],catalogo:[],comunidade:[]}` byte-a-byte).
  */
 export type SearchResponse = {
+  minhas: SearchResult[]
   catalogo: SearchResult[]
   comunidade: SearchResult[]
   consulta?: FacetasResolvidasDTO
@@ -139,12 +155,21 @@ export function displayedProvenance(hit: SearchHitRow): TranslationProvenance | 
 }
 
 /**
- * Projeta UM hit para `SearchResult` (4 campos), aplicando `resolveName` (#3) e o
- * `autoTranslationSignal`. Devolve `null` quando o hit não tem título exibível (sem
- * tradução em `requested`/`original`) — defesa "nunca tela quebrada". Reusado pelas
- * seções E pelas sugestões (#14) para a projeção não derivar entre os dois caminhos.
+ * Projeta UM hit para `SearchResult` (5 campos), aplicando `resolveName` (#3), o
+ * `autoTranslationSignal` e o booleano `isOwn`. Devolve `null` quando o hit não tem título
+ * exibível (sem tradução em `requested`/`original`) — defesa "nunca tela quebrada". Reusado
+ * pelas seções, pelas sugestões (#14) E pelo Feed (#103) para a projeção não derivar entre os
+ * caminhos.
+ *
+ * LEAK-SAFETY (#116/own-label): `isOwn` é derivado AQUI de `owner_id === viewerId` e é o ÚNICO
+ * sinal de dono no DTO — o `owner_id` cru NUNCA é copiado. `viewerId` undefined (anônimo) ⇒
+ * `isOwn` sempre `false` (`null`/qualquer `owner_id` !== undefined).
  */
-export function projectResult(hit: SearchHitRow, locale: string): SearchResult | null {
+export function projectResult(
+  hit: SearchHitRow,
+  locale: string,
+  viewerId?: string,
+): SearchResult | null {
   const translations = hitTranslations(hit, locale)
   if (translations.length === 0) return null
   const displayedTitle = resolveName({
@@ -155,29 +180,40 @@ export function projectResult(hit: SearchHitRow, locale: string): SearchResult |
   const baseProvenance = displayedProvenance(hit)
   const autoTranslationSignal =
     baseProvenance == null ? true : !isTranslationReliable(baseProvenance)
+  // #116/own-label: dono == viewer. `viewerId === undefined` (anônimo) NUNCA casa (own=false).
+  const isOwn = viewerId !== undefined && hit.owner_id === viewerId
   return {
     recipeId: hit.recipe_id,
     displayedTitle,
     origin: hit.origin,
     autoTranslationSignal,
+    isOwn,
   }
 }
 
 /**
- * Agrupa os hits nas seções nomeadas, projetando cada um para `SearchResult`.
+ * Agrupa os hits nas TRÊS seções nomeadas, projetando cada um para `SearchResult`.
  *
- * - Seção: RE-DERIVADA de `origin` via `classifySection` (NÃO confia na ordem entre
- *   seções), mas a ordem DENTRO de cada seção (o ranking vindo do SQL `ORDER BY
- *   section, rn`) é PRESERVADA — empurra na ordem de iteração, nunca re-ordena.
+ * - Seção: as PRÓPRIAS do viewer (`result.isOwn`, derivado de `owner_id === viewerId`) vão
+ *   para `minhas`; o RESTANTE é RE-DERIVADO de `origin` via `classifySection` (catalogo/
+ *   comunidade — NÃO confia na ordem entre seções). A ordem DENTRO de cada seção (o ranking
+ *   vindo do SQL `ORDER BY section, rn`) é PRESERVADA — empurra na ordem de iteração, nunca
+ *   re-ordena. LEAK-SAFETY (#116): o roteamento "minha" é só LABEL/agrupamento; o gate de
+ *   leitura (`viewerReadableSqlFragment`) é intocado — uma privada de outro dono nunca chega
+ *   aqui, então nunca vira "minha".
  * - `displayedTitle`: `resolveName` (#3) sobre as traduções `requested`/`original`.
  * - `autoTranslationSignal`: `!isTranslationReliable(displayedProvenance)` — rastreia
  *   a proveniência da linha-BASE (nome-primário), não o parêntese. Edge ambos-NULL
  *   (sem tradução exibível) ⇒ hit OMITIDO (não empurra result de título em branco).
  *
+ * `viewerId` (#116/own-label): logado ⇒ as próprias Receitas separadas em `minhas`. Anônimo
+ * (undefined) ⇒ `isOwn` sempre false ⇒ `minhas` fica `[]` (busca de antes byte-a-byte, só com
+ * a chave `minhas:[]` a mais no shape neutro).
+ *
  * `consulta` (#10): facetas RESOLVIDAS pela lente, ADITIVA. Quando passada (≠ undefined),
  * é ECOADA como `response.consulta`; quando ausente, a CHAVE é OMITIDA de vez (não emitida
  * como `undefined`) — robusto contra `toStrictEqual` e contra a comparação `toEqual` do
- * estado neutro de #6/#9 (`{catalogo:[],comunidade:[]}`).
+ * estado neutro (`{minhas:[],catalogo:[],comunidade:[]}`).
  *
  * `sugestoes` (#14, Fork C): vizinhos semânticos (US38), ADITIVA. Mesma omissão de chave
  * que `consulta` quando `sugestoesHits` é undefined/vazio.
@@ -185,6 +221,7 @@ export function projectResult(hit: SearchHitRow, locale: string): SearchResult |
 export function buildSearchResponse(
   hits: ReadonlyArray<SearchHitRow>,
   requestLocale: string,
+  viewerId?: string,
   consulta?: FacetasResolvidasDTO,
   sugestoesHits?: ReadonlyArray<SearchHitRow>,
 ): SearchResponse {
@@ -193,15 +230,17 @@ export function buildSearchResponse(
   // o módulo puro ser correto fora do route (testes, futuros call sites).
   const locale = isSupportedLocale(requestLocale) ? requestLocale : DEFAULT_LOCALE
 
-  const response: SearchResponse = { catalogo: [], comunidade: [] }
+  const response: SearchResponse = { minhas: [], catalogo: [], comunidade: [] }
 
   for (const hit of hits) {
     // Defesa "nunca tela quebrada": hit sem título exibível é PULADO (não empurra um
     // result de título em branco). Inalcançável em produção (persist.ts sempre insere a
     // tradução do original na tx).
-    const result = projectResult(hit, locale)
+    const result = projectResult(hit, locale, viewerId)
     if (result === null) continue
-    response[classifySection(hit.origin)].push(result)
+    // #116/own-label: a PRÓPRIA do viewer vai para `minhas`; o resto classifica por origin.
+    if (result.isOwn) response.minhas.push(result)
+    else response[classifySection(hit.origin)].push(result)
   }
 
   // Aditivo (#10): só adiciona a CHAVE quando a lente resolveu intenção difusa.
@@ -216,7 +255,7 @@ export function buildSearchResponse(
   if (sugestoesHits !== undefined && sugestoesHits.length > 0) {
     const sugestoes: SearchResult[] = []
     for (const hit of sugestoesHits) {
-      const result = projectResult(hit, locale)
+      const result = projectResult(hit, locale, viewerId)
       if (result !== null) sugestoes.push(result)
     }
     if (sugestoes.length > 0) response.sugestoes = sugestoes
