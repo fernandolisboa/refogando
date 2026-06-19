@@ -5,6 +5,7 @@ import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { isRestricao, isUnidade, type Restricao, type Unidade } from '@/domain/vocabulary'
 import { deriveRecipe, type DeriveEdits } from '@/server/recipe/derive'
+import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 
 /**
  * POST /api/recipes/[id]/derive — DERIVA (forka) uma Receita NÃO-própria (issue #17).
@@ -142,7 +143,7 @@ export async function POST(
 
   // Privada de OUTRO (com dono e não-pública) ⇒ 404 leak-safe. Catálogo (ownerId NULL) e
   // pública de outro PASSAM. Espelha o gate de leitura do GET (não vaza existência).
-  if (gate.ownerId !== null && gate.visibility !== 'public') {
+  if (!isCommunityVisible(gate.ownerId, gate.visibility)) {
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 

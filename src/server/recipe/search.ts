@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
+import { communityVisibleSqlFragment } from '@/server/recipe/visibility-sql'
 import type { SearchHitRow } from '@/domain/recipe-search-read'
 import { type EffectiveFacets, isFacetsEmpty } from '@/domain/facet-params'
 import type { SortMode } from '@/domain/sort-params'
@@ -93,7 +94,7 @@ function semanticSelectSql(litVec: string, requestLocale: string, facetSql: SQL)
       JOIN recipe r ON r.id = re.recipe_id
       WHERE re.embedding IS NOT NULL
         AND r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND ${communityVisibleSqlFragment('r')}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ORDER BY re.recipe_id,
@@ -303,7 +304,7 @@ export async function searchRecipes(
           SELECT 1 FROM combined c
           JOIN recipe r ON r.id = c.recipe_id
           WHERE r.result_kind <> 'playful'
-            AND (r.owner_id IS NULL OR r.visibility = 'public')
+            AND ${communityVisibleSqlFragment('r')}
             AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         )
         AND NOT EXISTS (SELECT 1 FROM combined c WHERE c.recipe_id = s.recipe_id)
@@ -353,7 +354,7 @@ export async function searchRecipes(
       FROM recipe r
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND ${communityVisibleSqlFragment('r')}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
     `
@@ -373,7 +374,7 @@ export async function searchRecipes(
       ${semanticJoinSql}
       ${voteCountJoinSql}
       WHERE r.result_kind <> 'playful'
-        AND (r.owner_id IS NULL OR r.visibility = 'public')
+        AND ${communityVisibleSqlFragment('r')}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${facetSql}
       ${bucket2Sql}
@@ -462,7 +463,7 @@ export async function searchRecipes(
       CROSS JOIN terms t
       WHERE ri.raw_text IS NOT NULL
         AND r2.result_kind <> 'playful'
-        AND (r2.owner_id IS NULL OR r2.visibility = 'public')
+        AND ${communityVisibleSqlFragment('r2')}
         AND r2.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         AND to_tsvector(
               recipe_ts_config(r2.original_locale),
