@@ -21,6 +21,11 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import type { GenerationOutput } from '@/domain/generation'
 import type { TranscriptMessage } from '@/domain/transcript'
 import { RecipeGenSchema } from '@/domain/recipe-gen-schema'
+import {
+  IngredientExtractionSchema,
+  EXTRACTION_MAX_TOKENS,
+  type ExtractionOutput,
+} from '@/domain/ingredient-extraction'
 
 /**
  * Forma da entrada da geração (em #8, mínima: o prompt já montado vive a montante).
@@ -58,6 +63,12 @@ export interface ClaudeClient {
   // Streaming conversacional: rende deltas de texto. A conclusão do iterável é o sinal
   // terminal (SEM sentinela). #12 só consome o texto; thinking NÃO é rendido.
   streamConversation(input: ConversationStreamInput): AsyncIterable<string>
+  // Extração de ingredientes (#112): ORGANIZA o texto natural do Usuário em itens
+  // estruturados (NÃO gera Receita). Mesma disciplina de structured output de
+  // generateRecipe (messages.parse + reparo), mas no `IngredientExtractionSchema` e com
+  // um teto de tokens próprio. Reusa `GenerationInput` (já carrega systemPrompt/userPrompt/
+  // model/signal) — a rota passa `model: EXTRACTION_MODEL` (modelo BARATO, não o default).
+  extractIngredients(input: GenerationInput): Promise<ExtractionOutput>
 }
 
 // Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
@@ -68,6 +79,12 @@ const MAX_TOKENS = 4096
 // ausente. FONTE ÚNICA: ambas as rotas de geração (/api/generations e
 // /api/conversations/stream) resolvem o modelo de app_config e caem AQUI no default.
 export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8'
+
+// Modelo DEDICADO e BARATO da Extração de ingredientes (#112). Env-overridable. NÃO é o
+// `app_config.default_model` compartilhado da Geração (esse é o OPUS de qualidade): a Extração
+// só organiza uma lista — usar o modelo caro derrotaria o objetivo de custo. A rota de
+// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem ALLOWED_MODELS.
+export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
 
 /**
  * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
@@ -129,6 +146,39 @@ export class RealClaudeClient implements ClaudeClient {
     }
   }
 
+  async extractIngredients(input: GenerationInput): Promise<ExtractionOutput> {
+    // Espelha generateRecipe (mesma disciplina ADR-0009: messages.parse + zodOutputFormat +
+    // reparo de UMA tentativa), mas no IngredientExtractionSchema e com o teto de tokens da
+    // Extração. Lazy: lê ANTHROPIC_API_KEY só na chamada — NUNCA em teste (o teste injeta o
+    // FakeClaudeClient). QUALQUER throw/null após o reparo → parse_failed (nunca vaza stack
+    // nem item parcial). NÃO ramifica por stop_reason em refusal/max_tokens: para a Extração,
+    // qualquer não-sucesso é simplesmente parse_failed (a rota mapeia para 502).
+    const client = new Anthropic()
+
+    try {
+      const params = {
+        model: input.model,
+        max_tokens: EXTRACTION_MAX_TOKENS,
+        system: input.systemPrompt,
+        messages: [{ role: 'user' as const, content: input.userPrompt }],
+        output_config: { format: zodOutputFormat(IngredientExtractionSchema) },
+      }
+
+      let message = await client.messages.parse(params, { signal: input.signal })
+
+      // Reparo mínimo: se o parser não produziu saída, re-chama UMA vez. Ainda null →
+      // parse_failed.
+      if (message.parsed_output === null) {
+        message = await client.messages.parse(params, { signal: input.signal })
+        if (message.parsed_output === null) return { kind: 'parse_failed' }
+      }
+
+      return { kind: 'ok', items: message.parsed_output.items }
+    } catch {
+      return { kind: 'parse_failed' }
+    }
+  }
+
   async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
     // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste.
     const client = new Anthropic()
@@ -165,10 +215,14 @@ export class FakeClaudeClient implements ClaudeClient {
   // arg é OPCIONAL e vem DEPOIS de (reply, canned) para que os call sites de 2 args
   // existentes continuem compilando. Os tokens são rendidos por `streamConversation`; a
   // destilação que segue usa `canned` via `generateRecipe`.
+  // `cannedExtraction` (#112) é o QUARTO arg OPCIONAL — vem DEPOIS dos três para que TODOS os
+  // call sites existentes (`new FakeClaudeClient(reply, canned, cannedTokens)`) compilem sem
+  // mudança. `extractIngredients` o devolve, ou estoura se ausente.
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
     private readonly cannedTokens?: string[],
+    private readonly cannedExtraction?: ExtractionOutput,
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -180,6 +234,15 @@ export class FakeClaudeClient implements ClaudeClient {
       throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
     }
     return this.canned
+  }
+
+  async extractIngredients(): Promise<ExtractionOutput> {
+    if (!this.cannedExtraction) {
+      throw new Error(
+        'FakeClaudeClient: nenhum ExtractionOutput enlatado (passe-o como 4º arg do construtor).',
+      )
+    }
+    return this.cannedExtraction
   }
 
   async *streamConversation(input?: ConversationStreamInput): AsyncIterable<string> {

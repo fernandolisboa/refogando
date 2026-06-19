@@ -56,6 +56,10 @@ _Avoid_: Chat (genérico); Conversação livre; Thread.
 Modo da Sessão de criação que é função quase pura: o usuário monta uma especificação por campos (ingredientes, restrições, porções, dificuldade, cozinha) e a IA gera sob medida. Guarda o que foi pedido (Briefing de geração), sem mensagens.
 _Avoid_: Formulário; Wizard; Filtro (é input de geração, não de busca).
 
+**Extração** (de ingredientes) vs **Geração**:
+**Extração** (#112) ORGANIZA os ingredientes que o usuário escreveu em texto natural nas linhas estruturadas do Briefing — um modelo barato apenas estrutura o que o usuário disse, e o usuário finaliza antes de gerar. **Geração** INVENTA a Receita a partir do Briefing/pedido. A Extração nunca inventa nem gera a Receita; é um passo de pré-preenchimento, não a criação.
+_Avoid_: chamar a Extração de "geração"; tratar a entrada inteligente como se inventasse ingredientes.
+
 **Cozinha** (cuisine):
 Tradição gastronômica de origem geográfica/cultural (italiana, japonesa, baiana), vocabulário controlado referenciado pela Receita. Um dos eixos em que o "perfil culinário" se concretiza. Ortogonal a Categoria.
 _Avoid_: Kitchen; Culinária (quando significar Perfil); Categoria; Estilo.

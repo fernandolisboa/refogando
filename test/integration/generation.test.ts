@@ -86,6 +86,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async *streamConversation(): AsyncIterable<string> {
     throw new Error('seam tocado: streamConversation não devia ser chamado')
   }
+  async extractIngredients(): Promise<never> {
+    throw new Error('seam tocado: extractIngredients não devia ser chamado')
+  }
 }
 
 /** Contagens cruas das três tabelas tocáveis (porta alta, sem ORM). */

@@ -62,6 +62,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async *streamConversation(): AsyncIterable<string> {
     throw new Error('streamConversation não devia ser chamado')
   }
+  async extractIngredients(): Promise<never> {
+    throw new Error('extractIngredients não devia ser chamado')
+  }
 }
 
 function regenerate(id: string, headers?: Headers): Promise<Response> {

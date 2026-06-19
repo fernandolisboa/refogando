@@ -79,6 +79,26 @@ function novoItem(): ItemDraft {
 }
 
 /**
+ * Entrada inteligente (#112): comprimentos da entrada de texto natural — UX LEVE (espelham o
+ * servidor; a rota revalida). Medidos sobre `entradaInteligente.trim().length`.
+ */
+const ENTRADA_MIN = 10
+const ENTRADA_MAX = 600
+
+/**
+ * `true` SÓ quando `itens` é exatamente uma linha-default em branco: length===1 E todos os
+ * campos vazios (rawText/quantidade/unidade === '' — estrito; `strength` 'required' default
+ * é ignorada, não conta como conteúdo). Usado para SUBSTITUIR essa linha-vazia inicial pelos
+ * itens extraídos (em vez de empilhar uma linha morta no topo). Qualquer trabalho real numa
+ * linha — texto, quantidade ou unidade — torna `false` (APPEND preserva o que o Usuário tem).
+ */
+function isOnlyEmptyDefaultRow(itens: ItemDraft[]): boolean {
+  if (itens.length !== 1) return false
+  const [it] = itens
+  return it.rawText === '' && it.quantidade === '' && it.unidade === ''
+}
+
+/**
  * Mapa CÓDIGO de validação (do handler) → chave de `messages.criar`. Casa por código,
  * espelhando `mapErrorToKey` do auth-form; NUNCA exibe a mensagem crua do servidor.
  */
@@ -136,6 +156,14 @@ export function CreateStructuredExperience() {
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemDraft[]>([novoItem()])
 
+  // Entrada inteligente (#112): texto natural de ingredientes + estado de extração (separado
+  // do `status` da geração — extrair NÃO trava a geração, só o botão Estruturar). `itemErrors`
+  // marca linhas cuja `unidade` voltou null da Extração, por índice ABSOLUTO em `itens`.
+  const [entradaInteligente, setEntradaInteligente] = useState('')
+  const [extracting, setExtracting] = useState(false)
+  const [extractError, setExtractError] = useState(false)
+  const [itemErrors, setItemErrors] = useState<Record<number, string>>({})
+
   const [status, setStatus] = useState<Status>('idle')
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [view, setView] = useState<RecipeView | null>(null)
@@ -158,6 +186,62 @@ export function CreateStructuredExperience() {
   }
   function removeItem(index: number) {
     setItens((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+    // Remover uma linha reindexaria `itemErrors` (chaveado por índice absoluto) — limpar TUDO
+    // evita um erro grudar na linha errada (off-by-one). #112.
+    setItemErrors({})
+  }
+
+  /**
+   * Entrada inteligente (#112): POST o texto natural em /api/parse-ingredients; em 200, APPEND
+   * as linhas extraídas a `itens` — EXCETO quando `itens` é só a linha-default vazia, que é
+   * SUBSTITUÍDA (sem empilhar uma linha morta). Linhas cuja `unidade` voltou null ganham um erro
+   * por-linha (`itemUnidadeDesconhecida`), chaveado pelo índice ABSOLUTO final. Limpa a textarea
+   * no sucesso. Em não-2xx/rede, mostra `erroEstruturacao` e DEIXA as linhas existentes intactas.
+   * NÃO trava os botões de linha nem "Gerar receita" — só o botão Estruturar (via `extracting`).
+   */
+  async function estruturar() {
+    const texto = entradaInteligente.trim()
+    if (texto.length < ENTRADA_MIN || extracting) return
+    setExtracting(true)
+    setExtractError(false)
+    try {
+      const res = await fetch('/api/parse-ingredients', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ rawInput: texto }),
+      })
+      if (!res.ok) {
+        setExtractError(true)
+        return
+      }
+      const data = (await res.json()) as {
+        items: { rawText: string; quantidade: string | null; unidade: string | null; strength: Strength }[]
+      }
+      const novas: ItemDraft[] = data.items.map((it) => ({
+        rawText: it.rawText,
+        quantidade: it.quantidade ?? '',
+        unidade: it.unidade ?? '',
+        strength: it.strength,
+      }))
+      setItens((prev) => {
+        const base = isOnlyEmptyDefaultRow(prev) ? [] : prev
+        const combinado = [...base, ...novas]
+        // Marca cada linha NOVA cuja unidade veio null: índice absoluto = offset da base + i.
+        setItemErrors((prevErr) => {
+          const next = { ...prevErr }
+          data.items.forEach((it, i) => {
+            if (it.unidade == null) next[base.length + i] = m.itemUnidadeDesconhecida
+          })
+          return next
+        })
+        return combinado
+      })
+      setEntradaInteligente('')
+    } catch {
+      setExtractError(true)
+    } finally {
+      setExtracting(false)
+    }
   }
 
   function toggleRestricao(value: string) {
@@ -223,6 +307,10 @@ export function CreateStructuredExperience() {
     setObservacoes('')
     setItens([novoItem()])
     setFreeText('')
+    // Entrada inteligente (#112): zera junto numa nova receita.
+    setEntradaInteligente('')
+    setExtractError(false)
+    setItemErrors({})
   }
 
   function voltarParaIdle({ limpar }: { limpar: boolean }) {
@@ -443,6 +531,46 @@ export function CreateStructuredExperience() {
           {/* Ingredientes */}
           <fieldset className="flex flex-col gap-4">
             <legend className="mb-1 text-sm font-medium text-fg">{m.legendaIngredientes}</legend>
+
+            {/* Entrada inteligente (#112): texto natural → linhas estruturadas (pré-preenchidas).
+                A IA ORGANIZA o que o Usuário escreveu; NÃO inventa nem gera a receita. Vive DENTRO
+                do <fieldset disabled={loading}> (some/destrava com a geração) mas o botão
+                Estruturar só trava por `extracting` — extrair não bloqueia "Gerar receita". */}
+            <div className="flex flex-col gap-2 rounded-md border border-border bg-surface p-3 sm:p-4">
+              <label htmlFor="entrada-inteligente" className="text-sm font-medium text-fg">
+                {m.entradaInteligente}
+              </label>
+              <textarea
+                id="entrada-inteligente"
+                rows={3}
+                maxLength={ENTRADA_MAX}
+                value={entradaInteligente}
+                onChange={(e) => setEntradaInteligente(e.target.value)}
+                placeholder={m.entradaPlaceholder}
+                className={`${inputCls} resize-y`}
+              />
+              <p className="text-xs text-muted">{m.entradaDistincao}</p>
+              {extractError && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
+                >
+                  {m.erroEstruturacao}
+                </p>
+              )}
+              <div>
+                <button
+                  type="button"
+                  onClick={estruturar}
+                  aria-busy={extracting || undefined}
+                  disabled={entradaInteligente.trim().length < ENTRADA_MIN || extracting}
+                  className={`${btnSecondary} disabled:opacity-50`}
+                >
+                  {extracting ? m.estruturando : m.estruturar}
+                </button>
+              </div>
+            </div>
+
             <ul role="list" className="flex flex-col gap-5">
               {itens.map((item, index) => (
                 <li
@@ -475,7 +603,17 @@ export function CreateStructuredExperience() {
                       {m.unidade}
                       <select
                         value={item.unidade}
-                        onChange={(e) => patchItem(index, { unidade: e.target.value })}
+                        onChange={(e) => {
+                          patchItem(index, { unidade: e.target.value })
+                          // Trocar a unidade desta linha LIMPA o seu erro de "unidade
+                          // desconhecida" (#112): o Usuário resolveu o que a Extração não sabia.
+                          setItemErrors((prev) => {
+                            if (!(index in prev)) return prev
+                            const next = { ...prev }
+                            delete next[index]
+                            return next
+                          })
+                        }}
                         className={inputCls}
                       >
                         <option value="">{m.unidadeNenhuma}</option>
@@ -520,6 +658,12 @@ export function CreateStructuredExperience() {
                       {m.removerIngrediente}
                     </button>
                   </div>
+                  {/* Erro por-linha (#112): a Extração não reconheceu a unidade desta linha.
+                      Neutro (NÃO âmbar — âmbar é exclusivo do Aviso de restrição). Some quando
+                      o Usuário escolhe uma unidade no <select> acima. */}
+                  {itemErrors[index] && (
+                    <p className="text-sm font-medium text-fg">{itemErrors[index]}</p>
+                  )}
                 </li>
               ))}
             </ul>

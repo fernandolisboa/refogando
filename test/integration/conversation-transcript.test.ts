@@ -496,6 +496,9 @@ describe('Concorrência de seq — UNIQUE(creation_session_id, seq) é a rede (2
         if (++arrived === 2) releaseBoth()
         await bothArrived // ambas só completam (→ append) quando as duas chegaram.
       }
+      async extractIngredients(): Promise<{ kind: 'parse_failed' }> {
+        return { kind: 'parse_failed' }
+      }
     }
     setClaudeClient(new BarrierClient())
 

@@ -57,6 +57,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async *streamConversation(): AsyncIterable<string> {
     throw new Error('seam tocado: a validação devia ter cortado ANTES de abrir o stream')
   }
+  async extractIngredients(): Promise<never> {
+    throw new Error('seam tocado: extractIngredients não devia ser chamado')
+  }
 }
 
 /** Contagens cruas das tabelas tocáveis (porta alta, sem ORM). `transcript` (#15) cobre as
@@ -471,6 +474,9 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
       async generateRecipe(): Promise<GenerationOutput> {
         recipeCalled = true
         return cannedSuccess()
+      }
+      async extractIngredients(): Promise<{ kind: 'parse_failed' }> {
+        return { kind: 'parse_failed' }
       }
     }
     setClaudeClient(new AbortProbeClient())
