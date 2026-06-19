@@ -192,7 +192,19 @@ export async function PATCH(
   if (gate.ownerId == null || gate.ownerId !== viewerId) return notFound()
 
   // Valida o corpo SÓ depois de autorizar (não revela a forma do contrato a quem não pode editar).
-  const body = (await request.json().catch(() => ({}))) as EditOwnBody
+  // Corpo ausente (sem texto) ⇒ patch vazio (no-op tolerado). Corpo PRESENTE mas JSON inválido ⇒
+  // 400 dados_invalidos (não trata silenciosamente como vazio — FIX 6).
+  const rawBody = await request.text()
+  let body: EditOwnBody = {}
+  if (rawBody.length > 0) {
+    try {
+      const parsed = JSON.parse(rawBody) as unknown
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return badRequest()
+      body = parsed as EditOwnBody
+    } catch {
+      return badRequest()
+    }
+  }
 
   const patch: OwnRecipePatch = {}
 

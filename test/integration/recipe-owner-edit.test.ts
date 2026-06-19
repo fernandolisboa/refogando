@@ -83,6 +83,14 @@ async function readTranslation(
   return row
 }
 
+async function readUpdatedAt(id: string): Promise<Date> {
+  const [row] = await getDb()
+    .select({ updatedAt: recipe.updatedAt })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  return row.updatedAt
+}
+
 async function readIngredientsRaw(id: string): Promise<{ ordem: number; rawText: string | null }[]> {
   return getDb()
     .select({ ordem: recipeIngredient.ordem, rawText: recipeIngredient.rawText })
@@ -318,5 +326,59 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     const { headers } = await seedSessionHeaders({ email: 'oe-badid@ex.com' })
     expect((await patch('not-a-uuid', { titulo: 'X' }, headers)).status).toBe(404)
     expect((await patch('00000000-0000-0000-0000-000000000000', { titulo: 'X' }, headers)).status).toBe(404)
+  })
+
+  // (m) editar traduzível + ingredientes JUNTOS (sem nenhum campo recipe-level) ⇒ updated_at da
+  //     receita É bumpado (invariante "qualquer eixo que muda"), o locale fica stale, e o GET
+  //     reflete o titulo novo + os ingredientes novos. Prova o bump cruzado (FIX 1).
+  it('(m) editar traduzível + ingredientes (sem recipe-level) bumpa updated_at e fica stale', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-bump@ex.com' })
+    const id = await seedOwnPrivate(userId) // titulo 'Pão de queijo', 1 ingrediente, pt-BR
+    const before = await readUpdatedAt(id)
+
+    // Garante que o updated_at seguinte seja estritamente maior (timestamp tem resolução fina, mas
+    // tornar a asserção robusta a relógios coincidentes não custa).
+    await new Promise((r) => setTimeout(r, 5))
+
+    const res = await patch(
+      id,
+      { titulo: 'Pão de queijo recheado', ingredientes: [{ rawText: 'polvilho doce', quantidade: '0.300' }] },
+      headers,
+    )
+    expect(res.status).toBe(200)
+
+    // updated_at da receita bumpado, mesmo sem nenhum campo recipe-level no patch.
+    const after = await readUpdatedAt(id)
+    expect(after.getTime()).toBeGreaterThan(before.getTime())
+
+    // O locale ficou stale (campo traduzível mudou ⇒ decideStale).
+    expect((await readTranslation(id, 'pt-BR'))?.stale).toBe(true)
+
+    // O GET reflete AMBOS os eixos: titulo novo + ingredientes novos.
+    const view = (await (await get(id, headers)).json()) as { name: string }
+    expect(view.name).toContain('Pão de queijo recheado')
+    expect((await readIngredientsRaw(id)).map((i) => i.rawText)).toEqual(['polvilho doce'])
+  })
+
+  // (n) editar para ZERO ingredientes ⇒ GET retorna lista vazia; updated_at bumpado (delete-all
+  //     sem reinsert). Confirma o caminho de lista vazia (FIX 5).
+  it('(n) editar para zero ingredientes ⇒ lista vazia no GET; updated_at bumpado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-zeroing@ex.com' })
+    const id = await seedOwnPrivate(userId) // 1 ingrediente
+    expect((await readIngredientsRaw(id)).length).toBe(1)
+    const before = await readUpdatedAt(id)
+    await new Promise((r) => setTimeout(r, 5))
+
+    const res = await patch(id, { ingredientes: [] }, headers)
+    expect(res.status).toBe(200)
+
+    // Lista vazia (delete-all-then-reinsert lida com vazio).
+    expect(await readIngredientsRaw(id)).toEqual([])
+    const view = (await (await get(id, headers)).json()) as { ingredients?: unknown[] }
+    expect(view.ingredients ?? []).toEqual([])
+
+    // updated_at bumpado (ingrediente é eixo que muda).
+    const after = await readUpdatedAt(id)
+    expect(after.getTime()).toBeGreaterThan(before.getTime())
   })
 })

@@ -39,9 +39,34 @@ import { pgCode } from '@/server/recipe/visibility'
  * 'translation_not_found' — acontece ANTES de qualquer escrita.
  *
  * Autorização é OWNERSHIP, provada pelo ROUTE antes de chamar (catálogo/não-dono ⇒ 404 leak-safe,
- * NUNCA 403, ADR-0011). Estes helpers AINDA filtram por owner_id na cláusula WHERE (E5: autoriza
- * também na escrita — corrida + defense-in-depth).
+ * NUNCA 403, ADR-0011). editOwnRecipe AINDA se auto-verifica (defense-in-depth, fail-closed):
+ * confere a posse UMA vez no começo (assertOwnedRecipe, espelha persist.ts assertOwnedSession de
+ * #15) e escopa todas as escritas por owner_id — uma chamada com viewerId errado (bug do route,
+ * nunca fluxo normal) ESTOURA em vez de tocar a linha alheia.
  */
+
+/**
+ * #21 — guarda de posse fail-closed (espelha persist.ts assertOwnedSession de #15). SELECT do
+ * owner_id da receita; se a linha não existir OU o dono não for `viewerId`, ESTOURA — assim nenhuma
+ * escrita subsequente (tradução / recipe / ingredientes / updated_at) toca a linha de outro dono. O
+ * route já prova a posse antes de chamar; isto é defense-in-depth, então o erro só dispara num bug
+ * de programação (nunca em fluxo normal). NÃO é exportado (detalhe interno da edição).
+ */
+async function assertOwnedRecipe(
+  db: Database,
+  recipeId: string,
+  viewerId: string,
+): Promise<void> {
+  const [owned] = await db
+    .select({ ownerId: recipe.ownerId })
+    .from(recipe)
+    .where(eq(recipe.id, recipeId))
+  if (!owned || owned.ownerId !== viewerId) {
+    throw new Error(
+      `editOwnRecipe: receita inexistente ou não-possuída pelo viewerId (defense-in-depth fail-closed)`,
+    )
+  }
+}
 
 export type OwnRecipePatch = {
   // Traduzíveis (presença = mudou):
@@ -70,6 +95,10 @@ export async function editOwnRecipe(
   const { recipeId, viewerId, locale, patch } = input
   const changedFields: string[] = []
   const now = new Date()
+
+  // Posse provada UMA vez no começo (fail-closed): com isso garantido, todas as escritas abaixo
+  // (escopadas por owner_id) só tocam a linha do próprio dono. Bug do route ⇒ estoura (não corrompe).
+  await assertOwnedRecipe(db, recipeId, viewerId)
 
   // Eixo traduzível: campos presentes em `recipe_translation`.
   const translatablePatch: Record<string, unknown> = {}
@@ -114,10 +143,16 @@ export async function editOwnRecipe(
   }
 
   const touchesTranslatable = Object.keys(translatablePatch).length > 0
+  // `recipe.updated_at` é bumpado por DOIS caminhos: o UPDATE da allowlist (eixo recipe-level) ou,
+  // quando NENHUM eixo recipe-level mudou, um único UPDATE de updated_at no fim (cobre traduzível,
+  // ingrediente E patch vazio). Este flag evita o double-bump.
+  let recipeRowBumped = false
 
   // 1. UPDATE do conteúdo traduzível ANTES de tudo (o re-embed lê o texto novo) E como GATE da
-  //    linha de tradução numa só ida: RETURNING vazio = linha (recipeId, locale) AUSENTE ⇒
-  //    early-return ANTES de tocar recipe/ingredientes/applyEdit (sem escrita parcial).
+  //    linha de tradução numa só ida — MAS só quando HÁ campo traduzível: RETURNING vazio = linha
+  //    (recipeId, locale) AUSENTE ⇒ early-return ANTES de tocar recipe/ingredientes/applyEdit (sem
+  //    escrita parcial). Patch sem campo traduzível NÃO passa por este gate (não exige a linha do
+  //    locale existir). updated_at da receita é bumpado adiante, em QUALQUER eixo que muda.
   if (touchesTranslatable) {
     const updated = await db
       .update(recipeTranslation)
@@ -132,27 +167,24 @@ export async function editOwnRecipe(
   // 2. UPDATE da allowlist em `recipe` (NUNCA origin/owner/visibility). Filtra por owner_id
   //    (E5: autoriza também na escrita). Defense-in-depth: captura P0001 (origin imutável —
   //    nunca setamos origin, então NÃO deve ocorrer) e RE-LANÇA (500 honesto, não mascara bug).
+  //    Já bumpa updated_at — marca `recipeRowBumped` p/ não re-bumpar no fim.
   if (Object.keys(recipePatch).length > 0) {
     try {
       await db
         .update(recipe)
         .set({ ...recipePatch, updatedAt: now })
         .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
+      recipeRowBumped = true
     } catch (e) {
       if (pgCode(e) === 'P0001') throw e // origin imutável (ADR-0002) — relança, não mascara
       throw e
     }
-  } else if (!touchesTranslatable && patch.ingredientes === undefined) {
-    // Patch sem nenhum eixo: bump conservador de updated_at (mantém o contrato "editei = mudou").
-    await db
-      .update(recipe)
-      .set({ updatedAt: now })
-      .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
   }
 
   // 3. Ingredientes: delete-all-then-reinsert DO ZERO (editCatalogRecipe não tem este eixo).
   //    Presença de `ingredientes` = reescreve a lista inteira (forma do create.ts: quantidade
-  //    string|null, ingredientId null, ordem por índice). Numa transação (atômico no eixo).
+  //    string|null, ingredientId null, ordem por índice). Numa transação (atômico no eixo). O
+  //    delete é escopado à receita do dono (defense-in-depth — a posse já foi afirmada acima).
   if (patch.ingredientes !== undefined) {
     const ingredientes = patch.ingredientes
     await db.transaction(async (tx) => {
@@ -170,13 +202,17 @@ export async function editOwnRecipe(
         )
       }
     })
-    // Bump updated_at também quando SÓ ingredientes mudam (eixo não-traduzível, não passa por 2).
-    if (Object.keys(recipePatch).length === 0 && !touchesTranslatable) {
-      await db
-        .update(recipe)
-        .set({ updatedAt: now })
-        .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
-    }
+  }
+
+  // 4. Bump de updated_at em QUALQUER eixo que muda (invariante do módulo). Se o UPDATE da allowlist
+  //    já bumpou, NÃO re-bumpa. Caso contrário, se ALGO mudou (traduzível e/ou ingredientes — eixos
+  //    que não passam pelo UPDATE de `recipe`), um único UPDATE escopado por owner_id. Patch vazio
+  //    (nenhum eixo) também cai aqui ⇒ bump conservador (mantém o contrato "editei = mudou").
+  if (!recipeRowBumped) {
+    await db
+      .update(recipe)
+      .set({ updatedAt: now })
+      .where(and(eq(recipe.id, recipeId), eq(recipe.ownerId, viewerId)))
   }
 
   // 4. Regra de #3 como fonte ÚNICA de stale/re-embed. Decisão vazia (só invariante/ingrediente)
