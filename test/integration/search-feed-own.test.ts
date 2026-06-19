@@ -21,8 +21,14 @@ import { seedUser, seedSessionHeaders } from '../helpers/users'
  * casaria o termo) mas está ausente do resultado — prova o gate, não um banco vazio.
  */
 
-type Hit = { recipeId: string; displayedTitle: string; origin: string; autoTranslationSignal: boolean }
-type SearchResponse = { catalogo: Hit[]; comunidade: Hit[]; sugestoes?: Hit[] }
+type Hit = {
+  recipeId: string
+  displayedTitle: string
+  origin: string
+  autoTranslationSignal: boolean
+  isOwn: boolean
+}
+type SearchResponse = { minhas: Hit[]; catalogo: Hit[]; comunidade: Hit[]; sugestoes?: Hit[] }
 type FeedResponse = { feed: Hit[]; nextCursor: string | null }
 
 let sql: Sql
@@ -47,9 +53,26 @@ async function searchBody(q: string, headers?: Headers): Promise<SearchResponse>
   return (await res.json()) as SearchResponse
 }
 
-/** Todos os ids de uma SearchResponse (catálogo + comunidade + sugestões). */
+/** Todos os ids de uma SearchResponse (minhas + catálogo + comunidade + sugestões). */
 function searchIds(b: SearchResponse): string[] {
-  return [...b.catalogo, ...b.comunidade, ...(b.sugestoes ?? [])].map((h) => h.recipeId)
+  return [...b.minhas, ...b.catalogo, ...b.comunidade, ...(b.sugestoes ?? [])].map(
+    (h) => h.recipeId,
+  )
+}
+
+/** Todos os hits de uma SearchResponse (planificados, com a seção de origem anotada). */
+function allHits(b: SearchResponse): { hit: Hit; secao: 'minhas' | 'catalogo' | 'comunidade' | 'sugestoes' }[] {
+  return [
+    ...b.minhas.map((hit) => ({ hit, secao: 'minhas' as const })),
+    ...b.catalogo.map((hit) => ({ hit, secao: 'catalogo' as const })),
+    ...b.comunidade.map((hit) => ({ hit, secao: 'comunidade' as const })),
+    ...(b.sugestoes ?? []).map((hit) => ({ hit, secao: 'sugestoes' as const })),
+  ]
+}
+
+/** Acha em qual seção um id caiu (ou undefined se ausente). */
+function secaoDe(b: SearchResponse, id: string) {
+  return allHits(b).find((x) => x.hit.recipeId === id)
 }
 
 /** Feed pela porta alta (limit alto p/ uma página só). `headers` ausente = anônimo. */
@@ -58,11 +81,19 @@ function feed(headers?: Headers): Promise<Response> {
   return feedGET(new Request(`http://localhost/api/feed?${params.toString()}`, { headers }))
 }
 
-async function feedIds(headers?: Headers): Promise<string[]> {
+async function feedBody(headers?: Headers): Promise<FeedResponse> {
   const res = await feed(headers)
   expect(res.status).toBe(200)
-  const b = (await res.json()) as FeedResponse
-  return b.feed.map((h) => h.recipeId)
+  return (await res.json()) as FeedResponse
+}
+
+async function feedIds(headers?: Headers): Promise<string[]> {
+  return (await feedBody(headers)).feed.map((h) => h.recipeId)
+}
+
+/** Acha um item do feed por id (ou undefined). */
+function feedItem(b: FeedResponse, id: string): Hit | undefined {
+  return b.feed.find((h) => h.recipeId === id)
 }
 
 /**
@@ -189,5 +220,72 @@ describe('#116 — moderação ortogonal: a PRÓPRIA removida-do-pool fica fora 
     const fIds = await feedIds(owner.headers)
     expect(fIds).toContain(own)
     expect(fIds).not.toContain(removed)
+  })
+})
+
+/**
+ * #116/own-label — a PRÓPRIA do viewer é ROTULADA/AGRUPADA como própria (não "Da comunidade"):
+ *  - Busca: a própria vai p/ a seção `minhas` com `isOwn=true`; a comunidade genuína (outro dono,
+ *    pública) fica em `comunidade` com `isOwn=false`; o catálogo fica em `catalogo`.
+ *  - Feed: o item próprio carrega `isOwn=true`; a comunidade carrega `isOwn=false`.
+ *  - Anônimo: `minhas` vazia, nenhum item com `isOwn=true`.
+ * É LABEL only — o gate de leitura (#116) é o mesmo; a privada de outro dono nunca aflora.
+ */
+describe('#116/own-label — Busca: a própria vai p/ `minhas`, comunidade/catálogo classificam como sempre', () => {
+  it('A logado: sua pública E sua privada em `minhas` (isOwn=true); a pública de B em `comunidade`; catálogo em `catalogo`', async () => {
+    const u = await seedUniverse()
+    const b = await searchBody('cebola', u.aSess.headers)
+
+    // As PRÓPRIAS de A (pública e privada) caem em `minhas`, com isOwn=true.
+    const minhasIds = b.minhas.map((h) => h.recipeId)
+    expect(minhasIds).toContain(u.aPub)
+    expect(minhasIds).toContain(u.aPriv)
+    expect(b.minhas.every((h) => h.isOwn === true)).toBe(true)
+
+    // A própria de A NÃO aparece em `comunidade` (era o bug: ia p/ "Da comunidade").
+    const comunidadeIds = b.comunidade.map((h) => h.recipeId)
+    expect(comunidadeIds).not.toContain(u.aPub)
+    expect(comunidadeIds).not.toContain(u.aPriv)
+
+    // A comunidade GENUÍNA (pública de B, outro dono) fica em `comunidade`, isOwn=false.
+    expect(secaoDe(b, u.bPub)?.secao).toBe('comunidade')
+    expect(secaoDe(b, u.bPub)?.hit.isOwn).toBe(false)
+
+    // Catálogo (owner NULL) fica em `catalogo`, isOwn=false.
+    expect(secaoDe(b, u.cat)?.secao).toBe('catalogo')
+    expect(secaoDe(b, u.cat)?.hit.isOwn).toBe(false)
+
+    // Leak-safety intocado: a privada de B nunca aparece em seção nenhuma.
+    expect(searchIds(b)).not.toContain(u.bPriv)
+  })
+
+  it('anônimo: `minhas` vazia; nenhum item com isOwn=true', async () => {
+    const u = await seedUniverse()
+    const b = await searchBody('cebola')
+
+    expect(b.minhas).toHaveLength(0)
+    expect(allHits(b).every((x) => x.hit.isOwn === false)).toBe(true)
+    // A pública de A, vista por anônimo, é comunidade (não própria de ninguém).
+    expect(secaoDe(b, u.aPub)?.secao).toBe('comunidade')
+  })
+})
+
+describe('#116/own-label — Feed: o item próprio carrega isOwn=true; a comunidade carrega isOwn=false', () => {
+  it('A logado: sua privada/pública com isOwn=true; a pública de B e o catálogo com isOwn=false', async () => {
+    const u = await seedUniverse()
+    const b = await feedBody(u.aSess.headers)
+
+    expect(feedItem(b, u.aPub)?.isOwn).toBe(true)
+    expect(feedItem(b, u.aPriv)?.isOwn).toBe(true)
+    expect(feedItem(b, u.bPub)?.isOwn).toBe(false)
+    expect(feedItem(b, u.cat)?.isOwn).toBe(false)
+    // Leak-safety intocado.
+    expect(feedItem(b, u.bPriv)).toBeUndefined()
+  })
+
+  it('anônimo: nenhum item com isOwn=true', async () => {
+    await seedUniverse()
+    const b = await feedBody()
+    expect(b.feed.every((h) => h.isOwn === false)).toBe(true)
   })
 })

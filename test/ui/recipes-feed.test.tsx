@@ -85,8 +85,8 @@ function lastFetchUrl(fetchMock: ReturnType<typeof vi.fn>): string {
   return String(fetchMock.mock.calls.at(-1)?.[0])
 }
 
-function item(recipeId: string, displayedTitle: string, origin: Origin = 'catalog') {
-  return { recipeId, displayedTitle, origin, autoTranslationSignal: false }
+function item(recipeId: string, displayedTitle: string, origin: Origin = 'catalog', isOwn = false) {
+  return { recipeId, displayedTitle, origin, autoTranslationSignal: false, isOwn }
 }
 
 afterEach(() => {
@@ -211,14 +211,18 @@ describe('RecipeFeedExperience (#103)', () => {
     expect(screen.queryByText(MF.subtituloLogado)).not.toBeInTheDocument()
   })
 
-  it('F7 (#116) — LOGADO: subtítulo "suas receitas + comunidade" E a própria privada renderiza', async () => {
+  it('F7 (#116/own-label) — LOGADO: a própria carrega o selo "Sua receita" (não "Da comunidade")', async () => {
     sessionState = authed()
-    // A linha PRIVADA do dono chega no payload do /api/feed (o gate do servidor a inclui p/ o
-    // viewer); a UI a renderiza como qualquer item (selo de comunidade — o DTO não carrega
-    // visibility; o importante é NÃO quebrar). Modela "private own row renders".
+    // A linha PRÓPRIA do dono chega no payload do /api/feed com `isOwn=true` (o servidor o deriva
+    // de owner_id===viewerId; o owner_id cru NÃO trafega). A UI mostra o selo "Sua receita" no
+    // lugar de "Da comunidade". Uma de catálogo (não-própria) segue com seu selo normal.
     stubFetchSequence([
       {
-        feed: [item('rPriv', 'Minha Privada', 'ai_chat'), item('rCat', 'Feijoada', 'catalog')],
+        feed: [
+          item('rPriv', 'Minha Privada', 'ai_chat', true),
+          item('rCom', 'Strogonoff', 'ai_chat', false),
+          item('rCat', 'Feijoada', 'catalog', false),
+        ],
         nextCursor: null,
       },
     ])
@@ -228,9 +232,15 @@ describe('RecipeFeedExperience (#103)', () => {
     // Cópia autenticada (key-path idêntica entre locales).
     expect(screen.getByText(MF.subtituloLogado)).toBeInTheDocument()
     expect(screen.queryByText(MF.subtitulo)).not.toBeInTheDocument()
-    // A própria privada renderiza sem quebrar, com link para o detalhe canônico.
+    // A própria mostra o selo "Sua receita" (own-label) — NUNCA "Da comunidade".
     const priv = screen.getByText('Minha Privada').closest('li')!
+    expect(within(priv).getByText(M.seloMinha)).toBeInTheDocument()
+    expect(within(priv).queryByText(M.seloComunidade)).not.toBeInTheDocument()
     expect(within(priv).getByRole('link')).toHaveAttribute('href', '/recipes/rPriv')
+    // A comunidade genuína (não-própria) mantém "Da comunidade".
+    const com = screen.getByText('Strogonoff').closest('li')!
+    expect(within(com).getByText(M.seloComunidade)).toBeInTheDocument()
+    expect(within(com).queryByText(M.seloMinha)).not.toBeInTheDocument()
     expect(screen.getByText('Feijoada')).toBeInTheDocument()
   })
 })

@@ -111,6 +111,7 @@ function semanticSelectSql(
         (1 - (re.embedding <=> ${sql.param(litVec)}::vector)) AS cosine_sim,
         r.origin AS origin,
         r.original_locale AS original_locale,
+        r.owner_id AS owner_id,
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
       FROM recipe_embedding re
       JOIN recipe r ON r.id = re.recipe_id
@@ -397,6 +398,7 @@ export async function searchRecipes(
         s.recipe_id AS recipe_id,
         s.origin AS origin,
         s.original_locale AS original_locale,
+        s.owner_id AS owner_id,
         0 AS overlap,
         false AS title_match,
         0::double precision AS title_rank,
@@ -452,6 +454,7 @@ export async function searchRecipes(
         r.id AS recipe_id,
         r.origin AS origin,
         r.original_locale AS original_locale,
+        r.owner_id AS owner_id,
         0 AS overlap,
         false AS title_match,
         0::double precision AS title_rank,
@@ -470,6 +473,7 @@ export async function searchRecipes(
         r.id AS recipe_id,
         r.origin AS origin,
         r.original_locale AS original_locale,
+        r.owner_id AS owner_id,
         c.overlap AS overlap,
         c.title_match AS title_match,
         c.title_rank AS title_rank,
@@ -645,6 +649,7 @@ export async function searchRecipes(
         visible.recipe_id AS recipe_id,
         visible.origin AS origin,
         visible.original_locale AS original_locale,
+        visible.owner_id AS owner_id,
         visible.section AS section,
         ROW_NUMBER() OVER (
           PARTITION BY visible.section
@@ -696,6 +701,7 @@ export async function searchRecipes(
         s.recipe_id AS recipe_id,
         s.origin AS origin,
         s.original_locale AS original_locale,
+        s.owner_id AS owner_id,
         s.section AS section,
         ROW_NUMBER() OVER (
           PARTITION BY s.section
@@ -725,6 +731,7 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       n.recipe_id AS recipe_id,
       n.origin AS origin,
       n.original_locale AS original_locale,
+      n.owner_id AS owner_id,
       n.section AS section,
       req_t.titulo AS requested_titulo,
       req_t.provenance AS requested_provenance,

@@ -23,7 +23,7 @@ type SearchResult = {
   origin: string
   autoTranslationSignal: boolean
 }
-type SearchResponse = { catalogo: SearchResult[]; comunidade: SearchResult[] }
+type SearchResponse = { minhas: SearchResult[]; catalogo: SearchResult[]; comunidade: SearchResult[] }
 
 /** Busca pela porta alta. `match` adiciona ?match=. Sem headers = Visitante ANÔNIMO. */
 function search(q: string, locale?: string, match?: 'any' | 'all'): Promise<Response> {
@@ -40,7 +40,11 @@ async function searchBody(q: string, locale?: string, match?: 'any' | 'all'): Pr
 }
 
 const ids = (results: SearchResult[]): string[] => results.map((r) => r.recipeId)
-const allIds = (body: SearchResponse): string[] => [...ids(body.catalogo), ...ids(body.comunidade)]
+const allIds = (body: SearchResponse): string[] => [
+  ...ids(body.minhas),
+  ...ids(body.catalogo),
+  ...ids(body.comunidade),
+]
 
 let sql: Sql
 
@@ -195,7 +199,8 @@ describe('GET /api/search — Busca por Ingrediente (#9)', () => {
     // belt-and-suspenders: preserva o invariante (hits de título da #6 sobrevivem ao N=0)
     // SE a simetria q↔terms algum dia divergir (ex.: um q com word-char mas terms=[]).
     const body = await searchBody(',,,', 'pt-BR', 'all')
-    expect(body).toEqual({ catalogo: [], comunidade: [] })
+    // #116/own-label: shape neutro agora carrega a chave `minhas:[]` (3 seções).
+    expect(body).toEqual({ minhas: [], catalogo: [], comunidade: [] })
   })
 
   it('EXTRA q patológico: handler trata graciosamente entrada gigante (smoke 200)', async () => {

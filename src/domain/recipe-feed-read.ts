@@ -97,18 +97,24 @@ export function decodeCursor(raw: string | null): FeedCursor | null {
  * offset. Linha sem título exibível é PULADA por `projectResult` (defesa "nunca tela
  * quebrada"), mas ainda conta para a posição do cursor (paginação é por linha, não por item
  * exibido).
+ *
+ * `viewerId` (#116/own-label): logado ⇒ cada item da própria Receita carrega `isOwn=true` no DTO
+ * (dirige o selo "Sua receita" no lugar de "Da comunidade"). Anônimo (undefined) ⇒ `isOwn` sempre
+ * false (selo de antes byte-a-byte). LEAK-SAFETY: `projectResult` deriva só o booleano de
+ * `owner_id === viewerId` — o `owner_id` cru nunca entra no DTO.
  */
 export function buildFeedResponse(
   rows: ReadonlyArray<FeedHitRow>,
   requestLocale: string,
   limit: number,
+  viewerId?: string,
 ): FeedResponse {
   const hasMore = rows.length > limit
   const pageRows = hasMore ? rows.slice(0, limit) : rows.slice()
 
   const feed: SearchResult[] = []
   for (const row of pageRows) {
-    const result = projectResult(row, requestLocale)
+    const result = projectResult(row, requestLocale, viewerId)
     if (result !== null) feed.push(result)
   }
 

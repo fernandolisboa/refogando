@@ -19,6 +19,7 @@ type SearchResult = {
   autoTranslationSignal: boolean
 }
 type SearchResponse = {
+  minhas: SearchResult[]
   catalogo: SearchResult[]
   comunidade: SearchResult[]
   sugestoes?: SearchResult[]
@@ -32,7 +33,7 @@ async function searchBody(q: string, locale = 'pt-BR'): Promise<{ status: number
 }
 const sugIds = (b: SearchResponse): string[] => (b.sugestoes ?? []).map((r) => r.recipeId)
 const secIds = (b: SearchResponse): string[] =>
-  [...b.catalogo, ...b.comunidade].map((r) => r.recipeId)
+  [...b.minhas, ...b.catalogo, ...b.comunidade].map((r) => r.recipeId)
 
 /**
  * Camada semântica + fusão híbrida (issue #14, ADR-0008) pela porta MAIS ALTA — handler

@@ -16,6 +16,7 @@ export function SearchSection({
   headingId,
   heading,
   badgeLabels,
+  ownLabel,
   autoTranslationLabel,
   results,
 }: {
@@ -23,6 +24,9 @@ export function SearchSection({
   heading: string
   /** Rótulos de selo por seção, localizados (cada item escolhe pelo seu origin). */
   badgeLabels: BadgeLabels
+  /** #116/own-label: rótulo do selo "Sua receita", localizado. Cada item próprio (`result.isOwn`)
+   * o exibe no lugar do selo de seção — relevante porque a seção "Minhas" mistura origens. */
+  ownLabel: string
   autoTranslationLabel: string
   results: SearchResult[]
 }) {
@@ -42,6 +46,8 @@ export function SearchSection({
             autoTranslationSignal={result.autoTranslationSignal}
             badgeLabels={badgeLabels}
             autoTranslationLabel={autoTranslationLabel}
+            isOwn={result.isOwn}
+            ownLabel={ownLabel}
           />
         ))}
       </ul>

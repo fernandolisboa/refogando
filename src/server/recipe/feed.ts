@@ -60,6 +60,7 @@ export async function loadFeed(
         r.id AS recipe_id,
         r.origin AS origin,
         r.original_locale AS original_locale,
+        r.owner_id AS owner_id,
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
         r.created_at AS created_at_ts,
         r.created_at::text AS created_at
@@ -75,6 +76,7 @@ export async function loadFeed(
       fr.recipe_id AS recipe_id,
       fr.origin AS origin,
       fr.original_locale AS original_locale,
+      fr.owner_id AS owner_id,
       fr.section AS section,
       fr.created_at AS created_at,
       req_t.titulo AS requested_titulo,

@@ -17,6 +17,7 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     original_titulo: 'Chili de carne',
     original_provenance: 'escrita_por_pessoa',
     section: 'catalogo',
+    owner_id: null,
     ...over,
   }
 }
@@ -190,7 +191,7 @@ describe('buildSearchResponse — agrupamento por seção e preservação da ord
   })
 
   it('lista vazia ⇒ seções vazias', () => {
-    expect(buildSearchResponse([], 'pt-BR')).toEqual({ catalogo: [], comunidade: [] })
+    expect(buildSearchResponse([], 'pt-BR')).toEqual({ minhas: [], catalogo: [], comunidade: [] })
   })
 })
 
@@ -218,12 +219,12 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
     expect(comunidade).toHaveLength(0)
   })
 
-  it('ts_rank NUNCA aparece nas chaves de SearchResult', () => {
+  it('ts_rank/owner_id NUNCA aparecem nas chaves de SearchResult', () => {
     const { catalogo, comunidade } = buildSearchResponse(
       [hit(), c3Composite],
       'pt-BR',
     )
-    const expectedKeys = ['autoTranslationSignal', 'displayedTitle', 'origin', 'recipeId']
+    const expectedKeys = ['autoTranslationSignal', 'displayedTitle', 'isOwn', 'origin', 'recipeId']
     for (const result of [...catalogo, ...comunidade]) {
       const keys = Object.keys(result).sort()
       expect(keys).toEqual(expectedKeys)
@@ -231,6 +232,9 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
       expect(keys).not.toContain('rn')
       expect(keys).not.toContain('ts_rank')
       expect(keys).not.toContain('section')
+      // LEAK-SAFETY (#116/own-label): o owner_id cru NUNCA aflora no DTO — só o booleano isOwn.
+      expect(keys).not.toContain('owner_id')
+      expect(keys).not.toContain('ownerId')
     }
   })
 })
@@ -238,51 +242,52 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
 // ── #10: `consulta` ADITIVA omitida quando a lente não resolveu ─────────────────
 
 describe('buildSearchResponse — consulta (facetas resolvidas, #10)', () => {
-  it('SEM 3º arg ⇒ chave `consulta` AUSENTE (estado neutro byte-a-byte)', () => {
+  it('SEM consulta ⇒ chave `consulta` AUSENTE (estado neutro byte-a-byte)', () => {
     const body = buildSearchResponse([], 'pt-BR')
-    expect(body).toEqual({ catalogo: [], comunidade: [] })
+    expect(body).toEqual({ minhas: [], catalogo: [], comunidade: [] })
     expect('consulta' in body).toBe(false)
   })
 
-  it('3º arg undefined ⇒ chave `consulta` AUSENTE (não emitida como undefined)', () => {
-    const body = buildSearchResponse([], 'pt-BR', undefined)
+  it('consulta undefined ⇒ chave `consulta` AUSENTE (não emitida como undefined)', () => {
+    const body = buildSearchResponse([], 'pt-BR', undefined, undefined)
     expect('consulta' in body).toBe(false)
   })
 
   it('COM `consulta` ⇒ chave presente, ecoada verbatim', () => {
     const consulta = { cozinhas: ['japonesa'], dificuldade: { max: 2 } }
-    const body = buildSearchResponse([], 'pt-BR', consulta)
+    const body = buildSearchResponse([], 'pt-BR', undefined, consulta)
     expect(body.consulta).toEqual(consulta)
   })
 
   it('`consulta` presente convive com os hits agrupados', () => {
-    const body = buildSearchResponse([hit()], 'pt-BR', { tags: ['leve'] })
+    const body = buildSearchResponse([hit()], 'pt-BR', undefined, { tags: ['leve'] })
     expect(body.catalogo).toHaveLength(1)
     expect(body.consulta).toEqual({ tags: ['leve'] })
   })
 })
 
 describe('buildSearchResponse — sugestoes (US38, #14)', () => {
-  it('SEM 4º arg ⇒ chave `sugestoes` AUSENTE (estado neutro byte-a-byte)', () => {
+  it('SEM sugestoes ⇒ chave `sugestoes` AUSENTE (estado neutro byte-a-byte)', () => {
     const body = buildSearchResponse([], 'pt-BR')
-    expect(body).toEqual({ catalogo: [], comunidade: [] })
+    expect(body).toEqual({ minhas: [], catalogo: [], comunidade: [] })
     expect('sugestoes' in body).toBe(false)
   })
 
-  it('4º arg [] ⇒ chave `sugestoes` OMITIDA (não emitida como [])', () => {
-    const body = buildSearchResponse([hit()], 'pt-BR', undefined, [])
+  it('sugestoes [] ⇒ chave `sugestoes` OMITIDA (não emitida como [])', () => {
+    const body = buildSearchResponse([hit()], 'pt-BR', undefined, undefined, [])
     expect('sugestoes' in body).toBe(false)
   })
 
-  it('COM vizinhos ⇒ `sugestoes` presente, projeção de 4 campos (sem cosseno/score)', () => {
+  it('COM vizinhos ⇒ `sugestoes` presente, projeção de 5 campos (sem cosseno/score; com isOwn)', () => {
     const neighbor = hit({ recipe_id: 'SN', original_titulo: 'Risoto', origin: 'catalog' })
-    const body = buildSearchResponse([], 'pt-BR', undefined, [neighbor])
+    const body = buildSearchResponse([], 'pt-BR', undefined, undefined, [neighbor])
     expect(body.sugestoes).toHaveLength(1)
     const s = body.sugestoes?.[0]
-    // EXATAMENTE 4 campos — nenhum vazamento de cosseno/score/matchKind.
+    // EXATAMENTE 5 campos — nenhum vazamento de cosseno/score/matchKind/owner_id.
     expect(Object.keys(s ?? {}).sort()).toEqual([
       'autoTranslationSignal',
       'displayedTitle',
+      'isOwn',
       'origin',
       'recipeId',
     ])
@@ -298,16 +303,77 @@ describe('buildSearchResponse — sugestoes (US38, #14)', () => {
       requested_titulo: null,
       requested_provenance: null,
     })
-    const body = buildSearchResponse([], 'pt-BR', undefined, [blank])
+    const body = buildSearchResponse([], 'pt-BR', undefined, undefined, [blank])
     // todos pulados ⇒ array vazio ⇒ chave OMITIDA.
     expect('sugestoes' in body).toBe(false)
   })
 
   it('`sugestoes` convive com seções e `consulta`', () => {
     const neighbor = hit({ recipe_id: 'SN', original_titulo: 'Caldo verde' })
-    const body = buildSearchResponse([hit()], 'pt-BR', { tags: ['leve'] }, [neighbor])
+    const body = buildSearchResponse([hit()], 'pt-BR', undefined, { tags: ['leve'] }, [neighbor])
     expect(body.catalogo).toHaveLength(1)
     expect(body.consulta).toEqual({ tags: ['leve'] })
     expect(body.sugestoes).toHaveLength(1)
+  })
+})
+
+// ── #116/own-label: roteamento da seção "Minhas" via isOwn (owner == viewer) ─────
+
+describe('buildSearchResponse — seção Minhas (#116/own-label)', () => {
+  it('viewer logado: a PRÓPRIA (owner == viewer) vai p/ `minhas`, NÃO p/ comunidade', () => {
+    const own = hit({
+      recipe_id: 'OWN',
+      origin: 'ai_chat',
+      original_titulo: 'Minha receita',
+      owner_id: 'viewer-1',
+      section: 'comunidade',
+    })
+    const community = hit({
+      recipe_id: 'COM',
+      origin: 'ai_chat',
+      original_titulo: 'Receita da comunidade',
+      owner_id: 'outro-2',
+      section: 'comunidade',
+    })
+    const cat = hit({ recipe_id: 'CAT', origin: 'catalog', owner_id: null })
+    const body = buildSearchResponse([own, community, cat], 'pt-BR', 'viewer-1')
+
+    expect(body.minhas.map((r) => r.recipeId)).toEqual(['OWN'])
+    expect(body.minhas[0].isOwn).toBe(true)
+    // A comunidade genuína (outro dono, público) fica na comunidade — NUNCA em minhas.
+    expect(body.comunidade.map((r) => r.recipeId)).toEqual(['COM'])
+    expect(body.comunidade[0].isOwn).toBe(false)
+    // Catálogo (owner NULL) fica no catálogo — owner NULL nunca casa o viewerId.
+    expect(body.catalogo.map((r) => r.recipeId)).toEqual(['CAT'])
+    expect(body.catalogo[0].isOwn).toBe(false)
+  })
+
+  it('anônimo (viewerId undefined): `minhas` vazia; nada vira própria mesmo com owner_id', () => {
+    const ownerRow = hit({
+      recipe_id: 'PUB',
+      origin: 'ai_chat',
+      original_titulo: 'Pública de alguém',
+      owner_id: 'algum-dono',
+      section: 'comunidade',
+    })
+    const body = buildSearchResponse([ownerRow], 'pt-BR' /* viewerId undefined */)
+    expect(body.minhas).toHaveLength(0)
+    expect(body.comunidade.map((r) => r.recipeId)).toEqual(['PUB'])
+    expect(body.comunidade[0].isOwn).toBe(false)
+  })
+
+  it('viewer logado mas SEM próprias: `minhas` vazia (busca de antes, só com a chave a mais)', () => {
+    const community = hit({ recipe_id: 'COM', origin: 'ai_chat', owner_id: 'outro', section: 'comunidade' })
+    const body = buildSearchResponse([community], 'pt-BR', 'viewer-1')
+    expect(body.minhas).toHaveLength(0)
+    expect(body.comunidade).toHaveLength(1)
+  })
+
+  it('PRÓPRIA de catálogo-origin (improvável, mas owner == viewer) ainda vai p/ minhas', () => {
+    // isOwn PRECEDE classifySection: mesmo origin=catalog, se for do viewer vai p/ minhas.
+    const ownCat = hit({ recipe_id: 'OC', origin: 'catalog', owner_id: 'viewer-1' })
+    const body = buildSearchResponse([ownCat], 'pt-BR', 'viewer-1')
+    expect(body.minhas.map((r) => r.recipeId)).toEqual(['OC'])
+    expect(body.catalogo).toHaveLength(0)
   })
 })
