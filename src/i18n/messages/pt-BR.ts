@@ -184,6 +184,8 @@ export const ptBR = {
     imagemPromptRotulo: 'Prompt da imagem',
     imagemPromptPlaceholder: 'Descreva o prato como quer que a foto fique (opcional).',
     imagemGerarErro: 'Não foi possível gerar a imagem. Tente de novo.',
+    // #134: geração desligada pelo admin (a UI esconde o botão; cobre a corrida de desligar no meio).
+    imagemGerarDesabilitada: 'A geração de imagem por IA está desativada no momento.',
     // Janela DESLIZANTE de 24h (não "hoje"/dia-calendário): copy neutra à janela.
     imagemLimite: 'Você atingiu o limite de gerações por enquanto. Libera em ~{tempo}.',
   },
@@ -546,6 +548,17 @@ export const ptBR = {
     navModeracao: 'Moderação',
     navTraducoes: 'Traduções',
     navCatalogo: 'Catálogo',
+    navAi: 'Geração de imagem',
+    // Seção /admin/ai (#134) — liga/desliga a geração de imagem por IA, modelo e tetos por papel.
+    aiTitulo: 'Geração de imagem por IA',
+    aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
+    aiHabilitadaLabel: 'Geração de imagem ligada',
+    aiModeloLabel: 'Modelo',
+    aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
+    aiTetosLabel: 'Tetos diários por papel (janela de 24h)',
+    aiTetoIlimitado: 'ilimitado',
+    aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
+    aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel. Confira o ID.',
     erroGenerico: 'Algo deu errado. Tente de novo.',

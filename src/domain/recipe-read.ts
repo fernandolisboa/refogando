@@ -180,6 +180,14 @@ export type ResolveInput = {
    * AUSENTE/`false` (caso normal: sem imagem ou imagem não moderada) ⇒ a imagem aparece p/ todos.
    */
   imageModerated?: boolean
+  /**
+   * Geração de imagem por IA LIGADA? (#134) — a config admin-controlada (`app_config.image_gen_enabled`)
+   * que o detalhe GET carrega SÓ quando o requester é o dono (a ação de gerar é OWNER-ONLY). Projetado
+   * apenas sob `canManage` (junto dos demais campos de gestão) ⇒ a UI esconde o botão "Gerar por IA"
+   * quando desligado. O servidor reimpõe o gate (403) — isto é só a afordância de esconder. AUSENTE
+   * quando não-dono OU o server não pediu (outras rotas que montam a view do dono não o carregam).
+   */
+  imageGenEnabled?: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -278,6 +286,12 @@ export type RecipeView = {
   visibility?: Visibility
   /** Desfecho da geração — presente SÓ quando `canManage` (gateia o caso playful no toggle). */
   resultKind?: ResultKind
+  /**
+   * Geração de imagem por IA LIGADA? (#134) — OWNER-GATED (presente SÓ quando `canManage` E o server
+   * carregou a config). A UI do dono esconde o botão "Gerar por IA" quando `false`. AUSENTE para
+   * não-dono / quando o server não carregou (mesma regra "ausente ≠ vazio").
+   */
+  imageGenEnabled?: boolean
   /**
    * Diff DERIVADO congelado (#17) — a forma versionada que o fork ARMAZENOU em
    * `recipe.derived_diff`, REPASSADA 1:1 (NUNCA recomputada na leitura — história 289: a base
@@ -572,6 +586,9 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           canManage: true,
           visibility: input.recipe.visibility,
           resultKind: input.recipe.resultKind,
+          // #134: flag de geração-por-IA-ligada, owner-gated. Só sai quando o server a carregou
+          // (detalhe GET do dono); outras rotas que montam a view do dono não a pedem ⇒ ausente.
+          ...(input.imageGenEnabled !== undefined ? { imageGenEnabled: input.imageGenEnabled } : {}),
         }
       : {}),
     // Diff DERIVADO (#17): OWNER-GATED como a gestão (só o dono da derivada vê o próprio diff)

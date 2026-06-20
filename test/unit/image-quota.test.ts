@@ -1,13 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import {
-  decideImageQuota,
-  capForRole,
-  DAILY_IMAGE_GEN_CAP_BY_ROLE,
-  IMAGE_GEN_WINDOW_MS,
-} from '@/domain/image-quota'
+import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
 
 /**
  * Teto de geração por IA — janela 24h DESLIZANTE (#132, ADR-0017). PURO/total. `now` injetado.
+ * (A resolução do cap por papel migrou p/ `image-gen-config.test.ts` na #134 — `capFromConfig`.)
  */
 
 const NOW = new Date('2026-06-20T12:00:00Z')
@@ -15,18 +11,6 @@ const NOW = new Date('2026-06-20T12:00:00Z')
 function hoursAgo(h: number): Date {
   return new Date(NOW.getTime() - h * 60 * 60 * 1000)
 }
-
-describe('capForRole — teto por papel (defaults fixos #132)', () => {
-  it('usuario=3, curador=5, admin=∞', () => {
-    expect(capForRole('usuario')).toBe(3)
-    expect(capForRole('curador')).toBe(5)
-    expect(capForRole('admin')).toBe(Infinity)
-    expect(DAILY_IMAGE_GEN_CAP_BY_ROLE.usuario).toBe(3)
-  })
-  it('papel null/desconhecido ⇒ fail-closed no teto de usuario (3)', () => {
-    expect(capForRole(null)).toBe(3)
-  })
-})
 
 describe('decideImageQuota — janela 24h deslizante', () => {
   it('admin (∞) sempre permite, mesmo com muitas gerações recentes', () => {

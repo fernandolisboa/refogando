@@ -42,6 +42,9 @@ export async function POST(
   switch (res.kind) {
     case 'ok':
       return Response.json(res.view, { status: 200 })
+    case 'disabled':
+      // #134: geração desligada pelo admin (config). 403 — bloqueio explícito (a UI também esconde a ação).
+      return Response.json({ error: 'geracao_desabilitada' }, { status: 403 })
     case 'quota':
       return Response.json({ error: 'limite_geracao', retryAfterMs: res.retryAfterMs }, { status: 429 })
     case 'generator':

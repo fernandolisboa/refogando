@@ -15,6 +15,12 @@
  * exercitado por teste (Fake) e só roda ao vivo quando a key estiver no ambiente (gate humano).
  */
 
+// Modelo default (Nano Banana 2) — fonte ÚNICA no DOMÍNIO (`image-gen-config.ts`), de onde o teto/
+// allowlist/config também saem (direção de camada: server depende de domínio). Re-exportado pra
+// conveniência dos consumidores históricos do seam.
+import { DEFAULT_IMAGE_MODEL } from '@/domain/image-gen-config'
+export { DEFAULT_IMAGE_MODEL }
+
 /** Entrada da geração: o prompt já montado (de `buildDishImagePrompt` ou editado pelo usuário). */
 export type GenerateImageInput = {
   prompt: string
@@ -32,8 +38,6 @@ export interface ImageGenerator {
   generateDishImage(input: GenerateImageInput): Promise<GeneratedImage>
 }
 
-/** Modelo default (ADR-0017: Nano Banana 2). */
-export const DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image'
 
 /** Forma mínima da resposta do `:generateContent` que consumimos (parts com inlineData base64). */
 type GeminiResponse = {
@@ -86,14 +90,17 @@ export class RealGeminiImageGenerator implements ImageGenerator {
 
 /** Dublê determinístico para testes — NUNCA toca o Gemini. Devolve bytes canned (PNG 1x1 fake). */
 export class FakeImageGenerator implements ImageGenerator {
-  /** Conta chamadas (provar que a geração disparou) e guarda o último prompt (asserções). */
+  /** Conta chamadas (provar que a geração disparou) e guarda o último prompt/modelo (asserções). */
   public calls = 0
   public lastPrompt: string | null = null
+  /** #134: o modelo recebido (da config do admin) — `undefined` quando o chamador não passou modelo. */
+  public lastModel: string | undefined = undefined
   constructor(private readonly canned: GeneratedImage = { data: Buffer.from([1, 2, 3, 4]), contentType: 'image/png' }) {}
 
   async generateDishImage(input: GenerateImageInput): Promise<GeneratedImage> {
     this.calls++
     this.lastPrompt = input.prompt
+    this.lastModel = input.model
     return this.canned
   }
 }

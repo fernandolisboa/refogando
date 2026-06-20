@@ -34,6 +34,11 @@ import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
+import {
+  DEFAULT_IMAGE_MODEL,
+  DEFAULT_IMAGE_GEN_CAP_BY_ROLE,
+  type ImageGenCapByRole,
+} from '@/domain/image-gen-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
@@ -497,16 +502,28 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
-// ── Config de aplicação (#5.AC2 — modelo default) ──────────────────────────────
+// ── Config de aplicação (#5.AC2 — modelo default; #134 — geração de imagem) ─────
 //
 // Singleton: só pode existir a linha id=true (CHECK app_config_singleton_chk torna o
 // singleton garantia de banco, não só convenção de PK). `default_model` é text livre
 // (não enum): o conjunto válido é detalhe de runtime; o handler valida por allowlist.
+//
+// #134 (geração de imagem por IA, admin-configurável): `image_gen_enabled` liga/desliga a geração;
+// `image_gen_model` é o modelo do gerador (text livre + allowlist EM CÓDIGO, espelha default_model);
+// `image_gen_cap_by_role` é o teto diário por papel (jsonb Record<Role, number|null>, `null` =
+// ILIMITADO — JSON não tem Infinity). Defaults vêm do domínio (mesma fonte da #132). Colunas planas
+// na MESMA linha singleton (não tabela própria): a config é um punhado de campos, não uma coleção.
 export const appConfig = pgTable(
   'app_config',
   {
     id: boolean('id').primaryKey().default(true),
     defaultModel: text('default_model').notNull().default('claude-opus-4-8'),
+    imageGenEnabled: boolean('image_gen_enabled').notNull().default(true),
+    imageGenModel: text('image_gen_model').notNull().default(DEFAULT_IMAGE_MODEL),
+    imageGenCapByRole: jsonb('image_gen_cap_by_role')
+      .$type<ImageGenCapByRole>()
+      .notNull()
+      .default(DEFAULT_IMAGE_GEN_CAP_BY_ROLE),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

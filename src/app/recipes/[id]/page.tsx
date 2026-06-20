@@ -108,6 +108,8 @@ export default async function RecipeDetailPage({
           // #131: `?reviewImage=1` (anexado pelos fluxos de editar/derivar/regenerar quando a
           // mudança foi VISUAL) destaca a sugestão de revisar a foto carregada-pra-frente.
           reviewSuggested={sp.reviewImage === '1'}
+          // #134: geração-por-IA-ligada (owner-gated na view). Ausente ⇒ default true no manager.
+          aiGenEnabled={view.imageGenEnabled ?? true}
         />
       )}
       {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
