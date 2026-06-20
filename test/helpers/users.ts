@@ -17,10 +17,28 @@ import type { Role } from '@/domain/user'
  * runtime garante a presença porque o harness roda em NODE_ENV==='test'.
  */
 
+/**
+ * Handle único e válido por seed (#128): `users.handle` é NOT NULL UNIQUE, e `seedUser`
+ * insere a linha DIRETO (sem o auth hook que gera o handle em produção). Derivamos um slug
+ * estável do email + sufixo aleatório curto, garantindo formato ([a-z0-9-], 3–30) e unicidade
+ * entre seeds. O caller pode sobrescrever via `handle` quando o teste precisa de um valor fixo.
+ */
+function defaultHandle(email: string): string {
+  const local = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 18)
+  const base = local.length >= 2 ? local : 'u'
+  return `${base}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 /** Cria um Usuário e devolve o uuid. Defaults seguros para teste. */
 export async function seedUser(input: {
   email: string
   name?: string
+  handle?: string
   role?: Role
   locale?: string | null
   emailVerified?: boolean
@@ -31,6 +49,7 @@ export async function seedUser(input: {
     .values({
       email: input.email,
       name: input.name ?? input.email,
+      handle: input.handle ?? defaultHandle(input.email),
       role: input.role ?? 'usuario',
       locale: input.locale ?? null,
       emailVerified: input.emailVerified ?? true,

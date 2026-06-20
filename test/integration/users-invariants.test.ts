@@ -43,10 +43,12 @@ describe('Usuário: invariantes de banco', () => {
 
     let err: unknown
     try {
-      // Insert RAW de uma 2ª linha com o MESMO email viola o unique index.
+      // Insert RAW de uma 2ª linha com o MESMO email viola o unique index. `handle` é NOT NULL
+      // (#128) e precisa de valor próprio (≠ do seed) — senão o INSERT bate 23502 (not-null)
+      // ANTES do 23505 que este teste prova; usamos um handle distinto pra isolar o email_uq.
       await sql`
-        INSERT INTO users (name, email)
-        VALUES ('Outro', 'dup@inv.test')
+        INSERT INTO users (name, email, handle)
+        VALUES ('Outro', 'dup@inv.test', 'outro-dup-inv')
       `
     } catch (e) {
       err = e

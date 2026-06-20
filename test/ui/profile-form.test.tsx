@@ -4,12 +4,13 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Teste jsdom do formulário de edição de perfil (#124). `fetch` mockado no shape REAL de
- * `/api/me`: GET ({ id, name, email, bio }) carrega o form; PATCH devolve os valores novos.
- * `useSession` mockado (sem Better Auth no jsdom). LocaleProvider real.
+ * Teste jsdom do formulário de edição de perfil (#124, +handle #128). `fetch` mockado no shape
+ * REAL de `/api/me`: GET ({ id, name, email, bio, handle }) carrega o form; PATCH devolve os
+ * valores novos. `useSession` mockado (sem Better Auth no jsdom). LocaleProvider real.
  *
- * Asserções: carrega name+bio do GET, email read-only (disabled), salva via PATCH e reflete
- * os valores novos, guard de Visitante (CTA de entrar), en-US.
+ * Asserções: carrega name+bio+handle do GET, email read-only (disabled), salva via PATCH e
+ * reflete os valores novos, guard de Visitante (CTA de entrar), en-US, e o FEEDBACK INLINE do
+ * handle (taken/reserved/invalid → mensagem específica embaixo do campo).
  */
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
@@ -33,11 +34,12 @@ function guest(): SessionState {
   return { data: null, error: null, isPending: false }
 }
 
-type MeBody = { id: string; name: string; email: string; bio: string | null }
+type MeBody = { id: string; name: string; email: string; bio: string | null; handle: string }
+type SentPatch = { name: string; bio: string; handle: string }
 type FetchResult = { status: number; body?: unknown }
 
 /** Mock de fetch por método; captura o último body de PATCH. */
-function mockMe(get: MeBody, patchResult: (sent: { name: string; bio: string }) => FetchResult) {
+function mockMe(get: MeBody, patchResult: (sent: SentPatch) => FetchResult) {
   const calls: { method: string; body: unknown }[] = []
   const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
     const init = args[1] as RequestInit | undefined
@@ -45,7 +47,7 @@ function mockMe(get: MeBody, patchResult: (sent: { name: string; bio: string }) 
     const sent = init?.body ? JSON.parse(init.body as string) : undefined
     calls.push({ method, body: sent })
     const r: FetchResult =
-      method === 'GET' ? { status: 200, body: get } : patchResult(sent as { name: string; bio: string })
+      method === 'GET' ? { status: 200, body: get } : patchResult(sent as SentPatch)
     return {
       ok: r.status >= 200 && r.status < 300,
       status: r.status,
@@ -54,6 +56,11 @@ function mockMe(get: MeBody, patchResult: (sent: { name: string; bio: string }) 
   })
   vi.stubGlobal('fetch', impl)
   return { impl, calls }
+}
+
+/** GET body completo com defaults — só sobrescreve o que o teste precisa. */
+function meBody(over: Partial<MeBody> = {}): MeBody {
+  return { id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null, handle: 'ana', ...over }
 }
 
 function renderForm(locale: Locale = 'pt-BR') {
@@ -76,16 +83,15 @@ describe('ProfileForm — edição de nome + bio (#124)', () => {
     expect(screen.queryByLabelText(M.nome)).not.toBeInTheDocument()
   })
 
-  it('carrega name + bio do GET /api/me; email é read-only (disabled)', async () => {
+  it('carrega name + bio + handle do GET /api/me; email é read-only (disabled)', async () => {
     sessionState = authed()
-    mockMe({ id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: 'Cozinheira.' }, () => ({
-      status: 200,
-    }))
+    mockMe(meBody({ bio: 'Cozinheira.', handle: 'ana-chef' }), () => ({ status: 200 }))
     renderForm('pt-BR')
 
     const nameInput = await screen.findByLabelText(M.nome)
     expect(nameInput).toHaveValue('Ana')
     expect(screen.getByLabelText(M.bio)).toHaveValue('Cozinheira.')
+    expect(screen.getByLabelText(M.handle)).toHaveValue('ana-chef')
 
     const emailInput = screen.getByLabelText(M.email) as HTMLInputElement
     expect(emailInput).toHaveValue('ana@ex.com')
@@ -94,7 +100,7 @@ describe('ProfileForm — edição de nome + bio (#124)', () => {
 
   it('bio null vira campo vazio (não a string "null")', async () => {
     sessionState = authed()
-    mockMe({ id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null }, () => ({ status: 200 }))
+    mockMe(meBody({ bio: null }), () => ({ status: 200 }))
     renderForm('pt-BR')
     expect(await screen.findByLabelText(M.bio)).toHaveValue('')
   })
@@ -102,10 +108,10 @@ describe('ProfileForm — edição de nome + bio (#124)', () => {
   it('salva via PATCH e reflete os valores novos + mensagem de sucesso', async () => {
     const user = userEvent.setup()
     sessionState = authed()
-    const { calls } = mockMe(
-      { id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null },
-      (sent) => ({ status: 200, body: { id: 'u-1', name: sent.name, email: 'ana@ex.com', bio: sent.bio || null } }),
-    )
+    const { calls } = mockMe(meBody({ bio: null, handle: 'ana' }), (sent) => ({
+      status: 200,
+      body: meBody({ name: sent.name, bio: sent.bio || null, handle: sent.handle }),
+    }))
     renderForm('pt-BR')
 
     const nameInput = await screen.findByLabelText(M.nome)
@@ -118,22 +124,19 @@ describe('ProfileForm — edição de nome + bio (#124)', () => {
 
     await waitFor(() => expect(screen.getByText(M.salvo)).toBeInTheDocument())
 
-    // Mandou o PATCH com os valores digitados.
+    // Mandou o PATCH com os valores digitados (incluindo handle).
     const patchCall = calls.find((c) => c.method === 'PATCH')
-    expect(patchCall?.body).toMatchObject({ name: 'Maria', bio: 'Olá!' })
+    expect(patchCall?.body).toMatchObject({ name: 'Maria', bio: 'Olá!', handle: 'ana' })
 
     // O form reflete os valores retornados.
     expect(screen.getByLabelText(M.nome)).toHaveValue('Maria')
     expect(screen.getByLabelText(M.bio)).toHaveValue('Olá!')
   })
 
-  it('erro do servidor no PATCH → mostra mensagem de erro, sem travar', async () => {
+  it('erro genérico do servidor no PATCH → mostra mensagem de erro, sem travar', async () => {
     const user = userEvent.setup()
     sessionState = authed()
-    mockMe({ id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null }, () => ({
-      status: 400,
-      body: { error: 'nome_invalido' },
-    }))
+    mockMe(meBody({ bio: null }), () => ({ status: 400, body: { error: 'nome_invalido' } }))
     renderForm('pt-BR')
 
     await screen.findByLabelText(M.nome)
@@ -144,10 +147,77 @@ describe('ProfileForm — edição de nome + bio (#124)', () => {
 
   it('en-US: rótulos em inglês', async () => {
     sessionState = authed()
-    mockMe({ id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null }, () => ({ status: 200 }))
+    mockMe(meBody({ bio: null }), () => ({ status: 200 }))
     renderForm('en-US')
     expect(await screen.findByLabelText(enUS.perfil.nome)).toBeInTheDocument()
     expect(screen.getByLabelText(enUS.perfil.bio)).toBeInTheDocument()
+    expect(screen.getByLabelText(enUS.perfil.handle)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: enUS.perfil.salvar })).toBeInTheDocument()
+  })
+})
+
+describe('ProfileForm — feedback inline do handle (#128)', () => {
+  it('handle em uso (409 handle_taken) → mensagem específica embaixo do campo', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(meBody({ handle: 'ana' }), () => ({ status: 409, body: { error: 'handle_taken' } }))
+    renderForm('pt-BR')
+
+    const handleInput = await screen.findByLabelText(M.handle)
+    await user.clear(handleInput)
+    await user.type(handleInput, 'tomado')
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+
+    await waitFor(() => expect(screen.getByText(M.handleEmUso)).toBeInTheDocument())
+    // Não é o erro genérico do form.
+    expect(screen.queryByText(M.erro)).not.toBeInTheDocument()
+    expect(handleInput).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('handle reservado (400 handle_reserved) → mensagem específica', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(meBody({ handle: 'ana' }), () => ({ status: 400, body: { error: 'handle_reserved' } }))
+    renderForm('pt-BR')
+
+    const handleInput = await screen.findByLabelText(M.handle)
+    await user.clear(handleInput)
+    await user.type(handleInput, 'admin')
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+
+    await waitFor(() => expect(screen.getByText(M.handleReservado)).toBeInTheDocument())
+    expect(screen.queryByText(M.erro)).not.toBeInTheDocument()
+  })
+
+  it('handle inválido (400 handle_invalid) → mensagem específica', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(meBody({ handle: 'ana' }), () => ({ status: 400, body: { error: 'handle_invalid' } }))
+    renderForm('pt-BR')
+
+    const handleInput = await screen.findByLabelText(M.handle)
+    await user.clear(handleInput)
+    await user.type(handleInput, 'ab')
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+
+    await waitFor(() => expect(screen.getByText(M.handleInvalido)).toBeInTheDocument())
+    expect(screen.queryByText(M.erro)).not.toBeInTheDocument()
+  })
+
+  it('editar o handle limpa o erro inline anterior', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(meBody({ handle: 'ana' }), () => ({ status: 409, body: { error: 'handle_taken' } }))
+    renderForm('pt-BR')
+
+    const handleInput = await screen.findByLabelText(M.handle)
+    await user.clear(handleInput)
+    await user.type(handleInput, 'tomado')
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+    await waitFor(() => expect(screen.getByText(M.handleEmUso)).toBeInTheDocument())
+
+    // Ao digitar de novo, o erro some (o campo volta a mostrar a dica).
+    await user.type(handleInput, '-2')
+    expect(screen.queryByText(M.handleEmUso)).not.toBeInTheDocument()
   })
 })

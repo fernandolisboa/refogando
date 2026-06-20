@@ -6,6 +6,7 @@ import * as schema from '@/db/schema'
 import { ac, roles } from '@/lib/auth-permissions'
 import { DEFAULT_ROLE } from '@/domain/user'
 import { isGoogleConfigured } from '@/server/auth/google'
+import { generateUniqueHandle } from '@/server/handle'
 
 /**
  * Instância Better Auth (issue #5, ADR-0010/0011). Route handlers, NÃO Server Actions
@@ -72,6 +73,24 @@ function buildAuth() {
         // role é do plugin admin — NÃO declarar aqui.
         locale: { type: 'string', required: false, input: false },
         deletedAt: { type: 'date', required: false, input: false },
+        // handle é gerado pelo databaseHooks.user.create.before (não vem do input do signup);
+        // input:false impede que o cliente o forneça/sobrescreva na criação da conta (#128).
+        handle: { type: 'string', required: false, input: false },
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          // #128 — todo Usuário nasce com um handle único derivado do `name` (com
+          // desambiguação). Roda ANTES do INSERT: injetamos `handle` no `data`. A unicidade
+          // é consultada aqui (best-effort) e travada pela UNIQUE `users_handle_uq` no banco.
+          // `name` sempre presente (email+senha e Google enviam name); fallback 'user' no
+          // domínio cobre nomes vazios/só-símbolos.
+          before: async (user) => {
+            const handle = await generateUniqueHandle((user.name as string | undefined) ?? '')
+            return { data: { ...user, handle } }
+          },
+        },
       },
     },
     plugins: [
