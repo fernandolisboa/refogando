@@ -71,6 +71,13 @@ describe('AuthSlot — estado de sessão na chrome (#55)', () => {
     expect(screen.queryByText('Entrar')).not.toBeInTheDocument()
   })
 
+  it('autenticado: o nome é um link para /me/profile (#124)', () => {
+    mockSession = authed()
+    renderSlot('pt-BR')
+    const link = screen.getByRole('link', { name: 'Ana' })
+    expect(link).toHaveAttribute('href', '/me/profile')
+  })
+
   it('autenticado sem nome: cai pro email', () => {
     mockSession = authed({ name: undefined })
     renderSlot('pt-BR')
