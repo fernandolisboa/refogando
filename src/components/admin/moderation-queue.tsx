@@ -32,10 +32,13 @@ export function ModerationQueue() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Qual ação está em voo no card ocupado — distingue o rótulo "Removendo…" (Receita) de
+  // "Removendo imagem…" (só a foto) para não piscar os dois botões ao mesmo tempo (#133).
+  const [busyAction, setBusyAction] = useState<'remove' | 'image' | null>(null)
   const [errorId, setErrorId] = useState<string | null>(null)
-  const [errorKey, setErrorKey] = useState<'erroJaResolvido' | 'erroMotivo' | 'erroGenerico' | null>(
-    null,
-  )
+  const [errorKey, setErrorKey] = useState<
+    'erroJaResolvido' | 'erroMotivo' | 'erroSemImagem' | 'erroGenerico' | null
+  >(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [reasonDraft, setReasonDraft] = useState<Record<string, string>>({})
 
@@ -120,6 +123,7 @@ export function ModerationQueue() {
     const reason = (reasonDraft[item.id] ?? '').trim()
     if (busyId || reason.length === 0) return
     setBusyId(item.id)
+    setBusyAction('remove')
     clearError()
     const snapshot = items
     setItems((prev) => prev.filter((it) => it.id !== item.id))
@@ -149,6 +153,53 @@ export function ModerationQueue() {
       setErrorKey('erroGenerico')
     } finally {
       setBusyId(null)
+      setBusyAction(null)
+    }
+  }
+
+  /**
+   * "Remover só a imagem" (#133) — espelha `handleRemove` (mesmo motivo OBRIGATÓRIO, mesma forma
+   * otimista que reverte no erro), mas POST em `.../remove-image`: esconde a foto do público SEM
+   * tirar a Receita do pool. A rota resolve o MESMO report ⇒ o card sai da fila no sucesso (idêntico
+   * ao remove). Mapeia o 422 `sem_imagem` (Receita reportada sem foto a remover) → `erroSemImagem`.
+   */
+  async function handleRemoveImage(item: ReportQueueItem) {
+    const reason = (reasonDraft[item.id] ?? '').trim()
+    if (busyId || reason.length === 0) return
+    setBusyId(item.id)
+    setBusyAction('image')
+    clearError()
+    const snapshot = items
+    setItems((prev) => prev.filter((it) => it.id !== item.id))
+    try {
+      const res = await fetch(`/api/curate/reports/${item.id}/remove-image`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        setItems(snapshot)
+        setErrorId(item.id)
+        setErrorKey(
+          body?.error === 'ja_resolvido'
+            ? 'erroJaResolvido'
+            : body?.error === 'sem_imagem'
+              ? 'erroSemImagem'
+              : body?.error === 'dados_invalidos'
+                ? 'erroMotivo'
+                : 'erroGenerico',
+        )
+      } else {
+        setRemovingId(null)
+      }
+    } catch {
+      setItems(snapshot)
+      setErrorId(item.id)
+      setErrorKey('erroGenerico')
+    } finally {
+      setBusyId(null)
+      setBusyAction(null)
     }
   }
 
@@ -249,10 +300,27 @@ export function ModerationQueue() {
                         disabled={
                           busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
                         }
-                        aria-busy={busyId === item.id}
+                        aria-busy={busyId === item.id && busyAction === 'remove'}
                         className={`${btnPrimarySm} disabled:opacity-70`}
                       >
-                        {busyId === item.id ? m.removendo : m.confirmarRemocao}
+                        {busyId === item.id && busyAction === 'remove'
+                          ? m.removendo
+                          : m.confirmarRemocao}
+                      </button>
+                      {/* "Remover só a imagem" (#133): mesmo motivo, eixo ORTOGONAL ao remover-do-pool.
+                          Secundário (a Receita SEGUE no pool — ação mais branda que tirá-la). */}
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveImage(item)}
+                        disabled={
+                          busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
+                        }
+                        aria-busy={busyId === item.id && busyAction === 'image'}
+                        className={`${btnSecondarySm} disabled:opacity-70`}
+                      >
+                        {busyId === item.id && busyAction === 'image'
+                          ? m.removendoImagem
+                          : m.removerImagem}
                       </button>
                       <button
                         type="button"

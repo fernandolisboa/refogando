@@ -171,6 +171,15 @@ export type ResolveInput = {
   imageUrl?: string
   /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA". AUSENTE quando não/foto. */
   imageAiGenerated?: boolean
+  /**
+   * Imagem MODERADA pelo Curador (#133, ADR-0016)? Quando `true` E o requester NÃO é o dono
+   * (`!canManage`), a vista ESCONDE `imageUrl` E `imageAiGenerated` — a imagem some do público em
+   * toda parte (espelha o gate de pool do feed/busca). O Owner (`canManage`) CONTINUA vendo a
+   * própria imagem moderada no privado (ADR-0016: a moderação esconde do público, não apaga). Eixo
+   * ORTOGONAL à moderação da Receita (#18) — a Receita segue legível/no pool; só a foto some.
+   * AUSENTE/`false` (caso normal: sem imagem ou imagem não moderada) ⇒ a imagem aparece p/ todos.
+   */
+  imageModerated?: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -548,9 +557,15 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     ...(author ? { author } : {}),
     // Imagem da receita (#130): foto PÚBLICA do prato. "ausente ≠ vazio": só sai quando há imagem.
     // NÃO owner-gated — qualquer leitor que vê a Receita vê a foto. Repassa 1:1 o que o server carregou.
-    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
-    // Selo "✨ gerada por IA" (#132): só quando a imagem é ai_generated. "ausente ≠ vazio".
-    ...(input.imageAiGenerated ? { imageAiGenerated: true } : {}),
+    // #133: MODERADA esconde a foto do público (`imageModerated && !canManage`) — o Owner ainda vê.
+    // O selo de IA acompanha a imagem: imagem escondida ⇒ selo escondido (não há foto a rotular).
+    ...(input.imageUrl != null && (!input.imageModerated || canManage)
+      ? {
+          imageUrl: input.imageUrl,
+          // Selo "✨ gerada por IA" (#132): só quando há imagem VISÍVEL e é ai_generated. "ausente ≠ vazio".
+          ...(input.imageAiGenerated ? { imageAiGenerated: true } : {}),
+        }
+      : {}),
     // Gestão (#59): os TRÊS campos saem JUNTOS e SÓ p/ o dono — leitura pública intacta.
     ...(canManage
       ? {

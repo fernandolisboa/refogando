@@ -143,6 +143,48 @@ describe('ModerationQueue (#63 AC4)', () => {
     expect(screen.getByText('conteúdo impróprio')).toBeInTheDocument()
   })
 
+  it('remover só a imagem (#133): mesmo motivo, POST remove-image, card some', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() },
+      [`POST /api/curate/reports/r1/remove-image`]: { ok: true, status: 200, body: { ok: true } },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+
+    await user.click(await screen.findByRole('button', { name: M.remover }))
+    const removerImagem = screen.getByRole('button', { name: M.removerImagem })
+    expect(removerImagem).toBeDisabled() // motivo OBRIGATÓRIO também na imagem
+
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'foto imprópria')
+    expect(removerImagem).toBeEnabled()
+    await user.click(removerImagem)
+
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove-image'))!
+    expect(String(post[0])).toBe('/api/curate/reports/r1/remove-image')
+    expect((post[1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'foto imprópria' })
+    expect(screen.queryByText('conteúdo impróprio')).toBeNull() // report resolvido ⇒ card some
+  })
+
+  it('422 sem_imagem na remoção de imagem: card VOLTA + mensagem específica', async () => {
+    mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() },
+      [`POST /api/curate/reports/r1/remove-image`]: {
+        ok: false,
+        status: 422,
+        body: { error: 'sem_imagem' },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+    await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'foto')
+    await user.click(screen.getByRole('button', { name: M.removerImagem }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroSemImagem)
+    expect(screen.getByText('conteúdo impróprio')).toBeInTheDocument() // voltou
+  })
+
   it('manter no pool: POST keep, card some por ESTADO LOCAL (sem router.refresh)', async () => {
     const fetchMock = mockFetch({
       'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() },
