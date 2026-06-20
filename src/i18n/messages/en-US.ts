@@ -381,7 +381,6 @@ export const enUS: Messages = {
     salvo: 'Profile saved.',
     precisaEntrar: 'Sign in to edit your profile.',
     erro: "We couldn't save your profile. Try again.",
-    erroCarregar: "We couldn't load your profile. Try again.",
   },
   comunidade: {
     titulo: 'Community',

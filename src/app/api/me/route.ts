@@ -56,15 +56,17 @@ export async function PATCH(req: Request): Promise<Response> {
   }
 
   // bio: opcional. Se presente, precisa ser string e respeitar o cap. Vazia/só-espaços → null.
+  // Trima ANTES de medir (mesma tese do name): o que conta para o cap é o conteúdo gravado,
+  // não o whitespace de borda — senão um corpo no limite + um "\n" final daria 400 espúrio.
   let bio: string | null = null
   if (body.bio !== undefined && body.bio !== null) {
     if (typeof body.bio !== 'string') {
       return Response.json({ error: 'bio_invalida' }, { status: 400 })
     }
-    if (body.bio.length > BIO_MAX_LEN) {
+    const trimmed = body.bio.trim()
+    if (trimmed.length > BIO_MAX_LEN) {
       return Response.json({ error: 'bio_invalida' }, { status: 400 })
     }
-    const trimmed = body.bio.trim()
     bio = trimmed.length === 0 ? null : trimmed
   }
 

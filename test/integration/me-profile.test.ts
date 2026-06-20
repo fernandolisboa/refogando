@@ -154,6 +154,16 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
     await expect(res.json()).resolves.toMatchObject({ bio })
   })
 
+  it('PATCH mede o cap APÓS o trim: 280 chars + whitespace de borda → 200 (grava só o trim)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'trimcap@me-profile.test' })
+    const core = 'c'.repeat(280)
+
+    // 282 chars no corpo cru, mas só 280 de conteúdo: o cap vale para o gravado, não a borda.
+    const res = await patch({ name: 'Ana', bio: `  ${core}\n` }, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ bio: core })
+  })
+
   it('PATCH com bio não-string (e não-omitida) → 400 bio_invalida', async () => {
     const { headers } = await seedSessionHeaders({ email: 'tipobio@me-profile.test' })
     const res = await patch({ name: 'Ana', bio: 42 }, headers)

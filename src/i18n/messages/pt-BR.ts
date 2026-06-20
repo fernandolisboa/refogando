@@ -411,7 +411,6 @@ export const ptBR = {
     salvo: 'Perfil salvo.',
     precisaEntrar: 'Entre na sua conta para editar seu perfil.',
     erro: 'Não foi possível salvar seu perfil. Tente de novo.',
-    erroCarregar: 'Não foi possível carregar seu perfil. Tente de novo.',
   },
   comunidade: {
     titulo: 'Comunidade',
