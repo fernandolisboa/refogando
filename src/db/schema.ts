@@ -209,17 +209,42 @@ export const recipe = pgTable(
  * moderação ("remover só a imagem", #133) e os metadados de geração IA (#132) NÃO entram aqui ainda
  * — cada fatia os adiciona por migração própria (slice vertical).
  */
-export const recipeImage = pgTable('recipe_image', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  // URL pública do blob (Vercel Blob, store PUBLIC — servida direto a anônimos). NOT NULL: toda
-  // linha de imagem tem um blob (não há recipe_image sem arquivo).
-  blobUrl: text('blob_url').notNull(),
-  provenance: imageProvenanceEnum('provenance').notNull(),
-  // Quem subiu/gerou (#130). ON DELETE set null (espelha recipe.moderatedBy): apagar o usuário NÃO
-  // apaga a imagem (a Receita que a referencia — possivelmente já no catálogo — sobrevive). NULLABLE.
-  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const recipeImage = pgTable(
+  'recipe_image',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // URL pública do blob (Vercel Blob, store PUBLIC — servida direto a anônimos). NOT NULL: toda
+    // linha de imagem tem um blob (não há recipe_image sem arquivo).
+    blobUrl: text('blob_url').notNull(),
+    provenance: imageProvenanceEnum('provenance').notNull(),
+    // Quem subiu/gerou (#130). ON DELETE set null (espelha recipe.moderatedBy): apagar o usuário NÃO
+    // apaga a imagem (a Receita que a referencia — possivelmente já no catálogo — sobrevive). NULLABLE.
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // ── Moderação "remover só a imagem" (#133, ADR-0016) ──────────────────────────
+    // Eixo ORTOGONAL a recipe.moderation_removed_at (remover-a-Receita-do-pool, #18): aqui o Curador
+    // esconde SÓ a imagem, a Receita CONTINUA no pool. A flag mora na imagem (não na Receita): como a
+    // imagem é COMPARTILHADA entre versões (carry-forward), moderá-la a esconde EM TODA PARTE. NÃO
+    // apaga o blob nem zera image_id — o Owner segue vendo no privado. O gate público de imagem ganha
+    // `AND moderated_at IS NULL` (espelha recipe_moderation_removed). moderatedBy ON DELETE set null:
+    // apagar o Curador preserva o registro de moderação.
+    moderatedAt: timestamp('moderated_at', { withTimezone: true }),
+    moderatedReason: text('moderated_reason'),
+    moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    // Consistência (espelha recipe_moderation_consistency_chk): at e by setados JUNTOS ou ambos NULL.
+    // `moderated_reason` fica FORA do CHECK (texto livre), exigido não-vazio na borda do route.
+    check(
+      'recipe_image_moderation_consistency_chk',
+      sql`(${t.moderatedAt} IS NULL) = (${t.moderatedBy} IS NULL)`,
+    ),
+    // Índice parcial nas imagens moderadas (enxuto — a maioria é NULL).
+    index('recipe_image_moderated_idx')
+      .on(t.moderatedAt)
+      .where(sql`${t.moderatedAt} IS NOT NULL`),
+  ],
+)
 
 /**
  * Registro (append-only) de EVENTOS de geração de imagem por IA (#132, ADR-0017) — o LEDGER de

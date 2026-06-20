@@ -3,6 +3,7 @@ import { getDb } from '@/server/deps'
 import {
   recipe,
   recipeTranslation,
+  recipeImage,
   ingredient,
   ingredientTranslation,
   recipeIngredient,
@@ -14,7 +15,7 @@ import {
   report,
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
-import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance } from '@/domain/recipe'
+import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance, ImageProvenance } from '@/domain/recipe'
 import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ReportStatus } from '@/domain/report'
 import { seedUser } from './users'
@@ -251,6 +252,39 @@ export async function seedRemovedFromPool(input: {
       moderatedBy: input.curatorId,
     })
     .where(eq(recipe.id, input.recipeId))
+}
+
+// ── Imagem da receita: entidade + ponteiro recipe.image_id (issues #130/#133) ────
+
+/**
+ * Insere uma `recipe_image` e aponta `recipe.image_id` para ela (espelha o setup inline de
+ * `recipe-image-read.test.ts`). `blobUrl` NOT NULL (toda imagem tem blob). `moderated` opcional
+ * semeia a imagem JÁ moderada (#133), respeitando o CHECK `recipe_image_moderation_consistency_chk`
+ * (seta `moderated_at` E `moderated_by` juntos); `curatorId` deve ser id real de Usuário. Devolve o
+ * id da imagem (útil p/ asserir o ref-count / o estado de moderação direto na tabela).
+ */
+export async function seedRecipeImage(input: {
+  recipeId: string
+  blobUrl?: string
+  provenance?: ImageProvenance
+  moderated?: { curatorId: string; reason?: string }
+}): Promise<string> {
+  const [img] = await getDb()
+    .insert(recipeImage)
+    .values({
+      blobUrl: input.blobUrl ?? 'https://abc.public.blob.vercel-storage.com/recipes/x.webp',
+      provenance: input.provenance ?? 'user_photo',
+      ...(input.moderated
+        ? {
+            moderatedAt: new Date(),
+            moderatedReason: input.moderated.reason ?? 'imagem moderada em teste',
+            moderatedBy: input.moderated.curatorId,
+          }
+        : {}),
+    })
+    .returning({ id: recipeImage.id })
+  await getDb().update(recipe).set({ imageId: img.id }).where(eq(recipe.id, input.recipeId))
+  return img.id
 }
 
 // ── Catálogo composto: Feijoada (origin catalog) ────────────────────────────────

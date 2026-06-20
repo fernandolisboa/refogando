@@ -51,6 +51,15 @@ export type LoadedRecipeRows = {
    * ADR-0017). AUSENTE quando não há imagem ou é foto do usuário (sem selo).
    */
   imageAiGenerated?: boolean
+  /**
+   * Imagem MODERADA pelo Curador (#133, ADR-0016) — `true` quando a `recipe_image` apontada tem
+   * `moderated_at` não-NULL. AUSENTE quando não há imagem ou ela não foi moderada (o caso normal).
+   * O loader SEMPRE traz `blob_url`/`provenance` (não filtra a query por moderação): é o módulo
+   * PURO `resolveRecipeView` que ESCONDE `imageUrl`/`imageAiGenerated` do público (não-dono) quando
+   * moderada — o Owner (`canManage`) ainda vê a própria. Espelha o gate de pool do feed/busca (que
+   * filtram com `AND moderated_at IS NULL`), mas aqui mantemos o dado carregado para o Owner.
+   */
+  imageModerated?: boolean
 }
 
 export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRecipeRows | null> {
@@ -98,7 +107,14 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     row.imageId == null
       ? Promise.resolve([])
       : db
-          .select({ blobUrl: recipeImage.blobUrl, provenance: recipeImage.provenance })
+          .select({
+            blobUrl: recipeImage.blobUrl,
+            provenance: recipeImage.provenance,
+            // #133: o estado de moderação acompanha blob/proveniência. SEMPRE carregado (não filtra
+            // a query) — quem decide esconder do público é o módulo PURO (recipe-read), preservando
+            // a visão do Owner. Espelha o `AND moderated_at IS NULL` do feed/busca, mas sem perder o dado.
+            moderatedAt: recipeImage.moderatedAt,
+          })
           .from(recipeImage)
           .where(eq(recipeImage.id, row.imageId))
           .limit(1),
@@ -110,6 +126,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
 
   const imageUrl = imageRows[0]?.blobUrl ?? undefined
   const imageAiGenerated = imageRows[0]?.provenance === 'ai_generated'
+  const imageModerated = imageRows[0]?.moderatedAt != null
 
   return {
     recipe: row,
@@ -119,6 +136,8 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     ...(author ? { author } : {}),
     ...(imageUrl ? { imageUrl } : {}),
     ...(imageAiGenerated ? { imageAiGenerated } : {}),
+    // #133: repassa a flag de moderação ao PURO (que esconde a imagem do não-dono). "ausente ≠ vazio".
+    ...(imageModerated ? { imageModerated } : {}),
   }
 }
 

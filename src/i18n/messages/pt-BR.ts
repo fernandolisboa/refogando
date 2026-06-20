@@ -575,8 +575,12 @@ export const ptBR = {
     confirmarRemocao: 'Confirmar remoção',
     cancelar: 'Cancelar',
     removendo: 'Removendo…',
+    // "Remover só a imagem" (#133): esconde a foto do público SEM tirar a Receita do pool.
+    removerImagem: 'Remover só a imagem',
+    removendoImagem: 'Removendo imagem…',
     filaVazia: 'Nenhum report pendente.',
     erroMotivo: 'Informe o motivo da remoção.',
+    erroSemImagem: 'Esta receita não tem imagem para remover.',
     erroJaResolvido: 'Este report já foi resolvido.',
     erroGenerico: 'Não foi possível processar o report. Tente de novo.',
   },

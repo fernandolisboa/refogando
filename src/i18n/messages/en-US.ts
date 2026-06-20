@@ -531,8 +531,12 @@ export const enUS: Messages = {
     confirmarRemocao: 'Confirm removal',
     cancelar: 'Cancel',
     removendo: 'Removing…',
+    // "Remove image only" (#133): hides the photo from the public WITHOUT removing the recipe from the pool.
+    removerImagem: 'Remove image only',
+    removendoImagem: 'Removing image…',
     filaVazia: 'No pending reports.',
     erroMotivo: 'Enter the reason for removal.',
+    erroSemImagem: 'This recipe has no image to remove.',
     erroJaResolvido: 'This report has already been resolved.',
     erroGenerico: 'Could not process the report. Try again.',
   },

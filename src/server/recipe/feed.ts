@@ -97,7 +97,7 @@ export async function loadFeed(
     LEFT JOIN users u
       ON u.id = fr.owner_id
     LEFT JOIN recipe_image ri
-      ON ri.id = fr.image_id
+      ON ri.id = fr.image_id AND ri.moderated_at IS NULL -- #133: imagem moderada some do público
     ORDER BY fr.created_at_ts DESC, fr.recipe_id DESC
   `)
 
