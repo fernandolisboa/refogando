@@ -1,0 +1,98 @@
+/**
+ * Perfil PÚBLICO (#129) — DTOs e montagem PURA da página `/u/<handle>`. Sem DB, sem I/O: recebe
+ * as linhas já carregadas (a identidade pública do dono + as Receitas PÚBLICAS dele, com as
+ * traduções) e projeta o `PublicProfile` que a rota serializa.
+ *
+ * LEAK-SAFETY: o perfil é ANÔNIMO-readable e expõe SÓ o que é público — `name`/`handle`/`image`/
+ * `bio`/`links` do dono e, por receita, o `displayedTitle` + `origin` (os campos do
+ * `RecipeResultItem` já públicos). NUNCA o `email`/`id`/papel do dono, nem `visibility`/
+ * `resultKind` das receitas (campos de gestão são owner-gated em #59 — aqui o gate de POOL já
+ * garante que só públicas chegam, então a visibilidade é redundante e não é exposta).
+ *
+ * Reusa `resolveName` (#3) p/ o título exibido (original primário + tradução confiável entre
+ * parênteses) — NÃO re-deriva a regra. Espelha `resolveRecipeListItem` (#61), mas SEM os campos
+ * de gestão (a lista do dono os expõe; o perfil público não).
+ */
+import type { Origin } from '@/domain/recipe'
+import type { ProfileLink } from '@/domain/links'
+import { resolveName, type TranslationRow } from '@/domain/recipe-read'
+
+/**
+ * Linha de Receita pública do perfil (o loader a projeta): a espinha mínima para o título +
+ * proveniência, mais as traduções (original/pedida) que `resolveName` consome. NÃO carrega
+ * `visibility`/`resultKind` (gate de pool já filtrou — só públicas chegam).
+ */
+export type ProfileRecipeRow = {
+  id: string
+  origin: Origin
+  originalLocale: string
+  translations: ReadonlyArray<TranslationRow>
+}
+
+/** Um item de receita no perfil público — o mínimo que `RecipeResultItem` consome. */
+export type ProfileRecipeItem = {
+  recipeId: string
+  displayedTitle: string
+  origin: Origin
+}
+
+/**
+ * O perfil público completo (#129): a identidade pública do dono + as Receitas públicas dele.
+ * `image`/`bio` são NULLABLE (perfil sem avatar/bio é normal). `links` é sempre array (default
+ * `[]` no banco). `recipes` já vem ordenado (mais novas primeiro) e projetado.
+ */
+export type PublicProfile = {
+  name: string
+  handle: string
+  image: string | null
+  bio: string | null
+  links: ProfileLink[]
+  recipes: ProfileRecipeItem[]
+}
+
+/**
+ * Projeta UMA linha de Receita do perfil para `ProfileRecipeItem`. PURO/total: nunca lança.
+ * Devolve `null` quando não há título exibível (sem tradução — defesa "nunca tela quebrada",
+ * espelha `projectResult`): a rota o PULA, nunca empurra um card de título em branco.
+ */
+export function projectProfileRecipe(
+  row: ProfileRecipeRow,
+  requestLocale: string,
+): ProfileRecipeItem | null {
+  if (row.translations.length === 0) return null
+  const displayedTitle = resolveName({
+    originalLocale: row.originalLocale,
+    requestLocale,
+    translations: row.translations,
+  })
+  if (displayedTitle.length === 0) return null
+  return { recipeId: row.id, displayedTitle, origin: row.origin }
+}
+
+/**
+ * Monta o `PublicProfile` a partir da identidade do dono + as linhas de receita já carregadas.
+ * Projeta cada receita (pulando as sem título exibível). PURO.
+ */
+export function buildPublicProfile(input: {
+  name: string
+  handle: string
+  image: string | null
+  bio: string | null
+  links: ProfileLink[]
+  recipeRows: ReadonlyArray<ProfileRecipeRow>
+  requestLocale: string
+}): PublicProfile {
+  const recipes: ProfileRecipeItem[] = []
+  for (const row of input.recipeRows) {
+    const item = projectProfileRecipe(row, input.requestLocale)
+    if (item !== null) recipes.push(item)
+  }
+  return {
+    name: input.name,
+    handle: input.handle,
+    image: input.image,
+    bio: input.bio,
+    links: input.links,
+    recipes,
+  }
+}

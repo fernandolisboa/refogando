@@ -74,6 +74,9 @@ export const ptBR = {
     filtroCozinha: 'Cozinha',
     filtroCategoria: 'Categoria',
     filtroRestricao: 'Restrição',
+    // Autoria (#129): crédito "por <nome>" no item de receita do pool, linkando /u/<handle>.
+    // {name} interpolado no componente via `.replace` (folhas do tipo são string).
+    porAutor: 'por {name}',
   },
   // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
   // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed
@@ -441,6 +444,17 @@ export const ptBR = {
     salvo: 'Perfil salvo.',
     precisaEntrar: 'Entre na sua conta para editar seu perfil.',
     erro: 'Não foi possível salvar seu perfil. Tente de novo.',
+  },
+  // Perfil PÚBLICO (#129) — a página `/u/<handle>` que um Visitante anônimo vê: nome, avatar,
+  // bio, links e as receitas PÚBLICAS daquela pessoa. Distinto de `perfil` (a tela de EDIÇÃO do
+  // próprio dono em /me/profile). `receitasTitulo`/`semReceitas` rotulam a seção de receitas.
+  perfilPublico: {
+    receitasTitulo: 'Receitas',
+    semReceitas: 'Esta pessoa ainda não publicou nenhuma receita.',
+    // Rótulo acessível do avatar (alt). {name} interpolado via `.replace` no componente.
+    avatarAlt: 'Foto de {name}',
+    // Rótulo acessível do bloco de links sociais.
+    linksLabel: 'Links',
   },
   comunidade: {
     titulo: 'Comunidade',

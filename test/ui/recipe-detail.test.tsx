@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
@@ -189,6 +189,21 @@ describe('RecipeDetailView (#57)', () => {
 
     // Restrição declarada SEM contradição NÃO é aviso âmbar.
     expect(screen.queryByRole('note')).toBeNull()
+  })
+
+  it('T7 — Autoria (#129): byline "por <name>" linka /u/<handle>; ausente no Catálogo', () => {
+    // Com autor (Receita de Comunidade): byline visível e linkando o perfil público.
+    renderView(baseView({ origin: 'ai_chat', author: { name: 'Ana Maria', handle: 'ana-maria' } }))
+    const byline = screen.getByText('por Ana Maria')
+    expect(byline).toBeInTheDocument()
+    // O byline é um link para /u/<handle>.
+    const link = byline.closest('a')
+    expect(link).toHaveAttribute('href', '/u/ana-maria')
+
+    // Sem autor (Catálogo): nenhum byline (sem crédito falso).
+    cleanup()
+    renderView(baseView({ origin: 'catalog' }))
+    expect(screen.queryByText(/^por /)).toBeNull()
   })
 
   it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {

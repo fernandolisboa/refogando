@@ -40,6 +40,18 @@ import { isRestricao, type Restricao } from '@/domain/vocabulary'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 
+/**
+ * Autoria exibível (#129, CONTEXT.md: _Owner / Autoria_) — o crédito "por <name>" linkando o
+ * perfil público `/u/<handle>`. Presente SÓ quando a Receita tem dono humano (`owner_id`
+ * não-NULL); Catálogo/sistema NÃO carrega autor (o badge de proveniência já distingue a origem).
+ * Distinta do Owner: aqui só o `name` + `handle` PÚBLICOS, NUNCA o `id`/`owner_id` interno.
+ * Definida aqui (módulo fundamental) e RE-EXPORTADA por `recipe-search-read` (evita ciclo).
+ */
+export type RecipeAuthor = {
+  name: string
+  handle: string
+}
+
 /** Linha de Receita conforme retorna de `db.select().from(recipe)`. */
 export type RecipeRow = {
   id: string
@@ -135,6 +147,14 @@ export type ResolveInput = {
   voteCount?: number
   viewerVoted?: boolean
   viewerFavorited?: boolean
+  /**
+   * Autoria (#129) — `name` + `handle` PÚBLICOS do dono, que o server carrega via JOIN em `users`
+   * sobre `recipe.owner_id`. Insumo do crédito "por <name>" linkando `/u/<handle>` no detalhe.
+   * `undefined` (Catálogo/sistema sem dono humano, OU o server não pediu) ⇒ a vista OMITE
+   * `author` (sem byline; o badge de proveniência já marca a origem). DISTINTO de `viewerId`/
+   * `ownerId` (gestão, owner-gated): a Autoria é PÚBLICA — visível a qualquer leitor.
+   */
+  author?: { name: string | null; handle: string | null }
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -202,6 +222,13 @@ export type RecipeView = {
   avisos?: AvisoView[]
   /** Aviso de tradução obsoleta — AUSENTE salvo quando a tradução pedida é stale e ≠ origem. */
   staleNotice?: StaleNotice
+  /**
+   * Autoria (#129) — `{ name, handle }` PÚBLICOS do dono, p/ o crédito "por <name>" linkando
+   * `/u/<handle>`. AUSENTE ("ausente ≠ vazio") quando a Receita não tem dono humano (Catálogo/
+   * sistema) OU o server não carregou o autor. PÚBLICO (qualquer leitor vê) — NÃO owner-gated
+   * como `canManage`/`visibility`. Nunca expõe o `owner_id` interno.
+   */
+  author?: RecipeAuthor
   /**
    * Campos de GESTÃO (#59) — a mesma regra "ausente ≠ vazio" das facetas/avisos. Os TRÊS
    * saem JUNTOS e SÓ quando o requester é o dono (`viewerId === recipe.ownerId`); para
@@ -454,6 +481,14 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     input.recipe.ownerId != null &&
     input.recipe.ownerId === input.viewerId
 
+  // Autoria (#129): crédito "por <name>" linkando /u/<handle>. Só quando o server carregou
+  // o autor E há AMBOS name+handle (Catálogo/sistema sem dono humano ⇒ author undefined ou
+  // campos NULL). "ausente ≠ vazio": a chave `author` só sai quando há autor — nunca falso.
+  const author =
+    input.author != null && input.author.name != null && input.author.handle != null
+      ? { name: input.author.name, handle: input.author.handle }
+      : undefined
+
   return {
     id: input.recipe.id,
     name,
@@ -480,6 +515,9 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     ...(avisos.length > 0 ? { avisos } : {}),
     // Ausente quando a tradução pedida não é stale (ou é a origem) — espelha `avisos?`.
     ...(staleNotice ? { staleNotice } : {}),
+    // Autoria (#129): crédito PÚBLICO "por <name>" (linka /u/<handle>). "ausente ≠ vazio":
+    // só sai quando há autor humano. NÃO owner-gated — qualquer leitor vê o crédito.
+    ...(author ? { author } : {}),
     // Gestão (#59): os TRÊS campos saem JUNTOS e SÓ p/ o dono — leitura pública intacta.
     ...(canManage
       ? {

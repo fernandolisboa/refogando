@@ -471,3 +471,36 @@ describe('resolveRecipeView — vinculoPerdido #21 (#289)', () => {
     expect(view.vinculoPerdido).toBeUndefined()
   })
 })
+
+// ── #129/Autoria: byline "por <name>" na vista (PÚBLICO, não owner-gated) ───────
+
+describe('resolveRecipeView — Autoria (byline #129)', () => {
+  it('autor presente ⇒ `author { name, handle }` na vista (visível p/ QUALQUER leitor, sem viewerId)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ origin: 'ai_chat', ownerId: 'u-1' }),
+        // anônimo (sem viewerId): a Autoria é PÚBLICA — não depende de sessão/ownership.
+        author: { name: 'Ana Maria', handle: 'ana-maria' },
+      }),
+    )
+    expect(view.author).toEqual({ name: 'Ana Maria', handle: 'ana-maria' })
+    // Não vaza ownership: anônimo não vê canManage/visibility.
+    expect(view.canManage).toBeUndefined()
+    expect(view.visibility).toBeUndefined()
+  })
+
+  it('sem autor (Catálogo/sistema) ⇒ `author` AUSENTE (sem crédito falso)', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ origin: 'catalog', ownerId: null }) }))
+    expect('author' in view).toBe(false)
+  })
+
+  it('autor parcial (handle NULL) ⇒ `author` AUSENTE (nunca crédito pela metade)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ origin: 'ai_chat', ownerId: 'u-1' }),
+        author: { name: 'Sem Handle', handle: null },
+      }),
+    )
+    expect('author' in view).toBe(false)
+  })
+})

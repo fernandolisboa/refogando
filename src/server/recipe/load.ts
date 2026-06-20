@@ -9,8 +9,9 @@ import {
   ingredient,
   recipeVote,
   recipeFavorite,
+  users,
 } from '@/db/schema'
-import type { RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
+import type { RecipeAuthor, RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
 
 /**
  * Loader de servidor compartilhado da Receita (issue #8, §7b — refactor DRY com #3).
@@ -29,14 +30,22 @@ export type LoadedRecipeRows = {
   translations: TranslationRow[]
   ingredients: IngredientItem[]
   tags: string[]
+  /**
+   * Autoria (#129) — `name` + `handle` PÚBLICOS do dono, carregados via SELECT em `users`
+   * sobre `recipe.owner_id`. `undefined` para Catálogo/sistema (`owner_id` NULL — sem dono
+   * humano) ⇒ a vista não exibe byline. PÚBLICO (não owner-gated): o crédito "por <name>"
+   * aparece para qualquer leitor. NUNCA expõe o `owner_id`/`id` interno.
+   */
+  author?: RecipeAuthor
 }
 
 export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRecipeRows | null> {
   const [row] = await db.select().from(recipe).where(eq(recipe.id, id))
   if (!row) return null
 
-  // As três leituras seguintes são independentes entre si: em paralelo.
-  const [translations, ingredients, tags] = await Promise.all([
+  // As três leituras seguintes são independentes entre si: em paralelo. A Autoria (#129) só é
+  // buscada quando há dono humano (`owner_id` não-NULL) — Catálogo/sistema dispensa a query.
+  const [translations, ingredients, tags, authorRows] = await Promise.all([
     db.select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id)),
     db
       .select({
@@ -59,13 +68,28 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
       .innerJoin(tag, eq(recipeTag.tagId, tag.id))
       .where(eq(recipeTag.recipeId, id))
       .orderBy(tag.nome),
+    // Autoria (#129): só `name`+`handle` PÚBLICOS. `owner_id` NULL ⇒ predicado nunca casa ⇒
+    // zero linhas ⇒ author undefined (Catálogo/sistema sem byline). Sem dono não há query útil,
+    // mas o `eq(users.id, null)` é seguro (NULL = NULL é UNKNOWN ⇒ zero linhas).
+    row.ownerId == null
+      ? Promise.resolve([])
+      : db
+          .select({ name: users.name, handle: users.handle })
+          .from(users)
+          .where(eq(users.id, row.ownerId))
+          .limit(1),
   ])
+
+  const authorRow = authorRows[0]
+  const author: RecipeAuthor | undefined =
+    authorRow != null ? { name: authorRow.name, handle: authorRow.handle } : undefined
 
   return {
     recipe: row,
     translations,
     ingredients,
     tags: tags.map((t) => t.nome),
+    ...(author ? { author } : {}),
   }
 }
 

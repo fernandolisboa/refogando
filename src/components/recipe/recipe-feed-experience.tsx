@@ -168,6 +168,8 @@ export function RecipeFeedExperience() {
               autoTranslationLabel={m.traducaoAutomatica}
               isOwn={it.isOwn}
               ownLabel={ownLabel}
+              author={it.author}
+              byLabel={m.porAutor}
             />
           ))}
         </ul>

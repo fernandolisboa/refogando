@@ -18,6 +18,10 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     original_provenance: 'escrita_por_pessoa',
     section: 'catalogo',
     owner_id: null,
+    // #129/Autoria: catálogo/sistema não tem dono humano ⇒ ambos NULL (sem byline). Hits de
+    // Comunidade sobrescrevem com `owner_name`/`owner_handle` reais.
+    owner_name: null,
+    owner_handle: null,
     ...over,
   }
 }
@@ -220,6 +224,7 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
   })
 
   it('ts_rank/owner_id NUNCA aparecem nas chaves de SearchResult', () => {
+    // hits SEM autor (owner_name/owner_handle NULL) ⇒ chave `author` AUSENTE: 5 campos exatos.
     const { catalogo, comunidade } = buildSearchResponse(
       [hit(), c3Composite],
       'pt-BR',
@@ -235,7 +240,50 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
       // LEAK-SAFETY (#116/own-label): o owner_id cru NUNCA aflora no DTO — só o booleano isOwn.
       expect(keys).not.toContain('owner_id')
       expect(keys).not.toContain('ownerId')
+      // #129: SEM autor humano (catálogo/sistema) ⇒ a chave `author` não existe (sem byline falso).
+      expect(keys).not.toContain('author')
     }
+  })
+})
+
+// ── #129/Autoria: byline "por <name>" linkando /u/<handle> ─────────────────────
+
+describe('buildSearchResponse — Autoria (byline #129)', () => {
+  it('Receita de Comunidade com dono ⇒ `author: { name, handle }` (sem expor owner_id)', () => {
+    const com = hit({
+      recipe_id: 'COM',
+      origin: 'ai_chat',
+      original_titulo: 'Bolo da vó',
+      owner_id: 'u-1',
+      owner_name: 'Ana Maria',
+      owner_handle: 'ana-maria',
+    })
+    const { comunidade } = buildSearchResponse([com], 'pt-BR')
+    expect(comunidade).toHaveLength(1)
+    expect(comunidade[0].author).toEqual({ name: 'Ana Maria', handle: 'ana-maria' })
+    // LEAK-SAFETY: o owner_id cru NUNCA entra no DTO; só name/handle PÚBLICOS.
+    const keys = Object.keys(comunidade[0])
+    expect(keys).not.toContain('owner_id')
+    expect(keys).not.toContain('ownerId')
+  })
+
+  it('Catálogo/sistema (owner NULL) ⇒ chave `author` AUSENTE (nada de autor falso)', () => {
+    const cat = hit({ recipe_id: 'CAT', origin: 'catalog' })
+    const { catalogo } = buildSearchResponse([cat], 'pt-BR')
+    expect('author' in catalogo[0]).toBe(false)
+  })
+
+  it('dono presente mas name/handle parciais (um NULL) ⇒ author AUSENTE (nunca crédito pela metade)', () => {
+    const partial = hit({
+      recipe_id: 'P',
+      origin: 'ai_chat',
+      original_titulo: 'Receita órfã',
+      owner_id: 'u-2',
+      owner_name: 'Sem Handle',
+      owner_handle: null,
+    })
+    const { comunidade } = buildSearchResponse([partial], 'pt-BR')
+    expect('author' in comunidade[0]).toBe(false)
   })
 })
 

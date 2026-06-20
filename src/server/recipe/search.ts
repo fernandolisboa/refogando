@@ -736,13 +736,17 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       req_t.titulo AS requested_titulo,
       req_t.provenance AS requested_provenance,
       orig_t.titulo AS original_titulo,
-      orig_t.provenance AS original_provenance
+      orig_t.provenance AS original_provenance,
+      u.name AS owner_name,
+      u.handle AS owner_handle
     FROM numbered n
     CROSS JOIN params p
     LEFT JOIN recipe_translation req_t
       ON req_t.recipe_id = n.recipe_id AND req_t.locale = p.req_locale
     LEFT JOIN recipe_translation orig_t
       ON orig_t.recipe_id = n.recipe_id AND orig_t.locale = n.original_locale
+    LEFT JOIN users u
+      ON u.id = n.owner_id
     WHERE ${whereClause}
     ORDER BY ${orderBy}
   `

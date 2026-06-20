@@ -14,6 +14,7 @@
  * vêm de `busca.seloCatalogo/seloComunidade` (mesmo conceito, não duplicar em `detalhe`).
  * Cores: só tokens já AA-verificados na #54.
  */
+import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { IngredientView, RecipeView } from '@/domain/recipe-read'
 import { isCategoria, isCozinha, isRestricao, isUnidade } from '@/domain/vocabulary'
@@ -87,12 +88,24 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
 
   return (
     <article className="flex flex-col gap-8">
-      {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota). */}
+      {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota) + Autoria (#129). */}
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           {view.name}
         </h1>
+        {/* Autoria (#129): crédito "por <name>" linkando o perfil público /u/<handle>. Só
+            quando a rota anexa `author` (Receita com dono humano — Catálogo/sistema não tem). */}
+        {view.author && (
+          <p className="text-sm text-muted">
+            <Link
+              href={`/u/${view.author.handle}`}
+              className="hover:text-fg hover:underline"
+            >
+              {m.busca.porAutor.replace('{name}', view.author.name)}
+            </Link>
+          </p>
+        )}
       </header>
 
       {/* Nota de tradução obsoleta — só quando a rota a anexa (stale e ≠ origem). */}
