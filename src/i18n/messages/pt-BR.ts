@@ -394,6 +394,24 @@ export const ptBR = {
     convidaEntrarTitulo: 'Entre para fazer isso',
     convidaEntrarTexto: 'Crie uma conta ou entre para criar, salvar e gerenciar receitas.',
   },
+  // Perfil do Usuário (#124, frente Perfil — primeira fatia: nome + bio). Tela de edição
+  // em /me/profile que consome o contrato `/api/me`. `email` é read-only (identidade). A
+  // `bioContador` interpola {n} via `.replace` no componente (folhas do tipo são string).
+  perfil: {
+    titulo: 'Seu perfil',
+    subtitulo: 'Edite como você aparece para a comunidade.',
+    nome: 'Nome de exibição',
+    email: 'Email',
+    emailDica: 'Seu email é usado para entrar e não pode ser alterado aqui.',
+    bio: 'Bio',
+    bioPlaceholder: 'Conte um pouco sobre você e o que você gosta de cozinhar.',
+    bioContador: '{n}/280',
+    salvar: 'Salvar',
+    salvando: 'Salvando…',
+    salvo: 'Perfil salvo.',
+    precisaEntrar: 'Entre na sua conta para editar seu perfil.',
+    erro: 'Não foi possível salvar seu perfil. Tente de novo.',
+  },
   comunidade: {
     titulo: 'Comunidade',
     votar: 'Votar',

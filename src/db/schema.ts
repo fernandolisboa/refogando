@@ -328,6 +328,10 @@ export const users = pgTable(
     role: roleEnum('role').notNull().default('usuario'),
     // Preferência de apresentação (D1, #4.AC5/#5.AC4). text livre BCP-47, NULLABLE.
     locale: text('locale'),
+    // Bio curta do perfil (#124, frente Perfil). text livre, NULLABLE; o CAP de tamanho
+    // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
+    // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).
+    bio: text('bio'),
     // Soft delete (D4): só a coluna agora; máscara/endpoint deferidos.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).

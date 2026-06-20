@@ -45,9 +45,14 @@ export function AuthSlot() {
   const nameOrEmail = session.user.name || session.user.email
   return (
     <div className="flex items-center gap-3">
-      <span className="max-w-[10rem] truncate text-sm text-muted" title={nameOrEmail}>
+      {/* O nome leva ao perfil (#124): clicar no seu nome abre /me/profile pra editar. */}
+      <Link
+        href="/me/profile"
+        className="max-w-[10rem] truncate text-sm text-muted transition-colors hover:text-fg"
+        title={nameOrEmail}
+      >
         {nameOrEmail}
-      </span>
+      </Link>
       <button
         type="button"
         className={btnPrimarySm}
