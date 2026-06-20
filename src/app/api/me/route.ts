@@ -3,22 +3,25 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 import { validateHandle } from '@/domain/handle'
+import { validateLinks, type ProfileLink } from '@/domain/links'
 import { isHandleAvailable } from '@/server/handle'
 
 /**
- * Contrato `/api/me` — perfil do logado (#124, frente Perfil). name + bio + handle (#128).
- * As fatias seguintes (#126/#127/#129: avatar/links/perfil público) ESTENDEM este shape;
+ * Contrato `/api/me` — perfil do logado (#124, frente Perfil). name + bio + handle (#128) +
+ * links (#127). As fatias seguintes (#126/#129: avatar/perfil público) ESTENDEM este shape;
  * por isso o GET devolve um objeto de perfil, não só os campos editáveis.
  *
  * Owner-only via `requireSession` (ADR-0011, mesma tese de /api/me/locale): 401 = Visitante
  * (sem sessão) OU conta soft-deletada (deletedAt != null). Toca SÓ `users` — nunca `recipe`.
  *
- * GET devolve { id, name, email, bio, handle }. `email` é READ-ONLY (identidade, gerida pelo
- * Better Auth) — o PATCH nunca o muda, mesmo se vier no corpo. PATCH valida e grava:
+ * GET devolve { id, name, email, bio, handle, links }. `email` é READ-ONLY (identidade, gerida
+ * pelo Better Auth) — o PATCH nunca o muda, mesmo se vier no corpo. PATCH valida e grava:
  *  - name: trimado; não pode ficar vazio (400 nome_invalido);
  *  - bio: string opcional, cap de BIO_MAX_LEN chars (400 bio_invalida); vazia/só-espaços → null;
  *  - handle (#128): opcional. Se presente, minúsculo/trimado; valida FORMATO (400 handle_invalid),
  *    RESERVADAS (400 handle_reserved) e UNICIDADE (409 handle_taken). Ausente → inalterado.
+ *  - links (#127): opcional. Se presente, valida via `validateLinks` (≤5, tipo conhecido, só URL
+ *    http(s) segura — recusa `javascript:`/`data:` etc. com 400 links_invalid). Ausente → inalterado.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -26,7 +29,14 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 /** Cap de tamanho da bio (≈280, history-tweet-ish). Enforced no app, não no banco. */
 const BIO_MAX_LEN = 280
 
-type Profile = { id: string; name: string; email: string; bio: string | null; handle: string }
+type Profile = {
+  id: string
+  name: string
+  email: string
+  bio: string | null
+  handle: string
+  links: ProfileLink[]
+}
 
 function profileJson(p: Profile): Response {
   return Response.json(p)
@@ -38,6 +48,7 @@ const profileCols = {
   email: users.email,
   bio: users.bio,
   handle: users.handle,
+  links: users.links,
 } as const
 
 export async function GET(req: Request): Promise<Response> {
@@ -57,6 +68,7 @@ export async function PATCH(req: Request): Promise<Response> {
     name?: unknown
     bio?: unknown
     handle?: unknown
+    links?: unknown
   }
 
   // name: obrigatório, trimado, não-vazio.
@@ -105,12 +117,33 @@ export async function PATCH(req: Request): Promise<Response> {
     handle = candidate
   }
 
-  // email é READ-ONLY: não entra no SET. handle só entra se foi fornecido e validado. Toca
-  // SÓ `users`. A UNIQUE `users_handle_uq` é a rede final contra corrida (23505 → 409 abaixo).
+  // links (#127): OPCIONAL. Ausente/undefined → inalterado (saves de só name/bio/handle seguem
+  // funcionando). Se presente, `validateLinks` (kernel puro) checa contagem (≤5), tipo conhecido
+  // e — CRÍTICO — só URL http(s) SEGURA: qualquer esquema perigoso (`javascript:`/`data:`/
+  // protocol-relative `//`) é recusado, porque #129 renderiza esses links CLICÁVEIS no perfil
+  // público (esquema inseguro = XSS armazenado / phishing). Qualquer recusa → 400 links_invalid.
+  // Grava a lista NORMALIZADA (URLs trimadas), não o corpo cru.
+  let links: ProfileLink[] | undefined
+  if (body.links !== undefined && body.links !== null) {
+    const v = validateLinks(body.links)
+    if (!v.ok) {
+      return Response.json({ error: 'links_invalid' }, { status: 400 })
+    }
+    links = v.links
+  }
+
+  // email é READ-ONLY: não entra no SET. handle/links só entram se foram fornecidos e validados.
+  // Toca SÓ `users`. A UNIQUE `users_handle_uq` é a rede final contra corrida (23505 → 409 abaixo).
   try {
     const [row] = await getDb()
       .update(users)
-      .set({ name, bio, ...(handle !== undefined ? { handle } : {}), updatedAt: new Date() })
+      .set({
+        name,
+        bio,
+        ...(handle !== undefined ? { handle } : {}),
+        ...(links !== undefined ? { links } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, g.session.user.id))
       .returning(profileCols)
 

@@ -20,10 +20,18 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary, fieldClassName } from '@/components/button'
+import { btnPrimary, btnSecondarySm, fieldClassName } from '@/components/button'
+import { LINKS_MAX, LINK_TIPOS, safeHttpUrl, type LinkTipo, type ProfileLink } from '@/domain/links'
 
 type Status = 'loading' | 'idle' | 'saving' | 'saved' | 'error'
-type Profile = { id: string; name: string; email: string; bio: string | null; handle: string }
+type Profile = {
+  id: string
+  name: string
+  email: string
+  bio: string | null
+  handle: string
+  links: ProfileLink[]
+}
 /** Erro específico do handle, traduzível inline (≠ erro genérico do form). */
 type HandleError = 'taken' | 'reserved' | 'invalid' | null
 
@@ -43,6 +51,28 @@ function handleErrorFor(code: string | undefined): HandleError {
   }
 }
 
+/** Linha editável do editor de links: o `url` pode estar incompleto enquanto o usuário digita. */
+type LinkRow = { tipo: LinkTipo; url: string }
+
+/**
+ * Rótulo i18n para cada tipo de link. Mapa fechado sobre `LINK_TIPOS` (allowlist do domínio):
+ * acrescentar um tipo lá quebra o typecheck aqui até traduzir, mantendo a paridade.
+ */
+function linkTipoLabel(m: { linkTipoInstagram: string; linkTipoX: string; linkTipoGithub: string; linkTipoYoutube: string; linkTipoSite: string }, tipo: LinkTipo): string {
+  switch (tipo) {
+    case 'instagram':
+      return m.linkTipoInstagram
+    case 'x':
+      return m.linkTipoX
+    case 'github':
+      return m.linkTipoGithub
+    case 'youtube':
+      return m.linkTipoYoutube
+    case 'site':
+      return m.linkTipoSite
+  }
+}
+
 export function ProfileForm() {
   const { messages } = useLocale()
   const m = messages.perfil
@@ -55,6 +85,7 @@ export function ProfileForm() {
   const [bio, setBio] = useState('')
   const [handle, setHandle] = useState('')
   const [handleError, setHandleError] = useState<HandleError>(null)
+  const [links, setLinks] = useState<LinkRow[]>([])
   const [status, setStatus] = useState<Status>('loading')
 
   // Carrega o perfil ao montar (só logado). AbortController cancela no unmount.
@@ -74,6 +105,7 @@ export function ProfileForm() {
         setName(p.name)
         setBio(p.bio ?? '')
         setHandle(p.handle)
+        setLinks((p.links ?? []).map((l) => ({ tipo: l.tipo, url: l.url })))
         setStatus('idle')
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
@@ -91,7 +123,14 @@ export function ProfileForm() {
       const res = await fetch('/api/me', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, bio, handle }),
+        // Envia os links trimados; o servidor é a fonte de verdade da validação (esquema seguro,
+        // contagem, tipo). O bloqueio client-side abaixo só evita um round-trip óbvio.
+        body: JSON.stringify({
+          name,
+          bio,
+          handle,
+          links: links.map((l) => ({ tipo: l.tipo, url: l.url.trim() })),
+        }),
       })
       if (!res.ok) {
         // Distingue um erro DE HANDLE (feedback inline específico) de um erro genérico.
@@ -107,14 +146,37 @@ export function ProfileForm() {
       }
       const p = (await res.json()) as Profile
       // Reflete os valores canônicos retornados pelo servidor (name trimado, bio vazia → null,
-      // handle normalizado pra minúsculas).
+      // handle normalizado pra minúsculas, links normalizados/trimados).
       setName(p.name)
       setBio(p.bio ?? '')
       setHandle(p.handle)
+      setLinks((p.links ?? []).map((l) => ({ tipo: l.tipo, url: l.url })))
       setStatus('saved')
     } catch {
       setStatus('error')
     }
+  }
+
+  // ── Editor de links (#127): add/remove de linhas, teto de LINKS_MAX ──────────
+  function addLink() {
+    setStatus('idle')
+    setLinks((prev) => (prev.length >= LINKS_MAX ? prev : [...prev, { tipo: LINK_TIPOS[0], url: '' }]))
+  }
+  function removeLink(index: number) {
+    setStatus('idle')
+    setLinks((prev) => prev.filter((_, i) => i !== index))
+  }
+  function setLinkTipo(index: number, tipo: LinkTipo) {
+    setStatus('idle')
+    setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, tipo } : l)))
+  }
+  function setLinkUrl(index: number, url: string) {
+    setStatus('idle')
+    setLinks((prev) => prev.map((l, i) => (i === index ? { ...l, url } : l)))
+  }
+  /** Uma linha é inválida se tem URL preenchida mas não é http(s) segura (feedback inline). */
+  function isLinkUrlInvalid(url: string): boolean {
+    return url.trim().length > 0 && safeHttpUrl(url) === null
   }
 
   // ── Guard de sessão (Visitante não tem perfil pra editar) ───────────────────
@@ -223,6 +285,80 @@ export function ProfileForm() {
         />
         <p className="self-end text-xs text-muted">{m.bioContador.replace('{n}', String(bio.length))}</p>
       </div>
+
+      {/* Editor de links (#127): até LINKS_MAX linhas (tipo + url), add/remove inline. */}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="text-sm font-medium text-fg">{m.links}</legend>
+        <p className="text-xs text-muted">{m.linksDica}</p>
+
+        {links.length > 0 && (
+          <ul className="flex flex-col gap-3">
+            {links.map((link, i) => {
+              const invalid = isLinkUrlInvalid(link.url)
+              const errId = `profile-link-${i}-error`
+              return (
+                <li key={i} className="flex flex-col gap-1.5">
+                  <div className="flex items-start gap-2">
+                    <label htmlFor={`profile-link-tipo-${i}`} className="sr-only">
+                      {m.linkTipoRotulo}
+                    </label>
+                    <select
+                      id={`profile-link-tipo-${i}`}
+                      value={link.tipo}
+                      onChange={(e) => setLinkTipo(i, e.target.value as LinkTipo)}
+                      className={`${fieldClassName} w-32 shrink-0`}
+                    >
+                      {LINK_TIPOS.map((tipo) => (
+                        <option key={tipo} value={tipo}>
+                          {linkTipoLabel(m, tipo)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label htmlFor={`profile-link-url-${i}`} className="sr-only">
+                      {m.linkUrlRotulo}
+                    </label>
+                    <input
+                      id={`profile-link-url-${i}`}
+                      type="url"
+                      inputMode="url"
+                      value={link.url}
+                      onChange={(e) => setLinkUrl(i, e.target.value)}
+                      placeholder={m.linkUrlPlaceholder}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      aria-invalid={invalid}
+                      aria-describedby={invalid ? errId : undefined}
+                      className={`${fieldClassName} grow`}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => removeLink(i)}
+                      aria-label={m.linkRemover}
+                      className={`${btnSecondarySm} shrink-0`}
+                    >
+                      {m.linkRemover}
+                    </button>
+                  </div>
+                  {invalid && (
+                    <p id={errId} role="alert" className="text-xs font-medium text-fg">
+                      {m.linkInvalido}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        {links.length < LINKS_MAX && (
+          <button type="button" onClick={addLink} className={`${btnSecondarySm} self-start`}>
+            {m.linkAdicionar}
+          </button>
+        )}
+      </fieldset>
 
       <div className="flex items-center gap-4">
         <button type="submit" disabled={status === 'saving'} className={btnPrimary}>
