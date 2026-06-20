@@ -14,6 +14,8 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
+import { isRole } from '@/domain/user'
+import { decideRole } from '@/domain/access'
 
 export function SiteHeader() {
   const { messages } = useLocale()
@@ -21,6 +23,12 @@ export function SiteHeader() {
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
   // /recipes público (feed da comunidade, #103): este link é o espaço privado do dono.
   const authed = !session.isPending && !session.error && !!session.data
+  // "Painel" (#125): atalho para o Console, só a curador+. FAIL-CLOSED igual ao gate de rota
+  // (#51): normaliza o papel cru (string → Role|null) e usa `decideRole` do domínio — papel
+  // null/desconhecido NUNCA mostra o link. É só afordância; o /admin revalida server-side.
+  const rawRole = (session.data?.user as { role?: string | null } | undefined)?.role
+  const role = typeof rawRole === 'string' && isRole(rawRole) ? rawRole : null
+  const showPainel = authed && decideRole(role, 'curador') === 'allow'
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
       <Container className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2">
@@ -42,6 +50,13 @@ export function SiteHeader() {
           {authed && (
             <Link href="/me/recipes" className="transition-colors hover:text-fg">
               {messages.minhasCriacoes.titulo}
+            </Link>
+          )}
+          {/* "Painel" (Console) só para curador+, ANTES de "Criar". Esconder é afordância;
+              o /admin revalida o papel server-side (gate de rota, não link). */}
+          {showPainel && (
+            <Link href="/admin" className="transition-colors hover:text-fg">
+              {messages.nav.painel}
             </Link>
           )}
           <Link

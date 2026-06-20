@@ -7,7 +7,14 @@ import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
-  nav: { home: 'Home', recipes: 'Recipes', create: 'Create', signIn: 'Sign in', signOut: 'Sign out' },
+  nav: {
+    home: 'Home',
+    recipes: 'Recipes',
+    create: 'Create',
+    painel: 'Dashboard',
+    signIn: 'Sign in',
+    signOut: 'Sign out',
+  },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   system: {
     loading: 'Loading…',
@@ -409,6 +416,12 @@ export const enUS: Messages = {
     promovido: 'Role updated.',
     grupoPlataforma: 'Platform',
     grupoCuradoria: 'Curation',
+    navAria: 'Console sections',
+    navConfig: 'Default model',
+    navPapeis: 'Roles',
+    navModeracao: 'Moderation',
+    navTraducoes: 'Translations',
+    navCatalogo: 'Catalog',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role. Check the ID.',
     erroGenerico: 'Something went wrong. Try again.',

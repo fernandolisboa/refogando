@@ -1,33 +1,24 @@
 /**
- * Console de administração (#63) — Server Component fino. Resolve a sessão server-side e
- * despacha pelo veredito PURO `decideAdminAccess` (que reusa `decideRole`/`isRole` do
- * domínio — o gate NÃO é reimplementado aqui).
+ * Índice do Console (#125). Decisão: `/admin` NÃO tem conteúdo próprio — REDIRECIONA para a
+ * primeira seção do papel (mais simples e limpo que uma landing vazia que duplicaria a nav).
+ * Admin entra na Governança (`/admin/config`); Curador, que não vê Governança, entra na
+ * Curadoria (`/admin/moderation`).
  *
- * Padrão NOVO de resolução de sessão em Server Component: chama `getAuth().api.getSession`
- * com os `headers()` do request. Não há precedente no codebase (`recipes/[id]/page.tsx`
- * resolve por self-fetch encaminhando o cookie); ler a sessão num Server Component NÃO viola
- * ADR-0010 — não é Server Action nem regra de domínio, é só leitura de sessão. As SEÇÕES
- * (Client Components) consomem as rotas por `fetch` e cada rota reforça o gate server-side.
- *
- * O gating mora no helper puro reusável e testável (`test/server/admin-access.test.ts`, a
- * matriz fail-closed que o jsdom não alcança), não aqui. `AdminConsole`/`AccessDenied`
- * rendem cada um o próprio `<Container as="main">` — esta page não envolve em Container.
+ * O `layout.tsx` já aplicou o gate (curador+) antes desta page rodar. Resolvemos o papel de
+ * novo (via `gateSection`) só para escolher o destino — e mantemos o redirect ao login para
+ * anon/papel insuficiente, deixando a página auto-suficiente mesmo fora do layout.
  */
-import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { getAuth } from '@/lib/auth'
-import { decideAdminAccess } from '@/server/auth/admin-access'
-import { AdminConsole } from '@/components/admin/admin-console'
-import { AccessDenied } from '@/components/admin/access-denied'
+import { gateSection } from './gate'
 
-export const runtime = 'nodejs' // Better Auth + postgres-js exigem Node, não Edge.
+export const runtime = 'nodejs'
 
-export default async function AdminPage() {
-  const session = await getAuth().api.getSession({ headers: await headers() })
-  const decision = decideAdminAccess(session?.user)
+export default async function AdminIndexPage() {
+  const decision = await gateSection('curador')
 
   if (decision === 'redirect') redirect('/sign-in')
-  if (decision === 'denied') return <AccessDenied />
+  if (decision === 'denied') redirect('/sign-in')
 
-  return <AdminConsole role={decision.role} />
+  // Admin abre na Governança; Curador (sem Governança) abre na Curadoria.
+  redirect(decision.role === 'admin' ? '/admin/config' : '/admin/moderation')
 }
