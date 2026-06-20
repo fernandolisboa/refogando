@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, report } from '@/db/schema'
+import { recipe, recipeImage, report } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
 
 /**
@@ -82,6 +82,69 @@ export async function applyModerationRemove(input: {
       .where(eq(report.id, reportId))
 
     return alreadyRemoved ? { kind: 'ok_already_removed' as const } : { kind: 'ok' as const }
+  })
+}
+
+/**
+ * MODERAR SÓ A IMAGEM (issue #133, ADR-0016) — o Curador esconde a imagem da Receita reportada SEM
+ * derrubar a Receita do pool. Eixo ORTOGONAL a `applyModerationRemove`: NÃO toca
+ * `recipe.moderation_*` (a Receita continua no pool); seta `moderated_*` na `recipe_image` apontada
+ * por `recipe.image_id`. Como a imagem é COMPARTILHADA (carry-forward), moderá-la a esconde em toda
+ * parte. Resolve o report. Preserva a proveniência da 1ª moderação (re-moderar não sobrescreve).
+ */
+export type ImageModerationResult =
+  | { kind: 'ok' } //                  200 — moderou a imagem agora
+  | { kind: 'ok_already_moderated' } //200 — imagem já moderada; só resolveu este report
+  | { kind: 'not_found' } //           404 — report inexistente
+  | { kind: 'invalid_reason' } //      400 — motivo vazio
+  | { kind: 'already_resolved' } //    409 — report já não está pending
+  | { kind: 'no_image' } //            422 — a Receita reportada não tem imagem a remover
+
+export async function applyImageModeration(input: {
+  db: Database
+  reportId: string // já validado uuid pelo route
+  curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
+  reason: string
+}): Promise<ImageModerationResult> {
+  const { db, reportId, curatorId, reason } = input
+
+  return db.transaction(async (tx) => {
+    // Report + a imagem ATUAL da Receita-alvo. FOR UPDATE serializa (innerJoin recipe; NÃO juntar
+    // recipe_image aqui — FOR UPDATE no lado nulável de outer join estoura no Postgres).
+    const [row] = await tx
+      .select({ status: report.status, imageId: recipe.imageId })
+      .from(report)
+      .innerJoin(recipe, eq(recipe.id, report.recipeId))
+      .where(eq(report.id, reportId))
+      .for('update')
+    if (!row) return { kind: 'not_found' as const }
+    if (row.status !== 'pending') return { kind: 'already_resolved' as const }
+    if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' as const }
+    if (row.imageId == null) return { kind: 'no_image' as const }
+
+    // Estado atual da imagem (FOR UPDATE, tabela única — sem outer join). Preserva a 1ª moderação.
+    const [img] = await tx
+      .select({ moderatedAt: recipeImage.moderatedAt })
+      .from(recipeImage)
+      .where(eq(recipeImage.id, row.imageId))
+      .for('update')
+    const alreadyModerated = img?.moderatedAt != null
+
+    if (!alreadyModerated) {
+      // NUNCA apaga o blob nem zera image_id (ADR-0016): só esconde do público. Owner segue vendo.
+      await tx
+        .update(recipeImage)
+        .set({ moderatedAt: sql`now()`, moderatedReason: reason, moderatedBy: curatorId })
+        .where(eq(recipeImage.id, row.imageId))
+    }
+
+    // Resolve SÓ este report. A Receita CONTINUA no pool (NÃO toca recipe.moderation_*).
+    await tx
+      .update(report)
+      .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
+      .where(eq(report.id, reportId))
+
+    return alreadyModerated ? { kind: 'ok_already_moderated' as const } : { kind: 'ok' as const }
   })
 }
 

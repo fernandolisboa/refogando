@@ -755,7 +755,7 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
     LEFT JOIN recipe r_img
       ON r_img.id = n.recipe_id
     LEFT JOIN recipe_image ri
-      ON ri.id = r_img.image_id
+      ON ri.id = r_img.image_id AND ri.moderated_at IS NULL -- #133: imagem moderada some do público
     WHERE ${whereClause}
     ORDER BY ${orderBy}
   `
