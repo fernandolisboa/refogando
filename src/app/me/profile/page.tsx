@@ -9,6 +9,7 @@
  */
 import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
+import { AvatarUploader } from '@/components/profile/avatar-uploader'
 import { ProfileForm } from '@/components/profile/profile-form'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
@@ -32,6 +33,7 @@ export default async function ProfilePage() {
         </h1>
         <p className="text-muted">{m.subtitulo}</p>
       </div>
+      <AvatarUploader />
       <ProfileForm />
     </Container>
   )
