@@ -61,6 +61,7 @@ export async function loadFeed(
         r.origin AS origin,
         r.original_locale AS original_locale,
         r.owner_id AS owner_id,
+        r.image_id AS image_id,
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
         r.created_at AS created_at_ts,
         r.created_at::text AS created_at
@@ -84,7 +85,8 @@ export async function loadFeed(
       orig_t.titulo AS original_titulo,
       orig_t.provenance AS original_provenance,
       u.name AS owner_name,
-      u.handle AS owner_handle
+      u.handle AS owner_handle,
+      ri.blob_url AS image_url
     FROM feed_rows fr
     CROSS JOIN params p
     LEFT JOIN recipe_translation req_t
@@ -93,6 +95,8 @@ export async function loadFeed(
       ON orig_t.recipe_id = fr.recipe_id AND orig_t.locale = fr.original_locale
     LEFT JOIN users u
       ON u.id = fr.owner_id
+    LEFT JOIN recipe_image ri
+      ON ri.id = fr.image_id
     ORDER BY fr.created_at_ts DESC, fr.recipe_id DESC
   `)
 

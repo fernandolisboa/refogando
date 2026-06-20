@@ -170,6 +170,7 @@ export function RecipeFeedExperience() {
               ownLabel={ownLabel}
               author={it.author}
               byLabel={m.porAutor}
+              imageUrl={it.imageUrl}
             />
           ))}
         </ul>

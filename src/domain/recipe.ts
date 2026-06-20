@@ -37,6 +37,13 @@ export const TRANSLATION_PROVENANCES = [
 ] as const
 export type TranslationProvenance = (typeof TRANSLATION_PROVENANCES)[number]
 
+// ── Proveniência da Imagem da receita (#130, ADR-0016) ─────────────────────────
+// Eixo DISTINTO da Proveniência da Receita (ORIGENS, "como a receita surgiu"): aqui é "como a
+// IMAGEM surgiu" — foto do Usuário (#130) ou ilustração gerada por IA (#132). Mora na entidade
+// `recipe_image`, nunca na Tradução (a imagem é language-neutral — ver CONTEXT.md).
+export const IMAGE_PROVENANCES = ['user_photo', 'ai_generated'] as const
+export type ImageProvenance = (typeof IMAGE_PROVENANCES)[number]
+
 export const SCHEMA_VERSION_RECEITA = 1 as const
 
 // ── Validadores PUROS ──────────────────────────────────────────────────────────

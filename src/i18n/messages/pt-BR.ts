@@ -163,6 +163,16 @@ export const ptBR = {
     restricoes: 'Restrições',
     tags: 'Tags',
     avisoTitulo: 'Aviso de restrição',
+    // Gestão da Imagem da receita (#130) — bloco do dono.
+    imagemTitulo: 'Foto do prato',
+    imagemDescricao: 'Adicione uma foto da sua receita. Ela aparece no detalhe e na busca.',
+    imagemAdicionar: 'Adicionar foto',
+    imagemTrocar: 'Trocar foto',
+    imagemRemover: 'Remover foto',
+    imagemEnviando: 'Enviando…',
+    imagemTipoInvalido: 'Use uma imagem JPG, PNG ou WebP.',
+    imagemGrande: 'Imagem muito grande. Tente uma menor.',
+    imagemErro: 'Não foi possível salvar a foto. Tente de novo.',
   },
   // Telas de autenticação (#55): entrar / criar conta. Objeto PLANO (folhas string) —
   // o TIPO `Messages` exige um nível de namespace. Guarda só o CONTEXTUAL das telas; o

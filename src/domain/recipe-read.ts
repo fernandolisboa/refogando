@@ -155,6 +155,13 @@ export type ResolveInput = {
    * `ownerId` (gestão, owner-gated): a Autoria é PÚBLICA — visível a qualquer leitor.
    */
   author?: { name: string | null; handle: string | null }
+  /**
+   * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da foto do prato (o server o carrega de
+   * `recipe_image` via `recipe.image_id`). `undefined` (Receita sem imagem) ⇒ a vista OMITE
+   * `imageUrl` ("ausente ≠ vazio"). PÚBLICO — visível a qualquer leitor que vê a Receita (NÃO
+   * owner-gated). NUNCA carrega o `image_id` interno.
+   */
+  imageUrl?: string
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -229,6 +236,12 @@ export type RecipeView = {
    * como `canManage`/`visibility`. Nunca expõe o `owner_id` interno.
    */
   author?: RecipeAuthor
+  /**
+   * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da foto do prato. AUSENTE
+   * ("ausente ≠ vazio") quando a Receita não tem imagem (caso normal). PÚBLICO (qualquer leitor que
+   * vê a Receita vê a foto) — NÃO owner-gated como `canManage`. Nunca expõe o `image_id` interno.
+   */
+  imageUrl?: string
   /**
    * Campos de GESTÃO (#59) — a mesma regra "ausente ≠ vazio" das facetas/avisos. Os TRÊS
    * saem JUNTOS e SÓ quando o requester é o dono (`viewerId === recipe.ownerId`); para
@@ -518,6 +531,9 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // Autoria (#129): crédito PÚBLICO "por <name>" (linka /u/<handle>). "ausente ≠ vazio":
     // só sai quando há autor humano. NÃO owner-gated — qualquer leitor vê o crédito.
     ...(author ? { author } : {}),
+    // Imagem da receita (#130): foto PÚBLICA do prato. "ausente ≠ vazio": só sai quando há imagem.
+    // NÃO owner-gated — qualquer leitor que vê a Receita vê a foto. Repassa 1:1 o que o server carregou.
+    ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
     // Gestão (#59): os TRÊS campos saem JUNTOS e SÓ p/ o dono — leitura pública intacta.
     ...(canManage
       ? {

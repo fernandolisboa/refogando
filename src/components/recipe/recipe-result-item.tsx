@@ -44,6 +44,11 @@ export type RecipeResultItemProps = {
   author?: RecipeAuthor
   /** Template "por {name}" já localizado (`busca.porAutor`). Lido só quando há `author`. */
   byLabel?: string
+  /**
+   * Imagem da receita (#130) — `blob_url` PÚBLICO da thumbnail (do DTO). Quando presente, o card
+   * mostra a foto do prato no topo; AUSENTE ⇒ estado limpo (sem thumbnail, sem moldura vazia).
+   */
+  imageUrl?: string
 }
 
 export function RecipeResultItem({
@@ -57,6 +62,7 @@ export function RecipeResultItem({
   ownLabel,
   author,
   byLabel,
+  imageUrl,
 }: RecipeResultItemProps) {
   const section = classifySection(origin)
   // #116/own-label: própria do viewer ⇒ selo "Sua receita" (precede catálogo/comunidade).
@@ -79,6 +85,17 @@ export function RecipeResultItem({
         href={`/recipes/${recipeId}`}
         className="flex flex-col gap-2 rounded-sm focus-visible:outline-none"
       >
+        {/* Thumbnail (#130): foto do prato no topo do card. AUSENTE ⇒ estado limpo (sem moldura).
+            <img> simples (convenção do repo); alt = título exibido (o card já leva ao detalhe). */}
+        {imageUrl != null && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={displayedTitle}
+            referrerPolicy="no-referrer"
+            className="aspect-video w-full rounded-md border border-border object-cover"
+          />
+        )}
         <ProvenanceBadge variant={badge.variant} label={badge.label} />
         <h3 className="font-display text-lg text-fg">{displayedTitle}</h3>
         {autoTranslationSignal && (

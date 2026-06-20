@@ -151,6 +151,16 @@ export const enUS: Messages = {
     restricoes: 'Restrictions',
     tags: 'Tags',
     avisoTitulo: 'Restriction notice',
+    // Recipe image management (#130) — owner block.
+    imagemTitulo: 'Dish photo',
+    imagemDescricao: 'Add a photo of your recipe. It shows on the detail page and in search.',
+    imagemAdicionar: 'Add photo',
+    imagemTrocar: 'Change photo',
+    imagemRemover: 'Remove photo',
+    imagemEnviando: 'Uploading…',
+    imagemTipoInvalido: 'Use a JPG, PNG, or WebP image.',
+    imagemGrande: 'Image too large. Try a smaller one.',
+    imagemErro: "We couldn't save the photo. Try again.",
   },
   // Telas de autenticação (#55), mesma substância traduzida (ADR-0001, não byte-idêntica).
   // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.

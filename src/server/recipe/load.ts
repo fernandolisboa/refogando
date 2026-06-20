@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import {
   recipe,
+  recipeImage,
   recipeTranslation,
   recipeIngredient,
   recipeTag,
@@ -37,15 +38,23 @@ export type LoadedRecipeRows = {
    * aparece para qualquer leitor. NUNCA expõe o `owner_id`/`id` interno.
    */
   author?: RecipeAuthor
+  /**
+   * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da `recipe_image` apontada por
+   * `recipe.image_id` (FK opcional). `undefined` ("ausente ≠ vazio") quando a Receita não tem
+   * imagem (o caso normal). PÚBLICO (não owner-gated): a foto do prato aparece para qualquer leitor
+   * que vê a Receita. NUNCA expõe o `image_id` interno — só a URL servível.
+   */
+  imageUrl?: string
 }
 
 export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRecipeRows | null> {
   const [row] = await db.select().from(recipe).where(eq(recipe.id, id))
   if (!row) return null
 
-  // As três leituras seguintes são independentes entre si: em paralelo. A Autoria (#129) só é
-  // buscada quando há dono humano (`owner_id` não-NULL) — Catálogo/sistema dispensa a query.
-  const [translations, ingredients, tags, authorRows] = await Promise.all([
+  // As leituras seguintes são independentes entre si: em paralelo. A Autoria (#129) só é buscada
+  // quando há dono humano (`owner_id` não-NULL); a Imagem (#130) só quando há `image_id` (FK) —
+  // ambas dispensam a query no caso comum (Catálogo sem autor / Receita sem foto).
+  const [translations, ingredients, tags, authorRows, imageRows] = await Promise.all([
     db.select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id)),
     db
       .select({
@@ -78,11 +87,22 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
           .from(users)
           .where(eq(users.id, row.ownerId))
           .limit(1),
+    // Imagem (#130): a foto do prato via recipe.image_id → recipe_image.blob_url. image_id NULL ⇒
+    // sem query (Receita sem imagem, caso comum) ⇒ imageUrl undefined ("ausente ≠ vazio").
+    row.imageId == null
+      ? Promise.resolve([])
+      : db
+          .select({ blobUrl: recipeImage.blobUrl })
+          .from(recipeImage)
+          .where(eq(recipeImage.id, row.imageId))
+          .limit(1),
   ])
 
   const authorRow = authorRows[0]
   const author: RecipeAuthor | undefined =
     authorRow != null ? { name: authorRow.name, handle: authorRow.handle } : undefined
+
+  const imageUrl = imageRows[0]?.blobUrl ?? undefined
 
   return {
     recipe: row,
@@ -90,6 +110,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     ingredients,
     tags: tags.map((t) => t.nome),
     ...(author ? { author } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
   }
 }
 

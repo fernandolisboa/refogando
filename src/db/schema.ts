@@ -25,6 +25,7 @@ import {
   RESULT_KINDS,
   LINEAGE_KINDS,
   TRANSLATION_PROVENANCES,
+  IMAGE_PROVENANCES,
   CREATION_MODES,
   SCHEMA_VERSION_RECEITA,
 } from '@/domain/recipe'
@@ -65,6 +66,10 @@ export const visibilityEnum = pgEnum('visibility', VISIBILIDADES)
 export const resultKindEnum = pgEnum('result_kind', RESULT_KINDS)
 export const lineageKindEnum = pgEnum('lineage_kind', LINEAGE_KINDS)
 export const translationProvenanceEnum = pgEnum('translation_provenance', TRANSLATION_PROVENANCES)
+// Proveniência da Imagem da receita (#130, ADR-0016). Fonte única: IMAGE_PROVENANCES de
+// @/domain/recipe. Eixo DISTINTO de originEnum (Proveniência da Receita) — DB type
+// 'image_provenance'. user_photo (foto do dono, #130) | ai_generated (gerada por IA, #132).
+export const imageProvenanceEnum = pgEnum('image_provenance', IMAGE_PROVENANCES)
 // Kernel de geração (issue #8). Modo da Session (ADR-0006) + taxonomia de resultado
 // (5 valores, auditável). Fonte única: CREATION_MODES (recipe.ts) + GENERATION_OUTCOMES
 // (generation.ts). `result_kind` segue congelado em success|degraded|playful.
@@ -141,6 +146,13 @@ export const recipe = pgTable(
     // `$type<DerivedDiff>` tipa a leitura/escrita do jsonb (o driver devolve `unknown` cru);
     // a forma é a `DerivedDiff` congelada de recipe-diff.ts (domínio puro, sem ciclo de import).
     derivedDiff: jsonb('derived_diff').$type<DerivedDiff>(),
+    // Imagem da receita (#130, ADR-0016): FK OPCIONAL → recipe_image.id, MUITAS-VERSÕES → UMA
+    // IMAGEM (many-to-one). Nunca uma coluna-URL: a entidade `recipe_image` carrega blob/proveniência
+    // e o blob é ref-counted (apagado só quando NENHUMA linha de recipe referencia o image_id). NULL
+    // = sem imagem (o caso normal). ON DELETE set null: se o recipe_image for apagado (último ref),
+    // esta FK zera (rede de segurança — o ref-count já garante que ninguém aponta). Forward-ref via
+    // AnyPgColumn (recipeImage é definido adiante; mesma técnica do self-ref parent_recipe_id).
+    imageId: uuid('image_id').references((): AnyPgColumn => recipeImage.id, { onDelete: 'set null' }),
     // ── Estado de MODERAÇÃO (issue #18, ADR-0003/0011) ────────────────────────────
     // Remover-do-pool pelo Curador é exclusão LÓGICA de moderação, DISTINTA de
     // despublicar (que toca `visibility`, #13). As 3 colunas são a SAÍDA do pool por
@@ -178,8 +190,36 @@ export const recipe = pgTable(
     index('recipe_moderation_removed_idx')
       .on(t.moderationRemovedAt)
       .where(sql`${t.moderationRemovedAt} IS NOT NULL`),
+    // Índice parcial na FK image_id (#130): cobre o ref-count (COUNT recipe WHERE image_id = X)
+    // que decide se o blob pode ser apagado. Parcial WHERE image_id IS NOT NULL — a maioria das
+    // Receitas não tem imagem, então o índice fica enxuto (espelha recipe_owner_id_idx).
+    index('recipe_image_id_idx')
+      .on(t.imageId)
+      .where(sql`${t.imageId} IS NOT NULL`),
   ],
 )
+
+/**
+ * Imagem da receita (#130, ADR-0016) — ENTIDADE própria, language-neutral (CONTEXT.md: _Imagem da
+ * receita_). MUITAS versões da linhagem → UMA imagem: a FK é `recipe.image_id` (acima); aqui NÃO há
+ * `recipe_id` de volta — o carry-forward (#131) fará várias linhas de `recipe` apontarem para o
+ * MESMO `recipe_image`. O blob é REF-COUNTED: só é apagado quando NENHUMA linha de `recipe`
+ * referencia este id (lógica em `server/recipe/image.ts`, não no banco). Proveniência da imagem
+ * DISTINTA da Proveniência da Receita: `user_photo` (#130) | `ai_generated` (#132). As flags de
+ * moderação ("remover só a imagem", #133) e os metadados de geração IA (#132) NÃO entram aqui ainda
+ * — cada fatia os adiciona por migração própria (slice vertical).
+ */
+export const recipeImage = pgTable('recipe_image', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // URL pública do blob (Vercel Blob, store PUBLIC — servida direto a anônimos). NOT NULL: toda
+  // linha de imagem tem um blob (não há recipe_image sem arquivo).
+  blobUrl: text('blob_url').notNull(),
+  provenance: imageProvenanceEnum('provenance').notNull(),
+  // Quem subiu/gerou (#130). ON DELETE set null (espelha recipe.moderatedBy): apagar o usuário NÃO
+  // apaga a imagem (a Receita que a referencia — possivelmente já no catálogo — sobrevive). NULLABLE.
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})
 
 export const recipeTranslation = pgTable(
   'recipe_translation',

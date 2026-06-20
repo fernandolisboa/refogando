@@ -22,6 +22,8 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     // Comunidade sobrescrevem com `owner_name`/`owner_handle` reais.
     owner_name: null,
     owner_handle: null,
+    // #130/Imagem: sem foto por default (a maioria dos hits não tem) — casos com imagem sobrescrevem.
+    image_url: null,
     ...over,
   }
 }
@@ -284,6 +286,20 @@ describe('buildSearchResponse — Autoria (byline #129)', () => {
     })
     const { comunidade } = buildSearchResponse([partial], 'pt-BR')
     expect('author' in comunidade[0]).toBe(false)
+  })
+})
+
+// ── #130: Imagem da receita (thumbnail) projetada por projectResult ─────────────
+describe('buildSearchResponse — Imagem da receita (#130)', () => {
+  it('hit com image_url ⇒ `imageUrl` na projeção', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
+    const { catalogo } = buildSearchResponse([hit({ recipe_id: 'IMG', image_url: url })], 'pt-BR')
+    expect(catalogo[0].imageUrl).toBe(url)
+  })
+
+  it('hit sem image_url (NULL) ⇒ chave `imageUrl` AUSENTE ("ausente ≠ vazio")', () => {
+    const { catalogo } = buildSearchResponse([hit({ recipe_id: 'NOIMG', image_url: null })], 'pt-BR')
+    expect('imageUrl' in catalogo[0]).toBe(false)
   })
 })
 

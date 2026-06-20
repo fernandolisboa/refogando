@@ -18,6 +18,7 @@ import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
 import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 import { RecipeVisibilityControls } from '@/components/recipe/recipe-visibility-controls'
@@ -96,6 +97,12 @@ export default async function RecipeDetailPage({
           initialVisibility={view.visibility}
           resultKind={view.resultKind}
         />
+      )}
+      {/* Gestão da Imagem da receita (#130) SÓ pro dono (canManage) — subir/trocar/remover a foto.
+          O servidor reimpõe ownership/ref-count; a page só passa se há imagem (gateia o botão
+          Remover/o label Trocar). O hero da foto vive no RecipeDetailView (acima). */}
+      {view.canManage && (
+        <RecipeImageManager recipeId={view.id} hasImage={view.imageUrl != null} />
       )}
       {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
           derivada); para o NÃO-dono, "Criar minha versão" (derivar) ou o convite de entrar
