@@ -78,6 +78,29 @@ describe('RecipeImageManager — gestão da foto do prato (#130)', () => {
     expect(screen.getByText(M.imagemRemover)).toBeInTheDocument()
   })
 
+  it('reviewSuggested (#131) + imagem ⇒ mostra o aviso de revisar a foto', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeImageManager recipeId={RID} hasImage reviewSuggested />
+      </LocaleProvider>,
+    )
+    expect(screen.getByText(M.imagemRevisar)).toBeInTheDocument()
+  })
+
+  it('reviewSuggested SEM imagem ⇒ não mostra o aviso (nada a revisar)', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeImageManager recipeId={RID} hasImage={false} reviewSuggested />
+      </LocaleProvider>,
+    )
+    expect(screen.queryByText(M.imagemRevisar)).not.toBeInTheDocument()
+  })
+
+  it('sem reviewSuggested ⇒ não mostra o aviso', () => {
+    renderManager(true)
+    expect(screen.queryByText(M.imagemRevisar)).not.toBeInTheDocument()
+  })
+
   it('upload válido: POST multipart para /api/recipes/[id]/image + router.refresh', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method) => (method === 'POST' ? { status: 200, body: { id: RID } } : { status: 405 }))

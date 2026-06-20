@@ -39,9 +39,11 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
       const res = await fetch(`/api/recipes/${recipeId}/regenerate`, { method: 'POST' })
 
       if (res.status === 201) {
-        const data = (await res.json()) as { recipeId: string }
+        const data = (await res.json()) as { recipeId: string; imageReviewSuggested?: boolean }
         // Nova versão criada → navega pra ela (a anterior fica salva e acessível por linhagem).
-        router.push(`/recipes/${data.recipeId}`)
+        // #131: se a versão herdou a foto e mudou visualmente, leva a dica de revisar a foto.
+        const q = data.imageReviewSuggested ? '?reviewImage=1' : ''
+        router.push(`/recipes/${data.recipeId}${q}`)
         router.refresh()
         return
       }

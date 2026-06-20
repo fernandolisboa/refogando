@@ -154,6 +154,7 @@ export const enUS: Messages = {
     // Recipe image management (#130) — owner block.
     imagemTitulo: 'Dish photo',
     imagemDescricao: 'Add a photo of your recipe. It shows on the detail page and in search.',
+    imagemRevisar: 'Your recipe changed a lot. Want to swap the photo to match the new version?',
     imagemAdicionar: 'Add photo',
     imagemTrocar: 'Change photo',
     imagemRemover: 'Remove photo',

@@ -85,6 +85,13 @@ export type RecipeRow = {
   parentRecipeId?: string | null
   lineageKind?: LineageKind | null
   derivedDiff?: DerivedDiff | null
+  /**
+   * Imagem da receita (#130/#131) — FK para `recipe_image`. OPCIONAL no tipo (mesma razão de
+   * `ownerId`: `select().from(recipe)` o traz em runtime; opcional poupa as fixtures puras). É
+   * insumo do CARRY-FORWARD (#131): a versão nova herda este `image_id`. NUNCA sai na vista (a
+   * vista expõe só `imageUrl` resolvido); aqui é o id interno usado pela camada de servidor.
+   */
+  imageId?: string | null
 }
 
 /** Linha de tradução conforme `db.select().from(recipeTranslation)`. */

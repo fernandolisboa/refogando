@@ -87,6 +87,10 @@ export type PersistGenerationInput = {
   // sessão; múltiplas generations por sessão são permitidas). `derivedDiff` segue NULL aqui:
   // regenerated NÃO carrega diff (PRD historia 292); só `edited` (a derivada de #17) o carrega.
   lineage?: { parentRecipeId: string; lineageKind: LineageKind }
+  // #131 (CARRY-FORWARD da Imagem): a Receita criada HERDA este image_id (mesmo blob, sem arquivo
+  // novo — ADR-0016). Presente SÓ na regeneração (passa o image_id da predecessora); AUSENTE em
+  // toda geração de raiz (#8/#11/#12/#88), que nasce sem imagem ⇒ NULL.
+  imageId?: string | null
 }
 
 export type PersistGenerationResult = {
@@ -161,7 +165,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -242,6 +246,9 @@ export async function persistGeneration(
         // recipe_origin_immutable estoura P0001 em UPDATE de origin, nunca aqui).
         parentRecipeId: lineage?.parentRecipeId,
         lineageKind: lineage?.lineageKind,
+        // #131 carry-forward: a regeneração HERDA o image_id da predecessora (mesmo blob, ADR-0016).
+        // AUSENTE (geração de raiz) ⇒ undefined ⇒ NULL (Receita nasce sem imagem).
+        imageId: imageId ?? null,
         // schemaVersion: default (SCHEMA_VERSION_RECEITA).
       })
       .returning({ id: recipe.id })

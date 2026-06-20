@@ -157,7 +157,12 @@ export async function POST(
 
   switch (res.kind) {
     case 'ok':
-      return Response.json({ recipeId: res.recipeId }, { status: 201 })
+      // imageReviewSuggested (#131): a derivada herdou a imagem da base E uma mudança visual sugere
+      // revisar a foto — a UI navega pra derivada com a dica.
+      return Response.json(
+        { recipeId: res.recipeId, imageReviewSuggested: res.imageReviewSuggested },
+        { status: 201 },
+      )
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }
