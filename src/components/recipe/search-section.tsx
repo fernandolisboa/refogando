@@ -19,6 +19,7 @@ export function SearchSection({
   ownLabel,
   autoTranslationLabel,
   byLabel,
+  aiLabel,
   results,
 }: {
   headingId: string
@@ -31,6 +32,8 @@ export function SearchSection({
   autoTranslationLabel: string
   /** #129/Autoria: template "por {name}" localizado, repassado ao byline de cada item. */
   byLabel: string
+  /** #132: rótulo do selo "✨ gerada por IA", localizado, repassado a cada thumbnail ai_generated. */
+  aiLabel: string
   results: SearchResult[]
 }) {
   if (results.length === 0) return null
@@ -54,6 +57,8 @@ export function SearchSection({
             author={result.author}
             byLabel={byLabel}
             imageUrl={result.imageUrl}
+            imageAiGenerated={result.imageAiGenerated}
+            aiLabel={aiLabel}
           />
         ))}
       </ul>

@@ -171,6 +171,8 @@ export function RecipeFeedExperience() {
               author={it.author}
               byLabel={m.porAutor}
               imageUrl={it.imageUrl}
+              imageAiGenerated={it.imageAiGenerated}
+              aiLabel={m.imagemSeloIa}
             />
           ))}
         </ul>

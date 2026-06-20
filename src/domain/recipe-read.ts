@@ -169,6 +169,8 @@ export type ResolveInput = {
    * owner-gated). NUNCA carrega o `image_id` interno.
    */
   imageUrl?: string
+  /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA". AUSENTE quando não/foto. */
+  imageAiGenerated?: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -249,6 +251,12 @@ export type RecipeView = {
    * vê a Receita vê a foto) — NÃO owner-gated como `canManage`. Nunca expõe o `image_id` interno.
    */
   imageUrl?: string
+  /**
+   * Imagem gerada por IA (#132, ADR-0017)? `true` quando a foto é `ai_generated` — dirige o selo
+   * PÚBLICO "✨ gerada por IA" (honestidade). AUSENTE ("ausente ≠ vazio") quando não há imagem ou é
+   * foto do usuário. PÚBLICO (qualquer leitor vê o selo).
+   */
+  imageAiGenerated?: boolean
   /**
    * Campos de GESTÃO (#59) — a mesma regra "ausente ≠ vazio" das facetas/avisos. Os TRÊS
    * saem JUNTOS e SÓ quando o requester é o dono (`viewerId === recipe.ownerId`); para
@@ -541,6 +549,8 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // Imagem da receita (#130): foto PÚBLICA do prato. "ausente ≠ vazio": só sai quando há imagem.
     // NÃO owner-gated — qualquer leitor que vê a Receita vê a foto. Repassa 1:1 o que o server carregou.
     ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+    // Selo "✨ gerada por IA" (#132): só quando a imagem é ai_generated. "ausente ≠ vazio".
+    ...(input.imageAiGenerated ? { imageAiGenerated: true } : {}),
     // Gestão (#59): os TRÊS campos saem JUNTOS e SÓ p/ o dono — leitura pública intacta.
     ...(canManage
       ? {

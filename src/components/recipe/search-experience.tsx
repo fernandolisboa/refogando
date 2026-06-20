@@ -281,7 +281,7 @@ export function SearchExperience() {
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
               results={data.minhas}
             />
             <SearchSection
@@ -290,7 +290,7 @@ export function SearchExperience() {
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
               results={data.catalogo}
             />
             <SearchSection
@@ -299,7 +299,7 @@ export function SearchExperience() {
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
               results={data.comunidade}
             />
             {data.sugestoes && data.sugestoes.length > 0 && (
@@ -309,7 +309,7 @@ export function SearchExperience() {
                 badgeLabels={badgeLabels}
                 ownLabel={ownLabel}
                 autoTranslationLabel={m.traducaoAutomatica}
-                byLabel={m.porAutor}
+                byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
                 results={data.sugestoes}
               />
             )}

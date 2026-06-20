@@ -739,7 +739,8 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       orig_t.provenance AS original_provenance,
       u.name AS owner_name,
       u.handle AS owner_handle,
-      ri.blob_url AS image_url
+      ri.blob_url AS image_url,
+      ri.provenance AS image_provenance
     FROM numbered n
     CROSS JOIN params p
     LEFT JOIN recipe_translation req_t

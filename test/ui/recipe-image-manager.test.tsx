@@ -128,6 +128,45 @@ describe('RecipeImageManager — gestão da foto do prato (#130)', () => {
     expect(resizeImage).not.toHaveBeenCalled()
   })
 
+  it('#132 gerar com IA (um-clique): POST /image/generate + router.refresh', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate') ? { status: 200, body: { imageAiGenerated: true } } : { status: 405 },
+    )
+    renderManager(false)
+
+    await user.click(screen.getByText(M.imagemGerar)) // o botão um-clique
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('#132 refino: abre o disclosure, digita o prompt e gera (POST com o prompt no body)', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate') ? { status: 200, body: {} } : { status: 405 },
+    )
+    renderManager(false)
+
+    await user.type(screen.getByLabelText(M.imagemPromptRotulo), 'prato neon futurista')
+    await user.click(screen.getByText(M.imagemGerarComPrompt))
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    const post = calls.find((c) => c.url.endsWith('/image/generate'))!
+    expect(JSON.parse(post.body as string)).toEqual({ prompt: 'prato neon futurista' })
+  })
+
+  it('#132 teto estourado (429): mostra o countdown e NÃO chama refresh', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))
+    renderManager(false)
+
+    await user.click(screen.getAllByText(M.imagemGerar)[0])
+
+    expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it('remover: DELETE para a rota + router.refresh', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method) => (method === 'DELETE' ? { status: 200, body: { id: RID } } : { status: 405 }))

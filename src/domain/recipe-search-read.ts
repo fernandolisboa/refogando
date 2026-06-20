@@ -68,6 +68,11 @@ export type SearchHitRow = {
    * — `projectResult` o projeta em `SearchResult.imageUrl`; nunca expõe o `image_id` interno.
    */
   image_url: string | null
+  /**
+   * Proveniência da imagem (#132) — `recipe_image.provenance` da thumbnail (NULL sem imagem).
+   * `projectResult` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA"). NUNCA expõe o id.
+   */
+  image_provenance: string | null
 }
 
 /** Uma linha do DTO da Busca. `ts_rank`/`owner_id` são INTERNOS — NUNCA aparecem aqui. */
@@ -95,6 +100,8 @@ export type SearchResult = {
    * `image_url` do loader; nunca carrega o `image_id` interno.
    */
   imageUrl?: string
+  /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto. */
+  imageAiGenerated?: boolean
 }
 
 /**
@@ -227,6 +234,8 @@ export function projectResult(
     ...(author !== undefined ? { author } : {}),
     // #130/Imagem: thumbnail PÚBLICA do card. "ausente ≠ vazio": só quando há blob (image_url != null).
     ...(hit.image_url != null ? { imageUrl: hit.image_url } : {}),
+    // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated.
+    ...(hit.image_provenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
   }
 }
 
