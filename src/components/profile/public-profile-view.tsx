@@ -17,15 +17,7 @@ import { classifySection } from '@/domain/recipe'
 import type { PublicProfile } from '@/domain/recipe-profile-read'
 import type { Messages } from '@/i18n/messages'
 import { ProvenanceBadge } from '@/components/recipe/provenance-badge'
-
-/** Iniciais para o avatar de fallback (NULL `image`): 1ª letra das 2 primeiras palavras do nome. */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter((p) => p.length > 0)
-  if (parts.length === 0) return '?'
-  const first = parts[0][0] ?? ''
-  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : ''
-  return (first + last).toUpperCase()
-}
+import { Avatar } from '@/components/profile/avatar'
 
 export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: Messages }) {
   const mp = m.perfilPublico
@@ -47,24 +39,13 @@ export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: M
   return (
     <article className="flex flex-col gap-8">
       <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-        {/* Avatar: <img> simples de users.image (URL do Google OAuth ou NULL). NULL ⇒ iniciais.
-            Não depende de next/image nem de Vercel-Blob (#126). */}
-        {profile.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={profile.image}
-            alt={mp.avatarAlt.replace('{name}', profile.name)}
-            referrerPolicy="no-referrer"
-            className="h-20 w-20 shrink-0 rounded-full border border-border object-cover"
-          />
-        ) : (
-          <span
-            aria-hidden="true"
-            className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-border bg-surface font-display text-2xl text-muted"
-          >
-            {initials(profile.name)}
-          </span>
-        )}
+        {/* Avatar reutilizável (#126): users.image (Vercel Blob ou Google OAuth); NULL ⇒ iniciais. */}
+        <Avatar
+          src={profile.image}
+          name={profile.name}
+          alt={mp.avatarAlt.replace('{name}', profile.name)}
+          size="lg"
+        />
         <div className="flex flex-col gap-1">
           <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
             {profile.name}

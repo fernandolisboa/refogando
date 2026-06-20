@@ -22,6 +22,7 @@ import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession, signOut } from '@/lib/auth-client'
 import { btnPrimarySm } from '@/components/button'
+import { Avatar } from '@/components/profile/avatar'
 
 export function AuthSlot() {
   const { messages } = useLocale()
@@ -45,13 +46,20 @@ export function AuthSlot() {
   const nameOrEmail = session.user.name || session.user.email
   return (
     <div className="flex items-center gap-3">
-      {/* O nome leva ao perfil (#124): clicar no seu nome abre /me/profile pra editar. */}
+      {/* Avatar + nome levam ao perfil (#124/#126): clicar abre /me/profile pra editar. O avatar
+          é users.image (Vercel Blob ou Google OAuth); NULL cai nas iniciais (sem dependência). */}
       <Link
         href="/me/profile"
-        className="max-w-[10rem] truncate text-sm text-muted transition-colors hover:text-fg"
+        className="flex items-center gap-2 transition-colors hover:text-fg"
         title={nameOrEmail}
       >
-        {nameOrEmail}
+        <Avatar
+          src={session.user.image}
+          name={nameOrEmail}
+          alt={messages.perfil.avatarAlt.replace('{name}', nameOrEmail)}
+          size="sm"
+        />
+        <span className="max-w-[10rem] truncate text-sm text-muted">{nameOrEmail}</span>
       </Link>
       <button
         type="button"

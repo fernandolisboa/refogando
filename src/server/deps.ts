@@ -2,13 +2,15 @@ import { makeDb, makeSql, type Database } from '@/db/client'
 import { RealClaudeClient, type ClaudeClient } from '@/server/claude/client'
 import { RealEmbedder, type Embedder } from '@/server/embedding/embedder'
 import { RealTranslator, type Translator } from '@/server/translation/translator'
+import { RealImageStore, type ImageStore } from '@/server/images/image-store'
 
 /**
- * Raiz de composição (DI) da fundação. Quatro seams com um dono cada:
+ * Raiz de composição (DI) da fundação. Cinco seams com um dono cada:
  *  - getDb()           → Postgres (Drizzle)
  *  - getClaudeClient() → seam do Claude
  *  - getEmbedder()     → seam de embedding
  *  - getTranslator()   → seam de tradução automática (issue #23)
+ *  - getImageStore()   → seam de storage de imagem (issue #126, Vercel Blob)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
@@ -23,6 +25,8 @@ let embedderOverride: Embedder | null = null
 let lazyEmbedder: Embedder | null = null
 let translatorOverride: Translator | null = null
 let lazyTranslator: Translator | null = null
+let imageStoreOverride: ImageStore | null = null
+let lazyImageStore: ImageStore | null = null
 
 export function getDb(): Database {
   if (dbOverride) return dbOverride
@@ -72,6 +76,16 @@ export function setTranslator(translator: Translator): void {
   translatorOverride = translator
 }
 
+export function getImageStore(): ImageStore {
+  if (imageStoreOverride) return imageStoreOverride
+  if (!lazyImageStore) lazyImageStore = new RealImageStore()
+  return lazyImageStore
+}
+
+export function setImageStore(store: ImageStore): void {
+  imageStoreOverride = store
+}
+
 /**
  * Limpa overrides dos seams entre testes. NÃO mexe no banco (setDb persiste por
  * arquivo de teste) nem derruba o pool.
@@ -80,4 +94,5 @@ export function resetDeps(): void {
   claudeOverride = null
   embedderOverride = null
   translatorOverride = null
+  imageStoreOverride = null
 }
