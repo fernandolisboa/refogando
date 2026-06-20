@@ -156,6 +156,36 @@ describe('RecipeImageManager — gestão da foto do prato (#130)', () => {
     expect(JSON.parse(post.body as string)).toEqual({ prompt: 'prato neon futurista' })
   })
 
+  it('#134 geração DESLIGADA (aiGenEnabled=false): esconde "Gerar com IA" e o refino; upload permanece', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeImageManager recipeId={RID} hasImage={false} aiGenEnabled={false} />
+      </LocaleProvider>,
+    )
+    expect(screen.queryByText(M.imagemGerar)).not.toBeInTheDocument()
+    expect(screen.queryByText(M.imagemRefinar)).not.toBeInTheDocument()
+    expect(screen.queryByText(M.imagemGerarComPrompt)).not.toBeInTheDocument()
+    // O upload da própria foto (#130) NÃO depende da geração por IA — continua disponível.
+    expect(screen.getByText(M.imagemAdicionar)).toBeInTheDocument()
+  })
+
+  it('#134 geração ligada (default): "Gerar com IA" e o refino aparecem', () => {
+    renderManager(false)
+    expect(screen.getByText(M.imagemGerar)).toBeInTheDocument()
+    expect(screen.getByText(M.imagemRefinar)).toBeInTheDocument()
+  })
+
+  it('#134 corrida 403 (desligaram no meio): mostra o aviso de geração desativada, sem refresh', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 403, body: { error: 'geracao_desabilitada' } }))
+    renderManager(false)
+
+    await user.click(screen.getByText(M.imagemGerar))
+
+    expect(await screen.findByText(M.imagemGerarDesabilitada)).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it('#132 teto estourado (429): mostra o countdown e NÃO chama refresh', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))

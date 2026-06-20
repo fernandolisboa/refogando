@@ -4,7 +4,8 @@ import { POST } from '@/app/api/recipes/[id]/image/generate/route'
 import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator } from '@/server/images/image-generator'
-import { recipe, recipeImage, imageGeneration } from '@/db/schema'
+import { recipe, recipeImage, imageGeneration, appConfig } from '@/db/schema'
+import { DEFAULT_IMAGE_MODEL, type ImageGenCapByRole } from '@/domain/image-gen-config'
 import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 
@@ -58,6 +59,25 @@ async function seedAiGenForUser(userId: string, n: number): Promise<void> {
 async function countGenEvents(userId: string): Promise<number> {
   const [r] = await getDb().select({ n: sql<number>`count(*)::int` }).from(imageGeneration).where(eq(imageGeneration.userId, userId))
   return r?.n ?? 0
+}
+/** #134: grava a config de geração no singleton app_config (campos omitidos caem nos DEFAULTs). */
+async function setImageGenConfig(cfg: { enabled?: boolean; model?: string; capByRole?: ImageGenCapByRole }): Promise<void> {
+  await getDb()
+    .insert(appConfig)
+    .values({
+      id: true,
+      ...(cfg.enabled !== undefined ? { imageGenEnabled: cfg.enabled } : {}),
+      ...(cfg.model !== undefined ? { imageGenModel: cfg.model } : {}),
+      ...(cfg.capByRole !== undefined ? { imageGenCapByRole: cfg.capByRole } : {}),
+    })
+    .onConflictDoUpdate({
+      target: appConfig.id,
+      set: {
+        ...(cfg.enabled !== undefined ? { imageGenEnabled: cfg.enabled } : {}),
+        ...(cfg.model !== undefined ? { imageGenModel: cfg.model } : {}),
+        ...(cfg.capByRole !== undefined ? { imageGenCapByRole: cfg.capByRole } : {}),
+      },
+    })
 }
 
 describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
@@ -170,5 +190,50 @@ describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'geracao_indisponivel' })
     expect((await imageState(id)).imageId).toBeNull()
     expect(await countAiGen()).toBe(0)
+  })
+
+  // ── #134: a geração respeita a config do admin (enabled/model/teto) ───────────────
+  it('#134 geração DESLIGADA na config → 403 geracao_desabilitada; o gerador NÃO é tocado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'off@gen.test' })
+    const id = await seedOwned(userId)
+    await setImageGenConfig({ enabled: false })
+    const throwing = new ThrowingImageGenerator()
+    setImageGenerator(throwing)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toMatchObject({ error: 'geracao_desabilitada' })
+    expect(throwing.calls).toBe(0) // bloqueio ANTES do seam
+    expect((await imageState(id)).imageId).toBeNull()
+    expect(await countGenEvents(userId)).toBe(0) // nada consumido
+  })
+
+  it('#134 teto vem da CONFIG: usuario cap=1 ⇒ 2ª geração estoura (429), não o default 3', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'capcfg@gen.test' }) // role usuario
+    const id = await seedOwned(userId)
+    await setImageGenConfig({ capByRole: { usuario: 1, curador: 5, admin: null } })
+
+    expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200) // 1ª cabe
+    const second = await POST(genReq(id, headers), ctx(id))
+    expect(second.status).toBe(429) // teto da CONFIG (1), não o fixo (3)
+    await expect(second.json()).resolves.toMatchObject({ error: 'limite_geracao' })
+  })
+
+  it('#134 teto da config pode AFROUXAR: usuario cap=5 ⇒ 4ª geração ainda cabe (default seria 3)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'caphi@gen.test' }) // role usuario
+    const id = await seedOwned(userId)
+    await setImageGenConfig({ capByRole: { usuario: 5, curador: 5, admin: null } })
+    await seedAiGenForUser(userId, 3) // já passaria o default fixo (3)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200) // cap 5 da config ⇒ a 4ª cabe
+  })
+
+  it('#134 o MODELO da config é repassado ao gerador (antes era undefined)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'modelo@gen.test' })
+    const id = await seedOwned(userId)
+    // Sem linha de config ⇒ defaults; o modelo default deve chegar ao seam (não undefined).
+    expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
+    expect(gen.lastModel).toBe(DEFAULT_IMAGE_MODEL)
   })
 })

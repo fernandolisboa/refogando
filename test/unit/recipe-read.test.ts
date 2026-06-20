@@ -574,3 +574,40 @@ describe('resolveRecipeView — Imagem (#130/#132/#133)', () => {
     expect('imageAiGenerated' in view).toBe(false)
   })
 })
+
+// ── #134: imageGenEnabled — flag de geração-por-IA OWNER-GATED ───────────────────
+describe('resolveRecipeView — imageGenEnabled (#134, owner-gated)', () => {
+  it('DONO (canManage) + flag presente ⇒ projeta imageGenEnabled (true e false 1:1)', () => {
+    const ligado = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1', imageGenEnabled: true }),
+    )
+    expect(ligado.canManage).toBe(true)
+    expect(ligado.imageGenEnabled).toBe(true)
+
+    const desligado = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1', imageGenEnabled: false }),
+    )
+    expect(desligado.imageGenEnabled).toBe(false) // false sai (não é "ausente ≠ vazio" — é o valor)
+  })
+
+  it('NÃO-dono (viewerId ≠ ownerId) ⇒ AUSENTE mesmo com o flag setado (não vaza a config)', () => {
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-2', imageGenEnabled: false }),
+    )
+    expect(view.canManage).toBeUndefined()
+    expect('imageGenEnabled' in view).toBe(false)
+  })
+
+  it('anônimo (sem viewerId) ⇒ AUSENTE', () => {
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), imageGenEnabled: true }),
+    )
+    expect('imageGenEnabled' in view).toBe(false)
+  })
+
+  it('DONO mas o server NÃO carregou a flag (input omite) ⇒ AUSENTE (só sai quando pedido)', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1' }))
+    expect(view.canManage).toBe(true)
+    expect('imageGenEnabled' in view).toBe(false)
+  })
+})

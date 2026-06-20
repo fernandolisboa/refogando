@@ -25,6 +25,7 @@ export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
   const governanca: Item[] = isAdmin
     ? [
         { href: '/admin/config', label: m.navConfig },
+        { href: '/admin/ai', label: m.navAi },
         { href: '/admin/users', label: m.navPapeis },
       ]
     : []

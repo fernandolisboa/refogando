@@ -7,9 +7,11 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import type { ImageProvenance } from '@/domain/recipe'
 import type { Role } from '@/domain/user'
-import { decideImageQuota, capForRole, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
+import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
+import { capFromConfig } from '@/domain/image-gen-config'
 import { buildDishImagePrompt } from '@/domain/image-prompt'
 import { loadRecipeRows } from '@/server/recipe/load'
+import { loadImageGenConfig } from '@/server/app-config'
 
 /**
  * Núcleo com efeito da Imagem da receita (issue #130, ADR-0016) — upload/troca/remoção da foto do
@@ -77,6 +79,7 @@ export async function applyRecipeImageUpload(input: {
 export type RecipeImageGenResult =
   | { kind: 'ok'; view: RecipeView } //               200 — view montada
   | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
+  | { kind: 'disabled' } //                           403 — geração desligada na config (#134)
   | { kind: 'storage' } //                            503 — ImageStore indisponível
   | { kind: 'generator' } //                          503 — geração por IA indisponível
   | { kind: 'quota'; retryAfterMs: number } //        429 — teto estourado (countdown)
@@ -99,17 +102,22 @@ export async function applyRecipeImageGeneration(input: {
   const rows = await loadRecipeRows(db, id)
   if (!rows || rows.recipe.ownerId == null || rows.recipe.ownerId !== userId) return { kind: 'not_found' }
 
-  // 2. Teto por papel, janela 24h deslizante (ADR-0017). Conta os EVENTOS de geração do usuário na
-  //    janela (ledger imutável) — imagem moderada/substituída AINDA conta (custo já gasto). admin
-  //    (cap ∞) pula a query (não há teto a checar). Estourou ⇒ 429 com countdown.
-  const cap = capForRole(role)
+  // 2. Config de geração (#134): enabled/model/teto vêm do singleton app_config (defaults em código
+  //    quando não há linha). Geração DESLIGADA ⇒ 403 ANTES de tocar o seam (a UI também esconde a ação).
+  const genConfig = await loadImageGenConfig(db)
+  if (!genConfig.enabled) return { kind: 'disabled' }
+
+  // 3. Teto por papel, janela 24h deslizante (ADR-0017) — agora da CONFIG (#134, era fixo na #132).
+  //    Conta os EVENTOS de geração do usuário na janela (ledger imutável) — imagem moderada/substituída
+  //    AINDA conta (custo já gasto). cap ∞ (papel ilimitado) pula a query. Estourou ⇒ 429 com countdown.
+  const cap = capFromConfig(genConfig.dailyCapByRole, role)
   if (Number.isFinite(cap)) {
     const recentAt = await loadRecentAiGenAt(db, userId, now)
     const quota = decideImageQuota({ cap, recentAt, now })
     if (!quota.allowed) return { kind: 'quota', retryAfterMs: quota.retryAfterMs }
   }
 
-  // 3. Prompt: o editado pelo usuário (refino), senão montado da receita ATUAL (um-clique).
+  // 4. Prompt: o editado pelo usuário (refino), senão montado da receita ATUAL (um-clique).
   const prompt =
     promptOverride?.trim() ||
     buildDishImagePrompt({
@@ -119,15 +127,16 @@ export async function applyRecipeImageGeneration(input: {
       ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
     })
 
-  // 4. Gera (Gemini REST). Falha ⇒ degradação 503 (nenhuma linha nasce ⇒ nenhum slot consumido).
+  // 5. Gera (Gemini REST) com o MODELO da config (#134). Falha ⇒ degradação 503 (nenhuma linha nasce
+  //    ⇒ nenhum slot consumido).
   let generated
   try {
-    generated = await generator.generateDishImage({ prompt })
+    generated = await generator.generateDishImage({ prompt, model: genConfig.model })
   } catch {
     return { kind: 'generator' }
   }
 
-  // 5. Guarda os bytes no blob. Falha ⇒ 503 storage.
+  // 6. Guarda os bytes no blob. Falha ⇒ 503 storage.
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({
@@ -139,7 +148,7 @@ export async function applyRecipeImageGeneration(input: {
     return { kind: 'storage' }
   }
 
-  // 6. Cria recipe_image (ai_generated) + repointa + reaproveita a antiga (mesma máquina do upload).
+  // 7. Cria recipe_image (ai_generated) + repointa + reaproveita a antiga (mesma máquina do upload).
   return persistAndPointImage(db, store, {
     id,
     userId,

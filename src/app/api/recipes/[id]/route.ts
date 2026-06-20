@@ -4,6 +4,7 @@ import { getDb } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
+import { loadImageGenConfig } from '@/server/app-config'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 import {
@@ -110,8 +111,14 @@ export async function GET(
   if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Estado social (#16): `voteCount` SÓ no pool (isPublicRead) — omitido em owned-private;
-  // `viewerVoted`/`viewerFavorited` SÓ quando há viewerId. Junto ao caminho já paralelo.
-  const social = await loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead })
+  // `viewerVoted`/`viewerFavorited` SÓ quando há viewerId. #134: a config de geração-por-IA
+  // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
+  // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
+  const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
+  const [social, imageGenEnabled] = await Promise.all([
+    loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead }),
+    isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
+  ])
 
   const view = resolveRecipeView({
     ...rows,
@@ -120,6 +127,7 @@ export async function GET(
     voteCount: social.voteCount,
     viewerVoted: social.viewerVoted,
     viewerFavorited: social.viewerFavorited,
+    imageGenEnabled,
   })
 
   return Response.json(view)

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { GET } from '@/app/api/recipes/[id]/route'
+import { getDb } from '@/server/deps'
+import { appConfig } from '@/db/schema'
 import {
   seedFeijoadaCatalog,
   seedRecipe,
@@ -219,5 +221,42 @@ describe('GET /api/recipes/[id] — campos de gestão gateados ao dono (#59)', (
     expect(view).not.toHaveProperty('canManage')
     expect(view).not.toHaveProperty('visibility')
     expect(view).not.toHaveProperty('resultKind')
+  })
+
+  // ── #134: imageGenEnabled owner-gated (a config de geração só vaza ao DONO) ──────────
+  type GenView = ManageView & { imageGenEnabled?: boolean }
+
+  it('N4: dono lê própria pública SEM linha de config ⇒ imageGenEnabled=true (default em código)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'ig-default@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+
+    const view = (await (await getAs(id, headers, 'pt-BR')).json()) as GenView
+    expect(view.canManage).toBe(true)
+    expect(view.imageGenEnabled).toBe(true) // sem linha ⇒ default (ligado)
+  })
+
+  it('N4b: dono lê própria pública com geração DESLIGADA na config ⇒ imageGenEnabled=false', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'ig-off@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+    await getDb().insert(appConfig).values({ id: true, imageGenEnabled: false })
+
+    const view = (await (await getAs(id, headers, 'pt-BR')).json()) as GenView
+    expect(view.canManage).toBe(true)
+    expect(view.imageGenEnabled).toBe(false) // reflete a config do admin
+  })
+
+  it('N5: NÃO vaza imageGenEnabled a não-dono autenticado nem a anônimo (mesmo com config desligada)', async () => {
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'ig-owner@ex.com' })
+    const { headers: intruderHeaders } = await seedSessionHeaders({ email: 'ig-intruder@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+    await getDb().insert(appConfig).values({ id: true, imageGenEnabled: false })
+
+    const nonOwner = (await (await getAs(id, intruderHeaders, 'pt-BR')).json()) as GenView
+    expect(nonOwner).not.toHaveProperty('imageGenEnabled') // owner-gated: não vaza a terceiro
+    const anon = (await (await get(id, 'pt-BR')).json()) as GenView
+    expect(anon).not.toHaveProperty('imageGenEnabled') // anônimo: nem o campo, nem a query de config
   })
 })

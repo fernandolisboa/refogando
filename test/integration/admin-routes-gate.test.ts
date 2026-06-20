@@ -85,6 +85,7 @@ const as = (m: Promise<unknown>): Promise<PageModule> => m as Promise<PageModule
 const layout = () => as(import('@/app/admin/layout'))
 const index = () => as(import('@/app/admin/page'))
 const config = () => as(import('@/app/admin/config/page'))
+const ai = () => as(import('@/app/admin/ai/page'))
 const users = () => as(import('@/app/admin/users/page'))
 const moderation = () => as(import('@/app/admin/moderation/page'))
 const translations = () => as(import('@/app/admin/translations/page'))
@@ -138,9 +139,10 @@ describe('Index /admin redireciona para a primeira seção do papel', () => {
   })
 })
 
-describe('Seções admin-only (/admin/config, /admin/users) — curador é BARRADO', () => {
+describe('Seções admin-only (/admin/config, /admin/ai, /admin/users) — curador é BARRADO', () => {
   it.each([
     ['config', config],
+    ['ai', ai],
     ['users', users],
   ] as const)('curador em /admin/%s → AccessDenied (gate, não link escondido)', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `cur-${_n}@routes.test`, role: 'curador' })
@@ -150,6 +152,7 @@ describe('Seções admin-only (/admin/config, /admin/users) — curador é BARRA
 
   it.each([
     ['config', config],
+    ['ai', ai],
     ['users', users],
   ] as const)('admin em /admin/%s → render da seção', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `adm-${_n}@routes.test`, role: 'admin' })
@@ -159,6 +162,7 @@ describe('Seções admin-only (/admin/config, /admin/users) — curador é BARRA
 
   it.each([
     ['config', config],
+    ['ai', ai],
     ['users', users],
   ] as const)('anon em /admin/%s → redirect', async (_n, mod) => {
     headersMock.current = new Headers()

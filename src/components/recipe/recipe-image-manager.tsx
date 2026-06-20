@@ -42,6 +42,7 @@ export function RecipeImageManager({
   recipeId,
   hasImage,
   reviewSuggested = false,
+  aiGenEnabled = true,
 }: {
   recipeId: string
   hasImage: boolean
@@ -51,6 +52,12 @@ export function RecipeImageManager({
    * relevante quando há imagem (sem foto, nada a revisar).
    */
   reviewSuggested?: boolean
+  /**
+   * #134: geração de imagem por IA LIGADA na config do admin (a view do dono carrega o flag). `false`
+   * ⇒ esconde a ação "Gerar com IA" (o upload de foto continua). Default `true` (a view sempre traz o
+   * flag p/ o dono; o default só protege contra ausência). O servidor reimpõe o gate (403).
+   */
+  aiGenEnabled?: boolean
 }) {
   const { messages } = useLocale()
   const m = messages.detalhe
@@ -58,8 +65,8 @@ export function RecipeImageManager({
 
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<ImageError>(null)
-  // #132: geração por IA — erro próprio ('falha'|'limite') + countdown quando o teto estoura.
-  const [genError, setGenError] = useState<null | 'falha' | 'limite'>(null)
+  // #132: geração por IA — erro próprio ('falha'|'limite'|'desabilitada') + countdown no teto.
+  const [genError, setGenError] = useState<null | 'falha' | 'limite' | 'desabilitada'>(null)
   const [countdown, setCountdown] = useState('')
   const [prompt, setPrompt] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -80,6 +87,12 @@ export function RecipeImageManager({
         const b = (await res.json().catch(() => ({}))) as { retryAfterMs?: number }
         setCountdown(formatCountdown(b.retryAfterMs ?? 0))
         setGenError('limite')
+        setStatus('idle')
+        return
+      }
+      // #134: geração desligada na config (corrida: desligaram depois do render). 403 → aviso próprio.
+      if (res.status === 403) {
+        setGenError('desabilitada')
         setStatus('idle')
         return
       }
@@ -190,15 +203,18 @@ export function RecipeImageManager({
             className="sr-only"
           />
         </label>
-        {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor). */}
-        <button
-          type="button"
-          onClick={() => onGenerate()}
-          disabled={busy}
-          className={btnSecondarySm}
-        >
-          {busy ? m.imagemGerando : m.imagemGerar}
-        </button>
+        {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor).
+            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
+        {aiGenEnabled && (
+          <button
+            type="button"
+            onClick={() => onGenerate()}
+            disabled={busy}
+            className={btnSecondarySm}
+          >
+            {busy ? m.imagemGerando : m.imagemGerar}
+          </button>
+        )}
         {hasImage && (
           <button type="button" onClick={onRemove} disabled={busy} className={btnSecondarySm}>
             {m.imagemRemover}
@@ -206,31 +222,34 @@ export function RecipeImageManager({
         )}
       </div>
 
-      {/* #132: refino opcional — prompt editável (disclosure). O default já é o um-clique acima. */}
-      <details className="text-sm">
-        <summary className="cursor-pointer text-muted hover:text-fg">{m.imagemRefinar}</summary>
-        <div className="mt-2 flex flex-col gap-2">
-          <label htmlFor="imagem-prompt" className="sr-only">
-            {m.imagemPromptRotulo}
-          </label>
-          <textarea
-            id="imagem-prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={m.imagemPromptPlaceholder}
-            rows={3}
-            className={`${fieldClassName} resize-y`}
-          />
-          <button
-            type="button"
-            onClick={() => onGenerate(prompt.trim() || undefined)}
-            disabled={busy}
-            className={`${btnSecondarySm} self-start`}
-          >
-            {busy ? m.imagemGerando : m.imagemGerarComPrompt}
-          </button>
-        </div>
-      </details>
+      {/* #132: refino opcional — prompt editável (disclosure). O default já é o um-clique acima.
+          #134: escondido junto com o botão de gerar quando a geração está desligada (`aiGenEnabled`). */}
+      {aiGenEnabled && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-muted hover:text-fg">{m.imagemRefinar}</summary>
+          <div className="mt-2 flex flex-col gap-2">
+            <label htmlFor="imagem-prompt" className="sr-only">
+              {m.imagemPromptRotulo}
+            </label>
+            <textarea
+              id="imagem-prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={m.imagemPromptPlaceholder}
+              rows={3}
+              className={`${fieldClassName} resize-y`}
+            />
+            <button
+              type="button"
+              onClick={() => onGenerate(prompt.trim() || undefined)}
+              disabled={busy}
+              className={`${btnSecondarySm} self-start`}
+            >
+              {busy ? m.imagemGerando : m.imagemGerarComPrompt}
+            </button>
+          </div>
+        </details>
+      )}
 
       <div aria-live="polite" className="text-sm">
         {error === 'tipo' && (
@@ -257,6 +276,12 @@ export function RecipeImageManager({
         {genError === 'limite' && (
           <p role="alert" className="font-medium text-fg">
             {m.imagemLimite.replace('{tempo}', countdown)}
+          </p>
+        )}
+        {/* #134: geração desligada na config (corrida de toggle pós-render). */}
+        {genError === 'desabilitada' && (
+          <p role="alert" className="font-medium text-fg">
+            {m.imagemGerarDesabilitada}
           </p>
         )}
       </div>

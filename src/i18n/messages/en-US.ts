@@ -172,6 +172,8 @@ export const enUS: Messages = {
     imagemPromptRotulo: 'Image prompt',
     imagemPromptPlaceholder: 'Describe how you want the dish photo to look (optional).',
     imagemGerarErro: "We couldn't generate the image. Try again.",
+    // #134: generation turned off by the admin (UI hides the button; covers the toggle-off race).
+    imagemGerarDesabilitada: 'AI image generation is currently disabled.',
     // 24h SLIDING window (not "today"/calendar day): window-neutral copy.
     imagemLimite: "You've hit the generation limit for now. Frees up in ~{tempo}.",
   },
@@ -504,6 +506,17 @@ export const enUS: Messages = {
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
     navCatalogo: 'Catalog',
+    navAi: 'Image generation',
+    // /admin/ai section (#134) — toggle AI image generation, model and per-role daily caps.
+    aiTitulo: 'AI image generation',
+    aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',
+    aiHabilitadaLabel: 'Image generation on',
+    aiModeloLabel: 'Model',
+    aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
+    aiTetosLabel: 'Daily caps per role (24h window)',
+    aiTetoIlimitado: 'unlimited',
+    aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
+    aiErroConfig: 'Invalid configuration. Review the caps and model.',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role. Check the ID.',
     erroGenerico: 'Something went wrong. Try again.',

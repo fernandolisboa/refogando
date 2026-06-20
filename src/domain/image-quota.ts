@@ -7,32 +7,13 @@
  * virada da meia-noite. Contado a partir das próprias linhas `recipe_image` com
  * `provenance = ai_generated` do usuário — sem contador separado pra manter.
  *
- * Tetos por papel FIXOS nesta fatia (#132); a fatia do admin (#134) passa os valores da config no
- * lugar — por isso `decideImageQuota` recebe o `cap` por parâmetro (não lê o mapa direto).
+ * O `cap` chega por PARÂMETRO (não lido aqui): a #132 passava os defaults fixos; a #134 passa os
+ * valores da config do admin. A RESOLUÇÃO do cap por papel (defaults + `null`=ilimitado) vive em
+ * `@/domain/image-gen-config` (`capFromConfig`) — fonte ÚNICA, evita drift de defaults.
  */
-
-import type { Role } from '@/domain/user'
 
 /** Janela deslizante de 24h em ms. */
 export const IMAGE_GEN_WINDOW_MS = 24 * 60 * 60 * 1000
-
-/**
- * Teto diário por papel (defaults FIXOS, ADR-0017). `admin: Infinity` = sem teto. #134 substitui
- * estes valores pelos da config do admin (mesma forma role→número).
- */
-export const DAILY_IMAGE_GEN_CAP_BY_ROLE: Record<Role, number> = {
-  usuario: 3,
-  curador: 5,
-  admin: Infinity,
-}
-
-/**
- * Teto para um papel. `null`/desconhecido (não deveria ocorrer pós-requireSession) → FAIL-CLOSED no
- * teto mais restritivo (`usuario`), nunca liberando geração paga para um papel indefinido.
- */
-export function capForRole(role: Role | null): number {
-  return role != null ? DAILY_IMAGE_GEN_CAP_BY_ROLE[role] : DAILY_IMAGE_GEN_CAP_BY_ROLE.usuario
-}
 
 export type QuotaDecision =
   | { allowed: true }
