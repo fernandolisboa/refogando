@@ -6,7 +6,16 @@ import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
-  nav: { home: 'Início', recipes: 'Receitas', create: 'Criar', signIn: 'Entrar', signOut: 'Sair' },
+  nav: {
+    home: 'Início',
+    recipes: 'Receitas',
+    create: 'Criar',
+    // "Painel" (#125): entrada para o Console de admin, só aparece a curador+. Curto e neutro
+    // — não revela "admin" a quem não acessa.
+    painel: 'Painel',
+    signIn: 'Entrar',
+    signOut: 'Sair',
+  },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   system: {
     loading: 'Carregando…',
@@ -462,6 +471,14 @@ export const ptBR = {
     // Rótulos de AGRUPAMENTO (governança da Plataforma vs Curadoria de conteúdo).
     grupoPlataforma: 'Plataforma',
     grupoCuradoria: 'Curadoria',
+    // Rótulos CURTOS da navegação por seção (#125, rotas aninhadas). `navAria` nomeia a
+    // <nav> de seções para AT (distinta da nav principal do header).
+    navAria: 'Seções do Console',
+    navConfig: 'Modelo padrão',
+    navPapeis: 'Papéis',
+    navModeracao: 'Moderação',
+    navTraducoes: 'Traduções',
+    navCatalogo: 'Catálogo',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel. Confira o ID.',
     erroGenerico: 'Algo deu errado. Tente de novo.',
