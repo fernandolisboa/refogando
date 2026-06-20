@@ -49,6 +49,10 @@ export type RecipeResultItemProps = {
    * mostra a foto do prato no topo; AUSENTE ⇒ estado limpo (sem thumbnail, sem moldura vazia).
    */
   imageUrl?: string
+  /** Imagem gerada por IA (#132)? Mostra o selo "✨ gerada por IA" sobre a thumbnail. */
+  imageAiGenerated?: boolean
+  /** Rótulo do selo "gerada por IA", já localizado. Lido só quando `imageAiGenerated`. */
+  aiLabel?: string
 }
 
 export function RecipeResultItem({
@@ -63,6 +67,8 @@ export function RecipeResultItem({
   author,
   byLabel,
   imageUrl,
+  imageAiGenerated = false,
+  aiLabel,
 }: RecipeResultItemProps) {
   const section = classifySection(origin)
   // #116/own-label: própria do viewer ⇒ selo "Sua receita" (precede catálogo/comunidade).
@@ -86,15 +92,23 @@ export function RecipeResultItem({
         className="flex flex-col gap-2 rounded-sm focus-visible:outline-none"
       >
         {/* Thumbnail (#130): foto do prato no topo do card. AUSENTE ⇒ estado limpo (sem moldura).
-            <img> simples (convenção do repo); alt = título exibido (o card já leva ao detalhe). */}
+            <img> simples (convenção do repo); alt = título exibido (o card já leva ao detalhe).
+            #132: selo "✨ gerada por IA" sobreposto quando ai_generated. */}
         {imageUrl != null && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={displayedTitle}
-            referrerPolicy="no-referrer"
-            className="aspect-video w-full rounded-md border border-border object-cover"
-          />
+          <span className="relative block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt={displayedTitle}
+              referrerPolicy="no-referrer"
+              className="aspect-video w-full rounded-md border border-border object-cover"
+            />
+            {imageAiGenerated && aiLabel && (
+              <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-surface/90 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                {aiLabel}
+              </span>
+            )}
+          </span>
         )}
         <ProvenanceBadge variant={badge.variant} label={badge.label} />
         <h3 className="font-display text-lg text-fg">{displayedTitle}</h3>

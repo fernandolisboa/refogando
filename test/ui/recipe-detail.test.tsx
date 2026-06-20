@@ -72,6 +72,15 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
+  it('Selo "gerada por IA" (#132): aparece quando imageAiGenerated; ausente quando foto do usuário', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/ia.webp'
+    const { rerender } = renderView(baseView({ imageUrl: url, imageAiGenerated: true }))
+    expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
+
+    rerender(<RecipeDetailView view={baseView({ imageUrl: url })} m={M} />)
+    expect(screen.queryByText(M.busca.imagemSeloIa)).not.toBeInTheDocument()
+  })
+
   it('T1 — receita sem nada a sinalizar → conteúdo localizado + selo de catálogo, tela limpa', () => {
     renderView(baseView())
 

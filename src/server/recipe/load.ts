@@ -45,6 +45,12 @@ export type LoadedRecipeRows = {
    * que vê a Receita. NUNCA expõe o `image_id` interno — só a URL servível.
    */
   imageUrl?: string
+  /**
+   * Imagem gerada por IA? (#132) — `true` quando a `recipe_image` apontada tem
+   * `provenance = 'ai_generated'`. Dirige o selo "✨ gerada por IA" no público (honestidade,
+   * ADR-0017). AUSENTE quando não há imagem ou é foto do usuário (sem selo).
+   */
+  imageAiGenerated?: boolean
 }
 
 export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRecipeRows | null> {
@@ -92,7 +98,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     row.imageId == null
       ? Promise.resolve([])
       : db
-          .select({ blobUrl: recipeImage.blobUrl })
+          .select({ blobUrl: recipeImage.blobUrl, provenance: recipeImage.provenance })
           .from(recipeImage)
           .where(eq(recipeImage.id, row.imageId))
           .limit(1),
@@ -103,6 +109,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     authorRow != null ? { name: authorRow.name, handle: authorRow.handle } : undefined
 
   const imageUrl = imageRows[0]?.blobUrl ?? undefined
+  const imageAiGenerated = imageRows[0]?.provenance === 'ai_generated'
 
   return {
     recipe: row,
@@ -111,6 +118,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     tags: tags.map((t) => t.nome),
     ...(author ? { author } : {}),
     ...(imageUrl ? { imageUrl } : {}),
+    ...(imageAiGenerated ? { imageAiGenerated } : {}),
   }
 }
 

@@ -1,9 +1,14 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeImage } from '@/db/schema'
+import { recipe, recipeImage, imageGeneration } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
+import type { ImageGenerator } from '@/server/images/image-generator'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
+import type { ImageProvenance } from '@/domain/recipe'
+import type { Role } from '@/domain/user'
+import { decideImageQuota, capForRole, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
+import { buildDishImagePrompt } from '@/domain/image-prompt'
 import { loadRecipeRows } from '@/server/recipe/load'
 
 /**
@@ -52,15 +57,132 @@ export async function applyRecipeImageUpload(input: {
     return { kind: 'storage' }
   }
 
-  // 3. Tx: cria a nova imagem, aponta a Receita pra ela, e — se a antiga ficou SEM referência —
-  //    apaga a LINHA recipe_image antiga, devolvendo o blob órfão pra deleção pós-commit.
+  // 3. Cria a recipe_image (user_photo), repointa a Receita e reaproveita a antiga (ref-count).
+  return persistAndPointImage(db, store, {
+    id,
+    userId,
+    blobUrl,
+    provenance: 'user_photo',
+    oldImageId,
+    requestLocale,
+  })
+}
+
+/**
+ * Geração de imagem por IA (issue #132, ADR-0017). Owner-only; respeita o TETO por papel na janela
+ * 24h deslizante (countdown ao estourar); monta o prompt da receita (ou usa o editado pelo usuário);
+ * Gemini → bytes → ImageStore → `recipe_image` (`ai_generated`) → `image_id` (ref-counted como o
+ * upload). A degradação dos seams é tratada (generator/storage → erro estruturado, não 500 cru).
+ */
+export type RecipeImageGenResult =
+  | { kind: 'ok'; view: RecipeView } //               200 — view montada
+  | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
+  | { kind: 'storage' } //                            503 — ImageStore indisponível
+  | { kind: 'generator' } //                          503 — geração por IA indisponível
+  | { kind: 'quota'; retryAfterMs: number } //        429 — teto estourado (countdown)
+
+export async function applyRecipeImageGeneration(input: {
+  db: Database
+  store: ImageStore
+  generator: ImageGenerator
+  id: string // já validado uuid pelo route
+  userId: string // session.user.id
+  role: Role | null // papel do dono (define o teto); null ⇒ fail-closed no teto de `usuario`
+  promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
+  requestLocale: string
+}): Promise<RecipeImageGenResult> {
+  const { db, store, generator, id, userId, role, promptOverride, requestLocale } = input
+  const now = new Date()
+
+  // 1. Carrega a receita (espinha + traduções + ingredientes) e prova ownership (404 leak-safe).
+  //    O gate de dono vem ANTES de tocar o gerador (caro) ⇒ anon/não-dono nunca disparam o seam.
+  const rows = await loadRecipeRows(db, id)
+  if (!rows || rows.recipe.ownerId == null || rows.recipe.ownerId !== userId) return { kind: 'not_found' }
+
+  // 2. Teto por papel, janela 24h deslizante (ADR-0017). Conta os EVENTOS de geração do usuário na
+  //    janela (ledger imutável) — imagem moderada/substituída AINDA conta (custo já gasto). admin
+  //    (cap ∞) pula a query (não há teto a checar). Estourou ⇒ 429 com countdown.
+  const cap = capForRole(role)
+  if (Number.isFinite(cap)) {
+    const recentAt = await loadRecentAiGenAt(db, userId, now)
+    const quota = decideImageQuota({ cap, recentAt, now })
+    if (!quota.allowed) return { kind: 'quota', retryAfterMs: quota.retryAfterMs }
+  }
+
+  // 3. Prompt: o editado pelo usuário (refino), senão montado da receita ATUAL (um-clique).
+  const prompt =
+    promptOverride?.trim() ||
+    buildDishImagePrompt({
+      titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
+      cozinha: rows.recipe.cozinha ?? null,
+      categoria: rows.recipe.categoria ?? null,
+      ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
+    })
+
+  // 4. Gera (Gemini REST). Falha ⇒ degradação 503 (nenhuma linha nasce ⇒ nenhum slot consumido).
+  let generated
+  try {
+    generated = await generator.generateDishImage({ prompt })
+  } catch {
+    return { kind: 'generator' }
+  }
+
+  // 5. Guarda os bytes no blob. Falha ⇒ 503 storage.
+  let blobUrl: string
+  try {
+    ;({ url: blobUrl } = await store.store({
+      data: generated.data,
+      contentType: generated.contentType,
+      pathPrefix: 'recipes',
+    }))
+  } catch {
+    return { kind: 'storage' }
+  }
+
+  // 6. Cria recipe_image (ai_generated) + repointa + reaproveita a antiga (mesma máquina do upload).
+  return persistAndPointImage(db, store, {
+    id,
+    userId,
+    blobUrl,
+    provenance: 'ai_generated',
+    oldImageId: rows.recipe.imageId ?? null,
+    requestLocale,
+  })
+}
+
+/**
+ * Núcleo compartilhado upload/geração: numa transação, cria a `recipe_image` (proveniência dada),
+ * aponta `recipe.image_id` pra ela e — se a anterior ficou SEM referência — apaga a LINHA antiga,
+ * devolvendo o blob órfão pra deleção pós-commit (best-effort). Se a tx falhar DEPOIS do store, o
+ * blob NOVO ficaria órfão (o reap só mira o ANTIGO) ⇒ limpa best-effort e relança (500 honesto).
+ */
+async function persistAndPointImage(
+  db: Database,
+  store: ImageStore,
+  args: {
+    id: string
+    userId: string
+    blobUrl: string
+    provenance: ImageProvenance
+    oldImageId: string | null
+    requestLocale: string
+  },
+): Promise<RecipeImageResult> {
+  const { id, userId, blobUrl, provenance, oldImageId, requestLocale } = args
   let orphanBlobUrl: string | null
   try {
     orphanBlobUrl = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(recipeImage)
-        .values({ blobUrl, provenance: 'user_photo', createdBy: userId })
+        .values({ blobUrl, provenance, createdBy: userId })
         .returning({ id: recipeImage.id })
+
+      // #132: registra o EVENTO de geração no ledger imutável (ATÔMICO com a criação da imagem) —
+      // o teto conta daqui (NÃO de recipe_image, que é reapado). Custo gasto = linha permanente:
+      // regenerar/substituir/moderar NÃO devolve o slot (ADR-0017). Só pra ai_generated (custo).
+      if (provenance === 'ai_generated') {
+        await tx.insert(imageGeneration).values({ userId })
+      }
 
       // E5: reimpõe ownership na escrita (espelha visibility.ts) — defesa-em-profundidade.
       await tx
@@ -71,18 +193,26 @@ export async function applyRecipeImageUpload(input: {
       return reapOrphanImage(tx, oldImageId, created.id)
     })
   } catch (err) {
-    // A tx falhou DEPOIS de guardarmos o blob NOVO: nenhuma linha o referencia ⇒ ele ficaria
-    // órfão (o reapOrphanImage só mira o blob ANTIGO). Limpa best-effort e relança — um erro de
-    // DB real continua 500 honesto (não mascaramos de 503), mas sem deixar blob pendurado.
     await deleteOrphanBlob(store, blobUrl)
     throw err
   }
 
-  // 4. Apaga o blob órfão (best-effort, fora da tx — não há rollback de blob; só o que é nosso).
   await deleteOrphanBlob(store, orphanBlobUrl)
-
-  // 5. View atualizada (mesma forma do GET; viewerId = dono ⇒ traz canManage etc.).
   return buildView(db, id, requestLocale, userId)
+}
+
+/**
+ * `created_at` dos EVENTOS de geração do usuário na janela 24h (insumo do teto). Lê do LEDGER
+ * imutável `image_generation` (NÃO de `recipe_image`, que é reapado): assim regenerar/substituir/
+ * moderar a imagem NÃO devolve o slot — o custo já gasto conta na janela (ADR-0017).
+ */
+async function loadRecentAiGenAt(db: Database, userId: string, now: Date): Promise<Date[]> {
+  const since = new Date(now.getTime() - IMAGE_GEN_WINDOW_MS)
+  const rows = await db
+    .select({ createdAt: imageGeneration.createdAt })
+    .from(imageGeneration)
+    .where(and(eq(imageGeneration.userId, userId), gte(imageGeneration.createdAt, since)))
+  return rows.map((r) => r.createdAt)
 }
 
 export async function applyRecipeImageRemoval(input: {

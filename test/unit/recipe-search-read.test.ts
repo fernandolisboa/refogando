@@ -24,6 +24,7 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     owner_handle: null,
     // #130/Imagem: sem foto por default (a maioria dos hits não tem) — casos com imagem sobrescrevem.
     image_url: null,
+    image_provenance: null, // #132: proveniência da imagem (ai_generated dispara o selo)
     ...over,
   }
 }
@@ -300,6 +301,20 @@ describe('buildSearchResponse — Imagem da receita (#130)', () => {
   it('hit sem image_url (NULL) ⇒ chave `imageUrl` AUSENTE ("ausente ≠ vazio")', () => {
     const { catalogo } = buildSearchResponse([hit({ recipe_id: 'NOIMG', image_url: null })], 'pt-BR')
     expect('imageUrl' in catalogo[0]).toBe(false)
+  })
+
+  it('#132 selo: image_provenance ai_generated ⇒ imageAiGenerated true; leak-safe (sem provenance crua)', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/ia.webp'
+    const { catalogo } = buildSearchResponse([hit({ recipe_id: 'IA', image_url: url, image_provenance: 'ai_generated' })], 'pt-BR')
+    expect(catalogo[0].imageAiGenerated).toBe(true)
+    const keys = Object.keys(catalogo[0])
+    expect(keys).not.toContain('image_provenance') // só o booleano sai; a string crua é interna
+  })
+
+  it('#132 selo: image_provenance user_photo ⇒ chave `imageAiGenerated` AUSENTE', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/foto.webp'
+    const { catalogo } = buildSearchResponse([hit({ recipe_id: 'FOTO', image_url: url, image_provenance: 'user_photo' })], 'pt-BR')
+    expect('imageAiGenerated' in catalogo[0]).toBe(false)
   })
 })
 

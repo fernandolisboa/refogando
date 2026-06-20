@@ -43,4 +43,26 @@ describe('RecipeResultItem — thumbnail (#130)', () => {
     renderItem()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
+
+  it('#132 imageAiGenerated + aiLabel ⇒ mostra o selo "gerada por IA"', () => {
+    render(
+      <RecipeResultItem
+        recipeId="r-2"
+        displayedTitle="Bolo IA"
+        origin="catalog"
+        autoTranslationSignal={false}
+        badgeLabels={badgeLabels}
+        autoTranslationLabel="Tradução automática"
+        imageUrl="https://abc.public.blob.vercel-storage.com/recipes/ia.webp"
+        imageAiGenerated
+        aiLabel="✨ gerada por IA"
+      />,
+    )
+    expect(screen.getByText('✨ gerada por IA')).toBeInTheDocument()
+  })
+
+  it('#132 sem imageAiGenerated ⇒ sem selo', () => {
+    renderItem({ imageUrl: 'https://abc.public.blob.vercel-storage.com/recipes/foto.webp' })
+    expect(screen.queryByText('✨ gerada por IA')).not.toBeInTheDocument()
+  })
 })

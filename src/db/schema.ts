@@ -221,6 +221,28 @@ export const recipeImage = pgTable('recipe_image', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+/**
+ * Registro (append-only) de EVENTOS de geração de imagem por IA (#132, ADR-0017) — o LEDGER de
+ * custo que o teto de 24h deslizante conta. DISTINTO de `recipe_image`: a entidade da imagem é
+ * REF-COUNTED e REAPADA (apagada quando nenhuma versão a referencia — ADR-0016), então NÃO serve de
+ * contador (regenerar a mesma receita apagaria a linha e "devolveria o slot", driblando o teto).
+ * Este ledger é IMUTÁVEL: cada geração bem-sucedida grava uma linha que NUNCA é apagada por reap —
+ * o custo já foi gasto e conta na janela mesmo se a imagem resultante for substituída/moderada
+ * (ADR-0017: "não devolve slot"). Uma linha por geração; o teto faz `COUNT WHERE user_id AND
+ * created_at > agora-24h`. ON DELETE cascade: apagar o usuário limpa o ledger dele.
+ */
+export const imageGeneration = pgTable(
+  'image_generation',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('image_generation_user_created_idx').on(t.userId, t.createdAt)],
+)
+
 export const recipeTranslation = pgTable(
   'recipe_translation',
   {

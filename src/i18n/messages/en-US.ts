@@ -71,6 +71,8 @@ export const enUS: Messages = {
     // Authorship (#129): "by <name>" credit on a pool recipe item, linking /u/<handle>.
     // {name} interpolated in the component via `.replace` (leaves of the type are string).
     porAutor: 'by {name}',
+    // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
+    imagemSeloIa: '✨ AI-generated',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -162,6 +164,16 @@ export const enUS: Messages = {
     imagemTipoInvalido: 'Use a JPG, PNG, or WebP image.',
     imagemGrande: 'Image too large. Try a smaller one.',
     imagemErro: "We couldn't save the photo. Try again.",
+    // AI generation (#132). {tempo} interpolated in the component via `.replace`.
+    imagemGerar: '✨ Generate with AI',
+    imagemGerarComPrompt: 'Generate with this prompt',
+    imagemGerando: 'Generating…',
+    imagemRefinar: 'Refine the prompt',
+    imagemPromptRotulo: 'Image prompt',
+    imagemPromptPlaceholder: 'Describe how you want the dish photo to look (optional).',
+    imagemGerarErro: "We couldn't generate the image. Try again.",
+    // 24h SLIDING window (not "today"/calendar day): window-neutral copy.
+    imagemLimite: "You've hit the generation limit for now. Frees up in ~{tempo}.",
   },
   // Telas de autenticação (#55), mesma substância traduzida (ADR-0001, não byte-idêntica).
   // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.
