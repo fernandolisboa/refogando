@@ -4,6 +4,7 @@ import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
+import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
 
 /**
  * Edição IN-PLACE + APAGAR da PRÓPRIA Receita (issue #21).
@@ -88,10 +89,17 @@ export type OwnRecipePatch = {
   }>
 }
 
+export type EditOwnRecipeResult =
+  // `imageReviewSuggested` (#131): a edição IN-PLACE mexeu num campo VISUAL (título/ingredientes/
+  // cozinha) E a Receita TEM imagem ⇒ a UI sugere revisar a foto. Edição in-place mantém o mesmo
+  // image_id (mesma linha) — o carry-forward é trivial aqui; só a sugestão importa.
+  | { kind: 'ok'; imageReviewSuggested: boolean }
+  | { kind: 'translation_not_found' }
+
 export async function editOwnRecipe(
   db: Database,
   input: { recipeId: string; viewerId: string; locale: string; patch: OwnRecipePatch },
-): Promise<'ok' | 'translation_not_found'> {
+): Promise<EditOwnRecipeResult> {
   const { recipeId, viewerId, locale, patch } = input
   const changedFields: string[] = []
   const now = new Date()
@@ -99,6 +107,13 @@ export async function editOwnRecipe(
   // Posse provada UMA vez no começo (fail-closed): com isso garantido, todas as escritas abaixo
   // (escopadas por owner_id) só tocam a linha do próprio dono. Bug do route ⇒ estoura (não corrompe).
   await assertOwnedRecipe(db, recipeId, viewerId)
+
+  // #131: a Receita tem imagem? (insumo da sugestão de revisar a foto após uma mudança visual.)
+  const [imgRow] = await db
+    .select({ imageId: recipe.imageId })
+    .from(recipe)
+    .where(eq(recipe.id, recipeId))
+  const hasImage = imgRow?.imageId != null
 
   // Eixo traduzível: campos presentes em `recipe_translation`.
   const translatablePatch: Record<string, unknown> = {}
@@ -161,7 +176,7 @@ export async function editOwnRecipe(
         and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)),
       )
       .returning({ id: recipeTranslation.id })
-    if (updated.length === 0) return 'translation_not_found'
+    if (updated.length === 0) return { kind: 'translation_not_found' }
   }
 
   // 2. UPDATE da allowlist em `recipe` (NUNCA origin/owner/visibility). Filtra por owner_id
@@ -187,6 +202,19 @@ export async function editOwnRecipe(
   //    delete é escopado à receita do dono (defense-in-depth — a posse já foi afirmada acima).
   if (patch.ingredientes !== undefined) {
     const ingredientes = patch.ingredientes
+    // #131: o CONJUNTO de ingredientes (rótulos rawText) mudou? É VISUAL ⇒ entra em changedFields
+    // (sugere revisar a foto). Lido ANTES do delete; mudança só-de-quantidade (mesmo conjunto) NÃO
+    // dispara — casa a semântica de derivar/regenerar. (`ingredientes` não é campo de stale/embed,
+    // então adicioná-lo a changedFields é inócuo para applyEdit — só alimenta a sugestão de imagem.)
+    const beforeLabels = (
+      await db
+        .select({ rawText: recipeIngredient.rawText })
+        .from(recipeIngredient)
+        .where(eq(recipeIngredient.recipeId, recipeId))
+    ).map((r) => r.rawText ?? '')
+    if (ingredientSetChanged(beforeLabels, ingredientes.map((i) => i.rawText ?? ''))) {
+      changedFields.push('ingredientes')
+    }
     await db.transaction(async (tx) => {
       await tx.delete(recipeIngredient).where(eq(recipeIngredient.recipeId, recipeId))
       if (ingredientes.length > 0) {
@@ -219,7 +247,10 @@ export async function editOwnRecipe(
   //    ⇒ applyStaleDecision no-op ⇒ zero stale/re-embed.
   await applyEdit(db, { recipeId, locale, changedFields })
 
-  return 'ok'
+  // #131: mudança VISUAL (título/ingredientes/cozinha) numa Receita COM imagem ⇒ sugere revisar a
+  // foto. `changedFields` reflete os campos no patch; só os visuais disparam (filtro no domínio).
+  const imageReviewSuggested = shouldSuggestNewImage({ hasImage, changed: changedFields })
+  return { kind: 'ok', imageReviewSuggested }
 }
 
 /**

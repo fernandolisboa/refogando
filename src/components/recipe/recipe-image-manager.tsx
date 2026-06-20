@@ -34,9 +34,16 @@ function extFor(type: string): string {
 export function RecipeImageManager({
   recipeId,
   hasImage,
+  reviewSuggested = false,
 }: {
   recipeId: string
   hasImage: boolean
+  /**
+   * #131: a versão atual herdou a imagem (carry-forward) E uma mudança VISUAL (título/ingredientes/
+   * cozinha) tornou a foto possivelmente desatualizada ⇒ destaca um aviso sugerindo revisar. Só
+   * relevante quando há imagem (sem foto, nada a revisar).
+   */
+  reviewSuggested?: boolean
 }) {
   const { messages } = useLocale()
   const m = messages.detalhe
@@ -116,6 +123,16 @@ export function RecipeImageManager({
         </h2>
         <p className="max-w-[60ch] text-sm text-muted">{m.imagemDescricao}</p>
       </div>
+
+      {/* #131: aviso de revisão quando a versão mudou visualmente e herdou a foto antiga. */}
+      {reviewSuggested && hasImage && (
+        <p
+          role="status"
+          className="max-w-[60ch] rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+        >
+          {m.imagemRevisar}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <label

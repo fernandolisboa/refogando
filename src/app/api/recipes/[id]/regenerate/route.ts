@@ -50,8 +50,10 @@ export async function POST(
 
   switch (res.kind) {
     case 'ok':
+      // imageReviewSuggested (#131): a nova versão herdou a imagem E mudou visualmente vs a
+      // predecessora — a UI navega pra nova versão com a dica de revisar a foto.
       return Response.json(
-        { recipeId: res.recipeId, outcome: res.outcome, advisory: res.advisory },
+        { recipeId: res.recipeId, outcome: res.outcome, advisory: res.advisory, imageReviewSuggested: res.imageReviewSuggested },
         { status: 201 },
       )
     case 'impossible':

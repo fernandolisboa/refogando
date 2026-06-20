@@ -4,6 +4,7 @@ import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { isRestricao } from '@/domain/vocabulary'
 import { decideDerivedDiff, type DiffLado } from '@/domain/recipe-diff'
+import { shouldSuggestNewImage, visualChangesFromDiff } from '@/domain/image-review'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { pgCode } from '@/server/recipe/visibility'
 
@@ -66,7 +67,9 @@ function toDiffLado(input: {
 }
 
 export type DeriveResult =
-  | { kind: 'ok'; recipeId: string } // 201
+  // 201 — `imageReviewSuggested` (#131): a derivada HERDOU a imagem da base E uma mudança VISUAL
+  // (título/ingredientes) tornou a foto possivelmente desatualizada ⇒ a UI sugere revisar.
+  | { kind: 'ok'; recipeId: string; imageReviewSuggested: boolean }
   | { kind: 'not_found' } //            404 — base inexistente (corrida pós-gate)
 
 /**
@@ -155,6 +158,10 @@ export async function deriveRecipe(input: {
           parentRecipeId: baseId,
           lineageKind: 'edited',
           derivedDiff,
+          // Carry-forward da Imagem (#131, ADR-0016): a derivada HERDA o image_id da base (mesmo
+          // blob, ZERO arquivo novo — many-versions→one-image; o ref-count de #130 já conta certo).
+          // NULL quando a base não tem imagem.
+          imageId: baseRecipe.imageId,
           // schemaVersion: default de banco.
         })
         .returning({ id: recipe.id })
@@ -216,7 +223,13 @@ export async function deriveRecipe(input: {
         )
       }
 
-      return { kind: 'ok' as const, recipeId: r.id }
+      // #131: a derivada herdou a imagem da base? Então uma mudança VISUAL (título/ingredientes,
+      // lida do diff JÁ congelado) sugere revisar a foto. Sem imagem herdada ⇒ silencioso.
+      const imageReviewSuggested = shouldSuggestNewImage({
+        hasImage: baseRecipe.imageId != null,
+        changed: visualChangesFromDiff(derivedDiff),
+      })
+      return { kind: 'ok' as const, recipeId: r.id, imageReviewSuggested }
     })
   } catch (e) {
     // Rede de segurança (defense-in-depth): o INSERT seta origin='user_edited' e o trigger

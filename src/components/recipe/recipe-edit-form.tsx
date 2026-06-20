@@ -168,8 +168,14 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
         setErrorKey('save')
         return
       }
+      const data = (await res.json().catch(() => ({}))) as { imageReviewSuggested?: boolean }
       setDialog('none')
-      // Relê a page server (o detalhe reflete a edição + recomputa Aviso/diff de graça).
+      // Relê a page server (o detalhe reflete a edição + recomputa Aviso/diff de graça). #131:
+      // edição in-place é a MESMA página — navega com `?reviewImage=1` quando a mudança foi VISUAL
+      // numa Receita com foto; senão à URL limpa (zera um `?reviewImage=1` stale de uma edição
+      // visual anterior). PRESERVA o `?locale` atual (a page o honra na precedência de locale).
+      const base = `/recipes/${view.id}?locale=${encodeURIComponent(currentLocale)}`
+      router.replace(data.imageReviewSuggested ? `${base}&reviewImage=1` : base)
       router.refresh()
     } catch {
       // Mesma razão: o erro só fica visível com o diálogo fechado.

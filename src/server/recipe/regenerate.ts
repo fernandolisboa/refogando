@@ -3,11 +3,18 @@ import type { Database } from '@/db/client'
 import type { ClaudeClient } from '@/server/claude/client'
 import {
   recipe,
+  recipeTranslation,
+  recipeIngredient,
   creationSession,
   briefing as briefingTable,
   briefingItem,
   transcriptMessage,
 } from '@/db/schema'
+import {
+  shouldSuggestNewImage,
+  visualChangesBetween,
+  type ImageReviewSnapshot,
+} from '@/domain/image-review'
 import {
   buildBriefingPrompt,
   buildFreeTextPrompt,
@@ -57,7 +64,9 @@ import { embedTranslation } from '@/server/embedding/recompute'
 const AI_ORIGINS = new Set<string>(['ai_chat', 'ai_structured', 'ai_free_text'])
 
 export type RegenerateResult =
-  | { kind: 'ok'; outcome: 'success' | 'degraded' | 'playful'; recipeId: string; advisory: string | null }
+  // `imageReviewSuggested` (#131): a nova versão HERDOU a imagem da predecessora E uma mudança
+  // VISUAL (título/ingredientes/cozinha, comparada contra a predecessora) sugere revisar a foto.
+  | { kind: 'ok'; outcome: 'success' | 'degraded' | 'playful'; recipeId: string; advisory: string | null; imageReviewSuggested: boolean }
   | { kind: 'impossible'; advisory: string | null }
   | { kind: 'invalid' } //          erro de sistema upstream (refusal/max_tokens/parse_failed)
   | { kind: 'not_found' } //         não-própria (404 leak-safe)
@@ -139,7 +148,14 @@ export async function regenerateRecipe(
 
   // ── GATE (1º toque de DB, ANTES do Claude) — owner + origin ──────────────────────
   const [pred] = await db
-    .select({ ownerId: recipe.ownerId, origin: recipe.origin, originalLocale: recipe.originalLocale })
+    .select({
+      ownerId: recipe.ownerId,
+      origin: recipe.origin,
+      originalLocale: recipe.originalLocale,
+      // #131: cozinha + image_id da predecessora — insumo do carry-forward + da comparação visual.
+      cozinha: recipe.cozinha,
+      imageId: recipe.imageId,
+    })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
   // Ausente OU não-própria (inclui catálogo owner_id NULL) → 404 leak-safe (NUNCA 403).
@@ -190,7 +206,8 @@ export async function regenerateRecipe(
     return { kind: 'impossible', advisory: result.advisory }
   }
 
-  // success | degraded | playful → NOVA Receita imutável (lineage regenerated).
+  // success | degraded | playful → NOVA Receita imutável (lineage regenerated). #131: HERDA o
+  // image_id da predecessora (carry-forward — mesmo blob, sem arquivo novo).
   const p = await persistGeneration({
     result,
     mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
@@ -199,6 +216,7 @@ export async function regenerateRecipe(
     model,
     existingSessionId: session.id,
     lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
+    imageId: pred.imageId,
   })
   // p é não-null para success/degraded/playful (persistGeneration só devolve null em invalid,
   // já tratado acima). recipeId presente nesse caminho.
@@ -211,5 +229,50 @@ export async function regenerateRecipe(
   // Wire a camada semântica da NOVA Receita (#14): re-embeda o locale original p/ entrar na Busca.
   await embedTranslation(db, newRecipeId, result.recipe.originalLocale)
 
-  return { kind: 'ok', outcome: result.outcome, recipeId: newRecipeId, advisory: result.advisory }
+  // #131: a nova versão herdou imagem? Compara o conjunto-de-ingredientes + título + cozinha da
+  // predecessora contra a versão fresca; mudança VISUAL ⇒ sugere revisar a foto. Sem imagem
+  // herdada ⇒ silencioso (não paga a leitura do snapshot do pai). PURO de comparação no domínio.
+  let imageReviewSuggested = false
+  if (pred.imageId != null) {
+    imageReviewSuggested = shouldSuggestNewImage({
+      hasImage: true,
+      changed: visualChangesBetween(
+        await loadParentSnapshot(db, recipeId, pred.originalLocale, pred.cozinha),
+        {
+          titulo: result.recipe.titulo,
+          cozinha: result.recipe.cozinha,
+          ingredientes: result.recipe.ingredientes.map((i) => i.rawText ?? ''),
+        },
+      ),
+    })
+  }
+
+  return { kind: 'ok', outcome: result.outcome, recipeId: newRecipeId, advisory: result.advisory, imageReviewSuggested }
+}
+
+/**
+ * Snapshot da PREDECESSORA p/ a comparação visual do #131: título (locale original) + cozinha +
+ * rótulos de ingrediente (rawText, casando a convenção do diff de derive). Leituras pequenas nas
+ * tabelas-filhas; só roda quando a predecessora tinha imagem (caminho que importa).
+ */
+async function loadParentSnapshot(
+  db: Database,
+  recipeId: string,
+  originalLocale: string,
+  cozinha: string | null,
+): Promise<ImageReviewSnapshot> {
+  const [titRow] = await db
+    .select({ titulo: recipeTranslation.titulo })
+    .from(recipeTranslation)
+    .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, originalLocale)))
+    .limit(1)
+  const ingRows = await db
+    .select({ rawText: recipeIngredient.rawText })
+    .from(recipeIngredient)
+    .where(eq(recipeIngredient.recipeId, recipeId))
+  return {
+    titulo: titRow?.titulo ?? '',
+    cozinha,
+    ingredientes: ingRows.map((i) => i.rawText ?? ''),
+  }
 }

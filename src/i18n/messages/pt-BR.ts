@@ -166,6 +166,7 @@ export const ptBR = {
     // Gestão da Imagem da receita (#130) — bloco do dono.
     imagemTitulo: 'Foto do prato',
     imagemDescricao: 'Adicione uma foto da sua receita. Ela aparece no detalhe e na busca.',
+    imagemRevisar: 'Sua receita mudou bastante. Quer trocar a foto para combinar com a nova versão?',
     imagemAdicionar: 'Adicionar foto',
     imagemTrocar: 'Trocar foto',
     imagemRemover: 'Remover foto',

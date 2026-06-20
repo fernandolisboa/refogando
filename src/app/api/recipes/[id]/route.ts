@@ -305,12 +305,17 @@ export async function PATCH(
   }
 
   const result = await editOwnRecipe(db, { recipeId: id, viewerId, locale, patch })
-  if (result === 'translation_not_found') {
+  if (result.kind === 'translation_not_found') {
     return Response.json({ error: 'translation_not_found' }, { status: 404 })
   }
 
   // was_public (história #277): a UI confirma "isto fica visível a quem favoritou" SÓ na pública.
-  return Response.json({ ok: true, was_public: gate.visibility === 'public' }, { status: 200 })
+  // imageReviewSuggested (#131): a UI sugere revisar a foto após uma mudança visual numa Receita
+  // com imagem (edição in-place mantém o mesmo image_id; só a sugestão importa).
+  return Response.json(
+    { ok: true, was_public: gate.visibility === 'public', imageReviewSuggested: result.imageReviewSuggested },
+    { status: 200 },
+  )
 }
 
 /**

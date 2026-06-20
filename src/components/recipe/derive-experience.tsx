@@ -102,8 +102,10 @@ export function DeriveExperience({ view, locale }: { view: RecipeView; locale: s
         body: JSON.stringify({ edits: buildEdits() }),
       })
       if (res.status === 201) {
-        const data = (await res.json()) as { recipeId: string }
-        router.push(`/recipes/${data.recipeId}`)
+        const data = (await res.json()) as { recipeId: string; imageReviewSuggested?: boolean }
+        // #131: mudança visual com imagem herdada ⇒ leva a dica de revisar a foto pra a derivada.
+        const q = data.imageReviewSuggested ? '?reviewImage=1' : ''
+        router.push(`/recipes/${data.recipeId}${q}`)
         router.refresh()
         return
       }

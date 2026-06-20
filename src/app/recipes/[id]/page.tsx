@@ -34,7 +34,7 @@ export default async function RecipeDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ locale?: string }>
+  searchParams: Promise<{ locale?: string; reviewImage?: string }>
 }) {
   const { id } = await params
   const sp = await searchParams
@@ -102,7 +102,13 @@ export default async function RecipeDetailPage({
           O servidor reimpõe ownership/ref-count; a page só passa se há imagem (gateia o botão
           Remover/o label Trocar). O hero da foto vive no RecipeDetailView (acima). */}
       {view.canManage && (
-        <RecipeImageManager recipeId={view.id} hasImage={view.imageUrl != null} />
+        <RecipeImageManager
+          recipeId={view.id}
+          hasImage={view.imageUrl != null}
+          // #131: `?reviewImage=1` (anexado pelos fluxos de editar/derivar/regenerar quando a
+          // mudança foi VISUAL) destaca a sugestão de revisar a foto carregada-pra-frente.
+          reviewSuggested={sp.reviewImage === '1'}
+        />
       )}
       {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
           derivada); para o NÃO-dono, "Criar minha versão" (derivar) ou o convite de entrar

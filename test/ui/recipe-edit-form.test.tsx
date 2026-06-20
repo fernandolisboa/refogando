@@ -14,8 +14,9 @@ import type { RecipeView } from '@/domain/recipe-read'
 
 const refresh = vi.fn()
 const push = vi.fn()
+const replace = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh, push }),
+  useRouter: () => ({ refresh, push, replace }),
 }))
 
 import { LocaleProvider, useLocale } from '@/i18n/provider'
@@ -117,6 +118,17 @@ describe('RecipeEditForm (#21/#61)', () => {
     expect(refresh).toHaveBeenCalled()
     // Nenhum diálogo abriu (privada não confirma).
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('#131 — edição visual com imageReviewSuggested ⇒ navega com ?reviewImage=1 (preserva locale)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 200, body: { ok: true, was_public: false, imageReviewSuggested: true } }))
+    renderForm(ownerView({ visibility: 'private' }))
+
+    await user.click(screen.getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    expect(replace).toHaveBeenCalledWith('/recipes/r-1?locale=pt-BR&reviewImage=1')
+    expect(refresh).toHaveBeenCalled()
   })
 
   it('T2 — pública: Salvar abre confirmação ANTES do PATCH; confirmar dispara o PATCH', async () => {
