@@ -321,6 +321,12 @@ export const users = pgTable(
     // o DB preenche via defaultRandom() (= gen_random_uuid()). Casa com recipe.owner_id.
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
+    // Handle público, único e legível (#128, CONTEXT.md: _Handle_) — endereça `/u/<handle>`.
+    // NOT NULL UNIQUE, SEM default no banco: é gerado na borda (auth hook, slug do `name` +
+    // desambiguação) e editável depois. Minúsculo/ascii/[a-z0-9-]; o formato e as reservadas
+    // são validados no app (PATCH /api/me), o banco só garante presença + unicidade. Distinto
+    // do `name` (display, não-único) e do `id` (uuid interno, nunca na URL pública).
+    handle: text('handle').notNull(),
     email: text('email').notNull(),
     emailVerified: boolean('email_verified').notNull().default(false),
     image: text('image'),
@@ -343,7 +349,12 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex('users_email_uq').on(t.email)],
+  (t) => [
+    uniqueIndex('users_email_uq').on(t.email),
+    // Unicidade do handle no banco (#128): a borda gera/edita garantindo livre, mas a UNIQUE
+    // é a última linha contra corrida (dois signups simultâneos com o mesmo slug → 23505).
+    uniqueIndex('users_handle_uq').on(t.handle),
+  ],
 )
 
 export const session = pgTable(

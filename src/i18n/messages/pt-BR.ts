@@ -412,6 +412,13 @@ export const ptBR = {
     nome: 'Nome de exibição',
     email: 'Email',
     emailDica: 'Seu email é usado para entrar e não pode ser alterado aqui.',
+    handle: 'Handle',
+    // {handle} interpolado no componente via `.replace` (folhas do tipo são string).
+    handleDica: 'O endereço do seu perfil público: /u/{handle}. Trocar quebra os links antigos.',
+    handlePlaceholder: 'seu-handle',
+    handleInvalido: 'Use 3 a 30 letras minúsculas, números e hífens (sem acento, espaço ou hífen nas bordas).',
+    handleReservado: 'Esse handle é reservado. Escolha outro.',
+    handleEmUso: 'Esse handle já está em uso. Escolha outro.',
     bio: 'Bio',
     bioPlaceholder: 'Conte um pouco sobre você e o que você gosta de cozinhar.',
     bioContador: '{n}/280',

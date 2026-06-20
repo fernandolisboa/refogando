@@ -380,6 +380,13 @@ export const enUS: Messages = {
     nome: 'Display name',
     email: 'Email',
     emailDica: 'Your email is used to sign in and cannot be changed here.',
+    handle: 'Handle',
+    // {handle} interpolated in the component via `.replace` (type leaves are strings).
+    handleDica: 'The address of your public profile: /u/{handle}. Changing it breaks old links.',
+    handlePlaceholder: 'your-handle',
+    handleInvalido: 'Use 3 to 30 lowercase letters, numbers, and hyphens (no accents, spaces, or edge hyphens).',
+    handleReservado: 'That handle is reserved. Pick another one.',
+    handleEmUso: 'That handle is already taken. Pick another one.',
     bio: 'Bio',
     bioPlaceholder: 'Tell us a bit about yourself and what you like to cook.',
     bioContador: '{n}/280',

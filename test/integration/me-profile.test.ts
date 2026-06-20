@@ -69,16 +69,19 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
     await expect(patchRes.json()).resolves.toMatchObject({ error: 'conta_desativada' })
   })
 
-  it('GET devolve { id, name, email, bio } do usuário atual', async () => {
+  it('GET devolve { id, name, email, bio, handle } do usuário atual', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'eu@me-profile.test' })
 
     const res = await get(headers)
     expect(res.status).toBe(200)
+    // handle é gerado automaticamente na criação (#128) — valor não-determinístico aqui,
+    // só asseguramos que é uma string não-vazia (a unicidade/forma é coberta noutra suíte).
     await expect(res.json()).resolves.toEqual({
       id: userId,
       name: 'eu@me-profile.test', // o helper usa o email como name default
       email: 'eu@me-profile.test',
       bio: null,
+      handle: expect.stringMatching(/^[a-z0-9-]+$/),
     })
   })
 
@@ -87,11 +90,13 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
 
     const res = await patch({ name: 'Maria Silva', bio: 'Cozinheira amadora.' }, headers)
     expect(res.status).toBe(200)
+    // PATCH sem `handle` no corpo NÃO o altera (#128): segue o gerado na criação.
     await expect(res.json()).resolves.toEqual({
       id: userId,
       name: 'Maria Silva',
       email: 'rw@me-profile.test',
       bio: 'Cozinheira amadora.',
+      handle: expect.stringMatching(/^[a-z0-9-]+$/),
     })
 
     // Persistiu no banco.
