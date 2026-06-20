@@ -37,6 +37,6 @@ export async function SectionGate({
 }): Promise<ReactNode> {
   const decision = await gateSection(min)
   if (decision === 'redirect') redirect('/sign-in')
-  if (decision === 'denied') return <AccessDenied />
+  if (decision === 'denied') return <AccessDenied standalone={false} />
   return children
 }
