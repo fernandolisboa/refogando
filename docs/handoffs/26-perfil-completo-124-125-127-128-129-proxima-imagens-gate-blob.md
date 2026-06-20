@@ -28,10 +28,11 @@ Perfil é navegável ponta-a-ponta. `main` em `56003e2`.
 
 Paralelismo: #126/#127/#128 tocam o MESMO surface de perfil (sequenciais — #127/#128 já feitas). #130 é surface diferente (receita) → paraleliza com perfil. MAS suítes de teste concorrentes dão flake no Neon (ver landmines) → na prática rode **uma fatia por vez**.
 
-## Gate do Vercel Blob (pendência humana — quase pronta)
+## Gate do Vercel Blob (RESOLVIDO 2026-06-20 — token já no `.env.local`)
 - Store **criado**, acesso **PUBLIC** (correto: imagens servidas direto por URL a anônimos no perfil público/pool; o modo é **imutável**).
-- O SDK `@vercel/blob` lê **`BLOB_READ_WRITE_TOKEN`** por padrão (a Vercel injeta no projeto na criação do store). **Não** é `BLOB_STORE_ID` (só id) nem `BLOB_WEBHOOK_PUBLIC_KEY` (verificação de webhook, não usamos).
-- Para dev local: `vercel env pull .env.local` (ou colar só o `BLOB_READ_WRITE_TOKEN`). **Quando estiver no env, #126 destrava.** Verifique com `grep -q BLOB_READ_WRITE_TOKEN .env.local`.
+- O SDK `@vercel/blob` lê **`BLOB_READ_WRITE_TOKEN`** por padrão. **Não** é `BLOB_STORE_ID` (só id) nem `BLOB_WEBHOOK_PUBLIC_KEY` (verificação de webhook, não usamos).
+- ⚠️ **NÃO use `vercel env pull`** pra trazer o token: ele (a) **sobrescreve o `.env.local` inteiro** (apaga todas as vars — aconteceu nesta sessão, recuperado de backup), (b) puxa o ambiente **Development** por padrão, mas as vars do Blob estão em **Production/Preview**, e (c) **pula vars _Sensitive_** — e o `BLOB_READ_WRITE_TOKEN` é Sensitive. Ou seja, `env pull` nunca traz esse token.
+- **Jeito certo (já feito):** copiar o valor na **página do Blob store** (Storage → store → snippet/criar token) e adicionar **uma linha** ao `.env.local`: `BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...`. Confirme com `grep -q '^BLOB_READ_WRITE_TOKEN=' .env.local` (**já presente**). Com isso, **#126 está destravado.**
 
 ## Inegociáveis
 - ADR-0016/0017 e os termos do CONTEXT são lei: imagem é **entidade** `recipe_image` ref-counted (nunca coluna-URL); proveniência `user_photo|ai_generated` distinta da Proveniência da Receita; carry-forward híbrido; moderação por **flag** (não deleção). Geração: REST **sem SDK** (driblar cutoff do npm), bytes→blob num passo, tetos por papel configuráveis no admin, **janela 24h deslizante** + countdown.
