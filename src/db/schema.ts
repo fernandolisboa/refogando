@@ -30,6 +30,7 @@ import {
 } from '@/domain/recipe'
 import { GENERATION_OUTCOMES } from '@/domain/generation'
 import type { DerivedDiff } from '@/domain/recipe-diff'
+import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
 import { REPORT_STATUSES } from '@/domain/report'
@@ -338,6 +339,14 @@ export const users = pgTable(
     // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
     // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).
     bio: text('bio'),
+    // Links sociais do perfil (#127, frente Perfil). jsonb `Array<{ tipo, url }>` (até 5),
+    // DEFAULT '[]' (NOT NULL): perfil sem links é lista vazia, nunca null — o GET/UI não
+    // precisam de guard de nulo. A FORMA e a SEGURANÇA (allowlist de tipo, só URL http(s),
+    // recusa de `javascript:`/`data:` etc.) são validadas na borda (PATCH /api/me via
+    // `validateLinks` de @/domain/links), não no banco — mesma tese de `bio`/`locale`. `$type`
+    // tipa a leitura/escrita do jsonb (o driver devolve `unknown` cru). Esses links são
+    // renderizados CLICÁVEIS no perfil público (#129): a validação de esquema é a fronteira.
+    links: jsonb('links').$type<ProfileLink[]>().notNull().default(sql`'[]'::jsonb`),
     // Soft delete (D4): só a coluna agora; máscara/endpoint deferidos.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).

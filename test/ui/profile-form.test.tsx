@@ -34,8 +34,16 @@ function guest(): SessionState {
   return { data: null, error: null, isPending: false }
 }
 
-type MeBody = { id: string; name: string; email: string; bio: string | null; handle: string }
-type SentPatch = { name: string; bio: string; handle: string }
+type Link = { tipo: string; url: string }
+type MeBody = {
+  id: string
+  name: string
+  email: string
+  bio: string | null
+  handle: string
+  links: Link[]
+}
+type SentPatch = { name: string; bio: string; handle: string; links: Link[] }
 type FetchResult = { status: number; body?: unknown }
 
 /** Mock de fetch por método; captura o último body de PATCH. */
@@ -60,7 +68,7 @@ function mockMe(get: MeBody, patchResult: (sent: SentPatch) => FetchResult) {
 
 /** GET body completo com defaults — só sobrescreve o que o teste precisa. */
 function meBody(over: Partial<MeBody> = {}): MeBody {
-  return { id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null, handle: 'ana', ...over }
+  return { id: 'u-1', name: 'Ana', email: 'ana@ex.com', bio: null, handle: 'ana', links: [], ...over }
 }
 
 function renderForm(locale: Locale = 'pt-BR') {
@@ -219,5 +227,111 @@ describe('ProfileForm — feedback inline do handle (#128)', () => {
     // Ao digitar de novo, o erro some (o campo volta a mostrar a dica).
     await user.type(handleInput, '-2')
     expect(screen.queryByText(M.handleEmUso)).not.toBeInTheDocument()
+  })
+})
+
+describe('ProfileForm — editor de links (#127)', () => {
+  it('carrega os links do GET /api/me e os exibe', async () => {
+    sessionState = authed()
+    mockMe(
+      meBody({
+        links: [
+          { tipo: 'instagram', url: 'https://instagram.com/ana' },
+          { tipo: 'github', url: 'https://github.com/ana' },
+        ],
+      }),
+      () => ({ status: 200 }),
+    )
+    renderForm('pt-BR')
+
+    await screen.findByLabelText(M.nome)
+    const urlInputs = screen.getAllByLabelText(M.linkUrlRotulo) as HTMLInputElement[]
+    expect(urlInputs).toHaveLength(2)
+    expect(urlInputs[0]).toHaveValue('https://instagram.com/ana')
+    expect(urlInputs[1]).toHaveValue('https://github.com/ana')
+  })
+
+  it('adiciona uma linha de link e a envia no PATCH', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    const { calls } = mockMe(meBody({ links: [] }), (sent) => ({
+      status: 200,
+      body: meBody({ links: sent.links }),
+    }))
+    renderForm('pt-BR')
+
+    await screen.findByLabelText(M.nome)
+    // Sem linhas no início → sem inputs de URL.
+    expect(screen.queryAllByLabelText(M.linkUrlRotulo)).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: M.linkAdicionar }))
+    const urlInput = screen.getByLabelText(M.linkUrlRotulo)
+    await user.type(urlInput, 'https://instagram.com/ana')
+
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+    await waitFor(() => expect(screen.getByText(M.salvo)).toBeInTheDocument())
+
+    const patchCall = calls.find((c) => c.method === 'PATCH')
+    expect((patchCall?.body as SentPatch).links).toEqual([
+      { tipo: 'instagram', url: 'https://instagram.com/ana' },
+    ])
+  })
+
+  it('remove uma linha de link', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(
+      meBody({ links: [{ tipo: 'site', url: 'https://a.com' }, { tipo: 'x', url: 'https://x.com/a' }] }),
+      () => ({ status: 200 }),
+    )
+    renderForm('pt-BR')
+
+    await screen.findByLabelText(M.nome)
+    expect(screen.getAllByLabelText(M.linkUrlRotulo)).toHaveLength(2)
+
+    const removeButtons = screen.getAllByRole('button', { name: M.linkRemover })
+    await user.click(removeButtons[0])
+
+    const urls = screen.getAllByLabelText(M.linkUrlRotulo) as HTMLInputElement[]
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toHaveValue('https://x.com/a')
+  })
+
+  it('teto de 5 links: some o botão de adicionar quando há 5', async () => {
+    sessionState = authed()
+    mockMe(
+      meBody({
+        links: Array.from({ length: 5 }, (_, i) => ({ tipo: 'site', url: `https://e${i}.com` })),
+      }),
+      () => ({ status: 200 }),
+    )
+    renderForm('pt-BR')
+
+    await screen.findByLabelText(M.nome)
+    expect(screen.getAllByLabelText(M.linkUrlRotulo)).toHaveLength(5)
+    expect(screen.queryByRole('button', { name: M.linkAdicionar })).not.toBeInTheDocument()
+  })
+
+  it('feedback inline: URL insegura marca o campo como inválido', async () => {
+    const user = userEvent.setup()
+    sessionState = authed()
+    mockMe(meBody({ links: [] }), () => ({ status: 200 }))
+    renderForm('pt-BR')
+
+    await screen.findByLabelText(M.nome)
+    await user.click(screen.getByRole('button', { name: M.linkAdicionar }))
+    const urlInput = screen.getByLabelText(M.linkUrlRotulo)
+
+    await user.type(urlInput, 'javascript:alert(1)')
+    await waitFor(() => expect(screen.getByText(M.linkInvalido)).toBeInTheDocument())
+    expect(urlInput).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('en-US: rótulos do editor de links em inglês', async () => {
+    sessionState = authed()
+    mockMe(meBody({ links: [] }), () => ({ status: 200 }))
+    renderForm('en-US')
+    expect(await screen.findByText(enUS.perfil.links)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: enUS.perfil.linkAdicionar })).toBeInTheDocument()
   })
 })

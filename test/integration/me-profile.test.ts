@@ -82,6 +82,7 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
       email: 'eu@me-profile.test',
       bio: null,
       handle: expect.stringMatching(/^[a-z0-9-]+$/),
+      links: [], // #127: conta nova nasce sem links
     })
   })
 
@@ -97,6 +98,7 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
       email: 'rw@me-profile.test',
       bio: 'Cozinheira amadora.',
       handle: expect.stringMatching(/^[a-z0-9-]+$/),
+      links: [], // #127: PATCH sem `links` no corpo não os altera — segue o default []
     })
 
     // Persistiu no banco.
