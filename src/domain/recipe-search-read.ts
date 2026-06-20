@@ -62,6 +62,12 @@ export type SearchHitRow = {
    */
   owner_name: string | null
   owner_handle: string | null
+  /**
+   * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da thumbnail (LEFT JOIN em
+   * `recipe_image` via `recipe.image_id` no loader). NULL quando a Receita não tem imagem. PÚBLICO
+   * — `projectResult` o projeta em `SearchResult.imageUrl`; nunca expõe o `image_id` interno.
+   */
+  image_url: string | null
 }
 
 /** Uma linha do DTO da Busca. `ts_rank`/`owner_id` são INTERNOS — NUNCA aparecem aqui. */
@@ -83,6 +89,12 @@ export type SearchResult = {
    * side de `owner_name`/`owner_handle`; o `owner_id` cru NUNCA vaza.
    */
   author?: RecipeAuthor
+  /**
+   * Imagem da receita (#130) — `blob_url` PÚBLICO da thumbnail do card. AUSENTE ("ausente ≠ vazio")
+   * quando a Receita não tem imagem ⇒ o card cai no estado limpo (sem thumbnail). Derivado do
+   * `image_url` do loader; nunca carrega o `image_id` interno.
+   */
+  imageUrl?: string
 }
 
 /**
@@ -213,6 +225,8 @@ export function projectResult(
     autoTranslationSignal,
     isOwn,
     ...(author !== undefined ? { author } : {}),
+    // #130/Imagem: thumbnail PÚBLICA do card. "ausente ≠ vazio": só quando há blob (image_url != null).
+    ...(hit.image_url != null ? { imageUrl: hit.image_url } : {}),
   }
 }
 

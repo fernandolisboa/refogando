@@ -738,7 +738,8 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       orig_t.titulo AS original_titulo,
       orig_t.provenance AS original_provenance,
       u.name AS owner_name,
-      u.handle AS owner_handle
+      u.handle AS owner_handle,
+      ri.blob_url AS image_url
     FROM numbered n
     CROSS JOIN params p
     LEFT JOIN recipe_translation req_t
@@ -747,6 +748,13 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       ON orig_t.recipe_id = n.recipe_id AND orig_t.locale = n.original_locale
     LEFT JOIN users u
       ON u.id = n.owner_id
+    -- #130: thumbnail via recipe.image_id -> recipe_image.blob_url. O CTE numbered só carrega
+    -- recipe_id, então re-juntamos recipe (r_img) para alcançar image_id; roda sobre o conjunto
+    -- já capado/numerado (pequeno), custo desprezível.
+    LEFT JOIN recipe r_img
+      ON r_img.id = n.recipe_id
+    LEFT JOIN recipe_image ri
+      ON ri.id = r_img.image_id
     WHERE ${whereClause}
     ORDER BY ${orderBy}
   `

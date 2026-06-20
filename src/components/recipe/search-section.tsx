@@ -53,6 +53,7 @@ export function SearchSection({
             ownLabel={ownLabel}
             author={result.author}
             byLabel={byLabel}
+            imageUrl={result.imageUrl}
           />
         ))}
       </ul>

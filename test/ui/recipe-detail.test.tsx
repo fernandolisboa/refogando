@@ -60,6 +60,18 @@ afterEach(() => {
 })
 
 describe('RecipeDetailView (#57)', () => {
+  it('Imagem da receita (#130): renderiza o hero quando há imageUrl; ausente ⇒ sem <img>', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
+    const { rerender } = renderView(baseView({ imageUrl: url }))
+    const img = screen.getByRole('img') as HTMLImageElement
+    expect(img.src).toBe(url)
+    expect(img).toHaveAttribute('alt', 'Texas Chili (chili do Texas)') // alt = nome da Receita
+
+    // Sem imageUrl ⇒ estado limpo (nenhuma <img>).
+    rerender(<RecipeDetailView view={baseView()} m={M} />)
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
   it('T1 — receita sem nada a sinalizar → conteúdo localizado + selo de catálogo, tela limpa', () => {
     renderView(baseView())
 

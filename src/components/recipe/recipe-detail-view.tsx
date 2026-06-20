@@ -88,6 +88,17 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
 
   return (
     <article className="flex flex-col gap-8">
+      {/* Foto do prato (#130): hero PÚBLICO quando a rota anexa `imageUrl` (Receita com imagem).
+          AUSENTE ⇒ estado limpo (sem moldura). <img> simples (convenção); alt = nome da Receita. */}
+      {view.imageUrl != null && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={view.imageUrl}
+          alt={view.name}
+          referrerPolicy="no-referrer"
+          className="aspect-video w-full rounded-lg border border-border object-cover"
+        />
+      )}
       {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota) + Autoria (#129). */}
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
