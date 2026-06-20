@@ -504,3 +504,73 @@ describe('resolveRecipeView — Autoria (byline #129)', () => {
     expect('author' in view).toBe(false)
   })
 })
+
+// ── Imagem da receita: projeção pública + gate de moderação (#130/#132/#133) ─────
+const BLOB = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
+
+describe('resolveRecipeView — Imagem (#130/#132/#133)', () => {
+  it('imagem não moderada ⇒ `imageUrl` na vista p/ QUALQUER leitor (anônimo, sem viewerId)', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ ownerId: 'u-1' }), imageUrl: BLOB }))
+    expect(view.imageUrl).toBe(BLOB)
+    expect(view.imageAiGenerated).toBeUndefined() // foto do usuário ⇒ sem selo
+    expect(view.canManage).toBeUndefined() // anônimo: não vaza gestão
+  })
+
+  it('imagem ai_generated não moderada ⇒ `imageUrl` + selo `imageAiGenerated` (público)', () => {
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), imageUrl: BLOB, imageAiGenerated: true }),
+    )
+    expect(view.imageUrl).toBe(BLOB)
+    expect(view.imageAiGenerated).toBe(true)
+  })
+
+  it('#133 MODERADA + anônimo (não-dono) ⇒ `imageUrl` E selo AUSENTES (some do público)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ ownerId: 'u-1' }),
+        imageUrl: BLOB,
+        imageAiGenerated: true,
+        imageModerated: true,
+        // sem viewerId (anônimo) ⇒ canManage falso ⇒ esconde a foto e o selo
+      }),
+    )
+    expect('imageUrl' in view).toBe(false)
+    expect('imageAiGenerated' in view).toBe(false)
+  })
+
+  it('#133 MODERADA + não-dono LOGADO ⇒ AUSENTES (gate por ownership, não por sessão)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ ownerId: 'u-1' }),
+        viewerId: 'u-2', // logado, mas NÃO é o dono
+        imageUrl: BLOB,
+        imageAiGenerated: true,
+        imageModerated: true,
+      }),
+    )
+    expect('imageUrl' in view).toBe(false)
+    expect('imageAiGenerated' in view).toBe(false)
+    expect(view.canManage).toBeUndefined() // não-dono não gerencia
+  })
+
+  it('#133 MODERADA + DONO (canManage) ⇒ `imageUrl` + selo PRESENTES (Owner ainda vê)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ ownerId: 'u-1' }),
+        viewerId: 'u-1', // o próprio dono
+        imageUrl: BLOB,
+        imageAiGenerated: true,
+        imageModerated: true,
+      }),
+    )
+    expect(view.canManage).toBe(true)
+    expect(view.imageUrl).toBe(BLOB) // a moderação esconde do público, não apaga p/ o Owner
+    expect(view.imageAiGenerated).toBe(true)
+  })
+
+  it('sem imagem ⇒ `imageUrl`/`imageAiGenerated` AUSENTES (ausente ≠ vazio), moderação irrelevante', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ ownerId: 'u-1' }), imageModerated: true }))
+    expect('imageUrl' in view).toBe(false)
+    expect('imageAiGenerated' in view).toBe(false)
+  })
+})
