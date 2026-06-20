@@ -38,6 +38,9 @@ class FakeEmbedder implements Embedder {
 
 beforeEach(() => {
   setImageStore(new FakeImageStore())
+  // editar um campo traduzível dispara applyEdit → embedTranslation; sem o Fake, o RealEmbedder
+  // lança. Injetado p/ todo o arquivo (derivar não embeda; regenerar embeda a nova versão).
+  setEmbedder(new FakeEmbedder())
 })
 
 const FAKE_BLOB = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
@@ -225,7 +228,7 @@ async function seedRegenerable(ownerId: string, titulo: string, ingredientes: st
 describe('Carry-forward da Imagem (#131) — REGENERAR', () => {
   beforeEach(() => {
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess())) // título 'Arroz de forno'
-    setEmbedder(new FakeEmbedder())
+    // FakeEmbedder já vem do beforeEach do arquivo (regenerar embeda a nova versão).
   })
 
   it('predecessora COM imagem ⇒ nova versão herda image_id + imageReviewSuggested (título mudou)', async () => {
