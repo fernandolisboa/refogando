@@ -21,8 +21,12 @@ import {
   type SearchSection,
   type TranslationProvenance,
 } from '@/domain/recipe'
-import { resolveName, type TranslationRow } from '@/domain/recipe-read'
+import { resolveName, type RecipeAuthor, type TranslationRow } from '@/domain/recipe-read'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
+
+// Re-export para os consumidores da Busca/Feed (#129) — a Autoria nasce em `recipe-read`
+// (módulo mais fundamental; evita ciclo de import) e é compartilhada com o detalhe.
+export type { RecipeAuthor }
 
 /**
  * Linha de resultado da Busca, projetada pelo loader (`@/server/recipe/search`).
@@ -49,6 +53,15 @@ export type SearchHitRow = {
    * sistema tem `owner_id` NULL (nunca igual a um `viewerId` ⇒ nunca "minha").
    */
   owner_id: string | null
+  /**
+   * Autoria (#129, CONTEXT.md: _Owner / Autoria_) — `name` + `handle` do dono, projetados via
+   * LEFT JOIN em `users` sobre `owner_id` (no loader). NULL para Catálogo/sistema (`owner_id`
+   * NULL) — sem autor humano ⇒ sem byline. DISTINTO do `owner_id` cru (que NUNCA vaza): o
+   * `handle` é o endereço PÚBLICO do perfil (`/u/<handle>`) e o `name` é o rótulo de exibição,
+   * AMBOS já públicos. `projectResult` os projeta em `SearchResult.author` (o crédito "por <nome>").
+   */
+  owner_name: string | null
+  owner_handle: string | null
 }
 
 /** Uma linha do DTO da Busca. `ts_rank`/`owner_id` são INTERNOS — NUNCA aparecem aqui. */
@@ -63,6 +76,13 @@ export type SearchResult = {
    * (feed) e a seção "Minhas" (busca). Anônimo ⇒ sempre `false` (nenhum `owner_id` casa undefined).
    */
   isOwn: boolean
+  /**
+   * Autoria (#129) — `{ name, handle }` PÚBLICOS do dono, para o crédito "por <name>" linkando
+   * `/u/<handle>`. AUSENTE ("ausente ≠ vazio") quando a Receita NÃO tem dono humano (Catálogo/
+   * sistema): nada de autor falso — o badge de proveniência já marca a origem. Derivado server-
+   * side de `owner_name`/`owner_handle`; o `owner_id` cru NUNCA vaza.
+   */
+  author?: RecipeAuthor
 }
 
 /**
@@ -182,13 +202,32 @@ export function projectResult(
     baseProvenance == null ? true : !isTranslationReliable(baseProvenance)
   // #116/own-label: dono == viewer. `viewerId === undefined` (anônimo) NUNCA casa (own=false).
   const isOwn = viewerId !== undefined && hit.owner_id === viewerId
+  // #129/Autoria: o crédito "por <name>" linkando /u/<handle>. Só quando há dono HUMANO
+  // (owner_name E owner_handle não-NULL — Catálogo/sistema tem ambos NULL ⇒ sem byline).
+  // "ausente ≠ vazio": a chave `author` só existe quando há autor — nada de autor falso.
+  const author = projectAuthor(hit.owner_name, hit.owner_handle)
   return {
     recipeId: hit.recipe_id,
     displayedTitle,
     origin: hit.origin,
     autoTranslationSignal,
     isOwn,
+    ...(author !== undefined ? { author } : {}),
   }
+}
+
+/**
+ * Projeta a Autoria (#129) a partir do `name`/`handle` do dono carregados pelo loader. Devolve
+ * `{ name, handle }` SÓ quando AMBOS estão presentes (Receita com dono humano); Catálogo/sistema
+ * (ambos NULL) ⇒ `undefined` (sem byline). Defensivo contra um lado NULL inesperado (dados
+ * íntegros sempre têm os dois juntos, mas nunca emite um crédito pela metade). PURO/total.
+ */
+export function projectAuthor(
+  ownerName: string | null,
+  ownerHandle: string | null,
+): RecipeAuthor | undefined {
+  if (ownerName == null || ownerHandle == null) return undefined
+  return { name: ownerName, handle: ownerHandle }
 }
 
 /**

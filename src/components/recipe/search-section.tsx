@@ -18,6 +18,7 @@ export function SearchSection({
   badgeLabels,
   ownLabel,
   autoTranslationLabel,
+  byLabel,
   results,
 }: {
   headingId: string
@@ -28,6 +29,8 @@ export function SearchSection({
    * o exibe no lugar do selo de seção — relevante porque a seção "Minhas" mistura origens. */
   ownLabel: string
   autoTranslationLabel: string
+  /** #129/Autoria: template "por {name}" localizado, repassado ao byline de cada item. */
+  byLabel: string
   results: SearchResult[]
 }) {
   if (results.length === 0) return null
@@ -48,6 +51,8 @@ export function SearchSection({
             autoTranslationLabel={autoTranslationLabel}
             isOwn={result.isOwn}
             ownLabel={ownLabel}
+            author={result.author}
+            byLabel={byLabel}
           />
         ))}
       </ul>

@@ -120,6 +120,37 @@ describe('RecipeFeedExperience (#103)', () => {
     expect(screen.queryByRole('button', { name: MF.carregarMais })).not.toBeInTheDocument()
   })
 
+  it('F1b — Autoria (#129): item com autor mostra byline "por <name>" linkando /u/<handle>', async () => {
+    stubFetchSequence([
+      {
+        feed: [
+          {
+            recipeId: 'r1',
+            displayedTitle: 'Bolo da Ana',
+            origin: 'ai_chat',
+            autoTranslationSignal: false,
+            isOwn: false,
+            author: { name: 'Ana Maria', handle: 'ana-maria' },
+          },
+          // Catálogo SEM autor — nenhum byline (sem crédito falso).
+          item('r2', 'Catálogo editorial', 'catalog'),
+        ],
+        nextCursor: null,
+      },
+    ])
+    renderFeed()
+
+    await screen.findByText('Bolo da Ana')
+
+    const card = screen.getByText('Bolo da Ana').closest('li')!
+    const byline = within(card).getByText('por Ana Maria')
+    expect(byline.closest('a')).toHaveAttribute('href', '/u/ana-maria')
+
+    // O item de Catálogo NÃO tem byline.
+    const catCard = screen.getByText('Catálogo editorial').closest('li')!
+    expect(within(catCard).queryByText(/^por /)).toBeNull()
+  })
+
   it('F2 — feed vazio → estado neutro, sem erro', async () => {
     stubFetchSequence([{ feed: [], nextCursor: null }])
     renderFeed()

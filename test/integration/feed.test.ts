@@ -115,6 +115,37 @@ describe('GET /api/feed — feed cronológico (#103)', () => {
     expect(all).not.toContain(removed)
   })
 
+  it('#129/Autoria: item de Comunidade carrega `author {name, handle}`; Catálogo NÃO (sem byline)', async () => {
+    const handle = `byline-${crypto.randomUUID().slice(0, 8)}`
+    const owner = await seedUser({
+      email: `byline-${crypto.randomUUID()}@test.dev`,
+      name: 'Cozinheiro Byline',
+      handle,
+    })
+    const com = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      ownerId: owner,
+      visibility: 'public',
+      resultKind: 'success',
+    })
+    await seedTranslation({ recipeId: com, locale: 'pt-BR', titulo: 'Receita com autor', provenance: 'escrita_por_pessoa' })
+    const cat = await seedAt('Catálogo sem autor', '2026-01-15T00:00:00Z')
+
+    // O FeedItem do teste omite `author` — lê via cast no shape real do DTO (#129).
+    const body = (await feedBody({ limit: '50' })) as {
+      feed: Array<{ recipeId: string; author?: { name: string; handle: string }; owner_id?: unknown }>
+    }
+    const comItem = body.feed.find((i) => i.recipeId === com)
+    const catItem = body.feed.find((i) => i.recipeId === cat)
+    // POSITIVO: a Comunidade carrega o crédito público name+handle (nunca o owner_id).
+    expect(comItem?.author).toEqual({ name: 'Cozinheiro Byline', handle })
+    expect(comItem && 'owner_id' in comItem).toBe(false)
+    // NEGATIVO não-vácuo: o Catálogo (owner NULL) NÃO tem autor humano ⇒ chave ausente.
+    expect(catItem).toBeDefined()
+    expect(catItem && 'author' in catItem).toBe(false)
+  })
+
   it('AC2: paginação por cursor — mais recentes primeiro, sem overlap nem gap, até nextCursor=null', async () => {
     const r1 = await seedAt('Mais antiga', '2026-02-01T00:00:00Z')
     const r2 = await seedAt('Do meio', '2026-02-02T00:00:00Z')

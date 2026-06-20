@@ -68,6 +68,9 @@ export const enUS: Messages = {
     filtroCozinha: 'Cuisine',
     filtroCategoria: 'Category',
     filtroRestricao: 'Dietary restriction',
+    // Authorship (#129): "by <name>" credit on a pool recipe item, linking /u/<handle>.
+    // {name} interpolated in the component via `.replace` (leaves of the type are string).
+    porAutor: 'by {name}',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -409,6 +412,17 @@ export const enUS: Messages = {
     salvo: 'Profile saved.',
     precisaEntrar: 'Sign in to edit your profile.',
     erro: "We couldn't save your profile. Try again.",
+  },
+  // PUBLIC profile (#129) — the `/u/<handle>` page an anonymous Visitor sees: name, avatar, bio,
+  // links, and that person's PUBLIC recipes. Distinct from `perfil` (the owner's EDIT screen at
+  // /me/profile). `receitasTitulo`/`semReceitas` label the recipes section.
+  perfilPublico: {
+    receitasTitulo: 'Recipes',
+    semReceitas: "This person hasn't published any recipes yet.",
+    // Accessible avatar label (alt). {name} interpolated via `.replace` in the component.
+    avatarAlt: 'Photo of {name}',
+    // Accessible label for the social links block.
+    linksLabel: 'Links',
   },
   comunidade: {
     titulo: 'Community',
