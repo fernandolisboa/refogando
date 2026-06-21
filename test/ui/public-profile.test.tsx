@@ -79,7 +79,8 @@ describe('PublicProfileView (#129)', () => {
       }),
     )
     const nav = screen.getByRole('navigation', { name: M.perfilPublico.linksLabel })
-    const insta = within(nav).getByRole('link', { name: M.perfil.linkTipoInstagram })
+    // O link agora mostra "Tipo · valor" (protótipo); o nome acessível CONTÉM o rótulo do tipo.
+    const insta = within(nav).getByRole('link', { name: new RegExp(M.perfil.linkTipoInstagram, 'i') })
     expect(insta).toHaveAttribute('href', 'https://instagram.com/chef')
     expect(insta).toHaveAttribute('rel', 'noopener noreferrer')
     expect(insta).toHaveAttribute('target', '_blank')

@@ -160,7 +160,7 @@ export function SearchExperience() {
 
   return (
     <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
+      <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
         {m.titulo}
       </h1>
 

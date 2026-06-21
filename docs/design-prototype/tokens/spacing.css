@@ -1,0 +1,32 @@
+/* ============================================================================
+   Refogando — Spacing, radius & layout tokens
+   Soft, home-cooking rounding. Spacing on a 4px base.
+============================================================================ */
+
+:root {
+  /* Spacing scale (4px base) */
+  --space-0: 0;
+  --space-1: 0.25rem;  /* 4 */
+  --space-2: 0.5rem;   /* 8 */
+  --space-3: 0.75rem;  /* 12 */
+  --space-4: 1rem;     /* 16 */
+  --space-5: 1.25rem;  /* 20 */
+  --space-6: 1.5rem;   /* 24 */
+  --space-8: 2rem;     /* 32 */
+  --space-10: 2.5rem;  /* 40 */
+  --space-12: 3rem;    /* 48 */
+  --space-16: 4rem;    /* 64 */
+
+  /* Radius — soft, home-cooking rounding (issue #54). shadcn reads --radius
+     and derives sm/md/lg from it; we expose the explicit ramp the codebase
+     uses and set --radius to the md step. */
+  --radius-sm: 0.375rem; /* 6px  — seals, chips, inputs, small buttons */
+  --radius-md: 0.625rem; /* 10px — buttons, cards, panels */
+  --radius-lg: 1rem;     /* 16px — large cards, dialogs */
+  --radius-xl: 1.5rem;   /* 24px — hero surfaces */
+  --radius: var(--radius-md); /* shadcn base */
+  --radius-full: 9999px; /* restriction chips, avatars */
+
+  /* Layout */
+  --container-page: 72rem; /* max content width */
+}

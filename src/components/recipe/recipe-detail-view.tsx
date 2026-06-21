@@ -110,7 +110,7 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
       {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota) + Autoria (#129). */}
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
+        <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
           {view.name}
         </h1>
         {/* Autoria (#129): crédito "por <name>" linkando o perfil público /u/<handle>. Só

@@ -15,7 +15,7 @@ import { CreatePageClient } from '@/components/recipe/create-page-client'
 
 export default function CreatePage() {
   return (
-    <Container as="main" className="py-8 sm:py-12">
+    <Container as="main" size="reading" className="py-8 sm:py-12">
       <Suspense>
         <CreatePageClient />
       </Suspense>

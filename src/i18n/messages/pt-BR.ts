@@ -84,7 +84,8 @@ export const ptBR = {
     // {name} interpolado no componente via `.replace` (folhas do tipo são string).
     porAutor: 'por {name}',
     // Selo "gerada por IA" (#132, ADR-0017) — sobre imagens ai_generated no card e no detalhe.
-    imagemSeloIa: '✨ gerada por IA',
+    // Sem emoji (regra do design: nenhum emoji no produto).
+    imagemSeloIa: 'gerada por IA',
   },
   // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
   // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed
@@ -171,6 +172,8 @@ export const ptBR = {
     restricoes: 'Restrições',
     tags: 'Tags',
     avisoTitulo: 'Aviso de restrição',
+    // Link de volta no topo do detalhe (#57) → "/" (a home É a busca).
+    voltarBusca: 'Voltar à busca',
     // Gestão da Imagem da receita (#130) — bloco do dono.
     imagemTitulo: 'Foto do prato',
     imagemDescricao: 'Adicione uma foto da sua receita. Ela aparece no detalhe e na busca.',
@@ -183,7 +186,7 @@ export const ptBR = {
     imagemGrande: 'Imagem muito grande. Tente uma menor.',
     imagemErro: 'Não foi possível salvar a foto. Tente de novo.',
     // Geração por IA (#132). {tempo} interpolado no componente via `.replace`.
-    imagemGerar: '✨ Gerar com IA',
+    imagemGerar: 'Gerar com IA',
     imagemGerarComPrompt: 'Gerar com este prompt',
     imagemGerando: 'Gerando…',
     imagemRefinar: 'Refinar o prompt',
@@ -490,6 +493,8 @@ export const ptBR = {
   // próprio dono em /me/profile). `receitasTitulo`/`semReceitas` rotulam a seção de receitas.
   perfilPublico: {
     receitasTitulo: 'Receitas',
+    // Link de volta no topo do perfil público (#129) → "/".
+    voltar: 'Voltar',
     semReceitas: 'Esta pessoa ainda não publicou nenhuma receita.',
     // Rótulo acessível do avatar (alt). {name} interpolado via `.replace` no componente.
     avatarAlt: 'Foto de {name}',

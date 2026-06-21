@@ -13,6 +13,9 @@ const eslintConfig = [
       'build/**',
       'next-env.d.ts',
       'drizzle/**',
+      // Espelho LOCAL read-only do protótipo do Claude Design (JSX standalone com React/
+      // RecipeCard globais) — referência de design, não código do app; não lintar.
+      'docs/design-prototype/**',
     ],
   },
 ]

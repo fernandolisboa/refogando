@@ -6,6 +6,7 @@
  */
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 export type FacetOption = { value: string; label: string }
 
@@ -23,19 +24,27 @@ export function FacetFieldset({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-sm font-medium text-fg">{legend}</legend>
-      <div className="flex flex-wrap gap-x-4 gap-y-2">
-        {options.map((option) => (
-          <Label
-            key={option.value}
-            className="inline-flex items-center gap-2 text-sm text-fg font-normal"
-          >
-            <Checkbox
-              checked={selected.includes(option.value)}
-              onCheckedChange={() => onToggle(option.value)}
-            />
-            {option.label}
-          </Label>
-        ))}
+      {/* Cada opção é um CHIP arredondado (protótipo Checkbox.jsx): tinge de páprica quando
+          marcado (bg-brand/10 + borda + tinta de marca). Mantém o Radix Checkbox dentro pela
+          a11y e pelo estado; o pill é a casca. Páprica, nunca erva (erva = selo do Catálogo). */}
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const isChecked = selected.includes(option.value)
+          return (
+            <Label
+              key={option.value}
+              className={cn(
+                'inline-flex cursor-pointer select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-normal transition-colors duration-150 ease-out',
+                isChecked
+                  ? 'border-brand bg-brand/10 text-brand-ink'
+                  : 'border-border bg-surface text-fg',
+              )}
+            >
+              <Checkbox checked={isChecked} onCheckedChange={() => onToggle(option.value)} />
+              {option.label}
+            </Label>
+          )
+        })}
       </div>
     </fieldset>
   )

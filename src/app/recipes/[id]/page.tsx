@@ -16,6 +16,7 @@
  */
 import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
@@ -69,7 +70,12 @@ export default async function RecipeDetailPage({
   const messages = MESSAGES[locale]
 
   return (
-    <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
+    <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
+      {/* Voltar à busca (protótipo): primeiro elemento, muted; href estável "/" (a home É a
+          busca) — mais robusto que history.back() em carga direta/deep-link. */}
+      <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
+        ← {messages.detalhe.voltarBusca}
+      </Link>
       <RecipeDetailView view={view} m={messages} />
       {/* Controles de Engajamento da Comunidade (#62) — voto + favorito. Gate pela presença
           do AGREGADO DE POOL (`voteCount`), NÃO pelo estado do viewer: a rota só emite

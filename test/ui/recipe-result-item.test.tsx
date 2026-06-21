@@ -55,14 +55,14 @@ describe('RecipeResultItem — thumbnail (#130)', () => {
         autoTranslationLabel="Tradução automática"
         imageUrl="https://abc.public.blob.vercel-storage.com/recipes/ia.webp"
         imageAiGenerated
-        aiLabel="✨ gerada por IA"
+        aiLabel="gerada por IA"
       />,
     )
-    expect(screen.getByText('✨ gerada por IA')).toBeInTheDocument()
+    expect(screen.getByText('gerada por IA')).toBeInTheDocument()
   })
 
   it('#132 sem imageAiGenerated ⇒ sem selo', () => {
     renderItem({ imageUrl: 'https://abc.public.blob.vercel-storage.com/recipes/foto.webp' })
-    expect(screen.queryByText('✨ gerada por IA')).not.toBeInTheDocument()
+    expect(screen.queryByText('gerada por IA')).not.toBeInTheDocument()
   })
 })

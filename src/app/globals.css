@@ -78,6 +78,8 @@
 
   /* Layout — namespace --container-* gera as utilities max-w-page/w-page. */
   --container-page: 72rem;
+  /* Coluna editorial estreita (detalhe/criar/perfil) — gera max-w-reading. Paridade com o protótipo. */
+  --container-reading: 52rem;
 
   /* Motion — curto, gentil; respeitado pelo gate prefers-reduced-motion no base. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -174,12 +176,32 @@
     -webkit-font-smoothing: antialiased;
     /* min-height fica na utility min-h-svh do <body> (layout.tsx) — fonte única. */
   }
+  /* Headings na serifa de display por padrão — o momento editorial (protótipo base.css).
+     Antes a serifa só aparecia onde o componente punha `font-display` à mão; tornar global
+     é o que faltava pras telas baterem com o protótipo. @layer base perde pras utilities,
+     então quem quiser sans ainda sobrescreve com font-sans/text-*. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    color: var(--color-fg);
+  }
   /* Títulos com quebra balanceada (evita a "viúva" de uma palavra na última linha). */
   h1,
   h2,
   h3 {
     text-wrap: balance;
   }
+  /* Parágrafos com quebra "pretty" (protótipo base.css). */
+  p {
+    text-wrap: pretty;
+  }
+  /* NB: NÃO definimos `a { color: brand-ink }` global (o protótipo define no base.css, mas
+     compensa pondo cor INLINE em cada link). Aqui os links nus HERDAM o contexto (nav e byline
+     herdam text-muted; preflight do Tailwind dá `a { color: inherit }`), e os links que devem
+     ser páprica põem text-brand-ink explícito (wordmark, links sociais, footer, pill "Criar").
+     Uma regra `a {color}` direta venceria a herança e pintaria nav/byline de páprica — regressão. */
   /* Foco visível consistente (a11y) — usado pelo teclado, não no clique. */
   :focus-visible {
     outline: 2px solid var(--color-ring);

@@ -37,7 +37,7 @@ export function CreatePageClient() {
   )
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       {/* Toggle EXTERNO Formulário ↔ Conversa. `labelId` DISTINTO (`create-outer-mode-label`)
           do toggle interno do estruturado (`create-mode-label`) — sem colisão de id. */}
       <SortToggle<OuterMode>
