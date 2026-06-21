@@ -19,7 +19,8 @@ import { useRouter } from 'next/navigation'
 import type { ResultKind, Visibility } from '@/domain/recipe'
 import type { RecipeView } from '@/domain/recipe-read'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimary, btnSecondary } from '@/components/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 
 /** Chaves de erro tratadas no toggle — mapeadas para a mensagem localizada neutra. */
 type ErrorKey = 'playful_nao_publicavel' | 'not_found' | 'erroGenerico'
@@ -89,7 +90,7 @@ export function RecipeVisibilityControls({
 
   const botaoLabel = isLoading ? m.atualizando : isPublic ? m.despublicar : m.publicar
   // Despublicar é a ação menos destacada (secundária); publicar é o CTA primário.
-  const botaoClasse = isPublic ? btnSecondary : btnPrimary
+  const botaoVariant = isPublic ? 'secondary' : 'default'
 
   return (
     <section
@@ -116,25 +117,25 @@ export function RecipeVisibilityControls({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        <Button
           type="button"
+          variant={botaoVariant}
           onClick={handleToggle}
           disabled={isLoading || publicarBloqueado}
           aria-busy={isLoading}
           aria-describedby={publicarBloqueado ? 'visibilidade-playful-nota' : undefined}
-          className={`${botaoClasse} disabled:opacity-70`}
+          className="disabled:opacity-70"
         >
           {botaoLabel}
-        </button>
+        </Button>
       </div>
 
       {erroMensagem && (
-        <p
-          role="alert"
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
-        >
-          {erroMensagem}
-        </p>
+        <Alert variant="info" role="alert">
+          <AlertDescription className="font-medium text-foreground">
+            {erroMensagem}
+          </AlertDescription>
+        </Alert>
       )}
     </section>
   )

@@ -116,8 +116,9 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Email ou senha incorretos.')
-    // Cor neutra text-fg — NÃO o token aviso (reservado pro Aviso de restrição).
-    expect(alert.className).toMatch(/text-fg/)
+    // Cor neutra (Alert variant="info" → text-foreground) — NÃO o token aviso
+    // (reservado pro Aviso de restrição, ADR-0015).
+    expect(alert.className).toMatch(/text-foreground/)
     expect(alert.className).not.toMatch(/aviso/)
     expect(push).not.toHaveBeenCalled()
   })

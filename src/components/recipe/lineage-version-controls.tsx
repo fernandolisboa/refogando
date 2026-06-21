@@ -19,7 +19,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 type ErrorKey = 'semFonte' | 'impossible' | 'invalid' | 'generico' | null
 
@@ -92,15 +92,15 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
       </div>
 
       <div>
-        <button
+        <Button
           type="button"
           onClick={regenerar}
           disabled={loading}
           aria-busy={loading}
-          className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
+          className="disabled:opacity-70"
         >
           {loading ? m.regenerando : m.regenerar}
-        </button>
+        </Button>
       </div>
 
       {erroMensagem && (

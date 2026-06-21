@@ -6,15 +6,20 @@
  * `FacetFieldset` recebe estado/callback). Usado por: ordenação Relevância ↔ Popularidade
  * da Comunidade (#62) e alternância de modo de criação Estruturado ↔ Prompt aberto (#88).
  *
- * Botões num `role="group"`: ativo `btnPrimarySm`, inativo `btnSecondarySm` (ambos
- * `px-3.5 py-1.5` ⇒ padding idêntico, sem SALTO de layout ao alternar a seleção). Só
- * tokens neutros/brand já AA-verificados; NUNCA accent (Catálogo) nem âmbar (Aviso).
+ * Wrapper fino sobre `<ToggleGroup type="single">` (Radix, ADR-0018): o item ativo vira
+ * páprica e o inativo parte do secundário, com `px-3.5 py-1.5` em ambos ⇒ padding idêntico,
+ * sem SALTO de layout ao alternar a seleção. Só tokens neutros/brand já AA-verificados;
+ * NUNCA accent (Catálogo) nem âmbar (Aviso) — tudo herdado da primitiva.
+ *
+ * CUIDADO de contrato (Radix `type="single"`): a seleção é DESmarcável — clicar no item
+ * ativo emite onValueChange(""). Este é um segmented control SEMPRE-selecionado, então
+ * descartamos o "" no guard (`if (v) onChange(...)`), preservando a invariante.
  *
  * `labelId` parametriza o id do rótulo visível (alvo do `aria-labelledby`) para não
  * cristalizar um id duplicado quando dois toggles convivem — cada call-site passa um id
  * único (`'sort-toggle-label'` na busca, `'create-mode-label'` na criação).
  */
-import { btnPrimarySm, btnSecondarySm } from '@/components/button'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 export function SortToggle<T extends string>({
   value,
@@ -30,28 +35,31 @@ export function SortToggle<T extends string>({
   labelId?: string
 }) {
   return (
-    <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-2">
+    // Container de layout PURO (sem role): quem é o radiogroup é o próprio `<ToggleGroup>`
+    // (Radix renderiza role="radiogroup"), então o `aria-labelledby` vai NELE — assim o
+    // elemento que possui os radios é que ganha nome. Pôr role="group" aqui criaria um
+    // segundo grupo aninhado, e o radiogroup interno ficaria SEM nome.
+    <div className="flex flex-wrap items-center gap-2">
       {/* O texto VISÍVEL é a ÚNICA fonte do nome acessível do grupo (via aria-labelledby) —
           sem duplicar a string num aria-label, que o leitor de tela anunciaria duas vezes. */}
       <span id={labelId} className="text-sm text-muted">
         {groupLabel}
       </span>
-      <div className="flex flex-wrap gap-2">
-        {options.map(({ key, label }) => {
-          const active = value === key
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(key)}
-              className={active ? btnPrimarySm : btnSecondarySm}
-            >
-              {label}
-            </button>
-          )
-        })}
-      </div>
+      <ToggleGroup
+        type="single"
+        aria-labelledby={labelId}
+        value={value}
+        onValueChange={(v) => {
+          if (v) onChange(v as T)
+        }}
+        className="flex flex-wrap gap-2"
+      >
+        {options.map(({ key, label }) => (
+          <ToggleGroupItem key={key} value={key}>
+            {label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     </div>
   )
 }

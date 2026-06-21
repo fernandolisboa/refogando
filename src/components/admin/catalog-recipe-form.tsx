@@ -13,10 +13,10 @@
  * backend reimpõe `requireRole('curador')`. Duplicar o gate aqui seria reimplementar regra.
  * Se a sessão caducou, a rota responde 401/403 e o form mostra erro neutro genérico.
  *
- * Tamanho de botão: este form usa `btnPrimary`/`btnSecondary` (cheios), enquanto a subseção
- * irmã de ingredientes recorrentes (CatalogCuration) usa `btnPrimarySm`/`btnSecondarySm`. É
- * hierarquia deliberada — a área de form pede ações maiores; a lista de promoção é compacta.
- * A coexistência dos dois tamanhos sob a mesma <section> é decisão, não drift.
+ * Tamanho de botão: este form usa `<Button>` no tamanho default ("cheio"), enquanto a subseção
+ * irmã de ingredientes recorrentes (CatalogCuration) usa `<Button size="sm">`. É hierarquia
+ * deliberada — a área de form pede ações maiores; a lista de promoção é compacta. A coexistência
+ * dos dois tamanhos sob a mesma <section> é decisão, não drift.
  *
  * Cores: só neutros/brand (tokens AA já verificados na #54). NUNCA âmbar (exclusivo do Aviso
  * de restrição, ADR-0015 — não há Aviso aqui) nem accent (selo de Catálogo — não há badge a
@@ -24,7 +24,10 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import { fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { FacetFieldset, type FacetOption } from '@/components/recipe/facet-fieldset'
 import {
   COZINHAS,
@@ -269,7 +272,7 @@ export function CatalogRecipeForm() {
                 {m.criarReceitaTituloCampo}{' '}
                 <span className="font-normal text-muted">{m.criarReceitaObrigatorio}</span>
               </span>
-              <input
+              <Input
                 type="text"
                 value={titulo}
                 onChange={(e) => {
@@ -277,7 +280,6 @@ export function CatalogRecipeForm() {
                   setTitulo(e.target.value)
                 }}
                 placeholder={m.criarReceitaTituloPlaceholder}
-                className={fieldClassName}
                 aria-required="true"
               />
             </label>
@@ -303,14 +305,14 @@ export function CatalogRecipeForm() {
           {/* Descrição */}
           <label className={labelCls}>
             {m.criarReceitaDescricaoCampo}
-            <textarea
+            <Textarea
               rows={2}
               value={descricao}
               onChange={(e) => {
                 clearSuccess()
                 setDescricao(e.target.value)
               }}
-              className={`${fieldClassName} resize-y`}
+              className="resize-y"
             />
           </label>
 
@@ -327,23 +329,21 @@ export function CatalogRecipeForm() {
                 >
                   <label className={`${labelCls} min-w-0 flex-1`}>
                     {`${m.criarReceitaIngrediente} ${index + 1}`}
-                    <input
+                    <Input
                       type="text"
                       value={item.rawText}
                       onChange={(e) => patchItem(index, 'rawText', e.target.value)}
                       placeholder={m.criarReceitaIngredientePlaceholder}
-                      className={fieldClassName}
                     />
                   </label>
                   <label className={`${labelCls} sm:w-28`}>
                     {m.criarReceitaQuantidade}
-                    <input
+                    <Input
                       type="text"
                       inputMode="decimal"
                       value={item.quantidade}
                       onChange={(e) => patchItem(index, 'quantidade', e.target.value)}
                       placeholder={m.criarReceitaQuantidadePlaceholder}
-                      className={fieldClassName}
                     />
                   </label>
                   <label className={`${labelCls} sm:w-40`}>
@@ -361,22 +361,22 @@ export function CatalogRecipeForm() {
                       ))}
                     </select>
                   </label>
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={() => removeItem(index)}
                     disabled={itens.length <= 1}
                     aria-label={`${m.criarReceitaRemoverIngrediente} ${index + 1}`}
-                    className={`${btnSecondary} disabled:opacity-50`}
                   >
                     {m.criarReceitaRemoverIngrediente}
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
             <div>
-              <button type="button" onClick={addItem} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={addItem}>
                 {m.criarReceitaAdicionarIngrediente}
-              </button>
+              </Button>
             </div>
           </fieldset>
 
@@ -432,7 +432,7 @@ export function CatalogRecipeForm() {
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
             <label className={`${labelCls} sm:w-40`}>
               {m.criarReceitaPorcoes}
-              <input
+              <Input
                 type="number"
                 min={PORCOES.min}
                 max={PORCOES.max}
@@ -442,12 +442,11 @@ export function CatalogRecipeForm() {
                   clearSuccess()
                   setPorcoes(e.target.value)
                 }}
-                className={fieldClassName}
               />
             </label>
             <label className={`${labelCls} sm:w-40`}>
               {m.criarReceitaDificuldade}
-              <input
+              <Input
                 type="number"
                 min={DIFICULDADE.min}
                 max={DIFICULDADE.max}
@@ -457,7 +456,6 @@ export function CatalogRecipeForm() {
                   clearSuccess()
                   setDificuldade(e.target.value)
                 }}
-                className={fieldClassName}
               />
             </label>
           </div>
@@ -470,43 +468,42 @@ export function CatalogRecipeForm() {
                 <li key={passo.id} className="flex flex-col gap-2 sm:flex-row sm:items-end">
                   <label className={`${labelCls} min-w-0 flex-1`}>
                     {`${m.criarReceitaPasso} ${index + 1}`}
-                    <input
+                    <Input
                       type="text"
                       value={passo.texto}
                       onChange={(e) => patchPasso(index, e.target.value)}
-                      className={fieldClassName}
                     />
                   </label>
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={() => removePasso(index)}
                     disabled={passos.length <= 1}
                     aria-label={`${m.criarReceitaRemoverPasso} ${index + 1}`}
-                    className={`${btnSecondary} disabled:opacity-50`}
                   >
                     {m.criarReceitaRemoverPasso}
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ol>
             <div>
-              <button type="button" onClick={addPasso} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={addPasso}>
                 {m.criarReceitaAdicionarPasso}
-              </button>
+              </Button>
             </div>
           </fieldset>
 
           {/* Notas */}
           <label className={labelCls}>
             {m.criarReceitaNotas}
-            <textarea
+            <Textarea
               rows={2}
               value={notas}
               onChange={(e) => {
                 clearSuccess()
                 setNotas(e.target.value)
               }}
-              className={`${fieldClassName} resize-y`}
+              className="resize-y"
             />
           </label>
 
@@ -534,13 +531,9 @@ export function CatalogRecipeForm() {
           )}
 
           <div>
-            <button
-              type="submit"
-              aria-busy={status === 'loading'}
-              className={`${btnPrimary} disabled:opacity-70`}
-            >
+            <Button type="submit" aria-busy={status === 'loading'}>
               {status === 'loading' ? m.criarReceitaEnviando : m.criarReceitaEnviar}
-            </button>
+            </Button>
           </div>
         </fieldset>
       </form>

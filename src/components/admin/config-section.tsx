@@ -14,7 +14,8 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { fieldClassName } from '@/components/button'
 
 const MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
 
@@ -107,9 +108,9 @@ export function ConfigSection() {
             >
               {sys.error}
             </p>
-            <button type="button" onClick={() => void load()} className={btnPrimarySm}>
+            <Button type="button" size="sm" onClick={() => void load()}>
               {sys.retry}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -130,15 +131,16 @@ export function ConfigSection() {
                 ))}
               </select>
             </label>
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={handleSave}
               disabled={saving}
               aria-busy={saving}
-              className={`${btnPrimarySm} disabled:opacity-70`}
+              className="disabled:opacity-70"
             >
               {saving ? m.salvando : m.salvar}
-            </button>
+            </Button>
           </div>
         )}
       </div>

@@ -48,3 +48,6 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 Thumbs.db
+
+# playwright MCP scratch (snapshots/screenshots/console logs — não commitar)
+.playwright-mcp/

@@ -23,7 +23,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
-import { btnPrimary, btnSecondary } from '@/components/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 type Mode = 'sign-in' | 'sign-up'
 
@@ -127,10 +130,8 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         {isSignUp && (
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="auth-name" className="text-sm font-medium text-fg">
-              {messages.auth.nome}
-            </label>
-            <input
+            <Label htmlFor="auth-name">{messages.auth.nome}</Label>
+            <Input
               id="auth-name"
               name="name"
               type="text"
@@ -139,16 +140,13 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="rounded-md border border-border bg-surface px-3 py-2 text-fg shadow-sm placeholder:text-muted"
             />
           </div>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="auth-email" className="text-sm font-medium text-fg">
-            {messages.auth.email}
-          </label>
-          <input
+          <Label htmlFor="auth-email">{messages.auth.email}</Label>
+          <Input
             id="auth-email"
             name="email"
             type="email"
@@ -159,15 +157,12 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
             onChange={(e) => setEmail(e.target.value)}
             aria-invalid={errorKey != null}
             aria-describedby={errorKey != null ? 'auth-error' : undefined}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-fg shadow-sm placeholder:text-muted"
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="auth-password" className="text-sm font-medium text-fg">
-            {messages.auth.senha}
-          </label>
-          <input
+          <Label htmlFor="auth-password">{messages.auth.senha}</Label>
+          <Input
             id="auth-password"
             name="password"
             type="password"
@@ -180,7 +175,6 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
             aria-describedby={
               isSignUp ? 'auth-password-hint' : errorKey != null ? 'auth-error' : undefined
             }
-            className="rounded-md border border-border bg-surface px-3 py-2 text-fg shadow-sm placeholder:text-muted"
           />
           {isSignUp && (
             <p id="auth-password-hint" className="text-sm text-muted">
@@ -190,23 +184,16 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
         </div>
 
         {errorKey != null && (
-          <p
-            id="auth-error"
-            role="alert"
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
-          >
-            {messages.auth[errorKey]}
-          </p>
+          <Alert variant="info" role="alert" id="auth-error">
+            <AlertDescription className="font-medium text-foreground">
+              {messages.auth[errorKey]}
+            </AlertDescription>
+          </Alert>
         )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          aria-busy={submitting}
-          className={`${btnPrimary} disabled:opacity-70`}
-        >
+        <Button type="submit" disabled={submitting} aria-busy={submitting}>
           {submitting ? messages.auth.enviando : submitLabel}
-        </button>
+        </Button>
       </form>
 
       {googleEnabled && (
@@ -216,9 +203,9 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
             <span>{messages.auth.ou}</span>
             <span aria-hidden="true" className="h-px flex-1 bg-border" />
           </div>
-          <button type="button" onClick={onGoogle} className={btnSecondary}>
+          <Button type="button" variant="secondary" onClick={onGoogle}>
             {messages.auth.continuarComGoogle}
-          </button>
+          </Button>
         </>
       )}
 

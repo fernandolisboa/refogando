@@ -16,7 +16,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
-import { btnPrimary, btnSecondary } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
@@ -174,17 +175,15 @@ export function SearchExperience() {
         <label htmlFor="search-q" className="sr-only">
           {m.titulo}
         </label>
-        <input
+        <Input
           id="search-q"
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={m.placeholder}
-          className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-fg placeholder:text-muted"
+          className="min-w-0 flex-1"
         />
-        <button type="submit" className={btnPrimary}>
-          {m.buscar}
-        </button>
+        <Button type="submit">{m.buscar}</Button>
       </form>
 
       <div className="flex flex-col gap-4">
@@ -249,9 +248,9 @@ export function SearchExperience() {
         {status === 'error' && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-fg">{messages.system.error}</p>
-            <button type="button" className={btnSecondary} onClick={() => void doSearch()}>
+            <Button variant="secondary" type="button" onClick={() => void doSearch()}>
               {messages.system.retry}
-            </button>
+            </Button>
           </div>
         )}
 

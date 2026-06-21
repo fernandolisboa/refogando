@@ -20,7 +20,10 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary, btnSecondarySm, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { fieldClassName } from '@/components/button'
 import { LINKS_MAX, LINK_TIPOS, safeHttpUrl, type LinkTipo, type ProfileLink } from '@/domain/links'
 
 type Status = 'loading' | 'idle' | 'saving' | 'saved' | 'error'
@@ -191,9 +194,9 @@ export function ProfileForm() {
     return (
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
-        <Link href="/sign-in" className={btnPrimary}>
-          {messages.nav.signIn}
-        </Link>
+        <Button asChild>
+          <Link href="/sign-in">{messages.nav.signIn}</Link>
+        </Button>
       </div>
     )
   }
@@ -212,13 +215,12 @@ export function ProfileForm() {
         <label htmlFor="profile-name" className="text-sm font-medium text-fg">
           {m.nome}
         </label>
-        <input
+        <Input
           id="profile-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          className={fieldClassName}
         />
       </div>
 
@@ -226,7 +228,7 @@ export function ProfileForm() {
         <label htmlFor="profile-handle" className="text-sm font-medium text-fg">
           {m.handle}
         </label>
-        <input
+        <Input
           id="profile-handle"
           type="text"
           value={handle}
@@ -240,7 +242,6 @@ export function ProfileForm() {
           spellCheck={false}
           aria-invalid={handleError !== null}
           aria-describedby={handleError ? 'profile-handle-error' : 'profile-handle-hint'}
-          className={fieldClassName}
         />
         {handleError ? (
           <p id="profile-handle-error" role="alert" className="text-xs font-medium text-fg">
@@ -259,13 +260,13 @@ export function ProfileForm() {
         <label htmlFor="profile-email" className="text-sm font-medium text-fg">
           {m.email}
         </label>
-        <input
+        <Input
           id="profile-email"
           type="email"
           value={email}
           disabled
           readOnly
-          className={`${fieldClassName} cursor-not-allowed opacity-70`}
+          className="cursor-not-allowed opacity-70"
         />
         <p className="text-xs text-muted">{m.emailDica}</p>
       </div>
@@ -274,14 +275,14 @@ export function ProfileForm() {
         <label htmlFor="profile-bio" className="text-sm font-medium text-fg">
           {m.bio}
         </label>
-        <textarea
+        <Textarea
           id="profile-bio"
           value={bio}
           onChange={(e) => setBio(e.target.value)}
           maxLength={BIO_MAX_LEN}
           rows={4}
           placeholder={m.bioPlaceholder}
-          className={`${fieldClassName} resize-y`}
+          className="resize-y"
         />
         <p className="self-end text-xs text-muted">{m.bioContador.replace('{n}', String(bio.length))}</p>
       </div>
@@ -318,7 +319,7 @@ export function ProfileForm() {
                     <label htmlFor={`profile-link-url-${i}`} className="sr-only">
                       {m.linkUrlRotulo}
                     </label>
-                    <input
+                    <Input
                       id={`profile-link-url-${i}`}
                       type="url"
                       inputMode="url"
@@ -330,17 +331,19 @@ export function ProfileForm() {
                       spellCheck={false}
                       aria-invalid={invalid}
                       aria-describedby={invalid ? errId : undefined}
-                      className={`${fieldClassName} grow`}
+                      className="grow"
                     />
 
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => removeLink(i)}
                       aria-label={m.linkRemover}
-                      className={`${btnSecondarySm} shrink-0`}
+                      className="shrink-0"
                     >
                       {m.linkRemover}
-                    </button>
+                    </Button>
                   </div>
                   {invalid && (
                     <p id={errId} role="alert" className="text-xs font-medium text-fg">
@@ -354,16 +357,16 @@ export function ProfileForm() {
         )}
 
         {links.length < LINKS_MAX && (
-          <button type="button" onClick={addLink} className={`${btnSecondarySm} self-start`}>
+          <Button type="button" variant="secondary" size="sm" onClick={addLink} className="self-start">
             {m.linkAdicionar}
-          </button>
+          </Button>
         )}
       </fieldset>
 
       <div className="flex items-center gap-4">
-        <button type="submit" disabled={status === 'saving'} className={btnPrimary}>
+        <Button type="submit" disabled={status === 'saving'}>
           {status === 'saving' ? m.salvando : m.salvar}
-        </button>
+        </Button>
       </div>
 
       {/* Live region: mensagens efêmeras curtas (sucesso/erro). */}

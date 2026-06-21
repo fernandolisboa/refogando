@@ -422,13 +422,13 @@ describe('CreateStructuredExperience (#58)', () => {
  * o pipeline de resultado/erro/avisos é o COMPARTILHADO (reusa `baseView`/`mockFetch`).
  */
 describe('CreateStructuredExperience — prompt aberto (#88)', () => {
-  /** Clica no botão "Prompt aberto" do grupo de alternância de modo. */
+  /** Clica no item "Prompt aberto" (radio do ToggleGroup) do grupo de alternância de modo. */
   async function irParaPromptAberto(user: ReturnType<typeof userEvent.setup>) {
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
-    await user.click(within(grupo).getByRole('button', { name: M.modoPromptAberto }))
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
+    await user.click(within(grupo).getByRole('radio', { name: M.modoPromptAberto }))
   }
 
-  it('F1 — alternância preserva o ramo oposto + a11y (aria-pressed, heading única)', async () => {
+  it('F1 — alternância preserva o ramo oposto + a11y (aria-checked, heading única)', async () => {
     const user = userEvent.setup()
     renderCreate()
 
@@ -446,26 +446,26 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     expect(textarea).toHaveAttribute('placeholder', M.textareaPlaceholder)
     expect(screen.queryByText(M.legendaIngredientes)).toBeNull()
 
-    // aria-pressed: 'Prompt aberto' ativo, 'Estruturado' inativo.
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
-    expect(within(grupo).getByRole('button', { name: M.modoPromptAberto })).toHaveAttribute(
-      'aria-pressed',
+    // aria-checked: 'Prompt aberto' ativo, 'Estruturado' inativo (ToggleGroup → role=radio).
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
+    expect(within(grupo).getByRole('radio', { name: M.modoPromptAberto })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
-    expect(within(grupo).getByRole('button', { name: M.modoEstruturado })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(grupo).getByRole('radio', { name: M.modoEstruturado })).toHaveAttribute(
+      'aria-checked',
       'false',
     )
 
-    // Volta para estruturado: o trabalho 'feijão' está preservado (sem perda) e o aria-pressed inverte.
-    await user.click(within(grupo).getByRole('button', { name: M.modoEstruturado }))
+    // Volta para estruturado: o trabalho 'feijão' está preservado (sem perda) e o aria-checked inverte.
+    await user.click(within(grupo).getByRole('radio', { name: M.modoEstruturado }))
     expect(screen.getByDisplayValue('feijão')).toBeInTheDocument()
-    expect(within(grupo).getByRole('button', { name: M.modoEstruturado })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(grupo).getByRole('radio', { name: M.modoEstruturado })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
-    expect(within(grupo).getByRole('button', { name: M.modoPromptAberto })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(grupo).getByRole('radio', { name: M.modoPromptAberto })).toHaveAttribute(
+      'aria-checked',
       'false',
     )
 
@@ -590,8 +590,8 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroTextoVazio)
 
     // Alternar para Estruturado deve DESCARTAR o alerta (a mensagem era do ramo free_text).
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
-    await user.click(within(grupo).getByRole('button', { name: M.modoEstruturado }))
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
+    await user.click(within(grupo).getByRole('radio', { name: M.modoEstruturado }))
     expect(screen.queryByRole('alert')).toBeNull()
 
     // Nenhum fetch foi disparado em todo o fluxo (guards retornam antes da rede).
@@ -641,9 +641,9 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     const user = userEvent.setup()
     renderCreate('en-US')
 
-    const grupo = screen.getByRole('group', { name: enUS.criar.modoLegenda })
-    expect(within(grupo).getByRole('button', { name: enUS.criar.modoEstruturado })).toBeInTheDocument()
-    await user.click(within(grupo).getByRole('button', { name: enUS.criar.modoPromptAberto }))
+    const grupo = screen.getByRole('radiogroup', { name: enUS.criar.modoLegenda })
+    expect(within(grupo).getByRole('radio', { name: enUS.criar.modoEstruturado })).toBeInTheDocument()
+    await user.click(within(grupo).getByRole('radio', { name: enUS.criar.modoPromptAberto }))
 
     expect(screen.getByLabelText(enUS.criar.textareaLabel)).toBeInTheDocument()
   })

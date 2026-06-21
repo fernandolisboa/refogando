@@ -14,7 +14,8 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
-import { btnSecondary, btnSecondarySm, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
 /** Cap (2 MB) — espelha MAX_BYTES da rota; barra cedo um arquivo grande pós-resize. */
@@ -190,35 +191,46 @@ export function RecipeImageManager({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <label
-          className={`${busy ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'} ${btnSecondary}`}
+        <Button
+          asChild
+          variant="secondary"
+          className={busy ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'}
         >
-          {busy ? m.imagemEnviando : hasImage ? m.imagemTrocar : m.imagemAdicionar}
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPT}
-            onChange={onPick}
-            disabled={busy}
-            className="sr-only"
-          />
-        </label>
+          <label>
+            {busy ? m.imagemEnviando : hasImage ? m.imagemTrocar : m.imagemAdicionar}
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPT}
+              onChange={onPick}
+              disabled={busy}
+              className="sr-only"
+            />
+          </label>
+        </Button>
         {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor).
             #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
         {aiGenEnabled && (
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => onGenerate()}
             disabled={busy}
-            className={btnSecondarySm}
           >
             {busy ? m.imagemGerando : m.imagemGerar}
-          </button>
+          </Button>
         )}
         {hasImage && (
-          <button type="button" onClick={onRemove} disabled={busy} className={btnSecondarySm}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onRemove}
+            disabled={busy}
+          >
             {m.imagemRemover}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -231,22 +243,24 @@ export function RecipeImageManager({
             <label htmlFor="imagem-prompt" className="sr-only">
               {m.imagemPromptRotulo}
             </label>
-            <textarea
+            <Textarea
               id="imagem-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={m.imagemPromptPlaceholder}
               rows={3}
-              className={`${fieldClassName} resize-y`}
+              className="resize-y"
             />
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => onGenerate(prompt.trim() || undefined)}
               disabled={busy}
-              className={`${btnSecondarySm} self-start`}
+              className="self-start"
             >
               {busy ? m.imagemGerando : m.imagemGerarComPrompt}
-            </button>
+            </Button>
           </div>
         </details>
       )}

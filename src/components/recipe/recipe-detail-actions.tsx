@@ -23,7 +23,7 @@
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import Link from 'next/link'
-import { btnPrimary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditForm } from './recipe-edit-form'
 import { LineageVersionControls } from './lineage-version-controls'
@@ -71,9 +71,9 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
           {messages.minhasCriacoes.convidaEntrarTexto}
         </p>
         <div>
-          <Link href="/sign-in" className={btnPrimary}>
-            {messages.nav.signIn}
-          </Link>
+          <Button asChild>
+            <Link href="/sign-in">{messages.nav.signIn}</Link>
+          </Button>
         </div>
       </section>
     )

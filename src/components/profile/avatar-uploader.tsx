@@ -17,7 +17,7 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { resizeImage } from '@/lib/image-resize'
 import { Avatar } from '@/components/profile/avatar'
-import { btnSecondarySm } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 /** Formatos aceitos (espelha a allowlist do servidor); o input filtra e o servidor reforça. */
 const ACCEPT = 'image/jpeg,image/png,image/webp'
@@ -125,25 +125,33 @@ export function AvatarUploader() {
 
       <div className="flex flex-col items-start gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <label
-            // Durante o envio, o affordance casa o estado real: cursor/eventos desligados +
-            // opacidade (o <input disabled> já bloqueia o clique; isto é só coerência visual).
-            className={`${btnSecondarySm} ${busy ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'}`}
-          >
-            {busy ? m.avatarEnviando : current ? m.avatarTrocar : m.avatarEnviar}
-            <input
-              ref={fileRef}
-              type="file"
-              accept={ACCEPT}
-              onChange={onPick}
-              disabled={busy}
-              className="sr-only"
-            />
-          </label>
+          <Button asChild variant="secondary" size="sm">
+            <label
+              // Durante o envio, o affordance casa o estado real: cursor/eventos desligados +
+              // opacidade (o <input disabled> já bloqueia o clique; isto é só coerência visual).
+              className={busy ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'}
+            >
+              {busy ? m.avatarEnviando : current ? m.avatarTrocar : m.avatarEnviar}
+              <input
+                ref={fileRef}
+                type="file"
+                accept={ACCEPT}
+                onChange={onPick}
+                disabled={busy}
+                className="sr-only"
+              />
+            </label>
+          </Button>
           {current && (
-            <button type="button" onClick={onRemove} disabled={busy} className={btnSecondarySm}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onRemove}
+              disabled={busy}
+            >
               {m.avatarRemover}
-            </button>
+            </Button>
           )}
         </div>
 

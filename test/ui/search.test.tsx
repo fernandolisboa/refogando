@@ -395,12 +395,12 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
 
     // O grupo de ordenação vive junto do form (não dentro da seção Comunidade).
-    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    const group = screen.getByRole('radiogroup', { name: MC.ordenarPor })
     expect(group).toBeInTheDocument()
-    const relBtn = within(group).getByRole('button', { name: MC.toggleRelevancia })
-    const popBtn = within(group).getByRole('button', { name: MC.togglePopularidade })
-    expect(relBtn).toHaveAttribute('aria-pressed', 'true')
-    expect(popBtn).toHaveAttribute('aria-pressed', 'false')
+    const relBtn = within(group).getByRole('radio', { name: MC.toggleRelevancia })
+    const popBtn = within(group).getByRole('radio', { name: MC.togglePopularidade })
+    expect(relBtn).toHaveAttribute('aria-checked', 'true')
+    expect(popBtn).toHaveAttribute('aria-checked', 'false')
   })
 
   it('T-sort-A2 — toggle AUSENTE sem critério (gateado por hasCriteria)', async () => {
@@ -411,7 +411,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     // Espera a janela do debounce elapsar (mesma técnica do T3) antes do assert negativo.
     await new Promise((r) => setTimeout(r, 400))
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(screen.queryByRole('group', { name: MC.ordenarPor })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: MC.ordenarPor })).not.toBeInTheDocument()
   })
 
   it('T-sort-B — clicar Popularidade dispara ?sort=popularidade (re-fetch)', async () => {
@@ -426,7 +426,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     expect(lastFetchUrl(fetchMock)).not.toContain('sort=')
     const callsAntes = fetchMock.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+    await user.click(screen.getByRole('radio', { name: MC.togglePopularidade }))
 
     // Vence o debounce (300ms): só então a URL nova fica disponível.
     await vi.waitFor(() => {
@@ -461,18 +461,18 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     ).not.toBeInTheDocument()
 
     // Vai a Popularidade (re-busca) — a Comunidade segue vazia.
-    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+    await user.click(screen.getByRole('radio', { name: MC.togglePopularidade }))
     await vi.waitFor(() => {
       expect(lastFetchUrl(fetchMock)).toContain('sort=popularidade')
     })
 
     // O grupo de ordenação CONTINUA presente apesar da Comunidade vazia.
-    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    const group = screen.getByRole('radiogroup', { name: MC.ordenarPor })
     expect(group).toBeInTheDocument()
     const callsAposPop = fetchMock.mock.calls.length
 
     // Clicar Relevância re-busca SEM sort= (o usuário não fica preso em Popularidade).
-    await user.click(within(group).getByRole('button', { name: MC.toggleRelevancia }))
+    await user.click(within(group).getByRole('radio', { name: MC.toggleRelevancia }))
     await vi.waitFor(() => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAposPop)
     })
@@ -487,13 +487,13 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     await user.type(screen.getByRole('searchbox'), 'feijao')
     await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
 
-    await user.click(screen.getByRole('button', { name: MC.togglePopularidade }))
+    await user.click(screen.getByRole('radio', { name: MC.togglePopularidade }))
     await vi.waitFor(() => {
       expect(lastFetchUrl(fetchMock)).toContain('sort=popularidade')
     })
     const callsAposPop = fetchMock.mock.calls.length
 
-    await user.click(screen.getByRole('button', { name: MC.toggleRelevancia }))
+    await user.click(screen.getByRole('radio', { name: MC.toggleRelevancia }))
     // Espera um re-fetch NOVO (a contagem aumenta) — sem isso confundiria com a URL inicial.
     await vi.waitFor(() => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAposPop)

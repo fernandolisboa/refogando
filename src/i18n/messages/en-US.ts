@@ -16,6 +16,12 @@ export const enUS: Messages = {
     signOut: 'Sign out',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
+  // Light/dark theme toggle (ADR-0018), in the header. `light`/`dark` name the action's
+  // TARGET (a11y): the aria-label changes with the current theme ("Switch to light/dark theme").
+  theme: {
+    light: 'Switch to light theme',
+    dark: 'Switch to dark theme',
+  },
   system: {
     loading: 'Loading…',
     error: 'Something went wrong.',

@@ -18,7 +18,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { fieldClassName } from '@/components/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
 import type { RecipeView } from '@/domain/recipe-read'
 
@@ -240,21 +243,20 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.criar.titulo}
-          <input
+          <Input
             type="text"
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
-            className={fieldClassName}
           />
         </label>
 
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.detalhe.descricao}
-          <textarea
+          <Textarea
             rows={2}
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
-            className={`${fieldClassName} resize-y`}
+            className="resize-y"
           />
         </label>
 
@@ -269,21 +271,19 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
               >
                 <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-fg">
                   {`${mc.ingrediente} ${index + 1}`}
-                  <input
+                  <Input
                     type="text"
                     value={item.rawText}
                     onChange={(e) => patchItem(index, { rawText: e.target.value })}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-24">
                   {mc.quantidade}
-                  <input
+                  <Input
                     type="text"
                     inputMode="decimal"
                     value={item.quantidade}
                     onChange={(e) => patchItem(index, { quantidade: e.target.value })}
-                    className={fieldClassName}
                   />
                 </label>
                 <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-36">
@@ -301,33 +301,34 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
                     ))}
                   </select>
                 </label>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => removeItem(index)}
                   disabled={itens.length <= 1}
                   aria-label={`${mc.removerIngrediente} ${index + 1}`}
-                  className={`${btnSecondary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-50`}
+                  className="disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-50"
                 >
                   {mc.removerIngrediente}
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
           <div>
-            <button type="button" onClick={addItem} className={btnSecondary}>
+            <Button type="button" variant="secondary" onClick={addItem}>
               {mc.adicionarIngrediente}
-            </button>
+            </Button>
           </div>
         </fieldset>
 
         {/* Modo de preparo (um passo por linha). */}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.detalhe.passos}
-          <textarea
+          <Textarea
             rows={4}
             value={passos}
             onChange={(e) => setPassos(e.target.value)}
-            className={`${fieldClassName} resize-y`}
+            className="resize-y"
           />
         </label>
 
@@ -387,24 +388,22 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
           <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
             {mc.porcoes}
-            <input
+            <Input
               type="number"
               min={PORCOES.min}
               max={PORCOES.max}
               value={porcoes}
               onChange={(e) => setPorcoes(e.target.value)}
-              className={fieldClassName}
             />
           </label>
           <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
             {mc.dificuldade}
-            <input
+            <Input
               type="number"
               min={DIFICULDADE.min}
               max={DIFICULDADE.max}
               value={dificuldade}
               onChange={(e) => setDificuldade(e.target.value)}
-              className={fieldClassName}
             />
           </label>
         </div>
@@ -412,11 +411,11 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
         {/* Notas. */}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.detalhe.notas}
-          <textarea
+          <Textarea
             rows={2}
             value={notas}
             onChange={(e) => setNotas(e.target.value)}
-            className={`${fieldClassName} resize-y`}
+            className="resize-y"
           />
         </label>
 
@@ -430,24 +429,24 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="submit"
             disabled={saving}
             aria-busy={saving}
-            className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
+            className="disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70"
           >
             {saving ? messages.system.loading : m.editarPublicaConfirmar}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
             onClick={(e) => {
               triggerRef.current = e.currentTarget
               setDialog('confirmDelete')
             }}
-            className={btnSecondary}
           >
             {messages.minhasCriacoes.apagar}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -479,20 +478,20 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
               {dialog === 'confirmDelete' ? m.apagarAviso : m.editarPublicaAviso}
             </p>
             <div className="flex flex-wrap justify-end gap-3">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={fecharDialogo}
-                className={btnSecondary}
               >
                 {dialog === 'confirmDelete' ? m.apagarCancelar : m.editarPublicaCancelar}
-              </button>
-              <button
+              </Button>
+              <Button
                 ref={dialogPrimaryRef}
                 type="button"
                 onClick={dialog === 'confirmDelete' ? apagar : salvar}
                 disabled={dialog === 'confirmDelete' ? deleting : saving}
                 aria-busy={dialog === 'confirmDelete' ? deleting : saving}
-                className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
+                className="disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70"
               >
                 {dialog === 'confirmDelete'
                   ? deleting
@@ -501,7 +500,7 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
                   : saving
                     ? messages.system.loading
                     : m.editarPublicaConfirmar}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

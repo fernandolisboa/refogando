@@ -20,7 +20,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { useConversationChat, type ChatMessage } from '@/hooks/use-conversation-chat'
 import { RecipeDetailView } from './recipe-detail-view'
 import { TranscriptModal } from './transcript-modal'
@@ -121,9 +122,9 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
       <div className="mx-auto flex max-w-sm flex-col gap-4">
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
         <p className="text-muted">{m.precisaEntrar}</p>
-        <Link href="/sign-in" className={btnPrimary}>
-          {messages.nav.signIn}
-        </Link>
+        <Button asChild>
+          <Link href="/sign-in">{messages.nav.signIn}</Link>
+        </Button>
       </div>
     )
   }
@@ -136,9 +137,9 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
         <p role="alert" className="text-muted">
           {m.retomarFalhou}
         </p>
-        <Link href="/create?mode=conversa" className={btnPrimary}>
-          {m.novaConversa}
-        </Link>
+        <Button asChild>
+          <Link href="/create?mode=conversa">{m.novaConversa}</Link>
+        </Button>
       </div>
     )
   }
@@ -206,7 +207,7 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
           <label htmlFor="conversa-input" className="text-sm font-medium text-fg">
             {m.inputLabel}
           </label>
-          <textarea
+          <Textarea
             id="conversa-input"
             ref={inputRef}
             rows={3}
@@ -214,46 +215,46 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholderAtual}
-            className={`${fieldClassName} resize-y`}
+            className="resize-y"
           />
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
               type="submit"
               aria-busy={inFlight}
               disabled={inFlight || input.trim() === ''}
-              className={`${btnPrimary} disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70`}
+              className="disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70"
             >
               {inFlight ? m.enviando : m.enviar}
-            </button>
+            </Button>
             {/* Ver transcrição (#104 S3) — só quando há conversa; abre o modal read-only com o
                 histórico COMPLETO. */}
             {transcript.length > 0 && (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => setTranscricaoAberta(true)}
-                className={btnSecondary}
               >
                 {m.verTranscricao}
-              </button>
+              </Button>
             )}
             {/* Apagar conversa (#15) — só quando há conversa E uma Session segurada. Guarda o
                 botão que abriu o diálogo p/ devolver-lhe o foco ao fechar (a11y). */}
             {sessionId && transcript.length > 0 && (
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={(e) => {
                   deleteTriggerRef.current = e.currentTarget
                   setDeleteOpen(true)
                 }}
-                className={btnSecondary}
               >
                 {m.apagarTranscricao}
-              </button>
+              </Button>
             )}
             {transcript.length > 0 && (
-              <button type="button" onClick={novaConversa} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={novaConversa}>
                 {m.novaConversa}
-              </button>
+              </Button>
             )}
           </div>
         </fieldset>
@@ -272,9 +273,9 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               {errorKey === 'conflito_concorrente' ? m.erroConflito : m.erroGeracao}
             </p>
             <div>
-              <button type="button" onClick={redestilar} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={redestilar}>
                 {m.redestilar}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -285,9 +286,9 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
             <p className="font-medium text-fg">{m.quedaTitulo}</p>
             <p className="text-sm text-muted">{m.quedaNota}</p>
             <div>
-              <button type="button" onClick={redestilar} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={redestilar}>
                 {m.retomar}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -305,16 +306,16 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               <p className="text-fg">{m.erroCarregarReceita}</p>
               {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
               <div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => {
                     setStatus('distilling')
                     void carregarReceita(result)
                   }}
-                  className={btnSecondary}
                 >
                   {m.tentarCarregarNovamente}
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -344,9 +345,9 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               <div className="flex flex-wrap items-center gap-3">
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}
                 {result.recipeId && (
-                  <Link href={`/recipes/${result.recipeId}`} className={btnPrimary}>
-                    {m.verReceita}
-                  </Link>
+                  <Button asChild>
+                    <Link href={`/recipes/${result.recipeId}`}>{m.verReceita}</Link>
+                  </Button>
                 )}
               </div>
             </>
@@ -417,17 +418,12 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               </p>
             )}
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <button type="button" onClick={fecharDialogo} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={fecharDialogo}>
                 {m.apagarCancelar}
-              </button>
-              <button
-                type="button"
-                autoFocus
-                onClick={() => void confirmarApagar()}
-                className={btnPrimary}
-              >
+              </Button>
+              <Button type="button" autoFocus onClick={() => void confirmarApagar()}>
                 {m.apagarConfirmar}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

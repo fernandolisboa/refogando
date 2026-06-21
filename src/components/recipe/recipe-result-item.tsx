@@ -13,6 +13,7 @@
 import Link from 'next/link'
 import { classifySection, type Origin, type SearchSection } from '@/domain/recipe'
 import type { RecipeAuthor } from '@/domain/recipe-search-read'
+import { Card } from '@/components/ui/card'
 import { ProvenanceBadge } from './provenance-badge'
 
 /** Rótulos de selo por seção, já localizados. O item escolhe pelo seu próprio
@@ -81,49 +82,54 @@ export function RecipeResultItem({
       ? byLabel.replace('{name}', author.name)
       : null
   return (
-    <li className="flex h-full flex-col gap-1.5 rounded-lg border border-border bg-surface p-4 shadow-sm transition-shadow duration-150 ease-out hover:shadow-md">
-      {/* SEM aria-label: o nome acessível do link é computado do conteúdo (selo de
+    <li className="h-full">
+      {/* Superfície do card composta via <Card> (ADR-0018): border/bg-card/shadow vêm da
+          primitiva; gap-1.5 (sobrepõe o gap-4 padrão do Card), p-4 e o hover de elevação
+          continuam aqui. O <li> permanece como item de lista (semântica do <ul> pai). */}
+      <Card className="h-full gap-1.5 p-4 transition-shadow duration-150 ease-out hover:shadow-md">
+        {/* SEM aria-label: o nome acessível do link é computado do conteúdo (selo de
           proveniência + título + marca de tradução automática) — caso contrário o leitor
           de tela perderia a distinção catálogo/comunidade e o aviso de tradução, que são o
           diferencial informativo desta tela. O byline de Autoria fica FORA deste <Link>
           (link aninhado é HTML inválido) — é um link IRMÃO para o perfil. */}
-      <Link
-        href={`/recipes/${recipeId}`}
-        className="flex flex-col gap-2 rounded-sm focus-visible:outline-none"
-      >
-        {/* Thumbnail (#130): foto do prato no topo do card. AUSENTE ⇒ estado limpo (sem moldura).
-            <img> simples (convenção do repo); alt = título exibido (o card já leva ao detalhe).
-            #132: selo "✨ gerada por IA" sobreposto quando ai_generated. */}
-        {imageUrl != null && (
-          <span className="relative block">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageUrl}
-              alt={displayedTitle}
-              referrerPolicy="no-referrer"
-              className="aspect-video w-full rounded-md border border-border object-cover"
-            />
-            {imageAiGenerated && aiLabel && (
-              <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-surface/90 px-1.5 py-0.5 text-[10px] font-medium text-muted">
-                {aiLabel}
-              </span>
-            )}
-          </span>
+        <Link
+          href={`/recipes/${recipeId}`}
+          className="flex flex-col gap-2 rounded-sm focus-visible:outline-none"
+        >
+          {/* Thumbnail (#130): foto do prato no topo do card. AUSENTE ⇒ estado limpo (sem moldura).
+              <img> simples (convenção do repo); alt = título exibido (o card já leva ao detalhe).
+              #132: selo "✨ gerada por IA" sobreposto quando ai_generated. */}
+          {imageUrl != null && (
+            <span className="relative block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageUrl}
+                alt={displayedTitle}
+                referrerPolicy="no-referrer"
+                className="aspect-video w-full rounded-md border border-border object-cover"
+              />
+              {imageAiGenerated && aiLabel && (
+                <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-surface/90 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                  {aiLabel}
+                </span>
+              )}
+            </span>
+          )}
+          <ProvenanceBadge variant={badge.variant} label={badge.label} />
+          <h3 className="font-display text-lg text-fg">{displayedTitle}</h3>
+          {autoTranslationSignal && (
+            <span className="text-xs text-muted">{autoTranslationLabel}</span>
+          )}
+        </Link>
+        {/* Autoria (#129): link IRMÃO ao card, levando ao perfil público /u/<handle>. */}
+        {byline !== null && author !== undefined && (
+          <p className="text-xs text-muted">
+            <Link href={`/u/${author.handle}`} className="hover:text-fg hover:underline">
+              {byline}
+            </Link>
+          </p>
         )}
-        <ProvenanceBadge variant={badge.variant} label={badge.label} />
-        <h3 className="font-display text-lg text-fg">{displayedTitle}</h3>
-        {autoTranslationSignal && (
-          <span className="text-xs text-muted">{autoTranslationLabel}</span>
-        )}
-      </Link>
-      {/* Autoria (#129): link IRMÃO ao card, levando ao perfil público /u/<handle>. */}
-      {byline !== null && author !== undefined && (
-        <p className="text-xs text-muted">
-          <Link href={`/u/${author.handle}`} className="hover:text-fg hover:underline">
-            {byline}
-          </Link>
-        </p>
-      )}
+      </Card>
     </li>
   )
 }

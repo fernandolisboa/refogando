@@ -17,6 +17,12 @@ export const ptBR = {
     signOut: 'Sair',
   },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
+  // Toggle de tema claro/escuro (ADR-0018), no header. `light`/`dark` nomeiam o DESTINO da
+  // ação (a11y): o aria-label muda conforme o tema atual ("Mudar para o tema claro/escuro").
+  theme: {
+    light: 'Mudar para o tema claro',
+    dark: 'Mudar para o tema escuro',
+  },
   system: {
     loading: 'Carregando…',
     error: 'Algo deu errado.',

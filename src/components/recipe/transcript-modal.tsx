@@ -11,7 +11,7 @@
  * `onClose`. O caller só precisa des-renderizar o modal dentro do seu `onClose`.
  */
 import { useEffect, useRef } from 'react'
-import { btnSecondary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import type { ChatMessage } from '@/hooks/use-conversation-chat'
 
 export function TranscriptModal({
@@ -86,9 +86,9 @@ export function TranscriptModal({
           <h2 id="transcricao-titulo" className="font-display text-lg font-semibold text-fg">
             {titulo}
           </h2>
-          <button ref={closeBtnRef} type="button" onClick={onClose} className={btnSecondary}>
+          <Button ref={closeBtnRef} type="button" variant="secondary" onClick={onClose}>
             {closeLabel}
-          </button>
+          </Button>
         </div>
 
         {/* Histórico completo, rolável. Cada fala rotulada pelo papel (Você / IA). */}
