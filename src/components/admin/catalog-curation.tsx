@@ -15,7 +15,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, btnSecondarySm } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import { CatalogRecipeForm } from './catalog-recipe-form'
 
 type PromotionItem = { rawText: string; count: number }
@@ -108,9 +108,9 @@ export function CatalogCuration() {
               >
                 {sys.error}
               </p>
-              <button type="button" onClick={() => void load()} className={btnPrimarySm}>
+              <Button type="button" size="sm" onClick={() => void load()}>
                 {sys.retry}
-              </button>
+              </Button>
             </div>
           ) : items.length === 0 ? (
             <p className="text-sm text-muted">{m.promocaoVazia}</p>
@@ -129,15 +129,17 @@ export function CatalogCuration() {
                     </span>
                   </span>
                   <div className="flex flex-col items-start gap-1">
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => void handlePromote(item)}
                       disabled={busyRaw === item.rawText}
                       aria-busy={busyRaw === item.rawText}
-                      className={`${btnSecondarySm} disabled:opacity-70`}
+                      className="disabled:opacity-70"
                     >
                       {busyRaw === item.rawText ? m.promovendo : m.promover}
-                    </button>
+                    </Button>
                     {errorRaw === item.rawText && errorKey && (
                       <p
                         role="alert"

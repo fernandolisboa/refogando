@@ -23,7 +23,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimary, btnSecondary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 export function RecipeEngagementControls({
   recipeId,
@@ -158,38 +158,40 @@ export function RecipeEngagementControls({
         {isAnon ? (
           <>
             {showVote && (
-              <Link href="/sign-in" className={btnSecondary}>
-                {m.convidaEntrarVoto}
-              </Link>
+              <Button asChild variant="secondary">
+                <Link href="/sign-in">{m.convidaEntrarVoto}</Link>
+              </Button>
             )}
-            <Link href="/sign-in" className={btnSecondary}>
-              {m.convidaEntrarFavorito}
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href="/sign-in">{m.convidaEntrarFavorito}</Link>
+            </Button>
           </>
         ) : (
           <>
             {showVote && (
-              <button
+              <Button
                 type="button"
                 onClick={handleVote}
                 disabled={voteBusy}
                 aria-pressed={voted}
                 aria-busy={voteBusy}
-                className={`${voted ? btnPrimary : btnSecondary} disabled:opacity-70`}
+                variant={voted ? 'default' : 'secondary'}
+                className="disabled:opacity-70"
               >
                 {voted ? m.votado : m.votar}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
               onClick={handleFavorite}
               disabled={favBusy}
               aria-pressed={favorited}
               aria-busy={favBusy}
-              className={`${favorited ? btnPrimary : btnSecondary} disabled:opacity-70`}
+              variant={favorited ? 'default' : 'secondary'}
+              className="disabled:opacity-70"
             >
               {favorited ? m.favoritado : m.favoritar}
-            </button>
+            </Button>
           </>
         )}
       </div>

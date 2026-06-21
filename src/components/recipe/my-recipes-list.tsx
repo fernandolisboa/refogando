@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 
 type Status = 'loading' | 'idle' | 'error'
@@ -104,9 +104,9 @@ export function MyRecipesList() {
     return (
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
-        <Link href="/sign-in" className={btnPrimary}>
-          {messages.nav.signIn}
-        </Link>
+        <Button asChild>
+          <Link href="/sign-in">{messages.nav.signIn}</Link>
+        </Button>
       </div>
     )
   }
@@ -142,9 +142,9 @@ export function MyRecipesList() {
       {isEmpty && (
         <div className="flex flex-col items-start gap-4">
           <p className="text-muted">{m.vazio}</p>
-          <Link href="/create" className={btnPrimary}>
-            {m.criarPrimeira}
-          </Link>
+          <Button asChild>
+            <Link href="/create">{m.criarPrimeira}</Link>
+          </Button>
         </div>
       )}
 

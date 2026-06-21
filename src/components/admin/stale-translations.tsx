@@ -14,7 +14,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, btnSecondarySm } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import {
   TRANSLATION_PROVENANCES,
   type TranslationProvenance,
@@ -116,9 +116,9 @@ export function StaleTranslations() {
             >
               {sys.error}
             </p>
-            <button type="button" onClick={() => void load()} className={btnPrimarySm}>
+            <Button type="button" size="sm" onClick={() => void load()}>
               {sys.retry}
-            </button>
+            </Button>
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">{m.listaVazia}</p>
@@ -142,15 +142,17 @@ export function StaleTranslations() {
                     <dd className="text-muted">{labelProvenance(item.provenance)}</dd>
                   </dl>
                   <div>
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => void handleReview(item)}
                       disabled={busyKey === key}
                       aria-busy={busyKey === key}
-                      className={`${btnSecondarySm} disabled:opacity-70`}
+                      className="disabled:opacity-70"
                     >
                       {busyKey === key ? m.marcando : m.marcarRevisada}
-                    </button>
+                    </Button>
                   </div>
                   {errorKey === key && (
                     <p

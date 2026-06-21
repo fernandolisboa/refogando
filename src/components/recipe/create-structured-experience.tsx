@@ -37,7 +37,9 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
-import { btnPrimary, btnSecondary, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { COZINHAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import type { RecipeView, AvisoView } from '@/domain/recipe-read'
@@ -458,9 +460,9 @@ export function CreateStructuredExperience() {
       <div className="mx-auto flex max-w-sm flex-col gap-4">
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
         <p className="text-muted">{m.precisaEntrar}</p>
-        <Link href="/sign-in" className={btnPrimary}>
-          {messages.nav.signIn}
-        </Link>
+        <Button asChild>
+          <Link href="/sign-in">{messages.nav.signIn}</Link>
+        </Button>
       </div>
     )
   }
@@ -540,14 +542,14 @@ export function CreateStructuredExperience() {
               <label htmlFor="entrada-inteligente" className="text-sm font-medium text-fg">
                 {m.entradaInteligente}
               </label>
-              <textarea
+              <Textarea
                 id="entrada-inteligente"
                 rows={3}
                 maxLength={ENTRADA_MAX}
                 value={entradaInteligente}
                 onChange={(e) => setEntradaInteligente(e.target.value)}
                 placeholder={m.entradaPlaceholder}
-                className={`${inputCls} resize-y`}
+                className="resize-y"
               />
               <p className="text-xs text-muted">{m.entradaDistincao}</p>
               {extractError && (
@@ -559,15 +561,15 @@ export function CreateStructuredExperience() {
                 </p>
               )}
               <div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={estruturar}
                   aria-busy={extracting || undefined}
                   disabled={entradaInteligente.trim().length < ENTRADA_MIN || extracting}
-                  className={`${btnSecondary} disabled:opacity-50`}
                 >
                   {extracting ? m.estruturando : m.estruturar}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -580,23 +582,21 @@ export function CreateStructuredExperience() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                     <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-fg">
                       {`${m.ingrediente} ${index + 1}`}
-                      <input
+                      <Input
                         type="text"
                         value={item.rawText}
                         onChange={(e) => patchItem(index, { rawText: e.target.value })}
                         placeholder={m.ingredientePlaceholder}
-                        className={inputCls}
                       />
                     </label>
                     <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-28">
                       {m.quantidade}
-                      <input
+                      <Input
                         type="text"
                         inputMode="decimal"
                         value={item.quantidade}
                         onChange={(e) => patchItem(index, { quantidade: e.target.value })}
                         placeholder={m.quantidadePlaceholder}
-                        className={inputCls}
                       />
                     </label>
                     <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
@@ -648,15 +648,15 @@ export function CreateStructuredExperience() {
                         </label>
                       ))}
                     </fieldset>
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       onClick={() => removeItem(index)}
                       disabled={itens.length <= 1}
                       aria-label={`${m.removerIngrediente} ${index + 1}`}
-                      className={`${btnSecondary} disabled:opacity-50`}
                     >
                       {m.removerIngrediente}
-                    </button>
+                    </Button>
                   </div>
                   {/* Erro por-linha (#112): a Extração não reconheceu a unidade desta linha.
                       Neutro (NÃO âmbar — âmbar é exclusivo do Aviso de restrição). Some quando
@@ -668,9 +668,9 @@ export function CreateStructuredExperience() {
               ))}
             </ul>
             <div>
-              <button type="button" onClick={addItem} className={btnSecondary}>
+              <Button type="button" variant="secondary" onClick={addItem}>
                 {m.adicionarIngrediente}
-              </button>
+              </Button>
             </div>
           </fieldset>
 
@@ -703,24 +703,22 @@ export function CreateStructuredExperience() {
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
               {m.porcoes}
-              <input
+              <Input
                 type="number"
                 min={PORCOES.min}
                 max={PORCOES.max}
                 value={porcoes}
                 onChange={(e) => setPorcoes(e.target.value)}
-                className={inputCls}
               />
             </label>
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
               {m.dificuldade}
-              <input
+              <Input
                 type="number"
                 min={DIFICULDADE.min}
                 max={DIFICULDADE.max}
                 value={dificuldade}
                 onChange={(e) => setDificuldade(e.target.value)}
-                className={inputCls}
               />
             </label>
           </div>
@@ -728,13 +726,13 @@ export function CreateStructuredExperience() {
           {/* Observações */}
           <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
             {m.observacoes}
-            <textarea
+            <Textarea
               rows={3}
               maxLength={2000}
               value={observacoes}
               onChange={(e) => setObservacoes(e.target.value)}
               placeholder={m.observacoesPlaceholder}
-              className={`${inputCls} resize-y`}
+              className="resize-y"
             />
           </label>
             </>
@@ -749,7 +747,7 @@ export function CreateStructuredExperience() {
               <label htmlFor="free-text" className="text-sm font-medium text-fg">
                 {m.textareaLabel}
               </label>
-              <textarea
+              <Textarea
                 id="free-text"
                 rows={6}
                 value={freeText}
@@ -758,7 +756,7 @@ export function CreateStructuredExperience() {
                 maxLength={FREE_TEXT_MAX + 200}
                 aria-describedby="free-text-contador"
                 aria-invalid={freeTextOver || undefined}
-                className={`${fieldClassName} resize-y`}
+                className="resize-y"
               />
               {/* Contador NEUTRO no caso normal; ao ULTRAPASSAR o teto (2001–2200, a folga do
                   maxLength) ele antecipa o estado de erro com peso/cor de FG — NUNCA âmbar
@@ -784,17 +782,16 @@ export function CreateStructuredExperience() {
           )}
 
           <div>
-            <button
+            <Button
               type="submit"
               aria-busy={status === 'loading'}
               disabled={
                 status === 'loading' ||
                 (mode === 'free_text' && freeText.trim().length < FREE_TEXT_MIN)
               }
-              className={`${btnPrimary} disabled:opacity-70`}
             >
               {status === 'loading' ? m.gerando : m.gerar}
-            </button>
+            </Button>
           </div>
           </fieldset>
         </form>
@@ -811,13 +808,13 @@ export function CreateStructuredExperience() {
               <p className="text-fg">{m.resultadoImpossivel}</p>
               {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
               <div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => voltarParaIdle({ limpar: false })}
-                  className={btnSecondary}
                 >
                   {m.tentarNovamente}
-                </button>
+                </Button>
               </div>
             </>
           ) : loadFailed || view == null ? (
@@ -828,16 +825,16 @@ export function CreateStructuredExperience() {
               <p className="text-fg">{m.erroCarregarReceita}</p>
               {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
               <div>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => {
                     setStatus('loading')
                     void carregarReceita(result)
                   }}
-                  className={btnSecondary}
                 >
                   {m.tentarCarregarNovamente}
-                </button>
+                </Button>
               </div>
             </>
           ) : (
@@ -869,17 +866,17 @@ export function CreateStructuredExperience() {
                     detalhe (#59), onde moram os controles de Visibilidade — não escreve nada
                     (glossário: salvar ≠ navegar). */}
                 {result.recipeId && (
-                  <Link href={`/recipes/${result.recipeId}`} className={btnPrimary}>
-                    {m.verReceita}
-                  </Link>
+                  <Button asChild>
+                    <Link href={`/recipes/${result.recipeId}`}>{m.verReceita}</Link>
+                  </Button>
                 )}
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => voltarParaIdle({ limpar: true })}
-                  className={btnSecondary}
                 >
                   {m.criarOutra}
-                </button>
+                </Button>
               </div>
             </>
           )

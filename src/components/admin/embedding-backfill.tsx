@@ -12,7 +12,7 @@
  */
 import { useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 type BackfillResult = { recomputed: number; remaining: number; error?: string }
 
@@ -51,15 +51,16 @@ export function EmbeddingBackfill() {
         <p className="max-w-[60ch] text-sm text-muted">{m.backfillDescricao}</p>
       </div>
 
-      <button
+      <Button
         type="button"
+        size="sm"
         onClick={() => void run()}
         disabled={busy}
         aria-busy={busy}
-        className={`${btnPrimarySm} self-start disabled:opacity-70`}
+        className="self-start disabled:opacity-70"
       >
         {busy ? m.backfillRodando : m.backfillBtn}
-      </button>
+      </Button>
 
       <div aria-live="polite" className="text-sm">
         {errored && (

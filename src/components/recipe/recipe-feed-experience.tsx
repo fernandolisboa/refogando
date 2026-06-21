@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
-import { btnSecondary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import type { SearchResult } from '@/domain/recipe-search-read'
 import type { FeedResponse } from '@/domain/recipe-feed-read'
 import { RecipeResultItem, type BadgeLabels } from './recipe-result-item'
@@ -148,9 +148,9 @@ export function RecipeFeedExperience() {
       {status === 'error' && (
         <div role="alert" className="flex flex-col items-start gap-3">
           <p className="text-fg">{messages.system.error}</p>
-          <button type="button" className={btnSecondary} onClick={() => void loadPage(null, true)}>
+          <Button type="button" variant="secondary" onClick={() => void loadPage(null, true)}>
             {messages.system.retry}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -184,15 +184,15 @@ export function RecipeFeedExperience() {
       {hasMore && (
         <div className="flex flex-col items-center gap-2">
           <div ref={sentinelRef} aria-hidden="true" />
-          <button
+          <Button
             type="button"
-            className={btnSecondary}
+            variant="secondary"
             onClick={loadMore}
             disabled={loadingMore}
             aria-busy={loadingMore}
           >
             {mf.carregarMais}
-          </button>
+          </Button>
         </div>
       )}
 

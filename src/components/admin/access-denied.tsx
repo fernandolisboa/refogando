@@ -11,7 +11,7 @@
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
-import { btnSecondary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 export function AccessDenied({ standalone = true }: { standalone?: boolean } = {}) {
   const { messages } = useLocale()
@@ -20,9 +20,9 @@ export function AccessDenied({ standalone = true }: { standalone?: boolean } = {
     <>
       <h1 className="font-display text-3xl font-semibold text-fg">{m.acessoNegadoTitulo}</h1>
       <p className="max-w-prose text-muted">{m.acessoNegado}</p>
-      <Link href="/" className={btnSecondary}>
-        {m.voltarInicio}
-      </Link>
+      <Button asChild variant="secondary">
+        <Link href="/">{m.voltarInicio}</Link>
+      </Button>
     </>
   )
   return standalone ? (

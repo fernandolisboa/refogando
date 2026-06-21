@@ -19,7 +19,8 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, btnSecondarySm, fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { ORIGENS, RESULT_KINDS, type Origin, type ResultKind } from '@/domain/recipe'
 import type { ReportQueueItem } from '@/server/curate/reports'
 
@@ -223,9 +224,9 @@ export function ModerationQueue() {
             >
               {sys.error}
             </p>
-            <button type="button" onClick={() => void load()} className={btnPrimarySm}>
+            <Button type="button" size="sm" onClick={() => void load()}>
               {sys.retry}
-            </button>
+            </Button>
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted">{m.filaVazia}</p>
@@ -256,33 +257,36 @@ export function ModerationQueue() {
                     é a saída de descoberta → secundário, de-emphasized. Espelha
                     recipe-visibility-controls (CTA primário vs ação menos destacada secundária). */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     onClick={() => void handleKeep(item)}
                     disabled={busyId === item.id}
-                    className={`${btnPrimarySm} disabled:opacity-70`}
+                    className="disabled:opacity-70"
                   >
                     {m.manter}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     onClick={() => {
                       clearError()
                       setRemovingId(removingId === item.id ? null : item.id)
                     }}
                     disabled={busyId === item.id}
                     aria-expanded={removingId === item.id}
-                    className={`${btnSecondarySm} disabled:opacity-70`}
+                    className="disabled:opacity-70"
                   >
                     {m.remover}
-                  </button>
+                  </Button>
                 </div>
 
                 {removingId === item.id && (
                   <div className="flex flex-col gap-2">
                     <label className="flex flex-col gap-1 text-sm font-medium text-fg">
                       {m.motivoRemocao}
-                      <textarea
+                      <Textarea
                         value={reasonDraft[item.id] ?? ''}
                         onChange={(e) =>
                           setReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))
@@ -290,46 +294,50 @@ export function ModerationQueue() {
                         placeholder={m.motivoPlaceholder}
                         aria-required="true"
                         rows={2}
-                        className={fieldClassName}
                       />
                     </label>
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
+                      <Button
                         type="button"
+                        size="sm"
                         onClick={() => void handleRemove(item)}
                         disabled={
                           busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
                         }
                         aria-busy={busyId === item.id && busyAction === 'remove'}
-                        className={`${btnPrimarySm} disabled:opacity-70`}
+                        className="disabled:opacity-70"
                       >
                         {busyId === item.id && busyAction === 'remove'
                           ? m.removendo
                           : m.confirmarRemocao}
-                      </button>
+                      </Button>
                       {/* "Remover só a imagem" (#133): mesmo motivo, eixo ORTOGONAL ao remover-do-pool.
                           Secundário (a Receita SEGUE no pool — ação mais branda que tirá-la). */}
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => void handleRemoveImage(item)}
                         disabled={
                           busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
                         }
                         aria-busy={busyId === item.id && busyAction === 'image'}
-                        className={`${btnSecondarySm} disabled:opacity-70`}
+                        className="disabled:opacity-70"
                       >
                         {busyId === item.id && busyAction === 'image'
                           ? m.removendoImagem
                           : m.removerImagem}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => setRemovingId(null)}
                         disabled={busyId === item.id}
-                        className={`${btnSecondarySm} disabled:opacity-70`}
+                        className="disabled:opacity-70"
                       >
                         {m.cancelar}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 )}

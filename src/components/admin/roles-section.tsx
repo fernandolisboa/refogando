@@ -17,7 +17,9 @@
  */
 import { useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, fieldClassName } from '@/components/button'
+import { fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ROLES, type Role } from '@/domain/user'
 
 export function RolesSection() {
@@ -83,7 +85,7 @@ export function RolesSection() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1 text-sm font-medium text-fg">
           {m.userIdLabel}
-          <input
+          <Input
             type="text"
             value={userId}
             onChange={(e) => {
@@ -91,7 +93,6 @@ export function RolesSection() {
               setStatus('idle')
             }}
             placeholder={m.userIdPlaceholder}
-            className={fieldClassName}
           />
         </label>
         <label className="flex flex-col gap-1 text-sm font-medium text-fg">
@@ -111,14 +112,15 @@ export function RolesSection() {
             ))}
           </select>
         </label>
-        <button
+        <Button
           type="submit"
+          size="sm"
           disabled={!podeEnviar}
           aria-busy={saving}
-          className={`${btnPrimarySm} disabled:opacity-70`}
+          className="disabled:opacity-70"
         >
           {saving ? m.aplicandoPapel : m.aplicarPapel}
-        </button>
+        </Button>
       </form>
 
       {status === 'done' && (

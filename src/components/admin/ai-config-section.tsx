@@ -16,7 +16,9 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
-import { btnPrimarySm, fieldClassName } from '@/components/button'
+import { fieldClassName } from '@/components/button'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ROLES, type Role } from '@/domain/user'
 import {
   IMAGE_GEN_MODELS,
@@ -161,9 +163,9 @@ export function AiConfigSection() {
             >
               {sys.error}
             </p>
-            <button type="button" onClick={() => void load()} className={btnPrimarySm}>
+            <Button type="button" size="sm" onClick={() => void load()}>
               {sys.retry}
-            </button>
+            </Button>
           </div>
         ) : (
           <>
@@ -208,7 +210,7 @@ export function AiConfigSection() {
                 {ROLES.map((role) => (
                   <label key={role} className="flex flex-col gap-1 text-sm font-medium text-fg">
                     {roleLabel[role]}
-                    <input
+                    <Input
                       type="number"
                       min={0}
                       step={1}
@@ -219,22 +221,23 @@ export function AiConfigSection() {
                         setCaps((prev) => ({ ...prev, [role]: e.target.value }))
                         setStatus('idle')
                       }}
-                      className={`${fieldClassName} w-32`}
+                      className="w-32"
                     />
                   </label>
                 ))}
               </div>
             </fieldset>
 
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={handleSave}
               disabled={saving}
               aria-busy={saving}
-              className={`${btnPrimarySm} self-start disabled:opacity-70`}
+              className="self-start"
             >
               {saving ? m.salvando : m.salvar}
-            </button>
+            </Button>
           </>
         )}
       </div>
