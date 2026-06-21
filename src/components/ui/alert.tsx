@@ -37,8 +37,9 @@ const alertVariants = cva(
 function Alert({
   className,
   variant,
-  // `role` é sobrescrevível e default "alert": o aviso de restrição (#7/#57, ADR-0004)
-  // passa role="note" — toque leve que NÃO interrompe o leitor de tela (informa, não bloqueia).
+  // `role` é sobrescrevível e default "alert" (live region assertiva — certo p/ erro de submit).
+  // Call-sites de INFO não-urgente DEVEM passar role="note"/"status" pra não anunciar de surpresa:
+  // o aviso de restrição (#7/#57, ADR-0004) e o stale-notice passam role="note" (informa, não bloqueia).
   role = 'alert',
   ...props
 }: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {

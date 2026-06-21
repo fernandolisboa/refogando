@@ -8,8 +8,8 @@ import { Badge, badgeVariants } from '@/components/ui/badge'
  * Seam de teste de FRONTEND (jsdom, ADR-0018) para a primitiva Badge. Prova, sem
  * browser/Postgres: render de um <span> com o `data-slot` da convenção; cada variante pinta a
  * classe de token quente certa (selos de proveniência — skin Refogando, não o slate do
- * shadcn); a invariante de ADR-0015 (erva SÓ em `catalog`, âmbar — não vermelho — no `aviso`,
- * nunca `bg-accent`/`bg-muted` nus); `asChild` delega a estrutura ao filho (Slot.Root).
+ * shadcn); a invariante de ADR-0015 (erva SÓ em `catalog`; SEM variante âmbar — âmbar é
+ * exclusivo do Alert de restrição; nunca `bg-accent`/`bg-muted` nus); `asChild` delega ao filho.
  */
 describe('Badge (ui/badge, ADR-0018)', () => {
   it('renderiza um <span> com o default-slot e a variante padrão (neutra)', () => {
@@ -27,7 +27,6 @@ describe('Badge (ui/badge, ADR-0018)', () => {
     ['catalog', 'bg-accent-surface'],
     ['mine', 'text-brand-ink'],
     ['translation', 'italic'],
-    ['aviso', 'text-aviso-fg'],
   ] as const)('aplica a classe-marca da variante %s', (variant, expected) => {
     render(<Badge variant={variant}>x</Badge>)
     expect(screen.getByText('x')).toHaveClass(expected)
@@ -47,15 +46,11 @@ describe('Badge (ui/badge, ADR-0018)', () => {
     expect(badge).toHaveClass('border-brand', 'bg-surface', 'text-brand-ink')
   })
 
-  it('aviso é ÂMBAR (token aviso), nunca vermelho', () => {
-    render(<Badge variant="aviso">Restrição</Badge>)
-    const badge = screen.getByText('Restrição')
-    expect(badge).toHaveClass('bg-aviso-bg', 'text-aviso-fg')
-    expect(badge.className).not.toMatch(/\bbg-red-/)
-    expect(badge.className).not.toMatch(/\btext-red-/)
-  })
+  // Nota (ADR-0015): NÃO há variante âmbar/aviso no Badge — âmbar é exclusivo do Alert de
+  // restrição. O invariante é garantido pelo tipo (VariantProps não inclui 'aviso'); um
+  // `variant="aviso"` num call-site falha no typecheck.
 
-  it.each(['default', 'catalog', 'mine', 'translation', 'aviso'] as const)(
+  it.each(['default', 'catalog', 'mine', 'translation'] as const)(
     'a variante %s NUNCA usa bg-accent/bg-muted nus (erva = selo do Catálogo; muted = texto)',
     (variant) => {
       render(<Badge variant={variant}>x</Badge>)

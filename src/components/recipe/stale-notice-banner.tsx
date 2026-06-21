@@ -22,7 +22,7 @@ export function StaleNoticeBanner({
 }) {
   return (
     <Alert variant="info" role="note" className="flex flex-col items-start gap-2">
-      <AlertDescription className="text-muted">{notice.mensagem}</AlertDescription>
+      <AlertDescription className="text-muted-foreground">{notice.mensagem}</AlertDescription>
       <Button asChild variant="secondary">
         <Link
           href={`/recipes/${recipeId}?locale=${encodeURIComponent(notice.originalLocale)}`}
