@@ -35,7 +35,11 @@ export function SortToggle<T extends string>({
   labelId?: string
 }) {
   return (
-    <div role="group" aria-labelledby={labelId} className="flex flex-wrap items-center gap-2">
+    // Container de layout PURO (sem role): quem é o radiogroup é o próprio `<ToggleGroup>`
+    // (Radix renderiza role="radiogroup"), então o `aria-labelledby` vai NELE — assim o
+    // elemento que possui os radios é que ganha nome. Pôr role="group" aqui criaria um
+    // segundo grupo aninhado, e o radiogroup interno ficaria SEM nome.
+    <div className="flex flex-wrap items-center gap-2">
       {/* O texto VISÍVEL é a ÚNICA fonte do nome acessível do grupo (via aria-labelledby) —
           sem duplicar a string num aria-label, que o leitor de tela anunciaria duas vezes. */}
       <span id={labelId} className="text-sm text-muted">
@@ -43,6 +47,7 @@ export function SortToggle<T extends string>({
       </span>
       <ToggleGroup
         type="single"
+        aria-labelledby={labelId}
         value={value}
         onValueChange={(v) => {
           if (v) onChange(v as T)

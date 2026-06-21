@@ -92,7 +92,13 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
       </div>
 
       <div>
-        <Button type="button" onClick={regenerar} disabled={loading} aria-busy={loading}>
+        <Button
+          type="button"
+          onClick={regenerar}
+          disabled={loading}
+          aria-busy={loading}
+          className="disabled:opacity-70"
+        >
           {loading ? m.regenerando : m.regenerar}
         </Button>
       </div>

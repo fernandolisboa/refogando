@@ -7,9 +7,10 @@ import { Textarea } from '@/components/ui/textarea'
 
 /**
  * Seam de FRONTEND (ADR-0018) — prova, sem browser/Postgres, a primitiva Textarea:
- * render como <textarea> acessível, props nativas repassadas (placeholder/value/disabled),
- * o data-slot da convenção shadcn, a skin de campo (min-h-16 + field-sizing-content, e os
- * tokens quentes da #54, NUNCA bg-muted/bg-accent), e o override de className via cn().
+ * render como <textarea> acessível, props nativas repassadas (placeholder/value/disabled/rows),
+ * o data-slot da convenção shadcn, a skin de campo (min-h-16 SEM field-sizing-content — para
+ * que `rows={N}` dos call-sites legados defina a altura inicial — e os tokens quentes da #54,
+ * NUNCA bg-muted/bg-accent), e o override de className via cn().
  */
 describe('Textarea (ui, ADR-0018)', () => {
   it('renderiza um <textarea> acessível e repassa props nativas (placeholder)', () => {
@@ -24,11 +25,14 @@ describe('Textarea (ui, ADR-0018)', () => {
     expect(screen.getByPlaceholderText('x')).toHaveAttribute('data-slot', 'textarea')
   })
 
-  it('carrega a skin de campo: min-h-16 + field-sizing-content + tokens quentes (sem slate/muted/accent nus)', () => {
+  it('carrega a skin de campo: min-h-16 SEM field-sizing-content + tokens quentes (sem slate/muted/accent nus)', () => {
     render(<Textarea placeholder="skin" />)
     const el = screen.getByPlaceholderText('skin')
-    // Altura mínima maior que Input + auto-crescimento por conteúdo.
-    expect(el).toHaveClass('min-h-16', 'field-sizing-content')
+    // Altura mínima maior que Input...
+    expect(el).toHaveClass('min-h-16')
+    // ...mas NÃO field-sizing-content: ele ignoraria o `rows={N}` dos call-sites legados,
+    // colapsando campos grandes ao piso de 64px no render inicial.
+    expect(el).not.toHaveClass('field-sizing-content')
     // Skin Refogando: superfície/borda/texto via token quente.
     expect(el).toHaveClass('bg-card', 'border-input', 'text-foreground')
     expect(el.className).toContain('placeholder:text-muted-foreground')
@@ -59,6 +63,15 @@ describe('Textarea (ui, ADR-0018)', () => {
     expect(el).toHaveClass('min-h-32', 'bg-secondary')
     expect(el).not.toHaveClass('min-h-16', 'bg-card')
     // ...mas o restante do default segue intacto.
-    expect(el).toHaveClass('field-sizing-content', 'rounded-md')
+    expect(el).toHaveClass('rounded-md')
+    // E continua sem field-sizing-content mesmo após o merge.
+    expect(el).not.toHaveClass('field-sizing-content')
+  })
+
+  it('honra o rows={N} dos call-sites legados (sem field-sizing colapsando ao piso)', () => {
+    render(<Textarea aria-label="bio" rows={4} />)
+    const el = screen.getByRole('textbox', { name: 'bio' })
+    expect(el).toHaveAttribute('rows', '4')
+    expect(el).not.toHaveClass('field-sizing-content')
   })
 })

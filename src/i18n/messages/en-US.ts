@@ -19,7 +19,6 @@ export const enUS: Messages = {
   // Light/dark theme toggle (ADR-0018), in the header. `light`/`dark` name the action's
   // TARGET (a11y): the aria-label changes with the current theme ("Switch to light/dark theme").
   theme: {
-    toggle: 'Switch theme',
     light: 'Switch to light theme',
     dark: 'Switch to dark theme',
   },

@@ -13,10 +13,10 @@
  * backend reimpõe `requireRole('curador')`. Duplicar o gate aqui seria reimplementar regra.
  * Se a sessão caducou, a rota responde 401/403 e o form mostra erro neutro genérico.
  *
- * Tamanho de botão: este form usa `btnPrimary`/`btnSecondary` (cheios), enquanto a subseção
- * irmã de ingredientes recorrentes (CatalogCuration) usa `btnPrimarySm`/`btnSecondarySm`. É
- * hierarquia deliberada — a área de form pede ações maiores; a lista de promoção é compacta.
- * A coexistência dos dois tamanhos sob a mesma <section> é decisão, não drift.
+ * Tamanho de botão: este form usa `<Button>` no tamanho default ("cheio"), enquanto a subseção
+ * irmã de ingredientes recorrentes (CatalogCuration) usa `<Button size="sm">`. É hierarquia
+ * deliberada — a área de form pede ações maiores; a lista de promoção é compacta. A coexistência
+ * dos dois tamanhos sob a mesma <section> é decisão, não drift.
  *
  * Cores: só neutros/brand (tokens AA já verificados na #54). NUNCA âmbar (exclusivo do Aviso
  * de restrição, ADR-0015 — não há Aviso aqui) nem accent (selo de Catálogo — não há badge a

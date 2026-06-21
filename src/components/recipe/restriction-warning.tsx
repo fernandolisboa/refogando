@@ -16,7 +16,7 @@ import type { AvisoView } from '@/domain/recipe-read'
 export function RestrictionWarning({ aviso, title }: { aviso: AvisoView; title: string }) {
   return (
     <Alert variant="aviso" role="note" aria-label={title}>
-      <AlertDescription className="text-aviso-fg">{aviso.mensagem}</AlertDescription>
+      <AlertDescription>{aviso.mensagem}</AlertDescription>
     </Alert>
   )
 }

@@ -395,7 +395,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
 
     // O grupo de ordenação vive junto do form (não dentro da seção Comunidade).
-    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    const group = screen.getByRole('radiogroup', { name: MC.ordenarPor })
     expect(group).toBeInTheDocument()
     const relBtn = within(group).getByRole('radio', { name: MC.toggleRelevancia })
     const popBtn = within(group).getByRole('radio', { name: MC.togglePopularidade })
@@ -411,7 +411,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     // Espera a janela do debounce elapsar (mesma técnica do T3) antes do assert negativo.
     await new Promise((r) => setTimeout(r, 400))
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(screen.queryByRole('group', { name: MC.ordenarPor })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radiogroup', { name: MC.ordenarPor })).not.toBeInTheDocument()
   })
 
   it('T-sort-B — clicar Popularidade dispara ?sort=popularidade (re-fetch)', async () => {
@@ -467,7 +467,7 @@ describe('SearchExperience — ordenação da Comunidade (#62)', () => {
     })
 
     // O grupo de ordenação CONTINUA presente apesar da Comunidade vazia.
-    const group = screen.getByRole('group', { name: MC.ordenarPor })
+    const group = screen.getByRole('radiogroup', { name: MC.ordenarPor })
     expect(group).toBeInTheDocument()
     const callsAposPop = fetchMock.mock.calls.length
 

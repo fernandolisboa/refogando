@@ -125,6 +125,7 @@
  *   - `.dark` no <html> (usuário forçou escuro) → aplica os valores escuros sempre.
  */
 @media (prefers-color-scheme: dark) {
+  /* manter em sincronia com o bloco .dark — mesmos 15 valores OKLCH, re-verificados em AA */
   :root:not(.light) {
     --color-bg: oklch(0.205 0.018 55);
     --color-surface: oklch(0.255 0.02 55);
@@ -143,6 +144,7 @@
     --color-ring: oklch(0.78 0.13 45);
   }
 }
+/* manter em sincronia com o bloco @media (prefers-color-scheme: dark) — mesmos 15 valores OKLCH, re-verificados em AA */
 .dark {
   --color-bg: oklch(0.205 0.018 55);
   --color-surface: oklch(0.255 0.02 55);

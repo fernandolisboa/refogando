@@ -20,7 +20,6 @@ export const ptBR = {
   // Toggle de tema claro/escuro (ADR-0018), no header. `light`/`dark` nomeiam o DESTINO da
   // ação (a11y): o aria-label muda conforme o tema atual ("Mudar para o tema claro/escuro").
   theme: {
-    toggle: 'Mudar o tema',
     light: 'Mudar para o tema claro',
     dark: 'Mudar para o tema escuro',
   },

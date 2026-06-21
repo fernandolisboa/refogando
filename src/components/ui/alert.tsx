@@ -24,7 +24,8 @@ const alertVariants = cva(
     variants: {
       variant: {
         info: 'border-border bg-surface text-foreground',
-        aviso: 'border-aviso-fg/30 bg-aviso-bg text-aviso-fg [&>svg]:text-aviso-fg',
+        aviso:
+          'border-aviso-fg/30 bg-aviso-bg text-aviso-fg [&>svg]:text-aviso-fg [&_[data-slot=alert-description]]:text-aviso-fg',
       },
     },
     defaultVariants: {

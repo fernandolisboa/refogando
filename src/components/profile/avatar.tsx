@@ -45,7 +45,7 @@ export function Avatar({
   return (
     <span
       aria-hidden="true"
-      className={`flex ${s.box} shrink-0 items-center justify-center rounded-full border border-border bg-surface font-display ${s.text} text-muted`}
+      className={`flex ${s.box} shrink-0 items-center justify-center rounded-full border border-border bg-surface font-display ${s.text} text-muted-foreground`}
     >
       {initials(name)}
     </span>

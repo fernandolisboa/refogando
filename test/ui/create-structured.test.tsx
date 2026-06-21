@@ -424,7 +424,7 @@ describe('CreateStructuredExperience (#58)', () => {
 describe('CreateStructuredExperience — prompt aberto (#88)', () => {
   /** Clica no item "Prompt aberto" (radio do ToggleGroup) do grupo de alternância de modo. */
   async function irParaPromptAberto(user: ReturnType<typeof userEvent.setup>) {
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
     await user.click(within(grupo).getByRole('radio', { name: M.modoPromptAberto }))
   }
 
@@ -447,7 +447,7 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     expect(screen.queryByText(M.legendaIngredientes)).toBeNull()
 
     // aria-checked: 'Prompt aberto' ativo, 'Estruturado' inativo (ToggleGroup → role=radio).
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
     expect(within(grupo).getByRole('radio', { name: M.modoPromptAberto })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -590,7 +590,7 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroTextoVazio)
 
     // Alternar para Estruturado deve DESCARTAR o alerta (a mensagem era do ramo free_text).
-    const grupo = screen.getByRole('group', { name: M.modoLegenda })
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
     await user.click(within(grupo).getByRole('radio', { name: M.modoEstruturado }))
     expect(screen.queryByRole('alert')).toBeNull()
 
@@ -641,7 +641,7 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     const user = userEvent.setup()
     renderCreate('en-US')
 
-    const grupo = screen.getByRole('group', { name: enUS.criar.modoLegenda })
+    const grupo = screen.getByRole('radiogroup', { name: enUS.criar.modoLegenda })
     expect(within(grupo).getByRole('radio', { name: enUS.criar.modoEstruturado })).toBeInTheDocument()
     await user.click(within(grupo).getByRole('radio', { name: enUS.criar.modoPromptAberto }))
 
