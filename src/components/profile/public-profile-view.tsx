@@ -13,10 +13,9 @@
  */
 import Link from 'next/link'
 import { safeHttpUrl } from '@/domain/links'
-import { classifySection } from '@/domain/recipe'
 import type { PublicProfile } from '@/domain/recipe-profile-read'
 import type { Messages } from '@/i18n/messages'
-import { ProvenanceBadge } from '@/components/recipe/provenance-badge'
+import { RecipeResultItem } from '@/components/recipe/recipe-result-item'
 import { Avatar } from '@/components/profile/avatar'
 
 export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: Messages }) {
@@ -85,32 +84,27 @@ export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: M
         </div>
       </header>
 
-      {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ grade de cards. */}
-      <section aria-labelledby="perfil-receitas" className="flex flex-col gap-4">
-        <h2 id="perfil-receitas" className="font-display text-xl font-semibold text-fg">
+      {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ LINHAS editoriais (mesmo item
+          da Busca/Feed — protótipo RefoStage). Sem byline (a autoria é o próprio dono da página). */}
+      <section aria-labelledby="perfil-receitas" className="flex flex-col gap-2">
+        <h2 id="perfil-receitas" className="font-display text-lg font-semibold tracking-tight text-fg">
           {mp.receitasTitulo}
         </h2>
         {profile.recipes.length === 0 ? (
           <p className="text-muted">{mp.semReceitas}</p>
         ) : (
-          <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-            {profile.recipes.map((r) => {
-              const section = classifySection(r.origin)
-              return (
-                <li
-                  key={r.recipeId}
-                  className="flex h-full flex-col gap-1.5 rounded-lg border border-border bg-surface p-4 shadow-sm transition-shadow duration-150 ease-out hover:shadow-md"
-                >
-                  <Link
-                    href={`/recipes/${r.recipeId}`}
-                    className="flex flex-col gap-2 rounded-sm focus-visible:outline-none"
-                  >
-                    <ProvenanceBadge variant={section} label={badgeLabels[section]} />
-                    <h3 className="font-display text-lg text-fg">{r.displayedTitle}</h3>
-                  </Link>
-                </li>
-              )
-            })}
+          <ul className="flex flex-col">
+            {profile.recipes.map((r) => (
+              <RecipeResultItem
+                key={r.recipeId}
+                recipeId={r.recipeId}
+                displayedTitle={r.displayedTitle}
+                origin={r.origin}
+                autoTranslationSignal={false}
+                badgeLabels={badgeLabels}
+                autoTranslationLabel={mb.traducaoAutomatica}
+              />
+            ))}
           </ul>
         )}
       </section>

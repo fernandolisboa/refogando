@@ -30,7 +30,7 @@ export default async function MyRecipesPage() {
   const m = MESSAGES[locale].minhasCriacoes
 
   return (
-    <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
+    <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
       <div className="flex flex-col gap-2">
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
           {m.titulo}
