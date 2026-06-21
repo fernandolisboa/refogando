@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { eq } from 'drizzle-orm'
+import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
-import { getDb } from '@/server/deps'
-import { recipe, recipeIngredient, recipeTranslation } from '@/db/schema'
+import { getDb, setEmbedder } from '@/server/deps'
+import { recipe, recipeIngredient, recipeTranslation, recipeEmbedding } from '@/db/schema'
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import { FakeEmbedder } from '@/server/embedding/embedder'
 import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import type { DerivedDiff } from '@/domain/recipe-diff'
@@ -442,5 +444,22 @@ describe('POST /api/recipes/[id]/derive — Receita DERIVADA (#17)', () => {
     expect(deriv.restricoes).toEqual(['vegano'])
     expect(deriv.derivedDiff?.restricoes.adicionadas).toEqual(['vegano'])
     expect(deriv.derivedDiff?.restricoes.removidas).toEqual(['sem_gluten'])
+  })
+
+  // (#119) a derivada ganha embedding na criação (best-effort) — antes a lane semântica morria p/ ela.
+  it('(#119) derivar ⇒ a derivada recebe embedding 1536-dim p/ a Busca semântica', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'derive-embed@ex.com' })
+    const baseId = await seedCatalogBase()
+    setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS))
+
+    const res = await derive(baseId, baseEdits, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+
+    const [emb] = await getDb()
+      .select({ dims: dsql`array_length(${recipeEmbedding.embedding}::real[], 1)`.mapWith(Number) })
+      .from(recipeEmbedding)
+      .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
+    expect(emb?.dims).toBe(EMBEDDING_DIMENSIONS)
   })
 })

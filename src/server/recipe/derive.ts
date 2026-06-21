@@ -7,6 +7,7 @@ import { decideDerivedDiff, type DiffLado } from '@/domain/recipe-diff'
 import { shouldSuggestNewImage, visualChangesFromDiff } from '@/domain/image-review'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { pgCode } from '@/server/recipe/visibility'
+import { embedTranslation } from '@/server/embedding/recompute'
 
 /**
  * Derivação de Receita NÃO-própria (issue #17) — o KEYSTONE de "Minhas criações".
@@ -137,7 +138,7 @@ export async function deriveRecipe(input: {
   }
 
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       // Pai primeiro (mirror de createCatalogRecipe). origin SÓ no INSERT (trigger P0001 só
       // dispara em UPDATE). resultKind HERDADO da base; playful ⇒ private satisfaz o CHECK.
       const [r] = await tx
@@ -231,6 +232,12 @@ export async function deriveRecipe(input: {
       })
       return { kind: 'ok' as const, recipeId: r.id, imageReviewSuggested }
     })
+
+    // #119: embeda a derivada (best-effort, ASSISTIVO) DEPOIS do commit — a tx não pode segurar a
+    // chamada de rede do embedder. Falha (sem key / 429 / rede) NÃO derruba o fork; a Busca degrada
+    // pra FTS+trigram. Embeda o originalLocale (a tradução-fonte do novo recipe).
+    await embedTranslation(db, result.recipeId, baseRecipe.originalLocale).catch(() => {})
+    return result
   } catch (e) {
     // Rede de segurança (defense-in-depth): o INSERT seta origin='user_edited' e o trigger
     // recipe_origin_immutable só dispara em UPDATE — um P0001 aqui seria bug INTERNO (nunca

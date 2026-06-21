@@ -1,18 +1,70 @@
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+
 /**
- * Seam ÚNICO e mockável para geração de embedding.
+ * Seam ÚNICO e mockável para geração de embedding (issues #14/#119).
  *
- * A camada semântica de verdade (pgvector, vetor por linha de tradução, versionamento
- * de modelo, re-embedding em `stale`) é da issue #14. Aqui só fixamos a interface
- * mockável, espelhando o seam do Claude.
+ * A camada semântica (pgvector, vetor por linha de tradução, versionamento de modelo, re-embedding
+ * em `stale`) é da #14. A impl REAL ficou pra cá (#119): Gemini `gemini-embedding-001` por REST PURO
+ * (sem SDK), espelhando o `ImageGenerator` (#132) — `fetch` direto no `:embedContent` com a key lida
+ * PREGUIÇOSAMENTE no uso (build/typecheck e os testes — que injetam `FakeEmbedder` — nunca a exigem).
  */
 export interface Embedder {
   embed(text: string): Promise<number[]>
 }
 
-/** Implementação real — stub até a #14 plugar o modelo de embedding multilíngue. */
+/**
+ * Modelo de embedding (gravado em `recipe_embedding.model`). Fonte ÚNICA aqui — `recompute.ts` o
+ * re-exporta (não pode importar daqui sem ciclo: embedder ← deps ← recompute). `gemini-embedding-001`
+ * (GA) suporta dimensão de saída flexível (MRL); pedimos `EMBEDDING_DIMENSIONS` (1536) p/ casar a
+ * coluna `vector(1536)` — 50% do armazenamento da default (3072) com o mesmo MTEB.
+ */
+export const EMBEDDING_MODEL = 'gemini-embedding-001'
+
+/** Forma mínima da resposta do `:embedContent` que consumimos (`embedding.values` = float[]). */
+type EmbedContentResponse = { embedding?: { values?: number[] } }
+
+/**
+ * Impl REAL — Gemini REST sem SDK (#119). POST em `:embedContent` com a key e `outputDimensionality`
+ * = 1536. Key exigida no USO (lazy): sem ela, lança ANTES de qualquer rede. Como o caminho de geração
+ * trata o embed como ASSISTIVO (best-effort, swallow), um erro aqui (sem key / 429 / rede) NÃO derruba
+ * a criação — só deixa a Receita sem vetor (a Busca degrada pra FTS+trigram). Este caminho NÃO é
+ * exercitado por teste (Fake); só roda ao vivo quando a key estiver no ambiente (gate humano).
+ *
+ * Distância da Busca é COSSENO (`<=>`), invariante a escala, então NÃO normalizamos o vetor (consistente
+ * com o `FakeEmbedder`, que também devolve cru). A mesma key do gerador de imagem serve (mesma API).
+ */
 export class RealEmbedder implements Embedder {
-  async embed(): Promise<number[]> {
-    throw new Error('RealEmbedder ainda não implementado — embedding real é da issue #14')
+  private requireKey(): string {
+    const key = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_AI_API_KEY
+    if (!key) {
+      throw new Error('GEMINI_API_KEY não definido (embedding real não configurado).')
+    }
+    return key
+  }
+
+  async embed(text: string): Promise<number[]> {
+    const key = this.requireKey()
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(EMBEDDING_MODEL)}:embedContent`
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        content: { parts: [{ text }] },
+        outputDimensionality: EMBEDDING_DIMENSIONS, // 1536 — casa a coluna vector(1536)
+      }),
+    })
+    if (!res.ok) {
+      // Corpo do erro do Gemini SERVER-ONLY (nunca volta ao cliente; o chamador é best-effort).
+      const detail = await res.text().catch(() => '')
+      throw new Error(`embedding falhou: HTTP ${res.status} ${detail.slice(0, 300)}`)
+    }
+    const body = (await res.json()) as EmbedContentResponse
+    const values = body.embedding?.values
+    if (!values || values.length === 0) {
+      throw new Error('resposta de embedding sem `embedding.values`')
+    }
+    return values
   }
 }
 

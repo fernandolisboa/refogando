@@ -1,14 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { eq } from 'drizzle-orm'
+import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
-import { getDb, setClaudeClient } from '@/server/deps'
+import { getDb, setClaudeClient, setEmbedder } from '@/server/deps'
 import type { ClaudeClient, ConversationStreamInput } from '@/server/claude/client'
 import { FakeClaudeClient } from '@/server/claude/client'
+import { FakeEmbedder } from '@/server/embedding/embedder'
 import type { GenerationOutput } from '@/domain/generation'
 import { POST } from '@/app/api/conversations/stream/route'
 import { persistGeneration } from '@/server/generation/persist'
-import { recipe, recipeTranslation, recipeIngredient, creationSession, generation, transcriptMessage, appConfig } from '@/db/schema'
+import { recipe, recipeTranslation, recipeIngredient, recipeEmbedding, creationSession, generation, transcriptMessage, appConfig } from '@/db/schema'
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
 import {
   cannedSuccess,
@@ -136,6 +138,36 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
       { role: 'user', content: 'arroz de forno com queijo', seq: 0 },
       { role: 'assistant', content: 'Vou pensar…', seq: 1 },
     ])
+  })
+
+  it('#119: a Receita destilada ganha embedding (best-effort) p/ a Busca semântica', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-embed@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens(['oi'])))
+    setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS)) // 1536 — casa vector(1536)
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+
+    const [emb] = await getDb()
+      .select({ dims: dsql`array_length(${recipeEmbedding.embedding}::real[], 1)`.mapWith(Number) })
+      .from(recipeEmbedding)
+      .where(and(eq(recipeEmbedding.recipeId, terminal.recipeId!), eq(recipeEmbedding.locale, 'pt-BR')))
+    expect(emb?.dims).toBe(EMBEDDING_DIMENSIONS)
+  })
+
+  it('#119: embedder INDISPONÍVEL na conversa NÃO derruba o turno (degrada — Receita persiste)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-embed-throw@gen.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens(['oi'])))
+    // Sem setEmbedder ⇒ RealEmbedder default LANÇA (sem key) — o embed best-effort engole.
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    const frames = await collectNdjson(res)
+    const terminal = frames[frames.length - 1]
+    expect(terminal.type).toBe('recipe') // o turno conclui mesmo sem embedding
+    if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
+    expect(terminal.recipeId).toBeTruthy()
+    expect((await counts()).recipe).toBe(1) // a Receita persiste
   })
 
   it('DEGRADED → {type:recipe,outcome:degraded}; result_kind degraded; advisory na generation', async () => {

@@ -559,6 +559,16 @@ export const ptBR = {
     aiTetoIlimitado: 'ilimitado',
     aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
     aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',
+    // Backfill dos embeddings da busca semântica (#119) — recompute em lote, retomável.
+    backfillTitulo: 'Embeddings da busca semântica',
+    backfillDescricao:
+      'Recomputa os vetores de busca das receitas que ainda não têm (criadas antes do recurso). Rode até "faltam: 0".',
+    backfillBtn: 'Recomputar embeddings',
+    backfillRodando: 'Recomputando…',
+    backfillResultado: 'Recomputados: {recomputados} · faltam: {restantes}.',
+    backfillResultadoParcial:
+      'Recomputados: {recomputados} · faltam: {restantes}. O serviço de embedding parou (sem chave ou limite). Rode de novo mais tarde.',
+    backfillErro: 'Não foi possível recomputar. Tente de novo.',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel. Confira o ID.',
     erroGenerico: 'Algo deu errado. Tente de novo.',

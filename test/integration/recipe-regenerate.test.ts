@@ -5,7 +5,7 @@ import { makeSql } from '@/db/client'
 import { getDb, setClaudeClient, setEmbedder } from '@/server/deps'
 import { FakeClaudeClient } from '@/server/claude/client'
 import type { ClaudeClient } from '@/server/claude/client'
-import type { Embedder } from '@/server/embedding/embedder'
+import { ThrowingEmbedder, type Embedder } from '@/server/embedding/embedder'
 import {
   recipe,
   creationSession,
@@ -210,6 +210,20 @@ describe('POST /api/recipes/[id]/regenerate — REGENERAÇÃO por linhagem (#20)
 
     // A predecessora fica INTACTA (imutável; regeneração nunca sobrescreve).
     expect(await readState(recipeId)).toEqual(before)
+  })
+
+  // (#119) o embed da NOVA Receita é best-effort: embedder indisponível NÃO derruba a regeneração.
+  it('(#119) embedder INDISPONÍVEL (Throwing) ⇒ regenerar ainda 201; a nova Receita persiste', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'regen-embed-throw@ex.com' })
+    const { recipeId } = await seedOwnAiRecipe({ ownerId: userId, mode: 'conversation', origin: 'ai_chat' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+    setEmbedder(new ThrowingEmbedder()) // sem key / 429 — antes do #119 isto 500-ava a regeneração
+
+    const res = await regenerate(recipeId, headers)
+    expect(res.status).toBe(201) // a regeneração NÃO falha por causa do embedder (best-effort)
+    const body = (await res.json()) as { recipeId: string }
+    expect(body.recipeId).not.toBe(recipeId)
+    expect((await readState(body.recipeId)).lineageKind).toBe('regenerated') // a nova Receita existe
   })
 
   // (b) a nova generation entra na MESMA creation_session (session count igual; generation +1).

@@ -517,6 +517,16 @@ export const enUS: Messages = {
     aiTetoIlimitado: 'unlimited',
     aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
     aiErroConfig: 'Invalid configuration. Review the caps and model.',
+    // Semantic-search embeddings backfill (#119) — batched, resumable recompute.
+    backfillTitulo: 'Semantic-search embeddings',
+    backfillDescricao:
+      "Recompute search vectors for recipes that don't have them yet (created before the feature). Run until \"remaining: 0\".",
+    backfillBtn: 'Recompute embeddings',
+    backfillRodando: 'Recomputing…',
+    backfillResultado: 'Recomputed: {recomputados} · remaining: {restantes}.',
+    backfillResultadoParcial:
+      'Recomputed: {recomputados} · remaining: {restantes}. The embedding service stopped (no key or rate limit). Run again later.',
+    backfillErro: 'Could not recompute. Try again.',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role. Check the ID.',
     erroGenerico: 'Something went wrong. Try again.',

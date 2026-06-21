@@ -87,7 +87,7 @@ describe('camada semântica #14 — migração + índice HNSW', () => {
       `
       await sql`
         INSERT INTO recipe_embedding (recipe_id, locale, embedding, model, stale)
-        VALUES (${rec.id}, 'pt-BR', ${lit(vecCos(c))}::vector, 'fake-deterministic', false)
+        VALUES (${rec.id}, 'pt-BR', ${lit(vecCos(c))}::vector, ${EMBEDDING_MODEL}, false)
       `
       ids.push(rec.id)
     }
