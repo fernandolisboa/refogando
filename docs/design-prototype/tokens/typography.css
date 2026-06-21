@@ -1,0 +1,46 @@
+/* ============================================================================
+   Refogando — Typography tokens
+   System stacks only (zero network fonts — safe in build/CI). The display
+   serif gives the editorial moment (wordmark, recipe title); the sans is the
+   system UI body.
+============================================================================ */
+
+:root {
+  /* Font stacks — NO @font-face, NO network fonts (hard product constraint). */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  /* Display serif — Palatino / Iowan Old Style family. Editorial, warm,
+     bookish; used for the wordmark and recipe titles. */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino,
+    "Book Antiqua", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* Type scale (rem) — modest, editorial. */
+  --text-xs: 0.75rem;    /* 12px — seals, meta, captions */
+  --text-sm: 0.875rem;   /* 14px — secondary, controls */
+  --text-base: 1rem;     /* 16px — body */
+  --text-lg: 1.125rem;   /* 18px — card title, lead */
+  --text-xl: 1.25rem;    /* 20px — section heading */
+  --text-2xl: 1.5rem;    /* 24px — page subhead / wordmark */
+  --text-3xl: 1.875rem;  /* 30px — page title */
+  --text-4xl: 2.25rem;   /* 36px — recipe hero */
+  --text-5xl: 3rem;      /* 48px — marketing display */
+
+  /* Line heights */
+  --leading-tight: 1.15;  /* display headings */
+  --leading-snug: 1.3;
+  --leading-normal: 1.55; /* body copy */
+
+  /* Weights — system fonts: 400 / 500 / 600 carry the whole system. */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Tracking */
+  --tracking-tight: -0.02em; /* display headings */
+  --tracking-normal: 0;
+
+  /* Measure — comfortable reading width for prose (steps, description). */
+  --measure: 68ch;
+}

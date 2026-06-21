@@ -36,9 +36,9 @@ import { SiteFooter } from '@/components/site-footer'
 /**
  * Seam de teste de FRONTEND (issue #54) — prova, acima da seam de servidor e sem
  * browser/Postgres, que: (1) a chrome renderiza no locale inicial; (2) trocar o seletor
- * de idioma (agora no footer) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
+ * de idioma (agora no header) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
  */
-describe('Shell — troca de locale (seletor no footer) cascateia na chrome', () => {
+describe('Shell — troca de locale (seletor no header) cascateia na chrome', () => {
   it('renderiza pt-BR e segue pro en-US ao trocar o seletor', async () => {
     const user = userEvent.setup()
     render(
@@ -57,7 +57,7 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
     expect(within(nav).getByText('Criar')).toBeInTheDocument()
     expect(within(nav).queryByText('Conversar')).not.toBeInTheDocument()
     expect(screen.getByText('Entrar')).toBeInTheDocument()
-    // O seletor de idioma agora vive no footer (único combobox da chrome).
+    // O seletor de idioma agora vive no header (único combobox da chrome).
     const select = screen.getByRole('combobox') as HTMLSelectElement
     expect(select.value).toBe('pt-BR')
 

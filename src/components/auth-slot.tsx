@@ -35,9 +35,11 @@ export function AuthSlot() {
   }
 
   // Anônimo (sem sessão) OU erro de leitura (fail-open): afordância de "Entrar".
+  // variant="secondary" (não primária): no header a única ação destacada é o pill "Criar"
+  // (protótipo). "Entrar" é silenciosa.
   if (error || !session) {
     return (
-      <Button asChild size="sm">
+      <Button asChild variant="secondary" size="sm">
         <Link href="/sign-in">{messages.nav.signIn}</Link>
       </Button>
     )
@@ -63,6 +65,7 @@ export function AuthSlot() {
       </Link>
       <Button
         type="button"
+        variant="ghost"
         size="sm"
         onClick={async () => {
           // try/finally: numa falha de transporte do signOut (offline) NÃO deixa promise

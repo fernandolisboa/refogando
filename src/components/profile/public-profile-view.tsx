@@ -35,10 +35,22 @@ export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: M
     youtube: m.perfil.linkTipoYoutube,
     site: m.perfil.linkTipoSite,
   }
+  // "valor" do link (protótipo "Tipo · valor"): URL sem protocolo/www/barra final.
+  const linkDisplay = (url: string) =>
+    url
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .replace(/\/+$/, '')
 
   return (
     <article className="flex flex-col gap-8">
-      <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+      {/* Voltar (protótipo): primeiro elemento, muted; href estável "/". */}
+      <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
+        ← {mp.voltar}
+      </Link>
+
+      {/* Header (protótipo): avatar + coluna com nome, @handle, bio e links juntos. */}
+      <header className="flex flex-col items-start gap-5 sm:flex-row">
         {/* Avatar reutilizável (#126): users.image (Vercel Blob ou Google OAuth); NULL ⇒ iniciais. */}
         <Avatar
           src={profile.image}
@@ -46,49 +58,48 @@ export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: M
           alt={mp.avatarAlt.replace('{name}', profile.name)}
           size="lg"
         />
-        <div className="flex flex-col gap-1">
-          <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
+        <div className="flex flex-1 flex-col gap-2">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">
             {profile.name}
           </h1>
           <p className="text-muted">@{profile.handle}</p>
+          {/* Bio — só quando presente (tela limpa). Medida ~52ch (protótipo). */}
+          {profile.bio && <p className="max-w-[52ch] text-pretty text-fg">{profile.bio}</p>}
+          {/* Links sociais "Tipo · valor" em tinta de marca (protótipo), sem sublinhado.
+              Só quando há ≥ 1 seguro; rel/target endurecidos. */}
+          {safeLinks.length > 0 && (
+            <nav aria-label={mp.linksLabel} className="mt-1 flex flex-wrap gap-4">
+              {safeLinks.map((l) => (
+                <a
+                  key={`${l.tipo}-${l.url}`}
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-brand-ink hover:underline"
+                >
+                  {linkTipoLabel[l.tipo] ?? l.tipo} · {linkDisplay(l.url)}
+                </a>
+              ))}
+            </nav>
+          )}
         </div>
       </header>
 
-      {/* Bio — só quando presente (tela limpa). Medida confortável de leitura. */}
-      {profile.bio && <p className="max-w-[68ch] text-pretty text-fg">{profile.bio}</p>}
-
-      {/* Links sociais — só quando há ≥ 1 seguro. Clicáveis com rel/target endurecidos. */}
-      {safeLinks.length > 0 && (
-        <nav aria-label={mp.linksLabel} className="flex flex-wrap gap-3">
-          {safeLinks.map((l) => (
-            <a
-              key={`${l.tipo}-${l.url}`}
-              href={l.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted underline hover:text-fg"
-            >
-              {linkTipoLabel[l.tipo] ?? l.tipo}
-            </a>
-          ))}
-        </nav>
-      )}
-
-      {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ grade de cards com byline. */}
-      <section aria-labelledby="perfil-receitas" className="flex flex-col gap-3">
-        <h2 id="perfil-receitas" className="font-display text-xl text-fg">
+      {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ grade de cards. */}
+      <section aria-labelledby="perfil-receitas" className="flex flex-col gap-4">
+        <h2 id="perfil-receitas" className="font-display text-xl font-semibold text-fg">
           {mp.receitasTitulo}
         </h2>
         {profile.recipes.length === 0 ? (
           <p className="text-muted">{mp.semReceitas}</p>
         ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
             {profile.recipes.map((r) => {
               const section = classifySection(r.origin)
               return (
                 <li
                   key={r.recipeId}
-                  className="flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-sm transition-shadow duration-150 ease-out hover:shadow-md"
+                  className="flex h-full flex-col gap-1.5 rounded-lg border border-border bg-surface p-4 shadow-sm transition-shadow duration-150 ease-out hover:shadow-md"
                 >
                   <Link
                     href={`/recipes/${r.recipeId}`}

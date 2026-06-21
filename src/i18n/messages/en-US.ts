@@ -78,7 +78,8 @@ export const enUS: Messages = {
     // {name} interpolated in the component via `.replace` (leaves of the type are string).
     porAutor: 'by {name}',
     // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
-    imagemSeloIa: '✨ AI-generated',
+    // No emoji (design rule: no emoji in the product).
+    imagemSeloIa: 'AI-generated',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -159,6 +160,8 @@ export const enUS: Messages = {
     restricoes: 'Restrictions',
     tags: 'Tags',
     avisoTitulo: 'Restriction notice',
+    // Back link at the top of the detail (#57) → "/" (home IS search).
+    voltarBusca: 'Back to search',
     // Recipe image management (#130) — owner block.
     imagemTitulo: 'Dish photo',
     imagemDescricao: 'Add a photo of your recipe. It shows on the detail page and in search.',
@@ -171,7 +174,7 @@ export const enUS: Messages = {
     imagemGrande: 'Image too large. Try a smaller one.',
     imagemErro: "We couldn't save the photo. Try again.",
     // AI generation (#132). {tempo} interpolated in the component via `.replace`.
-    imagemGerar: '✨ Generate with AI',
+    imagemGerar: 'Generate with AI',
     imagemGerarComPrompt: 'Generate with this prompt',
     imagemGerando: 'Generating…',
     imagemRefinar: 'Refine the prompt',
@@ -458,6 +461,8 @@ export const enUS: Messages = {
   // /me/profile). `receitasTitulo`/`semReceitas` label the recipes section.
   perfilPublico: {
     receitasTitulo: 'Recipes',
+    // Back link at the top of the public profile (#129) → "/".
+    voltar: 'Back',
     semReceitas: "This person hasn't published any recipes yet.",
     // Accessible avatar label (alt). {name} interpolated via `.replace` in the component.
     avatarAlt: 'Photo of {name}',

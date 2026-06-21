@@ -10,14 +10,17 @@
  * quando a nav crescer.
  */
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
 import { type Theme } from '@/lib/theme'
+import { cn } from '@/lib/utils'
 
 // `initialTheme` vem do SERVIDOR (cookie `theme`, lido em layout.tsx) e é threadado até o
 // ThemeToggle — SiteHeader é client, então a preferência não pode ser lida do cookie aqui sem
@@ -34,8 +37,26 @@ export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | nul
   const rawRole = (session.data?.user as { role?: string | null } | undefined)?.role
   const role = typeof rawRole === 'string' && isRole(rawRole) ? rawRole : null
   const showPainel = authed && decideRole(role, 'curador') === 'allow'
+  // Link de nav com estado ATIVO (protótipo Header.jsx): a rota atual ganha text-fg +
+  // aria-current="page"; inativos herdam o text-muted do <nav> e vão a text-fg no hover.
+  // `usePathname()` é null fora do contexto de router (ex.: seam jsdom) — null-safe.
+  const pathname = usePathname()
+  const navLink = (href: string, label: string) => {
+    const active =
+      pathname != null &&
+      (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`))
+    return (
+      <Link
+        href={href}
+        aria-current={active ? 'page' : undefined}
+        className={cn('transition-colors hover:text-fg', active && 'text-fg')}
+      >
+        {label}
+      </Link>
+    )
+  }
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur">
       <Container className="flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2">
         <Link
           href="/"
@@ -43,27 +64,15 @@ export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | nul
         >
           {messages.app.name}
         </Link>
-        <nav className="flex items-center gap-5 text-sm font-medium text-muted">
-          <Link href="/" className="transition-colors hover:text-fg">
-            {messages.nav.home}
-          </Link>
-          <Link href="/recipes" className="transition-colors hover:text-fg">
-            {messages.nav.recipes}
-          </Link>
+        <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted">
+          {navLink('/', messages.nav.home)}
+          {navLink('/recipes', messages.nav.recipes)}
           {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
               leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
-          {authed && (
-            <Link href="/me/recipes" className="transition-colors hover:text-fg">
-              {messages.minhasCriacoes.titulo}
-            </Link>
-          )}
+          {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo)}
           {/* "Painel" (Console) só para curador+, ANTES de "Criar". Esconder é afordância;
               o /admin revalida o papel server-side (gate de rota, não link). */}
-          {showPainel && (
-            <Link href="/admin" className="transition-colors hover:text-fg">
-              {messages.nav.painel}
-            </Link>
-          )}
+          {showPainel && navLink('/admin', messages.nav.painel)}
           <Link
             href="/create"
             className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
@@ -71,8 +80,11 @@ export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | nul
             {messages.nav.create}
           </Link>
         </nav>
+        {/* Cluster direito: tema, idioma (movido do footer pro header — paridade com o
+            protótipo) e auth por último (afordância mais à direita, como no protótipo). */}
         <div className="ml-auto flex items-center gap-3">
           <ThemeToggle initialTheme={initialTheme} />
+          <LocaleSwitcher />
           <AuthSlot />
         </div>
       </Container>

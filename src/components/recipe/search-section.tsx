@@ -38,11 +38,11 @@ export function SearchSection({
 }) {
   if (results.length === 0) return null
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h2 id={headingId} className="font-display text-xl text-fg">
+    <section aria-labelledby={headingId} className="flex flex-col gap-4">
+      <h2 id={headingId} className="font-display text-xl font-semibold text-fg">
         {heading}
       </h2>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
         {results.map((result) => (
           <RecipeResultItem
             key={result.recipeId}

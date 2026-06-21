@@ -7,15 +7,17 @@
  * par AA já verificado na #54, ADR-0004) — estrutura + skin Refogando, nenhuma cor nova.
  *
  * `role="note"` (não o default `role="alert"`): é leitura leve, não interrompe o leitor de
- * tela. O `title` segue como `aria-label` (rótulo), e a `mensagem` "declarado, não verificado"
- * vai na `AlertDescription`.
+ * tela. O `title` é o TÍTULO VISÍVEL (`AlertTitle`, protótipo) e a `mensagem` "declarado, não
+ * verificado" vai na `AlertDescription`. SEM `aria-label` (o título visível já nomeia a nota —
+ * aria-label duplicaria o nome acessível).
  */
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import type { AvisoView } from '@/domain/recipe-read'
 
 export function RestrictionWarning({ aviso, title }: { aviso: AvisoView; title: string }) {
   return (
-    <Alert variant="aviso" role="note" aria-label={title}>
+    <Alert variant="aviso" role="note">
+      <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{aviso.mensagem}</AlertDescription>
     </Alert>
   )

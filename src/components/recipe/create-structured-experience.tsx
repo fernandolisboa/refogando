@@ -668,8 +668,9 @@ export function CreateStructuredExperience() {
               ))}
             </ul>
             <div>
-              <Button type="button" variant="secondary" onClick={addItem}>
-                {m.adicionarIngrediente}
+              {/* Ghost sm com "+" (protótipo): afordância leve de adicionar linha. */}
+              <Button type="button" variant="ghost" size="sm" onClick={addItem}>
+                + {m.adicionarIngrediente}
               </Button>
             </div>
           </fieldset>
@@ -784,6 +785,7 @@ export function CreateStructuredExperience() {
           <div>
             <Button
               type="submit"
+              size="lg"
               aria-busy={status === 'loading'}
               disabled={
                 status === 'loading' ||

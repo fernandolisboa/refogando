@@ -8,12 +8,19 @@ import type { ComponentPropsWithoutRef, ElementType } from 'react'
  * Polimórfico via `as` pra preservar a semântica: páginas usam `as="main"` (um único
  * landmark <main> por documento), header/footer usam o <div> padrão. Sem hooks: serve
  * em server e client component.
+ *
+ * `size` escolhe a largura máxima: `page` (72rem, padrão — busca/feed/grades) ou `reading`
+ * (52rem — telas editoriais: detalhe da receita, criar, perfil). Seleciona UMA classe de
+ * max-width (NÃO confiar em tailwind-merge: ele não deduplica max-w-page vs max-w-reading,
+ * emitiria as duas e a ordem do CSS decidiria — frágil no Tailwind v4).
  */
 export function Container({
   as,
+  size = 'page',
   className = '',
   ...props
-}: { as?: ElementType } & ComponentPropsWithoutRef<'div'>) {
+}: { as?: ElementType; size?: 'page' | 'reading' } & ComponentPropsWithoutRef<'div'>) {
   const Comp = as ?? 'div'
-  return <Comp className={`mx-auto w-full max-w-page px-4 sm:px-6 ${className}`.trim()} {...props} />
+  const maxW = size === 'reading' ? 'max-w-reading' : 'max-w-page'
+  return <Comp className={`mx-auto w-full ${maxW} px-4 sm:px-6 ${className}`.trim()} {...props} />
 }
