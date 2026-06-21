@@ -3,20 +3,27 @@
  * Footer do shell (issue #54). Client component pra acompanhar o locale (app.name /
  * app.tagline) na troca em runtime (#4.AC1). Sem chamadas de dados (#4.AC4). Fica no
  * rodapé pelo wrapper flex-1 do layout (não precisa de mt-auto).
- * O seletor de idioma vive no HEADER (cluster direito) — paridade com o protótipo.
+ * O seletor de IDIOMA vive no HEADER (paridade com o protótipo); o ThemeToggle vive AQUI
+ * (o protótipo não tem toggle no header — deixa o header como [idioma, conta]). `initialTheme`
+ * é threadado do servidor (cookie `theme`, layout.tsx).
  */
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { type Theme } from '@/lib/theme'
 
-export function SiteFooter() {
+export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | null }) {
   const { messages } = useLocale()
   return (
     <footer className="border-t border-border">
-      <Container className="flex flex-col gap-1 py-8">
-        <span className="font-display text-lg font-semibold text-brand-ink">
-          {messages.app.name}
-        </span>
-        <span className="text-sm text-muted">{messages.app.tagline}</span>
+      <Container className="flex flex-col items-start gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <span className="font-display text-lg font-semibold text-brand-ink">
+            {messages.app.name}
+          </span>
+          <span className="text-sm text-muted">{messages.app.tagline}</span>
+        </div>
+        <ThemeToggle initialTheme={initialTheme} />
       </Container>
     </footer>
   )

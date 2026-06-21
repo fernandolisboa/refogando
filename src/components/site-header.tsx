@@ -15,17 +15,14 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
-import { ThemeToggle } from '@/components/theme-toggle'
 import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
-import { type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
-// `initialTheme` vem do SERVIDOR (cookie `theme`, lido em layout.tsx) e é threadado até o
-// ThemeToggle — SiteHeader é client, então a preferência não pode ser lida do cookie aqui sem
-// arriscar hydration mismatch. `null` = sem preferência (segue o SO).
-export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | null }) {
+// O cluster direito do header é só idioma + conta (paridade com o protótipo). O ThemeToggle
+// vive no footer (recebe `initialTheme` lá), então o header não precisa mais dessa preferência.
+export function SiteHeader() {
   const { messages } = useLocale()
   const session = useSession()
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
@@ -80,10 +77,9 @@ export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | nul
             {messages.nav.create}
           </Link>
         </nav>
-        {/* Cluster direito: tema, idioma (movido do footer pro header — paridade com o
-            protótipo) e auth por último (afordância mais à direita, como no protótipo). */}
+        {/* Cluster direito (paridade com o protótipo): só idioma + conta. O ThemeToggle foi
+            pro footer pra o header bater exatamente com o protótipo ([idioma, auth]). */}
         <div className="ml-auto flex items-center gap-3">
-          <ThemeToggle initialTheme={initialTheme} />
           <LocaleSwitcher />
           <AuthSlot />
         </div>

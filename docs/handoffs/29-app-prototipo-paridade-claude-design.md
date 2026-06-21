@@ -78,6 +78,22 @@ A revisão adversarial de 4 lentes pegou um **HIGH**: eu tinha adicionado `a { c
 - Disclosure/menu de nav no mobile (o comentário do header já antecipa "quando a nav crescer"; hoje resolvido com `flex-wrap`).
 - Menu de criação com "Criar receita" como h1 acima do toggle exigiria elevar o estado de resultado dos filhos pro pai (refator + reescrever testes) — só se a posição do título importar.
 
+## Rodada 2 — feedback "tem que aparecer EXATAMENTE igual"
+
+O usuário cobrou exatidão e não consegue abrir previews (sempre dá erro). Fechei mais deltas e fui honesto sobre os que conflitam com regras do próprio codebase:
+
+**Fechados (exatos agora):**
+- **ThemeToggle saiu do header pro footer** → o cluster direito do header ficou `[idioma, conta]`, igual ao protótipo (`Header.jsx`). `initialTheme` agora é threadado pro `SiteFooter` (layout.tsx). Dark mode continua (toggle no footer + @media do SO).
+- **Botões `ghost` agora usam `text-brand-ink`** (páprica), como o protótipo (`Button.jsx`). Afeta "+ Adicionar", "Sair" e o ícone do ThemeToggle. Test-safe (ui-button.test não fixava a cor do texto do ghost).
+
+**NÃO fechados — conflitam com regras testadas do codebase (decisão do usuário pra mudar):**
+- **Avatar verde (herb):** o mock do Claude Design usa iniciais verdes, MAS o codebase tem invariante TESTADA (`test/ui/ui-avatar.test.tsx`: "NUNCA bg-accent") de que o verde-erva é EXCLUSIVO do selo do Catálogo (ADR-0015/0018). Mantive o avatar NEUTRO (honra a regra testada). Pra ter avatar verde: mudar `ui/avatar.tsx` + `profile/avatar.tsx` + reescrever a asserção do teste + nota no ADR. **Aguarda OK do usuário** (raramente visível — quem tem foto não cai no fallback).
+- **Título do "Criar" acima do toggle:** o protótipo tem `[título][toggle][corpo]`. No app o título fica `[toggle][título][corpo]`. Pôr o título acima exige ou (a) elevar o título pro pai (quebra o seam de foco `headingRef` dos filhos + ~10 asserções de teste que renderizam os filhos isolados) ou (b) mover o toggle pra dentro dos filhos (quebra a persistência de foco do toggle ao trocar de modo). **Ambos são regressões reais de a11y de teclado** que o mock simplificado não tinha. Mantido `[toggle][título]`. A tela Criar carrega TODA a linguagem visual (serifa, chips, coluna 52rem, botão lg, ghost "+").
+
+**Diferenças que sobram = features REAIS que o mock simplificado não tem** (não são "layout antigo"): no header logado, avatar+nome+"Sair" (o mock tem só um "Você" ghost — mas precisamos de sign-out e do avatar #126); thumbnails/selo-IA + faceta Categoria + seção Sugestões na Busca; hero de imagem + tags + notas + controles do dono no Detalhe; smart-entry + força + toggle interno no Criar; link "Painel" (curador). Removê-las = apagar funcionalidade real.
+
+Screenshots atualizados (claro, com o header novo) em `docs/design-prototype/screenshots/` (home/recipe-detail/create/profile).
+
 ## Como fechar
 
 Branch `feat/app-prototype-parity` → PR. Squash-merge quando a CI ficar verde (padrão solo, sem gate de preview). Não há issue de tracker associada (é follow-up do ADR-0018, a partir do seu relato).
