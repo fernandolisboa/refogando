@@ -227,7 +227,10 @@ export async function regenerateRecipe(
   }
 
   // Wire a camada semântica da NOVA Receita (#14): re-embeda o locale original p/ entrar na Busca.
-  await embedTranslation(db, newRecipeId, result.recipe.originalLocale)
+  // #119: best-effort (ASSISTIVO) — agora que o embedder é REAL (rede), um erro (sem key / 429 / rede)
+  // NÃO pode derrubar a regeneração (a Receita já está persistida; a Busca degrada pra FTS+trigram).
+  // Espelha os caminhos de criação (generations/conversation/derive).
+  await embedTranslation(db, newRecipeId, result.recipe.originalLocale).catch(() => {})
 
   // #131: a nova versão herdou imagem? Compara o conjunto-de-ingredientes + título + cozinha da
   // predecessora contra a versão fresca; mudança VISUAL ⇒ sugere revisar a foto. Sem imagem

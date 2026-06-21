@@ -97,9 +97,11 @@ export async function recomputeMissingEmbeddings(
     try {
       const r = await embedTranslation(db, c.recipeId, c.locale)
       if (r.ok) recomputed++
-    } catch (e) {
+    } catch {
       // Embedder caiu (sem key / 429 / rede): para o lote e reporta — o progresso já feito persiste.
-      error = e instanceof Error ? e.message : 'erro_desconhecido'
+      // CÓDIGO estável, NÃO a mensagem crua: o corpo de erro do Gemini é SERVER-ONLY (espelha o
+      // contrato do RealEmbedder) — nunca volta ao cliente, nem ao admin. A UI mapeia o código.
+      error = 'embedder_indisponivel'
       break
     }
   }

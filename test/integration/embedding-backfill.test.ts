@@ -124,5 +124,13 @@ describe('POST /api/admin/embeddings/recompute — backfill (#119)', () => {
     expect(r.recomputed).toBe(1) // só `falta`
     expect(r.remaining).toBe(0)
     expect(await hasVector(falta)).toBe(true)
+
+    // E o vetor JÁ existente fica INTOCADO (não foi re-embedado): o 1º componente segue 0.1
+    // (o FakeEmbedder produziria outro valor — prova que o backfill não recomputou um válido).
+    const [e] = await getDb()
+      .select({ first: dsql`(${recipeEmbedding.embedding}::real[])[1]`.mapWith(Number) })
+      .from(recipeEmbedding)
+      .where(and(eq(recipeEmbedding.recipeId, jaTem), eq(recipeEmbedding.locale, 'pt-BR')))
+    expect(e.first).toBeCloseTo(0.1)
   })
 })
