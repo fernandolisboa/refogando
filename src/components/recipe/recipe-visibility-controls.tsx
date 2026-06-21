@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation'
 import type { ResultKind, Visibility } from '@/domain/recipe'
 import type { RecipeView } from '@/domain/recipe-read'
 import { useLocale } from '@/i18n/provider'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
 /** Chaves de erro tratadas no toggle — mapeadas para a mensagem localizada neutra. */
@@ -130,12 +131,11 @@ export function RecipeVisibilityControls({
       </div>
 
       {erroMensagem && (
-        <p
-          role="alert"
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
-        >
-          {erroMensagem}
-        </p>
+        <Alert variant="info" role="alert">
+          <AlertDescription className="font-medium text-foreground">
+            {erroMensagem}
+          </AlertDescription>
+        </Alert>
       )}
     </section>
   )

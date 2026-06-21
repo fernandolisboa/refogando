@@ -23,6 +23,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 
 export function RecipeEngagementControls({
@@ -197,20 +198,18 @@ export function RecipeEngagementControls({
       </div>
 
       {voteError && (
-        <p
-          role="alert"
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
-        >
-          {m.erroVoto}
-        </p>
+        <Alert variant="info" role="alert">
+          <AlertDescription className="font-medium text-foreground">
+            {m.erroVoto}
+          </AlertDescription>
+        </Alert>
       )}
       {favError && (
-        <p
-          role="alert"
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
-        >
-          {m.erroFavorito}
-        </p>
+        <Alert variant="info" role="alert">
+          <AlertDescription className="font-medium text-foreground">
+            {m.erroFavorito}
+          </AlertDescription>
+        </Alert>
       )}
     </section>
   )

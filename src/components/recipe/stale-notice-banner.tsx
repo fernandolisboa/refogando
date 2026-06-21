@@ -9,6 +9,7 @@
  * alerta de segurança — NÃO bloqueia a leitura. `role="note"`.
  */
 import Link from 'next/link'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import type { StaleNotice } from '@/domain/recipe-read'
 
@@ -20,11 +21,8 @@ export function StaleNoticeBanner({
   recipeId: string
 }) {
   return (
-    <div
-      role="note"
-      className="flex flex-col items-start gap-2 rounded-md border border-border bg-surface px-4 py-3"
-    >
-      <p className="text-sm text-muted">{notice.mensagem}</p>
+    <Alert variant="info" role="note" className="flex flex-col items-start gap-2">
+      <AlertDescription className="text-muted">{notice.mensagem}</AlertDescription>
       <Button asChild variant="secondary">
         <Link
           href={`/recipes/${recipeId}?locale=${encodeURIComponent(notice.originalLocale)}`}
@@ -32,6 +30,6 @@ export function StaleNoticeBanner({
           {notice.verOriginalLabel}
         </Link>
       </Button>
-    </div>
+    </Alert>
   )
 }

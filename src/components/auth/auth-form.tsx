@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -183,13 +184,11 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
         </div>
 
         {errorKey != null && (
-          <p
-            id="auth-error"
-            role="alert"
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
-          >
-            {messages.auth[errorKey]}
-          </p>
+          <Alert variant="info" role="alert" id="auth-error">
+            <AlertDescription className="font-medium text-foreground">
+              {messages.auth[errorKey]}
+            </AlertDescription>
+          </Alert>
         )}
 
         <Button type="submit" disabled={submitting} aria-busy={submitting}>

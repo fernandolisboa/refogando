@@ -24,7 +24,7 @@ const avatarVariants = cva(
 )
 
 const avatarFallbackVariants = cva(
-  'flex size-full items-center justify-center rounded-full bg-surface text-foreground font-display select-none',
+  'flex size-full items-center justify-center rounded-full bg-surface text-muted-foreground font-display select-none',
   {
     variants: { size: { sm: 'text-xs', default: 'text-sm', lg: 'text-2xl' } },
     defaultVariants: { size: 'default' },

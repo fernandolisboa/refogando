@@ -39,7 +39,7 @@ describe('ui/Avatar — primitiva shadcn pintada de Refogando', () => {
     expect(fb).toHaveAttribute('data-slot', 'avatar-fallback')
     // Skin Refogando: superfície de massa + serifa, e select-none.
     expect(fb.className).toContain('bg-surface')
-    expect(fb.className).toContain('text-foreground')
+    expect(fb.className).toContain('text-muted-foreground')
     expect(fb.className).toContain('font-display')
     expect(fb.className).toContain('select-none')
     // Invariante de colisão (ADR-0018): nada de bg-muted/bg-accent nus na primitiva.
