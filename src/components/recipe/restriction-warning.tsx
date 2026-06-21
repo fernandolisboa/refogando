@@ -3,20 +3,20 @@
  * `AvisoView` (a `mensagem` JÁ vem renderizada no locale pela rota) + `title` (rótulo de
  * a11y). Toque LEVE (CONTEXT.md): informa, NUNCA bloqueia/suprime/gateia a leitura.
  *
- * `role="note"` (não `role="alert"`): é leitura leve, não interrompe o leitor de tela.
- * Token ÂMBAR `bg-aviso-bg`/`text-aviso-fg` (par AA já verificado na #54, ADR-0004). A
- * borda usa o MESMO token âmbar com opacidade (decorativa) — nenhuma cor nova.
+ * Compõe a primitiva `Alert` (ADR-0018) na variante `aviso` (ÂMBAR `bg-aviso-bg`/`text-aviso-fg`,
+ * par AA já verificado na #54, ADR-0004) — estrutura + skin Refogando, nenhuma cor nova.
+ *
+ * `role="note"` (não o default `role="alert"`): é leitura leve, não interrompe o leitor de
+ * tela. O `title` segue como `aria-label` (rótulo), e a `mensagem` "declarado, não verificado"
+ * vai na `AlertDescription`.
  */
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { AvisoView } from '@/domain/recipe-read'
 
 export function RestrictionWarning({ aviso, title }: { aviso: AvisoView; title: string }) {
   return (
-    <div
-      role="note"
-      aria-label={title}
-      className="rounded-md border border-aviso-fg/30 bg-aviso-bg px-4 py-3 text-aviso-fg"
-    >
-      <p className="text-sm">{aviso.mensagem}</p>
-    </div>
+    <Alert variant="aviso" role="note" aria-label={title}>
+      <AlertDescription className="text-aviso-fg">{aviso.mensagem}</AlertDescription>
+    </Alert>
   )
 }

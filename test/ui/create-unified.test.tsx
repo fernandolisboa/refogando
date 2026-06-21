@@ -195,8 +195,8 @@ describe('Tela CRIAR unificada (#104)', () => {
 
     // O toggle externo existe e Formulário está ativo.
     const toggle = screen.getByRole('group', { name: C.seletorModo })
-    expect(within(toggle).getByRole('button', { name: C.modoFormulario })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(toggle).getByRole('radio', { name: C.modoFormulario })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
     // A UI estruturada (#58): o seu próprio toggle interno + o botão Gerar receita.
@@ -210,14 +210,14 @@ describe('Tela CRIAR unificada (#104)', () => {
     const user = userEvent.setup()
     renderCreate()
 
-    await user.click(screen.getByRole('button', { name: C.modoConversa }))
+    await user.click(screen.getByRole('radio', { name: C.modoConversa }))
 
     // A vista focada do chat: o input de mensagem aparece; a UI estruturada some.
     expect(screen.getByLabelText(V.inputLabel)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: C.gerar })).toBeNull()
     const toggle = screen.getByRole('group', { name: C.seletorModo })
-    expect(within(toggle).getByRole('button', { name: C.modoConversa })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(toggle).getByRole('radio', { name: C.modoConversa })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
   })
@@ -227,7 +227,7 @@ describe('Tela CRIAR unificada (#104)', () => {
     sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
     renderCreate()
 
-    await user.click(screen.getByRole('button', { name: C.modoConversa }))
+    await user.click(screen.getByRole('radio', { name: C.modoConversa }))
 
     expect(screen.getByText(V.precisaEntrar)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
@@ -241,8 +241,8 @@ describe('Tela CRIAR unificada (#104)', () => {
     expect(screen.getByLabelText(V.inputLabel)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: C.gerar })).toBeNull()
     const toggle = screen.getByRole('group', { name: C.seletorModo })
-    expect(within(toggle).getByRole('button', { name: C.modoConversa })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(toggle).getByRole('radio', { name: C.modoConversa })).toHaveAttribute(
+      'aria-checked',
       'true',
     )
   })

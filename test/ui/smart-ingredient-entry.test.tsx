@@ -127,7 +127,7 @@ describe('Entrada inteligente (#112)', () => {
     const user = userEvent.setup()
     renderCreate()
     const grupo = screen.getByRole('group', { name: M.modoLegenda })
-    await user.click(within(grupo).getByRole('button', { name: M.modoPromptAberto }))
+    await user.click(within(grupo).getByRole('radio', { name: M.modoPromptAberto }))
     expect(screen.queryByLabelText(M.entradaInteligente)).toBeNull()
     expect(screen.queryByRole('button', { name: M.estruturar })).toBeNull()
   })

@@ -9,7 +9,7 @@
 import { useEffect } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
-import { btnPrimary } from '@/components/button'
+import { Button } from '@/components/ui/button'
 
 export default function GlobalError({
   error,
@@ -26,9 +26,9 @@ export default function GlobalError({
   return (
     <Container as="main" className="flex flex-col items-start gap-5 py-24">
       <h1 className="font-display text-3xl font-semibold text-fg">{messages.system.error}</h1>
-      <button type="button" onClick={reset} className={btnPrimary}>
+      <Button type="button" onClick={reset}>
         {messages.system.retry}
-      </button>
+      </Button>
     </Container>
   )
 }

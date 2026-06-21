@@ -51,6 +51,13 @@ A #54 só tinha `@media (prefers-color-scheme: dark)` — escuro acompanhava o S
 
 As primitivas têm teste de componente no seam jsdom `test/ui/**` (ADR-0015): render + variantes + a11y básica (role/aria, foco/teclado nas que usam Radix). O seam **node** (domínio/integração, Postgres) não é tocado. Localmente roda-se o seam ui + typecheck + lint + `next build`; a suíte node completa fica para o CI (Postgres descartável flaka em concorrência — nota de ambiente).
 
+**Polyfills de jsdom (Radix).** O jsdom não tem `ResizeObserver` (usado pelo `react-use-size` do Radix em Checkbox/Select) nem `PointerCapture`/`scrollIntoView` (Select ao abrir) — sem eles, só renderizar uma primitiva Radix lança. `test/ui/setup.ts` os stuba por **atribuição direta no `globalThis`** (não `vi.stubGlobal`), porque vários testes chamam `vi.unstubAllGlobals()` no afterEach (limpam o mock de `fetch`) e isso derrubaria um stubGlobal.
+
+## Notas de implementação
+
+- **ToggleGroup `type="single"` = semântica de RADIO.** O Radix dá `role="radio"` + `aria-checked` aos itens do segmented control (sort, modo de criação) — **melhoria de a11y** sobre o `button` + `aria-pressed` à mão. Os testes que afirmavam `aria-pressed` foram traduzidos 1:1 para `aria-checked` (mesma cobertura de estado de seleção). O wrapper externo `role="group"` + `aria-labelledby` (rótulo visível) foi mantido. Cuidado de contrato encodado no wrapper `SortToggle`: single é DESmarcável (emite `""`) — o wrapper descarta o `""` pra continuar sempre-selecionado.
+- **Avatar — carve-out deliberado.** A primitiva `ui/avatar` (Radix) existe pra paridade com o design system, mas o avatar de **domínio** (`profile/avatar.tsx`, `<img>`-ou-iniciais trivial) **permanece à mão**: o load-gating do Radix Avatar (mostra a imagem só depois do `load`) não compensa aqui — adiciona flash de iniciais e atrito de teste no jsdom (a `<img>` nunca "carrega") sem ganho de UX. Decisão reversível; se o domínio precisar do load-state, troca-se pela primitiva com um shim de carregamento no setup.
+
 ## Consequências
 
 - Telas novas e refatoradas compõem `<Button>/<Input>/<Select>/<Badge>/<Alert>/<ToggleGroup>/<Avatar>/<Card>` em vez de strings de `className` — uma fonte por primitiva, a11y de referência (Radix), variantes tipadas (CVA).

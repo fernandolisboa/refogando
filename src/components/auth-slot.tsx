@@ -21,7 +21,7 @@
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession, signOut } from '@/lib/auth-client'
-import { btnPrimarySm } from '@/components/button'
+import { Button } from '@/components/ui/button'
 import { Avatar } from '@/components/profile/avatar'
 
 export function AuthSlot() {
@@ -37,9 +37,9 @@ export function AuthSlot() {
   // Anônimo (sem sessão) OU erro de leitura (fail-open): afordância de "Entrar".
   if (error || !session) {
     return (
-      <Link href="/sign-in" className={btnPrimarySm}>
-        {messages.nav.signIn}
-      </Link>
+      <Button asChild size="sm">
+        <Link href="/sign-in">{messages.nav.signIn}</Link>
+      </Button>
     )
   }
 
@@ -61,9 +61,9 @@ export function AuthSlot() {
         />
         <span className="max-w-[10rem] truncate text-sm text-muted">{nameOrEmail}</span>
       </Link>
-      <button
+      <Button
         type="button"
-        className={btnPrimarySm}
+        size="sm"
         onClick={async () => {
           // try/finally: numa falha de transporte do signOut (offline) NÃO deixa promise
           // rejeitada não-tratada no handler async e ainda re-busca a sessão pra a chrome
@@ -76,7 +76,7 @@ export function AuthSlot() {
         }}
       >
         {messages.nav.signOut}
-      </button>
+      </Button>
     </div>
   )
 }
