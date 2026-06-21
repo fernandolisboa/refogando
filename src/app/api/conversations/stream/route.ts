@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
 import { classify } from '@/domain/generation'
@@ -271,6 +272,12 @@ export async function POST(req: Request): Promise<Response> {
             model,
             existingSessionId: sessionId,
           })
+          // #119: embeda a Receita destilada (best-effort, ASSISTIVO) p/ a Busca semântica. Falha
+          // (sem key / 429 / rede) NÃO derruba o turno — a Receita já está persistida; a Busca degrada
+          // pra FTS+trigram. Await (não fire-and-forget): a function serverless pode encerrar no return.
+          if (p?.recipeId) {
+            await embedTranslation(getDb(), p.recipeId, result.recipe.originalLocale).catch(() => {})
+          }
           // Aviso pós-geração (#87/ADR-0004): só pós-geração (sem Briefing). Não-bloqueante.
           const postAvisos = decidePostGenerationRestrictionNotices({
             restricoes: result.recipe.restricoes,

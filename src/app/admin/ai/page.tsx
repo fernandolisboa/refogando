@@ -5,13 +5,18 @@
  */
 import { SectionGate } from '../gate'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 
 export const runtime = 'nodejs'
 
 export default async function AdminAiPage() {
   return (
     <SectionGate min="admin">
-      <AiConfigSection />
+      <div className="flex flex-col gap-10">
+        <AiConfigSection />
+        {/* #119: backfill dos embeddings da busca semântica (recompute em lote, admin-only). */}
+        <EmbeddingBackfill />
+      </div>
     </SectionGate>
   )
 }

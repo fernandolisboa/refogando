@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipeTranslation, recipeEmbedding } from '@/db/schema'
 import { getEmbedder } from '@/server/deps'
@@ -11,9 +11,10 @@ import { getEmbedder } from '@/server/deps'
  * ADR-0011; a Busca nunca recomputa on-read — colidiria com a degradação).
  */
 
-/** Modelo gravado em `recipe_embedding.model` (AC6). Constante por ora; o cliente real
- * troca por ex. `text-embedding-3-small` numa PR separada. */
-export const EMBEDDING_MODEL = 'fake-deterministic'
+// Modelo gravado em `recipe_embedding.model` (AC6) — fonte única no SEAM (`embedder.ts`); re-exportado
+// aqui pelos consumidores históricos. #119 plugou o Gemini real (`gemini-embedding-001`).
+export { EMBEDDING_MODEL } from '@/server/embedding/embedder'
+import { EMBEDDING_MODEL } from '@/server/embedding/embedder'
 
 /**
  * Recompute de UMA linha de embedding `(recipe_id, locale)`. Lê a Tradução corrente,
@@ -50,4 +51,70 @@ export async function embedTranslation(
       set: { embedding: vector, model: EMBEDDING_MODEL, stale: false },
     })
   return { ok: true }
+}
+
+/**
+ * Predicado "esta Tradução PRECISA de embedding" (#119): não há linha `recipe_embedding` para
+ * `(recipe_id, locale)`, OU há mas com vetor NULL (dormente), OU está `stale` (conteúdo mudou). É a
+ * fonte tanto dos CANDIDATOS do backfill quanto da contagem de RESTANTES — definido uma vez. Usa o
+ * LEFT JOIN externo `recipe_embedding`, então `isNull(recipeEmbedding.recipeId)` casa o "sem linha".
+ */
+const NEEDS_EMBEDDING = or(
+  isNull(recipeEmbedding.recipeId),
+  isNull(recipeEmbedding.embedding),
+  eq(recipeEmbedding.stale, true),
+)
+
+/**
+ * BACKFILL (#119) — recomputa, em LOTE CAPADO, as Traduções sem embedding válido. Para receitas que
+ * nasceram antes do pipeline de embedding-na-criação (ou cujo embed best-effort falhou). Processa
+ * sequencialmente; PARA no 1º erro do embedder (ex. 429) devolvendo o que já fez + a causa, pra o
+ * admin retomar depois sem perder progresso (cada embed é um upsert idempotente). Devolve também
+ * quantos AINDA faltam (após o lote) — o admin chama de novo até `remaining === 0`.
+ *
+ * Capado de propósito (serverless tem teto de tempo): o route limita `limit` a uma faixa segura.
+ */
+export async function recomputeMissingEmbeddings(
+  db: Database,
+  limit: number,
+): Promise<{ recomputed: number; remaining: number; error?: string }> {
+  const candidates = await db
+    .select({ recipeId: recipeTranslation.recipeId, locale: recipeTranslation.locale })
+    .from(recipeTranslation)
+    .leftJoin(
+      recipeEmbedding,
+      and(
+        eq(recipeEmbedding.recipeId, recipeTranslation.recipeId),
+        eq(recipeEmbedding.locale, recipeTranslation.locale),
+      ),
+    )
+    .where(NEEDS_EMBEDDING)
+    .limit(limit)
+
+  let recomputed = 0
+  let error: string | undefined
+  for (const c of candidates) {
+    try {
+      const r = await embedTranslation(db, c.recipeId, c.locale)
+      if (r.ok) recomputed++
+    } catch (e) {
+      // Embedder caiu (sem key / 429 / rede): para o lote e reporta — o progresso já feito persiste.
+      error = e instanceof Error ? e.message : 'erro_desconhecido'
+      break
+    }
+  }
+
+  const [rem] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(recipeTranslation)
+    .leftJoin(
+      recipeEmbedding,
+      and(
+        eq(recipeEmbedding.recipeId, recipeTranslation.recipeId),
+        eq(recipeEmbedding.locale, recipeTranslation.locale),
+      ),
+    )
+    .where(NEEDS_EMBEDDING)
+
+  return { recomputed, remaining: rem?.n ?? 0, ...(error ? { error } : {}) }
 }

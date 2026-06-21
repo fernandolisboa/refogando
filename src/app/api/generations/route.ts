@@ -1,6 +1,7 @@
 import { inArray } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
@@ -217,6 +218,13 @@ export async function POST(req: Request): Promise<Response> {
     briefing: persistBriefing,
     freeText,
   })
+
+  // #119: embeda a Receita recém-criada (best-effort, ASSISTIVO) p/ a Busca semântica achá-la pelo
+  // SIGNIFICADO. Falha (sem key / 429 / rede) NÃO derruba a criação — a Receita já está persistida; a
+  // Busca apenas degrada pra FTS+trigram (mesmo comportamento de hoje). Espelha ensureTranslation.
+  if (p?.recipeId) {
+    await embedTranslation(getDb(), p.recipeId, result.recipe.originalLocale).catch(() => {})
+  }
 
   // Aviso INLINE, não-bloqueante (#7/#87), SÓ no 201 com Receita entregue (§4.4). A
   // Receita persiste independentemente. Anexa `avisos` SÓ quando há contradição (ausente ≠
