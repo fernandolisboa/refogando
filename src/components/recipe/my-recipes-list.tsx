@@ -19,14 +19,11 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
+import { Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 
 type Status = 'loading' | 'idle' | 'error'
-
-/** Selo NEUTRO de estado (espelha o CHIP_BASE do detail-view, sempre rounded-full). */
-const SELO =
-  'inline-flex items-center rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted'
 
 export function MyRecipesList() {
   const { locale, messages } = useLocale()
@@ -115,26 +112,54 @@ export function MyRecipesList() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Lista — FORA da live region. */}
+      {/* Grade de CARDS (protótipo RefoStage "Minhas criações") — FORA da live region.
+          Cada card: área de imagem (placeholder até a foto chegar via DTO), selos de estado
+          (Pública/Privada/Derivada/Regenerada…) e título. Fecha com o card tracejado "começar
+          outra". 1 coluna no mobile, 2 no desktop. */}
       {items.length > 0 && (
-        <ul className="flex flex-col gap-4">
-          {items.map((item) => (
-            <li key={item.id}>
-              <Link
-                href={`/recipes/${item.id}`}
-                className="flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
-              >
-                <span className="font-display text-lg text-fg">{item.name}</span>
-                <span className="flex flex-wrap gap-2">
-                  {selos(item).map((s) => (
-                    <span key={s} className={SELO}>
-                      {s}
-                    </span>
-                  ))}
-                </span>
-              </Link>
-            </li>
-          ))}
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {items.map((item) => {
+            const badges = selos(item)
+            return (
+              <li key={item.id}>
+                <Link
+                  href={`/recipes/${item.id}`}
+                  className="flex h-full flex-col rounded-xl border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
+                >
+                  <div className="mb-3 flex aspect-video items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
+                    <ImageIcon className="size-6" strokeWidth={1.5} aria-hidden />
+                  </div>
+                  {badges.length > 0 && (
+                    <div className="mb-2.5 flex flex-wrap gap-1.5">
+                      {badges.map((s) => (
+                        <span
+                          key={s}
+                          className="inline-flex items-center rounded-full border border-border bg-bg px-2.5 py-0.5 text-xs font-semibold text-fg"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <span className="font-display text-lg font-semibold leading-snug text-fg">
+                    {item.name}
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+          {/* Card tracejado "começar outra" (protótipo) — atalho pro /create. */}
+          <li>
+            <Link
+              href="/create"
+              className="flex h-full flex-col items-start justify-center gap-2.5 rounded-xl border border-dashed border-border p-4"
+            >
+              <span className="text-sm text-muted">{m.comecarOutra}</span>
+              <span className="inline-flex items-center rounded-full border border-brand px-3.5 py-1.5 text-sm font-semibold text-brand-ink">
+                {m.criarReceita}
+              </span>
+            </Link>
+          </li>
         </ul>
       )}
 

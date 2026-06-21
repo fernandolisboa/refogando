@@ -78,8 +78,8 @@ export const enUS: Messages = {
     // {name} interpolated in the component via `.replace` (leaves of the type are string).
     porAutor: 'by {name}',
     // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
-    // No emoji (design rule: no emoji in the product).
-    imagemSeloIa: 'AI-generated',
+    // The Claude Design prototype uses ✨ on this seal (RefoStage "Minhas criações"/Search).
+    imagemSeloIa: '✨ AI-generated',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -174,7 +174,7 @@ export const enUS: Messages = {
     imagemGrande: 'Image too large. Try a smaller one.',
     imagemErro: "We couldn't save the photo. Try again.",
     // AI generation (#132). {tempo} interpolated in the component via `.replace`.
-    imagemGerar: 'Generate with AI',
+    imagemGerar: '✨ Generate with AI',
     imagemGerarComPrompt: 'Generate with this prompt',
     imagemGerando: 'Generating…',
     imagemRefinar: 'Refine the prompt',
@@ -393,6 +393,9 @@ export const enUS: Messages = {
     subtitulo: 'Everything you’ve created, newest first.',
     vazio: "You haven't created any recipes yet.",
     criarPrimeira: 'Create my first recipe',
+    // Dashed "start another" card in the grid (RefoStage "Minhas criações" prototype).
+    comecarOutra: 'Want to start another?',
+    criarReceita: 'Create recipe',
     precisaEntrar: 'Sign in to see your creations.',
     erro: "We couldn't load your creations. Try again.",
     semTitulo: 'Untitled recipe',

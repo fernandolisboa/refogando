@@ -145,11 +145,11 @@ describe('SearchExperience (#56)', () => {
     expect(headings[0]).toBe(catalogoHeading)
     expect(headings[1]).toBe(comunidadeHeading)
 
-    // Item de catalog: selo "Do catálogo" PRESENTE, com classe de accent.
+    // Item de catalog: kicker "Do catálogo" PRESENTE, em erva (text-accent-strong). A lista
+    // usa kicker de TEXTO (protótipo RefoStage), não a pílula — a erva segue exclusiva do catálogo.
     const feijoadaItem = screen.getByText('Feijoada').closest('li')!
     const catalogBadge = within(feijoadaItem).getByText(M.seloCatalogo)
     expect(catalogBadge).toBeInTheDocument()
-    expect(catalogBadge).toHaveClass('bg-accent-surface')
     expect(catalogBadge).toHaveClass('text-accent-strong')
 
     // Item de comunidade: selo "Da comunidade" PRESENTE (assertion positiva); SEM accent.

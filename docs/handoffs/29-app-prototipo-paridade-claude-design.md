@@ -94,6 +94,26 @@ O usuário cobrou exatidão e não consegue abrir previews (sempre dá erro). Fe
 
 Screenshots atualizados (claro, com o header novo) em `docs/design-prototype/screenshots/` (home/recipe-detail/create/profile).
 
+## Rodada 3 — CAUSA-RAIZ achada: eu usei o arquivo ERRADO
+
+O usuário mandou um print da tela "Minhas criações" do Claude Design (grid de cards) vs o app (lista crua) — completamente diferentes. **Causa-raiz:** eu tinha espelhado os `ui_kits/refogando-app/*.jsx` do DESIGN SYSTEM (`b03ee466`) — uma recriação SIMPLIFICADA — em vez do arquivo que o usuário apontou na URL: **`Refogando - Protótipo.dc.html`** (projeto `a660ed26`), cujo VIEW real é **`RefoStage.dc.html`**. O protótipo real tem **5 telas** (home, detail, create, profile, **mine**) e é bem mais rico. Eu tinha pulado a tela `mine` inteira e errado o layout de várias.
+
+Puxei o `RefoStage.dc.html` (a fonte certa) e refiz contra ele:
+- **"Minhas criações" → GRID DE CARDS** (`my-recipes-list.tsx`): cada card com área de imagem (placeholder por ora), selos (Pública/Privada/Derivada/Regenerada), título; + card tracejado "Quer começar outra? / Criar receita". Era exatamente o print do usuário.
+- **Home/Busca → LINHAS editoriais** (`recipe-result-item.tsx` virou LINHA: kicker de proveniência + título grande + byline à esquerda, thumbnail à direita com selo ✨ IA) + **busca EDITORIAL sublinhada** (input serifado, ícone de lupa, borda inferior; sem botão "Buscar" — busca ao vivo) + seções em LISTA (`search-section.tsx`) + coluna estreita (`size="reading"`).
+- **Perfil → LINHAS** (reusa `RecipeResultItem`).
+- **✨ RESTAURADO** nos selos de IA (`imagemSeloIa`/`imagemGerar`) — o protótipo USA o emoji (eu tinha removido errado seguindo a regra "no emoji" do README; o design do usuário vence).
+
+Verificado: typecheck/lint/build + **353/353** testes de UI; Home e Perfil conferidos por Playwright (claro). "Minhas criações" é code-verified — está atrás de login e meu browser de teste é anônimo; **confira logado**.
+
+**LIÇÃO:** a fonte da verdade é o `.dc.html` que o usuário aponta na URL (`a660ed26`/`RefoStage.dc.html`), NÃO o `ui_kits` do design system. Espelho real agora deveria substituir `docs/design-prototype/` (o atual é o ui_kit simplificado).
+
+**Follow-ups (pendentes):**
+- Thumbnails REAIS + meta (cozinha · categoria · votos / "Sua versão de X") nos cards de "Minhas criações" e nas linhas do Perfil — exigem estender os DTOs/loaders (`list-mine.ts`, `recipe-profile-read`) com `imageUrl`/`imageAiGenerated` (o de Busca já tem). Por ora: placeholder.
+- Subtítulos de seção na Busca ("curadas"/"publicadas por pessoas") — `SearchSection` já aceita `sub`, falta passar do `search-experience` (+ chaves i18n).
+- Header: o protótipo real tem `[wordmark][Início/Receitas/Minhas criações][Criar][avatar]` — sem seletor de idioma nem tema no header. Hoje o header tem o seletor de idioma. Decidir onde idioma/tema/sign-out moram (necessidades reais ausentes do mock).
+- Detail/Create: já têm a linguagem visual; refinar contra o RefoStage (vote "Votar · N", toggle do create na mesma linha do h1) se quiser exatidão total.
+
 ## Como fechar
 
 Branch `feat/app-prototype-parity` → PR. Squash-merge quando a CI ficar verde (padrão solo, sem gate de preview). Não há issue de tracker associada (é follow-up do ADR-0018, a partir do seu relato).

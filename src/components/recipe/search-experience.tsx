@@ -16,8 +16,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
+import { Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
@@ -159,31 +159,33 @@ export function SearchExperience() {
   const isEmpty = status === 'done' && data !== null && !hasResults
 
   return (
-    <Container as="main" className="flex flex-col gap-8 py-8 sm:py-12">
+    <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
       <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
         {m.titulo}
       </h1>
 
+      {/* Busca EDITORIAL (protótipo RefoStage): input serifado sem moldura, com ícone de lupa
+          e uma borda inferior grossa. Busca ao vivo (debounce no efeito); Enter também dispara. */}
       <form
         role="search"
-        className="flex flex-wrap items-center gap-3"
+        className="flex items-center gap-2.5 border-b-2 border-fg pb-2.5"
         onSubmit={(e) => {
           e.preventDefault()
           void doSearch()
         }}
       >
+        <Search className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
         <label htmlFor="search-q" className="sr-only">
           {m.titulo}
         </label>
-        <Input
+        <input
           id="search-q"
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={m.placeholder}
-          className="min-w-0 flex-1"
+          className="w-full border-none bg-transparent font-display text-lg text-fg outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none"
         />
-        <Button type="submit">{m.buscar}</Button>
       </form>
 
       <div className="flex flex-col gap-4">

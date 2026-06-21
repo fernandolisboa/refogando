@@ -15,6 +15,7 @@ import type { SearchResult } from '@/domain/recipe-search-read'
 export function SearchSection({
   headingId,
   heading,
+  sub,
   badgeLabels,
   ownLabel,
   autoTranslationLabel,
@@ -24,6 +25,8 @@ export function SearchSection({
 }: {
   headingId: string
   heading: string
+  /** Subtítulo discreto ao lado do heading (protótipo: "curadas"/"publicadas por pessoas"…). */
+  sub?: string
   /** Rótulos de selo por seção, localizados (cada item escolhe pelo seu origin). */
   badgeLabels: BadgeLabels
   /** #116/own-label: rótulo do selo "Sua receita", localizado. Cada item próprio (`result.isOwn`)
@@ -38,11 +41,14 @@ export function SearchSection({
 }) {
   if (results.length === 0) return null
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-4">
-      <h2 id={headingId} className="font-display text-xl font-semibold text-fg">
-        {heading}
-      </h2>
-      <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+    <section aria-labelledby={headingId} className="flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <h2 id={headingId} className="font-display text-lg font-semibold tracking-tight text-fg">
+          {heading}
+        </h2>
+        {sub && <span className="text-xs text-muted">{sub}</span>}
+      </div>
+      <ul className="flex flex-col">
         {results.map((result) => (
           <RecipeResultItem
             key={result.recipeId}
