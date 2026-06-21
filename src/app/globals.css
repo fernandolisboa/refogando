@@ -1,7 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /**
- * Fundação de design do Refogando (issue #54) — fonte ÚNICA de verdade dos tokens.
+ * Fundação de design do Refogando (issue #54, ADR-0015) — fonte ÚNICA de verdade dos tokens.
  *
  * Tailwind v4 CSS-first: o bloco `@theme` define os tokens E gera as utilities
  * correspondentes (--color-brand → bg-brand/text-brand/border-brand/ring-brand…).
@@ -13,7 +14,30 @@
  * corpo, ≥3:1 grande/UI) — verificados por cálculo de contraste OKLCH→sRGB. Cores em
  * OKLCH (uniformidade perceptual). Dark mode sobrescreve as custom properties num
  * @media (o @theme emite vars estáticas em :root; o dark NÃO cabe dentro do @theme).
+ *
+ * ADR-0018 adiciona, de forma ADITIVA (zero regressão nos utilitários --color-* atuais):
+ *   (a) a camada de alias do shadcn (`@theme inline`: --color-primary/-card/-muted-foreground/
+ *       -destructive… → mesmos tokens quentes), pra as primitivas em src/components/ui/*;
+ *   (b) classes .dark/.light pro toggle manual de tema, além da @media do SO;
+ *   (c) @font-face local()-only do serif (zero rede), ligando a família ao arquivo instalado.
  */
+
+/* @font-face local()-only: liga o serif de display ao que o usuário já tem instalado —
+   NENHUM url(), nada baixado. Se a fonte não existir, a regra não casa e o stack
+   --font-display cai pro próximo serif de sistema (comportamento de hoje). */
+@font-face {
+  font-family: "Iowan Old Style";
+  src: local("Iowan Old Style");
+  font-weight: 400 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Palatino Linotype";
+  src: local("Palatino Linotype"), local("Palatino");
+  font-weight: 400 700;
+  font-style: normal;
+}
+
 @theme {
   /* Tipografia — stacks de sistema (zero rede, seguro no build/CI); display serifado
      dá o momento editorial (wordmark, título de Receita). */
@@ -21,6 +45,8 @@
     "Helvetica Neue", Arial, sans-serif;
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
     Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
 
   /* Cor — modo claro (creme/massa morno; terracota; erva). */
   --color-bg: oklch(0.985 0.008 85); /* creme — canvas */
@@ -48,6 +74,7 @@
   /* Elevação — sombra baixa, tingida de marrom morno (não preto puro). */
   --shadow-sm: 0 1px 2px rgb(56 40 24 / 0.08), 0 1px 1px rgb(56 40 24 / 0.05);
   --shadow-md: 0 4px 14px rgb(56 40 24 / 0.1), 0 2px 4px rgb(56 40 24 / 0.06);
+  --shadow-lg: 0 10px 30px rgb(56 40 24 / 0.12), 0 4px 8px rgb(56 40 24 / 0.07);
 
   /* Layout — namespace --container-* gera as utilities max-w-page/w-page. */
   --container-page: 72rem;
@@ -56,10 +83,49 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Dark mode — sobrescreve as custom properties (mecanismo correto pro Tailwind v4,
-   já que o @theme as emite estáticas). Todos os pares re-verificados em AA. */
+/**
+ * ADR-0018 — camada de alias do shadcn/ui, ADITIVA. `inline` faz a utility resolver
+ * direto na var base (var(--color-bg) etc.), que é sobrescrita no dark — então
+ * bg-primary/text-muted-foreground/bg-destructive herdam o dark automaticamente, sem `dark:`.
+ *
+ * COLISÕES deixadas DE FORA de propósito (mantêm o significado do codebase):
+ *   - `muted`  : --color-muted segue = TEXTO secundário (text-muted, ~119 usos). Só
+ *                expomos --color-muted-foreground (mesmo café) pras primitivas.
+ *   - `accent` : --color-accent segue = ERVA do selo do Catálogo (ADR-0015). As primitivas
+ *                NÃO usam bg-accent/bg-muted nus; o realce/hover usa a lavagem de páprica
+ *                bg-brand/10 (ghost, item de Select), preservando a erva exclusiva do selo.
+ */
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-fg);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-fg);
+  --color-primary: var(--color-brand-strong);
+  --color-primary-foreground: var(--color-on-brand);
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-fg);
+  --color-muted-foreground: var(--color-muted);
+  --color-destructive: var(--color-aviso-fg);
+  --color-destructive-foreground: var(--color-on-brand);
+  --color-input: var(--color-border);
+  --radius: var(--radius-md); /* base do shadcn (rounded-md por padrão) */
+}
+
+/* Variante de classe pro dark (toggle manual), além da @media. Primitivas são
+   token-driven (sem `dark:`); esta variante é rede de segurança para casos pontuais. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/**
+ * Dark mode — mesmos pares re-verificados em AA. Mecânica do toggle (ADR-0018):
+ *   - cookie ausente  → o SO decide via @media (sem flash, CSS puro);
+ *   - `.light` no <html> (usuário forçou claro) → suprime a @media (`:root:not(.light)`),
+ *      :root mantém os valores claros do @theme — não precisa redeclarar o claro;
+ *   - `.dark` no <html> (usuário forçou escuro) → aplica os valores escuros sempre.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --color-bg: oklch(0.205 0.018 55);
     --color-surface: oklch(0.255 0.02 55);
     --color-fg: oklch(0.93 0.012 85);
@@ -68,7 +134,7 @@
     --color-brand: oklch(0.78 0.13 45); /* links/decorativo no escuro */
     --color-brand-strong: oklch(0.515 0.155 38); /* botão — branco em cima, igual */
     --color-on-brand: oklch(1 0 0);
-    --color-brand-ink: oklch(0.78 0.13 45); /* texto de marca no escuro = 8.61:1 (era 2.97 quando reusava brand-strong) */
+    --color-brand-ink: oklch(0.78 0.13 45); /* texto de marca no escuro = 8.61:1 */
     --color-accent: oklch(0.74 0.12 150);
     --color-accent-strong: oklch(0.74 0.12 150);
     --color-accent-surface: oklch(0.3 0.05 150);
@@ -76,6 +142,23 @@
     --color-aviso-bg: oklch(0.3 0.06 75);
     --color-ring: oklch(0.78 0.13 45);
   }
+}
+.dark {
+  --color-bg: oklch(0.205 0.018 55);
+  --color-surface: oklch(0.255 0.02 55);
+  --color-fg: oklch(0.93 0.012 85);
+  --color-muted: oklch(0.74 0.02 82);
+  --color-border: oklch(0.34 0.02 55);
+  --color-brand: oklch(0.78 0.13 45);
+  --color-brand-strong: oklch(0.515 0.155 38);
+  --color-on-brand: oklch(1 0 0);
+  --color-brand-ink: oklch(0.78 0.13 45);
+  --color-accent: oklch(0.74 0.12 150);
+  --color-accent-strong: oklch(0.74 0.12 150);
+  --color-accent-surface: oklch(0.3 0.05 150);
+  --color-aviso-fg: oklch(0.86 0.1 80);
+  --color-aviso-bg: oklch(0.3 0.06 75);
+  --color-ring: oklch(0.78 0.13 45);
 }
 
 @layer base {

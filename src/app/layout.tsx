@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { resolveLocale } from '@/i18n/locale'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
+import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
 
 export const metadata: Metadata = {
   title: 'Refogando',
@@ -24,11 +25,18 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     preferred: cookieStore.get(LOCALE_COOKIE)?.value ?? null,
     acceptLanguage: headerStore.get('accept-language'),
   })
+  // Tema do mesmo cookieStore (ADR-0018): cookie ausente → classe vazia (o SO decide via
+  // @media do globals.css); 'dark'/'light' → a classe vence a @media. SSR sem flash, igual
+  // ao locale. O ThemeToggle no header recebe `initialTheme` do mesmo cookie.
+  const themeClass = resolveThemeClass(cookieStore.get(THEME_COOKIE)?.value)
+  // `initialTheme` para o toggle (client): 'light'/'dark' explícito ou null (segue o SO).
+  // SiteHeader é client, então a preferência é threadada do servidor (sem ler cookie no client).
+  const initialTheme = themeClass === '' ? null : themeClass
   return (
-    <html lang={initialLocale}>
+    <html lang={initialLocale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
         <LocaleProvider initialLocale={initialLocale}>
-          <SiteHeader />
+          <SiteHeader initialTheme={initialTheme} />
           {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
               então mantém um único landmark main por documento. */}
           <div className="flex flex-1 flex-col">{children}</div>

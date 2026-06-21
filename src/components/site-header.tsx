@@ -14,10 +14,15 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
+import { ThemeToggle } from '@/components/theme-toggle'
 import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
+import { type Theme } from '@/lib/theme'
 
-export function SiteHeader() {
+// `initialTheme` vem do SERVIDOR (cookie `theme`, lido em layout.tsx) e é threadado até o
+// ThemeToggle — SiteHeader é client, então a preferência não pode ser lida do cookie aqui sem
+// arriscar hydration mismatch. `null` = sem preferência (segue o SO).
+export function SiteHeader({ initialTheme = null }: { initialTheme?: Theme | null }) {
   const { messages } = useLocale()
   const session = useSession()
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
@@ -67,6 +72,7 @@ export function SiteHeader() {
           </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3">
+          <ThemeToggle initialTheme={initialTheme} />
           <AuthSlot />
         </div>
       </Container>
