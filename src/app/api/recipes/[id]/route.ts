@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
-import { getDb } from '@/server/deps'
+import { getDb, getImageStore } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
@@ -353,7 +353,9 @@ export async function DELETE(
   if (!gate) return notFound()
   if (gate.ownerId == null || gate.ownerId !== viewerId) return notFound()
 
-  const result = await deleteOwnRecipe(db, { recipeId: id, viewerId })
+  // #146: injeta o ImageStore — o delete roda o ref-count da Imagem (apaga recipe_image+blob órfãos
+  // quando some a última versão que os referenciava). store.owns gateia o delete do blob.
+  const result = await deleteOwnRecipe(db, getImageStore(), { recipeId: id, viewerId })
   if (result === 'not_found') return notFound() // corrida pós-gate
 
   return new Response(null, { status: 204 })

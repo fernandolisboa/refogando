@@ -33,7 +33,7 @@ export type RecipeImageResult =
   | { kind: 'storage' } //             503 — storage de imagem indisponível (degradação do seam)
 
 /** Tipo da transação do Drizzle (mesmas APIs de query que `Database`). */
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
+export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
 
 export async function applyRecipeImageUpload(input: {
   db: Database
@@ -269,8 +269,11 @@ async function loadOwnerGate(
  * linha atual e conta só OUTRAS versões que ainda compartilham o blob (carry-forward #131). Zero
  * refs ⇒ apaga a LINHA recipe_image e devolve o `blob_url` (pra deleção pós-commit do blob); >0 ⇒
  * mantém (outra versão ainda usa) e devolve null. No-op quando não havia imagem ou ela não mudou.
+ *
+ * Reusado pelo HARD-delete da Receita (#146): lá `newImageId=null` e a Receita já foi DELETADA na
+ * mesma tx, então o COUNT exclui a linha apagada e conta só OUTRAS versões que compartilham o blob.
  */
-async function reapOrphanImage(
+export async function reapOrphanImage(
   tx: Tx,
   oldImageId: string | null,
   newImageId: string | null,
@@ -290,7 +293,7 @@ async function reapOrphanImage(
 }
 
 /** Apaga o blob órfão se houver E se for NOSSO (no-op silencioso para URL estrangeira/ausente). */
-async function deleteOrphanBlob(store: ImageStore, blobUrl: string | null): Promise<void> {
+export async function deleteOrphanBlob(store: ImageStore, blobUrl: string | null): Promise<void> {
   if (!blobUrl || !store.owns(blobUrl)) return
   try {
     await store.delete(blobUrl)

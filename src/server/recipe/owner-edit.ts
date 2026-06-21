@@ -2,8 +2,10 @@ import { and, eq } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import type { ImageStore } from '@/server/images/image-store'
 import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
+import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
 import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
 
 /**
@@ -264,14 +266,34 @@ export async function editOwnRecipe(
  * O WHERE inclui owner_id (autoriza na escrita — corrida + defense-in-depth). NÃO precisamos
  * apagar filhos à mão (o DB cascateia). Leak-safe: o route já provou ownership (404 não-403);
  * `deleted` cobre a corrida (some entre o gate e o DELETE) — devolve 'not_found' nesse caso.
+ *
+ * #146 — REF-COUNT da Imagem: a FK `recipe.image_id → recipe_image` é `ON DELETE set null` (one-way),
+ * então apagar a Receita NÃO cascateia a `recipe_image` nem o blob. Sem o reap, apagar a ÚLTIMA
+ * versão que aponta um `image_id` deixava a linha + o blob ÓRFÃOS (o carry-forward #131 fez várias
+ * versões compartilharem uma imagem, então a deleção segura passou a importar). Captura o `image_id`
+ * no `RETURNING` do DELETE e, na MESMA tx, roda `reapOrphanImage(tx, imageId, null)`: como a Receita
+ * já foi apagada nesta tx, o COUNT exclui ela e conta só OUTRAS versões que ainda compartilham —
+ * zero ⇒ apaga a `recipe_image` e devolve o blob pra deleção best-effort pós-commit (mesma máquina
+ * de upload/troca/remoção, agora injetando o `ImageStore` no caminho de delete). >0 ⇒ mantém.
  */
 export async function deleteOwnRecipe(
   db: Database,
+  store: ImageStore,
   input: { recipeId: string; viewerId: string },
 ): Promise<'ok' | 'not_found'> {
-  const deleted = await db
-    .delete(recipe)
-    .where(and(eq(recipe.id, input.recipeId), eq(recipe.ownerId, input.viewerId)))
-    .returning({ id: recipe.id })
-  return deleted.length > 0 ? 'ok' : 'not_found'
+  const outcome = await db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(recipe)
+      .where(and(eq(recipe.id, input.recipeId), eq(recipe.ownerId, input.viewerId)))
+      .returning({ imageId: recipe.imageId })
+    if (deleted.length === 0) return { kind: 'not_found' as const }
+    // A Receita foi apagada NESTA tx ⇒ o COUNT do reap a exclui e conta só OUTRAS versões que ainda
+    // compartilham o blob (carry-forward #131). image_id null ⇒ reap no-op (Receita sem imagem).
+    const orphanBlobUrl = await reapOrphanImage(tx, deleted[0].imageId, null)
+    return { kind: 'ok' as const, orphanBlobUrl }
+  })
+  if (outcome.kind === 'not_found') return 'not_found'
+  // Blob best-effort DEPOIS do commit (não há rollback de blob); só apaga se for NOSSO (store.owns).
+  await deleteOrphanBlob(store, outcome.orphanBlobUrl)
+  return 'ok'
 }
