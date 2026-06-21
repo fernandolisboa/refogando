@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
-import { getDb } from '@/server/deps'
-import { recipe } from '@/db/schema'
+import { getDb, setImageStore } from '@/server/deps'
+import { recipe, recipeImage } from '@/db/schema'
+import { FakeImageStore } from '@/server/images/image-store'
 import { DELETE as deleteRoute } from '@/app/api/recipes/[id]/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { deriveRecipe } from '@/server/recipe/derive'
@@ -13,6 +14,7 @@ import {
   seedRecipe,
   seedTranslation,
   seedRecipeIngredient,
+  seedRecipeImage,
   seedTag,
   linkRecipeTag,
   seedVote,
@@ -27,9 +29,18 @@ import {
  */
 
 let sql: Sql
+// #146: o delete roda o ref-count da Imagem injetando o ImageStore. FakeImageStore (host
+// `fake-blob.local` que `owns` reconhece) por teste — `blobs` prova o blob apagado/preservado.
+let store: FakeImageStore
 
 beforeAll(() => {
   sql = makeSql(inject('databaseUrl'))
+})
+
+beforeEach(() => {
+  // Roda APÓS o resetDeps() do setup.ts global (que zera o override) ⇒ a rota DELETE usa este Fake.
+  store = new FakeImageStore()
+  setImageStore(store)
 })
 
 afterAll(async () => {
@@ -54,6 +65,12 @@ function get(id: string, headers?: Headers): Promise<Response> {
 
 async function recipeExists(id: string): Promise<boolean> {
   const [row] = await getDb().select({ id: recipe.id }).from(recipe).where(eq(recipe.id, id))
+  return row != null
+}
+
+/** #146: a linha recipe_image (pelo id) ainda existe? (prova do reap/ref-count.) */
+async function imageExists(imageId: string): Promise<boolean> {
+  const [row] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, imageId))
   return row != null
 }
 
@@ -198,5 +215,44 @@ describe('DELETE /api/recipes/[id] — apagar a própria receita (#21)', () => {
     const { headers } = await seedSessionHeaders({ email: 'del-badid@ex.com' })
     expect((await del('not-a-uuid', headers)).status).toBe(404)
     expect((await del('00000000-0000-0000-0000-000000000000', headers)).status).toBe(404)
+  })
+
+  // (f) #146: apagar a ÚLTIMA versão que referencia uma imagem ⇒ recipe_image + blob são reapados.
+  it('(f) #146: apagar a última versão com imagem ⇒ recipe_image e blob somem (ref-count)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'del-img-last@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Com foto', provenance: 'escrita_por_pessoa' })
+    // Guarda o blob no Fake (URL em fake-blob.local, que `owns` reconhece) e aponta a recipe_image pra ele.
+    const { url } = await store.store({ data: Buffer.from([1, 2, 3, 4]), contentType: 'image/webp', pathPrefix: 'recipes' })
+    const imageId = await seedRecipeImage({ recipeId: id, blobUrl: url })
+    expect(store.blobs.has(url)).toBe(true)
+
+    expect((await del(id, headers)).status).toBe(204)
+    expect(await recipeExists(id)).toBe(false)
+    expect(await imageExists(imageId)).toBe(false) // linha recipe_image órfã reapada
+    expect(store.blobs.has(url)).toBe(false) // blob apagado best-effort (store.owns ⇒ deletou)
+  })
+
+  // (g) #146: imagem COMPARTILHADA por 2 versões (carry-forward #131) ⇒ apagar uma MANTÉM a imagem
+  //     (a outra ainda referencia); só ao apagar a ÚLTIMA é que recipe_image + blob são reapados.
+  it('(g) #146: imagem compartilhada ⇒ apagar uma versão preserva; apagar a última reapa', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'del-img-shared@ex.com' })
+    const a = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    await seedTranslation({ recipeId: a, locale: 'pt-BR', titulo: 'Versão A', provenance: 'escrita_por_pessoa' })
+    const b = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    await seedTranslation({ recipeId: b, locale: 'pt-BR', titulo: 'Versão B', provenance: 'escrita_por_pessoa' })
+    const { url } = await store.store({ data: Buffer.from([5, 6, 7, 8]), contentType: 'image/webp', pathPrefix: 'recipes' })
+    const imageId = await seedRecipeImage({ recipeId: a, blobUrl: url }) // cria a imagem, aponta A
+    await getDb().update(recipe).set({ imageId }).where(eq(recipe.id, b)) // B compartilha a MESMA imagem
+
+    // Apaga A: a imagem SOBREVIVE (B ainda referencia) — nada de blob/linha apagados.
+    expect((await del(a, headers)).status).toBe(204)
+    expect(await imageExists(imageId)).toBe(true)
+    expect(store.blobs.has(url)).toBe(true)
+
+    // Apaga B (última referência): agora reapa a recipe_image + o blob.
+    expect((await del(b, headers)).status).toBe(204)
+    expect(await imageExists(imageId)).toBe(false)
+    expect(store.blobs.has(url)).toBe(false)
   })
 })
