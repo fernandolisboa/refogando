@@ -89,6 +89,11 @@ export const enUS: Messages = {
     // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
     // The Claude Design prototype uses ✨ on this seal (RefoStage "Minhas criações"/Search).
     imagemSeloIa: '✨ AI-generated',
+    // #166: PERMANENT "Generate with AI" CTA — always visible on Search (with and without
+    // results), since generating is the heart of the app. It does NOT auto-fire: it links to
+    // /create?q=<term> pre-filling the free-text. Guests see the sign-in invite (reuses
+    // `minhasCriacoes.convidaEntrar*`).
+    gerarComIa: 'Generate with AI',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.

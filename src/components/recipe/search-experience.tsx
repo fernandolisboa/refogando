@@ -13,10 +13,11 @@
  * o early-return do handler), carregando, erro+retry, vazio, sugestões.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
-import { Search } from 'lucide-react'
+import { Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import type { SearchResponse } from '@/domain/recipe-search-read'
@@ -38,8 +39,11 @@ export function SearchExperience() {
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
   // (error / isPending) → trata como anônimo (dica de comunidade), sem travar a tela.
-  const { data: session } = useSession()
-  const dicaInicial = session ? m.dicaInicialLogado : m.dicaInicial
+  // #166: a mesma sessão decide o ramo do CTA "Gerar com IA": logado → link pro /create; visitante
+  // → convite de entrar (espelha o gate do RecipeDetailActions: pending/error/null = anônimo).
+  const session = useSession()
+  const authed = !session.isPending && !session.error && !!session.data
+  const dicaInicial = authed ? m.dicaInicialLogado : m.dicaInicial
 
   const [q, setQ] = useState('')
   const [cozinha, setCozinha] = useState<string[]>([])
@@ -196,6 +200,21 @@ export function SearchExperience() {
         />
       </form>
 
+      {/* #166: CTA PERMANENTE "Gerar com IA" — sempre visível (com e SEM resultados), porque
+          gerar é o mote do app. NÃO auto-dispara (a Busca nunca cria): logado → link pro fluxo
+          de criação `/create` PRÉ-PREENCHENDO o termo buscado; visitante → convite de entrar
+          (gerar exige conta). Vive logo abaixo do campo, antes dos resultados, pra estar sempre
+          ao alcance. `aria-hidden` no ícone (decorativo); o rótulo é o nome acessível do link. */}
+      <GerarComIaCta
+        q={q}
+        authed={authed}
+        sessionPending={session.isPending}
+        gerarLabel={m.gerarComIa}
+        conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
+        conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
+        signInLabel={messages.nav.signIn}
+      />
+
       <div className="flex flex-col gap-4">
         {/* #160: filtros RECOLHIDOS por padrão atrás de um disclosure NATIVO (mesmo padrão
             `<details>/<summary>` do RecipeImageManager — sem lib). Recolher/expandir é só um
@@ -338,6 +357,83 @@ export function SearchExperience() {
         )}
       </div>
     </Container>
+  )
+}
+
+/**
+ * CTA permanente "Gerar com IA" (#166) — o mote do app, sempre visível na Busca (com e SEM
+ * resultados). NÃO auto-dispara: a Busca nunca cria. Dois ramos, espelhando o gate do
+ * `RecipeDetailActions` (a UI só escolhe a CÓPIA; o gate de escrita real é server-side):
+ *
+ *  - LOGADO → link pro fluxo de criação `/create?q=<termo>`, PRÉ-PREENCHENDO o texto livre com o
+ *    termo buscado (o `CreatePageClient` lê `?q`). Sem termo, leva ao `/create` cru (gerar do zero).
+ *  - VISITANTE → convite de entrar (gerar exige conta), reusando `minhasCriacoes.convidaEntrar*`
+ *    + `nav.signIn`, o mesmo padrão de convite do detalhe da Receita.
+ *
+ * Enquanto a sessão resolve (`sessionPending`), mostra o ramo logado (otimista): o pior caso é
+ * um clique que cai no gate de escrita do servidor — nunca um flash do convite pra quem está
+ * logado. O ícone Sparkles é decorativo (`aria-hidden`); o rótulo nomeia o link/seção.
+ */
+function GerarComIaCta({
+  q,
+  authed,
+  sessionPending,
+  gerarLabel,
+  conviteTitulo,
+  conviteTexto,
+  signInLabel,
+}: {
+  q: string
+  authed: boolean
+  sessionPending: boolean
+  gerarLabel: string
+  conviteTitulo: string
+  conviteTexto: string
+  signInLabel: string
+}) {
+  // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
+  if (!authed && !sessionPending) {
+    return (
+      <section
+        aria-labelledby="gerar-ia-convite-titulo"
+        className="flex flex-col gap-3 rounded-md border border-border bg-surface px-4 py-3"
+      >
+        {/* O rótulo do convite é um <p> (não um <h2>) DE PROPÓSITO: a Busca reserva os headings
+            nível 2 às seções de RESULTADO (Catálogo/Comunidade/Minhas). `aria-labelledby` não
+            exige um heading no alvo — então o convite continua nomeado pro leitor de tela sem
+            poluir o outline do documento. */}
+        <p
+          id="gerar-ia-convite-titulo"
+          className="flex items-center gap-2 font-display text-lg font-semibold text-fg"
+        >
+          <Sparkles className="size-[18px] shrink-0 text-accent-strong" strokeWidth={1.75} aria-hidden />
+          {gerarLabel}
+        </p>
+        <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
+        <div>
+          <Button asChild>
+            <Link href="/sign-in">{signInLabel}</Link>
+          </Button>
+        </div>
+        {/* `conviteTitulo` ("Entre para fazer isso") dá o contexto extra pro leitor de tela — o
+            rótulo VISÍVEL é o próprio "Gerar com IA". */}
+        <span className="sr-only">{conviteTitulo}</span>
+      </section>
+    )
+  }
+
+  // Logado (ou sessão ainda resolvendo): link pro /create com o termo pré-preenchido. Só anexa
+  // `?q` quando há termo (sem `?q=` vazio espúrio na URL).
+  const href = q.trim() !== '' ? `/create?q=${encodeURIComponent(q.trim())}` : '/create'
+  return (
+    <div>
+      <Button asChild>
+        <Link href={href}>
+          <Sparkles className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
+          {gerarLabel}
+        </Link>
+      </Button>
+    </div>
   )
 }
 

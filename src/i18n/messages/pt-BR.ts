@@ -96,6 +96,10 @@ export const ptBR = {
     // Selo "gerada por IA" (#132, ADR-0017) — sobre imagens ai_generated no card e no detalhe.
     // O protótipo do Claude Design usa o ✨ neste selo (RefoStage "Minhas criações"/Busca).
     imagemSeloIa: '✨ gerada por IA',
+    // #166: CTA PERMANENTE "Gerar com IA" — sempre visível na Busca (com e sem resultados),
+    // porque gerar é o mote do app. NÃO auto-dispara: leva a /create?q=<termo> pré-preenchendo
+    // o texto livre. Visitante vê o convite de entrar (reusa `minhasCriacoes.convidaEntrar*`).
+    gerarComIa: 'Gerar com IA',
   },
   // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
   // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed

@@ -137,7 +137,15 @@ function mapErroMensagem(m: Messages['criar'], errorKey: string): string {
   }
 }
 
-export function CreateStructuredExperience() {
+export function CreateStructuredExperience({
+  // #166: termo vindo do CTA "Gerar com IA" da Busca (via /create?q=<termo>). Quando presente,
+  // SEMEIA o texto livre e abre direto no PROMPT ABERTO — o usuário ainda revisa e aciona "Gerar
+  // receita" (a Busca nunca gera sozinha). É só uma SEMENTE inicial: o campo segue editável e
+  // "Criar outra receita" o zera como qualquer outro estado.
+  initialFreeText,
+}: {
+  initialFreeText?: string
+} = {}) {
   const { locale, messages } = useLocale()
   const m = messages.criar
   const session = useSession()
@@ -148,8 +156,10 @@ export function CreateStructuredExperience() {
   // (ex.: `free_text_vazio`), então alternar de modo a DESCARTA (ver `trocarModo`) — senão
   // ela vazaria pro outro ramo, onde não faz sentido. Só error/errorKey vazam (o resultado
   // some no `!isResult`); os campos/freeText são preservados de propósito.
-  const [mode, setMode] = useState<Mode>('structured')
-  const [freeText, setFreeText] = useState('')
+  // #166: com `?q` presente, a semente abre no Prompt aberto com o termo já no campo.
+  const seed = initialFreeText?.trim() ?? ''
+  const [mode, setMode] = useState<Mode>(seed !== '' ? 'free_text' : 'structured')
+  const [freeText, setFreeText] = useState(seed)
 
   const [cozinha, setCozinha] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])

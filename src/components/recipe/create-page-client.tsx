@@ -8,10 +8,14 @@
  *  - Conversa: `ConversaFocusedView` (#60 reusado como VISTA FOCADA), recebendo o
  *    `resumeSessionId` vindo de `?resume`.
  *
- * `?mode`/`?resume` são DICAS INICIAIS lidas de `useSearchParams` (este é o PRIMEIRO consumidor
- * de `useSearchParams` do repo → o caller embrulha em <Suspense>). O modo é estado LOCAL
- * (`useState`) semeado a partir das dicas — NÃO há `router.push`: alternar o toggle só troca o
- * estado local, sem reescrever a URL.
+ * `?mode`/`?resume`/`?q` são DICAS INICIAIS lidas de `useSearchParams` (este é o PRIMEIRO
+ * consumidor de `useSearchParams` do repo → o caller embrulha em <Suspense>). O modo é estado
+ * LOCAL (`useState`) semeado a partir das dicas — NÃO há `router.push`: alternar o toggle só
+ * troca o estado local, sem reescrever a URL.
+ *
+ * `?q` (#166): o CTA "Gerar com IA" da Busca leva pra cá com o TERMO buscado. Cai no Formulário
+ * (modo padrão), com o termo pré-preenchido no PROMPT ABERTO (texto livre) do estruturado — a
+ * Busca nunca gera; é o usuário quem aciona "Gerar receita" aqui.
  */
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -28,6 +32,8 @@ export function CreatePageClient() {
   const params = useSearchParams()
   const resume = params.get('resume') ?? undefined
   const modeHint = params.get('mode')
+  // #166: termo vindo do CTA "Gerar com IA" da Busca. Pré-preenche o texto livre do estruturado.
+  const initialFreeText = params.get('q') ?? undefined
 
   // Semente do modo a partir das dicas da URL: Conversa quando `?mode=conversa` OU `?resume`
   // está presente (retomar uma conversa cai direto no Modo Conversa); senão Formulário. Estado
@@ -52,7 +58,7 @@ export function CreatePageClient() {
       />
 
       {mode === 'structured' ? (
-        <CreateStructuredExperience />
+        <CreateStructuredExperience initialFreeText={initialFreeText} />
       ) : (
         <ConversaFocusedView resumeSessionId={resume} />
       )}
