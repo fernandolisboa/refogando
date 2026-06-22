@@ -158,6 +158,16 @@ export const recipe = pgTable(
     // esta FK zera (rede de segurança — o ref-count já garante que ninguém aponta). Forward-ref via
     // AnyPgColumn (recipeImage é definido adiante; mesma técnica do self-ref parent_recipe_id).
     imageId: uuid('image_id').references((): AnyPgColumn => recipeImage.id, { onDelete: 'set null' }),
+    // ── Atribuição da importação da web (#165, ADR-0019) ──────────────────────────
+    // Só Receitas `origin=web_imported` (cópia privada de um link externo) carregam estas duas; toda
+    // outra Receita as deixa NULL. A Autoria é creditada à FONTE EXTERNA ("fonte: …"), nunca "por
+    // <Usuário>" — `source_name` é o nome legível do site/publisher e `source_url` a URL de origem,
+    // ambas só para ATRIBUIÇÃO (CONTEXT.md: _Receita importada da web_). NULLABLE/SEM default/SEM
+    // CHECK de propósito: um NOT NULL quebraria todos os INSERTs de geração/catálogo (que não
+    // importam). A regra "web_imported ⇒ tem atribuição" é invariante de ROTA (import.ts), não DB —
+    // espelha o tratamento de derived_diff (só `edited` o carrega, sem CHECK).
+    sourceUrl: text('source_url'),
+    sourceName: text('source_name'),
     // ── Estado de MODERAÇÃO (issue #18, ADR-0003/0011) ────────────────────────────
     // Remover-do-pool pelo Curador é exclusão LÓGICA de moderação, DISTINTA de
     // despublicar (que toca `visibility`, #13). As 3 colunas são a SAÍDA do pool por

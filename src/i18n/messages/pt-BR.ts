@@ -605,12 +605,13 @@ export const ptBR = {
     motivoReport: 'Motivo do report',
     status: 'Status',
     statusPendente: 'Pendente',
-    // Rótulos de VALOR de `origin` (5 valores de ORIGENS) — NÃO vazar token cru.
+    // Rótulos de VALOR de `origin` (6 valores de ORIGENS) — NÃO vazar token cru.
     origemCatalog: 'Catálogo',
     origemAiChat: 'Conversa com IA',
     origemAiStructured: 'Briefing estruturado',
     origemAiFreeText: 'Prompt aberto',
     origemUserEdited: 'Editada por pessoa',
+    origemWebImported: 'Importada da web',
     // Rótulos de VALOR de `resultKind` (3 valores de RESULT_KINDS).
     tipoSucesso: 'Sucesso',
     tipoDegradado: 'Degradado',

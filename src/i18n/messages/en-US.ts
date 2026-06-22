@@ -567,6 +567,7 @@ export const enUS: Messages = {
     origemAiStructured: 'Structured briefing',
     origemAiFreeText: 'Open prompt',
     origemUserEdited: 'Edited by a person',
+    origemWebImported: 'Imported from the web',
     tipoSucesso: 'Success',
     tipoDegradado: 'Degraded',
     tipoPlayful: 'Playful',
