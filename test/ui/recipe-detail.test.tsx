@@ -230,6 +230,41 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.queryByText(/^por /)).toBeNull()
   })
 
+  it('T7b — #169/ADR-0019: importada da web mostra "fonte: …" (link externo) no lugar de "por <name>"', () => {
+    renderView(
+      baseView({
+        origin: 'web_imported',
+        // a importada nunca traz author (read-model suprime); a vista carrega `source`.
+        source: { url: 'https://www.tudogostoso.com.br/receita/123', name: 'TudoGostoso' },
+      }),
+    )
+    // Crédito à FONTE: "fonte: TudoGostoso", linkando a URL de origem (externo).
+    const fonte = screen.getByText('fonte: TudoGostoso')
+    expect(fonte).toBeInTheDocument()
+    const link = fonte.closest('a')!
+    expect(link).toHaveAttribute('href', 'https://www.tudogostoso.com.br/receita/123')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+
+    // NUNCA "por <name>" numa importada (creditada à fonte, não ao importador).
+    expect(screen.queryByText(/^por /)).toBeNull()
+
+    // Selo de proveniência específico "Importada da web" (não "Da comunidade").
+    expect(screen.getByText(M.busca.seloImportada)).toBeInTheDocument()
+    expect(screen.queryByText(M.busca.seloComunidade)).toBeNull()
+  })
+
+  it('T7c — #169: importada SEM source_name cai no HOST derivado da URL', () => {
+    renderView(
+      baseView({
+        origin: 'web_imported',
+        source: { url: 'https://panelinha.com.br/receita/feijoada' },
+      }),
+    )
+    // Sem `name`, o crédito usa o host (sem "www.", sem path).
+    expect(screen.getByText('fonte: panelinha.com.br')).toBeInTheDocument()
+  })
+
   it('T8 — #161: ordem estilo Instagram (foto → título → descrição → ingredientes → passos → … → crédito ao final)', () => {
     const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
     const { container } = renderView(

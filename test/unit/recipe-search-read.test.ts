@@ -456,3 +456,41 @@ describe('buildSearchResponse — seção Minhas (#116/own-label)', () => {
     expect(body.catalogo).toHaveLength(0)
   })
 })
+
+// ── #169/ADR-0019: importada da web (web_imported) é PRIVADA e do DONO ⇒ seção Minhas ──
+//
+// Uma importada é cópia PRIVADA do importador (owner_id = quem importou); não é "comunidade".
+// O gate de leitura (viewerReadableSqlFragment) só a expõe ao próprio dono, logo na Busca ela
+// SEMPRE chega com isOwn=true e cai em `minhas`. Defesa em profundidade: mesmo um hit
+// web_imported que (por bug/dado inconsistente) NÃO seja do viewer NÃO pode poluir a Comunidade.
+describe('buildSearchResponse — importada da web (#169, ADR-0019)', () => {
+  it('web_imported do PRÓPRIO dono ⇒ `minhas` (não comunidade)', () => {
+    const importada = hit({
+      recipe_id: 'IMP',
+      origin: 'web_imported',
+      original_titulo: 'Feijoada do TudoGostoso',
+      owner_id: 'viewer-1',
+      section: 'comunidade', // o SQL rotula web_imported como comunidade; a TS é a verdade
+    })
+    const body = buildSearchResponse([importada], 'pt-BR', 'viewer-1')
+    expect(body.minhas.map((r) => r.recipeId)).toEqual(['IMP'])
+    expect(body.minhas[0].isOwn).toBe(true)
+    expect(body.comunidade).toHaveLength(0)
+  })
+
+  it('web_imported NÃO-própria (inalcançável em prod) NUNCA cai na Comunidade', () => {
+    // Inalcançável pelo gate (importada é privada), mas se um hit assim chegasse, não pode
+    // virar "comunidade" — uma importada nunca é conteúdo público do pool.
+    const stray = hit({
+      recipe_id: 'STRAY',
+      origin: 'web_imported',
+      original_titulo: 'Importada de outro',
+      owner_id: 'outro-dono',
+      section: 'comunidade',
+    })
+    const body = buildSearchResponse([stray], 'pt-BR', 'viewer-1')
+    expect(body.minhas).toHaveLength(0)
+    expect(body.comunidade).toHaveLength(0)
+    expect(body.catalogo).toHaveLength(0)
+  })
+})

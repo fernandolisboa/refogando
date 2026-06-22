@@ -101,6 +101,22 @@ export const enUS: Messages = {
     secaoDaWeb: 'From the web',
     daWebDescricao: "We didn't find this in our collection yet. These are external links — they open on the source site.",
     daWebFonte: 'from the web · {fonte}',
+    // Provenance seal for a recipe IMPORTED from the web (#169, ADR-0019) — distinct from Catalog/
+    // Community. Shows on the detail of an imported recipe (private, credited to the source).
+    seloImportada: 'Imported from the web',
+    // #169: import modal in Search. Clicking a "from the web" result opens a confirmation that the
+    // recipe will be COPIED to the user's private profile (credited to the source, never republished).
+    // {fonte} interpolated in the component via `.replace`. Guests see the sign-in invite.
+    importarTitulo: 'Import this recipe',
+    importarTexto: "We'll copy this recipe to your private profile, crediting the source ({fonte}). It stays yours alone — importing isn't republishing.",
+    importarConfirmar: 'Import to my profile',
+    importarVerNoSite: 'View on site',
+    importarCancelar: 'Cancel',
+    importarImportando: 'Importing…',
+    importarErroNaoImportavel: "We couldn't import this recipe: the site doesn't publish the structured data we need.",
+    importarErroGenerico: "We couldn't import right now. Try again or open it on the source site.",
+    importarConviteTitulo: 'Sign in to import',
+    importarConviteTexto: 'Create an account or sign in to import recipes from the web to your profile.',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -181,6 +197,11 @@ export const enUS: Messages = {
     restricoes: 'Restrictions',
     tags: 'Tags',
     avisoTitulo: 'Restriction notice',
+    // Source attribution (#169, ADR-0019): on the detail of a recipe IMPORTED from the web,
+    // "source: …" REPLACES the "by <User>" credit. {fonte} (site name or host) interpolated via
+    // `.replace`; the text links the origin URL. `fonteVerNoSite` is the external link's a11y label.
+    fonte: 'source: {fonte}',
+    fonteVerNoSite: 'View on the source site',
     // Back link at the top of the detail (#57) → "/" (home IS search).
     voltarBusca: 'Back to search',
     // Recipe image management (#130) — owner block.
@@ -431,6 +452,8 @@ export const enUS: Messages = {
     seloPlayful: 'Playful',
     seloDerivada: 'Derived',
     seloRegenerada: 'Regenerated',
+    // #169/ADR-0019: recipe IMPORTED from the web (origin=web_imported) — marker in the creations list.
+    seloImportada: 'Imported from the web',
     gerenciarTitulo: 'Manage recipe',
     editar: 'Edit',
     apagar: 'Delete',

@@ -54,6 +54,20 @@ function formatUnidade(unidade: string, m: Messages): string {
   return isUnidade(unidade) ? m.unidadeLabel[unidade] : unidade
 }
 
+/**
+ * Nome de exibição da FONTE (#169, ADR-0019): o `source.name` (publisher legível) quando há; senão
+ * o HOST da URL sem o prefixo `www.` (ex. `panelinha.com.br`). Defensivo: URL inválida (não deveria
+ * — a rota só importa http(s)) cai na própria string crua, nunca quebra a tela.
+ */
+function sourceDisplayName(source: { url: string; name?: string }): string {
+  if (source.name != null && source.name !== '') return source.name
+  try {
+    return new URL(source.url).hostname.replace(/^www\./, '')
+  } catch {
+    return source.url
+  }
+}
+
 /** Junta as partes não-nulas de um ingrediente numa linha legível: `qtd unidade — texto`. */
 function formatIngredient(item: IngredientView, m: Messages): string {
   const quantidade = item.quantidade != null && item.quantidade !== '' ? formatQuantidade(item.quantidade) : null
@@ -64,8 +78,16 @@ function formatIngredient(item: IngredientView, m: Messages): string {
 }
 
 export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages }) {
+  // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
+  // distinto de Catálogo/Comunidade — não é conteúdo do pool, é cópia privada creditada à fonte. A
+  // variante visual reusa `comunidade` (neutra) na primitiva (sem cor nova); só o RÓTULO muda.
   const section: SearchSection = classifySection(view.origin)
-  const badgeLabel = section === 'catalogo' ? m.busca.seloCatalogo : m.busca.seloComunidade
+  const isImported = view.origin === 'web_imported'
+  const badgeLabel = isImported
+    ? m.busca.seloImportada
+    : section === 'catalogo'
+      ? m.busca.seloCatalogo
+      : m.busca.seloComunidade
 
   // Cozinha/categoria são `string | null` (tipo largo) mas as colunas são enums PG —
   // estreita com os type-guards (sem `as`); `?? valor` é defensivo p/ valor fora do enum.
@@ -257,18 +279,35 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
         </section>
       )}
 
-      {/* Crédito ao FINAL (#161, estilo Instagram): "por <name>" MENOR (text-sm muted), linkando
-          o perfil público /u/<handle>. Só quando a rota anexa `author` (Receita com dono humano —
-          Catálogo/sistema não tem). Fecha a leitura sem competir com o título/conteúdo. */}
-      {view.author && (
+      {/* Crédito ao FINAL (#161, estilo Instagram), MENOR (text-sm muted), fechando a leitura.
+          #169/ADR-0019: a IMPORTADA da web credita a FONTE EXTERNA — "fonte: <site/host>" linkando a
+          URL de origem (target=_blank + rel external/nofollow, como os links "da web" da Busca), NUNCA
+          "por <Usuário>" (o read-model já suprime `author` quando há `source`). Caso contrário, o
+          byline humano "por <name>" linkando o perfil público /u/<handle> (Receita com dono humano —
+          Catálogo/sistema não tem). Os dois são mutuamente exclusivos. */}
+      {view.source ? (
         <p className="text-sm text-muted">
-          <Link
-            href={`/u/${view.author.handle}`}
+          <a
+            href={view.source.url}
+            target="_blank"
+            rel="noopener noreferrer nofollow external"
+            aria-label={m.detalhe.fonteVerNoSite}
             className="hover:text-fg hover:underline"
           >
-            {m.busca.porAutor.replace('{name}', view.author.name)}
-          </Link>
+            {m.detalhe.fonte.replace('{fonte}', sourceDisplayName(view.source))}
+          </a>
         </p>
+      ) : (
+        view.author && (
+          <p className="text-sm text-muted">
+            <Link
+              href={`/u/${view.author.handle}`}
+              className="hover:text-fg hover:underline"
+            >
+              {m.busca.porAutor.replace('{name}', view.author.name)}
+            </Link>
+          </p>
+        )
       )}
     </article>
   )

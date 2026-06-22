@@ -158,6 +158,19 @@ describe('MyRecipesList (#61)', () => {
     expect(selos).toHaveLength(1)
   })
 
+  it('T7 — #169/ADR-0019: selo "importada da web" na receita web_imported (e só nela)', async () => {
+    sessionState = authed()
+    mockRecipes([
+      item({ id: 'r-imp', name: 'Feijoada importada', origin: 'web_imported', visibility: 'private' }),
+      item({ id: 'r-gen', name: 'Receita gerada', origin: 'ai_structured', visibility: 'private' }),
+    ])
+    renderList()
+    expect(await screen.findByText('Feijoada importada')).toBeInTheDocument()
+    // O selo aparece exatamente uma vez (só na importada).
+    const selos = screen.getAllByText(M.seloImportada)
+    expect(selos).toHaveLength(1)
+  })
+
   it('T5 — en-US: título de selo traduzido', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])

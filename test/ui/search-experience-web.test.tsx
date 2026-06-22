@@ -24,6 +24,12 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201.
+const push = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push }),
+}))
+
 type SessionState = {
   data: unknown
   error: unknown
@@ -38,6 +44,16 @@ vi.mock('@/lib/auth-client', () => ({
 
 function anon(): SessionState {
   return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+}
+
+function authed(): SessionState {
+  return {
+    data: { user: { id: 'u-1' } },
+    error: null,
+    isPending: false,
+    isRefetching: false,
+    refetch: vi.fn(),
+  }
 }
 
 import { LocaleProvider } from '@/i18n/provider'
@@ -65,11 +81,23 @@ const WEB_LINKS: WebLink[] = [
  * Mocka `fetch` roteando por URL: /api/search → `search`; /api/discovery/web → `web`. Devolve o spy
  * para asserções de "foi/não foi chamado".
  */
-function stubFetchRouting(search: SearchResponse, web: WebLink[]) {
+function stubFetchRouting(
+  search: SearchResponse,
+  web: WebLink[],
+  importResult: { status: number; body?: unknown } = { status: 201, body: { recipeId: 'imp-1', visibility: 'private' } },
+) {
   const fetchMock = vi.fn(async (input: unknown) => {
     const url = String(input)
     if (url.includes('/api/discovery/web')) {
       return { ok: true, json: async () => ({ results: web }) }
+    }
+    // #169: POST /api/recipes/import — devolve o status configurado (201 sucesso / 422 não importável).
+    if (url.includes('/api/recipes/import')) {
+      return {
+        ok: importResult.status >= 200 && importResult.status < 300,
+        status: importResult.status,
+        json: async () => importResult.body ?? {},
+      }
     }
     return { ok: true, json: async () => search }
   }) as unknown as typeof fetch
@@ -96,7 +124,13 @@ function discoveryCalls(fetchMock: ReturnType<typeof vi.fn>): unknown[][] {
 
 beforeEach(() => {
   sessionState = anon()
+  push.mockClear()
 })
+
+/** Helper para casar o nome acessível do gatilho do resultado da web (título + atribuição). */
+function webTrigger(title: string) {
+  return screen.findByRole('button', { name: new RegExp(title) })
+}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -104,7 +138,7 @@ afterEach(() => {
 })
 
 describe('SearchExperience — descoberta na web (#164)', () => {
-  it('W1 — acervo RASO (vazio): mostra a seção "Da web" com links externos marcados', async () => {
+  it('W1 — acervo RASO (vazio): mostra a seção "Da web" com cartões marcados (gatilhos de import)', async () => {
     const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
@@ -115,15 +149,13 @@ describe('SearchExperience — descoberta na web (#164)', () => {
     const heading = await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
     expect(heading).toBeInTheDocument()
 
-    // Cada link é externo: <a> com target=_blank e rel external, abrindo no site de origem. O nome
-    // acessível combina título + atribuição ("da web · <fonte>"), então casamos pelo título (regex).
-    const link = await screen.findByRole('link', { name: new RegExp(WEB_LINKS[0].title) })
-    expect(link).toHaveAttribute('href', WEB_LINKS[0].url)
-    expect(link).toHaveAttribute('target', '_blank')
-    expect(link.getAttribute('rel')).toContain('external')
-    expect(link.getAttribute('rel')).toContain('noopener')
+    // #169: cada resultado da web é agora um GATILHO (button) que abre o modal de import — NÃO um
+    // link externo cru. O nome acessível combina título + atribuição ("da web · <fonte>").
+    const trigger = await webTrigger(WEB_LINKS[0].title)
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
 
-    // Atribuição "da web · <fonte>".
+    // Atribuição "da web · <fonte>" no cartão.
     expect(
       screen.getByText(M.daWebFonte.replace('{fonte}', WEB_LINKS[0].sourceName)),
     ).toBeInTheDocument()
@@ -165,19 +197,119 @@ describe('SearchExperience — descoberta na web (#164)', () => {
     expect(screen.queryByRole('heading', { name: M.secaoDaWeb })).not.toBeInTheDocument()
   })
 
-  it('W4 — links da web NÃO entram no ranking interno (seção própria, não RecipeResultItem)', async () => {
+  it('W4 — resultados da web NÃO entram no ranking interno (seção própria, gatilho, não RecipeResultItem)', async () => {
     stubFetchRouting(emptyLocal, WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
     await user.type(screen.getByRole('searchbox'), 'feijoada')
 
-    const link = await screen.findByRole('link', { name: new RegExp(WEB_LINKS[0].title) })
-    // O link vive sob a seção "Da web", NÃO sob Catálogo/Comunidade/Minhas.
-    const section = link.closest('section')!
+    const trigger = await webTrigger(WEB_LINKS[0].title)
+    // O gatilho vive sob a seção "Da web", NÃO sob Catálogo/Comunidade/Minhas.
+    const section = trigger.closest('section')!
     const sectionHeading = section.querySelector('h2')
     expect(sectionHeading?.textContent).toBe(M.secaoDaWeb)
-    // E é um link EXTERNO (host de origem), nunca uma rota interna /recipes/<id>.
-    expect(link.getAttribute('href')).not.toMatch(/^\/recipes\//)
+    // E é um BOTÃO (abre modal), nunca uma rota interna /recipes/<id>.
+    expect(trigger.tagName).toBe('BUTTON')
+    expect(trigger).not.toHaveAttribute('href')
+  })
+})
+
+// ── #169 (ADR-0019): modal de importação ligado ao backend de import ────────────
+describe('SearchExperience — modal de importação (#169)', () => {
+  it('I1 — LOGADO: clicar num resultado da web abre o modal de confirmação (com "Ver no site")', async () => {
+    sessionState = authed()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    const trigger = await webTrigger(WEB_LINKS[0].title)
+    await user.click(trigger)
+
+    // Modal aberto: role=dialog com o título de importação.
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText(M.importarTitulo)).toBeInTheDocument()
+    // Caminho "Ver no site": link externo pro site de origem (exibir ≠ importar).
+    const verNoSite = screen.getByRole('link', { name: M.importarVerNoSite })
+    expect(verNoSite).toHaveAttribute('href', WEB_LINKS[0].url)
+    expect(verNoSite).toHaveAttribute('target', '_blank')
+    expect(verNoSite.getAttribute('rel')).toContain('external')
+  })
+
+  it('I2 — LOGADO: confirmar chama POST /api/recipes/import com a URL e navega à receita importada', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS, {
+      status: 201,
+      body: { recipeId: 'imp-99', visibility: 'private' },
+    })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await user.click(await webTrigger(WEB_LINKS[0].title))
+    await screen.findByRole('dialog')
+
+    await user.click(screen.getByRole('button', { name: M.importarConfirmar }))
+
+    // POST /api/recipes/import com a URL escolhida.
+    await waitFor(() => {
+      const importCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/recipes/import'))
+      expect(importCall).toBeTruthy()
+      const init = importCall![1] as RequestInit
+      expect(init.method).toBe('POST')
+      expect(JSON.parse(String(init.body))).toEqual({ url: WEB_LINKS[0].url })
+    })
+    // Sucesso (201) ⇒ navega à receita importada.
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/imp-99'))
+  })
+
+  it('I3 — LOGADO: 422 (site sem JSON-LD) mostra erro "não importável" e NÃO navega', async () => {
+    sessionState = authed()
+    stubFetchRouting(emptyLocal, WEB_LINKS, { status: 422, body: { error: 'no_jsonld' } })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await user.click(await webTrigger(WEB_LINKS[0].title))
+    await screen.findByRole('dialog')
+    await user.click(screen.getByRole('button', { name: M.importarConfirmar }))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(M.importarErroNaoImportavel)
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('I4 — VISITANTE: clicar num resultado da web abre o convite de entrar (não importa)', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await user.click(await webTrigger(WEB_LINKS[0].title))
+
+    await screen.findByRole('dialog')
+    // Convite de entrar (gerar/importar exige conta) — sem botão de confirmar import.
+    expect(screen.getByText(M.importarConviteTitulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    expect(screen.queryByRole('button', { name: M.importarConfirmar })).not.toBeInTheDocument()
+    // Nunca chamou o endpoint de import.
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/import'))).toBe(false)
+  })
+
+  it('I5 — A11y: ESC fecha o modal', async () => {
+    sessionState = authed()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await user.click(await webTrigger(WEB_LINKS[0].title))
+    await screen.findByRole('dialog')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })

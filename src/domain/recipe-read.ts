@@ -52,6 +52,19 @@ export type RecipeAuthor = {
   handle: string
 }
 
+/**
+ * Atribuição à FONTE de uma receita importada da web (#169, ADR-0019) — o crédito "fonte: …" que
+ * SUBSTITUI o byline de autoria humana ("por <name>") nas Receitas `web_imported`. `url` é o link de
+ * origem (sempre presente quando há atribuição); `name` é o nome legível do site/publisher
+ * (`source_name`), AUSENTE quando o import não capturou um — a UI cai no host derivado da `url`.
+ * Distinta de `RecipeAuthor`: a importada é creditada à fonte EXTERNA, NUNCA ao Usuário que importou
+ * (ADR-0019: "A Autoria é creditada à fonte externa, nunca por <Usuário>").
+ */
+export type RecipeSource = {
+  url: string
+  name?: string
+}
+
 /** Linha de Receita conforme retorna de `db.select().from(recipe)`. */
 export type RecipeRow = {
   id: string
@@ -92,6 +105,14 @@ export type RecipeRow = {
    * vista expõe só `imageUrl` resolvido); aqui é o id interno usado pela camada de servidor.
    */
   imageId?: string | null
+  /**
+   * Atribuição da importação da web (#165/#169, ADR-0019) — `source_url`/`source_name` da Receita.
+   * SÓ Receitas `origin=web_imported` os carregam (toda outra os deixa NULL). OPCIONAIS no tipo
+   * (mesma razão de `ownerId`: o `select().from(recipe)` os traz em runtime; opcional poupa as
+   * fixtures puras). Insumo do crédito "fonte: …" (`RecipeSource`) que SUBSTITUI o byline humano.
+   */
+  sourceUrl?: string | null
+  sourceName?: string | null
 }
 
 /** Linha de tradução conforme `db.select().from(recipeTranslation)`. */
@@ -273,6 +294,14 @@ export type RecipeView = {
    * como `canManage`/`visibility`. Nunca expõe o `owner_id` interno.
    */
   author?: RecipeAuthor
+  /**
+   * Atribuição à FONTE (#169, ADR-0019) — `{ url, name? }` da receita importada da web. Presente SÓ
+   * para `web_imported` COM `sourceUrl`; SUBSTITUI o byline `author` (o detalhe mostra "fonte: …" no
+   * lugar de "por <name>"). PÚBLICO (qualquer leitor que vê a Receita). "ausente ≠ vazio": a chave só
+   * existe quando há atribuição. Mutuamente exclusiva com `author` na prática (importada não tem
+   * autor humano creditável).
+   */
+  source?: RecipeSource
   /**
    * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da foto do prato. AUSENTE
    * ("ausente ≠ vazio") quando a Receita não tem imagem (caso normal). PÚBLICO (qualquer leitor que
@@ -575,8 +604,24 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
   // Autoria (#129): crédito "por <name>" linkando /u/<handle>. Só quando o server carregou
   // o autor E há AMBOS name+handle (Catálogo/sistema sem dono humano ⇒ author undefined ou
   // campos NULL). "ausente ≠ vazio": a chave `author` só sai quando há autor — nunca falso.
+  // Atribuição à FONTE (#169, ADR-0019): receita importada da web (`web_imported`) é creditada à
+  // fonte externa via `source_url`/`source_name`, NUNCA "por <Usuário>". Presente SÓ p/ web_imported
+  // COM sourceUrl; `name` é OMITIDO quando o import não capturou `source_name` (a UI cai no host).
+  const source: RecipeSource | undefined =
+    input.recipe.origin === 'web_imported' && input.recipe.sourceUrl != null
+      ? {
+          url: input.recipe.sourceUrl,
+          ...(input.recipe.sourceName != null ? { name: input.recipe.sourceName } : {}),
+        }
+      : undefined
+
+  // Autoria (#129): SUPRIMIDA quando há `source` (importada credita a fonte, não o importador —
+  // mutuamente exclusivas). Caso contrário, "por <name>" linkando /u/<handle> quando há autor humano.
   const author =
-    input.author != null && input.author.name != null && input.author.handle != null
+    source === undefined &&
+    input.author != null &&
+    input.author.name != null &&
+    input.author.handle != null
       ? { name: input.author.name, handle: input.author.handle }
       : undefined
 
@@ -611,6 +656,9 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // Autoria (#129): crédito PÚBLICO "por <name>" (linka /u/<handle>). "ausente ≠ vazio":
     // só sai quando há autor humano. NÃO owner-gated — qualquer leitor vê o crédito.
     ...(author ? { author } : {}),
+    // Atribuição à FONTE (#169, ADR-0019): "fonte: …" da importada da web. "ausente ≠ vazio":
+    // só sai p/ web_imported com sourceUrl. SUBSTITUI o byline (são mutuamente exclusivos acima).
+    ...(source ? { source } : {}),
     // Imagem da receita (#130): foto PÚBLICA do prato. "ausente ≠ vazio": só sai quando há imagem.
     // NÃO owner-gated — qualquer leitor que vê a Receita vê a foto. Repassa 1:1 o que o server carregou.
     // #133: MODERADA esconde a foto do público (`imageModerated && !canManage`) — o Owner ainda vê.
