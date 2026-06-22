@@ -251,6 +251,17 @@ export type RecipeView = {
   dificuldade: number | null
   ingredients: ReadonlyArray<IngredientView>
   translations: ReadonlyArray<TranslationFlags>
+  /**
+   * Selo "tradução automática" (#161) — `true` quando a leitura localizada repousa numa
+   * tradução AUTOMÁTICA NÃO-REVISADA (`automatica_nao_revisada`, i.e. NÃO confiável). Rastreia a
+   * proveniência da linha-BASE do nome PRIMÁRIO (não o parêntese assistivo): a tradução do
+   * `originalLocale` quando existe; senão a do `requestLocale`; ambos ausentes ⇒ `true` (tratado
+   * como não-confiável, "nunca afirma revisado sem prova"). Espelha BYTE-A-BYTE o
+   * `autoTranslationSignal` da Busca/Feed (`recipe-search-read.displayedProvenance` +
+   * `isTranslationReliable`) — a mesma regra de proveniência, sem re-derivar no componente PURO.
+   * SEMPRE presente (booleano de display derivado), distinto dos campos "ausente ≠ vazio".
+   */
+  autoTranslationSignal: boolean
   /** Avisos de contradição — AUSENTE quando vazio (ausente ≠ "verificado OK"). */
   avisos?: AvisoView[]
   /** Aviso de tradução obsoleta — AUSENTE salvo quando a tradução pedida é stale e ≠ origem. */
@@ -378,6 +389,27 @@ export function resolveName(input: {
   // Positivo (AC#1): confiável e diferente ⇒ `Original (Tradução)`. Nunca `()` vazio.
   if (!present(requestedTitulo)) return baseName
   return `${baseName} (${requestedTitulo})`
+}
+
+/**
+ * Selo "tradução automática" (#161): `true` quando a leitura localizada repousa numa
+ * tradução AUTOMÁTICA NÃO-REVISADA. Rastreia a proveniência da linha-BASE do nome PRIMÁRIO
+ * (não o parêntese), ESPELHANDO `resolveName`: a base é a tradução do `originalLocale` quando
+ * existe; na sua ausência, a do `requestLocale`. Ambos ausentes (não deveria ocorrer — toda
+ * Receita tem ≥1 tradução) ⇒ `true` (tratado como NÃO-confiável; "nunca afirma revisado sem
+ * prova"). Mesma regra do `autoTranslationSignal` da Busca/Feed (`displayedProvenance` +
+ * `isTranslationReliable`) — repetida aqui (não re-exportada) para não acoplar o módulo
+ * fundamental de leitura ao módulo de busca (este é insumo daquele, não o contrário).
+ */
+export function resolveAutoTranslationSignal(input: {
+  originalLocale: string
+  requestLocale: string
+  translations: ReadonlyArray<TranslationRow>
+}): boolean {
+  const base =
+    findTranslation(input.translations, input.originalLocale) ??
+    findTranslation(input.translations, input.requestLocale)
+  return base == null ? true : !isTranslationReliable(base.provenance)
 }
 
 /**
@@ -509,6 +541,14 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     restricoes: input.recipe.restricoes,
   })
 
+  // Selo "tradução automática" (#161): a leitura localizada repousa numa tradução automática
+  // não-revisada? Derivado da proveniência da linha-BASE do nome (espelha resolveName).
+  const autoTranslationSignal = resolveAutoTranslationSignal({
+    originalLocale: input.recipe.originalLocale,
+    requestLocale: input.requestLocale,
+    translations: input.translations,
+  })
+
   // Aviso de restrição (#7): o motor PURO decide os CÓDIGOS; a vista os renderiza no
   // requestLocale. `restricoes` vem como `string[]` do loader — filtra por `isRestricao`
   // (defensivo, sem `as`) antes de passar ao motor, que só conhece valores do enum.
@@ -562,6 +602,8 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
       reliable: isTranslationReliable(t.provenance),
       stale: t.stale,
     })),
+    // Selo "tradução automática" (#161): SEMPRE presente (booleano de display derivado).
+    autoTranslationSignal,
     // Ausente ≠ vazio: anexa `avisos` SÓ quando há ≥ 1 (espelha `resolveFacets.restricoes`).
     ...(avisos.length > 0 ? { avisos } : {}),
     // Ausente quando a tradução pedida não é stale (ou é a origem) — espelha `avisos?`.

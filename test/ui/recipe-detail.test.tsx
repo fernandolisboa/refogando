@@ -46,6 +46,9 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     // a localização da unidade e a normalização da quantidade na view.
     ingredients: [{ ordem: 1, quantidade: '2.500', unidade: 'colher_de_sopa', rawText: 'feijão' }],
     translations: [],
+    // #161: por padrão a leitura NÃO repousa em tradução automática (sem selo). Cada caso que
+    // exercita o selo sobrescreve `autoTranslationSignal: true`.
+    autoTranslationSignal: false,
     ...over,
   }
 }
@@ -225,6 +228,67 @@ describe('RecipeDetailView (#57)', () => {
     cleanup()
     renderView(baseView({ origin: 'catalog' }))
     expect(screen.queryByText(/^por /)).toBeNull()
+  })
+
+  it('T8 — #161: ordem estilo Instagram (foto → título → descrição → ingredientes → passos → … → crédito ao final)', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
+    const { container } = renderView(
+      baseView({
+        imageUrl: url,
+        origin: 'ai_chat',
+        author: { name: 'Ana Maria', handle: 'ana-maria' },
+      }),
+    )
+
+    // Marcos de ordem do DOM (topo→baixo): foto, título (h1), descrição (h2), ingredientes (h2),
+    // passos (h2), crédito "por <Nome>" ao final. Ordem aferida por DOCUMENT_POSITION_FOLLOWING.
+    const img = screen.getByRole('img')
+    const h1 = screen.getByRole('heading', { level: 1 })
+    const descricao = screen.getByRole('heading', { name: M.detalhe.descricao, level: 2 })
+    const ingredientes = screen.getByRole('heading', { name: M.detalhe.ingredientes, level: 2 })
+    const passos = screen.getByRole('heading', { name: M.detalhe.passos, level: 2 })
+    const credito = screen.getByText('por Ana Maria')
+
+    const inOrder = [img, h1, descricao, ingredientes, passos, credito]
+    for (let i = 0; i < inOrder.length - 1; i++) {
+      // node[i] precede node[i+1] no DOM (bit FOLLOWING setado).
+      expect(
+        inOrder[i].compareDocumentPosition(inOrder[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+    }
+
+    // Crédito é o ÚLTIMO marco: nada de conteúdo de leitura (h2) vem depois dele.
+    const headingsAfterCredit = container.querySelectorAll('h2')
+    for (const h of headingsAfterCredit) {
+      expect(
+        credito.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeFalsy()
+    }
+  })
+
+  it('T9 — #161: crédito "por <Nome>" é MENOR (text-xs/sm) e muted, ao final', () => {
+    renderView(baseView({ origin: 'ai_chat', author: { name: 'Ana Maria', handle: 'ana-maria' } }))
+    const credito = screen.getByText('por Ana Maria')
+    // O parágrafo do crédito carrega tipografia diminuta (text-xs OU text-sm) + tom muted.
+    const p = credito.closest('p')
+    expect(p).not.toBeNull()
+    expect(p?.className).toMatch(/\btext-(xs|sm)\b/)
+    expect(p?.className).toContain('text-muted')
+  })
+
+  it('T10 — #161: selo "tradução automática" aparece quando autoTranslationSignal=true', () => {
+    renderView(baseView({ autoTranslationSignal: true }))
+    // Reusa o rótulo i18n já existente (busca.traducaoAutomatica = "tradução automática").
+    const selo = screen.getByText(M.busca.traducaoAutomatica)
+    expect(selo).toBeInTheDocument()
+    // Discreto: tipografia diminuta + tom muted (não compete com o título).
+    expect(selo.className).toMatch(/\btext-xs\b/)
+    expect(selo.className).toContain('text-muted')
+  })
+
+  it('T11 — #161: selo "tradução automática" some quando autoTranslationSignal=false (tradução confiável/origem)', () => {
+    renderView(baseView({ autoTranslationSignal: false }))
+    expect(screen.queryByText(M.busca.traducaoAutomatica)).toBeNull()
   })
 
   it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {

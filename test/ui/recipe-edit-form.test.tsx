@@ -39,6 +39,7 @@ function ownerView(over: Partial<RecipeView> = {}): RecipeView {
     dificuldade: 2,
     ingredients: [{ ordem: 0, quantidade: '2.000', unidade: 'xicara', rawText: 'farinha' }],
     translations: [],
+    autoTranslationSignal: false,
     canManage: true,
     visibility: 'private',
     resultKind: 'success',
