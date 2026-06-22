@@ -36,9 +36,9 @@ import { SiteFooter } from '@/components/site-footer'
 /**
  * Seam de teste de FRONTEND (issue #54) — prova, acima da seam de servidor e sem
  * browser/Postgres, que: (1) a chrome renderiza no locale inicial; (2) trocar o seletor
- * de idioma (agora no header) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
+ * de idioma (agora no FOOTER, #162) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
  */
-describe('Shell — troca de locale (seletor no header) cascateia na chrome', () => {
+describe('Shell — troca de locale (seletor no footer) cascateia na chrome', () => {
   it('renderiza pt-BR e segue pro en-US ao trocar o seletor', async () => {
     const user = userEvent.setup()
     render(
@@ -57,8 +57,12 @@ describe('Shell — troca de locale (seletor no header) cascateia na chrome', ()
     expect(within(nav).getByText('Criar')).toBeInTheDocument()
     expect(within(nav).queryByText('Conversar')).not.toBeInTheDocument()
     expect(screen.getByText('Entrar')).toBeInTheDocument()
-    // O seletor de idioma agora vive no header (único combobox da chrome).
-    const select = screen.getByRole('combobox') as HTMLSelectElement
+    // #162: o seletor de idioma vive no FOOTER (não no header). Ausente do banner,
+    // presente no contentinfo. É o único combobox da chrome.
+    const header = screen.getByRole('banner')
+    const footer = screen.getByRole('contentinfo')
+    expect(within(header).queryByRole('combobox')).toBeNull()
+    const select = within(footer).getByRole('combobox') as HTMLSelectElement
     expect(select.value).toBe('pt-BR')
 
     // Troca o idioma no seletor.
@@ -100,5 +104,23 @@ describe('Shell — troca de locale (seletor no header) cascateia na chrome', ()
     const iCriar = labels.indexOf('Criar')
     expect(iMinhas).toBeGreaterThanOrEqual(0)
     expect(iCriar).toBeGreaterThan(iMinhas)
+  })
+
+  it('#162: idioma vive no footer (ao lado do ThemeToggle); header mantém só o AuthSlot', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+        <SiteFooter />
+      </LocaleProvider>,
+    )
+    const header = screen.getByRole('banner')
+    const footer = screen.getByRole('contentinfo')
+    // Seletor de idioma: AUSENTE do header, PRESENTE no footer.
+    expect(within(header).queryByRole('combobox')).toBeNull()
+    expect(within(footer).getByRole('combobox')).toBeInTheDocument()
+    // ThemeToggle (botão) segue no footer, junto do idioma.
+    expect(within(footer).getByRole('button')).toBeInTheDocument()
+    // O AuthSlot do header NÃO regrediu: "Entrar" (Visitante) continua no banner.
+    expect(within(header).getByText('Entrar')).toBeInTheDocument()
   })
 })

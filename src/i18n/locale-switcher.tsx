@@ -3,7 +3,7 @@
  * Seletor de idioma (issue #4, #4.AC1). <select> NATIVO que chama `setLocale`; trocar
  * o valor alterna TODA a chrome. Mantido nativo de propósito: acessível por teclado de
  * graça e testável por getByRole('combobox')/selectOptions (seam de teste de UI, #54).
- * Vive no HEADER (cluster direito) — paridade com o protótipo. Rótulos COMPACTOS PT-BR/EN-US
+ * Vive no FOOTER (ao lado do ThemeToggle, #162). Rótulos COMPACTOS PT-BR/EN-US
  * (códigos de locale, não copy traduzível); `aria-label` vem de `messages.locale.label`.
  */
 import { useLocale } from '@/i18n/provider'

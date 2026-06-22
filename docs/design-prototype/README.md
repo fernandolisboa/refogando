@@ -89,4 +89,4 @@ This is a **local, read-only mirror** of the Claude Design project "Refogando De
 
 - `tokens/` — the CSS custom properties (foundation). The app's `src/app/globals.css` is the source of truth these were derived from.
 - `components/` — the 12 design-system primitives as standalone React/JSX (the exact visual spec). Each maps 1:1 to a shadcn/ui primitive in `src/components/ui/`.
-- `screens/` — the navigable prototype: `Header.jsx`, `HomeSearch.jsx`, `RecipeDetail.jsx`, `CreateScreen.jsx`, `Profile.jsx`, `App.jsx` over `data.js`. **These are the screen layouts the app must match.**
+- `screens/` — the navigable prototype: `Header.jsx`, `Footer.jsx`, `HomeSearch.jsx`, `RecipeDetail.jsx`, `CreateScreen.jsx`, `Profile.jsx`, `App.jsx` over `data.js`. **These are the screen layouts the app must match.** Note (#162): the language switcher lives in `Footer.jsx` (next to the theme toggle), not in the header — the header is `[wordmark, nav, account]`.

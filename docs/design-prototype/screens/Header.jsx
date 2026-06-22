@@ -1,7 +1,9 @@
-/* Refogando app — sticky header (wordmark + nav + language). Composes DS Button. */
-const { Button: RefoButton, Select: RefoSelect } = window.RefogandoDesignSystem_b03ee4
+/* Refogando app — sticky header (wordmark + nav + account). Composes DS Button.
+   O seletor de idioma (#162) vive no FOOTER agora, não aqui — o header fica enxuto
+   com [wordmark, nav, conta]. */
+const { Button: RefoButton } = window.RefogandoDesignSystem_b03ee4
 
-function Header({ route, onNavigate, locale, onLocale, authed }) {
+function Header({ route, onNavigate, authed }) {
   const link = (key, label) => (
     <a
       href="#"
@@ -58,10 +60,6 @@ function Header({ route, onNavigate, locale, onLocale, authed }) {
           </a>
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <RefoSelect value={locale} onChange={(e) => onLocale(e.target.value)} aria-label="Idioma" style={{ fontSize: 'var(--text-xs)', padding: '0.3125rem 1.75rem 0.3125rem 0.5rem' }}>
-            <option value="pt-BR">PT-BR</option>
-            <option value="en-US">EN-US</option>
-          </RefoSelect>
           {authed
             ? <RefoButton variant="ghost" size="sm" onClick={() => onNavigate('profile')}>Você</RefoButton>
             : <RefoButton variant="secondary" size="sm">Entrar</RefoButton>}
