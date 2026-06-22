@@ -22,7 +22,7 @@ function Meta({ label, value }) {
   )
 }
 
-function RecipeDetail({ recipe, onBack, onAuthor }) {
+function RecipeDetail({ recipe, onBack, onAuthor, onEdit, onDerive }) {
   const r = recipe
   const [voted, setVoted] = React.useState(r.voted)
   const [fav, setFav] = React.useState(r.favorited)
@@ -95,9 +95,11 @@ function RecipeDetail({ recipe, onBack, onAuthor }) {
         />
       )}
 
+      {/* Ações do dono/visitante. Editar e "Criar minha versão" abrem o MODAL
+          (RecipeFormModal) — a edição não mora mais inline nesta tela. */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', paddingTop: 'var(--space-2)' }}>
-        <RDSd.Button variant="secondary">Criar minha versão</RDSd.Button>
-        {r.provenance === 'minha' && <RDSd.Button variant="secondary">Editar</RDSd.Button>}
+        {r.provenance !== 'minha' && <RDSd.Button variant="secondary" onClick={onDerive}>Criar minha versão</RDSd.Button>}
+        {r.provenance === 'minha' && <RDSd.Button variant="secondary" onClick={onEdit}>Editar</RDSd.Button>}
         {r.provenance === 'minha' && <RDSd.Button>Publicar</RDSd.Button>}
       </div>
     </main>

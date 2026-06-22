@@ -117,3 +117,23 @@ A revisão pegou 1 **blocker** e várias correções de precisão. Ajustes finai
 
 ## Critério de saída
 Typecheck/lint/build verdes; testes UI verdes; as 5 telas + header batendo visualmente com `docs/design-prototype/screens/*`; features reais preservadas; handoff escrito.
+
+---
+
+## Atualização — sync do protótipo: modal de criar/editar receita (2026-06-22)
+
+`/design-sync` puxou o protótipo remoto (`a660ed26`, `Refogando - Protótipo.dc.html`/`RefoStage`) e refletiu no espelho a **novidade**: a parte editável da receita saiu de inline na tela de detalhe e virou um **modal quase-fullscreen** (overlay), deixando o detalhe **só-leitura** (alinhado ao redesenho estilo Instagram do #161, que deixou o detalhe "entra pelos olhos").
+
+**No espelho (este diretório):**
+- Novo `screens/RecipeFormModal.jsx` — overlay com kicker em versalete + título serifado ("Nova receita" / "Editar receita") + X; campos **Título**, **Tempo de preparo (min)**, **Visibilidade** (privada/pública via `ToggleGroup`), **Foto** ("Gerar com IA" + dica), **Ingredientes** (linhas `quantidade | unidade | nome` + remover + "+ Adicionar ingrediente"), **Modo de preparo** (passos numerados + remover + "+ Adicionar passo"); rodapé fixo **Cancelar** + **Salvar receita**. ESC e clique-fora fecham (paridade com o `Sheet`/Dialog real, #163).
+- `screens/RecipeDetail.jsx` — "Editar" (sua receita) e "Criar minha versão" (de outros) agora **abrem o modal** em vez de ações inline.
+- `screens/App.jsx` — estado `modal { mode, recipe }` + render do `RecipeFormModal`.
+
+**Postura/invariantes a respeitar quando isto virar app (grill → PRD → issues):**
+- O toggle **Pública** no modal vale só para receitas **criadas pelo usuário ou geradas por IA**; **`web_imported` nunca é publicável** (ADR-0019 / #168). O modal de edição de uma importada **não** mostra "Pública".
+- A foto é **invariante** da Receita (ADR-0016) e a geração por IA tem **cap** (#167) + selo "gerada por IA".
+- Geração de receita é **bloqueante (~8–15s)** hoje (sem streaming) — o modal precisa de estado de carregamento honesto se acionar geração.
+
+**Decisão em aberto (pro grilling):** o caminho **"Nova receita"** primário deve abrir este modal estruturado, ou continuar no fluxo `/create` (conversa/estruturado, que gera por IA)? Hoje o protótipo usa o modal para **editar** e **derivar**; "Criar" no nav segue indo ao fluxo de geração. Resolver antes de fatiar.
+
+> Pendência humana relacionada (#180): o **espelho local** já reflete idioma-no-footer + este modal; o **push** do Footer/Header pro design-system remoto via DesignSync (`write_files`) continua sendo tarefa de sessão humana.

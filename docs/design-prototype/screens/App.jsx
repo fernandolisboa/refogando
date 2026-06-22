@@ -9,23 +9,31 @@ function App() {
   // #162: o seletor de idioma vive no footer; o estado de locale sobe pro shell pra
   // header e footer compartilharem (a chrome inteira acompanha a troca).
   const [locale, setLocale] = React.useState('pt-BR')
+  // Sync 2026-06-22: editar/criar acontecem num MODAL quase-fullscreen (overlay), não
+  // inline na tela de detalhe — assim o detalhe fica só-leitura e curto. `modal` é
+  // null | { mode:'edit'|'new', recipe }.
+  const [modal, setModal] = React.useState(null)
   const data = window.RefoData
 
   const openRecipe = (id) => { setRecipeId(id); setRoute('recipe'); window.scrollTo(0, 0) }
   const openAuthor = (h) => { setHandle(h); setRoute('profile'); window.scrollTo(0, 0) }
   const go = (r) => { setRoute(r); window.scrollTo(0, 0) }
   const recipe = data.recipes.find((r) => r.id === recipeId) || data.recipes[0]
+  const openEdit = (r) => setModal({ mode: 'edit', recipe: r }) // sua receita → prefilled
+  const openDerive = () => setModal({ mode: 'new', recipe: null }) // "Criar minha versão" → form em branco
+  const closeModal = () => setModal(null)
 
   return (
     <React.Fragment>
       <Header route={route} onNavigate={go} authed={true} />
       {route === 'home' && <HomeSearch onOpen={openRecipe} />}
       {route === 'recipes' && <HomeSearch onOpen={openRecipe} />}
-      {route === 'recipe' && <RecipeDetail recipe={recipe} onBack={() => go('home')} onAuthor={openAuthor} />}
+      {route === 'recipe' && <RecipeDetail recipe={recipe} onBack={() => go('home')} onAuthor={openAuthor} onEdit={() => openEdit(recipe)} onDerive={openDerive} />}
       {route === 'create' && <CreateScreen />}
       {route === 'mine' && <Profile handle="voce" onOpen={openRecipe} onBack={() => go('home')} />}
       {route === 'profile' && <Profile handle={handle} onOpen={openRecipe} onBack={() => go('home')} />}
       <Footer locale={locale} onLocale={setLocale} />
+      {modal && <RecipeFormModal mode={modal.mode} recipe={modal.recipe} onClose={closeModal} onSave={closeModal} />}
     </React.Fragment>
   )
 }
