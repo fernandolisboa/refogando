@@ -15,6 +15,11 @@ export const ptBR = {
     painel: 'Painel',
     signIn: 'Entrar',
     signOut: 'Sair',
+    // Menu mobile (#163): rótulos acessíveis do gatilho hambúrguer e do título do painel
+    // (drawer). Só aparecem abaixo de `sm:`; no desktop a nav completa segue inline.
+    abrirMenu: 'Abrir menu',
+    fecharMenu: 'Fechar menu',
+    menu: 'Menu',
   },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   // Toggle de tema claro/escuro (ADR-0018), no header. `light`/`dark` nomeiam o DESTINO da

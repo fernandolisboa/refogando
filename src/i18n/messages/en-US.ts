@@ -14,6 +14,10 @@ export const enUS: Messages = {
     painel: 'Dashboard',
     signIn: 'Sign in',
     signOut: 'Sign out',
+    // Mobile menu (#163): accessible labels for the hamburger trigger and the drawer title.
+    abrirMenu: 'Open menu',
+    fecharMenu: 'Close menu',
+    menu: 'Menu',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   // Light/dark theme toggle (ADR-0018), in the header. `light`/`dark` name the action's
