@@ -44,6 +44,9 @@ export async function POST(
       return Response.json(res.view, { status: 200 })
     case 'playful':
       return Response.json({ error: 'playful_nao_publicavel' }, { status: 422 })
+    case 'web_imported':
+      // ADR-0019/#168: importada da web NUNCA vira pública (republicar conteúdo de terceiros).
+      return Response.json({ error: 'web_imported_nao_publicavel' }, { status: 422 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }

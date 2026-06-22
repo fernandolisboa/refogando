@@ -25,6 +25,7 @@ export type VisibilityChangeResult =
   | { kind: 'ok'; view: RecipeView } // 200 — view montada (mudou OU no-op)
   | { kind: 'not_found' } //            404 — inexistente / não-dono / catálogo
   | { kind: 'playful' } //              422 — playful_nao_publicavel
+  | { kind: 'web_imported' } //         422 — web_imported_nao_publicavel (ADR-0019/#168)
 
 /**
  * Lê o SQLSTATE de um erro do Postgres. Sob Drizzle/postgres.js o `PostgresError`
@@ -55,6 +56,7 @@ export async function applyVisibilityTransition(input: {
       ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
+      origin: recipe.origin, // #168: a decisão precisa do origin p/ barrar web_imported→public.
     })
     .from(recipe)
     .where(eq(recipe.id, id))
@@ -66,11 +68,16 @@ export async function applyVisibilityTransition(input: {
 
   // 3. Decisão pura.
   const decision = decideVisibilityTransition({
+    origin: gate.origin,
     resultKind: gate.resultKind,
     current: gate.visibility,
     target,
   })
-  if (!decision.allowed) return { kind: 'playful' }
+  if (!decision.allowed) {
+    return decision.reason === 'web_imported_nao_publicavel'
+      ? { kind: 'web_imported' }
+      : { kind: 'playful' }
+  }
 
   // 4. UPDATE só quando muda (idempotência sem UPDATE redundante nem bump de updatedAt).
   if (decision.changed) {

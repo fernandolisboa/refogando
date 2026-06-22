@@ -24,6 +24,7 @@ type Gate = {
   visibility: string
   resultKind: string
   moderationRemovedAt: Date | null
+  origin: string // #168: gate de pool exclui web_imported (recipe-pool.ts)
 }
 
 export type ReportResult =
@@ -43,6 +44,7 @@ async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      origin: recipe.origin, // #168: gate de pool exclui web_imported (recipe-pool.ts)
     })
     .from(recipe)
     .where(eq(recipe.id, id))

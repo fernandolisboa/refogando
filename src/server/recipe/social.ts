@@ -30,6 +30,7 @@ type Gate = {
   visibility: string
   resultKind: string
   moderationRemovedAt: Date | null
+  origin: string // #168: gate de pool exclui web_imported (recipe-pool.ts)
 }
 
 export type VoteResult =
@@ -56,6 +57,8 @@ async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
       // #18: a dimensão de moderação entra no gate de pool. Removida do pool pelo Curador
       // ⇒ não-votável/favoritável (quem favoritou deixa de ver, igual despublicar, AC3).
       moderationRemovedAt: recipe.moderationRemovedAt,
+      // #168: proveniência entra no gate de pool — web_imported nunca é votável/favoritável.
+      origin: recipe.origin,
     })
     .from(recipe)
     .where(eq(recipe.id, id))

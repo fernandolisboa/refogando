@@ -374,7 +374,10 @@ export const enUS: Messages = {
     despublicar: 'Unpublish',
     atualizando: 'Updating…',
     playfulBloqueio: "Playful recipes stay private and can't be published.",
+    // ADR-0019/#168: web imports stay private (credited to the source, never republished).
+    webImportedBloqueio: "Recipes imported from the web stay private and can't be published.",
     erroPlayful: "This playful recipe can't be published.",
+    erroWebImported: "Recipes imported from the web can't be published.",
     erroNaoEncontrada: "We couldn't find this recipe.",
     erroGenerico: "We couldn't change the visibility. Try again.",
   },

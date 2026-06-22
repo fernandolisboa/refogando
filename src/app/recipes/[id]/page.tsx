@@ -102,6 +102,7 @@ export default async function RecipeDetailPage({
           recipeId={view.id}
           initialVisibility={view.visibility}
           resultKind={view.resultKind}
+          origin={view.origin}
         />
       )}
       {/* Gestão da Imagem da receita (#130) SÓ pro dono (canManage) — subir/trocar/remover a foto.
