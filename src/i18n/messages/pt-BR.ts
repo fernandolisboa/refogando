@@ -80,6 +80,11 @@ export const ptBR = {
     filtroCozinha: 'Cozinha',
     filtroCategoria: 'Categoria',
     filtroRestricao: 'Restrição',
+    // #160: gatilho do disclosure que recolhe os filtros (recolhidos por padrão na home).
+    // `filtrosContagem` mostra o nº de facetas ativas (soma de cozinha+categoria+restrição);
+    // {count} é interpolado no componente via `.replace` (folhas do tipo são string).
+    filtros: '+ filtros',
+    filtrosContagem: '+ filtros ({count})',
     // Autoria (#129): crédito "por <nome>" no item de receita do pool, linkando /u/<handle>.
     // {name} interpolado no componente via `.replace` (folhas do tipo são string).
     porAutor: 'por {name}',

@@ -74,6 +74,11 @@ export const enUS: Messages = {
     filtroCozinha: 'Cuisine',
     filtroCategoria: 'Category',
     filtroRestricao: 'Dietary restriction',
+    // #160: disclosure trigger that collapses the filters (collapsed by default on the home).
+    // `filtrosContagem` shows the number of active facets (cuisine+category+restriction sum);
+    // {count} is interpolated in the component via `.replace` (leaves of the type are string).
+    filtros: '+ filters',
+    filtrosContagem: '+ filters ({count})',
     // Authorship (#129): "by <name>" credit on a pool recipe item, linking /u/<handle>.
     // {name} interpolated in the component via `.replace` (leaves of the type are string).
     porAutor: 'by {name}',
