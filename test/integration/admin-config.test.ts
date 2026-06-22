@@ -198,3 +198,60 @@ describe('/api/admin/config — recipeGenCapByRole (#167, admin-only)', () => {
     expect((await put({ recipeGenCapByRole: okCaps }, headers)).status).toBe(403)
   })
 })
+
+// ── #164: webSearch { enabled, allowlist } (descoberta na web, ADR-0019) ──────────
+describe('/api/admin/config — webSearch (#164, admin-only)', () => {
+  it('GET traz webSearch com default DESLIGADO + allowlist vazia quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as {
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(body.webSearch).toEqual({ enabled: false, allowlist: [] })
+  })
+
+  it('PUT webSearch válido persiste (allowlist CANONICALIZADA) e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-put@cfg.test', role: 'admin' })
+    const putRes = await put(
+      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'panelinha.com.br'] } },
+      headers,
+    )
+    expect(putRes.status).toBe(200)
+    const putBody = (await putRes.json()) as { webSearch: { enabled: boolean; allowlist: string[] } }
+    expect(putBody.webSearch).toEqual({
+      enabled: true,
+      allowlist: ['tudogostoso.com.br', 'panelinha.com.br'], // minúsculo, sem www.
+    })
+
+    const getBody = (await (await get(headers)).json()) as {
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(getBody.webSearch.enabled).toBe(true)
+    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'panelinha.com.br'])
+  })
+
+  it('PUT webSearch NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-iso@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect((await put({ webSearch: { enabled: true, allowlist: ['a.com'] } }, headers)).status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.webSearch).toEqual({ enabled: true, allowlist: ['a.com'] })
+  })
+
+  it('PUT webSearch inválido → 400 config_invalida (domínio malformado, enabled não-bool)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-bad@cfg.test', role: 'admin' })
+    expect((await put({ webSearch: { enabled: true, allowlist: ['localhost'] } }, headers)).status).toBe(400)
+    expect((await put({ webSearch: { enabled: true, allowlist: ['https://a.com'] } }, headers)).status).toBe(400)
+    const bad = await put({ webSearch: { enabled: 'sim', allowlist: [] } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('webSearch PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-cur@cfg.test', role: 'curador' })
+    expect((await put({ webSearch: { enabled: true, allowlist: ['a.com'] } }, headers)).status).toBe(403)
+  })
+})

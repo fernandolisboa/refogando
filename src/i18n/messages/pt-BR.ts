@@ -100,6 +100,12 @@ export const ptBR = {
     // porque gerar é o mote do app. NÃO auto-dispara: leva a /create?q=<termo> pré-preenchendo
     // o texto livre. Visitante vê o convite de entrar (reusa `minhasCriacoes.convidaEntrar*`).
     gerarComIa: 'Gerar com IA',
+    // #164: seção SEPARADA de links da web (ADR-0019) — só aparece quando o nosso acervo veio RASO.
+    // São LINKS externos, marcados "da web", NÃO armazenados nem ranqueados (a Busca só encontra). O
+    // `daWebFonte` credita a fonte ("da web · {fonte}"); {fonte} interpolado no componente via `.replace`.
+    secaoDaWeb: 'Da web',
+    daWebDescricao: 'Não achamos isso no nosso acervo ainda. Estes são links externos — abrem no site de origem.',
+    daWebFonte: 'da web · {fonte}',
   },
   // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
   // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed
@@ -592,6 +598,14 @@ export const ptBR = {
     aiTetoIlimitado: 'ilimitado',
     aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
     aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',
+    // #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios. A allowlist é fonte
+    // ÚNICA tanto da busca na web quanto do guard de SSRF do import. Um domínio por linha.
+    webTitulo: 'Descoberta na web',
+    webDescricao: 'Quando o nosso acervo está raso, mostre links externos da web. Defina os domínios permitidos (um por linha).',
+    webHabilitadaLabel: 'Descoberta na web ligada',
+    webAllowlistLabel: 'Domínios permitidos',
+    webAllowlistAjuda: 'Um domínio por linha (ex.: tudogostoso.com.br). Vazio bloqueia tudo.',
+    webErroConfig: 'Configuração inválida. Revise os domínios (um hostname por linha, sem http:// nem caminho).',
     // Backfill dos embeddings da busca semântica (#119) — recompute em lote, retomável.
     backfillTitulo: 'Embeddings da busca semântica',
     backfillDescricao:

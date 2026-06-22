@@ -1,0 +1,2 @@
+ALTER TABLE "app_config" ADD COLUMN "web_search_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "app_config" ADD COLUMN "web_search_allowlist" jsonb DEFAULT '[]'::jsonb NOT NULL;
