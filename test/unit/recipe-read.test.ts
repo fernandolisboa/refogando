@@ -336,6 +336,56 @@ describe('resolveRecipeView — vista completa', () => {
     expect(view.facets.categoria).toBe('prato_principal')
   })
 
+  // #169/ADR-0019: atribuição à FONTE da receita importada da web. A vista anexa `source`
+  // (url + name opcional) SÓ para web_imported COM sourceUrl; a Autoria humana ("por <name>")
+  // NÃO se aplica (a importada é creditada à fonte externa, nunca ao importador).
+  it('#169: web_imported com sourceUrl ⇒ `source` na vista (url + name); SEM author', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({
+          origin: 'web_imported',
+          ownerId: 'u-1',
+          sourceUrl: 'https://www.tudogostoso.com.br/receita/123-feijoada',
+          sourceName: 'TudoGostoso',
+        }),
+        // mesmo que o server passe um author (não deveria p/ importada), a fonte tem precedência
+        author: { name: 'Quem Importou', handle: 'quem-importou' },
+      }),
+    )
+    expect(view.source).toEqual({
+      url: 'https://www.tudogostoso.com.br/receita/123-feijoada',
+      name: 'TudoGostoso',
+    })
+    // Importada NÃO carrega byline de autoria humana — o crédito é à fonte.
+    expect('author' in view).toBe(false)
+  })
+
+  it('#169: web_imported sem sourceName ⇒ `source` só com url (name AUSENTE — host derivado na UI)', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({
+          origin: 'web_imported',
+          ownerId: 'u-1',
+          sourceUrl: 'https://exemplo.com/x',
+          sourceName: null,
+        }),
+      }),
+    )
+    expect(view.source?.url).toBe('https://exemplo.com/x')
+    expect(view.source && 'name' in view.source).toBe(false)
+  })
+
+  it('#169: receita NÃO-importada (sem sourceUrl) ⇒ chave `source` AUSENTE; author normal', () => {
+    const view = resolveRecipeView(
+      input({
+        recipe: recipeRow({ origin: 'ai_chat', ownerId: 'u-1' }),
+        author: { name: 'Ana', handle: 'ana' },
+      }),
+    )
+    expect('source' in view).toBe(false)
+    expect(view.author).toEqual({ name: 'Ana', handle: 'ana' })
+  })
+
   it('AC#5: invariantes (porcoes/dificuldade/ingredientes) idênticas entre locales', () => {
     const ptView = resolveRecipeView(input({ requestLocale: 'pt-BR' }))
     const enView = resolveRecipeView(input({ requestLocale: 'en-US' }))

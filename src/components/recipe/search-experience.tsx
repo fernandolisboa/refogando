@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -25,6 +26,7 @@ import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { SearchSection } from './search-section'
 import { SortToggle } from './sort-toggle'
 import type { BadgeLabels } from './recipe-result-item'
+import { ImportRecipeDialog, type ImportDialogLabels, type WebLink } from './import-recipe-dialog'
 
 type Sort = 'relevancia' | 'popularidade'
 
@@ -39,12 +41,13 @@ const DEBOUNCE_MS = 300
  */
 const SHALLOW_THRESHOLD = 3
 
-/** Um link da web (#164) — resultado externo da descoberta, NUNCA armazenado nem ranqueado. */
-type WebLink = { title: string; url: string; sourceName: string }
+// Um link da web (#164) — resultado externo da descoberta, NUNCA armazenado nem ranqueado. O tipo é
+// OWNED por `import-recipe-dialog` (que o consome como gatilho de import, #169) e re-usado aqui.
 
 export function SearchExperience() {
   const { locale, messages } = useLocale()
   const m = messages.busca
+  const router = useRouter()
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -428,7 +431,25 @@ export function SearchExperience() {
             links={webLinks}
             heading={m.secaoDaWeb}
             descricao={m.daWebDescricao}
-            fonteLabel={m.daWebFonte}
+            authed={authed}
+            sessionPending={session.isPending}
+            importLabels={{
+              titulo: m.importarTitulo,
+              texto: m.importarTexto,
+              confirmar: m.importarConfirmar,
+              verNoSite: m.importarVerNoSite,
+              cancelar: m.importarCancelar,
+              importando: m.importarImportando,
+              erroNaoImportavel: m.importarErroNaoImportavel,
+              erroGenerico: m.importarErroGenerico,
+              conviteTitulo: m.importarConviteTitulo,
+              conviteTexto: m.importarConviteTexto,
+              signInLabel: messages.nav.signIn,
+              daWebFonte: m.daWebFonte,
+            }}
+            // Sucesso (201): leva o usuário direto à receita importada (detalhe canônico). De lá,
+            // "Minhas criações" a lista marcada como importada (#169).
+            onImported={(recipeId) => router.push(`/recipes/${recipeId}`)}
           />
         )}
       </div>
@@ -437,22 +458,29 @@ export function SearchExperience() {
 }
 
 /**
- * #164 (ADR-0019): seção "Da web" — links EXTERNOS de descoberta quando o acervo é raso. Cada item é
- * um `<a>` que abre no site de origem (`target="_blank"` + `rel="noopener noreferrer nofollow"`),
- * marcado "da web · <fonte>" (atribuição). NÃO é uma Receita do nosso acervo: NUNCA usa o
- * `RecipeResultItem` (que linka `/recipes/<id>` interno) — é deliberadamente uma lista de links crus,
- * fora do ranking interno. Heading nível 2 (como as outras seções de resultado).
+ * #164/#169 (ADR-0019): seção "Da web" — resultados EXTERNOS de descoberta quando o acervo é raso.
+ * Cada item é o GATILHO de um `ImportRecipeDialog` (#169): clicar abre a confirmação de IMPORTAR a
+ * receita pro perfil privado (com saída "Ver no site" e, p/ visitante, convite de entrar). NÃO é uma
+ * Receita do nosso acervo: NUNCA usa o `RecipeResultItem` (que linka `/recipes/<id>` interno) — é
+ * deliberadamente uma lista de cartões marcados "da web · <fonte>", fora do ranking interno. Heading
+ * nível 2 (como as outras seções de resultado). O dialog tem o link externo dentro (exibir ≠ importar).
  */
 function WebDiscoverySection({
   links,
   heading,
   descricao,
-  fonteLabel,
+  authed,
+  sessionPending,
+  importLabels,
+  onImported,
 }: {
   links: WebLink[]
   heading: string
   descricao: string
-  fonteLabel: string
+  authed: boolean
+  sessionPending: boolean
+  importLabels: ImportDialogLabels
+  onImported: (recipeId: string) => void
 }) {
   return (
     <section aria-labelledby="search-section-da-web" className="flex flex-col gap-3">
@@ -466,17 +494,13 @@ function WebDiscoverySection({
       <ul className="flex flex-col gap-3">
         {links.map((link) => (
           <li key={link.url}>
-            <a
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer nofollow external"
-              className="flex flex-col gap-0.5 rounded-md border border-border bg-surface px-4 py-3 hover:border-fg"
-            >
-              <span className="font-display text-base font-medium text-fg">{link.title}</span>
-              <span className="text-xs text-muted">
-                {fonteLabel.replace('{fonte}', link.sourceName)}
-              </span>
-            </a>
+            <ImportRecipeDialog
+              link={link}
+              authed={authed}
+              sessionPending={sessionPending}
+              labels={importLabels}
+              onImported={onImported}
+            />
           </li>
         ))}
       </ul>

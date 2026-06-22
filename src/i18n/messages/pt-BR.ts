@@ -106,6 +106,24 @@ export const ptBR = {
     secaoDaWeb: 'Da web',
     daWebDescricao: 'Não achamos isso no nosso acervo ainda. Estes são links externos — abrem no site de origem.',
     daWebFonte: 'da web · {fonte}',
+    // Selo de proveniência da receita IMPORTADA da web (#169, ADR-0019) — distinto de Catálogo/
+    // Comunidade. Aparece no detalhe da importada (que é privada e creditada à fonte).
+    seloImportada: 'Importada da web',
+    // #169: modal de importação na Busca. Clicar num resultado "da web" abre uma confirmação de que
+    // a receita será COPIADA pro perfil privado do usuário (atribuída à fonte, nunca republicada).
+    // {fonte} interpolado no componente via `.replace`. Visitante vê o convite de entrar.
+    importarTitulo: 'Importar esta receita',
+    importarTexto: 'Vamos copiar esta receita para o seu perfil privado, com o crédito à fonte ({fonte}). Ela fica só sua — importar não é republicar.',
+    importarConfirmar: 'Importar para o meu perfil',
+    importarVerNoSite: 'Ver no site',
+    importarCancelar: 'Cancelar',
+    importarImportando: 'Importando…',
+    // Erros do import (mapeados das respostas da rota /api/recipes/import).
+    importarErroNaoImportavel: 'Não foi possível importar esta receita: o site não publica os dados estruturados de que precisamos.',
+    importarErroGenerico: 'Não foi possível importar agora. Tente de novo ou abra no site de origem.',
+    // Visitante: gerar/importar exige conta — reusa o convite de entrar.
+    importarConviteTitulo: 'Entre para importar',
+    importarConviteTexto: 'Crie uma conta ou entre para importar receitas da web para o seu perfil.',
   },
   // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
   // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed
@@ -192,6 +210,11 @@ export const ptBR = {
     restricoes: 'Restrições',
     tags: 'Tags',
     avisoTitulo: 'Aviso de restrição',
+    // Atribuição à FONTE (#169, ADR-0019): no detalhe da receita IMPORTADA da web, "fonte: …"
+    // SUBSTITUI o crédito "por <Usuário>". {fonte} (nome do site ou host) interpolado via `.replace`;
+    // o texto linka a URL de origem. `fonteVerNoSite` é o rótulo acessível do link externo.
+    fonte: 'fonte: {fonte}',
+    fonteVerNoSite: 'Ver no site de origem',
     // Link de volta no topo do detalhe (#57) → "/" (a home É a busca).
     voltarBusca: 'Voltar à busca',
     // Gestão da Imagem da receita (#130) — bloco do dono.
@@ -456,6 +479,8 @@ export const ptBR = {
     seloPlayful: 'Zoeira',
     seloDerivada: 'Derivada',
     seloRegenerada: 'Regenerada',
+    // #169/ADR-0019: receita IMPORTADA da web (origin=web_imported) — marcador na lista de criações.
+    seloImportada: 'Importada da web',
     // Afordâncias do dono no detalhe (aparecem só sob canManage, vindo do servidor).
     gerenciarTitulo: 'Gerenciar receita',
     editar: 'Editar',

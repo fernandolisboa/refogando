@@ -24,6 +24,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #169: a Busca usa useRouter().push (navega após importar) — mock p/ o jsdom (sem AppRouter montado).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
 // #116: a Busca lê useSession só para a dica inicial. Sem mock o hook bate em /api/auth (quebra
 // no jsdom). Anônimo por padrão (basta para os testes de disclosure).
 type SessionState = {

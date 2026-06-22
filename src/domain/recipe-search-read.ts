@@ -302,6 +302,11 @@ export function buildSearchResponse(
     if (result === null) continue
     // #116/own-label: a PRÓPRIA do viewer vai para `minhas`; o resto classifica por origin.
     if (result.isOwn) response.minhas.push(result)
+    // #169/ADR-0019: uma importada da web (`web_imported`) é cópia PRIVADA do importador — nunca
+    // conteúdo público da Comunidade. O gate de leitura só a expõe ao próprio dono (⇒ isOwn=true,
+    // já roteada acima); um hit web_imported que chegue aqui SEM ser do viewer é dado inconsistente
+    // (inalcançável em prod) — DESCARTADO (defesa em profundidade), nunca empurrado p/ comunidade.
+    else if (hit.origin === 'web_imported') continue
     else response[classifySection(hit.origin)].push(result)
   }
 

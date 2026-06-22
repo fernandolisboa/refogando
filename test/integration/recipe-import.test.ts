@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/import/route'
+import { GET } from '@/app/api/recipes/[id]/route'
 import { getDb, setRecipeImporter, setEmbedder } from '@/server/deps'
 import { FakeRecipeImporter, CANONICAL_IMPORTED_RECIPE } from '@/server/import/recipe-importer'
 import { FakeEmbedder } from '@/server/embedding/embedder'
 import { recipe, recipeTranslation, recipeIngredient, appConfig } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import type { RecipeView } from '@/domain/recipe-read'
 import { seedSessionHeaders } from '../helpers/users'
 
 /**
@@ -99,6 +101,30 @@ describe('POST /api/recipes/import (#165)', () => {
       .orderBy(recipeIngredient.ordem)
     expect(ings.length).toBe(CANONICAL_IMPORTED_RECIPE.ingredientes.length)
     expect(ings[0].rawText).toBe(CANONICAL_IMPORTED_RECIPE.ingredientes[0].rawText)
+  })
+
+  it('#169: o detalhe da importada (lida pelo DONO) traz `source` (atribuição) e SEM `author`', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-detail@ex.com' })
+    await seedAllowlist()
+    setRecipeImporter(new FakeRecipeImporter())
+    setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+
+    // A importada é PRIVADA: só o dono lê (gate de leitura). GET com a sessão do dono.
+    const getRes = await GET(
+      new Request(`http://localhost/api/recipes/${recipeId}?locale=pt-BR`, { headers }),
+      { params: Promise.resolve({ id: recipeId }) },
+    )
+    expect(getRes.status).toBe(200)
+    const view = (await getRes.json()) as RecipeView
+
+    // Atribuição à FONTE presente (url + name), substituindo a Autoria humana.
+    expect(view.origin).toBe('web_imported')
+    expect(view.source).toEqual({ url: SRC, name: CANONICAL_IMPORTED_RECIPE.sourceName })
+    expect('author' in view).toBe(false)
   })
 
   it('anon → 401 (zero efeito: nenhuma Receita criada)', async () => {

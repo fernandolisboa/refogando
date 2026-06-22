@@ -16,6 +16,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #169: a Busca usa useRouter().push (navega após importar) — mock p/ o jsdom (sem AppRouter montado).
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
 // A Busca lê useSession para escolher a dica inicial E, no #166, o ramo do CTA "Gerar com IA"
 // (logado → link pro /create; visitante → convite de entrar). Estado MUTÁVEL por teste.
 type SessionState = {

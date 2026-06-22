@@ -77,9 +77,12 @@ export function MyRecipesList() {
     }
   }, [locale, authed])
 
-  /** Selos de estado de UM card, na ordem visibilidade → linhagem (NEUTROS). */
+  /** Selos de estado de UM card, na ordem proveniência → visibilidade → linhagem (NEUTROS). */
   function selos(item: RecipeListItem): string[] {
     const out: string[] = []
+    // #169/ADR-0019: marcador de proveniência da IMPORTADA da web (origin=web_imported) — PRIMEIRO,
+    // como sinal de origem (a importada é privada e creditada à fonte, não criada pelo usuário).
+    if (item.origin === 'web_imported') out.push(m.seloImportada)
     if (item.resultKind === 'playful') out.push(m.seloPlayful)
     out.push(item.visibility === 'public' ? m.seloPublica : m.seloPrivada)
     // Removida-do-pool pela moderação (#18): o dono enxerga que saiu do acervo (selo NEUTRO).
