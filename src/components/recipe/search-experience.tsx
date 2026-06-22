@@ -138,6 +138,14 @@ export function SearchExperience() {
     label: messages.restricaoLabel[value],
   }))
 
+  // #160: contagem de facetas ATIVAS (soma das três facetas multi-seleção). Rótulo do gatilho
+  // "+ filtros" → "+ filtros (n)" quando há seleção. Sort NÃO entra (é ordenação, não filtro).
+  const activeFacetCount = cozinha.length + categoria.length + restricao.length
+  const filtrosLabel =
+    activeFacetCount > 0
+      ? m.filtrosContagem.replace('{count}', String(activeFacetCount))
+      : m.filtros
+
   const badgeLabels: BadgeLabels = {
     catalogo: m.seloCatalogo,
     comunidade: m.seloComunidade,
@@ -189,24 +197,36 @@ export function SearchExperience() {
       </form>
 
       <div className="flex flex-col gap-4">
-        <FacetFieldset
-          legend={m.filtroCozinha}
-          options={cozinhaOptions}
-          selected={cozinha}
-          onToggle={toggle(setCozinha)}
-        />
-        <FacetFieldset
-          legend={m.filtroCategoria}
-          options={categoriaOptions}
-          selected={categoria}
-          onToggle={toggle(setCategoria)}
-        />
-        <FacetFieldset
-          legend={m.filtroRestricao}
-          options={restricaoOptions}
-          selected={restricao}
-          onToggle={toggle(setRestricao)}
-        />
+        {/* #160: filtros RECOLHIDOS por padrão atrás de um disclosure NATIVO (mesmo padrão
+            `<details>/<summary>` do RecipeImageManager — sem lib). Recolher/expandir é só um
+            toggle de visibilidade do <details>: o estado das facetas vive no useState do pai,
+            então não se perde a seleção nem re-dispara a busca. O <summary> mostra "+ filtros"
+            com a contagem de facetas ativas. As 3 facetas vivem DENTRO do disclosure. */}
+        <details className="flex flex-col gap-4">
+          <summary className="cursor-pointer select-none text-sm font-medium text-muted hover:text-fg">
+            {filtrosLabel}
+          </summary>
+          <div className="mt-4 flex flex-col gap-4">
+            <FacetFieldset
+              legend={m.filtroCozinha}
+              options={cozinhaOptions}
+              selected={cozinha}
+              onToggle={toggle(setCozinha)}
+            />
+            <FacetFieldset
+              legend={m.filtroCategoria}
+              options={categoriaOptions}
+              selected={categoria}
+              onToggle={toggle(setCategoria)}
+            />
+            <FacetFieldset
+              legend={m.filtroRestricao}
+              options={restricaoOptions}
+              selected={restricao}
+              onToggle={toggle(setRestricao)}
+            />
+          </div>
+        </details>
 
         {/* Ordenação da Comunidade (#62). Vive JUNTO do form (gateada por `hasCriteria`),
             NÃO dentro da seção Comunidade: `SearchSection` se omite quando volta vazia, o
