@@ -26,14 +26,26 @@ import {
   type PersistBriefing,
   type PersistOrigin,
 } from '@/server/generation/persist'
+import { loadRecentRecipeGenAt } from '@/server/generation/quota'
+import {
+  capFromRecipeGenConfig,
+  DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+} from '@/domain/recipe-gen-config'
+import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 /**
  * Geração por IA — rota base do contrato (issue #8, §7a; ADR-0010 route handler).
  *
  * POST cria uma tentativa de geração. Fluxo: requireSession (401 Visitante) →
  * valida `mode` + entrada do usuário ANTES do seam (400, o cliente do Claude NUNCA
- * é chamado nesses casos) → resolve `model` de `app_config.default_model` → chama o
- * seam mockável → `classify` → persiste conforme a taxonomia.
+ * é chamado nesses casos) → resolve `model` de `app_config.default_model` → TETO de geração
+ * por papel (#167) → chama o seam mockável → `classify` → persiste conforme a taxonomia.
+ *
+ * Teto diário de geração de RECEITA por papel (#167, espelha o teto de imagem da #132/#134): ANTES
+ * de tocar o Claude, conta as `generation` do usuário na janela 24h deslizante (sem ledger novo —
+ * via creation_session.user_id) e decide pela função pura `decideRecipeGenQuota`. Estourou ⇒ 429
+ * `limite_geracao` com `retryAfterMs` (countdown), o seam NÃO é tocado (custo barrado). cap ∞
+ * (admin/papel ilimitado) pula a query de contagem.
  *
  * Status: success|degraded|playful → 201 (Receita privada criada); impossible → 200
  * (hard-stop honesto, sem Receita); invalid → 502 (falha upstream, NÃO persiste nada).
@@ -163,9 +175,28 @@ export async function POST(req: Request): Promise<Response> {
     userPrompt = prompt.userPrompt
   }
 
-  // Modelo de app_config (default em código quando a linha singleton está ausente).
+  // Config de app_config (default em código quando a linha singleton está ausente). UM toque de DB
+  // serve ao modelo (#5) E ao teto de geração de receita (#167) — a linha singleton carrega ambos.
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+
+  // Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de tocar o Claude
+  // (custo). cap ∞ (admin/papel ilimitado) pula a contagem. Estourou ⇒ 429 com countdown, mensagem
+  // AMIGÁVEL mapeada pela UI (limite_geracao). Espelha o teto de imagem (#132/#134).
+  const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
+  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  if (Number.isFinite(cap)) {
+    const now = new Date()
+    const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
+    const quota = decideRecipeGenQuota({ cap, recentAt, now })
+    if (!quota.allowed) {
+      return Response.json(
+        { error: 'limite_geracao', retryAfterMs: quota.retryAfterMs },
+        { status: 429 },
+      )
+    }
+  }
+
   // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
   // só restam free_text → ai_free_text e structured → ai_structured.
   const origin: PersistOrigin = mode === 'free_text' ? 'ai_free_text' : 'ai_structured'

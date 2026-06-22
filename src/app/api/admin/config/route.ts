@@ -3,19 +3,22 @@ import { getDb } from '@/server/deps'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
+import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
  * `app_config` (linha id=true, garantida por CHECK no schema).
  *
- * Dois eixos INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
+ * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
  *  - `defaultModel` (#5) — modelo de chat. allowlist EM CÓDIGO (muda mais rápido que migração).
  *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (a `/admin/ai`).
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
+ *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a `/admin/ai`).
+ *    Record<Role, number|null> (`null` = ∞); a rota /api/generations lê este valor pelo teto.
  *
- * PUT aceita `defaultModel` E/OU `imageGen` (ao menos um); valida cada campo PRESENTE; faz upsert só
- * dos campos enviados (preserva o outro eixo). Corpo vazio/sem campo conhecido ⇒ 400. Erro de DB →
- * `erro_interno` 500 sem stack (consistente com /api/admin/roles).
+ * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` (ao menos um); valida cada campo
+ * PRESENTE; faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo
+ * conhecido ⇒ 400. Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
 const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
 
@@ -33,6 +36,7 @@ export async function PUT(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => ({}))) as {
     defaultModel?: unknown
     imageGen?: unknown
+    recipeGenCapByRole?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -42,6 +46,7 @@ export async function PUT(req: Request): Promise<Response> {
     imageGenEnabled: boolean
     imageGenModel: string
     imageGenCapByRole: ImageGenConfig['dailyCapByRole']
+    recipeGenCapByRole: RecipeGenCapByRole
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -58,6 +63,14 @@ export async function PUT(req: Request): Promise<Response> {
     set.imageGenEnabled = parsed.value.enabled
     set.imageGenModel = parsed.value.model
     set.imageGenCapByRole = parsed.value.dailyCapByRole
+  }
+
+  // #167: teto de geração de RECEITA por papel (mesma validação do teto de imagem — null=∞ ou inteiro
+  // ≥0, exatamente os papéis conhecidos). Inválido ⇒ 400 config_invalida (mesma chave da UI /admin/ai).
+  if (body.recipeGenCapByRole !== undefined) {
+    const caps = parseRecipeGenCapByRole(body.recipeGenCapByRole)
+    if (caps === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.recipeGenCapByRole = caps
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

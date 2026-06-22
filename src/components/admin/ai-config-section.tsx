@@ -26,11 +26,12 @@ import {
   type ImageGenConfig,
   type ImageGenCapByRole,
 } from '@/domain/image-gen-config'
+import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 
 type CapsForm = Record<Role, string>
 
 /** config → form: `null` (ilimitado) vira string vazia; número vira sua string. */
-function capsToForm(caps: ImageGenCapByRole): CapsForm {
+function capsToForm(caps: ImageGenCapByRole | RecipeGenCapByRole): CapsForm {
   const out = {} as CapsForm
   for (const role of ROLES) out[role] = caps[role] == null ? '' : String(caps[role])
   return out
@@ -60,6 +61,10 @@ export function AiConfigSection() {
   const [enabled, setEnabled] = useState(true)
   const [model, setModel] = useState<string>(DEFAULT_IMAGE_MODEL)
   const [caps, setCaps] = useState<CapsForm>(() => capsToForm({ usuario: 3, curador: 5, admin: null }))
+  // #167: teto de geração de RECEITA por papel (eixo separado do teto de imagem).
+  const [recipeCaps, setRecipeCaps] = useState<CapsForm>(() =>
+    capsToForm({ usuario: 10, curador: 20, admin: null }),
+  )
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -72,10 +77,11 @@ export function AiConfigSection() {
     admin: m.papelAdmin,
   }
 
-  function applyConfig(cfg: ImageGenConfig) {
-    setEnabled(cfg.enabled)
-    setModel(cfg.model)
-    setCaps(capsToForm(cfg.dailyCapByRole))
+  function applyConfig(cfg: { imageGen: ImageGenConfig; recipeGenCapByRole: RecipeGenCapByRole }) {
+    setEnabled(cfg.imageGen.enabled)
+    setModel(cfg.imageGen.model)
+    setCaps(capsToForm(cfg.imageGen.dailyCapByRole))
+    setRecipeCaps(capsToForm(cfg.recipeGenCapByRole))
   }
 
   async function load() {
@@ -87,12 +93,16 @@ export function AiConfigSection() {
         setLoadError(true)
         return
       }
-      const body = (await res.json()) as { imageGen: ImageGenConfig }
+      const body = (await res.json()) as {
+        imageGen: ImageGenConfig
+        recipeGenCapByRole: RecipeGenCapByRole
+      }
       // Inline (não via `applyConfig`): assim `load` fecha SÓ sobre setters estáveis + a pura
       // `capsToForm` (módulo) ⇒ o effect de montagem não acusa exhaustive-deps (espelha config-section).
       setEnabled(body.imageGen.enabled)
       setModel(body.imageGen.model)
       setCaps(capsToForm(body.imageGen.dailyCapByRole))
+      setRecipeCaps(capsToForm(body.recipeGenCapByRole))
     } catch {
       setLoadError(true)
     } finally {
@@ -113,17 +123,20 @@ export function AiConfigSection() {
     setErrorKey(null)
     // Validação cliente leve: tetos inválidos ⇒ erro local, sem enviar (não vira `null` silencioso).
     const dailyCapByRole = formToCaps(caps)
-    if (dailyCapByRole === null) {
+    const recipeGenCapByRole = formToCaps(recipeCaps)
+    if (dailyCapByRole === null || recipeGenCapByRole === null) {
       setErrorKey('erroConfig')
       setStatus('error')
       return
     }
     setSaving(true)
     try {
+      // Envia AMBOS os eixos da /admin/ai (imagem + teto de receita) num único PUT; o defaultModel de
+      // chat (seção /admin/config) é preservado pelo upsert parcial do route.
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ imageGen: { enabled, model, dailyCapByRole } }),
+        body: JSON.stringify({ imageGen: { enabled, model, dailyCapByRole }, recipeGenCapByRole }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
@@ -131,8 +144,11 @@ export function AiConfigSection() {
         setStatus('error')
         return
       }
-      const body = (await res.json()) as { imageGen: ImageGenConfig }
-      applyConfig(body.imageGen)
+      const body = (await res.json()) as {
+        imageGen: ImageGenConfig
+        recipeGenCapByRole: RecipeGenCapByRole
+      }
+      applyConfig(body)
       setStatus('saved')
     } catch {
       setErrorKey('erroGenerico')
@@ -202,7 +218,7 @@ export function AiConfigSection() {
               </select>
             </label>
 
-            {/* Tetos por papel */}
+            {/* Tetos de IMAGEM por papel */}
             <fieldset className="flex flex-col gap-2">
               <legend className="text-sm font-medium text-fg">{m.aiTetosLabel}</legend>
               <p className="text-xs text-muted">{m.aiTetoAjuda}</p>
@@ -219,6 +235,35 @@ export function AiConfigSection() {
                       placeholder={m.aiTetoIlimitado}
                       onChange={(e) => {
                         setCaps((prev) => ({ ...prev, [role]: e.target.value }))
+                        setStatus('idle')
+                      }}
+                      className="w-32"
+                    />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {/* #167: Tetos de GERAÇÃO DE RECEITA por papel (eixo separado do teto de imagem). */}
+            <fieldset className="flex flex-col gap-2">
+              <legend className="text-sm font-medium text-fg">{m.aiTetoReceitaLabel}</legend>
+              <p className="text-xs text-muted">{m.aiTetoAjuda}</p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {ROLES.map((role) => (
+                  <label
+                    key={role}
+                    className="flex flex-col gap-1 text-sm font-medium text-fg"
+                  >
+                    {roleLabel[role]}
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      inputMode="numeric"
+                      value={recipeCaps[role]}
+                      placeholder={m.aiTetoIlimitado}
+                      onChange={(e) => {
+                        setRecipeCaps((prev) => ({ ...prev, [role]: e.target.value }))
                         setStatus('idle')
                       }}
                       className="w-32"

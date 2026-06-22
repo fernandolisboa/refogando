@@ -132,6 +132,10 @@ function mapErroMensagem(m: Messages['criar'], errorKey: string): string {
       return m.erroGeracao
     case 'erroConexao':
       return m.erroConexao
+    // #167: teto diário de geração de receita por papel (429 limite_geracao) → mensagem amigável.
+    case 'limite_geracao':
+    case 'erroLimiteGeracao':
+      return m.erroLimiteGeracao
     default:
       return m.erroCampos
   }
@@ -384,6 +388,14 @@ export function CreateStructuredExperience({
       if (res.status === 400) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         setErrorKey(data.error ?? 'erroCampos')
+        setStatus('error')
+        return
+      }
+      // #167: teto de geração estourado → 429 limite_geracao. Mensagem AMIGÁVEL (não erro cru), sem
+      // travar o formulário (o usuário pode tentar de novo mais tarde — "Ajustar e tentar de novo").
+      if (res.status === 429) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        setErrorKey(data.error === 'limite_geracao' ? 'limite_geracao' : 'erroGeracao')
         setStatus('error')
         return
       }

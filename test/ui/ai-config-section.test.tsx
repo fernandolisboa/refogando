@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Config da geração de imagem por IA (#134) — teste de COMPONENTE jsdom (seam #54): `fetch` mockado
- * no shape REAL de `GET/PUT /api/admin/config`. Cobre: carrega e reflete enabled/modelo/tetos; salvar
- * envia o eixo `imageGen` com os valores certos; teto inválido (negativo) bloqueia no CLIENTE (sem
- * PUT); erro do servidor (config_invalida / 500) mapeia a mensagem. NÃO mocka next/navigation
- * (a seção não navega — se alguém adicionar router, o jsdom lança e o teste pega).
+ * Config da geração por IA (#134 imagem + #167 teto de receita) — teste de COMPONENTE jsdom (seam
+ * #54): `fetch` mockado no shape REAL de `GET/PUT /api/admin/config`. Cobre: carrega e reflete
+ * enabled/modelo/tetos (imagem E receita); salvar envia AMBOS os eixos (imageGen + recipeGenCapByRole)
+ * com os valores certos; teto inválido bloqueia no CLIENTE (sem PUT); erro do servidor mapeia a
+ * mensagem. NÃO mocka next/navigation (a seção não navega — se alguém adicionar router, o jsdom lança).
+ *
+ * Os dois fieldsets de teto repetem os MESMOS rótulos de papel; as queries são escopadas por fieldset
+ * (via legenda) com `within` pra não ficarem ambíguas.
  */
 
 import { LocaleProvider } from '@/i18n/provider'
@@ -35,7 +38,17 @@ function mockFetch(routes: Record<string, FetchResult | FetchResult[]>) {
   return { impl, calls }
 }
 
-function configBody(over: Partial<{ enabled: boolean; usuario: number | null; curador: number | null; admin: number | null }> = {}) {
+function configBody(
+  over: Partial<{
+    enabled: boolean
+    usuario: number | null
+    curador: number | null
+    admin: number | null
+    recipeUsuario: number | null
+    recipeCurador: number | null
+    recipeAdmin: number | null
+  }> = {},
+) {
   return {
     defaultModel: 'claude-opus-4-8',
     imageGen: {
@@ -46,6 +59,11 @@ function configBody(over: Partial<{ enabled: boolean; usuario: number | null; cu
         curador: over.curador ?? 5,
         admin: over.admin ?? null,
       },
+    },
+    recipeGenCapByRole: {
+      usuario: over.recipeUsuario ?? 10,
+      curador: over.recipeCurador ?? 20,
+      admin: over.recipeAdmin ?? null,
     },
   }
 }
@@ -63,30 +81,52 @@ function renderSection() {
   )
 }
 
-describe('AiConfigSection (#134)', () => {
-  it('carrega e reflete enabled/modelo/tetos da config', async () => {
+/** Acha o <fieldset> que contém uma legenda dada (escopo pras queries de papel não ficarem ambíguas). */
+function fieldsetByLegend(legend: string): HTMLElement {
+  const leg = screen.getByText(legend)
+  const fs = leg.closest('fieldset')
+  if (!fs) throw new Error(`fieldset não encontrado para a legenda: ${legend}`)
+  return fs as HTMLElement
+}
+
+describe('AiConfigSection (#134 + #167)', () => {
+  it('carrega e reflete enabled/modelo/tetos de imagem E de receita', async () => {
     mockFetch({ 'GET /api/admin/config': { ok: true, status: 200, body: configBody() } })
     renderSection()
 
     const enabled = (await screen.findByLabelText(A.aiHabilitadaLabel)) as HTMLInputElement
     expect(enabled.checked).toBe(true)
-    expect((screen.getByLabelText(A.papelUsuario) as HTMLInputElement).value).toBe('3')
-    expect((screen.getByLabelText(A.papelCurador) as HTMLInputElement).value).toBe('5')
-    expect((screen.getByLabelText(A.papelAdmin) as HTMLInputElement).value).toBe('') // null ⇒ vazio (ilimitado)
+
+    const img = within(fieldsetByLegend(A.aiTetosLabel))
+    expect((img.getByLabelText(A.papelUsuario) as HTMLInputElement).value).toBe('3')
+    expect((img.getByLabelText(A.papelCurador) as HTMLInputElement).value).toBe('5')
+    expect((img.getByLabelText(A.papelAdmin) as HTMLInputElement).value).toBe('') // null ⇒ vazio
+
+    const rec = within(fieldsetByLegend(A.aiTetoReceitaLabel))
+    expect((rec.getByLabelText(A.papelUsuario) as HTMLInputElement).value).toBe('10')
+    expect((rec.getByLabelText(A.papelCurador) as HTMLInputElement).value).toBe('20')
+    expect((rec.getByLabelText(A.papelAdmin) as HTMLInputElement).value).toBe('') // null ⇒ vazio
   })
 
-  it('salvar envia o eixo imageGen com os valores editados', async () => {
+  it('salvar envia AMBOS os eixos (imageGen + recipeGenCapByRole) com os valores editados', async () => {
     const { calls } = mockFetch({
       'GET /api/admin/config': { ok: true, status: 200, body: configBody() },
-      'PUT /api/admin/config': { ok: true, status: 200, body: configBody({ enabled: false, usuario: 2 }) },
+      'PUT /api/admin/config': {
+        ok: true,
+        status: 200,
+        body: configBody({ enabled: false, usuario: 2, recipeUsuario: 7 }),
+      },
     })
     const user = userEvent.setup()
     renderSection()
 
     await user.click(await screen.findByLabelText(A.aiHabilitadaLabel)) // desliga
-    const usuario = screen.getByLabelText(A.papelUsuario)
-    await user.clear(usuario)
-    await user.type(usuario, '2')
+    const imgUsuario = within(fieldsetByLegend(A.aiTetosLabel)).getByLabelText(A.papelUsuario)
+    await user.clear(imgUsuario)
+    await user.type(imgUsuario, '2')
+    const recUsuario = within(fieldsetByLegend(A.aiTetoReceitaLabel)).getByLabelText(A.papelUsuario)
+    await user.clear(recUsuario)
+    await user.type(recUsuario, '7')
     await user.click(screen.getByRole('button', { name: A.salvar }))
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
@@ -97,11 +137,12 @@ describe('AiConfigSection (#134)', () => {
         model: DEFAULT_IMAGE_MODEL,
         dailyCapByRole: { usuario: 2, curador: 5, admin: null },
       },
+      recipeGenCapByRole: { usuario: 7, curador: 20, admin: null },
     })
     expect(await screen.findByText(A.salvo)).toBeInTheDocument()
   })
 
-  it('teto vazio é enviado como null (ilimitado)', async () => {
+  it('teto de receita vazio é enviado como null (ilimitado)', async () => {
     const { calls } = mockFetch({
       'GET /api/admin/config': { ok: true, status: 200, body: configBody() },
       'PUT /api/admin/config': { ok: true, status: 200, body: configBody() },
@@ -109,24 +150,26 @@ describe('AiConfigSection (#134)', () => {
     const user = userEvent.setup()
     renderSection()
 
-    const usuario = await screen.findByLabelText(A.papelUsuario)
-    await user.clear(usuario) // vazio ⇒ ilimitado
+    await screen.findByLabelText(A.aiHabilitadaLabel) // espera a carga (sai do "Carregando…")
+    const recUsuario = within(fieldsetByLegend(A.aiTetoReceitaLabel)).getByLabelText(A.papelUsuario)
+    await user.clear(recUsuario) // vazio ⇒ ilimitado
     await user.click(screen.getByRole('button', { name: A.salvar }))
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true))
     const put = calls.find((c) => c.method === 'PUT')!
-    expect(JSON.parse(String(put.body)).imageGen.dailyCapByRole.usuario).toBeNull()
+    expect(JSON.parse(String(put.body)).recipeGenCapByRole.usuario).toBeNull()
   })
 
-  it('teto inválido (negativo) bloqueia no CLIENTE: mostra erro e NÃO faz PUT', async () => {
+  it('teto de receita inválido (negativo) bloqueia no CLIENTE: mostra erro e NÃO faz PUT', async () => {
     const { calls } = mockFetch({
       'GET /api/admin/config': { ok: true, status: 200, body: configBody() },
     })
     const user = userEvent.setup()
     renderSection()
 
-    const usuario = await screen.findByLabelText(A.papelUsuario)
-    fireEvent.change(usuario, { target: { value: '-1' } }) // programático: passa a guarda de min do browser
+    await screen.findByLabelText(A.aiHabilitadaLabel) // espera a carga (sai do "Carregando…")
+    const recUsuario = within(fieldsetByLegend(A.aiTetoReceitaLabel)).getByLabelText(A.papelUsuario)
+    fireEvent.change(recUsuario, { target: { value: '-1' } }) // programático: passa a guarda de min
     await user.click(screen.getByRole('button', { name: A.salvar }))
 
     expect(await screen.findByText(A.aiErroConfig)).toBeInTheDocument()

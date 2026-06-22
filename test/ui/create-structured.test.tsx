@@ -366,6 +366,23 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
   })
 
+  it('T10b — teto de geração (429 limite_geracao): mensagem AMIGÁVEL, form preservado, sem GET (#167)', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 429, body: { error: 'limite_geracao', retryAfterMs: 3_600_000 } },
+    })
+    renderCreate()
+
+    await fillBriefing(user)
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(M.erroLimiteGeracao) // amigável, distinta de erroGeracao
+    expect(alert).not.toHaveTextContent(M.erroGeracao)
+    expect(screen.getByRole('button', { name: M.gerar })).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+  })
+
   it('T11 — erro de conexão (rede): catch mostra erroConexao, form preservado', async () => {
     const user = userEvent.setup()
     mockFetch({ generations: { reject: true } })

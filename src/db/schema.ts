@@ -39,6 +39,10 @@ import {
   DEFAULT_IMAGE_GEN_CAP_BY_ROLE,
   type ImageGenCapByRole,
 } from '@/domain/image-gen-config'
+import {
+  DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+  type RecipeGenCapByRole,
+} from '@/domain/recipe-gen-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
@@ -523,6 +527,11 @@ export const verification = pgTable('verification', {
 // `image_gen_cap_by_role` é o teto diário por papel (jsonb Record<Role, number|null>, `null` =
 // ILIMITADO — JSON não tem Infinity). Defaults vêm do domínio (mesma fonte da #132). Colunas planas
 // na MESMA linha singleton (não tabela própria): a config é um punhado de campos, não uma coleção.
+//
+// #167 (teto de geração de RECEITA por papel): `recipe_gen_cap_by_role` espelha EXATAMENTE a forma de
+// `image_gen_cap_by_role` (jsonb Record<Role, number|null>, `null` = ILIMITADO). Sem `enabled`/`model`
+// análogos: a geração de receita é o core do produto (sempre ligada) e o modelo de chat já vive em
+// `default_model`. Defaults vêm do domínio (`DEFAULT_RECIPE_GEN_CAP_BY_ROLE`).
 export const appConfig = pgTable(
   'app_config',
   {
@@ -534,6 +543,10 @@ export const appConfig = pgTable(
       .$type<ImageGenCapByRole>()
       .notNull()
       .default(DEFAULT_IMAGE_GEN_CAP_BY_ROLE),
+    recipeGenCapByRole: jsonb('recipe_gen_cap_by_role')
+      .$type<RecipeGenCapByRole>()
+      .notNull()
+      .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

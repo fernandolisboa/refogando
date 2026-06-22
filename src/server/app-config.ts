@@ -6,6 +6,10 @@ import {
   isImageGenModel,
   type ImageGenConfig,
 } from '@/domain/image-gen-config'
+import {
+  DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+  type RecipeGenCapByRole,
+} from '@/domain/recipe-gen-config'
 
 /**
  * Leitura do singleton `app_config` (issues #5/#134) — fonte ÚNICA da config de app, usada tanto pelo
@@ -22,12 +26,18 @@ export const DEFAULT_CHAT_MODEL = 'claude-opus-4-8'
 export type AppConfig = {
   defaultModel: string
   imageGen: ImageGenConfig
+  // #167: teto diário de geração de RECEITA por papel (jsonb Record<Role, number|null>, `null` = ∞).
+  recipeGenCapByRole: RecipeGenCapByRole
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
   const [row] = await db.select().from(appConfig)
   if (!row) {
-    return { defaultModel: DEFAULT_CHAT_MODEL, imageGen: DEFAULT_IMAGE_GEN_CONFIG }
+    return {
+      defaultModel: DEFAULT_CHAT_MODEL,
+      imageGen: DEFAULT_IMAGE_GEN_CONFIG,
+      recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+    }
   }
   return {
     defaultModel: row.defaultModel,
@@ -36,6 +46,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       model: isImageGenModel(row.imageGenModel) ? row.imageGenModel : DEFAULT_IMAGE_MODEL,
       dailyCapByRole: row.imageGenCapByRole,
     },
+    recipeGenCapByRole: row.recipeGenCapByRole,
   }
 }
 

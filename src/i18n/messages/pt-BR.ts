@@ -291,6 +291,9 @@ export const ptBR = {
     verReceita: 'Ver receita',
     erroGeracao: 'Não foi possível gerar a receita. Tente de novo.',
     erroConexao: 'Não foi possível conectar. Tente de novo.',
+    // #167: teto diário de geração de receita por papel atingido (janela 24h deslizante). Copy
+    // neutra à janela ("por enquanto", não "hoje"/dia-calendário) — espelha imagemLimite.
+    erroLimiteGeracao: 'Você atingiu o limite de receitas geradas por enquanto. Tente de novo mais tarde.',
     erroBriefingVazio:
       'Adicione ao menos um ingrediente, uma cozinha, uma restrição ou uma observação.',
     erroPorcoes: 'As porções devem ficar entre 1 e 50.',
@@ -583,7 +586,9 @@ export const ptBR = {
     aiHabilitadaLabel: 'Geração de imagem ligada',
     aiModeloLabel: 'Modelo',
     aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
-    aiTetosLabel: 'Tetos diários por papel (janela de 24h)',
+    aiTetosLabel: 'Tetos de imagem por papel (janela de 24h)',
+    // #167: teto de geração de RECEITA por papel (eixo separado do teto de imagem).
+    aiTetoReceitaLabel: 'Tetos de geração de receita por papel (janela de 24h)',
     aiTetoIlimitado: 'ilimitado',
     aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
     aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',

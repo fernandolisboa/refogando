@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ADD COLUMN "recipe_gen_cap_by_role" jsonb DEFAULT '{"usuario":10,"curador":20,"admin":null}'::jsonb NOT NULL;
