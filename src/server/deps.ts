@@ -5,16 +5,18 @@ import { RealTranslator, type Translator } from '@/server/translation/translator
 import { RealImageStore, type ImageStore } from '@/server/images/image-store'
 import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/image-generator'
 import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
+import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-search/web-search-provider'
 
 /**
- * Raiz de composição (DI) da fundação. Seis seams com um dono cada:
- *  - getDb()             → Postgres (Drizzle)
- *  - getClaudeClient()   → seam do Claude
- *  - getEmbedder()       → seam de embedding
- *  - getTranslator()     → seam de tradução automática (issue #23)
- *  - getImageStore()     → seam de storage de imagem (issue #126, Vercel Blob)
- *  - getImageGenerator() → seam de geração de imagem por IA (issue #132, Gemini REST)
- *  - getRecipeImporter() → seam de importação de receita da web (issue #165, JSON-LD)
+ * Raiz de composição (DI) da fundação. Sete seams com um dono cada:
+ *  - getDb()               → Postgres (Drizzle)
+ *  - getClaudeClient()     → seam do Claude
+ *  - getEmbedder()         → seam de embedding
+ *  - getTranslator()       → seam de tradução automática (issue #23)
+ *  - getImageStore()       → seam de storage de imagem (issue #126, Vercel Blob)
+ *  - getImageGenerator()   → seam de geração de imagem por IA (issue #132, Gemini REST)
+ *  - getRecipeImporter()   → seam de importação de receita da web (issue #165, JSON-LD)
+ *  - getWebSearchProvider()→ seam de DESCOBERTA na web (issue #164, links externos ADR-0019)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
@@ -35,6 +37,8 @@ let imageGeneratorOverride: ImageGenerator | null = null
 let lazyImageGenerator: ImageGenerator | null = null
 let recipeImporterOverride: RecipeImporter | null = null
 let lazyRecipeImporter: RecipeImporter | null = null
+let webSearchProviderOverride: WebSearchProvider | null = null
+let lazyWebSearchProvider: WebSearchProvider | null = null
 
 export function getDb(): Database {
   if (dbOverride) return dbOverride
@@ -114,6 +118,16 @@ export function setRecipeImporter(importer: RecipeImporter): void {
   recipeImporterOverride = importer
 }
 
+export function getWebSearchProvider(): WebSearchProvider {
+  if (webSearchProviderOverride) return webSearchProviderOverride
+  if (!lazyWebSearchProvider) lazyWebSearchProvider = new RealWebSearchProvider()
+  return lazyWebSearchProvider
+}
+
+export function setWebSearchProvider(provider: WebSearchProvider): void {
+  webSearchProviderOverride = provider
+}
+
 /**
  * Limpa overrides dos seams entre testes. NÃO mexe no banco (setDb persiste por
  * arquivo de teste) nem derruba o pool.
@@ -125,4 +139,5 @@ export function resetDeps(): void {
   imageStoreOverride = null
   imageGeneratorOverride = null
   recipeImporterOverride = null
+  webSearchProviderOverride = null
 }

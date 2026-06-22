@@ -32,6 +32,16 @@ type Status = 'idle' | 'loading' | 'done' | 'error'
 
 const DEBOUNCE_MS = 300
 
+/**
+ * #164 (ADR-0019): a ponte de descoberta na web SÓ dispara quando o nosso acervo veio RASO — a soma
+ * de minhas+catalogo+comunidade ABAIXO deste limiar. Com acervo suficiente, NÃO chamamos a web (não
+ * taxa o caminho quente). Conforme o acervo cresce, a ponte some sozinha.
+ */
+const SHALLOW_THRESHOLD = 3
+
+/** Um link da web (#164) — resultado externo da descoberta, NUNCA armazenado nem ranqueado. */
+type WebLink = { title: string; url: string; sourceName: string }
+
 export function SearchExperience() {
   const { locale, messages } = useLocale()
   const m = messages.busca
@@ -56,10 +66,17 @@ export function SearchExperience() {
   const [data, setData] = useState<SearchResponse | null>(null)
   const [status, setStatus] = useState<Status>('idle')
 
+  // #164: links da WEB (ADR-0019) — seção SEPARADA, fora do ranking interno. Carregam DEPOIS de
+  // /api/search (não bloqueiam os resultados locais) e SÓ quando o acervo local veio raso.
+  const [webLinks, setWebLinks] = useState<WebLink[]>([])
+
   // AbortController da requisição em voo: cancelar a anterior quando os critérios mudam
   // (debounce) ou no unmount. Uma req cancelada NÃO vira estado de erro (AbortError é
   // ignorado).
   const abortRef = useRef<AbortController | null>(null)
+  // AbortController SEPARADO da descoberta na web (#164): cancelar a anterior a cada nova busca
+  // (a web é um fetch independente, disparado depois do /api/search).
+  const webAbortRef = useRef<AbortController | null>(null)
 
   const hasCriteria =
     q.trim() !== '' ||
@@ -67,12 +84,41 @@ export function SearchExperience() {
     categoria.length > 0 ||
     restricao.length > 0
 
+  /**
+   * #164 (ADR-0019): descoberta na web — só chamada pelo `doSearch` QUANDO o acervo local veio raso.
+   * Fetch INDEPENDENTE de `/api/discovery/web` (não bloqueia os resultados locais; estes já estão na
+   * tela). Os links são EXTERNOS, numa seção SEPARADA, FORA do ranking interno. Qualquer falha (rede,
+   * desligado) ⇒ `[]` silencioso — a descoberta na web é assistiva, nunca derruba a Busca. Só o termo
+   * `q` alimenta a web (facetas não se aplicam a links externos).
+   */
+  const discoverWeb = useCallback(
+    async (term: string) => {
+      webAbortRef.current?.abort()
+      const controller = new AbortController()
+      webAbortRef.current = controller
+      const url = new URL('/api/discovery/web', window.location.origin)
+      url.searchParams.set('q', term)
+      url.searchParams.set('locale', locale)
+      try {
+        const res = await fetch(url, { signal: controller.signal })
+        if (!res.ok) return
+        const body = (await res.json()) as { results: WebLink[] }
+        setWebLinks(body.results ?? [])
+      } catch {
+        // AbortError ou rede caída: descoberta na web é assistiva — silencia (mantém só o local).
+      }
+    },
+    [locale],
+  )
+
   const doSearch = useCallback(async () => {
     // Estado inicial neutro: sem critério, NÃO chama a API (espelha o early-return do
     // handler — evita req supérflua e tela branca).
     if (!hasCriteria) {
       abortRef.current?.abort()
+      webAbortRef.current?.abort()
       setData(null)
+      setWebLinks([])
       setStatus('idle')
       return
     }
@@ -99,12 +145,25 @@ export function SearchExperience() {
       const body: SearchResponse = await res.json()
       setData(body)
       setStatus('done')
+
+      // #164: GATING da descoberta na web. Os resultados LOCAIS já estão na tela (acima). Só
+      // depois, e SÓ se o acervo local veio RASO (abaixo do limiar) E há um termo de texto,
+      // disparamos a web (fetch independente, não-bloqueante). Acervo suficiente ⇒ NÃO chama (e
+      // limpa qualquer link da web de uma busca anterior). Facetas-só (sem `q`) NÃO acionam a web.
+      const localCount = body.minhas.length + body.catalogo.length + body.comunidade.length
+      const term = q.trim()
+      if (term !== '' && localCount < SHALLOW_THRESHOLD) {
+        void discoverWeb(term)
+      } else {
+        webAbortRef.current?.abort()
+        setWebLinks([])
+      }
     } catch (err) {
       // Req cancelada (critérios mudaram / unmount) não é erro de verdade.
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort])
+  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -118,7 +177,10 @@ export function SearchExperience() {
   }, [doSearch])
 
   useEffect(() => {
-    return () => abortRef.current?.abort()
+    return () => {
+      abortRef.current?.abort()
+      webAbortRef.current?.abort()
+    }
   }, [])
 
   const toggle = useCallback(
@@ -355,8 +417,70 @@ export function SearchExperience() {
             )}
           </div>
         )}
+
+        {/* #164: seção SEPARADA "Da web" (ADR-0019). Renderiza FORA do bloco de resultados locais (que
+            só monta com `hasResults`), porque o caso mais comum é acervo VAZIO + links da web — esses
+            links têm de aparecer mesmo sem nenhum resultado local. São LINKS externos (target/rel
+            external), marcados "da web", NÃO misturados ao ranking interno. Carregam DEPOIS do
+            /api/search (não bloqueiam) e só quando o acervo veio raso. Some quando `webLinks` esvazia. */}
+        {status !== 'error' && webLinks.length > 0 && (
+          <WebDiscoverySection
+            links={webLinks}
+            heading={m.secaoDaWeb}
+            descricao={m.daWebDescricao}
+            fonteLabel={m.daWebFonte}
+          />
+        )}
       </div>
     </Container>
+  )
+}
+
+/**
+ * #164 (ADR-0019): seção "Da web" — links EXTERNOS de descoberta quando o acervo é raso. Cada item é
+ * um `<a>` que abre no site de origem (`target="_blank"` + `rel="noopener noreferrer nofollow"`),
+ * marcado "da web · <fonte>" (atribuição). NÃO é uma Receita do nosso acervo: NUNCA usa o
+ * `RecipeResultItem` (que linka `/recipes/<id>` interno) — é deliberadamente uma lista de links crus,
+ * fora do ranking interno. Heading nível 2 (como as outras seções de resultado).
+ */
+function WebDiscoverySection({
+  links,
+  heading,
+  descricao,
+  fonteLabel,
+}: {
+  links: WebLink[]
+  heading: string
+  descricao: string
+  fonteLabel: string
+}) {
+  return (
+    <section aria-labelledby="search-section-da-web" className="flex flex-col gap-3">
+      <h2
+        id="search-section-da-web"
+        className="font-display text-lg font-semibold text-fg"
+      >
+        {heading}
+      </h2>
+      <p className="max-w-[60ch] text-sm text-muted">{descricao}</p>
+      <ul className="flex flex-col gap-3">
+        {links.map((link) => (
+          <li key={link.url}>
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer nofollow external"
+              className="flex flex-col gap-0.5 rounded-md border border-border bg-surface px-4 py-3 hover:border-fg"
+            >
+              <span className="font-display text-base font-medium text-fg">{link.title}</span>
+              <span className="text-xs text-muted">
+                {fonteLabel.replace('{fonte}', link.sourceName)}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

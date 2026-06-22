@@ -94,6 +94,13 @@ export const enUS: Messages = {
     // /create?q=<term> pre-filling the free-text. Guests see the sign-in invite (reuses
     // `minhasCriacoes.convidaEntrar*`).
     gerarComIa: 'Generate with AI',
+    // #164: SEPARATE section of web links (ADR-0019) — appears ONLY when our own collection came back
+    // SHALLOW. These are EXTERNAL links, marked "from the web", NOT stored nor ranked (Search only
+    // finds). `daWebFonte` credits the source ("from the web · {fonte}"); {fonte} interpolated in the
+    // component via `.replace`.
+    secaoDaWeb: 'From the web',
+    daWebDescricao: "We didn't find this in our collection yet. These are external links — they open on the source site.",
+    daWebFonte: 'from the web · {fonte}',
   },
   // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
   // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
@@ -549,6 +556,14 @@ export const enUS: Messages = {
     aiTetoIlimitado: 'unlimited',
     aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
     aiErroConfig: 'Invalid configuration. Review the caps and model.',
+    // #164: web discovery (ADR-0019) — on/off + allowlist of domains. The allowlist is the SINGLE
+    // source of truth for both web search and the import SSRF guard. One domain per line.
+    webTitulo: 'Web discovery',
+    webDescricao: 'When our collection is shallow, show external web links. Set the allowed domains (one per line).',
+    webHabilitadaLabel: 'Web discovery on',
+    webAllowlistLabel: 'Allowed domains',
+    webAllowlistAjuda: 'One domain per line (e.g., tudogostoso.com.br). Empty blocks everything.',
+    webErroConfig: 'Invalid configuration. Review the domains (one hostname per line, no http:// or path).',
     // Semantic-search embeddings backfill (#119) — batched, resumable recompute.
     backfillTitulo: 'Semantic-search embeddings',
     backfillDescricao:

@@ -43,6 +43,7 @@ import {
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
+import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
@@ -532,6 +533,12 @@ export const verification = pgTable('verification', {
 // `image_gen_cap_by_role` (jsonb Record<Role, number|null>, `null` = ILIMITADO). Sem `enabled`/`model`
 // análogos: a geração de receita é o core do produto (sempre ligada) e o modelo de chat já vive em
 // `default_model`. Defaults vêm do domínio (`DEFAULT_RECIPE_GEN_CAP_BY_ROLE`).
+//
+// #164 (descoberta na web, ADR-0019): `web_search_enabled` liga/desliga a ponte de DESCOBERTA na web
+// (links externos quando o acervo é raso); `web_search_allowlist` é a lista de domínios permitidos
+// (jsonb string[]). Defaults DESLIGADO + lista VAZIA (fail-closed): a ponte só "acende" quando o admin
+// liga E define domínios E o deploy tem credencial (gate humano). A allowlist é fonte ÚNICA tanto da
+// busca na web quanto do GUARD de SSRF do import (#165). Defaults vêm do domínio (`web-search-config`).
 export const appConfig = pgTable(
   'app_config',
   {
@@ -547,6 +554,13 @@ export const appConfig = pgTable(
       .$type<RecipeGenCapByRole>()
       .notNull()
       .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
+    webSearchEnabled: boolean('web_search_enabled')
+      .notNull()
+      .default(DEFAULT_WEB_SEARCH_CONFIG.enabled),
+    webSearchAllowlist: jsonb('web_search_allowlist')
+      .$type<string[]>()
+      .notNull()
+      .default(DEFAULT_WEB_SEARCH_CONFIG.allowlist),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

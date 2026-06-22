@@ -2,14 +2,21 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getRecipeImporter } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { persistImport } from '@/server/import/persist-import'
+import { loadWebSearchConfig } from '@/server/app-config'
+import { isUrlAllowed } from '@/domain/web-search-config'
 
 /**
  * Importar uma receita de um link da web (#165, ADR-0019) — cópia PRIVADA do Usuário.
  *
- * Fluxo: requireSession (401 Visitante) → valida `url` (http(s) bem-formada) ANTES do seam → chama
- * o seam `getRecipeImporter` (fetch + parse JSON-LD schema.org/Recipe) → na falha tratada, 422 (não
- * importa) → no sucesso, persiste origin=web_imported, owner=usuário, visibility=private, atribuição
- * (source_url/source_name) e embeda best-effort (como a Geração) → 201.
+ * Fluxo: requireSession (401 Visitante) → valida `url` (http(s) bem-formada) ANTES do seam → GUARD de
+ * SSRF/allowlist (#164: o host TEM de estar na allowlist curada do admin — a MESMA fonte de verdade da
+ * descoberta na web) → chama o seam `getRecipeImporter` (fetch + parse JSON-LD schema.org/Recipe) → na
+ * falha tratada, 422 (não importa) → no sucesso, persiste origin=web_imported, owner=usuário,
+ * visibility=private, atribuição (source_url/source_name) e embeda best-effort (como a Geração) → 201.
+ *
+ * O guard de allowlist fecha o flanco de SSRF: SEM ele, a rota aceitaria URL arbitrária e o seam Real
+ * faria `fetch` em qualquer host (incluindo IPs/serviços internos). Como #164 introduz a allowlist,
+ * o import passa a SÓ buscar domínios que o admin curou (mesma allowlist do `/api/discovery/web`).
  *
  * O guard "nunca pública" (recusar o toggle de publicação numa importada) é a #168; aqui a receita
  * já nasce `private`, então está segura até lá.
@@ -18,6 +25,7 @@ import { persistImport } from '@/server/import/persist-import'
  *  - 201 { recipeId, visibility: 'private' }  — criada.
  *  - 400 { error: 'url_invalida' }            — body sem `url` http(s) bem-formada.
  *  - 401 { error: 'nao_autenticado' }         — Visitante.
+ *  - 403 { error: 'dominio_nao_permitido' }   — host fora da allowlist curada (SSRF guard, #164).
  *  - 422 { error: <reason> }                  — sem JSON-LD confiável / idioma fora de PT/EN /
  *                                               fetch falho (não importa; nunca 500).
  */
@@ -44,6 +52,15 @@ export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => ({}))) as { url?: unknown }
   const url = parseHttpUrl(body.url)
   if (!url) return Response.json({ error: 'url_invalida' }, { status: 400 })
+
+  // GUARD de SSRF/allowlist (#164, ADR-0019): o host TEM de estar na allowlist curada do admin (mesma
+  // fonte de verdade da descoberta na web) ANTES de qualquer `fetch`. Allowlist vazia ⇒ recusa tudo
+  // (fail-closed). Recusa host fora da curadoria com 403, ZERO efeito (nem rede, nem DB) — fecha o
+  // flanco de SSRF (sem isto, o seam Real faria fetch em IP/serviço interno arbitrário).
+  const cfg = await loadWebSearchConfig(getDb())
+  if (!isUrlAllowed(url, cfg.allowlist)) {
+    return Response.json({ error: 'dominio_nao_permitido' }, { status: 403 })
+  }
 
   // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança) — mapeadas a 422.
   const result = await getRecipeImporter().import(url)

@@ -4,7 +4,7 @@ import { POST } from '@/app/api/recipes/import/route'
 import { getDb, setRecipeImporter, setEmbedder } from '@/server/deps'
 import { FakeRecipeImporter, CANONICAL_IMPORTED_RECIPE } from '@/server/import/recipe-importer'
 import { FakeEmbedder } from '@/server/embedding/embedder'
-import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import { recipe, recipeTranslation, recipeIngredient, appConfig } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
 
@@ -13,10 +13,24 @@ import { seedSessionHeaders } from '../helpers/users'
  * `FakeRecipeImporter` injetado (NUNCA toca a rede). `setup.ts` aponta o DI pro Postgres descartável
  * e reseta seams/trunca antes de cada teste. Cobre: sucesso (web_imported privada, atribuição gravada,
  * owner correto, ingredientes/tradução), anon→401, sem-JSON-LD→422, idioma não suportado→422,
- * url inválida→400.
+ * url inválida→400, GUARD de SSRF/allowlist (#164: domínio fora da allowlist → 403, ANTES do seam).
+ *
+ * O domínio de origem `exemplo.com` é LIBERADO na allowlist do singleton `app_config` ANTES de cada
+ * caso de sucesso/422 (sem isso, o guard de SSRF recusaria com 403 — allowlist vazia é fail-closed).
  */
 
 const SRC = 'https://exemplo.com/receitas/bolo'
+
+/** Libera o domínio `exemplo.com` na allowlist (singleton app_config) — pré-condição do import. */
+async function seedAllowlist(domains: string[] = ['exemplo.com']): Promise<void> {
+  await getDb()
+    .insert(appConfig)
+    .values({ id: true, webSearchEnabled: true, webSearchAllowlist: domains })
+    .onConflictDoUpdate({
+      target: appConfig.id,
+      set: { webSearchEnabled: true, webSearchAllowlist: domains },
+    })
+}
 
 function withJson(base?: Headers): Headers {
   const h = base ? new Headers(base) : new Headers()
@@ -52,6 +66,7 @@ async function loadRecipe(id: string) {
 describe('POST /api/recipes/import (#165)', () => {
   it('sucesso: cria web_imported PRIVADA, owner=usuário, atribuição gravada, tradução + ingredientes', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'import-ok@ex.com' })
+    await seedAllowlist() // exemplo.com liberado (sem isso o guard de SSRF recusa com 403)
     setRecipeImporter(new FakeRecipeImporter()) // receita canônica fixa (pt-BR)
     setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS))
 
@@ -96,6 +111,7 @@ describe('POST /api/recipes/import (#165)', () => {
 
   it('sem JSON-LD confiável → 422, não importa', async () => {
     const { headers } = await seedSessionHeaders({ email: 'import-nojsonld@ex.com' })
+    await seedAllowlist()
     setRecipeImporter(new FakeRecipeImporter(undefined, 'no_jsonld'))
 
     const res = await importPost({ url: SRC }, headers)
@@ -108,6 +124,7 @@ describe('POST /api/recipes/import (#165)', () => {
 
   it('idioma fora de PT/EN → 422, não importa', async () => {
     const { headers } = await seedSessionHeaders({ email: 'import-locale@ex.com' })
+    await seedAllowlist()
     setRecipeImporter(new FakeRecipeImporter(undefined, 'unsupported_locale'))
 
     const res = await importPost({ url: SRC }, headers)
@@ -126,6 +143,34 @@ describe('POST /api/recipes/import (#165)', () => {
     expect((await importPost({}, headers)).status).toBe(400)
     expect((await importPost({ url: 'javascript:alert(1)' }, headers)).status).toBe(400)
     expect((await importPost({ url: 'não é url' }, headers)).status).toBe(400)
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
+  it('SSRF guard (#164): domínio FORA da allowlist → 403, ZERO efeito (antes do seam)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-ssrf@ex.com' })
+    await seedAllowlist(['exemplo.com']) // só exemplo.com liberado
+    // Importer que estouraria se chamado — prova que o 403 acontece ANTES do seam (sem fetch).
+    setRecipeImporter(new FakeRecipeImporter())
+
+    // Host fora da curadoria: recusado com 403, sem importar.
+    const res = await importPost({ url: 'https://evil.test/receita' }, headers)
+    expect(res.status).toBe(403)
+    const bodyJson = (await res.json()) as { error: string }
+    expect(bodyJson.error).toBe('dominio_nao_permitido')
+
+    // Subdomínio do allowlistado PASSA o guard (vai ao seam → 201).
+    const ok = await importPost({ url: 'https://m.exemplo.com/receita' }, headers)
+    expect(ok.status).toBe(201)
+  })
+
+  it('SSRF guard (#164): allowlist VAZIA recusa TODA URL (fail-closed) → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-emptyallow@ex.com' })
+    // SEM seedAllowlist: app_config nasce vazia (allowlist []), fail-closed.
+    setRecipeImporter(new FakeRecipeImporter())
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(403)
     const all = await getDb().select({ id: recipe.id }).from(recipe)
     expect(all.length).toBe(0)
   })

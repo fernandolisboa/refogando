@@ -5,6 +5,7 @@
  */
 import { SectionGate } from '../gate'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 
 export const runtime = 'nodejs'
@@ -14,6 +15,8 @@ export default async function AdminAiPage() {
     <SectionGate min="admin">
       <div className="flex flex-col gap-10">
         <AiConfigSection />
+        {/* #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios (admin-only). */}
+        <WebSearchConfigSection />
         {/* #119: backfill dos embeddings da busca semântica (recompute em lote, admin-only). */}
         <EmbeddingBackfill />
       </div>
