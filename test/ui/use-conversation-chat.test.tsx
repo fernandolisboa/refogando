@@ -103,6 +103,9 @@ function makeJson(r: { status: number; body: unknown }) {
 
 function mockFetch(opts: {
   stream?: StreamResult | (() => Promise<StreamResult>)
+  // #167: resposta JSON PRÉ-stream (ex.: 429 limite_geracao) — quando presente, o POST do stream
+  // devolve JSON em vez de abrir o ReadableStream (espelha o gate da rota antes do seam).
+  streamJson?: { status: number; body: unknown }
   createSession?: JsonResult
   recipes?: JsonResult
 }) {
@@ -112,6 +115,7 @@ function mockFetch(opts: {
     const method = (init?.method ?? 'GET').toUpperCase()
 
     if (url.includes('/api/conversations/stream')) {
+      if (opts.streamJson) return makeJson(opts.streamJson)
       const s = typeof opts.stream === 'function' ? await opts.stream() : opts.stream
       const ctrl = s as StreamResult
       return { ok: true, status: 200, body: ctrl.stream } as unknown as Response
@@ -242,6 +246,27 @@ describe('useConversationChat (#104 S1)', () => {
     expect(result.current.view).toBeNull()
     expect(result.current.result).toBeNull()
     expect(result.current.status).toBe('idle')
+  })
+
+  it('429 limite_geracao (#167) PRÉ-stream: status error + errorKey limite_geracao; NÃO commita Assistente, NÃO faz GET', async () => {
+    const fetchMock = mockFetch({ streamJson: { status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } } })
+
+    const { result } = renderHook(() => useConversationChat({ locale: 'pt-BR' }), {
+      wrapper: wrapper(),
+    })
+
+    act(() => result.current.setInput('algo'))
+    act(() => {
+      result.current.onSubmit({ preventDefault: () => {} } as React.FormEvent<HTMLFormElement>)
+    })
+
+    await waitFor(() => expect(result.current.status).toBe('error'))
+    // Desfecho LIMPO de limite (não 'dropped' / queda ambígua): a UI mapeia p/ mensagem amigável.
+    expect(result.current.errorKey).toBe('limite_geracao')
+    // Só a fala do Usuário; o Assistente não foi commitado (não houve stream).
+    expect(result.current.transcript).toEqual([{ role: 'user', content: 'algo' }])
+    // NUNCA fez o 2º GET de Receita (não houve destilação).
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
   })
 
   it('2º GET da Receita falha: marca loadFailed (NÃO impossible), status result', async () => {

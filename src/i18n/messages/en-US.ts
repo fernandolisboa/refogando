@@ -269,6 +269,8 @@ export const enUS: Messages = {
     verReceita: 'View recipe',
     erroGeracao: "Couldn't generate the recipe. Please try again.",
     erroConexao: 'Could not connect. Please try again.',
+    // #167: daily recipe generation cap reached (sliding 24h window). Window-neutral copy.
+    erroLimiteGeracao: "You've reached your recipe generation limit for now. Please try again later.",
     erroBriefingVazio: 'Add at least one ingredient, cuisine, restriction, or note.',
     erroPorcoes: 'Servings must be between 1 and 50.',
     erroDificuldade: 'Difficulty must be between 1 and 5.',
@@ -541,7 +543,9 @@ export const enUS: Messages = {
     aiHabilitadaLabel: 'Image generation on',
     aiModeloLabel: 'Model',
     aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
-    aiTetosLabel: 'Daily caps per role (24h window)',
+    aiTetosLabel: 'Image caps per role (24h window)',
+    // #167: per-role recipe generation cap (separate axis from the image cap).
+    aiTetoReceitaLabel: 'Recipe generation caps per role (24h window)',
     aiTetoIlimitado: 'unlimited',
     aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
     aiErroConfig: 'Invalid configuration. Review the caps and model.',

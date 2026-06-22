@@ -27,6 +27,8 @@ import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { classify } from '@/domain/generation'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
+import { loadRecentRecipeGenAt } from '@/server/generation/quota'
+import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 /**
  * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
@@ -71,6 +73,9 @@ export type RegenerateResult =
   | { kind: 'invalid' } //          erro de sistema upstream (refusal/max_tokens/parse_failed)
   | { kind: 'not_found' } //         não-própria (404 leak-safe)
   | { kind: 'sem_fonte' } //         origin não-ai_* OU fonte de prompt irrecuperável (409)
+  // Teto diário de geração de RECEITA por papel estourado (#167) → 429 limite_geracao. retryAfterMs
+  // = countdown até o próximo slot da janela 24h deslizante. O Claude NÃO é tocado (custo barrado).
+  | { kind: 'limite_geracao'; retryAfterMs: number }
 
 /**
  * Reconstrói o `{systemPrompt, userPrompt}` da predecessora pela `mode` da sua creation_session.
@@ -142,9 +147,12 @@ async function recoverPrompt(
 export async function regenerateRecipe(
   db: Database,
   claude: ClaudeClient,
-  input: { recipeId: string; viewerId: string; model: string },
+  // `cap` (#167): teto numérico do papel do viewer, JÁ resolvido pelo caller (capFromRecipeGenConfig,
+  // fonte ÚNICA). `Infinity` (admin/papel ilimitado) ⇒ pula a contagem. A regeneração persiste uma
+  // `generation` que CONTA pro teto; sem este gate o usuário burlaria o cap pelo botão de regenerar.
+  input: { recipeId: string; viewerId: string; model: string; cap: number },
 ): Promise<RegenerateResult> {
-  const { recipeId, viewerId, model } = input
+  const { recipeId, viewerId, model, cap } = input
 
   // ── GATE (1º toque de DB, ANTES do Claude) — owner + origin ──────────────────────
   const [pred] = await db
@@ -181,6 +189,18 @@ export async function regenerateRecipe(
 
   const prompt = await recoverPrompt(db, session)
   if (prompt === null) return { kind: 'sem_fonte' }
+
+  // ── TETO de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES do Claude ─────────
+  // A posse + a fonte já foram provadas (mantém o not_found/sem_fonte primeiro, sem vazar o estado do
+  // teto p/ Receitas alheias). A regeneração persiste uma `generation` na MESMA sessão, que CONTA pro
+  // teto; sem este gate o usuário furaria o cap pelo botão de regenerar. cap ∞ (admin) pula a contagem.
+  // Espelha o gate de POST /api/generations e de POST /api/conversations/stream.
+  if (Number.isFinite(cap)) {
+    const now = new Date()
+    const recentAt = await loadRecentRecipeGenAt(db, viewerId, now)
+    const quota = decideRecipeGenQuota({ cap, recentAt, now })
+    if (!quota.allowed) return { kind: 'limite_geracao', retryAfterMs: quota.retryAfterMs }
+  }
 
   // ── Claude (single-shot) → classify ──────────────────────────────────────────────
   const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model })

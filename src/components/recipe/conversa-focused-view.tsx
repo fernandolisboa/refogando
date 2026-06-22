@@ -270,7 +270,11 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               role="alert"
               className="rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-fg"
             >
-              {errorKey === 'conflito_concorrente' ? m.erroConflito : m.erroGeracao}
+              {errorKey === 'conflito_concorrente'
+                ? m.erroConflito
+                : errorKey === 'limite_geracao'
+                  ? messages.criar.erroLimiteGeracao
+                  : m.erroGeracao}
             </p>
             <div>
               <Button type="button" variant="secondary" onClick={redestilar}>

@@ -15,6 +15,12 @@ import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrict
 import { renderAvisos } from '@/domain/recipe-read'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
 import { persistGeneration } from '@/server/generation/persist'
+import { loadRecentRecipeGenAt } from '@/server/generation/quota'
+import {
+  capFromRecipeGenConfig,
+  DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+} from '@/domain/recipe-gen-config'
+import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 /**
  * Modo CONVERSA — streaming + destilação (issue #12, ADR-0009/0010).
@@ -174,9 +180,31 @@ export async function POST(req: Request): Promise<Response> {
     ? body.sessionId
     : null
 
-  // 4. Modelo de app_config (default em código quando a linha singleton está ausente).
+  // 4. Modelo de app_config (default em código quando a linha singleton está ausente). UM toque de DB
+  // serve ao modelo (#5) E ao teto de geração de receita (#167) — a linha singleton carrega ambos.
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+
+  // 4b. Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de ABRIR o stream
+  // (e portanto ANTES de QUALQUER chamada paga: streamConversation E a destilação generateRecipe). A
+  // conversa persiste uma `generation` na destilação que CONTA pro teto, então sem este gate o usuário
+  // burlaria o teto pelo modo conversa (estourava no structured/free_text e continuava gerando aqui). O
+  // 429 é JSON normal (os headers AINDA não foram enviados — diferente de geracao_invalida, que é
+  // in-band) com `retryAfterMs` (countdown); a UI mapeia limite_geracao p/ mensagem amigável. cap ∞
+  // (admin/papel ilimitado) pula a contagem. Espelha o gate de POST /api/generations.
+  const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
+  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  if (Number.isFinite(cap)) {
+    const now = new Date()
+    const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
+    const quota = decideRecipeGenQuota({ cap, recentAt, now })
+    if (!quota.allowed) {
+      return Response.json(
+        { error: 'limite_geracao', retryAfterMs: quota.retryAfterMs },
+        { status: 429 },
+      )
+    }
+  }
 
   // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
   // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também

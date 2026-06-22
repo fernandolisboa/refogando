@@ -4,6 +4,10 @@ import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig } from '@/db/schema'
 import { isUuid } from '@/server/http/params'
 import { regenerateRecipe } from '@/server/recipe/regenerate'
+import {
+  capFromRecipeGenConfig,
+  DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+} from '@/domain/recipe-gen-config'
 
 /**
  * POST /api/recipes/[id]/regenerate — REGENERA a PRÓPRIA Receita (issue #20): cria uma NOVA
@@ -24,6 +28,8 @@ import { regenerateRecipe } from '@/server/recipe/regenerate'
  *   - invalid                  → 502 { outcome:'invalid', error:'geracao_invalida' } (nada persiste).
  *   - sem_fonte (origin não-ai_* OU fonte irrecuperável) → 409 { error:'sem_fonte_para_regenerar' }.
  *   - not_found (não-própria, inclui catálogo) → 404 { error:'not_found' } (leak-safe, NUNCA 403).
+ *   - limite_geracao (teto diário por papel, #167) → 429 { error:'limite_geracao', retryAfterMs }
+ *     (mesmo contrato de POST /api/generations; o Claude NÃO é tocado — custo barrado).
  */
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
@@ -42,11 +48,15 @@ export async function POST(
 
   const db = getDb()
 
-  // Modelo de app_config (default em código quando a linha singleton está ausente).
+  // Modelo + TETO de geração (#167) de app_config — UM toque de DB serve aos dois (a linha singleton
+  // carrega ambos). Default em código quando a linha está ausente. O `cap` é resolvido AQUI (fonte
+  // ÚNICA capFromRecipeGenConfig) e threado p/ regenerateRecipe barrar ANTES do Claude (custo).
   const [cfg] = await db.select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
+  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
 
-  const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model })
+  const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model, cap })
 
   switch (res.kind) {
     case 'ok':
@@ -64,5 +74,12 @@ export async function POST(
       return Response.json({ error: 'sem_fonte_para_regenerar' }, { status: 409 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
+    case 'limite_geracao':
+      // #167: teto diário de geração de receita estourado → 429 com countdown (mesmo contrato do
+      // POST /api/generations). A UI mapeia limite_geracao p/ a mensagem amigável de limite.
+      return Response.json(
+        { error: 'limite_geracao', retryAfterMs: res.retryAfterMs },
+        { status: 429 },
+      )
   }
 }

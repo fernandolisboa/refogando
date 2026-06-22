@@ -14,8 +14,10 @@ import {
   briefingItem,
   transcriptMessage,
   recipeEmbedding,
+  appConfig,
 } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import type { RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { POST as regenerateRoute } from '@/app/api/recipes/[id]/regenerate/route'
 import { DELETE as deleteRecipeRoute } from '@/app/api/recipes/[id]/route'
 import { seedSessionHeaders } from '../helpers/users'
@@ -456,4 +458,86 @@ describe('POST /api/recipes/[id]/regenerate — REGENERAÇÃO por linhagem (#20)
     const missing = await regenerate('00000000-0000-0000-0000-000000000000', headers)
     expect(missing.status).toBe(404)
   })
+
+  // ── TETO de geração por papel (#167) NO BOTÃO DE REGENERAR ────────────────────────────────────
+  // A brecha que o gate de /api/generations sozinho deixava: regenerar (#20) também faz a chamada
+  // PAGA generateRecipe e persiste uma `generation` que CONTA pro teto. Sem o gate aqui, um usuário
+  // que estoura o teto continuava gerando pelo botão de regenerar.
+  it('(p) teto estourado (usuario default 10) ⇒ regenerar dá 429 limite_geracao; o Claude NÃO é tocado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'regen-cap@ex.com' })
+    // seedOwnAiRecipe já cria 1 generation; semeia +9 (própria sessão) ⇒ 10 = teto default do usuario.
+    const { recipeId } = await seedOwnAiRecipe({ ownerId: userId, mode: 'conversation', origin: 'ai_chat' })
+    await seedExtraGenerations(userId, 9)
+    setClaudeClient(new ExplodingClaudeClient()) // estoura se o teto NÃO barrar antes do Claude
+    const before = await counts()
+
+    const res = await regenerate(recipeId, headers)
+    expect(res.status).toBe(429)
+    const body = (await res.json()) as { error: string; retryAfterMs: number }
+    expect(body.error).toBe('limite_geracao')
+    expect(body.retryAfterMs).toBeGreaterThan(0)
+    // Nenhuma Receita/generation nova nasceu (barrado ANTES de persistir).
+    expect(await counts()).toEqual(before)
+  })
+
+  it('(q) abaixo do teto (usuario, 9 gerações) ⇒ regenerar segue normal (201, nova versão)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'regen-cap-below@ex.com' })
+    const { recipeId } = await seedOwnAiRecipe({ ownerId: userId, mode: 'conversation', origin: 'ai_chat' })
+    await seedExtraGenerations(userId, 8) // 1 (semente) + 8 = 9 < 10
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+    setEmbedder(new FakeEmbedder())
+
+    const res = await regenerate(recipeId, headers)
+    expect(res.status).toBe(201)
+  })
+
+  it('(r) admin (∞) ignora o teto: regenera mesmo com muitas gerações recentes', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'regen-cap-admin@ex.com', role: 'admin' })
+    const { recipeId } = await seedOwnAiRecipe({ ownerId: userId, mode: 'conversation', origin: 'ai_chat' })
+    await seedExtraGenerations(userId, 50)
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+    setEmbedder(new FakeEmbedder())
+
+    const res = await regenerate(recipeId, headers)
+    expect(res.status).toBe(201)
+  })
+
+  it('(s) teto da CONFIG: usuario cap=1 ⇒ regenerar (já com 1 geração) estoura 429', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'regen-cap-cfg@ex.com' })
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
+    // seedOwnAiRecipe já cria 1 generation ⇒ no teto da config (1).
+    const { recipeId } = await seedOwnAiRecipe({ ownerId: userId, mode: 'conversation', origin: 'ai_chat' })
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await regenerate(recipeId, headers)
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toMatchObject({ error: 'limite_geracao' })
+  })
 })
+
+/** Semeia N gerações EXTRA do usuário (além da semente do seedOwnAiRecipe) numa sessão própria. */
+async function seedExtraGenerations(userId: string, n: number): Promise<void> {
+  if (n <= 0) return
+  const [s] = await getDb()
+    .insert(creationSession)
+    .values({ userId, mode: 'free_text', recipeId: null, freeText: 'pedido qualquer' })
+    .returning({ id: creationSession.id })
+  await getDb().insert(generation).values(
+    Array.from({ length: n }, () => ({
+      creationSessionId: s.id,
+      recipeId: null,
+      outcome: 'impossible' as const,
+      advisoryComment: null,
+      model: 'claude-opus-4-8',
+      schemaVersion: 1,
+    })),
+  )
+}
+
+/** #167: grava o teto de geração de receita no singleton app_config. */
+async function setRecipeGenCap(caps: RecipeGenCapByRole): Promise<void> {
+  await getDb()
+    .insert(appConfig)
+    .values({ id: true, recipeGenCapByRole: caps })
+    .onConflictDoUpdate({ target: appConfig.id, set: { recipeGenCapByRole: caps } })
+}
