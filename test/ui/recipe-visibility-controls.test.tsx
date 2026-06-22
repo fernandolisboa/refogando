@@ -43,6 +43,7 @@ function ownerView(over: Partial<RecipeView> = {}): RecipeView {
     dificuldade: null,
     ingredients: [],
     translations: [],
+    autoTranslationSignal: false,
     canManage: true,
     visibility: 'private',
     resultKind: 'success',

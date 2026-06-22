@@ -35,6 +35,7 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     dificuldade: 2,
     ingredients: [{ ordem: 1, quantidade: '2.000', unidade: 'xicara', rawText: 'feijão' }],
     translations: [],
+    autoTranslationSignal: false,
     ...over,
   }
 }

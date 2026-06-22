@@ -13,6 +13,11 @@
  * `ProvenanceBadge` (#56) — `classifySection(origin)` decide a regra visual; os rótulos
  * vêm de `busca.seloCatalogo/seloComunidade` (mesmo conceito, não duplicar em `detalhe`).
  * Cores: só tokens já AA-verificados na #54.
+ *
+ * Ordem ESTILO INSTAGRAM (#161, topo→baixo): FOTO em destaque → título (+selo discreto
+ * "tradução automática" guiado SÓ pela proveniência, via `view.autoTranslationSignal`) →
+ * descrição → ingredientes → passos → notas → (metadados/restrições/tags) → crédito
+ * "por <name>" MENOR ao FINAL. A foto e a legenda ficam em foco; o crédito fecha a leitura.
  */
 import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
@@ -107,24 +112,23 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
           )}
         </div>
       )}
-      {/* Cabeçalho: selo de proveniência + título (já vem PRONTO da rota) + Autoria (#129). */}
+      {/* Cabeçalho estilo Instagram (#161): selo de proveniência + título (já vem PRONTO da rota)
+          + selo discreto "tradução automática" quando a leitura repousa numa tradução automática
+          NÃO-revisada (`autoTranslationSignal`, derivado da proveniência no read model — a UI NÃO
+          re-deriva a regra). Autoria NÃO mora mais aqui: o crédito "por <name>" foi p/ o FINAL. */}
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
-        <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
-          {view.name}
-        </h1>
-        {/* Autoria (#129): crédito "por <name>" linkando o perfil público /u/<handle>. Só
-            quando a rota anexa `author` (Receita com dono humano — Catálogo/sistema não tem). */}
-        {view.author && (
-          <p className="text-sm text-muted">
-            <Link
-              href={`/u/${view.author.handle}`}
-              className="hover:text-fg hover:underline"
-            >
-              {m.busca.porAutor.replace('{name}', view.author.name)}
-            </Link>
-          </p>
-        )}
+        <div className="flex flex-col gap-1.5">
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
+            {view.name}
+          </h1>
+          {/* Selo "tradução automática" (#161): toque LEVE (text-xs muted), guiado SÓ pela
+              proveniência (`autoTranslationSignal`). Reusa o rótulo i18n já existente
+              (busca.traducaoAutomatica) — mesmo conceito do kicker da Busca/Feed, não duplicar. */}
+          {view.autoTranslationSignal && (
+            <span className="text-xs font-medium text-muted">{m.busca.traducaoAutomatica}</span>
+          )}
+        </div>
       </header>
 
       {/* Nota de tradução obsoleta — só quando a rota a anexa (stale e ≠ origem). */}
@@ -141,8 +145,52 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
         </div>
       )}
 
+      {/* Descrição — logo após o título (estilo Instagram: legenda em foco). Só quando presente.
+          Medida limitada (~68ch) p/ leitura confortável. */}
+      {view.body.descricao && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.descricao}</h2>
+          <p className="max-w-[68ch] text-pretty text-fg">{view.body.descricao}</p>
+        </section>
+      )}
+
+      {/* Ingredientes — só quando há ≥ 1 linha não-vazia. */}
+      {ingredientLines.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>
+          <ul role="list" className="flex max-w-[68ch] flex-col gap-1.5 text-fg">
+            {ingredientLines.map((line) => (
+              <li key={line.ordem}>{line.text}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Modo de preparo — só quando há passos. */}
+      {view.body.passos && view.body.passos.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
+          <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
+            {view.body.passos.map((passo, i) => (
+              <li key={i} className="text-pretty pl-1">
+                {passo}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {/* Notas — só quando presente. */}
+      {view.body.notas && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.notas}</h2>
+          <p className="max-w-[68ch] text-pretty text-fg">{view.body.notas}</p>
+        </section>
+      )}
+
       {/* Metadados escalares (porções/dificuldade/cozinha/categoria) → <dl>. Cada par é
-          omitido quando nulo (tela limpa). O <dl> inteiro some quando não há escalar. */}
+          omitido quando nulo (tela limpa). O <dl> inteiro some quando não há escalar.
+          #161: METADADOS/restrições/tags ficam DEPOIS do conteúdo de leitura (foco na receita). */}
       {hasScalars && (
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm sm:grid-cols-[repeat(2,auto_1fr)] sm:gap-x-8">
           {view.porcoes != null && (
@@ -209,46 +257,18 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
         </section>
       )}
 
-      {/* Descrição — só quando presente. Medida limitada (~68ch) p/ leitura confortável. */}
-      {view.body.descricao && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.descricao}</h2>
-          <p className="max-w-[68ch] text-pretty text-fg">{view.body.descricao}</p>
-        </section>
-      )}
-
-      {/* Ingredientes — só quando há ≥ 1 linha não-vazia. */}
-      {ingredientLines.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>
-          <ul role="list" className="flex max-w-[68ch] flex-col gap-1.5 text-fg">
-            {ingredientLines.map((line) => (
-              <li key={line.ordem}>{line.text}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Modo de preparo — só quando há passos. */}
-      {view.body.passos && view.body.passos.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
-          <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
-            {view.body.passos.map((passo, i) => (
-              <li key={i} className="text-pretty pl-1">
-                {passo}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {/* Notas — só quando presente. */}
-      {view.body.notas && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.notas}</h2>
-          <p className="max-w-[68ch] text-pretty text-fg">{view.body.notas}</p>
-        </section>
+      {/* Crédito ao FINAL (#161, estilo Instagram): "por <name>" MENOR (text-sm muted), linkando
+          o perfil público /u/<handle>. Só quando a rota anexa `author` (Receita com dono humano —
+          Catálogo/sistema não tem). Fecha a leitura sem competir com o título/conteúdo. */}
+      {view.author && (
+        <p className="text-sm text-muted">
+          <Link
+            href={`/u/${view.author.handle}`}
+            className="hover:text-fg hover:underline"
+          >
+            {m.busca.porAutor.replace('{name}', view.author.name)}
+          </Link>
+        </p>
       )}
     </article>
   )

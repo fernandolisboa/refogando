@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  resolveAutoTranslationSignal,
   resolveBody,
   resolveFacets,
   resolveName,
@@ -237,6 +238,85 @@ describe('resolveFacets — restricoes ausente quando vazio (AC#3)', () => {
     })
     expect('restricoes' in facets).toBe(true)
     expect(facets.restricoes).toEqual(['sem_gluten', 'vegano'])
+  })
+})
+
+// ── resolveAutoTranslationSignal (#161) ────────────────────────────────────────
+
+describe('resolveAutoTranslationSignal — selo "tradução automática" (#161)', () => {
+  // Original escrito por pessoa, tradução pedida automática NÃO-revisada: a BASE do nome é o
+  // original (confiável) ⇒ SEM selo (espelha resolveName, que rastreia a linha-base).
+  const enAuto: TranslationRow = {
+    locale: 'en-US',
+    titulo: 'Black Bean Stew',
+    descricao: null,
+    passos: null,
+    notas: null,
+    provenance: 'automatica_nao_revisada',
+    stale: false,
+  }
+
+  it('original escrito-por-pessoa (confiável) ⇒ false, mesmo com tradução pedida automática', () => {
+    expect(
+      resolveAutoTranslationSignal({
+        originalLocale: 'pt-BR',
+        requestLocale: 'en-US',
+        translations: [ptOriginal, enAuto],
+      }),
+    ).toBe(false)
+  })
+
+  it('original automática NÃO-revisada ⇒ true (a base do nome não é confiável)', () => {
+    const ptAuto: TranslationRow = { ...ptOriginal, provenance: 'automatica_nao_revisada' }
+    expect(
+      resolveAutoTranslationSignal({
+        originalLocale: 'pt-BR',
+        requestLocale: 'en-US',
+        translations: [ptAuto, enAuto],
+      }),
+    ).toBe(true)
+  })
+
+  it('original automática REVISADA ⇒ false (confiável)', () => {
+    const ptRevisada: TranslationRow = { ...ptOriginal, provenance: 'automatica_revisada' }
+    expect(
+      resolveAutoTranslationSignal({
+        originalLocale: 'pt-BR',
+        requestLocale: 'en-US',
+        translations: [ptRevisada],
+      }),
+    ).toBe(false)
+  })
+
+  it('sem a linha do original: cai no requestLocale (aqui automática não-revisada ⇒ true)', () => {
+    expect(
+      resolveAutoTranslationSignal({
+        originalLocale: 'pt-BR',
+        requestLocale: 'en-US',
+        translations: [enAuto], // só a tradução pedida (automática) existe
+      }),
+    ).toBe(true)
+  })
+
+  it('nenhuma tradução ⇒ true (tratado como não-confiável, "nunca afirma revisado sem prova")', () => {
+    expect(
+      resolveAutoTranslationSignal({
+        originalLocale: 'pt-BR',
+        requestLocale: 'en-US',
+        translations: [],
+      }),
+    ).toBe(true)
+  })
+
+  it('a vista carrega o booleano derivado em autoTranslationSignal', () => {
+    const ptAuto: TranslationRow = { ...ptOriginal, provenance: 'automatica_nao_revisada' }
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ originalLocale: 'pt-BR' }), translations: [ptAuto] }),
+    )
+    expect(view.autoTranslationSignal).toBe(true)
+
+    const reliableView = resolveRecipeView(input()) // original escrita_por_pessoa ⇒ false
+    expect(reliableView.autoTranslationSignal).toBe(false)
   })
 })
 
