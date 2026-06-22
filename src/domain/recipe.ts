@@ -11,7 +11,12 @@
  */
 
 // ── Origin: selo de proveniência da Receita (imutável — ADR-0002) ──────────────
-export const ORIGENS = ['catalog', 'ai_chat', 'ai_structured', 'ai_free_text', 'user_edited'] as const
+// `web_imported` (ADR-0019): cópia PRIVADA de uma receita externa quando o Usuário importa um link
+// da web (schema.org/Recipe via JSON-LD). Atribuição à fonte externa (source_url/source_name), nunca
+// "por <Usuário>"; sempre privada e NÃO-publicável (o guard "nunca pública" é a #168). APPEND no fim
+// da lista — a migração de enum é um `ALTER TYPE ... ADD VALUE` simples (ADR-0002 já previa uma
+// origem futura "importada" sem migração de tipo; classifySection já o trata como Comunidade).
+export const ORIGENS = ['catalog', 'ai_chat', 'ai_structured', 'ai_free_text', 'user_edited', 'web_imported'] as const
 export type Origin = (typeof ORIGENS)[number]
 
 // ── Visibilidade ───────────────────────────────────────────────────────────────

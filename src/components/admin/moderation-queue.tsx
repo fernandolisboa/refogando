@@ -50,6 +50,7 @@ export function ModerationQueue() {
     ai_structured: m.origemAiStructured,
     ai_free_text: m.origemAiFreeText,
     user_edited: m.origemUserEdited,
+    web_imported: m.origemWebImported,
   } satisfies Record<Origin, string>
   const resultKindLabel = {
     success: m.tipoSucesso,

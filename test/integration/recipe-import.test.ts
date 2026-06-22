@@ -1,0 +1,132 @@
+import { describe, it, expect } from 'vitest'
+import { and, eq } from 'drizzle-orm'
+import { POST } from '@/app/api/recipes/import/route'
+import { getDb, setRecipeImporter, setEmbedder } from '@/server/deps'
+import { FakeRecipeImporter, CANONICAL_IMPORTED_RECIPE } from '@/server/import/recipe-importer'
+import { FakeEmbedder } from '@/server/embedding/embedder'
+import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import { seedSessionHeaders } from '../helpers/users'
+
+/**
+ * Importar receita da web (#165, ADR-0019) pela porta MAIS ALTA (POST /api/recipes/import) com
+ * `FakeRecipeImporter` injetado (NUNCA toca a rede). `setup.ts` aponta o DI pro Postgres descartável
+ * e reseta seams/trunca antes de cada teste. Cobre: sucesso (web_imported privada, atribuição gravada,
+ * owner correto, ingredientes/tradução), anon→401, sem-JSON-LD→422, idioma não suportado→422,
+ * url inválida→400.
+ */
+
+const SRC = 'https://exemplo.com/receitas/bolo'
+
+function withJson(base?: Headers): Headers {
+  const h = base ? new Headers(base) : new Headers()
+  h.set('content-type', 'application/json')
+  return h
+}
+
+function importPost(body: unknown, headers?: Headers): Promise<Response> {
+  return POST(
+    new Request('http://localhost/api/recipes/import', {
+      method: 'POST',
+      headers: withJson(headers),
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+async function loadRecipe(id: string) {
+  const [row] = await getDb()
+    .select({
+      origin: recipe.origin,
+      visibility: recipe.visibility,
+      ownerId: recipe.ownerId,
+      originalLocale: recipe.originalLocale,
+      sourceUrl: recipe.sourceUrl,
+      sourceName: recipe.sourceName,
+    })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  return row
+}
+
+describe('POST /api/recipes/import (#165)', () => {
+  it('sucesso: cria web_imported PRIVADA, owner=usuário, atribuição gravada, tradução + ingredientes', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'import-ok@ex.com' })
+    setRecipeImporter(new FakeRecipeImporter()) // receita canônica fixa (pt-BR)
+    setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(201)
+    const bodyJson = (await res.json()) as { recipeId: string; visibility: string }
+    expect(bodyJson.visibility).toBe('private')
+
+    const row = await loadRecipe(bodyJson.recipeId)
+    expect(row.origin).toBe('web_imported')
+    expect(row.visibility).toBe('private')
+    expect(row.ownerId).toBe(userId)
+    expect(row.originalLocale).toBe('pt-BR')
+    expect(row.sourceUrl).toBe(SRC) // URL de origem gravada p/ atribuição
+    expect(row.sourceName).toBe(CANONICAL_IMPORTED_RECIPE.sourceName)
+
+    // Tradução do locale de origem, marcada automática-não-revisada (conteúdo externo copiado).
+    const [tr] = await getDb()
+      .select({ titulo: recipeTranslation.titulo, provenance: recipeTranslation.provenance })
+      .from(recipeTranslation)
+      .where(and(eq(recipeTranslation.recipeId, bodyJson.recipeId), eq(recipeTranslation.locale, 'pt-BR')))
+    expect(tr.titulo).toBe(CANONICAL_IMPORTED_RECIPE.titulo)
+    expect(tr.provenance).toBe('automatica_nao_revisada')
+
+    // Ingredientes preservados na ordem, com rawText + qty/unidade best-effort.
+    const ings = await getDb()
+      .select({ ordem: recipeIngredient.ordem, rawText: recipeIngredient.rawText, unidade: recipeIngredient.unidade })
+      .from(recipeIngredient)
+      .where(eq(recipeIngredient.recipeId, bodyJson.recipeId))
+      .orderBy(recipeIngredient.ordem)
+    expect(ings.length).toBe(CANONICAL_IMPORTED_RECIPE.ingredientes.length)
+    expect(ings[0].rawText).toBe(CANONICAL_IMPORTED_RECIPE.ingredientes[0].rawText)
+  })
+
+  it('anon → 401 (zero efeito: nenhuma Receita criada)', async () => {
+    setRecipeImporter(new FakeRecipeImporter())
+    const res = await importPost({ url: SRC }) // sem headers de sessão
+    expect(res.status).toBe(401)
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
+  it('sem JSON-LD confiável → 422, não importa', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-nojsonld@ex.com' })
+    setRecipeImporter(new FakeRecipeImporter(undefined, 'no_jsonld'))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(422)
+    const bodyJson = (await res.json()) as { error: string }
+    expect(bodyJson.error).toBe('no_jsonld')
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
+  it('idioma fora de PT/EN → 422, não importa', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-locale@ex.com' })
+    setRecipeImporter(new FakeRecipeImporter(undefined, 'unsupported_locale'))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(422)
+    const bodyJson = (await res.json()) as { error: string }
+    expect(bodyJson.error).toBe('unsupported_locale')
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
+  it('url ausente/malformada → 400 (antes do seam)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-badurl@ex.com' })
+    // Importer que estouraria se chamado — prova que o 400 acontece ANTES do seam.
+    setRecipeImporter(new FakeRecipeImporter())
+
+    expect((await importPost({}, headers)).status).toBe(400)
+    expect((await importPost({ url: 'javascript:alert(1)' }, headers)).status).toBe(400)
+    expect((await importPost({ url: 'não é url' }, headers)).status).toBe(400)
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+})

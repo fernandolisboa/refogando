@@ -141,6 +141,13 @@
       "when": 1781994788639,
       "tag": "0019_lucky_morbius",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782101186015,
+      "tag": "0020_mixed_stryfe",
+      "breakpoints": true
     }
   ]
 }

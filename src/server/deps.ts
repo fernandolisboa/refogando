@@ -4,6 +4,7 @@ import { RealEmbedder, type Embedder } from '@/server/embedding/embedder'
 import { RealTranslator, type Translator } from '@/server/translation/translator'
 import { RealImageStore, type ImageStore } from '@/server/images/image-store'
 import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/image-generator'
+import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
 
 /**
  * Raiz de composição (DI) da fundação. Seis seams com um dono cada:
@@ -13,6 +14,7 @@ import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/i
  *  - getTranslator()     → seam de tradução automática (issue #23)
  *  - getImageStore()     → seam de storage de imagem (issue #126, Vercel Blob)
  *  - getImageGenerator() → seam de geração de imagem por IA (issue #132, Gemini REST)
+ *  - getRecipeImporter() → seam de importação de receita da web (issue #165, JSON-LD)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
@@ -31,6 +33,8 @@ let imageStoreOverride: ImageStore | null = null
 let lazyImageStore: ImageStore | null = null
 let imageGeneratorOverride: ImageGenerator | null = null
 let lazyImageGenerator: ImageGenerator | null = null
+let recipeImporterOverride: RecipeImporter | null = null
+let lazyRecipeImporter: RecipeImporter | null = null
 
 export function getDb(): Database {
   if (dbOverride) return dbOverride
@@ -100,6 +104,16 @@ export function setImageGenerator(generator: ImageGenerator): void {
   imageGeneratorOverride = generator
 }
 
+export function getRecipeImporter(): RecipeImporter {
+  if (recipeImporterOverride) return recipeImporterOverride
+  if (!lazyRecipeImporter) lazyRecipeImporter = new RealRecipeImporter()
+  return lazyRecipeImporter
+}
+
+export function setRecipeImporter(importer: RecipeImporter): void {
+  recipeImporterOverride = importer
+}
+
 /**
  * Limpa overrides dos seams entre testes. NÃO mexe no banco (setDb persiste por
  * arquivo de teste) nem derruba o pool.
@@ -110,4 +124,5 @@ export function resetDeps(): void {
   translatorOverride = null
   imageStoreOverride = null
   imageGeneratorOverride = null
+  recipeImporterOverride = null
 }
