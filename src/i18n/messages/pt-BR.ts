@@ -20,6 +20,7 @@ export const ptBR = {
     abrirMenu: 'Abrir menu',
     fecharMenu: 'Fechar menu',
     menu: 'Menu',
+    menuDescricao: 'Navegação do site e conta',
   },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   // Toggle de tema claro/escuro (ADR-0018), no header. `light`/`dark` nomeiam o DESTINO da

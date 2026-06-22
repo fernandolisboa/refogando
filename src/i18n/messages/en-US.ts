@@ -18,6 +18,7 @@ export const enUS: Messages = {
     abrirMenu: 'Open menu',
     fecharMenu: 'Close menu',
     menu: 'Menu',
+    menuDescricao: 'Site navigation and account',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   // Light/dark theme toggle (ADR-0018), in the header. `light`/`dark` name the action's
