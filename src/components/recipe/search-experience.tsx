@@ -406,7 +406,7 @@ function GerarComIaCta({
           id="gerar-ia-convite-titulo"
           className="flex items-center gap-2 font-display text-lg font-semibold text-fg"
         >
-          <Sparkles className="size-[18px] shrink-0 text-accent-strong" strokeWidth={1.75} aria-hidden />
+          <Sparkles className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
           {gerarLabel}
         </p>
         <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
