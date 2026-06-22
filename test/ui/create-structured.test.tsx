@@ -649,3 +649,57 @@ describe('CreateStructuredExperience — prompt aberto (#88)', () => {
     expect(screen.getByLabelText(enUS.criar.textareaLabel)).toBeInTheDocument()
   })
 })
+
+describe('CreateStructuredExperience — pré-preenchimento via ?q (#166)', () => {
+  /** Render com a semente `initialFreeText` (o que o CreatePageClient injeta a partir de ?q). */
+  function renderWithSeed(initialFreeText?: string, locale: Locale = 'pt-BR') {
+    return render(
+      <LocaleProvider initialLocale={locale}>
+        <CreateStructuredExperience initialFreeText={initialFreeText} />
+      </LocaleProvider>,
+    )
+  }
+
+  it('Q1 — com termo: abre no PROMPT ABERTO com o texto livre pré-preenchido', () => {
+    renderWithSeed('feijão tropeiro mineiro')
+
+    // O modo é Prompt aberto (a textarea de texto livre está montada).
+    const textarea = screen.getByLabelText(M.textareaLabel)
+    expect(textarea).toBeInTheDocument()
+    expect(textarea).toHaveValue('feijão tropeiro mineiro')
+
+    // aria-checked confirma que o modo ativo é Prompt aberto (não Estruturado).
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
+    expect(within(grupo).getByRole('radio', { name: M.modoPromptAberto })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
+  it('Q2 — o campo pré-preenchido segue EDITÁVEL (semente, não trava)', async () => {
+    const user = userEvent.setup()
+    renderWithSeed('bolo de cenoura')
+
+    const textarea = screen.getByLabelText(M.textareaLabel)
+    await user.clear(textarea)
+    await user.type(textarea, 'bolo de fubá')
+    expect(textarea).toHaveValue('bolo de fubá')
+  })
+
+  it('Q3 — sem termo: comportamento INALTERADO (abre no Estruturado, sem textarea)', () => {
+    renderWithSeed(undefined)
+
+    // Modo estruturado (default): a textarea de texto livre NÃO está montada.
+    expect(screen.queryByLabelText(M.textareaLabel)).toBeNull()
+    const grupo = screen.getByRole('radiogroup', { name: M.modoLegenda })
+    expect(within(grupo).getByRole('radio', { name: M.modoEstruturado })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+  })
+
+  it('Q4 — termo só com espaços: tratado como vazio (abre no Estruturado)', () => {
+    renderWithSeed('   ')
+    expect(screen.queryByLabelText(M.textareaLabel)).toBeNull()
+  })
+})

@@ -248,6 +248,22 @@ describe('Tela CRIAR unificada (#104)', () => {
     )
   })
 
+  it('T4b (#166) — ?q pré-preenche o texto livre no Formulário (CTA "Gerar com IA" da Busca)', () => {
+    searchParams = new URLSearchParams('q=feijão+tropeiro')
+    renderCreate()
+
+    // Fica no Formulário (modo padrão), mas no PROMPT ABERTO com o termo já no campo.
+    const toggle = screen.getByRole('radiogroup', { name: C.seletorModo })
+    expect(within(toggle).getByRole('radio', { name: C.modoFormulario })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    const textarea = screen.getByLabelText(C.textareaLabel)
+    expect(textarea).toHaveValue('feijão tropeiro')
+    // O chat NÃO está montado (não cai em Conversa).
+    expect(screen.queryByLabelText(V.inputLabel)).toBeNull()
+  })
+
   it('T5 — placeholder rotativo cicla (fake timers) e PARA após unmount', () => {
     vi.useFakeTimers()
     searchParams = new URLSearchParams('mode=conversa')
