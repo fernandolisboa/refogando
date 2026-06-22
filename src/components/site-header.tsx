@@ -23,6 +23,7 @@ import {
   Sheet,
   SheetClose,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -120,6 +121,9 @@ export function SiteHeader() {
           <SheetContent side="left" closeLabel={messages.nav.fecharMenu} className="gap-6">
             <SheetHeader>
               <SheetTitle>{messages.nav.menu}</SheetTitle>
+              {/* Descrição acessível (sr-only): satisfaz o aria-describedby do Radix Dialog
+                  (silencia o warning) e dá contexto a leitores de tela. */}
+              <SheetDescription className="sr-only">{messages.nav.menuDescricao}</SheetDescription>
             </SheetHeader>
             <nav className="flex flex-col items-start gap-4 text-base font-medium text-muted">
               {navLink('/', messages.nav.home, inSheet)}

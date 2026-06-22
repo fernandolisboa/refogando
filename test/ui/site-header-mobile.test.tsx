@@ -124,6 +124,14 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(within(dialog).getByRole('button', { name: ptBR.nav.signOut })).toBeInTheDocument()
   })
 
+  it('o painel tem descrição acessível (satisfaz o aria-describedby do Radix, #181)', async () => {
+    const user = userEvent.setup()
+    renderHeader()
+    await user.click(screen.getByRole('button', { name: ABRIR }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleDescription(ptBR.nav.menuDescricao)
+  })
+
   it('ESC fecha o drawer', async () => {
     const user = userEvent.setup()
     renderHeader()
