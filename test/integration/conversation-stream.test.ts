@@ -11,6 +11,7 @@ import { POST } from '@/app/api/conversations/stream/route'
 import { persistGeneration } from '@/server/generation/persist'
 import { recipe, recipeTranslation, recipeIngredient, recipeEmbedding, creationSession, generation, transcriptMessage, appConfig } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import type { RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { seedSessionHeaders } from '../helpers/users'
 import {
   cannedSuccess,
@@ -693,6 +694,91 @@ describe('persistGeneration — existingSessionId RETOMA a sessão (#15, REAL)',
     // Contagens globais inalteradas (a Receita de B até pode ter sido inserida na tx, mas a tx
     // reverteu inteira ao estourar — nada persiste). generation segue só a de A.
     expect(await counts()).toEqual(before)
+  })
+})
+
+/**
+ * Teto diário de geração de RECEITA por papel (#167) NO MODO CONVERSA — a brecha que o gate de
+ * /api/generations sozinho deixava: a conversa também faz a chamada PAGA generateRecipe (destilação)
+ * e persiste uma `generation` que CONTA pro teto. Sem o gate aqui, um usuário que estoura o teto no
+ * structured/free_text continuava gerando via chat. Prova: estourado ⇒ 429 limite_geracao JSON ANTES
+ * de abrir o stream (o seam NÃO é tocado — nem streamConversation, nem a destilação); abaixo ⇒ stream
+ * normal; admin (∞) ignora; cap da CONFIG do admin substitui o default.
+ */
+describe('POST /api/conversations/stream — teto de geração por papel (#167)', () => {
+  /** Semeia N gerações JÁ persistidas do usuário (a fonte do teto): 1 sessão + N generation nela. */
+  async function seedGenerationsForUser(userId: string, n: number): Promise<void> {
+    if (n <= 0) return
+    const [s] = await getDb()
+      .insert(creationSession)
+      .values({ userId, mode: 'free_text', recipeId: null, freeText: 'pedido qualquer' })
+      .returning({ id: creationSession.id })
+    await getDb().insert(generation).values(
+      Array.from({ length: n }, () => ({
+        creationSessionId: s.id,
+        recipeId: null,
+        outcome: 'impossible' as const,
+        advisoryComment: null,
+        model: 'claude-opus-4-8',
+        schemaVersion: 1,
+      })),
+    )
+  }
+
+  async function setRecipeGenCap(caps: RecipeGenCapByRole): Promise<void> {
+    await getDb()
+      .insert(appConfig)
+      .values({ id: true, recipeGenCapByRole: caps })
+      .onConflictDoUpdate({ target: appConfig.id, set: { recipeGenCapByRole: caps } })
+  }
+
+  it('no teto (usuario default 10, com 10 gerações) → 429 limite_geracao ANTES do stream; seam NÃO tocado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-at@cap.test' })
+    await seedGenerationsForUser(userId, 10)
+    setClaudeClient(new ExplodingClaudeClient()) // estoura se streamConversation OU generateRecipe for tocado
+    const before = await counts()
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    expect(res.status).toBe(429)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    const body = (await res.json()) as { error: string; retryAfterMs: number }
+    expect(body.error).toBe('limite_geracao')
+    expect(body.retryAfterMs).toBeGreaterThan(0)
+    // Nada novo nasceu: sem stream, sem destilação, sem 2 falas, sem generation.
+    expect(await counts()).toEqual(before)
+  })
+
+  it('abaixo do teto (usuario default 10, com 9 gerações) → stream normal (200) + {type:recipe}', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-below@cap.test' })
+    await seedGenerationsForUser(userId, 9)
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+    setEmbedder(new FakeEmbedder())
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    expect(res.status).toBe(200)
+    const frames = await collectNdjson(res)
+    expect(frames[frames.length - 1].type).toBe('recipe')
+  })
+
+  it('admin (∞) ignora o teto: streama mesmo com muitas gerações recentes', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-admin@cap.test', role: 'admin' })
+    await seedGenerationsForUser(userId, 50)
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens()))
+    setEmbedder(new FakeEmbedder())
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    expect(res.status).toBe(200)
+  })
+
+  it('teto vem da CONFIG: usuario cap=1 ⇒ 2ª geração via chat estoura (429), não o default 10', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'conv-cfg@cap.test' })
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
+    await seedGenerationsForUser(userId, 1) // já no teto da config (1)
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await postStream({ transcript: makeTranscript() }, headers)
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toMatchObject({ error: 'limite_geracao' })
   })
 })
 

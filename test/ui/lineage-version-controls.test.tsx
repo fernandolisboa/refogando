@@ -97,4 +97,14 @@ describe('LineageVersionControls (#20/#61)', () => {
     renderControls('en-US')
     expect(screen.getByRole('button', { name: enUS.versao.regenerar })).toBeInTheDocument()
   })
+
+  it('T6 — 429 limite_geracao (#167): mensagem AMIGÁVEL de limite, NÃO navega', async () => {
+    const user = userEvent.setup()
+    mockRegen({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } })
+    renderControls()
+    await user.click(screen.getByRole('button', { name: M.regenerar }))
+    // Mensagem amigável (a mesma do POST /api/generations), não o erro cru de geração.
+    expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.criar.erroLimiteGeracao)
+    expect(push).not.toHaveBeenCalled()
+  })
 })

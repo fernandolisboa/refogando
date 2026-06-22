@@ -10,6 +10,8 @@
  *  - 201 { recipeId } → nova versão criada → NAVEGA pra ela ("nova versão").
  *  - 200 { outcome:'impossible' } → não deu pra gerar → mensagem (sem Receita nova).
  *  - 409 { error:'sem_fonte_para_regenerar' } → "não dá pra regenerar esta" (graceful).
+ *  - 429 { error:'limite_geracao' } → teto diário de geração estourado (#167) → mensagem amigável de
+ *    limite (mesma do POST /api/generations) + permite tentar mais tarde.
  *  - 502 { outcome:'invalid' } → erro de sistema → mensagem + permite tentar de novo.
  *  - 404 → não-própria (não deve ocorrer; só aparece sob canManage) → mensagem neutra.
  *
@@ -21,7 +23,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 
-type ErrorKey = 'semFonte' | 'impossible' | 'invalid' | 'generico' | null
+type ErrorKey = 'semFonte' | 'impossible' | 'invalid' | 'limite' | 'generico' | null
 
 export function LineageVersionControls({ recipeId }: { recipeId: string }) {
   const { messages } = useLocale()
@@ -51,6 +53,11 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
         setErrorKey('semFonte')
         return
       }
+      if (res.status === 429) {
+        // #167: teto diário de geração estourado → mensagem amigável de limite (não erro cru).
+        setErrorKey('limite')
+        return
+      }
       if (res.status === 200) {
         // outcome:'impossible' — sem Receita nova; mensagem honesta.
         setErrorKey('impossible')
@@ -75,9 +82,11 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
         ? messages.criar.resultadoImpossivel
         : errorKey === 'invalid'
           ? messages.criar.erroGeracao
-          : errorKey === 'generico'
-            ? messages.system.error
-            : null
+          : errorKey === 'limite'
+            ? messages.criar.erroLimiteGeracao
+            : errorKey === 'generico'
+              ? messages.system.error
+              : null
 
   return (
     <section

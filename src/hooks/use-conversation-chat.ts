@@ -84,7 +84,7 @@ export type ConversationChat = {
   liveAssistant: string
   result: DistillResult | null
   view: RecipeView | null
-  errorKey: 'geracao_invalida' | 'conflito_concorrente' | null
+  errorKey: 'geracao_invalida' | 'conflito_concorrente' | 'limite_geracao' | null
   loadFailed: boolean
   deleteOpen: boolean
   deleteError: boolean
@@ -137,7 +137,9 @@ export function useConversationChat({
 
   const [result, setResult] = useState<DistillResult | null>(null)
   const [view, setView] = useState<RecipeView | null>(null)
-  const [errorKey, setErrorKey] = useState<'geracao_invalida' | 'conflito_concorrente' | null>(null)
+  const [errorKey, setErrorKey] = useState<
+    'geracao_invalida' | 'conflito_concorrente' | 'limite_geracao' | null
+  >(null)
   // Receita FOI destilada (recipeId não-null) mas o 2º GET do corpo falhou — "criada mas não
   // carregou" (NÃO 'impossible'; reenviar duplicaria a geração). Espelha a tela CRIAR.
   const [loadFailed, setLoadFailed] = useState(false)
@@ -353,6 +355,18 @@ export function useConversationChat({
         body: JSON.stringify({ transcript: t, sessionId: id ?? undefined }),
         signal: controller.signal,
       })
+
+      // #167: teto diário de geração estourado → 429 limite_geracao JSON ANTES do stream (custo
+      // barrado, headers ainda não enviados). É um desfecho LIMPO (não queda): mostra a mensagem
+      // amigável de limite com CTA de tentar mais tarde, distinta da queda ambígua de conexão.
+      if (res.status === 429) {
+        if (mountedRef.current) {
+          setLiveAssistant('')
+          setErrorKey('limite_geracao')
+          setStatus('error')
+        }
+        return
+      }
 
       // Falhas PRÉ-stream (401 auth / 400 shape): JSON normal, sem corpo de stream → queda.
       if (!res.ok || !res.body) {
