@@ -65,6 +65,18 @@ describe('SectionNav — links por papel (#125)', () => {
     expect(within(nav).getByRole('link', { name: A.navConfig })).not.toHaveAttribute('aria-current')
   })
 
+  it('#162: a tira de abas é ROLÁVEL no mobile (sem quebra de linha)', () => {
+    const nav = renderNav('admin')
+    // Tira horizontal com rolagem: overflow-x-auto + whitespace-nowrap; SEM flex-wrap
+    // (que quebraria as abas em várias linhas no mobile).
+    expect(nav.className).toContain('overflow-x-auto')
+    expect(nav.className).toContain('whitespace-nowrap')
+    expect(nav.className).not.toContain('flex-wrap')
+    // A aba ativa preserva o indicador border-b-2.
+    const active = within(nav).getByRole('link', { name: A.navConfig })
+    expect(active.className).toContain('border-b-2')
+  })
+
   it('links apontam para as rotas aninhadas corretas', () => {
     const nav = renderNav('admin')
     expect(within(nav).getByRole('link', { name: A.navConfig })).toHaveAttribute(

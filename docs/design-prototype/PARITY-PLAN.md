@@ -38,7 +38,7 @@ A "migração de botões inacabada (30 arquivos com `btnPrimary/btnSecondary`)" 
 - (Sem mexer em motion/spacing: Tailwind v4 já cobre via `ease-out`/`duration-150` e escala default. Sem renomear tokens — alias é aditivo.)
 
 ### B. Header — `site-header.tsx`, `auth-slot.tsx`, `site-footer.tsx`, `locale-switcher.tsx`
-- B1. Mover `<LocaleSwitcher/>` pro cluster direito do header `[ThemeToggle, LocaleSwitcher, AuthSlot]`; remover do footer. Rótulos compactos PT-BR/EN-US (computados do código de locale). [alto]
+- B1. ~~Mover `<LocaleSwitcher/>` pro cluster direito do header `[ThemeToggle, LocaleSwitcher, AuthSlot]`; remover do footer.~~ **SUPERSEDIDO por #162:** o `<LocaleSwitcher/>` voltou pro FOOTER (ao lado do `ThemeToggle`); o header fica `[wordmark, nav, AuthSlot]`. O espelho (`screens/Header.jsx` + novo `screens/Footer.jsx`) reflete isso. Rótulos compactos PT-BR/EN-US (computados do código de locale). [alto]
 - B2. Active-route: `usePathname()` marca o link atual com `text-fg` + `aria-current="page"` (inativos `text-muted`). [médio]
 - B3. AuthSlot: `Entrar` → `variant="secondary"`; `Sair` → `variant="ghost"` (mantém avatar+nome). Hierarquia silenciosa (única ação destacada = pill "Criar"). [médio]
 - B4. `backdrop-blur-sm` → `backdrop-blur` (8px) pra bater com o protótipo. [baixo]

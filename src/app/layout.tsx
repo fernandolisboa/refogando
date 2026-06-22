@@ -27,8 +27,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   })
   // Tema do mesmo cookieStore (ADR-0018): cookie ausente → classe vazia (o SO decide via
   // @media do globals.css); 'dark'/'light' → a classe vence a @media. SSR sem flash, igual
-  // ao locale. O ThemeToggle vive no FOOTER (paridade com o protótipo: o header só tem
-  // idioma + conta no cluster direito) e recebe `initialTheme` do mesmo cookie.
+  // ao locale. O ThemeToggle e o seletor de idioma (#162) vivem no FOOTER (o header fica
+  // só com [wordmark, nav, conta]); o footer recebe `initialTheme` do mesmo cookie.
   const themeClass = resolveThemeClass(cookieStore.get(THEME_COOKIE)?.value)
   // `initialTheme` para o toggle (client): 'light'/'dark' explícito ou null (segue o SO).
   // SiteFooter é client, então a preferência é threadada do servidor (sem ler cookie no client).

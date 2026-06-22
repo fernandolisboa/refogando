@@ -3,13 +3,15 @@
  * Footer do shell (issue #54). Client component pra acompanhar o locale (app.name /
  * app.tagline) na troca em runtime (#4.AC1). Sem chamadas de dados (#4.AC4). Fica no
  * rodapé pelo wrapper flex-1 do layout (não precisa de mt-auto).
- * O seletor de IDIOMA vive no HEADER (paridade com o protótipo); o ThemeToggle vive AQUI
- * (o protótipo não tem toggle no header — deixa o header como [idioma, conta]). `initialTheme`
- * é threadado do servidor (cookie `theme`, layout.tsx).
+ * O seletor de IDIOMA (#162) e o ThemeToggle vivem AQUI, lado a lado — o header fica enxuto
+ * com [wordmark, nav, conta]. Trocar idioma segue idêntico (cookie + `<html lang>` via
+ * `setLocale`, em i18n/provider). `initialTheme` é threadado do servidor (cookie `theme`,
+ * layout.tsx).
  */
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { type Theme } from '@/lib/theme'
 
 export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | null }) {
@@ -23,7 +25,11 @@ export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | nul
           </span>
           <span className="text-sm text-muted">{messages.app.tagline}</span>
         </div>
-        <ThemeToggle initialTheme={initialTheme} />
+        {/* Controles de apresentação da chrome (#162): idioma + tema, lado a lado. */}
+        <div className="flex items-center gap-3">
+          <LocaleSwitcher />
+          <ThemeToggle initialTheme={initialTheme} />
+        </div>
       </Container>
     </footer>
   )

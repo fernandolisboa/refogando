@@ -2,7 +2,7 @@
 /**
  * Header do shell (issue #54). Wordmark da marca + navegação (messages.nav) + slot de
  * auth. Client component porque toda a chrome lê `useLocale()` e acompanha a troca de
- * idioma em runtime (#4.AC1) — o seletor de locale vive no footer (SiteFooter). Não
+ * idioma em runtime (#4.AC1) — o seletor de locale vive no footer (SiteFooter, #162). Não
  * chama endpoint de Receita (#4.AC4 — isolamento).
  *
  * Barra com `min-h-16` (não altura fixa) + `flex-wrap`: cresce em vez de cortar quando a
@@ -15,13 +15,12 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
-import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
 import { cn } from '@/lib/utils'
 
-// O cluster direito do header é só idioma + conta (paridade com o protótipo). O ThemeToggle
-// vive no footer (recebe `initialTheme` lá), então o header não precisa mais dessa preferência.
+// O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
+// vivem no footer, então o header não precisa mais nem do seletor de locale nem do tema.
 export function SiteHeader() {
   const { messages } = useLocale()
   const session = useSession()
@@ -77,10 +76,9 @@ export function SiteHeader() {
             {messages.nav.create}
           </Link>
         </nav>
-        {/* Cluster direito (paridade com o protótipo): só idioma + conta. O ThemeToggle foi
-            pro footer pra o header bater exatamente com o protótipo ([idioma, auth]). */}
+        {/* Cluster direito: só o slot de conta. O idioma (#162) e o ThemeToggle foram pro
+            footer; o header fica enxuto com [wordmark, nav, auth]. */}
         <div className="ml-auto flex items-center gap-3">
-          <LocaleSwitcher />
           <AuthSlot />
         </div>
       </Container>

@@ -37,7 +37,10 @@ export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
   const items = [...governanca, ...curadoria]
 
   return (
-    <nav aria-label={m.navAria} className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium">
+    <nav
+      aria-label={m.navAria}
+      className="flex gap-x-5 gap-y-2 overflow-x-auto whitespace-nowrap pb-2 text-sm font-medium"
+    >
       {items.map((it) => {
         const active = pathname === it.href
         return (
