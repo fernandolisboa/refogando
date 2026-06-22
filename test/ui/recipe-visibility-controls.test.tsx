@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { RecipeView } from '@/domain/recipe-read'
-import type { ResultKind, Visibility } from '@/domain/recipe'
+import type { Origin, ResultKind, Visibility } from '@/domain/recipe'
 
 /**
  * Teste de COMPONENTE jsdom dos controles de Visibilidade (#59) — seam de frontend da #54
@@ -74,12 +74,17 @@ function deferred() {
 }
 
 function renderControls(
-  opts: { visibility?: Visibility; resultKind?: ResultKind; locale?: Locale } = {},
+  opts: { visibility?: Visibility; resultKind?: ResultKind; origin?: Origin; locale?: Locale } = {},
 ) {
-  const { visibility = 'private', resultKind = 'success', locale = 'pt-BR' } = opts
+  const { visibility = 'private', resultKind = 'success', origin = 'ai_structured', locale = 'pt-BR' } = opts
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeVisibilityControls recipeId="r-1" initialVisibility={visibility} resultKind={resultKind} />
+      <RecipeVisibilityControls
+        recipeId="r-1"
+        initialVisibility={visibility}
+        resultKind={resultKind}
+        origin={origin}
+      />
     </LocaleProvider>,
   )
 }
@@ -179,5 +184,29 @@ describe('RecipeVisibilityControls (#59)', () => {
     renderControls({ visibility: 'private', locale: 'en-US' })
     expect(screen.getByText(enUS.visibilidade.privadaBadge)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: enUS.visibilidade.publicar })).toBeInTheDocument()
+  })
+
+  it('T7 — web_imported (ADR-0019): botão "Publicar" desabilitado, nota de bloqueio, SEM âmbar', () => {
+    const { container } = renderControls({ visibility: 'private', origin: 'web_imported' })
+
+    const botao = screen.getByRole('button', { name: M.publicar })
+    expect(botao).toBeDisabled()
+    expect(screen.getByText(M.webImportedBloqueio)).toBeInTheDocument()
+    semAmbar(container)
+  })
+
+  it('T8 — 422 web_imported defensivo (se escapar ao disable): alerta neutro específico, badge inalterado', async () => {
+    const user = userEvent.setup()
+    // Estado incoerente de propósito: origin publicável no cliente, mas a rota responde 422
+    // web_imported (prova que o cliente lê o `error` p/ escolher a mensagem certa).
+    mockFetch({ status: 422, body: { error: 'web_imported_nao_publicavel' } })
+    const { container } = renderControls({ visibility: 'private', resultKind: 'success', origin: 'ai_chat' })
+
+    await user.click(screen.getByRole('button', { name: M.publicar }))
+
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(M.erroWebImported)
+    expect(screen.getByText(M.privadaBadge)).toBeInTheDocument()
+    semAmbar(container)
   })
 })

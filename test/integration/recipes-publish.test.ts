@@ -113,6 +113,28 @@ describe('POST /api/recipes/[id]/publish', () => {
     expect(state.visibility).toBe('private')
   })
 
+  // (c2) publicar uma web_imported (ADR-0019/#168): 422 web_imported_nao_publicavel; banco continua private.
+  // Republicar conteúdo de terceiros no nome do usuário é proibido — a importada NUNCA vira pública.
+  it('(c2) publicar web_imported ⇒ 422 web_imported_nao_publicavel; banco continua private', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'owner-webimported@ex.com' })
+    const id = await seedRecipe({
+      origin: 'web_imported',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      resultKind: 'success',
+      ownerId: userId,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Receita da web', provenance: 'escrita_por_pessoa' })
+
+    const res = await publish(id, headers)
+    expect(res.status).toBe(422)
+    await expect(res.json()).resolves.toMatchObject({ error: 'web_imported_nao_publicavel' })
+
+    const state = await readState(id)
+    expect(state.visibility).toBe('private') // banco inalterado
+    expect(state.origin).toBe('web_imported') // origin nunca tocado
+  })
+
   // (c) publicar playful: 422 + banco continua private + invariante CRUA 23514.
   it('(c) publicar playful ⇒ 422 playful_nao_publicavel; banco continua private', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'owner-playful@ex.com' })

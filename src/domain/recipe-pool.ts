@@ -13,16 +13,23 @@
  * `report.ts`/`moderation.ts`). `search.ts` é SQL cru e NÃO pode chamar JS — lá o predicado
  * `AND moderation_removed_at IS NULL` é replicado verbatim em cada gate, com comentário
  * apontando para aqui (faltar UM gate = vaza Receita removida).
+ *
+ * #168/ADR-0019: `origin <> 'web_imported'` é DEFENSE-IN-DEPTH. Uma importada da web é sempre
+ * private e não-publicável (o guard de visibilidade já a barra de virar pública, então o ramo
+ * `visibility='public'` nunca a alcança), mas excluí-la explicitamente aqui é cinto-e-suspensório:
+ * se um bug futuro vazasse uma importada para `public`, ela AINDA assim não entraria no pool.
  */
 export function eligibleForPool(r: {
   ownerId: string | null
   visibility: string
   resultKind: string
   moderationRemovedAt: Date | null
+  origin: string
 }): boolean {
   return (
     (r.ownerId == null || r.visibility === 'public') &&
     r.resultKind !== 'playful' &&
-    r.moderationRemovedAt == null
+    r.moderationRemovedAt == null &&
+    r.origin !== 'web_imported'
   )
 }

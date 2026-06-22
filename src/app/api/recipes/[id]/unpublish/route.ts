@@ -13,8 +13,9 @@ import { applyVisibilityTransition } from '@/server/recipe/visibility'
  * DB; mantém 404 para id malformado mesmo logado — espelha o GET).
  *
  * Autorização é ownership (não papel): não-dono/catálogo ⇒ 404, NUNCA 403 (ADR-0011).
- * O caso `'playful'` é estruturalmente inalcançável aqui (despublicar nunca recusa por
- * zoeira), mas o `switch` cobre os três `kind` por exaustividade de tipo.
+ * Os casos `'playful'` e `'web_imported'` são estruturalmente inalcançáveis aqui (ambas as
+ * recusas só disparam com `target='public'`; despublicar usa `target='private'`), mas o
+ * `switch` cobre todos os `kind` por exaustividade de tipo.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -45,6 +46,9 @@ export async function POST(
       return Response.json(res.view, { status: 200 })
     case 'playful':
       return Response.json({ error: 'playful_nao_publicavel' }, { status: 422 })
+    case 'web_imported':
+      // Inalcançável (despublicar usa target='private'); mapeado por exaustividade.
+      return Response.json({ error: 'web_imported_nao_publicavel' }, { status: 422 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }

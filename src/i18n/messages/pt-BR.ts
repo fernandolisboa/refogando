@@ -397,7 +397,10 @@ export const ptBR = {
     despublicar: 'Despublicar',
     atualizando: 'Atualizando…',
     playfulBloqueio: 'Receitas de zoeira ficam privadas e não podem ser publicadas.',
+    // ADR-0019/#168: importada da web é sempre privada (atribuída à fonte, nunca republicada).
+    webImportedBloqueio: 'Receitas importadas da web ficam privadas e não podem ser publicadas.',
     erroPlayful: 'Esta receita de zoeira não pode ser publicada.',
+    erroWebImported: 'Receitas importadas da web não podem ser publicadas.',
     erroNaoEncontrada: 'Não foi possível encontrar esta receita.',
     erroGenerico: 'Não foi possível mudar a visibilidade. Tente de novo.',
   },
