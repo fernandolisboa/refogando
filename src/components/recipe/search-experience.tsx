@@ -1,16 +1,23 @@
 'use client'
 /**
- * Tela de Busca (#56) — o cérebro client com TODO o estado e o fetch. É a home (#56,
- * Decisão 1): provê o ÚNICO `<main>` do documento (via `<Container as="main">`).
+ * Home-Descoberta (#56/#236) — o cérebro client com TODO o estado de busca/feed e o fetch. É a HOME
+ * (ADR-0020 "a Descoberta é a home"): provê o ÚNICO `<main>` do documento (via `<Container as="main">`).
  *
- * ADR-0010: a UI consome o ROUTE HANDLER `GET /api/search` via `fetch` — NÃO Server
- * Actions. NÃO reimplementa regra de domínio: renderiza o que a rota devolve (seções já
- * vêm separadas e ordenadas; `classifySection` do domínio decide o selo). Bilíngue
- * (ADR-0014/0001): o locale resolvido entra na query (`?locale=`) e troca de idioma
- * re-busca no novo idioma.
+ * DUAS faces na MESMA superfície (refino INLINE, nunca tela separada — #236):
+ *  - REPOUSO (sem critério): mostra o feed do POOL PÚBLICO já SEEDADO pelo SSR (`initialFeed`), navegável
+ *    via `<DiscoveryFeed>` (paginação por cursor no `/api/feed`). É o estado INDEXÁVEL — o crawler já viu
+ *    o feed no HTML; o cliente apenas o reflete e pagina.
+ *  - REFINADO (com `q`/faceta/`sort`): a Busca assume a superfície e mostra os resultados. O estado é
+ *    REFLETIDO na URL (`router.replace`) — recarregar com `?q=`/faceta cai no `noindex` do
+ *    `generateMetadata` (#236). Limpar tudo volta a URL pro repouso `/{locale}` e o feed seeded reaparece.
  *
- * Estados tratados (impeccable): inicial neutro (sem critério → NÃO chama a API, espelha
- * o early-return do handler), carregando, erro+retry, vazio, sugestões.
+ * ADR-0010: a UI consome o ROUTE HANDLER `GET /api/search` via `fetch` — NÃO Server Actions. NÃO
+ * reimplementa regra de domínio: renderiza o que a rota devolve (seções já vêm separadas e ordenadas;
+ * `classifySection` do domínio decide o selo). Bilíngue (ADR-0014/0001): o locale resolvido entra na
+ * query (`?locale=`) e troca de idioma re-busca no novo idioma.
+ *
+ * Estados tratados (impeccable): repouso (feed seeded, sem chamar a Busca — espelha o early-return do
+ * handler), carregando, erro+retry, vazio, sugestões.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -22,10 +29,11 @@ import { Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
-import type { SearchResponse } from '@/domain/recipe-search-read'
+import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { SearchSection } from './search-section'
 import { SortToggle } from './sort-toggle'
+import { DiscoveryFeed } from './discovery-feed'
 import type { BadgeLabels } from './recipe-result-item'
 import { ImportRecipeDialog, type ImportDialogLabels, type WebLink } from './import-recipe-dialog'
 
@@ -45,7 +53,25 @@ const SHALLOW_THRESHOLD = 3
 // Um link da web (#164) — resultado externo da descoberta, NUNCA armazenado nem ranqueado. O tipo é
 // OWNED por `import-recipe-dialog` (que o consome como gatilho de import, #169) e re-usado aqui.
 
-export function SearchExperience() {
+export function SearchExperience({
+  home = false,
+  initialFeed = [],
+  initialNextCursor = null,
+}: {
+  /**
+   * #236: montada como a HOME-Descoberta? `true` ⇒ o REPOUSO (sem critério) mostra o feed SEEDADO
+   * (`<DiscoveryFeed>`), INCLUSIVE quando vazio (estado neutro do feed). `false`/ausente (a Busca
+   * legada montada fora da home) ⇒ o repouso mostra a dica inicial de antes — sem regressão.
+   */
+  home?: boolean
+  /**
+   * #236: 1ª página do feed do POOL PÚBLICO já SEEDADA pelo SSR (anônimo/indexável). Mostrada no
+   * REPOUSO quando `home`. Default `[]`.
+   */
+  initialFeed?: SearchResult[]
+  /** #236: cursor da 2ª página do feed seeded (null = a 1ª já é o fim). */
+  initialNextCursor?: string | null
+} = {}) {
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
@@ -179,6 +205,29 @@ export function SearchExperience() {
       clearTimeout(t)
     }
   }, [doSearch])
+
+  /**
+   * #236: REFLETE o estado de busca/filtro na URL (refino INLINE na MESMA superfície). REFINADO ⇒
+   * `?q=…`/facetas (`router.replace`, sem empilhar histórico a cada tecla) → recarregar cai no
+   * `noindex` do `generateMetadata`. REPOUSO (sem critério) ⇒ a URL volta ao caminho NU `/{locale}`
+   * (sem query) — o estado indexável. `sort` só vai à URL quando difere do default (espelha a query).
+   * O `pathname` corrente é a base: NÃO recompõe o prefixo de locale (o proxy/path já o garante).
+   * Guarda no SSR/jsdom-sem-window: sem `window`, não reflete (nada a sincronizar).
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams()
+    if (q.trim() !== '') params.set('q', q.trim())
+    if (cozinha.length > 0) params.set('cozinha', cozinha.join(','))
+    if (categoria.length > 0) params.set('categoria', categoria.join(','))
+    if (restricao.length > 0) params.set('restricao', restricao.join(','))
+    if (sort === 'popularidade') params.set('sort', 'popularidade')
+    const query = params.toString()
+    const target = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`
+    // Só reescreve se MUDOU (evita um replace redundante por render que poderia laçar com o router).
+    const current = `${window.location.pathname}${window.location.search}`
+    if (target !== current) router.replace(target)
+  }, [q, cozinha, categoria, restricao, sort, router])
 
   useEffect(() => {
     return () => {
@@ -361,9 +410,17 @@ export function SearchExperience() {
           </div>
         )}
 
-        {/* Inicial neutro: só quando nunca houve resultado (não some pra dar lugar ao loading). */}
+        {/* #236 REPOUSO: sem critério de busca, a superfície mostra o FEED da Descoberta já SEEDADO
+            pelo SSR (pool público, indexável) em vez da dica neutra. O `DiscoveryFeed` reflete a 1ª
+            página do crawler e pagina via /api/feed. Sem feed seeded (Busca legada montada fora da
+            home), cai na dica inicial de antes (não regride). A Busca, ao digitar/filtrar, troca este
+            bloco pelos resultados (refino inline). */}
         {status === 'idle' && data === null && (
-          <p className="text-muted">{dicaInicial}</p>
+          home ? (
+            <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+          ) : (
+            <p className="text-muted">{dicaInicial}</p>
+          )
         )}
 
         {/* Vazio: a busca concluiu sem resultado. */}

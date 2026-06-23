@@ -1,8 +1,8 @@
 'use client'
 /**
  * Lista de "Minhas criações" (#61) — o cliente que busca e renderiza as Receitas do dono.
- * Espelha a disciplina do `RecipeFeedExperience` (AbortController no unmount + reset por
- * locale, estados loading/idle/error numa live region, lista FORA da live region) mas é
+ * Espelha a disciplina do feed da Descoberta `DiscoveryFeed` (AbortController no unmount + reset
+ * por locale, estados loading/idle/error numa live region, lista FORA da live region) mas é
  * OWNER-SCOPED: consome `GET /api/me/recipes` (que já é fail-closed no servidor) e mostra
  * TUDO o que é do dono — private, playful, removida-do-pool — com selos NEUTROS.
  *

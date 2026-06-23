@@ -46,8 +46,9 @@ export function SiteHeader() {
   // mobile acima. Sem deep-links aqui (abre limpo no método-picker); a semeadura por
   // `?q`/`?resume`/`?mode=conversa` é trabalho do shell `/create`.
   const [createOpen, setCreateOpen] = useState(false)
-  // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
-  // /recipes público (feed da comunidade, #103): este link é o espaço privado do dono.
+  // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto da
+  // Descoberta-home pública (#236): "Minhas criações" é o espaço PRIVADO do dono; a home `/` é o feed
+  // público + Busca.
   const authed = !session.isPending && !session.error && !!session.data
   // "Painel" (#125): atalho para o Console, só a curador+. FAIL-CLOSED igual ao gate de rota
   // (#51): normaliza o papel cru (string → Role|null) e usa `decideRole` do domínio — papel
@@ -104,8 +105,10 @@ export function SiteHeader() {
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
+          {/* #236: a Descoberta É a home — "Início" leva ao feed público + Busca. O antigo link
+              "Receitas" (índice do feed à parte) FUNDIU na home, então some do nav (era redundante
+              com "Início"). */}
           {navLink('/', messages.nav.home, identity)}
-          {navLink('/recipes', messages.nav.recipes, identity)}
           {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
               leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
@@ -136,8 +139,8 @@ export function SiteHeader() {
               <SheetDescription className="sr-only">{messages.nav.menuDescricao}</SheetDescription>
             </SheetHeader>
             <nav className="flex flex-col items-start gap-4 text-base font-medium text-muted">
+              {/* #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta). */}
               {navLink('/', messages.nav.home, inSheet)}
-              {navLink('/recipes', messages.nav.recipes, inSheet)}
               {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
               {showPainel && navLink('/admin', messages.nav.painel, inSheet)}
               {ctaLink(inSheet)}

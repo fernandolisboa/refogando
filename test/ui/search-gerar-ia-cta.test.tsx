@@ -16,9 +16,10 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// #169: a Busca usa useRouter().push (navega após importar) — mock p/ o jsdom (sem AppRouter montado).
+// #169: a Busca usa useRouter().push (navega após importar). #236: usa .replace (reflete a busca na
+// URL) — mock p/ o jsdom (sem AppRouter montado).
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
 // A Busca lê useSession para escolher a dica inicial E, no #166, o ramo do CTA "Gerar com IA"

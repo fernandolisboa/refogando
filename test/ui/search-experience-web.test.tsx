@@ -24,10 +24,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201.
+// #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201. #236: usa
+// .replace pra refletir a busca na URL (refino inline).
 const push = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace: vi.fn() }),
 }))
 
 type SessionState = {

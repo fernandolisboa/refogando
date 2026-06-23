@@ -1,7 +1,13 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
-import type { FeedHitRow, FeedCursor } from '@/domain/recipe-feed-read'
+import {
+  buildFeedResponse,
+  FEED_DEFAULT_LIMIT,
+  type FeedHitRow,
+  type FeedCursor,
+  type FeedResponse,
+} from '@/domain/recipe-feed-read'
 
 /**
  * Loader do Feed (#103). Lista PLANA e cronológica do pool, paginada por CURSOR keyset.
@@ -103,4 +109,31 @@ export async function loadFeed(
   `)
 
   return [...rows]
+}
+
+/**
+ * Feed da Descoberta-home (#236, ADR-0020) — a 1ª página ANÔNIMA do POOL PÚBLICO que o Server
+ * Component da home (`/{locale}`) renderiza no estado de REPOUSO (INDEXÁVEL). Junta o load DIRETO do
+ * DB (`loadFeed` com `viewerId: undefined`) ao montador PURO (`buildFeedResponse`), espelhando o que o
+ * route `/api/feed` faz pra o anônimo — mas SEM passar pela rota (sem self-fetch) e SEM cookie/sessão:
+ * o caminho de repouso da home tem de ficar cacheável e indexável, igual ao detalhe público (#230).
+ *
+ * `viewerId` é FIXO `undefined` (anônimo) DE PROPÓSITO: o conteúdo indexável é o MESMO pool do sitemap
+ * (#235) — `eligibleForPublicRead` (catálogo/comunidade pública, não-`playful`, não-removida). NUNCA
+ * server-renderiza feed personalizado-por-sessão aqui (vazaria privadas e mataria o cache). A
+ * personalização do logado (próprias receitas) vive na superfície PESSOAL ("Minhas criações"), não na
+ * home indexável.
+ *
+ * Devolve a `FeedResponse` (1ª página + `nextCursor`) — o Server Component a passa como `initialFeed`/
+ * `initialNextCursor` ao cliente, que pagina daí pra frente via `/api/feed` (também anônimo).
+ */
+export async function loadDiscoveryFeed(
+  db: Database,
+  args: { requestLocale: string; limit?: number },
+): Promise<FeedResponse> {
+  const limit = args.limit ?? FEED_DEFAULT_LIMIT
+  // ANÔNIMO (viewerId undefined): pool público, sem cookie — cacheável/indexável. 1ª página (cursor null).
+  const rows = await loadFeed(db, { requestLocale: args.requestLocale, limit, cursor: null, viewerId: undefined })
+  // `viewerId` omitido ⇒ `isOwn` sempre false (nenhum dono casa undefined): selo de comunidade/catálogo.
+  return buildFeedResponse(rows, args.requestLocale, limit)
 }

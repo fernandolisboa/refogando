@@ -8,7 +8,8 @@ export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
   nav: {
     home: 'Início',
-    recipes: 'Receitas',
+    // #236: a antiga entrada "Receitas" (índice do feed) fundiu na home (a Descoberta É a home);
+    // a chave foi removida por ficar órfã.
     create: 'Criar',
     // "Painel" (#125): entrada para o Console de admin, só aparece a curador+. Curto e neutro
     // — não revela "admin" a quem não acessa.
@@ -126,14 +127,12 @@ export const ptBR = {
     importarConviteTitulo: 'Entre para importar',
     importarConviteTexto: 'Crie uma conta ou entre para importar receitas da web para o seu perfil.',
   },
-  // Feed /recipes (#103): lista plana e cronológica do pool, scroll infinito. Reusa `busca.*`
-  // para selos/tradução automática (chrome compartilhado); só os textos próprios do feed
-  // vivem aqui. Sem filtros — daí não há `semResultado` de filtro, só `vazio` (pool vazio).
+  // Feed da Descoberta-home (#103/#236): lista plana e cronológica do pool, scroll infinito, em
+  // REPOUSO sob `/{locale}`. Reusa `busca.*` (título da home, selos, tradução automática); só os
+  // textos próprios do feed vivem aqui. O `titulo`/`subtituloLogado` saíram com a fusão (#236): o
+  // `<h1>` é o da Busca e o feed de repouso é sempre o pool PÚBLICO anônimo (sem cópia "suas receitas").
   feed: {
-    titulo: 'Receitas',
     subtitulo: 'O que a comunidade anda cozinhando, do mais novo ao mais antigo.',
-    // #116: usuário LOGADO vê também as PRÓPRIAS receitas (privadas inclusive) no feed.
-    subtituloLogado: 'Suas receitas e o que a comunidade anda cozinhando, do mais novo ao mais antigo.',
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',
     fim: 'Você chegou ao fim.',
