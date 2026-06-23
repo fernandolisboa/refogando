@@ -269,6 +269,61 @@ describe('useConversationChat (#104 S1)', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
   })
 
+  it('queda com texto parcial: transcript termina em user; redestilar re-posta body válido (sem 400)', async () => {
+    // #203: na QUEDA (stream fecha SEM terminal) com fala PARCIAL do Assistente acumulada, o
+    // transcript LOCAL não pode terminar em 'assistant' — senão o re-POST de `redestilar` viola
+    // `parseTranscript` (última fala = user) e o servidor 400a (`ultima_fala_nao_usuario`).
+    const drop = makeStreamController()
+    const retry = makeStreamController()
+    let streamCalls = 0
+    const fetchMock = mockFetch({
+      stream: async () => (streamCalls++ === 0 ? drop : retry),
+      recipes: { status: 200, body: baseView() },
+    })
+
+    const { result } = renderHook(() => useConversationChat({ locale: 'pt-BR' }), {
+      wrapper: wrapper(),
+    })
+
+    act(() => result.current.setInput('quero feijão'))
+    act(() => {
+      result.current.onSubmit({ preventDefault: () => {} } as React.FormEvent<HTMLFormElement>)
+    })
+    await waitFor(() => expect(result.current.transcript).toHaveLength(1))
+
+    // Token parcial acumula na bolha viva; depois o stream CAI sem frame terminal.
+    act(() => drop.push({ type: 'token', text: 'rascunho parcial' }))
+    await waitFor(() => expect(result.current.liveAssistant).toBe('rascunho parcial'))
+    act(() => drop.close())
+
+    await waitFor(() => expect(result.current.status).toBe('dropped'))
+    // O transcript NÃO ganhou a fala parcial do Assistente: termina em 'user'.
+    expect(result.current.transcript).toEqual([{ role: 'user', content: 'quero feijão' }])
+    expect(result.current.transcript[result.current.transcript.length - 1].role).toBe('user')
+    // O texto parcial sumiu do estado local (a destilação não concluiu).
+    expect(result.current.liveAssistant).toBe('')
+
+    // redestilar() re-posta o transcript ATUAL — cujo body deve terminar em 'user' (sem 400).
+    act(() => result.current.redestilar())
+    await waitFor(() => expect(result.current.status).toBe('streaming'))
+
+    const streamPost = fetchMock.mock.calls.find(
+      (c) => String(c[0]).includes('/api/conversations/stream'),
+    )
+    expect(streamPost).toBeDefined()
+    const postedBody = JSON.parse((streamPost![1] as RequestInit).body as string) as {
+      transcript: { role: string; content: string }[]
+    }
+    expect(postedBody.transcript[postedBody.transcript.length - 1].role).toBe('user')
+
+    // O re-POST conclui com sucesso (sem o 400 de `ultima_fala_nao_usuario`).
+    act(() => {
+      retry.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+      retry.close()
+    })
+    await waitFor(() => expect(result.current.status).toBe('result'))
+  })
+
   it('2º GET da Receita falha: marca loadFailed (NÃO impossible), status result', async () => {
     const ctrl = makeStreamController()
     mockFetch({ stream: ctrl, recipes: { reject: true } })
