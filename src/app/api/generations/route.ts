@@ -270,10 +270,17 @@ export async function POST(req: Request): Promise<Response> {
     recipeId: string | null
     advisory: string | null
     avisos?: ReturnType<typeof renderAvisos>
+    // #231 (ADR-0020): slug + locale CONGELADOS na criação (do `persistGeneration`/#229), pro cliente
+    // montar o link canônico `/{locale}/recipes/<slug>` SEM um 2º GET. "ausente ≠ vazio": só quando a
+    // persistência os devolveu (caminho com Receita) — o cliente cai no fallback por UUID se faltarem.
+    slug?: string
+    locale?: string
   } = {
     outcome: result.outcome,
     recipeId: p?.recipeId ?? null,
     advisory: result.advisory,
+    ...(p?.slug != null ? { slug: p.slug } : {}),
+    ...(p?.locale != null ? { locale: p.locale } : {}),
   }
 
   // UNIÃO determinística (todos os modos): PRÉ-geração (do Briefing — SÓ structured, do

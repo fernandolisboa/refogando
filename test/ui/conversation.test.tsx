@@ -536,7 +536,9 @@ describe('ConversaFocusedView (#60/#104)', () => {
     // Salvar/publicar é um LINK que NAVEGA pro detalhe (#59), onde moram os controles de
     // Visibilidade — NÃO um botão que re-gera. Apenas UM POST de stream em todo o fluxo.
     const link = screen.getByRole('link', { name: M.verReceita })
-    expect(link).toHaveAttribute('href', '/recipes/r-1')
+    // #231 (ADR-0020): a destilação não devolve slug ⇒ fallback canônico locale-no-caminho
+    // `/{locale}/recipes/<uuid>` (pt-BR), que 308a pro slug. Nunca o link nu sem locale.
+    expect(link).toHaveAttribute('href', '/pt-BR/recipes/r-1')
     const streamPosts = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/conversations/stream'))
     expect(streamPosts).toHaveLength(1)
   })
@@ -565,8 +567,8 @@ describe('ConversaFocusedView (#60/#104)', () => {
     // Receita atual reidratada (heading pelo nome) — um único <h1>.
     expect(screen.getByRole('heading', { name: baseView().name })).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-    // Salvar reusa #59 mesmo na retomada.
-    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // Salvar reusa #59 mesmo na retomada. #231: fallback canônico locale-no-caminho (pt-BR), nunca nu.
+    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/pt-BR/recipes/r-1')
   })
 
   it('C15 — APAGAR transcript: confirma → DELETE chamado → transcript some, Receita+link ficam', async () => {
@@ -605,7 +607,8 @@ describe('ConversaFocusedView (#60/#104)', () => {
     // Transcrição apagada localmente; a Receita + o link de salvar PERMANECEM.
     await waitFor(() => expect(screen.queryByText('apaga isso')).toBeNull())
     expect(screen.getByRole('heading', { name: baseView().name })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // #231: fallback canônico locale-no-caminho (pt-BR), nunca o link nu.
+    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/pt-BR/recipes/r-1')
   })
 
   it('C16 — buffer de tail parcial: um frame partido em DOIS chunks é remontado', async () => {

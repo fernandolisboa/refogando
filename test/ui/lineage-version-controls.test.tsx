@@ -62,7 +62,9 @@ describe('LineageVersionControls (#20/#61)', () => {
     const call = fetchMock.mock.calls[0]
     expect(String(call[0])).toBe('/api/recipes/r-1/regenerate')
     expect((call[1] as RequestInit).method).toBe('POST')
-    expect(push).toHaveBeenCalledWith('/recipes/v2')
+    // #231 (ADR-0020): o 201 não devolve slug ⇒ navega pro fallback canônico locale-no-caminho
+    // `/{locale}/recipes/<uuid>` (que 308a pro slug); provider sob 'pt-BR'. Nunca link nu.
+    expect(push).toHaveBeenCalledWith('/pt-BR/recipes/v2')
   })
 
   it('T2 — 409 sem_fonte: mensagem graceful, NÃO navega', async () => {

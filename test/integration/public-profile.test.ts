@@ -13,7 +13,9 @@ import { seedRecipe, seedTranslation, seedRemovedFromPool } from '../helpers/rec
  * AC tem ao menos um controle negativo NÃO-vacuamente-verde.
  */
 
-type ProfileRecipe = { recipeId: string; displayedTitle: string; origin: string }
+// #231 (ADR-0020): o slug do locale pedido entra no item pro card linkar o canônico; ausente quando
+// a Receita não tem tradução COM slug naquele locale (fallback por UUID).
+type ProfileRecipe = { recipeId: string; displayedTitle: string; origin: string; slug?: string }
 type PublicProfile = {
   name: string
   handle: string
@@ -45,19 +47,23 @@ async function seedOwnedRecipe(input: {
   titulo: string
   visibility?: 'public' | 'private'
   resultKind?: 'success' | 'degraded' | 'playful'
+  // #231: locale original (default pt-BR) + slug per-locale opcional — pra testar o slug do DTO.
+  originalLocale?: string
+  slug?: string | null
 }): Promise<string> {
   const id = await seedRecipe({
     origin: 'ai_chat',
-    originalLocale: 'pt-BR',
+    originalLocale: input.originalLocale ?? 'pt-BR',
     ownerId: input.ownerId,
     visibility: input.visibility ?? 'public',
     resultKind: input.resultKind ?? 'success',
   })
   await seedTranslation({
     recipeId: id,
-    locale: 'pt-BR',
+    locale: input.originalLocale ?? 'pt-BR',
     titulo: input.titulo,
     provenance: 'escrita_por_pessoa',
+    ...(input.slug !== undefined ? { slug: input.slug } : {}),
   })
   return id
 }
@@ -188,5 +194,30 @@ describe('GET /api/u/[handle] — perfil público (#129)', () => {
     const body = await profileBody(handle.toUpperCase())
     expect(body.handle).toBe(handle)
     expect(body.recipes).toHaveLength(1)
+  })
+
+  // WIRING SQL→DTO do slug (#231, ADR-0020): prova que `recipe_translation.slug` projetado pelo loader
+  // (list-public.ts → slugByLocale) chega ao item do perfil, escolhido pelo requestLocale. Sem isto, a
+  // suíte ficaria verde (builder puro recebe o slug à mão) e o card do perfil cairia no fallback UUID.
+  it('#231: item carrega o slug do locale pedido; sem tradução no locale → slug ausente', async () => {
+    const handle = `slug-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `slug-${crypto.randomUUID()}@ex.com`, handle })
+    // (a) pública pt-BR COM slug ⇒ item.slug === o slug daquele locale.
+    const comSlug = await seedOwnedRecipe({ ownerId, titulo: 'Pública com slug', slug: 'publica-com-slug' })
+    // (b) pública com original en-US COM slug; pedimos pt-BR ⇒ slugByLocale não tem pt-BR ⇒ slug ausente.
+    const semNoLocale = await seedOwnedRecipe({
+      ownerId,
+      titulo: 'Public English only',
+      originalLocale: 'en-US',
+      slug: 'public-english-only',
+    })
+
+    const body = await profileBody(handle, 'pt-BR')
+    const a = body.recipes.find((r) => r.recipeId === comSlug)
+    expect(a?.slug).toBe('publica-com-slug')
+    const b = body.recipes.find((r) => r.recipeId === semNoLocale)
+    expect(b, 'esperava a pública só-en-US no perfil (é pública)').toBeDefined()
+    // requestLocale pt-BR sem slug ⇒ o builder não acha slug no mapa ⇒ DTO sem slug (fallback UUID).
+    expect(b!.slug).toBeUndefined()
   })
 })

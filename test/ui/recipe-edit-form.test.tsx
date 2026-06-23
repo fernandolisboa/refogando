@@ -128,7 +128,9 @@ describe('RecipeEditForm (#21/#61)', () => {
 
     await user.click(screen.getByRole('button', { name: M.editarPublicaConfirmar }))
 
-    expect(replace).toHaveBeenCalledWith('/recipes/r-1?locale=pt-BR&reviewImage=1')
+    // #231 (ADR-0020): a re-leitura pós-save navega pro canônico locale-no-caminho
+    // `/{locale}/recipes/<uuid>` (a RecipeView não carrega slug ⇒ fallback por UUID, que 308a).
+    expect(replace).toHaveBeenCalledWith('/pt-BR/recipes/r-1?locale=pt-BR&reviewImage=1')
     expect(refresh).toHaveBeenCalled()
   })
 

@@ -106,9 +106,20 @@ describe('POST /api/generations — taxonomia de resultado', () => {
 
     const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
     expect(res.status).toBe(201)
-    const json = (await res.json()) as { outcome: string; recipeId: string; advisory: string | null }
+    const json = (await res.json()) as {
+      outcome: string
+      recipeId: string
+      advisory: string | null
+      // #231 (ADR-0020): o 201 devolve slug+locale congelados (de persistGeneration) pro cliente
+      // montar o link canônico `/{locale}/recipes/<slug>` SEM um 2º GET.
+      slug?: string
+      locale?: string
+    }
     expect(json.outcome).toBe('success')
     expect(json.recipeId).toBeTruthy()
+    // #231: contrato do 201 — slug NÃO-nulo (do título do originalLocale) + locale = originalLocale.
+    expect(json.slug).toBe('arroz-de-forno')
+    expect(json.locale).toBe('pt-BR')
 
     // Recipe: nasce privada, origin por mode (structured → ai_structured), result_kind
     // success, dono = caller. owner_id é o uuid RETORNADO por seedSessionHeaders.
@@ -130,6 +141,9 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(tr.titulo).toBe('Arroz de forno')
     // Slug por idioma (#229): a geração materializa o slug NA ESCRITA, do título do locale.
     expect(tr.slug).toBe('arroz-de-forno')
+    // #231: o slug+locale do 201 são COERENTES com a tradução congelada (o slug é o do originalLocale).
+    expect(json.slug).toBe(tr.slug)
+    expect(json.locale).toBe(rec.originalLocale)
 
     // recipe_ingredient: quantidade é STRING (numeric(10,3)), nunca number.
     const ings = await db

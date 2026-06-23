@@ -21,6 +21,7 @@ import { Container } from '@/components/container'
 import { Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { SearchSection } from './search-section'
@@ -387,6 +388,7 @@ export function SearchExperience() {
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
               byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              locale={locale}
               results={data.minhas}
             />
             <SearchSection
@@ -396,6 +398,7 @@ export function SearchExperience() {
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
               byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              locale={locale}
               results={data.catalogo}
             />
             <SearchSection
@@ -405,6 +408,7 @@ export function SearchExperience() {
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
               byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              locale={locale}
               results={data.comunidade}
             />
             {data.sugestoes && data.sugestoes.length > 0 && (
@@ -415,6 +419,7 @@ export function SearchExperience() {
                 ownLabel={ownLabel}
                 autoTranslationLabel={m.traducaoAutomatica}
                 byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+                locale={locale}
                 results={data.sugestoes}
               />
             )}
@@ -448,8 +453,10 @@ export function SearchExperience() {
               daWebFonte: m.daWebFonte,
             }}
             // Sucesso (201): leva o usuário direto à receita importada (detalhe canônico). De lá,
-            // "Minhas criações" a lista marcada como importada (#169).
-            onImported={(recipeId) => router.push(`/recipes/${recipeId}`)}
+            // "Minhas criações" a lista marcada como importada (#169). #231 (ADR-0020): a importada
+            // nasce privada e o import não devolve slug — navega pro fallback canônico por UUID
+            // `/{locale}/recipes/<uuid>` (que 308a pro slug). Nunca link nu sem locale.
+            onImported={(recipeId) => router.push(recipeDetailPath(locale, recipeId))}
           />
         )}
       </div>

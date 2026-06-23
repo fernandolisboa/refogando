@@ -18,7 +18,16 @@ import type { Messages } from '@/i18n/messages'
 import { RecipeResultItem } from '@/components/recipe/recipe-result-item'
 import { Avatar } from '@/components/profile/avatar'
 
-export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: Messages }) {
+export function PublicProfileView({
+  profile,
+  m,
+  locale,
+}: {
+  profile: PublicProfile
+  m: Messages
+  /** #231/ADR-0020: locale corrente (segmento `[locale]` da página), pro link canônico de cada card. */
+  locale: string
+}) {
   const mp = m.perfilPublico
   const mb = m.busca
   // Rótulos de selo de proveniência por seção (reusa busca.*, mesmo conceito do feed/busca).
@@ -98,6 +107,8 @@ export function PublicProfileView({ profile, m }: { profile: PublicProfile; m: M
               <RecipeResultItem
                 key={r.recipeId}
                 recipeId={r.recipeId}
+                locale={locale}
+                slug={r.slug}
                 displayedTitle={r.displayedTitle}
                 origin={r.origin}
                 autoTranslationSignal={false}

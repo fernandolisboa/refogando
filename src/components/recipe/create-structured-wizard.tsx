@@ -628,6 +628,7 @@ export function CreateStructuredWizard({
                 view={view}
                 loadFailed={loadFailed}
                 messages={messages}
+                locale={locale}
                 onRecarregar={() => {
                   setStatus('loading' as Status)
                   if (result) void carregarReceita(result)

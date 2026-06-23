@@ -111,10 +111,20 @@ describe('MyRecipesList (#61)', () => {
     expect(screen.getByText(M.seloPlayful)).toBeInTheDocument()
     expect(screen.getByText(M.seloDerivada)).toBeInTheDocument()
 
-    // Cada card linka pro detalhe.
+    // Cada card linka pro detalhe canônico. #231 (ADR-0020): sem slug no DTO ⇒ fallback canônico
+    // locale-no-caminho `/{locale}/recipes/<uuid>` (pt-BR), NUNCA o link nu sem locale.
     const links = screen.getAllByRole('link')
-    expect(links.some((a) => a.getAttribute('href') === '/recipes/r-priv')).toBe(true)
+    expect(links.some((a) => a.getAttribute('href') === '/pt-BR/recipes/r-priv')).toBe(true)
+    // Regressão #231: nunca o link nu.
+    expect(links.some((a) => a.getAttribute('href') === '/recipes/r-priv')).toBe(false)
     semAmbar(container)
+  })
+
+  it('T1b — #231: com slug no DTO, o card linka o canônico /{locale}/recipes/<slug>', async () => {
+    mockRecipes([item({ id: 'r-slug', name: 'Bolo com slug', slug: 'bolo-com-slug' })])
+    renderList()
+    const card = await screen.findByRole('link', { name: /Bolo com slug/ })
+    expect(card).toHaveAttribute('href', '/pt-BR/recipes/bolo-com-slug')
   })
 
   it('T2 — estado vazio: mensagem + CTA criar primeira receita', async () => {
@@ -200,11 +210,15 @@ describe('MyRecipesList (#61)', () => {
     expect(selos).toHaveLength(1)
   })
 
-  it('T5 — en-US: título de selo traduzido', async () => {
+  it('T5 — en-US: título de selo traduzido + link no segmento [locale] en-US (#231)', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])
     renderList('en-US')
     await waitFor(() => expect(screen.getByText('My recipe')).toBeInTheDocument())
     expect(screen.getByText(enUS.minhasCriacoes.seloPublica)).toBeInTheDocument()
+    // #231 (ADR-0020): o link canônico usa o locale CORRENTE (en-US) no segmento — prova que o
+    // segmento não é um hardcode de pt-BR (sem slug ⇒ fallback por UUID, mas SEMPRE locale-prefixado).
+    const card = screen.getByText('My recipe').closest('a')
+    expect(card?.getAttribute('href')).toMatch(/^\/en-US\/recipes\//)
   })
 })

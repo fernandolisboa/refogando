@@ -66,12 +66,18 @@ export async function listMyRecipes(
       notas: recipeTranslation.notas,
       provenance: recipeTranslation.provenance,
       stale: recipeTranslation.stale,
+      // Slug por idioma (#231, ADR-0020): projetado pra montar o link canônico do card. Só o slug
+      // da tradução do `requestLocale` é repassado ao DTO (mapa abaixo).
+      slug: recipeTranslation.slug,
     })
     .from(recipeTranslation)
     .where(inArray(recipeTranslation.recipeId, ids))
 
-  // Agrupa as traduções por receita (ausente ⇒ []; resolveName cai no fallback).
+  // Agrupa as traduções por receita (ausente ⇒ []; resolveName cai no fallback). Em paralelo,
+  // colhe o slug do locale CORRENTE por receita (#231): só a tradução do `requestLocale` COM slug
+  // não-NULL — o card linka `/{locale}/recipes/<slug>`; ausente ⇒ fallback por UUID.
   const byRecipe = new Map<string, TranslationRow[]>()
+  const slugByRecipe = new Map<string, string>()
   for (const t of translations) {
     const list = byRecipe.get(t.recipeId) ?? []
     list.push({
@@ -84,6 +90,7 @@ export async function listMyRecipes(
       stale: t.stale,
     })
     byRecipe.set(t.recipeId, list)
+    if (t.locale === requestLocale && t.slug != null) slugByRecipe.set(t.recipeId, t.slug)
   }
 
   return rows.map((r) =>
@@ -101,6 +108,7 @@ export async function listMyRecipes(
         moderationRemovida: r.moderationRemovedAt != null,
         imageUrl: r.imageUrl ?? undefined,
         imageProvenance: r.imageProvenance ?? undefined,
+        slug: slugByRecipe.get(r.id),
         translations: byRecipe.get(r.id) ?? [],
       },
       requestLocale,

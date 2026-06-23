@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import type { Messages } from '@/i18n/messages'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from './recipe-detail-view'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { GenerationResult } from '@/hooks/use-recipe-generation'
 
 export function GenerationResultRegion({
@@ -25,6 +26,7 @@ export function GenerationResultRegion({
   view,
   loadFailed,
   messages,
+  locale,
   onRecarregar,
   onTentarNovamente,
   onCriarOutra,
@@ -33,6 +35,11 @@ export function GenerationResultRegion({
   view: RecipeView | null
   loadFailed: boolean
   messages: Messages
+  /**
+   * #231 (ADR-0020): locale corrente (UI), fallback do segmento `[locale]` quando o 201 não devolveu
+   * `result.locale` (slug ausente). Com slug, o segmento é `result.locale` (o locale do slug congelado).
+   */
+  locale: string
   /** Re-busca o corpo da Receita JÁ criada (load-failed). */
   onRecarregar: () => void
   /** Volta ao formulário SEM limpar (impossible → "ajustar e tentar de novo"). */
@@ -102,7 +109,11 @@ export function GenerationResultRegion({
             onde moram os controles de Visibilidade — não escreve nada. */}
         {result.recipeId && (
           <Button asChild>
-            <Link href={`/recipes/${result.recipeId}`}>{m.verReceita}</Link>
+            {/* #231 (ADR-0020): canônico `/{locale}/recipes/<slug>` no locale do slug congelado; sem
+                slug cai no fallback `/{locale}/recipes/<uuid>` (que 308a). Nunca link nu sem locale. */}
+            <Link href={recipeDetailPath(result.locale ?? locale, result.slug ?? result.recipeId)}>
+              {m.verReceita}
+            </Link>
           </Button>
         )}
         <Button type="button" variant="secondary" onClick={onCriarOutra}>

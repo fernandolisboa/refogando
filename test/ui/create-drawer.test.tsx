@@ -332,12 +332,44 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     // Estado GERANDO: o botão vira "Gerando receita…".
     expect(await screen.findByRole('button', { name: M.gerando })).toBeInTheDocument()
 
-    // Libera o POST (201) → segue pro GET (200) → estado GERADA.
-    d.release({ status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } })
+    // Libera o POST (201) → segue pro GET (200) → estado GERADA. #231 (ADR-0020): o 201 devolve
+    // slug+locale congelados (#229) pro link canônico sem 2º GET.
+    d.release({
+      status: 201,
+      body: { outcome: 'success', recipeId: 'r-1', advisory: null, slug: 'refogado-de-abobrinha', locale: 'pt-BR' },
+    })
 
     expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
-    // "Ver receita" leva ao detalhe da Receita criada.
-    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // "Ver receita" leva ao detalhe canônico `/{locale}/recipes/<slug>` (#231), nunca o link nu.
+    const ver = screen.getByRole('link', { name: M.verReceita })
+    expect(ver).toHaveAttribute('href', '/pt-BR/recipes/refogado-de-abobrinha')
+    expect(ver).not.toHaveAttribute('href', '/recipes/r-1')
+  })
+
+  it('D5b — #231: o link usa o result.locale do 201 (en-US), não a UI (pt-BR) — precedência de locale', async () => {
+    const user = userEvent.setup()
+    const d = deferred()
+    // UI em pt-BR, mas a Receita criada foi congelada em en-US (originalLocale): o segmento canônico
+    // segue o `result.locale` (en-US), NÃO o locale da chrome. Prova que `result.locale ?? locale` no
+    // GenerationResultRegion não colapsou pra só `locale` (que mandaria pra pt-BR errado).
+    mockFetch({ generations: d.factory, recipes: { status: 200, body: baseView() } })
+    render(<Harness locale="pt-BR" />)
+
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoPromptTitulo) }))
+    await user.type(screen.getByLabelText(M.textareaLabel), 'a zucchini stir fry without onion')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    d.release({
+      status: 201,
+      body: { outcome: 'success', recipeId: 'r-1', advisory: null, slug: 'zucchini-stir-fry', locale: 'en-US' },
+    })
+
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+    const ver = screen.getByRole('link', { name: M.verReceita })
+    expect(ver).toHaveAttribute('href', '/en-US/recipes/zucchini-stir-fry')
+    // Não caiu no locale da UI (pt-BR) nem no link nu.
+    expect(ver).not.toHaveAttribute('href', '/pt-BR/recipes/zucchini-stir-fry')
+    expect(ver).not.toHaveAttribute('href', '/recipes/r-1')
   })
 
   it('D6 — ao gerar dentro do drawer: foco move pro topo do resultado e o nome da Receita é o ÚNICO <h1>', async () => {
@@ -557,8 +589,12 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     const h1s = screen.getAllByRole('heading', { level: 1 })
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent('Feijão tropeiro')
-    // "Ver e publicar receita" leva ao detalhe (#59) — não re-gera.
-    expect(screen.getByRole('link', { name: CV.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // "Ver e publicar receita" leva ao detalhe (#59) — não re-gera. #231 (ADR-0020): a destilação não
+    // devolve slug ⇒ fallback canônico locale-no-caminho `/{locale}/recipes/<uuid>` (pt-BR), nunca nu.
+    expect(screen.getByRole('link', { name: CV.verReceita })).toHaveAttribute(
+      'href',
+      '/pt-BR/recipes/r-1',
+    )
     // NÃO há botão autônomo de destilar (a Receita já aparece no terminal do turno).
     expect(screen.queryByRole('button', { name: D.destilarReceita })).toBeNull()
     // Caminho feliz: SEM banner de queda (o re-POST quebrado não acontece mais).

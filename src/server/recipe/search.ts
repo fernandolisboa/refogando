@@ -740,7 +740,8 @@ function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
       u.name AS owner_name,
       u.handle AS owner_handle,
       ri.blob_url AS image_url,
-      ri.provenance AS image_provenance
+      ri.provenance AS image_provenance,
+      req_t.slug AS slug -- #231: slug do locale PEDIDO (mesmo LEFT JOIN do título) pro link canônico
     FROM numbered n
     CROSS JOIN params p
     LEFT JOIN recipe_translation req_t

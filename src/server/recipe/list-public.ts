@@ -56,12 +56,17 @@ export async function listPublicRecipesByOwner(
       notas: recipeTranslation.notas,
       provenance: recipeTranslation.provenance,
       stale: recipeTranslation.stale,
+      // Slug por idioma (#231, ADR-0020): projetado pra montar o link canônico do card. O loader é
+      // locale-agnóstico — devolve `slugByLocale` e o builder escolhe pelo requestLocale.
+      slug: recipeTranslation.slug,
     })
     .from(recipeTranslation)
     .where(inArray(recipeTranslation.recipeId, ids))
 
   // Agrupa as traduções por receita (ausente ⇒ []; resolveName cai no fallback / item pulado).
+  // Em paralelo, colhe os slugs por idioma (#231): `{ locale → slug }` só dos não-NULL.
   const byRecipe = new Map<string, TranslationRow[]>()
+  const slugsByRecipe = new Map<string, Record<string, string>>()
   for (const t of translations) {
     const list = byRecipe.get(t.recipeId) ?? []
     list.push({
@@ -74,12 +79,21 @@ export async function listPublicRecipesByOwner(
       stale: t.stale,
     })
     byRecipe.set(t.recipeId, list)
+    if (t.slug != null) {
+      const map = slugsByRecipe.get(t.recipeId) ?? {}
+      map[t.locale] = t.slug
+      slugsByRecipe.set(t.recipeId, map)
+    }
   }
 
-  return rows.map((r) => ({
-    id: r.id,
-    origin: r.origin,
-    originalLocale: r.originalLocale,
-    translations: byRecipe.get(r.id) ?? [],
-  }))
+  return rows.map((r) => {
+    const slugByLocale = slugsByRecipe.get(r.id)
+    return {
+      id: r.id,
+      origin: r.origin,
+      originalLocale: r.originalLocale,
+      ...(slugByLocale ? { slugByLocale } : {}),
+      translations: byRecipe.get(r.id) ?? [],
+    }
+  })
 }

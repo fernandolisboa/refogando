@@ -699,6 +699,7 @@ export function CreateStructuredExperience({
             view={view}
             loadFailed={loadFailed}
             messages={messages}
+            locale={locale}
             onRecarregar={() => {
               setStatus('loading')
               void carregarReceita(result)

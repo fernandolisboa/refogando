@@ -31,6 +31,11 @@ export type GenerationResult = {
   recipeId?: string | null
   advisory: string | null
   avisos?: AvisoView[]
+  // #231 (ADR-0020): slug + locale CONGELADOS na criação (do 201 de /api/generations), pros
+  // componentes de resultado montarem o link canônico `/{locale}/recipes/<slug>`. AUSENTES no
+  // `impossible` (sem Receita) ou quando o slug ainda não congelou — o link cai no fallback por UUID.
+  slug?: string
+  locale?: string
 }
 
 /**

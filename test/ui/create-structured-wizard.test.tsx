@@ -257,10 +257,17 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     expect(body.mode).toBe('structured')
     expect(body.briefing.itens[0].rawText).toBe('feijão')
 
-    // Libera o POST (201) → GET (200) → GERADA.
-    d.release({ status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } })
+    // Libera o POST (201) → GET (200) → GERADA. #231 (ADR-0020): o 201 devolve slug+locale (#229).
+    d.release({
+      status: 201,
+      body: { outcome: 'success', recipeId: 'r-1', advisory: null, slug: 'feijao-tropeiro', locale: 'pt-BR' },
+    })
     expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // "Ver receita" linka o canônico `/{locale}/recipes/<slug>` (#231), nunca o link nu.
+    expect(screen.getByRole('link', { name: M.verReceita })).toHaveAttribute(
+      'href',
+      '/pt-BR/recipes/feijao-tropeiro',
+    )
   })
 
   it('W7 — bulk: as linhas viram itens do Briefing no POST', async () => {

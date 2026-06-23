@@ -16,16 +16,18 @@ import { RecipeResultItem, type BadgeLabels } from '@/components/recipe/recipe-r
 
 const badgeLabels: BadgeLabels = { catalogo: 'Catálogo', comunidade: 'Comunidade' }
 
-function renderItem(over: { imageUrl?: string } = {}) {
+function renderItem(over: { imageUrl?: string; slug?: string; locale?: string } = {}) {
+  const { locale = 'pt-BR', ...rest } = over
   return render(
     <RecipeResultItem
       recipeId="r-1"
+      locale={locale}
       displayedTitle="Bolo de cenoura"
       origin="catalog"
       autoTranslationSignal={false}
       badgeLabels={badgeLabels}
       autoTranslationLabel="Tradução automática"
-      {...over}
+      {...rest}
     />,
   )
 }
@@ -48,6 +50,7 @@ describe('RecipeResultItem — thumbnail (#130)', () => {
     render(
       <RecipeResultItem
         recipeId="r-2"
+        locale="pt-BR"
         displayedTitle="Bolo IA"
         origin="catalog"
         autoTranslationSignal={false}
@@ -64,5 +67,31 @@ describe('RecipeResultItem — thumbnail (#130)', () => {
   it('#132 sem imageAiGenerated ⇒ sem selo', () => {
     renderItem({ imageUrl: 'https://abc.public.blob.vercel-storage.com/recipes/foto.webp' })
     expect(screen.queryByText('✨ gerada por IA')).not.toBeInTheDocument()
+  })
+})
+
+describe('RecipeResultItem — link canônico por slug (#231, ADR-0020)', () => {
+  /** O título é o link primário pro detalhe — o <a> que envolve o <h3>. */
+  function detailHref() {
+    const heading = screen.getByRole('heading', { name: 'Bolo de cenoura' })
+    return heading.closest('a')?.getAttribute('href')
+  }
+
+  it('com slug ⇒ canônico /{locale}/recipes/<slug> no locale corrente', () => {
+    renderItem({ slug: 'bolo-de-cenoura', locale: 'pt-BR' })
+    expect(detailHref()).toBe('/pt-BR/recipes/bolo-de-cenoura')
+  })
+
+  it('locale en-US ⇒ slug daquele locale no segmento [locale]', () => {
+    renderItem({ slug: 'carrot-cake', locale: 'en-US' })
+    expect(detailHref()).toBe('/en-US/recipes/carrot-cake')
+  })
+
+  it('SEM slug ⇒ fallback canônico por UUID /{locale}/recipes/<uuid> (308a), NUNCA link nu', () => {
+    renderItem({ locale: 'pt-BR' }) // recipeId="r-1", sem slug
+    const href = detailHref()
+    expect(href).toBe('/pt-BR/recipes/r-1')
+    // Regressão #231: nunca o link nu sem prefixo de locale.
+    expect(href).not.toBe('/recipes/r-1')
   })
 })

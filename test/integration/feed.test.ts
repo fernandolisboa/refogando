@@ -17,6 +17,9 @@ type FeedItem = {
   displayedTitle: string
   origin: string
   autoTranslationSignal: boolean
+  // #231 (ADR-0020): slug do locale PEDIDO, projetado pelo loader (req_t.slug). Ausente quando a
+  // Receita não tem tradução COM slug naquele locale (fallback por UUID no card).
+  slug?: string
 }
 type FeedResponse = { feed: FeedItem[]; nextCursor: string | null }
 
@@ -188,5 +191,44 @@ describe('GET /api/feed — feed cronológico (#103)', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as FeedResponse
     expect(ids(body.feed)).toContain(r1)
+  })
+})
+
+describe('GET /api/feed — slug do locale no DTO (#231, ADR-0020)', () => {
+  // WIRING SQL→DTO: prova que o alias `req_t.slug AS slug` do loader chega ao FeedItem. Sem este
+  // teste, se o JOIN/alias largasse a coluna, a suíte ficaria verde (builders puros recebem o slug à
+  // mão) e TODO link canônico do feed cairia no fallback UUID silenciosamente.
+  it('Receita com slug no locale pedido → item.slug === o slug daquele locale', async () => {
+    const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, resultKind: 'success' })
+    await seedTranslation({
+      recipeId: id,
+      locale: 'pt-BR',
+      titulo: 'Bolo de cenoura com cobertura',
+      provenance: 'escrita_por_pessoa',
+      slug: 'bolo-de-cenoura',
+    })
+
+    const body = await feedBody()
+    const item = body.feed.find((i) => i.recipeId === id)
+    expect(item, 'esperava a Receita no feed').toBeDefined()
+    expect(item!.slug).toBe('bolo-de-cenoura')
+  })
+
+  it('Receita SEM tradução no locale pedido → slug ausente (fallback por UUID)', async () => {
+    // Original en-US COM slug, mas o feed é pedido em pt-BR (default) ⇒ req_t não casa ⇒ slug NULL ⇒
+    // chave ausente no DTO. O título ainda resolve via fallback (resolveName), mas SEM slug.
+    const id = await seedRecipe({ origin: 'catalog', originalLocale: 'en-US', ownerId: null, resultKind: 'success' })
+    await seedTranslation({
+      recipeId: id,
+      locale: 'en-US',
+      titulo: 'Carrot cake with frosting',
+      provenance: 'escrita_por_pessoa',
+      slug: 'carrot-cake',
+    })
+
+    const body = await feedBody() // locale pt-BR (default do feedReq)
+    const item = body.feed.find((i) => i.recipeId === id)
+    expect(item, 'esperava a Receita no feed (título via fallback)').toBeDefined()
+    expect(item!.slug).toBeUndefined()
   })
 })

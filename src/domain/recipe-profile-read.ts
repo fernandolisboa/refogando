@@ -26,6 +26,11 @@ export type ProfileRecipeRow = {
   id: string
   origin: Origin
   originalLocale: string
+  // Slugs por idioma (#231, ADR-0020): `{ locale → slug }` SÓ dos locales com slug não-NULL (o loader
+  // o projeta). O builder pega o slug do `requestLocale` (locale corrente) pra montar o link canônico
+  // `/{locale}/recipes/<slug>`; ausente naquele locale ⇒ o card cai no fallback por UUID. O loader é
+  // locale-agnóstico (não sabe o requestLocale) — quem escolhe é o `requestLocale` do builder.
+  slugByLocale?: Record<string, string>
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -34,6 +39,9 @@ export type ProfileRecipeItem = {
   recipeId: string
   displayedTitle: string
   origin: Origin
+  // Slug do locale CORRENTE (#231) — pro card linkar `/{locale}/recipes/<slug>`. AUSENTE ("ausente ≠
+  // vazio") quando não há slug naquele locale: o card cai no fallback canônico por UUID.
+  slug?: string
 }
 
 /**
@@ -66,7 +74,15 @@ export function projectProfileRecipe(
     translations: row.translations,
   })
   if (displayedTitle.length === 0) return null
-  return { recipeId: row.id, displayedTitle, origin: row.origin }
+  // #231: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o locale pedido tem
+  // slug (o builder/loader é locale-agnóstico — a escolha é por `requestLocale` aqui).
+  const slug = row.slugByLocale?.[requestLocale]
+  return {
+    recipeId: row.id,
+    displayedTitle,
+    origin: row.origin,
+    ...(slug != null ? { slug } : {}),
+  }
 }
 
 /**

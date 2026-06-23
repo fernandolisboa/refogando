@@ -39,6 +39,10 @@ export type RecipeListRow = {
   // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail. `undefined` = sem imagem.
   // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (espelha `projectResult`).
   imageProvenance?: 'user_photo' | 'ai_generated'
+  // Slug do locale CORRENTE (#231, ADR-0020): `recipe_translation.slug` da tradução do requestLocale
+  // (resolvido no loader). `undefined` quando o dono não tem tradução COM slug naquele locale (só o
+  // original, ou slug ainda não congelado) ⇒ o card cai no fallback canônico por UUID.
+  slug?: string
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -62,6 +66,9 @@ export type RecipeListItem = {
   // Imagem gerada por IA (#216): derivado de `imageProvenance === 'ai_generated'` — a UI sobrepõe
   // o selo "✨ gerada por IA" na thumbnail (espelha `projectResult`/RecipeResultItem). Omitido se falso.
   imageAiGenerated?: boolean
+  // Slug do locale CORRENTE (#231, ADR-0020) — pro card linkar `/{locale}/recipes/<slug>`. AUSENTE
+  // ("ausente ≠ vazio") quando não há slug naquele locale: o card cai no fallback canônico por UUID.
+  slug?: string
 }
 
 /**
@@ -90,5 +97,7 @@ export function resolveRecipeListItem(
     moderationRemovida: row.moderationRemovida,
     imageUrl: row.imageUrl,
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
+    // #231: slug do locale corrente pro link canônico. "ausente ≠ vazio": só quando há slug.
+    ...(row.slug != null ? { slug: row.slug } : {}),
   }
 }

@@ -36,8 +36,8 @@ function baseProfile(over: Partial<PublicProfile> = {}): PublicProfile {
   }
 }
 
-function renderProfile(profile: PublicProfile) {
-  return render(<PublicProfileView profile={profile} m={M} />)
+function renderProfile(profile: PublicProfile, locale = 'pt-BR') {
+  return render(<PublicProfileView profile={profile} m={M} locale={locale} />)
 }
 
 describe('PublicProfileView (#129)', () => {
@@ -92,19 +92,22 @@ describe('PublicProfileView (#129)', () => {
     }
   })
 
-  it('lista as receitas públicas como cards linkando o detalhe', () => {
+  it('lista as receitas públicas como cards linkando o detalhe canônico (#231)', () => {
     renderProfile(
       baseProfile({
         recipes: [
-          { recipeId: 'r-1', displayedTitle: 'Bolo de fubá', origin: 'ai_chat' },
+          // Com slug: linka o canônico /{locale}/recipes/<slug> (#231/ADR-0020).
+          { recipeId: 'r-1', displayedTitle: 'Bolo de fubá', origin: 'ai_chat', slug: 'bolo-de-fuba' },
+          // Sem slug naquele locale: fallback canônico por UUID /{locale}/recipes/<uuid> (308a), nunca nu.
           { recipeId: 'r-2', displayedTitle: 'Pão caseiro', origin: 'user_edited' },
         ],
       }),
     )
     expect(screen.queryByText(M.perfilPublico.semReceitas)).toBeNull()
     const card1 = screen.getByText('Bolo de fubá').closest('a')
-    expect(card1).toHaveAttribute('href', '/recipes/r-1')
+    expect(card1).toHaveAttribute('href', '/pt-BR/recipes/bolo-de-fuba')
     const card2 = screen.getByText('Pão caseiro').closest('a')
-    expect(card2).toHaveAttribute('href', '/recipes/r-2')
+    expect(card2).toHaveAttribute('href', '/pt-BR/recipes/r-2')
+    expect(card2).not.toHaveAttribute('href', '/recipes/r-2')
   })
 })
