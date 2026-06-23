@@ -191,6 +191,20 @@ export function RecipeImageManager({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
+        {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor).
+            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`).
+            #207: ação primária — vem ANTES do upload da própria foto. */}
+        {aiGenEnabled && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => onGenerate()}
+            disabled={busy}
+          >
+            {busy ? m.imagemGerando : m.imagemGerar}
+          </Button>
+        )}
         <Button
           asChild
           variant="secondary"
@@ -208,19 +222,6 @@ export function RecipeImageManager({
             />
           </label>
         </Button>
-        {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor).
-            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
-        {aiGenEnabled && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => onGenerate()}
-            disabled={busy}
-          >
-            {busy ? m.imagemGerando : m.imagemGerar}
-          </Button>
-        )}
         {hasImage && (
           <Button
             type="button"
