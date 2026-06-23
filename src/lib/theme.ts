@@ -15,11 +15,12 @@ export type Theme = 'light' | 'dark'
 /**
  * Resolve a classe a pôr no `<html>` a partir do valor cru do cookie `theme`.
  *  - 'dark'/'light' explícito  → essa classe (o usuário forçou um tema);
- *  - ausente/desconhecido      → '' (sem classe): o SO decide via @media do globals.css.
+ *  - ausente/desconhecido      → 'light' (padrão inicial, issue #208): emite `.light` no
+ *    `<html>`, derrotando a @media do SO. O dono prefere claro como padrão; o SO só passa
+ *    a valer se o usuário escolher 'dark' (cookie só é gravado ao alternar ativamente).
  * A precedência (classe vence a @media) é garantida pela ordem de fonte do CSS (ADR-0018).
  */
-export function resolveThemeClass(cookieValue: string | undefined | null): '' | 'dark' | 'light' {
+export function resolveThemeClass(cookieValue: string | undefined | null): 'dark' | 'light' {
   if (cookieValue === 'dark') return 'dark'
-  if (cookieValue === 'light') return 'light'
-  return ''
+  return 'light'
 }

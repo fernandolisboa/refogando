@@ -90,9 +90,11 @@ describe('resolveThemeClass (puro)', () => {
   it('mapeia o cookie cru para a classe do <html>', () => {
     expect(resolveThemeClass('dark')).toBe('dark')
     expect(resolveThemeClass('light')).toBe('light')
-    expect(resolveThemeClass(undefined)).toBe('')
-    expect(resolveThemeClass(null)).toBe('')
-    expect(resolveThemeClass('')).toBe('')
-    expect(resolveThemeClass('bogus')).toBe('')
+    // Padrão inicial = claro (issue #208): cookie ausente/desconhecido → 'light' (emite
+    // `.light` no <html>, derrotando a @media do SO). Antes era '' (deixava o SO decidir).
+    expect(resolveThemeClass(undefined)).toBe('light')
+    expect(resolveThemeClass(null)).toBe('light')
+    expect(resolveThemeClass('')).toBe('light')
+    expect(resolveThemeClass('bogus')).toBe('light')
   })
 })
