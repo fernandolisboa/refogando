@@ -5,6 +5,7 @@ import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { parseWebSearchConfig } from '@/domain/web-search-config'
+import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -18,10 +19,14 @@ import { parseWebSearchConfig } from '@/domain/web-search-config'
  *    Record<Role, number|null> (`null` = ∞); a rota /api/generations lê este valor pelo teto.
  *  - `webSearch { enabled, allowlist }` (#164, ADR-0019) — descoberta na web (também a `/admin/ai`).
  *    A allowlist é fonte ÚNICA do endpoint `/api/discovery/web` E do guard de SSRF do import (#165).
+ *  - `catalogDisclosure { enabled, text }` (#237, SEO #187) — aviso OPCIONAL "em colaboração entre
+ *    curadoria e IA" exibido SÓ em receitas `origin=catalog` quando ligado. CORTESIA editorial — NUNCA
+ *    suprime os selos obrigatórios de proveniência (`ai_*` / imagem `ai_generated`). Texto editável.
  *
- * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` (ao menos um);
- * valida cada campo PRESENTE; faz upsert só dos campos enviados (preserva os outros eixos). Corpo
- * vazio/sem campo conhecido ⇒ 400. Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
+ * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
+ * `catalogDisclosure` (ao menos um); valida cada campo PRESENTE; faz upsert só dos campos enviados
+ * (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400. Erro de DB → `erro_interno` 500
+ * sem stack (consistente com /api/admin/roles).
  */
 const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
 
@@ -41,6 +46,7 @@ export async function PUT(req: Request): Promise<Response> {
     imageGen?: unknown
     recipeGenCapByRole?: unknown
     webSearch?: unknown
+    catalogDisclosure?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -53,6 +59,8 @@ export async function PUT(req: Request): Promise<Response> {
     recipeGenCapByRole: RecipeGenCapByRole
     webSearchEnabled: boolean
     webSearchAllowlist: string[]
+    catalogDisclosureEnabled: boolean
+    catalogDisclosureText: string
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -87,6 +95,16 @@ export async function PUT(req: Request): Promise<Response> {
     if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.webSearchEnabled = parsed.value.enabled
     set.webSearchAllowlist = parsed.value.allowlist
+  }
+
+  // #237: aviso de catálogo AI-assistido (enabled + texto editável). O texto é TRIMADO na validação;
+  // vazio/só-espaço ⇒ 400 config_invalida (não persiste frase vazia). Substituição COMPLETA do eixo
+  // (a UI sempre envia os 2 campos). CORTESIA editorial — não toca os selos obrigatórios de proveniência.
+  if (body.catalogDisclosure !== undefined) {
+    const parsed = parseCatalogDisclosureConfig(body.catalogDisclosure)
+    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.catalogDisclosureEnabled = parsed.value.enabled
+    set.catalogDisclosureText = parsed.value.text
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

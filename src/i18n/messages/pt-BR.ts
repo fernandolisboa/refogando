@@ -211,6 +211,10 @@ export const ptBR = {
     restricoes: 'Restrições',
     tags: 'Tags',
     avisoTitulo: 'Aviso de restrição',
+    // #237 (aviso de catálogo AI-assistido, SEO #187): rótulo acessível do bloco de CORTESIA editorial
+    // ("em colaboração entre curadoria e IA"). O TEXTO exibido vem da config admin (editável); aqui só
+    // o nome acessível do bloco. NÃO é o selo obrigatório de proveniência — é um aviso adicional.
+    catalogoAvisoRotulo: 'Sobre este catálogo',
     // Atribuição à FONTE (#169, ADR-0019): no detalhe da receita IMPORTADA da web, "fonte: …"
     // SUBSTITUI o crédito "por <Usuário>". {fonte} (nome do site ou host) interpolado via `.replace`;
     // o texto linka a URL de origem. `fonteVerNoSite` é o rótulo acessível do link externo.
@@ -740,6 +744,15 @@ export const ptBR = {
     webAllowlistLabel: 'Domínios permitidos',
     webAllowlistAjuda: 'Um domínio por linha (ex.: tudogostoso.com.br). Vazio bloqueia tudo.',
     webErroConfig: 'Configuração inválida. Revise os domínios (um hostname por linha, sem http:// nem caminho).',
+    // #237: aviso de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável. CORTESIA
+    // editorial: aparece só em receitas de catálogo quando ligado; NUNCA substitui os selos obrigatórios.
+    catalogoAvisoTitulo: 'Aviso do catálogo (IA-assistido)',
+    catalogoAvisoDescricao:
+      'Mostre um aviso opcional nas receitas do catálogo informando que elas podem ser produzidas em colaboração entre a curadoria e a IA. Não substitui os selos obrigatórios de geração por IA.',
+    catalogoAvisoHabilitadoLabel: 'Aviso do catálogo ligado',
+    catalogoAvisoTextoLabel: 'Texto do aviso',
+    catalogoAvisoTextoAjuda: 'Frase exibida nas receitas do catálogo quando o aviso está ligado.',
+    catalogoAvisoErroConfig: 'Configuração inválida. O texto do aviso não pode ficar vazio.',
     // Backfill dos embeddings da busca semântica (#119) — recompute em lote, retomável.
     backfillTitulo: 'Embeddings da busca semântica',
     backfillDescricao:

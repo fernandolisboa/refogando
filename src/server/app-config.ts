@@ -15,6 +15,10 @@ import {
   parseAllowlist,
   type WebSearchConfig,
 } from '@/domain/web-search-config'
+import {
+  DEFAULT_CATALOG_DISCLOSURE_CONFIG,
+  type CatalogDisclosureConfig,
+} from '@/domain/catalog-disclosure-config'
 
 /**
  * Leitura do singleton `app_config` (issues #5/#134) — fonte ÚNICA da config de app, usada tanto pelo
@@ -36,6 +40,8 @@ export type AppConfig = {
   recipeGenCapByRole: RecipeGenCapByRole
   // #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios.
   webSearch: WebSearchConfig
+  // #237: aviso OPCIONAL de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável.
+  catalogDisclosure: CatalogDisclosureConfig
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
@@ -46,6 +52,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
       webSearch: DEFAULT_WEB_SEARCH_CONFIG,
+      catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
     }
   }
   return {
@@ -62,7 +69,21 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       // um domínio não-canônico vaza pro guard de SSRF / endpoint.
       allowlist: parseAllowlist(row.webSearchAllowlist) ?? [],
     },
+    catalogDisclosure: {
+      enabled: row.catalogDisclosureEnabled,
+      // Re-valida na leitura: texto vazio/só-espaço (linha editada à mão) cai no default — o aviso
+      // nunca renderiza uma frase vazia. As colunas têm NOT NULL + default, então o caso normal já é seguro.
+      text:
+        row.catalogDisclosureText.trim() !== ''
+          ? row.catalogDisclosureText.trim()
+          : DEFAULT_CATALOG_DISCLOSURE_CONFIG.text,
+    },
   }
+}
+
+/** Atalho: só a config do aviso de catálogo AI-assistido (#237) — usada pelo detalhe da Receita. */
+export async function loadCatalogDisclosureConfig(db: Database): Promise<CatalogDisclosureConfig> {
+  return (await loadAppConfig(db)).catalogDisclosure
 }
 
 /** Atalho: só a config de geração de imagem (a geração não precisa do default_model do chat). */

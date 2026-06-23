@@ -1,0 +1,2 @@
+ALTER TABLE "app_config" ADD COLUMN "catalog_disclosure_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "app_config" ADD COLUMN "catalog_disclosure_text" text DEFAULT 'Algumas receitas do nosso catálogo são produzidas em colaboração entre a nossa curadoria e a IA.' NOT NULL;

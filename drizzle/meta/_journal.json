@@ -169,6 +169,13 @@
       "when": 1782223453615,
       "tag": "0023_dry_true_believers",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782234836900,
+      "tag": "0024_famous_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }

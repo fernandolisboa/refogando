@@ -255,3 +255,60 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
     expect((await put({ webSearch: { enabled: true, allowlist: ['a.com'] } }, headers)).status).toBe(403)
   })
 })
+
+// ── #237: catalogDisclosure { enabled, text } (aviso de catálogo AI-assistido, SEO #187) ──────────
+describe('/api/admin/config — catalogDisclosure (#237, admin-only)', () => {
+  it('GET traz catalogDisclosure com default DESLIGADO + texto padrão quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cd-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as {
+      catalogDisclosure: { enabled: boolean; text: string }
+    }
+    expect(body.catalogDisclosure.enabled).toBe(false)
+    expect(body.catalogDisclosure.text.length).toBeGreaterThan(0)
+  })
+
+  it('PUT catalogDisclosure válido persiste (texto TRIMADO) e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cd-put@cfg.test', role: 'admin' })
+    const putRes = await put(
+      { catalogDisclosure: { enabled: true, text: '  Curadoria + IA.  ' } },
+      headers,
+    )
+    expect(putRes.status).toBe(200)
+    const putBody = (await putRes.json()) as { catalogDisclosure: { enabled: boolean; text: string } }
+    expect(putBody.catalogDisclosure).toEqual({ enabled: true, text: 'Curadoria + IA.' })
+
+    const getBody = (await (await get(headers)).json()) as {
+      catalogDisclosure: { enabled: boolean; text: string }
+    }
+    expect(getBody.catalogDisclosure).toEqual({ enabled: true, text: 'Curadoria + IA.' })
+  })
+
+  it('PUT catalogDisclosure NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cd-iso@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect(
+      (await put({ catalogDisclosure: { enabled: true, text: 'Curadoria + IA.' } }, headers)).status,
+    ).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      catalogDisclosure: { enabled: boolean; text: string }
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.catalogDisclosure).toEqual({ enabled: true, text: 'Curadoria + IA.' })
+  })
+
+  it('PUT catalogDisclosure inválido → 400 config_invalida (texto vazio, enabled não-bool)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cd-bad@cfg.test', role: 'admin' })
+    expect((await put({ catalogDisclosure: { enabled: true, text: '   ' } }, headers)).status).toBe(400)
+    const bad = await put({ catalogDisclosure: { enabled: 'sim', text: 'x' } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('catalogDisclosure PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cd-cur@cfg.test', role: 'curador' })
+    expect(
+      (await put({ catalogDisclosure: { enabled: true, text: 'x' } }, headers)).status,
+    ).toBe(403)
+  })
+})

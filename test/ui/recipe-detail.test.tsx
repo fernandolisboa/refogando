@@ -329,6 +329,50 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.queryByText(M.busca.traducaoAutomatica)).toBeNull()
   })
 
+  // ── #237: aviso de catálogo AI-assistido (CORTESIA editorial) ────────────────────────────────────
+  const DISCLOSURE = 'Algumas receitas são produzidas em colaboração entre curadoria e IA.'
+
+  it('T12 — #237: renderiza o aviso de catálogo quando a página passa o texto (catálogo + ligado)', () => {
+    render(
+      <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} catalogDisclosure={DISCLOSURE} />,
+    )
+    // O texto configurável aparece, rotulado como bloco "Sobre este catálogo" (aside, não heading).
+    const aviso = screen.getByText(DISCLOSURE)
+    expect(aviso).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: M.detalhe.catalogoAvisoRotulo })).toBeInTheDocument()
+    // CONTINUA mostrando o selo de proveniência obrigatório do catálogo (aviso NÃO o substitui).
+    expect(screen.getByText(M.busca.seloCatalogo)).toBeInTheDocument()
+  })
+
+  it('T13 — #237: SEM o prop (desligado) o aviso some — Catálogo renderiza como hoje, com o selo intacto', () => {
+    render(<RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} />)
+    expect(screen.queryByText(DISCLOSURE)).toBeNull()
+    expect(screen.queryByRole('complementary', { name: M.detalhe.catalogoAvisoRotulo })).toBeNull()
+    // Selo obrigatório de catálogo permanece.
+    expect(screen.getByText(M.busca.seloCatalogo)).toBeInTheDocument()
+  })
+
+  it('T14 — INEGOCIÁVEL: receita ai_chat/ai_generated mantém os selos OBRIGATÓRIOS com o aviso ON e OFF', () => {
+    const url = 'https://abc.public.blob.vercel-storage.com/recipes/ia.webp'
+    // A página NUNCA passa o texto para origens ≠ catalog (shouldShowCatalogDisclosure=false). Mesmo se
+    // um bug passasse o texto, os selos obrigatórios (proveniência ai_* + "gerada por IA") são caminhos
+    // SEPARADOS e seguem presentes. Provamos os dois cenários (com e sem o prop).
+    for (const disclosure of [undefined, DISCLOSURE]) {
+      cleanup()
+      render(
+        <RecipeDetailView
+          view={baseView({ origin: 'ai_chat', imageUrl: url, imageAiGenerated: true })}
+          m={M}
+          catalogDisclosure={disclosure}
+        />,
+      )
+      // Selo de proveniência obrigatório (ai_* → Comunidade) presente.
+      expect(screen.getByText(M.busca.seloComunidade)).toBeInTheDocument()
+      // Selo de imagem obrigatório "✨ gerada por IA" presente.
+      expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
+    }
+  })
+
   it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {
     expect(handleResponse({ ok: false, status: 404 })).toEqual({ kind: 'notFound' })
     expect(handleResponse({ ok: false, status: 500 })).toEqual({ kind: 'error', status: 500 })

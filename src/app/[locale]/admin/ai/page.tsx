@@ -6,6 +6,7 @@
 import { SectionGate } from '../gate'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
+import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 
 export const runtime = 'nodejs'
@@ -17,6 +18,8 @@ export default async function AdminAiPage() {
         <AiConfigSection />
         {/* #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios (admin-only). */}
         <WebSearchConfigSection />
+        {/* #237: aviso de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável (admin-only). */}
+        <CatalogDisclosureConfigSection />
         {/* #119: backfill dos embeddings da busca semântica (recompute em lote, admin-only). */}
         <EmbeddingBackfill />
       </div>
