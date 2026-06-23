@@ -45,6 +45,8 @@ import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
+import { shouldShowCatalogDisclosure } from '@/domain/catalog-disclosure-config'
+import { loadCatalogDisclosureConfig } from '@/server/app-config'
 import { buildRecipeMetadata, buildRecipeJsonLd, serializeJsonLd } from '@/domain/recipe-seo'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
@@ -173,7 +175,19 @@ export default async function RecipeDetailPage({
         eligible: true,
       })
       const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
-      return <DetailChrome view={view} locale={locale} reviewImage={false} jsonLd={jsonLd} />
+      // #237: aviso de catálogo AI-assistido — CORTESIA editorial. Lê a config (DB direto, SEM cookie:
+      // mantém o caminho público anônimo/cacheável) e resolve o TEXTO só quando deve mostrar (catálogo +
+      // ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
+      const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
+      return (
+        <DetailChrome
+          view={view}
+          locale={locale}
+          reviewImage={false}
+          jsonLd={jsonLd}
+          catalogDisclosure={catalogDisclosure}
+        />
+      )
     }
   }
 
@@ -215,7 +229,29 @@ export default async function RecipeDetailPage({
   }
 
   const view = (await res.json()) as RecipeView
-  return <DetailChrome view={view} locale={locale} reviewImage={sp.reviewImage === '1'} />
+  // #237: mesma cortesia editorial no caminho do dono (catálogo + ligado). A view do dono vem do
+  // JSON da rota /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
+  // já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
+  const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
+  return (
+    <DetailChrome
+      view={view}
+      locale={locale}
+      reviewImage={sp.reviewImage === '1'}
+      catalogDisclosure={catalogDisclosure}
+    />
+  )
+}
+
+/**
+ * #237: resolve o TEXTO do aviso de catálogo AI-assistido para uma `origin` — `undefined` salvo quando
+ * a receita é de CATÁLOGO E o aviso está LIGADO na config admin (`shouldShowCatalogDisclosure`). Lê a
+ * config do singleton `app_config` (DB direto, SEM cookie). Single-source da decisão (domínio) + texto
+ * (config). CORTESIA editorial: o retorno governa SÓ a frase opcional — nunca os selos obrigatórios.
+ */
+async function resolveCatalogDisclosure(origin: string): Promise<string | undefined> {
+  const config = await loadCatalogDisclosureConfig(getDb())
+  return shouldShowCatalogDisclosure({ origin, enabled: config.enabled }) ? config.text : undefined
 }
 
 /**
@@ -230,6 +266,7 @@ function DetailChrome({
   locale,
   reviewImage,
   jsonLd,
+  catalogDisclosure,
 }: {
   view: RecipeView
   locale: Locale
@@ -241,6 +278,8 @@ function DetailChrome({
    * no HTML pro crawler). String segura (o `<` já foi escapado em `serializeJsonLd`).
    */
   jsonLd?: string
+  /** #237: texto do aviso de catálogo AI-assistido — presente só quando deve mostrar (catálogo + ligado). */
+  catalogDisclosure?: string
 }) {
   const messages = MESSAGES[locale]
   return (
@@ -254,7 +293,7 @@ function DetailChrome({
       <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
         ← {messages.detalhe.voltarBusca}
       </Link>
-      <RecipeDetailView view={view} m={messages} />
+      <RecipeDetailView view={view} m={messages} catalogDisclosure={catalogDisclosure} />
       {/* Engajamento (#62): gate pela presença do agregado de pool (`voteCount`). No caminho público
           o anônimo VÊ a contagem; `viewerVoted`/`viewerFavorited` ausentes (resolvidos no cliente). */}
       {view.voteCount != null && (

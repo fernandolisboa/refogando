@@ -44,6 +44,7 @@ import {
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
+import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
@@ -557,6 +558,13 @@ export const verification = pgTable('verification', {
 // (jsonb string[]). Defaults DESLIGADO + lista VAZIA (fail-closed): a ponte só "acende" quando o admin
 // liga E define domínios E o deploy tem credencial (gate humano). A allowlist é fonte ÚNICA tanto da
 // busca na web quanto do GUARD de SSRF do import (#165). Defaults vêm do domínio (`web-search-config`).
+//
+// #237 (aviso de catálogo AI-assistido, SEO #187): `catalog_disclosure_enabled` liga/desliga o aviso
+// editorial OPCIONAL ("em colaboração entre curadoria e IA"); `catalog_disclosure_text` é a frase
+// EDITÁVEL exibida. Defaults DESLIGADO + texto padrão pt-BR (cortesia opt-in: aparece só quando o
+// admin liga). Colunas planas na MESMA linha singleton (não tabela própria) — espelha os demais eixos.
+// O aviso é CORTESIA: renderiza só em `origin=catalog` quando ligado e NUNCA suprime os selos
+// obrigatórios de proveniência. Defaults vêm do domínio (`catalog-disclosure-config`).
 export const appConfig = pgTable(
   'app_config',
   {
@@ -579,6 +587,12 @@ export const appConfig = pgTable(
       .$type<string[]>()
       .notNull()
       .default(DEFAULT_WEB_SEARCH_CONFIG.allowlist),
+    catalogDisclosureEnabled: boolean('catalog_disclosure_enabled')
+      .notNull()
+      .default(DEFAULT_CATALOG_DISCLOSURE_CONFIG.enabled),
+    catalogDisclosureText: text('catalog_disclosure_text')
+      .notNull()
+      .default(DEFAULT_CATALOG_DISCLOSURE_CONFIG.text),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

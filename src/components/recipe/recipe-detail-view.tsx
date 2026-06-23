@@ -77,7 +77,25 @@ function formatIngredient(item: IngredientView, m: Messages): string {
   return medida || item.rawText || ''
 }
 
-export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages }) {
+export function RecipeDetailView({
+  view,
+  m,
+  catalogDisclosure,
+}: {
+  view: RecipeView
+  m: Messages
+  /**
+   * #237 (aviso de catálogo AI-assistido, SEO #187): TEXTO já resolvido do aviso editorial — presente
+   * SÓ quando a página decidiu mostrá-lo (`shouldShowCatalogDisclosure`: receita de CATÁLOGO E config
+   * LIGADA). AUSENTE em qualquer outro caso ("ausente ≠ vazio"). O componente é PURO: ele NÃO re-decide
+   * a regra (a decisão vive no domínio + página) — só renderiza a frase quando a recebe.
+   *
+   * INEGOCIÁVEL: é uma CORTESIA editorial ADITIVA. NÃO substitui nem oculta os selos OBRIGATÓRIOS de
+   * proveniência — o `ProvenanceBadge` (selo de origem) e o selo "✨ gerada por IA" (`imageAiGenerated`)
+   * são renderizados em caminhos SEPARADOS abaixo, independentes deste prop (ligado OU desligado).
+   */
+  catalogDisclosure?: string
+}) {
   // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
   // distinto de Catálogo/Comunidade — não é conteúdo do pool, é cópia privada creditada à fonte. A
   // variante visual reusa `comunidade` (neutra) na primitiva (sem cor nova); só o RÓTULO muda.
@@ -152,6 +170,20 @@ export function RecipeDetailView({ view, m }: { view: RecipeView; m: Messages })
           )}
         </div>
       </header>
+
+      {/* #237 (aviso de catálogo AI-assistido, SEO #187): CORTESIA editorial OPCIONAL — frase discreta
+          (text-sm muted, sem cor nova) exibida SÓ quando a página a anexa (catálogo + config ligada). É
+          ADITIVA: o selo de proveniência (header acima) e o selo "gerada por IA" (sobre a foto) seguem
+          intactos — este bloco NUNCA os substitui. `<aside>` rotulado p/ AT (contexto, não conteúdo da
+          receita); fora da árvore de headings de leitura. AUSENTE quando a página não passa o texto. */}
+      {catalogDisclosure != null && (
+        <aside
+          aria-label={m.detalhe.catalogoAvisoRotulo}
+          className="max-w-[68ch] text-sm text-muted"
+        >
+          {catalogDisclosure}
+        </aside>
+      )}
 
       {/* Nota de tradução obsoleta — só quando a rota a anexa (stale e ≠ origem). */}
       {view.staleNotice && (

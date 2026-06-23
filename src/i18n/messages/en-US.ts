@@ -198,6 +198,10 @@ export const enUS: Messages = {
     restricoes: 'Restrictions',
     tags: 'Tags',
     avisoTitulo: 'Restriction notice',
+    // #237 (AI-assisted catalog disclosure, SEO #187): accessible label of the editorial COURTESY block
+    // ("in collaboration between curation and AI"). The displayed TEXT comes from admin config (editable);
+    // here only the block's accessible name. NOT the mandatory provenance seal — it's an additional notice.
+    catalogoAvisoRotulo: 'About this catalog',
     // Source attribution (#169, ADR-0019): on the detail of a recipe IMPORTED from the web,
     // "source: …" REPLACES the "by <User>" credit. {fonte} (site name or host) interpolated via
     // `.replace`; the text links the origin URL. `fonteVerNoSite` is the external link's a11y label.
@@ -694,6 +698,15 @@ export const enUS: Messages = {
     webAllowlistLabel: 'Allowed domains',
     webAllowlistAjuda: 'One domain per line (e.g., tudogostoso.com.br). Empty blocks everything.',
     webErroConfig: 'Invalid configuration. Review the domains (one hostname per line, no http:// or path).',
+    // #237: AI-assisted catalog disclosure (SEO #187) — on/off + editable text. Editorial COURTESY:
+    // shows only on catalog recipes when on; NEVER replaces the mandatory AI-generation seals.
+    catalogoAvisoTitulo: 'Catalog disclosure (AI-assisted)',
+    catalogoAvisoDescricao:
+      'Show an optional notice on catalog recipes stating they may be produced in collaboration between curation and AI. Does not replace the mandatory AI-generation seals.',
+    catalogoAvisoHabilitadoLabel: 'Catalog disclosure on',
+    catalogoAvisoTextoLabel: 'Disclosure text',
+    catalogoAvisoTextoAjuda: 'Phrase shown on catalog recipes when the disclosure is on.',
+    catalogoAvisoErroConfig: 'Invalid configuration. The disclosure text cannot be empty.',
     // Semantic-search embeddings backfill (#119) — batched, resumable recompute.
     backfillTitulo: 'Semantic-search embeddings',
     backfillDescricao:
