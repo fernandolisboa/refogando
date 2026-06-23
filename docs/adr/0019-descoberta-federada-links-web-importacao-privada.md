@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Atualização (ADR-0020):** onde este ADR diz que "o catálogo nasce **vazio** (não há seed)", leia "**nasce raso**". A iniciativa de SEO introduz um **seed AI-curado** (gerado pelo nosso AI + curadoria humana obrigatória → `origin=catalog`), **pré-requisito do marketing, não do friends-test**. A justificativa da ponte de links-da-web **sobrevive intacta**: o acervo é **raso** (não cobre a cauda longa de pratos tradicionais) no começo, e os links cobrem essa lacuna sem nos tornarmos republicadores. O invariante (importação privada, nunca pública) permanece.
+
 A **Busca continua só encontrando e nunca cria** (invariante de ADR-0008 e do glossário, preservado). O que muda é que a **descoberta** ganha duas **pontes explícitas, sempre acionadas pelo usuário** — nenhuma delas é a Busca "criando":
 
 1. **Gerar com IA** — CTA **permanente** (o mote do app), presente mesmo quando há resultados; leva à Sessão de criação (`/create`). Não dispara automático no zero-resultado.
