@@ -4,17 +4,18 @@ import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { applyRecipeImageUpload, applyRecipeImageRemoval } from '@/server/recipe/image'
 
 /**
- * Imagem da receita (#130, ADR-0016) — o Owner sobe/troca/remove a foto do prato. Route FINO:
- * valida uuid + multipart, exige sessão, delega ao núcleo (`server/recipe/image.ts`), mapeia o
- * discriminator. Autorização é OWNERSHIP (catálogo/não-dono ⇒ 404, NUNCA 403 — ADR-0011); o núcleo
- * a reimpõe. A imagem vira ENTIDADE `recipe_image` (`user_photo`), ref-counted (ver o núcleo).
+ * Imagem da receita (#130/#222, ADR-0016/0022) — o Owner sobe a foto / volta ao placeholder. Route
+ * FINO: valida uuid + multipart, exige sessão, delega ao núcleo (`server/recipe/image.ts`), mapeia o
+ * discriminator. Autorização é OWNERSHIP (catálogo/não-dono ⇒ 404, NUNCA 403 — ADR-0011); o núcleo a
+ * reimpõe. A imagem vira ENTIDADE `recipe_image` (`user_photo`), membro da GALERIA da linhagem (#222).
  *
  * Ordem dos guards (load-bearing, espelha publish): `isUuid` (sem DB) → `requireSession` ANTES de
  * tocar o DB/storage (sem-sessão ⇒ zero efeito) → validação do arquivo → delega.
  *
- * POST (multipart `file`): valida tipo (jpg/png/webp) + tamanho (rede do servidor; o cliente já
- * redimensiona). 200 com a view atualizada; 503 `storage_indisponivel` se o seam de storage cair.
- * DELETE: remove a foto (idempotente). 200 com a view.
+ * POST (multipart `file`): valida tipo (jpg/png/webp) + tamanho. Acrescenta a foto à galeria e
+ * AUTO-SELECIONA (vira a face). 200 com a view; 503 `storage_indisponivel` se o seam cair.
+ * DELETE: DESELECIONA a face (#222) — volta ao placeholder, NÃO apaga (a imagem fica na galeria,
+ * re-selecionável). Idempotente. 200 com a view. Para APAGAR de fato, use `DELETE .../images/[imageId]`.
  */
 
 export const runtime = 'nodejs' // postgres-js + Buffer exigem Node, não Edge.

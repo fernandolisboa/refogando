@@ -176,6 +176,13 @@
       "when": 1782234836900,
       "tag": "0024_famous_gertrude_yorkes",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782247484071,
+      "tag": "0025_lowly_hercules",
+      "breakpoints": true
     }
   ]
 }

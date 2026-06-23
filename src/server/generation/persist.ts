@@ -92,6 +92,13 @@ export type PersistGenerationInput = {
   // novo — ADR-0016). Presente SÓ na regeneração (passa o image_id da predecessora); AUSENTE em
   // toda geração de raiz (#8/#11/#12/#88), que nasce sem imagem ⇒ NULL.
   imageId?: string | null
+  // #222 (LINHAGEM da Galeria, ADR-0022 dec.1/3): a Receita criada HERDA esta lineage_id da
+  // predecessora — usado SÓ na regeneração same-owner (#20: a galeria é COMPARTILHADA entre versões,
+  // espelhando o carry-forward). ORTOGONAL ao `lineage{parentRecipeId,lineageKind}` acima (linhagem
+  // de VERSIONAMENTO, regenerated-only): `lineageId` é a chave OPACA da galeria. AUSENTE em toda
+  // geração de RAIZ (#8/#11/#12/#88 e a conversa) ⇒ a coluna toma o DB default (chave própria fresca,
+  // galeria nova). NUNCA passar `null` explícito (violaria o NOT NULL): ausente ⇒ undefined ⇒ default.
+  lineageId?: string
 }
 
 export type PersistGenerationResult = {
@@ -172,7 +179,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -256,6 +263,10 @@ export async function persistGeneration(
         // #131 carry-forward: a regeneração HERDA o image_id da predecessora (mesmo blob, ADR-0016).
         // AUSENTE (geração de raiz) ⇒ undefined ⇒ NULL (Receita nasce sem imagem).
         imageId: imageId ?? null,
+        // #222: a regeneração HERDA a lineage_id da predecessora (galeria compartilhada, ADR-0022
+        // dec.3); AUSENTE (geração de raiz) ⇒ undefined ⇒ DB default (gen_random_uuid → galeria
+        // própria nova). NUNCA `null` (violaria o NOT NULL) — `?? undefined` força o default.
+        lineageId: lineageId ?? undefined,
         // schemaVersion: default (SCHEMA_VERSION_RECEITA).
       })
       .returning({ id: recipe.id })

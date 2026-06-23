@@ -106,6 +106,13 @@ export type RecipeRow = {
    */
   imageId?: string | null
   /**
+   * Linhagem da galeria (#222, ADR-0022 dec.1) — chave OPACA `lineage_id`. OPCIONAL no tipo (mesma
+   * razão de `ownerId`: `select().from(recipe)` JÁ a traz em runtime; opcional poupa as fixtures
+   * puras de a setar). NUNCA sai na vista pública; é a chave que o servidor usa para montar a Galeria
+   * (`recipe_image WHERE lineage_id = X`) e carimbar imagens novas. A coluna é NOT NULL no banco.
+   */
+  lineageId?: string
+  /**
    * Atribuição da importação da web (#165/#169, ADR-0019) — `source_url`/`source_name` da Receita.
    * SÓ Receitas `origin=web_imported` os carregam (toda outra os deixa NULL). OPCIONAIS no tipo
    * (mesma razão de `ownerId`: o `select().from(recipe)` os traz em runtime; opcional poupa as
@@ -215,6 +222,28 @@ export type ResolveInput = {
    * quando não-dono OU o server não pediu (outras rotas que montam a view do dono não o carregam).
    */
   imageGenEnabled?: boolean
+  /**
+   * Galeria de imagens da LINHAGEM (#222, ADR-0022 dec.1/5) — OWNER-GATED. O server a carrega SÓ
+   * quando o requester é o dono (mirror de `imageGenEnabled`, NUNCA dentro de `loadRecipeRows`, que
+   * o caminho público-por-slug reusa). Projetada apenas sob `canManage` — o caminho público/by-slug
+   * NUNCA tem este campo. `undefined` (não-dono OU o server não pediu) ⇒ a vista OMITE `gallery`.
+   */
+  gallery?: ReadonlyArray<GalleryImage>
+}
+
+/**
+ * Item da Galeria de imagens (#222, ADR-0022 dec.1) — uma imagem da LINHAGEM da Receita, como sai na
+ * vista OWNER-GATED. `selected = (id === recipe.image_id)` (a face pública atual). NUNCA expõe o
+ * blob interno além da `url` servível. Distinto do `imageUrl` público (a face): a galeria é o
+ * HISTÓRICO re-selecionável, visível SÓ ao dono (`canManage`); a galeria em si nunca é pública.
+ */
+export type GalleryImage = {
+  id: string
+  url: string
+  /** `true` quando `provenance = 'ai_generated'` — dirige o selo "✨ gerada por IA" no thumbnail. */
+  aiGenerated: boolean
+  /** `true` para a imagem que é a face pública atual (`recipe.image_id`). */
+  selected: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */
@@ -338,6 +367,12 @@ export type RecipeView = {
    * não-dono / quando o server não carregou (mesma regra "ausente ≠ vazio").
    */
   imageGenEnabled?: boolean
+  /**
+   * Galeria de imagens da LINHAGEM (#222, ADR-0022 dec.1) — OWNER-GATED (sai SÓ sob `canManage` E
+   * quando o server a carregou). A UI do dono lista os thumbnails (selecionar/apagar). AUSENTE para
+   * não-dono / caminho público (nunca vaza — a galeria em si nunca é pública). "ausente ≠ vazio".
+   */
+  gallery?: ReadonlyArray<GalleryImage>
   /**
    * Diff DERIVADO congelado (#17) — a forma versionada que o fork ARMAZENOU em
    * `recipe.derived_diff`, REPASSADA 1:1 (NUNCA recomputada na leitura — história 289: a base
@@ -685,6 +720,10 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           // #134: flag de geração-por-IA-ligada, owner-gated. Só sai quando o server a carregou
           // (detalhe GET do dono); outras rotas que montam a view do dono não a pedem ⇒ ausente.
           ...(input.imageGenEnabled !== undefined ? { imageGenEnabled: input.imageGenEnabled } : {}),
+          // #222: Galeria da linhagem, OWNER-GATED (sai SÓ aqui, junto da gestão). Só quando o server
+          // a carregou (detalhe GET do dono / a view montada pelos cores de imagem). Caminho público/
+          // by-slug nunca passa `gallery` ⇒ ausente. "ausente ≠ vazio".
+          ...(input.gallery !== undefined ? { gallery: input.gallery } : {}),
         }
       : {}),
     // Diff DERIVADO (#17): OWNER-GATED como a gestão (só o dono da derivada vê o próprio diff)

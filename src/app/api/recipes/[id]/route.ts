@@ -5,6 +5,7 @@ import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
 import { loadImageGenConfig } from '@/server/app-config'
+import { loadGallery } from '@/server/recipe/image'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 import {
@@ -115,9 +116,15 @@ export async function GET(
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
   // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
-  const [social, imageGenEnabled] = await Promise.all([
+  const [social, imageGenEnabled, gallery] = await Promise.all([
     loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead }),
     isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
+    // #222: a GALERIA da linhagem SÓ quando o requester é o DONO (mirror de imageGenEnabled, NÃO
+    // dentro de loadRecipeRows — que o caminho público-por-slug reusa). O tráfego anônimo/não-dono
+    // NÃO paga essa query e a vista pública NUNCA carrega o campo `gallery` (owner-gated).
+    isOwner && rows.recipe.lineageId != null
+      ? loadGallery(db, rows.recipe.lineageId, rows.recipe.imageId ?? null)
+      : Promise.resolve(undefined),
   ])
 
   const view = resolveRecipeView({
@@ -128,6 +135,7 @@ export async function GET(
     viewerVoted: social.viewerVoted,
     viewerFavorited: social.viewerFavorited,
     imageGenEnabled,
+    gallery,
   })
 
   return Response.json(view)
