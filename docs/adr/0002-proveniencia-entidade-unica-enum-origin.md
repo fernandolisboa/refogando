@@ -2,7 +2,7 @@
 
 Status: aceito
 
-> **Atualização:** o enum `origin` cresceu, como este ADR previa ("admite uma origem futura sem migração de tipo"). O enum **real** (`src/domain/recipe.ts`) tem **seis** valores: `catalog`, `ai_chat`, `ai_structured`, `ai_free_text`, `user_edited`, `web_imported` (este via ADR-0019). Onde o glossário e outros ADRs falam em selo obrigatório de "`ai_*`", isso abrange `ai_chat`/`ai_structured`/`ai_free_text`.
+> **Atualização:** o enum `origin` cresceu, como este ADR previa ("admite uma origem futura sem migração de tipo"). O enum **real** (`src/domain/recipe.ts`) tem **seis** valores: `catalog`, `ai_chat`, `ai_structured`, `ai_free_text`, `user_edited`, `web_imported` (este via ADR-0019). Onde o glossário e outros ADRs falam em selo obrigatório de "`ai_*`", isso abrange `ai_chat`/`ai_structured`/`ai_free_text`. E "acompanha em toda superfície (busca, card, compartilhamento)" refere-se às superfícies **in-app**; o **OG/social card** minimiza rótulos de IA (é vitrine) — exceção deliberada do ADR-0020/0017.
 
 Receita de catálogo e receita gerada por IA são a **mesma entidade** `Recipe`, distinguidas por um campo **`origin`** (`catalog | ai_chat | ai_structured | user_edited`) — **não** por tabelas separadas nem por um boolean `isAiGenerated`. As duas são buscadas, favoritadas e traduzidas de forma idêntica; a diferença é uma propriedade (origem + nível de confiança), não um tipo distinto. `origin` é **imutável** e acompanha a receita em toda superfície (busca, card, compartilhamento): a diferenciação "do catálogo" vs "gerada por IA" é de primeira classe e sempre visível ao usuário.
 
