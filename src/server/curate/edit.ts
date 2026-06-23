@@ -107,6 +107,9 @@ export async function editCatalogRecipe(
   //    ambiguidade). Early-return ANTES de tocar recipe/tags/applyEdit ⇒ sem escrita
   //    parcial. (route mapeia 'translation_not_found' → 404.)
   if (touchesTranslatable) {
+    // CONGELAMENTO do slug (#243, ADR-0020 dec.4): o `translatablePatch` cobre SÓ titulo/descricao/
+    // passos/notas — NUNCA `slug`. Renomear/revisar o título aqui NÃO re-deriva a URL canônica (que
+    // só o 1º insert materializa via freezeSlug). Não adicionar `slug` a este SET é a invariante.
     const updated = await db
       .update(recipeTranslation)
       .set({ ...translatablePatch, updatedAt: new Date() })

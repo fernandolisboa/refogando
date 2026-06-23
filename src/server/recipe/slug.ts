@@ -26,11 +26,19 @@ import { freezeSlug } from '@/domain/recipe-slug'
  * Aceita `Database` OU uma transação Drizzle (mesma forma de `.select()` em ambos), então serve
  * tanto as vias transacionais (curate/derive/persist) quanto a não-transacional (ensure).
  *
- * CORRIDA: o `taken` é lido fora de lock, então dois inserts concorrentes no mesmo locale com o
- * mesmo título-base poderiam computar o mesmo slug; o índice PARCIAL `UNIQUE(locale, slug)`
- * recusaria o 2º (23505). É uma janela minúscula (mesmo título, mesmo locale, mesmo instante); o
- * caller decide a postura (ver `slugForNewTranslations`, que desambigua em lote localmente). O
- * backfill idempotente recupera qualquer linha que acabe NULL.
+ * CORRIDA — POSTURA DEFINITIVA (#243): o `taken` é lido fora de lock, então dois inserts
+ * concorrentes no mesmo locale com o mesmo título-base podem computar o MESMO slug; o índice
+ * PARCIAL `UNIQUE(locale, slug)` recusa o 2º (23505). É uma janela minúscula (mesmo título, mesmo
+ * locale, mesmo instante). A postura escolhida é ACEITA-FALHA-ROLLBACK (sem retry implícito aqui):
+ * em TODAS as 5 vias de insert o `slug` faz parte do MESMO `insert(...).values({...slug...})`, então
+ * um 23505 dá ROLLBACK do insert INTEIRO — NUNCA grava uma linha com `slug` NULL. Logo o cenário de
+ * "NULL órfão de corrida" NÃO existe no write-path. O 23505 PROPAGA — hoje sem retry automático, vira
+ * um 500 cru nas rotas (ensure/create não capturam 23505) — mas a falha é benigna (rollback limpo) e
+ * uma nova chamada re-lê o `taken`, agora com o slug do vencedor, e a desambiguação determinística sucede.
+ * Não embutimos retry porque o slug é computado AQUI mas o insert vive na tx do caller — um retry
+ * teria de envolver o insert nas 5 vias, espalhando churn sem ganho (a janela é ínfima e a falha é
+ * benigna: rollback limpo, nunca corrupção). O backfill idempotente continua como rede para o ACERVO
+ * pré-fatia (linhas antigas com slug NULL), NÃO para o write-path — que já nasce com slug ou falha.
  */
 
 /** Lê os slugs JÁ gravados (não-NULL) num locale — o `taken` da desambiguação. */
