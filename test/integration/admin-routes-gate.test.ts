@@ -82,14 +82,16 @@ async function run(
 // As assinaturas dos componentes de page/layout divergem do `PageModule` genérico (props
 // tipadas vs opcionais); um cast por loader unifica para o resolvedor genérico do teste.
 const as = (m: Promise<unknown>): Promise<PageModule> => m as Promise<PageModule>
-const layout = () => as(import('@/app/admin/layout'))
-const index = () => as(import('@/app/admin/page'))
-const config = () => as(import('@/app/admin/config/page'))
-const ai = () => as(import('@/app/admin/ai/page'))
-const users = () => as(import('@/app/admin/users/page'))
-const moderation = () => as(import('@/app/admin/moderation/page'))
-const translations = () => as(import('@/app/admin/translations/page'))
-const catalog = () => as(import('@/app/admin/catalog/page'))
+// ADR-0020: as rotas agora vivem sob `[locale]` (locale-no-caminho, #228). Os imports
+// apontam pro novo caminho; o gate de papel em si (o que este teste prova) não mudou.
+const layout = () => as(import('@/app/[locale]/admin/layout'))
+const index = () => as(import('@/app/[locale]/admin/page'))
+const config = () => as(import('@/app/[locale]/admin/config/page'))
+const ai = () => as(import('@/app/[locale]/admin/ai/page'))
+const users = () => as(import('@/app/[locale]/admin/users/page'))
+const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
+const translations = () => as(import('@/app/[locale]/admin/translations/page'))
+const catalog = () => as(import('@/app/[locale]/admin/catalog/page'))
 
 beforeEach(() => {
   headersMock.current = new Headers()

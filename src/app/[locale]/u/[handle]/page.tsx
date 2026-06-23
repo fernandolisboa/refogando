@@ -25,16 +25,18 @@ export default async function PublicProfilePage({
   params,
   searchParams,
 }: {
-  params: Promise<{ handle: string }>
+  params: Promise<{ locale: string; handle: string }>
   searchParams: Promise<{ locale?: string }>
 }) {
-  const { handle } = await params
+  const { locale: pathLocale, handle } = await params
   const sp = await searchParams
   const cookieStore = await cookies()
   const headerStore = await headers()
 
+  // Locale-no-caminho (ADR-0020): o idioma exibido vem do SEGMENTO DA URL (`params.locale`).
+  // O `?locale` legado cede ao path; mantido só como fallback até o slug-por-locale (#230).
   const locale = resolvePageLocale({
-    urlLocale: sp.locale ?? null,
+    urlLocale: pathLocale ?? sp.locale ?? null,
     cookieLocale: cookieStore.get(LOCALE_COOKIE)?.value ?? null,
     acceptLanguage: headerStore.get('accept-language'),
   })

@@ -34,16 +34,20 @@ export default async function RecipeDetailPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ locale: string; id: string }>
   searchParams: Promise<{ locale?: string; reviewImage?: string }>
 }) {
-  const { id } = await params
+  const { locale: pathLocale, id } = await params
   const sp = await searchParams
   const cookieStore = await cookies()
   const headerStore = await headers()
 
+  // Locale-no-caminho (ADR-0020): o idioma exibido vem do SEGMENTO DA URL (`params.locale`),
+  // que o proxy garante prefixado e canônico. Mantém-se a precedência do helper (urlLocale →
+  // cookie → Accept-Language) como rede de segurança, mas o path é o sinal primário agora; o
+  // `?locale` legado de "ver o original" cede ao slug-por-locale (#230), tolerado como fallback.
   const locale = resolvePageLocale({
-    urlLocale: sp.locale ?? null,
+    urlLocale: pathLocale ?? sp.locale ?? null,
     cookieLocale: cookieStore.get(LOCALE_COOKIE)?.value ?? null,
     acceptLanguage: headerStore.get('accept-language'),
   })
