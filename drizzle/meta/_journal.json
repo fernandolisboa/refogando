@@ -162,6 +162,13 @@
       "when": 1782104826413,
       "tag": "0022_slippery_black_bolt",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782223453615,
+      "tag": "0023_dry_true_believers",
+      "breakpoints": true
     }
   ]
 }
