@@ -242,8 +242,8 @@ export async function loadSocialState(
  * Receita não existe, não tem tradução NAQUELE locale, ou a tradução ainda não ganhou slug —
  * coluna nullable durante o backfill). NÃO lê cookie/sessão. Útil onde a visibilidade não
  * importa (ex.: o LocaleSwitcher do dono montando a URL irmã da própria receita). NÃO usar para
- * o 301 anônimo do link legado — esse precisa do gate (`resolvePublicSlugForLocale`), senão
- * vaza a existência + o slug derivado do título de uma Receita PRIVADA.
+ * o redirect (308) anônimo do link legado — esse precisa do gate (`resolvePublicSlugForLocale`),
+ * senão vaza a existência + o slug derivado do título de uma Receita PRIVADA.
  */
 export async function resolveSlugForLocale(
   db: Database,
@@ -280,17 +280,18 @@ export async function resolveRecipeIdBySlug(
 }
 
 /**
- * Resolve o slug PÚBLICO de uma Receita por (uuid, locale) — para o **301** ANÔNIMO do link
- * legado `/{locale}/recipes/<uuid>` → `/{locale}/recipes/<slug>` (#230, ADR-0020 decisão 4),
- * emitido no proxy. APLICA o gate de leitura pública (= gate de indexação): devolve o slug SÓ
- * quando a Receita é leitura pública (comunidade/Catálogo E não-`playful` E não-removida) E tem
- * slug naquele locale; senão `null`.
+ * Resolve o slug PÚBLICO de uma Receita por (uuid, locale) — para o **permanentRedirect (308)**
+ * ANÔNIMO do link legado `/{locale}/recipes/<uuid>` → `/{locale}/recipes/<slug>` (#230, ADR-0020
+ * decisão 4), emitido NO SERVER COMPONENT da página de detalhe. APLICA o gate de leitura pública
+ * (= gate de indexação): devolve o slug SÓ quando a Receita é leitura pública (comunidade/Catálogo
+ * E não-`playful` E não-removida) E tem slug naquele locale; senão `null`.
  *
  * Gatear aqui é LEAK-SAFE e por design: um anônimo pedindo o UUID de uma Receita PRIVADA/playful/
- * removida NÃO recebe um 301 que revele o slug (derivado do título) nem a existência — o proxy,
- * ao receber `null`, deixa a requisição seguir para a página, que cai no caminho do DONO (cookie,
- * 404 leak-safe a quem não é dono). Assim o 301 público e o caminho do dono concordam com o gate
- * do GET por uuid. NÃO lê cookie/sessão.
+ * removida NÃO recebe um 308 que revele o slug (derivado do título) nem a existência — a página,
+ * ao receber `null`, NÃO redireciona e cai no caminho do DONO (cookie, 404 leak-safe a quem não é
+ * dono). Assim o 308 público e o caminho do dono concordam com o gate do GET por uuid. NÃO lê
+ * cookie/sessão. Mantido na borda (não no proxy) para o proxy ficar header-only e sem DB no
+ * caminho quente; o gate de leitura/redirect mora no server component (ADR-0020).
  */
 export async function resolvePublicSlugForLocale(
   db: Database,

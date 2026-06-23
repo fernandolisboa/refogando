@@ -5,10 +5,11 @@
  * sem edge) — daí `proxy.ts` + `export function proxy`. Aqui o proxy é DELIBERADAMENTE fino:
  * delega a decisão inteira ("dado pathname + headers, qual redirect?") ao núcleo PURO
  * `decideLocaleRedirect` (testado no projeto "ui", sem banco) e só a traduz em `NextResponse`.
+ * NÃO toca o DB — é só negociação/normalização de locale, lendo cookie/Accept-Language/pathname
+ * (ADR-0020 consequência "o detector da raiz cabe num proxy nodejs"; o gate de leitura/redirect
+ * por slug mora NO SERVER COMPONENT, não aqui).
  *
- * Comportamento (ADR-0020 decisão 1+4 — redirects PERMANENTES emitidos como 301 LITERAL aqui,
- * porque o proxy roda em nodejs e pode escolher o status — diferente de um `permanentRedirect`
- * de Server Component, que serve 308):
+ * Comportamento (ADR-0020 decisão 1 — DOIS redirects de locale com status DIFERENTES de propósito):
  *  - raiz `/` e qualquer caminho NÃO-prefixado → **302** pro caminho com locale DETECTADO
  *    (cookie → Accept-Language → DEFAULT_LOCALE), preservando a rota e a query. Temporário e
  *    NUNCA 301 — o destino depende do `Accept-Language`; um 301 cacheável colaria o usuário no 1º
@@ -16,12 +17,12 @@
  *  - prefixo de locale com case errado (`/pt-br/...`) → **301** normalizando o case. O idioma vem
  *    do PATH (não da detecção): canonicalização permanente, Accept-Language-independente — então
  *    NÃO leva `Vary` (o destino não depende do header).
- *  - link LEGADO `/{locale}/recipes/<uuid>` → **301** pro slug canônico `/{locale}/recipes/<slug>`
- *    (ADR-0020 decisão 4) — SÓ quando a Receita é leitura PÚBLICA (gate de índice) e tem slug
- *    naquele locale. Lookup no DB DIRETO (o proxy é nodejs, igual ao 301 de case). Se a Receita
- *    NÃO é pública (privada/playful/removida) ou não tem slug, NÃO redireciona: deixa a página
- *    tratar o UUID pelo caminho do DONO (cookie, 404 leak-safe) — não vaza slug/existência.
  *  - caminho já corretamente prefixado → segue (`NextResponse.next()`), SEM loop, com `Vary`.
+ *
+ * A canonicalização do link LEGADO por UUID `/{locale}/recipes/<uuid>` → slug NÃO mora aqui: é um
+ * `permanentRedirect` (308) GATEADO no Server Component da página de detalhe (ADR-0020 decisão 4 +
+ * "leitura/gate no server component"). Pôr o lookup de slug no DB AQUI vazaria responsabilidade
+ * (proxy é header-only) e poria DB no caminho quente de toda navegação prefixada.
  *
  * O `matcher` exclui `api`, `_next/*`, arquivos de metadados e assets com extensão: essas
  * rotas NÃO são páginas de UI e não devem ser prefixadas (a API é versionada por `:id`/dados,
@@ -30,15 +31,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { decideLocaleRedirect, LOCALE_DETECT_REDIRECT_STATUS } from '@/i18n/locale-path'
-import {
-  parseLegacyUuidDetailPath,
-  recipeDetailPath,
-  LEGACY_UUID_REDIRECT_STATUS,
-} from '@/domain/recipe-detail-route'
-import { getDb } from '@/server/deps'
-import { resolvePublicSlugForLocale } from '@/server/recipe/load'
 
-export async function proxy(request: NextRequest): Promise<NextResponse> {
+export function proxy(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl
 
   const decision = decideLocaleRedirect({
@@ -48,20 +42,6 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   })
 
   if (!decision) {
-    // Caminho já prefixado corretamente. ANTES de seguir, checa o link LEGADO por UUID:
-    // `/{locale}/recipes/<uuid>` → 301 pro slug canônico (ADR-0020 decisão 4), SÓ quando público.
-    const legacy = parseLegacyUuidDetailPath(pathname)
-    if (legacy) {
-      const slug = await resolvePublicSlugForLocale(getDb(), legacy.uuid, legacy.locale)
-      if (slug != null) {
-        // 301 LITERAL — canonicalização permanente (igual ao 301 de case). Preserva a query.
-        const to = new URL(recipeDetailPath(legacy.locale, slug) + search, request.url)
-        return NextResponse.redirect(to, LEGACY_UUID_REDIRECT_STATUS)
-      }
-      // Não-público (privado/playful/removido) ou sem slug: NÃO redireciona — segue pra página,
-      // que trata o UUID pelo caminho do dono (cookie, leak-safe). Cai no `next()` abaixo.
-    }
-
     // Caminho já corretamente prefixado: segue. Ainda marca Vary porque a NEGOCIAÇÃO de
     // locale (na raiz/prefixação) depende do Accept-Language — caches intermediários não
     // devem servir uma variante de idioma por outra.

@@ -15,20 +15,24 @@
  *     (`useSession`) ⇒ a afordância "Criar minha versão"/convite resolve no cliente sem cookie.
  *
  *  2. DONO (privado/dinâmico): quando o caminho 1 devolve `null` (Receita privada/playful/removida
- *     OU slug inexistente), OU quando o `[id]` é um UUID legado que o proxy NÃO 301-ou (= a
- *     Receita não é leitura pública), caímos no caminho do dono — `?original` legado + self-fetch
+ *     OU slug inexistente), OU quando o `[id]` é um UUID legado que NÃO 308-ou (= a Receita não é
+ *     leitura pública: sem slug público), caímos no caminho do dono — `?original` legado + self-fetch
  *     `/api/recipes/[id]` com cookie de sessão (a rota reimpõe ownership e devolve 404 leak-safe a
  *     quem não é dono). Esse caminho é dinâmico por natureza (lê cookie) e PRESERVA o fluxo de
  *     leitura+edição do dono do rework Criar/Editar — mas NÃO contamina o caminho 1.
  *
- * Canonicalização UUID→slug (301): NÃO mora aqui. O **proxy** (nodejs) resolve o slug PÚBLICO do
- * locale e dá um **301 LITERAL** ANTES da página (ADR-0020 decisão 4) — só para UUIDs de leitura
- * pública. Um UUID que AINDA chega nesta página é, por construção, NÃO-público (privado/playful/
- * removido/sem-slug): tratado pelo caminho do dono (2), nunca 301-ado aqui (não vaza slug nem
- * existência de Receita privada — must-fix de revisão).
+ * Canonicalização UUID→slug (permanente): mora AQUI, no Server Component. Um `[id]` com forma de
+ * UUID legado resolve o slug PÚBLICO (gateado por `resolvePublicSlugForLocale`) do locale e dá um
+ * `permanentRedirect` — o redirect PERMANENTE idiomático de Server Component, que o Next 16 emite
+ * como **308** (equivalente ao 301 do ADR p/ SEO: permanente, cacheável, consolida link equity). O
+ * gate é LEAK-SAFE: só Receitas de leitura pública 308-am; um UUID NÃO-público (privado/playful/
+ * removido/sem-slug) NÃO redireciona — cai no caminho do dono (2), que devolve 404 leak-safe a quem
+ * não é dono. Assim NÃO se vaza o slug (derivado do título) nem a existência de Receita privada.
+ * Manter o gate+redirect AQUI (não no proxy) honra o ADR ("leitura/gate no server component") e
+ * mantém o proxy header-only (sem DB no caminho quente de toda navegação).
  */
 import { headers } from 'next/headers'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
@@ -38,13 +42,14 @@ import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-
 import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
-import { decideRecipeDetailRoute } from '@/domain/recipe-detail-route'
+import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
 import {
   loadPublicRecipeBySlug,
   loadSocialState,
+  resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
 import { getBaseUrl } from '@/server/http/base-url'
@@ -65,12 +70,25 @@ export default async function RecipeDetailPage({
   // entram como rede de segurança no caminho do dono (que já é dinâmico).
   const locale = resolvePageLocale({ urlLocale: pathLocale })
 
-  // Decisão PURA de forma do param: UUID legado (caminho do dono) vs slug (público + fallback dono).
+  // Decisão PURA de forma do param: UUID legado (resolver slug + 308) vs slug (público + fallback dono).
   const route = decideRecipeDetailRoute(id)
 
+  // ── UUID legado: resolve o slug PÚBLICO (gateado) e dá um permanentRedirect (308) pro canônico ──
+  // Leak-safe: `resolvePublicSlugForLocale` aplica o gate de leitura pública (= índice). Receita
+  // pública com slug ⇒ 308 pro slug (canonicalização permanente, ADR-0020 decisão 4). NÃO-pública
+  // (privada/playful/removida) ou sem slug ⇒ slug NULL ⇒ NÃO redireciona: cai no caminho do DONO
+  // abaixo (cookie, 404 leak-safe), sem vazar o slug (derivado do título) nem a existência.
+  if (route.kind === 'redirect-uuid') {
+    const slug = await resolvePublicSlugForLocale(getDb(), route.uuid, locale)
+    // permanentRedirect (308) NÃO retorna — lança e encerra o render. SÓ para UUIDs públicos.
+    if (slug != null) permanentRedirect(recipeDetailPath(locale, slug))
+    // slug == null ⇒ não-público/sem-slug: segue pro caminho do dono (usa o uuid direto). NÃO 404
+    // aqui (o dono ainda precisa ler a própria privada por uuid legado/bookmark).
+  }
+
   // ── PÚBLICO por slug: leitura ANÔNIMA e CACHEÁVEL via DB direto (NÃO toca cookie/sessão) ─────
-  // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 301-ado pelo proxy, então um
-  // UUID que chega aqui é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
+  // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 308-ado acima, então um
+  // UUID que chega adiante é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
   if (route.kind === 'slug') {
     const publicRows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
     if (publicRows != null) {
@@ -99,7 +117,7 @@ export default async function RecipeDetailPage({
 
   // ── DONO/privado: caminho DINÂMICO (cookie). Chega aqui quando:
   //    (a) o `[id]` é um SLUG cuja leitura pública deu null (privada/playful/removida/inexistente), OU
-  //    (b) o `[id]` é um UUID legado que o proxy NÃO 301-ou (= não é leitura pública).
+  //    (b) o `[id]` é um UUID legado que NÃO 308-ou acima (= não é leitura pública: sem slug público).
   //    Reusa a rota /api/recipes/[id] que reimpõe ownership e devolve 404 leak-safe a quem não é
   //    dono — preserva o fluxo leitura+edição do dono. NUNCA redireciona nem revela slug aqui.
   const sp = await searchParams
@@ -112,7 +130,7 @@ export default async function RecipeDetailPage({
   // se é um SLUG (link interno do dono), acha a Receita pelo slug — INCLUSIVE privada do dono, então
   // a busca NÃO aplica o gate público. Sem casamento ⇒ 404 leak-safe.
   const ownerUuid =
-    route.kind === 'owner-uuid'
+    route.kind === 'redirect-uuid'
       ? route.uuid
       : await resolveRecipeIdBySlug(getDb(), route.slug, locale)
   if (ownerUuid == null) notFound()

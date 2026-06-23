@@ -3,17 +3,16 @@ import {
   isUuidParam,
   decideRecipeDetailRoute,
   recipeDetailPath,
-  parseLegacyUuidDetailPath,
   eligibleForPublicRead,
   LEGACY_UUID_REDIRECT_STATUS,
 } from '@/domain/recipe-detail-route'
 
 /**
  * Lógica PURA da rota de detalhe por slug (#230, ADR-0020) — sem DB, sem React, sem `next/*`.
- * Cobre a DECISÃO de forma (uuid legado → caminho do dono vs slug → render), o PARSER do path
- * legado que alimenta o 301 do proxy, e o predicado PURO do gate de leitura pública (= gate de
- * indexação default-open). O comportamento de DB de `loadPublicRecipeBySlug`/`resolvePublicSlug`
- * (casar (locale, slug), filtrar pelo gate) é coberto na integração (CI).
+ * Cobre a DECISÃO de forma (uuid legado → resolver slug + 308 no server component vs slug → render)
+ * e o predicado PURO do gate de leitura pública (= gate de indexação default-open). O comportamento
+ * de DB de `loadPublicRecipeBySlug`/`resolvePublicSlugForLocale` (casar (locale, slug), filtrar
+ * pelo gate) é coberto na integração (CI).
  *
  * Roda no projeto "ui" (jsdom, sem Postgres) por importar só domínio puro.
  */
@@ -33,10 +32,10 @@ describe('isUuidParam (param da rota tem forma de UUID?)', () => {
   })
 })
 
-describe('decideRecipeDetailRoute (uuid → owner-uuid; senão → slug)', () => {
-  it('UUID legado ⇒ owner-uuid carregando o uuid (caminho do dono; o 301 público é do proxy)', () => {
+describe('decideRecipeDetailRoute (uuid → redirect-uuid; senão → slug)', () => {
+  it('UUID legado ⇒ redirect-uuid carregando o uuid (o server component resolve o slug e 308-a)', () => {
     expect(decideRecipeDetailRoute('11111111-2222-3333-4444-555555555555')).toEqual({
-      kind: 'owner-uuid',
+      kind: 'redirect-uuid',
       uuid: '11111111-2222-3333-4444-555555555555',
     })
   })
@@ -56,37 +55,13 @@ describe('recipeDetailPath (URL canônica de detalhe)', () => {
   })
 })
 
-describe('parseLegacyUuidDetailPath (alimenta o 301 do proxy UUID→slug)', () => {
-  const uuid = '11111111-2222-3333-4444-555555555555'
-
-  it('casa /{locale}/recipes/<uuid> com locale canônico', () => {
-    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}`)).toEqual({ locale: 'pt-BR', uuid })
-    expect(parseLegacyUuidDetailPath(`/en-US/recipes/${uuid}`)).toEqual({ locale: 'en-US', uuid })
-  })
-
-  it('tolera barra final', () => {
-    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}/`)).toEqual({ locale: 'pt-BR', uuid })
-  })
-
-  it('NÃO casa quando o 3º segmento é um SLUG (não-uuid)', () => {
-    expect(parseLegacyUuidDetailPath('/pt-BR/recipes/bolo-de-cenoura')).toBeNull()
-  })
-
-  it('NÃO casa locale com case errado (o proxy normaliza o case ANTES, num 301 separado)', () => {
-    expect(parseLegacyUuidDetailPath(`/pt-br/recipes/${uuid}`)).toBeNull()
-  })
-
-  it('NÃO casa locale ausente, outra rota, ou sub-rota', () => {
-    expect(parseLegacyUuidDetailPath(`/recipes/${uuid}`)).toBeNull() // sem locale
-    expect(parseLegacyUuidDetailPath(`/pt-BR/me/recipes/${uuid}`)).toBeNull() // outra rota
-    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}/edit`)).toBeNull() // sub-rota
-    expect(parseLegacyUuidDetailPath('/pt-BR/recipes')).toBeNull() // sem id
-  })
-})
-
 describe('LEGACY_UUID_REDIRECT_STATUS', () => {
-  it('é 301 (permanente) — a canonicalização UUID→slug do ADR-0020 decisão 4', () => {
-    expect(LEGACY_UUID_REDIRECT_STATUS).toBe(301)
+  it('é 308 (permanente) — permanentRedirect do server component; canonicalização UUID→slug (decisão 4)', () => {
+    // O ADR-0020 escreve "301", mas o redirect PERMANENTE de Server Component que o Next 16 emite
+    // é 308 — equivalente p/ SEO (permanente, cacheável, consolida link equity), e mantém o gate
+    // "no server component" (sem DB no proxy). O contraste do ADR é permanente (308/301) vs o 302
+    // da detecção de locale; ambos honram esse intento.
+    expect(LEGACY_UUID_REDIRECT_STATUS).toBe(308)
   })
 })
 

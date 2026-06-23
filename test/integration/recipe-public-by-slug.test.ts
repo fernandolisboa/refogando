@@ -12,11 +12,11 @@ import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 
 /**
- * Leitura PÚBLICA por slug + resolução de slug para o 301 (#230, ADR-0020) — contra Postgres
- * real (projeto "node" no CI). Cobre o que o teste ui PURO não pode: o casamento por
+ * Leitura PÚBLICA por slug + resolução de slug para o redirect permanente (#230, ADR-0020) — contra
+ * Postgres real (projeto "node" no CI). Cobre o que o teste ui PURO não pode: o casamento por
  * (locale, slug), o gate de leitura pública aplicado no DB (comunidade/Catálogo/playful/moderação),
- * a resolução uuid→slug PÚBLICA (leak-safe) que alimenta o 301 do link legado no proxy, e a
- * resolução slug→uuid (sem gate) que preserva o caminho do dono.
+ * a resolução uuid→slug PÚBLICA (leak-safe) que alimenta o permanentRedirect (308) do link legado no
+ * SERVER COMPONENT, e a resolução slug→uuid (sem gate) que preserva o caminho do dono.
  */
 
 const db = () => getDb()
@@ -227,8 +227,8 @@ describe('resolveSlugForLocale — uuid + locale → slug, SEM gate (LocaleSwitc
   })
 })
 
-describe('resolvePublicSlugForLocale — slug GATEADO p/ o 301 do proxy (leak-safe)', () => {
-  it('Receita pública ⇒ devolve o slug do locale (o proxy 301-a pro canônico)', async () => {
+describe('resolvePublicSlugForLocale — slug GATEADO p/ o 308 do server component (leak-safe)', () => {
+  it('Receita pública ⇒ devolve o slug do locale (o server component 308-a pro canônico)', async () => {
     const recipeId = await seedRecipe({
       origin: 'ai_chat',
       originalLocale: 'pt-BR',
@@ -245,7 +245,7 @@ describe('resolvePublicSlugForLocale — slug GATEADO p/ o 301 do proxy (leak-sa
     expect(await resolvePublicSlugForLocale(db(), recipeId, 'pt-BR')).toBe('publica-301')
   })
 
-  it('Catálogo (ownerId NULL, private) ⇒ devolve o slug (o eixo de comunidade abre o 301)', async () => {
+  it('Catálogo (ownerId NULL, private) ⇒ devolve o slug (o eixo de comunidade abre o 308)', async () => {
     const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({
       recipeId,
@@ -258,11 +258,11 @@ describe('resolvePublicSlugForLocale — slug GATEADO p/ o 301 do proxy (leak-sa
     expect(await resolvePublicSlugForLocale(db(), recipeId, 'pt-BR')).toBe('catalogo-301')
   })
 
-  it('Receita PRIVADA ⇒ null (NÃO vaza o slug nem a existência num 301 anônimo)', async () => {
-    // Must-fix de revisão: o 301 do UUID legado precisa ser GATEADO. Um anônimo pedindo o UUID de
-    // uma Receita privada NÃO pode receber um Location revelando o slug (derivado do título). O
-    // proxy, ao receber null, NÃO redireciona — deixa a página tratar pelo caminho do dono (404
-    // leak-safe a quem não é dono).
+  it('Receita PRIVADA ⇒ null (NÃO vaza o slug nem a existência num 308 anônimo)', async () => {
+    // Must-fix de revisão: o redirect do UUID legado precisa ser GATEADO. Um anônimo pedindo o UUID
+    // de uma Receita privada NÃO pode receber um Location revelando o slug (derivado do título). O
+    // server component, ao receber null, NÃO redireciona — deixa a página tratar pelo caminho do dono
+    // (404 leak-safe a quem não é dono).
     const { userId } = await seedSessionHeaders({ email: 'pubslug-private@ex.com' })
     const recipeId = await seedRecipe({
       origin: 'ai_chat',

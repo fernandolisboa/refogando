@@ -5,12 +5,15 @@
  * dinâmico `[id]` da rota carrega OU um slug per-locale OU, em links LEGADOS, o UUID interno.
  * Este módulo é a casca testável (projeto "ui", sem DB nem `next/*`) que separa os dois casos:
  *
- *  - param com FORMA de UUID → link legado: a canonicalização PERMANENTE UUID→slug é um **301**
- *    LITERAL emitido no `proxy` (runtime nodejs, igual ao 301 de normalização de case já lá) —
- *    NÃO um `permanentRedirect` de Server Component (que serve 308). O proxy resolve o slug
- *    PÚBLICO daquele locale e 301-a; se a Receita NÃO é leitura pública (privada/playful/removida
- *    OU sem slug), o proxy NÃO redireciona e deixa a página tratar o UUID pelo caminho do DONO
- *    (cookie, leak-safe). O UUID continua chave interna/da API de dados, jamais URL pública.
+ *  - param com FORMA de UUID → link legado: a canonicalização PERMANENTE UUID→slug é um
+ *    `permanentRedirect` do Server Component (que serve **308** no Next 16) — NÃO um 301 literal no
+ *    proxy. O server component resolve o slug PÚBLICO (gateado) daquele locale e 308-a; se a Receita
+ *    NÃO é leitura pública (privada/playful/removida OU sem slug), NÃO redireciona e cai no caminho
+ *    do DONO (cookie, leak-safe) — não vaza slug nem existência. O UUID continua chave interna/da
+ *    API de dados, jamais URL pública. (308 e 301 são idênticos p/ o Google: canonicalização
+ *    permanente, cacheável, passa link equity — o ADR diz "301" como sinônimo de "permanente, ao
+ *    contrário do 302 da detecção"; o `permanentRedirect` honra esse intento E mantém o gate "no
+ *    server component" do ADR, sem DB no proxy.)
  *  - qualquer outra forma → tratado como SLUG: a página renderiza o detalhe PÚBLICO via leitura
  *    anônima e cacheável (`loadPublicRecipeBySlug`), sem cookie/sessão.
  *
@@ -20,15 +23,16 @@
  * pelo sitemap/robots/hreflang (#233) — visibilidade pública/catálogo E não-`playful` E não-removida.
  */
 import { UUID_RE } from '@/server/http/params'
-import { SUPPORTED_LOCALES } from '@/i18n/locale'
 
 /**
- * Status do redirect do link LEGADO `/{locale}/recipes/<uuid>` → slug canônico: **301**
- * (permanente), emitido como 301 LITERAL no proxy (ADR-0020 decisão 4; a troça UUID→slug é
- * permanente, ao contrário do 302 da detecção de locale). Mesmo valor do 301 de normalização
- * de case (`LOCALE_CASE_REDIRECT_STATUS`), mas nomeado à parte para deixar a intenção explícita.
+ * Status do redirect do link LEGADO `/{locale}/recipes/<uuid>` → slug canônico: **308**
+ * (permanente), emitido por `permanentRedirect` no Server Component (ADR-0020 decisão 4; a troça
+ * UUID→slug é permanente, ao contrário do 302 da detecção de locale). O ADR escreve "301", mas o
+ * Next emite o redirect PERMANENTE idiomático de Server Component como 308 — equivalente p/ SEO
+ * (permanente, cacheável, consolida link equity), e mantém o gate "no server component" do ADR
+ * (sem DB no proxy). Nomeado à parte para deixar a intenção (permanente, ≠ 302) explícita.
  */
-export const LEGACY_UUID_REDIRECT_STATUS = 301 as const
+export const LEGACY_UUID_REDIRECT_STATUS = 308 as const
 
 /** `true` se o param da rota tem a forma de um UUID (link legado a canonicalizar). Sem tocar DB. */
 export function isUuidParam(idParam: string): boolean {
@@ -37,50 +41,27 @@ export function isUuidParam(idParam: string): boolean {
 
 /**
  * Decisão de rota a partir do param `[id]` cru:
- *  - `{ kind: 'owner-uuid', uuid }` — link LEGADO por UUID que chegou na PÁGINA (o proxy só 301-a
- *    UUIDs PÚBLICOS; um UUID que ainda chega aqui é privado/playful/removido/sem-slug). Trata pelo
- *    caminho do DONO (cookie, leak-safe) — NÃO redireciona (o 301 público já aconteceu no proxy).
+ *  - `{ kind: 'redirect-uuid', uuid }` — link LEGADO por UUID: o Server Component resolve o slug
+ *    PÚBLICO (gateado) do locale e dá um `permanentRedirect` (308). Se a Receita NÃO é leitura
+ *    pública (privada/playful/removida/sem-slug), NÃO redireciona e cai no caminho do DONO (cookie,
+ *    leak-safe) — não vaza slug nem existência.
  *  - `{ kind: 'slug', slug }` — renderizar o detalhe público por slug (leitura anônima/cacheável).
  *
  * Determinística e PURA: a forma do param é o único insumo. O caller (a page) executa o I/O
- * conforme o `kind` — caminho do dono (uuid) ou ler+renderizar (slug). A canonicalização
- * permanente UUID→slug (301) NÃO mora aqui: é do proxy (DB-direto, gateado, `NextResponse.redirect`).
+ * conforme o `kind` — resolver+redirecionar/owner (uuid) ou ler+renderizar (slug).
  */
 export type RecipeDetailRoute =
-  | { kind: 'owner-uuid'; uuid: string }
+  | { kind: 'redirect-uuid'; uuid: string }
   | { kind: 'slug'; slug: string }
 
 export function decideRecipeDetailRoute(idParam: string): RecipeDetailRoute {
-  if (isUuidParam(idParam)) return { kind: 'owner-uuid', uuid: idParam }
+  if (isUuidParam(idParam)) return { kind: 'redirect-uuid', uuid: idParam }
   return { kind: 'slug', slug: idParam }
 }
 
 /** Monta a URL canônica de detalhe `/{locale}/recipes/<slug>` (caminho relativo, p/ redirect). */
 export function recipeDetailPath(locale: string, slug: string): string {
   return `/${locale}/recipes/${slug}`
-}
-
-/**
- * Parser PURO do caminho de detalhe LEGADO por UUID — alimenta o **301** do proxy (#230, ADR-0020
- * decisão 4). Reconhece `/{locale}/recipes/<uuid>` (locale na forma canônica EXATA, já normalizada
- * pelo redirect de case do proxy) e devolve `{ locale, uuid }`; qualquer outra forma → `null`
- * (slug, sub-rotas, locale ausente/mau-case). Sem tocar DB nem `next/*`: a forma do path é o único
- * insumo, então o proxy fica fino e a decisão é testável no projeto "ui".
- *
- * Só casa o locale JÁ canônico: um `/pt-br/recipes/<uuid>` é primeiro 301-normalizado pelo case e
- * só então reconhecido aqui (evita encadear dois redirects numa resposta só).
- */
-export function parseLegacyUuidDetailPath(
-  pathname: string,
-): { locale: string; uuid: string } | null {
-  const segments = pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/')
-  // Exatamente `{locale}/recipes/{uuid}` — 3 segmentos, sem sub-rota.
-  if (segments.length !== 3) return null
-  const [locale, recipes, id] = segments
-  if (recipes !== 'recipes') return null
-  if (!SUPPORTED_LOCALES.includes(locale as (typeof SUPPORTED_LOCALES)[number])) return null
-  if (!isUuidParam(id)) return null
-  return { locale, uuid: id }
 }
 
 /**
