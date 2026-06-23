@@ -7,6 +7,7 @@ import { decideDerivedDiff, type DiffLado } from '@/domain/recipe-diff'
 import { shouldSuggestNewImage, visualChangesFromDiff } from '@/domain/image-review'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { pgCode } from '@/server/recipe/visibility'
+import { slugsForNewTranslations } from '@/server/recipe/slug'
 import { embedTranslation } from '@/server/embedding/recompute'
 
 /**
@@ -203,8 +204,18 @@ export async function deriveRecipe(input: {
           provenance: 'escrita_por_pessoa' as const,
         })
       }
+      // Slug por idioma (#229, ADR-0020 dec.4): a derivada é uma RECEITA NOVA com traduções
+      // NASCENTES — cada uma congela um slug PRÓPRIO do seu título (NÃO se copia o slug da base,
+      // que tomaria o `UNIQUE(locale, slug)` da base). Em lote (uma query de `taken` por locale),
+      // desambiguando também contra as irmãs do mesmo lote. Ordem preservada ⇒ casa 1:1 com as linhas.
       if (translationsToInsert.length > 0) {
-        await tx.insert(recipeTranslation).values(translationsToInsert)
+        const slugs = await slugsForNewTranslations(
+          tx,
+          translationsToInsert.map((t) => ({ locale: t.locale, title: t.titulo })),
+        )
+        await tx
+          .insert(recipeTranslation)
+          .values(translationsToInsert.map((t, i) => ({ ...t, slug: slugs[i] })))
       }
 
       // Ingredientes: SNAPSHOT das edições (o que o leitor mandou é o estado final da derivada).

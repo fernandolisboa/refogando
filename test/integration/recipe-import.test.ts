@@ -87,10 +87,16 @@ describe('POST /api/recipes/import (#165)', () => {
 
     // Tradução do locale de origem, marcada automática-não-revisada (conteúdo externo copiado).
     const [tr] = await getDb()
-      .select({ titulo: recipeTranslation.titulo, provenance: recipeTranslation.provenance })
+      .select({
+        titulo: recipeTranslation.titulo,
+        slug: recipeTranslation.slug,
+        provenance: recipeTranslation.provenance,
+      })
       .from(recipeTranslation)
       .where(and(eq(recipeTranslation.recipeId, bodyJson.recipeId), eq(recipeTranslation.locale, 'pt-BR')))
     expect(tr.titulo).toBe(CANONICAL_IMPORTED_RECIPE.titulo)
+    // Slug por idioma (#229): materializado na importação (write-path), não NULL.
+    expect(tr.slug).toBe('bolo-de-cenoura')
     expect(tr.provenance).toBe('automatica_nao_revisada')
 
     // Ingredientes preservados na ordem, com rawText + qty/unidade best-effort.

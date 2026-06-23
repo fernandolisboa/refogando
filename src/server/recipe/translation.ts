@@ -3,6 +3,7 @@ import { recipeTranslation } from '@/db/schema'
 import { getTranslator } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
+import { slugForNewTranslation } from '@/server/recipe/slug'
 
 /**
  * Ciclo de vida da tradução on-demand (issue #23, AC1 + AC4). CABEIA sobre as máquinas
@@ -62,6 +63,11 @@ export async function ensureTranslation(
     return { kind: 'degraded' }
   }
 
+  // Slug por idioma (#229, ADR-0020 dec.4): congela AGORA, a partir do título da MT INICIAL
+  // (`translated.titulo`) — é ESTE insert que materializa o slug en-US; uma revisão posterior da
+  // MT não o re-deriva (estabilidade > beleza). Desambiguado contra os slugs já em uso no locale.
+  const slug = await slugForNewTranslation(db, { locale: targetLocale, title: translated.titulo })
+
   // Insere IDEMPOTENTE: a UNIQUE (recipe_id, locale) protege a corrida de 1º acesso
   // concorrente (dois POST simultâneos ⇒ um insere, o outro vira no-op). NUNCA insert nu.
   // Nota: o PERDEDOR da corrida (conflito → 0 linhas) ainda retorna `created` aqui
@@ -75,6 +81,7 @@ export async function ensureTranslation(
       descricao: translated.descricao ?? null,
       passos: translated.passos ?? null,
       notas: translated.notas ?? null,
+      slug,
       provenance: 'automatica_nao_revisada',
       stale: false,
     })

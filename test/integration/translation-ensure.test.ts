@@ -143,6 +143,49 @@ describe('ensureTranslation #23 — AC1 (gera 2º locale sinalizado + embedding)
   })
 })
 
+describe('ensureTranslation — Slug por idioma (#229, ADR-0020 dec.4: congela da MT INICIAL)', () => {
+  it('a tradução en-US nasce JÁ com slug, derivado do título da MT — não fica NULL esperando backfill', async () => {
+    // MT que devolve um título en-US DISTINTO do pt-BR: prova que o slug vem do título da
+    // tradução-máquina (en-US), não do título de origem (pt-BR).
+    setTranslator(new FakeTranslator({ titulo: 'Carrot Cake', descricao: null, passos: null, notas: null }))
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const recipeId = await seedOriginOnly() // pt-BR "Feijoada"
+
+    const res = await ensureTranslation(db, recipeId, 'en-US')
+    expect(res).toEqual({ kind: 'created' })
+
+    const [en] = await db
+      .select({ slug: recipeTranslation.slug, titulo: recipeTranslation.titulo })
+      .from(recipeTranslation)
+      .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, 'en-US')))
+    expect(en.titulo).toBe('Carrot Cake')
+    // Slug materializado NA ESCRITA (write-path), congelado a partir do título da MT inicial.
+    expect(en.slug).toBe('carrot-cake')
+  })
+
+  it('dois en-US com o MESMO título de MT ⇒ slugs DISTINTOS (desambiguação por locale na borda)', async () => {
+    setTranslator(new FakeTranslator({ titulo: 'Carrot Cake', descricao: null, passos: null, notas: null }))
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const r1 = await seedOriginOnly()
+    const r2 = await seedOriginOnly()
+
+    await ensureTranslation(db, r1, 'en-US')
+    await ensureTranslation(db, r2, 'en-US')
+
+    const slugs = await db
+      .select({ recipeId: recipeTranslation.recipeId, slug: recipeTranslation.slug })
+      .from(recipeTranslation)
+      .where(and(eq(recipeTranslation.locale, 'en-US'), dsql`${recipeTranslation.titulo} = 'Carrot Cake'`))
+    const mine = slugs.filter((s) => s.recipeId === r1 || s.recipeId === r2)
+    expect(mine).toHaveLength(2)
+    for (const s of mine) expect(s.slug).not.toBeNull()
+    // O índice UNIQUE(locale, slug) teria recusado dois iguais ⇒ devem ser distintos.
+    expect(new Set(mine.map((s) => s.slug)).size).toBe(2)
+  })
+})
+
 describe('ensureTranslation #23 — AC4 (degradação graciosa)', () => {
   it('ThrowingTranslator ⇒ ZERO linha en-US, sem erro que aborte', async () => {
     setTranslator(new ThrowingTranslator())
