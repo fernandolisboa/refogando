@@ -12,8 +12,10 @@ import { redirect } from 'next/navigation'
 export default async function ConversationResumePage({
   params,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ locale: string; id: string }>
 }) {
-  const { id } = await params
-  redirect(`/create?mode=conversa&resume=${encodeURIComponent(id)}`)
+  const { locale, id } = await params
+  // Locale-no-caminho (ADR-0020): preserva o prefixo de locale no destino, evitando um 2º hop
+  // pelo proxy. A migração ampla de hrefs internos é #231; aqui é só o destino deste redirect.
+  redirect(`/${locale}/create?mode=conversa&resume=${encodeURIComponent(id)}`)
 }

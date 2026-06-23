@@ -17,7 +17,7 @@ import { ptBR } from '@/i18n/messages/pt-BR'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { handleResponse } from '@/server/http/handle-response'
-import { resolvePageLocale } from '@/server/http/page-locale'
+import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
 /**
  * Teste de COMPONENTE jsdom do detalhe da Receita (#57) — seam de frontend da #54 (sem
@@ -174,7 +174,7 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.getByText('Refogue')).toBeInTheDocument()
   })
 
-  it('T3 — receita com staleNotice → nota + link "ver o original" pro locale de origem', () => {
+  it('T3 — receita com staleNotice → nota + link "ver o original" PREFIXADO no locale corrente + ?original', () => {
     renderView(
       baseView({
         id: 'r-1',
@@ -188,9 +188,12 @@ describe('RecipeDetailView (#57)', () => {
     )
 
     expect(screen.getByText('This translation may be out of date…')).toBeInTheDocument()
-    // O href usa view.id + ?locale=originalLocale (a página honra esse ?locale — ver T6).
+    // Locale-no-caminho (#228/ADR-0020): o href fica PREFIXADO no locale CORRENTE (`notice.locale`,
+    // = a chrome em que a nota foi renderizada — en-US aqui) pra NÃO trocar a chrome/o path, e usa
+    // `?original=<originalLocale>` pra LER o corpo no idioma-fonte (a página honra esse escape —
+    // ver T6b). NUNCA `?locale` (morreu com o path-wins) nem um link bare (que bounceria no proxy).
     const link = screen.getByRole('link', { name: 'View the original' })
-    expect(link).toHaveAttribute('href', '/recipes/r-1?locale=pt-BR')
+    expect(link).toHaveAttribute('href', '/en-US/recipes/r-1?original=pt-BR')
   })
 
   it('T4 — restrições declaradas SEM aviso → chips neutros, sem âmbar', () => {
@@ -347,5 +350,35 @@ describe('RecipeDetailView (#57)', () => {
     ).toBe('pt-BR')
     // Case-insensitive → forma canônica.
     expect(resolvePageLocale({ urlLocale: 'PT-br' })).toBe('pt-BR')
+  })
+
+  it('T6b — locale-no-caminho (#228): a CHROME segue o path; o CONTEÚDO segue ?original (ver o original)', () => {
+    // Regressão da jornada "ver o original" sob locale-no-caminho. Sob `[locale]`, o segmento de
+    // path é SEMPRE presente (urlLocale nunca null), então a chrome SEMPRE vem do path — o `?locale`
+    // legado virou letra morta. O escape explícito que o banner emite é `?original`:
+
+    // CHROME (resolvePageLocale): o path manda; cookie/Accept-Language são só rede de segurança.
+    const chrome = resolvePageLocale({
+      urlLocale: 'en-US', // params.locale (sempre presente sob [locale])
+      cookieLocale: 'pt-BR',
+      acceptLanguage: 'pt-BR',
+    })
+    expect(chrome).toBe('en-US')
+
+    // CONTEÚDO (resolveContentLocale): com `?original` VÁLIDO, busca a tradução-fonte SEM trocar a
+    // chrome. É o que mantém a feature "ver o original" viva (era o que o `?locale` morto fazia).
+    expect(resolveContentLocale({ pageLocale: chrome, original: 'pt-BR' })).toBe('pt-BR')
+    expect(resolveContentLocale({ pageLocale: chrome, original: 'PT-br' })).toBe('pt-BR') // case-insensitive
+
+    // Sem `?original` (caso comum) OU `?original` inválido → o conteúdo SEGUE a chrome (path).
+    expect(resolveContentLocale({ pageLocale: chrome, original: null })).toBe('en-US')
+    expect(resolveContentLocale({ pageLocale: chrome, original: undefined })).toBe('en-US')
+    expect(resolveContentLocale({ pageLocale: chrome, original: 'xx-YY' })).toBe('en-US')
+
+    // O link que o banner emite (T3) e o que a página resolve concordam: a chrome FICA em en-US
+    // (path) enquanto o conteúdo vira pt-BR (?original) — exatamente "ver o original sem trocar a
+    // chrome". Antes deste fix, `pathLocale ?? sp.locale` fazia o path SEMPRE vencer e a feature
+    // resolvia o conteúdo no locale do path (regressão silenciosa).
+    expect(chrome).not.toBe(resolveContentLocale({ pageLocale: chrome, original: 'pt-BR' }))
   })
 })

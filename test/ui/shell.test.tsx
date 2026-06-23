@@ -5,14 +5,21 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
 // next/link precisa do AppRouterContext em runtime; no jsdom não há router montado.
-// Mockamos pra um <a> simples — o que importa aqui é a chrome acompanhar o locale,
-// não a navegação do Next.
+// Mockamos pra um <a> simples — o que importa aqui é a chrome e a NAVEGAÇÃO do switcher.
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
     </a>
   ),
+}))
+
+// O LocaleSwitcher agora NAVEGA pra URL irmã (#228/ADR-0020), então usa useRouter/usePathname.
+// Mockamos: `push` espionável + um pathname prefixado (o shell vive sob `[locale]`).
+const navMock = vi.hoisted(() => ({ push: vi.fn(), pathname: '/pt-BR' }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: navMock.push }),
+  usePathname: () => navMock.pathname,
 }))
 
 // O AuthSlot agora chama useSession; sem mock o hook tentaria buscar /api/auth/get-session
@@ -36,11 +43,13 @@ import { SiteFooter } from '@/components/site-footer'
 /**
  * Seam de teste de FRONTEND (issue #54) — prova, acima da seam de servidor e sem
  * browser/Postgres, que: (1) a chrome renderiza no locale inicial; (2) trocar o seletor
- * de idioma (agora no FOOTER, #162) faz TODA a chrome acompanhar (#4.AC1), dentro do shell.
+ * de idioma (no FOOTER, #162) NAVEGA pra URL irmã (#228/ADR-0020 — a URL é a verdade do
+ * idioma; a chrome re-renderiza no servidor após a navegação, não in-place no client).
  */
-describe('Shell — troca de locale (seletor no footer) cascateia na chrome', () => {
-  it('renderiza pt-BR e segue pro en-US ao trocar o seletor', async () => {
+describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', () => {
+  it('renderiza pt-BR e, ao trocar o seletor, navega pra /en-US{resto} (não cascateia in-place)', async () => {
     const user = userEvent.setup()
+    navMock.pathname = '/pt-BR/recipes'
     render(
       <LocaleProvider initialLocale="pt-BR">
         <SiteHeader />
@@ -68,19 +77,21 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
     // Troca o idioma no seletor.
     await user.selectOptions(select, 'en-US')
 
-    // A chrome inteira (header + footer) acompanha — nav, slot de auth e o valor do seletor.
-    expect(select.value).toBe('en-US')
-    expect(within(nav).getByText('Home')).toBeInTheDocument()
-    expect(within(nav).getByText('Recipes')).toBeInTheDocument()
-    // Create PRESENTE; "Chat" (a antiga entrada Conversar) AUSENTE após o locale-switch também.
-    expect(within(nav).getByText('Create')).toBeInTheDocument()
-    expect(within(nav).queryByText('Chat')).not.toBeInTheDocument()
-    expect(screen.getByText('Sign in')).toBeInTheDocument()
-    expect(within(nav).queryByText('Início')).not.toBeInTheDocument()
+    // #228/ADR-0020: NAVEGA pra URL irmã (troca só o prefixo de locale, preserva o resto). A
+    // chrome NÃO cascateia in-place no client — ela re-renderiza no servidor após a navegação
+    // (fora do alcance do jsdom). O que provamos aqui é a navegação + o cookie persistido.
+    expect(navMock.push).toHaveBeenCalledWith('/en-US/recipes')
+    expect(document.cookie).toContain('locale=en-US')
+    // `<html lang>` é sincronizado de imediato pelo efeito da troca (evita janela lang ≠ conteúdo).
+    expect(document.documentElement.lang).toBe('en-US')
   })
 
   afterEach(() => {
     authMock.current = authMock.anon
+    navMock.push.mockClear()
+    navMock.pathname = '/pt-BR'
+    document.cookie = 'locale=; Max-Age=0; Path=/'
+    document.documentElement.lang = 'pt-BR'
   })
 
   it('logado: "Minhas criações" vem ANTES de "Criar" na nav (Criar é a CTA destacada por último)', () => {
