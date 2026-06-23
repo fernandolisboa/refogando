@@ -171,6 +171,9 @@ export async function editOwnRecipe(
   //    escrita parcial). Patch sem campo traduzível NÃO passa por este gate (não exige a linha do
   //    locale existir). updated_at da receita é bumpado adiante, em QUALQUER eixo que muda.
   if (touchesTranslatable) {
+    // CONGELAMENTO do slug (#243, ADR-0020 dec.4): o `translatablePatch` cobre SÓ titulo/descricao/
+    // passos/notas — NUNCA `slug`. Editar in-place o título NÃO re-deriva a URL canônica (que só o 1º
+    // insert materializa via freezeSlug). Não adicionar `slug` a este SET é a invariante.
     const updated = await db
       .update(recipeTranslation)
       .set({ ...translatablePatch, updatedAt: now })

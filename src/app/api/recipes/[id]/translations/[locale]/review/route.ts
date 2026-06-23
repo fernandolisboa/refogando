@@ -63,6 +63,8 @@ export async function POST(
 
   // Flip SÓ quando automatica_nao_revisada (não rebaixa escrita_por_pessoa); bump updatedAt
   // (sem $onUpdate no Drizzle). Já-revisada ⇒ 0 linhas afetadas, ainda 200 (idempotente).
+  // CONGELAMENTO do slug (#243, ADR-0020 dec.4): promover a procedência NÃO toca `slug` — a URL
+  // canônica (congelada no 1º insert via freezeSlug) é estável sob revisão. O SET não inclui `slug`.
   await db
     .update(recipeTranslation)
     .set({ provenance: 'automatica_revisada', updatedAt: new Date() })
