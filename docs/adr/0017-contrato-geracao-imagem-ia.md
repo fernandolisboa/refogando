@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Atualização (ADR-0020):** o selo "gerada por IA" da imagem vale nas superfícies **in-app**. **Exceção deliberada: o OG/social card NÃO leva o selo** — ali a imagem de IA é vitrine do recurso, não aviso, e o público costuma perceber. Decisão consciente do dono, não descuido.
+
 Irmão do ADR-0009 (que cobre só a geração de **texto** da Receita). A geração da **imagem** do prato segue um contrato próprio:
 
 - **Provedor por REST puro, sem SDK.** Default **Nano Banana 2** (`gemini-3.1-flash-image`, Google). Chamado com `fetch` + API key direto no endpoint `generateContent` — **nenhum pacote npm novo** (sidestepa o histórico de cutoff de registro do ambiente). O modelo **devolve os bytes** (base64) → vão direto pro blob, sem segundo fetch nem corrida de URL expirável.
