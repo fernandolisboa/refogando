@@ -4,7 +4,7 @@
  * rota JÁ resolveu, QUAIS blocos de ação mostrar. Espelha o gate do servidor (NUNCA re-deriva
  * ownership no cliente):
  *
- *  - DONO (`view.canManage`): bloco de gestão = Editar/Apagar (`RecipeEditForm`) + Regenerar
+ *  - DONO (`view.canManage`): bloco de gestão = Editar/Apagar (`RecipeEditModal`, #192) + Regenerar
  *    (`LineageVersionControls`, SÓ p/ Receita de IA `ai_*`) + o diff da derivada
  *    (`RecipeDiffView`, quando `view.derivedDiff` chega — owner-gated pelo servidor) com a nota
  *    de vínculo perdido. A Visibilidade (#59) continua na PAGE (irmã desta).
@@ -25,7 +25,7 @@ import { useLocale } from '@/i18n/provider'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'
-import { RecipeEditForm } from './recipe-edit-form'
+import { RecipeEditModal } from './recipe-edit-modal'
 import { LineageVersionControls } from './lineage-version-controls'
 import { RecipeDiffView } from './recipe-diff-view'
 import { DeriveExperience } from './derive-experience'
@@ -48,7 +48,11 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
         {view.derivedDiff && (
           <RecipeDiffView diff={view.derivedDiff} vinculoPerdido={view.vinculoPerdido} />
         )}
-        <RecipeEditForm view={view} />
+        {/* #192/ADR-0021: editar a própria Receita é IN-PLACE num MODAL centrado (a tela de
+            detalhe é só-leitura), não mais um form inline. O Apagar acompanha dentro do modal. */}
+        <div>
+          <RecipeEditModal view={view} />
+        </div>
         {isAi && <LineageVersionControls recipeId={view.id} />}
       </div>
     )

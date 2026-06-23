@@ -419,6 +419,11 @@ export const enUS: Messages = {
     apagando: 'Deleting…',
     apagarErro: "We couldn't delete the recipe. Try again.",
     vinculoPerdido: 'The original recipe was deleted — your version is still complete, just no longer linked to it.',
+    // #192/ADR-0021: centered in-place edit modal (the detail page becomes read-only). The
+    // "Edit" button opens the modal; the title/description/close come from the `SheetContent`.
+    modalTitulo: 'Edit recipe',
+    modalDescricao: 'Change your recipe’s content. The changes apply to this same recipe.',
+    modalFechar: 'Close',
   },
   // Regeneration: new immutable version by lineage (#20). Regenerating your own recipe creates a
   // NEW version from the same request — it never overwrites; previous versions stay saved. The

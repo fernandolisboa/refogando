@@ -42,7 +42,21 @@ function itemsFromView(view: RecipeView): ItemDraft[] {
   return items.length > 0 ? items : [{ rawText: '', quantidade: '', unidade: '' }]
 }
 
-export function RecipeEditForm({ view }: { view: RecipeView }) {
+/**
+ * #192/ADR-0021: o form vive DENTRO do modal centrado (`RecipeEditModal`). `onSaved` fecha o
+ * modal após o PATCH dar certo; `onCancel` é o botão Cancelar do rodapé do modal. Sem essas
+ * props o form se auto-renderiza (compat) com o próprio `<h2>`. Apagar navega pra fora (não
+ * precisa de `onSaved`).
+ */
+export function RecipeEditForm({
+  view,
+  onSaved,
+  onCancel,
+}: {
+  view: RecipeView
+  onSaved?: () => void
+  onCancel?: () => void
+}) {
   // O locale do PATCH é o ATUAL (o usuário pode trocar o idioma no rodapé no meio da edição —
   // a prop estática do servidor ficaria obsoleta e o PATCH atingiria a tradução errada). Espelha
   // como o create estruturado usa `useLocale().locale` no fetch.
@@ -180,6 +194,9 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
       const base = `/recipes/${view.id}?locale=${encodeURIComponent(currentLocale)}`
       router.replace(data.imageReviewSuggested ? `${base}&reviewImage=1` : base)
       router.refresh()
+      // #192: salvou ⇒ fecha o modal (o detalhe atrás reflete via router.refresh; o banner de
+      // revisão de foto #131 aparece inline no detalhe, fora do modal).
+      onSaved?.()
     } catch {
       // Mesma razão: o erro só fica visível com o diálogo fechado.
       setDialog('none')
@@ -231,15 +248,13 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
       ? messages.restricaoLabel[r as (typeof RESTRICOES)[number]]
       : r
 
-  return (
-    <section
-      aria-labelledby="editar-titulo"
-      className="flex flex-col gap-6 rounded-md border border-border bg-surface px-4 py-4"
-    >
-      <h2 id="editar-titulo" className="font-display text-lg font-semibold text-fg">
-        {messages.minhasCriacoes.editar}
-      </h2>
+  // #192/ADR-0021: dentro do modal centrado o título e a moldura são do `SheetContent`
+  // (SheetTitle), então o form NÃO emite seu próprio `<h2>`/`<section>` (seria heading/moldura
+  // duplicada). Fora do modal (compat), mantém a section rotulada.
+  const inModal = onSaved != null || onCancel != null
 
+  const formBody = (
+    <>
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.criar.titulo}
@@ -437,6 +452,12 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
           >
             {saving ? messages.system.loading : m.editarPublicaConfirmar}
           </Button>
+          {/* #192: Cancelar fecha o modal sem gravar (só na variante modal). */}
+          {onCancel && (
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              {m.editarPublicaCancelar}
+            </Button>
+          )}
           <Button
             type="button"
             variant="secondary"
@@ -505,6 +526,21 @@ export function RecipeEditForm({ view }: { view: RecipeView }) {
           </div>
         </div>
       )}
+    </>
+  )
+
+  // Dentro do modal: sem moldura própria (o SheetContent é a moldura) — o SheetTitle nomeia.
+  // Fora do modal (compat): a section rotulada com o próprio `<h2>`.
+  if (inModal) return formBody
+  return (
+    <section
+      aria-labelledby="editar-titulo"
+      className="flex flex-col gap-6 rounded-md border border-border bg-surface px-4 py-4"
+    >
+      <h2 id="editar-titulo" className="font-display text-lg font-semibold text-fg">
+        {messages.minhasCriacoes.editar}
+      </h2>
+      {formBody}
     </section>
   )
 }
