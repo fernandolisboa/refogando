@@ -131,24 +131,35 @@ describe('decideLocaleRedirect', () => {
     ).toBeNull()
   })
 
-  it('normaliza o case do prefixo de locale (/pt-br/... → /pt-BR/...) sem trocar de idioma', () => {
+  it('normaliza o case do prefixo de locale (/pt-br/... → /pt-BR/...) sem trocar de idioma, com 301 permanente', () => {
+    // ADR-0020 decisão 1: a normalização de case é canonicalização permanente (Accept-Language-
+    // independente) → 301, NÃO 302. Consolida a variante lowercase na URL canônica (SEO).
     expect(
       decideLocaleRedirect({
         pathname: '/pt-br/recipes',
         cookieLocale: 'en-US',
         acceptLanguage: null,
       }),
-    ).toEqual({ to: '/pt-BR/recipes', status: 302 })
+    ).toEqual({ to: '/pt-BR/recipes', status: 301 })
   })
 
-  it('o redirect NUNCA é 301 (nem na raiz nem na normalização de case)', () => {
+  it('o redirect de DETECÇÃO (raiz/não-prefixado) é 302 — NUNCA 301 (depende do Accept-Language)', () => {
     const root = decideLocaleRedirect({ pathname: '/', cookieLocale: null, acceptLanguage: null })
+    const bare = decideLocaleRedirect({
+      pathname: '/recipes/carrot-cake',
+      cookieLocale: null,
+      acceptLanguage: null,
+    })
+    expect(root?.status).toBe(302)
+    expect(bare?.status).toBe(302)
+  })
+
+  it('o redirect de NORMALIZAÇÃO DE CASE é 301 (permanente, Accept-Language-independente)', () => {
     const cased = decideLocaleRedirect({
       pathname: '/EN-us/recipes',
       cookieLocale: null,
       acceptLanguage: null,
     })
-    expect(root?.status).not.toBe(301)
-    expect(cased?.status).not.toBe(301)
+    expect(cased?.status).toBe(301)
   })
 })

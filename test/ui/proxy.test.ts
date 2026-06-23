@@ -55,9 +55,19 @@ describe('proxy', () => {
     expect(res.headers.get('vary')).toBe('Accept-Language')
   })
 
-  it('prefixo com case errado → 302 normalizando o case (sem trocar de idioma)', () => {
+  it('prefixo com case errado → 301 normalizando o case (sem trocar de idioma), SEM Vary', () => {
+    // ADR-0020 decisão 1: normalização de case = canonicalização permanente (301), independente
+    // do Accept-Language → NÃO emite `Vary` (não há variação por idioma a proteger).
     const res = proxy(req('/pt-br/recipes', { cookie: 'locale=en-US' }))
-    expect(res.status).toBe(302)
+    expect(res.status).toBe(301)
     expect(new URL(res.headers.get('location')!).pathname).toBe('/pt-BR/recipes')
+    expect(res.headers.get('vary')).toBeNull()
+  })
+
+  it('a normalização de case NUNCA é 302 (é permanente); a detecção NUNCA é 301', () => {
+    const cased = proxy(req('/EN-us/recipes'))
+    expect(cased.status).toBe(301)
+    const detect = proxy(req('/recipes', { acceptLanguage: 'en-US' }))
+    expect(detect.status).toBe(302)
   })
 })

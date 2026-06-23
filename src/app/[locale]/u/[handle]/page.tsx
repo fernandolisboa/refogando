@@ -1,8 +1,8 @@
 /**
  * Página do perfil PÚBLICO (#129) — Server Component. Mirror de `/recipes/[id]/page.tsx`:
- * resolve o locale (precedência `?locale` → cookie → Accept-Language), monta a URL absoluta e
- * faz `fetch` da própria rota `GET /api/u/[handle]` (ADR-0010: a UI consome ROUTE HANDLERS, não
- * Server Actions; não reimplementa domínio), renderizando o `PublicProfile` que a rota devolve.
+ * resolve o locale do SEGMENTO DA URL (`params.locale`, ADR-0020 — a URL é a verdade do idioma),
+ * monta a URL absoluta e faz `fetch` da própria rota `GET /api/u/[handle]` (ADR-0010: a UI consome
+ * ROUTE HANDLERS, não Server Actions; não reimplementa domínio), renderizando o `PublicProfile`.
  *
  * ANÔNIMO-readable: NÃO encaminha cookie de sessão (o perfil público é o mesmo p/ todos; nada
  * depende de sessão). 404 leak-safe (handle inexistente/conta desativada) ⇒ `notFound()`. Outro
@@ -23,20 +23,18 @@ import { resolvePageLocale } from '@/server/http/page-locale'
 
 export default async function PublicProfilePage({
   params,
-  searchParams,
 }: {
   params: Promise<{ locale: string; handle: string }>
-  searchParams: Promise<{ locale?: string }>
 }) {
   const { locale: pathLocale, handle } = await params
-  const sp = await searchParams
   const cookieStore = await cookies()
   const headerStore = await headers()
 
-  // Locale-no-caminho (ADR-0020): o idioma exibido vem do SEGMENTO DA URL (`params.locale`).
-  // O `?locale` legado cede ao path; mantido só como fallback até o slug-por-locale (#230).
+  // Locale-no-caminho (ADR-0020): o idioma exibido vem do SEGMENTO DA URL (`params.locale`),
+  // que o proxy garante prefixado e canônico. cookie/Accept-Language ficam só como rede de
+  // segurança (defesa em profundidade — nunca tela quebrada se o path chegar inválido).
   const locale = resolvePageLocale({
-    urlLocale: pathLocale ?? sp.locale ?? null,
+    urlLocale: pathLocale,
     cookieLocale: cookieStore.get(LOCALE_COOKIE)?.value ?? null,
     acceptLanguage: headerStore.get('accept-language'),
   })

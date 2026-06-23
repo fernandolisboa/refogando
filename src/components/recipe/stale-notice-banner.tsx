@@ -3,10 +3,12 @@
  * Recebe `notice: StaleNotice` (mensagem + rótulo JÁ renderizados no locale pela rota) +
  * `recipeId` por prop SEPARADA: o tipo `StaleNotice` NÃO carrega `id` (vem de `view.id`).
  *
- * O href aponta pra origem (`?locale=originalLocale`); a página HONRA esse `?locale`
- * (precedência da URL em `resolvePageLocale`), fechando a jornada "ver o original" sem
- * trocar o cookie/idioma da chrome. Token NEUTRO (não âmbar): stale é informativo, não um
- * alerta de segurança — NÃO bloqueia a leitura. `role="note"`.
+ * Locale-no-caminho (ADR-0020, #228): o href fica PREFIXADO no locale CORRENTE (`notice.locale`
+ * = o requestLocale/chrome em que esta nota foi renderizada) e usa `?original=<originalLocale>`
+ * pra LER o corpo no idioma-fonte SEM trocar a chrome/o path. O path é a verdade da chrome, então
+ * o segmento `[locale]` segue o corrente e o conteúdo é trocado pelo escape explícito `?original`
+ * (o `?locale` legado morreu com o path-wins). Manter o prefixo evita o bounce do proxy (302) e
+ * vai direto ao canônico. Token NEUTRO (não âmbar): stale é informativo, não bloqueia. `role="note"`.
  */
 import Link from 'next/link'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -25,7 +27,7 @@ export function StaleNoticeBanner({
       <AlertDescription className="text-muted-foreground">{notice.mensagem}</AlertDescription>
       <Button asChild variant="secondary">
         <Link
-          href={`/recipes/${recipeId}?locale=${encodeURIComponent(notice.originalLocale)}`}
+          href={`/${notice.locale}/recipes/${recipeId}?original=${encodeURIComponent(notice.originalLocale)}`}
         >
           {notice.verOriginalLabel}
         </Link>
