@@ -15,12 +15,16 @@
  * DE VERDADE do admin é o gate de papel
  * (`admin/gate.tsx` + `requireRole`); o robots é só cortesia (nada ali é indexável de qualquer forma).
  *
- * `sitemap` é URL ABSOLUTA via `getBaseUrlFromEnv` (env-only, sem `headers()`) — BUILD-SAFE: este
- * arquivo de metadados pode ser avaliado em build/estaticamente, então NUNCA derivamos o host do
- * request. Função SÍNCRONA (sem I/O) — espelha a casca fina dos demais Metadata Files.
+ * `sitemap` é URL ABSOLUTA via `getBaseUrlFromEnv` (env-only, sem `headers()`): a base vem da env do
+ * deploy, conhecida só em RUNTIME. Função SÍNCRONA (sem I/O), mas DINÂMICA (`force-dynamic`): renderiza
+ * sob demanda, NÃO no build — `getBaseUrlFromEnv` LANÇA em produção sem `APP_URL`/`VERCEL_URL`, e o
+ * smoke-check do CI (`next build`, NODE_ENV=production) não as tem. Na Vercel a env existe em runtime.
  */
 import type { MetadataRoute } from 'next'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
+
+// Renderiza em runtime (não no build): getBaseUrlFromEnv é build-unsafe sem env — ver nota acima.
+export const dynamic = 'force-dynamic'
 
 export default function robots(): MetadataRoute.Robots {
   const baseUrl = getBaseUrlFromEnv()
