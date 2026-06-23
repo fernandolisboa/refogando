@@ -349,8 +349,13 @@ export const enUS: Messages = {
     metodoPromptDesc: 'Describe the dish all at once and generate it right away. No back and forth.',
     metodoConversaTitulo: 'Chat',
     metodoConversaDesc: 'Chat with the AI until the recipe is just the way you want.',
-    // Placeholder for the path not yet shipped (#3 Chat). The Structured form is now the real
-    // wizard (#193) — no placeholder for it anymore.
+    // Chat path (#194) — multi-turn chat + "Distill recipe" inside the drawer. The rest of the
+    // labels (bubbles, send, result/error/drop, View recipe) REUSE `conversa.*`.
+    conversaIntro:
+      'Chat your way to the recipe. Whenever you like, ask to distill everything into a finished recipe.',
+    destilarReceita: 'Distill recipe',
+    // Placeholder for the old not-yet-shipped path (kept for compat). The Structured form is now
+    // the real wizard (#193) and Chat is now functional (#194).
     emBreve: 'Coming soon',
     emBreveConversa: 'Chat mode is coming here soon.',
   },

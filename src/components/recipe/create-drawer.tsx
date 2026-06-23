@@ -30,6 +30,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { CreateStructuredExperience } from './create-structured-experience'
 import { CreateStructuredWizard } from './create-structured-wizard'
+import { CreateConversaExperience } from './create-conversa-experience'
 
 /** Caminho escolhido no método-picker. `null` = ainda no picker. */
 type Method = null | 'estruturado' | 'prompt' | 'conversa'
@@ -231,11 +232,17 @@ export function CreateDrawer({
             onLoadingChange={setGenerating}
           />
         )}
+        {/* Conversa (#194) — chat multi-turno + "Destilar receita". REUSA o cérebro do Modo
+            conversa (`useConversationChat`): stream NDJSON, destilação bloqueante, retomada (#15)
+            e cap #167. Conversa IDLE NÃO tem `<h1>` (o `SheetTitle` é o `<h2>` do diálogo); o nome
+            da Receita destilada vira o ÚNICO `<h1>`. `resumeSessionId` reidrata a retomada; `key`
+            remonta a cada abertura/escolha de método (estado limpo). */}
         {method === 'conversa' && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
-            <p className="font-medium text-fg">{d.emBreve}</p>
-            <p className="text-sm text-muted">{d.emBreveConversa}</p>
-          </div>
+          <CreateConversaExperience
+            key={`conversa-${nonce}`}
+            resumeSessionId={resumeSessionId}
+            onLoadingChange={setGenerating}
+          />
         )}
       </SheetContent>
     </Sheet>

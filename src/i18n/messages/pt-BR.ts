@@ -374,8 +374,13 @@ export const ptBR = {
     metodoPromptDesc: 'Descreva o prato de uma vez e gere na hora. Sem idas e vindas.',
     metodoConversaTitulo: 'Conversa',
     metodoConversaDesc: 'Converse com a IA até a receita ficar do seu jeito.',
-    // Placeholder do caminho ainda não entregue (#3 Conversa). O Formulário estruturado já é o
-    // wizard real (#193) — não há mais placeholder dele.
+    // Caminho Conversa (#194) — chat multi-turno + "Destilar receita" dentro do drawer. O resto
+    // dos rótulos (bolhas, enviar, resultado/erro/queda, Ver receita) REUSA `conversa.*`.
+    conversaIntro:
+      'Converse para chegar na receita. Quando quiser, peça para destilar tudo numa receita pronta.',
+    destilarReceita: 'Destilar receita',
+    // Placeholder do antigo caminho ainda-não-entregue (mantido por compat). O Formulário
+    // estruturado já é o wizard real (#193) e a Conversa agora é funcional (#194).
     emBreve: 'Em breve',
     emBreveConversa: 'O modo Conversa chega em breve por aqui.',
   },

@@ -42,10 +42,12 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
+import { parseTranscript } from '@/domain/transcript'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 
 const D = ptBR.criarDrawer
 const M = ptBR.criar
+const CV = ptBR.conversa
 
 function authed(): SessionState {
   return {
@@ -55,6 +57,11 @@ function authed(): SessionState {
     isRefetching: false,
     refetch: vi.fn(),
   }
+}
+
+/** Sessão ANÔNIMA (Visitante): sem `data`, sem `error`, resolvida. */
+function anon(): SessionState {
+  return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
 }
 
 /** Casca controlada: monta o drawer aberto e expõe o estado open para asseverar fechamento. */
@@ -134,6 +141,108 @@ function drawer() {
   return screen.getByRole('dialog')
 }
 
+// ── Caminho Conversa (#194): stream NDJSON + destilação ─────────────────────────────────────
+type ChatFrame =
+  | { type: 'token'; text: string }
+  | { type: 'recipe'; outcome: 'success' | 'degraded' | 'playful'; recipeId: string | null; advisory: string | null }
+  | { type: 'impossible'; advisory: string | null }
+  | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
+
+/** Controlador de stream NDJSON: enfileira linhas e fecha (queda quando sem terminal). */
+function makeStreamController() {
+  const encoder = new TextEncoder()
+  const queue: Uint8Array[] = []
+  let closed = false
+  let wake: (() => void) | null = null
+  const bump = () => {
+    if (wake) {
+      const w = wake
+      wake = null
+      w()
+    }
+  }
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      while (queue.length === 0 && !closed) await new Promise<void>((res) => (wake = res))
+      if (queue.length > 0) {
+        controller.enqueue(queue.shift()!)
+        return
+      }
+      controller.close()
+    },
+  })
+  return {
+    stream,
+    push(frame: ChatFrame) {
+      queue.push(encoder.encode(JSON.stringify(frame) + '\n'))
+      bump()
+    },
+    close() {
+      closed = true
+      bump()
+    },
+  }
+}
+
+type StreamCtrl = ReturnType<typeof makeStreamController>
+type JsonResult = { status: number; body: unknown } | { reject: true }
+
+/**
+ * Mock de `fetch` no shape REAL das rotas do Modo conversa (espelha conversation.test.tsx):
+ * `POST /api/conversations/stream` → ReadableStream NDJSON (ou 429/falha pré-stream);
+ * `POST /api/creation-sessions` → {sessionId}; `GET /api/creation-sessions/{id}` → retomada;
+ * `GET /api/recipes/{id}` → RecipeView (2º GET).
+ */
+function mockConversaFetch(opts: {
+  stream?: StreamCtrl | (() => Promise<StreamCtrl>) | JsonResult
+  createSession?: JsonResult
+  recipes?: JsonResult
+  resume?: JsonResult
+}) {
+  const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
+    const url = String(args[0])
+    const init = args[1] as RequestInit | undefined
+    const method = (init?.method ?? 'GET').toUpperCase()
+    if (url.includes('/api/conversations/stream')) {
+      // ESPELHA a pré-validação da rota (src/app/api/conversations/stream/route.ts): roda
+      // `parseTranscript(body.transcript)` e devolve 400 JSON ANTES de abrir o stream quando o
+      // shape é inválido (notadamente a última fala ≠ 'user' → `ultima_fala_nao_usuario`). Sem
+      // isto o mock aceitaria um re-POST de transcript que termina em 'assistant' (caminho feliz
+      // após um turno de sucesso) que o servidor REAL rejeitaria → 400 pré-stream → `dropped`.
+      const body = JSON.parse(String(init?.body ?? '{}')) as { transcript?: unknown }
+      const parsed = parseTranscript(body.transcript)
+      if (!parsed.ok) {
+        return { ok: false, status: 400, body: null, json: async () => ({ error: parsed.error }) } as unknown as Response
+      }
+      const s = typeof opts.stream === 'function' ? await opts.stream() : opts.stream
+      if (s && 'reject' in s) throw new TypeError('network down')
+      if (s && 'status' in s) {
+        return { ok: s.status >= 200 && s.status < 300, status: s.status, body: null, json: async () => s.body } as unknown as Response
+      }
+      const ctrl = s as StreamCtrl
+      return { ok: true, status: 200, body: ctrl.stream } as unknown as Response
+    }
+    if (url.includes('/api/creation-sessions/') && method === 'GET') {
+      const r = opts.resume ?? { status: 404, body: { error: 'not_found' } }
+      if ('reject' in r) throw new TypeError('network down')
+      return makeResponse(r)
+    }
+    if (url.includes('/api/creation-sessions') && method === 'POST') {
+      const r = opts.createSession ?? { status: 201, body: { sessionId: 'sess-1' } }
+      if ('reject' in r) throw new TypeError('network down')
+      return makeResponse(r)
+    }
+    if (url.includes('/api/recipes/')) {
+      const r = opts.recipes ?? { status: 404, body: { error: 'not_found' } }
+      if ('reject' in r) throw new TypeError('network down')
+      return makeResponse(r)
+    }
+    throw new Error(`fetch não mockado: ${method} ${url}`)
+  })
+  vi.stubGlobal('fetch', impl)
+  return impl
+}
+
 beforeEach(() => {
   sessionState = authed()
 })
@@ -179,15 +288,35 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     expect(drawer()).toHaveAccessibleName(D.tituloPrompt)
   })
 
-  it('D4 — ?resume roteia pro caminho Conversa (placeholder "em breve"), sem quebrar', () => {
+  it('D4 — ?resume roteia pro caminho Conversa (Modo conversa), reidratando a retomada', async () => {
+    // O drawer abre direto no Modo conversa; a retomada (#15) reidrata o transcript via GET.
+    mockConversaFetch({
+      resume: {
+        status: 200,
+        body: {
+          session: { id: 'sess-9', mode: 'conversation', recipeId: null },
+          recipe: null,
+          transcript: [{ role: 'user', content: 'oi de novo', seq: 0 }],
+          advisory: null,
+        },
+      },
+    })
     render(<Harness resumeSessionId="sess-9" />)
-    expect(screen.getByText(D.emBreveConversa)).toBeInTheDocument()
     expect(drawer()).toHaveAccessibleName(D.tituloConversa)
+    // A retomada reidratou o transcript; o placeholder "em breve" NÃO aparece mais.
+    expect(await screen.findByText('oi de novo')).toBeInTheDocument()
+    expect(screen.queryByText(D.emBreveConversa)).toBeNull()
   })
 
-  it('D4b — ?mode=conversa roteia pro caminho Conversa (placeholder), sem quebrar', () => {
+  it('D4b — ?mode=conversa abre no Modo conversa idle: input do chat e SEM <h1> (invariante)', () => {
     render(<Harness conversaHint />)
-    expect(screen.getByText(D.emBreveConversa)).toBeInTheDocument()
+    expect(drawer()).toHaveAccessibleName(D.tituloConversa)
+    // O chat está disponível (input + intro); o placeholder antigo sumiu.
+    expect(screen.getByLabelText(CV.inputLabel)).toBeInTheDocument()
+    expect(screen.getByText(D.conversaIntro)).toBeInTheDocument()
+    expect(screen.queryByText(D.emBreveConversa)).toBeNull()
+    // INVARIANTE (#194): Conversa idle NÃO tem <h1> (o SheetTitle é o <h2> do diálogo).
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 
   it('D5 — Prompt aberto ponta-a-ponta: gerando → gerada; "Ver receita" leva ao detalhe', async () => {
@@ -354,5 +483,170 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     expect(
       screen.getByRole('button', { name: new RegExp(enUS.criarDrawer.metodoPromptTitulo) }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('CreateDrawer — caminho Conversa (#194)', () => {
+  /** Digita no input do chat e clica em Enviar. */
+  async function enviar(user: ReturnType<typeof userEvent.setup>, text: string) {
+    await user.type(screen.getByLabelText(CV.inputLabel), text)
+    await user.click(screen.getByRole('button', { name: CV.enviar }))
+  }
+
+  it('CD1 — escolher "Conversa" abre o chat (sem <h1> idle); fetch não é chamado até enviar', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockConversaFetch({})
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoConversaTitulo) }))
+
+    expect(drawer()).toHaveAccessibleName(D.tituloConversa)
+    expect(screen.getByLabelText(CV.inputLabel)).toBeInTheDocument()
+    // INVARIANTE (#194): Conversa idle NÃO tem <h1>.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // Nenhum fetch até o usuário enviar uma mensagem.
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('CD2 — enviar mensagem usa o stream NDJSON e a IA responde com tokens incrementais', async () => {
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    const fetchMock = mockConversaFetch({
+      stream: ctrl,
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+    })
+    render(<Harness conversaHint />)
+
+    await enviar(user, 'quero um feijão tropeiro')
+    expect(await screen.findByText('quero um feijão tropeiro')).toBeInTheDocument()
+
+    // Tokens incrementais visíveis ANTES de qualquer terminal.
+    ctrl.push({ type: 'token', text: 'Vamos ' })
+    expect(await screen.findByText('Vamos')).toBeInTheDocument()
+    ctrl.push({ type: 'token', text: 'fazer feijão.' })
+    expect(await screen.findByText('Vamos fazer feijão.')).toBeInTheDocument()
+    ctrl.close()
+
+    // O POST do stream foi exercido (NDJSON reusado, não reimplementado).
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/conversations/stream'))).toBe(true)
+  })
+
+  it('CD3 — a Receita aparece como TERMINAL do turno de sucesso (nome = único <h1>; Ver receita; sem banner de queda)', async () => {
+    // MODELO correto (espelha a ConversaFocusedView, #104): a Receita NÃO é destilada por um
+    // botão autônomo — ela cai como TERMINAL do turno quando o servidor manda o frame `recipe`.
+    // O transcript de um turno de SUCESSO termina em 'assistant'; re-POSTá-lo daria 400
+    // (`ultima_fala_nao_usuario`). Por isso NÃO há botão "Destilar receita" no caminho feliz.
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    const fetchMock = mockConversaFetch({
+      stream: ctrl,
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+      recipes: { status: 200, body: baseView({ id: 'r-1', name: 'Feijão tropeiro', origin: 'ai_chat' }) },
+    })
+    render(<Harness conversaHint />)
+
+    // Turno único: a resposta da IA + o terminal `recipe` (recipeId) chegam no MESMO turno → o
+    // servidor decide o desfecho ao FIM do turno e a Receita vira o herói.
+    await enviar(user, 'quero um feijão tropeiro')
+    ctrl.push({ type: 'token', text: 'Beleza.' })
+    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl.close()
+
+    expect(await screen.findByText(CV.resultadoSucesso)).toBeInTheDocument()
+    // O nome da Receita é o ÚNICO <h1>.
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Feijão tropeiro')
+    // "Ver e publicar receita" leva ao detalhe (#59) — não re-gera.
+    expect(screen.getByRole('link', { name: CV.verReceita })).toHaveAttribute('href', '/recipes/r-1')
+    // NÃO há botão autônomo de destilar (a Receita já aparece no terminal do turno).
+    expect(screen.queryByRole('button', { name: D.destilarReceita })).toBeNull()
+    // Caminho feliz: SEM banner de queda (o re-POST quebrado não acontece mais).
+    expect(screen.queryByText(CV.quedaTitulo)).toBeNull()
+    // Sanidade: UM ÚNICO POST de stream (o turno) — sem re-destilar redundante.
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/conversations/stream'))).toHaveLength(1)
+  })
+
+  it('CD4 — cap 429 (limite_geracao) no stream: mensagem amigável, sem GET de Receita (cap intacto)', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockConversaFetch({
+      stream: { status: 429, body: { error: 'limite_geracao' } },
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+    })
+    render(<Harness conversaHint />)
+
+    await enviar(user, 'algo')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(M.erroLimiteGeracao)
+    // 429 barra ANTES da IA → nunca toca o GET da Receita (não consumiu cap).
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+  })
+
+  it('CD5 — QUEDA (stream fecha sem terminal): aviso DISTINTO + Retomar', async () => {
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    mockConversaFetch({ stream: ctrl, createSession: { status: 201, body: { sessionId: 'sess-1' } } })
+    render(<Harness conversaHint />)
+
+    await enviar(user, 'algo')
+    ctrl.push({ type: 'token', text: 'Comece' })
+    await screen.findByText('Comece')
+    ctrl.close() // sem frame terminal → queda
+
+    expect(await screen.findByText(CV.quedaTitulo)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: CV.retomar })).toBeInTheDocument()
+    expect(screen.queryByText(CV.erroGeracao)).toBeNull()
+  })
+
+  it('CD6 — ESC DURANTE o stream NÃO fecha o drawer (aberto e bloqueante); resolve no mesmo drawer', async () => {
+    const user = userEvent.setup()
+    const ctrl = makeStreamController()
+    mockConversaFetch({
+      stream: ctrl,
+      createSession: { status: 201, body: { sessionId: 'sess-1' } },
+      recipes: { status: 200, body: baseView({ id: 'r-1', origin: 'ai_chat' }) },
+    })
+    render(<Harness conversaHint />)
+
+    await enviar(user, 'algo')
+    // Em voo (streaming): o input fica travado (fieldset disabled).
+    await waitFor(() => expect(screen.getByLabelText(CV.inputLabel)).toBeDisabled())
+
+    // ESC com o stream in-flight: o dismiss é bloqueado.
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    // Resolve dentro do mesmo drawer.
+    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
+    ctrl.close()
+    expect(await screen.findByText(CV.resultadoSucesso)).toBeInTheDocument()
+  })
+
+  it('CD7 — en-US: rótulos do chat seguem o locale (paridade i18n, ADR-0001)', () => {
+    render(<Harness locale="en-US" conversaHint />)
+    expect(drawer()).toHaveAccessibleName(enUS.criarDrawer.tituloConversa)
+    expect(screen.getByLabelText(enUS.conversa.inputLabel)).toBeInTheDocument()
+    expect(screen.getByText(enUS.criarDrawer.conversaIntro)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+  })
+
+  it('CD8 — Visitante (anônimo): CTA "precisa entrar" → /sign-in, SEM input de chat, SEM <h1>, SEM banner de queda', async () => {
+    // Sem o guard de sessão, anônimo abriria o chat, mandaria mensagem → 401 pré-stream →
+    // `dropped` (loop de "queda" enganoso). O guard espelha os outros 2 caminhos do MESMO drawer.
+    sessionState = anon()
+    const fetchMock = mockConversaFetch({})
+    render(<Harness conversaHint />)
+
+    // A CTA "precisa entrar" aparece com link para /sign-in.
+    expect(screen.getByText(CV.precisaEntrar)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // O chat NÃO está disponível para o Visitante.
+    expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()
+    // INVARIANTE (#194): a CTA usa <p>, NÃO <h1> — Conversa idle não tem <h1>.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // NÃO aparece o banner de queda (o anônimo nunca chega a postar).
+    expect(screen.queryByText(CV.quedaTitulo)).toBeNull()
+    // Nenhum fetch foi disparado (o guard barra antes de qualquer rede).
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
