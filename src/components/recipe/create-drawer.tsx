@@ -18,7 +18,7 @@
  * Reabrir o drawer RESETA o wizard (paridade com o protótipo) via `key` no conteúdo interno —
  * assim trocar de método/gerar/voltar ao picker é estado local, sem vazar entre aberturas.
  */
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useLocale } from '@/i18n/provider'
 import {
   Sheet,
@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { CreateStructuredExperience } from './create-structured-experience'
+import { CreateStructuredWizard } from './create-structured-wizard'
 
 /** Caminho escolhido no método-picker. `null` = ainda no picker. */
 type Method = null | 'estruturado' | 'prompt' | 'conversa'
@@ -63,6 +64,12 @@ export function CreateDrawer({
   // ESC / pointer-down-outside / o `onOpenChange` do X e bloqueamos o dismiss enquanto `generating`.
   const [generating, setGenerating] = useState(false)
 
+  // #193: o wizard estruturado registra um handler de "voltar" STEP-AWARE (passo>0 volta um
+  // passo; passo 0 volta ao método-picker) e o stepper a renderizar no header. O `‹` do header
+  // delega ao handler quando há um; senão volta ao picker. `null` = sem wizard ativo.
+  const [wizardBack, setWizardBack] = useState<(() => void) | null>(null)
+  const [stepNode, setStepNode] = useState<ReactNode>(null)
+
   // Só REPASSA o dismiss quando NÃO está gerando. O X (`SheetClose`) e qualquer outro caminho
   // chamam `onOpenChange` — abrir sempre passa; fechar é engolido durante a geração.
   const handleOpenChange = (next: boolean) => {
@@ -91,8 +98,21 @@ export function CreateDrawer({
     if (open) {
       setMethod(seededMethod())
       setNonce((n) => n + 1)
+      // Reabrir limpa o chrome do wizard (handler/stepper) — a remontagem o re-registra.
+      setWizardBack(null)
+      setStepNode(null)
     }
   }
+
+  // Voltar ao método-picker pelo header: zera o estado e o chrome do wizard.
+  function voltarParaPicker() {
+    setMethod(null)
+    setWizardBack(null)
+    setStepNode(null)
+  }
+
+  // O `‹` do header delega ao back STEP-AWARE do wizard quando ativo; senão volta ao picker.
+  const handleHeaderBack = wizardBack ?? voltarParaPicker
 
   const headerTitle =
     method === null
@@ -126,28 +146,36 @@ export function CreateDrawer({
           if (generating) e.preventDefault()
         }}
       >
-        <SheetHeader className="flex flex-row items-start gap-3">
-          {hasBack && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={d.voltar}
-              onClick={() => setMethod(null)}
-              className="-ml-2 shrink-0"
-            >
-              ‹
-            </Button>
-          )}
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-brand-ink">
-              {d.kicker}
-            </span>
-            <SheetTitle className="font-display text-xl font-semibold tracking-tight text-fg">
-              {headerTitle}
-            </SheetTitle>
-            <SheetDescription className="sr-only">{d.descricaoAcessivel}</SheetDescription>
+        <SheetHeader className="flex flex-col gap-0">
+          <div className="flex flex-row items-start gap-3">
+            {hasBack && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={d.voltar}
+                // #193 (ADR-0021 dec.5 "aberto e bloqueante"): o `‹` também trava enquanto a
+                // geração corre — clicar desmontaria o wizard/inner e ORFANARIA o
+                // POST /api/generations (igual ao ESC/scrim/X, já bloqueados via `generating`).
+                disabled={generating}
+                onClick={handleHeaderBack}
+                className="-ml-2 shrink-0"
+              >
+                ‹
+              </Button>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <span className="text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-brand-ink">
+                {d.kicker}
+              </span>
+              <SheetTitle className="font-display text-xl font-semibold tracking-tight text-fg">
+                {headerTitle}
+              </SheetTitle>
+              <SheetDescription className="sr-only">{d.descricaoAcessivel}</SheetDescription>
+            </div>
           </div>
+          {/* Stepper do wizard estruturado (#193) — reportado pelo componente interno. */}
+          {stepNode}
         </SheetHeader>
 
         {/* Método-picker (3 cards). Escolher um card troca o estado local — não navega. */}
@@ -188,12 +216,20 @@ export function CreateDrawer({
           />
         )}
 
-        {/* Caminhos diferidos (#2/#3) — placeholders. A semeadura roteia até aqui sem quebrar. */}
+        {/* Formulário estruturado (#193) — wizard de 3 passos que monta o Briefing e gera via o
+            caminho `structured` (POST /api/generations). Reusa o motor de geração/result/cap/erro
+            do spine (`useRecipeGeneration` + `GenerationResultRegion`); o `‹` do header delega ao
+            back step-aware do wizard e o stepper sobe pro header. `key` remonta a cada abertura. */}
         {method === 'estruturado' && (
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
-            <p className="font-medium text-fg">{d.emBreve}</p>
-            <p className="text-sm text-muted">{d.emBreveEstruturado}</p>
-          </div>
+          <CreateStructuredWizard
+            key={`estruturado-${nonce}`}
+            onExit={voltarParaPicker}
+            // `setState` com função-valor: embrulha (senão React trataria o handler como updater).
+            // `null` zera o chrome (sem wizard ativo) → o `‹` volta ao método-picker.
+            onBackHandlerChange={(h) => setWizardBack(h ? () => h : null)}
+            onStepLabelChange={setStepNode}
+            onLoadingChange={setGenerating}
+          />
         )}
         {method === 'conversa' && (
           <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">

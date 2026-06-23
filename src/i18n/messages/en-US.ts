@@ -349,10 +349,56 @@ export const enUS: Messages = {
     metodoPromptDesc: 'Describe the dish all at once and generate it right away. No back and forth.',
     metodoConversaTitulo: 'Chat',
     metodoConversaDesc: 'Chat with the AI until the recipe is just the way you want.',
-    // Placeholders for the paths not yet shipped (#2/#3).
+    // Placeholder for the path not yet shipped (#3 Chat). The Structured form is now the real
+    // wizard (#193) — no placeholder for it anymore.
     emBreve: 'Coming soon',
-    emBreveEstruturado: 'The structured form is coming here soon.',
     emBreveConversa: 'Chat mode is coming here soon.',
+  },
+  // Structured-form wizard inside the drawer (#193, ADR-0021) — 3 steps that build the Briefing.
+  // Submission REUSES the `structured` path of POST /api/generations (same payload/Briefing) and
+  // the spine's cap/error/focus states (#191). The header stepper shows progress; Back preserves
+  // state. Result/error/View-recipe LABELS REUSE `criar.*` (same result pipeline).
+  criarWizard: {
+    // Stepper steps (index 0..2). Short names to fit the header.
+    passoIngredientes: 'Ingredients',
+    passoCozinha: 'Cuisine',
+    passoDetalhes: 'Details',
+    passoLabel: 'Step {n} of 3',
+    // Footer.
+    continuar: 'Continue',
+    gerar: 'Generate recipe',
+    // Step 1 — Ingredients.
+    ingredientesTitulo: 'Ingredients',
+    ingredientesIntro:
+      'List them all at once or add them one by one — you can go back and adjust any item.',
+    modoUmAUm: 'One by one',
+    modoDeUmaVez: 'All at once',
+    modoIngredientesLabel: 'How to enter ingredients',
+    itemPosicao: 'Ingredient {atual} of {total}',
+    itemAnterior: 'Previous ingredient',
+    itemProximo: 'Next ingredient',
+    irParaItem: 'Go to ingredient {n}',
+    adicionarOutro: 'Add another',
+    bulkLabel: 'List the ingredients',
+    bulkPlaceholder:
+      'One ingredient per line or separated by commas\ne.g., 2 cups of cornmeal, 1 onion, 200 g of guava paste',
+    bulkDistincao:
+      'One ingredient per line or separated by commas — the AI splits quantity, unit, and item.',
+    // Step 2 — Cuisine + Restrictions.
+    cozinhaTitulo: 'Cuisine',
+    cozinhaIntro: 'Where does the seasoning come from? Optional.',
+    restricoesTitulo: 'Dietary restrictions',
+    restricoesIntro: 'Mark what the recipe must respect. Declared, not verified.',
+    // Step 3 — Details.
+    porcoesTitulo: 'Servings',
+    porcoesMenos: 'Fewer servings',
+    porcoesMais: 'More servings',
+    dificuldadeTitulo: 'Difficulty',
+    // Short label per difficulty level (1..5) — wizard chips.
+    dificuldadeNiveis: ['Very easy', 'Easy', 'Medium', 'Hard', 'Very hard'],
+    observacoesTitulo: 'Notes',
+    observacoesPlaceholder:
+      'Anything else? e.g., no chili, freezes well, very creamy texture…',
   },
   conversa: {
     titulo: 'Chat with the AI',

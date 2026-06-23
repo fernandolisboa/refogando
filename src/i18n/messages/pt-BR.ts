@@ -374,10 +374,58 @@ export const ptBR = {
     metodoPromptDesc: 'Descreva o prato de uma vez e gere na hora. Sem idas e vindas.',
     metodoConversaTitulo: 'Conversa',
     metodoConversaDesc: 'Converse com a IA até a receita ficar do seu jeito.',
-    // Placeholders dos caminhos ainda não entregues (#2/#3).
+    // Placeholder do caminho ainda não entregue (#3 Conversa). O Formulário estruturado já é o
+    // wizard real (#193) — não há mais placeholder dele.
     emBreve: 'Em breve',
-    emBreveEstruturado: 'O formulário estruturado chega em breve por aqui.',
     emBreveConversa: 'O modo Conversa chega em breve por aqui.',
+  },
+  // Wizard do Formulário estruturado dentro do drawer (#193, ADR-0021) — 3 passos que montam o
+  // Briefing. A submissão REUSA o caminho `structured` de POST /api/generations (mesmo payload/
+  // Briefing) e os estados de cap/erro/foco do spine (#191). O stepper no header mostra o
+  // progresso; Voltar preserva o estado. Os RÓTULOS de resultado/erro/Ver receita REUSAM
+  // `criar.*` (mesmo pipeline de resultado). Seção própria (folhas string/array, sem aninhar —
+  // o tipo Messages é raso por seção).
+  criarWizard: {
+    // Passos do stepper (índice 0..2). Nomes curtos pra caberem no header.
+    passoIngredientes: 'Ingredientes',
+    passoCozinha: 'Cozinha',
+    passoDetalhes: 'Detalhes',
+    passoLabel: 'Passo {n} de 3',
+    // Rodapé.
+    continuar: 'Continuar',
+    gerar: 'Gerar receita',
+    // Passo 1 — Ingredientes.
+    ingredientesTitulo: 'Ingredientes',
+    ingredientesIntro:
+      'Liste tudo de uma vez ou adicione um a um — você pode voltar e ajustar qualquer item.',
+    modoUmAUm: 'Um a um',
+    modoDeUmaVez: 'De uma vez',
+    modoIngredientesLabel: 'Como informar os ingredientes',
+    itemPosicao: 'Ingrediente {atual} de {total}',
+    itemAnterior: 'Ingrediente anterior',
+    itemProximo: 'Próximo ingrediente',
+    irParaItem: 'Ir para o ingrediente {n}',
+    adicionarOutro: 'Adicionar outro',
+    bulkLabel: 'Liste os ingredientes',
+    bulkPlaceholder:
+      'Um ingrediente por linha ou separados por vírgula\nEx.: 2 xícaras de fubá, 1 cebola, 200 g de goiabada',
+    bulkDistincao:
+      'Um ingrediente por linha ou separados por vírgula — a IA separa quantidade, unidade e item.',
+    // Passo 2 — Cozinha + Restrições.
+    cozinhaTitulo: 'Cozinha',
+    cozinhaIntro: 'De onde vem o tempero? Opcional.',
+    restricoesTitulo: 'Restrições alimentares',
+    restricoesIntro: 'Marque o que a receita precisa respeitar. Declarado, não verificado.',
+    // Passo 3 — Detalhes.
+    porcoesTitulo: 'Porções',
+    porcoesMenos: 'Menos porções',
+    porcoesMais: 'Mais porções',
+    dificuldadeTitulo: 'Dificuldade',
+    // Rótulo curto por nível de dificuldade (1..5) — chips do wizard.
+    dificuldadeNiveis: ['Muito fácil', 'Fácil', 'Médio', 'Difícil', 'Muito difícil'],
+    observacoesTitulo: 'Observações',
+    observacoesPlaceholder:
+      'Algo a mais? Ex.: sem pimenta, rende bem congelado, ponto bem cremoso…',
   },
   conversa: {
     titulo: 'Conversar com a IA',
