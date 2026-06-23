@@ -147,8 +147,16 @@ export function CreateStructuredExperience({
   // receita" (a Busca nunca gera sozinha). É só uma SEMENTE inicial: o campo segue editável e
   // "Criar outra receita" o zera como qualquer outro estado.
   initialFreeText,
+  // #191 (ADR-0021): quando montado DENTRO do drawer "Nova receita" no caminho Prompt aberto, o
+  // método já foi escolhido no método-picker — o modo de entrada é FIXO em `free_text` e o toggle
+  // interno (Estruturado ↔ Prompt aberto) some (`hideModeToggle`). Defaults preservam o
+  // comportamento da /create (modo derivado da semente, toggle visível) — sem regressão.
+  forceMode,
+  hideModeToggle = false,
 }: {
   initialFreeText?: string
+  forceMode?: Mode
+  hideModeToggle?: boolean
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.criar
@@ -161,8 +169,9 @@ export function CreateStructuredExperience({
   // ela vazaria pro outro ramo, onde não faz sentido. Só error/errorKey vazam (o resultado
   // some no `!isResult`); os campos/freeText são preservados de propósito.
   // #166: com `?q` presente, a semente abre no Prompt aberto com o termo já no campo.
+  // #191: `forceMode` (do drawer) tem precedência sobre a semente para o modo inicial.
   const seed = initialFreeText?.trim() ?? ''
-  const [mode, setMode] = useState<Mode>(seed !== '' ? 'free_text' : 'structured')
+  const [mode, setMode] = useState<Mode>(forceMode ?? (seed !== '' ? 'free_text' : 'structured'))
   const [freeText, setFreeText] = useState(seed)
 
   const [cozinha, setCozinha] = useState('')
@@ -526,8 +535,9 @@ export function CreateStructuredExperience({
           ativo/inativo com padding idêntico ⇒ sem salto; `role="group"` + rótulo visível +
           `aria-pressed`). Fica FORA do `<form>`/`<fieldset disabled>` do loading: trocar de
           modo durante a geração é benigno (não dispara fetch; o submit do ramo certo já está
-          travado pelo fieldset). Some no resultado. */}
-      {!isResult && (
+          travado pelo fieldset). Some no resultado. #191: oculto no drawer (`hideModeToggle`) —
+          lá o método já foi escolhido no método-picker. */}
+      {!isResult && !hideModeToggle && (
         <SortToggle<Mode>
           value={mode}
           onChange={trocarModo}

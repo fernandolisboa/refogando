@@ -68,6 +68,10 @@ import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
 
+// #191 (ADR-0021): o stream de conversa + a destilação podem durar mais que o default de 10s do
+// Vercel Hobby (kill → erro neutro ambíguo). 60s dá folga. Reversível (dica de plataforma).
+export const maxDuration = 60
+
 // Frames do contrato NDJSON. O {type:'recipe'} espelha o 201 de /api/generations.
 type TerminalFrame =
   | {

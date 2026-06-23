@@ -70,6 +70,11 @@ import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
 
+// #191 (ADR-0021): geração `structured`/`free_text` é bloqueante (~8–15s, opus). Sem
+// `maxDuration`, o default de 10s do Vercel Hobby pode matar uma chamada longa e devolvê-la
+// como erro neutro ambíguo. 60s dá folga. Reversível (dica de plataforma, não regra de domínio).
+export const maxDuration = 60
+
 // Faixa de comprimento do texto livre (#88, decisão reversível). A validação roda ANTES
 // do seam, em AMBAS as bordas:
 //  - MIN: recusa o que é curto demais para gerar (vazio, espaços, uma palavra solta).

@@ -28,6 +28,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
 import { cn } from '@/lib/utils'
@@ -40,6 +41,11 @@ export function SiteHeader() {
   // Drawer mobile (#163): estado controlado pra fechar ao navegar (clicar num link) sem depender
   // só do clique-fora. O Sheet é o Radix Dialog por baixo; o controle vive aqui no header.
   const [menuOpen, setMenuOpen] = useState(false)
+  // Drawer "Nova receita" (#191, ADR-0021): "Criar" no nav ABRE este drawer por cima da tela
+  // atual (sem navegar pra /create — o contexto fica atrás). É um Sheet independente do menu
+  // mobile acima. Sem deep-links aqui (abre limpo no método-picker); a semeadura por
+  // `?q`/`?resume`/`?mode=conversa` é trabalho do shell `/create`.
+  const [createOpen, setCreateOpen] = useState(false)
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto do
   // /recipes público (feed da comunidade, #103): este link é o espaço privado do dono.
   const authed = !session.isPending && !session.error && !!session.data
@@ -70,15 +76,19 @@ export function SiteHeader() {
       </Link>,
     )
 
-  const ctaLink = (wrap: (node: React.ReactNode) => React.ReactNode) =>
-    wrap(
-      <Link
-        href="/create"
-        className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
-      >
-        {messages.nav.create}
-      </Link>,
-    )
+  // "Criar" ABRE o drawer (#191) — não navega. No drawer mobile, primeiro FECHA o menu (o
+  // SheetClose embrulha o botão) e o seu onClick abre o drawer de criação. No desktop é um botão
+  // direto. Mesmo visual de CTA leve (borda em páprica) de antes.
+  const ctaButton = (
+    <button
+      type="button"
+      onClick={() => setCreateOpen(true)}
+      className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
+    >
+      {messages.nav.create}
+    </button>
+  )
+  const ctaLink = (wrap: (node: React.ReactNode) => React.ReactNode) => wrap(ctaButton)
 
   const identity = (node: React.ReactNode) => node
   const inSheet = (node: React.ReactNode) => <SheetClose asChild>{node}</SheetClose>
@@ -140,6 +150,10 @@ export function SiteHeader() {
           </SheetContent>
         </Sheet>
       </Container>
+
+      {/* Drawer "Nova receita" (#191) — controlado pelo header; aberto pelo botão "Criar" do nav
+          (desktop e mobile). Renderiza num Portal (Radix Dialog), por cima da chrome. */}
+      <CreateDrawer open={createOpen} onOpenChange={setCreateOpen} />
     </header>
   )
 }
