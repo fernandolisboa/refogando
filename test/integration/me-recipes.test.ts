@@ -26,10 +26,13 @@ async function seedOwn(input: {
   visibility?: 'private' | 'public'
   resultKind?: 'success' | 'degraded' | 'playful'
   lineageKind?: 'regenerated' | 'edited' | null
+  // #231: locale original (default pt-BR) + slug per-locale opcional — pra testar o slug do DTO.
+  originalLocale?: string
+  slug?: string | null
 }): Promise<string> {
   const id = await seedRecipe({
     origin: 'ai_structured',
-    originalLocale: 'pt-BR',
+    originalLocale: input.originalLocale ?? 'pt-BR',
     ownerId: input.ownerId,
     visibility: input.visibility ?? 'private',
     resultKind: input.resultKind ?? 'success',
@@ -37,9 +40,10 @@ async function seedOwn(input: {
   })
   await seedTranslation({
     recipeId: id,
-    locale: 'pt-BR',
+    locale: input.originalLocale ?? 'pt-BR',
     titulo: input.titulo,
     provenance: 'escrita_por_pessoa',
+    ...(input.slug !== undefined ? { slug: input.slug } : {}),
   })
   return id
 }
@@ -120,5 +124,33 @@ describe('GET /api/me/recipes — Minhas criações (#61)', () => {
     const res = await getAs(me.headers, 'pt-BR')
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ recipes: [] })
+  })
+
+  // WIRING SQL→DTO do slug (#231, ADR-0020): prova que `recipe_translation.slug` projetado pelo loader
+  // (list-mine.ts, resolvido p/ o requestLocale) chega ao RecipeListItem. Sem este teste, se a projeção
+  // largasse a coluna a suíte ficaria verde (builder puro recebe o slug à mão) e o card do dono cairia
+  // no fallback UUID silenciosamente.
+  it('#231: item carrega o slug do locale pedido; sem tradução no locale → slug ausente', async () => {
+    const me = await seedSessionHeaders({ email: `slug-${crypto.randomUUID()}@ex.com` })
+    // (a) tradução pt-BR COM slug ⇒ item.slug === o slug daquele locale.
+    const comSlug = await seedOwn({ ownerId: me.userId, titulo: 'Minha com slug', slug: 'minha-com-slug' })
+    // (b) original en-US COM slug, mas pedimos pt-BR (sem tradução pt-BR) ⇒ slug do locale ausente.
+    const semNoLocale = await seedOwn({
+      ownerId: me.userId,
+      titulo: 'Only English',
+      originalLocale: 'en-US',
+      slug: 'only-english',
+    })
+
+    const res = await getAs(me.headers, 'pt-BR')
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { recipes: RecipeListItem[] }
+
+    const a = body.recipes.find((r) => r.id === comSlug)
+    expect(a?.slug).toBe('minha-com-slug')
+    const b = body.recipes.find((r) => r.id === semNoLocale)
+    expect(b, 'esperava a Receita só-en-US na lista do dono (sem gate de pool)').toBeDefined()
+    // Sem tradução pt-BR ⇒ o loader não acha slug do requestLocale ⇒ DTO sem slug (fallback UUID).
+    expect(b!.slug).toBeUndefined()
   })
 })

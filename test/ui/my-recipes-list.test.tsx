@@ -210,11 +210,15 @@ describe('MyRecipesList (#61)', () => {
     expect(selos).toHaveLength(1)
   })
 
-  it('T5 — en-US: título de selo traduzido', async () => {
+  it('T5 — en-US: título de selo traduzido + link no segmento [locale] en-US (#231)', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])
     renderList('en-US')
     await waitFor(() => expect(screen.getByText('My recipe')).toBeInTheDocument())
     expect(screen.getByText(enUS.minhasCriacoes.seloPublica)).toBeInTheDocument()
+    // #231 (ADR-0020): o link canônico usa o locale CORRENTE (en-US) no segmento — prova que o
+    // segmento não é um hardcode de pt-BR (sem slug ⇒ fallback por UUID, mas SEMPRE locale-prefixado).
+    const card = screen.getByText('My recipe').closest('a')
+    expect(card?.getAttribute('href')).toMatch(/^\/en-US\/recipes\//)
   })
 })
