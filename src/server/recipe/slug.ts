@@ -32,8 +32,9 @@ import { freezeSlug } from '@/domain/recipe-slug'
  * locale, mesmo instante). A postura escolhida é ACEITA-FALHA-ROLLBACK (sem retry implícito aqui):
  * em TODAS as 5 vias de insert o `slug` faz parte do MESMO `insert(...).values({...slug...})`, então
  * um 23505 dá ROLLBACK do insert INTEIRO — NUNCA grava uma linha com `slug` NULL. Logo o cenário de
- * "NULL órfão de corrida" NÃO existe no write-path; o 23505 PROPAGA e o caller/usuário re-tenta (a 2ª
- * tentativa re-lê o `taken`, agora com o slug do vencedor, e a desambiguação determinística sucede).
+ * "NULL órfão de corrida" NÃO existe no write-path. O 23505 PROPAGA — hoje sem retry automático, vira
+ * um 500 cru nas rotas (ensure/create não capturam 23505) — mas a falha é benigna (rollback limpo) e
+ * uma nova chamada re-lê o `taken`, agora com o slug do vencedor, e a desambiguação determinística sucede.
  * Não embutimos retry porque o slug é computado AQUI mas o insert vive na tx do caller — um retry
  * teria de envolver o insert nas 5 vias, espalhando churn sem ganho (a janela é ínfima e a falha é
  * benigna: rollback limpo, nunca corrupção). O backfill idempotente continua como rede para o ACERVO

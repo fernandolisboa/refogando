@@ -23,6 +23,9 @@ export async function applyStaleDecision(
   if (decision.staleTranslations.length === 0 && decision.staleEmbeddings.length === 0) return
   await db.transaction(async (tx) => {
     for (const locale of decision.staleTranslations) {
+      // Slug CONGELADO (#243, ADR-0020 dec.4): este UPDATE marca só `stale`; o `slug` NUNCA entra
+      // no SET — revalidar/re-traduzir não re-deriva a URL canônica. (Igual a curate/edit, owner-edit
+      // e a promoção de procedência: nenhum caminho de UPDATE toca o slug.)
       await tx
         .update(recipeTranslation)
         .set({ stale: true })
