@@ -26,7 +26,7 @@ A "migração de botões inacabada (30 arquivos com `btnPrimary/btnSecondary`)" 
 5. **Avatar fica neutro (não-herb)** — DESVIO CONSCIENTE do protótipo. O `Avatar.jsx` do protótipo usa verde-erva, mas ADR-0015/README dizem que **erva é exclusiva do selo do Catálogo**. A invariante vence. Fácil de reverter se você preferir o herb.
 6. **@handle mantido** sob o nome no perfil (afordância real útil; protótipo não tem). Aditivo, discreto.
 7. **Selects nativos ficam nativos** (carve-out) — sem chevron custom do protótipo (low-pri, evita mexer em admin). **Avatar de domínio fica à mão** (carve-out, sem Radix swap).
-8. **Remover emoji `✨`** dos selos de imagem IA (`imagemSeloIa`, `imagemGerar`) — viola a regra "no emoji" do README. Atualiza 2 locales + 2 testes. Reversível; sinalizado.
+8. ~~**Remover emoji `✨`** dos selos de imagem IA (`imagemSeloIa`, `imagemGerar`) — viola a regra "no emoji" do README. Atualiza 2 locales + 2 testes. Reversível; sinalizado.~~ **REVERTIDA / SUPERADA (#215):** o dono reconsiderou — ✨ é convenção de affordance de IA. O ✨ volta ao botão `imagemGerar` e permanece no selo `imagemSeloIa`; a regra "no emoji" do README foi afrouxada pra permitir ✨ em affordances de IA.
 
 ## Mudanças por área
 
@@ -74,7 +74,7 @@ A "migração de botões inacabada (30 arquivos com `btnPrimary/btnSecondary`)" 
 
 ### H. i18n / testes
 - H1. Add `detalhe.voltarBusca` e `perfilPublico.voltar` em `pt-BR.ts` + `en-US.ts` (paridade). 
-- H2. Remover `✨ ` de `imagemSeloIa`/`imagemGerar` nos 2 locales; atualizar `test/ui/recipe-result-item.test.tsx` e `test/ui/recipe-detail.test.tsx`.
+- H2. ~~Remover `✨ ` de `imagemSeloIa`/`imagemGerar` nos 2 locales; atualizar `test/ui/recipe-result-item.test.tsx` e `test/ui/recipe-detail.test.tsx`.~~ **REVERTIDA (#215):** ✨ permanece nas affordances de IA (botão + selo).
 - H3. Conferir paridade de chaves novas en-US.
 
 ## Carve-outs respeitadas (NÃO mexer)

@@ -44,7 +44,7 @@ This system was reverse-engineered from the live product, which is the single so
 
 **Empty/loading/error states are first-class.** Each surface has an initial-neutral hint, a loading line, an empty line, and an error + retry — all written, never blank.
 
-**Emoji.** **None.** The product uses no emoji. Warmth comes from the palette and the serif, not decoration.
+**Emoji.** Avoid emoji as decoration — warmth comes from the palette and the serif. The one sanctioned exception is the ✨ sparkle on **AI affordances** (the "Gerar com IA" button and the "gerada por IA" badge), where ✨ is an established product convention for "this is AI" (revisited in #215; superseded the earlier blanket "no emoji" rule from #207).
 
 ---
 

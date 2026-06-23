@@ -90,9 +90,8 @@ describe('RecipeImageManager — gestão da foto do prato (#130)', () => {
     expect(upload.compareDocumentPosition(remover) & FOLLOWING).toBeTruthy()
   })
 
-  it('#207 imagemGerar sem emoji ✨', () => {
-    expect(M.imagemGerar).toBe('Gerar com IA')
-    expect(M.imagemGerar).not.toContain('✨')
+  it('#215 imagemGerar traz o ✨ (convenção de affordance de IA)', () => {
+    expect(M.imagemGerar).toContain('✨')
   })
 
   it('reviewSuggested (#131) + imagem ⇒ mostra o aviso de revisar a foto', () => {

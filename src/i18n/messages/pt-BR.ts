@@ -230,7 +230,7 @@ export const ptBR = {
     imagemGrande: 'Imagem muito grande. Tente uma menor.',
     imagemErro: 'Não foi possível salvar a foto. Tente de novo.',
     // Geração por IA (#132). {tempo} interpolado no componente via `.replace`.
-    imagemGerar: 'Gerar com IA',
+    imagemGerar: '✨ Gerar com IA',
     imagemGerarComPrompt: 'Gerar com este prompt',
     imagemGerando: 'Gerando…',
     imagemRefinar: 'Refinar o prompt',
