@@ -91,14 +91,15 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(dialog).toContainElement(document.activeElement as HTMLElement)
   })
 
-  it('Visitante: o painel mobile contém a nav (Início/Receitas), Criar e a CONTA (Entrar)', async () => {
+  it('Visitante: o painel mobile contém a nav (Início), Criar e a CONTA (Entrar)', async () => {
     const user = userEvent.setup()
     renderHeader()
     await user.click(screen.getByRole('button', { name: ABRIR }))
     const dialog = await screen.findByRole('dialog')
 
     expect(within(dialog).getByRole('link', { name: ptBR.nav.home })).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.recipes })).toBeInTheDocument()
+    // #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta) no nav.
+    expect(within(dialog).queryByRole('link', { name: ptBR.nav.recipes })).toBeNull()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
     expect(within(dialog).getByRole('button', { name: ptBR.nav.create })).toBeInTheDocument()
     expect(within(dialog).queryByRole('link', { name: ptBR.nav.create })).toBeNull()
@@ -151,7 +152,7 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     await user.click(screen.getByRole('button', { name: ABRIR }))
     const dialog = await screen.findByRole('dialog')
 
-    await user.click(within(dialog).getByRole('link', { name: ptBR.nav.recipes }))
+    await user.click(within(dialog).getByRole('link', { name: ptBR.nav.home }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 

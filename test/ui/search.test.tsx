@@ -16,10 +16,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// #169: a Busca usa useRouter().push (navega à receita após importar). Mock p/ o jsdom (sem
-// AppRouter montado o hook lança "invariant expected app router to be mounted").
+// #169: a Busca usa useRouter().push (navega à receita após importar). #236: usa .replace pra
+// REFLETIR o estado de busca na URL (refino inline). Mock p/ o jsdom (sem AppRouter montado o hook
+// lança "invariant expected app router to be mounted").
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
 // #116: a Busca agora lê useSession só para escolher a DICA INICIAL (anônimo vs logado). Sem

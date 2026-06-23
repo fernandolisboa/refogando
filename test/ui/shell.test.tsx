@@ -60,7 +60,8 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     // Estado inicial: chrome em pt-BR.
     const nav = screen.getByRole('navigation')
     expect(within(nav).getByText('Início')).toBeInTheDocument()
-    expect(within(nav).getByText('Receitas')).toBeInTheDocument()
+    // #236: "Receitas" (índice do feed) FUNDIU na home — "Início" é a Descoberta. Sem link à parte.
+    expect(within(nav).queryByText('Receitas')).not.toBeInTheDocument()
     // Criar PRESENTE na nav; a entrada "Conversar" foi removida (#104 S6 — o Modo Conversa
     // vive dentro de /create agora, não como um slot de nav próprio).
     expect(within(nav).getByText('Criar')).toBeInTheDocument()
