@@ -128,6 +128,8 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(tr.locale).toBe('pt-BR')
     expect(tr.provenance).toBe('automatica_nao_revisada')
     expect(tr.titulo).toBe('Arroz de forno')
+    // Slug por idioma (#229): a geração materializa o slug NA ESCRITA, do título do locale.
+    expect(tr.slug).toBe('arroz-de-forno')
 
     // recipe_ingredient: quantidade é STRING (numeric(10,3)), nunca number.
     const ings = await db

@@ -300,6 +300,16 @@ export const recipeTranslation = pgTable(
     descricao: text('descricao'),
     passos: text('passos').array(),
     notas: text('notas'),
+    // Slug por idioma (#229, ADR-0020): o identificador legível na URL de detalhe
+    // (`/{locale}/recipes/<slug>`, nunca o UUID). Derivado do título DAQUELE locale na
+    // criação, normalizado (recipe-slug.ts), e CONGELADO — renomear/revisar/republicar não
+    // muda a URL; en-US congela a partir do título da MT inicial (estabilidade > beleza).
+    // NULLABLE de propósito: (a) tabela POPULADA em prod ⇒ um NOT NULL sem default quebraria
+    // o deploy; o backfill preenche numa etapa separada (script idempotente). (b) escreve-se a
+    // tradução ANTES de ter slug em alguns caminhos; o slug é materializado por freezeSlug na
+    // borda. A unicidade é por (locale, slug) via índice PARCIAL (WHERE slug IS NOT NULL) —
+    // ortogonal ao recipe_translation_recipe_locale_uq existente.
+    slug: text('slug'),
     provenance: translationProvenanceEnum('provenance').notNull(),
     stale: boolean('stale').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -314,6 +324,14 @@ export const recipeTranslation = pgTable(
   },
   (t) => [
     uniqueIndex('recipe_translation_recipe_locale_uq').on(t.recipeId, t.locale),
+    // Unicidade do slug POR locale (#229, ADR-0020): pt-BR e en-US podem ter o mesmo slug sem
+    // colidir; a colisão dentro de um locale é resolvida por sufixo na borda (disambiguateSlug).
+    // PARCIAL (WHERE slug IS NOT NULL): as linhas que ainda não ganharam slug (antes/durante o
+    // backfill, ou en-US sem tradução) não disputam a unicidade — só as preenchidas. Ortogonal
+    // ao recipe_translation_recipe_locale_uq (este acopla recipe_id+locale, aquele locale+slug).
+    uniqueIndex('recipe_translation_locale_slug_uq')
+      .on(t.locale, t.slug)
+      .where(sql`${t.slug} IS NOT NULL`),
     index('recipe_translation_search_vector_gin').using('gin', t.searchVector),
   ],
 )

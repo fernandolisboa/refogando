@@ -1,6 +1,7 @@
 import { getDb } from '@/server/deps'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { ImportedRecipe } from '@/domain/recipe-import-parse'
+import { slugForNewTranslation } from '@/server/recipe/slug'
 
 /**
  * Persistência transacional da Receita IMPORTADA da web (#165, ADR-0019).
@@ -52,6 +53,10 @@ export async function persistImport(input: PersistImportInput): Promise<PersistI
       })
       .returning({ id: recipe.id })
 
+    // Slug por idioma (#229, ADR-0020 dec.4): congelado na criação, do título do locale de
+    // origem; desambiguado contra os slugs já em uso no locale.
+    const slug = await slugForNewTranslation(tx, { locale: r.originalLocale, title: r.titulo })
+
     await tx.insert(recipeTranslation).values({
       recipeId: createdRecipe.id,
       locale: r.originalLocale,
@@ -59,6 +64,7 @@ export async function persistImport(input: PersistImportInput): Promise<PersistI
       descricao: r.descricao,
       passos: r.passos,
       notas: r.notas,
+      slug,
       provenance: 'automatica_nao_revisada',
     })
 

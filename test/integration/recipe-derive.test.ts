@@ -173,6 +173,37 @@ describe('POST /api/recipes/[id]/derive — Receita DERIVADA (#17)', () => {
     expect(await readState(baseId)).toEqual(baseBefore)
   })
 
+  // (a-slug) Slug por idioma (#229, ADR-0020 dec.4): a DERIVADA é uma receita NOVA — cada tradução
+  // nascente congela um slug PRÓPRIO do seu título, NÃO copia o slug da base (que tomaria o
+  // UNIQUE(locale, slug) da base). Mesmo título ⇒ desambiguação por sufixo, nunca colisão/cópia.
+  it('(a-slug) a derivada ganha slug PRÓPRIO do seu título; mesmo título da base com slug ⇒ desambigua', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'derive-slug@ex.com' })
+    const baseId = await seedCatalogBase() // pt-BR "Pão de queijo"
+    // Materializa o slug da base (como o write-path faria): "pao-de-queijo".
+    await sql`UPDATE recipe_translation SET slug = 'pao-de-queijo' WHERE recipe_id = ${baseId} AND locale = 'pt-BR'`
+
+    // Deriva MANTENDO o título ⇒ mesma slug-base; a derivada NÃO pode copiar nem colidir.
+    const res = await derive(baseId, { ...baseEdits, titulo: 'Pão de queijo' }, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+
+    const [deriv] = await getDb()
+      .select({ slug: recipeTranslation.slug })
+      .from(recipeTranslation)
+      .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, 'pt-BR')))
+    // Slug materializado na criação da derivada, DISTINTO do da base (desambiguado por sufixo).
+    expect(deriv.slug).not.toBeNull()
+    expect(deriv.slug).not.toBe('pao-de-queijo')
+    expect(deriv.slug).toBe('pao-de-queijo-1')
+
+    // A base segue com o slug original — fork não a tocou.
+    const [base] = await getDb()
+      .select({ slug: recipeTranslation.slug })
+      .from(recipeTranslation)
+      .where(and(eq(recipeTranslation.recipeId, baseId), eq(recipeTranslation.locale, 'pt-BR')))
+    expect(base.slug).toBe('pao-de-queijo')
+  })
+
   // (b) derivar PÚBLICA de OUTRO usuário ⇒ mesma forma.
   it('(b) deriva pública de outro usuário ⇒ user_edited/owner=U/edited/parent=base', async () => {
     const { userId: ownerA } = await seedSessionHeaders({ email: 'derive-ownerA@ex.com' })

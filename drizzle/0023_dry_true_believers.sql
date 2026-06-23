@@ -1,0 +1,2 @@
+ALTER TABLE "recipe_translation" ADD COLUMN "slug" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "recipe_translation_locale_slug_uq" ON "recipe_translation" USING btree ("locale","slug") WHERE "recipe_translation"."slug" IS NOT NULL;

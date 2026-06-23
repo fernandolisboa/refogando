@@ -1,6 +1,7 @@
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import { slugForNewTranslation } from '@/server/recipe/slug'
 
 /**
  * Criação de Receita de CATÁLOGO editorial pelo Curador (issue #19, AC1).
@@ -62,6 +63,13 @@ export async function createCatalogRecipe(
       })
       .returning({ id: recipe.id })
 
+    // Slug por idioma (#229, ADR-0020 dec.4): congelado AGORA, na criação, a partir do título
+    // deste locale; desambiguado contra os slugs já em uso no locale (`@/server/recipe/slug`).
+    const slug = await slugForNewTranslation(tx, {
+      locale: input.originalLocale,
+      title: input.titulo,
+    })
+
     await tx.insert(recipeTranslation).values({
       recipeId: r.id,
       locale: input.originalLocale,
@@ -69,6 +77,7 @@ export async function createCatalogRecipe(
       descricao: input.descricao,
       passos: input.passos,
       notas: input.notas,
+      slug,
       provenance: 'escrita_por_pessoa',
     })
 

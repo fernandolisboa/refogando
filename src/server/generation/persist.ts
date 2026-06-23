@@ -10,6 +10,7 @@ import {
   generation,
 } from '@/db/schema'
 import { SCHEMA_VERSION_RECEITA, type CreationMode, type LineageKind } from '@/domain/recipe'
+import { slugForNewTranslation } from '@/server/recipe/slug'
 import type { ClassifyResult } from '@/domain/generation'
 import type { Strength } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
@@ -253,6 +254,10 @@ export async function persistGeneration(
       })
       .returning({ id: recipe.id })
 
+    // Slug por idioma (#229, ADR-0020 dec.4): congelado na criação, do título do locale
+    // original; desambiguado contra os slugs já em uso no locale.
+    const slug = await slugForNewTranslation(tx, { locale: r.originalLocale, title: r.titulo })
+
     await tx.insert(recipeTranslation).values({
       recipeId: createdRecipe.id,
       locale: r.originalLocale,
@@ -260,6 +265,7 @@ export async function persistGeneration(
       descricao: r.descricao,
       passos: r.passos,
       notas: r.notas,
+      slug,
       provenance: 'automatica_nao_revisada',
     })
 

@@ -150,6 +150,7 @@ describe('POST /api/curate/recipes #19 — AC1 create', () => {
         descricao: recipeTranslation.descricao,
         passos: recipeTranslation.passos,
         notas: recipeTranslation.notas,
+        slug: recipeTranslation.slug,
         provenance: recipeTranslation.provenance,
         stale: recipeTranslation.stale,
       })
@@ -159,6 +160,9 @@ describe('POST /api/curate/recipes #19 — AC1 create', () => {
     expect(tr.descricao).toBe('Editorial.')
     expect(tr.passos).toEqual(['Passo 1', 'Passo 2'])
     expect(tr.notas).toBe('Sirva com arroz.')
+    // Slug por idioma (#229): materializado NA CRIAÇÃO (write-path), congelado do título do locale —
+    // não fica NULL esperando o backfill.
+    expect(tr.slug).toBe('feijoada-de-catalogo')
     expect(tr.provenance).toBe('escrita_por_pessoa')
     expect(tr.stale).toBe(false)
 
