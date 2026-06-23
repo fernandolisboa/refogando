@@ -32,6 +32,8 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet'
 import type { GalleryImage } from '@/domain/recipe-read'
+// #223: cap do refino vem do domínio (módulo client-safe: puro, sem DB/IO) — evita drift cliente/servidor.
+import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
 /** Cap (2 MB) — espelha MAX_BYTES da rota; barra cedo um arquivo grande pós-resize. */
@@ -57,9 +59,6 @@ function formatCountdown(ms: number): string {
 
 /** Imagem-preview devolvida por POST .../image/generate (#222/#223): `{ image, basePrompt }`. */
 type PreviewImage = { id: string; url: string; aiGenerated: boolean }
-
-/** Cap do refino (#214/#223) — espelha IMAGE_PROMPT_OVERRIDE_MAX do servidor; barra cedo no client. */
-const REFINO_MAX = 200
 
 export function RecipeImageManager({
   recipeId,
@@ -487,10 +486,12 @@ export function RecipeImageManager({
                   {basePrompt && (
                     <div className="flex flex-col gap-1">
                       <span className="font-medium text-muted">{m.imagemPromptBase}</span>
-                      {/* Base READ-ONLY (um <output>, não um campo editável que posta). */}
-                      <output className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
+                      {/* Base READ-ONLY: <p> simples (não <output>) — evita role=status/aria-live
+                          fazer o leitor de tela anunciar o prompt inteiro ao revelar (a11y, #223).
+                          Não é campo editável e nunca é postado: o cliente só envia o refino. */}
+                      <p className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
                         {basePrompt}
-                      </output>
+                      </p>
                     </div>
                   )}
                   <label className="flex flex-col gap-1">
@@ -498,7 +499,7 @@ export function RecipeImageManager({
                     <textarea
                       value={refino}
                       onChange={(e) => setRefino(e.target.value)}
-                      maxLength={REFINO_MAX}
+                      maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
                       rows={2}
                       placeholder={m.imagemPromptPlaceholder}
                       disabled={busy}

@@ -368,6 +368,41 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect(Number(refino.maxLength)).toBe(200)
   })
 
+  it('#223 o refino RESETA ao fechar o modal: reabrir começa vazio e a auto-geração POSTa {}', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true }, basePrompt: 'Prato: Feijoada.' } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    // 1ª sessão: abre, revela o painel, digita um refino.
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog1 = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog1).getByRole('img')).toBeInTheDocument())
+    await user.click(within(dialog1).getByText(M.imagemRefinar))
+    await user.type(within(dialog1).getByLabelText(M.imagemPromptRotulo), 'em aquarela')
+    expect((within(dialog1).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement).value).toBe('em aquarela')
+
+    // Fecha o modal (o refino deve ser descartado — não pode vazar pra próxima sessão/receita).
+    await user.click(within(dialog1).getByLabelText(M.imagemFechar))
+    await waitFor(() => expect(within(document.body).queryByRole('dialog')).not.toBeInTheDocument())
+
+    const genCallsBeforeReopen = calls.filter((c) => c.url.endsWith('/image/generate')).length
+
+    // Reabre: a auto-geração na reabertura deve POSTar {} (refino zerado), NÃO { prompt: 'em aquarela' }.
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog2 = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog2).getByRole('img')).toBeInTheDocument())
+    const reopenGen = calls.filter((c) => c.url.endsWith('/image/generate'))[genCallsBeforeReopen]
+    expect(JSON.parse(String(reopenGen.body))).toEqual({})
+
+    // E o campo de refino, ao revelar de novo, está vazio.
+    await user.click(within(dialog2).getByText(M.imagemRefinar))
+    expect((within(dialog2).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement).value).toBe('')
+  })
+
   it('#222 cap 429 no modal: mostra o countdown e NÃO chama refresh', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))
