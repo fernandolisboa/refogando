@@ -415,10 +415,12 @@ export function useConversationChat({
         }
       }
 
-      // Stream fechou SEM frame terminal → QUEDA (distinta do frame de erro). A fala parcial do
-      // Assistente vira fala fixa (não some), mas a destilação não concluiu.
+      // Stream fechou SEM frame terminal → QUEDA (distinta do frame de erro). NÃO commita a fala
+      // PARCIAL do Assistente (#203): o transcript LOCAL fica como `t`, terminando em 'user' — assim
+      // `redestilar` re-POSTa um transcript VÁLIDO (parseTranscript exige última fala = 'user') sem
+      // 400 (`ultima_fala_nao_usuario`). O texto parcial some (a destilação não concluiu; o servidor
+      // já persistiu o que houve).
       if (!sawTerminal && mountedRef.current) {
-        if (assistantText) setTranscript([...t, { role: 'assistant', content: assistantText }])
         setLiveAssistant('')
         setStatus('dropped')
       }
