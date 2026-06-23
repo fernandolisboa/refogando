@@ -5,7 +5,7 @@ import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/sel
 import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator, FAKE_IMAGE_USAGE } from '@/server/images/image-generator'
-import { recipe, recipeImage, imageGeneration, appConfig } from '@/db/schema'
+import { recipe, recipeImage, imageGeneration, appConfig, users } from '@/db/schema'
 import { computeImageCost } from '@/domain/image-cost'
 import { DEFAULT_IMAGE_MODEL, type ImageGenCapByRole } from '@/domain/image-gen-config'
 import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
@@ -83,6 +83,13 @@ async function genLedgerRow(userId: string): Promise<{
     .from(imageGeneration)
     .where(eq(imageGeneration.userId, userId))
   return r ?? null
+}
+/** #226: marca o usuário como BLOQUEADO p/ geração-por-IA (espelha o efeito de setImageGenRestriction). */
+async function blockUserImageGen(userId: string, blockerId: string): Promise<void> {
+  await getDb()
+    .update(users)
+    .set({ imageGenBlockedAt: sql`now()`, imageGenBlockedBy: blockerId, imageGenBlockedReason: 'abuso' })
+    .where(eq(users.id, userId))
 }
 /** #134: grava a config de geração no singleton app_config (campos omitidos caem nos DEFAULTs). */
 async function setImageGenConfig(cfg: { enabled?: boolean; model?: string; capByRole?: ImageGenCapByRole }): Promise<void> {
@@ -345,6 +352,51 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
       )
       expect(selRes.status).toBe(200)
       expect(await countGenEvents(userId)).toBe(1) // re-selecionar NÃO adicionou linha
+    })
+  })
+
+  // ── #226: restrição GRANULAR — o Curador bloqueou a geração-por-IA do usuário (ADR-0022 dec.3) ──
+  describe('#226 restrição de conta (geração-por-IA bloqueada)', () => {
+    it('dono BLOQUEADO → 403 geracao_bloqueada; o gerador NÃO é tocado; nenhuma imagem; ledger=0', async () => {
+      const curator = await seedUser({ email: 'cur@block.test', role: 'curador' })
+      const { userId, headers } = await seedSessionHeaders({ email: 'bloqueado@block.test' })
+      const id = await seedOwned(userId)
+      await blockUserImageGen(userId, curator)
+      const throwing = new ThrowingImageGenerator()
+      setImageGenerator(throwing)
+
+      const res = await POST(genReq(id, headers), ctx(id))
+      expect(res.status).toBe(403)
+      await expect(res.json()).resolves.toMatchObject({ error: 'geracao_bloqueada' })
+      expect(throwing.calls).toBe(0) // bloqueio ANTES do seam (como cap/disabled)
+      expect(await countAiGen()).toBe(0) // nenhuma recipe_image criada
+      expect(await countGenEvents(userId)).toBe(0) // nada no ledger
+    })
+
+    it('dono NÃO-bloqueado gera normalmente (o bloqueio é por-usuário, não global)', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'livre@block.test' })
+      const id = await seedOwned(userId)
+
+      const res = await POST(genReq(id, headers), ctx(id))
+      expect(res.status).toBe(200)
+      expect(gen.calls).toBe(1)
+      expect(await countGenEvents(userId)).toBe(1)
+    })
+
+    it('o bloqueio NÃO vaza antes do gate de dono: não-dono numa receita alheia segue 404', async () => {
+      // O DONO está bloqueado; um INTRUSO (não-bloqueado) tenta gerar na receita dele.
+      const curator = await seedUser({ email: 'cur2@block.test', role: 'curador' })
+      const owner = await seedUser({ email: 'dono@block.test' })
+      const id = await seedOwned(owner)
+      await blockUserImageGen(owner, curator)
+      const throwing = new ThrowingImageGenerator()
+      setImageGenerator(throwing)
+      const { headers } = await seedSessionHeaders({ email: 'intruso@block.test' })
+
+      const res = await POST(genReq(id, headers), ctx(id))
+      // Gate de dono ANTES do check de bloqueio ⇒ 404 (não 403): o intruso nunca aprende o bloqueio alheio.
+      expect(res.status).toBe(404)
+      expect(throwing.calls).toBe(0)
     })
   })
 })

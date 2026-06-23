@@ -231,6 +231,14 @@ export const enUS: Messages = {
     imagemGerarErro: "We couldn't generate the image. Try again.",
     // #134: generation turned off by the admin (UI hides the button; covers the toggle-off race).
     imagemGerarDesabilitada: 'AI image generation is currently disabled.',
+    // #226 (ADR-0022 dec.3): the Curator blocked AI image generation for THIS user (confirmed abuse).
+    // Proactive note (hides "Generate with AI"; photo upload still works) + a modal warning
+    // (defense-in-depth on the block-mid-flight race). DISTINCT from `imagemGerarDesabilitada`
+    // (admin global config) — this is the per-ACCOUNT restriction.
+    imagemGerarBloqueadaNota:
+      'AI image generation has been turned off for this account. You can still upload your own photos.',
+    imagemGerarBloqueada:
+      'AI image generation has been turned off for your account. You can still upload your own photos.',
     // 24h SLIDING window (not "today"/calendar day): window-neutral copy.
     imagemLimite: "You've hit the generation limit for now. Frees up in ~{tempo}.",
     // Image studio (#222, ADR-0022): preview modal + re-selectable gallery.
@@ -775,6 +783,17 @@ export const enUS: Messages = {
     erroSemImagem: 'This recipe has no image to remove.',
     erroJaResolvido: 'This report has already been resolved.',
     erroGenerico: 'Could not process the report. Try again.',
+    // #226 (ADR-0022 dec.3 / 1st hook of ADR-0007): the Curator blocks/unblocks AI image generation
+    // for the AUTHOR of the reported recipe (confirmed abuse). Only shown when there's an owner
+    // (Catalog → no action). Reason is REQUIRED to block (mirrors remove-from-pool).
+    bloquearGeracao: "Block author's image generation",
+    confirmarBloqueio: 'Confirm block',
+    desbloquearGeracao: "Unblock author's image generation",
+    bloqueandoGeracao: 'Blocking…',
+    desbloqueandoGeracao: 'Unblocking…',
+    motivoBloqueioGeracao: 'Reason for the block',
+    motivoBloqueioPlaceholder: 'Explain why the author loses AI image generation',
+    erroUsuarioNaoEncontrado: "Couldn't find this recipe's author.",
   },
   traducoesStale: {
     titulo: 'Outdated translations',

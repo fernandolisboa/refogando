@@ -66,6 +66,7 @@ export function RecipeImageManager({
   gallery = [],
   reviewSuggested = false,
   aiGenEnabled = true,
+  imageGenBlocked = false,
 }: {
   recipeId: string
   hasImage: boolean
@@ -85,6 +86,14 @@ export function RecipeImageManager({
    * ⇒ esconde a ação "Gerar com IA" (o upload de foto continua). Default `true`. O servidor reimpõe o gate (403).
    */
   aiGenEnabled?: boolean
+  /**
+   * #226 (ADR-0022 dec.3 / 1º gancho do ADR-0007): o Curador BLOQUEOU a geração-de-imagem-por-IA DESTE
+   * usuário (abuso confirmado). `true` ⇒ esconde "Gerar com IA" + mostra uma nota clara (role=status).
+   * DISTINTO de `aiGenEnabled=false` (config-global do admin): este é a restrição por-CONTA. O upload de
+   * foto SEGUE funcionando (a restrição é só sobre a geração-por-IA). Default `false`. O servidor é a
+   * verdade (403 geracao_bloqueada — coberto em `onGenerate` como defesa-em-profundidade).
+   */
+  imageGenBlocked?: boolean
 }) {
   const { messages } = useLocale()
   const m = messages.detalhe
@@ -92,8 +101,9 @@ export function RecipeImageManager({
 
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<ImageError>(null)
-  // #132: geração por IA — erro próprio ('falha'|'limite'|'desabilitada') + countdown no teto.
-  const [genError, setGenError] = useState<null | 'falha' | 'limite' | 'desabilitada'>(null)
+  // #132: geração por IA — erro próprio ('falha'|'limite'|'desabilitada'|'bloqueada') + countdown no teto.
+  // #226: 'bloqueada' = o Curador bloqueou a geração-por-IA deste usuário (defesa-em-profundidade no modal).
+  const [genError, setGenError] = useState<null | 'falha' | 'limite' | 'desabilitada' | 'bloqueada'>(null)
   const [countdown, setCountdown] = useState('')
   // #222: estado do modal de preview.
   const [modalOpen, setModalOpen] = useState(false)
@@ -134,9 +144,12 @@ export function RecipeImageManager({
         setStatus('idle')
         return
       }
-      // #134: geração desligada na config (corrida: desligaram depois do render). 403 → aviso próprio.
+      // 403 → aviso próprio por motivo. #226: o Curador bloqueou a geração-por-IA deste usuário
+      // (`geracao_bloqueada`) — distinto de #134 `geracao_desabilitada` (config-global do admin).
+      // Defesa-em-profundidade: a UI já esconde o botão ao bloqueado, mas o servidor é a verdade.
       if (res.status === 403) {
-        setGenError('desabilitada')
+        const b = (await res.json().catch(() => ({}))) as { error?: string }
+        setGenError(b.error === 'geracao_bloqueada' ? 'bloqueada' : 'desabilitada')
         setStatus('idle')
         return
       }
@@ -346,10 +359,23 @@ export function RecipeImageManager({
         </p>
       )}
 
+      {/* #226 (ADR-0022 dec.3): o Curador BLOQUEOU a geração-de-imagem-por-IA deste usuário (abuso
+          confirmado) ⇒ nota clara (role=status) + esconde "Gerar com IA" abaixo. O upload SEGUE. */}
+      {imageGenBlocked && (
+        <p
+          role="status"
+          className="max-w-[60ch] rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+        >
+          {m.imagemGerarBloqueadaNota}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         {/* #222: "Gerar com IA" abre o MODAL de preview (#207: ação primária, antes do upload).
-            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
-        {aiGenEnabled && (
+            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`).
+            #226: também escondido quando o Curador bloqueou a geração-por-IA deste usuário (a nota
+            acima explica). O upload SEGUE — a restrição é só sobre a geração-por-IA. */}
+        {aiGenEnabled && !imageGenBlocked && (
           <Button type="button" variant="secondary" size="sm" onClick={onOpenModal} disabled={busy}>
             {m.imagemGerar}
           </Button>
@@ -496,6 +522,13 @@ export function RecipeImageManager({
               {genError === 'desabilitada' && (
                 <p role="alert" className="font-medium text-fg">
                   {m.imagemGerarDesabilitada}
+                </p>
+              )}
+              {/* #226: o Curador bloqueou a geração-por-IA deste usuário (defesa-em-profundidade — o
+                  botão já é escondido, mas o servidor é a verdade; cobre a corrida de bloquear no meio). */}
+              {genError === 'bloqueada' && (
+                <p role="alert" className="font-medium text-fg">
+                  {m.imagemGerarBloqueada}
                 </p>
               )}
               {genError === 'falha' && (

@@ -40,6 +40,9 @@ function mockFetch(routes: Record<string, FetchResult | FetchResult[]>) {
 const M = ptBR.moderacao
 const RID = '11111111-1111-1111-1111-111111111111'
 
+const OWNER = '99999999-9999-9999-9999-999999999999'
+
+/** Report SEM dono (Catálogo) — #226: nenhuma ação de bloquear-geração. */
 function oneReport() {
   return {
     reports: [
@@ -52,6 +55,28 @@ function oneReport() {
         reporterId: 'u1',
         status: 'pending',
         createdAt: '2026-06-18T00:00:00.000Z',
+        ownerId: null,
+        ownerImageGenBlocked: false,
+      },
+    ],
+  }
+}
+
+/** #226: report COM dono (comunidade) — habilita a ação de bloquear/desbloquear o autor. */
+function ownedReport(ownerImageGenBlocked = false) {
+  return {
+    reports: [
+      {
+        id: 'r1',
+        recipeId: RID,
+        reason: 'conteúdo impróprio',
+        origin: 'ai_chat',
+        resultKind: 'success',
+        reporterId: 'u1',
+        status: 'pending',
+        createdAt: '2026-06-18T00:00:00.000Z',
+        ownerId: OWNER,
+        ownerImageGenBlocked,
       },
     ],
   }
@@ -220,5 +245,89 @@ describe('ModerationQueue (#63 AC4)', () => {
     expect(within(alert).queryByText(ptBR.system.error)).not.toBeNull()
     await user.click(screen.getByRole('button', { name: ptBR.system.retry }))
     expect(await screen.findByText('conteúdo impróprio')).toBeInTheDocument()
+  })
+
+  // ── #226: bloquear/desbloquear a geração-de-imagem-por-IA do AUTOR ────────────────────
+  it('#226 Catálogo (sem dono): NENHUMA ação de bloquear/desbloquear o autor', async () => {
+    mockFetch({ 'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() } })
+    renderQueue()
+    await screen.findByText('conteúdo impróprio')
+    expect(screen.queryByRole('button', { name: M.bloquearGeracao })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.desbloquearGeracao })).toBeNull()
+  })
+
+  it('#226 com dono não-bloqueado: "Bloquear" exige motivo, POSTa { blocked, reason }, alterna p/ "Desbloquear"', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: ownedReport(false) },
+      [`POST /api/curate/users/${OWNER}/image-gen-restriction`]: {
+        ok: true,
+        status: 200,
+        body: { ok: true },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+
+    // Revela o painel de motivo do bloqueio.
+    await user.click(await screen.findByRole('button', { name: M.bloquearGeracao }))
+    // O confirmar (rótulo distinto, dentro do painel) começa desabilitado sem motivo.
+    const confirmar = screen.getByRole('button', { name: M.confirmarBloqueio })
+    expect(confirmar).toBeDisabled()
+
+    await user.type(screen.getByLabelText(M.motivoBloqueioGeracao), 'gerou imagem abusiva repetidas vezes')
+    // Agora o confirmar habilita; clica.
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/image-gen-restriction'))!
+    expect(String(post[0])).toBe(`/api/curate/users/${OWNER}/image-gen-restriction`)
+    expect((post[1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({
+      blocked: true,
+      reason: 'gerou imagem abusiva repetidas vezes',
+    })
+    // O rótulo alterna para "Desbloquear" (override local pós-sucesso) e o card NÃO some.
+    expect(await screen.findByRole('button', { name: M.desbloquearGeracao })).toBeInTheDocument()
+    expect(screen.getByText('conteúdo impróprio')).toBeInTheDocument()
+  })
+
+  it('#226 com dono bloqueado: "Desbloquear" POSTa { blocked:false } SEM motivo, alterna p/ "Bloquear"', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: ownedReport(true) },
+      [`POST /api/curate/users/${OWNER}/image-gen-restriction`]: {
+        ok: true,
+        status: 200,
+        body: { ok: true },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+
+    await user.click(await screen.findByRole('button', { name: M.desbloquearGeracao }))
+
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/image-gen-restriction'))!
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ blocked: false })
+    expect(await screen.findByRole('button', { name: M.bloquearGeracao })).toBeInTheDocument()
+  })
+
+  it('#226 404 not_found no bloqueio: mensagem de autor-não-encontrado; rótulo NÃO alterna', async () => {
+    mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: ownedReport(false) },
+      [`POST /api/curate/users/${OWNER}/image-gen-restriction`]: {
+        ok: false,
+        status: 404,
+        body: { error: 'not_found' },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+
+    await user.click(await screen.findByRole('button', { name: M.bloquearGeracao }))
+    await user.type(screen.getByLabelText(M.motivoBloqueioGeracao), 'motivo')
+    await user.click(screen.getByRole('button', { name: M.confirmarBloqueio }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroUsuarioNaoEncontrado)
+    // Falhou ⇒ continua não-bloqueado (não virou "Desbloquear").
+    expect(screen.queryByRole('button', { name: M.desbloquearGeracao })).toBeNull()
   })
 })

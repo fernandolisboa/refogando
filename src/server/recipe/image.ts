@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeImage, imageGeneration } from '@/db/schema'
+import { recipe, recipeImage, imageGeneration, users } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
 import type { ImageGenerator } from '@/server/images/image-generator'
 import { computeImageCost, type ImageUsage } from '@/domain/image-cost'
@@ -63,6 +63,7 @@ export type RecipeImageSelectResult = RecipeImageResult | { kind: 'moderated' }
 export type RecipeImageGenResult =
   | { kind: 'ok'; image: GalleryImage; basePrompt: string } // 200 — imagem (preview) + prompt-base read-only
   | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
+  | { kind: 'blocked' } //                            403 — geração-por-IA BLOQUEADA p/ este usuário (#226)
   | { kind: 'disabled' } //                           403 — geração desligada na config (#134)
   | { kind: 'storage' } //                            503 — ImageStore indisponível
   | { kind: 'generator' } //                          503 — geração por IA indisponível
@@ -141,6 +142,13 @@ export async function applyRecipeImageGeneration(input: {
   //    O gate de dono vem ANTES de tocar o gerador (caro) ⇒ anon/não-dono nunca disparam o seam.
   const rows = await loadRecipeRows(db, id)
   if (!rows || rows.recipe.ownerId == null || rows.recipe.ownerId !== userId) return { kind: 'not_found' }
+
+  // 1b. Restrição GRANULAR de geração-por-IA (#226, ADR-0022 dec.3 / 1º gancho do ADR-0007): o
+  //     requester (= o dono, já provado acima) está BLOQUEADO pelo Curador? ⇒ 403 ANTES do seam.
+  //     Defesa-em-profundidade: a UI já esconde a ação ao bloqueado, mas o servidor é a verdade.
+  //     APÓS o gate de dono (404 leak-safe): um não-dono nunca chega aqui ⇒ nunca aprende o bloqueio
+  //     na receita de outrem. É por-USUÁRIO (flag em `users`), não por-receita. SELECT mínimo.
+  if (await isImageGenBlocked(db, userId)) return { kind: 'blocked' }
 
   // 2. Config de geração (#134): geração DESLIGADA ⇒ 403 ANTES de tocar o seam (a UI também esconde).
   const genConfig = await loadImageGenConfig(db)
@@ -364,6 +372,20 @@ export async function applyRecipeGalleryImageDelete(input: {
 }
 
 /**
+ * Restrição GRANULAR de geração-por-IA (#226, ADR-0022 dec.3): o Usuário foi BLOQUEADO pelo Curador?
+ * Lê só `image_gen_blocked_at` em `users` (bloqueado = `≠ null`). SELECT mínimo, usado no caminho de
+ * geração (defesa-em-profundidade APÓS o gate de dono) e na montagem da view do dono (afordância
+ * proativa). É por-USUÁRIO, não por-receita.
+ */
+async function isImageGenBlocked(db: Database, userId: string): Promise<boolean> {
+  const [u] = await db
+    .select({ blockedAt: users.imageGenBlockedAt })
+    .from(users)
+    .where(eq(users.id, userId))
+  return u?.blockedAt != null
+}
+
+/**
  * `created_at` dos EVENTOS de geração do usuário na janela 24h (insumo do teto). Lê do LEDGER
  * imutável `image_generation` (NÃO de `recipe_image`): assim regenerar/substituir/moderar a imagem
  * NÃO devolve o slot — o custo já gasto conta na janela (ADR-0017).
@@ -499,5 +521,12 @@ async function buildView(
   if (!rows) return { kind: 'not_found' }
   // `lineage_id` é NOT NULL no banco; o `?? ''` só satisfaz o tipo opcional do RecipeRow puro.
   const gallery = await loadGallery(db, rows.recipe.lineageId ?? '', rows.recipe.imageId ?? null)
-  return { kind: 'ok', view: resolveRecipeView({ ...rows, requestLocale, viewerId: userId, gallery }) }
+  // #226: a view do dono carrega o flag de bloqueio (owner-gated) pra consistência pós-ação — a UI
+  // esconde "Gerar com IA" se o Curador bloqueou. userId aqui é sempre o dono (esta fn só roda em
+  // caminhos do dono); a flag é por-USUÁRIO, então é o bloqueio do próprio requester=dono.
+  const imageGenBlocked = await isImageGenBlocked(db, userId)
+  return {
+    kind: 'ok',
+    view: resolveRecipeView({ ...rows, requestLocale, viewerId: userId, gallery, imageGenBlocked }),
+  }
 }

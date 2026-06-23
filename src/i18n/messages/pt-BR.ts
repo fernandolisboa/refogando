@@ -244,6 +244,14 @@ export const ptBR = {
     imagemGerarErro: 'Não foi possível gerar a imagem. Tente de novo.',
     // #134: geração desligada pelo admin (a UI esconde o botão; cobre a corrida de desligar no meio).
     imagemGerarDesabilitada: 'A geração de imagem por IA está desativada no momento.',
+    // #226 (ADR-0022 dec.3): o Curador bloqueou a geração-de-imagem-por-IA DESTE usuário (abuso
+    // confirmado). Nota proativa (esconde "Gerar com IA"; o upload de foto segue) + aviso no modal
+    // (defesa-em-profundidade na corrida de bloquear no meio). DISTINTO de `imagemGerarDesabilitada`
+    // (config-global do admin) — aqui é a restrição por-CONTA.
+    imagemGerarBloqueadaNota:
+      'A geração de imagem por IA foi desativada para esta conta. Você ainda pode enviar suas próprias fotos.',
+    imagemGerarBloqueada:
+      'A geração de imagem por IA foi desativada para a sua conta. Você ainda pode enviar suas próprias fotos.',
     // Janela DESLIZANTE de 24h (não "hoje"/dia-calendário): copy neutra à janela.
     imagemLimite: 'Você atingiu o limite de gerações por enquanto. Libera em ~{tempo}.',
     // Estúdio de imagem (#222, ADR-0022): preview-modal + galeria re-selecionável.
@@ -823,6 +831,17 @@ export const ptBR = {
     erroSemImagem: 'Esta receita não tem imagem para remover.',
     erroJaResolvido: 'Este report já foi resolvido.',
     erroGenerico: 'Não foi possível processar o report. Tente de novo.',
+    // #226 (ADR-0022 dec.3 / 1º gancho do ADR-0007): o Curador bloqueia/desbloqueia a geração-de-
+    // imagem-por-IA do AUTOR da receita reportada (abuso confirmado). Só aparece quando há dono
+    // (Catálogo → sem ação). O motivo é OBRIGATÓRIO ao bloquear (espelha o remove-do-pool).
+    bloquearGeracao: 'Bloquear geração de imagem do autor',
+    confirmarBloqueio: 'Confirmar bloqueio',
+    desbloquearGeracao: 'Desbloquear geração de imagem do autor',
+    bloqueandoGeracao: 'Bloqueando…',
+    desbloqueandoGeracao: 'Desbloqueando…',
+    motivoBloqueioGeracao: 'Motivo do bloqueio',
+    motivoBloqueioPlaceholder: 'Explique por que o autor perde a geração de imagem por IA',
+    erroUsuarioNaoEncontrado: 'Não foi possível encontrar o autor desta receita.',
   },
   traducoesStale: {
     titulo: 'Traduções desatualizadas',

@@ -43,7 +43,14 @@ function mockFetch(byMethod: (method: string, url: string) => FetchResult) {
   return { impl, calls }
 }
 
-function renderManager(opts: { hasImage?: boolean; gallery?: GalleryImage[]; aiGenEnabled?: boolean } = {}) {
+function renderManager(
+  opts: {
+    hasImage?: boolean
+    gallery?: GalleryImage[]
+    aiGenEnabled?: boolean
+    imageGenBlocked?: boolean
+  } = {},
+) {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <RecipeImageManager
@@ -51,6 +58,7 @@ function renderManager(opts: { hasImage?: boolean; gallery?: GalleryImage[]; aiG
         hasImage={opts.hasImage ?? false}
         gallery={opts.gallery ?? []}
         aiGenEnabled={opts.aiGenEnabled ?? true}
+        imageGenBlocked={opts.imageGenBlocked ?? false}
       />
     </LocaleProvider>,
   )
@@ -180,6 +188,38 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#134 geração ligada (default): "Gerar com IA" aparece', () => {
     renderManager({ hasImage: false })
     expect(screen.getByText(M.imagemGerar)).toBeInTheDocument()
+  })
+
+  // ── #226: restrição por-conta (o Curador bloqueou a geração-por-IA deste usuário) ─────────────
+  it('#226 imageGenBlocked: esconde "Gerar com IA" + mostra a nota (role=status); upload permanece', () => {
+    renderManager({ hasImage: false, imageGenBlocked: true })
+    expect(screen.queryByText(M.imagemGerar)).not.toBeInTheDocument()
+    const nota = screen.getByText(M.imagemGerarBloqueadaNota)
+    expect(nota).toBeInTheDocument()
+    expect(nota).toHaveAttribute('role', 'status')
+    // O upload (a restrição é só da geração-por-IA) continua disponível.
+    expect(screen.getByText(M.imagemAdicionar)).toBeInTheDocument()
+  })
+
+  it('#226 não-bloqueado (default): "Gerar com IA" aparece e não há nota de bloqueio', () => {
+    renderManager({ hasImage: false })
+    expect(screen.getByText(M.imagemGerar)).toBeInTheDocument()
+    expect(screen.queryByText(M.imagemGerarBloqueadaNota)).not.toBeInTheDocument()
+  })
+
+  it('#226 defesa-em-profundidade: 403 geracao_bloqueada no modal surfa a mensagem própria (≠ desabilitada)', async () => {
+    const user = userEvent.setup()
+    // O botão fica escondido quando imageGenBlocked=true; aqui testamos a CORRIDA (bloquearam no meio):
+    // o usuário não-bloqueado abre o modal e o servidor responde 403 geracao_bloqueada.
+    mockFetch(() => ({ status: 403, body: { error: 'geracao_bloqueada' } }))
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+
+    expect(await screen.findByText(M.imagemGerarBloqueada)).toBeInTheDocument()
+    // NÃO mostra a mensagem de "desabilitada" (config-global) — é um motivo distinto.
+    expect(screen.queryByText(M.imagemGerarDesabilitada)).not.toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   // ── #222: preview-modal ─────────────────────────────────────────────────────────
