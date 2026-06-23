@@ -171,6 +171,22 @@ describe('MyRecipesList (#61)', () => {
     expect(selos).toHaveLength(1)
   })
 
+  it('T8 — #206: receita com imageUrl renderiza <img> (src/alt); sem imageUrl cai no placeholder', async () => {
+    sessionState = authed()
+    mockRecipes([
+      item({ id: 'r-img', name: 'Com foto', imageUrl: 'https://blob.example/foto.jpg' }),
+      item({ id: 'r-noimg', name: 'Sem foto', imageUrl: undefined }),
+    ])
+    const { container } = renderList()
+    expect(await screen.findByText('Com foto')).toBeInTheDocument()
+
+    const img = screen.getByRole('img', { name: 'Com foto' })
+    expect(img).toHaveAttribute('src', 'https://blob.example/foto.jpg')
+
+    // Exatamente UMA <img> (a "Sem foto" cai no placeholder, sem <img>).
+    expect(container.querySelectorAll('img')).toHaveLength(1)
+  })
+
   it('T5 — en-US: título de selo traduzido', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])

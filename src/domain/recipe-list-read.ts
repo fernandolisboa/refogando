@@ -33,6 +33,9 @@ export type RecipeListRow = {
   // Removida-do-pool pela moderação (#18). É dado do PRÓPRIO dono (query owner-scoped, sem
   // vazamento): a lista mostra TUDO que é seu, inclusive o que saiu do acervo público.
   moderationRemovida: boolean
+  // Imagem da receita (#130/#206): `blob_url` PÚBLICO da thumbnail, já gateado por
+  // `moderated_at IS NULL` no loader (espelha feed.ts). `undefined` = sem imagem.
+  imageUrl?: string
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -51,6 +54,8 @@ export type RecipeListItem = {
   updatedAt: string
   // Removida-do-pool (#18): a UI renderiza um selo "fora do acervo" — só o dono vê.
   moderationRemovida: boolean
+  // Imagem da receita (#130/#206): `blob_url` da thumbnail; `undefined` = sem imagem (placeholder).
+  imageUrl?: string
 }
 
 /**
@@ -77,5 +82,6 @@ export function resolveRecipeListItem(
     lineageKind: row.lineageKind,
     updatedAt: row.updatedAt,
     moderationRemovida: row.moderationRemovida,
+    imageUrl: row.imageUrl,
   }
 }

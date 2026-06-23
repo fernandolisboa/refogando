@@ -129,9 +129,19 @@ export function MyRecipesList() {
                   href={`/recipes/${item.id}`}
                   className="flex h-full flex-col rounded-xl border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
                 >
-                  <div className="mb-3 flex aspect-video items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
-                    <ImageIcon className="size-6" strokeWidth={1.5} aria-hidden />
-                  </div>
+                  {item.imageUrl != null ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      referrerPolicy="no-referrer"
+                      className="mb-3 aspect-video w-full rounded-lg border border-border object-cover"
+                    />
+                  ) : (
+                    <div className="mb-3 flex aspect-video items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
+                      <ImageIcon className="size-6" strokeWidth={1.5} aria-hidden />
+                    </div>
+                  )}
                   {badges.length > 0 && (
                     <div className="mb-2.5 flex flex-wrap gap-1.5">
                       {badges.map((s) => (

@@ -1,6 +1,6 @@
-import { eq, desc, inArray } from 'drizzle-orm'
+import { and, eq, desc, inArray, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeTranslation } from '@/db/schema'
+import { recipe, recipeImage, recipeTranslation } from '@/db/schema'
 import { resolveRecipeListItem, type RecipeListItem } from '@/domain/recipe-list-read'
 import type { TranslationRow } from '@/domain/recipe-read'
 
@@ -38,8 +38,15 @@ export async function listMyRecipes(
       originalLocale: recipe.originalLocale,
       updatedAt: recipe.updatedAt,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      // Imagem (#130/#206): LEFT JOIN da thumbnail com o gate público `moderated_at IS NULL`
+      // (espelha feed.ts/#133). Sem casamento (sem imagem ou imagem moderada) ⇒ NULL ⇒ placeholder.
+      imageUrl: recipeImage.blobUrl,
     })
     .from(recipe)
+    .leftJoin(
+      recipeImage,
+      and(eq(recipeImage.id, recipe.imageId), isNull(recipeImage.moderatedAt)),
+    )
     .where(eq(recipe.ownerId, ownerId))
     .orderBy(desc(recipe.updatedAt), desc(recipe.id))
 
@@ -89,6 +96,7 @@ export async function listMyRecipes(
         // `moderation_removed_at NÃO NULL` ⇒ saiu do acervo público (a SELECT-projection é a
         // única mudança; sem migração — a coluna já existe no schema).
         moderationRemovida: r.moderationRemovedAt != null,
+        imageUrl: r.imageUrl ?? undefined,
         translations: byRecipe.get(r.id) ?? [],
       },
       requestLocale,
