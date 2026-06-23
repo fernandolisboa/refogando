@@ -99,7 +99,9 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
 
     expect(within(dialog).getByRole('link', { name: ptBR.nav.home })).toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: ptBR.nav.recipes })).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.create })).toBeInTheDocument()
+    // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
+    expect(within(dialog).getByRole('button', { name: ptBR.nav.create })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('link', { name: ptBR.nav.create })).toBeNull()
     // Área de conta: Visitante vê "Entrar".
     expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toBeInTheDocument()
     // Visitante NÃO vê "Minhas criações" nem "Painel".
@@ -118,7 +120,8 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
       within(dialog).getByRole('link', { name: ptBR.minhasCriacoes.titulo }),
     ).toBeInTheDocument()
     expect(within(dialog).getByRole('link', { name: ptBR.nav.painel })).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.create })).toBeInTheDocument()
+    // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
+    expect(within(dialog).getByRole('button', { name: ptBR.nav.create })).toBeInTheDocument()
     // Conta logada: nome + botão Sair (do AuthSlot reusado).
     expect(within(dialog).getByText('Ana')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: ptBR.nav.signOut })).toBeInTheDocument()

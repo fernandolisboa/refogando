@@ -43,7 +43,7 @@ Isto é UX reorg, não expansão do modelo de domínio: nenhuma migração de sc
 
 - O detalhe perde os blocos inline de **edição** e de **controle de visibilidade**; ganha (no máximo) um **chip de status** de visibilidade não-clicável. Foto e lineage seguem inline.
 - O fluxo **#131** (`imageReviewSuggested`) se mantém: salvar campo visual → modal fecha → o detalhe mostra o banner de revisão de foto inline (a foto não está no modal).
-- **Testes de heading:** os ~8 testes da máquina de um-`h1` continuam válidos (renderizam componentes, não a rota); ganham **uma** asserção nova — após gerar dentro do drawer, o foco vai pro `h1` do nome da receita, sem ser roubado pelo foco inicial do Radix no `SheetContent`.
+- **Testes de heading:** os ~8 testes da máquina de um-`h1` continuam válidos (renderizam componentes, não a rota); ganham **uma** asserção nova — após gerar dentro do drawer, o foco vai pro heading no TOPO da região de resultado (o `criar.titulo`, rebaixado a `<h2>` quando há Receita), sem ser roubado pelo foco inicial do Radix no `SheetContent`. A invariante de **um único `<h1>`** segue preservada à parte: o `<h1>` é o nome da Receita (emitido pelo `RecipeDetailView`), único no documento.
 - **i18n (ADR-0001):** chaves novas do drawer/modal (navegação do wizard, "Refogando sua receita…", rótulos de visibilidade-no-modal, cópia de cap/erro) entram em **pt-BR e en-US** com paridade.
 - **jsdom (testes UI):** qualquer primitiva Radix nova (Dialog central do modal, `ToggleGroup` da visibilidade) precisa dos polyfills (`ResizeObserver`/`PointerCapture`/`scrollIntoView`) em `test/ui/setup.ts` antes do render.
 - **Config:** `maxDuration=60` nas rotas `/api/generations` e `/api/conversations/stream` — reversível.

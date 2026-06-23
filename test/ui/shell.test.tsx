@@ -97,9 +97,10 @@ describe('Shell — troca de locale (seletor no footer) cascateia na chrome', ()
       </LocaleProvider>,
     )
     const nav = screen.getByRole('navigation')
-    const labels = within(nav)
-      .getAllByRole('link')
-      .map((a) => a.textContent)
+    // #191: "Criar" virou um BOTÃO (abre o drawer), então a ordem mistura links + botão. Lê os
+    // itens de nav em ORDEM de DOM (links e botões) para asseverar "Minhas criações" antes de
+    // "Criar".
+    const labels = Array.from(nav.querySelectorAll('a, button')).map((el) => el.textContent)
     const iMinhas = labels.indexOf('Minhas criações')
     const iCriar = labels.indexOf('Criar')
     expect(iMinhas).toBeGreaterThanOrEqual(0)

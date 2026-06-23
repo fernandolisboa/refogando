@@ -514,7 +514,9 @@ function WebDiscoverySection({
  * `RecipeDetailActions` (a UI só escolhe a CÓPIA; o gate de escrita real é server-side):
  *
  *  - LOGADO → link pro fluxo de criação `/create?q=<termo>`, PRÉ-PREENCHENDO o texto livre com o
- *    termo buscado (o `CreatePageClient` lê `?q`). Sem termo, leva ao `/create` cru (gerar do zero).
+ *    termo buscado. A rota `/create` monta `CreateShellClient → CreateDrawer`, que lê o `?q` da URL
+ *    e o repassa como `initialFreeText` ao Prompt aberto (ponte #166; a Busca nunca gera). Sem
+ *    termo, leva ao `/create` cru (gerar do zero).
  *  - VISITANTE → convite de entrar (gerar exige conta), reusando `minhasCriacoes.convidaEntrar*`
  *    + `nav.signIn`, o mesmo padrão de convite do detalhe da Receita.
  *

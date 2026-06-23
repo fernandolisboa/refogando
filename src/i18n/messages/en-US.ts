@@ -325,6 +325,35 @@ export const enUS: Messages = {
     modoConversa: 'Chat',
     seletorModo: 'How to create',
   },
+  // "New recipe" drawer (#191, ADR-0021) — reorganizes AI creation into a right-side drawer
+  // (over the Sheet). The small-caps kicker + step title give the dialog's accessible name; the
+  // recipe-name `<h1>` still belongs to the inner components (heading seam, F1 cancelled). This
+  // slice ships the method picker + the Open prompt path end-to-end.
+  criarDrawer: {
+    kicker: 'New recipe',
+    fechar: 'Close',
+    voltar: 'Back',
+    descricaoAcessivel: 'Create a recipe with the help of AI.',
+    // Per-step dialog title (becomes the SheetTitle / drawer accessible name).
+    tituloPicker: 'How do you want to create?',
+    tituloPrompt: 'Open prompt',
+    tituloEstruturado: 'Structured form',
+    tituloConversa: 'Chat',
+    // Method picker (3 cards).
+    pickerIntro:
+      'How do you want to get to your recipe? You can build it by fields, describe it all at once, or chat.',
+    metodoEstruturadoTitulo: 'Structured form',
+    metodoEstruturadoDesc:
+      'Build it by fields — ingredients, cuisine, restrictions. The AI fills in the rest.',
+    metodoPromptTitulo: 'Open prompt',
+    metodoPromptDesc: 'Describe the dish all at once and generate it right away. No back and forth.',
+    metodoConversaTitulo: 'Chat',
+    metodoConversaDesc: 'Chat with the AI until the recipe is just the way you want.',
+    // Placeholders for the paths not yet shipped (#2/#3).
+    emBreve: 'Coming soon',
+    emBreveEstruturado: 'The structured form is coming here soon.',
+    emBreveConversa: 'Chat mode is coming here soon.',
+  },
   conversa: {
     titulo: 'Chat with the AI',
     descricao:

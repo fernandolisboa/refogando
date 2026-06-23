@@ -1,10 +1,11 @@
 /**
  * Redirect legado de RETOMADA (#104 S7) — `/conversation/[id]` deixou de ter rota própria. O
  * Modo Conversa vive dentro de `/create` agora; a retomada é dirigida pelo search param
- * `?resume=<id>` (lido por `CreatePageClient` → `ConversaFocusedView`). Esta rota antiga
- * redireciona para `/create?mode=conversa&resume=<id>`, preservando links/bookmarks de retomada
- * sem 404 (params é uma Promise no Next 15 — `await params`). `encodeURIComponent` no id para
- * não corromper a querystring com caracteres especiais.
+ * `?resume=<id>` (lido pelo shell de `/create` — `CreateShellClient` → `CreateDrawer`, #191/
+ * ADR-0021, que roteia pro caminho Conversa). Esta rota antiga redireciona para
+ * `/create?mode=conversa&resume=<id>`, preservando links/bookmarks de retomada sem 404 (params é
+ * uma Promise no Next 15 — `await params`). `encodeURIComponent` no id para não corromper a
+ * querystring com caracteres especiais.
  */
 import { redirect } from 'next/navigation'
 

@@ -350,6 +350,35 @@ export const ptBR = {
     modoConversa: 'Conversa',
     seletorModo: 'Como criar',
   },
+  // Drawer "Nova receita" (#191, ADR-0021) — reorganiza a criação por IA num drawer da direita
+  // (sobre o Sheet). O kicker em versalete + o título do passo dão o nome acessível do diálogo; o
+  // `<h1>` do nome da Receita continua sendo dos componentes internos (seam de heading, F1
+  // cancelado). Esta fatia entrega o método-picker + o caminho Prompt aberto ponta-a-ponta.
+  criarDrawer: {
+    kicker: 'Nova receita',
+    fechar: 'Fechar',
+    voltar: 'Voltar',
+    descricaoAcessivel: 'Crie uma receita com a ajuda da IA.',
+    // Título do diálogo por passo (vira o SheetTitle / nome acessível do drawer).
+    tituloPicker: 'Como você quer criar?',
+    tituloPrompt: 'Prompt aberto',
+    tituloEstruturado: 'Formulário estruturado',
+    tituloConversa: 'Conversa',
+    // Método-picker (3 cards).
+    pickerIntro:
+      'Como você quer chegar na sua receita? Dá pra montar por campos, descrever de uma vez ou conversar.',
+    metodoEstruturadoTitulo: 'Formulário estruturado',
+    metodoEstruturadoDesc:
+      'Monte por campos — ingredientes, cozinha, restrições. A IA preenche o resto.',
+    metodoPromptTitulo: 'Prompt aberto',
+    metodoPromptDesc: 'Descreva o prato de uma vez e gere na hora. Sem idas e vindas.',
+    metodoConversaTitulo: 'Conversa',
+    metodoConversaDesc: 'Converse com a IA até a receita ficar do seu jeito.',
+    // Placeholders dos caminhos ainda não entregues (#2/#3).
+    emBreve: 'Em breve',
+    emBreveEstruturado: 'O formulário estruturado chega em breve por aqui.',
+    emBreveConversa: 'O modo Conversa chega em breve por aqui.',
+  },
   conversa: {
     titulo: 'Conversar com a IA',
     descricao:
