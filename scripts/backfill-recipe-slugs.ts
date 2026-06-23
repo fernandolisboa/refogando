@@ -1,9 +1,17 @@
 // Backfill do Slug por idioma das traduções existentes (#229, ADR-0020).
 //
 // A coluna `recipe_translation.slug` nasce NULLABLE (migração 0023, prod-safe sobre tabela
-// populada). Este script preenche o slug das linhas que ainda estão NULL, derivando-o do
-// `titulo` daquela tradução e desambiguando POR locale com sufixo numérico — usando a MESMA
-// lógica pura da borda (`@/domain/recipe-slug`), fonte única, sem duplicar regra.
+// populada). REDE pós-deploy: o write-path (`@/server/recipe/slug`) já congela o slug de toda
+// tradução NOVA no instante da escrita, então este backfill cobre só as linhas que JÁ existiam
+// antes da fatia (e qualquer NULL residual de corrida). Deriva o slug do `titulo` daquela
+// tradução e desambigua POR locale com sufixo numérico — usando a MESMA lógica pura da borda
+// (`@/domain/recipe-slug`), fonte única, sem duplicar regra.
+//
+// SEED BEST-EFFORT (honestidade): para uma linha JÁ EXISTENTE não há histórico do título
+// inicial — só o título ATUAL (possivelmente já revisado). Então o slug semeado aqui parte do
+// título corrente, não do "título inicial". Isso é uma aproximação aceitável só para o acervo
+// pré-fatia; o invariante de verdade ("en-US congela a partir do título da MT INICIAL") é
+// capturado no write-path, na criação da tradução — não aqui.
 //
 // PROPRIEDADES (inegociáveis):
 //  - IDEMPOTENTE: só toca linhas com slug IS NULL; re-rodar não re-sluga nem muda slugs já
@@ -12,8 +20,9 @@
 //  - DETERMINÍSTICO: dentro de cada locale, processa as linhas numa ordem ESTÁVEL
 //    (created_at, depois id) e atribui o MENOR sufixo livre — então a mesma base de dados
 //    produz sempre os mesmos slugs/sufixos, mesmo em re-rodadas parciais.
-//  - CONGELAMENTO: o slug derivado aqui é o congelado; revisões futuras do título não o mudam
-//    (regra materializada em `freezeSlug`, idem ao write-path).
+//  - ESTÁVEL DEPOIS DE GRAVADO: uma vez preenchido aqui (ou pelo write-path), o slug NÃO é
+//    reatribuído — re-rodar preserva o que existe. (Não é "congelado do título inicial" para
+//    estas linhas antigas: ver SEED BEST-EFFORT acima.)
 //
 // Uso:  npm run backfill-recipe-slugs
 //   (equivale a:  tsx --env-file=.env.local scripts/backfill-recipe-slugs.ts)
