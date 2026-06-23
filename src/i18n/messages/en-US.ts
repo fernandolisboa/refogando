@@ -512,6 +512,11 @@ export const enUS: Messages = {
     modalTitulo: 'Edit recipe',
     modalDescricao: 'Change your recipe’s content. The changes apply to this same recipe.',
     modalFechar: 'Close',
+    // #196/ADR-0021: the SAME modal opens to DERIVE a recipe that isn't yours. Saving never
+    // mutates the base — it creates a private copy of yours and takes you to it. No Visibility
+    // toggle and no Delete (the base isn't yours); the copy notice reuses `derivada.copiaAviso`.
+    modalDerivarTitulo: 'Create my version',
+    modalDerivarDescricao: 'Edit the content. We’ll save it as your own private copy — the original recipe stays unchanged.',
   },
   // Regeneration: new immutable version by lineage (#20). Regenerating your own recipe creates a
   // NEW version from the same request — it never overwrites; previous versions stay saved. The

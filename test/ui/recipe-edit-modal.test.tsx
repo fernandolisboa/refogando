@@ -434,3 +434,137 @@ describe('RecipeEditModal — Visibilidade no modal (#195)', () => {
     expect(screen.getByDisplayValue('Bolo de fubá')).toBeInTheDocument()
   })
 })
+
+/**
+ * #196/ADR-0021: o MESMO modal abre em Receita NÃO-própria com `mode="derive"`. O gatilho é
+ * "Criar minha versão"; o conteúdo vem prefilled da base; Salvar DERIVA (POST /derive — nunca
+ * PATCH, a base nunca é mutada) e NAVEGA pra nova Receita (sua, privada). O toggle de
+ * Visibilidade e o Apagar ficam ESCONDIDOS (a derivada nasce privada e a base não é sua); o
+ * confirm #277 não dispara (não há nada público a confirmar — a derivada nasce privada).
+ */
+import { enUS } from '@/i18n/messages/en-US'
+
+function baseView(over: Partial<RecipeView> = {}): RecipeView {
+  return {
+    id: 'base-1',
+    name: 'Feijoada do catálogo',
+    origin: 'catalog',
+    schemaVersion: 1,
+    body: { descricao: 'Clássico', passos: ['Cozinhe'], notas: null },
+    facets: { cozinha: 'brasileira', categoria: 'prato_principal', tags: [] },
+    porcoes: 6,
+    dificuldade: 3,
+    ingredients: [{ ordem: 0, quantidade: '2.500', unidade: 'kg', rawText: 'feijão' }],
+    translations: [],
+    autoTranslationSignal: false,
+    resultKind: 'success',
+    ...over,
+  }
+}
+
+function renderDeriveModal(view: RecipeView, locale: Locale = 'pt-BR') {
+  return render(
+    <LocaleProvider initialLocale={locale}>
+      <RecipeEditModal view={view} mode="derive" locale={locale} />
+    </LocaleProvider>,
+  )
+}
+
+async function openDeriveModal(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+  return screen.findByRole('dialog')
+}
+
+describe('RecipeEditModal — modo DERIVE (#196)', () => {
+  it('o gatilho é "Criar minha versão" e abre o MESMO modal prefilled com o conteúdo da base', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 201, body: { recipeId: 'new-1' } }))
+    renderDeriveModal(baseView())
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    const dialog = await openDeriveModal(user)
+    // Nome acessível = título de derivar (mesmo modal, título distinto).
+    expect(dialog).toHaveAccessibleName(M.modalDerivarTitulo)
+    // Prefilled a partir da base.
+    expect(within(dialog).getByDisplayValue('Feijoada do catálogo')).toBeInTheDocument()
+    expect(within(dialog).getByDisplayValue('Clássico')).toBeInTheDocument()
+    // Aviso de cópia (reusa derivada.copiaAviso).
+    expect(within(dialog).getByText(ptBR.derivada.copiaAviso)).toBeInTheDocument()
+  })
+
+  it('Salvar DERIVA: POST /derive (nunca PATCH, base não mutada) e navega pra nova Receita', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 201, body: { recipeId: 'new-9' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+
+    const titulo = within(dialog).getByDisplayValue('Feijoada do catálogo')
+    await user.clear(titulo)
+    await user.type(titulo, 'Minha feijoada')
+
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+
+    const call = fetchMock.mock.calls[0]
+    expect(String(call[0])).toContain('/api/recipes/base-1/derive')
+    expect((call[1] as RequestInit).method).toBe('POST')
+    // NUNCA PATCH (não muta a base).
+    expect(fetchMock.mock.calls.every((c) => (c[1] as RequestInit).method !== 'PATCH')).toBe(true)
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.edits.titulo).toBe('Minha feijoada')
+    // Navega pra nova Receita (sua, privada).
+    expect(push).toHaveBeenCalledWith('/recipes/new-9')
+  })
+
+  it('o toggle de Visibilidade NÃO aparece no modo derive (a derivada nasce privada)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 201, body: { recipeId: 'new-1' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    expect(
+      within(dialog).queryByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('o botão Apagar NÃO aparece no modo derive (a base não é sua)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 201, body: { recipeId: 'new-1' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    expect(
+      within(dialog).queryByRole('button', { name: ptBR.minhasCriacoes.apagar }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('Salvar numa base PÚBLICA de outro NÃO abre o confirm #277 — deriva direto', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 201, body: { recipeId: 'new-2' } }))
+    // base pública de outro (não-própria): canManage ausente, visibility public.
+    renderDeriveModal(baseView({ origin: 'ai_structured', visibility: 'public' }))
+    const dialog = await openDeriveModal(user)
+
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+    // Sem confirm de editar-pública: derivar não mexe na base; o POST sai direto.
+    expect(screen.queryByText(M.editarPublicaAviso)).not.toBeInTheDocument()
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/new-2'))
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
+  })
+
+  it('erro não-201: mensagem neutra, NÃO navega, modal segue aberto', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 409, body: { error: 'derivar_da_propria' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('en-US: gatilho e título de derivar traduzidos', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 201, body: { recipeId: 'x' } }))
+    renderDeriveModal(baseView(), 'en-US')
+    await user.click(screen.getByRole('button', { name: enUS.minhasCriacoes.criarMinhaVersao }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(enUS.edicaoPropria.modalDerivarTitulo)
+  })
+})

@@ -8,8 +8,10 @@
  *    (`LineageVersionControls`, SÓ p/ Receita de IA `ai_*`) + o diff da derivada
  *    (`RecipeDiffView`, quando `view.derivedDiff` chega — owner-gated pelo servidor) com a nota
  *    de vínculo perdido. A Visibilidade (#59) continua na PAGE (irmã desta).
- *  - NÃO-DONO (catálogo / pública de outra pessoa): "Criar minha versão" (`DeriveExperience`).
- *    Gating #22 (descope): Visitante vê um CONVITE de entrar; logado vê o fluxo de derivar.
+ *  - NÃO-DONO (catálogo / pública de outra pessoa): "Criar minha versão" — #196/ADR-0021 abre o
+ *    MESMO modal compartilhado (`RecipeEditModal mode="derive"`), prefilled da base; o Salvar
+ *    DERIVA (POST /derive — a base nunca é mutada) e navega pra nova Receita (sua, privada).
+ *    Gating #22 (descope): Visitante vê um CONVITE de entrar; logado vê o gatilho de derivar.
  *    Derivar a PRÓPRIA já é impossível aqui (o dono cai no ramo `canManage`).
  *
  * `canDerive`: catálogo (origin 'catalog') OU comunidade NÃO-própria. Como a rota só expõe
@@ -28,7 +30,6 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditModal } from './recipe-edit-modal'
 import { LineageVersionControls } from './lineage-version-controls'
 import { RecipeDiffView } from './recipe-diff-view'
-import { DeriveExperience } from './derive-experience'
 
 export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale: string }) {
   const { messages } = useLocale()
@@ -83,7 +84,9 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
     )
   }
 
-  // Logado e não-dono: pode criar a própria versão (derivar). Toda leitura não-dono é
-  // catálogo/pública por construção do gate (privada de outro é 404 e nunca chega aqui).
-  return <DeriveExperience view={view} locale={locale} />
+  // Logado e não-dono: pode criar a própria versão (derivar). #196/ADR-0021: o MESMO modal
+  // compartilhado abre em `mode="derive"` — Salvar deriva (POST /derive) e navega pra nova
+  // Receita. Toda leitura não-dono é catálogo/pública por construção do gate (privada de outro
+  // é 404 e nunca chega aqui).
+  return <RecipeEditModal view={view} mode="derive" locale={locale} />
 }

@@ -14,8 +14,14 @@
  * Escopo desta fatia: conteúdo + Apagar + Visibilidade (#195). O modal agora hospeda o toggle de
  * Visibilidade como rascunho local que só comita no Salvar — via publish/unpublish SEPARADO do
  * PATCH de conteúdo, mantendo a fronteira owner-edit. O detalhe deixou de ter controle inline e
- * passou a um chip de status NÃO-clicável (só-leitura). "Criar minha versão"/derivar é fatia
- * própria (#196).
+ * passou a um chip de status NÃO-clicável (só-leitura).
+ *
+ * #196/ADR-0021: o MESMO modal abre numa Receita NÃO-própria com `mode="derive"`. O gatilho é
+ * "Criar minha versão" e o Salvar DERIVA (POST /api/recipes/[id]/derive — nunca PATCH; a base
+ * NUNCA é mutada) e navega pra nova Receita (sua, privada). No modo derive o toggle de
+ * Visibilidade e o Apagar ficam ESCONDIDOS: a derivada ainda NÃO existe (sem id pra
+ * publish/unpublish) e a base não é sua — ela nasce privada e o Usuário publica depois, no
+ * detalhe dela. O `locale` é passado pro form (o POST /derive carrega `?locale`).
  *
  * O `SheetTitle` nomeia o painel (o form NÃO emite `<h2>` próprio dentro do modal — sem heading
  * duplicado). O Radix desmonta o `SheetContent` ao fechar, então o form re-prefila da `view`
@@ -42,9 +48,24 @@ import {
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditForm } from './recipe-edit-form'
 
-export function RecipeEditModal({ view }: { view: RecipeView }) {
+/**
+ * `mode='own'` (default): editar IN-PLACE a própria Receita (gatilho "Editar", PATCH).
+ * `mode='derive'` (#196): derivar uma Receita NÃO-própria (gatilho "Criar minha versão", POST
+ * /derive). `locale` só é usado no modo derive (o POST carrega `?locale`); no own o form usa o
+ * locale atual do provider.
+ */
+export function RecipeEditModal({
+  view,
+  mode = 'own',
+  locale,
+}: {
+  view: RecipeView
+  mode?: 'own' | 'derive'
+  locale?: string
+}) {
   const { messages } = useLocale()
   const m = messages.edicaoPropria
+  const isDerive = mode === 'derive'
   const [open, setOpen] = useState(false)
   // #197: enquanto o confirm interno do form está aberto, o Sheet IGNORA o Escape/click-fora
   // (o confirm — camada de cima — os consome), pra não fechar o modal e perder o rascunho.
@@ -53,7 +74,9 @@ export function RecipeEditModal({ view }: { view: RecipeView }) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button">{messages.minhasCriacoes.editar}</Button>
+        <Button type="button">
+          {isDerive ? messages.minhasCriacoes.criarMinhaVersao : messages.minhasCriacoes.editar}
+        </Button>
       </SheetTrigger>
       <SheetContent
         side="center"
@@ -66,11 +89,15 @@ export function RecipeEditModal({ view }: { view: RecipeView }) {
         }}
       >
         <SheetHeader>
-          <SheetTitle>{m.modalTitulo}</SheetTitle>
-          <SheetDescription>{m.modalDescricao}</SheetDescription>
+          <SheetTitle>{isDerive ? m.modalDerivarTitulo : m.modalTitulo}</SheetTitle>
+          <SheetDescription>
+            {isDerive ? m.modalDerivarDescricao : m.modalDescricao}
+          </SheetDescription>
         </SheetHeader>
         <RecipeEditForm
           view={view}
+          mode={mode}
+          locale={locale}
           onSaved={() => setOpen(false)}
           onCancel={() => setOpen(false)}
           onConfirmOpenChange={setConfirmOpen}

@@ -1,9 +1,10 @@
 'use client'
 /**
  * Edição IN-PLACE + Apagar a PRÓPRIA Receita (#21 UI / #61). Prefilled a partir da `RecipeView`
- * (que a rota já resolveu no locale pedido). Edita a MESMA linha via `PATCH /api/recipes/[id]`
- * (NUNCA forka — derivar é o fluxo da receita NÃO-própria, `DeriveExperience`). Apagar é
- * `DELETE /api/recipes/[id]` atrás de um diálogo de irreversibilidade.
+ * (que a rota já resolveu no locale pedido). No modo own edita a MESMA linha via
+ * `PATCH /api/recipes/[id]` (NUNCA forka); Apagar é `DELETE /api/recipes/[id]` atrás de um diálogo
+ * de irreversibilidade. #196/ADR-0021: o MESMO form, com `mode="derive"`, deriva uma Receita
+ * NÃO-própria (POST /api/recipes/[id]/derive — a base nunca é mutada — e navega pra nova).
  *
  * ADR-0010: consome os ROUTE HANDLERS via `fetch`; o servidor é a verdade (reimpõe ownership/
  * allowlist). Confirmação de editar PÚBLICA (história #277): quando a Receita é pública, o Salvar
@@ -58,11 +59,22 @@ function itemsFromView(view: RecipeView): ItemDraft[] {
  */
 export function RecipeEditForm({
   view,
+  mode = 'own',
+  locale: deriveLocale,
   onSaved,
   onCancel,
   onConfirmOpenChange,
 }: {
   view: RecipeView
+  /**
+   * #196/ADR-0021: `'own'` (default) = editar IN-PLACE (PATCH a mesma Receita); `'derive'` =
+   * derivar uma Receita NÃO-própria (POST /derive — a base NUNCA é mutada — e navega pra nova).
+   * No modo derive, o toggle de Visibilidade e o Apagar ficam ESCONDIDOS (a derivada ainda não
+   * existe pra publicar e a base não é sua).
+   */
+  mode?: 'own' | 'derive'
+  /** Locale do POST /derive (`?locale`); ignorado no modo own (usa o locale atual do provider). */
+  locale?: string
   onSaved?: () => void
   onCancel?: () => void
   onConfirmOpenChange?: (open: boolean) => void
@@ -74,20 +86,25 @@ export function RecipeEditForm({
   const m = messages.edicaoPropria
   const mc = messages.criar // reusa rótulos de campo do create
   const router = useRouter()
+  const isDerive = mode === 'derive'
 
   // Visibilidade ATUAL no servidor (prefill do toggle rascunho). `view.visibility` é owner-gated:
   // sempre presente no detalhe do dono; default defensivo 'private' se faltar.
   const initialPublic = view.visibility === 'public'
-  const isPublic = initialPublic
+  // #196: no modo derive, a base pode ser pública (de outro), mas isso NÃO aciona o confirm #277
+  // (derivar não muta a base) — o confirm é exclusivo do modo own.
+  const isPublic = !isDerive && initialPublic
 
   // #195/ADR-0021 (decisão 4): o toggle de Visibilidade é RASCUNHO LOCAL — clicar NÃO chama o
   // servidor. O Salvar comita: PATCH do conteúdo primeiro; SÓ se isto difere do estado inicial,
   // POST publish/unpublish por request separado (a fronteira de `owner-edit.ts` nunca toca
   // visibility). web_imported (#168/ADR-0019) e playful (ADR-0013) NUNCA publicam → toggle ESCONDIDO
-  // (o gate de servidor segue valendo; um 422 que escape é tratado in-modal).
+  // (o gate de servidor segue valendo; um 422 que escape é tratado in-modal). #196: no modo derive
+  // a derivada ainda NÃO existe (sem id pra publish/unpublish) → toggle SEMPRE escondido; ela nasce
+  // privada e o Usuário publica depois, no detalhe dela.
   const isWebImported = view.origin === 'web_imported'
   const isPlayful = view.resultKind === 'playful'
-  const showVisibilityToggle = !isWebImported && !isPlayful
+  const showVisibilityToggle = !isDerive && !isWebImported && !isPlayful
   const [draftPublic, setDraftPublic] = useState(initialPublic)
 
   // ── Estado do formulário, prefilled da view ─────────────────────────────────
@@ -201,6 +218,62 @@ export function RecipeEditForm({
   }
 
   /**
+   * #196/ADR-0021: monta o body do POST /derive (forma do contrato da rota de derivar). O subset
+   * é o que a rota aceita em `edits` (titulo/descricao/passos/notas/restricoes/ingredientes) — a
+   * rota copia o resto da base e congela o diff. Reusa o mesmo parsing de itens do PATCH.
+   */
+  function buildDeriveEdits() {
+    const p = buildPatch()
+    return {
+      titulo: p.titulo,
+      descricao: p.descricao,
+      passos: p.passos,
+      notas: p.notas,
+      restricoes: p.restricoes,
+      ingredientes: p.ingredientes,
+    }
+  }
+
+  /**
+   * #196/ADR-0021: DERIVA uma Receita NÃO-própria. POST /api/recipes/[id]/derive (a base NUNCA é
+   * mutada) → 201 { recipeId } → NAVEGA pra nova Receita (sua, privada). Erro (qualquer não-201)
+   * mostra mensagem neutra e mantém o modal aberto (a edição não se perde). #131: mudança visual
+   * com imagem herdada ⇒ `?reviewImage=1`.
+   */
+  async function derivar() {
+    if (saving) return
+    setSaving(true)
+    setErrorKey(null)
+    const locale = deriveLocale ?? currentLocale
+    try {
+      const res = await fetch(
+        `/api/recipes/${view.id}/derive?locale=${encodeURIComponent(locale)}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ edits: buildDeriveEdits() }),
+        },
+      )
+      if (res.status === 201) {
+        const data = (await res.json().catch(() => ({}))) as {
+          recipeId: string
+          imageReviewSuggested?: boolean
+        }
+        const q = data.imageReviewSuggested ? '?reviewImage=1' : ''
+        router.push(`/recipes/${data.recipeId}${q}`)
+        router.refresh()
+        onSaved?.()
+        return
+      }
+      setErrorKey('save')
+    } catch {
+      setErrorKey('save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
    * #195/ADR-0021 (decisão 4): Salvar orquestra CONTEÚDO PRIMEIRO. (1) PATCH do conteúdo
    * (`owner-edit.ts`, nunca toca visibility); (2) SÓ se o rascunho de Visibilidade difere do estado
    * inicial, POST publish/unpublish por request SEPARADO. Falha parcial (PATCH ok, publish falha)
@@ -273,6 +346,12 @@ export function RecipeEditForm({
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (saving) return
+    // #196: no modo derive, Salvar DERIVA direto (POST /derive). Sem confirm #277 — derivar não
+    // muta a base; a derivada nasce privada (nada público a confirmar).
+    if (isDerive) {
+      void derivar()
+      return
+    }
     // Pública (#277): confirma antes de gravar — a mudança fica visível na comunidade.
     if (isPublic) {
       const submitter = (e.nativeEvent as SubmitEvent).submitter
@@ -320,6 +399,12 @@ export function RecipeEditForm({
   const formBody = (
     <>
       <form onSubmit={onSubmit} className="flex flex-col gap-5">
+        {/* #196: aviso de CÓPIA no modo derive — neutro (NÃO âmbar). Reusa `derivada.copiaAviso`. */}
+        {isDerive && (
+          <p className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg">
+            {messages.derivada.copiaAviso}
+          </p>
+        )}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
           {messages.criar.titulo}
           <Input
@@ -551,7 +636,11 @@ export function RecipeEditForm({
             aria-busy={saving}
             className="disabled:cursor-not-allowed disabled:border disabled:border-border disabled:opacity-70"
           >
-            {saving ? messages.system.loading : m.editarPublicaConfirmar}
+            {saving
+              ? messages.system.loading
+              : isDerive
+                ? messages.minhasCriacoes.criarMinhaVersao
+                : m.editarPublicaConfirmar}
           </Button>
           {/* #192: Cancelar fecha o modal sem gravar (só na variante modal). */}
           {onCancel && (
@@ -559,16 +648,19 @@ export function RecipeEditForm({
               {m.editarPublicaCancelar}
             </Button>
           )}
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={(e) => {
-              triggerRef.current = e.currentTarget
-              setDialog('confirmDelete')
-            }}
-          >
-            {messages.minhasCriacoes.apagar}
-          </Button>
+          {/* #196: Apagar fica SÓ no modo own — a base derivada não é sua, não há o que apagar. */}
+          {!isDerive && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={(e) => {
+                triggerRef.current = e.currentTarget
+                setDialog('confirmDelete')
+              }}
+            >
+              {messages.minhasCriacoes.apagar}
+            </Button>
+          )}
         </div>
       </form>
 
