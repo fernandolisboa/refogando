@@ -31,6 +31,8 @@
  * Manter o gate+redirect AQUI (não no proxy) honra o ADR ("leitura/gate no server component") e
  * mantém o proxy header-only (sem DB no caminho quente de toda navegação).
  */
+import { cache } from 'react'
+import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
@@ -43,6 +45,7 @@ import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
+import { buildRecipeMetadata, buildRecipeJsonLd, serializeJsonLd } from '@/domain/recipe-seo'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
@@ -52,9 +55,57 @@ import {
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
-import { getBaseUrl } from '@/server/http/base-url'
+import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
+import { getBaseUrl, getBaseUrlFromEnv } from '@/server/http/base-url'
 import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
+
+/**
+ * Dedup por-request (React.cache) das DUAS leituras públicas que `generateMetadata` E o render fazem
+ * pelo MESMO (slug, locale)/recipeId no mesmo request — o Next não dedup raw DB sozinho. `cache()`
+ * memoiza por argumentos no escopo do request: a 2ª chamada (render, depois do metadata) reusa o
+ * resultado em vez de bater o banco de novo. Build-safe: nenhuma das duas toca `headers()`/`cookies()`,
+ * então a memoização NÃO contamina a cacheabilidade do caminho público.
+ */
+const loadPublicRecipeBySlugCached = cache(loadPublicRecipeBySlug)
+const loadRecipeSlugMapCached = cache(loadRecipeSlugMap)
+
+/**
+ * Metadados indexáveis do detalhe (#232 OG, #233 canonical/hreflang/x-default/robots, #234 alimenta
+ * o JSON-LD via o mesmo input) — `generateMetadata` da MESMA rota do render. CACHEÁVEL por design:
+ * NÃO toca `headers()`/`cookies()` (usa `getBaseUrlFromEnv`, env-only) e lê SÓ pelo caminho PÚBLICO
+ * por slug (`loadPublicRecipeBySlug`, anônimo). Assim a página indexável NÃO vira dinâmica.
+ *
+ * Dois desfechos, espelhando o render:
+ *  - SLUG público elegível ⇒ metadados completos (OG/canonical/hreflang/robots index,follow).
+ *  - Qualquer outra coisa (UUID legado, slug privado/inexistente = caminho do DONO/dinâmico) ⇒
+ *    `noindex` (não vaza nem indexa o caminho do dono). NUNCA toca cookie aqui.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string; id: string }>
+}): Promise<Metadata> {
+  const { locale: pathLocale, id } = await params
+  const locale = resolvePageLocale({ urlLocale: pathLocale })
+  const baseUrl = getBaseUrlFromEnv() // build-safe (env-only, SEM headers) ⇒ mantém cacheável.
+
+  const route = decideRecipeDetailRoute(id)
+  if (route.kind === 'slug') {
+    const rows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
+    if (rows != null) {
+      const slugMap = await loadRecipeSlugMapCached(getDb(), rows.recipe.id)
+      const input = buildRecipeSeoInputFromRows({ rows, locale, baseUrl, slugMap, eligible: true })
+      return buildRecipeMetadata(input)
+    }
+  }
+  // Caminho do dono/privado/UUID legado: NÃO indexar (default-open só vale pro caminho público).
+  // metadataBase mesmo assim (links absolutos consistentes), sem canonical/OG de conteúdo privado.
+  return {
+    metadataBase: new URL(baseUrl),
+    robots: { index: false, follow: false },
+  }
+}
 
 export default async function RecipeDetailPage({
   params,
@@ -90,7 +141,7 @@ export default async function RecipeDetailPage({
   // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 308-ado acima, então um
   // UUID que chega adiante é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
   if (route.kind === 'slug') {
-    const publicRows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
+    const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
       // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
       // dinâmico). `viewerVoted`/`viewerFavorited` ficam AUSENTES (anônimo) — o estado do viewer é
@@ -111,7 +162,18 @@ export default async function RecipeDetailPage({
         ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
         ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
       })
-      return <DetailChrome view={view} locale={locale} reviewImage={false} />
+      // JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
+      // aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
+      const slugMap = await loadRecipeSlugMapCached(getDb(), publicRows.recipe.id)
+      const seoInput = buildRecipeSeoInputFromRows({
+        rows: publicRows,
+        locale,
+        baseUrl: getBaseUrlFromEnv(),
+        slugMap,
+        eligible: true,
+      })
+      const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
+      return <DetailChrome view={view} locale={locale} reviewImage={false} jsonLd={jsonLd} />
     }
   }
 
@@ -167,14 +229,27 @@ function DetailChrome({
   view,
   locale,
   reviewImage,
+  jsonLd,
 }: {
   view: RecipeView
   locale: Locale
   reviewImage: boolean
+  /**
+   * JSON-LD `schema.org/Recipe` JÁ serializado (#234) — presente SÓ no caminho PÚBLICO/indexável
+   * (ausente no caminho do dono/dinâmico: receita privada não vai pro grafo). Renderizado como
+   * `<script type="application/ld+json">` no corpo (forma idiomática do Next 16 — entrega o JSON-LD
+   * no HTML pro crawler). String segura (o `<` já foi escapado em `serializeJsonLd`).
+   */
+  jsonLd?: string
 }) {
   const messages = MESSAGES[locale]
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
+      {/* JSON-LD Recipe (#234): só no caminho público. `dangerouslySetInnerHTML` é a forma idiomática
+          de embutir JSON-LD; a string já vem com `<`→`<` (anti-XSS de `</script>`). */}
+      {jsonLd != null && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
+      )}
       {/* Voltar à busca: primeiro elemento, muted; href estável "/" (a home É a busca). */}
       <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
         ← {messages.detalhe.voltarBusca}
