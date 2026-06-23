@@ -198,9 +198,11 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(h1s).toHaveLength(1)
     expect(h1s[0]).toHaveTextContent(baseView().name)
 
-    // CTA "Ver receita" é um LINK que navega pro detalhe (#59) — não escreve nada.
+    // CTA "Ver receita" é um LINK que navega pro detalhe (#59) — não escreve nada. #231 (ADR-0020):
+    // o 201 desta fixtura não traz slug ⇒ fallback canônico locale-no-caminho `/{locale}/recipes/<uuid>`
+    // (pt-BR), que 308a pro slug. Nunca o link nu sem locale.
     const verReceita = screen.getByRole('link', { name: M.verReceita })
-    expect(verReceita).toHaveAttribute('href', '/recipes/r-1')
+    expect(verReceita).toHaveAttribute('href', '/pt-BR/recipes/r-1')
 
     // Corpo da Receita lido CRU: o ingrediente aparece (trava ausência de .view/.recipe).
     expect(screen.getByText(/feijão/)).toBeInTheDocument()

@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldClassName } from '@/components/button'
 import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { RecipeView } from '@/domain/recipe-read'
 
 /** Rascunho de UM ingrediente no formulário (espelha o create estruturado, sem força). */
@@ -267,7 +268,9 @@ export function RecipeEditForm({
           imageReviewSuggested?: boolean
         }
         const q = data.imageReviewSuggested ? '?reviewImage=1' : ''
-        router.push(`/recipes/${data.recipeId}${q}`)
+        // #231 (ADR-0020): a derivada nasce privada e o /derive não devolve slug — navega pro fallback
+        // canônico por UUID `/{locale}/recipes/<uuid>` (que 308a pro slug). Nunca link nu sem locale.
+        router.push(`${recipeDetailPath(currentLocale, data.recipeId)}${q}`)
         router.refresh()
         onSaved?.()
         return
@@ -323,7 +326,9 @@ export function RecipeEditForm({
           // relê o detalhe (o conteúdo novo aparece). Mostra só o erro de visibilidade.
           setDialog('none')
           setErrorKey('visibility')
-          const base = `/recipes/${view.id}?locale=${encodeURIComponent(currentLocale)}`
+          // #231 (ADR-0020): canônico locale-no-caminho `/{locale}/recipes/<uuid>` (que 308a pro
+          // slug) — NUNCA o link nu sem locale. A `RecipeView` não carrega slug ⇒ fallback por UUID.
+          const base = `${recipeDetailPath(currentLocale, view.id)}?locale=${encodeURIComponent(currentLocale)}`
           router.replace(data.imageReviewSuggested ? `${base}&reviewImage=1` : base)
           router.refresh()
           return
@@ -335,7 +340,8 @@ export function RecipeEditForm({
       // edição in-place é a MESMA página — navega com `?reviewImage=1` quando a mudança foi VISUAL
       // numa Receita com foto; senão à URL limpa (zera um `?reviewImage=1` stale de uma edição
       // visual anterior). PRESERVA o `?locale` atual (a page o honra na precedência de locale).
-      const base = `/recipes/${view.id}?locale=${encodeURIComponent(currentLocale)}`
+      // #231 (ADR-0020): locale-no-caminho `/{locale}/recipes/<uuid>` (que 308a pro slug), nunca link nu.
+      const base = `${recipeDetailPath(currentLocale, view.id)}?locale=${encodeURIComponent(currentLocale)}`
       router.replace(data.imageReviewSuggested ? `${base}&reviewImage=1` : base)
       router.refresh()
       // #192: salvou ⇒ fecha o modal (o detalhe atrás reflete via router.refresh; o banner de

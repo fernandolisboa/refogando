@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSearchResponse,
   displayedProvenance,
+  projectResult,
   type SearchHitRow,
 } from '@/domain/recipe-search-read'
 
@@ -25,6 +26,7 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     // #130/Imagem: sem foto por default (a maioria dos hits não tem) — casos com imagem sobrescrevem.
     image_url: null,
     image_provenance: null, // #132: proveniência da imagem (ai_generated dispara o selo)
+    slug: null, // #231: slug do locale pedido (req_t.slug); null ⇒ DTO sem slug ⇒ card no fallback UUID
     ...over,
   }
 }
@@ -492,5 +494,29 @@ describe('buildSearchResponse — importada da web (#169, ADR-0019)', () => {
     expect(body.minhas).toHaveLength(0)
     expect(body.comunidade).toHaveLength(0)
     expect(body.catalogo).toHaveLength(0)
+  })
+})
+
+describe('slug do locale corrente no DTO (#231, ADR-0020)', () => {
+  it('projectResult: req_t.slug presente ⇒ SearchResult.slug projetado', () => {
+    const r = projectResult(hit({ recipe_id: 'r-slug', slug: 'chili-de-carne' }), 'pt-BR')
+    expect(r).not.toBeNull()
+    expect(r!.slug).toBe('chili-de-carne')
+  })
+
+  it('projectResult: slug NULL (sem tradução com slug no locale) ⇒ chave AUSENTE (fallback UUID)', () => {
+    const r = projectResult(hit({ recipe_id: 'r-noslug', slug: null }), 'pt-BR')
+    expect(r).not.toBeNull()
+    // "ausente ≠ vazio": a chave slug NÃO existe ⇒ o card monta o fallback canônico por UUID.
+    expect(r!.slug).toBeUndefined()
+    expect('slug' in r!).toBe(false)
+  })
+
+  it('buildSearchResponse: carrega o slug projetado por seção', () => {
+    const body = buildSearchResponse(
+      [hit({ recipe_id: 'cat', section: 'catalogo', slug: 'feijoada' })],
+      'pt-BR',
+    )
+    expect(body.catalogo[0]?.slug).toBe('feijoada')
   })
 })

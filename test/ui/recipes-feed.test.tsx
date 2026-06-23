@@ -111,7 +111,9 @@ describe('RecipeFeedExperience (#103)', () => {
     // Selos de proveniência + links para o detalhe canônico.
     const fe = screen.getByText('Feijoada').closest('li')!
     expect(within(fe).getByText(M.seloCatalogo)).toBeInTheDocument()
-    expect(within(fe).getByRole('link')).toHaveAttribute('href', '/recipes/r1')
+    // #231 (ADR-0020): sem slug no DTO ⇒ fallback canônico locale-no-caminho `/{locale}/recipes/<uuid>`
+    // (pt-BR), que 308a pro slug. Nunca o link nu sem locale.
+    expect(within(fe).getByRole('link')).toHaveAttribute('href', '/pt-BR/recipes/r1')
     const st = screen.getByText('Strogonoff').closest('li')!
     expect(within(st).getByText(M.seloComunidade)).toBeInTheDocument()
 
@@ -131,6 +133,8 @@ describe('RecipeFeedExperience (#103)', () => {
             autoTranslationSignal: false,
             isOwn: false,
             author: { name: 'Ana Maria', handle: 'ana-maria' },
+            // #231: com slug no DTO, o card linka o canônico /{locale}/recipes/<slug>.
+            slug: 'bolo-da-ana',
           },
           // Catálogo SEM autor — nenhum byline (sem crédito falso).
           item('r2', 'Catálogo editorial', 'catalog'),
@@ -145,6 +149,11 @@ describe('RecipeFeedExperience (#103)', () => {
     const card = screen.getByText('Bolo da Ana').closest('li')!
     const byline = within(card).getByText('por Ana Maria')
     expect(byline.closest('a')).toHaveAttribute('href', '/u/ana-maria')
+    // #231: com slug, o título linka o canônico /{locale}/recipes/<slug>.
+    expect(within(card).getByText('Bolo da Ana').closest('a')).toHaveAttribute(
+      'href',
+      '/pt-BR/recipes/bolo-da-ana',
+    )
 
     // O item de Catálogo NÃO tem byline.
     const catCard = screen.getByText('Catálogo editorial').closest('li')!
@@ -267,7 +276,8 @@ describe('RecipeFeedExperience (#103)', () => {
     const priv = screen.getByText('Minha Privada').closest('li')!
     expect(within(priv).getByText(M.seloMinha)).toBeInTheDocument()
     expect(within(priv).queryByText(M.seloComunidade)).not.toBeInTheDocument()
-    expect(within(priv).getByRole('link')).toHaveAttribute('href', '/recipes/rPriv')
+    // #231: sem slug ⇒ fallback canônico locale-no-caminho `/{locale}/recipes/<uuid>` (pt-BR).
+    expect(within(priv).getByRole('link')).toHaveAttribute('href', '/pt-BR/recipes/rPriv')
     // A comunidade genuína (não-própria) mantém "Da comunidade".
     const com = screen.getByText('Strogonoff').closest('li')!
     expect(within(com).getByText(M.seloComunidade)).toBeInTheDocument()

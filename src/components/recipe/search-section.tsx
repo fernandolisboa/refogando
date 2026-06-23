@@ -21,6 +21,7 @@ export function SearchSection({
   autoTranslationLabel,
   byLabel,
   aiLabel,
+  locale,
   results,
 }: {
   headingId: string
@@ -37,6 +38,8 @@ export function SearchSection({
   byLabel: string
   /** #132: rótulo do selo "✨ gerada por IA", localizado, repassado a cada thumbnail ai_generated. */
   aiLabel: string
+  /** #231/ADR-0020: locale corrente, repassado a cada item pro link canônico `/{locale}/recipes/…`. */
+  locale: string
   results: SearchResult[]
 }) {
   if (results.length === 0) return null
@@ -53,6 +56,8 @@ export function SearchSection({
           <RecipeResultItem
             key={result.recipeId}
             recipeId={result.recipeId}
+            locale={locale}
+            slug={result.slug}
             displayedTitle={result.displayedTitle}
             origin={result.origin}
             autoTranslationSignal={result.autoTranslationSignal}

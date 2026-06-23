@@ -21,12 +21,13 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { Button } from '@/components/ui/button'
 
 type ErrorKey = 'semFonte' | 'impossible' | 'invalid' | 'limite' | 'generico' | null
 
 export function LineageVersionControls({ recipeId }: { recipeId: string }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const m = messages.versao
   const router = useRouter()
 
@@ -44,8 +45,10 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
         const data = (await res.json()) as { recipeId: string; imageReviewSuggested?: boolean }
         // Nova versão criada → navega pra ela (a anterior fica salva e acessível por linhagem).
         // #131: se a versão herdou a foto e mudou visualmente, leva a dica de revisar a foto.
+        // #231 (ADR-0020): o 201 não devolve slug — navega pro fallback canônico por UUID
+        // `/{locale}/recipes/<uuid>` (que 308a pro slug). Nunca link nu sem locale.
         const q = data.imageReviewSuggested ? '?reviewImage=1' : ''
-        router.push(`/recipes/${data.recipeId}${q}`)
+        router.push(`${recipeDetailPath(locale, data.recipeId)}${q}`)
         router.refresh()
         return
       }

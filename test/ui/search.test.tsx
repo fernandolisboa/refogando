@@ -112,6 +112,8 @@ describe('SearchExperience (#56)', () => {
           origin: 'catalog',
           autoTranslationSignal: false,
           isOwn: false,
+          // #231: com slug, o card linka o canônico /{locale}/recipes/<slug>.
+          slug: 'feijoada',
         },
       ],
       comunidade: [
@@ -166,11 +168,12 @@ describe('SearchExperience (#56)', () => {
     expect(communityBadge).toBeInTheDocument()
     expect(communityBadge).not.toHaveClass('bg-accent-surface')
 
-    // Links para o detalhe canônico /recipes/:id.
-    expect(within(feijoadaItem).getByRole('link')).toHaveAttribute('href', '/recipes/r1')
+    // Links pro detalhe canônico (#231, ADR-0020): com slug ⇒ `/{locale}/recipes/<slug>`; sem slug ⇒
+    // fallback `/{locale}/recipes/<uuid>` (que 308a). Locale pt-BR no provider. Nunca o link nu.
+    expect(within(feijoadaItem).getByRole('link')).toHaveAttribute('href', '/pt-BR/recipes/feijoada')
     expect(within(strogonoffItem).getByRole('link')).toHaveAttribute(
       'href',
-      '/recipes/r2',
+      '/pt-BR/recipes/r2',
     )
   })
 
@@ -272,7 +275,8 @@ describe('SearchExperience (#56)', () => {
 
     await screen.findByRole('heading', { name: M.talvezQueira, level: 2 })
     const risotoItem = screen.getByText('Risoto').closest('li')!
-    expect(within(risotoItem).getByRole('link')).toHaveAttribute('href', '/recipes/r9')
+    // #231: sem slug ⇒ fallback canônico locale-no-caminho `/{locale}/recipes/<uuid>` (pt-BR).
+    expect(within(risotoItem).getByRole('link')).toHaveAttribute('href', '/pt-BR/recipes/r9')
     // Sugestão de origem comunidade (ai_structured) → selo de Comunidade.
     expect(within(risotoItem).getByText(M.seloComunidade)).toBeInTheDocument()
     // NÃO é estado vazio.

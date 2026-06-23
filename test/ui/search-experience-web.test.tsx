@@ -261,8 +261,9 @@ describe('SearchExperience — modal de importação (#169)', () => {
       expect(init.method).toBe('POST')
       expect(JSON.parse(String(init.body))).toEqual({ url: WEB_LINKS[0].url })
     })
-    // Sucesso (201) ⇒ navega à receita importada.
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/imp-99'))
+    // Sucesso (201) ⇒ navega à receita importada. #231 (ADR-0020): canônico locale-no-caminho
+    // `/{locale}/recipes/<uuid>` (que 308a pro slug); o provider monta sob 'pt-BR'. Nunca link nu.
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/pt-BR/recipes/imp-99'))
   })
 
   it('I3 — LOGADO: 422 (site sem JSON-LD) mostra erro "não importável" e NÃO navega', async () => {

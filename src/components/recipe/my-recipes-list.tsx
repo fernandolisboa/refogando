@@ -8,7 +8,8 @@
  *
  * ADR-0010: consome o ROUTE HANDLER via `fetch`, não Server Action; NÃO reimplementa domínio
  * (o título exibido + os campos chegam prontos da rota). Cada card é um <Link> pro detalhe
- * canônico `/recipes/:id` (onde moram as afordâncias de gestão, #59 + #61).
+ * canônico `/{locale}/recipes/<slug>` (#231/ADR-0020; fallback por UUID quando sem slug no locale),
+ * onde moram as afordâncias de gestão (#59 + #61).
  *
  * Âmbar é EXCLUSIVO do Aviso de restrição (ADR-0004): os selos de estado aqui são NEUTROS
  * (border-border/bg-surface/text-muted) — privada/pública/zoeira/derivada não são alertas.
@@ -22,6 +23,7 @@ import { useSession } from '@/lib/auth-client'
 import { Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 
 type Status = 'loading' | 'idle' | 'error'
 
@@ -126,7 +128,9 @@ export function MyRecipesList() {
             return (
               <li key={item.id}>
                 <Link
-                  href={`/recipes/${item.id}`}
+                  // #231 (ADR-0020): canônico `/{locale}/recipes/<slug>` no locale corrente; sem slug
+                  // naquele locale cai no fallback `/{locale}/recipes/<uuid>` (que 308a). Nunca link nu.
+                  href={recipeDetailPath(locale, item.slug ?? item.id)}
                   className="flex h-full flex-col rounded-xl border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
                 >
                   {item.imageUrl != null ? (

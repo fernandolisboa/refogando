@@ -41,6 +41,7 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useConversationChat } from '@/hooks/use-conversation-chat'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { lastExchange } from './conversa-focused-view'
 import { RecipeDetailView } from './recipe-detail-view'
 
@@ -299,7 +300,9 @@ export function CreateConversaExperience({
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}
                 {result.recipeId && (
                   <Button asChild>
-                    <Link href={`/recipes/${result.recipeId}`}>{m.verReceita}</Link>
+                    {/* #231 (ADR-0020): a destilação não devolve slug — linka o fallback canônico por
+                        UUID `/{locale}/recipes/<uuid>` (que 308a pro slug). Nunca link nu sem locale. */}
+                    <Link href={recipeDetailPath(locale, result.recipeId)}>{m.verReceita}</Link>
                   </Button>
                 )}
               </div>

@@ -54,7 +54,7 @@ export default async function PublicProfilePage({
 
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
-      <PublicProfileView profile={profile} m={messages} />
+      <PublicProfileView profile={profile} m={messages} locale={locale} />
     </Container>
   )
 }

@@ -73,6 +73,14 @@ export type SearchHitRow = {
    * `projectResult` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA"). NUNCA expõe o id.
    */
   image_provenance: string | null
+  /**
+   * Slug canônico (#231, ADR-0020) — `recipe_translation.slug` da tradução do locale PEDIDO
+   * (`req_t.slug` no loader, MESMO LEFT JOIN do título). NULL quando a Receita não tem tradução COM
+   * slug naquele locale (só o original, ou slug ainda não congelado). `projectResult` o projeta em
+   * `SearchResult.slug`; AUSENTE ⇒ o card linka o canônico por UUID (`/{locale}/recipes/<uuid>`, que
+   * 308a). NUNCA é o UUID — o UUID é chave interna, jamais URL pública.
+   */
+  slug: string | null
 }
 
 /** Uma linha do DTO da Busca. `ts_rank`/`owner_id` são INTERNOS — NUNCA aparecem aqui. */
@@ -102,6 +110,13 @@ export type SearchResult = {
   imageUrl?: string
   /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto. */
   imageAiGenerated?: boolean
+  /**
+   * Slug canônico do locale CORRENTE (#231, ADR-0020) — pro card linkar `/{locale}/recipes/<slug>`.
+   * AUSENTE ("ausente ≠ vazio") quando a Receita não tem tradução COM slug no locale pedido (só o
+   * original, ou slug ainda não congelado): o card cai no fallback canônico por UUID
+   * (`/{locale}/recipes/<uuid>`, que 308a pro slug). NUNCA é o UUID.
+   */
+  slug?: string
 }
 
 /**
@@ -236,6 +251,9 @@ export function projectResult(
     ...(hit.image_url != null ? { imageUrl: hit.image_url } : {}),
     // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated.
     ...(hit.image_provenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
+    // #231/Slug: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o LEFT JOIN
+    // do locale pedido trouxe slug (req_t.slug != null) — senão o card cai no fallback por UUID.
+    ...(hit.slug != null ? { slug: hit.slug } : {}),
   }
 }
 

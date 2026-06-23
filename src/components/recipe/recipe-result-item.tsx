@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { Image as ImageIcon } from 'lucide-react'
 import { classifySection, type Origin, type SearchSection } from '@/domain/recipe'
 import type { RecipeAuthor } from '@/domain/recipe-search-read'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { cn } from '@/lib/utils'
 
 /** Rótulos de selo por seção, já localizados. O item escolhe pelo seu próprio
@@ -24,6 +25,16 @@ export type BadgeLabels = Record<SearchSection, string>
 
 export type RecipeResultItemProps = {
   recipeId: string
+  /**
+   * Locale CORRENTE (#231, ADR-0020) — o segmento `[locale]` do link canônico `/{locale}/recipes/…`.
+   * Obrigatório: o pai (server por segmento `[locale]`, ou client via `useLocale()`) sempre o conhece.
+   */
+  locale: string
+  /**
+   * Slug do locale corrente (#231) — quando presente, o card linka `/{locale}/recipes/<slug>`
+   * (canônico). AUSENTE ⇒ fallback `/{locale}/recipes/<uuid>` (que 308a pro slug). NUNCA link nu.
+   */
+  slug?: string
   displayedTitle: string
   origin: Origin
   autoTranslationSignal: boolean
@@ -54,6 +65,8 @@ export type RecipeResultItemProps = {
 
 export function RecipeResultItem({
   recipeId,
+  locale,
+  slug,
   displayedTitle,
   origin,
   autoTranslationSignal,
@@ -80,12 +93,15 @@ export function RecipeResultItem({
   // #129/Autoria: "por <name>". {name} interpolado por replace (folhas i18n são string).
   const byline =
     author !== undefined && byLabel !== undefined ? byLabel.replace('{name}', author.name) : null
+  // #231 (ADR-0020): link canônico `/{locale}/recipes/<slug>` no locale corrente; sem slug naquele
+  // locale, cai no fallback `/{locale}/recipes/<uuid>` (que 308a pro slug) — NUNCA link nu sem locale.
+  const detailHref = recipeDetailPath(locale, slug ?? recipeId)
 
   return (
     <li className="flex items-center gap-4 border-t border-border py-4 first:border-t-0">
       <div className="min-w-0 flex-1">
         {/* O título é o link primário pro detalhe; foco visível herda do :focus-visible global. */}
-        <Link href={`/recipes/${recipeId}`} className="group block rounded-sm">
+        <Link href={detailHref} className="group block rounded-sm">
           {kickerLabel.length > 0 && (
             <div className={cn('mb-1 text-xs font-semibold tracking-wide', kickerColor)}>
               {kicker}

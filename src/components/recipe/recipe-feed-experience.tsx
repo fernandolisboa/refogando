@@ -161,6 +161,8 @@ export function RecipeFeedExperience() {
             <RecipeResultItem
               key={it.recipeId}
               recipeId={it.recipeId}
+              locale={locale}
+              slug={it.slug}
               displayedTitle={it.displayedTitle}
               origin={it.origin}
               autoTranslationSignal={it.autoTranslationSignal}

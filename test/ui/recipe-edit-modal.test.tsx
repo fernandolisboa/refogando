@@ -511,8 +511,9 @@ describe('RecipeEditModal — modo DERIVE (#196)', () => {
     expect(fetchMock.mock.calls.every((c) => (c[1] as RequestInit).method !== 'PATCH')).toBe(true)
     const body = JSON.parse((call[1] as RequestInit).body as string)
     expect(body.edits.titulo).toBe('Minha feijoada')
-    // Navega pra nova Receita (sua, privada).
-    expect(push).toHaveBeenCalledWith('/recipes/new-9')
+    // Navega pra nova Receita (sua, privada). #231 (ADR-0020): o /derive não devolve slug ⇒ fallback
+    // canônico locale-no-caminho `/{locale}/recipes/<uuid>` (pt-BR), que 308a pro slug. Nunca nu.
+    expect(push).toHaveBeenCalledWith('/pt-BR/recipes/new-9')
   })
 
   it('o toggle de Visibilidade NÃO aparece no modo derive (a derivada nasce privada)', async () => {
@@ -545,7 +546,8 @@ describe('RecipeEditModal — modo DERIVE (#196)', () => {
     await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
     // Sem confirm de editar-pública: derivar não mexe na base; o POST sai direto.
     expect(screen.queryByText(M.editarPublicaAviso)).not.toBeInTheDocument()
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/recipes/new-2'))
+    // #231: o /derive não devolve slug ⇒ fallback canônico locale-no-caminho (pt-BR), nunca nu.
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/pt-BR/recipes/new-2'))
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
   })
 

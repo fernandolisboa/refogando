@@ -100,6 +100,12 @@ export type PersistGenerationResult = {
   generationId: string
   creationSessionId: string
   outcome: 'success' | 'degraded' | 'playful' | 'impossible'
+  // Slug + locale CONGELADOS na criação (#231/#229, ADR-0020): o slug per-locale da tradução do
+  // ORIGINAL recém-criado e o seu `locale`. SÓ no caminho com Receita (success/degraded/playful) —
+  // `impossible` não cria Receita/tradução ⇒ ambos `undefined`. O caller (route/stream) os devolve ao
+  // cliente pra montar o link canônico `/{locale}/recipes/<slug>` sem um 2º GET.
+  slug?: string
+  locale?: string
 }
 
 /**
@@ -326,6 +332,9 @@ export async function persistGeneration(
       generationId: gen.id,
       creationSessionId: sessionId,
       outcome: result.outcome,
+      // #231/#229: slug + locale congelados (do INSERT da tradução do original) pro link canônico.
+      slug,
+      locale: r.originalLocale,
     }
   })
 }
