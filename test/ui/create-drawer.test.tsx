@@ -42,6 +42,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
+import { parseTranscript } from '@/domain/transcript'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 
 const D = ptBR.criarDrawer
@@ -56,6 +57,11 @@ function authed(): SessionState {
     isRefetching: false,
     refetch: vi.fn(),
   }
+}
+
+/** Sessão ANÔNIMA (Visitante): sem `data`, sem `error`, resolvida. */
+function anon(): SessionState {
+  return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
 }
 
 /** Casca controlada: monta o drawer aberto e expõe o estado open para asseverar fechamento. */
@@ -198,6 +204,16 @@ function mockConversaFetch(opts: {
     const init = args[1] as RequestInit | undefined
     const method = (init?.method ?? 'GET').toUpperCase()
     if (url.includes('/api/conversations/stream')) {
+      // ESPELHA a pré-validação da rota (src/app/api/conversations/stream/route.ts): roda
+      // `parseTranscript(body.transcript)` e devolve 400 JSON ANTES de abrir o stream quando o
+      // shape é inválido (notadamente a última fala ≠ 'user' → `ultima_fala_nao_usuario`). Sem
+      // isto o mock aceitaria um re-POST de transcript que termina em 'assistant' (caminho feliz
+      // após um turno de sucesso) que o servidor REAL rejeitaria → 400 pré-stream → `dropped`.
+      const body = JSON.parse(String(init?.body ?? '{}')) as { transcript?: unknown }
+      const parsed = parseTranscript(body.transcript)
+      if (!parsed.ok) {
+        return { ok: false, status: 400, body: null, json: async () => ({ error: parsed.error }) } as unknown as Response
+      }
       const s = typeof opts.stream === 'function' ? await opts.stream() : opts.stream
       if (s && 'reject' in s) throw new TypeError('network down')
       if (s && 'status' in s) {
@@ -515,26 +531,24 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/conversations/stream'))).toBe(true)
   })
 
-  it('CD3 — "Destilar receita" gera a Receita e cai em gerada (nome = único <h1>; Ver receita)', async () => {
+  it('CD3 — a Receita aparece como TERMINAL do turno de sucesso (nome = único <h1>; Ver receita; sem banner de queda)', async () => {
+    // MODELO correto (espelha a ConversaFocusedView, #104): a Receita NÃO é destilada por um
+    // botão autônomo — ela cai como TERMINAL do turno quando o servidor manda o frame `recipe`.
+    // O transcript de um turno de SUCESSO termina em 'assistant'; re-POSTá-lo daria 400
+    // (`ultima_fala_nao_usuario`). Por isso NÃO há botão "Destilar receita" no caminho feliz.
     const user = userEvent.setup()
-    let ctrl = makeStreamController()
+    const ctrl = makeStreamController()
     const fetchMock = mockConversaFetch({
-      stream: () => Promise.resolve(ctrl),
+      stream: ctrl,
       createSession: { status: 201, body: { sessionId: 'sess-1' } },
       recipes: { status: 200, body: baseView({ id: 'r-1', name: 'Feijão tropeiro', origin: 'ai_chat' }) },
     })
     render(<Harness conversaHint />)
 
-    // 1º turno (conversa).
+    // Turno único: a resposta da IA + o terminal `recipe` (recipeId) chegam no MESMO turno → o
+    // servidor decide o desfecho ao FIM do turno e a Receita vira o herói.
     await enviar(user, 'quero um feijão tropeiro')
     ctrl.push({ type: 'token', text: 'Beleza.' })
-    ctrl.push({ type: 'recipe', outcome: 'success', recipeId: null, advisory: null })
-    ctrl.close()
-    await screen.findByText('Beleza.')
-
-    // "Destilar receita" → re-POSTa o transcript; o servidor decide o terminal recipe → gerada.
-    ctrl = makeStreamController()
-    await user.click(screen.getByRole('button', { name: D.destilarReceita }))
     ctrl.push({ type: 'recipe', outcome: 'success', recipeId: 'r-1', advisory: null })
     ctrl.close()
 
@@ -545,8 +559,12 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     expect(h1s[0]).toHaveTextContent('Feijão tropeiro')
     // "Ver e publicar receita" leva ao detalhe (#59) — não re-gera.
     expect(screen.getByRole('link', { name: CV.verReceita })).toHaveAttribute('href', '/recipes/r-1')
-    // Sanidade: dois POSTs de stream (turno + destilar); a destilação reusa o mesmo endpoint.
-    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/conversations/stream'))).toHaveLength(2)
+    // NÃO há botão autônomo de destilar (a Receita já aparece no terminal do turno).
+    expect(screen.queryByRole('button', { name: D.destilarReceita })).toBeNull()
+    // Caminho feliz: SEM banner de queda (o re-POST quebrado não acontece mais).
+    expect(screen.queryByText(CV.quedaTitulo)).toBeNull()
+    // Sanidade: UM ÚNICO POST de stream (o turno) — sem re-destilar redundante.
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/conversations/stream'))).toHaveLength(1)
   })
 
   it('CD4 — cap 429 (limite_geracao) no stream: mensagem amigável, sem GET de Receita (cap intacto)', async () => {
@@ -610,5 +628,25 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     expect(screen.getByLabelText(enUS.conversa.inputLabel)).toBeInTheDocument()
     expect(screen.getByText(enUS.criarDrawer.conversaIntro)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+  })
+
+  it('CD8 — Visitante (anônimo): CTA "precisa entrar" → /sign-in, SEM input de chat, SEM <h1>, SEM banner de queda', async () => {
+    // Sem o guard de sessão, anônimo abriria o chat, mandaria mensagem → 401 pré-stream →
+    // `dropped` (loop de "queda" enganoso). O guard espelha os outros 2 caminhos do MESMO drawer.
+    sessionState = anon()
+    const fetchMock = mockConversaFetch({})
+    render(<Harness conversaHint />)
+
+    // A CTA "precisa entrar" aparece com link para /sign-in.
+    expect(screen.getByText(CV.precisaEntrar)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // O chat NÃO está disponível para o Visitante.
+    expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()
+    // INVARIANTE (#194): a CTA usa <p>, NÃO <h1> — Conversa idle não tem <h1>.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
+    // NÃO aparece o banner de queda (o anônimo nunca chega a postar).
+    expect(screen.queryByText(CV.quedaTitulo)).toBeNull()
+    // Nenhum fetch foi disparado (o guard barra antes de qualquer rede).
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

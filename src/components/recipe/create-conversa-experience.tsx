@@ -1,9 +1,9 @@
 'use client'
 /**
  * Caminho CONVERSA do drawer "Nova receita" (#194, ADR-0021). Torna FUNCIONAL o card que era
- * placeholder "em breve": um chat multi-turno + a ação "Destilar receita", que transforma a
- * conversa numa Receita. É a contraparte enxuta da `ConversaFocusedView` (a vista focada de
- * `/create`), enxugada para caber no DRAWER.
+ * placeholder "em breve": um chat multi-turno que destila a conversa numa Receita. É a
+ * contraparte enxuta da `ConversaFocusedView` (a vista focada de `/create`), enxugada para
+ * caber no DRAWER.
  *
  * REUSO total do cérebro: o stream NDJSON, a destilação bloqueante, os estados (streaming/
  * distilling/result/error/dropped), a retomada (#15) e o cap #167 (429 nunca consome cap) vivem
@@ -11,20 +11,33 @@
  * partir do "bag" do hook e reportamos o loading ao shell (`onLoadingChange`) para o drawer
  * travar o dismiss enquanto uma destilação está EM VOO (igual aos caminhos Prompt/Estruturado).
  *
+ * MODELO de destilação (espelha a `ConversaFocusedView`): a Receita aparece como TERMINAL de
+ * CADA turno de sucesso — o servidor decide o desfecho `recipe` ao FIM do turno (a UI só anexa
+ * a fala do Usuário e posta; `handleTerminal` commita a Receita). NÃO há botão autônomo de
+ * "destilar" no caminho feliz: `redestilar` só é legítimo nos estados `error`/`dropped`, onde o
+ * transcript local TERMINA em 'user' (a fala do Assistente do turno falho não foi commitada).
+ * Após um turno de SUCESSO o transcript termina em 'assistant' e re-POSTá-lo daria 400 no
+ * servidor (`parseTranscript` → `ultima_fala_nao_usuario`). Por isso o "destilar" autônomo NÃO
+ * existe aqui; o re-destilar/retomar vive só nos CTAs dos frames de erro/queda abaixo.
+ *
+ * GUARD de sessão (decisão 4, igual aos outros 2 caminhos do MESMO drawer): Visitante não usa o
+ * chat — sem o guard, anônimo manda mensagem → 401 pré-stream → `dropped` (loop de "queda"
+ * enganoso). CRÍTICO: a CTA "precisa entrar" usa `<p>` (NÃO `<h1>`) para PRESERVAR a invariante
+ * "Conversa idle não tem `<h1>`" do drawer (o `SheetTitle` é o `<h2>` do diálogo).
+ *
  * INVARIANTE de heading (#194): a Conversa IDLE NÃO tem `<h1>` — o drawer já tem seu nome
  * acessível pelo `SheetTitle` (um `<h2>` do Radix). Quando a destilação cai em `result`, o nome
  * da Receita renderizado por `RecipeDetailView` vira o ÚNICO `<h1>` do documento. Diferente da
  * vista focada, NÃO renderizamos um `titulo`/`descricao` de página — o header do drawer já o faz.
  *
  * Diferenças de UI vs. a vista focada (deliberadas, para o drawer): sem o heading/descrição de
- * página, sem placeholders rotativos, e a ação primária é o botão "Destilar receita" (reusa
- * `redestilar`, que re-POSTa o transcript atual → o servidor decide o terminal `recipe`), além
- * do "Enviar" de cada turno. Apagar/Ver transcrição/Nova conversa ficam fora desta fatia (a
- * reabertura do drawer já zera o estado via `key`).
+ * página e sem placeholders rotativos. Apagar/Ver transcrição/Nova conversa ficam fora desta
+ * fatia (a reabertura do drawer já zera o estado via `key`).
  */
 import { useEffect } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useConversationChat } from '@/hooks/use-conversation-chat'
@@ -41,6 +54,7 @@ export function CreateConversaExperience({
   const { locale, messages } = useLocale()
   const m = messages.conversa
   const d = messages.criarDrawer
+  const session = useSession()
 
   const {
     transcript,
@@ -70,11 +84,26 @@ export function CreateConversaExperience({
     onLoadingChange?.(inFlight)
   }, [inFlight, onLoadingChange])
 
-  // Retomada em andamento: aguarda a reidratação (sem piscar o chat vazio).
-  if (resuming) {
+  // Retomada em andamento OU sessão ainda resolvendo: aguarda (sem piscar o chat vazio nem a CTA
+  // de "precisa entrar" antes de saber se há sessão).
+  if (resuming || session.isPending) {
     return (
       <div aria-busy="true" className="text-muted">
         {messages.system.loading}
+      </div>
+    )
+  }
+  // ── Guard de sessão (decisão 4) — Visitante NÃO usa o chat. Sem isto, anônimo manda mensagem →
+  // 401 pré-stream → `dropped` (loop de "queda" enganoso). Espelha os outros 2 caminhos do MESMO
+  // drawer (Estruturado/Prompt). CRÍTICO: usa `<p>` (NÃO `<h1>`) p/ preservar a invariante
+  // "Conversa idle não tem `<h1>`" do drawer (o `SheetTitle` já é o `<h2>` do diálogo).
+  if (session.error || !session.data) {
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-muted">{m.precisaEntrar}</p>
+        <Button asChild>
+          <Link href="/sign-in">{messages.nav.signIn}</Link>
+        </Button>
       </div>
     )
   }
@@ -157,28 +186,19 @@ export function CreateConversaExperience({
             className="resize-y"
           />
           <div className="flex flex-wrap items-center gap-3">
+            {/* "Enviar" é a ÚNICA ação primária. A Receita aparece como TERMINAL de cada turno de
+                sucesso (o servidor decide o desfecho `recipe` ao fim do turno) — NÃO há botão
+                autônomo de "destilar" no caminho feliz: re-POSTar um transcript que termina em
+                'assistant' daria 400 (`ultima_fala_nao_usuario`). O re-destilar/retomar vive só
+                nos CTAs dos frames de erro/queda abaixo, onde o transcript termina em 'user'. */}
             <Button
               type="submit"
-              variant="secondary"
               aria-busy={inFlight}
               disabled={inFlight || input.trim() === ''}
               className="disabled:cursor-not-allowed disabled:opacity-70"
             >
               {inFlight ? m.enviando : m.enviar}
             </Button>
-            {/* "Destilar receita" — transforma a conversa numa Receita (geração bloqueante após o
-                stream). REUSA `redestilar` (re-POSTa o transcript atual; o servidor decide o
-                terminal `recipe`). Só quando há conversa E nenhuma destilação em voo. */}
-            {transcript.length > 0 && (
-              <Button
-                type="button"
-                onClick={redestilar}
-                disabled={inFlight}
-                className="disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {d.destilarReceita}
-              </Button>
-            )}
           </div>
         </fieldset>
       </form>
