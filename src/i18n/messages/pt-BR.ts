@@ -544,6 +544,11 @@ export const ptBR = {
     modalTitulo: 'Editar receita',
     modalDescricao: 'Altere o conteúdo da sua receita. As mudanças valem para esta mesma receita.',
     modalFechar: 'Fechar',
+    // #196/ADR-0021: o MESMO modal abre para DERIVAR uma receita NÃO-própria. Salvar não muta a
+    // base — cria uma cópia sua (privada) e leva você até ela. Sem toggle de Visibilidade nem
+    // Apagar (a base não é sua); o aviso de cópia reusa `derivada.copiaAviso`.
+    modalDerivarTitulo: 'Criar minha versão',
+    modalDerivarDescricao: 'Edite o conteúdo. Vamos salvar como uma cópia sua, privada — a receita original não muda.',
   },
   // Regeneração: nova versão imutável por linhagem (#20). Regenerar a PRÓPRIA receita cria uma
   // NOVA versão a partir do mesmo pedido — nunca sobrescreve; as versões anteriores ficam salvas.

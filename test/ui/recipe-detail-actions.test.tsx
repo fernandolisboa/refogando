@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import type { RecipeView } from '@/domain/recipe-read'
@@ -101,6 +102,56 @@ describe('RecipeDetailActions após #192 (detalhe só-leitura)', () => {
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: ptBR.edicaoPropria.editarPublicaConfirmar }),
+    ).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * #196/ADR-0021: numa Receita NÃO-própria, o autenticado vê "Criar minha versão" — que abre o
+ * MESMO modal (compartilhado, `RecipeEditModal mode="derive"`), não mais o form inline da antiga
+ * `DeriveExperience`. O conteúdo só aparece ao abrir o modal (detalhe só-leitura).
+ */
+function nonOwnerView(over: Partial<RecipeView> = {}): RecipeView {
+  return { ...ownerView(), canManage: false, visibility: undefined, ...over }
+}
+
+describe('RecipeDetailActions — não-dono autenticado deriva no modal (#196)', () => {
+  it('mostra o gatilho "Criar minha versão" e nenhum form inline (detalhe só-leitura)', () => {
+    sessionState = {
+      data: { user: { id: 'u-1' } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    }
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+
+    expect(
+      screen.getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }),
+    ).toBeInTheDocument()
+    // Nenhum modal montado de saída; nenhum campo inline.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Bolo simples')).not.toBeInTheDocument()
+  })
+
+  it('clicar "Criar minha versão" abre o modal compartilhado prefilled da base', async () => {
+    const user = userEvent.setup()
+    sessionState = {
+      data: { user: { id: 'u-1' } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    }
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveAccessibleName(ptBR.edicaoPropria.modalDerivarTitulo)
+    // Prefilled da base; sem Apagar (não é sua).
+    expect(screen.getByDisplayValue('Bolo simples')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: ptBR.minhasCriacoes.apagar }),
     ).not.toBeInTheDocument()
   })
 })
