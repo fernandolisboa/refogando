@@ -431,6 +431,19 @@ export const enUS: Messages = {
     erroWebImported: "Recipes imported from the web can't be published.",
     erroNaoEncontrada: "We couldn't find this recipe.",
     erroGenerico: "We couldn't change the visibility. Try again.",
+    // #195/ADR-0021 (decision 4): Visibility toggle INSIDE the edit modal — local draft (no server
+    // call until Save). Content saves first; only then, if visibility changed, publishing commits
+    // via a separate request.
+    rascunhoLegenda: 'Visibility',
+    rascunhoTornarPublica: 'Make public',
+    rascunhoTornarPublicaAjuda: 'It appears in the community pool when you save.',
+    rascunhoManterPrivada: 'Only you can see this recipe.',
+    // PARTIAL Save failure: content saved, but publish/unpublish failed. The edit is NOT lost; only
+    // the visibility didn't change.
+    erroVisibilidadeParcial:
+      "We saved your changes, but couldn't change the visibility. Try again.",
+    // Status chip (non-clickable) on the detail — the owner sees the state at a glance.
+    chipRotulo: 'Visibility',
   },
   // Edit IN-PLACE + delete your OWN recipe (#21). Same substance translated (ADR-0001, not
   // byte-identical). Confirm editing the public one (#277), delete with irreversibility warning

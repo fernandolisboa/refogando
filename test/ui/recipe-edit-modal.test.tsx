@@ -267,3 +267,165 @@ describe('RecipeEditModal (#192)', () => {
     expect((call[1] as RequestInit).method).toBe('PATCH')
   })
 })
+
+/**
+ * #195/ADR-0021 (decisão 4): Visibilidade DENTRO do modal como toggle RASCUNHO — clicar não chama o
+ * servidor. No Salvar, a orquestração é conteúdo-primeiro: (1) PATCH; (2) SÓ se a visibilidade
+ * mudou, POST publish/unpublish por request separado. web_imported/playful escondem o toggle.
+ * Falha parcial (PATCH ok, publish falha) preserva o conteúdo + edição e mostra só o erro.
+ */
+const MV = ptBR.visibilidade
+
+/** Fetch mockado que devolve por (método+URL); registra a ordem das chamadas (asserta a sequência). */
+function mockFetchSeq(
+  resolver: (method: string, url: string) => FetchResult,
+): ReturnType<typeof vi.fn> {
+  const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
+    const url = String(args[0])
+    const init = args[1] as RequestInit | undefined
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const r = resolver(method, url)
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body ?? {} } as Response
+  })
+  vi.stubGlobal('fetch', impl)
+  return impl
+}
+
+/** Liga o toggle "Tornar pública" (rascunho) dentro do modal. */
+async function togglePublic(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+  await user.click(within(dialog).getByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) }))
+}
+
+describe('RecipeEditModal — Visibilidade no modal (#195)', () => {
+  it('mostra o toggle de Visibilidade (rascunho); clicar NÃO dispara request', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetchSeq(() => ({ status: 200, body: { ok: true } }))
+    renderModal(ownerView({ visibility: 'private' }))
+    const dialog = await openModal(user)
+
+    const toggle = within(dialog).getByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) })
+    expect(toggle).not.toBeChecked()
+    await togglePublic(user, dialog)
+    expect(toggle).toBeChecked()
+    // Clicar no toggle NÃO chama o servidor (rascunho local).
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('Salvar: PATCH do conteúdo e, SÓ se a visibilidade mudou, POST /publish — nessa ordem', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetchSeq((method, url) =>
+      url.endsWith('/publish') || url.endsWith('/unpublish')
+        ? { status: 200, body: { visibility: 'public' } }
+        : { status: 200, body: { ok: true } },
+    )
+    renderModal(ownerView({ visibility: 'private' }))
+    const dialog = await openModal(user)
+
+    await togglePublic(user, dialog)
+    await user.click(within(dialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBe(2))
+    // Sequência: conteúdo primeiro (PATCH), depois publish.
+    const [c1, c2] = fetchMock.mock.calls
+    expect(String(c1[0])).toBe('/api/recipes/r-1')
+    expect((c1[1] as RequestInit).method).toBe('PATCH')
+    expect(String(c2[0])).toBe('/api/recipes/r-1/publish')
+    expect((c2[1] as RequestInit).method).toBe('POST')
+    // O PATCH não carrega `visibility` (fronteira owner-edit preservada).
+    const sent = JSON.parse((c1[1] as RequestInit).body as string)
+    expect(sent.visibility).toBeUndefined()
+    // Salvou tudo ⇒ o modal fecha.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('Salvar SEM mudar a visibilidade: só PATCH, nenhum publish/unpublish', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetchSeq(() => ({ status: 200, body: { ok: true } }))
+    renderModal(ownerView({ visibility: 'private' }))
+    const dialog = await openModal(user)
+
+    // Edita só o título, NÃO mexe no toggle.
+    const titulo = within(dialog).getByDisplayValue('Bolo simples')
+    await user.clear(titulo)
+    await user.type(titulo, 'Bolo de fubá')
+    await user.click(within(dialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    // Exatamente UMA chamada: o PATCH. Sem publish/unpublish.
+    expect(fetchMock.mock.calls.length).toBe(1)
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('PATCH')
+  })
+
+  it('pública → despublicar no Salvar: PATCH depois POST /unpublish', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetchSeq((method, url) =>
+      url.endsWith('/unpublish')
+        ? { status: 200, body: { visibility: 'private' } }
+        : { status: 200, body: { ok: true } },
+    )
+    renderModal(ownerView({ visibility: 'public' }))
+    const dialog = await openModal(user)
+
+    // Desmarca "Tornar pública" (estava marcada por ser pública).
+    const toggle = within(dialog).getByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) })
+    expect(toggle).toBeChecked()
+    await user.click(toggle)
+
+    // Pública ⇒ Salvar abre o confirm #277 antes de gravar; confirma.
+    await user.click(within(dialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+    const confirm = await screen.findByText(M.editarPublicaAviso)
+    const confirmDialog = confirm.closest('[role="dialog"]') as HTMLElement
+    await user.click(within(confirmDialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBe(2))
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('PATCH')
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/recipes/r-1/unpublish')
+  })
+
+  it('web_imported: o toggle de público NÃO aparece', async () => {
+    const user = userEvent.setup()
+    mockFetchSeq(() => ({ status: 200, body: { ok: true } }))
+    renderModal(ownerView({ origin: 'web_imported' }))
+    const dialog = await openModal(user)
+    expect(
+      within(dialog).queryByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('playful: o toggle de público NÃO aparece', async () => {
+    const user = userEvent.setup()
+    mockFetchSeq(() => ({ status: 200, body: { ok: true } }))
+    renderModal(ownerView({ resultKind: 'playful' }))
+    const dialog = await openModal(user)
+    expect(
+      within(dialog).queryByRole('checkbox', { name: new RegExp(MV.rascunhoTornarPublica) }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('falha parcial: PATCH ok mas publish 422 → conteúdo salvo, erro só da visibilidade, edição preservada (modal aberto)', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetchSeq((method, url) =>
+      url.endsWith('/publish')
+        ? { status: 422, body: { error: 'web_imported_nao_publicavel' } }
+        : { status: 200, body: { ok: true } },
+    )
+    renderModal(ownerView({ visibility: 'private' }))
+    const dialog = await openModal(user)
+
+    const titulo = within(dialog).getByDisplayValue('Bolo simples')
+    await user.clear(titulo)
+    await user.type(titulo, 'Bolo de fubá')
+    await togglePublic(user, dialog)
+    await user.click(within(dialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    // O conteúdo gravou (PATCH ok) e a page foi relida.
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    // PATCH + publish foram tentados, nessa ordem.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('PATCH')
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/recipes/r-1/publish')
+    // Erro SÓ da visibilidade (parcial), e o modal continua aberto com a edição preservada.
+    expect(await screen.findByText(MV.erroVisibilidadeParcial)).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Bolo de fubá')).toBeInTheDocument()
+  })
+})

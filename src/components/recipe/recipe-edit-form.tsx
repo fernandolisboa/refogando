@@ -75,7 +75,20 @@ export function RecipeEditForm({
   const mc = messages.criar // reusa rótulos de campo do create
   const router = useRouter()
 
-  const isPublic = view.visibility === 'public'
+  // Visibilidade ATUAL no servidor (prefill do toggle rascunho). `view.visibility` é owner-gated:
+  // sempre presente no detalhe do dono; default defensivo 'private' se faltar.
+  const initialPublic = view.visibility === 'public'
+  const isPublic = initialPublic
+
+  // #195/ADR-0021 (decisão 4): o toggle de Visibilidade é RASCUNHO LOCAL — clicar NÃO chama o
+  // servidor. O Salvar comita: PATCH do conteúdo primeiro; SÓ se isto difere do estado inicial,
+  // POST publish/unpublish por request separado (a fronteira de `owner-edit.ts` nunca toca
+  // visibility). web_imported (#168/ADR-0019) e playful (ADR-0013) NUNCA publicam → toggle ESCONDIDO
+  // (o gate de servidor segue valendo; um 422 que escape é tratado in-modal).
+  const isWebImported = view.origin === 'web_imported'
+  const isPlayful = view.resultKind === 'playful'
+  const showVisibilityToggle = !isWebImported && !isPlayful
+  const [draftPublic, setDraftPublic] = useState(initialPublic)
 
   // ── Estado do formulário, prefilled da view ─────────────────────────────────
   const [titulo, setTitulo] = useState(view.name)
@@ -93,7 +106,9 @@ export function RecipeEditForm({
 
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [errorKey, setErrorKey] = useState<'save' | 'delete' | null>(null)
+  // `visibility` = falha PARCIAL no Salvar (PATCH ok, publish/unpublish falhou): o conteúdo gravou,
+  // só a visibilidade não mudou — a edição NÃO se perde.
+  const [errorKey, setErrorKey] = useState<'save' | 'delete' | 'visibility' | null>(null)
   const [dialog, setDialog] = useState<Dialog>('none')
 
   // Foco do diálogo: guarda o gatilho p/ devolver o foco ao fechar; foca o primário ao abrir.
@@ -185,12 +200,19 @@ export function RecipeEditForm({
     }
   }
 
-  /** Executa o PATCH (chamado direto na privada; via confirmação na pública). */
+  /**
+   * #195/ADR-0021 (decisão 4): Salvar orquestra CONTEÚDO PRIMEIRO. (1) PATCH do conteúdo
+   * (`owner-edit.ts`, nunca toca visibility); (2) SÓ se o rascunho de Visibilidade difere do estado
+   * inicial, POST publish/unpublish por request SEPARADO. Falha parcial (PATCH ok, publish falha)
+   * deixa o conteúdo salvo e mostra só o erro de visibilidade (sem perder a edição nem fechar o
+   * modal) — ordem conteúdo-primeiro = a falha menos surpreendente.
+   */
   async function salvar() {
     if (saving) return
     setSaving(true)
     setErrorKey(null)
     try {
+      // ── (1) Conteúdo ──────────────────────────────────────────────────────────
       const res = await fetch(`/api/recipes/${view.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -203,6 +225,31 @@ export function RecipeEditForm({
         return
       }
       const data = (await res.json().catch(() => ({}))) as { imageReviewSuggested?: boolean }
+
+      // ── (2) Visibilidade — SÓ se o rascunho mudou ─────────────────────────────
+      // O toggle só aparece para Receitas publicáveis; mesmo assim, gateamos por
+      // `showVisibilityToggle` (defesa) e por mudança real (idempotência — request só quando muda).
+      if (showVisibilityToggle && draftPublic !== initialPublic) {
+        const endpoint = draftPublic ? 'publish' : 'unpublish'
+        let visOk = false
+        try {
+          const visRes = await fetch(`/api/recipes/${view.id}/${endpoint}`, { method: 'POST' })
+          visOk = visRes.ok
+        } catch {
+          visOk = false
+        }
+        if (!visOk) {
+          // Falha PARCIAL: o conteúdo JÁ gravou. Mantém o modal aberto, NÃO perde a edição, e
+          // relê o detalhe (o conteúdo novo aparece). Mostra só o erro de visibilidade.
+          setDialog('none')
+          setErrorKey('visibility')
+          const base = `/recipes/${view.id}?locale=${encodeURIComponent(currentLocale)}`
+          router.replace(data.imageReviewSuggested ? `${base}&reviewImage=1` : base)
+          router.refresh()
+          return
+        }
+      }
+
       setDialog('none')
       // Relê a page server (o detalhe reflete a edição + recomputa Aviso/diff de graça). #131:
       // edição in-place é a MESMA página — navega com `?reviewImage=1` quando a mudança foi VISUAL
@@ -291,6 +338,32 @@ export function RecipeEditForm({
             className="resize-y"
           />
         </label>
+
+        {/* #195/ADR-0021: toggle de Visibilidade — RASCUNHO local (não chama o servidor; comita no
+            Salvar). Escondido para web_imported (#168) e playful (ADR-0013), que nunca publicam. */}
+        {showVisibilityToggle && (
+          <fieldset className="flex flex-col gap-2 rounded-md border border-border bg-bg p-3">
+            <legend className="px-1 text-sm font-medium text-fg">
+              {messages.visibilidade.rascunhoLegenda}
+            </legend>
+            <label className="inline-flex items-start gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={draftPublic}
+                onChange={(e) => setDraftPublic(e.target.checked)}
+                className="mt-0.5 accent-brand-strong"
+              />
+              <span className="flex flex-col gap-0.5">
+                <span className="font-medium">{messages.visibilidade.rascunhoTornarPublica}</span>
+                <span className="text-muted">
+                  {draftPublic
+                    ? messages.visibilidade.rascunhoTornarPublicaAjuda
+                    : messages.visibilidade.rascunhoManterPrivada}
+                </span>
+              </span>
+            </label>
+          </fieldset>
+        )}
 
         {/* Ingredientes — linha por item (texto + quantidade + unidade). */}
         <fieldset className="flex flex-col gap-3">
@@ -457,6 +530,17 @@ export function RecipeEditForm({
             className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
           >
             {messages.system.error}
+          </p>
+        )}
+
+        {/* #195: falha PARCIAL no Salvar — conteúdo gravou, mas publicar/despublicar falhou. A
+            edição NÃO se perde; o modal fica aberto pro usuário tentar de novo. */}
+        {errorKey === 'visibility' && (
+          <p
+            role="alert"
+            className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+          >
+            {messages.visibilidade.erroVisibilidadeParcial}
           </p>
         )}
 

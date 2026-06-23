@@ -456,6 +456,19 @@ export const ptBR = {
     erroWebImported: 'Receitas importadas da web não podem ser publicadas.',
     erroNaoEncontrada: 'Não foi possível encontrar esta receita.',
     erroGenerico: 'Não foi possível mudar a visibilidade. Tente de novo.',
+    // #195/ADR-0021 (decisão 4): toggle de Visibilidade DENTRO do modal de edição — rascunho local
+    // (não chama o servidor até o Salvar). O conteúdo grava primeiro; só depois, se a visibilidade
+    // mudou, a publicação comita por request separado.
+    rascunhoLegenda: 'Visibilidade',
+    rascunhoTornarPublica: 'Tornar pública',
+    rascunhoTornarPublicaAjuda: 'Aparece no acervo da comunidade quando você salvar.',
+    rascunhoManterPrivada: 'Só você vê esta receita.',
+    // Falha PARCIAL no Salvar: o conteúdo gravou, mas publicar/despublicar falhou. A edição NÃO se
+    // perde; só a visibilidade não mudou.
+    erroVisibilidadeParcial:
+      'Salvamos suas mudanças, mas não foi possível alterar a visibilidade. Tente de novo.',
+    // Chip de status (não-clicável) no detalhe — o dono vê o estado de relance.
+    chipRotulo: 'Visibilidade',
   },
   // Edição IN-PLACE + apagar a PRÓPRIA receita (#21). Confirmar editar a pública (história #277:
   // a mudança fica visível a quem favoritou), apagar com aviso de irreversibilidade (#157), e o
