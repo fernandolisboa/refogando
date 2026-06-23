@@ -3,6 +3,11 @@
  * que ele devolve o STATUS e o Location certos, anexa `Vary: Accept-Language`, preserva a
  * query e NÃO entra em loop num caminho já prefixado. A lógica de DECISÃO em si tem seu
  * próprio teste (`locale-path.test.ts`); aqui é a tradução pra `NextResponse`.
+ *
+ * O proxy é SÍNCRONO e header-only — só negocia/normaliza locale, sem tocar o DB. A
+ * canonicalização do UUID legado → slug NÃO passa por aqui (é um permanentRedirect 308 GATEADO no
+ * Server Component da página de detalhe; ver `recipe-public-by-slug.test.ts` / CI), então o proxy
+ * não lê banco e roda inteiro no projeto "ui" (jsdom).
  */
 import { describe, it, expect } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -48,8 +53,9 @@ describe('proxy', () => {
   })
 
   it('caminho já prefixado corretamente → segue (NÃO redireciona), com Vary', () => {
-    const res = proxy(req('/pt-BR/recipes', { cookie: 'locale=en-US' }))
-    // NextResponse.next() não é um redirect (status 200), e não traz Location.
+    const res = proxy(req('/pt-BR/recipes/bolo-de-cenoura', { cookie: 'locale=en-US' }))
+    // NextResponse.next() não é um redirect (status 200), e não traz Location. O proxy NÃO inspeciona
+    // o caminho de detalhe (uuid vs slug): a canonicalização UUID→slug é do server component.
     expect(res.status).toBe(200)
     expect(res.headers.get('location')).toBeNull()
     expect(res.headers.get('vary')).toBe('Accept-Language')

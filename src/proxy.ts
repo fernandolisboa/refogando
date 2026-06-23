@@ -5,8 +5,11 @@
  * sem edge) — daí `proxy.ts` + `export function proxy`. Aqui o proxy é DELIBERADAMENTE fino:
  * delega a decisão inteira ("dado pathname + headers, qual redirect?") ao núcleo PURO
  * `decideLocaleRedirect` (testado no projeto "ui", sem banco) e só a traduz em `NextResponse`.
+ * NÃO toca o DB — é só negociação/normalização de locale, lendo cookie/Accept-Language/pathname
+ * (ADR-0020 consequência "o detector da raiz cabe num proxy nodejs"; o gate de leitura/redirect
+ * por slug mora NO SERVER COMPONENT, não aqui).
  *
- * Comportamento (ADR-0020 decisão 1 — DOIS redirects com status DIFERENTES de propósito):
+ * Comportamento (ADR-0020 decisão 1 — DOIS redirects de locale com status DIFERENTES de propósito):
  *  - raiz `/` e qualquer caminho NÃO-prefixado → **302** pro caminho com locale DETECTADO
  *    (cookie → Accept-Language → DEFAULT_LOCALE), preservando a rota e a query. Temporário e
  *    NUNCA 301 — o destino depende do `Accept-Language`; um 301 cacheável colaria o usuário no 1º
@@ -15,6 +18,11 @@
  *    do PATH (não da detecção): canonicalização permanente, Accept-Language-independente — então
  *    NÃO leva `Vary` (o destino não depende do header).
  *  - caminho já corretamente prefixado → segue (`NextResponse.next()`), SEM loop, com `Vary`.
+ *
+ * A canonicalização do link LEGADO por UUID `/{locale}/recipes/<uuid>` → slug NÃO mora aqui: é um
+ * `permanentRedirect` (308) GATEADO no Server Component da página de detalhe (ADR-0020 decisão 4 +
+ * "leitura/gate no server component"). Pôr o lookup de slug no DB AQUI vazaria responsabilidade
+ * (proxy é header-only) e poria DB no caminho quente de toda navegação prefixada.
  *
  * O `matcher` exclui `api`, `_next/*`, arquivos de metadados e assets com extensão: essas
  * rotas NÃO são páginas de UI e não devem ser prefixadas (a API é versionada por `:id`/dados,
