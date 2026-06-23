@@ -217,7 +217,7 @@ export const enUS: Messages = {
     imagemGrande: 'Image too large. Try a smaller one.',
     imagemErro: "We couldn't save the photo. Try again.",
     // AI generation (#132). {tempo} interpolated in the component via `.replace`.
-    imagemGerar: '✨ Generate with AI',
+    imagemGerar: 'Generate with AI',
     imagemGerarComPrompt: 'Generate with this prompt',
     imagemGerando: 'Generating…',
     imagemRefinar: 'Refine the prompt',

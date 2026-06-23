@@ -78,6 +78,23 @@ describe('RecipeImageManager — gestão da foto do prato (#130)', () => {
     expect(screen.getByText(M.imagemRemover)).toBeInTheDocument()
   })
 
+  it('#207 ordem das ações: Gerar com IA → Trocar/Adicionar foto → Remover', () => {
+    renderManager(true)
+    // O upload é um <label> dentro de Button asChild (não tem role=button), então comparamos
+    // a posição no DOM dos próprios nós de texto — robusto independentemente do elemento.
+    const gerar = screen.getByText(M.imagemGerar)
+    const upload = screen.getByText(M.imagemTrocar)
+    const remover = screen.getByText(M.imagemRemover)
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+    expect(gerar.compareDocumentPosition(upload) & FOLLOWING).toBeTruthy()
+    expect(upload.compareDocumentPosition(remover) & FOLLOWING).toBeTruthy()
+  })
+
+  it('#207 imagemGerar sem emoji ✨', () => {
+    expect(M.imagemGerar).toBe('Gerar com IA')
+    expect(M.imagemGerar).not.toContain('✨')
+  })
+
   it('reviewSuggested (#131) + imagem ⇒ mostra o aviso de revisar a foto', () => {
     render(
       <LocaleProvider initialLocale="pt-BR">
