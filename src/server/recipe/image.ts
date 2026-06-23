@@ -3,6 +3,7 @@ import type { Database } from '@/db/client'
 import { recipe, recipeImage, imageGeneration } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
 import type { ImageGenerator } from '@/server/images/image-generator'
+import { computeImageCost, type ImageUsage } from '@/domain/image-cost'
 import type { GalleryImage, RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import type { ImageProvenance } from '@/domain/recipe'
@@ -189,6 +190,11 @@ export async function applyRecipeImageGeneration(input: {
         userId,
         lineageId,
         writeLedger: true,
+        // #224: telemetria de custo (best-effort). O `usageMetadata` pode faltar (caminho ao vivo sem
+        // telemetria) ⇒ a linha do ledger nasce com usage/custo nulos. O modelo do gerador, quando
+        // ausente, cai no modelo da config (genConfig.model) — o que de fato foi pedido.
+        usage: generated.usageMetadata,
+        model: generated.model ?? genConfig.model,
       })
     })
   } catch (err) {
@@ -208,6 +214,11 @@ export async function applyRecipeImageGeneration(input: {
  * para `ai_generated` quando `writeLedger` — grava o EVENTO no ledger imutável (ATÔMICO com a
  * criação). O custo gasto = linha permanente: regenerar/substituir/moderar NÃO devolve o slot
  * (ADR-0017). Devolve o id da imagem criada; o CALLER decide se a aponta como face (image_id).
+ *
+ * #224 (ADR-0022 dec.4): a linha do ledger CARREGA o custo — o `model` + os tokens (`usage`) + o
+ * `cost_usd` SNAPSHOT (`computeImageCost`). TUDO best-effort: `usage` ausente (telemetria indisponível)
+ * ⇒ tokens/custo NULOS, a linha ainda é gravada (o teto conta por contagem, #167). `cost_usd` numeric
+ * ⇒ string no insert. Re-selecionar/enviar não passam por aqui com `writeLedger` ⇒ não geram linha.
  */
 async function createGalleryImage(
   tx: Tx,
@@ -217,16 +228,29 @@ async function createGalleryImage(
     userId: string
     lineageId: string
     writeLedger?: boolean
+    usage?: ImageUsage
+    model?: string
   },
 ): Promise<string> {
-  const { blobUrl, provenance, userId, lineageId, writeLedger } = args
+  const { blobUrl, provenance, userId, lineageId, writeLedger, usage, model } = args
   const [created] = await tx
     .insert(recipeImage)
     .values({ blobUrl, provenance, createdBy: userId, lineageId })
     .returning({ id: recipeImage.id })
 
   if (writeLedger && provenance === 'ai_generated') {
-    await tx.insert(imageGeneration).values({ userId })
+    // Custo SNAPSHOT da tabela de preço EM CÓDIGO (puro). usage/modelo ausentes ⇒ null (honesto).
+    const costUsd = model != null ? computeImageCost(usage, model) : null
+    await tx.insert(imageGeneration).values({
+      userId,
+      model: model ?? null,
+      promptTokens: usage?.promptTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      thinkingTokens: usage?.thinkingTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null,
+      // numeric → string|null no insert (precisão exata; espelha recipe_ingredient.quantidade).
+      costUsd: costUsd != null ? costUsd.toString() : null,
+    })
   }
 
   return created.id

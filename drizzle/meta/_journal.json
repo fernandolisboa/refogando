@@ -183,6 +183,13 @@
       "when": 1782247484071,
       "tag": "0025_lowly_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782253204959,
+      "tag": "0026_lazy_lord_hawal",
+      "breakpoints": true
     }
   ]
 }
