@@ -288,6 +288,15 @@ export function CreateStructuredWizard({
           disabled={isLoading}
           className="flex min-w-0 flex-col gap-6 border-0 p-0 disabled:opacity-60"
         >
+          {/* Destino de foco do swap (a11y): o motor (`useRecipeGeneration`) move o foco para o
+              `headingRef` a cada troca de status. No resultado ele mora no `<h2>` do nome; nos
+              estados de FORM (idle/loading/error) o ref vive aqui, num <h2> sr-only focável
+              (tabIndex=-1) — assim o foco não cai no <body> ao entrar em "gerando"/erro. Form e
+              resultado nunca montam juntos → o ref é compartilhado sem conflito. Continua sendo
+              <h2> (o nome da Receita é o ÚNICO <h1>: invariante 1-h1 preservada). */}
+          <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">
+            {m.titulo}
+          </h2>
           {/* ── Passo 1 — Ingredientes ───────────────────────────────────────── */}
           {step === 0 && (
             <div className="flex flex-col gap-4">

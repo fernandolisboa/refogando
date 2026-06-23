@@ -154,6 +154,10 @@ export function CreateDrawer({
                 variant="ghost"
                 size="sm"
                 aria-label={d.voltar}
+                // #193 (ADR-0021 dec.5 "aberto e bloqueante"): o `‹` também trava enquanto a
+                // geração corre — clicar desmontaria o wizard/inner e ORFANARIA o
+                // POST /api/generations (igual ao ESC/scrim/X, já bloqueados via `generating`).
+                disabled={generating}
                 onClick={handleHeaderBack}
                 className="-ml-2 shrink-0"
               >

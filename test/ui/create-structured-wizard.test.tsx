@@ -143,8 +143,8 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     render(<Harness />)
     await abrirWizard(user)
 
-    // Não é mais o placeholder "em breve".
-    expect(screen.queryByText(D.emBreveEstruturado)).toBeNull()
+    // Não é mais o placeholder "em breve" (o card estruturado virou o wizard real, #193).
+    expect(screen.queryByText(D.emBreve)).toBeNull()
     // Título do diálogo vira "Formulário estruturado"; passo 1 visível.
     expect(drawer()).toHaveAccessibleName(D.tituloEstruturado)
     expect(screen.getByRole('heading', { name: W.ingredientesTitulo })).toBeInTheDocument()
@@ -327,6 +327,40 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     const h1 = await screen.findByRole('heading', { level: 1, name: baseView().name })
     expect(h1).toBeInTheDocument()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+  })
+
+  it('W11 — o `‹` do header não orfana a geração: trava enquanto gera (ADR-0021 dec.5)', async () => {
+    const user = userEvent.setup()
+    const d = deferred()
+    const fetchMock = mockFetch({
+      generations: d.factory,
+      recipes: { status: 200, body: baseView() },
+    })
+    render(<Harness />)
+    await abrirWizard(user)
+
+    // Monta um Briefing mínimo e dispara "Gerar receita" (POST em voo, não resolvido).
+    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.gerar }))
+    expect(await screen.findByRole('button', { name: M.gerando })).toBeInTheDocument()
+
+    // O `‹` do header (1º controle "Voltar") está DESABILITADO enquanto gera — clicar é no-op.
+    const back = screen.getAllByRole('button', { name: D.voltar })[0]
+    expect(back).toBeDisabled()
+    await user.click(back)
+
+    // O wizard NÃO desmontou: o diálogo segue "Formulário estruturado" e ainda em "Gerando".
+    expect(drawer()).toHaveAccessibleName(D.tituloEstruturado)
+    expect(screen.getByRole('button', { name: M.gerando })).toBeInTheDocument()
+    // Nenhum 2º POST disparado pelo clique no `‹`.
+    const posts = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/generations'))
+    expect(posts).toHaveLength(1)
+
+    // Ao resolver, conclui normalmente (sem geração órfã).
+    d.release({ status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } })
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
   })
 
   it('W10 — en-US: o wizard estruturado aparece traduzido (paridade i18n, ADR-0001)', async () => {

@@ -349,9 +349,9 @@ export const enUS: Messages = {
     metodoPromptDesc: 'Describe the dish all at once and generate it right away. No back and forth.',
     metodoConversaTitulo: 'Chat',
     metodoConversaDesc: 'Chat with the AI until the recipe is just the way you want.',
-    // Placeholders for the paths not yet shipped (#3 Chat).
+    // Placeholder for the path not yet shipped (#3 Chat). The Structured form is now the real
+    // wizard (#193) — no placeholder for it anymore.
     emBreve: 'Coming soon',
-    emBreveEstruturado: 'The structured form is coming here soon.',
     emBreveConversa: 'Chat mode is coming here soon.',
   },
   // Structured-form wizard inside the drawer (#193, ADR-0021) — 3 steps that build the Briefing.

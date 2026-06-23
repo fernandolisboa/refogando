@@ -374,9 +374,9 @@ export const ptBR = {
     metodoPromptDesc: 'Descreva o prato de uma vez e gere na hora. Sem idas e vindas.',
     metodoConversaTitulo: 'Conversa',
     metodoConversaDesc: 'Converse com a IA até a receita ficar do seu jeito.',
-    // Placeholders dos caminhos ainda não entregues (#3 Conversa).
+    // Placeholder do caminho ainda não entregue (#3 Conversa). O Formulário estruturado já é o
+    // wizard real (#193) — não há mais placeholder dele.
     emBreve: 'Em breve',
-    emBreveEstruturado: 'O formulário estruturado chega em breve por aqui.',
     emBreveConversa: 'O modo Conversa chega em breve por aqui.',
   },
   // Wizard do Formulário estruturado dentro do drawer (#193, ADR-0021) — 3 passos que montam o
