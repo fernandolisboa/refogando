@@ -187,6 +187,19 @@ describe('MyRecipesList (#61)', () => {
     expect(container.querySelectorAll('img')).toHaveLength(1)
   })
 
+  it('T9 — #216: selo "gerada por IA" sobreposto na thumbnail com imageAiGenerated (e só nela)', async () => {
+    sessionState = authed()
+    mockRecipes([
+      item({ id: 'r-ai', name: 'Foto por IA', imageUrl: 'https://blob.example/ai.jpg', imageAiGenerated: true }),
+      item({ id: 'r-photo', name: 'Foto do dono', imageUrl: 'https://blob.example/photo.jpg' }),
+    ])
+    renderList()
+    expect(await screen.findByText('Foto por IA')).toBeInTheDocument()
+    // O selo aparece exatamente uma vez (só na receita com imagem gerada por IA).
+    const selos = screen.getAllByText(ptBR.busca.imagemSeloIa)
+    expect(selos).toHaveLength(1)
+  })
+
   it('T5 — en-US: título de selo traduzido', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])
