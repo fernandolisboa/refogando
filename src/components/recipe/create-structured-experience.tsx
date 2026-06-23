@@ -33,7 +33,7 @@
  * da Receita). Para manter UM único `<h1>` por documento, `criar.titulo` é `<h1>` em
  * idle/loading/error/impossible e REBAIXA para `<h2>` quando a Receita está na tela.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
@@ -42,10 +42,9 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { COZINHAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
-import type { RecipeView, AvisoView } from '@/domain/recipe-read'
-import type { Messages } from '@/i18n/messages'
+import { useRecipeGeneration, mapErroMensagem } from '@/hooks/use-recipe-generation'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
-import { RecipeDetailView } from './recipe-detail-view'
+import { GenerationResultRegion } from './generation-result-region'
 import { SortToggle } from './sort-toggle'
 
 /** Modo de entrada da tela: por campos (#58) ou texto livre (#88). */
@@ -65,15 +64,6 @@ type ItemDraft = {
   quantidade: string
   unidade: string
   strength: Strength
-}
-
-type Status = 'idle' | 'loading' | 'result' | 'error'
-
-type GenerationResult = {
-  outcome: 'success' | 'degraded' | 'playful' | 'impossible'
-  recipeId?: string | null
-  advisory: string | null
-  avisos?: AvisoView[]
 }
 
 function novoItem(): ItemDraft {
@@ -98,47 +88,6 @@ function isOnlyEmptyDefaultRow(itens: ItemDraft[]): boolean {
   if (itens.length !== 1) return false
   const [it] = itens
   return it.rawText === '' && it.quantidade === '' && it.unidade === ''
-}
-
-/**
- * Mapa CÓDIGO de validação (do handler) → chave de `messages.criar`. Casa por código,
- * espelhando `mapErrorToKey` do auth-form; NUNCA exibe a mensagem crua do servidor.
- */
-function mapErroMensagem(m: Messages['criar'], errorKey: string): string {
-  switch (errorKey) {
-    case 'briefing_vazio':
-      return m.erroBriefingVazio
-    case 'porcoes_fora_de_faixa':
-      return m.erroPorcoes
-    case 'dificuldade_fora_de_faixa':
-      return m.erroDificuldade
-    case 'observacoes_muito_longas':
-      return m.erroObservacoesLongas
-    case 'free_text_vazio':
-      return m.erroTextoVazio
-    case 'free_text_muito_longo':
-      return m.erroTextoMuitoLongo
-    case 'ingrediente_inexistente':
-    case 'item_sem_identidade':
-    case 'unidade_invalida':
-    case 'strength_invalida':
-    case 'erroIngrediente':
-      return m.erroIngrediente
-    case 'cozinha_invalida':
-    case 'restricao_invalida':
-    case 'briefing_invalido':
-      return m.erroCampos
-    case 'erroGeracao':
-      return m.erroGeracao
-    case 'erroConexao':
-      return m.erroConexao
-    // #167: teto diário de geração de receita por papel (429 limite_geracao) → mensagem amigável.
-    case 'limite_geracao':
-    case 'erroLimiteGeracao':
-      return m.erroLimiteGeracao
-    default:
-      return m.erroCampos
-  }
 }
 
 export function CreateStructuredExperience({
@@ -195,18 +144,22 @@ export function CreateStructuredExperience({
   const [extractError, setExtractError] = useState(false)
   const [itemErrors, setItemErrors] = useState<Record<number, string>>({})
 
-  const [status, setStatus] = useState<Status>('idle')
-  const [result, setResult] = useState<GenerationResult | null>(null)
-  const [view, setView] = useState<RecipeView | null>(null)
-  const [errorKey, setErrorKey] = useState<string | null>(null)
-  // A Receita FOI criada (POST ok, recipeId não-null) mas o GET do corpo falhou. NÃO é o
-  // mesmo que 'impossible' (lá não há Receita): aqui dizemos "criada, mas não carregou" e
-  // oferecemos recarregar — nunca induzir o usuário a reenviar (= geração duplicada).
-  const [loadFailed, setLoadFailed] = useState(false)
-
-  // Foco no swap de view (a11y): o form inteiro é desmontado no resultado e vice-versa, então
-  // o foco do teclado cairia no <body>. Movemos o foco para o heading do estado novo.
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  // Motor de geração COMPARTILHADO (#193): POST /api/generations + 2º GET do corpo, e os estados
+  // status/result/view/errorKey/loadFailed + foco-no-swap (headingRef) + onLoadingChange. Este
+  // componente só monta o `body` (Briefing/freeText) e chama `enviar`/`carregarReceita`.
+  const {
+    status,
+    result,
+    view,
+    errorKey,
+    loadFailed,
+    headingRef,
+    enviar,
+    carregarReceita,
+    voltarParaIdle: voltarParaIdleEngine,
+    setStatus,
+    setErrorKey,
+  } = useRecipeGeneration({ locale, onLoadingChange })
 
   // ── Helpers de estado dos itens ────────────────────────────────────────────
   function patchItem(index: number, patch: Partial<ItemDraft>) {
@@ -344,102 +297,6 @@ export function CreateStructuredExperience({
     setItemErrors({})
   }
 
-  function voltarParaIdle({ limpar }: { limpar: boolean }) {
-    if (limpar) resetCampos()
-    setResult(null)
-    setView(null)
-    setErrorKey(null)
-    setLoadFailed(false)
-    setStatus('idle')
-  }
-
-  /**
-   * Busca o corpo da Receita criada (RecipeView CRU). Em sucesso, monta `view`. Em falha
-   * (não-ok ou rede), NÃO cai no estado 'impossible' — marca `loadFailed` para mostrar
-   * "criada, mas não carregou" + recarregar. `result` (com `avisos` do POST) já está setado.
-   */
-  async function carregarReceita(generation: GenerationResult) {
-    if (generation.recipeId == null) {
-      setLoadFailed(true)
-      setStatus('result')
-      return
-    }
-    try {
-      const r = await fetch(
-        `/api/recipes/${generation.recipeId}?locale=${encodeURIComponent(locale)}`,
-      )
-      if (r.ok) {
-        const v = (await r.json()) as RecipeView
-        // Merge defensivo (ADR-0004): se o POST trouxe avisos e o GET não, preserva-os.
-        setView(v.avisos ? v : { ...v, avisos: generation.avisos })
-        setLoadFailed(false)
-      } else {
-        setView(null)
-        setLoadFailed(true)
-      }
-    } catch {
-      setView(null)
-      setLoadFailed(true)
-    }
-    setStatus('result')
-  }
-
-  /**
-   * Núcleo COMPARTILHADO pelos dois modos: posta o `body` em `/api/generations` (cru, sem
-   * `?locale=` — o servidor lê `locale` SÓ da query da URL; os avisos vêm localizados do GET
-   * via `carregarReceita`), trata 400/não-ok/parse e converge para o resultado. Idêntico para
-   * estruturado e prompt aberto (simetria). O `freeText` e o Briefing NÃO viajam juntos: cada
-   * modo monta o seu próprio `body`.
-   */
-  async function enviar(body: unknown) {
-    setStatus('loading')
-    try {
-      const res = await fetch('/api/generations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-
-      if (res.status === 400) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string }
-        setErrorKey(data.error ?? 'erroCampos')
-        setStatus('error')
-        return
-      }
-      // #167: teto de geração estourado → 429 limite_geracao. Mensagem AMIGÁVEL (não erro cru), sem
-      // travar o formulário (o usuário pode tentar de novo mais tarde — "Ajustar e tentar de novo").
-      if (res.status === 429) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string }
-        setErrorKey(data.error === 'limite_geracao' ? 'limite_geracao' : 'erroGeracao')
-        setStatus('error')
-        return
-      }
-      if (!res.ok) {
-        // 502 (outcome:'invalid') e qualquer outro não-ok caem em erro de geração neutro.
-        setErrorKey('erroGeracao')
-        setStatus('error')
-        return
-      }
-
-      const data = (await res.json()) as GenerationResult
-      setResult(data)
-      setLoadFailed(false)
-
-      if (data.outcome === 'impossible') {
-        // Hard-stop honesto: sem Receita, sem GET.
-        setView(null)
-        setStatus('result')
-        return
-      }
-
-      // success | degraded | playful → busca o corpo da Receita (RecipeView CRU).
-      await carregarReceita(data)
-    } catch {
-      setErrorKey('erroConexao')
-      setStatus('error')
-    }
-  }
-
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (status === 'loading') return // evita re-entrada / geração duplicada (duplo-clique)
@@ -477,18 +334,6 @@ export function CreateStructuredExperience({
 
     await enviar(buildBody())
   }
-
-  // Foco no swap form↔resultado (a11y): quando o status muda para 'result' (ou volta a
-  // 'idle'/'error'), o heading do estado novo recebe o foco para o teclado não cair no <body>.
-  useEffect(() => {
-    headingRef.current?.focus()
-  }, [status])
-
-  // #191 (ADR-0021): sinaliza ao shell (drawer) se há geração EM VOO, para ele travar o dismiss
-  // enquanto `status === 'loading'` (fechar no meio orfanaria o POST). No-op sem o callback.
-  useEffect(() => {
-    onLoadingChange?.(status === 'loading')
-  }, [status, onLoadingChange])
 
   // ── Guard de sessão (decisão 4) ─────────────────────────────────────────────
   if (session.isPending) {
@@ -845,87 +690,28 @@ export function CreateStructuredExperience({
 
       {/* Região de resultado — renderizada SEMPRE (mesmo vazia) para que o `aria-live` PRÉ-
           exista no DOM: regiões live inseridas junto do conteúdo não são anunciadas por muitos
-          leitores de tela (padrão de search-experience). O conteúdo entra/sai DENTRO dela. */}
+          leitores de tela (padrão de search-experience). O conteúdo entra/sai DENTRO dela.
+          `GenerationResultRegion` (#193) desenha o desfecho a partir do bag do motor. */}
       <div aria-live="polite" className="flex flex-col gap-6">
         {isResult && result != null && (
-          result.outcome === 'impossible' ? (
-            // 'impossible' de verdade: nenhuma Receita foi criada.
-            <>
-              <p className="text-fg">{m.resultadoImpossivel}</p>
-              {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
-              <div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => voltarParaIdle({ limpar: false })}
-                >
-                  {m.tentarNovamente}
-                </Button>
-              </div>
-            </>
-          ) : loadFailed || view == null ? (
-            // A Receita FOI criada (success/degraded/playful) mas o GET do corpo falhou.
-            // NÃO dizer 'impossível' (factualmente errado → o usuário reenviaria e DUPLICARIA
-            // a geração). Oferecer recarregar a Receita já criada.
-            <>
-              <p className="text-fg">{m.erroCarregarReceita}</p>
-              {result.advisory && <p className="max-w-[60ch] text-muted">{result.advisory}</p>}
-              <div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setStatus('loading')
-                    void carregarReceita(result)
-                  }}
-                >
-                  {m.tentarCarregarNovamente}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Banner de desfecho — neutro (âmbar é EXCLUSIVO do Aviso de restrição). */}
-              {result.outcome === 'playful' ? (
-                <div className="flex flex-col gap-1 rounded-md border border-border bg-surface px-4 py-3">
-                  <p className="font-medium text-fg">{m.playfulTitulo}</p>
-                  <p className="text-sm text-muted">{m.playfulNota}</p>
-                </div>
-              ) : (
-                <p className="font-medium text-fg">
-                  {result.outcome === 'degraded' ? m.resultadoDegradado : m.resultadoSucesso}
-                </p>
-              )}
-
-              {/* Comentário consultivo (advisory) — FORA do objeto Receita (CONTEXT.md). */}
-              {result.advisory && (
-                <p className="max-w-[60ch] text-muted">
-                  <span className="font-medium text-fg">{m.consultoria}:</span> {result.advisory}
-                </p>
-              )}
-
-              {/* A Receita — REUSO total. O `<h1>{view.name}` aqui é o ÚNICO `<h1>`. */}
-              <RecipeDetailView view={view} m={messages} />
-
-              <div className="flex flex-wrap items-center gap-3">
-                {/* A Receita JÁ está persistida (private). "Ver receita" só NAVEGA pro
-                    detalhe (#59), onde moram os controles de Visibilidade — não escreve nada
-                    (glossário: salvar ≠ navegar). */}
-                {result.recipeId && (
-                  <Button asChild>
-                    <Link href={`/recipes/${result.recipeId}`}>{m.verReceita}</Link>
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => voltarParaIdle({ limpar: true })}
-                >
-                  {m.criarOutra}
-                </Button>
-              </div>
-            </>
-          )
+          <GenerationResultRegion
+            result={result}
+            view={view}
+            loadFailed={loadFailed}
+            messages={messages}
+            onRecarregar={() => {
+              setStatus('loading')
+              void carregarReceita(result)
+            }}
+            // 'impossible' → volta ao form SEM limpar (era `voltarParaIdle({ limpar: false })`).
+            onTentarNovamente={voltarParaIdleEngine}
+            // "Criar outra" → volta ao form LIMPANDO o Briefing (era `{ limpar: true }`): o motor
+            // não conhece `resetCampos`, então zeramos os campos locais aqui antes do reset do motor.
+            onCriarOutra={() => {
+              resetCampos()
+              voltarParaIdleEngine()
+            }}
+          />
         )}
       </div>
     </div>
