@@ -47,15 +47,25 @@ function itemsFromView(view: RecipeView): ItemDraft[] {
  * modal após o PATCH dar certo; `onCancel` é o botão Cancelar do rodapé do modal. Sem essas
  * props o form se auto-renderiza (compat) com o próprio `<h2>`. Apagar navega pra fora (não
  * precisa de `onSaved`).
+ *
+ * #197 (fix da regressão de perda-de-dados): o diálogo de confirmação INTERNO (apagar / editar
+ * pública) é um `role="dialog"` próprio renderizado SOBRE o `Sheet` (Radix Dialog) do modal. O
+ * Radix escuta o Escape em CAPTURE no document, então fecharia o Sheet inteiro (descartando o
+ * rascunho) ANTES do nosso handler. Por isso o form SINALIZA o estado de confirm-aberto pra cima
+ * via `onConfirmOpenChange`: o `RecipeEditModal` usa esse sinal pra `preventDefault()` o
+ * Escape/click-fora do `SheetContent` enquanto o confirm está aberto — assim o Escape só fecha o
+ * confirm (via `onDialogKeyDown`), nunca o modal. Fora do modal (compat) o callback é no-op.
  */
 export function RecipeEditForm({
   view,
   onSaved,
   onCancel,
+  onConfirmOpenChange,
 }: {
   view: RecipeView
   onSaved?: () => void
   onCancel?: () => void
+  onConfirmOpenChange?: (open: boolean) => void
 }) {
   // O locale do PATCH é o ATUAL (o usuário pode trocar o idioma no rodapé no meio da edição —
   // a prop estática do servidor ficaria obsoleta e o PATCH atingiria a tradução errada). Espelha
@@ -94,6 +104,13 @@ export function RecipeEditForm({
   useEffect(() => {
     if (dialog !== 'none') dialogPrimaryRef.current?.focus()
   }, [dialog])
+
+  // #197: sinaliza confirm-aberto pra cima para o modal consumir o Escape/click-fora do Sheet
+  // enquanto o confirm interno está empilhado (senão o Radix fecharia o Sheet e perderia o
+  // rascunho). `onConfirmOpenChange` é estável (definido no RecipeEditModal por render).
+  useEffect(() => {
+    onConfirmOpenChange?.(dialog !== 'none')
+  }, [dialog, onConfirmOpenChange])
 
   function fecharDialogo() {
     setDialog('none')

@@ -199,4 +199,71 @@ describe('RecipeEditModal (#192)', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // #197: regressão de PERDA-DE-DADOS no Escape. Com o confirm interno (apagar / editar-pública)
+  // empilhado SOBRE o Sheet, o Escape deve fechar SÓ o confirm — o Sheet fica aberto e o rascunho
+  // sobrevive. Antes do fix, o Radix (listener em capture) via o Escape primeiro e fechava o
+  // Sheet inteiro, descartando todas as edições.
+  it('#197 — Apagar abre o confirm; Escape fecha SÓ o confirm e o rascunho sobrevive (Sheet aberto)', async () => {
+    const user = userEvent.setup()
+    mockFetch((method) =>
+      method === 'DELETE' ? { status: 204 } : { status: 200, body: { ok: true } },
+    )
+    renderModal(ownerView())
+    const dialog = await openModal(user)
+
+    // Rascunho: edita o título dentro do modal.
+    const titulo = within(dialog).getByDisplayValue('Bolo simples')
+    await user.clear(titulo)
+    await user.type(titulo, 'Bolo de fubá')
+
+    // Abre o confirm de apagar (empilha sobre o Sheet).
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.apagar }))
+    expect(await screen.findByText(M.apagarAviso)).toBeInTheDocument()
+
+    // Escape: fecha SÓ o confirm.
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByText(M.apagarAviso)).not.toBeInTheDocument())
+
+    // O Sheet continua aberto E o rascunho sobrevive (título ainda preenchido).
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Bolo de fubá')).toBeInTheDocument()
+  })
+
+  it('#197 — PÚBLICA: Salvar abre o confirm empilhado; Escape preserva o Sheet + rascunho e o PATCH só dispara após confirmar', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 200, body: { ok: true } }))
+    renderModal(ownerView({ visibility: 'public' }))
+    const dialog = await openModal(user)
+
+    // Edita o título e tenta Salvar — na pública abre o confirm de editar-pública (sobre o Sheet).
+    const titulo = within(dialog).getByDisplayValue('Bolo simples')
+    await user.clear(titulo)
+    await user.type(titulo, 'Bolo de fubá')
+    await user.click(within(dialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    // O confirm abriu e o PATCH AINDA não rodou (confirma antes de gravar a mudança pública).
+    expect(await screen.findByText(M.editarPublicaAviso)).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    // Escape: fecha SÓ o confirm; o Sheet + rascunho sobrevivem; nenhum PATCH disparou.
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByText(M.editarPublicaAviso)).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Bolo de fubá')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    // Reabre o confirm e confirma → SÓ aí o PATCH IN-PLACE dispara.
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: M.editarPublicaConfirmar }),
+    )
+    const confirm = await screen.findByText(M.editarPublicaAviso)
+    const confirmDialog = confirm.closest('[role="dialog"]') as HTMLElement
+    await user.click(within(confirmDialog).getByRole('button', { name: M.editarPublicaConfirmar }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    const call = fetchMock.mock.calls[0]
+    expect(String(call[0])).toBe('/api/recipes/r-1')
+    expect((call[1] as RequestInit).method).toBe('PATCH')
+  })
 })

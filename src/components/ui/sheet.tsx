@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils'
 /**
  * Sheet — primitiva shadcn/ui de drawer (#163) sobre o Radix Dialog (monopacote `radix-ui`),
  * pintada com os tokens quentes da casa (ADR-0018). O Dialog dá de graça o que a issue exige
- * em a11y: trap de foco, foco move pro painel ao abrir, Escape fecha, clique no overlay fecha,
- * `role=dialog` + `aria-modal`, e o gatilho ganha `aria-expanded`/`aria-controls` ligados ao
- * conteúdo. Sem `dark:` — os tokens viram sozinhos via globals.css. Sem ring custom: o
+ * em a11y: `role=dialog`, trap de foco (foco move pro painel ao abrir e volta ao gatilho ao
+ * fechar), overlay, Escape fecha e clique no overlay fecha; o gatilho ganha
+ * `aria-expanded`/`aria-controls` ligados ao conteúdo. O nome acessível vem do `SheetTitle`
+ * (aria-labelledby). Sem `dark:` — os tokens viram sozinhos via globals.css. Sem ring custom: o
  * :focus-visible global pinta o anel de páprica.
  *
  * Usado pelo menu mobile do header; por padrão entra pela esquerda (`side="left"`). Um único
