@@ -113,6 +113,12 @@ export type RecipeRow = {
    */
   sourceUrl?: string | null
   sourceName?: string | null
+  /**
+   * Data de criação da Receita (#234, ADR-0020 dec.7) — vira `datePublished` no JSON-LD. OPCIONAL no
+   * tipo (mesma razão de `ownerId`: `select().from(recipe)` JÁ a traz em runtime; opcional poupa as
+   * fixtures puras de a setar). NUNCA sai na vista pública direta; é insumo só do markup de SEO.
+   */
+  createdAt?: Date
 }
 
 /** Linha de tradução conforme `db.select().from(recipeTranslation)`. */

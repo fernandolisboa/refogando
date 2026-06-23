@@ -62,6 +62,16 @@ export type RecipeSeoInput = {
   source?: { url: string; name?: string }
   /** Nome da marca p/ rótulos do OG (publisher), do catálogo de mensagens do locale. */
   brandName: string
+  /** Rendimento (#234, ADR-0020 dec.7) — `porcoes` da Receita → `recipeYield`. Ausente ⇒ omitido. */
+  porcoes?: number | null
+  /** Cozinha (#234) — token de faceta → `recipeCuisine`. Ausente ⇒ omitido. */
+  cozinha?: string | null
+  /** Categoria (#234) — token de faceta → `recipeCategory`. Ausente ⇒ omitido. */
+  categoria?: string | null
+  /** Restrições (#234) — tokens de faceta → `suitableForDiet` (só os que mapeiam p/ `RestrictedDiet`). */
+  restricoes?: ReadonlyArray<string>
+  /** Data de criação (#234) — `recipe.createdAt` → `datePublished` (ISO 8601). Ausente ⇒ omitido. */
+  datePublished?: string | null
   /**
    * Elegível p/ leitura pública (= indexação, default-open). `false` ⇒ robots `noindex` (caminho do
    * dono/privado/não-elegível). Default `true` (o load público só devolve dados quando elegível).
@@ -81,6 +91,10 @@ function absoluteDetailUrl(baseUrl: string, locale: string, slug: string): strin
  * `slugsByLocale` (= têm tradução pública com slug). x-default aponta pro DEFAULT_LOCALE quando ele
  * existe; senão pro primeiro locale suportado presente (degrade gracioso — não deixa o x-default
  * apontar pra um locale inexistente).
+ *
+ * DIVERGÊNCIA CONSCIENTE do ADR-0020 decisão 5: no DETALHE o x-default aponta pra URL da receita no
+ * DEFAULT_LOCALE (não pra raiz `/` da home) — não há redirecionador por-receita; ver a nota de
+ * implementação na decisão 5 do ADR-0020.
  */
 function buildLanguageAlternates(
   baseUrl: string,
@@ -154,6 +168,18 @@ export function buildRecipeMetadata(input: RecipeSeoInput): Metadata {
   }
 }
 
+/**
+ * Subset de `schema.org/RestrictedDiet` que mapeamos a partir do enum `Restricao` do app. SÓ
+ * entram os tokens com correspondência SEGURA no enum do Google — os ambíguos/sem-equivalente
+ * (`sem_acucar`, `low_carb`, `sem_oleaginosas`, `sem_frutos_do_mar`) são OMITIDOS (#234, ADR-0020
+ * dec.7: nunca emitir structured data inválido — Google trata enum fora-da-lista como erro).
+ */
+export type RestrictedDiet =
+  | 'https://schema.org/GlutenFreeDiet'
+  | 'https://schema.org/LowLactoseDiet'
+  | 'https://schema.org/VeganDiet'
+  | 'https://schema.org/VegetarianDiet'
+
 /** Forma do objeto JSON-LD `schema.org/Recipe` que emitimos (subset tipado — sem `aggregateRating`). */
 export type RecipeJsonLd = {
   '@context': 'https://schema.org'
@@ -169,6 +195,29 @@ export type RecipeJsonLd = {
   publisher?: { '@type': 'Organization'; name: string }
   /** URL canônica da Receita — `mainEntityOfPage`. */
   mainEntityOfPage?: string
+  /** Rendimento ← `porcoes` (string, ex. `'4'`) — schema.org aceita texto. */
+  recipeYield?: string
+  /** Cozinha ← `facets.cozinha` (token). */
+  recipeCuisine?: string
+  /** Categoria ← `facets.categoria` (token). */
+  recipeCategory?: string
+  /** Dietas ← `restricoes` mapeadas p/ `RestrictedDiet` (só as seguras; lossy ⇒ omitida). */
+  suitableForDiet?: RestrictedDiet[]
+  /** Data de publicação ← `recipe.createdAt` (ISO 8601). */
+  datePublished?: string
+}
+
+/**
+ * Mapa LOSSLESS `Restricao` → `RestrictedDiet` do schema.org (#234, ADR-0020 dec.7). Só os tokens
+ * com equivalência DIRETA e inequívoca no enum do Google. Os demais (`sem_acucar` ≠ DiabeticDiet;
+ * `low_carb`/`sem_oleaginosas`/`sem_frutos_do_mar` sem equivalente) são OMITIDOS de propósito: emitir
+ * um enum fora da lista do Google é structured data inválido (risco de ação manual). Lossy ⇒ omite.
+ */
+const RESTRICTED_DIET_BY_RESTRICAO: Record<string, RestrictedDiet> = {
+  sem_gluten: 'https://schema.org/GlutenFreeDiet',
+  sem_lactose: 'https://schema.org/LowLactoseDiet',
+  vegano: 'https://schema.org/VeganDiet',
+  vegetariano: 'https://schema.org/VegetarianDiet',
 }
 
 /**
@@ -179,6 +228,11 @@ export type RecipeJsonLd = {
  *
  * SEM `aggregateRating`/estrelas: `voteCount` é IGNORADO (Voto ≠ nota — não expomos voto como
  * rating, ADR de SEO). `publisher` = a marca (organização editorial).
+ *
+ * Campos da ADR-0020 dec.7 mapeados quando a view os traz: `recipeYield`←porções, `recipeCuisine`←
+ * cozinha, `recipeCategory`←categoria, `datePublished`←createdAt, `suitableForDiet`←restrições (só as
+ * que mapeiam p/ `RestrictedDiet` válido — lossy é OMITIDA, nunca enum inválido). Cada chave sai SÓ
+ * quando há dado.
  */
 export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
   const { locale, baseUrl, name, brandName } = input
@@ -199,6 +253,20 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
   if (input.ingredients.length > 0) ld.recipeIngredient = [...input.ingredients]
   if (input.steps.length > 0) {
     ld.recipeInstructions = input.steps.map((text) => ({ '@type': 'HowToStep', text }))
+  }
+  // Campos da ADR-0020 dec.7 mapeados da view (dados JÁ carregados — sem query nova). Cada chave SÓ
+  // sai quando há dado (omite chave vazia — "ausente ≠ vazio", espelha as facetas da view).
+  if (input.porcoes != null) ld.recipeYield = String(input.porcoes)
+  if (input.cozinha) ld.recipeCuisine = input.cozinha
+  if (input.categoria) ld.recipeCategory = input.categoria
+  if (input.datePublished) ld.datePublished = input.datePublished
+  // suitableForDiet: SÓ os tokens com mapa LOSSLESS p/ RestrictedDiet (lossy ⇒ omitido — nunca
+  // structured data inválido). Vazio após filtrar ⇒ não emite a chave.
+  if (input.restricoes && input.restricoes.length > 0) {
+    const diets = input.restricoes
+      .map((r) => RESTRICTED_DIET_BY_RESTRICAO[r])
+      .filter((d): d is RestrictedDiet => d != null)
+    if (diets.length > 0) ld.suitableForDiet = diets
   }
   // Proveniência (mutuamente exclusiva, espelha a view): importada ⇒ fonte externa (isBasedOn);
   // senão ⇒ autoria humana (Person) quando há dono. Catálogo sem dono ⇒ nenhum dos dois (só publisher).

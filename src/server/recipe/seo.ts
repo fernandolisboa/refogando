@@ -119,7 +119,15 @@ export function buildRecipeSeoInputFromRows(args: {
     // Atribuição à fonte externa (web_imported) — vira isBasedOn no LD.
     ...(view.source ? { source: view.source } : {}),
     brandName: m.app.name,
+    // Campos da ADR-0020 dec.7 pro JSON-LD (#234) — da view/linha JÁ carregadas, sem query nova. O
+    // builder PURO omite cada chave quando vazia (porcoes/cozinha/categoria/restricoes) e filtra
+    // `restricoes` p/ os tokens com `RestrictedDiet` válido (lossy ⇒ omitido).
+    porcoes: view.porcoes,
+    cozinha: view.facets.cozinha,
+    categoria: view.facets.categoria,
+    restricoes: view.facets.restricoes ?? [],
+    // `createdAt` é opcional no tipo (vem do select em runtime); ausente ⇒ omite datePublished.
+    ...(rows.recipe.createdAt ? { datePublished: rows.recipe.createdAt.toISOString() } : {}),
     eligible,
-    ...(view.voteCount != null ? { voteCount: view.voteCount } : {}),
   }
 }

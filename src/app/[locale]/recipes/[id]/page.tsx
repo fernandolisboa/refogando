@@ -31,6 +31,7 @@
  * Manter o gate+redirect AQUI (não no proxy) honra o ADR ("leitura/gate no server component") e
  * mantém o proxy header-only (sem DB no caminho quente de toda navegação).
  */
+import { cache } from 'react'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound, permanentRedirect } from 'next/navigation'
@@ -60,6 +61,16 @@ import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
 /**
+ * Dedup por-request (React.cache) das DUAS leituras públicas que `generateMetadata` E o render fazem
+ * pelo MESMO (slug, locale)/recipeId no mesmo request — o Next não dedup raw DB sozinho. `cache()`
+ * memoiza por argumentos no escopo do request: a 2ª chamada (render, depois do metadata) reusa o
+ * resultado em vez de bater o banco de novo. Build-safe: nenhuma das duas toca `headers()`/`cookies()`,
+ * então a memoização NÃO contamina a cacheabilidade do caminho público.
+ */
+const loadPublicRecipeBySlugCached = cache(loadPublicRecipeBySlug)
+const loadRecipeSlugMapCached = cache(loadRecipeSlugMap)
+
+/**
  * Metadados indexáveis do detalhe (#232 OG, #233 canonical/hreflang/x-default/robots, #234 alimenta
  * o JSON-LD via o mesmo input) — `generateMetadata` da MESMA rota do render. CACHEÁVEL por design:
  * NÃO toca `headers()`/`cookies()` (usa `getBaseUrlFromEnv`, env-only) e lê SÓ pelo caminho PÚBLICO
@@ -81,9 +92,9 @@ export async function generateMetadata({
 
   const route = decideRecipeDetailRoute(id)
   if (route.kind === 'slug') {
-    const rows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
+    const rows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (rows != null) {
-      const slugMap = await loadRecipeSlugMap(getDb(), rows.recipe.id)
+      const slugMap = await loadRecipeSlugMapCached(getDb(), rows.recipe.id)
       const input = buildRecipeSeoInputFromRows({ rows, locale, baseUrl, slugMap, eligible: true })
       return buildRecipeMetadata(input)
     }
@@ -130,7 +141,7 @@ export default async function RecipeDetailPage({
   // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 308-ado acima, então um
   // UUID que chega adiante é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
   if (route.kind === 'slug') {
-    const publicRows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
+    const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
       // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
       // dinâmico). `viewerVoted`/`viewerFavorited` ficam AUSENTES (anônimo) — o estado do viewer é
@@ -153,7 +164,7 @@ export default async function RecipeDetailPage({
       })
       // JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
       // aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
-      const slugMap = await loadRecipeSlugMap(getDb(), publicRows.recipe.id)
+      const slugMap = await loadRecipeSlugMapCached(getDb(), publicRows.recipe.id)
       const seoInput = buildRecipeSeoInputFromRows({
         rows: publicRows,
         locale,
