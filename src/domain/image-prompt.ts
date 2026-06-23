@@ -39,3 +39,19 @@ export function buildDishImagePrompt(input: DishImagePromptInput): string {
 
   return partes.join(' ')
 }
+
+/** Teto de caracteres do override do usuário (stopgap de segurança #214). */
+export const IMAGE_PROMPT_OVERRIDE_MAX = 200
+
+/**
+ * Composição SEGURA do prompt final (stopgap de segurança, issue #214). O `base` montado da receita
+ * (`buildDishImagePrompt`: título/ingredientes/cozinha) fica SEMPRE presente — o override do usuário
+ * NUNCA o substitui (antes um `||` deixava o override trocar a receita inteira: vetor pra gerar imagem
+ * nada-a-ver). Quando há override, ele vira um SUFIXO de estilo/refinamento, trimado e limitado a
+ * `IMAGE_PROMPT_OVERRIDE_MAX` chars. Pura e determinística (sem DB/I/O), como o resto do módulo. A
+ * UX completa (preview, base read-only) vem no redesign; aqui é só ancorar no servidor.
+ */
+export function composeImagePrompt(base: string, override?: string): string {
+  const refino = override?.trim().slice(0, IMAGE_PROMPT_OVERRIDE_MAX)
+  return refino ? `${base} Estilo/refinamento: ${refino}` : base
+}

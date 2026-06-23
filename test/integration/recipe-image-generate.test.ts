@@ -118,11 +118,14 @@ describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
     expect(img).toMatchObject({ provenance: 'ai_generated', createdBy: userId })
   })
 
-  it('prompt editado (refino) é repassado ao gerador', async () => {
+  it('prompt editado (refino) ANCORA no base da receita + vira sufixo de estilo (#214)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'refino@gen.test' })
     const id = await seedOwned(userId)
     await POST(genReq(id, headers, 'um prato futurista neon'), ctx(id))
-    expect(gen.lastPrompt).toBe('um prato futurista neon')
+    // O base da receita (título) fica SEMPRE presente — o override NUNCA o substitui (stopgap de
+    // segurança): o override vira sufixo de estilo/refinamento limitado.
+    expect(gen.lastPrompt).toContain('Bolo de fubá')
+    expect(gen.lastPrompt).toContain('Estilo/refinamento: um prato futurista neon')
   })
 
   it('regenerar substitui: ref-count apaga a ai_generated anterior, mantém a nova', async () => {

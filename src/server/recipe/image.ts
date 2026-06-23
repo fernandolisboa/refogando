@@ -9,7 +9,7 @@ import type { ImageProvenance } from '@/domain/recipe'
 import type { Role } from '@/domain/user'
 import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
 import { capFromConfig } from '@/domain/image-gen-config'
-import { buildDishImagePrompt } from '@/domain/image-prompt'
+import { buildDishImagePrompt, composeImagePrompt } from '@/domain/image-prompt'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { loadImageGenConfig } from '@/server/app-config'
 
@@ -117,15 +117,18 @@ export async function applyRecipeImageGeneration(input: {
     if (!quota.allowed) return { kind: 'quota', retryAfterMs: quota.retryAfterMs }
   }
 
-  // 4. Prompt: o editado pelo usuário (refino), senão montado da receita ATUAL (um-clique).
-  const prompt =
-    promptOverride?.trim() ||
-    buildDishImagePrompt({
-      titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
-      cozinha: rows.recipe.cozinha ?? null,
-      categoria: rows.recipe.categoria ?? null,
-      ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
-    })
+  // 4. Prompt: SEMPRE ancorado na receita ATUAL (#214, stopgap de segurança). O base (título/
+  //    ingredientes/cozinha) é montado PRIMEIRO; o override do usuário NUNCA o substitui — vira
+  //    sufixo de estilo trimado/limitado (composeImagePrompt). Antes um `||` deixava o override
+  //    trocar a receita inteira (vetor de abuso: gerar imagem nada-a-ver). Fix server-side ⇒ não
+  //    dá pra burlar pelo cliente.
+  const base = buildDishImagePrompt({
+    titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
+    cozinha: rows.recipe.cozinha ?? null,
+    categoria: rows.recipe.categoria ?? null,
+    ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
+  })
+  const prompt = composeImagePrompt(base, promptOverride)
 
   // 5. Gera (Gemini REST) com o MODELO da config (#134). Falha ⇒ degradação 503 (nenhuma linha nasce
   //    ⇒ nenhum slot consumido).

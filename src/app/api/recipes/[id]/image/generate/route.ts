@@ -2,6 +2,7 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore, getImageGenerator } from '@/server/deps'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { applyRecipeImageGeneration } from '@/server/recipe/image'
+import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 
 /**
  * Geração de imagem por IA da Receita (#132, ADR-0017) — `POST /api/recipes/[id]/image/generate`.
@@ -25,8 +26,12 @@ export async function POST(
   if (!g.ok) return g.response
 
   // Prompt editado é OPCIONAL (refino); ausente ⇒ um-clique (a receita monta o prompt no núcleo).
+  // Defesa-em-profundidade (#214): truncamos o override a IMAGE_PROMPT_OVERRIDE_MAX já aqui; o núcleo
+  // (composeImagePrompt) também ancora SEMPRE no base da receita e re-limita — o servidor é a fonte
+  // da verdade, o cliente não burla.
   const body = (await request.json().catch(() => ({}))) as { prompt?: unknown }
-  const promptOverride = typeof body.prompt === 'string' ? body.prompt : undefined
+  const promptOverride =
+    typeof body.prompt === 'string' ? body.prompt.slice(0, IMAGE_PROMPT_OVERRIDE_MAX) : undefined
 
   const res = await applyRecipeImageGeneration({
     db: getDb(),
