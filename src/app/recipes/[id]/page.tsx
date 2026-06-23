@@ -22,7 +22,7 @@ import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
 import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
-import { RecipeVisibilityControls } from '@/components/recipe/recipe-visibility-controls'
+import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
 import type { RecipeView } from '@/domain/recipe-read'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
@@ -94,16 +94,11 @@ export default async function RecipeDetailPage({
           canManage={view.canManage ?? false}
         />
       )}
-      {/* Controles de Visibilidade SÓ pro dono (#59) — a rota gateia canManage/visibility/
-          resultKind ao dono; o servidor reimpõe ownership/playful. Sem chamada extra a DB:
-          o ownership chega na própria view (page segue orquestrador fino, ADR-0010). */}
-      {view.canManage && view.visibility && view.resultKind && (
-        <RecipeVisibilityControls
-          recipeId={view.id}
-          initialVisibility={view.visibility}
-          resultKind={view.resultKind}
-          origin={view.origin}
-        />
+      {/* #195/ADR-0021 (decisão 4): o controle de Visibilidade inline saiu daqui — a AÇÃO migrou pro
+          toggle rascunho DENTRO do modal de edição (comita no Salvar). No detalhe só-leitura fica
+          um CHIP de status não-clicável, SÓ pro dono (a rota gateia `visibility` ao dono). */}
+      {view.canManage && view.visibility && (
+        <RecipeStatusChip visibility={view.visibility} m={messages} />
       )}
       {/* Gestão da Imagem da receita (#130) SÓ pro dono (canManage) — subir/trocar/remover a foto.
           O servidor reimpõe ownership/ref-count; a page só passa se há imagem (gateia o botão
@@ -122,7 +117,8 @@ export default async function RecipeDetailPage({
       {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
           derivada); para o NÃO-dono, "Criar minha versão" (derivar) ou o convite de entrar
           (Visitante, descope #22). O componente lê SÓ a view (server-truth) + a sessão (gating
-          de derivar). Salvar/publicar continua nos controles de Visibilidade (#59) acima. */}
+          de derivar). Publicar/despublicar migrou pro modal de edição (#195); aqui o detalhe é
+          só-leitura com chip de status. */}
       <RecipeDetailActions view={view} locale={locale} />
     </Container>
   )
