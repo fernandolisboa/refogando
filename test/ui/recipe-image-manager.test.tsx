@@ -287,6 +287,24 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
+  it('#222 DECISION 6 negativo: abrir → 429 (nenhuma geração) → fechar NÃO chama refresh', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    // A geração estourou (429) ⇒ generatedThisSession ficou false; o preview nunca apareceu.
+    expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
+    refresh.mockClear()
+
+    await user.click(within(dialog).getByLabelText(M.imagemFechar))
+
+    // Nada foi gerado ⇒ fechar NÃO deve relê a página (não há previews a refletir).
+    await waitFor(() => expect(within(document.body).queryByRole('dialog')).not.toBeInTheDocument())
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   // ── #222: galeria ───────────────────────────────────────────────────────────────
   it('#222 galeria lista as imagens + selo IA na gerada', () => {
     const gallery: GalleryImage[] = [

@@ -234,7 +234,6 @@ async function createGalleryImage(
  */
 export async function applyRecipeImageSelect(input: {
   db: Database
-  store: ImageStore
   id: string
   userId: string
   imageId: string

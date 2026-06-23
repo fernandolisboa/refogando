@@ -2,25 +2,38 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from 'v
 import { eq, sql as dsql } from 'drizzle-orm'
 import type { Sql } from 'postgres'
 import { makeSql } from '@/db/client'
-import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
+import { getDb, setImageStore, setImageGenerator, setClaudeClient, setEmbedder } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator } from '@/server/images/image-generator'
-import { recipe, recipeImage } from '@/db/schema'
+import { FakeClaudeClient } from '@/server/claude/client'
+import type { Embedder } from '@/server/embedding/embedder'
+import { recipe, recipeImage, creationSession, EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { POST as generateRoute } from '@/app/api/recipes/[id]/image/generate/route'
 import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/select/route'
 import { DELETE as galleryDeleteRoute } from '@/app/api/recipes/[id]/images/[imageId]/route'
+import { POST as regenerateRoute } from '@/app/api/recipes/[id]/regenerate/route'
 import { GET as detailGET } from '@/app/api/recipes/[id]/route'
+import { loadPublicRecipeBySlug } from '@/server/recipe/load'
+import { resolveRecipeView } from '@/domain/recipe-read'
 import { seedRecipe, seedTranslation, seedRecipeIngredient, seedRecipeImage } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
+import { cannedSuccess } from '../helpers/generation'
 
 /**
  * Galeria de imagens re-selecionável (#222, ADR-0022) — select/delete/gallery + projeção pública.
  * FakeImageStore/FakeImageGenerator (sem rede). Cobre: gerar APPENDA preview deselecionada e NÃO toca
- * a face pública (anon vê a antiga, nunca a fresca); a galeria é OWNER-GATED (a vista pública nunca a
- * tem); selecionar repointa a face (sem ledger/reap); selecionar imagem de OUTRA linhagem ⇒ um
- * not_found (= não-dono); apagar remove a linha + reapa o blob; apagar a face em uso ⇒ in_use (409);
- * apagar imagem de outra linhagem ⇒ not_found.
+ * a face pública (anon vê a antiga, nunca a fresca); a galeria é OWNER-GATED (a vista pública por uuid
+ * E por slug nunca a tem); ordenação por created_at; selecionar repointa a face (sem ledger/reap);
+ * selecionar imagem de OUTRA linhagem ⇒ um not_found (= não-dono); apagar remove a linha + reapa o
+ * blob (caminho real generate→delete); apagar a face em uso ⇒ in_use (409), inclusive a face ainda
+ * referenciada por uma VERSÃO ANTERIOR (ref-count GLOBAL cross-version); apagar de outra linhagem ⇒ not_found.
  */
+
+class FakeEmbedder implements Embedder {
+  async embed(): Promise<number[]> {
+    return new Array(EMBEDDING_DIMENSIONS).fill(0.1)
+  }
+}
 
 let sql: Sql
 beforeAll(() => {
@@ -35,6 +48,9 @@ beforeEach(() => {
   store = new FakeImageStore()
   setImageStore(store)
   setImageGenerator(new FakeImageGenerator())
+  // Regenerar (#20) embeda a nova versão (best-effort) e chama o Claude — Fakes p/ sem rede.
+  setEmbedder(new FakeEmbedder())
+  setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
 })
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
@@ -63,6 +79,19 @@ async function seedOwned(ownerId: string, titulo = 'Bolo'): Promise<string> {
   const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId, visibility: 'private', cozinha: 'brasileira' })
   await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo, provenance: 'automatica_nao_revisada' })
   await seedRecipeIngredient({ recipeId: id, ingredientId: null, ordem: 0, rawText: 'farinha', quantidade: null })
+  return id
+}
+
+function regenReq(id: string, headers: Headers): Request {
+  return new Request(`http://localhost/api/recipes/${id}/regenerate`, { method: 'POST', headers })
+}
+/** Receita ai_free_text PRÓPRIA com sessão recuperável (fonte free_text) — regenerável. */
+async function seedRegenerable(ownerId: string, titulo: string): Promise<string> {
+  const id = await seedRecipe({ origin: 'ai_free_text', originalLocale: 'pt-BR', ownerId, visibility: 'private', cozinha: 'brasileira' })
+  await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo, provenance: 'automatica_nao_revisada' })
+  await getDb()
+    .insert(creationSession)
+    .values({ userId: ownerId, mode: 'free_text', recipeId: id, freeText: 'um prato qualquer pra quatro' })
   return id
 }
 
@@ -116,6 +145,37 @@ describe('Galeria de imagens (#222) — preview + projeção pública', () => {
     expect(otherView.gallery).toBeUndefined()
   })
 
+  it('#222 leitura PÚBLICA por SLUG: anon vê a face SELECIONADA e NUNCA o campo gallery (mesmo com 2+ imagens)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'byslug@g.test' })
+    // Receita PÚBLICA com slug + face inicial; gera mais previews (2+ imagens na galeria).
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: userId, visibility: 'public', cozinha: 'brasileira' })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Pizza', provenance: 'escrita_por_pessoa', slug: 'pizza' })
+    const face = await seedRecipeImage({ recipeId: id, blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/face.webp' })
+    await generateRoute(genReq(id, headers), ctx(id)) // preview #1
+    await generateRoute(genReq(id, headers), ctx(id)) // preview #2
+    expect(await imageIdOf(id)).toBe(face) // a face seguiu a selecionada inicial
+
+    // Seam ANÔNIMO por slug (o que a página indexável usa). Monta a view PÚBLICA (sem viewerId).
+    const rows = await loadPublicRecipeBySlug(getDb(), 'pizza', 'pt-BR')
+    expect(rows).not.toBeNull()
+    const view = resolveRecipeView({ ...rows!, requestLocale: 'pt-BR' })
+    expect(view.imageUrl).toBe('https://abc.public.blob.vercel-storage.com/recipes/face.webp') // só a face
+    expect(view.gallery).toBeUndefined() // a galeria NUNCA vaza no caminho por slug
+    expect(view.canManage).toBeUndefined()
+  })
+
+  it('#222 a galeria respeita a ordem de created_at (asc) — contrato que a UI renderiza', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'order@g.test' })
+    const id = await seedOwned(userId)
+    const g1 = (await (await generateRoute(genReq(id, headers), ctx(id))).json()) as { image: { id: string } }
+    const g2 = (await (await generateRoute(genReq(id, headers), ctx(id))).json()) as { image: { id: string } }
+    const g3 = (await (await generateRoute(genReq(id, headers), ctx(id))).json()) as { image: { id: string } }
+
+    const res = await detailGET(new Request(`http://localhost/api/recipes/${id}?locale=pt-BR`, { headers }), ctx(id))
+    const view = (await res.json()) as { gallery?: { id: string }[] }
+    expect(view.gallery!.map((g) => g.id)).toEqual([g1.image.id, g2.image.id, g3.image.id])
+  })
+
   it('selecionar a preview repointa a face (sem reap); a galeria mantém todas', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'select@g.test' })
     const id = await seedOwned(userId)
@@ -161,27 +221,30 @@ describe('Galeria de imagens (#222) — preview + projeção pública', () => {
     expect((await selectRoute(selectReq(others, othersImg, headers), ctx2(others, othersImg))).status).toBe(404)
   })
 
-  it('apagar uma imagem NÃO-referenciada remove a linha + reapa o blob', async () => {
+  it('caminho real append→delete→reap: gerar 2 previews, selecionar a 1ª, apagar a 2ª (não-ref) ⇒ linha + blob somem', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'delete@g.test' })
     const id = await seedOwned(userId)
-    const face = await seedRecipeImage({ recipeId: id }) // selecionada (face)
-    const blobUrl = 'https://fake-blob.local/recipes/extra.png'
-    // Uma 2ª imagem na MESMA linhagem, NÃO selecionada — guardada no store fake para o reap conferir.
-    await store.store({ data: Buffer.from([9]), contentType: 'image/png', pathPrefix: 'recipes' })
-    const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, id))
-    const [extra] = await getDb()
-      .insert(recipeImage)
-      .values({ blobUrl, provenance: 'ai_generated', lineageId: r.lineageId })
-      .returning({ id: recipeImage.id })
-    store.blobs.set(blobUrl, { contentType: 'image/png', bytes: new Uint8Array([9]) })
 
-    const res = await galleryDeleteRoute(deleteReq(id, extra.id, headers), ctx2(id, extra.id))
+    // Gera DUAS previews pelo caminho REAL (generateRoute → createGalleryImage guarda blobs reais).
+    const g1 = (await (await generateRoute(genReq(id, headers), ctx(id))).json()) as { image: { id: string; url: string } }
+    const g2 = (await (await generateRoute(genReq(id, headers), ctx(id))).json()) as { image: { id: string; url: string } }
+    expect(store.blobs.has(g1.image.url)).toBe(true)
+    expect(store.blobs.has(g2.image.url)).toBe(true)
+    expect(await countImages()).toBe(2)
+
+    // Seleciona a 1ª como face ⇒ a 2ª fica NÃO-referenciada (apagável).
+    await selectRoute(selectReq(id, g1.image.id, headers), ctx2(id, g1.image.id))
+    expect(await imageIdOf(id)).toBe(g1.image.id)
+
+    const res = await galleryDeleteRoute(deleteReq(id, g2.image.id, headers), ctx2(id, g2.image.id))
     expect(res.status).toBe(200)
-    // A linha sumiu e o blob foi reapado; a face (outra imagem) intacta.
-    const [gone] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, extra.id))
+    // A linha da 2ª sumiu e o blob foi reapado de verdade; a face (1ª) intacta.
+    const [gone] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, g2.image.id))
     expect(gone).toBeUndefined()
-    expect(store.blobs.has(blobUrl)).toBe(false)
-    expect(await imageIdOf(id)).toBe(face)
+    expect(store.blobs.has(g2.image.url)).toBe(false) // reapado
+    expect(store.blobs.has(g1.image.url)).toBe(true) // a face permanece
+    expect(await imageIdOf(id)).toBe(g1.image.id)
+    expect(await countImages()).toBe(1)
   })
 
   it('apagar a face em uso (referenciada) ⇒ in_use (409); nada destruído', async () => {
@@ -196,6 +259,33 @@ describe('Galeria de imagens (#222) — preview + projeção pública', () => {
     const [still] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, face))
     expect(still).toBeDefined()
     expect(await imageIdOf(id)).toBe(face)
+  })
+
+  it('#222 in_use GLOBAL cross-version: a face ainda referenciada por uma VERSÃO ANTERIOR não é apagável', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'delete-crossver@g.test' })
+    // V1 regenerável com uma face F (referenciada por V1).
+    const v1 = await seedRegenerable(userId, 'Versão 1')
+    const face = await seedRecipeImage({ recipeId: v1 })
+
+    // Regenera (same-owner) ⇒ V2 COMPARTILHA a linhagem e CARRY-FORWARD da face (V2.image_id = F).
+    const regen = await regenerateRoute(regenReq(v1, headers), ctx(v1))
+    expect(regen.status).toBe(201)
+    const v2 = ((await regen.json()) as { recipeId: string }).recipeId
+    expect(await imageIdOf(v2)).toBe(face) // carry-forward p/ a nova versão
+    // Ambas referenciam F agora (V1 e V2) — ref-count GLOBAL = 2.
+
+    // DESSELECIONA na versão ATUAL (V2) — V1 AINDA referencia F (ref-count GLOBAL cai p/ 1, não 0).
+    await getDb().update(recipe).set({ imageId: null }).where(eq(recipe.id, v2))
+
+    // Apagar F pela galeria da V2 → BLOQUEADO (V1 ainda a referencia) — ref-count GLOBAL, não
+    // current-recipe-only. Se o COUNT fosse só da V2, isto passaria (verde-falso) — daí o teste.
+    const del = await galleryDeleteRoute(deleteReq(v2, face, headers), ctx2(v2, face))
+    expect(del.status).toBe(409)
+    await expect(del.json()).resolves.toMatchObject({ error: 'in_use' })
+    // A linha SOBREVIVE (V1 ainda a usa).
+    const [still] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, face))
+    expect(still).toBeDefined()
+    expect(await imageIdOf(v1)).toBe(face) // V1 segue apontando F
   })
 
   it('apagar imagem de OUTRA linhagem ⇒ not_found (leak-safe)', async () => {

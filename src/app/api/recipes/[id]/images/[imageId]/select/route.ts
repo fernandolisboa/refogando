@@ -1,5 +1,5 @@
 import { requireSession } from '@/server/auth/guard'
-import { getDb, getImageStore } from '@/server/deps'
+import { getDb } from '@/server/deps'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { applyRecipeImageSelect } from '@/server/recipe/image'
 
@@ -27,7 +27,6 @@ export async function POST(
 
   const res = await applyRecipeImageSelect({
     db: getDb(),
-    store: getImageStore(),
     id,
     userId: g.session.user.id,
     imageId,

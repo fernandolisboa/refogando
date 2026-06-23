@@ -251,7 +251,7 @@ export const recipeImage = pgTable(
     provenance: imageProvenanceEnum('provenance').notNull(),
     // ── Linhagem da galeria (#222, ADR-0022 dec.1) ────────────────────────────────
     // A imagem PERTENCE a uma linhagem (= a galeria daquela linhagem). NOT NULL: setada na criação
-    // (`persistAndPointImage`) = a `recipe.lineage_id` da Receita-alvo. A galeria do Owner é
+    // (`createGalleryImage`) = a `recipe.lineage_id` da Receita-alvo. A galeria do Owner é
     // `recipe_image WHERE lineage_id = recipe.lineage_id ORDER BY created_at` — daí o índice
     // composto (lineage_id, created_at) abaixo. A imagem NÃO carrega `recipe_id` (a face é o
     // ponteiro recipe.image_id; várias versões da linhagem compartilham a galeria).
