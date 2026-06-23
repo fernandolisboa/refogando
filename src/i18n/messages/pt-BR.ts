@@ -444,6 +444,11 @@ export const ptBR = {
     apagando: 'Apagando…',
     apagarErro: 'Não foi possível apagar a receita. Tente de novo.',
     vinculoPerdido: 'A receita original foi apagada — sua versão continua completa, só sem o vínculo com ela.',
+    // #192/ADR-0021: modal centrado de edição IN-PLACE (a tela de detalhe vira só-leitura). O
+    // botão "Editar" abre o modal; o título/descrição/fechar são do `SheetContent`.
+    modalTitulo: 'Editar receita',
+    modalDescricao: 'Altere o conteúdo da sua receita. As mudanças valem para esta mesma receita.',
+    modalFechar: 'Fechar',
   },
   // Regeneração: nova versão imutável por linhagem (#20). Regenerar a PRÓPRIA receita cria uma
   // NOVA versão a partir do mesmo pedido — nunca sobrescreve; as versões anteriores ficam salvas.

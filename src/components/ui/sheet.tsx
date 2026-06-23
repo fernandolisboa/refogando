@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils'
 /**
  * Sheet — primitiva shadcn/ui de drawer (#163) sobre o Radix Dialog (monopacote `radix-ui`),
  * pintada com os tokens quentes da casa (ADR-0018). O Dialog dá de graça o que a issue exige
- * em a11y: trap de foco, foco move pro painel ao abrir, Escape fecha, clique no overlay fecha,
- * `role=dialog` + `aria-modal`, e o gatilho ganha `aria-expanded`/`aria-controls` ligados ao
- * conteúdo. Sem `dark:` — os tokens viram sozinhos via globals.css. Sem ring custom: o
+ * em a11y: `role=dialog`, trap de foco (foco move pro painel ao abrir e volta ao gatilho ao
+ * fechar), overlay, Escape fecha e clique no overlay fecha; o gatilho ganha
+ * `aria-expanded`/`aria-controls` ligados ao conteúdo. O nome acessível vem do `SheetTitle`
+ * (aria-labelledby). Sem `dark:` — os tokens viram sozinhos via globals.css. Sem ring custom: o
  * :focus-visible global pinta o anel de páprica.
  *
  * Usado pelo menu mobile do header; por padrão entra pela esquerda (`side="left"`). Um único
@@ -58,7 +59,7 @@ function SheetContent({
   closeLabel = 'Fechar',
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
-  side?: 'top' | 'right' | 'bottom' | 'left'
+  side?: 'top' | 'right' | 'bottom' | 'left' | 'center'
   showClose?: boolean
   closeLabel?: string
 }) {
@@ -77,6 +78,11 @@ function SheetContent({
             'inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
           side === 'bottom' &&
             'inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
+          // Variante CENTRADA (#192/ADR-0021): modal de tarefa focada (editar a própria receita),
+          // não drawer. Centro da viewport, largura confortável e altura limitada com rolagem
+          // interna (formulários longos). Mantém os mesmos tokens/animação de fade do overlay.
+          side === 'center' &&
+            'inset-0 m-auto h-fit max-h-[90vh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-lg border data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           className,
         )}
         {...props}
