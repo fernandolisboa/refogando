@@ -32,9 +32,10 @@ async function seedCatalog(titulo: string, withImage: boolean): Promise<string> 
   const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, resultKind: 'success' })
   await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo, provenance: 'escrita_por_pessoa' })
   if (withImage) {
+    const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, id))
     const [img] = await getDb()
       .insert(recipeImage)
-      .values({ blobUrl: FAKE_BLOB, provenance: 'user_photo' })
+      .values({ blobUrl: FAKE_BLOB, provenance: 'user_photo', lineageId: r.lineageId })
       .returning({ id: recipeImage.id })
     await getDb().update(recipe).set({ imageId: img.id }).where(eq(recipe.id, id))
   }

@@ -309,11 +309,13 @@ function DetailChrome({
       {view.canManage && view.visibility && (
         <RecipeStatusChip visibility={view.visibility} m={messages} />
       )}
-      {/* Gestão da Imagem (#130) — owner-gated; ausente no caminho público. */}
+      {/* Gestão da Imagem (#130/#222) — owner-gated; ausente no caminho público. A galeria vem
+          owner-gated na view (`view.gallery`); ausente ⇒ lista vazia (defensivo). */}
       {view.canManage && (
         <RecipeImageManager
           recipeId={view.id}
           hasImage={view.imageUrl != null}
+          gallery={view.gallery ?? []}
           reviewSuggested={reviewImage}
           aiGenEnabled={view.imageGenEnabled ?? true}
         />

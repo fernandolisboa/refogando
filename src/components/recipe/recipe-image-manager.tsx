@@ -1,21 +1,37 @@
 'use client'
 /**
- * Gestão da Imagem da receita (#130, ADR-0016) — bloco do DONO para subir/trocar/remover a foto do
- * prato. Irmão do `RecipeDetailView` (que continua PURO): a page de detalhe o renderiza SÓ quando
- * `view.canManage` (dono). Espelha a disciplina do `RecipeVisibilityControls` (consome ROUTE
- * HANDLER via `fetch` — ADR-0010 — e `router.refresh()` ao mudar) e do `AvatarUploader` (#126:
- * valida tipo no client + REDIMENSIONA antes de subir, pra ficar abaixo do limite de body da
- * Vercel). O servidor é a verdade (ownership, ref-count, tipo/tamanho); isto é afordância.
+ * Estúdio de imagem da receita (#130/#132/#222, ADR-0016/0017/0022) — bloco do DONO. Irmão do
+ * `RecipeDetailView` (PURO): a page o renderiza SÓ quando `view.canManage` (dono). Espelha a
+ * disciplina do `RecipeVisibilityControls` (consome ROUTE HANDLER via `fetch` — ADR-0010 — e
+ * `router.refresh()` ao mudar) e do `AvatarUploader` (#126: valida tipo no client + REDIMENSIONA
+ * antes de subir). O servidor é a verdade (ownership, lineage, ref-count, tipo/tamanho); isto é
+ * afordância.
  *
- * Em sucesso, `router.refresh()` relê a page server → o hero do `RecipeDetailView` reflete a nova
- * foto (ou some, na remoção). Sem estado de imagem local: a foto vive na view server-rendered.
+ * #222 (galeria re-selecionável + preview):
+ *  - "Gerar com IA" abre um MODAL de PREVIEW (Sheet center): gera → mostra a imagem; "Usar esta"
+ *    SELECIONA a face (POST .../select → refresh, fecha); "Gerar outra" gera de novo e troca o
+ *    preview (as anteriores ficam na galeria server-side, deselecionadas). A face NÃO muda até
+ *    "Usar esta". DECISION 6: se houve ≥1 geração e o dono fecha SEM selecionar, chamamos
+ *    `router.refresh()` no fechar (os previews já estão persistidos ⇒ a galeria server-rendered
+ *    reflete-os; senão "cadê minhas gerações").
+ *  - GALERIA: thumbnails (uploads + geradas) com selo "✨ gerada por IA"; clicar SELECIONA; apagar
+ *    APAGA (DELETE .../images/[imageId]); 409 in_use ⇒ mensagem amigável (a deleção da face em uso
+ *    é bloqueada — a UI também desabilita apagar na selecionada).
+ *  - Upload (Adicionar/Trocar) auto-seleciona; "Remover foto" DESSELECIONA (volta ao placeholder).
  */
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
+import type { GalleryImage } from '@/domain/recipe-read'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
 /** Cap (2 MB) — espelha MAX_BYTES da rota; barra cedo um arquivo grande pós-resize. */
@@ -39,14 +55,23 @@ function formatCountdown(ms: number): string {
   return `${minutes}min`
 }
 
+/** Imagem-preview devolvida por POST .../image/generate (#222): `{ image }`. */
+type PreviewImage = { id: string; url: string; aiGenerated: boolean }
+
 export function RecipeImageManager({
   recipeId,
   hasImage,
+  gallery = [],
   reviewSuggested = false,
   aiGenEnabled = true,
 }: {
   recipeId: string
   hasImage: boolean
+  /**
+   * #222: galeria de imagens da linhagem (uploads + geradas), owner-gated na view. Os thumbnails
+   * permitem selecionar/apagar. Default `[]` (defensivo: a view sempre traz a galeria pro dono).
+   */
+  gallery?: ReadonlyArray<GalleryImage>
   /**
    * #131: a versão atual herdou a imagem (carry-forward) E uma mudança VISUAL (título/ingredientes/
    * cozinha) tornou a foto possivelmente desatualizada ⇒ destaca um aviso sugerindo revisar. Só
@@ -55,8 +80,7 @@ export function RecipeImageManager({
   reviewSuggested?: boolean
   /**
    * #134: geração de imagem por IA LIGADA na config do admin (a view do dono carrega o flag). `false`
-   * ⇒ esconde a ação "Gerar com IA" (o upload de foto continua). Default `true` (a view sempre traz o
-   * flag p/ o dono; o default só protege contra ausência). O servidor reimpõe o gate (403).
+   * ⇒ esconde a ação "Gerar com IA" (o upload de foto continua). Default `true`. O servidor reimpõe o gate (403).
    */
   aiGenEnabled?: boolean
 }) {
@@ -69,21 +93,23 @@ export function RecipeImageManager({
   // #132: geração por IA — erro próprio ('falha'|'limite'|'desabilitada') + countdown no teto.
   const [genError, setGenError] = useState<null | 'falha' | 'limite' | 'desabilitada'>(null)
   const [countdown, setCountdown] = useState('')
-  const [prompt, setPrompt] = useState('')
+  // #222: estado do modal de preview.
+  const [modalOpen, setModalOpen] = useState(false)
+  const [preview, setPreview] = useState<PreviewImage | null>(null)
+  // DECISION 6: houve ≥1 geração nesta sessão de modal? ⇒ refresh ao fechar sem selecionar.
+  const [generatedThisSession, setGeneratedThisSession] = useState(false)
+  // #222: erro de seleção/deleção na galeria ('falha'|'emUso').
+  const [galleryError, setGalleryError] = useState<null | 'falha' | 'emUso'>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const busy = status === 'busy'
 
-  // #132: gera a imagem por IA. `promptOverride` (refino) opcional ⇒ um-clique monta da receita.
-  async function onGenerate(promptOverride?: string) {
+  // #132/#222: gera a imagem por IA como PREVIEW (acrescenta à galeria deselecionada; devolve `{image}`).
+  async function onGenerate() {
     setGenError(null)
     setError(null)
     setStatus('busy')
     try {
-      const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
-        method: 'POST',
-        headers: promptOverride ? { 'content-type': 'application/json' } : undefined,
-        body: promptOverride ? JSON.stringify({ prompt: promptOverride }) : undefined,
-      })
+      const res = await fetch(`/api/recipes/${recipeId}/image/generate`, { method: 'POST' })
       if (res.status === 429) {
         const b = (await res.json().catch(() => ({}))) as { retryAfterMs?: number }
         setCountdown(formatCountdown(b.retryAfterMs ?? 0))
@@ -102,10 +128,96 @@ export function RecipeImageManager({
         setStatus('idle')
         return
       }
+      const body = (await res.json().catch(() => ({}))) as { image?: PreviewImage }
+      if (body.image) setPreview(body.image)
+      setGeneratedThisSession(true) // DECISION 6: a galeria server-side mudou
       setStatus('idle')
-      router.refresh() // relê a page server → o hero reflete a imagem gerada
     } catch {
       setGenError('falha')
+      setStatus('idle')
+    }
+  }
+
+  /** "Gerar com IA": abre o modal e dispara a 1ª geração. */
+  function onOpenModal() {
+    setPreview(null)
+    setGenError(null)
+    setGeneratedThisSession(false)
+    setModalOpen(true)
+    void onGenerate()
+  }
+
+  /** Fecha o modal; DECISION 6: refresh se houve geração e nada foi selecionado (face inalterada). */
+  function onModalOpenChange(open: boolean) {
+    setModalOpen(open)
+    if (!open) {
+      if (generatedThisSession) router.refresh()
+      setGeneratedThisSession(false)
+      setPreview(null)
+    }
+  }
+
+  /** "Usar esta": SELECIONA o preview como face → refresh, fecha (sem o refresh do close). */
+  async function onUseThis() {
+    if (!preview) return
+    setStatus('busy')
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/images/${preview.id}/select`, { method: 'POST' })
+      if (!res.ok) {
+        setGenError('falha')
+        setStatus('idle')
+        return
+      }
+      setStatus('idle')
+      setModalOpen(false)
+      setGeneratedThisSession(false) // já demos refresh; evita um 2º no close
+      setPreview(null)
+      router.refresh()
+    } catch {
+      setGenError('falha')
+      setStatus('idle')
+    }
+  }
+
+  /** Galeria: SELECIONA uma imagem existente (clicar no thumbnail). */
+  async function onSelect(imageId: string) {
+    setGalleryError(null)
+    setStatus('busy')
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/images/${imageId}/select`, { method: 'POST' })
+      if (!res.ok) {
+        setGalleryError('falha')
+        setStatus('idle')
+        return
+      }
+      setStatus('idle')
+      router.refresh()
+    } catch {
+      setGalleryError('falha')
+      setStatus('idle')
+    }
+  }
+
+  /** Galeria: APAGA uma imagem (409 in_use ⇒ mensagem amigável, nada destruído). */
+  async function onDelete(imageId: string) {
+    setGalleryError(null)
+    setStatus('busy')
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/images/${imageId}`, { method: 'DELETE' })
+      if (res.status === 409) {
+        setGalleryError('emUso')
+        setStatus('idle')
+        return
+      }
+      if (!res.ok) {
+        setGalleryError('falha')
+        setStatus('idle')
+        return
+      }
+      setStatus('idle')
+      router.refresh()
+    } catch {
+      setGalleryError('falha')
       setStatus('idle')
     }
   }
@@ -191,18 +303,11 @@ export function RecipeImageManager({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        {/* #132: gerar por IA com UM CLIQUE (prompt montado da receita no servidor).
-            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`).
-            #207: ação primária — vem ANTES do upload da própria foto. */}
+        {/* #222: "Gerar com IA" abre o MODAL de preview (#207: ação primária, antes do upload).
+            #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
         {aiGenEnabled && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => onGenerate()}
-            disabled={busy}
-          >
-            {busy ? m.imagemGerando : m.imagemGerar}
+          <Button type="button" variant="secondary" size="sm" onClick={onOpenModal} disabled={busy}>
+            {m.imagemGerar}
           </Button>
         )}
         <Button
@@ -223,48 +328,57 @@ export function RecipeImageManager({
           </label>
         </Button>
         {hasImage && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={onRemove}
-            disabled={busy}
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={onRemove} disabled={busy}>
             {m.imagemRemover}
           </Button>
         )}
       </div>
 
-      {/* #132: refino opcional — prompt editável (disclosure). O default já é o um-clique acima.
-          #134: escondido junto com o botão de gerar quando a geração está desligada (`aiGenEnabled`). */}
-      {aiGenEnabled && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted hover:text-fg">{m.imagemRefinar}</summary>
-          <div className="mt-2 flex flex-col gap-2">
-            <label htmlFor="imagem-prompt" className="sr-only">
-              {m.imagemPromptRotulo}
-            </label>
-            <Textarea
-              id="imagem-prompt"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={m.imagemPromptPlaceholder}
-              rows={3}
-              className="resize-y"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => onGenerate(prompt.trim() || undefined)}
-              disabled={busy}
-              className="self-start"
-            >
-              {busy ? m.imagemGerando : m.imagemGerarComPrompt}
-            </Button>
-          </div>
-        </details>
-      )}
+      {/* #222: GALERIA re-selecionável (uploads + geradas). Clicar SELECIONA; apagar APAGA. */}
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium text-muted">{m.imagemGaleria}</h3>
+        {gallery.length === 0 ? (
+          <p className="text-sm text-muted">{m.imagemGaleriaVazia}</p>
+        ) : (
+          <ul className="flex flex-wrap gap-3">
+            {gallery.map((img) => (
+              <li key={img.id} className="flex flex-col items-stretch gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSelect(img.id)}
+                  disabled={busy || img.selected}
+                  aria-pressed={img.selected}
+                  className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
+                  <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
+                  {img.aiGenerated && (
+                    <span className="absolute bottom-0 left-0 right-0 bg-fg/60 px-1 py-0.5 text-[10px] text-bg">
+                      {m.imagemSeloIa}
+                    </span>
+                  )}
+                </button>
+                <div className="flex items-center justify-between gap-1 text-xs">
+                  {img.selected ? (
+                    <span className="font-medium text-fg">{m.imagemSelecionada}</span>
+                  ) : (
+                    <span className="text-muted">{m.imagemSelecionar}</span>
+                  )}
+                  {/* A face em uso não pode ser apagada (in_use); desabilita por afordância. */}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(img.id)}
+                    disabled={busy || img.selected}
+                    className="text-muted underline hover:text-fg disabled:no-underline disabled:opacity-50"
+                  >
+                    {m.imagemApagar}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div aria-live="polite" className="text-sm">
         {error === 'tipo' && (
@@ -282,24 +396,66 @@ export function RecipeImageManager({
             {m.imagemErro}
           </p>
         )}
-        {/* #132: erro/limite da geração por IA. */}
-        {genError === 'falha' && (
+        {/* #222: erro de seleção/deleção na galeria. */}
+        {galleryError === 'falha' && (
           <p role="alert" className="font-medium text-fg">
-            {m.imagemGerarErro}
+            {m.imagemErro}
           </p>
         )}
-        {genError === 'limite' && (
+        {galleryError === 'emUso' && (
           <p role="alert" className="font-medium text-fg">
-            {m.imagemLimite.replace('{tempo}', countdown)}
+            {m.imagemApagarEmUso}
           </p>
         )}
-        {/* #134: geração desligada na config (corrida de toggle pós-render). */}
-        {genError === 'desabilitada' && (
-          <p role="alert" className="font-medium text-fg">
-            {m.imagemGerarDesabilitada}
-          </p>
-        )}
+        {/* #222: os erros da geração (falha/limite/desabilitada) são surfados DENTRO do modal — a
+            geração só acontece lá. Não duplicamos aqui (evita mensagem em dobro). */}
       </div>
+
+      {/* #222: MODAL de PREVIEW da geração (Sheet center, precedente recipe-edit-modal). */}
+      <Sheet open={modalOpen} onOpenChange={onModalOpenChange}>
+        <SheetContent side="center" closeLabel={m.imagemFechar}>
+          <SheetHeader>
+            <SheetTitle>{m.imagemPreviewTitulo}</SheetTitle>
+            <SheetDescription>{m.imagemPreviewDescricao}</SheetDescription>
+          </SheetHeader>
+
+          <div className="flex flex-col items-center gap-3">
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element -- preview de blob público
+              <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
+            ) : (
+              <p className="py-8 text-sm text-muted">{busy ? m.imagemGerando : m.imagemGerarErro}</p>
+            )}
+
+            <div aria-live="polite" className="text-sm">
+              {genError === 'limite' && (
+                <p role="alert" className="font-medium text-fg">
+                  {m.imagemLimite.replace('{tempo}', countdown)}
+                </p>
+              )}
+              {genError === 'desabilitada' && (
+                <p role="alert" className="font-medium text-fg">
+                  {m.imagemGerarDesabilitada}
+                </p>
+              )}
+              {genError === 'falha' && (
+                <p role="alert" className="font-medium text-fg">
+                  {m.imagemGerarErro}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button type="button" size="sm" onClick={onUseThis} disabled={busy || !preview}>
+                {m.imagemUsarEsta}
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={onGenerate} disabled={busy}>
+                {busy ? m.imagemGerando : m.imagemGerarOutra}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
     </section>
   )
 }

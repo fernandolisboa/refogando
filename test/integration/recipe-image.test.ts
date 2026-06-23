@@ -8,10 +8,11 @@ import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { seedSessionHeaders, seedDeletedSessionHeaders, seedUser } from '../helpers/users'
 
 /**
- * Round-trip da Imagem da receita (#130, ADR-0016) — contrato `/api/recipes/[id]/image` + entidade
- * `recipe_image` ref-counted. Owner-only (catálogo/não-dono ⇒ 404, ADR-0011). FakeImageStore
- * injetado — NUNCA toca a rede. Cobre: upload cria recipe_image (`user_photo`) + seta image_id;
- * troca/remoção com REF-COUNT (blob só apaga quando 0 referências); degradação do storage → 503.
+ * Round-trip da Imagem da receita (#130/#222, ADR-0016/0022) — contrato `/api/recipes/[id]/image` +
+ * entidade `recipe_image` por LINHAGEM. Owner-only (catálogo/não-dono ⇒ 404, ADR-0011). FakeImageStore
+ * injetado — NUNCA toca a rede. Cobre: upload cria recipe_image (`user_photo`) + AUTO-SELECIONA;
+ * #222: TROCA ACRESCENTA à galeria e NÃO reapa (o reap-on-swap saiu de cena — DECISION 4); DELETE
+ * /image agora DESSELECIONA (zera image_id, NÃO apaga: a imagem fica na galeria); degradação → 503.
  */
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
@@ -129,7 +130,7 @@ describe('/api/recipes/[id]/image — upload/troca/remoção (#130)', () => {
     expect(await countImages()).toBe(0)
   })
 
-  it('TROCA: ref-count 0 ⇒ apaga a recipe_image antiga e o blob; mantém só a nova', async () => {
+  it('#222 TROCA ACRESCENTA à galeria (NÃO reapa): 2 imagens, a NOVA vira a face, o blob antigo PERMANECE', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'troca@ri.test' })
     const id = await seedOwnedRecipe(userId)
 
@@ -138,45 +139,29 @@ describe('/api/recipes/[id]/image — upload/troca/remoção (#130)', () => {
     const second = (await (await POST(postReq(id, pngFile(), headers), ctx(id))).json()) as { imageUrl: string }
 
     expect(second.imageUrl).not.toBe(first.imageUrl)
-    expect(await countImages()).toBe(1) // a antiga foi reaproveitada (apagada)
-    expect(store.blobs.has(first.imageUrl)).toBe(false) // blob antigo apagado (0 refs)
+    // #222: o reap-on-swap saiu de cena (DECISION 4) — a antiga FICA na galeria.
+    expect(await countImages()).toBe(2)
+    expect(store.blobs.has(first.imageUrl)).toBe(true) // blob antigo PRESERVADO (não reapado)
     expect(store.blobs.has(second.imageUrl)).toBe(true)
-    // A linha recipe_image antiga não existe mais; a nova é a apontada.
+    // A face agora aponta a NOVA imagem (upload auto-seleciona); ambas na MESMA linhagem.
     const newImageId = await readImageId(id)
     expect(newImageId).not.toBe(firstImageId)
+    const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, id))
+    const lineages = await getDb().select({ lineageId: recipeImage.lineageId }).from(recipeImage)
+    expect(lineages.every((l) => l.lineageId === r.lineageId)).toBe(true)
   })
 
-  it('TROCA com carry-forward (#131): ref-count > 0 ⇒ NÃO apaga a imagem compartilhada', async () => {
-    const { userId, headers } = await seedSessionHeaders({ email: 'carry@ri.test' })
-    const idA = await seedOwnedRecipe(userId, 'Versão A')
-
-    // Upload em A cria a imagem X (A.image_id = X).
-    const first = (await (await POST(postReq(idA, pngFile(), headers), ctx(idA))).json()) as { imageUrl: string }
-    const sharedImageId = await readImageId(idA)
-    // Simula o carry-forward (#131): uma 2ª versão B aponta para o MESMO image_id X.
-    const idB = await seedOwnedRecipe(userId, 'Versão B')
-    await getDb().update(recipe).set({ imageId: sharedImageId }).where(eq(recipe.id, idB))
-
-    // Troca a foto de A → cria Y; X ainda é referenciada por B ⇒ X (linha + blob) PERMANECE.
-    const second = (await (await POST(postReq(idA, pngFile(), headers), ctx(idA))).json()) as { imageUrl: string }
-
-    expect(second.imageUrl).not.toBe(first.imageUrl)
-    expect(store.blobs.has(first.imageUrl)).toBe(true) // X preservado (B ainda usa)
-    expect(store.blobs.has(second.imageUrl)).toBe(true) // Y novo
-    expect(await readImageId(idB)).toBe(sharedImageId) // B segue apontando X
-    expect(await countImages()).toBe(2) // X e Y coexistem
-  })
-
-  it('DELETE: zera image_id, apaga a recipe_image e o blob (ref-count 0)', async () => {
+  it('#222 DELETE = DESSELECIONAR: zera image_id mas NÃO apaga (a imagem fica na galeria, blob preservado)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'del@ri.test' })
     const id = await seedOwnedRecipe(userId)
     const created = (await (await POST(postReq(id, pngFile(), headers), ctx(id))).json()) as { imageUrl: string }
 
     const res = await DELETE(deleteReq(id, headers), ctx(id))
     expect(res.status).toBe(200)
-    expect(await readImageId(id)).toBeNull()
-    expect(await countImages()).toBe(0)
-    expect(store.blobs.has(created.imageUrl)).toBe(false)
+    expect(await readImageId(id)).toBeNull() // desselecionada (volta ao placeholder)
+    // #222: NÃO reapa — a linha recipe_image e o blob PERMANECEM (re-selecionáveis na galeria).
+    expect(await countImages()).toBe(1)
+    expect(store.blobs.has(created.imageUrl)).toBe(true)
   })
 
   it('DELETE numa Receita SEM foto → 200 no-op idempotente (nada a apagar)', async () => {

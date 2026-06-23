@@ -274,11 +274,18 @@ export async function seedRecipeImage(input: {
   provenance?: ImageProvenance
   moderated?: { curatorId: string; reason?: string }
 }): Promise<string> {
+  // #222: a imagem PERTENCE à linhagem da Receita-alvo — lê a lineage_id e carimba (NOT NULL). Assim
+  // a imagem semeada é membro REAL da galeria daquela Receita (seleção/galeria-delete a alcançam).
+  const [r] = await getDb()
+    .select({ lineageId: recipe.lineageId })
+    .from(recipe)
+    .where(eq(recipe.id, input.recipeId))
   const [img] = await getDb()
     .insert(recipeImage)
     .values({
       blobUrl: input.blobUrl ?? 'https://abc.public.blob.vercel-storage.com/recipes/x.webp',
       provenance: input.provenance ?? 'user_photo',
+      lineageId: r.lineageId,
       ...(input.moderated
         ? {
             moderatedAt: new Date(),

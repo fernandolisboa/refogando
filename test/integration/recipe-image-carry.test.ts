@@ -45,11 +45,12 @@ beforeEach(() => {
 
 const FAKE_BLOB = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
 
-/** Insere uma recipe_image e aponta recipe.image_id pra ela. Devolve o imageId. */
+/** Insere uma recipe_image (na linhagem da Receita-alvo) e aponta recipe.image_id pra ela (#222). */
 async function attachImage(recipeId: string): Promise<string> {
+  const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, recipeId))
   const [img] = await getDb()
     .insert(recipeImage)
-    .values({ blobUrl: FAKE_BLOB, provenance: 'user_photo' })
+    .values({ blobUrl: FAKE_BLOB, provenance: 'user_photo', lineageId: r.lineageId })
     .returning({ id: recipeImage.id })
   await getDb().update(recipe).set({ imageId: img.id }).where(eq(recipe.id, recipeId))
   return img.id
@@ -84,30 +85,36 @@ async function seedBase(titulo = 'Bolo', ingrediente = 'farinha'): Promise<strin
   return id
 }
 
-describe('Carry-forward da Imagem (#131) — DERIVAR', () => {
-  it('mudança VISUAL (título) numa base COM imagem ⇒ derivada herda image_id + imageReviewSuggested', async () => {
+// #222 (ADR-0022 dec.2): a DERIVA cross-owner NÃO carrega mais a face — nasce com galeria VAZIA
+// (image_id NULL + linhagem PRÓPRIA), independentemente de a base ter imagem. SUPERSEDE o
+// carry-forward de #131 SÓ na deriva (a regeneração same-owner abaixo ainda carrega).
+describe('Deriva NÃO carrega imagem (#222 dec.2) — galeria vazia', () => {
+  it('base COM imagem + mudança visual ⇒ derivada SEM image_id, silenciosa, linhagem PRÓPRIA', async () => {
     const base = await seedBase()
-    const baseImageId = await attachImage(base)
+    await attachImage(base)
     const { headers } = await seedSessionHeaders({ email: 'derive-big@ic.test' })
 
     const res = await derive(base, { titulo: 'Bolo de chocolate', ingredientes: [{ rawText: 'farinha', quantidade: null }] }, headers)
     expect(res.status).toBe(201)
     const body = (await res.json()) as { recipeId: string; imageReviewSuggested: boolean }
-    expect(body.imageReviewSuggested).toBe(true)
-    expect(await imageIdOf(body.recipeId)).toBe(baseImageId) // mesmo blob, sem arquivo novo
+    expect(body.imageReviewSuggested).toBe(false) // sem face herdada ⇒ nada a revisar
+    expect(await imageIdOf(body.recipeId)).toBeNull() // galeria vazia (dec.2)
+    // linhagem PRÓPRIA: difere da linhagem da base (galeria não compartilhada cross-owner).
+    const [d] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, body.recipeId))
+    const [b] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, base))
+    expect(d.lineageId).not.toBe(b.lineageId)
   })
 
-  it('mudança só COSMÉTICA (restrição) numa base COM imagem ⇒ herda image_id mas silencioso', async () => {
+  it('base COM imagem + mudança só cosmética ⇒ derivada SEM image_id, silenciosa', async () => {
     const base = await seedBase()
-    const baseImageId = await attachImage(base)
+    await attachImage(base)
     const { headers } = await seedSessionHeaders({ email: 'derive-small@ic.test' })
 
-    // título e conjunto de ingredientes IGUAIS à base; só adiciona uma restrição (cosmético).
     const res = await derive(base, { titulo: 'Bolo', ingredientes: [{ rawText: 'farinha', quantidade: null }], restricoes: ['vegano'] }, headers)
     expect(res.status).toBe(201)
     const body = (await res.json()) as { recipeId: string; imageReviewSuggested: boolean }
     expect(body.imageReviewSuggested).toBe(false)
-    expect(await imageIdOf(body.recipeId)).toBe(baseImageId)
+    expect(await imageIdOf(body.recipeId)).toBeNull()
   })
 
   it('base SEM imagem ⇒ derivada sem image_id e silenciosa (nada a revisar)', async () => {
@@ -241,6 +248,14 @@ describe('Carry-forward da Imagem (#131) — REGENERAR', () => {
     const body = (await res.json()) as { recipeId: string; imageReviewSuggested: boolean }
     expect(body.imageReviewSuggested).toBe(true) // título 'Receita original' → 'Arroz de forno'
     expect(await imageIdOf(body.recipeId)).toBe(imageId) // herdou o mesmo blob
+
+    // #222: a nova versão COMPARTILHA a linhagem da predecessora ⇒ mesma galeria; a face carregada
+    // (cuja recipe_image.lineage_id == a linhagem compartilhada) É membro da galeria (invariante).
+    const [p] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, pred))
+    const [n] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, body.recipeId))
+    expect(n.lineageId).toBe(p.lineageId)
+    const [face] = await getDb().select({ lineageId: recipeImage.lineageId }).from(recipeImage).where(eq(recipeImage.id, imageId))
+    expect(face.lineageId).toBe(n.lineageId)
   })
 
   it('predecessora SEM imagem ⇒ nova versão sem image_id e silenciosa', async () => {

@@ -164,6 +164,17 @@ export const recipe = pgTable(
     // esta FK zera (rede de segurança — o ref-count já garante que ninguém aponta). Forward-ref via
     // AnyPgColumn (recipeImage é definido adiante; mesma técnica do self-ref parent_recipe_id).
     imageId: uuid('image_id').references((): AnyPgColumn => recipeImage.id, { onDelete: 'set null' }),
+    // ── Linhagem da galeria de imagens (#222, ADR-0022) ───────────────────────────
+    // Chave OPACA da linhagem (ADR-0022 dec.1): a Galeria da Receita R = `recipe_image WHERE
+    // lineage_id = R.lineage_id`. NÃO é um tree-walk de parent_recipe_id (previews ficam
+    // DESELECIONADAS — a galeria precisa agrupar ANTES de qualquer seleção; e a chave sobrevive ao
+    // hard-delete do ancestral, que anula parent_recipe_id por ON DELETE set null). NOT NULL com
+    // DEFAULT gen_random_uuid(): toda RAIZ (geração/conversa/catálogo/import/DERIVA) nasce com
+    // linhagem PRÓPRIA (o default). A REGENERAÇÃO same-owner (#20) INHERITS a lineage_id da
+    // predecessora (setada explicitamente no INSERT — persist.ts). A edição in-place (#21) muta a
+    // MESMA linha ⇒ mantém a lineage_id. A DERIVA cross-owner (#17) NÃO herda (ADR-0022 dec.1:
+    // "derivada nasce com galeria vazia") — toma o default ⇒ linhagem nova, galeria vazia.
+    lineageId: uuid('lineage_id').notNull().defaultRandom(),
     // ── Atribuição da importação da web (#165, ADR-0019) ──────────────────────────
     // Só Receitas `origin=web_imported` (cópia privada de um link externo) carregam estas duas; toda
     // outra Receita as deixa NULL. A Autoria é creditada à FONTE EXTERNA ("fonte: …"), nunca "por
@@ -238,6 +249,13 @@ export const recipeImage = pgTable(
     // linha de imagem tem um blob (não há recipe_image sem arquivo).
     blobUrl: text('blob_url').notNull(),
     provenance: imageProvenanceEnum('provenance').notNull(),
+    // ── Linhagem da galeria (#222, ADR-0022 dec.1) ────────────────────────────────
+    // A imagem PERTENCE a uma linhagem (= a galeria daquela linhagem). NOT NULL: setada na criação
+    // (`createGalleryImage`) = a `recipe.lineage_id` da Receita-alvo. A galeria do Owner é
+    // `recipe_image WHERE lineage_id = recipe.lineage_id ORDER BY created_at` — daí o índice
+    // composto (lineage_id, created_at) abaixo. A imagem NÃO carrega `recipe_id` (a face é o
+    // ponteiro recipe.image_id; várias versões da linhagem compartilham a galeria).
+    lineageId: uuid('lineage_id').notNull(),
     // Quem subiu/gerou (#130). ON DELETE set null (espelha recipe.moderatedBy): apagar o usuário NÃO
     // apaga a imagem (a Receita que a referencia — possivelmente já no catálogo — sobrevive). NULLABLE.
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -264,6 +282,9 @@ export const recipeImage = pgTable(
     index('recipe_image_moderated_idx')
       .on(t.moderatedAt)
       .where(sql`${t.moderatedAt} IS NOT NULL`),
+    // Galeria por linhagem (#222, ADR-0022 dec.1): a query é `WHERE lineage_id = X ORDER BY
+    // created_at` — o índice composto (lineage_id, created_at) cobre filtro + ordenação.
+    index('recipe_image_lineage_idx').on(t.lineageId, t.createdAt),
   ],
 )
 

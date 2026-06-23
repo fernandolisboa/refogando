@@ -10,11 +10,11 @@ import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/re
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 
 /**
- * Geração de imagem por IA (#132, ADR-0017) — `/api/recipes/[id]/image/generate`. Owner-only;
- * FakeImageGenerator/FakeImageStore (NUNCA tocam Gemini/Blob). Cobre: gera → recipe_image
- * (ai_generated) + image_id + created_by; prompt montado da receita ou editado; teto por papel na
- * janela 24h (429 + countdown, generator NÃO chamado); regenerar substitui (ref-count); degradação
- * → 503; anon/não-dono barrados (Throwing prova que o seam não foi tocado).
+ * Geração de imagem por IA = PREVIEW (#132/#222, ADR-0017/0022) — `/api/recipes/[id]/image/generate`.
+ * Owner-only; FakeImageGenerator/FakeImageStore (NUNCA tocam Gemini/Blob). #222: a geração ACRESCENTA
+ * uma `recipe_image` DESELECIONADA à galeria da linhagem e devolve `{ image }` — NÃO troca a face
+ * (`image_id` intacto), NÃO reapa a anterior (a galeria mantém todas). O ledger conta os EVENTOS
+ * (teto inalterado, ADR-0017). Anon/não-dono barrados; degradação → 503.
  */
 
 let store: FakeImageStore
@@ -80,7 +80,7 @@ async function setImageGenConfig(cfg: { enabled?: boolean; model?: string; capBy
     })
 }
 
-describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
+describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222)', () => {
   it('anon → 401; o gerador NÃO é tocado', async () => {
     const owner = await seedUser({ email: 'o@gen.test' })
     const id = await seedOwned(owner)
@@ -101,60 +101,68 @@ describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
     expect(throwing.calls).toBe(0) // gate de dono ANTES do seam
   })
 
-  it('dono gera (um-clique) → 200; recipe_image ai_generated + image_id + created_by; prompt da receita', async () => {
+  it('#222 dono gera = PREVIEW: 200 com { image } (deselecionada); image_id NÃO muda; created_by/ai_generated/lineage', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'gera@gen.test' })
     const id = await seedOwned(userId, 'Feijoada')
+    const [r0] = await getDb().select({ lineageId: recipe.lineageId, imageId: recipe.imageId }).from(recipe).where(eq(recipe.id, id))
 
     const res = await POST(genReq(id, headers), ctx(id))
     expect(res.status).toBe(200)
-    const view = (await res.json()) as { imageUrl?: string; imageAiGenerated?: boolean }
-    expect(view.imageAiGenerated).toBe(true) // selo
+    const body = (await res.json()) as { image?: { id: string; url: string; aiGenerated: boolean; selected: boolean } }
+    expect(body.image).toBeDefined()
+    expect(body.image!.aiGenerated).toBe(true)
+    expect(body.image!.selected).toBe(false) // preview — NÃO é a face
     expect(gen.calls).toBe(1)
     expect(gen.lastPrompt).toContain('Feijoada') // prompt montado da receita
 
-    const imageId = (await imageState(id)).imageId
-    expect(imageId).not.toBeNull()
-    const [img] = await getDb().select({ provenance: recipeImage.provenance, createdBy: recipeImage.createdBy }).from(recipeImage).where(eq(recipeImage.id, imageId!))
-    expect(img).toMatchObject({ provenance: 'ai_generated', createdBy: userId })
+    // A face NÃO mudou (preview não seleciona) — image_id segue o que era (null aqui).
+    expect((await imageState(id)).imageId).toBe(r0.imageId)
+    // A imagem nasceu na MESMA linhagem da Receita, ai_generated, created_by = dono.
+    const [img] = await getDb()
+      .select({ provenance: recipeImage.provenance, createdBy: recipeImage.createdBy, lineageId: recipeImage.lineageId })
+      .from(recipeImage)
+      .where(eq(recipeImage.id, body.image!.id))
+    expect(img).toMatchObject({ provenance: 'ai_generated', createdBy: userId, lineageId: r0.lineageId })
+    // O ledger contou o evento (custo gasto).
+    expect(await countGenEvents(userId)).toBe(1)
   })
 
   it('prompt editado (refino) ANCORA no base da receita + vira sufixo de estilo (#214)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'refino@gen.test' })
     const id = await seedOwned(userId)
     await POST(genReq(id, headers, 'um prato futurista neon'), ctx(id))
-    // O base da receita (título) fica SEMPRE presente — o override NUNCA o substitui (stopgap de
-    // segurança): o override vira sufixo de estilo/refinamento limitado.
     expect(gen.lastPrompt).toContain('Bolo de fubá')
     expect(gen.lastPrompt).toContain('Estilo/refinamento: um prato futurista neon')
   })
 
-  it('regenerar substitui: ref-count apaga a ai_generated anterior, mantém a nova', async () => {
+  it('#222 gerar de novo APPENDA (NÃO reapa): ambas as imagens sobrevivem; image_id intacto; ledger=2', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'regen@gen.test' })
     const id = await seedOwned(userId)
 
-    const first = (await (await POST(genReq(id, headers), ctx(id))).json()) as { imageUrl: string }
-    const second = (await (await POST(genReq(id, headers), ctx(id))).json()) as { imageUrl: string }
+    const first = (await (await POST(genReq(id, headers), ctx(id))).json()) as { image: { id: string; url: string } }
+    const second = (await (await POST(genReq(id, headers), ctx(id))).json()) as { image: { id: string; url: string } }
 
-    expect(second.imageUrl).not.toBe(first.imageUrl)
-    expect(store.blobs.has(first.imageUrl)).toBe(false) // anterior coletado (0 refs) — AC
-    expect(store.blobs.has(second.imageUrl)).toBe(true)
-    expect(await countAiGen()).toBe(1) // só a atual sobrevive (recipe_image reapado)
-    // ...MAS o ledger contou as DUAS gerações (custo gasto não devolve slot — ADR-0017).
+    expect(second.image.url).not.toBe(first.image.url)
+    // #222: o reap-on-swap saiu de cena — AMBAS ficam na galeria (blobs preservados).
+    expect(store.blobs.has(first.image.url)).toBe(true)
+    expect(store.blobs.has(second.image.url)).toBe(true)
+    expect(await countAiGen()).toBe(2) // as duas recipe_image sobrevivem (sem reap)
+    // A face nunca mudou (preview não seleciona).
+    expect((await imageState(id)).imageId).toBeNull()
+    // O ledger contou as DUAS gerações (custo gasto — ADR-0017).
     expect(await countGenEvents(userId)).toBe(2)
   })
 
-  it('regenerar a MESMA receita CONSOME o teto (ledger conta eventos, não imagens sobreviventes)', async () => {
+  it('#222 cap conta o ledger mesmo sem reap: 3 gerações consomem o teto; a 4ª estoura (429)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'burla@gen.test' }) // usuario, cap 3
     const id = await seedOwned(userId)
 
-    // 3 gerações na MESMA receita (recipe_image fica em 1 por reap; o ledger acumula 3).
     expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
     expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
     expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
-    expect(await countAiGen()).toBe(1)
+    expect(await countAiGen()).toBe(3) // 3 na galeria (sem reap)
     expect(await countGenEvents(userId)).toBe(3)
 
-    // 4ª estoura o teto — antes do fix, isto era ilimitado (reap "devolvia" o slot).
     const fourth = await POST(genReq(id, headers), ctx(id))
     expect(fourth.status).toBe(429)
     await expect(fourth.json()).resolves.toMatchObject({ error: 'limite_geracao' })
@@ -235,7 +243,6 @@ describe('/api/recipes/[id]/image/generate — geração por IA (#132)', () => {
   it('#134 o MODELO da config é repassado ao gerador (antes era undefined)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'modelo@gen.test' })
     const id = await seedOwned(userId)
-    // Sem linha de config ⇒ defaults; o modelo default deve chegar ao seam (não undefined).
     expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
     expect(gen.lastModel).toBe(DEFAULT_IMAGE_MODEL)
   })

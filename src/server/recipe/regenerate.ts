@@ -163,6 +163,8 @@ export async function regenerateRecipe(
       // #131: cozinha + image_id da predecessora — insumo do carry-forward + da comparação visual.
       cozinha: recipe.cozinha,
       imageId: recipe.imageId,
+      // #222: lineage_id da predecessora — a nova versão HERDA (galeria compartilhada, ADR-0022).
+      lineageId: recipe.lineageId,
     })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
@@ -237,6 +239,9 @@ export async function regenerateRecipe(
     existingSessionId: session.id,
     lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
     imageId: pred.imageId,
+    // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face
+    // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
+    lineageId: pred.lineageId,
   })
   // p é não-null para success/degraded/playful (persistGeneration só devolve null em invalid,
   // já tratado acima). recipeId presente nesse caminho.

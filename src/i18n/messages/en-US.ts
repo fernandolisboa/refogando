@@ -231,6 +231,20 @@ export const enUS: Messages = {
     imagemGerarDesabilitada: 'AI image generation is currently disabled.',
     // 24h SLIDING window (not "today"/calendar day): window-neutral copy.
     imagemLimite: "You've hit the generation limit for now. Frees up in ~{tempo}.",
+    // Image studio (#222, ADR-0022): preview modal + re-selectable gallery.
+    imagemSeloIa: '✨ AI-generated',
+    imagemPreviewTitulo: 'Generate image with AI',
+    imagemPreviewDescricao: 'Preview the generated image before using it. Generating another keeps the previous ones in the gallery.',
+    imagemUsarEsta: 'Use this one',
+    imagemGerarOutra: 'Generate another',
+    imagemFechar: 'Close',
+    imagemGaleria: 'Image gallery',
+    imagemGaleriaVazia: 'No images yet. Generate one with AI or upload your own photo.',
+    imagemSelecionar: 'Use this one',
+    imagemSelecionada: 'In use',
+    imagemApagar: 'Delete',
+    // 409 in_use: the image is still a version's face — deselect it before deleting.
+    imagemApagarEmUso: 'This image is in use by a version. Pick another one before deleting it.',
   },
   // Telas de autenticação (#55), mesma substância traduzida (ADR-0001, não byte-idêntica).
   // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.

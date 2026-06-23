@@ -160,10 +160,14 @@ export async function deriveRecipe(input: {
           parentRecipeId: baseId,
           lineageKind: 'edited',
           derivedDiff,
-          // Carry-forward da Imagem (#131, ADR-0016): a derivada HERDA o image_id da base (mesmo
-          // blob, ZERO arquivo novo — many-versions→one-image; o ref-count de #130 já conta certo).
-          // NULL quando a base não tem imagem.
-          imageId: baseRecipe.imageId,
+          // #222 (ADR-0022 dec.1/2): a DERIVA cross-owner nasce com galeria VAZIA — image_id NULL
+          // (omitido ⇒ NULL) + lineage_id FRESCA (omitida ⇒ DB default gen_random_uuid). SUPERSEDE o
+          // carry-forward de #131 SÓ AQUI: carregar a face da base (cujo recipe_image.lineage_id é o
+          // da BASE) para uma derivada de linhagem nova produziria uma face que NÃO é membro da
+          // própria galeria (quebra "selecionada é sempre membro" + o guard de select rejeita
+          // lineage estrangeira). A regeneração same-owner (#20) MANTÉM o carry-forward (lá a
+          // lineage é compartilhada ⇒ a face É membro). A derivada vira face quando o dono gerar/subir.
+          // imageId/lineageId: ambos omitidos (NULL / DB default).
           // schemaVersion: default de banco.
         })
         .returning({ id: recipe.id })
@@ -235,10 +239,12 @@ export async function deriveRecipe(input: {
         )
       }
 
-      // #131: a derivada herdou a imagem da base? Então uma mudança VISUAL (título/ingredientes,
-      // lida do diff JÁ congelado) sugere revisar a foto. Sem imagem herdada ⇒ silencioso.
+      // #222 (ADR-0022 dec.2): a DERIVA cross-owner agora nasce SEM imagem (galeria vazia) — não há
+      // face herdada a revisar, então a sugestão é SEMPRE false (hasImage:false ⇒ shouldSuggestNewImage
+      // retorna false). A comparação visual fica para a regeneração same-owner (#20) e a edição
+      // in-place (#21), que ainda carregam a imagem. Mantido o campo no contrato (a UI já o lê).
       const imageReviewSuggested = shouldSuggestNewImage({
-        hasImage: baseRecipe.imageId != null,
+        hasImage: false,
         changed: visualChangesFromDiff(derivedDiff),
       })
       return { kind: 'ok' as const, recipeId: r.id, imageReviewSuggested }

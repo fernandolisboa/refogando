@@ -1,16 +1,17 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore, getImageGenerator } from '@/server/deps'
-import { isUuid, parseRequestLocale } from '@/server/http/params'
+import { isUuid } from '@/server/http/params'
 import { applyRecipeImageGeneration } from '@/server/recipe/image'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 
 /**
- * Geração de imagem por IA da Receita (#132, ADR-0017) — `POST /api/recipes/[id]/image/generate`.
- * Owner-only (catálogo/não-dono ⇒ 404, ADR-0011; o gate de dono vem ANTES de tocar o gerador, então
- * anon/não-dono NUNCA disparam o seam pago). Um-clique: monta o prompt da receita; aceita um
- * `prompt` editado opcional (refino). Reusa os seams `ImageGenerator` + `ImageStore` e a entidade
- * `recipe_image` (`ai_generated`, ref-counted). Teto por papel em janela 24h deslizante → 429 com
- * `retryAfterMs` (countdown). Degradação dos seams → 503 estruturado.
+ * Geração de imagem por IA da Receita = PREVIEW (#132/#222, ADR-0017/0022) —
+ * `POST /api/recipes/[id]/image/generate`. Owner-only (catálogo/não-dono ⇒ 404, ADR-0011; o gate de
+ * dono vem ANTES de tocar o gerador, então anon/não-dono NUNCA disparam o seam pago). Um-clique:
+ * monta o prompt da receita; aceita um `prompt` editado opcional (refino, vira sufixo de estilo).
+ * #222: a geração ACRESCENTA uma `recipe_image` DESELECIONADA à galeria da linhagem e devolve só a
+ * imagem gerada (`{ image }`) — NÃO troca a face pública (a face só muda no `POST .../select`). Teto
+ * por papel em janela 24h deslizante → 429 com `retryAfterMs` (countdown). Degradação → 503.
  */
 
 export const runtime = 'nodejs' // postgres-js + Buffer + fetch exigem Node, não Edge.
@@ -41,12 +42,12 @@ export async function POST(
     userId: g.session.user.id,
     role: g.session.user.role,
     promptOverride,
-    requestLocale: parseRequestLocale(request),
   })
 
   switch (res.kind) {
     case 'ok':
-      return Response.json(res.view, { status: 200 })
+      // #222: devolve SÓ a imagem-preview (deselecionada) — a face pública não mudou.
+      return Response.json({ image: res.image }, { status: 200 })
     case 'disabled':
       // #134: geração desligada pelo admin (config). 403 — bloqueio explícito (a UI também esconde a ação).
       return Response.json({ error: 'geracao_desabilitada' }, { status: 403 })

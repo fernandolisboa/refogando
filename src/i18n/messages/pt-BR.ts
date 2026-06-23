@@ -244,6 +244,20 @@ export const ptBR = {
     imagemGerarDesabilitada: 'A geração de imagem por IA está desativada no momento.',
     // Janela DESLIZANTE de 24h (não "hoje"/dia-calendário): copy neutra à janela.
     imagemLimite: 'Você atingiu o limite de gerações por enquanto. Libera em ~{tempo}.',
+    // Estúdio de imagem (#222, ADR-0022): preview-modal + galeria re-selecionável.
+    imagemSeloIa: '✨ gerada por IA',
+    imagemPreviewTitulo: 'Gerar imagem com IA',
+    imagemPreviewDescricao: 'Veja a imagem gerada antes de usá-la. Gerar outra mantém as anteriores na galeria.',
+    imagemUsarEsta: 'Usar esta',
+    imagemGerarOutra: 'Gerar outra',
+    imagemFechar: 'Fechar',
+    imagemGaleria: 'Galeria de imagens',
+    imagemGaleriaVazia: 'Nenhuma imagem ainda. Gere uma com IA ou envie a sua foto.',
+    imagemSelecionar: 'Usar esta',
+    imagemSelecionada: 'Em uso',
+    imagemApagar: 'Apagar',
+    // 409 in_use: a imagem ainda é a face de alguma versão — desselecione antes de apagar.
+    imagemApagarEmUso: 'Esta imagem está em uso por uma versão. Escolha outra antes de apagá-la.',
   },
   // Telas de autenticação (#55): entrar / criar conta. Objeto PLANO (folhas string) —
   // o TIPO `Messages` exige um nível de namespace. Guarda só o CONTEXTUAL das telas; o
