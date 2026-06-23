@@ -245,11 +245,12 @@ export type GalleryImage = {
   /** `true` para a imagem que é a face pública atual (`recipe.image_id`). */
   selected: boolean
   /**
-   * #225 (ADR-0022): `true` quando o Curador MODEROU esta imagem (`recipe_image.moderated_at` ≠ null —
-   * flag por-imagem do #133, ORTOGONAL à Visibilidade). O dono ainda a vê na galeria, marcada como
-   * "removida"; ela NÃO pode virar a face pública (selecioná-la é bloqueado no seam, 409). Se for a
-   * face atual numa Receita pública, o gate público do #133 (resolveRecipeView) já a esconde do público
-   * (placeholder). Owner-gated como a galeria toda — nunca vaza no caminho público.
+   * `true` quando o Curador MODEROU esta imagem (`recipe_image.moderated_at` ≠ null). A flag por-imagem
+   * e suas semânticas (esconder a foto do público, ORTOGONAL à Visibilidade) são do #133/ADR-0016; a
+   * INTERAÇÃO galeria×moderação é o #225/ADR-0022: o dono ainda a vê na galeria, marcada "removida", e
+   * ela NÃO pode virar a face pública (selecioná-la é bloqueado no seam, 409). Se for a face atual numa
+   * Receita pública, o gate público do #133 (resolveRecipeView) já a esconde do público (placeholder).
+   * Owner-gated como a galeria toda — nunca vaza no caminho público.
    */
   moderated: boolean
 }

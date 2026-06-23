@@ -340,6 +340,29 @@ describe('Galeria × moderação (#225) — imagem moderada não vira face públ
     expect(byId.get(limpa)).toBe(false)
   })
 
+  it('uma imagem MODERADA NÃO-selecionada ainda é APAGÁVEL (o bloqueio de select NÃO vaza p/ o delete)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'del-moder@g.test' })
+    const curId = await seedUser({ email: 'del-moder-cur@g.test' })
+    const id = await seedOwned(userId, 'Pudim')
+    // Face LIMPA selecionada + uma 2ª imagem MODERADA e NÃO-selecionada (apagável: nenhuma versão a referencia).
+    const limpa = await seedRecipeImage({ recipeId: id })
+    const moderada = await seedRecipeImage({ recipeId: id, moderated: { curatorId: curId } })
+    // A 2ª seed moveu image_id p/ a moderada — reaponta a face de volta p/ a limpa.
+    await getDb().update(recipe).set({ imageId: limpa }).where(eq(recipe.id, id))
+    expect(await imageIdOf(id)).toBe(limpa)
+    expect(await countImages()).toBe(2)
+
+    // APAGAR a moderada (não-selecionada, sem refs) ⇒ 200; a linha some. O bloqueio é só do SELECT
+    // (moderada não vira face); apagar uma moderada continua permitido (guarda contra regressão de
+    // "bloquear ops em linhas moderadas" que silenciosamente quebraria o delete).
+    const res = await galleryDeleteRoute(deleteReq(id, moderada, headers), ctx2(id, moderada))
+    expect(res.status).toBe(200)
+    const [gone] = await getDb().select({ id: recipeImage.id }).from(recipeImage).where(eq(recipeImage.id, moderada))
+    expect(gone).toBeUndefined()
+    expect(await countImages()).toBe(1)
+    expect(await imageIdOf(id)).toBe(limpa) // a face limpa intacta
+  })
+
   it('selecionar uma imagem MODERADA ⇒ 409 imagem_moderada; image_id NÃO muda (moderada não vira face)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'sel-moder@g.test' })
     const curId = await seedUser({ email: 'sel-moder-cur@g.test' })
