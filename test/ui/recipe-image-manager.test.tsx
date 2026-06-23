@@ -265,6 +265,109 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled())
   })
 
+  // ── #223: refino ancorado (base read-only + campo de refino) ──────────────────────
+  it('#223 a 1ª geração (abrir) POSTa { content-type: json } SEM prompt (refino vazio)', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true }, basePrompt: 'Prato: Feijoada.' } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    const gen = calls.find((c) => c.url.endsWith('/image/generate'))!
+    // Refino vazio na 1ª geração ⇒ corpo vazio (sem { prompt }). O servidor monta da receita.
+    expect(gen.body ? JSON.parse(String(gen.body)) : {}).toEqual({})
+  })
+
+  it('#223 prompt-base escondido por padrão; o botão menos-destacado revela em read-only', async () => {
+    const user = userEvent.setup()
+    mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true }, basePrompt: 'Prato: Feijoada com feijão preto.' } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
+
+    // Por padrão o base NÃO aparece.
+    expect(within(dialog).queryByText('Prato: Feijoada com feijão preto.')).not.toBeInTheDocument()
+
+    // O botão menos-destacado revela o base read-only.
+    await user.click(within(dialog).getByText(M.imagemRefinar))
+    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).toBeInTheDocument()
+  })
+
+  it('#223 o base revelado é READ-ONLY (não um campo editável que posta)', async () => {
+    const user = userEvent.setup()
+    mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true }, basePrompt: 'Prato: Feijoada.' } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
+    await user.click(within(dialog).getByText(M.imagemRefinar))
+
+    // O base aparece como texto read-only (um <output>), NÃO como textbox editável.
+    const baseNode = within(dialog).getByText('Prato: Feijoada.')
+    expect(baseNode.tagName.toLowerCase()).not.toBe('textarea')
+    expect(baseNode.tagName.toLowerCase()).not.toBe('input')
+  })
+
+  it('#223 typing um refino + "Gerar outra" POSTa { prompt: <refino> }', async () => {
+    const user = userEvent.setup()
+    let n = 0
+    const { calls } = mockFetch((method, url) => {
+      if (method === 'POST' && url.endsWith('/image/generate')) {
+        n++
+        return { status: 200, body: { image: { id: n === 1 ? IMG1 : IMG2, url: `https://fake-blob.local/recipes/${n}.png`, aiGenerated: true }, basePrompt: 'Prato: Feijoada.' } }
+      }
+      return { status: 405 }
+    })
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://fake-blob.local/recipes/1.png'))
+
+    // Revela o painel de refino e digita.
+    await user.click(within(dialog).getByText(M.imagemRefinar))
+    const refino = within(dialog).getByLabelText(M.imagemPromptRotulo)
+    await user.type(refino, 'em aquarela')
+    await user.click(within(dialog).getByText(M.imagemGerarOutra))
+
+    await waitFor(() => expect(calls.filter((c) => c.url.endsWith('/image/generate')).length).toBe(2))
+    const second = calls.filter((c) => c.url.endsWith('/image/generate'))[1]
+    expect(JSON.parse(String(second.body))).toEqual({ prompt: 'em aquarela' })
+  })
+
+  it('#223 o campo de refino respeita o cap de 200 chars (maxLength)', async () => {
+    const user = userEvent.setup()
+    mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true }, basePrompt: 'Prato: Feijoada.' } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
+    await user.click(within(dialog).getByText(M.imagemRefinar))
+
+    const refino = within(dialog).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement | HTMLInputElement
+    expect(Number(refino.maxLength)).toBe(200)
+  })
+
   it('#222 cap 429 no modal: mostra o countdown e NÃO chama refresh', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))

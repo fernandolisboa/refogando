@@ -55,8 +55,11 @@ function formatCountdown(ms: number): string {
   return `${minutes}min`
 }
 
-/** Imagem-preview devolvida por POST .../image/generate (#222): `{ image }`. */
+/** Imagem-preview devolvida por POST .../image/generate (#222/#223): `{ image, basePrompt }`. */
 type PreviewImage = { id: string; url: string; aiGenerated: boolean }
+
+/** Cap do refino (#214/#223) — espelha IMAGE_PROMPT_OVERRIDE_MAX do servidor; barra cedo no client. */
+const REFINO_MAX = 200
 
 export function RecipeImageManager({
   recipeId,
@@ -96,6 +99,11 @@ export function RecipeImageManager({
   // #222: estado do modal de preview.
   const [modalOpen, setModalOpen] = useState(false)
   const [preview, setPreview] = useState<PreviewImage | null>(null)
+  // #223: refino ancorado — campo de refino livre, base read-only (revelado por botão), e o
+  // prompt-base devolvido pelo servidor (o cliente NUNCA envia o base; só o refino).
+  const [refino, setRefino] = useState('')
+  const [showRefino, setShowRefino] = useState(false)
+  const [basePrompt, setBasePrompt] = useState<string | null>(null)
   // DECISION 6: houve ≥1 geração nesta sessão de modal? ⇒ refresh ao fechar sem selecionar.
   const [generatedThisSession, setGeneratedThisSession] = useState(false)
   // #222: erro de seleção/deleção na galeria ('falha'|'emUso').
@@ -103,13 +111,20 @@ export function RecipeImageManager({
   const fileRef = useRef<HTMLInputElement>(null)
   const busy = status === 'busy'
 
-  // #132/#222: gera a imagem por IA como PREVIEW (acrescenta à galeria deselecionada; devolve `{image}`).
+  // #132/#222/#223: gera a imagem por IA como PREVIEW (acrescenta à galeria deselecionada; devolve
+  // `{ image, basePrompt }`). O cliente envia SÓ o refino (texto livre, cap 200) — o servidor sempre
+  // re-deriva e re-compõe o base (#214); base read-only nunca é postado.
   async function onGenerate() {
     setGenError(null)
     setError(null)
     setStatus('busy')
     try {
-      const res = await fetch(`/api/recipes/${recipeId}/image/generate`, { method: 'POST' })
+      const trimmed = refino.trim()
+      const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(trimmed ? { prompt: trimmed } : {}),
+      })
       if (res.status === 429) {
         const b = (await res.json().catch(() => ({}))) as { retryAfterMs?: number }
         setCountdown(formatCountdown(b.retryAfterMs ?? 0))
@@ -128,8 +143,10 @@ export function RecipeImageManager({
         setStatus('idle')
         return
       }
-      const body = (await res.json().catch(() => ({}))) as { image?: PreviewImage }
+      const body = (await res.json().catch(() => ({}))) as { image?: PreviewImage; basePrompt?: string }
       if (body.image) setPreview(body.image)
+      // #223: guarda o prompt-base devolvido (pro reveal read-only). Vem do servidor a cada geração.
+      if (typeof body.basePrompt === 'string') setBasePrompt(body.basePrompt)
       setGeneratedThisSession(true) // DECISION 6: a galeria server-side mudou
       setStatus('idle')
     } catch {
@@ -138,11 +155,15 @@ export function RecipeImageManager({
     }
   }
 
-  /** "Gerar com IA": abre o modal e dispara a 1ª geração. */
+  /** "Gerar com IA": abre o modal e dispara a 1ª geração (refino vazio ⇒ um-clique). */
   function onOpenModal() {
     setPreview(null)
     setGenError(null)
     setGeneratedThisSession(false)
+    // #223: estado de refino zerado a cada abertura (não persiste entre sessões de modal).
+    setRefino('')
+    setShowRefino(false)
+    setBasePrompt(null)
     setModalOpen(true)
     void onGenerate()
   }
@@ -154,6 +175,10 @@ export function RecipeImageManager({
       if (generatedThisSession) router.refresh()
       setGeneratedThisSession(false)
       setPreview(null)
+      // #223: reset do refino ao fechar (a próxima abertura começa limpa).
+      setRefino('')
+      setShowRefino(false)
+      setBasePrompt(null)
     }
   }
 
@@ -442,6 +467,45 @@ export function RecipeImageManager({
                 <p role="alert" className="font-medium text-fg">
                   {m.imagemGerarErro}
                 </p>
+              )}
+            </div>
+
+            {/* #223: refino ancorado — botão menos-destacado (link) revela o prompt-base read-only
+                + um campo de refino livre. O base NUNCA é editável/postado: o cliente envia só o
+                refino; o servidor re-deriva e re-compõe o base (template estruturado, #214). */}
+            <div className="flex w-full max-w-prose flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowRefino((v) => !v)}
+                aria-expanded={showRefino}
+                className="self-start text-sm text-muted underline hover:text-fg"
+              >
+                {m.imagemRefinar}
+              </button>
+              {showRefino && (
+                <div className="flex flex-col gap-2 text-sm">
+                  {basePrompt && (
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-muted">{m.imagemPromptBase}</span>
+                      {/* Base READ-ONLY (um <output>, não um campo editável que posta). */}
+                      <output className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
+                        {basePrompt}
+                      </output>
+                    </div>
+                  )}
+                  <label className="flex flex-col gap-1">
+                    <span className="font-medium text-fg">{m.imagemPromptRotulo}</span>
+                    <textarea
+                      value={refino}
+                      onChange={(e) => setRefino(e.target.value)}
+                      maxLength={REFINO_MAX}
+                      rows={2}
+                      placeholder={m.imagemPromptPlaceholder}
+                      disabled={busy}
+                      className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
+                    />
+                  </label>
+                </div>
               )}
             </div>
 
