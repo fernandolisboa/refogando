@@ -137,3 +137,27 @@ Typecheck/lint/build verdes; testes UI verdes; as 5 telas + header batendo visua
 **Decisão em aberto (pro grilling):** o caminho **"Nova receita"** primário deve abrir este modal estruturado, ou continuar no fluxo `/create` (conversa/estruturado, que gera por IA)? Hoje o protótipo usa o modal para **editar** e **derivar**; "Criar" no nav segue indo ao fluxo de geração. Resolver antes de fatiar.
 
 > Pendência humana relacionada (#180): o **espelho local** já reflete idioma-no-footer + este modal; o **push** do Footer/Header pro design-system remoto via DesignSync (`write_files`) continua sendo tarefa de sessão humana.
+
+---
+
+## Atualização — sync do protótipo: drawer "Nova receita" (wizard de criação) (2026-06-22)
+
+`/design-sync` puxou `Refogando - Drawer Nova Receita.dc.html` (projeto `a660ed26`) e refletiu no espelho a **reorganização da CRIAÇÃO**: a tela `/create` centralizada (lotada de abas/toggles) vira um **drawer da direita + wizard**, aberto por cima da busca (mantém o contexto atrás).
+
+**Decisão confirmada (não é autoria manual — é (1), reorganizar a geração por IA):** os 3 caminhos do drawer mapeiam aos modos que **já existem**, sem proveniência nova:
+- **Formulário estruturado** → `ai_structured` (wizard 3 passos: Ingredientes → Cozinha/Restrições → Detalhes; ingrediente "um a um" com pager OU "de uma vez" em bulk).
+- **Prompt aberto** → `ai_free_text` (textarea + sugestões).
+- **Conversa** → `ai_chat` (chat).
+- Depois: estado **gerando** ("Refogando sua receita…") → **gerada** (Abrir receita / Criar outra).
+
+**No espelho (este diretório):**
+- Novo `screens/CreateDrawer.jsx` — porte fiel do drawer/wizard (scrim + slide da direita; header com kicker "NOVA RECEITA" + stepper; método-picker; 3 passos; prompt; conversa; gerando; gerada; rodapé Voltar + CTA Continuar/Gerar/Destilar).
+- `screens/App.jsx` — "Criar" agora **abre o drawer** (não navega); `screens/CreateScreen.jsx` fica como referência **superseded**.
+
+**Padrão de containers (decidido com o usuário):** **editar = modal centralizado** (tarefa focada e fechada) · **criar = drawer da direita + wizard** (tarefa exploratória, multi-etapa). Dois containers, mas **mesma pele** (kicker em versalete, tokens, botões) pra lerem como irmãos.
+
+**Quando virar app (grill → PRD → issues), respeitar:**
+- O drawer **substitui a UX** de `/create` mas **reusa o backend de geração** (`POST /api/generations`, modos structured/free_text + o stream de conversa). Geração é **bloqueante ~8–15s** — o estado "gerando" do drawer cobre isso (sem streaming hoje).
+- O **cap de geração** (#167) continua valendo (mensagem amigável ao estourar).
+- O `/create` tem um **seam de foco/heading** e ~8 testes na máquina de 1-h1 (ver F1 cancelado acima) — mover pra drawer **mexe nessa arquitetura**; planejar com cuidado (heading do drawer, foco ao abrir, ESC/scrim).
+- **Decisão em aberto** (já registrada): se o "Nova receita" primário abre o drawer e o `/create` deixa de existir como rota, ou se a rota fica como fallback/deep-link.
