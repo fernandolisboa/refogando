@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -68,5 +68,29 @@ describe('Header — "Criar" abre o drawer (#191)', () => {
     // ESC fecha.
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('mobile: "Criar" DENTRO do menu hambúrguer fecha o menu e abre o drawer', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+      </LocaleProvider>,
+    )
+
+    // Abre o menu hambúrguer (Sheet da esquerda).
+    await user.click(screen.getByRole('button', { name: ptBR.nav.abrirMenu }))
+    const menu = await screen.findByRole('dialog')
+    expect(menu).toHaveAccessibleName(ptBR.nav.menu)
+
+    // "Criar" dentro do menu: clicar FECHA o menu (SheetClose) e ABRE o drawer de criação.
+    await user.click(within(menu).getByRole('button', { name: ptBR.nav.create }))
+
+    await waitFor(() => {
+      const dialog = screen.getByRole('dialog')
+      expect(dialog).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+    })
+    // O menu hambúrguer fechou (só o drawer de criação segue montado).
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
   })
 })

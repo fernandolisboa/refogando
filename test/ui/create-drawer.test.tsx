@@ -282,7 +282,10 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     })
   })
 
-  it('D9 — fechar o drawer no meio da geração NÃO dispara um segundo POST (guarda de re-entrada)', async () => {
+  it('D9 — ESC DURANTE a geração NÃO fecha o drawer (aberto e bloqueante, ADR-0021 dec.5): o painel segue aberto, "gerando" permanece e nenhum 2o POST dispara', async () => {
+    // Fechar no meio orfanaria o POST (o servidor conclui, cria a Receita e consome cap, mas o
+    // usuário não vê). O drawer trava o dismiss enquanto `status === 'loading'` (sinalizado pelo
+    // inner via `onLoadingChange`). Não há cancel/abort — a geração é bounded por maxDuration=60.
     const user = userEvent.setup()
     const d = deferred()
     const fetchMock = mockFetch({ generations: d.factory, recipes: { status: 200, body: baseView() } })
@@ -293,15 +296,38 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     await user.click(screen.getByRole('button', { name: M.gerar }))
     expect(await screen.findByRole('button', { name: M.gerando })).toBeInTheDocument()
 
-    // ESC fecha o drawer com o POST ainda in-flight.
+    // ESC com o POST ainda in-flight: o dismiss é BLOQUEADO — o drawer continua aberto.
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // O estado "gerando" permanece (a geração não foi interrompida nem desmontada).
+    expect(screen.getByRole('button', { name: M.gerando })).toBeInTheDocument()
 
-    // Libera a resposta tardia; reabrir o drawer re-semeia o picker (estado limpo) — nenhum
-    // segundo POST foi disparado pelo fechamento.
+    // Libera a resposta tardia → o fluxo conclui normalmente, DENTRO do mesmo drawer. Nenhum
+    // segundo POST foi disparado (sem re-entrada/duplicação).
     d.release({ status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } })
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
     const posts = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/generations')).length
     expect(posts).toBe(1)
+  })
+
+  it('D9b — resolvida a geração, o dismiss volta a funcionar (o bloqueio é SÓ durante o loading)', async () => {
+    const user = userEvent.setup()
+    const d = deferred()
+    mockFetch({ generations: d.factory, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoPromptTitulo) }))
+    await user.type(screen.getByLabelText(M.textareaLabel), 'um refogado de abobrinha sem cebola')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+    expect(await screen.findByRole('button', { name: M.gerando })).toBeInTheDocument()
+
+    // Conclui a geração → sai do estado loading.
+    d.release({ status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } })
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    // Agora ESC fecha normalmente (não há geração em voo).
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('D10 — reabrir o drawer reseta o wizard ao método-picker (estado limpo entre aberturas)', async () => {

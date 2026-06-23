@@ -55,6 +55,21 @@ export function CreateDrawer({
   const { messages } = useLocale()
   const d = messages.criarDrawer
 
+  // #191 (ADR-0021, dec. 5): o drawer é "aberto e bloqueante" enquanto uma geração está EM VOO.
+  // Fechar no meio (ESC/scrim/X) desmontaria `CreateStructuredExperience` e ORFANARIA o
+  // `POST /api/generations` (o servidor conclui, cria a Receita e consome cap, mas o usuário não
+  // vê). Não há cancel/abort hoje — a geração é bounded por `maxDuration=60`; mantemos o painel
+  // aberto até resolver. O inner sinaliza o loading via `onLoadingChange`; aqui interceptamos
+  // ESC / pointer-down-outside / o `onOpenChange` do X e bloqueamos o dismiss enquanto `generating`.
+  const [generating, setGenerating] = useState(false)
+
+  // Só REPASSA o dismiss quando NÃO está gerando. O X (`SheetClose`) e qualquer outro caminho
+  // chamam `onOpenChange` — abrir sempre passa; fechar é engolido durante a geração.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && generating) return
+    onOpenChange(next)
+  }
+
   // Método escolhido. Reaberturas re-semeiam o método inicial a partir dos deep-links.
   const seededMethod = (): Method => {
     if (initialQ && initialQ.trim() !== '') return 'prompt'
@@ -97,11 +112,19 @@ export function CreateDrawer({
   ]
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
         closeLabel={d.fechar}
         className="w-full gap-6 overflow-y-auto sm:max-w-md"
+        // Bloqueia o dismiss por ESC / clique fora enquanto a geração roda (ver `generating`).
+        // O `preventDefault` impede o Radix de fechar; o painel segue "aberto e bloqueante".
+        onEscapeKeyDown={(e) => {
+          if (generating) e.preventDefault()
+        }}
+        onPointerDownOutside={(e) => {
+          if (generating) e.preventDefault()
+        }}
       >
         <SheetHeader className="flex flex-row items-start gap-3">
           {hasBack && (
@@ -161,6 +184,7 @@ export function CreateDrawer({
             forceMode="free_text"
             hideModeToggle
             initialFreeText={initialQ}
+            onLoadingChange={setGenerating}
           />
         )}
 

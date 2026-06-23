@@ -153,10 +153,16 @@ export function CreateStructuredExperience({
   // comportamento da /create (modo derivado da semente, toggle visível) — sem regressão.
   forceMode,
   hideModeToggle = false,
+  // #191 (ADR-0021, dec. 5): quando montado no drawer "aberto e bloqueante", o shell precisa saber
+  // se uma geração está EM VOO para travar o dismiss (ESC/scrim/X) — fechar no meio orfanaria o
+  // POST (o servidor conclui, cria a Receita e consome cap, mas o usuário não vê). Callback ADITIVO:
+  // a /create não o passa (sem regressão). Espelha `status === 'loading'`.
+  onLoadingChange,
 }: {
   initialFreeText?: string
   forceMode?: Mode
   hideModeToggle?: boolean
+  onLoadingChange?: (loading: boolean) => void
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.criar
@@ -477,6 +483,12 @@ export function CreateStructuredExperience({
   useEffect(() => {
     headingRef.current?.focus()
   }, [status])
+
+  // #191 (ADR-0021): sinaliza ao shell (drawer) se há geração EM VOO, para ele travar o dismiss
+  // enquanto `status === 'loading'` (fechar no meio orfanaria o POST). No-op sem o callback.
+  useEffect(() => {
+    onLoadingChange?.(status === 'loading')
+  }, [status, onLoadingChange])
 
   // ── Guard de sessão (decisão 4) ─────────────────────────────────────────────
   if (session.isPending) {
