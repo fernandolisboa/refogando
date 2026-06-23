@@ -48,38 +48,45 @@ if (!url) {
   process.exit(1)
 }
 
-const sql = postgres(url, { max: 1 })
+// Embrulhado num `main()` async porque o pacote não declara `"type": "module"`, então o tsx
+// transpila este `.ts` para CJS — onde top-level await não existe. Um `async main()` roda
+// idêntico em CJS e ESM.
+async function main() {
+  const sql = postgres(url!, { max: 1 })
 
-try {
-  // Carrega TODAS as traduções (slug presente OU NULL) numa ordem ESTÁVEL por locale: o
-  // (locale, created_at, id) torna a atribuição de sufixo determinística e estável entre
-  // re-rodadas. Trazer também as que já têm slug é o que semeia o `taken` (idempotência).
-  const rows = await sql<TranslationSlugRow[]>`
-    SELECT "id", "locale", "titulo", "slug"
-    FROM "recipe_translation"
-    ORDER BY "locale" ASC, "created_at" ASC, "id" ASC
-  `
-
-  // A REGRA (desambiguação por locale, preserva slugs existentes) vive no domínio puro —
-  // fonte única partilhada com o write-path e o teste de integração.
-  const assignments = computeSlugBackfill(rows)
-
-  for (const a of assignments) {
-    // Guard de corrida: só atualiza se o slug SEGUIR NULL — re-rodar nunca sobrescreve.
-    await sql`
-      UPDATE "recipe_translation"
-      SET "slug" = ${a.slug}
-      WHERE "id" = ${a.id} AND "slug" IS NULL
+  try {
+    // Carrega TODAS as traduções (slug presente OU NULL) numa ordem ESTÁVEL por locale: o
+    // (locale, created_at, id) torna a atribuição de sufixo determinística e estável entre
+    // re-rodadas. Trazer também as que já têm slug é o que semeia o `taken` (idempotência).
+    const rows = await sql<TranslationSlugRow[]>`
+      SELECT "id", "locale", "titulo", "slug"
+      FROM "recipe_translation"
+      ORDER BY "locale" ASC, "created_at" ASC, "id" ASC
     `
-  }
 
-  const skipped = rows.length - assignments.length
-  console.log(
-    `OK — backfill de slug: ${assignments.length} tradução(ões) preenchida(s), ${skipped} já tinha(m) slug (puladas). Idempotente: re-rodar não muda nada.`,
-  )
-} catch (err) {
+    // A REGRA (desambiguação por locale, preserva slugs existentes) vive no domínio puro —
+    // fonte única partilhada com o write-path e o teste de integração.
+    const assignments = computeSlugBackfill(rows)
+
+    for (const a of assignments) {
+      // Guard de corrida: só atualiza se o slug SEGUIR NULL — re-rodar nunca sobrescreve.
+      await sql`
+        UPDATE "recipe_translation"
+        SET "slug" = ${a.slug}
+        WHERE "id" = ${a.id} AND "slug" IS NULL
+      `
+    }
+
+    const skipped = rows.length - assignments.length
+    console.log(
+      `OK — backfill de slug: ${assignments.length} tradução(ões) preenchida(s), ${skipped} já tinha(m) slug (puladas). Idempotente: re-rodar não muda nada.`,
+    )
+  } finally {
+    await sql.end()
+  }
+}
+
+main().catch((err) => {
   console.error('Falha no backfill de slug:', err instanceof Error ? err.message : err)
   process.exit(1)
-} finally {
-  await sql.end()
-}
+})
