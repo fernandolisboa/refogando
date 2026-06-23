@@ -567,4 +567,57 @@ describe('RecipeEditModal — modo DERIVE (#196)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveAccessibleName(enUS.edicaoPropria.modalDerivarTitulo)
   })
+
+  it('MUST-FIX: Cozinha/Categoria/Porções/Dificuldade NÃO aparecem no modo derive (a rota /derive os herda da base)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 201, body: { recipeId: 'new-1' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    const mc = ptBR.criar
+    // Esses 4 campos ficam fora do subset que POST /derive aceita em `edits` — renderizá-los
+    // editáveis seria um trap (edição descartada SILENCIOSAMENTE no Salvar).
+    expect(within(dialog).queryByRole('combobox', { name: mc.cozinha })).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('combobox', { name: ptBR.detalhe.categoria }),
+    ).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('spinbutton', { name: mc.porcoes })).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByRole('spinbutton', { name: mc.dificuldade }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('MUST-FIX (contrapartida own): esses 4 campos SEGUEM aparecendo no modo own (editáveis via PATCH)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeEditModal view={ownerView()} />
+      </LocaleProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.editar }))
+    const dialog = await screen.findByRole('dialog')
+    const mc = ptBR.criar
+    expect(within(dialog).getByRole('combobox', { name: mc.cozinha })).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: ptBR.detalhe.categoria })).toBeInTheDocument()
+    expect(within(dialog).getByRole('spinbutton', { name: mc.porcoes })).toBeInTheDocument()
+    expect(within(dialog).getByRole('spinbutton', { name: mc.dificuldade })).toBeInTheDocument()
+  })
+
+  it('SHOULD-FIX: título vazio NÃO dispara o POST /derive — guard local mostra erro antes do fetch', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 201, body: { recipeId: 'new-1' } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+
+    // Esvazia o título e tenta derivar.
+    await user.clear(within(dialog).getByDisplayValue('Feijoada do catálogo'))
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+
+    // Nenhum fetch saiu (guard barato antes do round-trip) e o alerta neutro apareceu.
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+      ptBR.system.error,
+    )
+    expect(push).not.toHaveBeenCalled()
+  })
 })

@@ -242,6 +242,13 @@ export function RecipeEditForm({
    */
   async function derivar() {
     if (saving) return
+    // #196 (should-fix): guard barato de título-vazio ANTES do fetch. A validação saiu pro servidor
+    // (400 → system.error neutro), mas evitamos o round-trip: título vazio (ou só espaços) ⇒ erro
+    // local apontando ao Salvar e NÃO dispara o POST. O 400 do servidor segue como rede de segurança.
+    if (buildDeriveEdits().titulo === '') {
+      setErrorKey('save')
+      return
+    }
     setSaving(true)
     setErrorKey(null)
     const locale = deriveLocale ?? currentLocale
@@ -522,39 +529,43 @@ export function RecipeEditForm({
           />
         </label>
 
-        {/* Cozinha + categoria. */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
-            {mc.cozinha}
-            <select
-              value={cozinha}
-              onChange={(e) => setCozinha(e.target.value)}
-              className={fieldClassName}
-            >
-              <option value="">{mc.cozinhaNenhuma}</option>
-              {COZINHAS.map((c) => (
-                <option key={c} value={c}>
-                  {messages.cozinhaLabel[c]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
-            {messages.detalhe.categoria}
-            <select
-              value={categoria}
-              onChange={(e) => setCategoria(e.target.value)}
-              className={fieldClassName}
-            >
-              <option value="">{mc.cozinhaNenhuma}</option>
-              {CATEGORIAS.map((c) => (
-                <option key={c} value={c}>
-                  {messages.categoriaLabel[c]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {/* #196/ADR-0021: Cozinha + categoria. ESCONDIDOS no modo derive — a rota POST /derive
+            herda esses campos da base (não estão no subset de `edits` que ela aceita). Renderizá-los
+            editáveis seria um trap: a edição seria descartada SILENCIOSAMENTE no Salvar. */}
+        {!isDerive && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+              {mc.cozinha}
+              <select
+                value={cozinha}
+                onChange={(e) => setCozinha(e.target.value)}
+                className={fieldClassName}
+              >
+                <option value="">{mc.cozinhaNenhuma}</option>
+                {COZINHAS.map((c) => (
+                  <option key={c} value={c}>
+                    {messages.cozinhaLabel[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+              {messages.detalhe.categoria}
+              <select
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className={fieldClassName}
+              >
+                <option value="">{mc.cozinhaNenhuma}</option>
+                {CATEGORIAS.map((c) => (
+                  <option key={c} value={c}>
+                    {messages.categoriaLabel[c]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
 
         {/* Restrições. */}
         <fieldset className="flex flex-col gap-2">
@@ -574,29 +585,32 @@ export function RecipeEditForm({
           </div>
         </fieldset>
 
-        {/* Porções + dificuldade. */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-            {mc.porcoes}
-            <Input
-              type="number"
-              min={PORCOES.min}
-              max={PORCOES.max}
-              value={porcoes}
-              onChange={(e) => setPorcoes(e.target.value)}
-            />
-          </label>
-          <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-            {mc.dificuldade}
-            <Input
-              type="number"
-              min={DIFICULDADE.min}
-              max={DIFICULDADE.max}
-              value={dificuldade}
-              onChange={(e) => setDificuldade(e.target.value)}
-            />
-          </label>
-        </div>
+        {/* #196/ADR-0021: Porções + dificuldade. ESCONDIDOS no modo derive — herdados da base pela
+            rota POST /derive (fora do subset de `edits`). Ver nota no bloco Cozinha/Categoria. */}
+        {!isDerive && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+              {mc.porcoes}
+              <Input
+                type="number"
+                min={PORCOES.min}
+                max={PORCOES.max}
+                value={porcoes}
+                onChange={(e) => setPorcoes(e.target.value)}
+              />
+            </label>
+            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+              {mc.dificuldade}
+              <Input
+                type="number"
+                min={DIFICULDADE.min}
+                max={DIFICULDADE.max}
+                value={dificuldade}
+                onChange={(e) => setDificuldade(e.target.value)}
+              />
+            </label>
+          </div>
+        )}
 
         {/* Notas. */}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-fg">
