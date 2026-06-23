@@ -11,8 +11,11 @@
  * fechando o modal via `onSaved` após salvar. O banner de revisão de foto (#131) aparece inline
  * no detalhe atrás, não aqui (a foto é invariante ADR-0016 e fica fora do modal).
  *
- * Escopo desta fatia: SÓ conteúdo + Apagar. Visibilidade-no-modal e "Criar minha versão"/derivar
- * são fatias próprias (#195/#196). O controle de Visibilidade inline do detalhe PERMANECE por ora.
+ * Escopo desta fatia: conteúdo + Apagar + Visibilidade (#195). O modal agora hospeda o toggle de
+ * Visibilidade como rascunho local que só comita no Salvar — via publish/unpublish SEPARADO do
+ * PATCH de conteúdo, mantendo a fronteira owner-edit. O detalhe deixou de ter controle inline e
+ * passou a um chip de status NÃO-clicável (só-leitura). "Criar minha versão"/derivar é fatia
+ * própria (#196).
  *
  * O `SheetTitle` nomeia o painel (o form NÃO emite `<h2>` próprio dentro do modal — sem heading
  * duplicado). O Radix desmonta o `SheetContent` ao fechar, então o form re-prefila da `view`

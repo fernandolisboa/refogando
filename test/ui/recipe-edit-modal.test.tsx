@@ -422,9 +422,14 @@ describe('RecipeEditModal — Visibilidade no modal (#195)', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled())
     // PATCH + publish foram tentados, nessa ordem.
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('PATCH')
+    // O PATCH de conteúdo NUNCA carrega visibilidade — esta vai só pelo publish/unpublish separado.
+    const PATCH = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(PATCH.visibility).toBeUndefined()
     expect(String(fetchMock.mock.calls[1][0])).toBe('/api/recipes/r-1/publish')
     // Erro SÓ da visibilidade (parcial), e o modal continua aberto com a edição preservada.
     expect(await screen.findByText(MV.erroVisibilidadeParcial)).toBeInTheDocument()
+    // O erro de SAVE (system.error) NÃO co-aparece: o conteúdo gravou; a falha é só de visibilidade.
+    expect(screen.queryByText(ptBR.system.error)).not.toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Bolo de fubá')).toBeInTheDocument()
   })

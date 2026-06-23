@@ -117,7 +117,8 @@ export default async function RecipeDetailPage({
       {/* Afordâncias do detalhe (#61): para o DONO, gestão (editar/apagar/regenerar/diff da
           derivada); para o NÃO-dono, "Criar minha versão" (derivar) ou o convite de entrar
           (Visitante, descope #22). O componente lê SÓ a view (server-truth) + a sessão (gating
-          de derivar). Salvar/publicar continua nos controles de Visibilidade (#59) acima. */}
+          de derivar). Publicar/despublicar migrou pro modal de edição (#195); aqui o detalhe é
+          só-leitura com chip de status. */}
       <RecipeDetailActions view={view} locale={locale} />
     </Container>
   )
