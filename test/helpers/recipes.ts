@@ -84,6 +84,10 @@ export async function seedTranslation(input: {
   passos?: string[] | null
   notas?: string | null
   stale?: boolean
+  // Slug per-locale (#229/#230): opcional — ausente ⇒ NULL (a coluna nasce nullable; o slug é
+  // materializado por freezeSlug na borda). Settável aqui p/ semear a URL canônica nos testes
+  // de leitura por slug e do 301 do uuid.
+  slug?: string | null
 }): Promise<string> {
   const [row] = await getDb()
     .insert(recipeTranslation)
@@ -96,6 +100,7 @@ export async function seedTranslation(input: {
       passos: input.passos ?? null,
       notas: input.notas ?? null,
       stale: input.stale,
+      ...(input.slug !== undefined ? { slug: input.slug } : {}),
     })
     .returning({ id: recipeTranslation.id })
   return row.id

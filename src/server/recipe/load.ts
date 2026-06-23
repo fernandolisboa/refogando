@@ -13,6 +13,7 @@ import {
   users,
 } from '@/db/schema'
 import type { RecipeAuthor, RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
+import { eligibleForPublicRead } from '@/domain/recipe-detail-route'
 
 /**
  * Loader de servidor compartilhado da Receita (issue #8, §7b — refactor DRY com #3).
@@ -232,4 +233,82 @@ export async function loadSocialState(
 
   await Promise.all(tasks)
   return out
+}
+
+/**
+ * Resolve o SLUG canônico de uma Receita por (uuid, locale) — para o **301** do link legado
+ * `/{locale}/recipes/<uuid>` → `/{locale}/recipes/<slug>` (#230, ADR-0020 decisão 4).
+ *
+ * Casa a tradução do `locale` daquele `recipeId` e devolve seu `slug` (ou `null` quando a
+ * Receita não existe, não tem tradução NAQUELE locale, ou a tradução ainda não ganhou slug —
+ * coluna nullable durante o backfill). NÃO aplica o gate de leitura pública: o 301 é
+ * canonicalização de URL, independente de visibilidade — quem decide se a página renderiza é
+ * a leitura pelo slug (gate) ou o caminho do dono. NÃO lê cookie/sessão.
+ */
+export async function resolveSlugForLocale(
+  db: Database,
+  recipeId: string,
+  locale: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ slug: recipeTranslation.slug })
+    .from(recipeTranslation)
+    .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)))
+    .limit(1)
+  return row?.slug ?? null
+}
+
+/**
+ * Leitura PÚBLICA da Receita por (locale, slug) — anônima, cacheável, via DB DIRETO (#230,
+ * ADR-0020). É o seam da página de detalhe INDEXÁVEL: NÃO lê cookie/sessão, NÃO faz self-fetch
+ * da API com `no-store`, NÃO força render dinâmico, NÃO personaliza para o crawler. O caminho do
+ * DONO (privado/dinâmico, com cookie) é SEPARADO e não passa por aqui.
+ *
+ * Passo a passo:
+ *  1. casa o `(locale, slug)` em `recipe_translation` (índice parcial `recipe_translation_locale_slug_uq`)
+ *     para achar o `recipeId`. Sem casamento ⇒ `null` (404 leak-safe).
+ *  2. lê a espinha (visibility/result_kind/moderation_removed_at) e aplica o gate de leitura
+ *     PÚBLICA = gate de indexação default-open (`eligibleForPublicRead`): pública E não-`playful`
+ *     E não-removida. Reprovou ⇒ `null` (privada/playful/removida não é leitura pública).
+ *  3. aprovou ⇒ delega a `loadRecipeRows` para montar o MESMO shape que o resto da app consome
+ *     (traduções + ingredientes + tags + autoria + imagem). Reusa o loader existente — sem
+ *     duplicar a leitura nem o contrato.
+ *
+ * Devolve `null` para "não encontrado OU não público" (indistinguíveis na superfície pública —
+ * mesma postura leak-safe do GET por uuid). O caller (page) faz `notFound()` nesse caso.
+ */
+export async function loadPublicRecipeBySlug(
+  db: Database,
+  slug: string,
+  locale: string,
+): Promise<LoadedRecipeRows | null> {
+  // 1. (locale, slug) → recipeId. Junta translation→recipe e já traz o gate barato numa query.
+  const [gate] = await db
+    .select({
+      recipeId: recipe.id,
+      visibility: recipe.visibility,
+      resultKind: recipe.resultKind,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+    })
+    .from(recipeTranslation)
+    .innerJoin(recipe, eq(recipeTranslation.recipeId, recipe.id))
+    .where(and(eq(recipeTranslation.locale, locale), eq(recipeTranslation.slug, slug)))
+    .limit(1)
+  if (!gate) return null
+
+  // 2. Gate de leitura PÚBLICA = gate de indexação (ADR-0020 decisão 6). Reprovou ⇒ não é
+  //    leitura pública (privada/playful/removida): `null` leak-safe (o dono lê pelo caminho
+  //    dinâmico-com-cookie, não por aqui).
+  if (
+    !eligibleForPublicRead({
+      visibility: gate.visibility,
+      resultKind: gate.resultKind,
+      moderationRemovedAt: gate.moderationRemovedAt,
+    })
+  ) {
+    return null
+  }
+
+  // 3. Aprovado ⇒ monta o shape canônico via o loader existente (DRY com o GET por uuid).
+  return loadRecipeRows(db, gate.recipeId)
 }
