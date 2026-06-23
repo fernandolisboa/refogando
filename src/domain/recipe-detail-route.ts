@@ -23,6 +23,7 @@
  * pelo sitemap/robots/hreflang (#233) — visibilidade pública/catálogo E não-`playful` E não-removida.
  */
 import { UUID_RE } from '@/server/http/params'
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 
 /**
  * Status do redirect do link LEGADO `/{locale}/recipes/<uuid>` → slug canônico: **308**
@@ -62,6 +63,44 @@ export function decideRecipeDetailRoute(idParam: string): RecipeDetailRoute {
 /** Monta a URL canônica de detalhe `/{locale}/recipes/<slug>` (caminho relativo, p/ redirect). */
 export function recipeDetailPath(locale: string, slug: string): string {
   return `/${locale}/recipes/${slug}`
+}
+
+/** URL ABSOLUTA canônica do detalhe `<base>/{locale}/recipes/{slug}`. */
+export function absoluteRecipeDetailUrl(baseUrl: string, locale: string, slug: string): string {
+  return `${baseUrl}${recipeDetailPath(locale, slug)}`
+}
+
+/**
+ * Mapa hreflang `{ locale → url, x-default → url(DEFAULT_LOCALE) }` da Receita por SLUG — fonte ÚNICA
+ * reusada pelo `alternates.languages` do detalhe (#233, `buildRecipeMetadata`) E por cada entrada do
+ * SITEMAP (#235). SÓ entram os locales presentes em `slugsByLocale` (= têm tradução pública com slug):
+ * NUNCA inventamos URL de locale inexistente. x-default aponta pro DEFAULT_LOCALE quando ele tem slug;
+ * senão pro primeiro locale suportado presente (degrade gracioso — não deixa o x-default apontar pra um
+ * locale inexistente).
+ *
+ * DIVERGÊNCIA CONSCIENTE do ADR-0020 decisão 5: no DETALHE/sitemap o x-default aponta pra URL da
+ * receita no DEFAULT_LOCALE (não pra raiz `/` da home) — não há redirecionador por-receita; ver a nota
+ * de implementação na decisão 5 do ADR-0020.
+ */
+export function recipeHreflangAlternates(
+  baseUrl: string,
+  slugsByLocale: Partial<Record<Locale, string>>,
+): Record<string, string> {
+  const langs: Record<string, string> = {}
+  for (const loc of SUPPORTED_LOCALES) {
+    const slug = slugsByLocale[loc]
+    if (slug) langs[loc] = absoluteRecipeDetailUrl(baseUrl, loc, slug)
+  }
+  // x-default: prioriza o DEFAULT_LOCALE; se ele não tiver slug, usa o primeiro presente.
+  const defaultSlug =
+    slugsByLocale[DEFAULT_LOCALE] ?? SUPPORTED_LOCALES.map((l) => slugsByLocale[l]).find(Boolean)
+  const defaultLocaleForX = slugsByLocale[DEFAULT_LOCALE]
+    ? DEFAULT_LOCALE
+    : SUPPORTED_LOCALES.find((l) => slugsByLocale[l])
+  if (defaultSlug && defaultLocaleForX) {
+    langs['x-default'] = absoluteRecipeDetailUrl(baseUrl, defaultLocaleForX, defaultSlug)
+  }
+  return langs
 }
 
 /**

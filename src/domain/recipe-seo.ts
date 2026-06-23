@@ -20,8 +20,11 @@
  * traduz isso em `robots` index/follow vs noindex.
  */
 import type { Metadata } from 'next'
-import { recipeDetailPath } from '@/domain/recipe-detail-route'
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
+import {
+  absoluteRecipeDetailUrl,
+  recipeHreflangAlternates,
+} from '@/domain/recipe-detail-route'
+import { type Locale } from '@/i18n/locale'
 
 /** Asset estável do card de MARCA (#232) — fallback de OG quando a Receita não tem foto. */
 const BRAND_OG_IMAGE_PATH = '/opengraph-image.png'
@@ -81,42 +84,6 @@ export type RecipeSeoInput = {
   voteCount?: number
 }
 
-/** URL absoluta canônica do detalhe `<base>/{locale}/recipes/{slug}`. */
-function absoluteDetailUrl(baseUrl: string, locale: string, slug: string): string {
-  return `${baseUrl}${recipeDetailPath(locale, slug)}`
-}
-
-/**
- * Mapa hreflang `{ locale → url, x-default → url(DEFAULT_LOCALE) }` SÓ dos locales presentes em
- * `slugsByLocale` (= têm tradução pública com slug). x-default aponta pro DEFAULT_LOCALE quando ele
- * existe; senão pro primeiro locale suportado presente (degrade gracioso — não deixa o x-default
- * apontar pra um locale inexistente).
- *
- * DIVERGÊNCIA CONSCIENTE do ADR-0020 decisão 5: no DETALHE o x-default aponta pra URL da receita no
- * DEFAULT_LOCALE (não pra raiz `/` da home) — não há redirecionador por-receita; ver a nota de
- * implementação na decisão 5 do ADR-0020.
- */
-function buildLanguageAlternates(
-  baseUrl: string,
-  slugsByLocale: Partial<Record<Locale, string>>,
-): Record<string, string> {
-  const langs: Record<string, string> = {}
-  for (const loc of SUPPORTED_LOCALES) {
-    const slug = slugsByLocale[loc]
-    if (slug) langs[loc] = absoluteDetailUrl(baseUrl, loc, slug)
-  }
-  // x-default: prioriza o DEFAULT_LOCALE; se ele não tiver slug, usa o primeiro presente.
-  const defaultSlug =
-    slugsByLocale[DEFAULT_LOCALE] ?? SUPPORTED_LOCALES.map((l) => slugsByLocale[l]).find(Boolean)
-  const defaultLocaleForX = slugsByLocale[DEFAULT_LOCALE]
-    ? DEFAULT_LOCALE
-    : SUPPORTED_LOCALES.find((l) => slugsByLocale[l])
-  if (defaultSlug && defaultLocaleForX) {
-    langs['x-default'] = absoluteDetailUrl(baseUrl, defaultLocaleForX, defaultSlug)
-  }
-  return langs
-}
-
 /**
  * #232 + #233 — objeto `Metadata` do Next pra UMA Receita pública. metadataBase = baseUrl
  * build-safe; openGraph/twitter com title/description do conteúdo do locale + image híbrida (foto
@@ -127,7 +94,7 @@ export function buildRecipeMetadata(input: RecipeSeoInput): Metadata {
   const { locale, baseUrl, name, brandName } = input
   const slug = input.slugsByLocale[locale]
   // O caller garante que o locale corrente tem slug (a página só renderiza por slug público).
-  const canonical = slug ? absoluteDetailUrl(baseUrl, locale, slug) : baseUrl
+  const canonical = slug ? absoluteRecipeDetailUrl(baseUrl, locale, slug) : baseUrl
   const description =
     input.description && input.description.trim() !== '' ? input.description : undefined
 
@@ -143,7 +110,7 @@ export function buildRecipeMetadata(input: RecipeSeoInput): Metadata {
     ...(description ? { description } : {}),
     alternates: {
       canonical,
-      languages: buildLanguageAlternates(baseUrl, input.slugsByLocale),
+      languages: recipeHreflangAlternates(baseUrl, input.slugsByLocale),
     },
     openGraph: {
       type: 'article',
@@ -248,7 +215,7 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
     publisher: { '@type': 'Organization', name: brandName },
   }
   if (description) ld.description = description
-  if (slug) ld.mainEntityOfPage = absoluteDetailUrl(baseUrl, locale, slug)
+  if (slug) ld.mainEntityOfPage = absoluteRecipeDetailUrl(baseUrl, locale, slug)
   if (input.imageUrl) ld.image = input.imageUrl
   if (input.ingredients.length > 0) ld.recipeIngredient = [...input.ingredients]
   if (input.steps.length > 0) {
