@@ -108,10 +108,16 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
 
     const res = await POST(genReq(id, headers), ctx(id))
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { image?: { id: string; url: string; aiGenerated: boolean; selected: boolean } }
+    const body = (await res.json()) as {
+      image?: { id: string; url: string; aiGenerated: boolean; selected: boolean }
+      basePrompt?: string
+    }
     expect(body.image).toBeDefined()
     expect(body.image!.aiGenerated).toBe(true)
     expect(body.image!.selected).toBe(false) // preview — NÃO é a face
+    // #223: a resposta traz o prompt-base (pro modal mostrar read-only) — o base montado da receita.
+    expect(body.basePrompt).toBeDefined()
+    expect(body.basePrompt).toContain('Feijoada')
     expect(gen.calls).toBe(1)
     expect(gen.lastPrompt).toContain('Feijoada') // prompt montado da receita
 
@@ -127,12 +133,19 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
     expect(await countGenEvents(userId)).toBe(1)
   })
 
-  it('prompt editado (refino) ANCORA no base da receita + vira sufixo de estilo (#214)', async () => {
+  it('prompt editado (refino) ANCORA no base da receita + vira nota de estilo no template estruturado (#214/#223)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'refino@gen.test' })
     const id = await seedOwned(userId)
-    await POST(genReq(id, headers, 'um prato futurista neon'), ctx(id))
-    expect(gen.lastPrompt).toContain('Bolo de fubá')
-    expect(gen.lastPrompt).toContain('Estilo/refinamento: um prato futurista neon')
+    const res = await POST(genReq(id, headers, 'um prato futurista neon'), ctx(id))
+    // #223: o servidor re-deriva o base (título da receita) E o refino, no template estruturado.
+    expect(gen.lastPrompt).toContain('Bolo de fubá') // base re-derivado no servidor (#214)
+    expect(gen.lastPrompt).toContain('sujeito fotográfico principal') // template estruturado (#223)
+    expect(gen.lastPrompt).toContain('refinamento de estilo: um prato futurista neon')
+    // #223: a resposta inclui o basePrompt (pro modal mostrar read-only); é só o base, SEM o refino.
+    const body = (await res.json()) as { basePrompt?: string }
+    expect(body.basePrompt).toBeDefined()
+    expect(body.basePrompt).toContain('Bolo de fubá')
+    expect(body.basePrompt).not.toContain('um prato futurista neon') // o refino NÃO faz parte do base
   })
 
   it('#222 gerar de novo APPENDA (NÃO reapa): ambas as imagens sobrevivem; image_id intacto; ledger=2', async () => {

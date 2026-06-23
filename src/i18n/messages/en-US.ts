@@ -226,6 +226,8 @@ export const enUS: Messages = {
     imagemRefinar: 'Refine the prompt',
     imagemPromptRotulo: 'Image prompt',
     imagemPromptPlaceholder: 'Describe how you want the dish photo to look (optional).',
+    // #223: label for the READ-ONLY base prompt (built from the recipe; the refinement is always added to it).
+    imagemPromptBase: 'Base prompt (built from the recipe)',
     imagemGerarErro: "We couldn't generate the image. Try again.",
     // #134: generation turned off by the admin (UI hides the button; covers the toggle-off race).
     imagemGerarDesabilitada: 'AI image generation is currently disabled.',

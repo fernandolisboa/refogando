@@ -45,9 +45,13 @@ export type RecipeImageResult =
 /** Resultado do gallery-delete (#222): inclui `in_use` (409) além do `ok`/`not_found`. */
 export type RecipeGalleryDeleteResult = RecipeImageResult | { kind: 'in_use' }
 
-/** Resultado da GERAÇÃO-como-preview (#222): NÃO devolve view (a face não mudou) — só a imagem. */
+/**
+ * Resultado da GERAÇÃO-como-preview (#222/#223): NÃO devolve view (a face não mudou) — só a imagem +
+ * o `basePrompt` (#223: o prompt-base montado da receita, pro modal exibir read-only). O base é
+ * sempre re-derivado no servidor; o cliente nunca o envia (só o refino) — invariante do #214.
+ */
 export type RecipeImageGenResult =
-  | { kind: 'ok'; image: GalleryImage } //            200 — a imagem gerada (deselecionada/preview)
+  | { kind: 'ok'; image: GalleryImage; basePrompt: string } // 200 — imagem (preview) + prompt-base read-only
   | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
   | { kind: 'disabled' } //                           403 — geração desligada na config (#134)
   | { kind: 'storage' } //                            503 — ImageStore indisponível
@@ -192,8 +196,10 @@ export async function applyRecipeImageGeneration(input: {
     throw err
   }
 
-  // Devolve a imagem-preview (deselecionada por construção — `image_id` não mudou).
-  return { kind: 'ok', image: { id: newImageId, url: blobUrl, aiGenerated: true, selected: false } }
+  // Devolve a imagem-preview (deselecionada por construção — `image_id` não mudou) + o `basePrompt`
+  // (#223): o prompt-base montado da receita, pro modal exibir read-only. O refino NÃO entra aqui (é
+  // só o base; o servidor é quem compõe base+refino ao gerar — o cliente nunca recebe o composto).
+  return { kind: 'ok', image: { id: newImageId, url: blobUrl, aiGenerated: true, selected: false }, basePrompt: base }
 }
 
 /**

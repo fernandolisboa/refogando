@@ -34,8 +34,9 @@ describe('buildDishImagePrompt', () => {
 })
 
 /**
- * Composição segura do prompt (#214, stopgap de segurança): o `base` da receita fica SEMPRE
- * presente — o override do usuário NUNCA o substitui, só vira sufixo de estilo limitado.
+ * Composição segura do prompt (#214/#223, stopgap de segurança → template estruturado): o `base` da
+ * receita fica SEMPRE presente — o override do usuário NUNCA o substitui, só vira NOTA DE ESTILO num
+ * template estruturado que reafirma que o prato (o base) é o SUJEITO fotográfico. Limitado a 200 chars.
  */
 describe('composeImagePrompt', () => {
   const base = buildDishImagePrompt({
@@ -51,11 +52,14 @@ describe('composeImagePrompt', () => {
     expect(composeImagePrompt(base, '   ')).toBe(base)
   })
 
-  it('com override ⇒ ancora SEMPRE no base e anexa o override como sufixo de estilo', () => {
+  it('com override ⇒ ancora SEMPRE no base e anexa o override como nota de estilo (template estruturado)', () => {
     const out = composeImagePrompt(base, 'em aquarela vibrante')
     expect(out.startsWith(base)).toBe(true)
     expect(out).toContain('em aquarela vibrante')
-    expect(out).toContain('Estilo/refinamento:')
+    // #223: o template estruturado reafirma EXPLICITAMENTE que o prato é o sujeito fotográfico
+    // principal e que o refino é só estilo (substring estável — invariante do #214).
+    expect(out).toContain('sujeito fotográfico principal')
+    expect(out).toContain('refinamento de estilo')
   })
 
   it('o override NÃO consegue apagar/substituir o base (vetor de abuso)', () => {
@@ -65,6 +69,8 @@ describe('composeImagePrompt', () => {
     expect(out).toContain('Feijoada')
     expect(out).toContain('feijão preto')
     expect(out).toContain(abuso)
+    // E o template reafirma que o prato segue sendo o sujeito (o abuso não vira o sujeito).
+    expect(out).toContain('sujeito fotográfico principal')
   })
 
   it('trunca o override em IMAGE_PROMPT_OVERRIDE_MAX chars', () => {
@@ -76,6 +82,6 @@ describe('composeImagePrompt', () => {
   })
 
   it('trima o override antes de truncar', () => {
-    expect(composeImagePrompt(base, '  rústico  ')).toContain('Estilo/refinamento: rústico')
+    expect(composeImagePrompt(base, '  rústico  ')).toContain('refinamento de estilo: rústico')
   })
 })

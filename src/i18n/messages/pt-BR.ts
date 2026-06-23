@@ -239,6 +239,8 @@ export const ptBR = {
     imagemRefinar: 'Refinar o prompt',
     imagemPromptRotulo: 'Prompt da imagem',
     imagemPromptPlaceholder: 'Descreva o prato como quer que a foto fique (opcional).',
+    // #223: rótulo do prompt-base READ-ONLY (montado da receita; o refino é sempre adicionado a ele).
+    imagemPromptBase: 'Prompt-base (gerado da receita)',
     imagemGerarErro: 'Não foi possível gerar a imagem. Tente de novo.',
     // #134: geração desligada pelo admin (a UI esconde o botão; cobre a corrida de desligar no meio).
     imagemGerarDesabilitada: 'A geração de imagem por IA está desativada no momento.',
