@@ -22,7 +22,7 @@ import {
   absoluteRecipeDetailUrl,
   recipeHreflangAlternates,
 } from '@/domain/recipe-detail-route'
-import { SUPPORTED_LOCALES, DEFAULT_LOCALE, type Locale } from '@/i18n/locale'
+import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 
 /**
  * Insumo do builder — UMA Receita elegível com seus slugs POR locale (só os locales que TÊM slug
@@ -63,13 +63,15 @@ export function buildSitemapEntries(
 
 /**
  * Rotas estáticas indexáveis: a HOME por locale (`<base>/{locale}`). Cada home lista as outras no
- * hreflang + `x-default` → DEFAULT_LOCALE (espelha o prefix-all locale-no-caminho do ADR-0020). Sem
- * `lastModified` (a home é um feed sempre-fresco — sem data canônica de modificação).
+ * hreflang + `x-default` → a RAIZ `/` redirecionadora (ADR-0020 dec.5: na home o x-default aponta pra
+ * raiz que negocia o idioma por Accept-Language — diferente do DETALHE, onde aponta pra receita no
+ * DEFAULT_LOCALE por não haver redirecionador por-receita). Sem `lastModified` (a home é um feed
+ * sempre-fresco — sem data canônica de modificação).
  */
 export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap {
   const languages: Record<string, string> = {}
   for (const loc of SUPPORTED_LOCALES) languages[loc] = `${baseUrl}/${loc}`
-  languages['x-default'] = `${baseUrl}/${DEFAULT_LOCALE}`
+  languages['x-default'] = `${baseUrl}/`
 
   return SUPPORTED_LOCALES.map((loc) => ({
     url: `${baseUrl}/${loc}`,

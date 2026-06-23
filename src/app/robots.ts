@@ -7,10 +7,13 @@
  * NÃO desautorizamos `/{locale}/recipes/*` aqui — o sitemap lista só o indexável e cada página
  * não-elegível se auto-protege com `noindex`.
  *
- * Bloqueamos as superfícies NÃO-públicas óbvias: a API (`/api/`, JSON server-only) e o painel admin
- * (`/admin`, restrito ao Curador/Admin — espelha `/{locale}/admin/*`; o crawler não tem o que indexar
- * ali e nem deve tentar). `disallow` é prefixo de caminho (sem locale por design — cobre qualquer
- * prefixo de locale via o segmento, e os caminhos sem locale também).
+ * Bloqueamos as superfícies NÃO-públicas óbvias: a API (`/api/`, JSON server-only, caminho REAL sem
+ * locale) e o painel admin. ATENÇÃO ao casamento de `disallow` (RFC 9309): é prefixo ANCORADO no início
+ * do path, então `/admin` casa só o caminho nu — o admin REAL é locale-prefixado (`/pt-BR/admin`,
+ * `/en-US/admin`). Por isso adicionamos também a entrada curinga de locale (`/` + `*` + `/admin`,
+ * curinga suportado por Google/Bing) que cobre qualquer prefixo de locale. Mesmo assim, a proteção
+ * DE VERDADE do admin é o gate de papel
+ * (`admin/gate.tsx` + `requireRole`); o robots é só cortesia (nada ali é indexável de qualquer forma).
  *
  * `sitemap` é URL ABSOLUTA via `getBaseUrlFromEnv` (env-only, sem `headers()`) — BUILD-SAFE: este
  * arquivo de metadados pode ser avaliado em build/estaticamente, então NUNCA derivamos o host do
@@ -26,8 +29,9 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        // Superfícies não-públicas: API JSON e painel admin (qualquer prefixo de locale).
-        disallow: ['/api/', '/admin'],
+        // Superfícies não-públicas: API JSON (`/api/`) e painel admin nu (`/admin`) + locale-prefixado
+        // (`/*/admin`, que é o caminho REAL — o admin vive sob `[locale]`).
+        disallow: ['/api/', '/admin', '/*/admin'],
       },
     ],
     sitemap: `${baseUrl}/sitemap.xml`,

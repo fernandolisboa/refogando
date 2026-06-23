@@ -12,7 +12,7 @@ import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from '@/i18n/locale'
  * `lastModified`, mais a `baseUrl` build-safe (env, sem `headers()`), e devolve as entradas do
  * `MetadataRoute.Sitemap`: UMA por (receita, locale com slug), URL ABSOLUTA via `recipeDetailPath`,
  * e `alternates.languages` (hreflang) ligando os locales existentes + `x-default` → DEFAULT_LOCALE.
- * Espelha a mesma lógica de `buildLanguageAlternates`/`recipeDetailPath` do detalhe (#233).
+ * Espelha a mesma lógica de `recipeHreflangAlternates`/`recipeDetailPath` do detalhe (#233).
  */
 
 const BASE = 'https://refogando.com'
@@ -100,14 +100,15 @@ describe('buildStaticLocaleEntries — homes indexáveis por locale', () => {
     }
   })
 
-  it('cada home lista as outras homes no hreflang + x-default → DEFAULT_LOCALE', () => {
+  it('cada home lista as outras homes no hreflang + x-default → raiz `/` redirecionadora', () => {
     const entries = buildStaticLocaleEntries(BASE)
     for (const e of entries) {
       const langs = e.alternates?.languages ?? {}
       for (const loc of SUPPORTED_LOCALES) {
         expect(langs[loc]).toBe(`${BASE}/${loc}`)
       }
-      expect(langs['x-default']).toBe(`${BASE}/${DEFAULT_LOCALE}`)
+      // ADR-0020 dec.5: a home aponta x-default pra raiz `/` (negocia idioma), não pra um locale.
+      expect(langs['x-default']).toBe(`${BASE}/`)
     }
   })
 })
