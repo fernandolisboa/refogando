@@ -244,6 +244,14 @@ export type GalleryImage = {
   aiGenerated: boolean
   /** `true` para a imagem que é a face pública atual (`recipe.image_id`). */
   selected: boolean
+  /**
+   * #225 (ADR-0022): `true` quando o Curador MODEROU esta imagem (`recipe_image.moderated_at` ≠ null —
+   * flag por-imagem do #133, ORTOGONAL à Visibilidade). O dono ainda a vê na galeria, marcada como
+   * "removida"; ela NÃO pode virar a face pública (selecioná-la é bloqueado no seam, 409). Se for a
+   * face atual numa Receita pública, o gate público do #133 (resolveRecipeView) já a esconde do público
+   * (placeholder). Owner-gated como a galeria toda — nunca vaza no caminho público.
+   */
+  moderated: boolean
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */

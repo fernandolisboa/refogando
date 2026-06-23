@@ -315,3 +315,72 @@ describe('Galeria de imagens (#222) — preview + projeção pública', () => {
     expect((await galleryDeleteRoute(deleteReq(id, face, headers), ctx2(id, face))).status).toBe(404)
   })
 })
+
+/**
+ * #225 — Moderação × galeria (ADR-0022): a moderação por-imagem (#133, flag ortogonal à Visibilidade)
+ * encontra a galeria re-selecionável. Cobre: a galeria do DONO marca a imagem moderada (`moderated:true`);
+ * SELECIONAR uma imagem moderada é BLOQUEADO (409 imagem_moderada, image_id intocado — "moderada não
+ * vira face pública" no seam); e o gate público do #133 segue valendo (uma face selecionada-depois-moderada
+ * vira placeholder no caminho público-por-slug, enquanto o dono ainda a vê).
+ */
+describe('Galeria × moderação (#225) — imagem moderada não vira face pública', () => {
+  it('loadGallery marca a imagem MODERADA com moderated:true (e a não-moderada com false) na view do dono', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'gal-moder@g.test' })
+    const curId = await seedUser({ email: 'gal-moder-cur@g.test' })
+    const id = await seedOwned(userId, 'Bolo')
+    // 1ª imagem: vira a face e fica MODERADA. 2ª imagem: limpa.
+    const moderada = await seedRecipeImage({ recipeId: id, moderated: { curatorId: curId } })
+    const limpa = await seedRecipeImage({ recipeId: id })
+
+    const res = await detailGET(new Request(`http://localhost/api/recipes/${id}?locale=pt-BR`, { headers }), ctx(id))
+    const view = (await res.json()) as { gallery?: { id: string; moderated: boolean }[] }
+    expect(view.gallery).toBeDefined()
+    const byId = new Map(view.gallery!.map((g) => [g.id, g.moderated]))
+    expect(byId.get(moderada)).toBe(true)
+    expect(byId.get(limpa)).toBe(false)
+  })
+
+  it('selecionar uma imagem MODERADA ⇒ 409 imagem_moderada; image_id NÃO muda (moderada não vira face)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'sel-moder@g.test' })
+    const curId = await seedUser({ email: 'sel-moder-cur@g.test' })
+    const id = await seedOwned(userId, 'Torta')
+    // Face limpa inicial + uma imagem moderada (NÃO-selecionada) na mesma galeria.
+    const limpa = await seedRecipeImage({ recipeId: id }) // seedRecipeImage aponta image_id p/ a última
+    const moderada = await seedRecipeImage({ recipeId: id, moderated: { curatorId: curId } })
+    // Reaponta a face de volta p/ a limpa (a 2ª seed moveu image_id pra moderada).
+    await getDb().update(recipe).set({ imageId: limpa }).where(eq(recipe.id, id))
+    expect(await imageIdOf(id)).toBe(limpa)
+
+    const res = await selectRoute(selectReq(id, moderada, headers), ctx2(id, moderada))
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: 'imagem_moderada' })
+    // A face seguiu a limpa — selecionar a moderada NÃO a tornou pública.
+    expect(await imageIdOf(id)).toBe(limpa)
+  })
+
+  it('#133 gate público persiste: uma face selecionada-depois-moderada cai pro placeholder no caminho por SLUG; o dono ainda a vê', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'gate-moder@g.test' })
+    const curId = await seedUser({ email: 'gate-moder-cur@g.test' })
+    // Receita PÚBLICA com slug; a face é a imagem que SERÁ moderada.
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: userId, visibility: 'public', cozinha: 'brasileira' })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Quibe', provenance: 'escrita_por_pessoa', slug: 'quibe' })
+    const face = await seedRecipeImage({
+      recipeId: id,
+      blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/quibe.webp',
+      moderated: { curatorId: curId },
+    })
+    expect(await imageIdOf(id)).toBe(face) // a moderada É a face selecionada
+
+    // Caminho ANÔNIMO por slug (página indexável): a foto moderada some ⇒ placeholder.
+    const rows = await loadPublicRecipeBySlug(getDb(), 'quibe', 'pt-BR')
+    expect(rows).not.toBeNull()
+    const anonView = resolveRecipeView({ ...rows!, requestLocale: 'pt-BR' })
+    expect(anonView.imageUrl).toBeUndefined() // gate #133: público vê placeholder
+
+    // O DONO (canManage) AINDA vê a própria imagem moderada (face) e a galeria marca-a moderated.
+    const ownerRes = await detailGET(new Request(`http://localhost/api/recipes/${id}?locale=pt-BR`, { headers }), ctx(id))
+    const ownerView = (await ownerRes.json()) as { imageUrl?: string; gallery?: { id: string; moderated: boolean }[] }
+    expect(ownerView.imageUrl).toBe('https://abc.public.blob.vercel-storage.com/recipes/quibe.webp')
+    expect(ownerView.gallery!.find((g) => g.id === face)?.moderated).toBe(true)
+  })
+})

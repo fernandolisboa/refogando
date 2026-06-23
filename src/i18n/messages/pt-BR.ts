@@ -260,6 +260,13 @@ export const ptBR = {
     imagemApagar: 'Apagar',
     // 409 in_use: a imagem ainda é a face de alguma versão — desselecione antes de apagar.
     imagemApagarEmUso: 'Esta imagem está em uso por uma versão. Escolha outra antes de apagá-la.',
+    // #225: moderação × galeria (ADR-0022). A imagem moderada (#133) fica na galeria do dono marcada
+    // "removida"; não pode virar a face pública.
+    imagemRemovida: 'Removida pela moderação',
+    // 409 imagem_moderada: tentar selecionar uma imagem moderada como face.
+    imagemModeradaNaoSelecionavel: 'Esta imagem foi removida pela moderação e não pode ser usada como capa. Escolha outra.',
+    // US21: a face SELECIONADA foi moderada — o público vê um placeholder; sugira escolher outra.
+    imagemSelecionadaModerada: 'A imagem selecionada foi removida pela moderação; o público vê um placeholder. Escolha outra imagem como capa.',
   },
   // Telas de autenticação (#55): entrar / criar conta. Objeto PLANO (folhas string) —
   // o TIPO `Messages` exige um nível de namespace. Guarda só o CONTEXTUAL das telas; o

@@ -38,6 +38,9 @@ export async function POST(
       return Response.json(res.view, { status: 200 })
     case 'storage':
       return Response.json({ error: 'storage_indisponivel' }, { status: 503 })
+    // #225: imagem moderada (#133) não vira face pública — 409 (NÃO leak-sensitive: owner-only).
+    case 'moderated':
+      return Response.json({ error: 'imagem_moderada' }, { status: 409 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }

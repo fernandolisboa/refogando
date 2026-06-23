@@ -47,6 +47,15 @@ export type RecipeImageResult =
 export type RecipeGalleryDeleteResult = RecipeImageResult | { kind: 'in_use' }
 
 /**
+ * Resultado do SELECT (#225): inclui `moderated` (409) além do `ok`/`not_found`. Uma imagem MODERADA
+ * pelo Curador (#133, flag por-imagem) NÃO pode virar a face pública ("moderada não vira face pública"
+ * no seam: image_id nunca aponta p/ uma moderada). NÃO é leak-sensitive (o select é owner-only — o dono
+ * é dono da imagem moderada), então um erro distinto é seguro (≠ o not_found leak-safe). União PRÓPRIA
+ * (não alarga o RecipeImageResult de upload/removal — espelha o `in_use` do gallery-delete).
+ */
+export type RecipeImageSelectResult = RecipeImageResult | { kind: 'moderated' }
+
+/**
  * Resultado da GERAÇÃO-como-preview (#222/#223): NÃO devolve view (a face não mudou) — só a imagem +
  * o `basePrompt` (#223: o prompt-base montado da receita, pro modal exibir read-only). O base é
  * sempre re-derivado no servidor; o cliente nunca o envia (só o refino) — invariante do #214.
@@ -205,7 +214,12 @@ export async function applyRecipeImageGeneration(input: {
   // Devolve a imagem-preview (deselecionada por construção — `image_id` não mudou) + o `basePrompt`
   // (#223): o prompt-base montado da receita, pro modal exibir read-only. O refino NÃO entra aqui (é
   // só o base; o servidor é quem compõe base+refino ao gerar — o cliente nunca recebe o composto).
-  return { kind: 'ok', image: { id: newImageId, url: blobUrl, aiGenerated: true, selected: false }, basePrompt: base }
+  // #225: uma preview recém-gerada nunca nasce moderada (`moderated: false`).
+  return {
+    kind: 'ok',
+    image: { id: newImageId, url: blobUrl, aiGenerated: true, selected: false, moderated: false },
+    basePrompt: base,
+  }
 }
 
 /**
@@ -268,7 +282,7 @@ export async function applyRecipeImageSelect(input: {
   userId: string
   imageId: string
   requestLocale: string
-}): Promise<RecipeImageResult> {
+}): Promise<RecipeImageSelectResult> {
   const { db, id, userId, imageId, requestLocale } = input
 
   // Gate de dono + lineage_id da Receita. Catálogo/não-dono ⇒ 404 (leak-safe).
@@ -278,11 +292,16 @@ export async function applyRecipeImageSelect(input: {
   // A imagem precisa existir E pertencer à MESMA linhagem (membro da galeria desta Receita). Qualquer
   // falha (inexistente / linhagem estrangeira) ⇒ o MESMO not_found do não-dono (não vaza existência).
   const [img] = await db
-    .select({ id: recipeImage.id })
+    .select({ id: recipeImage.id, moderatedAt: recipeImage.moderatedAt })
     .from(recipeImage)
     .where(and(eq(recipeImage.id, imageId), eq(recipeImage.lineageId, gate.lineageId)))
     .limit(1)
   if (!img) return { kind: 'not_found' }
+
+  // #225: imagem MODERADA (#133) NÃO vira face pública — bloqueia o select no seam (image_id nunca
+  // aponta p/ uma moderada). Distinto do not_found: o select é owner-only e o dono é dono da imagem
+  // moderada, então não vaza existência (≠ leak-safe). 409 imagem_moderada na borda.
+  if (img.moderatedAt != null) return { kind: 'moderated' }
 
   // Repointa a face (custo zero). Reimpõe ownership na escrita (defesa-em-profundidade).
   await db
@@ -398,8 +417,9 @@ async function loadOwnerGate(
 /**
  * Carrega a GALERIA da linhagem (#222, ADR-0022 dec.1) — todas as `recipe_image` daquela `lineage_id`,
  * ordenadas por `created_at` (índice composto `recipe_image_lineage_idx`). `selected = id === image_id`.
- * Para o #222 lista TODAS (imagens moderadas inclusas — o dono vê as próprias; o visual de moderação
- * × galeria + "moderada não vira face pública" é #225, não aqui). Owner-only (carregada na borda).
+ * Lista TODAS (imagens moderadas inclusas — o dono vê as próprias). #225: `moderated = moderated_at ≠ null`
+ * (flag por-imagem do #133), pro thumbnail marcá-la "removida" e desabilitar o select (e o nudge da face
+ * moderada). Owner-only (carregada na borda); a galeria nunca vaza no caminho público.
  */
 export async function loadGallery(
   db: Database,
@@ -407,7 +427,12 @@ export async function loadGallery(
   selectedImageId: string | null,
 ): Promise<GalleryImage[]> {
   const rows = await db
-    .select({ id: recipeImage.id, blobUrl: recipeImage.blobUrl, provenance: recipeImage.provenance })
+    .select({
+      id: recipeImage.id,
+      blobUrl: recipeImage.blobUrl,
+      provenance: recipeImage.provenance,
+      moderatedAt: recipeImage.moderatedAt,
+    })
     .from(recipeImage)
     .where(eq(recipeImage.lineageId, lineageId))
     .orderBy(asc(recipeImage.createdAt), asc(recipeImage.id))
@@ -416,6 +441,7 @@ export async function loadGallery(
     url: r.blobUrl,
     aiGenerated: r.provenance === 'ai_generated',
     selected: r.id === selectedImageId,
+    moderated: r.moderatedAt != null,
   }))
 }
 

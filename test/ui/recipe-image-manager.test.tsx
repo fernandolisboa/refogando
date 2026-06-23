@@ -446,8 +446,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   // ── #222: galeria ───────────────────────────────────────────────────────────────
   it('#222 galeria lista as imagens + selo IA na gerada', () => {
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
     ]
     renderManager({ hasImage: true, gallery })
     expect(screen.getByText(M.imagemGaleria)).toBeInTheDocument()
@@ -467,8 +467,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 clicar num thumbnail NÃO-selecionado ⇒ POST select + refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
     ]
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith(`/images/${IMG2}/select`) ? { status: 200, body: { id: RID } } : { status: 405 },
@@ -486,8 +486,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 apagar uma imagem da galeria ⇒ DELETE + refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
     ]
     const { calls } = mockFetch((method, url) =>
       method === 'DELETE' && url.endsWith(`/images/${IMG2}`) ? { status: 200, body: { id: RID } } : { status: 405 },
@@ -505,8 +505,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 apagar 409 in_use ⇒ mensagem amigável, sem refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
     ]
     mockFetch(() => ({ status: 409, body: { error: 'in_use' } }))
     renderManager({ hasImage: true, gallery })
@@ -516,6 +516,62 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     expect(await screen.findByText(M.imagemApagarEmUso)).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  // ── #225: moderação × galeria ─────────────────────────────────────────────────────
+  it('#225 imagem moderada na galeria: marca "removida" + desabilita selecionar', () => {
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: false, moderated: true },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+    ]
+    renderManager({ hasImage: true, gallery })
+
+    // O marcador "removida" aparece (pelo menos uma vez, na moderada).
+    expect(screen.getAllByText(M.imagemRemovida).length).toBeGreaterThanOrEqual(1)
+
+    // O thumbnail da moderada (IMG1) está desabilitado — não dá pra selecioná-la.
+    const moderadaImg = screen.getAllByRole('img').find((n) => n.getAttribute('src')?.endsWith('/0.png'))!
+    const moderadaBtn = moderadaImg.closest('button') as HTMLButtonElement
+    expect(moderadaBtn.disabled).toBe(true)
+    // A não-moderada (IMG2) segue selecionável.
+    const limpaImg = screen.getAllByRole('img').find((n) => n.getAttribute('src')?.endsWith('/1.png'))!
+    const limpaBtn = limpaImg.closest('button') as HTMLButtonElement
+    expect(limpaBtn.disabled).toBe(false)
+  })
+
+  it('#225 selecionar uma moderada (via servidor) ⇒ 409 imagem_moderada surface mensagem amigável, sem refresh', async () => {
+    const user = userEvent.setup()
+    // A moderada está desabilitada por afordância; clicamos numa LIMPA cuja rota responde 409
+    // (o servidor é a verdade; a UI mapeia 409 imagem_moderada → mensagem amigável).
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+    ]
+    mockFetch(() => ({ status: 409, body: { error: 'imagem_moderada' } }))
+    renderManager({ hasImage: true, gallery })
+
+    const thumbs = screen.getAllByRole('button', { pressed: false })
+    await user.click(thumbs[0])
+
+    expect(await screen.findByText(M.imagemModeradaNaoSelecionavel)).toBeInTheDocument()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('#225 nudge (US21): a face SELECIONADA está moderada ⇒ aviso de escolher outra (role=status)', () => {
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: true },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+    ]
+    renderManager({ hasImage: true, gallery })
+    expect(screen.getByText(M.imagemSelecionadaModerada)).toBeInTheDocument()
+  })
+
+  it('#225 sem face moderada ⇒ nenhum nudge de moderação', () => {
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+    ]
+    renderManager({ hasImage: true, gallery })
+    expect(screen.queryByText(M.imagemSelecionadaModerada)).not.toBeInTheDocument()
   })
 
   it('durante o upload: o label mostra imagemEnviando', async () => {

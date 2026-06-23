@@ -105,10 +105,13 @@ export function RecipeImageManager({
   const [basePrompt, setBasePrompt] = useState<string | null>(null)
   // DECISION 6: houve ≥1 geração nesta sessão de modal? ⇒ refresh ao fechar sem selecionar.
   const [generatedThisSession, setGeneratedThisSession] = useState(false)
-  // #222: erro de seleção/deleção na galeria ('falha'|'emUso').
-  const [galleryError, setGalleryError] = useState<null | 'falha' | 'emUso'>(null)
+  // #222/#225: erro de seleção/deleção na galeria ('falha'|'emUso'|'moderada').
+  const [galleryError, setGalleryError] = useState<null | 'falha' | 'emUso' | 'moderada'>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const busy = status === 'busy'
+  // #225 (US21): a face pública atual (a imagem selecionada) foi moderada ⇒ o público vê um placeholder
+  // (gate #133). Sugere ao dono escolher outra como capa.
+  const selectedModerated = gallery.some((g) => g.selected && g.moderated)
 
   // #132/#222/#223: gera a imagem por IA como PREVIEW (acrescenta à galeria deselecionada; devolve
   // `{ image, basePrompt }`). O cliente envia SÓ o refino (texto livre, cap 200) — o servidor sempre
@@ -209,6 +212,13 @@ export function RecipeImageManager({
     setStatus('busy')
     try {
       const res = await fetch(`/api/recipes/${recipeId}/images/${imageId}/select`, { method: 'POST' })
+      // #225: 409 imagem_moderada — uma imagem moderada (#133) não vira face pública (o servidor é a
+      // verdade; a UI já desabilita selecionar a moderada, mas cobre a corrida de moderar-no-meio).
+      if (res.status === 409) {
+        setGalleryError('moderada')
+        setStatus('idle')
+        return
+      }
       if (!res.ok) {
         setGalleryError('falha')
         setStatus('idle')
@@ -326,6 +336,16 @@ export function RecipeImageManager({
         </p>
       )}
 
+      {/* #225 (US21): a face SELECIONADA foi moderada — o público vê um placeholder; nudge p/ escolher outra. */}
+      {selectedModerated && (
+        <p
+          role="status"
+          className="max-w-[60ch] rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+        >
+          {m.imagemSelecionadaModerada}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         {/* #222: "Gerar com IA" abre o MODAL de preview (#207: ação primária, antes do upload).
             #134: escondido quando a geração está desligada na config do admin (`aiGenEnabled=false`). */}
@@ -370,9 +390,11 @@ export function RecipeImageManager({
                 <button
                   type="button"
                   onClick={() => onSelect(img.id)}
-                  disabled={busy || img.selected}
+                  // #225: imagem moderada (#133) não vira face pública ⇒ select desabilitado por afordância
+                  // (o servidor reimpõe — 409 imagem_moderada).
+                  disabled={busy || img.selected || img.moderated}
                   aria-pressed={img.selected}
-                  className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''}`}
+                  className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''} ${img.moderated ? 'opacity-60' : ''}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
                   <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
@@ -381,9 +403,17 @@ export function RecipeImageManager({
                       {m.imagemSeloIa}
                     </span>
                   )}
+                  {/* #225: marcador "removida" — distinto do selo de IA (topo, tom de alerta). */}
+                  {img.moderated && (
+                    <span className="absolute left-0 right-0 top-0 bg-fg/70 px-1 py-0.5 text-[10px] text-bg">
+                      {m.imagemRemovida}
+                    </span>
+                  )}
                 </button>
                 <div className="flex items-center justify-between gap-1 text-xs">
-                  {img.selected ? (
+                  {img.moderated ? (
+                    <span className="font-medium text-muted">{m.imagemRemovida}</span>
+                  ) : img.selected ? (
                     <span className="font-medium text-fg">{m.imagemSelecionada}</span>
                   ) : (
                     <span className="text-muted">{m.imagemSelecionar}</span>
@@ -429,6 +459,12 @@ export function RecipeImageManager({
         {galleryError === 'emUso' && (
           <p role="alert" className="font-medium text-fg">
             {m.imagemApagarEmUso}
+          </p>
+        )}
+        {/* #225: 409 imagem_moderada — tentar selecionar uma imagem moderada como capa. */}
+        {galleryError === 'moderada' && (
+          <p role="alert" className="font-medium text-fg">
+            {m.imagemModeradaNaoSelecionavel}
           </p>
         )}
         {/* #222: os erros da geração (falha/limite/desabilitada) são surfados DENTRO do modal — a
