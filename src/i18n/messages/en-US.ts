@@ -247,6 +247,13 @@ export const enUS: Messages = {
     imagemApagar: 'Delete',
     // 409 in_use: the image is still a version's face — deselect it before deleting.
     imagemApagarEmUso: 'This image is in use by a version. Pick another one before deleting it.',
+    // #225: moderation × gallery (ADR-0022). A moderated image (#133) stays in the owner's gallery
+    // marked "removed"; it cannot become the public face.
+    imagemRemovida: 'Removed by moderation',
+    // 409 imagem_moderada: trying to select a moderated image as the face.
+    imagemModeradaNaoSelecionavel: 'This image was removed by moderation and cannot be used as the cover. Pick another one.',
+    // US21: the SELECTED face was moderated — the public sees a placeholder; nudge to pick another.
+    imagemSelecionadaModerada: 'The selected image was removed by moderation; the public sees a placeholder. Pick another image as the cover.',
   },
   // Telas de autenticação (#55), mesma substância traduzida (ADR-0001, não byte-idêntica).
   // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.
