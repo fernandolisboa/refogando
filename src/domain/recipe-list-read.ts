@@ -36,6 +36,9 @@ export type RecipeListRow = {
   // Imagem da receita (#130/#206): `blob_url` PÚBLICO da thumbnail, já gateado por
   // `moderated_at IS NULL` no loader (espelha feed.ts). `undefined` = sem imagem.
   imageUrl?: string
+  // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail. `undefined` = sem imagem.
+  // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (espelha `projectResult`).
+  imageProvenance?: 'user_photo' | 'ai_generated'
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -56,6 +59,9 @@ export type RecipeListItem = {
   moderationRemovida: boolean
   // Imagem da receita (#130/#206): `blob_url` da thumbnail; `undefined` = sem imagem (placeholder).
   imageUrl?: string
+  // Imagem gerada por IA (#216): derivado de `imageProvenance === 'ai_generated'` — a UI sobrepõe
+  // o selo "✨ gerada por IA" na thumbnail (espelha `projectResult`/RecipeResultItem). Omitido se falso.
+  imageAiGenerated?: boolean
 }
 
 /**
@@ -83,5 +89,6 @@ export function resolveRecipeListItem(
     updatedAt: row.updatedAt,
     moderationRemovida: row.moderationRemovida,
     imageUrl: row.imageUrl,
+    ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
   }
 }

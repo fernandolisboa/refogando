@@ -41,6 +41,9 @@ export async function listMyRecipes(
       // Imagem (#130/#206): LEFT JOIN da thumbnail com o gate público `moderated_at IS NULL`
       // (espelha feed.ts/#133). Sem casamento (sem imagem ou imagem moderada) ⇒ NULL ⇒ placeholder.
       imageUrl: recipeImage.blobUrl,
+      // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail (NULL sem imagem).
+      // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA").
+      imageProvenance: recipeImage.provenance,
     })
     .from(recipe)
     .leftJoin(
@@ -97,6 +100,7 @@ export async function listMyRecipes(
         // única mudança; sem migração — a coluna já existe no schema).
         moderationRemovida: r.moderationRemovedAt != null,
         imageUrl: r.imageUrl ?? undefined,
+        imageProvenance: r.imageProvenance ?? undefined,
         translations: byRecipe.get(r.id) ?? [],
       },
       requestLocale,
