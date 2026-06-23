@@ -297,6 +297,13 @@ export const recipeImage = pgTable(
  * o custo já foi gasto e conta na janela mesmo se a imagem resultante for substituída/moderada
  * (ADR-0017: "não devolve slot"). Uma linha por geração; o teto faz `COUNT WHERE user_id AND
  * created_at > agora-24h`. ON DELETE cascade: apagar o usuário limpa o ledger dele.
+ *
+ * #224 (ADR-0022 dec.4): a linha passa a CARREGAR o custo — o `model` usado, os tokens do
+ * `usageMetadata` (prompt/output-imagem/thinking/total) e o `cost_usd` SNAPSHOT derivado da tabela de
+ * preço EM CÓDIGO (`computeImageCost`). TODAS NULLABLE e best-effort: linhas pré-#224 e gerações sem
+ * telemetria do provedor ficam nulas (não invalidam o teto, que segue por CONTAGEM — #167). Gravar o
+ * custo (não recomputar) congela o que cada geração custou mesmo quando os preços do provedor mudam.
+ * `cost_usd` é numeric → trafega string|null (precisão exata; OK p/ snapshot).
  */
 export const imageGeneration = pgTable(
   'image_generation',
@@ -306,6 +313,13 @@ export const imageGeneration = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // ── Cost-tracking (#224, ADR-0022 dec.4) — NULLABLE/best-effort ──────────────────
+    model: text('model'),
+    promptTokens: integer('prompt_tokens'),
+    outputTokens: integer('output_tokens'),
+    thinkingTokens: integer('thinking_tokens'),
+    totalTokens: integer('total_tokens'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
   },
   (t) => [index('image_generation_user_created_idx').on(t.userId, t.createdAt)],
 )

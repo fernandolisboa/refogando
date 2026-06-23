@@ -19,7 +19,9 @@
 // allowlist/config também saem (direção de camada: server depende de domínio). Re-exportado pra
 // conveniência dos consumidores históricos do seam.
 import { DEFAULT_IMAGE_MODEL } from '@/domain/image-gen-config'
+import type { ImageUsage } from '@/domain/image-cost'
 export { DEFAULT_IMAGE_MODEL }
+export type { ImageUsage }
 
 /** Entrada da geração: o prompt já montado (de `buildDishImagePrompt` ou editado pelo usuário). */
 export type GenerateImageInput = {
@@ -28,10 +30,19 @@ export type GenerateImageInput = {
   model?: string
 }
 
-/** Bytes da imagem gerada + o content-type (pro `ImageStore` e pro recipe_image). */
+/**
+ * Bytes da imagem gerada + content-type + telemetria de custo (#224, ADR-0022 dec.4). O `usageMetadata`
+ * (tokens) + `model` alimentam `computeImageCost` e viram o snapshot `cost_usd` no ledger. Ambos são
+ * OPCIONAIS e BEST-EFFORT: o caminho Real só popula se o Gemini mandou `usageMetadata`; sem ele a
+ * geração NÃO falha (a linha nasce com usage/custo nulos). O Fake devolve um usage canned.
+ */
 export type GeneratedImage = {
   data: Buffer
   contentType: string
+  /** Tokens da geração (prompt/output-imagem/thinking/total) — ausente ⇒ telemetria indisponível. */
+  usageMetadata?: ImageUsage
+  /** Modelo efetivamente usado (pro snapshot de preço); ausente ⇒ o caller usa o modelo da config. */
+  model?: string
 }
 
 export interface ImageGenerator {
@@ -39,11 +50,34 @@ export interface ImageGenerator {
 }
 
 
-/** Forma mínima da resposta do `:generateContent` que consumimos (parts com inlineData base64). */
+/** Forma mínima da resposta do `:generateContent` que consumimos (parts com inlineData base64 +
+ * usageMetadata de tokens). TODOS os campos opcionais — o caminho Real mapeia defensivamente. */
 type GeminiResponse = {
   candidates?: Array<{
     content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string } }> }
   }>
+  usageMetadata?: {
+    promptTokenCount?: number
+    candidatesTokenCount?: number
+    thoughtsTokenCount?: number
+    totalTokenCount?: number
+  }
+}
+
+/**
+ * Mapeia o `usageMetadata` cru do Gemini → `ImageUsage` normalizado. DEFENSIVO: cada campo é opcional
+ * (default 0), NUNCA lança. Se o bloco `usageMetadata` está ausente, devolve `undefined` (telemetria
+ * indisponível — a geração segue, a linha do ledger nasce com usage/custo nulos). Caminho Real não
+ * exercitado por teste (roda ao vivo só com a key).
+ */
+function mapGeminiUsage(raw: GeminiResponse['usageMetadata']): ImageUsage | undefined {
+  if (!raw) return undefined
+  return {
+    promptTokens: raw.promptTokenCount ?? 0,
+    outputTokens: raw.candidatesTokenCount ?? 0,
+    thinkingTokens: raw.thoughtsTokenCount ?? 0,
+    totalTokens: raw.totalTokenCount ?? 0,
+  }
 }
 
 /**
@@ -84,18 +118,37 @@ export class RealGeminiImageGenerator implements ImageGenerator {
     return {
       data: Buffer.from(b64, 'base64'),
       contentType: part?.inlineData?.mimeType ?? 'image/png',
+      // #224: telemetria de custo (best-effort). `usageMetadata` ausente ⇒ undefined (não falha).
+      usageMetadata: mapGeminiUsage(body.usageMetadata),
+      model,
     }
   }
 }
 
-/** Dublê determinístico para testes — NUNCA toca o Gemini. Devolve bytes canned (PNG 1x1 fake). */
+/** Usage canned default do Fake (#224) — números plausíveis (output ≈ 1 imagem) p/ exercitar o custo. */
+export const FAKE_IMAGE_USAGE: ImageUsage = {
+  promptTokens: 25,
+  outputTokens: 1290,
+  thinkingTokens: 0,
+  totalTokens: 1315,
+}
+
+/** Dublê determinístico para testes — NUNCA toca o Gemini. Devolve bytes canned (PNG 1x1 fake) +
+ * `usageMetadata`/`model` canned (#224) — o custo grava no ledger. O `model` do canned é null por
+ * default: o caller cai no modelo da config (genConfig.model), espelhando o caminho Real. */
 export class FakeImageGenerator implements ImageGenerator {
   /** Conta chamadas (provar que a geração disparou) e guarda o último prompt/modelo (asserções). */
   public calls = 0
   public lastPrompt: string | null = null
   /** #134: o modelo recebido (da config do admin) — `undefined` quando o chamador não passou modelo. */
   public lastModel: string | undefined = undefined
-  constructor(private readonly canned: GeneratedImage = { data: Buffer.from([1, 2, 3, 4]), contentType: 'image/png' }) {}
+  constructor(
+    private readonly canned: GeneratedImage = {
+      data: Buffer.from([1, 2, 3, 4]),
+      contentType: 'image/png',
+      usageMetadata: FAKE_IMAGE_USAGE,
+    },
+  ) {}
 
   async generateDishImage(input: GenerateImageInput): Promise<GeneratedImage> {
     this.calls++

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/[id]/image/generate/route'
+import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/select/route'
 import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
-import { FakeImageGenerator, ThrowingImageGenerator } from '@/server/images/image-generator'
+import { FakeImageGenerator, ThrowingImageGenerator, FAKE_IMAGE_USAGE } from '@/server/images/image-generator'
 import { recipe, recipeImage, imageGeneration, appConfig } from '@/db/schema'
+import { computeImageCost } from '@/domain/image-cost'
 import { DEFAULT_IMAGE_MODEL, type ImageGenCapByRole } from '@/domain/image-gen-config'
 import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
@@ -59,6 +61,28 @@ async function seedAiGenForUser(userId: string, n: number): Promise<void> {
 async function countGenEvents(userId: string): Promise<number> {
   const [r] = await getDb().select({ n: sql<number>`count(*)::int` }).from(imageGeneration).where(eq(imageGeneration.userId, userId))
   return r?.n ?? 0
+}
+/** #224: a ÚNICA linha do ledger do usuário (com as colunas de custo). */
+async function genLedgerRow(userId: string): Promise<{
+  model: string | null
+  promptTokens: number | null
+  outputTokens: number | null
+  thinkingTokens: number | null
+  totalTokens: number | null
+  costUsd: string | null
+} | null> {
+  const [r] = await getDb()
+    .select({
+      model: imageGeneration.model,
+      promptTokens: imageGeneration.promptTokens,
+      outputTokens: imageGeneration.outputTokens,
+      thinkingTokens: imageGeneration.thinkingTokens,
+      totalTokens: imageGeneration.totalTokens,
+      costUsd: imageGeneration.costUsd,
+    })
+    .from(imageGeneration)
+    .where(eq(imageGeneration.userId, userId))
+  return r ?? null
 }
 /** #134: grava a config de geração no singleton app_config (campos omitidos caem nos DEFAULTs). */
 async function setImageGenConfig(cfg: { enabled?: boolean; model?: string; capByRole?: ImageGenCapByRole }): Promise<void> {
@@ -258,5 +282,69 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
     const id = await seedOwned(userId)
     expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
     expect(gen.lastModel).toBe(DEFAULT_IMAGE_MODEL)
+  })
+
+  // ── #224: cost-tracking — a linha do ledger grava tokens + modelo + cost_usd snapshot ─────────
+  describe('#224 cost-tracking (ADR-0022 dec.4)', () => {
+    it('a geração grava model + tokens + cost_usd (do usageMetadata canned do Fake) no ledger', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'custo@gen.test' })
+      const id = await seedOwned(userId)
+
+      expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
+
+      const row = await genLedgerRow(userId)
+      expect(row).not.toBeNull()
+      // Modelo = o da config (o Fake não força modelo no canned ⇒ cai no genConfig.model).
+      expect(row!.model).toBe(DEFAULT_IMAGE_MODEL)
+      // Tokens espelham o usageMetadata canned do Fake.
+      expect(row!.promptTokens).toBe(FAKE_IMAGE_USAGE.promptTokens)
+      expect(row!.outputTokens).toBe(FAKE_IMAGE_USAGE.outputTokens)
+      expect(row!.thinkingTokens).toBe(FAKE_IMAGE_USAGE.thinkingTokens)
+      expect(row!.totalTokens).toBe(FAKE_IMAGE_USAGE.totalTokens)
+      // cost_usd = computeImageCost do usage canned (numeric trafega como string).
+      const expected = computeImageCost(FAKE_IMAGE_USAGE, DEFAULT_IMAGE_MODEL)!
+      expect(row!.costUsd).not.toBeNull()
+      expect(Number(row!.costUsd)).toBeCloseTo(expected, 6)
+    })
+
+    it('usageMetadata AUSENTE (telemetria indisponível) ⇒ linha gravada com tokens/custo NULOS', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'semtelem@gen.test' })
+      const id = await seedOwned(userId)
+      // Fake SEM usageMetadata (caminho ao vivo sem telemetria): a geração NÃO pode falhar.
+      setImageGenerator(new FakeImageGenerator({ data: Buffer.from([9, 9]), contentType: 'image/png' }))
+
+      expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
+
+      const row = await genLedgerRow(userId)
+      expect(row).not.toBeNull()
+      // O modelo (da config) é gravado mesmo sem usage; tokens/custo ficam nulos (best-effort honesto).
+      expect(row!.model).toBe(DEFAULT_IMAGE_MODEL)
+      expect(row!.promptTokens).toBeNull()
+      expect(row!.outputTokens).toBeNull()
+      expect(row!.thinkingTokens).toBeNull()
+      expect(row!.totalTokens).toBeNull()
+      expect(row!.costUsd).toBeNull()
+      // O teto segue contando o EVENTO (por contagem, #167) mesmo sem custo.
+      expect(await countGenEvents(userId)).toBe(1)
+    })
+
+    it('re-selecionar uma imagem da galeria NÃO grava nova linha no ledger (não chama IA)', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'reselect@gen.test' })
+      const id = await seedOwned(userId)
+
+      const gen1 = (await (await POST(genReq(id, headers), ctx(id))).json()) as { image: { id: string } }
+      expect(await countGenEvents(userId)).toBe(1) // 1 geração ⇒ 1 linha
+
+      // Selecionar a imagem gerada como face — custo ZERO (sem IA ⇒ sem ledger).
+      const selRes = await selectRoute(
+        new Request(`http://localhost/api/recipes/${id}/images/${gen1.image.id}/select`, {
+          method: 'POST',
+          headers,
+        }),
+        { params: Promise.resolve({ id, imageId: gen1.image.id }) },
+      )
+      expect(selRes.status).toBe(200)
+      expect(await countGenEvents(userId)).toBe(1) // re-selecionar NÃO adicionou linha
+    })
   })
 })
