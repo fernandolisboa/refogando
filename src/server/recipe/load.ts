@@ -236,14 +236,14 @@ export async function loadSocialState(
 }
 
 /**
- * Resolve o SLUG canônico de uma Receita por (uuid, locale) — para o **301** do link legado
- * `/{locale}/recipes/<uuid>` → `/{locale}/recipes/<slug>` (#230, ADR-0020 decisão 4).
+ * Resolve o SLUG de uma Receita por (uuid, locale), SEM aplicar o gate de leitura pública.
  *
  * Casa a tradução do `locale` daquele `recipeId` e devolve seu `slug` (ou `null` quando a
  * Receita não existe, não tem tradução NAQUELE locale, ou a tradução ainda não ganhou slug —
- * coluna nullable durante o backfill). NÃO aplica o gate de leitura pública: o 301 é
- * canonicalização de URL, independente de visibilidade — quem decide se a página renderiza é
- * a leitura pelo slug (gate) ou o caminho do dono. NÃO lê cookie/sessão.
+ * coluna nullable durante o backfill). NÃO lê cookie/sessão. Útil onde a visibilidade não
+ * importa (ex.: o LocaleSwitcher do dono montando a URL irmã da própria receita). NÃO usar para
+ * o 301 anônimo do link legado — esse precisa do gate (`resolvePublicSlugForLocale`), senão
+ * vaza a existência + o slug derivado do título de uma Receita PRIVADA.
  */
 export async function resolveSlugForLocale(
   db: Database,
@@ -256,6 +256,71 @@ export async function resolveSlugForLocale(
     .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)))
     .limit(1)
   return row?.slug ?? null
+}
+
+/**
+ * Resolve o UUID interno de uma Receita por (locale, slug) SEM aplicar o gate público — usado SÓ
+ * no caminho do DONO da página de detalhe (caminho 2), onde a Receita pode ser privada e o link
+ * interno do dono já usa o slug. Devolve o `recipeId` (chave da API de dados) ou `null` quando não
+ * há tradução com aquele (locale, slug). NÃO lê cookie/sessão (o gate de ownership é da rota de API
+ * que o caller bate em seguida). NÃO usar no caminho público (esse passa pelo gate via
+ * `loadPublicRecipeBySlug`).
+ */
+export async function resolveRecipeIdBySlug(
+  db: Database,
+  slug: string,
+  locale: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ recipeId: recipeTranslation.recipeId })
+    .from(recipeTranslation)
+    .where(and(eq(recipeTranslation.locale, locale), eq(recipeTranslation.slug, slug)))
+    .limit(1)
+  return row?.recipeId ?? null
+}
+
+/**
+ * Resolve o slug PÚBLICO de uma Receita por (uuid, locale) — para o **301** ANÔNIMO do link
+ * legado `/{locale}/recipes/<uuid>` → `/{locale}/recipes/<slug>` (#230, ADR-0020 decisão 4),
+ * emitido no proxy. APLICA o gate de leitura pública (= gate de indexação): devolve o slug SÓ
+ * quando a Receita é leitura pública (comunidade/Catálogo E não-`playful` E não-removida) E tem
+ * slug naquele locale; senão `null`.
+ *
+ * Gatear aqui é LEAK-SAFE e por design: um anônimo pedindo o UUID de uma Receita PRIVADA/playful/
+ * removida NÃO recebe um 301 que revele o slug (derivado do título) nem a existência — o proxy,
+ * ao receber `null`, deixa a requisição seguir para a página, que cai no caminho do DONO (cookie,
+ * 404 leak-safe a quem não é dono). Assim o 301 público e o caminho do dono concordam com o gate
+ * do GET por uuid. NÃO lê cookie/sessão.
+ */
+export async function resolvePublicSlugForLocale(
+  db: Database,
+  recipeId: string,
+  locale: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({
+      slug: recipeTranslation.slug,
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      resultKind: recipe.resultKind,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+    })
+    .from(recipeTranslation)
+    .innerJoin(recipe, eq(recipeTranslation.recipeId, recipe.id))
+    .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)))
+    .limit(1)
+  if (!row || row.slug == null) return null
+  if (
+    !eligibleForPublicRead({
+      ownerId: row.ownerId,
+      visibility: row.visibility,
+      resultKind: row.resultKind,
+      moderationRemovedAt: row.moderationRemovedAt,
+    })
+  ) {
+    return null
+  }
+  return row.slug
 }
 
 /**
@@ -286,6 +351,7 @@ export async function loadPublicRecipeBySlug(
   const [gate] = await db
     .select({
       recipeId: recipe.id,
+      ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
@@ -297,10 +363,12 @@ export async function loadPublicRecipeBySlug(
   if (!gate) return null
 
   // 2. Gate de leitura PÚBLICA = gate de indexação (ADR-0020 decisão 6). Reprovou ⇒ não é
-  //    leitura pública (privada/playful/removida): `null` leak-safe (o dono lê pelo caminho
-  //    dinâmico-com-cookie, não por aqui).
+  //    leitura pública (privada-não-catálogo/playful/removida): `null` leak-safe (o dono lê pelo
+  //    caminho dinâmico-com-cookie, não por aqui). O eixo de comunidade (owner-NULL = Catálogo)
+  //    casa o GET por uuid, então slug e uuid concordam sobre o que é público.
   if (
     !eligibleForPublicRead({
+      ownerId: gate.ownerId,
       visibility: gate.visibility,
       resultKind: gate.resultKind,
       moderationRemovedAt: gate.moderationRemovedAt,

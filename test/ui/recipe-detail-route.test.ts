@@ -3,14 +3,17 @@ import {
   isUuidParam,
   decideRecipeDetailRoute,
   recipeDetailPath,
+  parseLegacyUuidDetailPath,
   eligibleForPublicRead,
+  LEGACY_UUID_REDIRECT_STATUS,
 } from '@/domain/recipe-detail-route'
 
 /**
  * Lógica PURA da rota de detalhe por slug (#230, ADR-0020) — sem DB, sem React, sem `next/*`.
- * Cobre a DECISÃO de forma (uuid legado → 301 vs slug → render) e o predicado PURO do gate de
- * leitura pública (= gate de indexação default-open). O comportamento de DB de
- * `loadPublicRecipeBySlug` (casar (locale, slug), filtrar pelo gate) é coberto na integração (CI).
+ * Cobre a DECISÃO de forma (uuid legado → caminho do dono vs slug → render), o PARSER do path
+ * legado que alimenta o 301 do proxy, e o predicado PURO do gate de leitura pública (= gate de
+ * indexação default-open). O comportamento de DB de `loadPublicRecipeBySlug`/`resolvePublicSlug`
+ * (casar (locale, slug), filtrar pelo gate) é coberto na integração (CI).
  *
  * Roda no projeto "ui" (jsdom, sem Postgres) por importar só domínio puro.
  */
@@ -30,10 +33,10 @@ describe('isUuidParam (param da rota tem forma de UUID?)', () => {
   })
 })
 
-describe('decideRecipeDetailRoute (uuid → redirect-uuid; senão → slug)', () => {
-  it('UUID legado ⇒ redirect-uuid carregando o uuid (resolver slug + 301)', () => {
+describe('decideRecipeDetailRoute (uuid → owner-uuid; senão → slug)', () => {
+  it('UUID legado ⇒ owner-uuid carregando o uuid (caminho do dono; o 301 público é do proxy)', () => {
     expect(decideRecipeDetailRoute('11111111-2222-3333-4444-555555555555')).toEqual({
-      kind: 'redirect-uuid',
+      kind: 'owner-uuid',
       uuid: '11111111-2222-3333-4444-555555555555',
     })
   })
@@ -53,15 +56,73 @@ describe('recipeDetailPath (URL canônica de detalhe)', () => {
   })
 })
 
-describe('eligibleForPublicRead (gate de leitura pública = gate de indexação)', () => {
-  const base = { visibility: 'public', resultKind: 'success', moderationRemovedAt: null as Date | null }
+describe('parseLegacyUuidDetailPath (alimenta o 301 do proxy UUID→slug)', () => {
+  const uuid = '11111111-2222-3333-4444-555555555555'
 
-  it('pública + não-playful + não-removida ⇒ legível/indexável', () => {
+  it('casa /{locale}/recipes/<uuid> com locale canônico', () => {
+    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}`)).toEqual({ locale: 'pt-BR', uuid })
+    expect(parseLegacyUuidDetailPath(`/en-US/recipes/${uuid}`)).toEqual({ locale: 'en-US', uuid })
+  })
+
+  it('tolera barra final', () => {
+    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}/`)).toEqual({ locale: 'pt-BR', uuid })
+  })
+
+  it('NÃO casa quando o 3º segmento é um SLUG (não-uuid)', () => {
+    expect(parseLegacyUuidDetailPath('/pt-BR/recipes/bolo-de-cenoura')).toBeNull()
+  })
+
+  it('NÃO casa locale com case errado (o proxy normaliza o case ANTES, num 301 separado)', () => {
+    expect(parseLegacyUuidDetailPath(`/pt-br/recipes/${uuid}`)).toBeNull()
+  })
+
+  it('NÃO casa locale ausente, outra rota, ou sub-rota', () => {
+    expect(parseLegacyUuidDetailPath(`/recipes/${uuid}`)).toBeNull() // sem locale
+    expect(parseLegacyUuidDetailPath(`/pt-BR/me/recipes/${uuid}`)).toBeNull() // outra rota
+    expect(parseLegacyUuidDetailPath(`/pt-BR/recipes/${uuid}/edit`)).toBeNull() // sub-rota
+    expect(parseLegacyUuidDetailPath('/pt-BR/recipes')).toBeNull() // sem id
+  })
+})
+
+describe('LEGACY_UUID_REDIRECT_STATUS', () => {
+  it('é 301 (permanente) — a canonicalização UUID→slug do ADR-0020 decisão 4', () => {
+    expect(LEGACY_UUID_REDIRECT_STATUS).toBe(301)
+  })
+})
+
+describe('eligibleForPublicRead (gate de leitura pública = gate de indexação)', () => {
+  const base = {
+    ownerId: 'u1' as string | null,
+    visibility: 'public',
+    resultKind: 'success',
+    moderationRemovedAt: null as Date | null,
+  }
+
+  it('comunidade (dono + pública) + não-playful + não-removida ⇒ legível/indexável', () => {
     expect(eligibleForPublicRead(base)).toBe(true)
   })
 
-  it('privada ⇒ NÃO legível publicamente (cai no caminho do dono)', () => {
+  it('Receita com dono + privada ⇒ NÃO legível publicamente (cai no caminho do dono)', () => {
     expect(eligibleForPublicRead({ ...base, visibility: 'private' })).toBe(false)
+  })
+
+  it('Catálogo (ownerId NULL) + visibility=private ⇒ LEGÍVEL/indexável (eixo de comunidade)', () => {
+    // Carga de propósito: o Catálogo nasce visibility=private + ownerId NULL (createCatalogRecipe);
+    // o eixo owner-NULL abre a leitura (igual ao GET por uuid via isCommunityVisible), senão o
+    // Catálogo inteiro cairia do índice/da leitura por slug (contra a exceção editorial do ADR).
+    expect(eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private' })).toBe(true)
+  })
+
+  it('Catálogo (ownerId NULL) playful ⇒ NÃO legível (playful sempre fora, mesmo no Catálogo)', () => {
+    expect(
+      eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private', resultKind: 'playful' }),
+    ).toBe(false)
+  })
+
+  it('Catálogo (ownerId NULL) removido pela moderação ⇒ NÃO legível', () => {
+    expect(
+      eligibleForPublicRead({ ...base, ownerId: null, moderationRemovedAt: new Date() }),
+    ).toBe(false)
   })
 
   it('playful ⇒ NÃO legível publicamente (mesmo que marcada public por bug)', () => {

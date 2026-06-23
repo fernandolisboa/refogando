@@ -1,7 +1,7 @@
 /**
  * Página de detalhe da Receita (#57, #230) — Server Component. URL canônica = SLUG per-locale
- * (`/{locale}/recipes/<slug>`, ADR-0020 decisão 4); o UUID legado é PERMANENT-redirecionado pro
- * slug. O segmento dinâmico `[id]` carrega OU um slug OU (links antigos) o UUID interno.
+ * (`/{locale}/recipes/<slug>`, ADR-0020 decisão 4). O segmento dinâmico `[id]` carrega OU um slug
+ * OU (links antigos / bookmark do dono) o UUID interno.
  *
  * DOIS caminhos de leitura, deliberadamente separados (ADR-0020 — "leitura indexável anônima e
  * cacheável, separada da leitura do dono"):
@@ -9,24 +9,26 @@
  *  1. PÚBLICO/INDEXÁVEL (slug): `loadPublicRecipeBySlug` lê do DB DIRETO, ANÔNIMO e CACHEÁVEL —
  *     SEM cookie/sessão, SEM self-fetch com `no-store`, SEM forçar render dinâmico, SEM
  *     personalizar pro crawler. Aplica o gate de leitura pública (= gate de indexação default-open:
- *     pública E não-`playful` E não-removida). Achou ⇒ renderiza a view só-leitura e termina SEM
- *     tocar cookies (a rota fica estaticamente renderizável/cacheável). É o caminho quente do
- *     Google e de qualquer anônimo. `RecipeDetailActions` é client component (`useSession`) ⇒ a
- *     afordância "Criar minha versão"/convite resolve no cliente sem cookie no servidor.
+ *     comunidade/Catálogo E não-`playful` E não-removida). Achou ⇒ renderiza a view só-leitura e
+ *     termina SEM tocar cookies (a rota fica estaticamente renderizável/cacheável). É o caminho
+ *     quente do Google e de qualquer anônimo. `RecipeDetailActions` é client component
+ *     (`useSession`) ⇒ a afordância "Criar minha versão"/convite resolve no cliente sem cookie.
  *
- *  2. DONO (privado/dinâmico): só quando o caminho 1 devolve `null` (Receita privada/playful/
- *     removida OU slug inexistente) caímos no caminho do dono — `?original` legado + self-fetch
+ *  2. DONO (privado/dinâmico): quando o caminho 1 devolve `null` (Receita privada/playful/removida
+ *     OU slug inexistente), OU quando o `[id]` é um UUID legado que o proxy NÃO 301-ou (= a
+ *     Receita não é leitura pública), caímos no caminho do dono — `?original` legado + self-fetch
  *     `/api/recipes/[id]` com cookie de sessão (a rota reimpõe ownership e devolve 404 leak-safe a
  *     quem não é dono). Esse caminho é dinâmico por natureza (lê cookie) e PRESERVA o fluxo de
  *     leitura+edição do dono do rework Criar/Editar — mas NÃO contamina o caminho 1.
  *
- * UUID legado ⇒ `resolveSlugForLocale` acha o slug do locale e dá **permanentRedirect** (308 no
- * Next — o redirect PERMANENTE idiomático de Server Component; consolida link equity como o 301 do
- * ADR, já que o framework não emite 301 literal aqui). Sem slug naquele locale ⇒ 404 leak-safe.
+ * Canonicalização UUID→slug (301): NÃO mora aqui. O **proxy** (nodejs) resolve o slug PÚBLICO do
+ * locale e dá um **301 LITERAL** ANTES da página (ADR-0020 decisão 4) — só para UUIDs de leitura
+ * pública. Um UUID que AINDA chega nesta página é, por construção, NÃO-público (privado/playful/
+ * removido/sem-slug): tratado pelo caminho do dono (2), nunca 301-ado aqui (não vaza slug nem
+ * existência de Receita privada — must-fix de revisão).
  */
-import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
-import { notFound, permanentRedirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
@@ -34,14 +36,17 @@ import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
 import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
-import { recipeTranslation } from '@/db/schema'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
-import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
+import { decideRecipeDetailRoute } from '@/domain/recipe-detail-route'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
-import { loadPublicRecipeBySlug, loadSocialState, resolveSlugForLocale } from '@/server/recipe/load'
+import {
+  loadPublicRecipeBySlug,
+  loadSocialState,
+  resolveRecipeIdBySlug,
+} from '@/server/recipe/load'
 import { getBaseUrl } from '@/server/http/base-url'
 import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
@@ -60,53 +65,56 @@ export default async function RecipeDetailPage({
   // entram como rede de segurança no caminho do dono (que já é dinâmico).
   const locale = resolvePageLocale({ urlLocale: pathLocale })
 
-  // Decisão PURA de forma do param: UUID legado (resolver slug + 308) vs slug (renderizar público).
+  // Decisão PURA de forma do param: UUID legado (caminho do dono) vs slug (público + fallback dono).
   const route = decideRecipeDetailRoute(id)
 
-  // ── UUID legado: resolve o slug do locale e PERMANENT-redirect pro canônico ─────────────────
-  if (route.kind === 'redirect-uuid') {
-    const slug = await resolveSlugForLocale(getDb(), route.uuid, locale)
-    // Sem slug naquele locale (Receita inexistente / sem tradução / slug ainda NULL): 404 leak-safe
-    // (não revela existência; espelha a postura do GET por uuid). permanentRedirect NÃO retorna.
-    if (slug == null) notFound()
-    permanentRedirect(recipeDetailPath(locale, slug))
-  }
-
   // ── PÚBLICO por slug: leitura ANÔNIMA e CACHEÁVEL via DB direto (NÃO toca cookie/sessão) ─────
-  const publicRows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
-  if (publicRows != null) {
-    // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
-    // dinâmico). `viewerVoted`/`viewerFavorited` ficam AUSENTES (anônimo) — o estado do viewer é
-    // resolvido no cliente pelos controles quando logado. Mantém a rota cacheável.
-    const social = await loadSocialState(getDb(), { id: publicRows.recipe.id, includeVoteCount: true })
-    const view = resolveRecipeView({
-      recipe: publicRows.recipe,
-      translations: publicRows.translations,
-      ingredients: publicRows.ingredients,
-      tags: publicRows.tags,
-      requestLocale: locale,
-      voteCount: social.voteCount,
-      ...(publicRows.author ? { author: publicRows.author } : {}),
-      ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
-      ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
-      ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
-    })
-    return <DetailChrome view={view} locale={locale} reviewImage={false} />
+  // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 301-ado pelo proxy, então um
+  // UUID que chega aqui é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
+  if (route.kind === 'slug') {
+    const publicRows = await loadPublicRecipeBySlug(getDb(), route.slug, locale)
+    if (publicRows != null) {
+      // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
+      // dinâmico). `viewerVoted`/`viewerFavorited` ficam AUSENTES (anônimo) — o estado do viewer é
+      // resolvido no cliente pelos controles quando logado. Mantém a rota cacheável.
+      const social = await loadSocialState(getDb(), {
+        id: publicRows.recipe.id,
+        includeVoteCount: true,
+      })
+      const view = resolveRecipeView({
+        recipe: publicRows.recipe,
+        translations: publicRows.translations,
+        ingredients: publicRows.ingredients,
+        tags: publicRows.tags,
+        requestLocale: locale,
+        voteCount: social.voteCount,
+        ...(publicRows.author ? { author: publicRows.author } : {}),
+        ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
+        ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
+        ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
+      })
+      return <DetailChrome view={view} locale={locale} reviewImage={false} />
+    }
   }
 
-  // ── DONO/privado: caminho DINÂMICO (cookie). Só chega aqui quando a leitura pública deu null
-  //    (privada/playful/removida OU slug inexistente). Reusa a rota /api/recipes/[id] que reimpõe
-  //    ownership e devolve 404 leak-safe a quem não é dono — preserva o fluxo leitura+edição do dono.
+  // ── DONO/privado: caminho DINÂMICO (cookie). Chega aqui quando:
+  //    (a) o `[id]` é um SLUG cuja leitura pública deu null (privada/playful/removida/inexistente), OU
+  //    (b) o `[id]` é um UUID legado que o proxy NÃO 301-ou (= não é leitura pública).
+  //    Reusa a rota /api/recipes/[id] que reimpõe ownership e devolve 404 leak-safe a quem não é
+  //    dono — preserva o fluxo leitura+edição do dono. NUNCA redireciona nem revela slug aqui.
   const sp = await searchParams
   // `headers()` (lido para encaminhar o cookie de sessão abaixo) já marca ESTE branch como
   // DINÂMICO (correto — leitura do dono), sem afetar o branch público acima (que retornou sem
   // tocar `headers()`/`cookies()`, ficando estaticamente renderizável/cacheável).
   const headerStore = await headers()
 
-  // No caminho do dono o `[id]` é um SLUG (o link interno do dono já usa o slug). Resolve o UUID
-  // interno (chave da API de dados) achando a Receita pelo slug — INCLUSIVE privada do dono, então
-  // a busca aqui NÃO aplica o gate público. Sem casamento ⇒ 404 leak-safe.
-  const ownerUuid = await resolveRecipeIdBySlug(route.slug, locale)
+  // Resolve o UUID interno (chave da API de dados): se o `[id]` JÁ é um UUID legado, usa-o direto;
+  // se é um SLUG (link interno do dono), acha a Receita pelo slug — INCLUSIVE privada do dono, então
+  // a busca NÃO aplica o gate público. Sem casamento ⇒ 404 leak-safe.
+  const ownerUuid =
+    route.kind === 'owner-uuid'
+      ? route.uuid
+      : await resolveRecipeIdBySlug(getDb(), route.slug, locale)
   if (ownerUuid == null) notFound()
 
   const contentLocale = resolveContentLocale({ pageLocale: locale, original: sp.original })
@@ -128,19 +136,6 @@ export default async function RecipeDetailPage({
 
   const view = (await res.json()) as RecipeView
   return <DetailChrome view={view} locale={locale} reviewImage={sp.reviewImage === '1'} />
-}
-
-/**
- * Resolve o UUID interno de uma Receita por (locale, slug) SEM aplicar o gate público — usado SÓ
- * no caminho do dono (caminho 2), onde a Receita pode ser privada. Privado à page.
- */
-async function resolveRecipeIdBySlug(slug: string, locale: string): Promise<string | null> {
-  const [row] = await getDb()
-    .select({ recipeId: recipeTranslation.recipeId })
-    .from(recipeTranslation)
-    .where(and(eq(recipeTranslation.locale, locale), eq(recipeTranslation.slug, slug)))
-    .limit(1)
-  return row?.recipeId ?? null
 }
 
 /**
