@@ -47,6 +47,16 @@ describe('isRefinedHomeParams — repouso (indexável) vs refinado (noindex)', (
     expect(isRefinedHomeParams({ sort: 'popularidade' })).toBe(true)
   })
 
+  it('GUARDIÃO-DE-DRIFT: `match` (modo any/all do /api/search, #9) conta como refino ⇒ noindex', () => {
+    // `match` ainda não é refletido na URL pela home, mas o /api/search o aceita. Se algum dia
+    // for refletido, esse estado refinado tem de cair em noindex automaticamente — este teste trava
+    // `match` dentro de REFINEMENT_PARAM_KEYS pra o gate de índice nunca ficar atrás do que a Busca aceita.
+    expect(isRefinedHomeParams({ match: 'all' })).toBe(true)
+    expect(isRefinedHomeParams({ match: 'any' })).toBe(true)
+    // Vazio segue sendo repouso (mesma regra dos outros params).
+    expect(isRefinedHomeParams({ match: '' })).toBe(false)
+  })
+
   it('param presente porém VAZIO (?q=) NÃO conta como refino (repouso)', () => {
     expect(isRefinedHomeParams({ q: '' })).toBe(false)
     expect(isRefinedHomeParams({ q: '   ' })).toBe(false)

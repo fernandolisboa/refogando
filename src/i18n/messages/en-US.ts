@@ -9,7 +9,8 @@ export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
   nav: {
     home: 'Home',
-    recipes: 'Recipes',
+    // #236: the old "Recipes" entry (feed index) merged into the home (Discovery IS the home);
+    // key removed as orphaned.
     create: 'Create',
     painel: 'Dashboard',
     signIn: 'Sign in',
@@ -119,13 +120,11 @@ export const enUS: Messages = {
     importarConviteTitulo: 'Sign in to import',
     importarConviteTexto: 'Create an account or sign in to import recipes from the web to your profile.',
   },
-  // Feed /recipes (#103), mesma substância traduzida (ADR-0001, não byte-idêntica). Reusa
-  // `busca.*` para o chrome compartilhado; só os textos próprios do feed vivem aqui.
+  // Feed da Descoberta-home (#103/#236), mesma substância traduzida (ADR-0001). Reusa `busca.*`
+  // para o chrome compartilhado; só os textos próprios do feed vivem aqui. `titulo`/`subtituloLogado`
+  // saíram com a fusão (#236): o `<h1>` é o da Busca e o feed de repouso é sempre o pool público anônimo.
   feed: {
-    titulo: 'Recipes',
     subtitulo: 'What the community is cooking up, newest first.',
-    // #116: signed-in users also see their OWN recipes (private ones included) in the feed.
-    subtituloLogado: 'Your recipes and what the community is cooking up, newest first.',
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
     fim: "You've reached the end.",

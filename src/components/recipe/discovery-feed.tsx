@@ -51,8 +51,13 @@ export function DiscoveryFeed({
   const ownLabel = m.seloMinha
 
   // Carrega a PRÓXIMA página (append). A 1ª já veio seeded — só páginas seguintes batem o /api/feed.
-  // ANÔNIMO de propósito (NÃO manda credenciais): o feed de repouso é o pool PÚBLICO, igual ao SSR —
-  // não personaliza por sessão (manteria a paginação coerente com a 1ª página indexável).
+  // ANÔNIMO de propósito (`credentials: 'omit'` ⇒ NÃO manda o cookie de sessão): a página 1 é o pool
+  // público SSR (viewerId undefined); SEM `omit`, o fetch mandaria o cookie por padrão e o /api/feed
+  // (auth-OPCIONAL, sem 401) resolveria o `viewerId` do LOGADO — daí as páginas 2+ passariam a incluir
+  // as PRÓPRIAS PRIVADAS do usuário no meio do stream, contradizendo o contrato "anônimo, igual à
+  // página 1 indexável" e quebrando a coerência de keyset na fronteira de página. Com `omit`, toda a
+  // paginação bate com o SSR anônimo (pool público puro). A personalização do logado vive na superfície
+  // PESSOAL ("Minhas criações"), nunca na Descoberta-home.
   const loadMore = useCallback(() => {
     const cursor = cursorRef.current
     if (loadingMore || cursor === null) return
@@ -68,7 +73,7 @@ export function DiscoveryFeed({
     setLoadMoreError(false)
     void (async () => {
       try {
-        const res = await fetch(url, { signal: controller.signal })
+        const res = await fetch(url, { signal: controller.signal, credentials: 'omit' })
         if (!res.ok) {
           setLoadMoreError(true)
           setLoadingMore(false)

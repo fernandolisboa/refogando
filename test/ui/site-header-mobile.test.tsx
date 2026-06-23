@@ -98,8 +98,9 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     const dialog = await screen.findByRole('dialog')
 
     expect(within(dialog).getByRole('link', { name: ptBR.nav.home })).toBeInTheDocument()
-    // #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta) no nav.
-    expect(within(dialog).queryByRole('link', { name: ptBR.nav.recipes })).toBeNull()
+    // #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta) no nav. A chave
+    // i18n `nav.recipes` foi removida; asseguramos a ausência pelo rótulo LITERAL de antes.
+    expect(within(dialog).queryByRole('link', { name: 'Receitas' })).toBeNull()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
     expect(within(dialog).getByRole('button', { name: ptBR.nav.create })).toBeInTheDocument()
     expect(within(dialog).queryByRole('link', { name: ptBR.nav.create })).toBeNull()

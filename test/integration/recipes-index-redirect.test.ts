@@ -45,4 +45,14 @@ describe('/{locale}/recipes (índice) → permanentRedirect pra home /{locale} (
     const { to } = await run('en-US')
     expect(to).toBe('/en-US')
   })
+
+  it('GUARD: o ÍNDICE e o DETALHE são módulos DISTINTOS (a fusão só toca o índice)', async () => {
+    // O detalhe `/{locale}/recipes/[id]` é rota IRMÃ e NÃO pode redirecionar — só o índice fundiu.
+    // Provamos que são default-exports de módulos diferentes (a fusão não desviou o detalhe por engano).
+    const detail = await import('@/app/[locale]/recipes/[id]/page')
+    expect(detail.default).not.toBe(RecipesIndex)
+    expect(typeof detail.default).toBe('function')
+    // O detalhe expõe `generateMetadata` (SEO da Receita); o índice é só um redirect.
+    expect(typeof detail.generateMetadata).toBe('function')
+  })
 })

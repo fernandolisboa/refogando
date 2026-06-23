@@ -24,12 +24,15 @@ import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 const BRAND_OG_IMAGE_PATH = '/opengraph-image.png'
 
 /**
- * Os parâmetros de busca/filtro que, presentes, marcam a home como REFINADA (= `noindex`). É a MESMA
- * lista que `SearchExperience` reflete na URL ao buscar/filtrar (`q` + as três facetas + `sort`): o
- * estado de repouso indexável é o SEM nenhum deles. Centralizado aqui pra a página e o cliente nunca
- * divergirem sobre "o que conta como refino".
+ * Os parâmetros de busca/filtro que, presentes, marcam a home como REFINADA (= `noindex`). Cobre os que
+ * `SearchExperience` reflete na URL ao buscar/filtrar (`q` + as três facetas + `sort`) E `match` (modo
+ * any/all da Busca por ingrediente, #9, aceito pelo `/api/search`): o estado de repouso indexável é o
+ * SEM nenhum deles. `match` ainda NÃO é refletido na URL pela home hoje (inócuo no presente), mas entra
+ * aqui de PROPÓSITO como blindagem-de-drift: se algum dia a Busca refletir `match`, esse estado refinado
+ * já cai em `noindex` automaticamente (o gate de índice nunca fica para trás do que o /api/search aceita).
+ * Centralizado pra a página e o cliente nunca divergirem sobre "o que conta como refino".
  */
-export const REFINEMENT_PARAM_KEYS = ['q', 'cozinha', 'categoria', 'restricao', 'sort'] as const
+export const REFINEMENT_PARAM_KEYS = ['q', 'cozinha', 'categoria', 'restricao', 'sort', 'match'] as const
 
 /**
  * Forma crua de `searchParams` do Next 16: cada chave é `string | string[] | undefined` (multivalor
