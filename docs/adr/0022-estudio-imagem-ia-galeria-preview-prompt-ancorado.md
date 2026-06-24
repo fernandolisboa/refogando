@@ -41,3 +41,27 @@ A geração de imagem por IA evolui de **"uma imagem corrente, gera-e-aplica, de
 - **UI:** "Gerar com IA" abre o **modal de preview**; nele um botão menos-destacado mostra o **prompt-base read-only** + campo de refino; a galeria lista as imagens com **selecionar/apagar** e o selo "gerada por IA"; o cap #167 e a mensagem amigável valem; preview não troca a face até "Usar esta".
 - **Curador:** nova fila/visão das gerações **refinadas** (`review_required`) + a ação **"bloquear geração de imagem por IA deste usuário"**.
 - **Follow-ups:** validação de saída por visão; cap por orçamento de tokens + painel de custo; a escada completa de restrições de conta (ADR-0007); cap de quantidade da galeria (UX).
+
+## Atualização (image-to-image: editar a partir de outra imagem)
+
+Evolução pedida pelo Owner: além de **gerar do zero**, **editar a partir de uma imagem existente** — selecionar uma imagem da Galeria como **imagem-base**, escrever um **refino** (que aqui é **instrução de edição**) e gerar uma **variante editada**. O modelo Flash Image (`generateContent` multimodal) já suporta entrada imagem+texto; o seam é que era texto-puro. Decisões:
+
+1. **Edição ANCORADA na receita (não edição livre).** A imagem-base vira **tela de partida**, mas o servidor **continua afirmando o prato como sujeito** — mantém o anti-abuso da dec.2: compõe um template do tipo *"esta é uma foto de `<prato>`; aplique apenas este ajuste, mantendo uma foto realista do prato: `<refino>`"*. O refino é instrução de edição, **nunca** substitui o prato — a contenção do resíduo é a **mesma** de hoje (`review_required` + moderação + privado + cap), **sem gate novo**. *Rejeitado: edição livre (imagem-base como único sujeito) — reabriria o vetor "anime do Goku" que a dec.2 fechou de propósito.*
+
+2. **Parentesco por-imagem: `source_image_id`.** A imagem editada grava um **ponteiro nullable** pra imagem-base (`source_image_id`, auto-FK em `recipe_image`) — **primeira relação imagem→imagem** do modelo (a galeria segue agrupando por `lineage_id`; isto é parentesco **fino dentro** da linhagem). Só se paga porque é **surfado** (o affordance "editada de" + o selo da dec.3). *Proveniência impossível de reconstruir depois ⇒ capturar na criação; sem surface, não gravaria.*
+
+3. **Selo distinto "Editada com IA" (derivado, sem coluna nova).** `source_image_id IS NULL` ⇒ **"✨ Gerada por IA"** (do zero); `source_image_id IS NOT NULL` ⇒ **"✨ Editada com IA"**. Ambos **obrigatórios in-app** e ambos **omitidos no OG/social card** (mesma exceção do ADR-0020). A divulgação da intervenção de IA é garantida pela **saída**: a variante é **sempre `ai_generated`** — mesmo editando uma **foto real** (`user_photo`) como base, a saída leva o selo (nada de "lavar" IA como foto real).
+
+4. **Fonte = qualquer imagem da Galeria, inclusive moderada.** Editar a partir de uma imagem **moderada** (#133) é **permitido**, mas a variante **re-entra na revisão** (`review_required`, automático: toda edição tem refino) — o Curador a vê na fila e, via `source_image_id`, enxerga que **nasceu de uma moderada** (escrutínio extra). *Considerado e rejeitado: bloquear edição de fonte moderada — o Owner preferiu liberar com a rede do review reativo, não fechar o caminho.*
+
+5. **O resto segue o estúdio (sem decisão nova):** a variante nasce **preview** (não auto-selecionada; só vira face no "Usar esta"), **consome o cap** e **escreve o ledger** `image_generation` (mesmo cost-tracking da dec.4), e é **escopada à Galeria do Owner** (linhagem) — não dá pra editar imagem de outro.
+
+**Fronteira (não confundir): editar uma imagem ≠ Receita derivada.** Editar a **imagem** é eixo da **Galeria** (uma `ai_generated` a mais na mesma linhagem); **não** toca a identidade nem a proveniência da **Receita** (não forka, não vira `user_edited`). "Editar a partir de" (imagem) é deliberadamente distinto de "derivar/forkar" (receita).
+
+### Consequências (delta)
+- **Schema (migração — só `db:generate`, migrate-on-deploy):** `recipe_image` ganha `source_image_id uuid NULL` (auto-FK pra `recipe_image`, `ON DELETE SET NULL` — apagar a base não apaga a variante).
+- **Seam `ImageGenerator`:** `generateDishImage` aceita uma **imagem-base opcional** (bytes + contentType) → vira uma `inlineData` part ao lado do texto na chamada Gemini; `composeImagePrompt` ganha a variante "edição" do template. Os fakes de teste acompanham.
+- **Rota:** `POST .../image/generate` aceita um **`sourceImageId`** opcional; o servidor carrega o blob da imagem-base (own-gated, mesma linhagem) e o passa pro seam. `hasRefino`/`review_required` seguem como hoje (edição sempre tem refino).
+- **UI:** na Galeria, cada imagem ganha **"Editar a partir desta"** → abre o campo de refino como **instrução de edição**; o preview do resultado mostra o selo **"Editada com IA"** e o "editada de".
+- **Rollout do selo (dec.3):** a v1 entrega o selo distinto **"Editada com IA"** no **estúdio do Owner** (galeria + preview da edição) — onde o Owner gerencia as variantes. As superfícies **públicas** (detalhe/busca/feed/minhas-criações) mantêm **"Gerada por IA"** por ora (a divulgação **obrigatória de que é IA é preservada**; só a granularidade gerada-vs-editada fica para depois, pra não fiar o `source_image_id` da selecionada por ~5 read-paths, incl. as superfícies SSR-indexáveis). Surfar "Editada com IA" no público é **follow-up**.
+- **Follow-up:** o selo "Editada com IA" nas superfícies públicas (acima); histórico de edição encadeado (a cadeia `source_image_id`); mostrar a imagem-base lado-a-lado no preview.
