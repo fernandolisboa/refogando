@@ -173,6 +173,43 @@ describe('POST /api/recipes/[id]/derive — Receita DERIVADA (#17)', () => {
     expect(await readState(baseId)).toEqual(baseBefore)
   })
 
+  // (a-tempo) #261/ADR-0023: a derivada HERDA o tempo de preparo da base (invariante, fora do
+  // subset de `edits` — igual a porcoes/dificuldade). Sem isso, forkar perderia o tempo silenciosamente.
+  it('(a-tempo) a derivada herda o tempo de preparo da base', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'derive-tempo@ex.com' })
+    const baseId = await seedRecipe({
+      origin: 'catalog',
+      originalLocale: 'pt-BR',
+      ownerId: null,
+      cozinha: 'brasileira',
+      categoria: 'prato_principal',
+      restricoes: ['sem_gluten'],
+      porcoes: 4,
+      dificuldade: 2,
+      tempoAtivoMin: 20,
+      tempoTotalMin: 90,
+    })
+    await seedTranslation({
+      recipeId: baseId,
+      locale: 'pt-BR',
+      titulo: 'Pão de queijo',
+      descricao: 'Salgadinho.',
+      passos: ['Misture.', 'Asse.'],
+      provenance: 'escrita_por_pessoa',
+    })
+    await seedRecipeIngredient({ recipeId: baseId, ordem: 0, rawText: 'polvilho' })
+
+    const res = await derive(baseId, baseEdits, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+
+    const [deriv] = await getDb()
+      .select({ tempoAtivoMin: recipe.tempoAtivoMin, tempoTotalMin: recipe.tempoTotalMin })
+      .from(recipe)
+      .where(eq(recipe.id, recipeId))
+    expect(deriv).toEqual({ tempoAtivoMin: 20, tempoTotalMin: 90 })
+  })
+
   // (a-slug) Slug por idioma (#229, ADR-0020 dec.4): a DERIVADA é uma receita NOVA — cada tradução
   // nascente congela um slug PRÓPRIO do seu título, NÃO copia o slug da base (que tomaria o
   // UNIQUE(locale, slug) da base). Mesmo título ⇒ desambiguação por sufixo, nunca colisão/cópia.

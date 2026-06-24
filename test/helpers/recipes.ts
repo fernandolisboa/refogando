@@ -44,6 +44,8 @@ export async function seedRecipe(input: {
   restricoes?: Restricao[]
   porcoes?: number | null
   dificuldade?: number | null
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
   parentRecipeId?: string | null
   lineageKind?: LineageKind | null
   // Diff DERIVADO congelado (#17): JSONB nullable, settável para semear uma DERIVADA já forkada
@@ -66,6 +68,8 @@ export async function seedRecipe(input: {
       restricoes: input.restricoes,
       porcoes: input.porcoes ?? null,
       dificuldade: input.dificuldade ?? null,
+      tempoAtivoMin: input.tempoAtivoMin ?? null,
+      tempoTotalMin: input.tempoTotalMin ?? null,
       parentRecipeId: input.parentRecipeId ?? null,
       lineageKind: input.lineageKind ?? null,
       derivedDiff: input.derivedDiff ?? null,

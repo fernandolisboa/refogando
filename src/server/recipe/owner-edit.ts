@@ -172,7 +172,8 @@ export async function editOwnRecipe(
   // owner-edit é o único lugar com o par final, então o clamp (ativo > total ⇒ ativo null) aqui
   // garante o CHECK recipe_tempo_consistency_chk mesmo num patch parcial (só uma das facetas). Grava
   // SEMPRE as duas reconciliadas. NÃO entra em changedFields (tempo não é visual ⇒ não sugere revisar
-  // a foto). updated_at é bumpado pelo UPDATE de recipe (recipePatch não-vazio).
+  // a foto). updated_at é bumpado pelo UPDATE de recipe (recipePatch não-vazio). `imgRow` está
+  // GARANTIDO (assertOwnedRecipe já provou a existência/posse da linha acima) — `?.` é só TS.
   if (patch.tempoAtivoMin !== undefined || patch.tempoTotalMin !== undefined) {
     const tempo = conciliarTempoPreparo(
       patch.tempoAtivoMin !== undefined ? patch.tempoAtivoMin : imgRow?.tempoAtivoMin,
