@@ -44,6 +44,8 @@ type PatchBody = {
   restricoes?: string[]
   porcoes?: number | null
   dificuldade?: number | null
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
   ingredientes?: { rawText: string | null; quantidade: string | null; unidade?: string | null }[]
 }
 
@@ -89,6 +91,16 @@ async function readUpdatedAt(id: string): Promise<Date> {
     .from(recipe)
     .where(eq(recipe.id, id))
   return row.updatedAt
+}
+
+async function readTempo(
+  id: string,
+): Promise<{ tempoAtivoMin: number | null; tempoTotalMin: number | null }> {
+  const [row] = await getDb()
+    .select({ tempoAtivoMin: recipe.tempoAtivoMin, tempoTotalMin: recipe.tempoTotalMin })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  return row
 }
 
 async function readIngredientsRaw(id: string): Promise<{ ordem: number; rawText: string | null }[]> {
@@ -143,6 +155,41 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     expect(view.id).toBe(id)
     expect(view.name).toContain('Pão de queijo turbinado')
     expect(view.porcoes).toBe(6)
+  })
+
+  // (a2) tempo de preparo (#261, ADR-0023): grava ambos; clamp ativo>total; limpa; GET reflete.
+  it('(a2) tempo: grava ativo+total; clamp ativo>total descarta o ativo; limpa; GET reflete', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-tempo@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    // grava ambos válidos
+    expect((await patch(id, { tempoAtivoMin: 20, tempoTotalMin: 90 }, headers)).status).toBe(200)
+    expect(await readTempo(id)).toEqual({ tempoAtivoMin: 20, tempoTotalMin: 90 })
+
+    // clamp: ativo > total ⇒ salva descartando o ativo (mantém o total), NÃO invalida (200)
+    expect((await patch(id, { tempoAtivoMin: 200, tempoTotalMin: 120 }, headers)).status).toBe(200)
+    expect(await readTempo(id)).toEqual({ tempoAtivoMin: null, tempoTotalMin: 120 })
+
+    // limpar ambos (null) ⇒ zera
+    expect((await patch(id, { tempoAtivoMin: null, tempoTotalMin: null }, headers)).status).toBe(200)
+    expect(await readTempo(id)).toEqual({ tempoAtivoMin: null, tempoTotalMin: null })
+
+    // o GET reflete o tempo via view
+    await patch(id, { tempoAtivoMin: 15, tempoTotalMin: 60 }, headers)
+    const view = (await (await get(id, headers)).json()) as {
+      tempoAtivoMin: number | null
+      tempoTotalMin: number | null
+    }
+    expect(view.tempoTotalMin).toBe(60)
+    expect(view.tempoAtivoMin).toBe(15)
+  })
+
+  // (a3) tempo: faixa inválida na borda ⇒ 400 (positividade + teto).
+  it('(a3) tempo: faixa inválida (0 ou acima do teto) ⇒ 400 dados_invalidos', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-tempo2@ex.com' })
+    const id = await seedOwnPrivate(userId)
+    expect((await patch(id, { tempoTotalMin: 0 }, headers)).status).toBe(400)
+    expect((await patch(id, { tempoTotalMin: 99999 }, headers)).status).toBe(400)
   })
 
   // (b) editar campo traduzível ⇒ locale fica stale; só invariante ⇒ NÃO stale.

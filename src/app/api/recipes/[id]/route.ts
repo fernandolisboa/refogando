@@ -15,6 +15,7 @@ import {
   isUnidade,
   isPorcoesValidas,
   isDificuldadeValida,
+  isTempoValido,
   type Cozinha,
   type Categoria,
   type Restricao,
@@ -180,6 +181,8 @@ type EditOwnBody = {
   restricoes?: unknown
   porcoes?: unknown
   dificuldade?: unknown
+  tempoAtivoMin?: unknown
+  tempoTotalMin?: unknown
   ingredientes?: unknown
 }
 
@@ -291,6 +294,19 @@ export async function PATCH(
     const v = optionalIntInRange(body.dificuldade, isDificuldadeValida)
     if (v === undefined) return badRequest()
     patch.dificuldade = v
+  }
+  // Tempo de preparo (#261, ADR-0023): valida SÓ a faixa por campo (positividade + teto). A
+  // consistência ativo ≤ total NÃO é rejeitada aqui — é reconciliada no editOwnRecipe sobre o
+  // estado mesclado (conciliarTempoPreparo), política de salvamento uniforme com a geração.
+  if (body.tempoAtivoMin !== undefined) {
+    const v = optionalIntInRange(body.tempoAtivoMin, isTempoValido)
+    if (v === undefined) return badRequest()
+    patch.tempoAtivoMin = v
+  }
+  if (body.tempoTotalMin !== undefined) {
+    const v = optionalIntInRange(body.tempoTotalMin, isTempoValido)
+    if (v === undefined) return badRequest()
+    patch.tempoTotalMin = v
   }
 
   // Ingredientes: reescreve do zero (quantidade string|null; unidade enum|null; rawText string|null).

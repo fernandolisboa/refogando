@@ -142,6 +142,27 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.queryByText('2/5')).toBeNull()
   })
 
+  it('T1c — tempo de preparo (#261): total + ativo presentes → ambos com formato legível', () => {
+    renderView(baseView({ tempoTotalMin: 90, tempoAtivoMin: 20 }))
+    expect(screen.getByText(M.detalhe.tempoTotal)).toBeInTheDocument()
+    expect(screen.getByText('1 h 30 min')).toBeInTheDocument()
+    expect(screen.getByText(M.detalhe.tempoAtivo)).toBeInTheDocument()
+    expect(screen.getByText('20 min')).toBeInTheDocument()
+  })
+
+  it('T1d — só o total presente → mostra total, omite ativo (ativo-sozinho é impossível)', () => {
+    renderView(baseView({ tempoTotalMin: 45, tempoAtivoMin: null }))
+    expect(screen.getByText(M.detalhe.tempoTotal)).toBeInTheDocument()
+    expect(screen.getByText('45 min')).toBeInTheDocument()
+    expect(screen.queryByText(M.detalhe.tempoAtivo)).toBeNull()
+  })
+
+  it('T1e — tempo ausente → nenhum rótulo de tempo', () => {
+    renderView(baseView())
+    expect(screen.queryByText(M.detalhe.tempoTotal)).toBeNull()
+    expect(screen.queryByText(M.detalhe.tempoAtivo)).toBeNull()
+  })
+
   it('T2 — receita com aviso de restrição → banner âmbar, receita inteira preservada', () => {
     renderView(
       baseView({

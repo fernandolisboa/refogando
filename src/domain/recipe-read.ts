@@ -77,6 +77,10 @@ export type RecipeRow = {
   restricoes: string[]
   porcoes: number | null
   dificuldade: number | null
+  // Tempo de preparo (#261, ADR-0023): OPCIONAIS no tipo (mesma razão do ownerId abaixo — o
+  // select().from(recipe) os traz em runtime; opcional poupa as fixtures puras de mudar).
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
   schemaVersion: number
   /**
    * Dono da Receita (#59) — `null` para catálogo/sistema (ADR-0011). OPCIONAL no tipo:
@@ -323,6 +327,10 @@ export type RecipeView = {
   facets: RecipeFacets
   porcoes: number | null
   dificuldade: number | null
+  // Tempo de preparo (#261, ADR-0023): facetas invariantes, OPCIONAIS no tipo (poupa as fixtures de
+  // view nos testes; o detalhe condiciona em `!= null`). ativo-sozinho é impossível (CHECK do DB).
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
   ingredients: ReadonlyArray<IngredientView>
   translations: ReadonlyArray<TranslationFlags>
   /**
@@ -700,6 +708,10 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     facets,
     porcoes: input.recipe.porcoes,
     dificuldade: input.recipe.dificuldade,
+    // Tempo de preparo (#261, ADR-0023): `?? null` coage o undefined das fixtures (campo opcional
+    // no RecipeRow) — em runtime o select().from(recipe) sempre traz o valor (ou NULL do banco).
+    tempoAtivoMin: input.recipe.tempoAtivoMin ?? null,
+    tempoTotalMin: input.recipe.tempoTotalMin ?? null,
     // Projeta SEM `alergenos`: insumo de decisão, não conteúdo da vista (Omit guard).
     ingredients: input.ingredients.map(({ ordem, quantidade, unidade, rawText }) => ({
       ordem,

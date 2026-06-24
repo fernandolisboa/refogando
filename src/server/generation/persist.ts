@@ -14,6 +14,7 @@ import { slugForNewTranslation } from '@/server/recipe/slug'
 import type { ClassifyResult } from '@/domain/generation'
 import type { Strength } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
+import { conciliarTempoPreparo } from '@/domain/tempo'
 
 /**
  * Persistência transacional da geração (issue #8, §6).
@@ -240,6 +241,10 @@ export async function persistGeneration(
 
   // success | degraded | playful: Receita privada + tradução + ingredientes.
   const r = result.recipe
+  // Tempo de preparo (#261, ADR-0023 dec.3): reconcilia o par estimado pela IA — ativo > total
+  // (ou ativo sem total) descarta o ativo e mantém o total, NÃO invalida (tempo é baixo-risco).
+  // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
+  const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
   return getDb().transaction(async (tx) => {
     const [createdRecipe] = await tx
       .insert(recipe)
@@ -254,6 +259,9 @@ export async function persistGeneration(
         restricoes: r.restricoes,
         porcoes: r.porcoes,
         dificuldade: r.dificuldade,
+        // Tempo de preparo (#261, ADR-0023): já reconciliado acima (conciliarTempoPreparo).
+        tempoAtivoMin: tempo.tempoAtivoMin,
+        tempoTotalMin: tempo.tempoTotalMin,
         // #20: linhagem (regenerated) quando presente; ausente → NULL (toda geração legada).
         // `origin` foi HERDADO no caller (PersistOrigin ai_*). `derived_diff` segue NULL —
         // regenerated não carrega diff (só `edited`, em derive.ts). SÓ no INSERT (o trigger

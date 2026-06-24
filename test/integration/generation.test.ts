@@ -100,6 +100,44 @@ async function counts(): Promise<{ recipe: number; session: number; generation: 
 }
 
 describe('POST /api/generations — taxonomia de resultado', () => {
+  it('tempo de preparo (#261, ADR-0023): geração persiste ambos; clamp ativo>total; ausência → NULL', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'tempo@gen.test' })
+
+    // ambos válidos → persiste os dois
+    setClaudeClient(
+      new FakeClaudeClient(undefined, cannedSuccess({ tempoAtivoMin: 20, tempoTotalMin: 90 })),
+    )
+    let recipeId = (
+      (await (await post({ mode: 'structured', briefing: makeBriefing() }, headers)).json()) as {
+        recipeId: string
+      }
+    ).recipeId
+    let [rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
+    expect([rec.tempoAtivoMin, rec.tempoTotalMin]).toEqual([20, 90])
+
+    // a IA estima ativo > total (incoerente) → clamp: descarta o ativo, mantém o total (não invalida)
+    setClaudeClient(
+      new FakeClaudeClient(undefined, cannedSuccess({ tempoAtivoMin: 200, tempoTotalMin: 120 })),
+    )
+    recipeId = (
+      (await (await post({ mode: 'structured', briefing: makeBriefing() }, headers)).json()) as {
+        recipeId: string
+      }
+    ).recipeId
+    ;[rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
+    expect([rec.tempoAtivoMin, rec.tempoTotalMin]).toEqual([null, 120])
+
+    // sem estimativa (default makeReceita não preenche tempo) → NULL nos dois (opcional)
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+    recipeId = (
+      (await (await post({ mode: 'structured', briefing: makeBriefing() }, headers)).json()) as {
+        recipeId: string
+      }
+    ).recipeId
+    ;[rec] = await getDb().select().from(recipe).where(eq(recipe.id, recipeId))
+    expect([rec.tempoAtivoMin, rec.tempoTotalMin]).toEqual([null, null])
+  })
+
   it('SUCCESS (structured) → 201; recipe privada + provenance IA + advisory FORA da recipe', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'ok@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
