@@ -270,6 +270,16 @@ export const recipeImage = pgTable(
     moderatedAt: timestamp('moderated_at', { withTimezone: true }),
     moderatedReason: text('moderated_reason'),
     moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
+    // ── Sinal PROATIVO de revisão (#227, ADR-0022 dec.3) ──────────────────────────
+    // Uma geração-por-IA COM refino (o sufixo de estilo em texto livre do Owner, #223) marca a
+    // imagem resultante `review_required` ⇒ uma fila PROATIVA e NÃO-BLOQUEANTE do Curador surfa as
+    // gerações refinadas. NÃO é um gate de publicação (default-open INTACTO, ADR-0020): a imagem
+    // segue pública/selecionável; o Curador só MONITORA e pode REMOVER (moderar, #133) reativamente
+    // OU DISPENSAR (zera a flag — julgou ok). Geração SEM refino e UPLOAD nascem `false`. A fila
+    // encolhe por remoção (moderated_at setado) OU dispensa (review_required=false). NOT NULL DEFAULT
+    // false: um ADD COLUMN com default constante é metadata-only no Postgres moderno (sem rewrite) —
+    // seguro na tabela populada do prod; linhas existentes ficam false.
+    reviewRequired: boolean('review_required').notNull().default(false),
   },
   (t) => [
     // Consistência (espelha recipe_moderation_consistency_chk): at e by setados JUNTOS ou ambos NULL.
@@ -285,6 +295,12 @@ export const recipeImage = pgTable(
     // Galeria por linhagem (#222, ADR-0022 dec.1): a query é `WHERE lineage_id = X ORDER BY
     // created_at` — o índice composto (lineage_id, created_at) cobre filtro + ordenação.
     index('recipe_image_lineage_idx').on(t.lineageId, t.createdAt),
+    // Fila proativa do Curador (#227): o predicado da fila é `review_required AND moderated_at IS
+    // NULL` (uma imagem já moderada saiu da fila). Índice PARCIAL nesse predicado (ordenado por
+    // created_at, a ordem da fila) — enxuto, espelha os outros índices parciais (a maioria é false).
+    index('recipe_image_review_required_idx')
+      .on(t.createdAt)
+      .where(sql`${t.reviewRequired} AND ${t.moderatedAt} IS NULL`),
   ],
 )
 

@@ -795,6 +795,31 @@ export const enUS: Messages = {
     motivoBloqueioPlaceholder: 'Explain why the author loses AI image generation',
     erroUsuarioNaoEncontrado: "Couldn't find this recipe's author.",
   },
+  // #227 (ADR-0022 dec.3): PROACTIVE, NON-BLOCKING Curator queue — AI generations WITH the author's
+  // refinement. The image stays public (default-open, ADR-0020); the Curator only monitors and can
+  // REMOVE (moderate, hides it from the public) OR DISMISS (judged fine, keeps it public).
+  revisaoImagens: {
+    titulo: 'Images to review',
+    descricao:
+      "AI generations with the author's refinement. The image stays visible to the public — this queue is just for monitoring. Remove it (hides it from the public) or dismiss it (keeps it visible).",
+    receita: 'Recipe',
+    autor: 'Author',
+    semReceita: 'No linked recipe',
+    refinada: 'Generated with refinement',
+    abrirReceita: 'Open recipe',
+    remover: 'Remove',
+    removendo: 'Removing…',
+    confirmarRemocao: 'Confirm removal',
+    motivoRemocao: 'Reason for removal',
+    motivoPlaceholder: 'Explain why this image leaves the public view',
+    dispensar: 'Dismiss',
+    dispensando: 'Dismissing…',
+    cancelar: 'Cancel',
+    filaVazia: 'No images to review.',
+    erroMotivo: 'Enter the reason for removal.',
+    erroNaoEncontrada: 'This image is no longer in the queue.',
+    erroGenerico: 'Could not process the image. Try again.',
+  },
   traducoesStale: {
     titulo: 'Outdated translations',
     receita: 'Recipe',

@@ -1,0 +1,2 @@
+ALTER TABLE "recipe_image" ADD COLUMN "review_required" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "recipe_image_review_required_idx" ON "recipe_image" USING btree ("created_at") WHERE "recipe_image"."review_required" AND "recipe_image"."moderated_at" IS NULL;

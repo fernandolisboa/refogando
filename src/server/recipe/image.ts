@@ -137,6 +137,10 @@ export async function applyRecipeImageGeneration(input: {
 }): Promise<RecipeImageGenResult> {
   const { db, store, generator, id, userId, role, promptOverride } = input
   const now = new Date()
+  // #227 (ADR-0022 dec.3): geração COM refino (o sufixo de estilo em texto livre do Owner, #223)
+  // marca a imagem `review_required` ⇒ fila PROATIVA do Curador. Refino = override não-vazio (trim).
+  // Um-clique (sem override) ⇒ false. NÃO é um gate de publicação (default-open intacto, ADR-0020).
+  const hasRefino = !!promptOverride?.trim()
 
   // 1. Carrega a receita (espinha + traduções + ingredientes) e prova ownership (404 leak-safe).
   //    O gate de dono vem ANTES de tocar o gerador (caro) ⇒ anon/não-dono nunca disparam o seam.
@@ -207,6 +211,8 @@ export async function applyRecipeImageGeneration(input: {
         userId,
         lineageId,
         writeLedger: true,
+        // #227: geração COM refino marca review_required (sinal proativo do Curador, ADR-0022 dec.3).
+        reviewRequired: hasRefino,
         // #224: telemetria de custo (best-effort). O `usageMetadata` pode faltar (caminho ao vivo sem
         // telemetria) ⇒ a linha do ledger nasce com usage/custo nulos. O modelo do gerador, quando
         // ausente, cai no modelo da config (genConfig.model) — o que de fato foi pedido.
@@ -252,12 +258,15 @@ async function createGalleryImage(
     writeLedger?: boolean
     usage?: ImageUsage
     model?: string
+    // #227: marca a imagem `review_required` (fila proativa do Curador). Só `ai_generated` COM refino
+    // passa `true`; upload e geração-um-clique omitem ⇒ `false`. NÃO gateia publicação (ADR-0020).
+    reviewRequired?: boolean
   },
 ): Promise<string> {
-  const { blobUrl, provenance, userId, lineageId, writeLedger, usage, model } = args
+  const { blobUrl, provenance, userId, lineageId, writeLedger, usage, model, reviewRequired } = args
   const [created] = await tx
     .insert(recipeImage)
-    .values({ blobUrl, provenance, createdBy: userId, lineageId })
+    .values({ blobUrl, provenance, createdBy: userId, lineageId, reviewRequired: reviewRequired ?? false })
     .returning({ id: recipeImage.id })
 
   if (writeLedger && provenance === 'ai_generated') {
