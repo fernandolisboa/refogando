@@ -115,6 +115,9 @@ export function RecipeImageManager({
   const [basePrompt, setBasePrompt] = useState<string | null>(null)
   // DECISION 6: houve ≥1 geração nesta sessão de modal? ⇒ refresh ao fechar sem selecionar.
   const [generatedThisSession, setGeneratedThisSession] = useState(false)
+  // #265: geração-EM-CURSO (≠ `busy` genérico). Distingue "gerando" de operações da galeria
+  // (selecionar/apagar) — só com isto o corpo do modal mostra "Gerando…" (e não some a galeria).
+  const [generating, setGenerating] = useState(false)
   // #222/#225: erro de seleção/deleção na galeria ('falha'|'emUso'|'moderada').
   const [galleryError, setGalleryError] = useState<null | 'falha' | 'emUso' | 'moderada'>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -130,6 +133,7 @@ export function RecipeImageManager({
     setGenError(null)
     setError(null)
     setStatus('busy')
+    setGenerating(true)
     try {
       const trimmed = refino.trim()
       const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
@@ -167,20 +171,27 @@ export function RecipeImageManager({
     } catch {
       setGenError('falha')
       setStatus('idle')
+    } finally {
+      setGenerating(false)
     }
   }
 
-  /** "Gerar com IA": abre o modal e dispara a 1ª geração (refino vazio ⇒ um-clique). */
+  /**
+   * "Gerar com IA": abre o modal no ESTADO DE REPOUSO (galeria). #265: NÃO gera ao abrir — a
+   * geração só ocorre no clique explícito de "Gerar" (senão queima uma imagem da cota só de abrir).
+   */
   function onOpenModal() {
     setPreview(null)
     setGenError(null)
+    // #265: galeria mora no modal agora (estado de repouso) — zere o erro da galeria ao abrir pra
+    // um erro de ação na PÁGINA (ex.: 409 in_use de um apagar) não vazar pro modal recém-aberto.
+    setGalleryError(null)
     setGeneratedThisSession(false)
     // #223: estado de refino zerado a cada abertura (não persiste entre sessões de modal).
     setRefino('')
     setShowRefino(false)
     setBasePrompt(null)
     setModalOpen(true)
-    void onGenerate()
   }
 
   /** Fecha o modal; DECISION 6: refresh se houve geração e nada foi selecionado (face inalterada). */
@@ -404,61 +415,19 @@ export function RecipeImageManager({
         )}
       </div>
 
-      {/* #222: GALERIA re-selecionável (uploads + geradas). Clicar SELECIONA; apagar APAGA. */}
-      <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium text-muted">{m.imagemGaleria}</h3>
-        {gallery.length === 0 ? (
-          <p className="text-sm text-muted">{m.imagemGaleriaVazia}</p>
-        ) : (
-          <ul className="flex flex-wrap gap-3">
-            {gallery.map((img) => (
-              <li key={img.id} className="flex flex-col items-stretch gap-1">
-                <button
-                  type="button"
-                  onClick={() => onSelect(img.id)}
-                  // #225: imagem moderada (#133) não vira face pública ⇒ select desabilitado por afordância
-                  // (o servidor reimpõe — 409 imagem_moderada).
-                  disabled={busy || img.selected || img.moderated}
-                  aria-pressed={img.selected}
-                  className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''} ${img.moderated ? 'opacity-60' : ''}`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
-                  <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
-                  {img.aiGenerated && (
-                    <span className="absolute bottom-0 left-0 right-0 bg-fg/60 px-1 py-0.5 text-[10px] text-bg">
-                      {m.imagemSeloIa}
-                    </span>
-                  )}
-                  {/* #225: marcador "removida" — distinto do selo de IA (topo, tom de alerta). */}
-                  {img.moderated && (
-                    <span className="absolute left-0 right-0 top-0 bg-fg/70 px-1 py-0.5 text-[10px] text-bg">
-                      {m.imagemRemovida}
-                    </span>
-                  )}
-                </button>
-                <div className="flex items-center justify-between gap-1 text-xs">
-                  {img.moderated ? (
-                    <span className="font-medium text-muted">{m.imagemRemovida}</span>
-                  ) : img.selected ? (
-                    <span className="font-medium text-fg">{m.imagemSelecionada}</span>
-                  ) : (
-                    <span className="text-muted">{m.imagemSelecionar}</span>
-                  )}
-                  {/* A face em uso não pode ser apagada (in_use); desabilita por afordância. */}
-                  <button
-                    type="button"
-                    onClick={() => onDelete(img.id)}
-                    disabled={busy || img.selected}
-                    className="text-muted underline hover:text-fg disabled:no-underline disabled:opacity-50"
-                  >
-                    {m.imagemApagar}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* #222/#265: GALERIA re-selecionável (uploads + geradas) — MESMO componente do modal
+          (fonte única). Na página é o bloco do dono; no modal é o estado de repouso. Escondida
+          enquanto o modal está aberto (gate `!modalOpen`) pra não duplicar no DOM — o modal já
+          mostra a galeria por cima; assim só existe UMA cópia montada por vez. */}
+      {!modalOpen && (
+        <RecipeImageGallery
+          gallery={gallery}
+          busy={busy}
+          onSelect={onSelect}
+          onDelete={onDelete}
+          error={galleryError}
+        />
+      )}
 
       <div aria-live="polite" className="text-sm">
         {error === 'tipo' && (
@@ -476,25 +445,9 @@ export function RecipeImageManager({
             {m.imagemErro}
           </p>
         )}
-        {/* #222: erro de seleção/deleção na galeria. */}
-        {galleryError === 'falha' && (
-          <p role="alert" className="font-medium text-fg">
-            {m.imagemErro}
-          </p>
-        )}
-        {galleryError === 'emUso' && (
-          <p role="alert" className="font-medium text-fg">
-            {m.imagemApagarEmUso}
-          </p>
-        )}
-        {/* #225: 409 imagem_moderada — tentar selecionar uma imagem moderada como capa. */}
-        {galleryError === 'moderada' && (
-          <p role="alert" className="font-medium text-fg">
-            {m.imagemModeradaNaoSelecionavel}
-          </p>
-        )}
-        {/* #222: os erros da geração (falha/limite/desabilitada) são surfados DENTRO do modal — a
-            geração só acontece lá. Não duplicamos aqui (evita mensagem em dobro). */}
+        {/* #222/#265: os erros de seleção/deleção da galeria ficam co-locados no RecipeImageGallery
+            (aparecem na página E no modal). Os erros da geração (falha/limite/desabilitada/bloqueada)
+            são surfados DENTRO do modal — não duplicamos aqui (evita mensagem em dobro). */}
       </div>
 
       {/* #222: MODAL de PREVIEW da geração (Sheet center, precedente recipe-edit-modal). */}
@@ -509,8 +462,20 @@ export function RecipeImageManager({
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element -- preview de blob público
               <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
+            ) : generating ? (
+              <p className="py-8 text-sm text-muted">{m.imagemGerando}</p>
             ) : (
-              <p className="py-8 text-sm text-muted">{busy ? m.imagemGerando : m.imagemGerarErro}</p>
+              // #265: estado de REPOUSO — a galeria (mesmo componente da página). Abrir o modal NÃO
+              // gera; a geração só ocorre no clique de "Gerar" abaixo. Galeria vazia ⇒ empty-state.
+              <div className="w-full">
+                <RecipeImageGallery
+                  gallery={gallery}
+                  busy={busy}
+                  onSelect={onSelect}
+                  onDelete={onDelete}
+                  error={galleryError}
+                />
+              </div>
             )}
 
             <div aria-live="polite" className="text-sm">
@@ -579,17 +544,126 @@ export function RecipeImageManager({
               )}
             </div>
 
+            {/* #265: rodapé condicional ao preview. Em REPOUSO (sem preview) só há o CTA primário
+                "Gerar" — a geração é explícita. Com preview: "Usar esta" + "Gerar outra" (como antes). */}
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Button type="button" size="sm" onClick={onUseThis} disabled={busy || !preview}>
-                {m.imagemUsarEsta}
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={onGenerate} disabled={busy}>
-                {busy ? m.imagemGerando : m.imagemGerarOutra}
-              </Button>
+              {preview ? (
+                <>
+                  <Button type="button" size="sm" onClick={onUseThis} disabled={busy}>
+                    {m.imagemUsarEsta}
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={onGenerate} disabled={busy}>
+                    {generating ? m.imagemGerando : m.imagemGerarOutra}
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" size="sm" onClick={onGenerate} disabled={busy}>
+                  {generating ? m.imagemGerando : m.imagemGerarAgora}
+                </Button>
+              )}
             </div>
           </div>
         </SheetContent>
       </Sheet>
     </section>
+  )
+}
+
+/**
+ * #222/#265: galeria re-selecionável (uploads + geradas) — apresentacional, fonte ÚNICA. Renderizada
+ * na PÁGINA (bloco do dono) OU dentro do modal de geração (estado de repouso): o chamador esconde a
+ * cópia da página enquanto o modal está aberto (`!modalOpen`), então só UMA existe no DOM por vez —
+ * sem aria-live/thumbnails duplicados. Clicar SELECIONA; apagar APAGA. A face em uso e as
+ * imagens moderadas (#133/#225) ficam desabilitadas por afordância (o servidor é a verdade). O slot de
+ * erro (falha/in_use/moderada) é co-locado aqui pra aparecer em ambos os contextos.
+ */
+function RecipeImageGallery({
+  gallery,
+  busy,
+  onSelect,
+  onDelete,
+  error,
+}: {
+  gallery: ReadonlyArray<GalleryImage>
+  busy: boolean
+  onSelect: (imageId: string) => void
+  onDelete: (imageId: string) => void
+  error: null | 'falha' | 'emUso' | 'moderada'
+}) {
+  const { messages } = useLocale()
+  const m = messages.detalhe
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium text-muted">{m.imagemGaleria}</h3>
+      {gallery.length === 0 ? (
+        <p className="text-sm text-muted">{m.imagemGaleriaVazia}</p>
+      ) : (
+        <ul className="flex flex-wrap gap-3">
+          {gallery.map((img) => (
+            <li key={img.id} className="flex flex-col items-stretch gap-1">
+              <button
+                type="button"
+                onClick={() => onSelect(img.id)}
+                // #225: imagem moderada (#133) não vira face pública ⇒ select desabilitado por afordância
+                // (o servidor reimpõe — 409 imagem_moderada).
+                disabled={busy || img.selected || img.moderated}
+                aria-pressed={img.selected}
+                className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''} ${img.moderated ? 'opacity-60' : ''}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
+                <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
+                {img.aiGenerated && (
+                  <span className="absolute bottom-0 left-0 right-0 bg-fg/60 px-1 py-0.5 text-[10px] text-bg">
+                    {m.imagemSeloIa}
+                  </span>
+                )}
+                {/* #225: marcador "removida" — distinto do selo de IA (topo, tom de alerta). */}
+                {img.moderated && (
+                  <span className="absolute left-0 right-0 top-0 bg-fg/70 px-1 py-0.5 text-[10px] text-bg">
+                    {m.imagemRemovida}
+                  </span>
+                )}
+              </button>
+              <div className="flex items-center justify-between gap-1 text-xs">
+                {img.moderated ? (
+                  <span className="font-medium text-muted">{m.imagemRemovida}</span>
+                ) : img.selected ? (
+                  <span className="font-medium text-fg">{m.imagemSelecionada}</span>
+                ) : (
+                  <span className="text-muted">{m.imagemSelecionar}</span>
+                )}
+                {/* A face em uso não pode ser apagada (in_use); desabilita por afordância. */}
+                <button
+                  type="button"
+                  onClick={() => onDelete(img.id)}
+                  disabled={busy || img.selected}
+                  className="text-muted underline hover:text-fg disabled:no-underline disabled:opacity-50"
+                >
+                  {m.imagemApagar}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div aria-live="polite" className="text-sm">
+        {error === 'falha' && (
+          <p role="alert" className="font-medium text-fg">
+            {m.imagemErro}
+          </p>
+        )}
+        {error === 'emUso' && (
+          <p role="alert" className="font-medium text-fg">
+            {m.imagemApagarEmUso}
+          </p>
+        )}
+        {/* #225: 409 imagem_moderada — tentar selecionar uma imagem moderada como capa. */}
+        {error === 'moderada' && (
+          <p role="alert" className="font-medium text-fg">
+            {m.imagemModeradaNaoSelecionavel}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

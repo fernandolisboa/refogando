@@ -262,6 +262,9 @@ export const ptBR = {
     imagemPreviewDescricao: 'Veja a imagem gerada antes de usá-la. Gerar outra mantém as anteriores na galeria.',
     imagemUsarEsta: 'Usar esta',
     imagemGerarOutra: 'Gerar outra',
+    // #265: CTA primário do modal no estado de REPOUSO (sem preview ainda). Distinto de
+    // `imagemGerar` ("✨ Gerar com IA", botão externo) — não gera ao abrir, só no clique.
+    imagemGerarAgora: 'Gerar',
     imagemFechar: 'Fechar',
     imagemGaleria: 'Galeria de imagens',
     imagemGaleriaVazia: 'Nenhuma imagem ainda. Gere uma com IA ou envie a sua foto.',

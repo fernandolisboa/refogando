@@ -215,6 +215,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     renderManager({ hasImage: false })
 
     await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
 
     expect(await screen.findByText(M.imagemGerarBloqueada)).toBeInTheDocument()
     // NÃO mostra a mensagem de "desabilitada" (config-global) — é um motivo distinto.
@@ -222,8 +224,25 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
-  // ── #222: preview-modal ─────────────────────────────────────────────────────────
-  it('#222 gerar abre o modal e POSTa /image/generate; mostra o preview; a face NÃO muda (sem select)', async () => {
+  // ── #265: abrir o modal NÃO gera (estado de repouso = galeria) ───────────────────
+  it('#265 abrir o modal NÃO POSTa /image/generate (não queima cota só de abrir)', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true } } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar)) // abre o modal
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(M.imagemPreviewTitulo)).toBeInTheDocument()
+
+    // Nenhuma geração na abertura — a rota não foi tocada.
+    expect(calls.filter((c) => c.url.endsWith('/image/generate'))).toHaveLength(0)
+  })
+
+  it('#265 a 1ª geração só ocorre no clique explícito de "Gerar" do modal', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith('/image/generate')
@@ -233,10 +252,74 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     renderManager({ hasImage: false })
 
     await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    expect(calls.filter((c) => c.url.endsWith('/image/generate'))).toHaveLength(0)
 
-    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    // Só o clique no "Gerar" DENTRO do modal dispara a geração.
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+
+    await waitFor(() => expect(calls.filter((c) => c.url.endsWith('/image/generate')).length).toBe(1))
+    await waitFor(() =>
+      expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://fake-blob.local/recipes/0.png'),
+    )
+  })
+
+  it('#265 a galeria existente aparece DENTRO do modal ao abrir (estado de repouso)', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+    ]
+    // Nada deve ser chamado ao abrir; se algo POSTar, 405 (o teste falharia ao não achar a galeria).
+    mockFetch(() => ({ status: 405 }))
+    renderManager({ hasImage: true, gallery })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+
+    // As imagens da galeria aparecem dentro do dialog (não só na página atrás do overlay).
+    const imgs = within(dialog).getAllByRole('img')
+    expect(imgs.some((i) => i.getAttribute('src')?.endsWith('/0.png'))).toBe(true)
+    expect(imgs.some((i) => i.getAttribute('src')?.endsWith('/1.png'))).toBe(true)
+  })
+
+  it('#265 erro de ação na PÁGINA não vaza pro modal: abrir limpa o galleryError', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+    ]
+    // Apagar dá 409 in_use ⇒ galleryError='emUso' na página.
+    mockFetch(() => ({ status: 409, body: { error: 'in_use' } }))
+    renderManager({ hasImage: true, gallery })
+
+    // Dispara o apagar na página (thumbnail apagável) → mostra imagemApagarEmUso.
+    const apagar = screen.getAllByText(M.imagemApagar).map((n) => n.closest('button')!).filter((b) => !b.disabled)
+    await user.click(apagar[0])
+    expect(await screen.findByText(M.imagemApagarEmUso)).toBeInTheDocument()
+
+    // Abre o modal → o erro da página foi limpo (não vaza pro estado de repouso do modal).
+    await user.click(screen.getByText(M.imagemGerar))
+    await screen.findByRole('dialog')
+    expect(screen.queryByText(M.imagemApagarEmUso)).not.toBeInTheDocument()
+  })
+
+  // ── #222: preview-modal ─────────────────────────────────────────────────────────
+  it('#222 gerar (clique no modal) POSTa /image/generate; mostra o preview; a face NÃO muda (sem select)', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true } } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(M.imagemPreviewTitulo)).toBeInTheDocument()
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
     // O preview aparece (a imagem com o url devolvido).
     await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://fake-blob.local/recipes/0.png'))
     // Nenhum select foi chamado ⇒ a face não mudou.
@@ -255,6 +338,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     await user.click(within(dialog).getByText(M.imagemUsarEsta))
 
@@ -276,6 +360,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://fake-blob.local/recipes/1.png'))
 
     await user.click(within(dialog).getByText(M.imagemGerarOutra))
@@ -296,6 +381,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     refresh.mockClear()
 
@@ -306,7 +392,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   })
 
   // ── #223: refino ancorado (base read-only + campo de refino) ──────────────────────
-  it('#223 a 1ª geração (abrir) POSTa { content-type: json } SEM prompt (refino vazio)', async () => {
+  it('#223 a 1ª geração (clique em "Gerar") POSTa { content-type: json } SEM prompt (refino vazio)', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith('/image/generate')
@@ -316,6 +402,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     renderManager({ hasImage: false })
 
     await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
     const gen = calls.find((c) => c.url.endsWith('/image/generate'))!
     // Refino vazio na 1ª geração ⇒ corpo vazio (sem { prompt }). O servidor monta da receita.
@@ -333,6 +421,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
 
     // Por padrão o base NÃO aparece.
@@ -354,6 +443,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     await user.click(within(dialog).getByText(M.imagemRefinar))
 
@@ -377,6 +467,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://fake-blob.local/recipes/1.png'))
 
     // Revela o painel de refino e digita.
@@ -401,6 +492,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     await user.click(within(dialog).getByText(M.imagemRefinar))
 
@@ -408,7 +500,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect(Number(refino.maxLength)).toBe(200)
   })
 
-  it('#223 o refino RESETA ao fechar o modal: reabrir começa vazio e a auto-geração POSTa {}', async () => {
+  it('#223 o refino RESETA ao fechar o modal: reabrir começa vazio e a geração ao reabrir POSTa {}', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith('/image/generate')
@@ -417,9 +509,10 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     )
     renderManager({ hasImage: false })
 
-    // 1ª sessão: abre, revela o painel, digita um refino.
+    // 1ª sessão: abre, gera, revela o painel, digita um refino.
     await user.click(screen.getByText(M.imagemGerar))
     const dialog1 = await screen.findByRole('dialog')
+    await user.click(within(dialog1).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog1).getByRole('img')).toBeInTheDocument())
     await user.click(within(dialog1).getByText(M.imagemRefinar))
     await user.type(within(dialog1).getByLabelText(M.imagemPromptRotulo), 'em aquarela')
@@ -431,9 +524,10 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     const genCallsBeforeReopen = calls.filter((c) => c.url.endsWith('/image/generate')).length
 
-    // Reabre: a auto-geração na reabertura deve POSTar {} (refino zerado), NÃO { prompt: 'em aquarela' }.
+    // Reabre e gera de novo: deve POSTar {} (refino zerado), NÃO { prompt: 'em aquarela' }.
     await user.click(screen.getByText(M.imagemGerar))
     const dialog2 = await screen.findByRole('dialog')
+    await user.click(within(dialog2).getByText(M.imagemGerarAgora))
     await waitFor(() => expect(within(dialog2).getByRole('img')).toBeInTheDocument())
     const reopenGen = calls.filter((c) => c.url.endsWith('/image/generate'))[genCallsBeforeReopen]
     expect(JSON.parse(String(reopenGen.body))).toEqual({})
@@ -449,6 +543,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     renderManager({ hasImage: false })
 
     await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
 
     expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
@@ -460,6 +556,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     renderManager({ hasImage: false })
 
     await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
 
     expect(await screen.findByText(M.imagemGerarDesabilitada)).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
@@ -472,6 +570,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
     // A geração estourou (429) ⇒ generatedThisSession ficou false; o preview nunca apareceu.
     expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
     refresh.mockClear()
