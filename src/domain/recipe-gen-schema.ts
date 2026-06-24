@@ -58,6 +58,11 @@ const ReceitaGen = z.object({
   restricoes: z.array(z.enum(RESTRICOES)), // → recipe.restricoes (default '{}')
   porcoes: z.number().int(), // → recipe.porcoes (faixa validada no app)
   dificuldade: z.number().int(), // → recipe.dificuldade (faixa validada no app)
+  // Tempo de preparo (#261, ADR-0023): OUTPUT-ONLY, ambos OPCIONAIS na saída (.nullable().optional()
+  // — a IA estima quando dá; geração degradada persiste sem tempo). Sem min/max no Zod (faixa no app,
+  // como porcoes/dificuldade). O Briefing NÃO ganha tempo. ativo > total é reconciliado no persist.
+  tempoAtivoMin: z.number().int().nullable().optional(), // → recipe.tempo_ativo_min
+  tempoTotalMin: z.number().int().nullable().optional(), // → recipe.tempo_total_min
   ingredientes: z.array(IngredienteGen), // → recipe_ingredient[]
 })
 

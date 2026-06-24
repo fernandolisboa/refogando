@@ -121,6 +121,34 @@ describe('RecipeEditForm (#21/#61)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('T6 — tempo de preparo (#261): prefilled da view e enviado no PATCH', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
+    renderForm(ownerView({ visibility: 'private', tempoAtivoMin: 20, tempoTotalMin: 90 }))
+
+    expect(screen.getByDisplayValue('20')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('90')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: M.editarPublicaConfirmar }))
+    const sent = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(sent.tempoAtivoMin).toBe(20)
+    expect(sent.tempoTotalMin).toBe(90)
+  })
+
+  it('T7 — aviso inline quando tempo ativo > total (clamp acontece ao salvar)', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
+    renderForm(ownerView({ visibility: 'private', tempoAtivoMin: 20, tempoTotalMin: 60 }))
+
+    expect(screen.queryByText(ptBR.criar.tempoAtivoExcedeTotal)).toBeNull()
+
+    const ativo = screen.getByLabelText(ptBR.criar.tempoAtivoMin)
+    await user.clear(ativo)
+    await user.type(ativo, '100')
+
+    expect(screen.getByText(ptBR.criar.tempoAtivoExcedeTotal)).toBeInTheDocument()
+  })
+
   it('#131 — edição visual com imageReviewSuggested ⇒ navega com ?reviewImage=1 (preserva locale)', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 200, body: { ok: true, was_public: false, imageReviewSuggested: true } }))

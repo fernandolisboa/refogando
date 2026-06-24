@@ -3,6 +3,7 @@ import {
   buildRecipeMetadata,
   buildRecipeJsonLd,
   serializeJsonLd,
+  minutosParaISO8601,
   type RecipeSeoInput,
 } from '@/domain/recipe-seo'
 
@@ -285,4 +286,39 @@ describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', ()
       expect(flat).toContain(PAYLOAD) // o dado original sobrevive ao round-trip
     })
   }
+})
+
+describe('minutosParaISO8601 (#262, ADR-0023 dec.4)', () => {
+  it('converte minutos → ISO 8601 duration, omitindo o componente zero', () => {
+    expect(minutosParaISO8601(90)).toBe('PT1H30M')
+    expect(minutosParaISO8601(60)).toBe('PT1H')
+    expect(minutosParaISO8601(5)).toBe('PT5M')
+    expect(minutosParaISO8601(1)).toBe('PT1M')
+    expect(minutosParaISO8601(125)).toBe('PT2H5M')
+  })
+
+  it('ausente / não-positivo (null/undefined/0/negativo) → null (chave omitida)', () => {
+    expect(minutosParaISO8601(null)).toBeNull()
+    expect(minutosParaISO8601(undefined)).toBeNull()
+    expect(minutosParaISO8601(0)).toBeNull()
+    expect(minutosParaISO8601(-5)).toBeNull()
+  })
+})
+
+describe('buildRecipeJsonLd — totalTime (#262, fecha #234)', () => {
+  it('emite totalTime (ISO 8601) quando tempo_total presente', () => {
+    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: 90 }))
+    expect(ld.totalTime).toBe('PT1H30M')
+  })
+
+  it('OMITE totalTime quando tempo_total ausente (chave não sai)', () => {
+    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: null }))
+    expect('totalTime' in ld).toBe(false)
+  })
+
+  it('NUNCA emite prepTime nem cookTime (ADR-0023 dec.4 — só totalTime)', () => {
+    const ld = buildRecipeJsonLd(baseInput({ tempoTotalMin: 90 }))
+    expect('prepTime' in ld).toBe(false)
+    expect('cookTime' in ld).toBe(false)
+  })
 })

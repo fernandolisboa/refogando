@@ -23,7 +23,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldClassName } from '@/components/button'
-import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import {
+  COZINHAS,
+  CATEGORIAS,
+  RESTRICOES,
+  UNIDADES,
+  PORCOES,
+  DIFICULDADE,
+  TEMPO_MIN,
+} from '@/domain/vocabulary'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { RecipeView } from '@/domain/recipe-read'
 
@@ -120,6 +128,14 @@ export function RecipeEditForm({
   const [dificuldade, setDificuldade] = useState(
     view.dificuldade != null ? String(view.dificuldade) : '',
   )
+  // Tempo de preparo (#261, ADR-0023): ativo + total (min). String no state (input numérico); ''→null
+  // no buildPatch. SEMPRE enviados (espelha porcoes) — o clamp ativo>total roda no servidor.
+  const [tempoAtivoMin, setTempoAtivoMin] = useState(
+    view.tempoAtivoMin != null ? String(view.tempoAtivoMin) : '',
+  )
+  const [tempoTotalMin, setTempoTotalMin] = useState(
+    view.tempoTotalMin != null ? String(view.tempoTotalMin) : '',
+  )
   const [itens, setItens] = useState<ItemDraft[]>(itemsFromView(view))
 
   const [saving, setSaving] = useState(false)
@@ -214,6 +230,8 @@ export function RecipeEditForm({
       restricoes,
       porcoes: porcoes === '' ? null : Number(porcoes),
       dificuldade: dificuldade === '' ? null : Number(dificuldade),
+      tempoAtivoMin: tempoAtivoMin === '' ? null : Number(tempoAtivoMin),
+      tempoTotalMin: tempoTotalMin === '' ? null : Number(tempoTotalMin),
       ingredientes,
     }
   }
@@ -594,27 +612,59 @@ export function RecipeEditForm({
         {/* #196/ADR-0021: Porções + dificuldade. ESCONDIDOS no modo derive — herdados da base pela
             rota POST /derive (fora do subset de `edits`). Ver nota no bloco Cozinha/Categoria. */}
         {!isDerive && (
-          <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
-            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-              {mc.porcoes}
-              <Input
-                type="number"
-                min={PORCOES.min}
-                max={PORCOES.max}
-                value={porcoes}
-                onChange={(e) => setPorcoes(e.target.value)}
-              />
-            </label>
-            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-              {mc.dificuldade}
-              <Input
-                type="number"
-                min={DIFICULDADE.min}
-                max={DIFICULDADE.max}
-                value={dificuldade}
-                onChange={(e) => setDificuldade(e.target.value)}
-              />
-            </label>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+              <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+                {mc.porcoes}
+                <Input
+                  type="number"
+                  min={PORCOES.min}
+                  max={PORCOES.max}
+                  value={porcoes}
+                  onChange={(e) => setPorcoes(e.target.value)}
+                />
+              </label>
+              <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+                {mc.dificuldade}
+                <Input
+                  type="number"
+                  min={DIFICULDADE.min}
+                  max={DIFICULDADE.max}
+                  value={dificuldade}
+                  onChange={(e) => setDificuldade(e.target.value)}
+                />
+              </label>
+            </div>
+            {/* Tempo de preparo (#261, ADR-0023): ativo + total (min), em linha própria (não estoura
+                a row). Aviso honesto se ativo > total — ao salvar, o ativo é descartado (clamp do
+                servidor, política de salvamento; não invalida a Receita). */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
+              <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+                {mc.tempoAtivoMin}
+                <Input
+                  type="number"
+                  min={TEMPO_MIN.min}
+                  max={TEMPO_MIN.max}
+                  value={tempoAtivoMin}
+                  onChange={(e) => setTempoAtivoMin(e.target.value)}
+                />
+              </label>
+              <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+                {mc.tempoTotalMin}
+                <Input
+                  type="number"
+                  min={TEMPO_MIN.min}
+                  max={TEMPO_MIN.max}
+                  value={tempoTotalMin}
+                  onChange={(e) => setTempoTotalMin(e.target.value)}
+                />
+              </label>
+            </div>
+            {tempoAtivoMin !== '' &&
+              tempoTotalMin !== '' &&
+              Number(tempoAtivoMin) > Number(tempoTotalMin) && (
+                <p className="text-sm text-muted">{mc.tempoAtivoExcedeTotal}</p>
+              )}
           </div>
         )}
 

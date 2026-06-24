@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { IngredientView, RecipeView } from '@/domain/recipe-read'
 import { isCategoria, isCozinha, isRestricao, isUnidade } from '@/domain/vocabulary'
+import { formatDuracao } from '@/domain/tempo'
 import type { Messages } from '@/i18n/messages'
 import { ProvenanceBadge } from './provenance-badge'
 import { RestrictionWarning } from './restriction-warning'
@@ -126,6 +127,7 @@ export function RecipeDetailView({
   const hasScalars =
     view.porcoes != null ||
     view.dificuldade != null ||
+    view.tempoTotalMin != null ||
     cozinhaLabel != null ||
     categoriaLabel != null
   const restricoes = view.facets.restricoes
@@ -259,6 +261,20 @@ export function RecipeDetailView({
               {/* Faixa canônica 1–5 (vocabulary.ts): denominador fixo `/5` desambigua o
                   inteiro cru (não há rótulo por nível de dificuldade). */}
               <dd className="text-fg">{view.dificuldade}/5</dd>
+            </>
+          )}
+          {/* Tempo de preparo (#261, ADR-0023): total quando presente; ativo adicional quando
+              presente. ativo-sozinho é impossível (CHECK do DB). formatDuracao → "1 h 30 min". */}
+          {view.tempoTotalMin != null && (
+            <>
+              <dt className="font-medium text-muted">{m.detalhe.tempoTotal}</dt>
+              <dd className="text-fg">{formatDuracao(view.tempoTotalMin)}</dd>
+            </>
+          )}
+          {view.tempoAtivoMin != null && (
+            <>
+              <dt className="font-medium text-muted">{m.detalhe.tempoAtivo}</dt>
+              <dd className="text-fg">{formatDuracao(view.tempoAtivoMin)}</dd>
             </>
           )}
           {cozinhaLabel != null && (

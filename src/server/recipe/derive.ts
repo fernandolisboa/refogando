@@ -157,6 +157,11 @@ export async function deriveRecipe(input: {
           restricoes: [...edits.restricoes],
           porcoes: baseRecipe.porcoes,
           dificuldade: baseRecipe.dificuldade,
+          // Tempo de preparo (#261, ADR-0023): HERDADO da base inalterado (invariante no fork, fora
+          // do subset de `edits`, igual a porcoes/dificuldade). A base já satisfaz o CHECK ⇒ herdar
+          // como está é seguro, sem reconciliação (não há edição do par aqui).
+          tempoAtivoMin: baseRecipe.tempoAtivoMin,
+          tempoTotalMin: baseRecipe.tempoTotalMin,
           parentRecipeId: baseId,
           lineageKind: 'edited',
           derivedDiff,

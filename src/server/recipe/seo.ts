@@ -123,6 +123,8 @@ export function buildRecipeSeoInputFromRows(args: {
     // builder PURO omite cada chave quando vazia (porcoes/cozinha/categoria/restricoes) e filtra
     // `restricoes` p/ os tokens com `RestrictedDiet` válido (lossy ⇒ omitido).
     porcoes: view.porcoes,
+    // Tempo total (#262, ADR-0023): da view JÁ carregada (sem query nova) → `totalTime` no JSON-LD.
+    tempoTotalMin: view.tempoTotalMin,
     cozinha: view.facets.cozinha,
     categoria: view.facets.categoria,
     restricoes: view.facets.restricoes ?? [],

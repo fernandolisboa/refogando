@@ -204,6 +204,13 @@
       "when": 1782260302183,
       "tag": "0028_fancy_mimic",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782331850896,
+      "tag": "0029_chief_carmella_unuscione",
+      "breakpoints": true
     }
   ]
 }

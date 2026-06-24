@@ -144,6 +144,15 @@ export const recipe = pgTable(
     restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
     porcoes: integer('porcoes'),
     dificuldade: integer('dificuldade'),
+    // ── Tempo de preparo (#188/#261, ADR-0023) ────────────────────────────────────
+    // Atributo INVARIANTE (language-neutral, como porcoes/dificuldade — vive na recipe,
+    // nunca na recipe_translation). Duas facetas em minutos: tempo ATIVO (mão na massa) e
+    // tempo TOTAL (relógio na parede, inclui esperas passivas como marinar/descansar).
+    // Ambos NULLABLE/sem default ("ausente ≠ vazio", espelha porcoes). Output-only da IA
+    // (o Briefing NÃO ganha tempo); o CHECK recipe_tempo_consistency_chk garante ativo ≤
+    // total (ativo-sozinho é impossível). Sem backfill (linhas existentes ficam NULL).
+    tempoAtivoMin: integer('tempo_ativo_min'),
+    tempoTotalMin: integer('tempo_total_min'),
     parentRecipeId: uuid('parent_recipe_id').references((): AnyPgColumn => recipe.id, {
       onDelete: 'set null',
     }),
@@ -210,6 +219,13 @@ export const recipe = pgTable(
     check(
       'recipe_moderation_consistency_chk',
       sql`(${t.moderationRemovedAt} IS NULL) = (${t.moderatedBy} IS NULL)`,
+    ),
+    // Consistência do tempo de preparo (#261, ADR-0023): o ativo só existe junto de um
+    // total e nunca o excede (ativo-sozinho é impossível). NULL passa trivialmente —
+    // ambas as facetas são opcionais. Espelha o padrão de moderation_consistency_chk.
+    check(
+      'recipe_tempo_consistency_chk',
+      sql`${t.tempoAtivoMin} IS NULL OR (${t.tempoTotalMin} IS NOT NULL AND ${t.tempoAtivoMin} <= ${t.tempoTotalMin})`,
     ),
     index('recipe_restricoes_gin').using('gin', t.restricoes),
     // Índice parcial na FK owner_id: cobre o RESTRICT e queries por owner sem

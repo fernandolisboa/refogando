@@ -7,6 +7,7 @@ import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
 import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
 import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
+import { conciliarTempoPreparo } from '@/domain/tempo'
 
 /**
  * Edição IN-PLACE + APAGAR da PRÓPRIA Receita (issue #21).
@@ -83,6 +84,11 @@ export type OwnRecipePatch = {
   restricoes?: Restricao[]
   porcoes?: number | null
   dificuldade?: number | null
+  // Tempo de preparo (#261, ADR-0023): facetas invariantes (allowlist). Reconciliadas sobre o
+  // MERGE (patch ?? existente) via conciliarTempoPreparo antes do UPDATE — ativo > total descarta
+  // o ativo (mantém o total), garantindo o CHECK mesmo num patch parcial.
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
   // Ingredientes (presença = reescreve do zero):
   ingredientes?: ReadonlyArray<{
     rawText: string | null
@@ -112,7 +118,11 @@ export async function editOwnRecipe(
 
   // #131: a Receita tem imagem? (insumo da sugestão de revisar a foto após uma mudança visual.)
   const [imgRow] = await db
-    .select({ imageId: recipe.imageId })
+    .select({
+      imageId: recipe.imageId,
+      tempoAtivoMin: recipe.tempoAtivoMin,
+      tempoTotalMin: recipe.tempoTotalMin,
+    })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
   const hasImage = imgRow?.imageId != null
@@ -157,6 +167,20 @@ export async function editOwnRecipe(
   if (patch.dificuldade !== undefined) {
     recipePatch.dificuldade = patch.dificuldade
     changedFields.push('dificuldade')
+  }
+  // Tempo de preparo (#261, ADR-0023): reconcilia sobre o estado MESCLADO (patch ?? existente) —
+  // owner-edit é o único lugar com o par final, então o clamp (ativo > total ⇒ ativo null) aqui
+  // garante o CHECK recipe_tempo_consistency_chk mesmo num patch parcial (só uma das facetas). Grava
+  // SEMPRE as duas reconciliadas. NÃO entra em changedFields (tempo não é visual ⇒ não sugere revisar
+  // a foto). updated_at é bumpado pelo UPDATE de recipe (recipePatch não-vazio). `imgRow` está
+  // GARANTIDO (assertOwnedRecipe já provou a existência/posse da linha acima) — `?.` é só TS.
+  if (patch.tempoAtivoMin !== undefined || patch.tempoTotalMin !== undefined) {
+    const tempo = conciliarTempoPreparo(
+      patch.tempoAtivoMin !== undefined ? patch.tempoAtivoMin : imgRow?.tempoAtivoMin,
+      patch.tempoTotalMin !== undefined ? patch.tempoTotalMin : imgRow?.tempoTotalMin,
+    )
+    recipePatch.tempoAtivoMin = tempo.tempoAtivoMin
+    recipePatch.tempoTotalMin = tempo.tempoTotalMin
   }
 
   const touchesTranslatable = Object.keys(translatablePatch).length > 0

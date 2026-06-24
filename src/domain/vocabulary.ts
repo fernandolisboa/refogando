@@ -55,6 +55,12 @@ export type FaixaNumerica = { readonly min: number; readonly max: number }
 
 export const DIFICULDADE: FaixaNumerica = { min: 1, max: 5 }
 export const PORCOES: FaixaNumerica = { min: 1, max: 50 }
+// Tempo de preparo (#261, ADR-0023): minutos. Faixa validada na borda (positividade +
+// teto sanitário de 7 dias = 10080 min, cobre fermentação/maturação longa, barra absurdo).
+// Mesma faixa serve ativo e total; o CHECK do banco (ativo ≤ total) é o invariante de
+// consistência entre as facetas. FORA do kernel bidirecional: tempo é output-only da IA,
+// não é filtro de Busca nem constraint de Briefing.
+export const TEMPO_MIN: FaixaNumerica = { min: 1, max: 10080 }
 
 /** O kernel bidirecional: o que a Busca filtra e a criação estruturada constrange. */
 export const vocabularioCulinario = {
@@ -136,4 +142,8 @@ export function isDificuldadeValida(value: number): boolean {
 
 export function isPorcoesValidas(value: number): boolean {
   return naFaixa(value, PORCOES)
+}
+
+export function isTempoValido(value: number): boolean {
+  return naFaixa(value, TEMPO_MIN)
 }

@@ -67,6 +67,9 @@ export type RecipeSeoInput = {
   brandName: string
   /** Rendimento (#234, ADR-0020 dec.7) — `porcoes` da Receita → `recipeYield`. Ausente ⇒ omitido. */
   porcoes?: number | null
+  /** Tempo total em minutos (#262, ADR-0023 dec.4) — `tempo_total_min` → `totalTime` (ISO 8601).
+   *  Ausente ⇒ omitido. NÃO emitimos `prepTime`/`cookTime` (sem split preparo-vs-cozimento honesto). */
+  tempoTotalMin?: number | null
   /** Cozinha (#234) — token de faceta → `recipeCuisine`. Ausente ⇒ omitido. */
   cozinha?: string | null
   /** Categoria (#234) — token de faceta → `recipeCategory`. Ausente ⇒ omitido. */
@@ -164,6 +167,9 @@ export type RecipeJsonLd = {
   mainEntityOfPage?: string
   /** Rendimento ← `porcoes` (string, ex. `'4'`) — schema.org aceita texto. */
   recipeYield?: string
+  /** Tempo total (#262) ← `tempoTotalMin` em ISO 8601 (ex. `'PT1H30M'`). SÓ `totalTime` — nunca
+   *  `prepTime`/`cookTime` (ADR-0023 dec.4: não modelamos o split preparo-vs-cozimento). */
+  totalTime?: string
   /** Cozinha ← `facets.cozinha` (token). */
   recipeCuisine?: string
   /** Categoria ← `facets.categoria` (token). */
@@ -185,6 +191,21 @@ const RESTRICTED_DIET_BY_RESTRICAO: Record<string, RestrictedDiet> = {
   sem_lactose: 'https://schema.org/LowLactoseDiet',
   vegano: 'https://schema.org/VeganDiet',
   vegetariano: 'https://schema.org/VegetarianDiet',
+}
+
+/**
+ * Minutos → ISO 8601 duration (#262, ADR-0023 dec.4): `90→'PT1H30M'`, `60→'PT1H'`, `5→'PT5M'`,
+ * `1→'PT1M'`. Ausente/não-positivo (null/≤0) → `null` (a chave `totalTime` é OMITIDA). Omite o
+ * componente zero. PURO/TOTAL — nunca lança (um throw aqui quebraria o build do JSON-LD da página).
+ */
+export function minutosParaISO8601(minutos: number | null | undefined): string | null {
+  if (minutos == null || minutos <= 0) return null
+  const horas = Math.floor(minutos / 60)
+  const mins = minutos % 60
+  let out = 'PT'
+  if (horas > 0) out += `${horas}H`
+  if (mins > 0) out += `${mins}M`
+  return out
 }
 
 /**
@@ -224,6 +245,12 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
   // Campos da ADR-0020 dec.7 mapeados da view (dados JÁ carregados — sem query nova). Cada chave SÓ
   // sai quando há dado (omite chave vazia — "ausente ≠ vazio", espelha as facetas da view).
   if (input.porcoes != null) ld.recipeYield = String(input.porcoes)
+  // Tempo total (#262, ADR-0023 dec.4): só `totalTime` (ISO 8601), e só quando há dado. Nunca
+  // `prepTime`/`cookTime` (não modelamos o split). `minutosParaISO8601` devolve null se ≤0 ⇒ omite.
+  if (input.tempoTotalMin != null) {
+    const iso = minutosParaISO8601(input.tempoTotalMin)
+    if (iso) ld.totalTime = iso
+  }
   if (input.cozinha) ld.recipeCuisine = input.cozinha
   if (input.categoria) ld.recipeCategory = input.categoria
   if (input.datePublished) ld.datePublished = input.datePublished
