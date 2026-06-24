@@ -76,6 +76,10 @@ _Avoid_: Tipo de receita; Tipo (genérico); Classe; Perfil; Cozinha.
 Rótulo descritivo solto e multivalorado (N:M com Receita) que captura qualidades que não são Cozinha nem Categoria (rápida, leve, conforto, sem forno). Onde boa parte do "perfil culinário" aterrissa no dado.
 _Avoid_: Categoria; Label genérico; Keyword.
 
+**Tempo de preparo** (atributo invariante):
+Quanto tempo a Receita leva — atributo **invariante** (language-neutral, vive na Receita como `porções`/`dificuldade`, nunca na Tradução). Tem **duas facetas**: o **tempo ativo** (mão na massa — o que o cozinheiro fica de fato fazendo) e o **tempo total** (relógio na parede — inclui esperas passivas como marinar, descansar, gelar). O total **não** é a soma dos passos nem do ativo: é o tempo de ponta a ponta, e é sempre **≥** o ativo. **Opcional** (a Receita pode não declará-lo); numa Receita de IA é **estimativa da IA**, coberta pelo selo "gerada por IA" (não ganha caveat próprio — tempo é baixo-risco, diferente do Aviso de restrição). Forma do atributo, mapeamento de SEO e o porquê de não usar `prepTime`/`cookTime`: ADR-0023.
+_Avoid_: "tempo de preparo" como sinônimo só da fase ativa (é o guarda-chuva das duas facetas); tempo-por-passo; somar passos pra achar o total; `prepTime`/`cookTime` (não modelamos a fase preparo-vs-cozimento — só ativo-vs-total).
+
 **Perfil culinário**:
 **Lente de descoberta/UX da busca** que traduz intenção difusa ("algo asiático e leve") em facetas concretas: Cozinha + Categoria + Tag. **Não é coluna nem entidade** — é o guarda-chuva de UX que atravessa os eixos.
 _Avoid_: Estilo; Gênero culinário; tabela "perfil" que mistura tudo; tratar como dimensão própria.
