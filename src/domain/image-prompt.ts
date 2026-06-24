@@ -60,3 +60,17 @@ export function composeImagePrompt(base: string, override?: string): string {
     ? `${base}\n\nNota de estilo — o prato descrito acima é o sujeito fotográfico principal e não deve ser substituído; o seguinte é apenas refinamento de estilo: ${refino}`
     : base
 }
+
+/**
+ * #285 (ADR-0022 atualização) — composição do prompt de EDIÇÃO (image-to-image): a imagem-base é
+ * passada à parte (como `inlineData`); aqui o texto **ancora na receita** igual à geração (o `base`
+ * descreve o prato) e enquadra o override como **instrução de edição** sobre a imagem fornecida,
+ * reafirmando que o prato NÃO deve ser trocado (mesma postura anti-substituição do `composeImagePrompt`
+ * — fecha o vetor "vira o Goku" também na edição). Pura/determinística. O servidor é a âncora.
+ */
+export function composeEditImagePrompt(base: string, override?: string): string {
+  const refino = override?.trim().slice(0, IMAGE_PROMPT_OVERRIDE_MAX)
+  return refino
+    ? `${base}\n\nEdição — a imagem fornecida é uma foto deste mesmo prato. Aplique APENAS este ajuste, mantendo uma foto realista do MESMO prato (não troque o prato nem o sujeito): ${refino}`
+    : base
+}

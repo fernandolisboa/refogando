@@ -10,7 +10,8 @@ import type { ImageProvenance } from '@/domain/recipe'
 import type { Role } from '@/domain/user'
 import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
 import { capFromConfig } from '@/domain/image-gen-config'
-import { buildDishImagePrompt, composeImagePrompt } from '@/domain/image-prompt'
+import { buildDishImagePrompt, composeImagePrompt, composeEditImagePrompt } from '@/domain/image-prompt'
+import { pgCode } from '@/server/recipe/visibility' // #285: lê o SQLSTATE p/ tratar o FK da imagem-base (23503)
 import { loadRecipeRows } from '@/server/recipe/load'
 import { loadImageGenConfig } from '@/server/app-config'
 
@@ -134,18 +135,41 @@ export async function applyRecipeImageGeneration(input: {
   userId: string // session.user.id
   role: Role | null // papel do dono (define o teto); null ⇒ fail-closed no teto de `usuario`
   promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
+  // #285 (image-to-image): id da imagem-base — a variante é editada a partir dela. Ausente ⇒ do zero.
+  sourceImageId?: string
 }): Promise<RecipeImageGenResult> {
-  const { db, store, generator, id, userId, role, promptOverride } = input
+  const { db, store, generator, id, userId, role, promptOverride, sourceImageId } = input
   const now = new Date()
   // #227 (ADR-0022 dec.3): geração COM refino (o sufixo de estilo em texto livre do Owner, #223)
   // marca a imagem `review_required` ⇒ fila PROATIVA do Curador. Refino = override não-vazio (trim).
   // Um-clique (sem override) ⇒ false. NÃO é um gate de publicação (default-open intacto, ADR-0020).
   const hasRefino = !!promptOverride?.trim()
+  // #285 (ADR-0022 dec.4): TODA edição (imagem-base presente) também nasce `review_required` — o
+  // Curador vê a variante na fila (e, via source_image_id, que nasceu de uma moderada, se for o caso).
+  const reviewRequired = hasRefino || !!sourceImageId
 
   // 1. Carrega a receita (espinha + traduções + ingredientes) e prova ownership (404 leak-safe).
   //    O gate de dono vem ANTES de tocar o gerador (caro) ⇒ anon/não-dono nunca disparam o seam.
   const rows = await loadRecipeRows(db, id)
   if (!rows || rows.recipe.ownerId == null || rows.recipe.ownerId !== userId) return { kind: 'not_found' }
+
+  // `lineage_id` é NOT NULL no banco; o `?? ''` só satisfaz o tipo opcional do RecipeRow puro.
+  const lineageId = rows.recipe.lineageId ?? ''
+
+  // #285 (image-to-image): valida a imagem-base CEDO (logo após o gate de dono) — own-gated pela
+  // LINHAGEM. Leak-safe: UM `not_found` para imageId inexistente E imagem de OUTRA linhagem (nunca
+  // distingue). Moderada da MESMA linhagem é PERMITIDA como fonte (ADR-0022 dec.4 / Q3=B — a variante
+  // re-entra na revisão). Só o SELECT (barato) aqui; os BYTES (`store.get`, I/O) só depois dos gates
+  // de cota — o invariante "não tocar I/O pago antes de autorizado/dentro-da-cota" segue valendo.
+  let sourceBlobUrl: string | null = null
+  if (sourceImageId) {
+    const [srcRow] = await db
+      .select({ blobUrl: recipeImage.blobUrl })
+      .from(recipeImage)
+      .where(and(eq(recipeImage.id, sourceImageId), eq(recipeImage.lineageId, lineageId)))
+    if (!srcRow) return { kind: 'not_found' }
+    sourceBlobUrl = srcRow.blobUrl
+  }
 
   // 1b. Restrição GRANULAR de geração-por-IA (#226, ADR-0022 dec.3 / 1º gancho do ADR-0007): o
   //     requester (= o dono, já provado acima) está BLOQUEADO pelo Curador? ⇒ 403 ANTES do seam.
@@ -175,12 +199,28 @@ export async function applyRecipeImageGeneration(input: {
     categoria: rows.recipe.categoria ?? null,
     ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
   })
-  const prompt = composeImagePrompt(base, promptOverride)
+  // #285: edição (imagem-base presente) usa o template de EDIÇÃO (ainda ancorado na receita — o prato
+  // segue sendo o sujeito, nunca substituído). Do zero ⇒ o template de geração de sempre.
+  const prompt = sourceImageId
+    ? composeEditImagePrompt(base, promptOverride)
+    : composeImagePrompt(base, promptOverride)
+
+  // #285: AGORA (depois dos gates de cota) lê os BYTES da imagem-base (image-to-image). Erro de rede OU
+  // `get` null (blob sumiu) ⇒ 503 storage (espelha o try/catch do store.store; sem linha ⇒ sem slot).
+  let source: { data: Buffer; contentType: string } | undefined
+  if (sourceBlobUrl) {
+    try {
+      source = (await store.get(sourceBlobUrl)) ?? undefined
+    } catch {
+      return { kind: 'storage' }
+    }
+    if (!source) return { kind: 'storage' }
+  }
 
   // 5. Gera (Gemini REST) com o MODELO da config. Falha ⇒ 503 (nenhuma linha nasce ⇒ nenhum slot).
   let generated
   try {
-    generated = await generator.generateDishImage({ prompt, model: genConfig.model })
+    generated = await generator.generateDishImage({ prompt, model: genConfig.model, source })
   } catch {
     return { kind: 'generator' }
   }
@@ -199,9 +239,7 @@ export async function applyRecipeImageGeneration(input: {
 
   // 7. ACRESCENTA a `recipe_image` (ai_generated) à galeria + grava o ledger — DESELECIONADA (NÃO
   //    toca `image_id`, NÃO reapa). A face só muda no "Usar esta" (select). Se a tx falhar, o blob
-  //    novo fica órfão ⇒ limpa best-effort e relança (500 honesto).
-  // `lineage_id` é NOT NULL no banco; o `?? ''` só satisfaz o tipo opcional do RecipeRow puro.
-  const lineageId = rows.recipe.lineageId ?? ''
+  //    novo fica órfão ⇒ limpa best-effort e relança (500 honesto). `lineageId` foi içado acima.
   let newImageId: string
   try {
     newImageId = await db.transaction(async (tx) => {
@@ -211,17 +249,24 @@ export async function applyRecipeImageGeneration(input: {
         userId,
         lineageId,
         writeLedger: true,
-        // #227: geração COM refino marca review_required (sinal proativo do Curador, ADR-0022 dec.3).
-        reviewRequired: hasRefino,
+        // #227/#285: geração COM refino OU edição (sourceImageId) marca review_required (sinal proativo
+        // do Curador, ADR-0022 dec.3/4).
+        reviewRequired,
         // #224: telemetria de custo (best-effort). O `usageMetadata` pode faltar (caminho ao vivo sem
         // telemetria) ⇒ a linha do ledger nasce com usage/custo nulos. O modelo do gerador, quando
         // ausente, cai no modelo da config (genConfig.model) — o que de fato foi pedido.
         usage: generated.usageMetadata,
         model: generated.model ?? genConfig.model,
+        // #285: parentesco da edição (image-to-image). undefined ⇒ gerada do zero (source_image_id null).
+        sourceImageId,
       })
     })
   } catch (err) {
     await deleteOrphanBlob(store, blobUrl)
+    // #285: TOCTOU — se o dono APAGOU a imagem-base entre o SELECT inicial e este INSERT (janela que
+    // abrange store.get + a geração no Gemini), o FK de `source_image_id` estoura (23503). A fonte
+    // sumiu ⇒ é o mesmo caso de um id inexistente: 404, não um 500 cru. Qualquer outro erro relança.
+    if (sourceImageId && pgCode(err) === '23503') return { kind: 'not_found' }
     throw err
   }
 
@@ -231,7 +276,15 @@ export async function applyRecipeImageGeneration(input: {
   // #225: uma preview recém-gerada nunca nasce moderada (`moderated: false`).
   return {
     kind: 'ok',
-    image: { id: newImageId, url: blobUrl, aiGenerated: true, selected: false, moderated: false },
+    image: {
+      id: newImageId,
+      url: blobUrl,
+      aiGenerated: true,
+      selected: false,
+      moderated: false,
+      // #285: o preview carrega o parentesco ⇒ o modal mostra "✨ Editada com IA" (vs "Gerada por IA").
+      editedFromId: sourceImageId ?? null,
+    },
     basePrompt: base,
   }
 }
@@ -261,12 +314,22 @@ async function createGalleryImage(
     // #227: marca a imagem `review_required` (fila proativa do Curador). Só `ai_generated` COM refino
     // passa `true`; upload e geração-um-clique omitem ⇒ `false`. NÃO gateia publicação (ADR-0020).
     reviewRequired?: boolean
+    // #285: parentesco de edição (image-to-image) — a imagem-base de que esta variante foi editada.
+    // Ausente/undefined ⇒ gerada do zero / upload (source_image_id null).
+    sourceImageId?: string
   },
 ): Promise<string> {
   const { blobUrl, provenance, userId, lineageId, writeLedger, usage, model, reviewRequired } = args
   const [created] = await tx
     .insert(recipeImage)
-    .values({ blobUrl, provenance, createdBy: userId, lineageId, reviewRequired: reviewRequired ?? false })
+    .values({
+      blobUrl,
+      provenance,
+      createdBy: userId,
+      lineageId,
+      reviewRequired: reviewRequired ?? false,
+      sourceImageId: args.sourceImageId ?? null,
+    })
     .returning({ id: recipeImage.id })
 
   if (writeLedger && provenance === 'ai_generated') {
@@ -463,6 +526,7 @@ export async function loadGallery(
       blobUrl: recipeImage.blobUrl,
       provenance: recipeImage.provenance,
       moderatedAt: recipeImage.moderatedAt,
+      sourceImageId: recipeImage.sourceImageId,
     })
     .from(recipeImage)
     .where(eq(recipeImage.lineageId, lineageId))
@@ -473,6 +537,8 @@ export async function loadGallery(
     aiGenerated: r.provenance === 'ai_generated',
     selected: r.id === selectedImageId,
     moderated: r.moderatedAt != null,
+    // #285: parentesco de edição (image-to-image) ⇒ dirige o selo "Editada com IA" no estúdio do Owner.
+    editedFromId: r.sourceImageId ?? null,
   }))
 }
 

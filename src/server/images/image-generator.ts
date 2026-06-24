@@ -28,6 +28,11 @@ export type GenerateImageInput = {
   prompt: string
   /** Modelo a usar (default Nano Banana 2). #134 passa o modelo da config; #132 usa o default. */
   model?: string
+  /**
+   * #285 (image-to-image): imagem-base OPCIONAL. Quando presente, vira uma part `inlineData` ao lado do
+   * texto na chamada multimodal do Gemini (editar a partir dela). Ausente ⇒ geração do zero (texto-só).
+   */
+  source?: { data: Buffer; contentType: string }
 }
 
 /**
@@ -98,10 +103,22 @@ export class RealGeminiImageGenerator implements ImageGenerator {
     const model = input.model ?? DEFAULT_IMAGE_MODEL
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
 
+    // #285: parts multimodais — o texto (sempre) + (se edição) a imagem-base como `inlineData` base64.
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
+      { text: input.prompt },
+    ]
+    if (input.source) {
+      parts.push({
+        inlineData: {
+          mimeType: input.source.contentType,
+          data: input.source.data.toString('base64'),
+        },
+      })
+    }
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ parts: [{ text: input.prompt }] }] }),
+      body: JSON.stringify({ contents: [{ parts }] }),
     })
     if (!res.ok) {
       // Inclui o corpo do erro do Gemini na mensagem (SERVER-ONLY — nunca volta ao cliente; a rota
@@ -142,6 +159,8 @@ export class FakeImageGenerator implements ImageGenerator {
   public lastPrompt: string | null = null
   /** #134: o modelo recebido (da config do admin) — `undefined` quando o chamador não passou modelo. */
   public lastModel: string | undefined = undefined
+  /** #285: a imagem-base recebida (image-to-image) — `undefined` na geração do zero. */
+  public lastSource: { data: Buffer; contentType: string } | undefined = undefined
   constructor(
     private readonly canned: GeneratedImage = {
       data: Buffer.from([1, 2, 3, 4]),
@@ -154,6 +173,7 @@ export class FakeImageGenerator implements ImageGenerator {
     this.calls++
     this.lastPrompt = input.prompt
     this.lastModel = input.model
+    this.lastSource = input.source
     return this.canned
   }
 }

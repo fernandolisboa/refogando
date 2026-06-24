@@ -275,6 +275,14 @@ export const recipeImage = pgTable(
     // Quem subiu/gerou (#130). ON DELETE set null (espelha recipe.moderatedBy): apagar o usuário NÃO
     // apaga a imagem (a Receita que a referencia — possivelmente já no catálogo — sobrevive). NULLABLE.
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    // ── Parentesco de edição (image-to-image, #285, ADR-0022 atualização) ─────────
+    // Quando esta imagem é uma VARIANTE editada a partir de outra, aponta pra imagem-base (auto-FK
+    // na própria recipe_image). NULL = gerada do zero / upload. ON DELETE set null: apagar a base
+    // NÃO apaga a variante (independente). Dirige o selo "Editada com IA" (NOT NULL) vs "Gerada por
+    // IA" (NULL) — só no estúdio do Owner na v1 (#285; público = follow-up do ADR-0022).
+    sourceImageId: uuid('source_image_id').references((): AnyPgColumn => recipeImage.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     // ── Moderação "remover só a imagem" (#133, ADR-0016) ──────────────────────────
     // Eixo ORTOGONAL a recipe.moderation_removed_at (remover-a-Receita-do-pool, #18): aqui o Curador

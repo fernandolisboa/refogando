@@ -1,0 +1,2 @@
+ALTER TABLE "recipe_image" ADD COLUMN "source_image_id" uuid;--> statement-breakpoint
+ALTER TABLE "recipe_image" ADD CONSTRAINT "recipe_image_source_image_id_recipe_image_id_fk" FOREIGN KEY ("source_image_id") REFERENCES "public"."recipe_image"("id") ON DELETE set null ON UPDATE no action;

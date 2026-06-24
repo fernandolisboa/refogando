@@ -32,9 +32,13 @@ export async function POST(
   // Defesa-em-profundidade (#214): truncamos o override a IMAGE_PROMPT_OVERRIDE_MAX já aqui; o núcleo
   // (composeImagePrompt) também ancora SEMPRE no base da receita e re-limita — o servidor é a fonte
   // da verdade, o cliente não burla.
-  const body = (await request.json().catch(() => ({}))) as { prompt?: unknown }
+  const body = (await request.json().catch(() => ({}))) as { prompt?: unknown; sourceImageId?: unknown }
   const promptOverride =
     typeof body.prompt === 'string' ? body.prompt.slice(0, IMAGE_PROMPT_OVERRIDE_MAX) : undefined
+  // #285 (image-to-image): id da imagem-base OPCIONAL. O núcleo own-gateia pela linhagem (404 leak-safe
+  // se inexistente/de outra linhagem) — o servidor é a verdade; um id forjado nunca edita imagem alheia.
+  const sourceImageId =
+    typeof body.sourceImageId === 'string' ? body.sourceImageId : undefined
 
   const res = await applyRecipeImageGeneration({
     db: getDb(),
@@ -44,6 +48,7 @@ export async function POST(
     userId: g.session.user.id,
     role: g.session.user.role,
     promptOverride,
+    sourceImageId,
   })
 
   switch (res.kind) {

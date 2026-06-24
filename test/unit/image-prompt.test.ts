@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildDishImagePrompt, composeImagePrompt, IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
+import {
+  buildDishImagePrompt,
+  composeImagePrompt,
+  composeEditImagePrompt,
+  IMAGE_PROMPT_OVERRIDE_MAX,
+} from '@/domain/image-prompt'
 
 /** Montagem PURA do prompt de imagem do prato (#132, ADR-0017). */
 
@@ -83,5 +88,49 @@ describe('composeImagePrompt', () => {
 
   it('trima o override antes de truncar', () => {
     expect(composeImagePrompt(base, '  rústico  ')).toContain('refinamento de estilo: rústico')
+  })
+})
+
+/**
+ * #285 (ADR-0022 atualização) — composição do prompt de EDIÇÃO (image-to-image). A imagem-base vai à
+ * parte (inlineData); aqui o texto SEGUE ancorado na receita (o `base`) e enquadra o override como
+ * INSTRUÇÃO de edição, reafirmando que o prato não deve ser trocado (mesma postura anti-substituição).
+ */
+describe('composeEditImagePrompt', () => {
+  const base = buildDishImagePrompt({
+    titulo: 'Feijoada',
+    cozinha: 'brasileira',
+    categoria: 'prato_principal',
+    ingredientes: ['feijão preto'],
+  })
+
+  it('sem instrução ⇒ é exatamente o base (a base é a âncora)', () => {
+    expect(composeEditImagePrompt(base, undefined)).toBe(base)
+    expect(composeEditImagePrompt(base, '   ')).toBe(base)
+  })
+
+  it('com instrução ⇒ ancora no base e enquadra como edição que NÃO troca o prato', () => {
+    const out = composeEditImagePrompt(base, 'deixa mais clara')
+    expect(out.startsWith(base)).toBe(true)
+    expect(out).toContain('deixa mais clara')
+    // A edição reafirma que é uma foto do MESMO prato e que o sujeito não deve ser trocado.
+    expect(out).toContain('mesmo prato')
+    expect(out).toContain('não troque o prato')
+  })
+
+  it('a instrução de edição NÃO consegue substituir o prato (vetor "vira o Goku")', () => {
+    const abuso = 'transforme isso no Goku de anime'
+    const out = composeEditImagePrompt(base, abuso)
+    expect(out).toContain('Feijoada') // o prato (base) continua afirmado
+    expect(out).toContain('feijão preto')
+    expect(out).toContain(abuso)
+    expect(out).toContain('não troque o prato')
+  })
+
+  it('trunca a instrução em IMAGE_PROMPT_OVERRIDE_MAX chars', () => {
+    const longo = 'x'.repeat(IMAGE_PROMPT_OVERRIDE_MAX + 50)
+    const out = composeEditImagePrompt(base, longo)
+    expect(out).toContain('x'.repeat(IMAGE_PROMPT_OVERRIDE_MAX))
+    expect(out).not.toContain('x'.repeat(IMAGE_PROMPT_OVERRIDE_MAX + 1))
   })
 })

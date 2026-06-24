@@ -58,7 +58,8 @@ function formatCountdown(ms: number): string {
 }
 
 /** Imagem-preview devolvida por POST .../image/generate (#222/#223): `{ image, basePrompt }`. */
-type PreviewImage = { id: string; url: string; aiGenerated: boolean }
+// #285: `editedFromId` ≠ null ⇒ é uma VARIANTE editada (image-to-image) ⇒ selo "Editada com IA".
+type PreviewImage = { id: string; url: string; aiGenerated: boolean; editedFromId?: string | null }
 
 export function RecipeImageManager({
   recipeId,
@@ -118,6 +119,9 @@ export function RecipeImageManager({
   // #265: geração-EM-CURSO (≠ `busy` genérico). Distingue "gerando" de operações da galeria
   // (selecionar/apagar) — só com isto o corpo do modal mostra "Gerando…" (e não some a galeria).
   const [generating, setGenerating] = useState(false)
+  // #285 (image-to-image): id da imagem-base no MODO EDIÇÃO (entrado via "Editar a partir desta"). null
+  // ⇒ geração do zero. Setado ⇒ a geração POSTa { sourceImageId } e o refino é instrução de edição.
+  const [editBaseId, setEditBaseId] = useState<string | null>(null)
   // #222/#225: erro de seleção/deleção na galeria ('falha'|'emUso'|'moderada').
   const [galleryError, setGalleryError] = useState<null | 'falha' | 'emUso' | 'moderada'>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -136,10 +140,15 @@ export function RecipeImageManager({
     setGenerating(true)
     try {
       const trimmed = refino.trim()
+      // #285: no MODO EDIÇÃO (editBaseId setado) inclui sourceImageId — o servidor edita a partir dela.
+      const payload = {
+        ...(trimmed ? { prompt: trimmed } : {}),
+        ...(editBaseId ? { sourceImageId: editBaseId } : {}),
+      }
       const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(trimmed ? { prompt: trimmed } : {}),
+        body: JSON.stringify(payload),
       })
       if (res.status === 429) {
         const b = (await res.json().catch(() => ({}))) as { retryAfterMs?: number }
@@ -191,6 +200,26 @@ export function RecipeImageManager({
     setRefino('')
     setShowRefino(false)
     setBasePrompt(null)
+    // #285: from-scratch zera o modo edição (defesa: nunca vazar um sourceImageId stale numa geração
+    // do zero — entrada autoritativa, não depende do fechamento anterior ter limpado).
+    setEditBaseId(null)
+    setModalOpen(true)
+  }
+
+  /**
+   * #285 "Editar a partir desta": entra no MODO EDIÇÃO (imagem-base = `imageId`), abre o modal e revela
+   * o refino (aqui = instrução de edição). NÃO gera — só no clique de "Gerar". Funciona da galeria da
+   * PÁGINA (abre o modal) e da galeria DENTRO do modal (troca a base).
+   */
+  function onEditFrom(imageId: string) {
+    setEditBaseId(imageId)
+    setPreview(null)
+    setGenError(null)
+    setGalleryError(null)
+    setGeneratedThisSession(false)
+    setRefino('')
+    setShowRefino(true)
+    setBasePrompt(null)
     setModalOpen(true)
   }
 
@@ -205,6 +234,8 @@ export function RecipeImageManager({
       setRefino('')
       setShowRefino(false)
       setBasePrompt(null)
+      // #285: sai do modo edição ao fechar.
+      setEditBaseId(null)
     }
   }
 
@@ -223,6 +254,7 @@ export function RecipeImageManager({
       setModalOpen(false)
       setGeneratedThisSession(false) // já demos refresh; evita um 2º no close
       setPreview(null)
+      setEditBaseId(null) // #285: sai do modo edição ao aplicar
       router.refresh()
     } catch {
       setGenError('falha')
@@ -425,6 +457,7 @@ export function RecipeImageManager({
           busy={busy}
           onSelect={onSelect}
           onDelete={onDelete}
+          onEditFrom={onEditFrom}
           error={galleryError}
         />
       )}
@@ -459,9 +492,32 @@ export function RecipeImageManager({
           </SheetHeader>
 
           <div className="flex flex-col items-center gap-3">
+            {/* #285: banner do MODO EDIÇÃO (image-to-image). "Cancelar edição" volta à geração do zero. */}
+            {editBaseId && (
+              <div
+                role="status"
+                className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-bg px-3 py-2 text-sm"
+              >
+                <span className="font-medium text-fg">{m.imagemEditandoDesta}</span>
+                <button
+                  type="button"
+                  onClick={() => setEditBaseId(null)}
+                  disabled={busy}
+                  className="text-muted underline hover:text-fg disabled:opacity-50"
+                >
+                  {m.imagemCancelarEdicao}
+                </button>
+              </div>
+            )}
             {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element -- preview de blob público
-              <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
+              <div className="flex flex-col items-center gap-1">
+                {/* eslint-disable-next-line @next/next/no-img-element -- preview de blob público */}
+                <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
+                {/* #285: selo do preview — "Editada com IA" se veio de uma base, senão "Gerada por IA". */}
+                <span className="text-xs text-muted">
+                  {preview.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa}
+                </span>
+              </div>
             ) : generating ? (
               <p className="py-8 text-sm text-muted">{m.imagemGerando}</p>
             ) : (
@@ -473,6 +529,7 @@ export function RecipeImageManager({
                   busy={busy}
                   onSelect={onSelect}
                   onDelete={onDelete}
+                  onEditFrom={onEditFrom}
                   error={galleryError}
                 />
               </div>
@@ -535,7 +592,7 @@ export function RecipeImageManager({
                       onChange={(e) => setRefino(e.target.value)}
                       maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
                       rows={2}
-                      placeholder={m.imagemPromptPlaceholder}
+                      placeholder={editBaseId ? m.imagemEdicaoPlaceholder : m.imagemPromptPlaceholder}
                       disabled={busy}
                       className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
                     />
@@ -552,12 +609,25 @@ export function RecipeImageManager({
                   <Button type="button" size="sm" onClick={onUseThis} disabled={busy}>
                     {m.imagemUsarEsta}
                   </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={onGenerate} disabled={busy}>
+                  {/* #285: no modo edição, exige a instrução (refino) — espelha o guard do "Gerar". */}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onGenerate}
+                    disabled={busy || (!!editBaseId && !refino.trim())}
+                  >
                     {generating ? m.imagemGerando : m.imagemGerarOutra}
                   </Button>
                 </>
               ) : (
-                <Button type="button" size="sm" onClick={onGenerate} disabled={busy}>
+                // #285: no modo edição, "Gerar" exige a instrução de edição (refino não-vazio).
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={onGenerate}
+                  disabled={busy || (!!editBaseId && !refino.trim())}
+                >
                   {generating ? m.imagemGerando : m.imagemGerarAgora}
                 </Button>
               )}
@@ -582,12 +652,15 @@ function RecipeImageGallery({
   busy,
   onSelect,
   onDelete,
+  onEditFrom,
   error,
 }: {
   gallery: ReadonlyArray<GalleryImage>
   busy: boolean
   onSelect: (imageId: string) => void
   onDelete: (imageId: string) => void
+  /** #285: "Editar a partir desta" (image-to-image) — entra no modo edição com esta imagem-base. */
+  onEditFrom: (imageId: string) => void
   error: null | 'falha' | 'emUso' | 'moderada'
 }) {
   const { messages } = useLocale()
@@ -612,9 +685,11 @@ function RecipeImageGallery({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
                 <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
+                {/* #285: selo distinto — "editada com IA" quando é variante de outra imagem (editedFromId),
+                    senão "gerada por IA". Toda imagem editada é ai_generated, então a condição cobre ambas. */}
                 {img.aiGenerated && (
                   <span className="absolute bottom-0 left-0 right-0 bg-fg/60 px-1 py-0.5 text-[10px] text-bg">
-                    {m.imagemSeloIa}
+                    {img.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa}
                   </span>
                 )}
                 {/* #225: marcador "removida" — distinto do selo de IA (topo, tom de alerta). */}
@@ -642,6 +717,16 @@ function RecipeImageGallery({
                   {m.imagemApagar}
                 </button>
               </div>
+              {/* #285: "Editar a partir desta" (image-to-image). Habilitado mesmo na MODERADA (pode ser
+                  fonte — ADR-0022 dec.4; a variante re-entra na revisão). Só `busy` desabilita. */}
+              <button
+                type="button"
+                onClick={() => onEditFrom(img.id)}
+                disabled={busy}
+                className="text-left text-xs text-muted underline hover:text-fg disabled:no-underline disabled:opacity-50"
+              >
+                {m.imagemEditarDesta}
+              </button>
             </li>
           ))}
         </ul>
