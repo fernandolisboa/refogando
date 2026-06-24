@@ -318,6 +318,7 @@ function DetailChrome({
           gallery={view.gallery ?? []}
           reviewSuggested={reviewImage}
           aiGenEnabled={view.imageGenEnabled ?? true}
+          imageGenBlocked={view.imageGenBlocked ?? false}
         />
       )}
       {/* Afordâncias (#61): dono (gestão) vs não-dono ("Criar minha versão") vs visitante (convite) —

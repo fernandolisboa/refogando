@@ -741,3 +741,43 @@ describe('resolveRecipeView — imageGenEnabled (#134, owner-gated)', () => {
     expect('imageGenEnabled' in view).toBe(false)
   })
 })
+
+// ── #226: imageGenBlocked — restrição de conta do Curador, OWNER-GATED ─────────────
+// Mesma disciplina do imageGenEnabled, mas o fato é uma SANÇÃO (o Curador bloqueou a geração-por-IA
+// deste usuário). A projeção SÓ pode sair sob canManage (dono) — vazá-la a terceiro/anônimo exporia
+// uma moderação privada. Guarda a borda de projeção em resolveRecipeView contra regressão.
+describe('resolveRecipeView — imageGenBlocked (#226, owner-gated)', () => {
+  it('DONO (canManage) + flag presente ⇒ projeta imageGenBlocked (true e false 1:1)', () => {
+    const bloqueado = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1', imageGenBlocked: true }),
+    )
+    expect(bloqueado.canManage).toBe(true)
+    expect(bloqueado.imageGenBlocked).toBe(true)
+
+    const livre = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1', imageGenBlocked: false }),
+    )
+    expect(livre.imageGenBlocked).toBe(false) // false sai (é o valor, não "ausente")
+  })
+
+  it('NÃO-dono (viewerId ≠ ownerId) ⇒ AUSENTE mesmo com o flag setado (não vaza a sanção)', () => {
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-2', imageGenBlocked: true }),
+    )
+    expect(view.canManage).toBeUndefined()
+    expect('imageGenBlocked' in view).toBe(false)
+  })
+
+  it('anônimo (sem viewerId) ⇒ AUSENTE', () => {
+    const view = resolveRecipeView(
+      input({ recipe: recipeRow({ ownerId: 'u-1' }), imageGenBlocked: true }),
+    )
+    expect('imageGenBlocked' in view).toBe(false)
+  })
+
+  it('DONO mas o server NÃO carregou a flag (input omite) ⇒ AUSENTE (só sai quando pedido)', () => {
+    const view = resolveRecipeView(input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1' }))
+    expect(view.canManage).toBe(true)
+    expect('imageGenBlocked' in view).toBe(false)
+  })
+})

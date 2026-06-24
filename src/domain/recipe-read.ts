@@ -223,6 +223,15 @@ export type ResolveInput = {
    */
   imageGenEnabled?: boolean
   /**
+   * Geração-por-IA BLOQUEADA p/ este usuário? (#226, ADR-0022 dec.3 / 1º gancho do ADR-0007) —
+   * OWNER-GATED como `imageGenEnabled`. O server o carrega SÓ quando o requester é o dono (a flag é
+   * por-USUÁRIO em `users`, e a ação de gerar é owner-only). Projetado apenas sob `canManage` ⇒ a UI
+   * do dono esconde "Gerar com IA" + mostra uma nota clara quando o Curador o bloqueou. AUSENTE para
+   * não-dono OU quando o server não pediu. DISTINTO de `imageGenEnabled` (config-global do admin):
+   * este é a restrição por-conta do Curador. O servidor reimpõe o gate (403 geracao_bloqueada).
+   */
+  imageGenBlocked?: boolean
+  /**
    * Galeria de imagens da LINHAGEM (#222, ADR-0022 dec.1/5) — OWNER-GATED. O server a carrega SÓ
    * quando o requester é o dono (mirror de `imageGenEnabled`, NUNCA dentro de `loadRecipeRows`, que
    * o caminho público-por-slug reusa). Projetada apenas sob `canManage` — o caminho público/by-slug
@@ -376,6 +385,13 @@ export type RecipeView = {
    * não-dono / quando o server não carregou (mesma regra "ausente ≠ vazio").
    */
   imageGenEnabled?: boolean
+  /**
+   * Geração-por-IA BLOQUEADA p/ este usuário? (#226, ADR-0022 dec.3) — OWNER-GATED (presente SÓ sob
+   * `canManage` E quando o server carregou o flag). A UI do dono esconde "Gerar com IA" + mostra uma
+   * nota clara quando `true`. AUSENTE para não-dono / quando o server não pediu ("ausente ≠ vazio").
+   * Restrição por-CONTA do Curador (#226), distinta de `imageGenEnabled` (config-global do admin).
+   */
+  imageGenBlocked?: boolean
   /**
    * Galeria de imagens da LINHAGEM (#222, ADR-0022 dec.1) — OWNER-GATED (sai SÓ sob `canManage` E
    * quando o server a carregou). A UI do dono lista os thumbnails (selecionar/apagar). AUSENTE para
@@ -729,6 +745,9 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           // #134: flag de geração-por-IA-ligada, owner-gated. Só sai quando o server a carregou
           // (detalhe GET do dono); outras rotas que montam a view do dono não a pedem ⇒ ausente.
           ...(input.imageGenEnabled !== undefined ? { imageGenEnabled: input.imageGenEnabled } : {}),
+          // #226: flag de geração-por-IA-BLOQUEADA p/ este usuário, owner-gated (mirror do enabled).
+          // Só sai quando o server a carregou (detalhe GET do dono / view montada pelos cores de imagem).
+          ...(input.imageGenBlocked !== undefined ? { imageGenBlocked: input.imageGenBlocked } : {}),
           // #222: Galeria da linhagem, OWNER-GATED (sai SÓ aqui, junto da gestão). Só quando o server
           // a carregou (detalhe GET do dono / a view montada pelos cores de imagem). Caminho público/
           // by-slug nunca passa `gallery` ⇒ ausente. "ausente ≠ vazio".

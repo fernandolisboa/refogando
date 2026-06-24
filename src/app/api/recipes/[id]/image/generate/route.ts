@@ -51,6 +51,10 @@ export async function POST(
       // #222/#223: devolve a imagem-preview (deselecionada — a face não mudou) + o `basePrompt`
       // (prompt-base montado da receita, pro modal exibir read-only). O cliente nunca envia o base.
       return Response.json({ image: res.image, basePrompt: res.basePrompt }, { status: 200 })
+    case 'blocked':
+      // #226: o Curador BLOQUEOU a geração-por-IA deste usuário (abuso confirmado). 403 distinto do
+      // `disabled` (config-global) — a UI mostra uma mensagem própria (e também esconde a ação).
+      return Response.json({ error: 'geracao_bloqueada' }, { status: 403 })
     case 'disabled':
       // #134: geração desligada pelo admin (config). 403 — bloqueio explícito (a UI também esconde a ação).
       return Response.json({ error: 'geracao_desabilitada' }, { status: 403 })

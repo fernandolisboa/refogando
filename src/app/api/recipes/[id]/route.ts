@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
-import { recipe } from '@/db/schema'
+import { recipe, users } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
 import { loadImageGenConfig } from '@/server/app-config'
@@ -116,9 +116,19 @@ export async function GET(
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
   // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
-  const [social, imageGenEnabled, gallery] = await Promise.all([
+  const [social, imageGenEnabled, imageGenBlocked, gallery] = await Promise.all([
     loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead }),
     isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
+    // #226: a restrição GRANULAR de geração-por-IA do usuário (flag por-conta do Curador), owner-gated
+    // como imageGenEnabled — a flag é por-USUÁRIO e a ação de gerar é owner-only ⇒ é o bloqueio do
+    // próprio dono. O tráfego anônimo/não-dono NÃO paga essa query (afordância proativa de esconder).
+    isOwner && viewerId != null
+      ? db
+          .select({ blockedAt: users.imageGenBlockedAt })
+          .from(users)
+          .where(eq(users.id, viewerId))
+          .then((rows) => rows[0]?.blockedAt != null)
+      : Promise.resolve(undefined),
     // #222: a GALERIA da linhagem SÓ quando o requester é o DONO (mirror de imageGenEnabled, NÃO
     // dentro de loadRecipeRows — que o caminho público-por-slug reusa). O tráfego anônimo/não-dono
     // NÃO paga essa query e a vista pública NUNCA carrega o campo `gallery` (owner-gated).
@@ -135,6 +145,7 @@ export async function GET(
     viewerVoted: social.viewerVoted,
     viewerFavorited: social.viewerFavorited,
     imageGenEnabled,
+    imageGenBlocked,
     gallery,
   })
 

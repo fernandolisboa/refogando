@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
+import { eq, sql } from 'drizzle-orm'
 import { GET } from '@/app/api/recipes/[id]/route'
 import { getDb } from '@/server/deps'
-import { appConfig } from '@/db/schema'
+import { appConfig, users } from '@/db/schema'
 import {
   seedFeijoadaCatalog,
   seedRecipe,
@@ -258,5 +259,46 @@ describe('GET /api/recipes/[id] — campos de gestão gateados ao dono (#59)', (
     expect(nonOwner).not.toHaveProperty('imageGenEnabled') // owner-gated: não vaza a terceiro
     const anon = (await (await get(id, 'pt-BR')).json()) as GenView
     expect(anon).not.toHaveProperty('imageGenEnabled') // anônimo: nem o campo, nem a query de config
+  })
+
+  // ── #226: imageGenBlocked owner-gated (a restrição de conta do Curador SÓ vaza ao DONO) ──────
+  // Mesma tese do N5, mas o fato gateado é uma MODERAÇÃO (que um usuário foi disciplinado pelo
+  // Curador) — vazá-lo a terceiro/anônimo seria expor uma sanção privada. Guarda contra regressão
+  // que mova a projeção pra fora do `canManage` (resolveRecipeView) ou solte o `isOwner` na rota.
+  type BlockView = ManageView & { imageGenBlocked?: boolean }
+
+  it('N6: dono lê própria pública estando BLOQUEADO ⇒ imageGenBlocked=true (owner-gated)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'igb-owner@ex.com' })
+    const curatorId = await seedSessionHeaders({ email: 'igb-curator@ex.com', role: 'curador' }).then((r) => r.userId)
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+    // Marca o DONO como bloqueado pelo Curador (idioma de setImageGenRestriction).
+    await getDb()
+      .update(users)
+      .set({ imageGenBlockedAt: sql`now()`, imageGenBlockedBy: curatorId, imageGenBlockedReason: 'abuso' })
+      .where(eq(users.id, userId))
+
+    const view = (await (await getAs(id, headers, 'pt-BR')).json()) as BlockView
+    expect(view.canManage).toBe(true)
+    expect(view.imageGenBlocked).toBe(true) // o dono VÊ a própria restrição (afordância proativa)
+  })
+
+  it('N6b: NÃO vaza imageGenBlocked a não-dono autenticado nem a anônimo (dono BLOQUEADO)', async () => {
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'igb-owner2@ex.com' })
+    const { headers: intruderHeaders } = await seedSessionHeaders({ email: 'igb-intruder@ex.com' })
+    const curatorId = await seedSessionHeaders({ email: 'igb-curator2@ex.com', role: 'curador' }).then((r) => r.userId)
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+    await getDb()
+      .update(users)
+      .set({ imageGenBlockedAt: sql`now()`, imageGenBlockedBy: curatorId, imageGenBlockedReason: 'abuso' })
+      .where(eq(users.id, ownerId))
+
+    // Terceiro logado: o campo NÃO sai (a moderação do dono é fato privado — owner-gated).
+    const nonOwner = (await (await getAs(id, intruderHeaders, 'pt-BR')).json()) as BlockView
+    expect(nonOwner).not.toHaveProperty('imageGenBlocked')
+    // Anônimo: nem o campo, nem a query de bloqueio (caminho quente não paga).
+    const anon = (await (await get(id, 'pt-BR')).json()) as BlockView
+    expect(anon).not.toHaveProperty('imageGenBlocked')
   })
 })

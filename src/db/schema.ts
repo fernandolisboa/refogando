@@ -516,6 +516,21 @@ export const users = pgTable(
     banned: boolean('banned').notNull().default(false),
     banReason: text('ban_reason'),
     banExpires: timestamp('ban_expires', { withTimezone: true }),
+    // Restrição GRANULAR de geração de imagem por IA (#226, ADR-0022 dec.3 / 1º gancho do ADR-0007).
+    // DISTINTA do `banned` inerte (ban de CONTA INTEIRA, ainda deferido): aqui o Curador bloqueia SÓ a
+    // geração de imagem por IA do Usuário (abuso confirmado) — o upload de foto e o resto da conta
+    // seguem funcionando. As 3 colunas espelham o idioma de moderação (`recipe.moderation_*`):
+    // `at` (quando) + `by` (qual Curador, FK ON DELETE set null) + `reason` (texto livre, obrigatório
+    // não-vazio na borda do route ao bloquear). Bloqueado = `image_gen_blocked_at IS NOT NULL`. Todas
+    // NULLABLE, sem backfill: usuários existentes nascem desbloqueados. A escada completa (bloquear
+    // geração-de-receita → conta inteira) é follow-up (ADR-0007), fora desta fatia.
+    imageGenBlockedAt: timestamp('image_gen_blocked_at', { withTimezone: true }),
+    // Self-FK (o Curador é um `users`): `AnyPgColumn` quebra a inferência circular do TS — mesma
+    // técnica do self-ref `recipe.parent_recipe_id`/`recipe.image_id`.
+    imageGenBlockedBy: uuid('image_gen_blocked_by').references((): AnyPgColumn => users.id, {
+      onDelete: 'set null',
+    }),
+    imageGenBlockedReason: text('image_gen_blocked_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -524,6 +539,13 @@ export const users = pgTable(
     // Unicidade do handle no banco (#128): a borda gera/edita garantindo livre, mas a UNIQUE
     // é a última linha contra corrida (dois signups simultâneos com o mesmo slug → 23505).
     uniqueIndex('users_handle_uq').on(t.handle),
+    // Consistência da restrição de imagem (#226) — espelha `recipe_moderation_consistency_chk`:
+    // `at` e `by` setados JUNTOS ou ambos NULL (o `reason` fica fora do CHECK — texto livre validado
+    // não-vazio na borda do route ao bloquear). Garante que um bloqueio sempre carrega proveniência.
+    check(
+      'users_image_gen_block_consistency_chk',
+      sql`(${t.imageGenBlockedAt} IS NULL) = (${t.imageGenBlockedBy} IS NULL)`,
+    ),
   ],
 )
 
