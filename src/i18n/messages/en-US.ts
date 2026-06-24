@@ -249,6 +249,9 @@ export const enUS: Messages = {
     imagemPreviewDescricao: 'Preview the generated image before using it. Generating another keeps the previous ones in the gallery.',
     imagemUsarEsta: 'Use this one',
     imagemGerarOutra: 'Generate another',
+    // #265: primary modal CTA in the RESTING state (no preview yet). Distinct from `imagemGerar`
+    // ("✨ Generate with AI", outer button) — opening does not generate; only the click does.
+    imagemGerarAgora: 'Generate',
     imagemFechar: 'Close',
     imagemGaleria: 'Image gallery',
     imagemGaleriaVazia: 'No images yet. Generate one with AI or upload your own photo.',
