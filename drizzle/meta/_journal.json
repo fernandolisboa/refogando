@@ -211,6 +211,13 @@
       "when": 1782331850896,
       "tag": "0029_chief_carmella_unuscione",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782343442836,
+      "tag": "0030_tricky_quicksilver",
+      "breakpoints": true
     }
   ]
 }

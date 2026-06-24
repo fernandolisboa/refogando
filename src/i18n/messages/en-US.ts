@@ -245,6 +245,12 @@ export const enUS: Messages = {
     imagemLimite: "You've hit the generation limit for now. Frees up in ~{tempo}.",
     // Image studio (#222, ADR-0022): preview modal + re-selectable gallery.
     imagemSeloIa: '✨ AI-generated',
+    // #285 (image-to-image): edit from an existing gallery image (distinct badge + edit mode).
+    imagemSeloIaEditada: '✨ AI-edited',
+    imagemEditarDesta: 'Edit from this',
+    imagemEditandoDesta: 'Editing from this image',
+    imagemCancelarEdicao: 'Cancel edit',
+    imagemEdicaoPlaceholder: 'Describe the change you want in this image.',
     imagemPreviewTitulo: 'Generate image with AI',
     imagemPreviewDescricao: 'Preview the generated image before using it. Generating another keeps the previous ones in the gallery.',
     imagemUsarEsta: 'Use this one',

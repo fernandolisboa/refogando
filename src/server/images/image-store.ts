@@ -32,6 +32,13 @@ export type StoredImage = { url: string }
 export interface ImageStore {
   /** Guarda os bytes e devolve a URL pública. */
   store(input: StoreImageInput): Promise<StoredImage>
+  /**
+   * #285 (image-to-image): lê de volta os bytes de um blob (a imagem-base de uma edição vira
+   * `inlineData` pro Gemini). Retorna `null` quando não-encontrado / resposta `!ok`; deixa um erro de
+   * rede genuíno BORBULHAR (o call-site faz try/catch → 503, como no `store`). Seam, não `fetch` direto:
+   * o dublê lê do próprio map (testes não tocam a rede).
+   */
+  get(url: string): Promise<{ data: Buffer; contentType: string } | null>
   /** Apaga um blob que NÓS guardamos. No-op SILENCIOSO se a URL não pertence a este store. */
   delete(url: string): Promise<void>
   /** A URL aponta para um blob deste store? (só apagamos o que guardamos — OAuth fica intacto.) */
@@ -107,6 +114,17 @@ export class RealImageStore implements ImageStore {
     return { url: res.url }
   }
 
+  async get(url: string): Promise<{ data: Buffer; contentType: string } | null> {
+    // Blob PUBLIC: a URL serve direto (leitura não exige token). `!res.ok` ⇒ null (não lê o body);
+    // um erro de rede genuíno borbulha pro call-site (→ 503).
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const data = Buffer.from(await res.arrayBuffer())
+    // content-type ausente/vazio ⇒ default 'image/png' (espelha o fallback do generator).
+    const contentType = res.headers.get('content-type')?.trim() || 'image/png'
+    return { data, contentType }
+  }
+
   async delete(url: string): Promise<void> {
     if (!this.owns(url)) return
     await del(url, { token: this.requireToken() })
@@ -135,6 +153,12 @@ export class FakeImageStore implements ImageStore {
     return { url }
   }
 
+  async get(url: string): Promise<{ data: Buffer; contentType: string } | null> {
+    const blob = this.blobs.get(url)
+    if (!blob) return null
+    return { data: Buffer.from(blob.bytes), contentType: blob.contentType }
+  }
+
   async delete(url: string): Promise<void> {
     if (!this.owns(url)) return
     this.blobs.delete(url)
@@ -148,6 +172,10 @@ export class FakeImageStore implements ImageStore {
 /** Dublê que SEMPRE falha em store/delete — exercita a degradação (rota deve responder 5xx/erro). */
 export class ThrowingImageStore implements ImageStore {
   async store(): Promise<StoredImage> {
+    throw new Error('storage de imagem indisponível (dublê de degradação)')
+  }
+
+  async get(): Promise<{ data: Buffer; contentType: string } | null> {
     throw new Error('storage de imagem indisponível (dublê de degradação)')
   }
 

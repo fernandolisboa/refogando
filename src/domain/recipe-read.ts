@@ -266,6 +266,12 @@ export type GalleryImage = {
    * Owner-gated como a galeria toda — nunca vaza no caminho público.
    */
   moderated: boolean
+  /**
+   * #285 (ADR-0022 atualização): id da **imagem-base** quando esta é uma VARIANTE editada a partir de
+   * outra (image-to-image). `null` = gerada do zero / upload. Dirige o selo "✨ Editada com IA" (vs
+   * "✨ Gerada por IA") no estúdio do Owner. Owner-gated como a galeria toda.
+   */
+  editedFromId: string | null
 }
 
 /** Facetas: `restricoes` é opcional — ausente quando o array vier vazio. */

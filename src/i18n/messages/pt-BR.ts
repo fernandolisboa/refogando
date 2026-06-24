@@ -258,6 +258,12 @@ export const ptBR = {
     imagemLimite: 'Você atingiu o limite de gerações por enquanto. Libera em ~{tempo}.',
     // Estúdio de imagem (#222, ADR-0022): preview-modal + galeria re-selecionável.
     imagemSeloIa: '✨ gerada por IA',
+    // #285 (image-to-image): editar a partir de outra imagem da galeria (selo distinto + modo edição).
+    imagemSeloIaEditada: '✨ editada com IA',
+    imagemEditarDesta: 'Editar a partir desta',
+    imagemEditandoDesta: 'Editando a partir desta imagem',
+    imagemCancelarEdicao: 'Cancelar edição',
+    imagemEdicaoPlaceholder: 'Descreva a mudança que você quer nesta imagem.',
     imagemPreviewTitulo: 'Gerar imagem com IA',
     imagemPreviewDescricao: 'Veja a imagem gerada antes de usá-la. Gerar outra mantém as anteriores na galeria.',
     imagemUsarEsta: 'Usar esta',

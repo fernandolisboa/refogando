@@ -267,8 +267,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#265 a galeria existente aparece DENTRO do modal ao abrir (estado de repouso)', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     // Nada deve ser chamado ao abrir; se algo POSTar, 405 (o teste falharia ao não achar a galeria).
     mockFetch(() => ({ status: 405 }))
@@ -286,8 +286,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#265 erro de ação na PÁGINA não vaza pro modal: abrir limpa o galleryError', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     // Apagar dá 409 in_use ⇒ galleryError='emUso' na página.
     mockFetch(() => ({ status: 409, body: { error: 'in_use' } }))
@@ -585,8 +585,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   // ── #222: galeria ───────────────────────────────────────────────────────────────
   it('#222 galeria lista as imagens + selo IA na gerada', () => {
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     renderManager({ hasImage: true, gallery })
     expect(screen.getByText(M.imagemGaleria)).toBeInTheDocument()
@@ -606,8 +606,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 clicar num thumbnail NÃO-selecionado ⇒ POST select + refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith(`/images/${IMG2}/select`) ? { status: 200, body: { id: RID } } : { status: 405 },
@@ -625,8 +625,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 apagar uma imagem da galeria ⇒ DELETE + refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     const { calls } = mockFetch((method, url) =>
       method === 'DELETE' && url.endsWith(`/images/${IMG2}`) ? { status: 200, body: { id: RID } } : { status: 405 },
@@ -644,8 +644,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   it('#222 apagar 409 in_use ⇒ mensagem amigável, sem refresh', async () => {
     const user = userEvent.setup()
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     mockFetch(() => ({ status: 409, body: { error: 'in_use' } }))
     renderManager({ hasImage: true, gallery })
@@ -660,8 +660,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
   // ── #225: moderação × galeria ─────────────────────────────────────────────────────
   it('#225 imagem moderada na galeria: marca "removida" + desabilita selecionar', () => {
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: false, moderated: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: false, moderated: true, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     renderManager({ hasImage: true, gallery })
 
@@ -683,8 +683,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     // A moderada está desabilitada por afordância; clicamos numa LIMPA cuja rota responde 409
     // (o servidor é a verdade; a UI mapeia 409 imagem_moderada → mensagem amigável).
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     mockFetch(() => ({ status: 409, body: { error: 'imagem_moderada' } }))
     renderManager({ hasImage: true, gallery })
@@ -698,8 +698,8 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
   it('#225 nudge (US21): a face SELECIONADA está moderada ⇒ aviso de escolher outra (role=status)', () => {
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: true },
-      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: true, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
     ]
     renderManager({ hasImage: true, gallery })
     expect(screen.getByText(M.imagemSelecionadaModerada)).toBeInTheDocument()
@@ -707,7 +707,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
   it('#225 sem face moderada ⇒ nenhum nudge de moderação', () => {
     const gallery: GalleryImage[] = [
-      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false },
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: false, selected: true, moderated: false, editedFromId: null },
     ]
     renderManager({ hasImage: true, gallery })
     expect(screen.queryByText(M.imagemSelecionadaModerada)).not.toBeInTheDocument()
@@ -725,5 +725,142 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     d.resolve(pngFile())
     await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+})
+
+describe('RecipeImageManager — image-to-image (editar a partir de outra) (#285)', () => {
+  const EDIT_BODY = {
+    image: { id: '44444444-4444-4444-4444-444444444444', url: 'https://fake-blob.local/recipes/edit.png', aiGenerated: true, editedFromId: IMG1 },
+    basePrompt: 'Prato: Bolo.',
+  }
+
+  it('#285 "Editar a partir desta" (galeria da página) abre o modal em modo edição e POSTa { sourceImageId }', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: true, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: false, selected: false, moderated: false, editedFromId: null },
+    ]
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate') ? { status: 200, body: EDIT_BODY } : { status: 405 },
+    )
+    renderManager({ hasImage: true, gallery })
+
+    // Clica "Editar a partir desta" no 1º thumbnail (página; modal fechado) → abre o modal em modo edição.
+    await user.click(screen.getAllByText(M.imagemEditarDesta)[0])
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(M.imagemEditandoDesta)).toBeInTheDocument()
+
+    // Sem instrução, "Gerar" está DESABILITADO (edição exige refino).
+    const gerar = within(dialog).getByText(M.imagemGerarAgora).closest('button') as HTMLButtonElement
+    expect(gerar.disabled).toBe(true)
+
+    // Digita a instrução e gera.
+    await user.type(within(dialog).getByLabelText(M.imagemPromptRotulo), 'deixa mais clara')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    const gen = calls.find((c) => c.url.endsWith('/image/generate'))!
+    expect(JSON.parse(String(gen.body))).toEqual({ prompt: 'deixa mais clara', sourceImageId: IMG1 })
+    // O preview mostra o selo "Editada com IA".
+    await waitFor(() => expect(within(dialog).getByText(M.imagemSeloIaEditada)).toBeInTheDocument())
+  })
+
+  it('#285 thumbnail editado mostra "editada com IA"; o gerado-do-zero mostra "gerada por IA"', () => {
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: false, moderated: false, editedFromId: null },
+      { id: IMG2, url: 'https://fake-blob.local/recipes/1.png', aiGenerated: true, selected: false, moderated: false, editedFromId: IMG1 },
+    ]
+    renderManager({ hasImage: true, gallery })
+    expect(screen.getByText(M.imagemSeloIaEditada)).toBeInTheDocument()
+    expect(screen.getByText(M.imagemSeloIa)).toBeInTheDocument()
+  })
+
+  it('#285 "Cancelar edição" sai do modo edição (o banner some)', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: false, moderated: false, editedFromId: null },
+    ]
+    mockFetch(() => ({ status: 405 }))
+    renderManager({ hasImage: true, gallery })
+
+    await user.click(screen.getAllByText(M.imagemEditarDesta)[0])
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(M.imagemEditandoDesta)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByText(M.imagemCancelarEdicao))
+    expect(within(dialog).queryByText(M.imagemEditandoDesta)).not.toBeInTheDocument()
+  })
+
+  it('#285 editar a MODERADA é permitido (botão habilitado) — vira fonte', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: false, moderated: true, editedFromId: null },
+    ]
+    mockFetch(() => ({ status: 405 }))
+    renderManager({ hasImage: true, gallery })
+
+    // A moderada tem o botão "Editar a partir desta" HABILITADO (só `busy` desabilita).
+    const editar = screen.getByText(M.imagemEditarDesta).closest('button') as HTMLButtonElement
+    expect(editar.disabled).toBe(false)
+    await user.click(editar)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(M.imagemEditandoDesta)).toBeInTheDocument()
+  })
+
+  it('#285 from-scratch após cancelar edição (fechar) NÃO vaza sourceImageId', async () => {
+    const user = userEvent.setup()
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: false, moderated: false, editedFromId: null },
+    ]
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? { status: 200, body: { image: { id: IMG2, url: 'https://fake-blob.local/recipes/n.png', aiGenerated: true, editedFromId: null } } }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: true, gallery })
+
+    // Entra em modo edição e FECHA o modal (cancela via close).
+    await user.click(screen.getAllByText(M.imagemEditarDesta)[0])
+    const dialog1 = await screen.findByRole('dialog')
+    await user.click(within(dialog1).getByLabelText(M.imagemFechar))
+    await waitFor(() => expect(within(document.body).queryByRole('dialog')).not.toBeInTheDocument())
+
+    // Abre o modal from-scratch ("Gerar com IA") e gera (refino vazio).
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog2 = await screen.findByRole('dialog')
+    expect(within(dialog2).queryByText(M.imagemEditandoDesta)).not.toBeInTheDocument()
+    await user.click(within(dialog2).getByText(M.imagemGerarAgora))
+
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith('/image/generate'))).toBe(true))
+    const gen = calls.find((c) => c.url.endsWith('/image/generate'))!
+    expect(JSON.parse(String(gen.body))).toEqual({}) // SEM sourceImageId
+  })
+
+  it('#285 "Gerar outra" em modo edição mantém o sourceImageId (itera a edição)', async () => {
+    const user = userEvent.setup()
+    let n = 0
+    const gallery: GalleryImage[] = [
+      { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true, selected: false, moderated: false, editedFromId: null },
+    ]
+    const { calls } = mockFetch((method, url) => {
+      if (method === 'POST' && url.endsWith('/image/generate')) {
+        n++
+        return { status: 200, body: { image: { id: `v${n}`, url: `https://fake-blob.local/recipes/e${n}.png`, aiGenerated: true, editedFromId: IMG1 }, basePrompt: 'Prato: Bolo.' } }
+      }
+      return { status: 405 }
+    })
+    renderManager({ hasImage: true, gallery })
+
+    await user.click(screen.getAllByText(M.imagemEditarDesta)[0])
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText(M.imagemPromptRotulo), 'mais clara')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+    await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
+
+    // "Gerar outra" mantém a edição (sourceImageId) — o refino ainda está preenchido.
+    await user.click(within(dialog).getByText(M.imagemGerarOutra))
+    await waitFor(() => expect(calls.filter((c) => c.url.endsWith('/image/generate')).length).toBe(2))
+    const second = calls.filter((c) => c.url.endsWith('/image/generate'))[1]
+    expect(JSON.parse(String(second.body))).toEqual({ prompt: 'mais clara', sourceImageId: IMG1 })
   })
 })

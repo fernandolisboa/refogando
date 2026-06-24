@@ -3,7 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/[id]/image/generate/route'
 import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/select/route'
 import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
-import { FakeImageStore } from '@/server/images/image-store'
+import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator, FAKE_IMAGE_USAGE } from '@/server/images/image-generator'
 import { recipe, recipeImage, imageGeneration, appConfig, users } from '@/db/schema'
 import { computeImageCost } from '@/domain/image-cost'
@@ -29,11 +29,16 @@ beforeEach(() => {
 })
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
-function genReq(id: string, headers?: Headers, prompt?: string): Request {
+function genReq(id: string, headers?: Headers, prompt?: string, sourceImageId?: string): Request {
+  const body: Record<string, unknown> = {}
+  if (prompt !== undefined) body.prompt = prompt
+  // #285 (image-to-image): id opcional da imagem-base.
+  if (sourceImageId !== undefined) body.sourceImageId = sourceImageId
+  const hasBody = prompt !== undefined || sourceImageId !== undefined
   return new Request(`http://localhost/api/recipes/${id}/image/generate`, {
     method: 'POST',
     headers: { ...(headers ? Object.fromEntries(headers) : {}), 'content-type': 'application/json' },
-    body: prompt !== undefined ? JSON.stringify({ prompt }) : undefined,
+    body: hasBody ? JSON.stringify(body) : undefined,
   })
 }
 async function imageState(recipeId: string): Promise<{ imageId: string | null }> {
@@ -457,5 +462,90 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
       const [r] = await getDb().select({ imageId: recipe.imageId }).from(recipe).where(eq(recipe.id, id))
       expect(r.imageId).toBe(gen.image.id) // a face pública é a imagem refinada
     })
+  })
+})
+
+describe('#285 image-to-image (editar a partir de outra)', () => {
+  /** Gera a imagem-FONTE via a rota (do zero) → cria recipe_image + guarda o blob no FakeImageStore. */
+  async function seedSource(recipeId: string, headers: Headers): Promise<{ id: string; url: string }> {
+    const res = await POST(genReq(recipeId, headers), ctx(recipeId))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { image: { id: string; url: string } }
+    return body.image
+  }
+
+  it('editar a partir de uma imagem da galeria: passa a base ao gerador; variante persiste source_image_id + review_required + editedFromId', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'edit-ok@gen.test' })
+    const id = await seedOwned(userId, 'Bolo de fubá')
+
+    // 1. Gera a FONTE (do zero — nenhuma imagem-base passada ao gerador).
+    const source = await seedSource(id, headers)
+    expect(store.blobs.has(source.url)).toBe(true)
+    expect(gen.lastSource).toBeUndefined()
+
+    // 2. Edita a partir dela (com instrução).
+    const res = await POST(genReq(id, headers, 'mais clara e bem iluminada', source.id), ctx(id))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { image: { id: string; editedFromId: string | null } }
+    expect(body.image.editedFromId).toBe(source.id)
+
+    // O gerador recebeu a imagem-base (bytes do blob da fonte).
+    expect(gen.lastSource).toBeDefined()
+    expect(Buffer.isBuffer(gen.lastSource!.data)).toBe(true)
+
+    // A variante persiste source_image_id + review_required + ai_generated.
+    const [variant] = await getDb()
+      .select({
+        sourceImageId: recipeImage.sourceImageId,
+        reviewRequired: recipeImage.reviewRequired,
+        provenance: recipeImage.provenance,
+      })
+      .from(recipeImage)
+      .where(eq(recipeImage.id, body.image.id))
+    expect(variant.sourceImageId).toBe(source.id)
+    expect(variant.reviewRequired).toBe(true)
+    expect(variant.provenance).toBe('ai_generated')
+  })
+
+  it('imagem-base de OUTRA linhagem ⇒ 404 leak-safe (não edita imagem de linhagem alheia)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'edit-foreign@gen.test' })
+    const idA = await seedOwned(userId, 'Receita A')
+    const idB = await seedOwned(userId, 'Receita B') // linhagem distinta, MESMO dono
+    const sourceB = await seedSource(idB, headers)
+
+    // Editar A usando a fonte de B (outra linhagem) ⇒ 404 (a fonte não pertence à galeria de A).
+    const res = await POST(genReq(idA, headers, 'mais clara', sourceB.id), ctx(idA))
+    expect(res.status).toBe(404)
+  })
+
+  it('imagem-base MODERADA da MESMA linhagem ⇒ 200 (permitida; a variante re-entra na revisão)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'edit-moderada@gen.test' })
+    const id = await seedOwned(userId, 'Bolo')
+    const source = await seedSource(id, headers)
+    // O Curador moderou a fonte (#133): segue na galeria do dono, não vira face — MAS pode ser editada.
+    // A moderação é consistente (chk): moderated_at/by/reason juntos.
+    await getDb()
+      .update(recipeImage)
+      .set({ moderatedAt: sql`now()`, moderatedBy: userId, moderatedReason: 'teste' })
+      .where(eq(recipeImage.id, source.id))
+
+    const res = await POST(genReq(id, headers, 'em aquarela', source.id), ctx(id))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { image: { id: string; editedFromId: string | null } }
+    expect(body.image.editedFromId).toBe(source.id)
+    expect(await reviewRequiredOf(body.image.id)).toBe(true)
+  })
+
+  it('store.get falha na imagem-base ⇒ 503 storage; nenhuma variante criada', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'edit-503@gen.test' })
+    const id = await seedOwned(userId, 'Bolo')
+    const source = await seedSource(id, headers) // fonte gerada com o FakeStore (o blob existe)
+    const before = await countAiGen()
+
+    // Troca o store por um que SEMPRE lança ⇒ o store.get da imagem-base estoura ⇒ 503 storage.
+    setImageStore(new ThrowingImageStore())
+    const res = await POST(genReq(id, headers, 'mais clara', source.id), ctx(id))
+    expect(res.status).toBe(503)
+    expect(await countAiGen()).toBe(before) // nada nasceu (falhou antes do insert)
   })
 })
