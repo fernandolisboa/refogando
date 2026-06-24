@@ -44,6 +44,11 @@ async function countAiGen(): Promise<number> {
   const [r] = await getDb().select({ n: sql<number>`count(*)::int` }).from(recipeImage).where(eq(recipeImage.provenance, 'ai_generated'))
   return r?.n ?? 0
 }
+/** #227: lê o flag review_required de uma recipe_image (a fila proativa do Curador). */
+async function reviewRequiredOf(imageId: string): Promise<boolean> {
+  const [r] = await getDb().select({ rr: recipeImage.reviewRequired }).from(recipeImage).where(eq(recipeImage.id, imageId))
+  return r?.rr ?? false
+}
 /** Receita ai própria com título + 1 ingrediente (pro prompt). */
 async function seedOwned(ownerId: string, titulo = 'Bolo de fubá'): Promise<string> {
   const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId, visibility: 'private', cozinha: 'brasileira' })
@@ -397,6 +402,60 @@ describe('/api/recipes/[id]/image/generate — geração-como-preview (#132/#222
       // Gate de dono ANTES do check de bloqueio ⇒ 404 (não 403): o intruso nunca aprende o bloqueio alheio.
       expect(res.status).toBe(404)
       expect(throwing.calls).toBe(0)
+    })
+  })
+
+  // ── #227: geração COM refino marca review_required (sinal proativo, ADR-0022 dec.3) ──────────
+  describe('#227 review_required (sinal proativo do Curador)', () => {
+    it('geração COM refino (prompt não-vazio) marca a imagem review_required=true', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'comrefino@rr.test' })
+      const id = await seedOwned(userId)
+
+      const res = await POST(genReq(id, headers, 'estilo neon futurista'), ctx(id))
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { image: { id: string } }
+      expect(await reviewRequiredOf(body.image.id)).toBe(true)
+    })
+
+    it('geração SEM refino (um-clique, sem prompt) NÃO marca: review_required=false', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'semrefino@rr.test' })
+      const id = await seedOwned(userId)
+
+      const res = await POST(genReq(id, headers), ctx(id)) // sem prompt
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { image: { id: string } }
+      expect(await reviewRequiredOf(body.image.id)).toBe(false)
+    })
+
+    it('refino só de espaços em branco NÃO marca (trim ⇒ false)', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'soespaco@rr.test' })
+      const id = await seedOwned(userId)
+
+      const res = await POST(genReq(id, headers, '   '), ctx(id))
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { image: { id: string } }
+      expect(await reviewRequiredOf(body.image.id)).toBe(false)
+    })
+
+    it('review_required NÃO gateia a publicação: a imagem refinada pode virar a face pública (select 200)', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'publica@rr.test' })
+      const id = await seedOwned(userId)
+      const gen = (await (await POST(genReq(id, headers, 'estilo aquarela'), ctx(id))).json()) as {
+        image: { id: string }
+      }
+      expect(await reviewRequiredOf(gen.image.id)).toBe(true)
+
+      // Default-open INTACTO (ADR-0020): review_required não bloqueia o select — a imagem vira a face.
+      const selRes = await selectRoute(
+        new Request(`http://localhost/api/recipes/${id}/images/${gen.image.id}/select`, {
+          method: 'POST',
+          headers,
+        }),
+        { params: Promise.resolve({ id, imageId: gen.image.id }) },
+      )
+      expect(selRes.status).toBe(200)
+      const [r] = await getDb().select({ imageId: recipe.imageId }).from(recipe).where(eq(recipe.id, id))
+      expect(r.imageId).toBe(gen.image.id) // a face pública é a imagem refinada
     })
   })
 })

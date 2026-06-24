@@ -843,6 +843,31 @@ export const ptBR = {
     motivoBloqueioPlaceholder: 'Explique por que o autor perde a geração de imagem por IA',
     erroUsuarioNaoEncontrado: 'Não foi possível encontrar o autor desta receita.',
   },
+  // #227 (ADR-0022 dec.3): fila PROATIVA e NÃO-BLOQUEANTE do Curador — gerações por IA COM refino.
+  // A imagem segue pública (default-open, ADR-0020); o Curador só monitora e pode REMOVER (moderar,
+  // esconde do público) OU DISPENSAR (julgou ok, mantém pública). Espelha a fila de moderação.
+  revisaoImagens: {
+    titulo: 'Imagens para revisar',
+    descricao:
+      'Gerações por IA com refino do autor. A imagem continua visível ao público — esta fila é só para monitorar. Remova (esconde do público) ou dispense (mantém visível).',
+    receita: 'Receita',
+    autor: 'Autor',
+    semReceita: 'Sem receita vinculada',
+    refinada: 'Gerada com refino',
+    abrirReceita: 'Abrir receita',
+    remover: 'Remover',
+    removendo: 'Removendo…',
+    confirmarRemocao: 'Confirmar remoção',
+    motivoRemocao: 'Motivo da remoção',
+    motivoPlaceholder: 'Explique por que esta imagem sai do público',
+    dispensar: 'Dispensar',
+    dispensando: 'Dispensando…',
+    cancelar: 'Cancelar',
+    filaVazia: 'Nenhuma imagem para revisar.',
+    erroMotivo: 'Informe o motivo da remoção.',
+    erroNaoEncontrada: 'Esta imagem não está mais na fila.',
+    erroGenerico: 'Não foi possível processar a imagem. Tente de novo.',
+  },
   traducoesStale: {
     titulo: 'Traduções desatualizadas',
     receita: 'Receita',
