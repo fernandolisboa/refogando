@@ -34,6 +34,18 @@ export type FeedResponse = {
 export const FEED_DEFAULT_LIMIT = 20
 export const FEED_MAX_LIMIT = 50
 
+/**
+ * Parse PERMISSIVO do `limit` da URL (fonte única das rotas `/api/feed` e `/api/feed/following`,
+ * #277): inteiro em `[1, FEED_MAX_LIMIT]`; ausente/inválido → `FEED_DEFAULT_LIMIT`. Política "nunca
+ * tela quebrada" — input de URL NUNCA vira 400/500.
+ */
+export function parseFeedLimit(raw: string | null): number {
+  if (raw === null) return FEED_DEFAULT_LIMIT
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 1) return FEED_DEFAULT_LIMIT
+  return Math.min(n, FEED_MAX_LIMIT)
+}
+
 /** Conteúdo decodificado do cursor: o par keyset (created_at, id) da última linha entregue. */
 export type FeedCursor = { createdAt: string; id: string }
 

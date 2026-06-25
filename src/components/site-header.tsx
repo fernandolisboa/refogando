@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { MenuIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
+import { splitLocalePrefix } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
@@ -52,11 +53,14 @@ export function SiteHeader() {
   // é quem agora computa o gating de papel (curador+, fail-closed). O header só decide "logado?".
   // Link de nav com estado ATIVO (protótipo Header.jsx): a rota atual ganha text-fg +
   // aria-current="page"; inativos herdam o text-muted do <nav> e vão a text-fg no hover.
-  // `usePathname()` é null fora do contexto de router (ex.: seam jsdom) — null-safe.
+  // `usePathname()` vem PREFIXADO pelo locale (`/pt-BR/following`), mas os hrefs do nav são NUS
+  // (`/`, `/following`) — então tiramos o prefixo (`splitLocalePrefix → rest`) ANTES de comparar.
+  // Sem isso o estado ativo NUNCA dispararia (#277: `'/pt-BR/following' === '/following'` é false).
+  // `usePathname()` é null fora do contexto de router (ex.: seam jsdom) → null-safe via `rest = '/'`.
   const pathname = usePathname()
+  const rest = splitLocalePrefix(pathname ?? '/').rest
   const isActive = (href: string) =>
-    pathname != null &&
-    (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`))
+    href === '/' ? rest === '/' : rest === href || rest.startsWith(`${href}/`)
 
   // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
   // fecha o painel ao navegar; no desktop o wrap é a identidade (link inline puro).
@@ -99,10 +103,12 @@ export function SiteHeader() {
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
-          {/* #236: a Descoberta É a home — "Início" leva ao feed público + Busca. O antigo link
-              "Receitas" (índice do feed à parte) FUNDIU na home, então some do nav (era redundante
-              com "Início"). */}
+          {/* #236/#277: a Descoberta É a home, agora rotulada "Explorar" — leva ao feed público +
+              Busca. O antigo link "Receitas" (índice do feed à parte) FUNDIU na home. */}
           {navLink('/', messages.nav.home, identity)}
+          {/* #277: aba "Seguindo" (logado) — feed das Receitas de quem o viewer segue, ao lado de
+              "Explorar". Só-logada (a conta/Painel vive no AuthSlot à direita). */}
+          {authed && navLink('/following', messages.nav.seguindo, identity)}
           {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
               leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
@@ -131,8 +137,10 @@ export function SiteHeader() {
               <SheetDescription className="sr-only">{messages.nav.menuDescricao}</SheetDescription>
             </SheetHeader>
             <nav className="flex flex-col items-start gap-4 text-base font-medium text-muted">
-              {/* #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta). */}
+              {/* #236/#277: a Descoberta É a home, rotulada "Explorar". */}
               {navLink('/', messages.nav.home, inSheet)}
+              {/* #277: aba "Seguindo" (logado), ao lado de "Explorar". */}
+              {authed && navLink('/following', messages.nav.seguindo, inSheet)}
               {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
               {/* "Painel" saiu da nav (#267): vive no menu da conta do AuthSlot abaixo. */}
               {ctaLink(inSheet)}

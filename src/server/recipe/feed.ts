@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
+import { followeesPublicSqlFragment, viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
+import { listFollowingIds } from '@/server/user/follow'
 import {
   buildFeedResponse,
   FEED_DEFAULT_LIMIT,
@@ -10,54 +11,45 @@ import {
 } from '@/domain/recipe-feed-read'
 
 /**
- * Loader do Feed (#103). Lista PLANA e cronológica do pool, paginada por CURSOR keyset.
- * Diverge do loader da Busca (`search.ts`): SEM FTS/ranking/semântica/seccionamento — só o
- * gate de leitura canônico + ordem `created_at DESC, id DESC` + cursor keyset.
+ * Template SQL CRU do Feed (#103) — FONTE ÚNICA do shape de query usada por `loadFeed` (pool da
+ * comunidade/viewer) E por `loadFollowingFeed` (#277, pool dos seguidos). O ÚNICO ponto variável é
+ * o `scopeSql` (o predicado de POSSE/visibilidade): os predicados CONSTANTES do pool
+ * (`result_kind <> 'playful'`, `moderation_removed_at IS NULL`) e o cursor keyset vivem aqui, então
+ * os dois feeds compartilham EXATAMENTE o mesmo display (tradução/imagem/slug) e a mesma paginação.
  *
- * Reusa o PADRÃO de display da Busca (double LEFT JOIN de tradução: locale pedido + original)
- * para `displayedTitle`/`autoTranslationSignal` saírem idênticos aos da Busca — mas NÃO reusa
- * `displayTailSql` (que pende de um CTE `numbered` sem `created_at`, que o cursor precisa).
- * Query auto-contida: o LIMIT vive no CTE interno `feed_rows` (só junta tradução das linhas da
- * página); o SELECT externo re-ordena (o JOIN pode embaralhar) por `created_at, id`.
+ * Reusa o PADRÃO de display da Busca (double LEFT JOIN de tradução: locale pedido + original) para
+ * `displayedTitle`/`autoTranslationSignal` saírem idênticos aos da Busca — mas NÃO reusa
+ * `displayTailSql` (que pende de um CTE `numbered` sem `created_at`, que o cursor precisa). Query
+ * auto-contida: o LIMIT vive no CTE interno `feed_rows` (só junta tradução das linhas da página); o
+ * SELECT externo re-ordena (o JOIN pode embaralhar) por `created_at, id`.
  *
- * Gate de leitura do VIEWER (#116, espelha o `visible` da Busca): `result_kind <> 'playful'`
- * AND `viewerReadableSqlFragment('r', viewerId)` AND `moderation_removed_at IS NULL`. Anônimo
- * (`viewerId` undefined, ADR-0011) ⇒ o fragmento reduz a `(owner_id IS NULL OR visibility =
- * 'public')` — gate de pool byte-a-byte com o de antes. LOGADO ⇒ adiciona a arma
- * `OR owner_id = <viewerId>` (BINDADO), incluindo as PRÓPRIAS Receitas (privadas inclusive).
+ * Keyset (FONTE ÚNICA, construído AQUI a partir do `cursor` decodificado — nunca passado pré-montado
+ * pelos chamadores, p/ os dois feeds não desincronizarem a inequação): `(created_at, id) < (cursor)`
+ * sob a ordem DESC pega a "próxima página" (linhas mais antigas) de forma estável, sem drift de
+ * offset. `created_at` sai como `::text` canônico p/ o cursor round-tripar com precisão de
+ * microssegundos. Imagem MODERADA some do público via `ri.moderated_at IS NULL` no LEFT JOIN (#133).
  *
- * Keyset: `(created_at, id) < (cursor)` sob a ordem DESC pega a "próxima página" (linhas mais
- * antigas) de forma estável, sem drift de offset. `created_at` sai como `::text` canônico p/
- * o cursor round-tripar com precisão de microssegundos.
+ * v1 (consciente, como a Busca): sem índice composto em `(created_at, id)` ainda — o planner faz Sort
+ * sobre o gate. ACEITO no v1 (tabelas minúsculas); índice parcial deferido.
  *
- * v1 (consciente, como a Busca): sem índice composto em `(created_at, id)` ainda — o planner
- * faz Sort sobre o gate. ACEITO no v1 (tabelas minúsculas); índice parcial deferido.
- *
- * LANDMINE: NENHUM backtick dentro do template `sql\`...\`` (nem em comentário) — terminaria
- * o template. Comentários explicativos ficam AQUI, fora dele.
+ * LANDMINE: NENHUM backtick dentro do template `sql\`...\`` (nem em comentário) — terminaria o
+ * template. Comentários explicativos ficam AQUI, fora dele.
  */
-export async function loadFeed(
-  db: Database,
-  args: {
-    requestLocale: string
-    limit: number
-    cursor: FeedCursor | null
-    /**
-     * Viewer LOGADO (#116): inclui as PRÓPRIAS Receitas (privadas inclusive) além do pool da
-     * comunidade. `undefined` (anônimo, ADR-0011) ⇒ só o pool — comportamento de antes.
-     */
-    viewerId?: string
-  },
-): Promise<FeedHitRow[]> {
-  const { requestLocale, limit, cursor, viewerId } = args
+function feedQuery(args: {
+  requestLocale: string
+  limit: number
+  cursor: FeedCursor | null
+  scopeSql: SQL
+}): SQL {
+  const { requestLocale, limit, cursor, scopeSql } = args
 
   // Predicado keyset: vazio na 1a pagina (cursor null), inequacao de row-value depois. Bind
-  // seguro via sql.param (cast ::timestamptz/::uuid; valor invalido foi descartado na borda).
+  // seguro via param do template (cast ::timestamptz/::uuid; valor invalido foi descartado na borda).
   const cursorSql: SQL = cursor
     ? sql`AND (r.created_at, r.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
     : sql``
 
-  const rows = await db.execute<FeedHitRow>(sql`
+  return sql`
     WITH params AS (
       SELECT ${requestLocale}::text AS req_locale
     ),
@@ -73,7 +65,7 @@ export async function loadFeed(
         r.created_at::text AS created_at
       FROM recipe r
       WHERE r.result_kind <> 'playful'
-        AND ${viewerReadableSqlFragment('r', viewerId)}
+        AND ${scopeSql}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         ${cursorSql}
       ORDER BY r.created_at DESC, r.id DESC
@@ -106,8 +98,65 @@ export async function loadFeed(
     LEFT JOIN recipe_image ri
       ON ri.id = fr.image_id AND ri.moderated_at IS NULL -- #133: imagem moderada some do público
     ORDER BY fr.created_at_ts DESC, fr.recipe_id DESC
-  `)
+  `
+}
 
+/**
+ * Loader do Feed (#103). Lista PLANA e cronológica do pool da COMUNIDADE/VIEWER, paginada por CURSOR
+ * keyset. Diverge do loader da Busca (`search.ts`): SEM FTS/ranking/semântica/seccionamento.
+ *
+ * Gate de leitura do VIEWER (#116, espelha o `visible` da Busca): `viewerReadableSqlFragment('r',
+ * viewerId)` (+ os constantes do template `feedQuery`). Anônimo (`viewerId` undefined, ADR-0011) ⇒ o
+ * fragmento reduz a `(owner_id IS NULL OR visibility = 'public')` — gate de pool byte-a-byte com o de
+ * antes. LOGADO ⇒ adiciona a arma `OR owner_id = <viewerId>` (BINDADO), incluindo as PRÓPRIAS Receitas
+ * (privadas inclusive).
+ */
+export async function loadFeed(
+  db: Database,
+  args: {
+    requestLocale: string
+    limit: number
+    cursor: FeedCursor | null
+    /**
+     * Viewer LOGADO (#116): inclui as PRÓPRIAS Receitas (privadas inclusive) além do pool da
+     * comunidade. `undefined` (anônimo, ADR-0011) ⇒ só o pool — comportamento de antes.
+     */
+    viewerId?: string
+  },
+): Promise<FeedHitRow[]> {
+  const { requestLocale, limit, cursor, viewerId } = args
+  const rows = await db.execute<FeedHitRow>(
+    feedQuery({ requestLocale, limit, cursor, scopeSql: viewerReadableSqlFragment('r', viewerId) }),
+  )
+  return [...rows]
+}
+
+/**
+ * Loader do Feed SEGUINDO (#277, ADR-0024) — as Receitas PÚBLICAS dos Cozinheiros que o `viewerId`
+ * SEGUE, mais novas primeiro, paginadas pelo MESMO cursor keyset do `loadFeed`. Superfície SÓ-LOGADA
+ * e NÃO-INDEXÁVEL (Modelo B: separada da home anon; nunca personaliza a Descoberta/perfil).
+ *
+ * Gate = `followeesPublicSqlFragment('r', ids)` — `visibility='public' AND origin<>'web_imported' AND
+ * owner_id IN (seguidos)` — combinado com os constantes do template (`result_kind<>'playful'`,
+ * `moderation_removed_at IS NULL`). EXCLUI: catálogo (owner NULL nunca casa `IN`), privada de 3º
+ * (`visibility='public'`), removida-do-pool + playful (constantes), importada da web (eixo explícito).
+ * O `viewer` NUNCA aparece (não se segue a si — `auto_seguir` barrado), então `isOwn` é sempre false.
+ *
+ * Os `ids` dos seguidos VÊM do seam `listFollowingIds` (alive-gated — conta desativada some, fonte
+ * única do gate de soft-delete; NÃO re-derivar aqui). CURTO-CIRCUITO `ids.length === 0 → []` é o
+ * PRIMEIRO statement (antes de QUALQUER montagem de SQL): `IN ()` é erro de sintaxe (→ 500) e, sem
+ * seguidos, não há o que buscar — zero ida ao DB.
+ */
+export async function loadFollowingFeed(
+  db: Database,
+  args: { viewerId: string; requestLocale: string; limit: number; cursor: FeedCursor | null },
+): Promise<FeedHitRow[]> {
+  const ids = await listFollowingIds(db, args.viewerId)
+  if (ids.length === 0) return [] // sem seguidos: nada a buscar + evita `IN ()` inválido. NÃO mover.
+  const { requestLocale, limit, cursor } = args
+  const rows = await db.execute<FeedHitRow>(
+    feedQuery({ requestLocale, limit, cursor, scopeSql: followeesPublicSqlFragment('r', ids) }),
+  )
   return [...rows]
 }
 

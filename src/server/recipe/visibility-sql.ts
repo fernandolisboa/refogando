@@ -59,3 +59,41 @@ export function viewerReadableSqlFragment(alias: string, viewerId?: string): SQL
     `(${alias}.owner_id IS NULL OR ${alias}.visibility = 'public' OR ${alias}.owner_id = `,
   )}${viewerId}${sql.raw(')')}`
 }
+
+/**
+ * Fragmento SQL CRU do POOL PÚBLICO de um CONJUNTO de donos (issue #277, Feed Seguindo) — a
+ * generalização de `list-public.ts` (público de UM dono) para muitos. Três armas combinadas:
+ *   (<alias>.visibility = 'public' AND <alias>.origin <> 'web_imported' AND <alias>.owner_id IN (...))
+ *
+ * - `visibility='public'`: SÓ o que o dono publicou — privada de 3º NUNCA aparece (allowlist; um
+ *   futuro valor de visibilidade fica de fora por padrão, direção segura).
+ * - `origin <> 'web_imported'`: cinto-e-suspensório do `eligibleForPool` (#168/ADR-0019). A importada
+ *   da web é sempre private (o guard de visibilidade a barra de virar pública), mas o eixo EXPLÍCITO
+ *   impede que um bug futuro vaze conteúdo de 3º importado neste feed social — a invariante
+ *   web_imported⇒private é app-level, sem CHECK no DB.
+ * - `owner_id IN (ids)`: escopa aos SEGUIDOS. NULL nunca casa `IN (...)`, então o CATÁLOGO
+ *   (owner NULL) é excluído POR CONSTRUÇÃO (não por `visibility`) — sem precisar de cláusula extra.
+ *
+ * Os predicados CONSTANTES do pool (`result_kind <> 'playful'`, `moderation_removed_at IS NULL`)
+ * vivem no template do feed (herdados de `loadFeed`), combinados via AND pelo chamador.
+ *
+ * SEGURANÇA: os `ids` NUNCA entram na string crua (seria injeção). O alias (literal do código) vai
+ * por `sql.raw`; cada id é BINDADO `::uuid` via `sql.join` (postgres-js o envia separado do texto).
+ * REQUER `ids` NÃO-VAZIO — `IN ()` é erro de sintaxe (→ 500); o chamador (`loadFollowingFeed`)
+ * curto-circuita `ids.length === 0 → []` ANTES de montar qualquer SQL.
+ */
+export function followeesPublicSqlFragment(alias: string, ids: string[]): SQL {
+  if (!/^[a-z][a-z0-9_]*$/i.test(alias)) {
+    throw new Error(`followeesPublicSqlFragment: alias inválido ${JSON.stringify(alias)}`)
+  }
+  if (ids.length === 0) {
+    throw new Error('followeesPublicSqlFragment: ids vazio (o chamador deve curto-circuitar antes)')
+  }
+  const inList = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  )
+  return sql`${sql.raw(
+    `(${alias}.visibility = 'public' AND ${alias}.origin <> 'web_imported' AND ${alias}.owner_id IN (`,
+  )}${inList}${sql.raw('))')}`
+}
