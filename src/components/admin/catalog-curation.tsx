@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
-import { CatalogRecipeForm } from './catalog-recipe-form'
+import { CatalogRecipeDrawer } from './catalog-recipe-drawer'
 
 type PromotionItem = { rawText: string; count: number }
 
@@ -156,8 +156,9 @@ export function CatalogCuration() {
         </div>
       </div>
 
-      {/* Subseção B — form de criação estruturada de Receita de catálogo (#85). */}
-      <CatalogRecipeForm />
+      {/* Subseção B — criação estruturada de Receita de catálogo (#85), agora num DRAWER lateral
+          direito acionado por um gatilho (#266, ADR-0021). */}
+      <CatalogRecipeDrawer />
     </section>
   )
 }

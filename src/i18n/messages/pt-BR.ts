@@ -904,6 +904,9 @@ export const ptBR = {
     promocaoVazia: 'Nenhum ingrediente recorrente para promover.',
     erroSlugEmUso: 'Este ingrediente já existe.',
     erroGenerico: 'Não foi possível promover. Tente de novo.',
+    // #266: gatilho do drawer lateral + label do X (ADR-0021).
+    criarReceitaBotao: 'Nova receita de catálogo',
+    criarReceitaFechar: 'Fechar',
     criarReceitaTitulo: 'Criar receita do catálogo',
     criarReceitaDescricao: 'Cadastre uma receita completa para a coleção editorial.',
     criarReceitaTituloCampo: 'Título',

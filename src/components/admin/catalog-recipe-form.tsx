@@ -84,7 +84,13 @@ function mapErro(m: Messages['curadoria'], key: ErrorKey): string {
   }
 }
 
-export function CatalogRecipeForm() {
+export function CatalogRecipeForm({
+  // #266: o drawer (CatalogRecipeDrawer) escuta o estado de POST pra BLOQUEAR o dismiss durante o envio
+  // (não orfanar a submissão). Opcional — o form segue usável inline/standalone sem o prop.
+  onLoadingChange,
+}: {
+  onLoadingChange?: (loading: boolean) => void
+} = {}) {
   const { locale, messages } = useLocale()
   const m = messages.curadoria
 
@@ -112,6 +118,11 @@ export function CatalogRecipeForm() {
   useEffect(() => {
     if (status === 'success') feedbackRef.current?.focus()
   }, [status])
+
+  // #266: sinaliza "POST em voo" pro drawer (que bloqueia o dismiss enquanto envia).
+  useEffect(() => {
+    onLoadingChange?.(status === 'loading')
+  }, [status, onLoadingChange])
 
   // O form NÃO desmonta no sucesso (reseta in-place), então a confirmação "Receita criada"
   // pairaria sobre a PRÓXIMA receita até o próximo submit. Limpamos a confirmação na primeira
@@ -249,15 +260,9 @@ export function CatalogRecipeForm() {
   const labelCls = 'flex w-full flex-col gap-1.5 text-sm font-medium text-fg'
 
   return (
-    <section
-      aria-labelledby="criar-receita-titulo"
-      className="flex flex-col gap-4 border-t border-border pt-6"
-    >
-      <h3 id="criar-receita-titulo" className="text-base font-semibold text-fg">
-        {m.criarReceitaTitulo}
-      </h3>
-      <p className="max-w-prose text-sm text-muted">{m.criarReceitaDescricao}</p>
-
+    // #266: o TÍTULO + a descrição agora vivem no SheetHeader do drawer (CatalogRecipeDrawer) — o form
+    // é só o formulário, sem cabeçalho próprio (evita título em dobro / dois headings com o mesmo nome).
+    <section className="flex flex-col gap-4">
       <form onSubmit={onSubmit} aria-busy={status === 'loading'}>
         {/* `disabled` durante o loading trava TODOS os controles de uma vez, honrando o
             aria-busy do form. */}
