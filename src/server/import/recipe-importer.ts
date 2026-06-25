@@ -16,12 +16,19 @@
 
 import { parseImportedRecipe, type ImportedRecipe } from '@/domain/recipe-import-parse'
 import { isPathAllowedByRobots } from '@/domain/robots-txt'
+import { createDomainRateLimiter, type DomainRateLimiter } from '@/server/import/rate-limit'
 
 /**
  * Falha TRATADA da importação — nenhuma vira 500. A rota mapeia: `robots_blocked` → 403 (política do
- * site externo), as demais → 422 (não importou). Nunca vaza stack.
+ * site externo), `rate_limited` → 429 (politeness por host), as demais → 422 (não importou). Nunca
+ * vaza stack.
  */
-export type ImportFailureReason = 'no_jsonld' | 'unsupported_locale' | 'fetch_failed' | 'robots_blocked'
+export type ImportFailureReason =
+  | 'no_jsonld'
+  | 'unsupported_locale'
+  | 'fetch_failed'
+  | 'robots_blocked'
+  | 'rate_limited'
 
 export type ImportResult =
   | { ok: true; recipe: ImportedRecipe }
@@ -53,7 +60,24 @@ const ROBOTS_TIMEOUT_MS = 3000
  * contrato dos outros seams reais). NÃO é exercitada por teste (Fake); só roda ao vivo.
  */
 export class RealRecipeImporter implements RecipeImporter {
+  // Limiter por-instância (persiste enquanto o singleton lazy de `deps.ts` viver). Injetável p/ teste.
+  constructor(private readonly limiter: DomainRateLimiter = createDomainRateLimiter()) {}
+
   async import(url: string): Promise<ImportResult> {
+    // GUARD-RAIL rate-limit (#272): politeness ~1/s por HOST, ANTES de QUALQUER rede — uma tentativa
+    // limitada não toca o site (nem robots.txt nem página). A janela cobre a tentativa inteira. A chave
+    // é o hostname: subdomínios distintos de um mesmo site allowlistado têm orçamentos separados —
+    // aceitável p/ politeness (não é quota dura; é só pra não martelar a origem).
+    let hostname = ''
+    try {
+      hostname = new URL(url).hostname
+    } catch {
+      // URL inválida: cai no fetch_failed adiante; aqui não consome a janela.
+    }
+    if (hostname && !this.limiter.tryAcquire(hostname)) {
+      return { ok: false, reason: 'rate_limited' }
+    }
+
     // GUARD-RAIL robots.txt (#272, ADR-0019): respeita o `Disallow` do site ANTES de buscar a receita.
     // FAIL-OPEN deliberado (≠ o fail-CLOSED do SSRF/allowlist da rota): robots indisponível NÃO é
     // proibição — só uma proibição EXPLÍCITA bloqueia. Roda só no caminho REAL (o Fake nunca chega aqui).

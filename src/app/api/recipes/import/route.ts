@@ -28,6 +28,7 @@ import { isUrlAllowed } from '@/domain/web-search-config'
  *  - 401 { error: 'nao_autenticado' }         — Visitante.
  *  - 403 { error: 'dominio_nao_permitido' }   — host fora da allowlist curada (SSRF guard, #164).
  *  - 403 { error: 'robots_blocked' }          — o robots.txt do site PROÍBE buscar a receita (#272).
+ *  - 429 { error: 'rate_limited' }            — politeness ~1/s/domínio (#272); tente em instantes.
  *  - 422 { error: <reason> }                  — sem JSON-LD confiável / idioma fora de PT/EN /
  *                                               fetch falho (não importa; nunca 500).
  */
@@ -36,13 +37,15 @@ export const runtime = 'nodejs' // fetch externo + postgres-js exigem Node, não
 
 /**
  * Status HTTP de uma falha TRATADA do seam. `robots_blocked` é POLÍTICA do site externo (403, espelha o
- * 403 do SSRF guard); as demais são "o site não nos dá dados importáveis" → 422. O `default` preserva
- * `no_jsonld`/`unsupported_locale`/`fetch_failed` em 422 e acomoda futuras reasons (ex.: rate_limited).
+ * 403 do SSRF guard); `rate_limited` é politeness (429, Too Many Requests); as demais são "o site não
+ * nos dá dados importáveis" → 422 (preservadas no `default`).
  */
 function statusForReason(reason: ImportFailureReason): number {
   switch (reason) {
     case 'robots_blocked':
       return 403
+    case 'rate_limited':
+      return 429
     default:
       return 422
   }
@@ -79,10 +82,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança). O `reason` é a chave i18n p/ a UI
-  // (#168); o status varia por reason (#272: robots_blocked → 403; demais → 422).
+  // (#168); o status varia por reason (#272: robots_blocked → 403; rate_limited → 429; demais → 422).
   const result = await getRecipeImporter().import(url)
   if (!result.ok) {
-    return Response.json({ error: result.reason }, { status: statusForReason(result.reason) })
+    const status = statusForReason(result.reason)
+    // 429: aconselha quando tentar de novo (~1s, a janela do rate-limit). Demais reasons: sem header.
+    const init = result.reason === 'rate_limited' ? { status, headers: { 'retry-after': '1' } } : { status }
+    return Response.json({ error: result.reason }, init)
   }
 
   const p = await persistImport({ recipe: result.recipe, ownerId, sourceUrl: url })

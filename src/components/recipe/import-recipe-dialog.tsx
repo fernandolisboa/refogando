@@ -38,6 +38,8 @@ export type ImportDialogLabels = {
   erroNaoImportavel: string
   /** #272: o robots.txt do site proíbe a importação automática (403) — mensagem distinta. */
   erroRobotsBloqueado: string
+  /** #272: rate-limit por domínio (429) — "muitas importações desse site; tente em instantes". */
+  erroLimite: string
   erroGenerico: string
   conviteTitulo: string
   conviteTexto: string
@@ -47,18 +49,21 @@ export type ImportDialogLabels = {
 
 type Status = 'idle' | 'importing' | 'error'
 /** Qual mensagem de erro mostrar — derivada da `reason` do corpo, NUNCA do status HTTP cru. */
-type ErrorKind = 'naoImportavel' | 'robots' | 'generico'
+type ErrorKind = 'naoImportavel' | 'robots' | 'limite' | 'generico'
 
 /**
  * Mapeia a `reason` (corpo `{ error }` da rota) → mensagem. As três razões 422 ("o site não nos dá
- * dados importáveis") compartilham a mesma mensagem; `robots_blocked` (403) tem a sua; qualquer outra
- * coisa — inclusive rede caída, corpo ilegível ou um 403 de SSRF (`dominio_nao_permitido`) — cai no
- * genérico. Discriminar pela REASON (não pelo status) evita pintar o 403 do SSRF como "robôs".
+ * dados importáveis") compartilham a mesma mensagem; `robots_blocked` (403) e `rate_limited` (429) têm
+ * a sua; qualquer outra coisa — inclusive rede caída, corpo ilegível ou um 403 de SSRF
+ * (`dominio_nao_permitido`) — cai no genérico. Discriminar pela REASON (não pelo status) evita pintar o
+ * 403 do SSRF como "robôs".
  */
 function errorKindFor(reason: string | undefined): ErrorKind {
   switch (reason) {
     case 'robots_blocked':
       return 'robots'
+    case 'rate_limited':
+      return 'limite'
     case 'no_jsonld':
     case 'unsupported_locale':
     case 'fetch_failed':
@@ -185,9 +190,11 @@ export function ImportRecipeDialog({
                 <p role="alert" className="text-sm font-medium text-fg">
                   {errorKind === 'robots'
                     ? labels.erroRobotsBloqueado
-                    : errorKind === 'naoImportavel'
-                      ? labels.erroNaoImportavel
-                      : labels.erroGenerico}
+                    : errorKind === 'limite'
+                      ? labels.erroLimite
+                      : errorKind === 'naoImportavel'
+                        ? labels.erroNaoImportavel
+                        : labels.erroGenerico}
                 </p>
               )}
 

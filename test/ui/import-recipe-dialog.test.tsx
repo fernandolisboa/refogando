@@ -38,6 +38,7 @@ const LABELS: ImportDialogLabels = {
   importando: m.importarImportando,
   erroNaoImportavel: m.importarErroNaoImportavel,
   erroRobotsBloqueado: m.importarErroRobotsBloqueado,
+  erroLimite: m.importarErroLimite,
   erroGenerico: m.importarErroGenerico,
   conviteTitulo: m.importarConviteTitulo,
   conviteTexto: m.importarConviteTexto,
@@ -131,6 +132,12 @@ describe('ImportRecipeDialog (#169)', () => {
     stubFetch(403, { error: 'robots_blocked' })
     await clickImport()
     expect(await screen.findByRole('alert')).toHaveTextContent(m.importarErroRobotsBloqueado)
+  })
+
+  it('#272: 429 {rate_limited} → mensagem de limite (distinta de robôs/não-importável/genérica)', async () => {
+    stubFetch(429, { error: 'rate_limited' })
+    await clickImport()
+    expect(await screen.findByRole('alert')).toHaveTextContent(m.importarErroLimite)
   })
 
   it('#272: cada uma das 3 razões 422 → mensagem "não importável" (não regride pro genérico)', async () => {
