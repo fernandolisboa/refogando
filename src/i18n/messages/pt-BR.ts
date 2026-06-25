@@ -171,6 +171,12 @@ export const ptBR = {
     seguindo: 'Seguindo',
     erroSeguir: 'Não deu pra atualizar. Tente de novo.',
   },
+  // Cluster de Cozinheiros na Busca mesclada (#279, ADR-0024) — flutua acima das receitas por força-de-match.
+  buscaCozinheiros: {
+    titulo: 'Cozinheiros',
+    verTodos: 'Ver todos',
+    verMenos: 'Ver menos',
+  },
   // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
   // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são
   // chrome da UI #61 (render dos arrays/campos do `derivedDiff`); o Aviso é o sinal pós-fork.

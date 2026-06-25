@@ -579,6 +579,16 @@ export const users = pgTable(
     // Unicidade do handle no banco (#128): a borda gera/edita garantindo livre, mas a UNIQUE
     // é a última linha contra corrida (dois signups simultâneos com o mesmo slug → 23505).
     uniqueIndex('users_handle_uq').on(t.handle),
+    // Trigram GIN em name/handle (#279) — ESCALA a busca pública de Cozinheiros: `searchUsers` casa por
+    // `name ILIKE '%termo%'` / `handle ILIKE '%termo%'` (substring, leading wildcard) que sem índice faz
+    // seq scan. `gin_trgm_ops` na COLUNA CRUA acelera ILIKE case-insensitive (a query NÃO usa
+    // lower()/unaccent — o índice espelha EXATAMENTE a expressão buscada; copiar o lower(immutable_unaccent)
+    // do 0012 deixaria o índice MORTO). DOIS índices (não composto): o planner faz BitmapOr nos dois lados
+    // do `name ILIKE OR handle ILIKE`. Não-parcial (sempre usável). pg_trgm já criada no 0012; o índice só
+    // engaja com trigrama completo (≥3 chars não-curinga). drizzle-kit GERA `USING gin (col gin_trgm_ops)`
+    // via `.op()` em coluna crua (≠ HNSW/0012 hand-written) ⇒ db:generate offline; NUNCA db:migrate local.
+    index('users_name_trgm_gin').using('gin', t.name.op('gin_trgm_ops')),
+    index('users_handle_trgm_gin').using('gin', t.handle.op('gin_trgm_ops')),
     // Consistência da restrição de imagem (#226) — espelha `recipe_moderation_consistency_chk`:
     // `at` e `by` setados JUNTOS ou ambos NULL (o `reason` fica fora do CHECK — texto livre validado
     // não-vazio na borda do route ao bloquear). Garante que um bloqueio sempre carrega proveniência.

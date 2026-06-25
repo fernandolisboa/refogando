@@ -163,6 +163,12 @@ export const enUS: Messages = {
     seguindo: 'Following',
     erroSeguir: "Couldn't update. Try again.",
   },
+  // Cooks cluster in the merged Search (#279, ADR-0024) — floats above recipes by match strength.
+  buscaCozinheiros: {
+    titulo: 'Cooks',
+    verTodos: 'See all',
+    verMenos: 'See less',
+  },
   // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
   // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).
   derivada: {

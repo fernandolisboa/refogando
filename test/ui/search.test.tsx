@@ -85,11 +85,15 @@ function stubFetchOk(body: SearchResponse) {
   return fetchMock as unknown as ReturnType<typeof vi.fn>
 }
 
-/** Última URL de BUSCA (`/api/search`) passada ao fetch, como string. Ignora as chamadas de
- * descoberta na web (#164: `/api/discovery/web`), que disparam DEPOIS quando o acervo é raso —
- * estes testes só asseguram a URL da Busca local. */
+/** Última URL de BUSCA (`/api/search`) passada ao fetch, como string. Ignora a descoberta na web
+ * (#164: `/api/discovery/web`) E a busca de Cozinheiros (#279: `/api/search/cooks`, que é um SUPERSET
+ * textual de `/api/search` — precisa excluir explicitamente), que disparam em paralelo; estes testes
+ * só asseguram a URL da Busca local de receitas. */
 function lastFetchUrl(fetchMock: ReturnType<typeof vi.fn>): string {
-  const searchCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/search'))
+  const searchCalls = fetchMock.mock.calls.filter((c) => {
+    const u = String(c[0])
+    return u.includes('/api/search') && !u.includes('/api/search/cooks')
+  })
   return String(searchCalls.at(-1)?.[0])
 }
 

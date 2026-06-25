@@ -35,6 +35,8 @@ import { SearchSection } from './search-section'
 import { SortToggle } from './sort-toggle'
 import { DiscoveryFeed } from './discovery-feed'
 import { CooksToFollowRail } from './cooks-to-follow-rail'
+import { CookSearchCluster } from './cook-search-cluster'
+import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
 import type { BadgeLabels } from './recipe-result-item'
 import { ImportRecipeDialog, type ImportDialogLabels, type WebLink } from './import-recipe-dialog'
 
@@ -101,6 +103,10 @@ export function SearchExperience({
   // /api/search (não bloqueiam os resultados locais) e SÓ quando o acervo local veio raso.
   const [webLinks, setWebLinks] = useState<WebLink[]>([])
 
+  // #279: cluster de COZINHEIROS (ADR-0024) — busca PARALELA por nome/@handle, FORA do ranking de
+  // receitas. Flutua acima das receitas quando casa alguém. Fetch independente de /api/search/cooks.
+  const [cooks, setCooks] = useState<ProfileFollowUser[]>([])
+
   // AbortController da requisição em voo: cancelar a anterior quando os critérios mudam
   // (debounce) ou no unmount. Uma req cancelada NÃO vira estado de erro (AbortError é
   // ignorado).
@@ -108,6 +114,9 @@ export function SearchExperience({
   // AbortController SEPARADO da descoberta na web (#164): cancelar a anterior a cada nova busca
   // (a web é um fetch independente, disparado depois do /api/search).
   const webAbortRef = useRef<AbortController | null>(null)
+  // AbortController SEPARADO da busca de Cozinheiros (#279): cancela a anterior a cada nova busca
+  // (paralelo independente do /api/search — um responde sem o outro).
+  const cooksAbortRef = useRef<AbortController | null>(null)
 
   const hasCriteria =
     q.trim() !== '' ||
@@ -142,16 +151,57 @@ export function SearchExperience({
     [locale],
   )
 
+  /**
+   * #279 (ADR-0024): busca de COZINHEIROS — fetch PARALELO de `/api/search/cooks` por nome/@handle.
+   * Espelha `discoverWeb` (AbortController próprio, falha silenciosa, assistivo). É LOCALE-INDEPENDENTE
+   * (nome/@handle/avatar não traduzem) ⇒ sem `?locale=`. Disparado JUNTO da busca (não-bloqueante), SÓ
+   * com termo >= 2 chars; a rota faz o gate fino (barra id/email, termo classificado < 2).
+   */
+  const discoverCooks = useCallback(async (term: string) => {
+    cooksAbortRef.current?.abort()
+    const controller = new AbortController()
+    cooksAbortRef.current = controller
+    const url = new URL('/api/search/cooks', window.location.origin)
+    url.searchParams.set('q', term)
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) {
+        // HTTP não-ok (rota degrada a 200, então isto é raro): limpa o cluster STALE da busca anterior.
+        setCooks([])
+        return
+      }
+      const body = (await res.json()) as { cooks: ProfileFollowUser[] }
+      setCooks(body.cooks ?? [])
+    } catch {
+      // AbortError (busca superada) ou rede caída: o cluster é assistivo — silencia (não limpa: o
+      // abort vem de uma nova busca que já vai semear; rede caída mantém o último resultado).
+    }
+  }, [])
+
   const doSearch = useCallback(async () => {
     // Estado inicial neutro: sem critério, NÃO chama a API (espelha o early-return do
     // handler — evita req supérflua e tela branca).
     if (!hasCriteria) {
       abortRef.current?.abort()
       webAbortRef.current?.abort()
+      cooksAbortRef.current?.abort()
       setData(null)
       setWebLinks([])
+      setCooks([])
       setStatus('idle')
       return
+    }
+
+    // #279: cluster de Cozinheiros em PARALELO (antes do await do /api/search — não-bloqueante). Só com
+    // termo >= 3 chars (alinha com o trigrama do índice + corta ruído de 1–2 chars; a rota faz o gate
+    // fino no termo CLASSIFICADO). Facet-only ou termo curto ⇒ aborta e limpa o cluster (some ao trocar
+    // pra busca-por-faceta). Independente do resultado das receitas.
+    const cookTerm = q.trim()
+    if (cookTerm.length >= 3) {
+      void discoverCooks(cookTerm)
+    } else {
+      cooksAbortRef.current?.abort()
+      setCooks([])
     }
 
     abortRef.current?.abort()
@@ -194,7 +244,7 @@ export function SearchExperience({
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb])
+  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -234,6 +284,7 @@ export function SearchExperience({
     return () => {
       abortRef.current?.abort()
       webAbortRef.current?.abort()
+      cooksAbortRef.current?.abort()
     }
   }, [])
 
@@ -409,6 +460,14 @@ export function SearchExperience({
           de cada estado é o próprio conteúdo anunciado (sem duplicar nó SR-only, que faria
           `findByText` casar dois elementos). */}
       <div aria-live="polite" aria-busy={status === 'loading'} className="flex flex-col gap-8">
+        {/* #279: cluster de Cozinheiros — flutua no TOPO dos resultados (acima de qualquer estado de
+            receita) quando alguém casa o termo. Gated `status !== 'error'` (espelha a seção "Da web").
+            `key` = assinatura dos cooks ⇒ remonta ao trocar de busca, RESETANDO o "Ver todos" expandido
+            (sem setState em effect). Renderiza `null` quando não casa ninguém. */}
+        {status !== 'error' && (
+          <CookSearchCluster key={cooks.map((c) => c.handle).join(',')} cooks={cooks} />
+        )}
+
         {status === 'error' && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-fg">{messages.system.error}</p>
@@ -431,8 +490,9 @@ export function SearchExperience({
           )
         )}
 
-        {/* Vazio: a busca concluiu sem resultado. */}
-        {isEmpty && <p className="text-muted">{m.semResultado}</p>}
+        {/* Vazio: a busca concluiu sem RECEITA. #279: só mostra "nenhum resultado" se TAMBÉM não há
+            Cozinheiro casando — senão o cluster acima carrega o resultado (cook casa, receita vazia). */}
+        {isEmpty && cooks.length === 0 && <p className="text-muted">{m.semResultado}</p>}
 
         {/* Resultados: stale-while-revalidate — montados sempre que a última busca trouxe
             itens, INCLUSIVE durante o loading de uma re-busca (não pisca). Loading isolado
