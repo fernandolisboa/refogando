@@ -232,7 +232,7 @@ export const ptBR = {
     // #272 (LGPD, ADR-0019): o dono de uma importada com nome de fonte humano pode REMOVÊ-LO; a
     // atribuição passa a mostrar só o site (o source_url fica). Confirmação inline (baixo-risco).
     removerNomeFonte: 'Remover o nome da fonte',
-    removerNomeFonteAjuda: 'A atribuição passa a mostrar só o site de origem. O nome não volta depois.',
+    removerNomeFonteAjuda: 'A atribuição passa a mostrar só o site de origem (o link para a página continua). O nome não volta depois.',
     removerNomeFonteConfirma: 'Remover',
     removerNomeFonteCancela: 'Cancelar',
     removerNomeFonteErro: 'Não foi possível remover agora. Tente de novo.',

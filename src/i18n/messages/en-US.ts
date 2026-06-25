@@ -219,7 +219,7 @@ export const enUS: Messages = {
     // #272 (LGPD, ADR-0019): the owner of an imported recipe with a human source name can REMOVE it;
     // the attribution then shows only the site (source_url stays). Inline confirmation (low-risk).
     removerNomeFonte: 'Remove the source name',
-    removerNomeFonteAjuda: 'The attribution will then show only the source site. The name does not come back.',
+    removerNomeFonteAjuda: 'The attribution will then show only the source site (the link to the page stays). The name does not come back.',
     removerNomeFonteConfirma: 'Remove',
     removerNomeFonteCancela: 'Cancel',
     removerNomeFonteErro: "We couldn't remove it right now. Try again.",

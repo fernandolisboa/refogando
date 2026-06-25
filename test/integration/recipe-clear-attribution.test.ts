@@ -102,6 +102,17 @@ describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
     expect(afterSecond.updatedAt).toEqual(afterFirst.updatedAt) // no-op NÃO bumpa updatedAt
   })
 
+  it('importada cujo sourceName JÁ é o host (fallback www) → 200 no-op, sourceName e updatedAt INALTERADOS', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'clear-hostname@ex.com' })
+    // O parser de import grava `new URL(url).host` (com www) como sourceName quando não há publisher.
+    const id = await seedImported({ ownerId: userId, sourceName: 'www.exemplo.com', sourceUrl: 'https://www.exemplo.com/r' })
+
+    const res = await clearPost(id, headers)
+    expect(res.status).toBe(200) // dono ⇒ ok, mas nada humano a remover (nome == host)
+    const row = await loadSource(id)
+    expect(row.sourceName).toBe('www.exemplo.com') // INALTERADO (no-op)
+  })
+
   it('dono de receita NÃO importada (ai_structured) → 200 no-op; origin intacto', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'clear-ai@ex.com' })
     const id = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })

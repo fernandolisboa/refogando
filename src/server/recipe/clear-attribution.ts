@@ -50,7 +50,9 @@ export async function clearSourceAttribution(input: {
   //    (não-importada, sem nome, ou nome que já é o host) ⇒ 200 sem UPDATE redundante nem bump de
   //    updatedAt. A normalização nome-vs-host é a MESMA do botão (domínio puro `sourceNameIsHost`).
   const hasRemovableName =
-    gate.origin === 'web_imported' && !sourceNameIsHost(gate.sourceName, gate.sourceUrl)
+    gate.origin === 'web_imported' &&
+    gate.sourceUrl != null && // espelha a construção de view.source (sem sourceUrl o botão se esconde) — paridade exata botão↔servidor, não só por invariante
+    !sourceNameIsHost(gate.sourceName, gate.sourceUrl)
   if (hasRemovableName) {
     await db
       .update(recipe)
