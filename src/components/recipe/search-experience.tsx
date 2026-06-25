@@ -34,6 +34,7 @@ import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { SearchSection } from './search-section'
 import { SortToggle } from './sort-toggle'
 import { DiscoveryFeed } from './discovery-feed'
+import { CooksToFollowRail } from './cooks-to-follow-rail'
 import type { BadgeLabels } from './recipe-result-item'
 import { ImportRecipeDialog, type ImportDialogLabels, type WebLink } from './import-recipe-dialog'
 
@@ -329,6 +330,13 @@ export function SearchExperience({
         conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
         signInLabel={messages.nav.signIn}
       />
+
+      {/* #278 (ADR-0024): trilho "Cozinheiros pra seguir" — SÓ na home (`home`) e SÓ em REPOUSO
+          (`!hasCriteria`): é a companhia de descoberta do feed de repouso; ao buscar, a superfície é
+          tomada pelos resultados e o trilho some. É uma ILHA SÓ-LOGADA que renderiza `null` no SSR/anon
+          (Modelo B — a home indexável segue byte-idêntica) e FORA da live region abaixo (não é status
+          efêmero). Variante anônima/global = follow-up deferido. */}
+      {home && !hasCriteria && <CooksToFollowRail />}
 
       <div className="flex flex-col gap-4">
         {/* #160: filtros RECOLHIDOS por padrão atrás de um disclosure NATIVO (mesmo padrão

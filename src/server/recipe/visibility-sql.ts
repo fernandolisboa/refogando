@@ -97,3 +97,31 @@ export function followeesPublicSqlFragment(alias: string, ids: string[]): SQL {
     `(${alias}.visibility = 'public' AND ${alias}.origin <> 'web_imported' AND ${alias}.owner_id IN (`,
   )}${inList}${sql.raw('))')}`
 }
+
+/**
+ * Fragmento SQL CRU da RECEITA PÚBLICA ELEGÍVEL (issue #278, trilho de Cozinheiros recomendados) — o
+ * gate `eligibleForPool` (`@/domain/recipe-pool`) reduzido ao ramo OWNER-PUBLICADO, para o loader de
+ * popularidade (`recommended-cooks.ts`) qualificar as receitas de um Cozinheiro num JOIN cru:
+ *   (<alias>.visibility = 'public' AND <alias>.result_kind <> 'playful'
+ *      AND <alias>.moderation_removed_at IS NULL AND <alias>.origin <> 'web_imported')
+ *
+ * É o MESMO conjunto de armas do `eligibleForPool` MENOS o ramo `owner_id IS NULL` (catálogo): o
+ * chamador junta `recipe.owner_id = users.id`, e NULL nunca casa essa igualdade ⇒ o catálogo (sem
+ * Cozinheiro a ranquear) fica de fora POR CONSTRUÇÃO, sem cláusula extra. `result_kind <> 'playful'`
+ * e `origin <> 'web_imported'` são cinto-e-suspensório (ambos ⇒ private, barrados por `visibility`),
+ * mas o eixo explícito blinda contra um bug futuro — ponto único da regra no SQL cru, espelhando
+ * `eligibleForPool`. Sem `viewerId`/`ids`: o gate é GLOBAL (popularidade não-personalizada, Modelo B).
+ *
+ * SEGURANÇA: só o alias (literal do código, ex. `'r'`) entra via `sql.raw`; nenhuma entrada de usuário.
+ */
+export function eligiblePublicRecipeSqlFragment(alias: string): SQL {
+  if (!/^[a-z][a-z0-9_]*$/i.test(alias)) {
+    throw new Error(`eligiblePublicRecipeSqlFragment: alias inválido ${JSON.stringify(alias)}`)
+  }
+  return sql.raw(
+    `(${alias}.visibility = 'public'` +
+      ` AND ${alias}.result_kind <> 'playful'` +
+      ` AND ${alias}.moderation_removed_at IS NULL` +
+      ` AND ${alias}.origin <> 'web_imported')`,
+  )
+}

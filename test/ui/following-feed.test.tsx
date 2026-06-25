@@ -132,7 +132,7 @@ describe('FollowingFeed (#277)', () => {
     expect(screen.getByText(MF.fim)).toBeInTheDocument()
   })
 
-  it('logado SEM nada no feed: empty state cause-neutro (h2) + CTA "Explorar receitas" → /', async () => {
+  it('logado SEM nada no feed: empty state cause-neutro (h2) + CTA "Descobrir cozinheiros" → /', async () => {
     mockFetch(() => ({ body: { feed: [], nextCursor: null } }))
     renderFollowing(authed())
 
