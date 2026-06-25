@@ -856,6 +856,9 @@ export const enUS: Messages = {
     promocaoVazia: 'No recurring ingredients to promote.',
     erroSlugEmUso: 'This ingredient already exists.',
     erroGenerico: 'Could not promote. Try again.',
+    // #266: right-side drawer trigger + X label (ADR-0021).
+    criarReceitaBotao: 'New catalog recipe',
+    criarReceitaFechar: 'Close',
     criarReceitaTitulo: 'Create catalog recipe',
     criarReceitaDescricao: 'Add a complete recipe to the editorial collection.',
     criarReceitaTituloCampo: 'Title',

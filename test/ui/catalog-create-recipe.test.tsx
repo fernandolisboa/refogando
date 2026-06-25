@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Criação estruturada de Receita de catálogo (#85). Teste de COMPONENTE jsdom (seam #54):
+ * Criação estruturada de Receita de catálogo (#85; #266 abre num DRAWER lateral direito — os testes
+ * clicam no gatilho `criarReceitaBotao` via `openDrawer` e escopam em `within(dialog)`).
+ * Teste de COMPONENTE jsdom (seam #54):
  * `fetch` mockado no shape REAL de `POST /api/curate/recipes` (sucesso = 200 `{ id }`; erro
  * = 400 `{ error:'dados_invalidos' }` / 403 / rede). Renderiza `CatalogCuration` (que monta
  * o form) p/ cobrir a integração "form na seção Curadoria"; o `GET /api/curate/promotion` do
@@ -64,20 +66,37 @@ function postCall(fetchMock: ReturnType<typeof mockFetch>) {
   return fetchMock.mock.calls.find((c) => (c[1]?.method ?? 'GET') === 'POST')
 }
 
-describe('CatalogRecipeForm (#85)', () => {
-  it('renderiza o form com os campos essenciais', async () => {
+/** #266: o form agora vive num DRAWER — clica no gatilho e devolve o `dialog` aberto. */
+async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: M.criarReceitaBotao }))
+  return screen.findByRole('dialog')
+}
+
+/** Promise controlável (pra travar o POST no estado 'Criando…' e testar o dismiss bloqueado). */
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+describe('CatalogRecipeForm + drawer (#85/#266)', () => {
+  it('#266 o form fica atrás do gatilho; clicar abre o drawer com os campos', async () => {
     mockFetch({ 'GET /api/curate/promotion': promotionVazio })
+    const user = userEvent.setup()
     renderForm()
 
-    expect(
-      await screen.findByRole('heading', { name: M.criarReceitaTitulo }),
-    ).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(M.criarReceitaTituloPlaceholder)).toBeInTheDocument()
-    // Select de idioma original com valor inicial pt-BR (label = locale.ptBR).
-    expect(screen.getByDisplayValue(ptBR.locale.ptBR)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: M.criarReceitaEnviar })).toBeInTheDocument()
-    // Ausência ancorada no texto antigo distintivo (o "em breve" da subseção info-only foi-se).
-    expect(screen.queryByText(/próximo passo/i)).toBeNull()
+    // Antes de abrir: o gatilho existe; os campos do form NÃO estão no DOM (vivem no drawer).
+    expect(await screen.findByRole('button', { name: M.criarReceitaBotao })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(M.criarReceitaTituloPlaceholder)).toBeNull()
+
+    const dialog = await openDrawer(user)
+    // O título único (SheetTitle) + os campos essenciais aparecem no drawer.
+    expect(within(dialog).getByRole('heading', { name: M.criarReceitaTitulo })).toBeInTheDocument()
+    expect(within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder)).toBeInTheDocument()
+    expect(within(dialog).getByDisplayValue(ptBR.locale.ptBR)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: M.criarReceitaEnviar })).toBeInTheDocument()
   })
 
   it('submit envia POST com o shape correto (200 → sucesso) e reseta', async () => {
@@ -87,22 +106,15 @@ describe('CatalogRecipeForm (#85)', () => {
     })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    await user.type(
-      await screen.findByPlaceholderText(M.criarReceitaTituloPlaceholder),
-      'Feijoada',
-    )
-    await user.type(
-      screen.getByPlaceholderText(M.criarReceitaIngredientePlaceholder),
-      'feijão preto',
-    )
-    await user.type(screen.getByPlaceholderText(M.criarReceitaQuantidadePlaceholder), '500')
-    // Unidade do 1º ingrediente = g; cozinha = brasileira (por label acessível — "Nenhuma"
-    // de Cozinha e Categoria colidem em display value).
-    await user.selectOptions(screen.getByRole('combobox', { name: M.criarReceitaUnidade }), 'g')
-    await user.selectOptions(screen.getByRole('combobox', { name: M.criarReceitaCozinha }), 'brasileira')
+    await user.type(within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder), 'Feijoada')
+    await user.type(within(dialog).getByPlaceholderText(M.criarReceitaIngredientePlaceholder), 'feijão preto')
+    await user.type(within(dialog).getByPlaceholderText(M.criarReceitaQuantidadePlaceholder), '500')
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: M.criarReceitaUnidade }), 'g')
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: M.criarReceitaCozinha }), 'brasileira')
 
-    await user.click(screen.getByRole('button', { name: M.criarReceitaEnviar }))
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
     const post = postCall(fetchMock)!
     expect(String(post[0])).toBe('/api/curate/recipes')
@@ -117,15 +129,15 @@ describe('CatalogRecipeForm (#85)', () => {
         ingredientes: [{ rawText: 'feijão preto', quantidade: '500', unidade: 'g' }],
       }),
     )
-    // quantidade é STRING; sem strength/mode/briefing.
+    // quantidade é STRING; sem strength/mode/briefing — contrato do catálogo inalterado.
     expect(typeof body.ingredientes[0].quantidade).toBe('string')
     expect(body).not.toHaveProperty('mode')
     expect(body).not.toHaveProperty('briefing')
     expect(body.ingredientes[0]).not.toHaveProperty('strength')
 
-    // Sucesso anunciado + form resetou (título de volta a vazio).
-    expect(await screen.findByRole('status')).toHaveTextContent(M.criarReceitaSucesso)
-    expect(screen.getByPlaceholderText(M.criarReceitaTituloPlaceholder)).toHaveValue('')
+    // Sucesso anunciado + form resetou (título de volta a vazio) — o drawer SEGUE aberto.
+    expect(await within(dialog).findByRole('status')).toHaveTextContent(M.criarReceitaSucesso)
+    expect(within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder)).toHaveValue('')
   })
 
   it('erro 400 mostra alerta neutro e mantém o que foi digitado', async () => {
@@ -135,12 +147,13 @@ describe('CatalogRecipeForm (#85)', () => {
     })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    const titulo = await screen.findByPlaceholderText(M.criarReceitaTituloPlaceholder)
+    const titulo = within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder)
     await user.type(titulo, 'Feijoada')
-    await user.click(screen.getByRole('button', { name: M.criarReceitaEnviar }))
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(M.criarReceitaErroDados)
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(M.criarReceitaErroDados)
     expect(titulo).toHaveValue('Feijoada') // não resetou em erro
   })
 
@@ -151,33 +164,28 @@ describe('CatalogRecipeForm (#85)', () => {
     })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    await user.type(
-      await screen.findByPlaceholderText(M.criarReceitaTituloPlaceholder),
-      'Feijoada',
-    )
-    await user.click(screen.getByRole('button', { name: M.criarReceitaEnviar }))
+    await user.type(within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder), 'Feijoada')
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(M.criarReceitaErroConexao)
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(M.criarReceitaErroConexao)
   })
 
   it('erro não-ok não-400 (403) mostra alerta genérico', async () => {
     mockFetch({
       'GET /api/curate/promotion': promotionVazio,
-      'POST /api/curate/recipes': {
-        ok: false,
-        status: 403,
-        body: { error: 'papel_insuficiente' },
-      },
+      'POST /api/curate/recipes': { ok: false, status: 403, body: { error: 'papel_insuficiente' } },
     })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    const titulo = await screen.findByPlaceholderText(M.criarReceitaTituloPlaceholder)
+    const titulo = within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder)
     await user.type(titulo, 'Feijoada')
-    await user.click(screen.getByRole('button', { name: M.criarReceitaEnviar }))
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(M.criarReceitaErroGenerico)
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(M.criarReceitaErroGenerico)
     expect(titulo).toHaveValue('Feijoada') // mantém o digitado, igual ao 400
   })
 
@@ -188,28 +196,79 @@ describe('CatalogRecipeForm (#85)', () => {
     })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    const titulo = await screen.findByPlaceholderText(M.criarReceitaTituloPlaceholder)
+    const titulo = within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder)
     await user.type(titulo, 'Feijoada')
-    await user.click(screen.getByRole('button', { name: M.criarReceitaEnviar }))
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
-    // Sucesso renderizado e foco levado à confirmação (junto do botão de submit).
-    const status = await screen.findByRole('status')
+    const status = await within(dialog).findByRole('status')
     expect(status).toHaveTextContent(M.criarReceitaSucesso)
 
-    // Primeira interação após o sucesso (digitar no título) limpa a confirmação órfã.
     await user.type(titulo, 'x')
-    expect(screen.queryByRole('status')).toBeNull()
+    expect(within(dialog).queryByRole('status')).toBeNull()
   })
 
   it('validação leve: sem título não dispara POST', async () => {
     const fetchMock = mockFetch({ 'GET /api/curate/promotion': promotionVazio })
     const user = userEvent.setup()
     renderForm()
+    const dialog = await openDrawer(user)
 
-    await user.click(await screen.findByRole('button', { name: M.criarReceitaEnviar }))
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(M.criarReceitaErroTitulo)
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(M.criarReceitaErroTitulo)
     expect(postCall(fetchMock)).toBeUndefined() // nenhuma chamada POST (o GET do mount não conta)
+  })
+
+  it('#266 dismiss BLOQUEADO durante o POST: Esc não fecha o drawer; 1 POST só', async () => {
+    const d = deferred<FetchResult>()
+    const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0])
+      const method = (args[1]?.method ?? 'GET').toUpperCase()
+      if (method === 'GET' && url.includes('/promotion')) {
+        return { ok: true, status: 200, json: async () => ({ promotion: [] }) } as Response
+      }
+      if (method === 'POST' && url.includes('/recipes')) {
+        const r = await d.promise // trava o POST no estado 'Criando…'
+        if ('reject' in r) throw new TypeError('network down')
+        return { ok: r.ok, status: r.status, json: async () => r.body } as Response
+      }
+      throw new Error(`fetch não mockado: ${method} ${url}`)
+    })
+    vi.stubGlobal('fetch', impl)
+    const user = userEvent.setup()
+    renderForm()
+    const dialog = await openDrawer(user)
+
+    await user.type(within(dialog).getByPlaceholderText(M.criarReceitaTituloPlaceholder), 'Feijoada')
+    await user.click(within(dialog).getByRole('button', { name: M.criarReceitaEnviar }))
+
+    // O POST está em voo (botão "Criando…"). Esc NÃO fecha o drawer (dismiss bloqueado).
+    expect(await within(dialog).findByRole('button', { name: M.criarReceitaEnviando })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    // Libera a resposta → conclui DENTRO do mesmo drawer; nenhum 2º POST.
+    d.resolve({ ok: true, status: 200, body: { id: 'rec-1' } })
+    expect(await within(dialog).findByRole('status')).toHaveTextContent(M.criarReceitaSucesso)
+    const posts = impl.mock.calls.filter((c) => (c[1]?.method ?? 'GET') === 'POST').length
+    expect(posts).toBe(1)
+  })
+
+  it('#266 reabrir o drawer reseta o form (estado limpo entre aberturas)', async () => {
+    mockFetch({ 'GET /api/curate/promotion': promotionVazio })
+    const user = userEvent.setup()
+    renderForm()
+
+    // Abre, digita um rascunho, fecha (Esc — sem POST em voo, fecha normalmente).
+    const dialog1 = await openDrawer(user)
+    await user.type(within(dialog1).getByPlaceholderText(M.criarReceitaTituloPlaceholder), 'rascunho que some')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    // Reabre: o título começa vazio (o Radix desmonta o conteúdo ao fechar ⇒ form fresco).
+    const dialog2 = await openDrawer(user)
+    expect(within(dialog2).getByPlaceholderText(M.criarReceitaTituloPlaceholder)).toHaveValue('')
   })
 })
