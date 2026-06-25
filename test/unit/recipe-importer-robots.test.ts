@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RealRecipeImporter } from '@/server/import/recipe-importer'
+import { createDomainRateLimiter, type DomainRateLimiter } from '@/server/import/rate-limit'
 
 /**
- * Guard-rail robots.txt do seam REAL (#272, ADR-0019) — caminho de REDE com `fetch` mockado (espelha
- * `web-search-provider.test.ts`). O matcher PURO (`isPathAllowedByRobots`) é coberto em
- * `test/domain/robots-txt.test.ts`; AQUI provamos a fiação do hook que o unit puro NÃO alcança:
- *  - `checkRobotsAllowed` roda ANTES do fetch da página e curto-circuita quando o robots.txt proíbe;
- *  - é FAIL-OPEN deliberado — 404/5xx/timeout/erro-de-rede/redirect ⇒ permitido (busca a página).
- * O `FakeRecipeImporter` ignora a URL e pula esse hook (os route tests de #165 ficam intactos).
+ * Guard-rails do seam REAL (#272, ADR-0019) — caminho de REDE com `fetch` mockado (espelha
+ * `web-search-provider.test.ts`). Os módulos PUROS (`isPathAllowedByRobots`, `createDomainRateLimiter`)
+ * são cobertos em `test/domain/robots-txt.test.ts` e `test/unit/import-rate-limit.test.ts`; AQUI
+ * provamos a FIAÇÃO dos hooks que os units puros não alcançam:
+ *  - robots: `checkRobotsAllowed` roda antes do fetch e curto-circuita no `Disallow`; FAIL-OPEN
+ *    (404/5xx/timeout/erro/redirect ⇒ permitido);
+ *  - rate-limit: a janela por domínio gateia ANTES de qualquer rede (limitada ⇒ zero fetch).
+ * O `FakeRecipeImporter` ignora a URL e pula ambos (os route tests de #165 ficam intactos).
  */
+
+/** Limiter permissivo p/ isolar os testes de robots (senão imports do mesmo host em sequência são limitados). */
+const ALLOW_ALL: DomainRateLimiter = { tryAcquire: () => true }
 
 const URL_ALVO = 'https://exemplo.com/receitas/bolo' // path = /receitas/bolo
 const ROBOTS_URL = 'https://exemplo.com/robots.txt'
@@ -51,7 +57,7 @@ function mockFetch(robots: RobotsReply) {
   return { impl, calls }
 }
 
-const importer = new RealRecipeImporter()
+const importer = new RealRecipeImporter(ALLOW_ALL)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -106,5 +112,36 @@ describe('RealRecipeImporter — guard-rail robots.txt (#272)', () => {
     const res = await importer.import(URL_ALVO)
     expect(res.ok).toBe(true) // tamanho declarado > cap ⇒ tratado como indisponível (permitido)
     expect(calls).toContain(URL_ALVO)
+  })
+})
+
+describe('RealRecipeImporter — guard-rail rate-limit (#272)', () => {
+  function fixedClock(start = 0) {
+    let t = start
+    return { now: () => t, advance: (ms: number) => (t += ms) }
+  }
+
+  it('2ª importação do mesmo domínio dentro da janela → rate_limited e ZERO rede (gateia antes do robots)', async () => {
+    const clock = fixedClock()
+    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }))
+    const { calls } = mockFetch({ ok: false, status: 404 }) // robots 404 ⇒ permite a 1ª importação
+
+    expect((await limited.import(URL_ALVO)).ok).toBe(true)
+    const afterFirst = calls.length // robots.txt + página
+
+    clock.advance(500) // ainda dentro da janela de 1s
+    const second = await limited.import(URL_ALVO)
+    expect(second).toEqual({ ok: false, reason: 'rate_limited' })
+    expect(calls.length).toBe(afterFirst) // nenhum fetch novo — nem robots.txt nem página
+  })
+
+  it('passada a janela (>= 1s), o mesmo domínio importa de novo', async () => {
+    const clock = fixedClock()
+    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }))
+    mockFetch({ ok: false, status: 404 })
+
+    expect((await limited.import(URL_ALVO)).ok).toBe(true)
+    clock.advance(1000)
+    expect((await limited.import(URL_ALVO)).ok).toBe(true)
   })
 })

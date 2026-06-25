@@ -186,6 +186,19 @@ describe('POST /api/recipes/import (#165)', () => {
     expect(all.length).toBe(0)
   })
 
+  it('#272: rate-limit por domínio → 429 {rate_limited}, ZERO efeito (não importa)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-ratelimit@ex.com' })
+    await seedAllowlist()
+    setRecipeImporter(new FakeRecipeImporter(undefined, 'rate_limited'))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(429) // Too Many Requests (politeness por domínio)
+    const bodyJson = (await res.json()) as { error: string }
+    expect(bodyJson.error).toBe('rate_limited')
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
   it('url ausente/malformada → 400 (antes do seam)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'import-badurl@ex.com' })
     // Importer que estouraria se chamado — prova que o 400 acontece ANTES do seam.
