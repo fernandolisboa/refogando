@@ -1,8 +1,10 @@
 'use client'
 
 /**
- * Config do AVISO de catálogo AI-assistido (#237, SEO #187) — Admin-only (a page `/admin/ai` revalida
- * `min='admin'` server-side; a API `/api/admin/config` reforça `requireRole 'admin'`). Liga/desliga o
+ * Config do AVISO de catálogo AI-assistido (#237, SEO #187) — Admin-only. Desde #268 vive na page
+ * `/admin/catalog` (Curadoria, `min='curador'`), perto do Catálogo, mas renderizada SÓ pra admin
+ * (`isAdmin && <…>` na page) — a garantia admin-only vem desse render condicional + da API
+ * `/api/admin/config` que reforça `requireRole 'admin'` (a page NÃO é mais `min='admin'`). Liga/desliga o
  * aviso editorial OPCIONAL ("em colaboração entre curadoria e IA") e edita o seu TEXTO. CORTESIA: o
  * aviso aparece SÓ em receitas de catálogo quando ligado e NUNCA substitui os selos obrigatórios de
  * proveniência (`origin=ai_*` / imagem `ai_generated`).

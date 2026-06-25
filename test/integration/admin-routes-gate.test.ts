@@ -34,6 +34,17 @@ vi.mock('next/headers', () => ({
 }))
 
 import { isValidElement, type ReactElement } from 'react'
+import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
+
+/** Busca recursiva por um TIPO de componente na árvore resolvida (children aninhados). */
+function containsType(node: unknown, target: unknown): boolean {
+  if (!isValidElement(node)) return false
+  const el = node as ReactElement<{ children?: unknown }>
+  if (el.type === target) return true
+  const kids = el.props?.children
+  const arr = Array.isArray(kids) ? kids : [kids]
+  return arr.some((k) => containsType(k, target))
+}
 
 /**
  * Resolve recursivamente Server Components ASSÍNCRONOS: as `page.tsx` de seção devolvem
@@ -191,5 +202,33 @@ describe('Seções de Curadoria (curador+) — curador E admin passam', () => {
     const { headers } = await seedSessionHeaders({ email: `u-${_n}@routes.test`, role: 'usuario' })
     headersMock.current = headers
     expect(await run(mod)).toEqual({ kind: 'denied' })
+  })
+
+  // #268: /admin/catalog passou a sondar o gate admin (gateSection('admin')) ANTES do SectionGate
+  // curador. Pro anônimo essa sonda devolve a STRING 'redirect' (não-throw) → isAdmin=false; o
+  // redirect de verdade vem do SectionGate. Trava a invariante: a sonda nunca vira leak/render.
+  it('anon em /admin/catalog → redirect (a sonda admin não converte anon em render)', async () => {
+    headersMock.current = new Headers()
+    expect(await run(catalog)).toEqual({ kind: 'redirect', to: '/sign-in' })
+  })
+})
+
+describe('Aviso do catálogo (#268) — admin-only DENTRO da seção Curadoria de catálogo', () => {
+  // O Aviso fala com `/api/admin/config` (admin). Mover pra /admin/catalog (curador+) NÃO pode
+  // expor o form ao Curador (gating preservado): a página só o renderiza pra admin. A seção de
+  // Curadoria em si (CatalogCuration) continua curador+ — provado pelos testes de gate acima.
+  async function catalogTree(role: 'admin' | 'curador') {
+    const { headers } = await seedSessionHeaders({ email: `disc-${role}@routes.test`, role })
+    headersMock.current = headers
+    const { default: Component } = await catalog()
+    return resolve(await Component())
+  }
+
+  it('admin → a seção do Aviso do catálogo está presente', async () => {
+    expect(containsType(await catalogTree('admin'), CatalogDisclosureConfigSection)).toBe(true)
+  })
+
+  it('curador → a seção do Aviso está AUSENTE (não vê o que a API recusaria com 403)', async () => {
+    expect(containsType(await catalogTree('curador'), CatalogDisclosureConfigSection)).toBe(false)
   })
 })

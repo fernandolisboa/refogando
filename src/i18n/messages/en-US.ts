@@ -725,7 +725,9 @@ export const enUS: Messages = {
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
     navCatalogo: 'Catalog',
-    navAi: 'Image generation',
+    // #268: /admin/ai holds image generation + web discovery + embeddings → "AI & Discovery"
+    // (not just "Image generation"). The catalog disclosure moved out of here to Curation.
+    navAi: 'AI & Discovery',
     // /admin/ai section (#134) — toggle AI image generation, model and per-role daily caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',

@@ -1,12 +1,14 @@
 /**
- * Seção Geração de imagem por IA (#134, Governança) — admin-only. Revalida o papel server-side com
+ * Seção "IA & Descoberta" (#134/#268, Governança) — admin-only. Revalida o papel server-side com
  * `min='admin'` (um Curador batendo direto aqui é barrado por `AccessDenied`, não só pelo link
  * escondido). A API `/api/admin/config` ainda reforça `requireRole 'admin'`. Espelha config/page.tsx.
+ *
+ * #268: reúne o que é INFRA de IA/descoberta — geração de imagem, descoberta na web e embeddings.
+ * O "Aviso do catálogo" (cortesia editorial) SAIU daqui pra perto da Curadoria/Catálogo.
  */
 import { SectionGate } from '../gate'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
-import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 
 export const runtime = 'nodejs'
@@ -18,8 +20,6 @@ export default async function AdminAiPage() {
         <AiConfigSection />
         {/* #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios (admin-only). */}
         <WebSearchConfigSection />
-        {/* #237: aviso de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável (admin-only). */}
-        <CatalogDisclosureConfigSection />
         {/* #119: backfill dos embeddings da busca semântica (recompute em lote, admin-only). */}
         <EmbeddingBackfill />
       </div>
