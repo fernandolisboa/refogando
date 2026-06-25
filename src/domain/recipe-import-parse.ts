@@ -29,10 +29,17 @@ export type ImportedIngredient = {
   unidade: Unidade | null
 }
 
-/** Forma estruturada da Receita importada — espelha o miolo de `ReceitaGenT` que a persistência consome. */
+/**
+ * Forma estruturada da Receita importada — espelha o miolo de `ReceitaGenT` que a persistência consome.
+ *
+ * #272/ADR-0019 (emenda legal): a importação copia SÓ FATOS (título, ingredientes, passos). A
+ * **camada expressiva protegida** — a FOTO e o **`description`/headnote** — NÃO é importada: NÃO há
+ * campo `descricao` aqui (a importada nasce com headnote em branco; o dono escreve o seu) nem imagem
+ * (a `persist-import` nunca cria `recipe_image`; o dono completa pela Galeria). `sourceName` é só
+ * para a ATRIBUIÇÃO obrigatória à fonte, nunca um headnote.
+ */
 export type ImportedRecipe = {
   titulo: string
-  descricao: string | null
   passos: string[]
   notas: string | null
   originalLocale: Locale
@@ -267,7 +274,8 @@ export function parseImportedRecipe(html: string, sourceUrl: string): ParseResul
     ok: true,
     recipe: {
       titulo,
-      descricao: asText(recipeNode['description']),
+      // #272/ADR-0019: o `description`/headnote da fonte é camada protegida — NÃO copiamos (a
+      // importada nasce com headnote em branco). Só fatos: título, passos, ingredientes.
       passos: parseInstructions(recipeNode['recipeInstructions']),
       notas: null,
       originalLocale,
