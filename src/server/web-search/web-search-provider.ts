@@ -15,6 +15,7 @@
  */
 
 import { isUrlAllowed } from '@/domain/web-search-config'
+import { bareHost } from '@/domain/source-host'
 
 /** Um resultado da web — SEMPRE um link externo, jamais armazenado nem ranqueado (ADR-0019). */
 export type WebSearchResult = {
@@ -149,16 +150,10 @@ function toWebSearchResult(r: BraveWebResult): WebSearchResult | null {
   return { title: r.title, url: r.url, sourceName: publisher !== '' ? publisher : fromHost }
 }
 
-/** Nome da fonte = host "pelado" (sem `www.`) — atribuição "da web · <fonte>". `null` se URL inválida. */
+/** Nome da fonte = host "pelado" (sem `www.`) — atribuição "da web · <fonte>". `null` se URL inválida.
+ *  Delega ao domínio puro `bareHost` (#272): fonte única da normalização compartilhada com a atribuição. */
 function sourceNameFromUrl(url: string): string | null {
-  let host: string
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/\.$/, '')
-  } catch {
-    return null
-  }
-  if (host === '') return null
-  return host.startsWith('www.') ? host.slice(4) : host
+  return bareHost(url)
 }
 
 /** Locale da Busca → dicas de país/idioma do Brave (opcionais). Desconhecido ⇒ sem dica. */

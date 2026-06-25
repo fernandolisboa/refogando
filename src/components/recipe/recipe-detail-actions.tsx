@@ -30,6 +30,7 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditModal } from './recipe-edit-modal'
 import { LineageVersionControls } from './lineage-version-controls'
 import { RecipeDiffView } from './recipe-diff-view'
+import { ClearAttributionButton } from './clear-attribution-button'
 
 export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale: string }) {
   const { messages } = useLocale()
@@ -55,6 +56,8 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
           <RecipeEditModal view={view} />
         </div>
         {isAi && <LineageVersionControls recipeId={view.id} />}
+        {/* #272 (LGPD): só aparece p/ importada da web com nome de fonte humano (self-gating). */}
+        <ClearAttributionButton view={view} />
       </div>
     )
   }
