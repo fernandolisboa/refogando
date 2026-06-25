@@ -54,6 +54,18 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
   'undefined',
 ])
 
+/**
+ * Normaliza um handle CRU do path (`/u/<handle>`) pra LOOKUP: trim + minúsculo (como a gravação no
+ * #128). Vazio → null (o caller responde 404 sem tocar o DB útil). NÃO valida formato/reservada — é
+ * só a forma de consulta (o que não casar nenhuma linha já é 404 leak-safe). Fonte ÚNICA do perfil
+ * público (`/api/u/[handle]`) e da rota de seguir (#274), pra os dois NÃO divergirem em
+ * case-sensitivity nem no short-circuit de vazio (senão viram oráculos de existência distintos).
+ */
+export function normalizeHandle(raw: string): string | null {
+  const h = raw.trim().toLowerCase()
+  return h.length === 0 ? null : h
+}
+
 /** Veredito de validação de um handle proposto pelo usuário. */
 export type HandleValidation =
   | { ok: true }

@@ -5,6 +5,14 @@ import { parseRequestLocale } from '@/server/http/params'
 import { listPublicRecipesByOwner } from '@/server/recipe/list-public'
 import { buildPublicProfile } from '@/domain/recipe-profile-read'
 import { validateLinks } from '@/domain/links'
+import { normalizeHandle } from '@/domain/handle'
+import {
+  countFollowers,
+  countFollowing,
+  listFollowers,
+  listFollowing,
+  FOLLOW_LIST_PREVIEW,
+} from '@/server/user/follow'
 
 /**
  * Perfil PÚBLICO (#129): GET `/api/u/<handle>?locale=`. ANÔNIMO-readable (ADR-0011) — sem
@@ -33,8 +41,9 @@ export async function GET(
 ): Promise<Response> {
   const { handle: rawHandle } = await params
   // Normaliza como na gravação (#128): trim + lower. Handle vazio → 404 (sem tocar o DB útil).
-  const handle = rawHandle.trim().toLowerCase()
-  if (handle.length === 0) return notFound()
+  // Fonte ÚNICA (`normalizeHandle`) reusada pela rota de seguir (#274) — não divergir.
+  const handle = normalizeHandle(rawHandle)
+  if (handle === null) return notFound()
 
   const requestLocale = parseRequestLocale(request)
   const db = getDb()
@@ -58,6 +67,25 @@ export async function GET(
   // Receitas PÚBLICAS (pool) do dono — privadas/playful/removidas NUNCA entram (list-public.ts).
   const recipeRows = await listPublicRecipesByOwner(db, owner.id)
 
+  // Bloco SOCIAL (#274): contadores + preview das listas. PÚBLICO e SEM estado do viewer — esta rota
+  // NUNCA lê a sessão (o "eu sigo?" é client-side, pra o perfil seguir anon-cacheável / Modelo B).
+  // As seams gateiam soft-deleted; o `owner.id` é só interno (nunca emitido no DTO). DEGRADA: um erro
+  // transitório no bloco social (assistivo) NÃO derruba o payload SEO-crítico (identidade + receitas)
+  // — cai p/ social vazio (a view já omite listas vazias). `owner.id` nunca é emitido no DTO.
+  const social = await Promise.all([
+    countFollowers(db, owner.id),
+    countFollowing(db, owner.id),
+    listFollowers(db, owner.id, FOLLOW_LIST_PREVIEW),
+    listFollowing(db, owner.id, FOLLOW_LIST_PREVIEW),
+  ])
+    .then(([followerCount, followingCount, followers, following]) => ({
+      followerCount,
+      followingCount,
+      followers,
+      following,
+    }))
+    .catch(() => ({ followerCount: 0, followingCount: 0, followers: [], following: [] }))
+
   // Defesa-em-profundidade (#127/#129): re-valida os links http(s)-only antes de emitir. Lista
   // inválida (não deveria ocorrer — a escrita já valida) ⇒ cai p/ vazia, nunca emite link inseguro.
   const linksCheck = validateLinks(owner.links)
@@ -71,6 +99,7 @@ export async function GET(
     links,
     recipeRows,
     requestLocale,
+    social,
   })
 
   return Response.json(profile)

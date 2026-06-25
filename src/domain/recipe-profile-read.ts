@@ -44,10 +44,30 @@ export type ProfileRecipeItem = {
   slug?: string
 }
 
+/** Um Cozinheiro numa lista pública de seguir (#274) — allowlist mínima (nome/@handle/avatar). */
+export type ProfileFollowUser = {
+  name: string
+  handle: string
+  image: string | null
+}
+
 /**
- * O perfil público completo (#129): a identidade pública do dono + as Receitas públicas dele.
- * `image`/`bio` são NULLABLE (perfil sem avatar/bio é normal). `links` é sempre array (default
- * `[]` no banco). `recipes` já vem ordenado (mais novas primeiro) e projetado.
+ * Bloco SOCIAL público do perfil (#274, ADR-0024): contadores (derivados por query no v1) + um
+ * PREVIEW capado das listas de Seguidores/Seguindo. Tudo PÚBLICO e SEM estado do viewer (o "eu
+ * sigo?" é resolvido client-side pela ilha, pra o perfil seguir anon-cacheável — Modelo B/ADR-0020).
+ * Os contadores são o total VIVO; as listas são só os primeiros N (mais recentes).
+ */
+export type ProfileSocial = {
+  followerCount: number
+  followingCount: number
+  followers: ProfileFollowUser[]
+  following: ProfileFollowUser[]
+}
+
+/**
+ * O perfil público completo (#129): a identidade pública do dono + as Receitas públicas dele + o
+ * bloco social (#274). `image`/`bio` são NULLABLE (perfil sem avatar/bio é normal). `links` é sempre
+ * array (default `[]` no banco). `recipes` já vem ordenado (mais novas primeiro) e projetado.
  */
 export type PublicProfile = {
   name: string
@@ -56,6 +76,7 @@ export type PublicProfile = {
   bio: string | null
   links: ProfileLink[]
   recipes: ProfileRecipeItem[]
+  social: ProfileSocial
 }
 
 /**
@@ -97,6 +118,7 @@ export function buildPublicProfile(input: {
   links: ProfileLink[]
   recipeRows: ReadonlyArray<ProfileRecipeRow>
   requestLocale: string
+  social: ProfileSocial
 }): PublicProfile {
   const recipes: ProfileRecipeItem[] = []
   for (const row of input.recipeRows) {
@@ -110,5 +132,6 @@ export function buildPublicProfile(input: {
     bio: input.bio,
     links: input.links,
     recipes,
+    social: input.social,
   }
 }

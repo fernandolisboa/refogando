@@ -13,10 +13,11 @@
  */
 import Link from 'next/link'
 import { safeHttpUrl } from '@/domain/links'
-import type { PublicProfile } from '@/domain/recipe-profile-read'
+import type { PublicProfile, ProfileFollowUser } from '@/domain/recipe-profile-read'
 import type { Messages } from '@/i18n/messages'
 import { RecipeResultItem } from '@/components/recipe/recipe-result-item'
 import { Avatar } from '@/components/profile/avatar'
+import { ProfileFollowSection } from '@/components/profile/profile-follow-section'
 
 export function PublicProfileView({
   profile,
@@ -49,6 +50,34 @@ export function PublicProfileView({
       .replace(/^https?:\/\//, '')
       .replace(/^www\./, '')
       .replace(/\/+$/, '')
+
+  // Lista de seguir (#274): seção capada de Cozinheiros (avatar+nome+@handle linkando o perfil). Vazia
+  // ⇒ OMITIDA (tela limpa); como contador e lista concordam (ambos gateiam soft-deleted), lista não-
+  // vazia ⟺ contador > 0.
+  const followList = (titleId: string, title: string, list: ProfileFollowUser[]) =>
+    list.length === 0 ? null : (
+      <section aria-labelledby={titleId} className="flex flex-col gap-2">
+        <h2 id={titleId} className="font-display text-lg font-semibold tracking-tight text-fg">
+          {title}
+        </h2>
+        <ul className="flex flex-col gap-1">
+          {list.map((u) => (
+            <li key={u.handle}>
+              <Link
+                href={`/u/${u.handle}`}
+                className="flex items-center gap-3 rounded-md py-1 transition-colors hover:text-fg"
+              >
+                <Avatar src={u.image} name={u.name} alt="" size="sm" />
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm font-medium text-fg">{u.name}</span>
+                  <span className="truncate text-xs text-muted">@{u.handle}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
 
   return (
     <article className="flex flex-col gap-8">
@@ -93,6 +122,20 @@ export function PublicProfileView({
         </div>
       </header>
 
+      {/* Social (#274): a ilha mostra os SEGUIDORES (contador que muda no clique) + o botão Seguir/
+          Seguindo (anon → "Entrar para seguir"; próprio perfil → sem botão); o SEGUINDO é estático SSR.
+          Tudo público, anon-cacheável (o "eu sigo?" é resolvido client-side dentro da ilha). */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <ProfileFollowSection
+          handle={profile.handle}
+          initialFollowerCount={profile.social.followerCount}
+          labels={mp}
+        />
+        <span className="text-sm text-muted">
+          {mp.seguindoContagem.replace('{n}', String(profile.social.followingCount))}
+        </span>
+      </div>
+
       {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ LINHAS editoriais (mesmo item
           da Busca/Feed — protótipo RefoStage). Sem byline (a autoria é o próprio dono da página). */}
       <section aria-labelledby="perfil-receitas" className="flex flex-col gap-2">
@@ -119,6 +162,10 @@ export function PublicProfileView({
           </ul>
         )}
       </section>
+
+      {/* Listas públicas (#274): Seguidores e Seguindo (preview capado; contador dá o total). */}
+      {followList('perfil-seguidores', mp.seguidoresTitulo, profile.social.followers)}
+      {followList('perfil-seguindo', mp.seguindoTitulo, profile.social.following)}
     </article>
   )
 }
