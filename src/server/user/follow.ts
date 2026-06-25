@@ -94,3 +94,21 @@ export async function listFollowing(
     .orderBy(desc(userFollow.createdAt), asc(userFollow.followeeId))
     .limit(limit)
 }
+
+/**
+ * Ids (SERVER-ONLY) de quem `userId` SEGUE e estão VIVOS — alimenta o filtro do Feed Seguindo
+ * (#277). Espelha o gate de `listFollowing` (INNER JOIN `users` + `isNull(deletedAt)` no FOLLOWEE,
+ * a counterparty), mas devolve SÓ os ids: o feed os usa como `owner_id IN (...)`. NUNCA serializados
+ * ao cliente (o `FollowUser` público segue sem id). SEM `limit` — o feed precisa de TODOS os seguidos
+ * (não é preview); SEM `orderBy` — vira filtro `IN`, a ordem é irrelevante (a ordem do feed é por
+ * `created_at` da Receita). v1: lista ilimitada aceitável (tabelas minúsculas), mesmo balde do
+ * deferimento do índice composto/owner_id do `loadFeed`.
+ */
+export async function listFollowingIds(db: Database, userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: userFollow.followeeId })
+    .from(userFollow)
+    .innerJoin(users, eq(users.id, userFollow.followeeId))
+    .where(and(eq(userFollow.followerId, userId), isNull(users.deletedAt)))
+  return rows.map((r) => r.id)
+}

@@ -7,7 +7,11 @@ import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
   nav: {
-    home: 'Início',
+    // #277: a Descoberta/home virou "Explorar" na nav (aba ao lado de "Seguindo"). O key segue
+    // `home` (linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
+    home: 'Explorar',
+    // #277: aba "Seguindo" — feed das Receitas de quem o viewer segue. Só-logada (gateada por authed).
+    seguindo: 'Seguindo',
     // #236: a antiga entrada "Receitas" (índice do feed) fundiu na home (a Descoberta É a home);
     // a chave foi removida por ficar órfã.
     create: 'Criar',
@@ -144,6 +148,20 @@ export const ptBR = {
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',
     fim: 'Você chegou ao fim.',
+  },
+  // Feed SEGUINDO (#277, ADR-0024) — superfície SÓ-LOGADA e NÃO-indexável (separada da home anon,
+  // Modelo B). Reusa `feed.carregarMais`/`feed.fim` e `system.loading`/`system.error` na paginação.
+  // O empty state é cause-NEUTRO (dispara em "não segue ninguém" E "seguidos sem receita pública"):
+  // a copy é verdadeira nos dois casos e faz a ponte pra descoberta (AC4).
+  seguindoFeed: {
+    titulo: 'Seguindo',
+    subtitulo: 'Receitas de quem você segue, do mais novo ao mais antigo.',
+    precisaEntrar: 'Entre para ver as receitas de quem você segue.',
+    vazioTitulo: 'Nada por aqui ainda',
+    vazioCorpo: 'Siga cozinheiros para ver as receitas deles no seu feed.',
+    // CTA leva à Descoberta (`/`); o trilho de cozinheiros recomendados é #278 (futuro) — quando
+    // existir, o rótulo volta a "Descobrir cozinheiros". Até lá o rótulo casa o destino (receitas).
+    vazioCta: 'Explorar receitas',
   },
   // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
   // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são

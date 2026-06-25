@@ -39,6 +39,7 @@ vi.mock('@/lib/auth-client', () => ({
 import { LocaleProvider } from '@/i18n/provider'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { ptBR } from '@/i18n/messages/pt-BR'
 
 /**
  * Seam de teste de FRONTEND (issue #54) — prova, acima da seam de servidor e sem
@@ -59,9 +60,12 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
 
     // Estado inicial: chrome em pt-BR.
     const nav = screen.getByRole('navigation')
-    expect(within(nav).getByText('Início')).toBeInTheDocument()
-    // #236: "Receitas" (índice do feed) FUNDIU na home — "Início" é a Descoberta. Sem link à parte.
+    // #277: o rótulo da home/Descoberta é "Explorar" (lido do catálogo — rename-proof).
+    expect(within(nav).getByText(ptBR.nav.home)).toBeInTheDocument()
+    // #236: "Receitas" (índice do feed) FUNDIU na home — a Descoberta É a home. Sem link à parte.
     expect(within(nav).queryByText('Receitas')).not.toBeInTheDocument()
+    // #277: a aba "Seguindo" é só-logada — AUSENTE para Visitante (sessão anon padrão deste teste).
+    expect(within(nav).queryByText(ptBR.nav.seguindo)).not.toBeInTheDocument()
     // Criar PRESENTE na nav; a entrada "Conversar" foi removida (#104 S6 — o Modo Conversa
     // vive dentro de /create agora, não como um slot de nav próprio).
     expect(within(nav).getByText('Criar')).toBeInTheDocument()
@@ -117,6 +121,33 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     const iCriar = labels.indexOf('Criar')
     expect(iMinhas).toBeGreaterThanOrEqual(0)
     expect(iCriar).toBeGreaterThan(iMinhas)
+    // #277: "Seguindo" (logado) aparece ENTRE "Explorar" e "Minhas criações".
+    const iExplorar = labels.indexOf(ptBR.nav.home)
+    const iSeguindo = labels.indexOf(ptBR.nav.seguindo)
+    expect(iExplorar).toBeGreaterThanOrEqual(0)
+    expect(iSeguindo).toBeGreaterThan(iExplorar)
+    expect(iSeguindo).toBeLessThan(iMinhas)
+  })
+
+  it('#277: em /pt-BR/following, a aba "Seguindo" fica ATIVA (aria-current) e "Explorar" não', () => {
+    // Prova o isActive LOCALE-AWARE: `usePathname()` vem prefixado (`/pt-BR/following`); sem tirar o
+    // prefixo de locale o aria-current NUNCA dispararia (`'/pt-BR/following' === '/following'` é false).
+    authMock.current = {
+      data: { user: { id: 'u1', name: 'X', email: 'x@y.z', role: 'user', deletedAt: null } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: () => {},
+    }
+    navMock.pathname = '/pt-BR/following'
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+      </LocaleProvider>,
+    )
+    const nav = screen.getByRole('navigation')
+    expect(within(nav).getByRole('link', { name: ptBR.nav.seguindo })).toHaveAttribute('aria-current', 'page')
+    expect(within(nav).getByRole('link', { name: ptBR.nav.home })).not.toHaveAttribute('aria-current')
   })
 
   it('#162: idioma vive no footer (ao lado do ThemeToggle); header mantém só o AuthSlot', () => {

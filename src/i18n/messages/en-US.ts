@@ -8,7 +8,11 @@ import type { Messages } from './pt-BR'
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
   nav: {
-    home: 'Home',
+    // #277: the Discovery/home is now labeled "Explore" in the nav (a tab next to "Following").
+    // Key stays `home` (links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
+    home: 'Explore',
+    // #277: "Following" tab — feed of recipes from the cooks the viewer follows. Logged-in only.
+    seguindo: 'Following',
     // #236: the old "Recipes" entry (feed index) merged into the home (Discovery IS the home);
     // key removed as orphaned.
     create: 'Create',
@@ -136,6 +140,20 @@ export const enUS: Messages = {
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
     fim: "You've reached the end.",
+  },
+  // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
+  // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
+  // The empty state is cause-NEUTRAL (fires for "follows nobody" AND "followees have no public
+  // recipes"): the copy is true in both cases and bridges to discovery (AC4).
+  seguindoFeed: {
+    titulo: 'Following',
+    subtitulo: 'Recipes from the cooks you follow, newest first.',
+    precisaEntrar: 'Sign in to see recipes from the cooks you follow.',
+    vazioTitulo: 'Nothing here yet',
+    vazioCorpo: 'Follow cooks to see their recipes in your feed.',
+    // CTA leads to Discovery (`/`); the recommended-cooks rail is #278 (future) — once it ships, the
+    // label returns to "Discover cooks". Until then the label matches the destination (recipes).
+    vazioCta: 'Explore recipes',
   },
   // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
   // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).
