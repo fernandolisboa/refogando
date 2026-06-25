@@ -92,27 +92,28 @@ export class RealRecipeImporter implements RecipeImporter {
     } catch {
       return true // URL inválida cai no fetch_failed adiante; aqui não bloqueamos por robots
     }
-    let robotsTxt: string
+    // UM timer cobre fetch + leitura do corpo (signal aborta ambos); a avaliação roda DENTRO do try
+    // (o matcher é linear e total, mas o try honra literalmente o fail-open-on-evaluate do docstring).
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), ROBOTS_TIMEOUT_MS)
     try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), ROBOTS_TIMEOUT_MS)
-      let res: Response
-      try {
-        res = await fetch(`${target.origin}/robots.txt`, {
-          headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/plain' },
-          redirect: 'manual', // NÃO perseguir 3xx p/ outro host (SSRF) — trata como indisponível
-          signal: controller.signal,
-        })
-      } finally {
-        clearTimeout(timer)
-      }
+      const res = await fetch(`${target.origin}/robots.txt`, {
+        headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/plain' },
+        redirect: 'manual', // NÃO perseguir 3xx p/ outro host (SSRF) — trata como indisponível
+        signal: controller.signal,
+      })
       if (!res.ok) return true // 404/4xx (sem regras), 5xx, ou 3xx opaco (manual) ⇒ permitido
+      // Dica de tamanho: um robots.txt absurdo é tratado como indisponível (não bufferiza GB na memória).
+      const declared = Number(res.headers.get('content-length'))
+      if (Number.isFinite(declared) && declared > MAX_ROBOTS_BYTES) return true
       const raw = await res.text()
-      robotsTxt = raw.length > MAX_ROBOTS_BYTES ? raw.slice(0, MAX_ROBOTS_BYTES) : raw
+      const robotsTxt = raw.length > MAX_ROBOTS_BYTES ? raw.slice(0, MAX_ROBOTS_BYTES) : raw
+      return isPathAllowedByRobots(robotsTxt, ROBOTS_UA_TOKEN, target.pathname + target.search)
     } catch {
-      return true // timeout/abort/erro de rede ⇒ permitido (fail-open)
+      return true // timeout/abort/erro de rede/avaliação ⇒ permitido (FAIL-OPEN)
+    } finally {
+      clearTimeout(timer)
     }
-    return isPathAllowedByRobots(robotsTxt, ROBOTS_UA_TOKEN, target.pathname + target.search)
   }
 }
 

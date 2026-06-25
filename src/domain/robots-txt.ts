@@ -72,27 +72,51 @@ function selectRules(groups: RobotsGroup[], token: string): RobotsRule[] {
   return chosen.flatMap((g) => g.rules)
 }
 
-const REGEX_META = /[.+?^${}()|[\]\\]/
-
 /**
- * Converte um padrão de robots.txt em RegExp ancorada no INÍCIO (prefix-match). `*` ⇒ `.*`; um `$` no
- * FIM ⇒ âncora de fim; demais chars são literais (metacaracteres de regex escapados). Sem `$` final, o
- * match é por prefixo (não ancora o fim).
+ * Casa um padrão de robots.txt contra `path` com semântica de PREFIXO. `*` casa qualquer sequência
+ * (inclusive vazia); um `$` no FIM ancora o fim do path (match TOTAL). Um `$` fora do fim é literal.
+ *
+ * Implementação por dois ponteiros com UM ponto de retrocesso (greedy, estilo glob `*`-only) — O(n*m),
+ * SEM backtracking exponencial. NÃO compila uma RegExp a partir do conteúdo (não-confiável) do
+ * robots.txt: isso evita ReDoS (um padrão hostil com muitos `*` derrubaria o event loop) e o throw
+ * "regex too large" de uma linha longa — o matcher é total, nunca lança.
  */
-function patternToRegex(pattern: string): RegExp {
-  let out = '^'
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i]
-    if (c === '*') out += '.*'
-    else if (c === '$' && i === pattern.length - 1) out += '$'
-    else out += REGEX_META.test(c) ? `\\${c}` : c
+function matchesPattern(pattern: string, path: string): boolean {
+  let pat = pattern
+  let anchorEnd = false
+  if (pat.endsWith('$')) {
+    anchorEnd = true
+    pat = pat.slice(0, -1)
   }
-  return new RegExp(out)
+  let p = 0 // índice no path
+  let s = 0 // índice no padrão
+  let star = -1 // posição do último `*` visto no padrão
+  let starPath = 0 // posição no path quando o último `*` foi aberto
+  while (p < path.length) {
+    if (s < pat.length && pat[s] === '*') {
+      star = s
+      starPath = p
+      s++
+    } else if (s < pat.length && pat[s] === path[p]) {
+      s++
+      p++
+    } else if (s >= pat.length && !anchorEnd) {
+      return true // padrão consumido + prefixo casado: o resto do path não importa
+    } else if (star >= 0) {
+      s = star + 1 // o último `*` engole mais um char do path (retrocesso ÚNICO, não exponencial)
+      starPath++
+      p = starPath
+    } else {
+      return false
+    }
+  }
+  while (s < pat.length && pat[s] === '*') s++ // `*` finais casam a sequência vazia
+  return s === pat.length // padrão totalmente consumido (cobre prefixo e âncora `$`)
 }
 
-/** Especificidade (= comprimento do padrão) se a regra casa o `path`; senão `null`. */
+/** Especificidade (= comprimento do PADRÃO, com `*`/`$` contando 1) se a regra casa o `path`; senão null. */
 function matchLength(pattern: string, path: string): number | null {
-  return patternToRegex(pattern).test(path) ? pattern.length : null
+  return matchesPattern(pattern, path) ? pattern.length : null
 }
 
 /**

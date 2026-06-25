@@ -21,7 +21,10 @@ const PAGE_HTML = `<html lang="pt-BR"><head><script type="application/ld+json">$
   recipeInstructions: ['Misture tudo.'],
 })}</script></head><body></body></html>`
 
-type RobotsReply = { ok: boolean; status?: number; body?: string } | { throw: true } | { redirect: true }
+type RobotsReply =
+  | { ok: boolean; status?: number; body?: string; contentLength?: number }
+  | { throw: true }
+  | { redirect: true }
 
 /** Mocka o `fetch` global roteando por URL: o `/robots.txt` segue `robots`; a página devolve JSON-LD válido. */
 function mockFetch(robots: RobotsReply) {
@@ -32,14 +35,17 @@ function mockFetch(robots: RobotsReply) {
     if (url.endsWith('/robots.txt')) {
       if ('throw' in robots) throw new TypeError('robots network down')
       // redirect:'manual' faz o fetch real devolver uma resposta opaca não-ok (status 0) p/ um 3xx.
-      if ('redirect' in robots) return { ok: false, status: 0, text: async () => '' } as Response
+      if ('redirect' in robots) return { ok: false, status: 0, headers: new Headers(), text: async () => '' } as Response
+      const headers = new Headers()
+      if (robots.contentLength != null) headers.set('content-length', String(robots.contentLength))
       return {
         ok: robots.ok,
         status: robots.status ?? (robots.ok ? 200 : 404),
+        headers,
         text: async () => robots.body ?? '',
       } as Response
     }
-    return { ok: true, status: 200, text: async () => PAGE_HTML } as Response
+    return { ok: true, status: 200, headers: new Headers(), text: async () => PAGE_HTML } as Response
   })
   vi.stubGlobal('fetch', impl)
   return { impl, calls }
@@ -92,6 +98,13 @@ describe('RealRecipeImporter — guard-rail robots.txt (#272)', () => {
     const { calls } = mockFetch({ ok: true, body: 'User-agent: *\nAllow: /receitas\nDisallow: /outro' })
     const res = await importer.import(URL_ALVO)
     expect(res.ok).toBe(true)
+    expect(calls).toContain(URL_ALVO)
+  })
+
+  it('robots.txt com Content-Length absurdo → fail-open: não bufferiza, busca a página', async () => {
+    const { calls } = mockFetch({ ok: true, contentLength: 50 * 1024 * 1024, body: 'User-agent: *\nDisallow: /receitas' })
+    const res = await importer.import(URL_ALVO)
+    expect(res.ok).toBe(true) // tamanho declarado > cap ⇒ tratado como indisponível (permitido)
     expect(calls).toContain(URL_ALVO)
   })
 })

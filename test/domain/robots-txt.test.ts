@@ -83,6 +83,20 @@ describe('isPathAllowedByRobots — wildcards e âncora $', () => {
     expect(isPathAllowedByRobots(txt, UA, '/')).toBe(true)
     expect(isPathAllowedByRobots(txt, UA, '/page.htm')).toBe(false)
   })
+
+  it('um "$" fora do FIM do padrão é LITERAL (não âncora): Disallow:/a$b bloqueia /a$b, não /ab', () => {
+    const txt = ['User-agent: *', 'Disallow: /a$b'].join('\n')
+    expect(isPathAllowedByRobots(txt, UA, '/a$b')).toBe(false)
+    expect(isPathAllowedByRobots(txt, UA, '/ab')).toBe(true)
+  })
+
+  it('padrão patológico com MUITOS wildcards não trava (matcher linear, sem backtracking exponencial)', () => {
+    // Com a antiga conversão p/ regex, `/*a*a…*aZ` vs um path sem o "Z" final dava catastrophic
+    // backtracking (k=12 ⇒ ~40s). O matcher linear resolve em O(n*m): aqui nada casa ⇒ permitido, e o
+    // teste só termina rápido se NÃO houver explosão exponencial (senão estoura o timeout do vitest).
+    const hostile = 'User-agent: *\nDisallow: /' + '*a'.repeat(25) + 'Z'
+    expect(isPathAllowedByRobots(hostile, UA, '/' + 'a'.repeat(80))).toBe(true)
+  })
 })
 
 describe('isPathAllowedByRobots — case-sensitivity, vazios e robustez', () => {
