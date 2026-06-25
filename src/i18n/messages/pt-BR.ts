@@ -771,7 +771,9 @@ export const ptBR = {
     navModeracao: 'Moderação',
     navTraducoes: 'Traduções',
     navCatalogo: 'Catálogo',
-    navAi: 'Geração de imagem',
+    // #268: a seção /admin/ai abriga geração de imagem + descoberta na web + embeddings — por isso
+    // "IA & Descoberta" (não só "Geração de imagem"). O Aviso do catálogo saiu daqui p/ a Curadoria.
+    navAi: 'IA & Descoberta',
     // Seção /admin/ai (#134) — liga/desliga a geração de imagem por IA, modelo e tetos por papel.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',

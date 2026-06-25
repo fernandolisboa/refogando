@@ -38,15 +38,15 @@ function renderNav(role: 'admin' | 'curador', path = '/admin/config') {
   return screen.getByRole('navigation', { name: A.navAria })
 }
 
-describe('SectionNav — links por papel (#125)', () => {
-  it('admin vê as 6 seções (Governança: Config, Geração de imagem, Papéis + Curadoria)', () => {
+describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () => {
+  it('admin vê as 6 seções (Governança: Config, IA & Descoberta, Papéis + Curadoria)', () => {
     const nav = renderNav('admin')
     for (const label of [A.navConfig, A.navAi, A.navPapeis, A.navModeracao, A.navTraducoes, A.navCatalogo]) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
     }
   })
 
-  it('curador NÃO vê a Governança (Config, Geração de imagem, Papéis); vê só a Curadoria', () => {
+  it('curador NÃO vê a Governança (Config, IA & Descoberta, Papéis); vê só a Curadoria', () => {
     const nav = renderNav('curador', '/admin/moderation')
     expect(within(nav).queryByRole('link', { name: A.navConfig })).toBeNull()
     expect(within(nav).queryByRole('link', { name: A.navAi })).toBeNull() // #134: admin-only
@@ -54,6 +54,24 @@ describe('SectionNav — links por papel (#125)', () => {
     for (const label of [A.navModeracao, A.navTraducoes, A.navCatalogo]) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
     }
+  })
+
+  it('#268: admin vê os grupos rotulados Plataforma e Curadoria (role=group nomeado)', () => {
+    const nav = renderNav('admin')
+    expect(within(nav).getByRole('group', { name: A.grupoPlataforma })).toBeInTheDocument()
+    expect(within(nav).getByRole('group', { name: A.grupoCuradoria })).toBeInTheDocument()
+    // O grupo Plataforma contém os links de Governança; o Curadoria, os de Curadoria.
+    const plataforma = within(nav).getByRole('group', { name: A.grupoPlataforma })
+    expect(within(plataforma).getByRole('link', { name: A.navAi })).toBeInTheDocument()
+    const curadoria = within(nav).getByRole('group', { name: A.grupoCuradoria })
+    expect(within(curadoria).getByRole('link', { name: A.navCatalogo })).toBeInTheDocument()
+  })
+
+  it('#268: curador vê só o grupo Curadoria (Plataforma some — sem itens, sem rótulo órfão)', () => {
+    const nav = renderNav('curador', '/admin/moderation')
+    expect(within(nav).queryByRole('group', { name: A.grupoPlataforma })).toBeNull()
+    expect(within(nav).queryByText(A.grupoPlataforma)).toBeNull()
+    expect(within(nav).getByRole('group', { name: A.grupoCuradoria })).toBeInTheDocument()
   })
 
   it('marca a rota ativa com aria-current="page"', () => {
