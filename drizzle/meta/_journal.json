@@ -225,6 +225,13 @@
       "when": 1782362673701,
       "tag": "0031_loving_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782426531761,
+      "tag": "0032_organic_serpent_society",
+      "breakpoints": true
     }
   ]
 }
