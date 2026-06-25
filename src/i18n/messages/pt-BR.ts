@@ -159,9 +159,17 @@ export const ptBR = {
     precisaEntrar: 'Entre para ver as receitas de quem você segue.',
     vazioTitulo: 'Nada por aqui ainda',
     vazioCorpo: 'Siga cozinheiros para ver as receitas deles no seu feed.',
-    // CTA leva à Descoberta (`/`); o trilho de cozinheiros recomendados é #278 (futuro) — quando
-    // existir, o rótulo volta a "Descobrir cozinheiros". Até lá o rótulo casa o destino (receitas).
-    vazioCta: 'Explorar receitas',
+    // CTA leva à Descoberta (`/`), onde vive o trilho de Cozinheiros recomendados (#278).
+    vazioCta: 'Descobrir cozinheiros',
+  },
+  // Trilho "Cozinheiros pra seguir" (#278, ADR-0024) — recomendados por popularidade global na home.
+  cozinheirosSugeridos: {
+    titulo: 'Cozinheiros pra seguir',
+    receitaContagem: '{n} receita',
+    receitasContagem: '{n} receitas',
+    seguir: 'Seguir',
+    seguindo: 'Seguindo',
+    erroSeguir: 'Não deu pra atualizar. Tente de novo.',
   },
   // Receita DERIVADA (#17): rótulos do diff congelado (recipe-diff.ts) + o Aviso de que editar
   // uma receita que não é sua CRIA UMA CÓPIA (fork), nunca altera a base. Os rótulos são

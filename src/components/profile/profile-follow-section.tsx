@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
+import { useFollowToggle } from '@/hooks/use-follow-toggle'
 import type { Messages } from '@/i18n/messages'
 
 export function ProfileFollowSection({
@@ -33,11 +34,12 @@ export function ProfileFollowSection({
   const authed = !isPending && !error && !!session
 
   const [followerCount, setFollowerCount] = useState(initialFollowerCount)
-  const [isFollowing, setIsFollowing] = useState(false)
   const [isSelf, setIsSelf] = useState(false)
   const [stateLoaded, setStateLoaded] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(false)
+  // Seam ÚNICO do toggle (#278): isFollowing/busy/error otimistas + revert vivem em `useFollowToggle`,
+  // compartilhado com o `CookFollowButton` do trilho. O `followerCount` (exclusivo do perfil) fica AQUI
+  // e reconcilia pelo RETORNO do `toggle()` (corpo do servidor no sucesso; `null` no erro → reverte).
+  const { isFollowing, busy, error: err, toggle, setFollowing } = useFollowToggle({ handle })
 
   // Estado "eu sigo? / sou eu?" SÓ quando logado (sem seed SSR — perfil anon-cacheável). AbortController
   // limpa na desmontagem/troca de handle. Erro/abort ⇒ fica neutro (sem botão), sem quebrar a chrome.
@@ -51,7 +53,7 @@ export function ProfileFollowSection({
         const res = await fetch(`/api/u/${encodeURIComponent(handle)}/follow`, { signal: ctrl.signal })
         if (!res.ok) return
         const body = (await res.json()) as { isFollowing: boolean; isSelf: boolean }
-        setIsFollowing(body.isFollowing)
+        setFollowing(body.isFollowing)
         setIsSelf(body.isSelf)
         setStateLoaded(true)
       } catch {
@@ -59,39 +61,17 @@ export function ProfileFollowSection({
       }
     })()
     return () => ctrl.abort()
-  }, [authed, handle])
+  }, [authed, handle, setFollowing])
 
-  async function toggle() {
-    if (busy) return
-    setBusy(true)
-    setErr(false)
-    const prevFollowing = isFollowing
+  async function onFollowClick() {
+    if (busy) return // anti-duplo-clique ANTES da otimização do contador (sem flash transitório).
     const prevCount = followerCount
-    // Otimista: alterna o estado e o contador (±1, com piso 0 — blinda contra um seed SSR defasado
-    // pelo cache do Modelo B mostrar "-1" por um instante; o servidor reconcilia logo em seguida).
-    setIsFollowing(!prevFollowing)
-    setFollowerCount(Math.max(0, prevCount + (prevFollowing ? -1 : 1)))
-    try {
-      const res = await fetch(`/api/u/${encodeURIComponent(handle)}/follow`, {
-        method: prevFollowing ? 'DELETE' : 'POST',
-      })
-      if (!res.ok) {
-        // 401/404/422 caem todos aqui — reverte ao snapshot, erro neutro único.
-        setIsFollowing(prevFollowing)
-        setFollowerCount(prevCount)
-        setErr(true)
-        return
-      }
-      const body = (await res.json()) as { isFollowing: boolean; followerCount: number }
-      setIsFollowing(body.isFollowing)
-      setFollowerCount(body.followerCount)
-    } catch {
-      setIsFollowing(prevFollowing)
-      setFollowerCount(prevCount)
-      setErr(true)
-    } finally {
-      setBusy(false)
-    }
+    const goingToFollow = !isFollowing
+    // Otimista no contador (±1, piso 0 — blinda contra um seed SSR defasado pelo cache do Modelo B
+    // mostrar "-1" por um instante). O `toggle()` otimiza o estado do botão e reconcilia tudo no fim.
+    setFollowerCount(Math.max(0, prevCount + (goingToFollow ? 1 : -1)))
+    const body = await toggle()
+    setFollowerCount(body ? body.followerCount : prevCount) // sucesso: do servidor; erro: reverte.
   }
 
   // Anon resolvido (não-pendente, sem sessão ou erro) → convite. Pendente → nada (sem flash do convite
@@ -113,7 +93,7 @@ export function ProfileFollowSection({
       ) : authed && stateLoaded && !isSelf ? (
         <Button
           type="button"
-          onClick={toggle}
+          onClick={onFollowClick}
           disabled={busy}
           aria-pressed={isFollowing}
           aria-busy={busy}

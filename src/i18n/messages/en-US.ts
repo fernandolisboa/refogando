@@ -151,9 +151,17 @@ export const enUS: Messages = {
     precisaEntrar: 'Sign in to see recipes from the cooks you follow.',
     vazioTitulo: 'Nothing here yet',
     vazioCorpo: 'Follow cooks to see their recipes in your feed.',
-    // CTA leads to Discovery (`/`); the recommended-cooks rail is #278 (future) — once it ships, the
-    // label returns to "Discover cooks". Until then the label matches the destination (recipes).
-    vazioCta: 'Explore recipes',
+    // CTA leads to Discovery (`/`), where the recommended-cooks rail lives (#278).
+    vazioCta: 'Discover cooks',
+  },
+  // "Cooks to follow" rail (#278, ADR-0024) — recommended by global popularity on the home.
+  cozinheirosSugeridos: {
+    titulo: 'Cooks to follow',
+    receitaContagem: '{n} recipe',
+    receitasContagem: '{n} recipes',
+    seguir: 'Follow',
+    seguindo: 'Following',
+    erroSeguir: "Couldn't update. Try again.",
   },
   // Receita DERIVADA (#17): mesma substância traduzida (ADR-0001, não byte-idêntica). Rótulos
   // do diff congelado + o Aviso de que editar uma receita que não é sua cria uma cópia (fork).
