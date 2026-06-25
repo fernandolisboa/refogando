@@ -2,6 +2,7 @@ import { eq, ne, and, like, or } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 import { disambiguate, handleBaseFromName } from '@/domain/handle'
+import { escapeLike } from '@/server/sql/like'
 
 /**
  * Borda I/O do handle (#128): casa a lógica PURA de `@/domain/handle` com o banco. Dois
@@ -13,11 +14,6 @@ import { disambiguate, handleBaseFromName } from '@/domain/handle'
  * colisão (consultam o estado atual), mas o INSERT/UPDATE ainda pode bater 23505 sob corrida
  * de signups simultâneos — o caller trata o erro de unicidade (gera-de-novo / 409).
  */
-
-/** Escapa os curingas de LIKE (`%`, `_`, `\`) num literal de busca por prefixo. */
-function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, '\\$&')
-}
 
 /**
  * Lê os handles JÁ EM USO que poderiam colidir com a desambiguação de `base`: o próprio

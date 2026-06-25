@@ -4,18 +4,17 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Config de modelo + Papéis (#63, AC1). Teste de COMPONENTE jsdom (seam #54): `fetch`
- * mockado no shape REAL das rotas `GET/PUT /api/admin/config` e `PUT /api/admin/roles`.
- * Cobre: carga do valor, salvar com sucesso, erro específico (`modelo_invalido`), erro
- * GENÉRICO (500 `erro_interno` — prova que não-ok != chave conhecida cai no genérico),
- * erro de CARGA + retry, e a discriminação de erro de papéis pela CHAVE do corpo (não pelo
- * status): `papel_invalido` (400) e `papel_nao_aplicado` (testado em 404 E em 400).
+ * Config de modelo (#63, AC1). Teste de COMPONENTE jsdom (seam #54): `fetch` mockado no shape REAL
+ * das rotas `GET/PUT /api/admin/config`. Cobre: carga do valor, salvar com sucesso, erro específico
+ * (`modelo_invalido`), erro GENÉRICO (500 `erro_interno`) e erro de CARGA + retry.
+ *
+ * As asserções da RolesSection vivem em `roles-section.test.tsx` (#269 trocou o "cole o UUID" por
+ * busca → selecionar → atribuir; o componente ficou grande demais pra dividir o arquivo).
  */
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { ConfigSection } from '@/components/admin/config-section'
-import { RolesSection } from '@/components/admin/roles-section'
 
 type FetchResult = { ok: boolean; status: number; body: unknown } | { reject: true }
 
@@ -46,13 +45,6 @@ function renderConfig() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <ConfigSection />
-    </LocaleProvider>,
-  )
-}
-function renderRoles() {
-  return render(
-    <LocaleProvider initialLocale="pt-BR">
-      <RolesSection />
     </LocaleProvider>,
   )
 }
@@ -133,67 +125,5 @@ describe('ConfigSection (#63 AC1)', () => {
     await user.click(screen.getByRole('button', { name: ptBR.system.retry }))
     const select = (await screen.findByRole('combobox')) as HTMLSelectElement
     expect(select.value).toBe('claude-sonnet-4-6')
-  })
-})
-
-describe('RolesSection (#63 AC1) — discriminação de erro por CHAVE do corpo', () => {
-  it('promove (PUT com body correto) → status de sucesso', async () => {
-    const fetchMock = mockFetch({
-      'PUT /api/admin/roles': { ok: true, status: 200, body: { userId: 'u1', role: 'curador' } },
-    })
-    const user = userEvent.setup()
-    renderRoles()
-    await user.type(screen.getByLabelText(A.userIdLabel), 'u1')
-    await user.selectOptions(screen.getByLabelText(A.papelLabel), 'curador')
-    await user.click(screen.getByRole('button', { name: A.aplicarPapel }))
-
-    const put = fetchMock.mock.calls[0]
-    expect(String(put[0])).toBe('/api/admin/roles')
-    expect(JSON.parse(String((put[1] as RequestInit).body))).toEqual({
-      userId: 'u1',
-      role: 'curador',
-    })
-    expect(await screen.findByText(A.promovido)).toBeInTheDocument()
-  })
-
-  it('papel_invalido (400) → mensagem de papel inválido', async () => {
-    mockFetch({
-      'PUT /api/admin/roles': { ok: false, status: 400, body: { error: 'papel_invalido' } },
-    })
-    const user = userEvent.setup()
-    renderRoles()
-    await user.type(screen.getByLabelText(A.userIdLabel), 'u1')
-    await user.click(screen.getByRole('button', { name: A.aplicarPapel }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(A.erroPapelInvalido)
-  })
-
-  it('papel_nao_aplicado em 404 → "Não foi possível aplicar o papel"', async () => {
-    mockFetch({
-      'PUT /api/admin/roles': { ok: false, status: 404, body: { error: 'papel_nao_aplicado' } },
-    })
-    const user = userEvent.setup()
-    renderRoles()
-    await user.type(screen.getByLabelText(A.userIdLabel), 'u1')
-    await user.click(screen.getByRole('button', { name: A.aplicarPapel }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(A.erroNaoAplicado)
-  })
-
-  it('papel_nao_aplicado em 400 → MESMA mensagem (discrimina por CHAVE, não por status)', async () => {
-    mockFetch({
-      'PUT /api/admin/roles': { ok: false, status: 400, body: { error: 'papel_nao_aplicado' } },
-    })
-    const user = userEvent.setup()
-    renderRoles()
-    await user.type(screen.getByLabelText(A.userIdLabel), 'u1')
-    await user.click(screen.getByRole('button', { name: A.aplicarPapel }))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(A.erroNaoAplicado)
-    expect(alert).not.toHaveTextContent(A.erroPapelInvalido)
-  })
-
-  it('botão desabilitado com userId vazio', () => {
-    mockFetch({})
-    renderRoles()
-    expect(screen.getByRole('button', { name: A.aplicarPapel })).toBeDisabled()
   })
 })
