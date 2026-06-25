@@ -70,4 +70,18 @@ describe('createDomainRateLimiter (#272) — janela por domínio com clock injet
     clock.advance(50)
     expect(rl.tryAcquire('a.com')).toBe(true) // 200ms acumulados
   })
+
+  it('a poda (delete durante for..of do Map) remove os stale e NÃO corrompe entradas vivas', () => {
+    const clock = fixedClock()
+    const rl = createDomainRateLimiter({ now: clock.now })
+    rl.tryAcquire('stale1.com')
+    rl.tryAcquire('stale2.com')
+    rl.tryAcquire('stale3.com')
+    clock.advance(1000) // os três saem da janela
+    expect(rl.tryAcquire('vivo.com')).toBe(true) // entra agora (e a poda varre os stale*)
+    clock.advance(500) // vivo.com ainda dentro da janela
+    // Adquirir outro domínio força a poda a iterar o Map de novo; vivo.com deve sobreviver intacto.
+    expect(rl.tryAcquire('outro.com')).toBe(true)
+    expect(rl.tryAcquire('vivo.com')).toBe(false) // a poda não removeu nem corrompeu a entrada viva
+  })
 })

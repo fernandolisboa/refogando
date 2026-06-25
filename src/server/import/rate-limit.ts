@@ -1,9 +1,9 @@
 /**
  * Rate-limit de POLITENESS por domínio para a importação de receitas (#272, ADR-0019).
  *
- * Objetivo: não martelar o site de origem — no MÁXIMO ~1 tentativa de importação por segundo por
- * domínio (uma tentativa = fetch do robots.txt + da página). NÃO é uma quota dura nem uma defesa de
- * segurança: o estado vive in-memory NA INSTÂNCIA. No Vercel cada instância serverless tem o seu Map,
+ * Objetivo: não martelar o site de origem — no MÁXIMO ~1 tentativa de importação por segundo por CHAVE
+ * (o caller decide a granularidade; o importador usa o hostname). NÃO é uma quota dura nem uma defesa
+ * de segurança: o estado vive in-memory NA INSTÂNCIA. No Vercel cada instância serverless tem o seu Map,
  * então o limite é best-effort POR-INSTÂNCIA — um burst distribuído por várias instâncias pode passar,
  * e um cold start zera a janela. É politeness, não garantia global; não prometemos mais que isso.
  *

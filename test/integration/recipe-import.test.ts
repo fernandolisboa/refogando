@@ -192,7 +192,8 @@ describe('POST /api/recipes/import (#165)', () => {
     setRecipeImporter(new FakeRecipeImporter(undefined, 'rate_limited'))
 
     const res = await importPost({ url: SRC }, headers)
-    expect(res.status).toBe(429) // Too Many Requests (politeness por domínio)
+    expect(res.status).toBe(429) // Too Many Requests (politeness por host)
+    expect(res.headers.get('retry-after')).toBe('1') // aconselha quando tentar de novo
     const bodyJson = (await res.json()) as { error: string }
     expect(bodyJson.error).toBe('rate_limited')
     const all = await getDb().select({ id: recipe.id }).from(recipe)

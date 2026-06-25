@@ -20,7 +20,7 @@ import { createDomainRateLimiter, type DomainRateLimiter } from '@/server/import
 
 /**
  * Falha TRATADA da importação — nenhuma vira 500. A rota mapeia: `robots_blocked` → 403 (política do
- * site externo), `rate_limited` → 429 (politeness por domínio), as demais → 422 (não importou). Nunca
+ * site externo), `rate_limited` → 429 (politeness por host), as demais → 422 (não importou). Nunca
  * vaza stack.
  */
 export type ImportFailureReason =
@@ -64,8 +64,10 @@ export class RealRecipeImporter implements RecipeImporter {
   constructor(private readonly limiter: DomainRateLimiter = createDomainRateLimiter()) {}
 
   async import(url: string): Promise<ImportResult> {
-    // GUARD-RAIL rate-limit (#272): politeness ~1/s/domínio, ANTES de QUALQUER rede — uma tentativa
-    // limitada não toca o site (nem robots.txt nem página). A janela cobre a tentativa inteira.
+    // GUARD-RAIL rate-limit (#272): politeness ~1/s por HOST, ANTES de QUALQUER rede — uma tentativa
+    // limitada não toca o site (nem robots.txt nem página). A janela cobre a tentativa inteira. A chave
+    // é o hostname: subdomínios distintos de um mesmo site allowlistado têm orçamentos separados —
+    // aceitável p/ politeness (não é quota dura; é só pra não martelar a origem).
     let hostname = ''
     try {
       hostname = new URL(url).hostname

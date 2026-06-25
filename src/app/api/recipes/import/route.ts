@@ -82,10 +82,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança). O `reason` é a chave i18n p/ a UI
-  // (#168); o status varia por reason (#272: robots_blocked → 403; demais → 422).
+  // (#168); o status varia por reason (#272: robots_blocked → 403; rate_limited → 429; demais → 422).
   const result = await getRecipeImporter().import(url)
   if (!result.ok) {
-    return Response.json({ error: result.reason }, { status: statusForReason(result.reason) })
+    const status = statusForReason(result.reason)
+    // 429: aconselha quando tentar de novo (~1s, a janela do rate-limit). Demais reasons: sem header.
+    const init = result.reason === 'rate_limited' ? { status, headers: { 'retry-after': '1' } } : { status }
+    return Response.json({ error: result.reason }, init)
   }
 
   const p = await persistImport({ recipe: result.recipe, ownerId, sourceUrl: url })
