@@ -65,19 +65,26 @@ export function FollowingFeed() {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
+    // Zera o cursor SINCRONAMENTE (no corpo do effect, NÃO no setTimeout): ao trocar de locale o
+    // observer re-registra NESTE MESMO commit (dep [loadMore]) e `observe()` entrega um callback
+    // inicial pro sentinel já intersectando — que poderia disparar `loadMore` ANTES do setTimeout
+    // rodar. Sem zerar o cursor aqui, o guard `cursorRef.current === null` do loadMore não barraria
+    // esse disparo com o cursor do locale ANTIGO (abortaria a busca da página 1 → spinner travado).
+    // Isto é o que torna o reset de fato ATÔMICO contra o observer; o resto (setState) pode ser
+    // deferido sem risco (a lista/flags vivem fora da live region).
+    cursorRef.current = null
 
     const url = new URL('/api/feed/following', window.location.origin)
     url.searchParams.set('locale', locale)
 
     const t = setTimeout(() => {
-      // Reset atômico: zera tudo do locale anterior ANTES da nova página 1 (a lista vive fora da
-      // live region; o cursor stale não pode sobreviver — senão o observer appenda o idioma errado).
+      // Reset do estado de render (deferido — setState não pode rodar síncrono no corpo do effect):
+      // zera a lista/flags do locale anterior ANTES da nova página 1.
       setItems([])
       setStatus('loading')
       setLoadMoreError(false)
       setLoadingMore(false)
       setEndReached(false)
-      cursorRef.current = null
       void (async () => {
         try {
           const res = await fetch(url, { signal: controller.signal }) // COM cookie (per-viewer)
@@ -171,7 +178,11 @@ export function FollowingFeed() {
   }
 
   const hasMore = !endReached
-  const isEmpty = status === 'idle' && items.length === 0
+  // Vazio só quando NÃO há mais páginas (espelha DiscoveryFeed: `endReached && items 0`) — assim o
+  // empty state nunca aparece enquanto a paginação ainda poderia trazer linhas (defensivo "nunca tela
+  // quebrada"; idêntico ao gate por `status==='idle'` em todos os casos alcançáveis, pois o feed vazio
+  // alcançável sempre vem com `nextCursor` null ⇒ endReached).
+  const isEmpty = endReached && items.length === 0
 
   return (
     <div className="flex flex-col gap-8">
