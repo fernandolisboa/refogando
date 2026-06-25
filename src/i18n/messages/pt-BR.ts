@@ -229,6 +229,13 @@ export const ptBR = {
     // o texto linka a URL de origem. `fonteVerNoSite` é o rótulo acessível do link externo.
     fonte: 'fonte: {fonte}',
     fonteVerNoSite: 'Ver no site de origem',
+    // #272 (LGPD, ADR-0019): o dono de uma importada com nome de fonte humano pode REMOVÊ-LO; a
+    // atribuição passa a mostrar só o site (o source_url fica). Confirmação inline (baixo-risco).
+    removerNomeFonte: 'Remover o nome da fonte',
+    removerNomeFonteAjuda: 'A atribuição passa a mostrar só o site de origem (o link para a página continua). O nome não volta depois.',
+    removerNomeFonteConfirma: 'Remover',
+    removerNomeFonteCancela: 'Cancelar',
+    removerNomeFonteErro: 'Não foi possível remover agora. Tente de novo.',
     // Link de volta no topo do detalhe (#57) → "/" (a home É a busca).
     voltarBusca: 'Voltar à busca',
     // Gestão da Imagem da receita (#130) — bloco do dono.
