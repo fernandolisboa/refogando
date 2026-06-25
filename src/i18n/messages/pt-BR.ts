@@ -712,6 +712,19 @@ export const ptBR = {
     avatarAlt: 'Foto de {name}',
     // Rótulo acessível do bloco de links sociais.
     linksLabel: 'Links',
+    // Social (#274, ADR-0024) — voz Cozinheiro. Contadores com placeholder '{n}' (.replace no
+    // componente); nudge espelha `comunidade.convidaEntrarVoto`.
+    seguir: 'Seguir',
+    seguindo: 'Seguindo',
+    // Contador de seguidores tem singular ("1 seguidor") — espelha `comunidade.voto`/`votos`. O de
+    // "seguindo" é gerúndio invariante ("1 seguindo" / "2 seguindo"), uma chave só basta.
+    seguidorContagem: '{n} seguidor',
+    seguidoresContagem: '{n} seguidores',
+    seguindoContagem: '{n} seguindo',
+    entrarParaSeguir: 'Entrar para seguir',
+    erroSeguir: 'Não foi possível concluir. Tente de novo.',
+    seguidoresTitulo: 'Seguidores',
+    seguindoTitulo: 'Seguindo',
   },
   comunidade: {
     titulo: 'Comunidade',

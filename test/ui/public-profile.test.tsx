@@ -12,6 +12,12 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #274: o view agora monta a ilha `ProfileFollowSection` (usa `useSession`). Default ANÔNIMO —
+// a ilha mostra o contador + o nudge "Entrar para seguir", sem tocar a API.
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
+}))
+
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { PublicProfile } from '@/domain/recipe-profile-read'
 import { PublicProfileView } from '@/components/profile/public-profile-view'
@@ -32,6 +38,7 @@ function baseProfile(over: Partial<PublicProfile> = {}): PublicProfile {
     bio: null,
     links: [],
     recipes: [],
+    social: { followerCount: 0, followingCount: 0, followers: [], following: [] },
     ...over,
   }
 }

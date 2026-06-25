@@ -676,6 +676,18 @@ export const enUS: Messages = {
     avatarAlt: 'Photo of {name}',
     // Accessible label for the social links block.
     linksLabel: 'Links',
+    // Social (#274, ADR-0024) — Cook voice. Counters use the '{n}' placeholder (.replace in the
+    // component); nudge mirrors `comunidade.convidaEntrarVoto`.
+    seguir: 'Follow',
+    seguindo: 'Following',
+    // Follower count has a singular ("1 follower"); "following" is invariant, one key suffices.
+    seguidorContagem: '{n} follower',
+    seguidoresContagem: '{n} followers',
+    seguindoContagem: '{n} following',
+    entrarParaSeguir: 'Sign in to follow',
+    erroSeguir: "Couldn't complete. Try again.",
+    seguidoresTitulo: 'Followers',
+    seguindoTitulo: 'Following',
   },
   comunidade: {
     titulo: 'Community',

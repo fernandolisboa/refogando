@@ -881,6 +881,36 @@ export const recipeFavorite = pgTable(
   ],
 )
 
+// Grafo de SEGUIR (#274, ADR-0024) — aresta dirigida `follower → followee` entre Usuários. Espelha
+// `recipe_vote`: par ÚNICO via PK composta (re-seguir colide na PK = idempotente), DELETE da linha =
+// deixar de seguir (sem updatedAt/deletedAt — a aresta é descartável). Seguir é ASSIMÉTRICO e público
+// (modelo Instagram, NÃO amizade) e NUNCA dá acesso a conteúdo privado (é só assinatura de descoberta).
+//  - FK ON DELETE cascade em AMBAS as colunas (sem órfãos): apagar QUALQUER um dos Usuários limpa a
+//    aresta. Soft-delete (deleted_at) NÃO é DELETE ⇒ a aresta PERSISTE, mas os contadores/listas a
+//    gateiam por `isNull(users.deleted_at)` no servidor (conta desativada some da social, leak-safe).
+//  - CHECK `follower <> followee`: ninguém segue a si mesmo (backstop do DB; o gate de verdade é o 422
+//    no servidor ANTES do insert — `src/server/user/follow.ts`, comparando `session.user.id`).
+//  - índice em followee_id (lista/conta de SEGUIDORES, futuro trilho) e em follower_id (lista/conta de
+//    SEGUINDO, futuro feed "Seguindo" #277). Ambos cobrem COUNT(*) e o JOIN com `users`.
+export const userFollow = pgTable(
+  'user_follow',
+  {
+    followerId: uuid('follower_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    followeeId: uuid('followee_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.followerId, t.followeeId] }),
+    check('user_follow_not_self_chk', sql`${t.followerId} <> ${t.followeeId}`),
+    index('user_follow_followee_id_idx').on(t.followeeId),
+    index('user_follow_follower_id_idx').on(t.followerId),
+  ],
+)
+
 // ── Moderação reativa: Report (issue #18, ADR-0003/0011) ───────────────────────
 //
 // ENTRADA da moderação: qualquer Usuário autenticado reporta uma Receita do POOL; a linha
