@@ -173,6 +173,19 @@ describe('POST /api/recipes/import (#165)', () => {
     expect(all.length).toBe(0)
   })
 
+  it('#272: robots.txt do site proíbe → 403 {robots_blocked}, ZERO efeito (não importa)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-robots@ex.com' })
+    await seedAllowlist()
+    setRecipeImporter(new FakeRecipeImporter(undefined, 'robots_blocked'))
+
+    const res = await importPost({ url: SRC }, headers)
+    expect(res.status).toBe(403) // política do site externo (não 422) — distinto do 403 do SSRF guard
+    const bodyJson = (await res.json()) as { error: string }
+    expect(bodyJson.error).toBe('robots_blocked')
+    const all = await getDb().select({ id: recipe.id }).from(recipe)
+    expect(all.length).toBe(0)
+  })
+
   it('url ausente/malformada → 400 (antes do seam)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'import-badurl@ex.com' })
     // Importer que estouraria se chamado — prova que o 400 acontece ANTES do seam.

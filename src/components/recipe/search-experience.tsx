@@ -503,6 +503,7 @@ export function SearchExperience({
               cancelar: m.importarCancelar,
               importando: m.importarImportando,
               erroNaoImportavel: m.importarErroNaoImportavel,
+              erroRobotsBloqueado: m.importarErroRobotsBloqueado,
               erroGenerico: m.importarErroGenerico,
               conviteTitulo: m.importarConviteTitulo,
               conviteTexto: m.importarConviteTexto,
