@@ -61,7 +61,8 @@ export async function persistImport(input: PersistImportInput): Promise<PersistI
       recipeId: createdRecipe.id,
       locale: r.originalLocale,
       titulo: r.titulo,
-      descricao: r.descricao,
+      // #272/ADR-0019: headnote NÃO é copiado da fonte (camada protegida) — nasce em branco.
+      descricao: null,
       passos: r.passos,
       notas: r.notas,
       slug,

@@ -35,7 +35,9 @@ describe('parseImportedRecipe (#165)', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.recipe.titulo).toBe('Bolo de Cenoura')
-    expect(r.recipe.descricao).toBe('Bolo fofinho')
+    // #272/ADR-0019: o `description`/headnote da fonte (aqui "Bolo fofinho") é camada PROTEGIDA — o
+    // parser NÃO o copia (a importada nasce com headnote em branco). Os FATOS seguem extraídos.
+    expect('descricao' in r.recipe).toBe(false)
     expect(r.recipe.originalLocale).toBe('pt-BR')
     expect(r.recipe.passos).toEqual(['Misture tudo', 'Asse por 40 minutos'])
     expect(r.recipe.sourceName).toBe('Cozinha da Vovó')

@@ -79,10 +79,10 @@ export class FakeRecipeImporter implements RecipeImporter {
   }
 }
 
-/** Receita canônica fixa do FakeRecipeImporter — pt-BR, atribuição à fonte externa (ADR-0019). */
+/** Receita canônica fixa do FakeRecipeImporter — pt-BR, atribuição à fonte externa (ADR-0019). Sem
+ * headnote nem imagem (#272: a importada nasce com a camada protegida em branco). */
 export const CANONICAL_IMPORTED_RECIPE: ImportedRecipe = {
   titulo: 'Bolo de Cenoura',
-  descricao: 'Bolo de cenoura fofinho com cobertura de chocolate.',
   passos: [
     'Bata as cenouras, os ovos e o óleo no liquidificador.',
     'Misture o açúcar e a farinha; junte ao liquidificado.',

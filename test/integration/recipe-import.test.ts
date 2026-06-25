@@ -59,6 +59,7 @@ async function loadRecipe(id: string) {
       originalLocale: recipe.originalLocale,
       sourceUrl: recipe.sourceUrl,
       sourceName: recipe.sourceName,
+      imageId: recipe.imageId,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
@@ -84,17 +85,22 @@ describe('POST /api/recipes/import (#165)', () => {
     expect(row.originalLocale).toBe('pt-BR')
     expect(row.sourceUrl).toBe(SRC) // URL de origem gravada p/ atribuição
     expect(row.sourceName).toBe(CANONICAL_IMPORTED_RECIPE.sourceName)
+    // #272/ADR-0019: camada PROTEGIDA não copiada — importada nasce SEM imagem.
+    expect(row.imageId).toBeNull()
 
     // Tradução do locale de origem, marcada automática-não-revisada (conteúdo externo copiado).
     const [tr] = await getDb()
       .select({
         titulo: recipeTranslation.titulo,
+        descricao: recipeTranslation.descricao,
         slug: recipeTranslation.slug,
         provenance: recipeTranslation.provenance,
       })
       .from(recipeTranslation)
       .where(and(eq(recipeTranslation.recipeId, bodyJson.recipeId), eq(recipeTranslation.locale, 'pt-BR')))
     expect(tr.titulo).toBe(CANONICAL_IMPORTED_RECIPE.titulo)
+    // #272/ADR-0019: headnote (`description`) NÃO copiado — nasce em branco (NULL).
+    expect(tr.descricao).toBeNull()
     // Slug por idioma (#229): materializado na importação (write-path), não NULL.
     expect(tr.slug).toBe('bolo-de-cenoura')
     expect(tr.provenance).toBe('automatica_nao_revisada')
