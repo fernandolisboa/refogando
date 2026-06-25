@@ -36,6 +36,8 @@ export type ImportDialogLabels = {
   cancelar: string
   importando: string
   erroNaoImportavel: string
+  /** #272: o robots.txt do site proíbe a importação automática (403) — mensagem distinta. */
+  erroRobotsBloqueado: string
   erroGenerico: string
   conviteTitulo: string
   conviteTexto: string
@@ -44,6 +46,27 @@ export type ImportDialogLabels = {
 }
 
 type Status = 'idle' | 'importing' | 'error'
+/** Qual mensagem de erro mostrar — derivada da `reason` do corpo, NUNCA do status HTTP cru. */
+type ErrorKind = 'naoImportavel' | 'robots' | 'generico'
+
+/**
+ * Mapeia a `reason` (corpo `{ error }` da rota) → mensagem. As três razões 422 ("o site não nos dá
+ * dados importáveis") compartilham a mesma mensagem; `robots_blocked` (403) tem a sua; qualquer outra
+ * coisa — inclusive rede caída, corpo ilegível ou um 403 de SSRF (`dominio_nao_permitido`) — cai no
+ * genérico. Discriminar pela REASON (não pelo status) evita pintar o 403 do SSRF como "robôs".
+ */
+function errorKindFor(reason: string | undefined): ErrorKind {
+  switch (reason) {
+    case 'robots_blocked':
+      return 'robots'
+    case 'no_jsonld':
+    case 'unsupported_locale':
+    case 'fetch_failed':
+      return 'naoImportavel'
+    default:
+      return 'generico'
+  }
+}
 
 export function ImportRecipeDialog({
   link,
@@ -61,8 +84,8 @@ export function ImportRecipeDialog({
 }) {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
-  // Distingue 422 (site sem JSON-LD ⇒ "não importável") das demais falhas (genérico).
-  const [naoImportavel, setNaoImportavel] = useState(false)
+  // Qual mensagem de erro mostrar — derivada da reason do corpo (errorKindFor), não do status cru.
+  const [errorKind, setErrorKind] = useState<ErrorKind>('generico')
 
   // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
   const visitante = !authed && !sessionPending
@@ -70,7 +93,7 @@ export function ImportRecipeDialog({
   async function handleImport() {
     if (status === 'importing') return
     setStatus('importing')
-    setNaoImportavel(false)
+    setErrorKind('generico')
     try {
       const res = await fetch('/api/recipes/import', {
         method: 'POST',
@@ -82,10 +105,17 @@ export function ImportRecipeDialog({
         onImported(body.recipeId)
         return
       }
-      // 422: o site não publica os dados estruturados de que precisamos (no_jsonld/locale).
-      if (res.status === 422) setNaoImportavel(true)
+      // Falha: discrimina pela REASON do corpo (`{ error }`); corpo ausente/ilegível ⇒ genérico.
+      let reason: string | undefined
+      try {
+        reason = ((await res.json()) as { error?: string }).error
+      } catch {
+        reason = undefined
+      }
+      setErrorKind(errorKindFor(reason))
       setStatus('error')
     } catch {
+      setErrorKind('generico')
       setStatus('error')
     }
   }
@@ -95,7 +125,7 @@ export function ImportRecipeDialog({
     setOpen(next)
     if (!next) {
       setStatus('idle')
-      setNaoImportavel(false)
+      setErrorKind('generico')
     }
   }
 
@@ -153,7 +183,11 @@ export function ImportRecipeDialog({
 
               {status === 'error' && (
                 <p role="alert" className="text-sm font-medium text-fg">
-                  {naoImportavel ? labels.erroNaoImportavel : labels.erroGenerico}
+                  {errorKind === 'robots'
+                    ? labels.erroRobotsBloqueado
+                    : errorKind === 'naoImportavel'
+                      ? labels.erroNaoImportavel
+                      : labels.erroGenerico}
                 </p>
               )}
 

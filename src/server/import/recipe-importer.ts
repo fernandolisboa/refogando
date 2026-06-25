@@ -15,9 +15,13 @@
  */
 
 import { parseImportedRecipe, type ImportedRecipe } from '@/domain/recipe-import-parse'
+import { isPathAllowedByRobots } from '@/domain/robots-txt'
 
-/** Falha TRATADA da importação — nenhuma vira 500; a rota as mapeia para 422 (não importou). */
-export type ImportFailureReason = 'no_jsonld' | 'unsupported_locale' | 'fetch_failed'
+/**
+ * Falha TRATADA da importação — nenhuma vira 500. A rota mapeia: `robots_blocked` → 403 (política do
+ * site externo), as demais → 422 (não importou). Nunca vaza stack.
+ */
+export type ImportFailureReason = 'no_jsonld' | 'unsupported_locale' | 'fetch_failed' | 'robots_blocked'
 
 export type ImportResult =
   | { ok: true; recipe: ImportedRecipe }
@@ -35,6 +39,13 @@ const MAX_HTML_BYTES = 2 * 1024 * 1024
 // User-Agent explícito: alguns sites bloqueiam clientes sem UA. Identifica o bot honestamente.
 const IMPORT_USER_AGENT = 'RefogandoBot/1.0 (+recipe-import)'
 
+// Product token do nosso UA (a parte antes da `/`) — é por ele que um grupo do robots.txt nos endereça
+// (RFC 9309 §2.2.1, case-insensitive). NÃO confundir com a string completa do `IMPORT_USER_AGENT`.
+const ROBOTS_UA_TOKEN = 'RefogandoBot'
+// robots.txt é pequeno; cap defensivo bem abaixo do HTML. Timeout curto — robots indisponível ⇒ permitido.
+const MAX_ROBOTS_BYTES = 512 * 1024
+const ROBOTS_TIMEOUT_MS = 3000
+
 /**
  * Impl REAL — fetch da URL + parse PURO do domínio. A ÚNICA I/O é o `fetch`; toda a extração
  * (JSON-LD, locale, ingredientes) é do domínio puro `parseImportedRecipe`. QUALQUER erro de rede/
@@ -43,6 +54,13 @@ const IMPORT_USER_AGENT = 'RefogandoBot/1.0 (+recipe-import)'
  */
 export class RealRecipeImporter implements RecipeImporter {
   async import(url: string): Promise<ImportResult> {
+    // GUARD-RAIL robots.txt (#272, ADR-0019): respeita o `Disallow` do site ANTES de buscar a receita.
+    // FAIL-OPEN deliberado (≠ o fail-CLOSED do SSRF/allowlist da rota): robots indisponível NÃO é
+    // proibição — só uma proibição EXPLÍCITA bloqueia. Roda só no caminho REAL (o Fake nunca chega aqui).
+    if (!(await this.checkRobotsAllowed(url))) {
+      return { ok: false, reason: 'robots_blocked' }
+    }
+
     let html: string
     try {
       const res = await fetch(url, {
@@ -58,6 +76,44 @@ export class RealRecipeImporter implements RecipeImporter {
       return { ok: false, reason: 'fetch_failed' }
     }
     return parseImportedRecipe(html, url)
+  }
+
+  /**
+   * `true` se o robots.txt da MESMA origem da `url` permite buscarmos esse path (RFC 9309, avaliado
+   * pelo domínio puro `isPathAllowedByRobots`). FAIL-OPEN: qualquer falha de obter/avaliar o robots.txt
+   * — 4xx/404, 5xx, timeout, erro de rede, redirect — devolve `true` (permitido). Defesas: `redirect:
+   * 'manual'` (um 3xx do /robots.txt NÃO leva o fetch a um host arbitrário — fecha o flanco de SSRF que
+   * a allowlist da rota validou só p/ o host ALVO), timeout curto e corpo capado.
+   */
+  private async checkRobotsAllowed(url: string): Promise<boolean> {
+    let target: URL
+    try {
+      target = new URL(url)
+    } catch {
+      return true // URL inválida cai no fetch_failed adiante; aqui não bloqueamos por robots
+    }
+    // UM timer cobre fetch + leitura do corpo (signal aborta ambos); a avaliação roda DENTRO do try
+    // (o matcher é linear e total, mas o try honra literalmente o fail-open-on-evaluate do docstring).
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), ROBOTS_TIMEOUT_MS)
+    try {
+      const res = await fetch(`${target.origin}/robots.txt`, {
+        headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/plain' },
+        redirect: 'manual', // NÃO perseguir 3xx p/ outro host (SSRF) — trata como indisponível
+        signal: controller.signal,
+      })
+      if (!res.ok) return true // 404/4xx (sem regras), 5xx, ou 3xx opaco (manual) ⇒ permitido
+      // Dica de tamanho: um robots.txt absurdo é tratado como indisponível (não bufferiza GB na memória).
+      const declared = Number(res.headers.get('content-length'))
+      if (Number.isFinite(declared) && declared > MAX_ROBOTS_BYTES) return true
+      const raw = await res.text()
+      const robotsTxt = raw.length > MAX_ROBOTS_BYTES ? raw.slice(0, MAX_ROBOTS_BYTES) : raw
+      return isPathAllowedByRobots(robotsTxt, ROBOTS_UA_TOKEN, target.pathname + target.search)
+    } catch {
+      return true // timeout/abort/erro de rede/avaliação ⇒ permitido (FAIL-OPEN)
+    } finally {
+      clearTimeout(timer)
+    }
   }
 }
 

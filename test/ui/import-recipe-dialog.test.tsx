@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -37,6 +37,7 @@ const LABELS: ImportDialogLabels = {
   cancelar: m.importarCancelar,
   importando: m.importarImportando,
   erroNaoImportavel: m.importarErroNaoImportavel,
+  erroRobotsBloqueado: m.importarErroRobotsBloqueado,
   erroGenerico: m.importarErroGenerico,
   conviteTitulo: m.importarConviteTitulo,
   conviteTexto: m.importarConviteTexto,
@@ -113,6 +114,55 @@ describe('ImportRecipeDialog (#169)', () => {
 
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(m.importarErroGenerico)
+    expect(onImported).not.toHaveBeenCalled()
+  })
+
+  // #272: a mensagem de erro é decidida pela REASON do corpo (`{ error }`), nunca pelo status cru.
+  async function clickImport(over: Partial<Parameters<typeof ImportRecipeDialog>[0]> = {}) {
+    const user = userEvent.setup()
+    const ret = renderDialog(over)
+    await user.click(screen.getByRole('button', { name: new RegExp(LINK.title) }))
+    await screen.findByRole('dialog')
+    await user.click(screen.getByRole('button', { name: m.importarConfirmar }))
+    return ret
+  }
+
+  it('#272: 403 {robots_blocked} → mensagem de robôs (distinta da genérica/não-importável)', async () => {
+    stubFetch(403, { error: 'robots_blocked' })
+    await clickImport()
+    expect(await screen.findByRole('alert')).toHaveTextContent(m.importarErroRobotsBloqueado)
+  })
+
+  it('#272: cada uma das 3 razões 422 → mensagem "não importável" (não regride pro genérico)', async () => {
+    for (const reason of ['no_jsonld', 'unsupported_locale', 'fetch_failed']) {
+      stubFetch(422, { error: reason })
+      const { onImported } = await clickImport()
+      expect(await screen.findByRole('alert')).toHaveTextContent(m.importarErroNaoImportavel)
+      expect(onImported).not.toHaveBeenCalled()
+      cleanup()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('#272: discrimina por reason, NÃO por status — 403 {dominio_nao_permitido} → genérico (não robôs)', async () => {
+    stubFetch(403, { error: 'dominio_nao_permitido' })
+    await clickImport()
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent(m.importarErroGenerico)
+    expect(alerta).not.toHaveTextContent(m.importarErroRobotsBloqueado)
+  })
+
+  it('#272: resposta não-2xx com corpo ilegível (json lança) → genérico, não navega', async () => {
+    const impl = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => {
+        throw new Error('corpo não-JSON')
+      },
+    }))
+    vi.stubGlobal('fetch', impl as unknown as typeof fetch)
+    const { onImported } = await clickImport()
+    expect(await screen.findByRole('alert')).toHaveTextContent(m.importarErroGenerico)
     expect(onImported).not.toHaveBeenCalled()
   })
 

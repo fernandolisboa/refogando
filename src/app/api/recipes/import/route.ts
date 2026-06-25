@@ -2,6 +2,7 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getRecipeImporter } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { persistImport } from '@/server/import/persist-import'
+import type { ImportFailureReason } from '@/server/import/recipe-importer'
 import { loadWebSearchConfig } from '@/server/app-config'
 import { isUrlAllowed } from '@/domain/web-search-config'
 
@@ -26,11 +27,26 @@ import { isUrlAllowed } from '@/domain/web-search-config'
  *  - 400 { error: 'url_invalida' }            — body sem `url` http(s) bem-formada.
  *  - 401 { error: 'nao_autenticado' }         — Visitante.
  *  - 403 { error: 'dominio_nao_permitido' }   — host fora da allowlist curada (SSRF guard, #164).
+ *  - 403 { error: 'robots_blocked' }          — o robots.txt do site PROÍBE buscar a receita (#272).
  *  - 422 { error: <reason> }                  — sem JSON-LD confiável / idioma fora de PT/EN /
  *                                               fetch falho (não importa; nunca 500).
  */
 
 export const runtime = 'nodejs' // fetch externo + postgres-js exigem Node, não Edge.
+
+/**
+ * Status HTTP de uma falha TRATADA do seam. `robots_blocked` é POLÍTICA do site externo (403, espelha o
+ * 403 do SSRF guard); as demais são "o site não nos dá dados importáveis" → 422. O `default` preserva
+ * `no_jsonld`/`unsupported_locale`/`fetch_failed` em 422 e acomoda futuras reasons (ex.: rate_limited).
+ */
+function statusForReason(reason: ImportFailureReason): number {
+  switch (reason) {
+    case 'robots_blocked':
+      return 403
+    default:
+      return 422
+  }
+}
 
 /** Só http(s) bem-formada é importável (defesa antes do seam: nada de file:/ftp:/javascript:). */
 function parseHttpUrl(v: unknown): string | null {
@@ -62,11 +78,11 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'dominio_nao_permitido' }, { status: 403 })
   }
 
-  // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança) — mapeadas a 422.
+  // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança). O `reason` é a chave i18n p/ a UI
+  // (#168); o status varia por reason (#272: robots_blocked → 403; demais → 422).
   const result = await getRecipeImporter().import(url)
   if (!result.ok) {
-    // reason ∈ { no_jsonld, unsupported_locale, fetch_failed } — chave i18n p/ a UI (#168).
-    return Response.json({ error: result.reason }, { status: 422 })
+    return Response.json({ error: result.reason }, { status: statusForReason(result.reason) })
   }
 
   const p = await persistImport({ recipe: result.recipe, ownerId, sourceUrl: url })

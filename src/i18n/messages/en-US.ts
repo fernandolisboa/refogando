@@ -120,6 +120,8 @@ export const enUS: Messages = {
     importarCancelar: 'Cancel',
     importarImportando: 'Importing…',
     importarErroNaoImportavel: "We couldn't import this recipe: the site doesn't publish the structured data we need.",
+    // #272: the site's robots.txt forbids automated fetching — the way out is "View on site".
+    importarErroRobotsBloqueado: "This site doesn't allow automated importing of its recipes. You can still open it on the source site.",
     importarErroGenerico: "We couldn't import right now. Try again or open it on the source site.",
     importarConviteTitulo: 'Sign in to import',
     importarConviteTexto: 'Create an account or sign in to import recipes from the web to your profile.',

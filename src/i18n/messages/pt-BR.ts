@@ -126,6 +126,8 @@ export const ptBR = {
     importarImportando: 'Importando…',
     // Erros do import (mapeados das respostas da rota /api/recipes/import).
     importarErroNaoImportavel: 'Não foi possível importar esta receita: o site não publica os dados estruturados de que precisamos.',
+    // #272: o robots.txt do site proíbe a busca automática — a saída é "Ver no site".
+    importarErroRobotsBloqueado: 'Este site não permite a importação automática das suas receitas. Você ainda pode abri-la no site de origem.',
     importarErroGenerico: 'Não foi possível importar agora. Tente de novo ou abra no site de origem.',
     // Visitante: gerar/importar exige conta — reusa o convite de entrar.
     importarConviteTitulo: 'Entre para importar',
