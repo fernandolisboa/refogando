@@ -35,7 +35,7 @@ import { SiteHeader } from '@/components/site-header'
 
 function sessionFor(role: string | null) {
   return {
-    data: { user: { id: 'u1', name: 'Ana', email: 'ana@y.z', role, deletedAt: null } },
+    data: { user: { id: 'u1', name: 'Ana', email: 'ana@y.z', role, handle: 'ana', deletedAt: null } },
     error: null,
     isPending: false,
     isRefetching: false,
@@ -111,7 +111,7 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(within(dialog).queryByText(ptBR.nav.painel)).not.toBeInTheDocument()
   })
 
-  it('curador logado: o painel mobile inclui Minhas criações, Painel e a conta (avatar/nome/Sair)', async () => {
+  it('curador logado: o painel mobile inclui Minhas criações, Criar e o MENU DA CONTA (Painel + Sair)', async () => {
     authMock.current = sessionFor('curador')
     const user = userEvent.setup()
     renderHeader()
@@ -121,12 +121,22 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(
       within(dialog).getByRole('link', { name: ptBR.minhasCriacoes.titulo }),
     ).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.painel })).toBeInTheDocument()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
     expect(within(dialog).getByRole('button', { name: ptBR.nav.create })).toBeInTheDocument()
-    // Conta logada: nome + botão Sair (do AuthSlot reusado).
-    expect(within(dialog).getByText('Ana')).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: ptBR.nav.signOut })).toBeInTheDocument()
+
+    // #267: "Painel" e "Sair" saíram da nav/cluster → vivem no MENU DA CONTA (dropdown do avatar),
+    // renderizado AQUI dentro do drawer. Há dois AuthSlot no DOM (cluster desktop `hidden sm:flex`
+    // + cópia do drawer), então o gatilho da conta (nome 'Ana') é escopado a `within(dialog)`. O
+    // conteúdo do menu portaleia pro body → itens buscados por `screen`, NÃO dentro do dialog.
+    // Regressão (#267): com o menu FECHADO não há botão "Sair" solto no drawer — ele só existe
+    // dentro do dropdown (o antigo botão de topo sumiu).
+    expect(within(dialog).queryByRole('button', { name: ptBR.nav.signOut })).toBeNull()
+    const accountTrigger = within(dialog).getByRole('button', { name: 'Ana' })
+    await user.click(accountTrigger)
+    await screen.findByRole('menu')
+    expect(accountTrigger).toHaveAttribute('aria-expanded', 'true') // smoke: o menu abriu no jsdom
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/admin')
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.signOut })).toBeInTheDocument()
   })
 
   it('o painel tem descrição acessível (satisfaz o aria-describedby do Radix, #181)', async () => {

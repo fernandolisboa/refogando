@@ -29,8 +29,6 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
-import { isRole } from '@/domain/user'
-import { decideRole } from '@/domain/access'
 import { cn } from '@/lib/utils'
 
 // O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
@@ -50,12 +48,8 @@ export function SiteHeader() {
   // Descoberta-home pública (#236): "Minhas criações" é o espaço PRIVADO do dono; a home `/` é o feed
   // público + Busca.
   const authed = !session.isPending && !session.error && !!session.data
-  // "Painel" (#125): atalho para o Console, só a curador+. FAIL-CLOSED igual ao gate de rota
-  // (#51): normaliza o papel cru (string → Role|null) e usa `decideRole` do domínio — papel
-  // null/desconhecido NUNCA mostra o link. É só afordância; o /admin revalida server-side.
-  const rawRole = (session.data?.user as { role?: string | null } | undefined)?.role
-  const role = typeof rawRole === 'string' && isRole(rawRole) ? rawRole : null
-  const showPainel = authed && decideRole(role, 'curador') === 'allow'
+  // "Painel" (#125) NÃO vive mais na nav: migrou pro menu da conta (#267), dentro do AuthSlot, que
+  // é quem agora computa o gating de papel (curador+, fail-closed). O header só decide "logado?".
   // Link de nav com estado ATIVO (protótipo Header.jsx): a rota atual ganha text-fg +
   // aria-current="page"; inativos herdam o text-muted do <nav> e vão a text-fg no hover.
   // `usePathname()` é null fora do contexto de router (ex.: seam jsdom) — null-safe.
@@ -112,9 +106,7 @@ export function SiteHeader() {
           {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
               leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
-          {/* "Painel" (Console) só para curador+, ANTES de "Criar". Esconder é afordância;
-              o /admin revalida o papel server-side (gate de rota, não link). */}
-          {showPainel && navLink('/admin', messages.nav.painel, identity)}
+          {/* "Painel" saiu da nav (#267): agora é item do menu da conta (AuthSlot). */}
           {ctaLink(identity)}
         </nav>
         {/* Cluster direito do desktop: só o slot de conta. Escondido abaixo de `sm:` (vai pro
@@ -142,7 +134,7 @@ export function SiteHeader() {
               {/* #236: "Receitas" (índice do feed) fundiu na home — só "Início" (a Descoberta). */}
               {navLink('/', messages.nav.home, inSheet)}
               {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
-              {showPainel && navLink('/admin', messages.nav.painel, inSheet)}
+              {/* "Painel" saiu da nav (#267): vive no menu da conta do AuthSlot abaixo. */}
               {ctaLink(inSheet)}
             </nav>
             {/* Área de CONTA dentro do painel: o mesmo AuthSlot do desktop (avatar/nome/Sair, ou
