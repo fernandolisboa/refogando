@@ -16,6 +16,10 @@ export const ptBR = {
     painel: 'Painel',
     signIn: 'Entrar',
     signOut: 'Sair',
+    // Menu da conta (#267): itens do dropdown do avatar. "Painel" (curador+) e "Sair" também
+    // moram nesse menu, reusando `painel`/`signOut` acima (não duplicar).
+    verPerfilPublico: 'Ver meu perfil público',
+    editarPerfil: 'Editar perfil',
     // Menu mobile (#163): rótulos acessíveis do gatilho hambúrguer e do título do painel
     // (drawer). Só aparecem abaixo de `sm:`; no desktop a nav completa segue inline.
     abrirMenu: 'Abrir menu',

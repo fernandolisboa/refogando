@@ -15,6 +15,10 @@ export const enUS: Messages = {
     painel: 'Dashboard',
     signIn: 'Sign in',
     signOut: 'Sign out',
+    // Account menu (#267): avatar dropdown items. "Dashboard" (curator+) and "Sign out" also
+    // live in this menu, reusing `painel`/`signOut` above (no duplication).
+    verPerfilPublico: 'View my public profile',
+    editarPerfil: 'Edit profile',
     // Mobile menu (#163): accessible labels for the hamburger trigger and the drawer title.
     abrirMenu: 'Open menu',
     fecharMenu: 'Close menu',
