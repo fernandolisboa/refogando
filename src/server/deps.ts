@@ -5,6 +5,7 @@ import { RealTranslator, type Translator } from '@/server/translation/translator
 import { RealImageStore, type ImageStore } from '@/server/images/image-store'
 import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/image-generator'
 import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
+import { RealRecipeProbe, type RecipeProbe } from '@/server/import/recipe-probe'
 import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-search/web-search-provider'
 
 /**
@@ -16,6 +17,7 @@ import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-sear
  *  - getImageStore()       → seam de storage de imagem (issue #126, Vercel Blob)
  *  - getImageGenerator()   → seam de geração de imagem por IA (issue #132, Gemini REST)
  *  - getRecipeImporter()   → seam de importação de receita da web (issue #165, JSON-LD)
+ *  - getRecipeProbe()      → seam do PROBE de saúde admin (issue #273, JSON-LD + robots, sem persistir)
  *  - getWebSearchProvider()→ seam de DESCOBERTA na web (issue #164, links externos ADR-0019)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
@@ -37,6 +39,8 @@ let imageGeneratorOverride: ImageGenerator | null = null
 let lazyImageGenerator: ImageGenerator | null = null
 let recipeImporterOverride: RecipeImporter | null = null
 let lazyRecipeImporter: RecipeImporter | null = null
+let recipeProbeOverride: RecipeProbe | null = null
+let lazyRecipeProbe: RecipeProbe | null = null
 let webSearchProviderOverride: WebSearchProvider | null = null
 let lazyWebSearchProvider: WebSearchProvider | null = null
 
@@ -118,6 +122,16 @@ export function setRecipeImporter(importer: RecipeImporter): void {
   recipeImporterOverride = importer
 }
 
+export function getRecipeProbe(): RecipeProbe {
+  if (recipeProbeOverride) return recipeProbeOverride
+  if (!lazyRecipeProbe) lazyRecipeProbe = new RealRecipeProbe()
+  return lazyRecipeProbe
+}
+
+export function setRecipeProbe(probe: RecipeProbe): void {
+  recipeProbeOverride = probe
+}
+
 export function getWebSearchProvider(): WebSearchProvider {
   if (webSearchProviderOverride) return webSearchProviderOverride
   if (!lazyWebSearchProvider) lazyWebSearchProvider = new RealWebSearchProvider()
@@ -139,5 +153,6 @@ export function resetDeps(): void {
   imageStoreOverride = null
   imageGeneratorOverride = null
   recipeImporterOverride = null
+  recipeProbeOverride = null
   webSearchProviderOverride = null
 }

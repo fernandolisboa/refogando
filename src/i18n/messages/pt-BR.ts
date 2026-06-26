@@ -863,6 +863,33 @@ export const ptBR = {
     webAllowlistLabel: 'Domínios permitidos',
     webAllowlistAjuda: 'Um domínio por linha (ex.: tudogostoso.com.br). Vazio bloqueia tudo.',
     webErroConfig: 'Configuração inválida. Revise os domínios (um hostname por linha, sem http:// nem caminho).',
+    // #273: domínios sugeridos (click-to-add) — atalho de curadoria. Clicar SÓ acrescenta ao campo acima;
+    // adicionar = vetar (não salva nem liga sozinho). Os DOIS grupos aparecem (a allowlist é global).
+    webSugeridosTitulo: 'Domínios sugeridos',
+    webSugeridosDescricao:
+      'Atalhos para preencher a lista. Clicar só acrescenta o domínio ao campo acima — não salva nem liga a descoberta.',
+    webSugeridosGrupoBrasil: 'Brasil',
+    webSugeridosGrupoInternacional: 'Internacional',
+    webSugeridoAdicionarAria: 'Adicionar {dominio} à lista',
+    webSugeridoJaAdicionado: 'já na lista',
+    webVetarLembrete:
+      'Adicionar um domínio = vetá-lo. Confira o robots.txt e os termos de uso do site antes.',
+    // #273: probe de saúde — cola uma URL de receita e checa (a) JSON-LD schema.org/Recipe e (b) o
+    // robots.txt da origem, ANTES de vetar. Veredito por cópia + estado (sem cor isolada — a11y AA).
+    webProbeUrlLabel: 'Checar uma receita de exemplo',
+    webProbePlaceholder: 'https://site.com/receita-de-bolo',
+    webProbeChecar: 'Checar',
+    webProbeChecando: 'Checando…',
+    webProbeJsonLdSim: 'Tem receita em JSON-LD (schema.org/Recipe).',
+    webProbeJsonLdIdiomaNaoSuportado: 'Tem receita em JSON-LD, mas em idioma fora de PT/EN.',
+    webProbeJsonLdNao: 'Sem receita em JSON-LD utilizável.',
+    webProbeRobotsPermite: 'O robots.txt permite o RefogandoBot nesse caminho.',
+    webProbeRobotsBloqueia: 'O robots.txt bloqueia o RefogandoBot nesse caminho.',
+    webProbeImportavel: 'Pronto para importar depois de vetar o domínio.',
+    webProbeNaoImportavel: 'Ainda não dá para importar dessa página.',
+    webProbeNaoCarregou: 'Não foi possível carregar a página. Confira a URL.',
+    webProbeErro: 'Não foi possível checar agora. Tente de novo.',
+    webProbeUrlInvalida: 'URL inválida. Use http(s) de um site público.',
     // #237: aviso de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável. CORTESIA
     // editorial: aparece só em receitas de catálogo quando ligado; NUNCA substitui os selos obrigatórios.
     catalogoAvisoTitulo: 'Aviso do catálogo (IA-assistido)',

@@ -3,9 +3,9 @@
  *
  * Camada de DOMÍNIO, PURO: sem rede, sem DB. Recebe o CORPO de um robots.txt + o nosso product token
  * (`RefogandoBot`) + o `path` (pathname+search) e decide se podemos buscar. O fetch do robots.txt vive
- * no seam server-side (`RealRecipeImporter.checkRobotsAllowed`), que é FAIL-OPEN (robots indisponível ⇒
- * permitido). Logo a política só "pega" quando o robots.txt EXISTE e proíbe — e é esse caso que este
- * módulo precisa acertar.
+ * no seam server-side (`robotsAllows` em `server/import/web-fetch.ts`, compartilhado pela importação e
+ * pelo probe de saúde #273), que é FAIL-OPEN (robots indisponível ⇒ permitido). Logo a política só "pega"
+ * quando o robots.txt EXISTE e proíbe — e é esse caso que este módulo precisa acertar.
  *
  * Regras (RFC 9309):
  *  - Grupos: um ou mais `User-agent:` consecutivos seguidos das regras (`Allow:`/`Disallow:`). Uma
