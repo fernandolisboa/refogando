@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -131,6 +131,64 @@ beforeEach(() => {
 /** Helper para casar o nome acessível do gatilho do resultado da web (título + atribuição). */
 function webTrigger(title: string) {
   return screen.findByRole('button', { name: new RegExp(title) })
+}
+
+/** O `<details>` que embrulha as facetas (o que tem o summary "+ filtros"). Copiado do teste de filtros. */
+function disclosure(): HTMLDetailsElement {
+  const summary = screen.getByText((_content, el) => el?.tagName === 'SUMMARY' && /\+ filtros/.test(el.textContent ?? ''))
+  return summary.closest('details') as HTMLDetailsElement
+}
+
+/**
+ * Variante de `stubFetchRouting` com a resposta de `/api/discovery/web` CONTROLÁVEL via promise diferida.
+ * Usada para inspecionar o estado em-voo do CTA manual (#275): loading/disabled/aria-busy e a ausência
+ * do CTA enquanto a web automática (#164) ainda não resolveu.
+ */
+function stubFetchRoutingDeferred(search: SearchResponse) {
+  let resolveWeb!: (links: WebLink[]) => void
+  const webPromise = new Promise<WebLink[]>((r) => {
+    resolveWeb = r
+  })
+  const fetchMock = vi.fn(async (input: unknown) => {
+    const url = String(input)
+    if (url.includes('/api/discovery/web')) {
+      const links = await webPromise
+      return { ok: true, json: async () => ({ results: links }) }
+    }
+    return { ok: true, json: async () => search }
+  }) as unknown as typeof fetch
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock: fetchMock as unknown as ReturnType<typeof vi.fn>, resolveWeb }
+}
+
+/**
+ * Variante de `stubFetchRoutingDeferred` que REPRODUZ o `AbortController` real: a resposta de
+ * `/api/discovery/web` fica diferida, MAS se o `signal` da requisição abortar (uma nova busca cancela a
+ * anterior via `webAbortRef.abort()`), o fetch REJEITA com `AbortError` — como o `fetch` do navegador.
+ * Usada para o cenário de CORRIDA (#275): um clique no CTA superado por nova digitação não pode acabar
+ * pintando o aviso "nada na web" obsoleto.
+ */
+function stubFetchRoutingWebAbortable(search: SearchResponse) {
+  let resolveWeb!: (links: WebLink[]) => void
+  let rejectWeb!: (err: unknown) => void
+  const webPromise = new Promise<WebLink[]>((res, rej) => {
+    resolveWeb = res
+    rejectWeb = rej
+  })
+  const fetchMock = vi.fn(async (input: unknown, init?: { signal?: AbortSignal }) => {
+    const url = String(input)
+    if (url.includes('/api/discovery/web')) {
+      // Reproduz o fetch real: abortar o signal REJEITA a requisição com AbortError.
+      init?.signal?.addEventListener('abort', () =>
+        rejectWeb(new DOMException('Aborted', 'AbortError')),
+      )
+      const links = await webPromise
+      return { ok: true, json: async () => ({ results: links }) }
+    }
+    return { ok: true, json: async () => search }
+  }) as unknown as typeof fetch
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock: fetchMock as unknown as ReturnType<typeof vi.fn>, resolveWeb }
 }
 
 afterEach(() => {
@@ -313,5 +371,182 @@ describe('SearchExperience — modal de importação (#169)', () => {
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+})
+
+// ── #275 (ADR-0019): 2º gatilho EXPLÍCITO "buscar na web" no FIM dos resultados ──────────
+// Coexiste com o gatilho automático #164 (acervo raso): o CTA cobre o caso COMPLEMENTAR (acervo
+// SUFICIENTE) — "rolei até o fim e nada serviu". Reusa a MESMA /api/discovery/web (allowlist-restrita,
+// degrade-200). O CTA dispara a web SÓ por AÇÃO do usuário (preserva "Busca nunca cria").
+describe('SearchExperience — CTA manual buscar na web (#275)', () => {
+  it('C1 — acervo SUFICIENTE + termo: CTA aparece, clique chama a web e renderiza os links (CTA some)', async () => {
+    const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    // Resultados locais concluídos (acervo suficiente).
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+    // O gatilho automático NÃO disparou (acervo >= limiar).
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+
+    // O CTA manual aparece ao fim dos resultados.
+    const cta = await screen.findByRole('button', { name: M.webManualCta })
+    expect(cta).toBeInTheDocument()
+
+    await user.click(cta)
+
+    // A seção "Da web" renderiza os links e o CTA some.
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    await webTrigger(WEB_LINKS[0].title)
+    const calls = discoveryCalls(fetchMock)
+    expect(calls.length).toBeGreaterThan(0)
+    expect(String(calls[0][0])).toContain('q=feijoada')
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+  })
+
+  it('C2 — auto-trigger (acervo RASO) acende a web SEM CTA (não-regressão #164, sem flash)', async () => {
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    // A web automática acendeu...
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    // ...e o CTA manual NUNCA aparece no caminho raso (gate por inventário ⇒ timing-independente).
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+  })
+
+  it('C2b — sem CTA enquanto a web AUTOMÁTICA está em voo (acervo raso, promise diferida)', async () => {
+    const { resolveWeb } = stubFetchRoutingDeferred(emptyLocal)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    // Local raso concluído (vazio), web ainda em voo: o CTA NÃO pode piscar.
+    await screen.findByText(M.semResultado)
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+
+    // Resolve a web automática → a seção "Da web" renderiza; o CTA segue ausente.
+    resolveWeb(WEB_LINKS)
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+  })
+
+  it('C3 — clique que volta {results:[]} degrada gracioso (aviso neutro na live region, sem erro vermelho)', async () => {
+    const fetchMock = stubFetchRouting(localWith(3), [])
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    await user.click(await screen.findByRole('button', { name: M.webManualCta }))
+
+    // Aviso neutro discreto, NUNCA estado de erro.
+    const aviso = await screen.findByText(M.webManualNada)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(ptBR.system.error)).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBeGreaterThan(0)
+    // O aviso vive DENTRO da live region (anunciado ao leitor de tela).
+    expect(aviso.closest('[aria-live="polite"]')).not.toBeNull()
+  })
+
+  it('C4 — facet-only (sem termo) NÃO mostra nem dispara o CTA', async () => {
+    const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    // Abre os filtros e marca uma cozinha (busca SÓ por faceta, sem termo).
+    await user.click(within(disclosure()).getByText(M.filtros))
+    await user.click(screen.getByLabelText(ptBR.cozinhaLabel.brasileira))
+
+    // Sync POSITIVO: espera os resultados concluírem ANTES das asserções negativas.
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('C5 — RESET na 2ª busca: trocar o termo volta o CTA a idle; limpar tudo o remove', async () => {
+    stubFetchRouting(localWith(3), [])
+    const user = userEvent.setup()
+    renderSearch()
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    // Clica o CTA → web volta vazia → aviso "nada" (estado done).
+    await user.click(await screen.findByRole('button', { name: M.webManualCta }))
+    await screen.findByText(M.webManualNada)
+
+    // Muda o termo → nova busca reseta webManualState=idle ⇒ o CTA reaparece.
+    await user.type(box, 'x')
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: M.webManualCta })).toBeInTheDocument(),
+    )
+
+    // Limpar TODO o termo volta ao repouso (sem prender o CTA).
+    await user.clear(box)
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('C6 — loading: botão desabilitado + "buscando…" + aria-busy; duplo-clique não re-dispara (guard)', async () => {
+    const { fetchMock, resolveWeb } = stubFetchRoutingDeferred(localWith(3))
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    await user.click(await screen.findByRole('button', { name: M.webManualCta }))
+
+    // Em voo: o botão mostra "buscando…", está disabled e aria-busy.
+    const buscando = await screen.findByRole('button', { name: M.webManualBuscando })
+    expect(buscando).toBeDisabled()
+    expect(buscando).toHaveAttribute('aria-busy', 'true')
+
+    // Clicar de novo enquanto carrega NÃO re-dispara (guard de reentrância).
+    await user.click(buscando)
+    expect(discoveryCalls(fetchMock).length).toBe(1)
+
+    // Resolve → os links renderizam.
+    resolveWeb(WEB_LINKS)
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+  })
+
+  it('C7 — clique SUPERADO por nova digitação NÃO pinta o aviso "nada na web" obsoleto (corrida)', async () => {
+    // Acervo suficiente ⇒ o auto-gate #164 NÃO dispara; o único fetch de web é o do clique manual,
+    // cuja resposta fica diferida e ABORTA quando a nova busca cancela a anterior.
+    const { resolveWeb } = stubFetchRoutingWebAbortable(localWith(3))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    // Clica o CTA → busca manual EM VOO (promise diferida; o botão mostra "buscando…").
+    await user.click(await screen.findByRole('button', { name: M.webManualCta }))
+    await screen.findByRole('button', { name: M.webManualBuscando })
+
+    // Nova digitação dispara nova busca → ABORTA o fetch manual em voo (corrida superada). O reset de
+    // `doSearch` devolve o CTA a `idle`; o `done` obsoleto da corrida abortada NÃO pode aparecer.
+    await user.type(box, 'x')
+
+    // A nova busca conclui e o CTA volta (idle); o aviso obsoleto "nada na web" NUNCA aparece.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: M.webManualCta })).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(M.webManualNada)).not.toBeInTheDocument()
+
+    // Resolver TARDE a web da corrida superada (já abortada) segue sem pintar o aviso obsoleto.
+    resolveWeb(WEB_LINKS)
+    await waitFor(() => {
+      expect(screen.queryByText(M.webManualNada)).not.toBeInTheDocument()
+    })
   })
 })

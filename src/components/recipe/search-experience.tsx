@@ -103,6 +103,12 @@ export function SearchExperience({
   // /api/search (não bloqueiam os resultados locais) e SÓ quando o acervo local veio raso.
   const [webLinks, setWebLinks] = useState<WebLink[]>([])
 
+  // #275: estado do 2º gatilho EXPLÍCITO "buscar na web" ao fim dos resultados (coexiste com o
+  // automático #164). `idle` ⇒ CTA disponível; `loading` ⇒ fetch em voo (botão disabled + "buscando…");
+  // `done` ⇒ a busca manual concluiu. Quando `done` E `webLinks` segue vazio, mostramos o aviso neutro
+  // (degradação graciosa, sem provedor/allowlist). Reseta a `idle` a cada nova busca (ver `doSearch`).
+  const [webManualState, setWebManualState] = useState<'idle' | 'loading' | 'done'>('idle')
+
   // #279: cluster de COZINHEIROS (ADR-0024) — busca PARALELA por nome/@handle, FORA do ranking de
   // receitas. Flutua acima das receitas quando casa alguém. Fetch independente de /api/search/cooks.
   const [cooks, setCooks] = useState<ProfileFollowUser[]>([])
@@ -117,6 +123,12 @@ export function SearchExperience({
   // AbortController SEPARADO da busca de Cozinheiros (#279): cancela a anterior a cada nova busca
   // (paralelo independente do /api/search — um responde sem o outro).
   const cooksAbortRef = useRef<AbortController | null>(null)
+  // #275: token de reentrância da busca MANUAL na web. Incrementa a cada clique no CTA; o handler
+  // captura o valor local e só transiciona para `done` se ainda for a corrida CORRENTE. Protege a
+  // corrida em que uma NOVA busca (nova digitação) ABORTA o fetch manual em voo: `discoverWeb` engole
+  // o AbortError, então sem este guarda (mais o boolean de conclusão) o `done` obsoleto pintaria o
+  // aviso "nada na web" indevidamente.
+  const webManualTokenRef = useRef(0)
 
   const hasCriteria =
     q.trim() !== '' ||
@@ -132,7 +144,10 @@ export function SearchExperience({
    * `q` alimenta a web (facetas não se aplicam a links externos).
    */
   const discoverWeb = useCallback(
-    async (term: string) => {
+    // #275: RETORNA um boolean — `true` só quando a busca COMPLETOU de verdade (res.ok + parse). `false`
+    // quando foi ABORTADA (corrida superada por nova busca) ou `!res.ok`. O handler manual usa isso para
+    // NÃO transicionar para `done` numa corrida abortada (que pintaria o aviso "nada na web" obsoleto).
+    async (term: string): Promise<boolean> => {
       webAbortRef.current?.abort()
       const controller = new AbortController()
       webAbortRef.current = controller
@@ -141,15 +156,40 @@ export function SearchExperience({
       url.searchParams.set('locale', locale)
       try {
         const res = await fetch(url, { signal: controller.signal })
-        if (!res.ok) return
+        if (!res.ok) return false
         const body = (await res.json()) as { results: WebLink[] }
         setWebLinks(body.results ?? [])
+        return true
       } catch {
         // AbortError ou rede caída: descoberta na web é assistiva — silencia (mantém só o local).
+        return false
       }
     },
     [locale],
   )
+
+  /**
+   * #275 (ADR-0019): 2º gatilho da descoberta na web — acionado por CLIQUE EXPLÍCITO no CTA "buscar na
+   * web" ao fim dos resultados (preserva "Busca nunca cria" / fetch-só-por-ação). Reusa a MESMA
+   * `discoverWeb` (allowlist-restrita, degrade-200) — NUNCA dá erro vermelho: o pior caso é o aviso
+   * neutro quando volta vazio. Guarda de reentrância (`loading`) evita duplo-clique. `done` distingue
+   * "rodou manualmente" de "nunca rodou" (que `webLinks.length` sozinho não diferencia).
+   */
+  const handleWebManual = useCallback(async () => {
+    const term = q.trim()
+    if (term === '' || webManualState === 'loading') return
+    // Captura o token DESTA corrida. Só transiciona para `done` se, ao resolver, (a) este ainda for o
+    // último clique (token bate) E (b) a `discoverWeb` COMPLETOU (não foi abortada por uma nova busca).
+    // Corrida superada ⇒ `discoverWeb` devolve `false` e o reset de `doSearch` já devolveu o CTA a
+    // `idle`; sem este guarda, o `done` obsoleto pintaria o aviso "nada na web". NÃO há estado de erro
+    // vermelho — a degradação graciosa (aviso neutro só quando completou vazio) permanece.
+    const token = (webManualTokenRef.current += 1)
+    setWebManualState('loading')
+    const completed = await discoverWeb(term)
+    if (completed && webManualTokenRef.current === token) {
+      setWebManualState('done')
+    }
+  }, [q, webManualState, discoverWeb])
 
   /**
    * #279 (ADR-0024): busca de COZINHEIROS — fetch PARALELO de `/api/search/cooks` por nome/@handle.
@@ -226,6 +266,11 @@ export function SearchExperience({
       const body: SearchResponse = await res.json()
       setData(body)
       setStatus('done')
+
+      // #275: toda nova busca BEM-SUCEDIDA volta o CTA manual a `idle` (reaparece ao mudar q/faceta/sort).
+      // SÓ aqui (não no early-return de repouso nem no catch de erro) — senão o CTA piscaria fora do
+      // estado `done`. O effect debounced re-roda `doSearch` a cada mudança, então o reset é automático.
+      setWebManualState('idle')
 
       // #164: GATING da descoberta na web. Os resultados LOCAIS já estão na tela (acima). Só
       // depois, e SÓ se o acervo local veio RASO (abaixo do limiar) E há um termo de texto,
@@ -336,6 +381,12 @@ export function SearchExperience({
       (data.sugestoes !== undefined && data.sugestoes.length > 0))
 
   const isEmpty = status === 'done' && data !== null && !hasResults
+
+  // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
+  // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
+  // — "rolei até o fim e nada serviu". No caminho raso (`< limiar`) o auto já disparou, então o CTA não
+  // aparece (sem flash nem redundância). Espelha byte-a-byte o `localCount` de `doSearch`.
+  const localCount = data ? data.minhas.length + data.catalogo.length + data.comunidade.length : 0
 
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
@@ -586,6 +637,24 @@ export function SearchExperience({
             onImported={(recipeId) => router.push(recipeDetailPath(locale, recipeId))}
           />
         )}
+
+        {/* #275: 2º gatilho EXPLÍCITO "buscar na web" ao FIM dos resultados (dentro da live region). SÓ
+            quando: busca concluída, há termo, o acervo veio SUFICIENTE (o auto-gate #164 já cobre o raso)
+            e a seção "Da web" ainda não foi preenchida (`webLinks` vazio). Particiona o espaço do auto:
+            raso ⇒ auto disparou (sem CTA); suficiente ⇒ CTA disponível — nunca os dois (sem flash). Some
+            quando o clique popula `webLinks` (a WebDiscoverySection acima assume). */}
+        {status === 'done' &&
+          q.trim() !== '' &&
+          localCount >= SHALLOW_THRESHOLD &&
+          webLinks.length === 0 && (
+            <WebManualCta
+              state={webManualState}
+              onSearch={handleWebManual}
+              ctaLabel={m.webManualCta}
+              buscandoLabel={m.webManualBuscando}
+              nadaLabel={m.webManualNada}
+            />
+          )}
       </div>
     </Container>
   )
@@ -639,6 +708,48 @@ function WebDiscoverySection({
         ))}
       </ul>
     </section>
+  )
+}
+
+/**
+ * #275 (ADR-0019): CTA EXPLÍCITO "buscar na web" ao FIM dos resultados — o 2º gatilho da descoberta na
+ * web, para o caso "rolei até o fim e nada serviu" (acervo suficiente, o auto-gate #164 não disparou).
+ * Dispara `discoverWeb` SÓ por clique do usuário (a Busca nunca cria). Três faces:
+ *  - `idle`: o botão (variant secondary, espelha o retry);
+ *  - `loading`: o MESMO botão disabled + `aria-busy` + rótulo "buscando…" (feedback + guard de duplo-clique);
+ *  - `done` com a web vazia: um aviso NEUTRO ("nada na web agora") — degradação graciosa sem provedor/
+ *    allowlist, NUNCA estado de erro vermelho. (Quando a web popula links, o pai esconde este bloco e a
+ *    `WebDiscoverySection` assume — então `done` aqui ⇒ necessariamente voltou vazio.)
+ */
+function WebManualCta({
+  state,
+  onSearch,
+  ctaLabel,
+  buscandoLabel,
+  nadaLabel,
+}: {
+  state: 'idle' | 'loading' | 'done'
+  onSearch: () => void
+  ctaLabel: string
+  buscandoLabel: string
+  nadaLabel: string
+}) {
+  if (state === 'done') {
+    return <p className="text-sm text-muted">{nadaLabel}</p>
+  }
+  const loading = state === 'loading'
+  return (
+    <div>
+      <Button
+        variant="secondary"
+        type="button"
+        onClick={onSearch}
+        disabled={loading}
+        aria-busy={loading}
+      >
+        {loading ? buscandoLabel : ctaLabel}
+      </Button>
+    </div>
   )
 }
 
