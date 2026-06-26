@@ -4,8 +4,9 @@
  * traduções) e projeta o `PublicProfile` que a rota serializa.
  *
  * LEAK-SAFETY: o perfil é ANÔNIMO-readable e expõe SÓ o que é público — `name`/`handle`/`image`/
- * `bio`/`links` do dono e, por receita, o `displayedTitle` + `origin` (os campos do
- * `RecipeResultItem` já públicos). NUNCA o `email`/`id`/papel do dono, nem `visibility`/
+ * `bio`/`links` do dono e, por receita, o `displayedTitle` + `origin` + a foto de capa (`imageUrl`,
+ * só o `blob_url` PÚBLICO, nunca o `image_id` interno) + `imageAiGenerated` (#130/#132) — os campos do
+ * `RecipeResultItem` já públicos. NUNCA o `email`/`id`/papel do dono, nem `visibility`/
  * `resultKind` das receitas (campos de gestão são owner-gated em #59 — aqui o gate de POOL já
  * garante que só públicas chegam, então a visibilidade é redundante e não é exposta).
  *
@@ -31,6 +32,11 @@ export type ProfileRecipeRow = {
   // `/{locale}/recipes/<slug>`; ausente naquele locale ⇒ o card cai no fallback por UUID. O loader é
   // locale-agnóstico (não sabe o requestLocale) — quem escolhe é o `requestLocale` do builder.
   slugByLocale?: Record<string, string>
+  // Foto de capa (#130/#132) — CRUS do LEFT JOIN em recipe_image (via recipe.image_id, gate
+  // moderated_at IS NULL no loader). Nullable (sem imagem / imagem moderada ⇒ NULL). O projetor deriva
+  // `imageUrl`/`imageAiGenerated` aqui (não no loader), espelhando `projectResult` da Busca.
+  imageUrl?: string | null
+  imageProvenance?: string | null
   translations: ReadonlyArray<TranslationRow>
 }
 
@@ -42,6 +48,11 @@ export type ProfileRecipeItem = {
   // Slug do locale CORRENTE (#231) — pro card linkar `/{locale}/recipes/<slug>`. AUSENTE ("ausente ≠
   // vazio") quando não há slug naquele locale: o card cai no fallback canônico por UUID.
   slug?: string
+  // Foto de capa (#130) — `blob_url` PÚBLICO da thumbnail. AUSENTE ("ausente ≠ vazio") quando a Receita
+  // não tem imagem ⇒ o card cai no placeholder. Espelha `SearchResult.imageUrl`; nunca o `image_id`.
+  imageUrl?: string
+  // Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto.
+  imageAiGenerated?: boolean
 }
 
 /** Um Cozinheiro numa lista pública de seguir (#274) — allowlist mínima (nome/@handle/avatar). */
@@ -103,6 +114,11 @@ export function projectProfileRecipe(
     displayedTitle,
     origin: row.origin,
     ...(slug != null ? { slug } : {}),
+    // #130/Imagem: foto de capa PÚBLICA. "ausente ≠ vazio": só quando há blob (imageUrl != null —
+    // o LEFT JOIN traz NULL sem imagem ou com imagem moderada). Espelha `projectResult` da Busca.
+    ...(row.imageUrl != null ? { imageUrl: row.imageUrl } : {}),
+    // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated (foto do dono NÃO).
+    ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
   }
 }
 

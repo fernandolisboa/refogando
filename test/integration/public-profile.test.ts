@@ -4,7 +4,12 @@ import { GET } from '@/app/api/u/[handle]/route'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 import { seedUser } from '../helpers/users'
-import { seedRecipe, seedTranslation, seedRemovedFromPool } from '../helpers/recipes'
+import {
+  seedRecipe,
+  seedTranslation,
+  seedRemovedFromPool,
+  seedRecipeImage,
+} from '../helpers/recipes'
 
 /**
  * Perfil PÚBLICO (#129) pela porta MAIS ALTA — handler GET de `/api/u/[handle]`. Visitante
@@ -15,7 +20,15 @@ import { seedRecipe, seedTranslation, seedRemovedFromPool } from '../helpers/rec
 
 // #231 (ADR-0020): o slug do locale pedido entra no item pro card linkar o canônico; ausente quando
 // a Receita não tem tradução COM slug naquele locale (fallback por UUID).
-type ProfileRecipe = { recipeId: string; displayedTitle: string; origin: string; slug?: string }
+// #130/#132 (BUG 2): a foto de capa entra no item — `imageUrl` (blob PÚBLICO) + `imageAiGenerated`.
+type ProfileRecipe = {
+  recipeId: string
+  displayedTitle: string
+  origin: string
+  slug?: string
+  imageUrl?: string
+  imageAiGenerated?: boolean
+}
 type PublicProfile = {
   name: string
   handle: string
@@ -50,9 +63,11 @@ async function seedOwnedRecipe(input: {
   // #231: locale original (default pt-BR) + slug per-locale opcional — pra testar o slug do DTO.
   originalLocale?: string
   slug?: string | null
+  // BUG 2: origin é 'ai_chat' por padrão; o caso web_imported força 'web_imported' p/ provar o gate.
+  origin?: 'ai_chat' | 'web_imported'
 }): Promise<string> {
   const id = await seedRecipe({
-    origin: 'ai_chat',
+    origin: input.origin ?? 'ai_chat',
     originalLocale: input.originalLocale ?? 'pt-BR',
     ownerId: input.ownerId,
     visibility: input.visibility ?? 'public',
@@ -219,5 +234,87 @@ describe('GET /api/u/[handle] — perfil público (#129)', () => {
     expect(b, 'esperava a pública só-en-US no perfil (é pública)').toBeDefined()
     // requestLocale pt-BR sem slug ⇒ o builder não acha slug no mapa ⇒ DTO sem slug (fallback UUID).
     expect(b!.slug).toBeUndefined()
+  })
+
+  // BUG 2 (#130/#132): a foto de capa do perfil. WIRING SQL→DTO: prova que o LEFT JOIN em
+  // recipe_image (via recipe.image_id, com moderated_at IS NULL) chega ao item. Sem isto, o card do
+  // perfil cai no placeholder mesmo com a receita TENDO imagem (o bug reportado pelo dono).
+  it('#130: receita com foto ⇒ item.imageUrl === blob público (sem image_id/provenance no DTO)', async () => {
+    const handle = `img-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `img-${crypto.randomUUID()}@ex.com`, handle })
+    const blob = `https://abc.public.blob.vercel-storage.com/recipes/${crypto.randomUUID()}.webp`
+    const comFoto = await seedOwnedRecipe({ ownerId, titulo: 'Com foto' })
+    await seedRecipeImage({ recipeId: comFoto, blobUrl: blob, provenance: 'user_photo' })
+
+    const body = await profileBody(handle)
+    const r = body.recipes.find((x) => x.recipeId === comFoto)
+    expect(r?.imageUrl).toBe(blob)
+    // foto do dono NÃO é gerada por IA ⇒ sem selo.
+    expect(r?.imageAiGenerated).toBeUndefined()
+    // LEAK-SAFETY: o DTO da imagem expõe SÓ o blob público — nunca o image_id/provenance internos.
+    const keys = Object.keys(r!)
+    expect(keys).not.toContain('image_id')
+    expect(keys).not.toContain('imageId')
+    expect(keys).not.toContain('imageProvenance')
+    expect(keys).not.toContain('provenance')
+  })
+
+  it('#130: receita SEM foto ⇒ imageUrl AUSENTE (negativo não-vácuo)', async () => {
+    const handle = `noimg-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `noimg-${crypto.randomUUID()}@ex.com`, handle })
+    const semFoto = await seedOwnedRecipe({ ownerId, titulo: 'Sem foto' })
+
+    const body = await profileBody(handle)
+    const r = body.recipes.find((x) => x.recipeId === semFoto)
+    expect(r, 'a pública sem foto ainda aparece no perfil').toBeDefined()
+    expect('imageUrl' in r!).toBe(false)
+  })
+
+  it("#132: foto gerada por IA ⇒ imageAiGenerated true (dirige o selo no card)", async () => {
+    const handle = `ai-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `ai-${crypto.randomUUID()}@ex.com`, handle })
+    const gerada = await seedOwnedRecipe({ ownerId, titulo: 'Gerada por IA' })
+    await seedRecipeImage({ recipeId: gerada, provenance: 'ai_generated' })
+
+    const body = await profileBody(handle)
+    const r = body.recipes.find((x) => x.recipeId === gerada)
+    expect(r?.imageUrl).toBeTruthy()
+    expect(r?.imageAiGenerated).toBe(true)
+  })
+
+  it('#133: imagem MODERADA ⇒ a receita aparece mas SEM imageUrl (gate moderated_at IS NULL)', async () => {
+    const handle = `mod-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `mod-${crypto.randomUUID()}@ex.com`, handle })
+    const curator = await seedUser({ email: `mod-cur-${crypto.randomUUID()}@ex.com`, role: 'curador' })
+    const moderada = await seedOwnedRecipe({ ownerId, titulo: 'Com foto moderada' })
+    await seedRecipeImage({ recipeId: moderada, moderated: { curatorId: curator } })
+
+    const body = await profileBody(handle)
+    const r = body.recipes.find((x) => x.recipeId === moderada)
+    // POSITIVO: a receita ainda está no perfil (a moderação some a IMAGEM, não a receita).
+    expect(r, 'a receita aparece — só a imagem moderada some').toBeDefined()
+    // NEGATIVO não-vácuo: o gate moderated_at IS NULL na cláusula ON zera a imagem.
+    expect('imageUrl' in r!).toBe(false)
+  })
+
+  it('ADR-0019: web_imported forçada public COM imagem ⇒ AUSENTE do perfil (gate origin)', async () => {
+    const handle = `web-${crypto.randomUUID().slice(0, 8)}`
+    const ownerId = await seedUser({ email: `web-${crypto.randomUUID()}@ex.com`, handle })
+    // Cinto-e-suspensório (sem CHECK no DB): forçamos public numa web_imported COM imagem — o loader
+    // a barra pelo `origin <> 'web_imported'`, alinhado ao eligibleForPool canônico (#168).
+    const web = await seedOwnedRecipe({
+      ownerId,
+      titulo: 'Importada da web',
+      origin: 'web_imported',
+      visibility: 'public',
+    })
+    await seedRecipeImage({ recipeId: web, blobUrl: 'https://x/y.webp', provenance: 'user_photo' })
+    // controle: uma pública normal do mesmo dono, pra a asserção não ser vácua.
+    const normal = await seedOwnedRecipe({ ownerId, titulo: 'Pública normal' })
+
+    const body = await profileBody(handle)
+    const ids = recipeIds(body)
+    expect(ids).toContain(normal)
+    expect(ids).not.toContain(web)
   })
 })

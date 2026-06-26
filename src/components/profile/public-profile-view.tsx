@@ -122,19 +122,16 @@ export function PublicProfileView({
         </div>
       </header>
 
-      {/* Social (#274): a ilha mostra os SEGUIDORES (contador que muda no clique) + o botão Seguir/
-          Seguindo (anon → "Entrar para seguir"; próprio perfil → sem botão); o SEGUINDO é estático SSR.
+      {/* Social (#274): a ilha detém AMBOS os contadores ADJACENTES — SEGUIDORES (muda no clique) e
+          SEGUINDO (estático SSR, por prop) — seguidos do botão Seguir/Seguindo ao FINAL (anon →
+          "Entrar para seguir"; próprio perfil → sem botão). O botão NUNCA fica entre os contadores.
           Tudo público, anon-cacheável (o "eu sigo?" é resolvido client-side dentro da ilha). */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <ProfileFollowSection
-          handle={profile.handle}
-          initialFollowerCount={profile.social.followerCount}
-          labels={mp}
-        />
-        <span className="text-sm text-muted">
-          {mp.seguindoContagem.replace('{n}', String(profile.social.followingCount))}
-        </span>
-      </div>
+      <ProfileFollowSection
+        handle={profile.handle}
+        initialFollowerCount={profile.social.followerCount}
+        followingCount={profile.social.followingCount}
+        labels={mp}
+      />
 
       {/* Receitas PÚBLICAS do dono. Vazio ⇒ mensagem; senão ⇒ LINHAS editoriais (mesmo item
           da Busca/Feed — protótipo RefoStage). Sem byline (a autoria é o próprio dono da página). */}
@@ -157,6 +154,9 @@ export function PublicProfileView({
                 autoTranslationSignal={false}
                 badgeLabels={badgeLabels}
                 autoTranslationLabel={mb.traducaoAutomatica}
+                imageUrl={r.imageUrl}
+                imageAiGenerated={r.imageAiGenerated}
+                aiLabel={mb.imagemSeloIa}
               />
             ))}
           </ul>

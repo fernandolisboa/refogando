@@ -84,3 +84,42 @@ describe('projectProfileRecipe — slug do locale corrente (#231)', () => {
     expect(item!.slug).toBeUndefined()
   })
 })
+
+// BUG 2 (#130/#132): a imagem de capa chega ao item do perfil. O projetor PURO espelha o
+// `projectResult` da Busca — "ausente ≠ vazio": só inclui `imageUrl` quando há blob; `imageAiGenerated`
+// só quando a proveniência é 'ai_generated' (foto do dono NÃO carimba o selo).
+describe('projectProfileRecipe — imagem de capa (#130/#132)', () => {
+  it('imageUrl presente ⇒ copiado pro item', () => {
+    const item = projectProfileRecipe(
+      profileRow({ imageUrl: 'https://abc.public.blob.vercel-storage.com/r/x.webp' }),
+      'pt-BR',
+    )
+    expect(item).not.toBeNull()
+    expect(item!.imageUrl).toBe('https://abc.public.blob.vercel-storage.com/r/x.webp')
+  })
+
+  it('imageUrl null/ausente ⇒ chave omitida (placeholder, não <img> vazio)', () => {
+    const semImg = projectProfileRecipe(profileRow(), 'pt-BR')
+    expect(semImg!.imageUrl).toBeUndefined()
+    expect('imageUrl' in semImg!).toBe(false)
+    const nullImg = projectProfileRecipe(profileRow({ imageUrl: null }), 'pt-BR')
+    expect('imageUrl' in nullImg!).toBe(false)
+  })
+
+  it("provenance 'ai_generated' ⇒ imageAiGenerated true", () => {
+    const item = projectProfileRecipe(
+      profileRow({ imageUrl: 'https://x/y.webp', imageProvenance: 'ai_generated' }),
+      'pt-BR',
+    )
+    expect(item!.imageAiGenerated).toBe(true)
+  })
+
+  it("provenance 'user_photo' ⇒ imageAiGenerated AUSENTE (foto do dono não carimba o selo)", () => {
+    const item = projectProfileRecipe(
+      profileRow({ imageUrl: 'https://x/y.webp', imageProvenance: 'user_photo' }),
+      'pt-BR',
+    )
+    expect(item!.imageAiGenerated).toBeUndefined()
+    expect('imageAiGenerated' in item!).toBe(false)
+  })
+})

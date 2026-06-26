@@ -1,8 +1,11 @@
 'use client'
 
 /**
- * Bloco SEGUIR do perfil público (#274, ADR-0024) — ILHA client (o `PublicProfileView` é PURO). Mostra
- * a contagem de SEGUIDORES (a que muda quando ESTE viewer segue) + o botão Seguir/Seguindo.
+ * Bloco SEGUIR do perfil público (#274, ADR-0024) — ILHA client (o `PublicProfileView` é PURO). Detém
+ * AMBOS os contadores — SEGUIDORES (muda quando ESTE viewer segue, com `aria-live`) e SEGUINDO (estático
+ * SSR, `followingCount` por prop) — ADJACENTES, seguidos do botão Seguir/Seguindo ao FINAL (o botão
+ * NUNCA fica entre os contadores). O "seguindo" vive aqui (não num `<span>` irmão na view) só pra a
+ * ordem do DOM ficar correta; continua estático ⇒ o perfil segue anon-cacheável (Modelo B/ADR-0020).
  *
  * Diferente do `RecipeEngagementControls` (que recebe o estado do viewer por PROPS de SSR): o perfil é
  * ANÔN-CACHEÁVEL (Modelo B/ADR-0020), então NÃO há seed SSR do "eu sigo?". A ilha BUSCA o estado client-
@@ -22,10 +25,13 @@ import type { Messages } from '@/i18n/messages'
 export function ProfileFollowSection({
   handle,
   initialFollowerCount,
+  followingCount,
   labels,
 }: {
   handle: string
   initialFollowerCount: number
+  /** Contagem de SEGUINDO — estática SSR (não muda no clique do viewer; perfil anon-cacheável). */
+  followingCount: number
   /** Rótulos já localizados (a view é prop-driven por `m`; a ilha só hooka a SESSÃO, não o locale). */
   labels: Messages['perfilPublico']
 }) {
@@ -85,6 +91,10 @@ export function ProfileFollowSection({
           '{n}',
           String(followerCount),
         )}
+      </span>
+      {/* SEGUINDO — estático SSR, ADJACENTE ao de seguidores. SEM aria-live (não muda no clique). */}
+      <span className="text-sm text-muted">
+        {mp.seguindoContagem.replace('{n}', String(followingCount))}
       </span>
       {resolvedAnon ? (
         <Button asChild variant="secondary" size="sm">

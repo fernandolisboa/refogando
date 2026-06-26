@@ -45,9 +45,14 @@ function mockFetch(handler: (method: string) => Reply) {
   return impl
 }
 
-function renderSection(initialFollowerCount = 10) {
+function renderSection(initialFollowerCount = 10, followingCount = 7) {
   return render(
-    <ProfileFollowSection handle="chef-ana" initialFollowerCount={initialFollowerCount} labels={MP} />,
+    <ProfileFollowSection
+      handle="chef-ana"
+      initialFollowerCount={initialFollowerCount}
+      followingCount={followingCount}
+      labels={MP}
+    />,
   )
 }
 
@@ -66,6 +71,30 @@ describe('ProfileFollowSection (#274)', () => {
     expect(screen.getByText(MP.seguidoresContagem.replace('{n}', '10'))).toBeInTheDocument()
     expect(screen.getByRole('link', { name: MP.entrarParaSeguir })).toHaveAttribute('href', '/sign-in')
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // BUG 1 (layout): os DOIS contadores ADJACENTES (seguidores → seguindo), o botão por ÚLTIMO —
+  // NUNCA o botão ENTRE os contadores. Posicional/red-first: os três nós já existiam, mas em ordem
+  // errada (seguidores / botão / seguindo), então só a ORDEM no textContent protege o fix.
+  it('os dois contadores ficam ADJACENTES e o botão por último (botão nunca entre eles)', () => {
+    mockSession = anon
+    mockFetch(() => ({ ok: true, body: {} }))
+    const { container } = renderSection(3, 5)
+    const row = container.firstElementChild as HTMLElement
+    // seguidores → seguindo → botão (o nudge anon "Entrar para seguir"), nesta ordem exata.
+    expect(row.textContent).toMatch(
+      new RegExp(
+        `${MP.seguidoresContagem.replace('{n}', '3')}[\\s\\S]*${MP.seguindoContagem.replace('{n}', '5')}[\\s\\S]*${MP.entrarParaSeguir}`,
+      ),
+    )
+    // aria-live é SÓ do contador de SEGUIDORES (o único que muda no clique). O "seguindo" é estático
+    // SSR e NÃO deve ser anunciado — senão um aria-live errôneo nele passaria batido.
+    const live = container.querySelectorAll('[aria-live]')
+    expect(live).toHaveLength(1)
+    expect(live[0]).toHaveTextContent(MP.seguidoresContagem.replace('{n}', '3'))
+    // O "seguindo" estático aparece, mas SEM aria-live.
+    const seguindo = screen.getByText(MP.seguindoContagem.replace('{n}', '5'))
+    expect(seguindo).not.toHaveAttribute('aria-live')
   })
 
   it('erro de sessão (fail-open): trata como anônimo → nudge, sem tocar a API', () => {

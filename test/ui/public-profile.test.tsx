@@ -117,4 +117,71 @@ describe('PublicProfileView (#129)', () => {
     expect(card2).toHaveAttribute('href', '/pt-BR/recipes/r-2')
     expect(card2).not.toHaveAttribute('href', '/recipes/r-2')
   })
+
+  // BUG 2: a foto de capa carrega no card do perfil (era o branch placeholder por falta de imageUrl).
+  it('receita COM imageUrl renderiza <img> (não o placeholder); alt === título', () => {
+    renderProfile(
+      baseProfile({
+        // avatar null ⇒ o ÚNICO <img> da árvore é a thumbnail da receita.
+        recipes: [
+          {
+            recipeId: 'r-1',
+            displayedTitle: 'Bolo de fubá',
+            origin: 'ai_chat',
+            imageUrl: 'https://abc.public.blob.vercel-storage.com/r/x.webp',
+          },
+        ],
+      }),
+    )
+    const img = screen.getByRole('img')
+    expect(img).toHaveAttribute('src', 'https://abc.public.blob.vercel-storage.com/r/x.webp')
+    expect(img).toHaveAttribute('alt', 'Bolo de fubá')
+  })
+
+  it('receita gerada por IA mostra o selo "gerada por IA" sobre a foto (#132)', () => {
+    renderProfile(
+      baseProfile({
+        recipes: [
+          {
+            recipeId: 'r-1',
+            displayedTitle: 'Bolo de fubá',
+            origin: 'ai_chat',
+            imageUrl: 'https://x/y.webp',
+            imageAiGenerated: true,
+          },
+        ],
+      }),
+    )
+    expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
+  })
+
+  it('receita SEM imageUrl ⇒ placeholder (queryByRole img é nulo, não <img> vazio)', () => {
+    renderProfile(
+      baseProfile({
+        // avatar null + sem foto na receita ⇒ NENHUM <img> na árvore.
+        recipes: [{ recipeId: 'r-1', displayedTitle: 'Pão caseiro', origin: 'user_edited' }],
+      }),
+    )
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+
+  // BUG 1: os DOIS contadores ADJACENTES (seguidores → seguindo) + o botão por ÚLTIMO. Red-first:
+  // antes o DOM era seguidores / botão / seguindo (o botão ENCRAVADO no meio). Posicional no
+  // textContent + exatamente UM aria-live (o de seguidores; o "seguindo" é estático SSR).
+  it('a linha social: contadores adjacentes (seguidores → seguindo) + botão ao final', () => {
+    const { container } = renderProfile(
+      baseProfile({ social: { followerCount: 3, followingCount: 5, followers: [], following: [] } }),
+    )
+    const seguidoresTxt = M.perfilPublico.seguidoresContagem.replace('{n}', '3')
+    const seguindoTxt = M.perfilPublico.seguindoContagem.replace('{n}', '5')
+    const row = screen.getByText(seguidoresTxt).closest('div') as HTMLElement
+    // seguidores → seguindo → botão (nudge anon "Entrar para seguir"), nesta ordem exata.
+    expect(row.textContent).toMatch(
+      new RegExp(`${seguidoresTxt}[\\s\\S]*${seguindoTxt}[\\s\\S]*${M.perfilPublico.entrarParaSeguir}`),
+    )
+    // aria-live SÓ no contador de seguidores (o único mutável). Um único nó na árvore inteira.
+    const live = container.querySelectorAll('[aria-live]')
+    expect(live).toHaveLength(1)
+    expect(live[0]).toHaveTextContent(seguidoresTxt)
+  })
 })
