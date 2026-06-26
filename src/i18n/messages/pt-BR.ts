@@ -778,6 +778,17 @@ export const ptBR = {
     erroSeguir: 'Não foi possível concluir. Tente de novo.',
     seguidoresTitulo: 'Seguidores',
     seguindoTitulo: 'Seguindo',
+    // Lista COMPLETA (#307) — modal "ver todos" aberto pelos contadores. Título reusa seguidores/seguindo;
+    // a descrição é o aria-describedby (#181). "Carregar mais" pagina; vazio/erro localizados.
+    listaDescricao: 'Lista completa de cozinheiros.',
+    carregarMais: 'Carregar mais',
+    // Estado de carregamento da página 1; rótulo do X (≠ 'Voltar', que é navegação); erro de "carregar
+    // mais" é INLINE (não apaga a lista já carregada) e separado do erro da página 1.
+    listaCarregando: 'Carregando…',
+    listaFechar: 'Fechar',
+    listaVazia: 'Ninguém por aqui ainda.',
+    listaErro: 'Não foi possível carregar a lista. Tente de novo.',
+    listaErroMais: 'Não foi possível carregar mais. Tente de novo.',
   },
   comunidade: {
     titulo: 'Comunidade',
