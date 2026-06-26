@@ -122,12 +122,14 @@ export function PublicProfileView({
         </div>
       </header>
 
-      {/* Social (#274): a ilha detém AMBOS os contadores ADJACENTES — SEGUIDORES (muda no clique) e
-          SEGUINDO (estático SSR, por prop) — seguidos do botão Seguir/Seguindo ao FINAL (anon →
-          "Entrar para seguir"; próprio perfil → sem botão). O botão NUNCA fica entre os contadores.
-          Tudo público, anon-cacheável (o "eu sigo?" é resolvido client-side dentro da ilha). */}
+      {/* Social (#274, estilo Instagram): a ilha mostra a LINHA DE STATS — "{n} receitas · {n} seguidores
+          · {n} seguindo" (número em negrito; contadores viram âncoras pras seções abaixo) — e o botão
+          Seguir/Seguindo numa LINHA ABAIXO (anon → "Entrar para seguir"; próprio perfil → sem botão).
+          `recipesCount` vem de `recipes.length` (sem nova query); RECEITAS e SEGUINDO são estáticos/SSR,
+          só SEGUIDORES é dinâmico ⇒ o perfil segue anon-cacheável (o "eu sigo?" é resolvido na ilha). */}
       <ProfileFollowSection
         handle={profile.handle}
+        recipesCount={profile.recipes.length}
         initialFollowerCount={profile.social.followerCount}
         followingCount={profile.social.followingCount}
         labels={mp}

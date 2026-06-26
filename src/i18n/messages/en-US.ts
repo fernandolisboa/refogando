@@ -733,6 +733,10 @@ export const enUS: Messages = {
     seguidorContagem: '{n} follower',
     seguidoresContagem: '{n} followers',
     seguindoContagem: '{n} following',
+    // Recipe counter on the Instagram-style stats line — comes from `recipes.length` (no extra query).
+    // Has a singular ("1 recipe"), mirroring the follower counter.
+    receitaContagem: '{n} recipe',
+    receitasContagem: '{n} recipes',
     entrarParaSeguir: 'Sign in to follow',
     erroSeguir: "Couldn't complete. Try again.",
     seguidoresTitulo: 'Followers',

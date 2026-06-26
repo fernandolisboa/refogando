@@ -1,11 +1,20 @@
 'use client'
 
 /**
- * Bloco SEGUIR do perfil público (#274, ADR-0024) — ILHA client (o `PublicProfileView` é PURO). Detém
- * AMBOS os contadores — SEGUIDORES (muda quando ESTE viewer segue, com `aria-live`) e SEGUINDO (estático
- * SSR, `followingCount` por prop) — ADJACENTES, seguidos do botão Seguir/Seguindo ao FINAL (o botão
- * NUNCA fica entre os contadores). O "seguindo" vive aqui (não num `<span>` irmão na view) só pra a
- * ordem do DOM ficar correta; continua estático ⇒ o perfil segue anon-cacheável (Modelo B/ADR-0020).
+ * Bloco SEGUIR do perfil público (#274, ADR-0024) — ILHA client (o `PublicProfileView` é PURO).
+ *
+ * Layout estilo Instagram (refinação de UX): uma LINHA DE STATS com TRÊS contadores inline e o número
+ * em NEGRITO — "{n} receitas · {n} seguidores · {n} seguindo" — e o BOTÃO Seguir/Seguindo numa LINHA
+ * ABAIXO (nunca inline com os contadores). RECEITAS (`recipesCount`, vem de `recipes.length` na view,
+ * sem nova query) e SEGUINDO (`followingCount`) são ESTÁTICOS/SSR; só SEGUIDORES é DINÂMICO (muda quando
+ * ESTE viewer segue), com `aria-live` no NÚMERO ⇒ o perfil segue anon-cacheável (Modelo B/ADR-0020).
+ *
+ * Contadores CLICÁVEIS (versão lite — a lista completa clicável é o #307): cada um é uma âncora pra MESMA
+ * página, apontando pros IDs das <section> definidas na `public-profile-view.tsx` (acoplamento DELIBERADO,
+ * mantido em sincronia aqui): `#perfil-receitas`, `#perfil-seguidores`, `#perfil-seguindo`. Receitas
+ * linka SEMPRE (a seção de receitas sempre existe). Seguidores/seguindo só viram link quando o contador
+ * é > 0 — a seção-alvo só renderiza com ≥ 1 (contador e lista concordam: ambos gateiam soft-deleted);
+ * contador 0 = texto puro, sem link (não há âncora pra onde ir).
  *
  * Diferente do `RecipeEngagementControls` (que recebe o estado do viewer por PROPS de SSR): o perfil é
  * ANÔN-CACHEÁVEL (Modelo B/ADR-0020), então NÃO há seed SSR do "eu sigo?". A ilha BUSCA o estado client-
@@ -22,13 +31,52 @@ import { Button } from '@/components/ui/button'
 import { useFollowToggle } from '@/hooks/use-follow-toggle'
 import type { Messages } from '@/i18n/messages'
 
+/**
+ * Um contador da linha de stats: "{n} <palavra>" com o NÚMERO em `<strong>` (negrito). `live` põe
+ * `aria-live="polite"` SÓ no número (usado pelo de seguidores, que muda no clique). `href` ⇒ âncora
+ * clicável (nome acessível = "n palavra"); sem `href` ⇒ texto puro (contador 0, sem seção-alvo).
+ */
+function StatCounter({
+  template,
+  n,
+  href,
+  live,
+}: {
+  template: string
+  n: number
+  href?: string
+  live?: boolean
+}) {
+  // O template tem o placeholder '{n}'; partir nele deixa o número isolado pra ir em <strong>.
+  const [before = '', after = ''] = template.split('{n}')
+  const inner = (
+    <>
+      {before}
+      <strong className="font-semibold text-fg" aria-live={live ? 'polite' : undefined}>
+        {n}
+      </strong>
+      {after}
+    </>
+  )
+  return href ? (
+    <a href={href} className="transition-colors hover:text-fg">
+      {inner}
+    </a>
+  ) : (
+    <span>{inner}</span>
+  )
+}
+
 export function ProfileFollowSection({
   handle,
+  recipesCount,
   initialFollowerCount,
   followingCount,
   labels,
 }: {
   handle: string
+  /** Contagem de RECEITAS públicas — vem de `recipes.length` na view (estática SSR, sem nova query). */
+  recipesCount: number
   initialFollowerCount: number
   /** Contagem de SEGUINDO — estática SSR (não muda no clique do viewer; perfil anon-cacheável). */
   followingCount: number
@@ -84,41 +132,59 @@ export function ProfileFollowSection({
   // pro logado). Logado+resolvido+não-próprio → botão. Próprio/carregando → nada.
   const resolvedAnon = !isPending && (!!error || !session)
 
+  const seguidoresTemplate = followerCount === 1 ? mp.seguidorContagem : mp.seguidoresContagem
+  const receitasTemplate = recipesCount === 1 ? mp.receitaContagem : mp.receitasContagem
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <span aria-live="polite" className="text-sm text-muted">
-        {(followerCount === 1 ? mp.seguidorContagem : mp.seguidoresContagem).replace(
-          '{n}',
-          String(followerCount),
-        )}
-      </span>
-      {/* SEGUINDO — estático SSR, ADJACENTE ao de seguidores. SEM aria-live (não muda no clique). */}
-      <span className="text-sm text-muted">
-        {mp.seguindoContagem.replace('{n}', String(followingCount))}
-      </span>
+    <div className="flex flex-col gap-3">
+      {/* LINHA DE STATS estilo Instagram (número em negrito). IDs das âncoras ACOPLADOS às <section> da
+          public-profile-view.tsx — manter em sincronia. Receitas linka SEMPRE (seção sempre existe);
+          seguidores/seguindo SÓ quando > 0 (a seção-alvo só renderiza com ≥1). Separadores aria-hidden. */}
+      <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+        <StatCounter template={receitasTemplate} n={recipesCount} href="#perfil-receitas" />
+        <span aria-hidden="true">·</span>
+        <StatCounter
+          template={seguidoresTemplate}
+          n={followerCount}
+          href={followerCount > 0 ? '#perfil-seguidores' : undefined}
+          live
+        />
+        <span aria-hidden="true">·</span>
+        <StatCounter
+          template={mp.seguindoContagem}
+          n={followingCount}
+          href={followingCount > 0 ? '#perfil-seguindo' : undefined}
+        />
+      </p>
+      {/* BOTÃO numa LINHA ABAIXO dos contadores (≠ inline): Seguir/Seguindo (logado, não-próprio),
+          "Entrar para seguir" (anon) ou nada (próprio/carregando). */}
       {resolvedAnon ? (
-        <Button asChild variant="secondary" size="sm">
-          <Link href="/sign-in">{mp.entrarParaSeguir}</Link>
-        </Button>
+        <div>
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/sign-in">{mp.entrarParaSeguir}</Link>
+          </Button>
+        </div>
       ) : authed && stateLoaded && !isSelf ? (
-        <Button
-          type="button"
-          onClick={onFollowClick}
-          disabled={busy}
-          aria-pressed={isFollowing}
-          aria-busy={busy}
-          variant={isFollowing ? 'default' : 'secondary'}
-          size="sm"
-          className="disabled:opacity-70"
-        >
-          {isFollowing ? mp.seguindo : mp.seguir}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            onClick={onFollowClick}
+            disabled={busy}
+            aria-pressed={isFollowing}
+            aria-busy={busy}
+            variant={isFollowing ? 'default' : 'secondary'}
+            size="sm"
+            className="disabled:opacity-70"
+          >
+            {isFollowing ? mp.seguindo : mp.seguir}
+          </Button>
+          {err && (
+            <span role="alert" className="text-sm font-medium text-fg">
+              {mp.erroSeguir}
+            </span>
+          )}
+        </div>
       ) : null}
-      {err && (
-        <span role="alert" className="text-sm font-medium text-fg">
-          {mp.erroSeguir}
-        </span>
-      )}
     </div>
   )
 }
