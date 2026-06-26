@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 296 80" role="img" aria-label="Refogando">
+<!-- Lockup horizontal: simbolo (frigideira-R) + wordmark serifada "Refogando". -->
+<!-- simbolo -->
+<g transform="translate(8,8)">
+  <rect x="46" y="27.5" width="16" height="9" rx="4.5" fill="#9E4430"/>
+  <circle cx="27" cy="32" r="23" fill="#C2553A"/>
+  <circle cx="27" cy="32" r="19.5" fill="#3A2E25"/>
+  <g fill="#FBF7EF">
+    <rect x="19" y="17" width="8" height="30"/>
+    <rect x="14" y="17" width="13" height="3"/>
+    <rect x="13" y="44" width="16" height="3"/>
+    <path fill-rule="evenodd" d="M25 17 C45 16, 45 33, 25 33 Z M27 20.5 C39 20.5, 39 29.5, 27 29.5 Z"/>
+    <path d="M23 30 L32 30 L41 47 L33 47 Z"/>
+    <rect x="32" y="44" width="11" height="3"/>
+  </g>
+</g>
+<!-- wordmark -->
+<text x="84" y="52" font-family="Georgia, 'Times New Roman', serif" font-size="40" fill="#3A2E25">Refogando</text>
+</svg>

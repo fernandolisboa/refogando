@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Refogando">
+  <!-- Icone de app 32px: fundo creme arredondado + R/frigideira simplificado (sem fios de aroma). -->
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="#FBF7EF"/>
+  <g transform="translate(2 2.5) scale(0.4375)">
+    <circle cx="32" cy="24" r="15" fill="#3A2E25"/>
+    <rect x="15" y="10" width="9" height="42" rx="2.5" fill="#3A2E25"/>
+    <path d="M33 35 L48 53" fill="none" stroke="#3A2E25" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="33" cy="23" r="8" fill="#C2553A"/>
+    <circle cx="33" cy="23" r="7" fill="#FBF7EF"/>
+    <circle cx="34.5" cy="25" r="2.8" fill="#C2553A"/>
+  </g>
+</svg>

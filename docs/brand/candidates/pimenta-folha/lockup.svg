@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Lockup horizontal: simbolo pimenta-folha + wordmark serifado "Refogando" -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 312 80" width="312" height="80" role="img" aria-label="Refogando">
+  <!-- simbolo (mesma geometria do symbol.svg), centralizado verticalmente -->
+  <g transform="translate(8,8)">
+    <path d="M31 8
+             C42 10 49 18 49 30
+             C49 42 41 52 33 58
+             C27 52 15 42 15 30
+             C15 18 22 10 31 8 Z"
+          fill="#C2553A"/>
+    <path d="M31 15 C30 27 31 41 33 54"
+          fill="none" stroke="#FBF7EF" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M30 14
+             C26 9 28 3 33 2
+             C36 6 35 11 30 14 Z"
+          fill="#4E8A5F"/>
+  </g>
+  <!-- wordmark serifado em cafe -->
+  <text x="88" y="53" font-family="Georgia, 'Times New Roman', serif"
+        font-size="40" font-weight="400" letter-spacing="0.3"
+        fill="#3A2E25">Refogando</text>
+</svg>

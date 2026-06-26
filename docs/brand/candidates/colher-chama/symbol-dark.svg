@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Refogando">
+  <!-- Variante para fundo escuro (#3A2E25). Chama em paprica com keyline creme
+       para garantir contraste; colher em creme. -->
+  <!-- Chama (paprica) com contorno creme para destacar do fundo escuro -->
+  <path d="M32 5
+           C 41 16, 47 25, 47 36
+           C 47 47, 40 55, 32 55
+           C 24 55, 17 47, 17 36
+           C 17 25, 23 16, 32 5 Z"
+        fill="#C2553A" stroke="#FBF7EF" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Nucleo claro (creme) — brilho central -->
+  <path d="M32 23
+           C 36 29, 38.5 33, 38.5 38.5
+           C 38.5 45, 35.5 49.5, 32 49.5
+           C 28.5 49.5, 25.5 45, 25.5 38.5
+           C 25.5 33, 28 29, 32 23 Z"
+        fill="#F4EEE2"/>
+  <!-- Colher de pau em creme cruzando a chama -->
+  <g transform="rotate(-45 32 32)">
+    <line x1="12" y1="32" x2="40" y2="32"
+          stroke="#FBF7EF" stroke-width="6" stroke-linecap="round"/>
+    <ellipse cx="44" cy="32" rx="8" ry="6" fill="#FBF7EF"/>
+  </g>
+</svg>

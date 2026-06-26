@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Refogando">
+  <!-- Favicon/app-tile 32px: fundo creme arredondado + frigideira simplificada -->
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="#FBF7EF" />
+  <!-- aroma -->
+  <g fill="none" stroke="#3A2E25" stroke-width="1.5" stroke-linecap="round">
+    <path d="M12 7 q-2 -2 0 -4" />
+    <path d="M17 6 q-2 -2 0 -4" />
+  </g>
+  <!-- cabo -->
+  <rect x="21" y="13.5" width="9" height="5" rx="2.5" fill="#9E4430" />
+  <!-- corpo de ferro com aro paprica -->
+  <circle cx="14" cy="17" r="8.5" fill="#3A2E25" stroke="#C2553A" stroke-width="1.6" />
+  <!-- aromaticos -->
+  <circle cx="11.5" cy="15" r="2.2" fill="#4E8A5F" />
+  <circle cx="16.5" cy="14.5" r="1.7" fill="#C2553A" />
+  <circle cx="15" cy="20" r="1.8" fill="#FBF7EF" />
+</svg>

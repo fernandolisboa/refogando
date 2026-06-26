@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Favicon/icone de app 32px: fundo creme arredondado + simbolo simplificado -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Refogando">
+  <rect x="0" y="0" width="32" height="32" rx="7" ry="7" fill="#FBF7EF"/>
+  <g transform="translate(1.5,2.2) scale(0.45)">
+    <path d="M31 8
+             C42 10 49 18 49 30
+             C49 42 41 52 33 58
+             C27 52 15 42 15 30
+             C15 18 22 10 31 8 Z"
+          fill="#C2553A"/>
+    <path d="M31 15 C30 27 31 41 33 54"
+          fill="none" stroke="#FBF7EF" stroke-width="4.4" stroke-linecap="round"/>
+    <path d="M30 14
+             C26 9 28 3 33 2
+             C36 6 35 11 30 14 Z"
+          fill="#4E8A5F"/>
+  </g>
+</svg>

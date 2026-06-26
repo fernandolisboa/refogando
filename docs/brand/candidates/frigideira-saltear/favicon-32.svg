@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Refogando">
+  <!-- icone de app 32px: fundo creme arredondado + frigideira-saltear simplificada (sem fios/aromaticos creme) -->
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="#FBF7EF"/>
+  <!-- cabo -->
+  <rect x="20.5" y="21.3" width="9" height="3.4" rx="1.7" fill="#9E4430" transform="rotate(-13 22.5 23)"/>
+  <!-- panela: aro paprica + superficie cafe -->
+  <ellipse cx="13" cy="23" rx="9.5" ry="4.4" fill="#C2553A"/>
+  <ellipse cx="13" cy="22.7" rx="7.5" ry="3.2" fill="#3A2E25"/>
+  <!-- aromaticos no ar, em arco -->
+  <circle cx="7.5" cy="18" r="1.7" fill="#4E8A5F"/>
+  <circle cx="12" cy="12.5" r="1.7" fill="#C2553A"/>
+  <circle cx="17.5" cy="11" r="1.7" fill="#3F7A50"/>
+  <circle cx="23" cy="14" r="1.5" fill="#4E8A5F"/>
+</svg>
