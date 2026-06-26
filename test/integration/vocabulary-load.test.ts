@@ -4,6 +4,7 @@ import {
   __clearVocabularyCache,
   loadVocabulary,
   VOCABULARY_SCOPES,
+  type VocabularyTermView,
 } from '@/server/vocabulary/load'
 import { getDb } from '@/server/deps'
 import { seedVocabularyCozinhas } from '../helpers/vocabulary'
@@ -67,11 +68,18 @@ describe('loadVocabulary (#315) — leitor por status/superfície', () => {
     await insertTerm({ slug: 'd-merged', status: 'merged', sort: 92 })
     await insertTerm({ slug: 'd-rej', status: 'rejected', sort: 93 })
 
-    const slugs = (await loadVocabulary(getDb(), 'cozinha', 'display')).map((r) => r.slug)
+    const rows = await loadVocabulary(getDb(), 'cozinha', 'display')
+    const slugs = rows.map((r) => r.slug)
     expect(slugs).toContain('d-depr')
     expect(slugs).not.toContain('d-sugg')
     expect(slugs).not.toContain('d-merged')
     expect(slugs).not.toContain('d-rej')
+    // a depreciada entra na ordenação mesclada no SEU slot de sort (90 → por último).
+    const expected = [
+      ...COZINHA_SEED.map((t) => ({ slug: t.slug, sort: t.sort })),
+      { slug: 'd-depr', sort: 90 },
+    ].sort((a, b) => a.sort - b.sort || a.slug.localeCompare(b.slug))
+    expect(rows.map((r) => ({ slug: r.slug, sort: r.sort }))).toEqual(expected)
   })
 
   it('ordena por sort asc e desempata por slug asc (resultado completo)', async () => {
@@ -129,6 +137,24 @@ describe('loadVocabulary (#315) — leitor por status/superfície', () => {
 
     const display = (await loadVocabulary(getDb(), 'cozinha', 'display')).map((r) => r.slug)
     expect(display).toContain('depr2')
+  })
+
+  it('snapshot é congelado: mutar o resultado não envenena o cache compartilhado', async () => {
+    await seedVocabularyCozinhas(getDb())
+    const first = await loadVocabulary(getDb(), 'cozinha', 'active')
+
+    // array e linhas congelados → mutação acidental falha no ponto de chamada (strict mode).
+    expect(Object.isFrozen(first)).toBe(true)
+    expect(Object.isFrozen(first[0])).toBe(true)
+    expect(() => (first as VocabularyTermView[]).reverse()).toThrow()
+    expect(() => {
+      ;(first[0] as VocabularyTermView).slug = 'mutado'
+    }).toThrow()
+
+    // o segundo chamador (cache hit dentro do TTL) recebe o snapshot intacto.
+    const second = await loadVocabulary(getDb(), 'cozinha', 'active')
+    expect(second.map((r) => r.slug)).toEqual(first.map((r) => r.slug))
+    expect(second.map((r) => r.slug)).not.toContain('mutado')
   })
 
   it('VOCABULARY_SCOPES expõe exatamente active e display', () => {

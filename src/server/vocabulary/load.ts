@@ -28,6 +28,11 @@ export type VocabularyTermView = {
   sort: number
 }
 
+// O snapshot é COMPARTILHADO entre requisições da mesma instância serverless dentro do TTL, então
+// o leitor devolve um array CONGELADO de linhas congeladas: mutar acidentalmente (sort/reverse/push
+// ou setar um campo) vira erro no ponto de chamada, em vez de envenenar o cache p/ todos os viewers.
+export type ReadonlyVocabulary = readonly Readonly<VocabularyTermView>[]
+
 // scope → status visíveis (ADR-0025 Decisão 4). `as const satisfies` preserva os literais p/
 // que `keyof` infira a união 'active' | 'display' (uma anotação `Record` simples alargaria).
 export const VOCABULARY_SCOPES = {
@@ -43,19 +48,19 @@ export type VocabularyScope = keyof typeof VOCABULARY_SCOPES
 // por aqui (lê o DB direto) — ver docstring. Chaveado por `${kind}:${scope}` (chaves independentes).
 const READ_TTL_MS = 30_000
 
-type CacheEntry = { expiresAt: number; snapshot: VocabularyTermView[] }
+type CacheEntry = { expiresAt: number; snapshot: ReadonlyVocabulary }
 const cache = new Map<string, CacheEntry>()
 
 export async function loadVocabulary(
   db: Database,
   kind: VocabularyKind,
   scope: VocabularyScope,
-): Promise<VocabularyTermView[]> {
+): Promise<ReadonlyVocabulary> {
   const key = `${kind}:${scope}`
   const entry = cache.get(key)
   if (entry && entry.expiresAt > Date.now()) return entry.snapshot
 
-  const snapshot = await db
+  const rows = await db
     .select({
       slug: vocabularyTerm.slug,
       labelPtBr: vocabularyTerm.labelPtBr,
@@ -69,9 +74,11 @@ export async function loadVocabulary(
     // (kind,status,sort) do #314 respalda o WHERE; o PG adiciona um nó de sort p/ o desempate por slug.
     .orderBy(asc(vocabularyTerm.sort), asc(vocabularyTerm.slug))
 
+  // Congela array + linhas: o snapshot é compartilhado por TODAS as requisições da instância
+  // dentro do TTL; mutação acidental por um futuro consumidor (#316/#317/#318) falharia AQUI em
+  // vez de envenenar silenciosamente o cache. Custo zero por leitura (congela uma vez, na escrita).
+  const snapshot: ReadonlyVocabulary = Object.freeze(rows.map((r) => Object.freeze(r)))
   cache.set(key, { expiresAt: Date.now() + READ_TTL_MS, snapshot })
-  // v1 devolve o array do cache POR REFERÊNCIA; consumidores são read-only por convenção
-  // (#316/#317 NÃO devem mutar o snapshot compartilhado). Sem freeze/clone agora p/ não over-engineerar.
   return snapshot
 }
 
