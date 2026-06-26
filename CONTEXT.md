@@ -65,8 +65,8 @@ _Avoid_: Prompt (cru, como termo de domínio); confundir o texto livre com o Bri
 _Avoid_: chamar a Extração de "geração"; tratar a entrada inteligente como se inventasse ingredientes.
 
 **Cozinha** (cuisine):
-Tradição gastronômica de origem geográfica/cultural (italiana, japonesa, baiana), vocabulário controlado referenciado pela Receita. Um dos eixos em que o "perfil culinário" se concretiza. Ortogonal a Categoria.
-_Avoid_: Kitchen; Culinária (quando significar Perfil); Categoria; Estilo.
+Tradição gastronômica de origem geográfica/cultural (italiana, japonesa, baiana), **vocabulário controlado data-driven** referenciado pela Receita — a lista vive em dado (gerida sem deploy), não em código. Cada cozinha tem um **slug** estável (identidade language-neutral, congelada como o slug de receita) + **rótulos por locale**. Continua **controlada** (curada, conjunto fechado-num-instante), distinta da Tag (livre): quem não acha a sua escolhe **"Outra"** e a sugestão entra na fila do Curador — vira faceta só quando aprovada (a IA nunca inventa cozinha; termo novo nasce de sugestão humana). Um dos eixos em que o "perfil culinário" se concretiza. Ortogonal a Categoria. Ver ADR-0025.
+_Avoid_: Kitchen; Culinária (quando significar Perfil); Categoria; Estilo; tratar como vocabulário aberto/livre (isso é Tag).
 
 **Categoria** (curso):
 Papel da receita na refeição (entrada, prato principal, sobremesa, bebida, molho), vocabulário controlado ortogonal a Cozinha. Restrita a curso/papel — nunca um balde genérico.
@@ -89,8 +89,8 @@ Conjunto estruturado de parâmetros que o usuário dá à IA para gerar uma rece
 _Avoid_: Query; Filtro; Prompt (cru); Pedido; confundir o pedido com o entregue.
 
 **Vocabulário culinário**:
-Kernel de enums compartilhado (cozinha, dificuldade, restrição, porções) usado tanto pela Busca (como filtros) quanto pela criação estruturada (como constraints). Mesma taxonomia, **semântica oposta**: filtrar o existente vs. gerar o novo.
-_Avoid_: tags (vago); filtros (só vale pra busca).
+Kernel compartilhado usado tanto pela Busca (como filtros) quanto pela criação estruturada (como constraints) — mesma taxonomia, **semântica oposta**: filtrar o existente vs. gerar o novo. **Cozinha** é **vocabulário controlado data-driven** (vive em dado, gerido sem deploy; restrição segue essa direção na fase 2 — ADR-0025); **dificuldade e porções** seguem **faixas numéricas** validadas no app (ADR-0009). Controlado **≠** aberto: o conjunto é curado (o livre é a Tag).
+_Avoid_: tags (vago); filtros (só vale pra busca); chamar de "enum" (cozinha não é mais enum de código).
 
 **Busca / Consulta**:
 Busca = o ato de **encontrar** receitas existentes por nome, ingrediente ou perfil. Consulta = o conjunto de parâmetros (termo + facetas resolvidas). Opera sobre o que já existe — **nunca cria**; no máximo ranqueia/interpreta. Na UI, a **Descoberta é a home** (`/{locale}`): o app é descoberta-first — o **feed** (navegar o acervo) é o estado de repouso, **server-rendered e indexável**, e a Busca **refina inline** a mesma superfície (não é mais tela separada nem "a home"; o `/recipes` que era feed à parte funde-se na home — ver ADR-0020). A descoberta oferece, de forma **permanente** (não só na tela sem resultado), uma **ponte explícita** para a Criação — "gerar com IA" — porque gerar é o mote do app; mas o **ato de gerar pertence sempre à Sessão de criação, nunca à Busca**. A ponte não viola o invariante: clicar nela leva à Criação; a Busca segue só encontrando. A Busca abrange **dois corpora** — Receitas e **Cozinheiros** (ADR-0024): o mesmo termo flutua um **cluster compacto de Cozinheiros** (match por nome/@handle) acima da lista de Receitas, **sem toggle** (a força do match é o sinal de intenção — "alfredo" traz o Cozinheiro *e* o molho). Buscar pessoas também **nunca cria**.
@@ -133,7 +133,7 @@ Nome do produto/app — gerúndio de "refogar" (dourar alho e cebola, onde a com
 _Avoid_: Refogar/Refogado como entidade, status ou tag; "Refogando" como termo técnico.
 
 **Usuário e papéis**:
-A pessoa por trás de uma conta, com um papel: **Visitante** (anônimo — busca, gera efêmero, compartilha por texto), **Usuário** (padrão — salva, publica, vota, favorita), **Curador** (revisa receitas reportadas/com aviso e cura o catálogo; não mexe em config), **Admin** (tudo + config). Salvar/publicar exigem conta.
+A pessoa por trás de uma conta, com um papel: **Visitante** (anônimo — busca, gera efêmero, compartilha por texto), **Usuário** (padrão — salva, publica, vota, favorita), **Curador** (revisa receitas reportadas/com aviso, cura o catálogo e revisa a **fila de sugestões de cozinha** — "Outra" — aprovando/mesclando/rejeitando, ADR-0025; não mexe em config), **Admin** (tudo + config, incl. autoria proativa da taxonomia de cozinhas). Salvar/publicar exigem conta.
 _Avoid_: Conta (como sinônimo da pessoa); "author" string única; Moderador (use Curador).
 
 **Cozinheiro** (fachada social do Usuário):
