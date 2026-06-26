@@ -810,6 +810,33 @@ export const enUS: Messages = {
     webAllowlistLabel: 'Allowed domains',
     webAllowlistAjuda: 'One domain per line (e.g., tudogostoso.com.br). Empty blocks everything.',
     webErroConfig: 'Invalid configuration. Review the domains (one hostname per line, no http:// or path).',
+    // #273: suggested domains (click-to-add) — a curation shortcut. Clicking only appends to the field
+    // above; adding = vetting (it does not save or turn discovery on). Both groups show (allowlist is global).
+    webSugeridosTitulo: 'Suggested domains',
+    webSugeridosDescricao:
+      'Shortcuts to fill the list. Clicking only appends the domain to the field above — it does not save or turn discovery on.',
+    webSugeridosGrupoBrasil: 'Brazil',
+    webSugeridosGrupoInternacional: 'International',
+    webSugeridoAdicionarAria: 'Add {dominio} to the list',
+    webSugeridoJaAdicionado: 'already in the list',
+    webVetarLembrete:
+      'Adding a domain = vetting it. Check the robots.txt and terms of use of the site first.',
+    // #273: health probe — paste a sample recipe URL and check (a) schema.org/Recipe JSON-LD and (b) the
+    // origin robots.txt, BEFORE vetting. Verdict by copy + state (no color alone — AA a11y).
+    webProbeUrlLabel: 'Check a sample recipe',
+    webProbePlaceholder: 'https://site.com/cake-recipe',
+    webProbeChecar: 'Check',
+    webProbeChecando: 'Checking…',
+    webProbeJsonLdSim: 'Has a JSON-LD recipe (schema.org/Recipe).',
+    webProbeJsonLdIdiomaNaoSuportado: 'Has a JSON-LD recipe, but in a language outside PT/EN.',
+    webProbeJsonLdNao: 'No usable JSON-LD recipe.',
+    webProbeRobotsPermite: 'robots.txt allows RefogandoBot on that path.',
+    webProbeRobotsBloqueia: 'robots.txt blocks RefogandoBot on that path.',
+    webProbeImportavel: 'Ready to import after you vet the domain.',
+    webProbeNaoImportavel: 'This page cannot be imported yet.',
+    webProbeNaoCarregou: 'Could not load the page. Check the URL.',
+    webProbeErro: 'Could not check right now. Try again.',
+    webProbeUrlInvalida: 'Invalid URL. Use a public http(s) site.',
     // #237: AI-assisted catalog disclosure (SEO #187) — on/off + editable text. Editorial COURTESY:
     // shows only on catalog recipes when on; NEVER replaces the mandatory AI-generation seals.
     catalogoAvisoTitulo: 'Catalog disclosure (AI-assisted)',

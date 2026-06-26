@@ -18,6 +18,13 @@
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
+import {
+  SUGGESTED_DOMAINS,
+  addDomainToAllowlistText,
+  isSuggestionPresent,
+} from '@/domain/suggested-domains'
+import { isImportable, type ProbeReport } from '@/domain/web-search-probe'
+import type { Messages } from '@/i18n/messages'
 
 /** textarea (uma linha por domínio) → string[] (descarta linhas vazias/espaços). */
 function textToAllowlist(text: string): string[] {
@@ -32,6 +39,9 @@ function allowlistToText(allowlist: string[]): string {
   return allowlist.join('\n')
 }
 
+/** Grupos renderizados (os DOIS — a allowlist é global; pt-BR e en-US consomem a mesma). */
+const SUGGESTED_GROUPS = ['pt-BR', 'en-US'] as const
+
 export function WebSearchConfigSection() {
   const { messages } = useLocale()
   const m = messages.admin
@@ -44,6 +54,12 @@ export function WebSearchConfigSection() {
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [errorKey, setErrorKey] = useState<'erroConfig' | 'erroGenerico' | null>(null)
+
+  // Probe de saúde (#273): estado LOCAL e isolado do save da allowlist. O probe não toca a config.
+  const [probeUrl, setProbeUrl] = useState('')
+  const [probeStatus, setProbeStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [probeReport, setProbeReport] = useState<ProbeReport | null>(null)
+  const [probeErrorKey, setProbeErrorKey] = useState<'invalida' | 'generico' | null>(null)
 
   async function load() {
     setLoading(true)
@@ -69,6 +85,39 @@ export function WebSearchConfigSection() {
     const t = setTimeout(() => void load(), 0)
     return () => clearTimeout(t)
   }, [])
+
+  /** Acrescenta um domínio sugerido ao textarea (estado local) — NÃO salva nem ativa (sugerir ≠ vetar). */
+  function addSuggested(domain: string) {
+    setAllowlistText((prev) => addDomainToAllowlistText(prev, domain))
+    setStatus('idle')
+  }
+
+  /** Checa uma URL de exemplo via a rota admin-only (JSON-LD + robots). Assistivo: erro vira label, nunca quebra. */
+  async function handleProbe() {
+    const url = probeUrl.trim()
+    if (probeStatus === 'loading' || url === '') return
+    setProbeStatus('loading')
+    setProbeReport(null)
+    setProbeErrorKey(null)
+    try {
+      const res = await fetch('/api/admin/web-search/probe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        setProbeErrorKey(body?.error === 'url_invalida' ? 'invalida' : 'generico')
+        setProbeStatus('error')
+        return
+      }
+      setProbeReport((await res.json()) as ProbeReport)
+      setProbeStatus('done')
+    } catch {
+      setProbeErrorKey('generico')
+      setProbeStatus('error')
+    }
+  }
 
   async function handleSave() {
     if (saving) return
@@ -168,6 +217,47 @@ export function WebSearchConfigSection() {
               </span>
             </div>
 
+            {/* Domínios sugeridos (#273): atalho de curadoria. Clicar SÓ acrescenta ao textarea acima —
+                não salva nem ativa (sugerir ≠ vetar). Os DOIS grupos aparecem (a allowlist é global). */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-sm font-medium text-fg">{m.webSugeridosTitulo}</h3>
+                <p className="max-w-[60ch] text-xs text-muted">{m.webSugeridosDescricao}</p>
+              </div>
+              {SUGGESTED_GROUPS.map((grupo) => (
+                <div key={grupo} className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-muted">
+                    {grupo === 'pt-BR'
+                      ? m.webSugeridosGrupoBrasil
+                      : m.webSugeridosGrupoInternacional}
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTED_DOMAINS[grupo].map((d) => {
+                      const present = isSuggestionPresent(allowlistText, d)
+                      return (
+                        <Button
+                          key={d}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={present}
+                          aria-label={
+                            present
+                              ? `${d} — ${m.webSugeridoJaAdicionado}`
+                              : m.webSugeridoAdicionarAria.replace('{dominio}', d)
+                          }
+                          onClick={() => addSuggested(d)}
+                        >
+                          {present ? `${d} ✓` : d}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              <p className="max-w-[60ch] text-xs text-muted">{m.webVetarLembrete}</p>
+            </div>
+
             <Button
               type="button"
               size="sm"
@@ -178,6 +268,53 @@ export function WebSearchConfigSection() {
             >
               {saving ? m.salvando : m.salvar}
             </Button>
+
+            {/* Probe de saúde (#273): cola uma URL e checa JSON-LD + robots ANTES de vetar. Isolado do
+                save da allowlist — o probe NÃO toca a config. Veredito por cópia + estado (a11y AA). */}
+            <div className="flex flex-col gap-2 border-t border-border pt-4">
+              <label htmlFor="web-search-probe-url" className="text-sm font-medium text-fg">
+                {m.webProbeUrlLabel}
+              </label>
+              <div className="flex flex-wrap items-start gap-2">
+                <input
+                  id="web-search-probe-url"
+                  type="url"
+                  value={probeUrl}
+                  placeholder={m.webProbePlaceholder}
+                  onChange={(e) => {
+                    setProbeUrl(e.target.value)
+                    setProbeStatus('idle')
+                    setProbeReport(null)
+                    setProbeErrorKey(null)
+                  }}
+                  className="w-full max-w-md rounded-md border border-border bg-bg px-3 py-2 font-mono text-sm text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleProbe}
+                  disabled={probeStatus === 'loading'}
+                  aria-busy={probeStatus === 'loading'}
+                >
+                  {probeStatus === 'loading' ? m.webProbeChecando : m.webProbeChecar}
+                </Button>
+              </div>
+
+              <div aria-live="polite" className="flex flex-col gap-1 text-sm">
+                {probeStatus === 'error' && (
+                  <p
+                    role="alert"
+                    className="rounded-md border border-border bg-bg px-3 py-2 font-medium text-fg"
+                  >
+                    {probeErrorKey === 'invalida' ? m.webProbeUrlInvalida : m.webProbeErro}
+                  </p>
+                )}
+                {probeStatus === 'done' && probeReport && (
+                  <ProbeResult report={probeReport} m={m} />
+                )}
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -196,5 +333,46 @@ export function WebSearchConfigSection() {
         </p>
       )}
     </section>
+  )
+}
+
+/** Ícone DECORATIVO do veredito (aria-hidden) — o sentido é carregado pela cópia, nunca só pela cor/ícone. */
+function VerdictIcon({ ok }: { ok: boolean }) {
+  return <span aria-hidden="true">{ok ? '✓' : '✕'}</span>
+}
+
+/**
+ * Renderiza o veredito do probe (#273). Ramifica em `fetched` PRIMEIRO: não carregou ⇒ só "não carregou"
+ * (suprime as linhas por-sinal, que seriam indeterminadas). Carregou ⇒ linha JSON-LD (3 estados), linha
+ * robots (2) e o veredito `isImportable`. A cópia de cada linha vai num <span> próprio (o ícone fica fora)
+ * para o nome acessível casar exatamente o rótulo.
+ */
+function ProbeResult({ report, m }: { report: ProbeReport; m: Messages['admin'] }) {
+  if (!report.fetched) {
+    return <p className="font-medium text-fg">{m.webProbeNaoCarregou}</p>
+  }
+  const jsonLdLabel =
+    report.jsonLd === 'present'
+      ? m.webProbeJsonLdSim
+      : report.jsonLd === 'present_unsupported_locale'
+        ? m.webProbeJsonLdIdiomaNaoSuportado
+        : m.webProbeJsonLdNao
+  const robotsLabel = report.robotsAllowed ? m.webProbeRobotsPermite : m.webProbeRobotsBloqueia
+  const importable = isImportable(report)
+  return (
+    <>
+      <p className="flex items-start gap-1 text-fg">
+        <VerdictIcon ok={report.jsonLd === 'present'} />
+        <span>{jsonLdLabel}</span>
+      </p>
+      <p className="flex items-start gap-1 text-fg">
+        <VerdictIcon ok={report.robotsAllowed} />
+        <span>{robotsLabel}</span>
+      </p>
+      <p className="flex items-start gap-1 font-medium text-fg">
+        <VerdictIcon ok={importable} />
+        <span>{importable ? m.webProbeImportavel : m.webProbeNaoImportavel}</span>
+      </p>
+    </>
   )
 }

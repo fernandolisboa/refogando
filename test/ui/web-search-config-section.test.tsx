@@ -125,3 +125,130 @@ describe('WebSearchConfigSection (#164)', () => {
     expect(sent.webSearch.allowlist).toEqual(['a.com'])
   })
 })
+
+// ── #273: domínios sugeridos (click-to-add) ───────────────────────────────────────
+describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
+  it('clicar num sugerido acrescenta ao textarea e desabilita o chip (dedup)', async () => {
+    mockFetch({
+      'GET /api/admin/config': { ok: true, status: 200, body: configBody(false, []) },
+    })
+    const user = userEvent.setup()
+    renderSection()
+
+    const chip = await screen.findByRole('button', {
+      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'tudogostoso.com.br'),
+    })
+    expect(chip).toBeEnabled()
+    await user.click(chip)
+
+    const textarea = screen.getByLabelText(A.webAllowlistLabel) as HTMLTextAreaElement
+    expect(textarea.value).toBe('tudogostoso.com.br')
+    // após o clique, o chip vira "já na lista" e fica desabilitado (dedup).
+    const present = screen.getByRole('button', { name: /tudogostoso\.com\.br/ })
+    expect(present).toBeDisabled()
+  })
+
+  it('chip de domínio já presente na allowlist nasce desabilitado', async () => {
+    mockFetch({
+      'GET /api/admin/config': {
+        ok: true,
+        status: 200,
+        body: configBody(true, ['tudogostoso.com.br']),
+      },
+    })
+    renderSection()
+
+    const present = await screen.findByRole('button', { name: /tudogostoso\.com\.br/ })
+    expect(present).toBeDisabled()
+    // um sugerido AUSENTE segue habilitado.
+    expect(
+      screen.getByRole('button', {
+        name: A.webSugeridoAdicionarAria.replace('{dominio}', 'panelinha.com.br'),
+      }),
+    ).toBeEnabled()
+  })
+
+  it('clicar num sugerido NÃO dispara save (PUT) — sugerir ≠ vetar', async () => {
+    const { calls } = mockFetch({
+      'GET /api/admin/config': { ok: true, status: 200, body: configBody(false, []) },
+    })
+    const user = userEvent.setup()
+    renderSection()
+
+    const chip = await screen.findByRole('button', {
+      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'allrecipes.com'),
+    })
+    await user.click(chip)
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false)
+  })
+})
+
+// ── #273: probe de saúde (JSON-LD + robots) ───────────────────────────────────────
+describe('WebSearchConfigSection — probe de saúde (#273)', () => {
+  const PROBE_URL = '/api/admin/web-search/probe'
+
+  async function runProbe(probeEntry: FetchResult) {
+    const mocks = mockFetch({
+      'GET /api/admin/config': { ok: true, status: 200, body: configBody(false, []) },
+      [`POST ${PROBE_URL}`]: probeEntry,
+    })
+    const user = userEvent.setup()
+    renderSection()
+    const input = await screen.findByLabelText(A.webProbeUrlLabel)
+    await user.type(input, 'https://site.com/receita')
+    await user.click(screen.getByRole('button', { name: A.webProbeChecar }))
+    return mocks
+  }
+
+  it('veredito VERDE: fetched + JSON-LD presente + robots permite → importável', async () => {
+    await runProbe({
+      ok: true,
+      status: 200,
+      body: { fetched: true, jsonLd: 'present', robotsAllowed: true },
+    })
+    expect(await screen.findByText(A.webProbeImportavel)).toBeInTheDocument()
+    expect(screen.getByText(A.webProbeJsonLdSim)).toBeInTheDocument()
+    expect(screen.getByText(A.webProbeRobotsPermite)).toBeInTheDocument()
+  })
+
+  it('robots BLOQUEIA → não importável', async () => {
+    await runProbe({
+      ok: true,
+      status: 200,
+      body: { fetched: true, jsonLd: 'present', robotsAllowed: false },
+    })
+    expect(await screen.findByText(A.webProbeNaoImportavel)).toBeInTheDocument()
+    expect(screen.getByText(A.webProbeRobotsBloqueia)).toBeInTheDocument()
+  })
+
+  it('idioma não suportado → mostra a 3ª variante do JSON-LD e não importável', async () => {
+    await runProbe({
+      ok: true,
+      status: 200,
+      body: { fetched: true, jsonLd: 'present_unsupported_locale', robotsAllowed: true },
+    })
+    expect(await screen.findByText(A.webProbeJsonLdIdiomaNaoSuportado)).toBeInTheDocument()
+    expect(screen.getByText(A.webProbeNaoImportavel)).toBeInTheDocument()
+  })
+
+  it('fetched:false → mostra SÓ "não carregou" (suprime linhas por-sinal)', async () => {
+    await runProbe({
+      ok: true,
+      status: 200,
+      body: { fetched: false, jsonLd: 'absent', robotsAllowed: true },
+    })
+    expect(await screen.findByText(A.webProbeNaoCarregou)).toBeInTheDocument()
+    expect(screen.queryByText(A.webProbeJsonLdNao)).not.toBeInTheDocument()
+    expect(screen.queryByText(A.webProbeRobotsPermite)).not.toBeInTheDocument()
+  })
+
+  it('400 url_invalida do servidor → label de URL inválida', async () => {
+    await runProbe({ ok: false, status: 400, body: { error: 'url_invalida' } })
+    expect(await screen.findByText(A.webProbeUrlInvalida)).toBeInTheDocument()
+  })
+
+  it('erro de rede → label de erro genérico do probe', async () => {
+    await runProbe({ reject: true })
+    expect(await screen.findByText(A.webProbeErro)).toBeInTheDocument()
+  })
+})
