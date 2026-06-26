@@ -116,6 +116,12 @@ export const ptBR = {
     secaoDaWeb: 'Da web',
     daWebDescricao: 'Não achamos isso no nosso acervo ainda. Estes são links externos — abrem no site de origem.',
     daWebFonte: 'da web · {fonte}',
+    // #275: 2º gatilho EXPLÍCITO "buscar na web" ao FIM dos resultados — acende a web por AÇÃO do
+    // usuário MESMO com acervo suficiente ("rolei até o fim e nada serviu"). Coexiste com o automático
+    // (#164). Reusa a MESMA /api/discovery/web; degrada gracioso (aviso neutro, nunca erro vermelho).
+    webManualCta: 'Não achou? Buscar na web',
+    webManualBuscando: 'Buscando…',
+    webManualNada: 'Nada encontrado na web agora.',
     // Selo de proveniência da receita IMPORTADA da web (#169, ADR-0019) — distinto de Catálogo/
     // Comunidade. Aparece no detalhe da importada (que é privada e creditada à fonte).
     seloImportada: 'Importada da web',

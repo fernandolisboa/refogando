@@ -111,6 +111,12 @@ export const enUS: Messages = {
     secaoDaWeb: 'From the web',
     daWebDescricao: "We didn't find this in our collection yet. These are external links — they open on the source site.",
     daWebFonte: 'from the web · {fonte}',
+    // #275: explicit second "search the web" trigger at the END of the results — fires the web by the
+    // user's ACTION even with enough local results ("scrolled to the end and nothing fit"). Coexists
+    // with the automatic one (#164). Reuses the SAME /api/discovery/web; degrades gracefully.
+    webManualCta: "Didn't find it? Search the web",
+    webManualBuscando: 'Searching…',
+    webManualNada: 'Nothing found on the web right now.',
     // Provenance seal for a recipe IMPORTED from the web (#169, ADR-0019) — distinct from Catalog/
     // Community. Shows on the detail of an imported recipe (private, credited to the source).
     seloImportada: 'Imported from the web',
