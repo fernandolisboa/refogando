@@ -9,6 +9,8 @@ import {
   COZINHA_SEED,
 } from '@/domain/vocabulary-term'
 import { COZINHAS } from '@/domain/vocabulary'
+import { ptBR } from '@/i18n/messages/pt-BR'
+import { enUS } from '@/i18n/messages/en-US'
 
 /**
  * Kernel da tabela `vocabulary_term` (issue #314, ADR-0025 Fatia A). Puro — sem DB.
@@ -70,6 +72,21 @@ describe('vocabulary-term: COZINHA_SEED (fonte única da migração/helper)', ()
     for (const t of COZINHA_SEED) {
       expect(t.labelPtBr.trim().length).toBeGreaterThan(0)
       expect(t.labelEnUs.trim().length).toBeGreaterThan(0)
+    }
+  })
+
+  /**
+   * Enquanto #314..#317 não colapsam a fonte, os rótulos vivem em DOIS lugares: a seed
+   * aqui e o `cozinhaLabel` do i18n. Sem este guard, um typo-fix num lado não propagaria
+   * pro outro e o #317 (rótulos vindos da tabela) embarcaria o valor velho. americana não
+   * tem entrada no enum/i18n (é nova), então fica de fora.
+   */
+  it('rótulos das 14 cozinhas atuais batem com cozinhaLabel do i18n (guard de drift)', () => {
+    for (const t of COZINHA_SEED) {
+      if (t.slug === 'americana') continue
+      const slug = t.slug as keyof typeof ptBR.cozinhaLabel
+      expect(t.labelPtBr).toBe(ptBR.cozinhaLabel[slug])
+      expect(t.labelEnUs).toBe(enUS.cozinhaLabel[slug])
     }
   })
 })
