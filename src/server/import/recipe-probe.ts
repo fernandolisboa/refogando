@@ -4,9 +4,10 @@
  * Espelha os outros seams (`recipe-importer.ts`, `embedder.ts`): interface + impl REAL + dublê FAKE no
  * MESMO arquivo, injetado via `getRecipeProbe()/setRecipeProbe()` em `deps.ts`. O probe é ASSISTIVO e
  * IDEMPOTENTE: NÃO persiste nada e NÃO toca a config (allowlist) — é só um check de uma URL ainda-NÃO-vetada
- * antes de o admin decidir adicioná-la. Roda os DOIS sinais independentes — (a) a página tem schema.org/
- * Recipe via JSON-LD? (b) o robots.txt da origem permite o RefogandoBot nesse path? — e devolve um
- * `ProbeReport` (derivação pura em `domain/web-search-probe.ts`).
+ * antes de o admin decidir adicioná-la. Reporta DOIS sinais — (a) a página tem schema.org/Recipe via
+ * JSON-LD? (b) o robots.txt da origem permite o RefogandoBot nesse path? — mas avalia o robots PRIMEIRO e
+ * só busca a página se ele PERMITIR (espelha o `RealRecipeImporter`, que devolve `robots_blocked` ANTES do
+ * fetch); devolve um `ProbeReport` (derivação pura em `domain/web-search-probe.ts`).
  *
  * SEGURANÇA (SSRF) — o probe é o PRIMEIRO ponto onde URL admin-arbitrária chega ao `fetch` SEM a barreira
  * de allowlist. Defesas, nesta ordem: (1) `parseProbeUrl` (só http(s), rejeita IP privado/loopback/
@@ -57,7 +58,13 @@ function hostnameOf(url: string): string | null {
   }
 }
 
-/** Lê o corpo da resposta com cap por streaming; excede o cap ⇒ `null` (tratado como não-buscável). */
+/**
+ * Lê o corpo da resposta com cap por streaming. No ESTOURO do cap, NÃO descarta tudo: trunca em
+ * `MAX_HTML_BYTES` e devolve o prefixo — espelha o `RealRecipeImporter.import`, que faz `raw.slice(0,
+ * MAX_HTML_BYTES)` e parseia assim mesmo (o JSON-LD vive no `<head>`, antes do corte), pra o veredito do
+ * probe casar com o que a importação real faria. Só um ERRO de leitura no meio do stream (≠ estouro de
+ * cap) ⇒ `null` (tratado como não-buscável).
+ */
 async function readCappedHtml(res: Response): Promise<string | null> {
   const body = res.body
   if (!body) {
@@ -73,16 +80,21 @@ async function readCappedHtml(res: Response): Promise<string | null> {
       const { done, value } = await reader.read()
       if (done) break
       if (value) {
-        total += value.byteLength
-        if (total > MAX_HTML_BYTES) {
+        const remaining = MAX_HTML_BYTES - total
+        if (value.byteLength >= remaining) {
+          // Estourou o cap: guarda só o prefixo até MAX_HTML_BYTES, cancela o resto e PARA (parseia o que
+          // tem — não retorna null). Casa o `raw.slice(0, MAX_HTML_BYTES)` do importer.
+          chunks.push(value.subarray(0, remaining))
+          total += remaining
           await reader.cancel().catch(() => {})
-          return null
+          break
         }
+        total += value.byteLength
         chunks.push(value)
       }
     }
   } catch {
-    return null
+    return null // erro de leitura no meio do stream (≠ estouro de cap) ⇒ não-buscável
   }
   const buf = new Uint8Array(total)
   let off = 0
@@ -112,13 +124,18 @@ export class RealRecipeProbe implements RecipeProbe {
       return { fetched: false, jsonLd: 'absent', robotsAllowed: true }
     }
 
-    // Robots roda INDEPENDENTE do fetch da página (os dois sinais são reportados separados): a página é
-    // checada mesmo se o robots proibir — só não fica "importável". Avaliado na URL de ORIGEM.
+    // GUARD-RAIL robots (#272, ADR-0019): avalia o robots da ORIGEM PRIMEIRO; só busca a página se ele
+    // PERMITIR. FAIL-OPEN (robots indisponível ⇒ true); uma proibição EXPLÍCITA (Disallow casando ⇒ false)
+    // curto-circuita ANTES do fetch da página — espelha o `RealRecipeImporter`, que devolve `robots_blocked`
+    // sem buscar. Não martelar (nem com o probe admin-manual) um site que nos proibiu.
     let robotsAllowed = true
     try {
       robotsAllowed = await robotsAllows(parsed, ROBOTS_UA_TOKEN)
     } catch {
       robotsAllowed = true // FAIL-OPEN (robotsAllows já não lança, mas cinto-e-suspensório)
+    }
+    if (!robotsAllowed) {
+      return { fetched: false, jsonLd: 'absent', robotsAllowed: false }
     }
 
     const page = await this.fetchPage(parsed)

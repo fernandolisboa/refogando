@@ -100,6 +100,8 @@ export function isBlockedAddress(ip: string): boolean {
  * Valida + normaliza uma URL crua colada pelo admin para o probe. Devolve a URL normalizada (string) ou
  * `null` (⇒ a rota mapeia a 400 ANTES de qualquer rede). Regras:
  *  - só `http:`/`https:` (recusa ftp/file/javascript/data…);
+ *  - ZERA o userinfo (`user:pass@host`): senão o `fetch` mandaria `Authorization: Basic` ao host colado
+ *    pelo admin — o probe NUNCA autentica em host arbitrário;
  *  - normaliza o host (lowercase, tira `[]`, tira ponto final);
  *  - IP-literal privado/loopback/link-local ⇒ `null` (`net.isIP` + CIDR, pega decimal/octal/hex que o
  *    `new URL` normaliza para dotted, e o IPv4-mapped/`[::1]`);
@@ -122,6 +124,11 @@ export function parseProbeUrl(raw: unknown): string | null {
   if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1)
   if (host.endsWith('.')) host = host.slice(0, -1)
   if (host === '') return null
+
+  // Zera credenciais embutidas (`https://user:pass@host/…`) ANTES de qualquer `u.toString()`: senão o
+  // `fetch` enviaria `Authorization: Basic` ao host arbitrário. O probe nunca autentica em terceiros.
+  u.username = ''
+  u.password = ''
 
   const kind = isIP(host)
   if (kind > 0) {

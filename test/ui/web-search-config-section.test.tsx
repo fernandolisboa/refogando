@@ -13,6 +13,7 @@ import '@testing-library/jest-dom/vitest'
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
+import type { ProbeReport } from '@/domain/web-search-probe'
 
 const A = ptBR.admin
 
@@ -250,5 +251,44 @@ describe('WebSearchConfigSection — probe de saúde (#273)', () => {
   it('erro de rede → label de erro genérico do probe', async () => {
     await runProbe({ reject: true })
     expect(await screen.findByText(A.webProbeErro)).toBeInTheDocument()
+  })
+
+  it('descarta veredito OBSOLETO: se a URL muda antes de a resposta voltar, NÃO pinta o resultado', async () => {
+    // Probe pendente controlável: só resolve quando chamarmos resolveProbe — assim mudamos a URL no meio do voo.
+    let resolveProbe!: (report: ProbeReport) => void
+    const pending = new Promise<ProbeReport>((r) => {
+      resolveProbe = r
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (...args: Parameters<typeof fetch>) => {
+        const url = String(args[0])
+        const method = (args[1]?.method ?? 'GET').toUpperCase()
+        if (method === 'GET' && url === '/api/admin/config') {
+          return { ok: true, status: 200, json: async () => configBody(false, []) } as Response
+        }
+        if (method === 'POST' && url === PROBE_URL) {
+          const report = await pending
+          return { ok: true, status: 200, json: async () => report } as Response
+        }
+        throw new Error(`fetch não mockado: ${method} ${url}`)
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderSection()
+    const input = await screen.findByLabelText(A.webProbeUrlLabel)
+    await user.type(input, 'https://site-a.com/receita')
+    await user.click(screen.getByRole('button', { name: A.webProbeChecar }))
+
+    // a URL muda ENQUANTO o probe da URL-A ainda está no ar (sequence-guard deve invalidá-lo)
+    await user.type(input, 'X')
+
+    // agora a resposta (da URL-A) finalmente volta — deve ser DESCARTADA, não pintada
+    resolveProbe({ fetched: true, jsonLd: 'present', robotsAllowed: true })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(screen.queryByText(A.webProbeImportavel)).not.toBeInTheDocument()
+    expect(screen.queryByText(A.webProbeJsonLdSim)).not.toBeInTheDocument()
   })
 })

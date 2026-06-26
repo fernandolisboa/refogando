@@ -15,7 +15,7 @@
  * vazias); o servidor revalida/canonicaliza (config_invalida → `webErroConfig`). Cores: só tokens
  * AA-verificados (#54); sem âmbar/accent.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import {
@@ -60,6 +60,9 @@ export function WebSearchConfigSection() {
   const [probeStatus, setProbeStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [probeReport, setProbeReport] = useState<ProbeReport | null>(null)
   const [probeErrorKey, setProbeErrorKey] = useState<'invalida' | 'generico' | null>(null)
+  // Sequence-guard do probe: cada disparo/edição da URL incrementa o contador. Uma resposta em voo só
+  // pinta o veredito se o contador AINDA bate — senão a URL mudou e o resultado é obsoleto (descartado).
+  const probeReqRef = useRef(0)
 
   async function load() {
     setLoading(true)
@@ -96,6 +99,7 @@ export function WebSearchConfigSection() {
   async function handleProbe() {
     const url = probeUrl.trim()
     if (probeStatus === 'loading' || url === '') return
+    const reqId = ++probeReqRef.current // marca ESTE disparo; respostas de disparos anteriores são obsoletas
     setProbeStatus('loading')
     setProbeReport(null)
     setProbeErrorKey(null)
@@ -105,15 +109,20 @@ export function WebSearchConfigSection() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ url }),
       })
+      if (probeReqRef.current !== reqId) return // a URL mudou no meio do voo: descarta o veredito obsoleto
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
+        if (probeReqRef.current !== reqId) return
         setProbeErrorKey(body?.error === 'url_invalida' ? 'invalida' : 'generico')
         setProbeStatus('error')
         return
       }
-      setProbeReport((await res.json()) as ProbeReport)
+      const report = (await res.json()) as ProbeReport
+      if (probeReqRef.current !== reqId) return
+      setProbeReport(report)
       setProbeStatus('done')
     } catch {
+      if (probeReqRef.current !== reqId) return
       setProbeErrorKey('generico')
       setProbeStatus('error')
     }
@@ -283,6 +292,7 @@ export function WebSearchConfigSection() {
                   placeholder={m.webProbePlaceholder}
                   onChange={(e) => {
                     setProbeUrl(e.target.value)
+                    probeReqRef.current++ // invalida qualquer probe em voo: o veredito que voltar é de outra URL
                     setProbeStatus('idle')
                     setProbeReport(null)
                     setProbeErrorKey(null)

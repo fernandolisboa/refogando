@@ -69,6 +69,22 @@ describe('parseProbeUrl — rejeita IP privado/loopback/link-local e hostnames i
   })
 })
 
+describe('parseProbeUrl — zera userinfo (não vaza Authorization Basic ao host arbitrário)', () => {
+  it('remove user:pass embutidos, preservando host e path', () => {
+    expect(parseProbeUrl('https://admin:secret@example.com/receita')).toBe(
+      'https://example.com/receita',
+    )
+  })
+
+  it('remove userinfo só com usuário (sem senha)', () => {
+    expect(parseProbeUrl('https://user@example.com/x')).toBe('https://example.com/x')
+  })
+
+  it('URL pública sem userinfo segue intacta', () => {
+    expect(parseProbeUrl('https://example.com/x?q=1')).toBe('https://example.com/x?q=1')
+  })
+})
+
 describe('isBlockedAddress', () => {
   it('público ⇒ false', () => {
     expect(isBlockedAddress('8.8.8.8')).toBe(false)

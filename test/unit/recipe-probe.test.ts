@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RealRecipeProbe, type AddressLookup } from '@/server/import/recipe-probe'
+import { MAX_HTML_BYTES } from '@/server/import/web-fetch'
 
 /**
  * Seam REAL do probe (#273) — caminho de REDE com `fetch` mockado e `lookup` injetado (espelha
@@ -72,13 +73,13 @@ afterEach(() => {
 })
 
 describe('RealRecipeProbe — sinais independentes (JSON-LD + robots)', () => {
-  it('robots PROÍBE o path → robotsAllowed:false, MAS a página ainda é buscada e o JSON-LD reportado', async () => {
+  it('robots PROÍBE o path → robotsAllowed:false e a página NÃO é buscada (espelha o importer)', async () => {
     const { calls } = mockFetch({ robots: { ok: true, body: 'User-agent: *\nDisallow: /receitas' } })
     const probe = new RealRecipeProbe(publicLookup)
     const report = await probe.probe(URL_ALVO)
-    expect(report).toEqual({ fetched: true, jsonLd: 'present', robotsAllowed: false })
+    expect(report).toEqual({ fetched: false, jsonLd: 'absent', robotsAllowed: false })
     expect(calls).toContain(ROBOTS_URL)
-    expect(calls).toContain(URL_ALVO) // divergência-chave do importer: a página NÃO é curto-circuitada
+    expect(calls).not.toContain(URL_ALVO) // guard-rail: robots proíbe ⇒ NÃO martelamos a página
   })
 
   it('robots PERMITE + página com Recipe → tudo verde', async () => {
@@ -149,5 +150,76 @@ describe('RealRecipeProbe — defesa de SSRF (DNS + redirect por hop)', () => {
     }
     const report = await new RealRecipeProbe(throwingLookup).probe(URL_ALVO)
     expect(report.fetched).toBe(false)
+  })
+})
+
+/**
+ * Cobre o caminho de STREAMING (`res.body` = ReadableStream REAL) que o `mockFetch` acima — que só expõe
+ * `text()` — não alcança: leitura sob o cap, OVERFLOW do cap (trunca+parseia, espelha o importer), e um hop
+ * de redirect p/ host público seguido e parseado pelo stream.
+ */
+describe('RealRecipeProbe — leitura por streaming (body = ReadableStream real)', () => {
+  /** Response REAL com body = ReadableStream, emitido em pedaços p/ exercitar o loop de leitura. */
+  function streamingResponse(
+    bytes: Uint8Array,
+    opts?: { status?: number; headers?: Record<string, string> },
+  ): Response {
+    const CHUNK = 64 * 1024
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          controller.enqueue(bytes.slice(i, i + CHUNK)) // slice = cópia (sem aliasar o buffer de origem)
+        }
+        controller.close()
+      },
+    })
+    return new Response(stream, { status: opts?.status ?? 200, headers: opts?.headers })
+  }
+
+  it('(a) corpo SOB o cap → JSON-LD lido do stream e parseado', async () => {
+    const bytes = new TextEncoder().encode(PAGE_HTML)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input)
+        if (url.endsWith('/robots.txt')) return new Response('', { status: 404 })
+        return streamingResponse(bytes)
+      }),
+    )
+    const report = await new RealRecipeProbe(publicLookup).probe(URL_ALVO)
+    expect(report).toEqual({ fetched: true, jsonLd: 'present', robotsAllowed: true })
+  })
+
+  it('(b) corpo ACIMA do cap → trunca em MAX_HTML_BYTES e PARSEIA o prefixo (não vira null — espelha o importer)', async () => {
+    // JSON-LD válido no <head> (dentro do cap); depois lixo empurrando o total ALÉM de MAX_HTML_BYTES.
+    const head = new TextEncoder().encode(PAGE_HTML)
+    const oversized = new Uint8Array(MAX_HTML_BYTES + 50_000)
+    oversized.set(head, 0)
+    oversized.fill(0x20, head.length) // resto = espaços (HTML inerte) só p/ estourar o cap
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input)
+        if (url.endsWith('/robots.txt')) return new Response('', { status: 404 })
+        return streamingResponse(oversized) // sem content-length: o overflow só aparece no stream
+      }),
+    )
+    const report = await new RealRecipeProbe(publicLookup).probe(URL_ALVO)
+    // Antes do fix, overflow virava fetched:false; agora o prefixo (com o <head>) é parseado.
+    expect(report).toEqual({ fetched: true, jsonLd: 'present', robotsAllowed: true })
+  })
+
+  it('(c) redirect 301 p/ host PÚBLICO é seguido e a página final (streaming) é parseada', async () => {
+    const FINAL = 'https://destino.com/receita-final'
+    const impl = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/robots.txt')) return new Response('', { status: 404 })
+      if (url === URL_ALVO) return new Response(null, { status: 301, headers: { location: FINAL } })
+      return streamingResponse(new TextEncoder().encode(PAGE_HTML))
+    })
+    vi.stubGlobal('fetch', impl)
+    const report = await new RealRecipeProbe(publicLookup).probe(URL_ALVO)
+    expect(report).toEqual({ fetched: true, jsonLd: 'present', robotsAllowed: true })
+    expect(impl.mock.calls.map((c) => String(c[0]))).toContain(FINAL) // hop seguido
   })
 })
