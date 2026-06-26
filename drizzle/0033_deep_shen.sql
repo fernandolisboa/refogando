@@ -30,4 +30,5 @@ INSERT INTO "vocabulary_term" ("kind", "slug", "status", "label_pt_br", "label_e
 	('cozinha', 'portuguesa', 'active', 'Portuguesa', 'Portuguese', 11),
 	('cozinha', 'mediterranea', 'active', 'Mediterrânea', 'Mediterranean', 12),
 	('cozinha', 'peruana', 'active', 'Peruana', 'Peruvian', 13),
-	('cozinha', 'americana', 'active', 'Americana', 'American', 14);
+	('cozinha', 'americana', 'active', 'Americana', 'American', 14)
+ON CONFLICT ("slug") DO NOTHING;
