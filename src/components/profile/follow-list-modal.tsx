@@ -64,9 +64,12 @@ export function FollowListModal({
   const mp = labels
   const [items, setItems] = useState<FollowUser[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false) // ao menos uma página resolveu p/ a (abertura,kind,handle) atual
-  const [error, setError] = useState(false)
-  // Guarda do AbortController vivo, pra cancelar a busca anterior ao trocar página/kind/handle.
+  const [loaded, setLoaded] = useState(false) // a página 1 resolveu p/ a (abertura,kind,handle) atual
+  const [error, setError] = useState(false) // SÓ a página 1 (a inicial). Erro de "carregar mais" é o `moreError`.
+  const [loadingMore, setLoadingMore] = useState(false) // busca de "carregar mais" em voo (anti-duplo-clique)
+  const [moreError, setMoreError] = useState(false) // falha de "carregar mais" — INLINE, NÃO apaga a lista
+  // Guarda do AbortController vivo (página 1 OU "carregar mais"): cancela a busca anterior ao trocar
+  // página/kind/handle. Lido na limpeza do efeito (aborta o que estiver em voo, inclusive um load-more).
   const ctrlRef = useRef<AbortController | null>(null)
 
   const title = kind === 'followers' ? mp.seguidoresTitulo : mp.seguindoTitulo
@@ -82,10 +85,14 @@ export function FollowListModal({
     setCursor(null)
     setLoaded(false)
     setError(false)
+    setLoadingMore(false)
+    setMoreError(false)
   }
 
   // (Re)abertura ou troca de aba/perfil: busca a página 1. `setState` só DEPOIS do `await` (dentro do
-  // IIFE), espelhando o efeito do `profile-follow-section` (lint `set-state-in-effect` limpo). Aborta ao sair.
+  // IIFE), espelhando o efeito do `profile-follow-section` (lint `set-state-in-effect` limpo). A limpeza
+  // aborta o controller VIVO (`ctrlRef.current`) — não só o da página 1: um "carregar mais" em voo é
+  // cancelado ao trocar de aba/handle, então uma página velha nunca appenda na lista nova (anti-vazamento).
   useEffect(() => {
     if (!open) return
     const ctrl = new AbortController()
@@ -103,38 +110,52 @@ export function FollowListModal({
         setLoaded(true)
       }
     })()
-    return () => ctrl.abort()
+    return () => ctrlRef.current?.abort()
   }, [open, kind, handle])
 
-  // "Carregar mais": handler de evento (chamar `setState` aqui é OK), appenda a próxima página.
+  // "Carregar mais": handler de evento (chamar `setState` aqui é OK), appenda a próxima página. Guarda
+  // anti-duplo-clique (`loadingMore`): dois cliques rápidos leriam o MESMO `cursor` do closure e
+  // appendariam a mesma página duas vezes (dup visível + key React colidida). Uma falha NÃO mexe no
+  // `error` da página 1 (não apaga a lista): vira `moreError` INLINE e o botão segue clicável p/ retry.
   async function onLoadMore() {
-    if (cursor === null) return
+    if (cursor === null || loadingMore) return
+    setLoadingMore(true)
+    setMoreError(false)
     const ctrl = new AbortController()
     ctrlRef.current = ctrl
     try {
       const page = await fetchFollowPage(handle, kind, cursor, ctrl.signal)
+      // Reset (troca de aba/handle) abortou este controller no meio? Não toca o estado da lista nova.
+      if (ctrl.signal.aborted || ctrlRef.current !== ctrl) return
       setItems((prev) => [...prev, ...page.items])
       setCursor(page.nextCursor)
     } catch {
       if (ctrl.signal.aborted) return
-      setError(true)
+      setMoreError(true)
+    } finally {
+      if (!ctrl.signal.aborted) setLoadingMore(false)
     }
   }
 
+  // A página 1 falhou → bloco de erro grande (a lista está vazia mesmo). Carregando = página 1 em voo.
+  const showInitialError = error && items.length === 0
+  const showLoading = !loaded && !error
   const isEmpty = loaded && !error && items.length === 0
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="center" closeLabel={mp.voltar}>
+      <SheetContent side="center" closeLabel={mp.listaFechar}>
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{mp.listaDescricao}</SheetDescription>
         </SheetHeader>
 
-        {error ? (
+        {showInitialError ? (
           <p role="alert" className="text-sm font-medium text-fg">
             {mp.listaErro}
           </p>
+        ) : showLoading ? (
+          <p className="text-muted">{mp.listaCarregando}</p>
         ) : isEmpty ? (
           <p className="text-muted">{mp.listaVazia}</p>
         ) : (
@@ -156,11 +177,24 @@ export function FollowListModal({
           </ul>
         )}
 
-        {cursor !== null && !error && (
-          <div>
-            <Button type="button" variant="secondary" size="sm" onClick={() => void onLoadMore()}>
+        {/* "Carregar mais" enquanto houver `cursor` (NÃO gateado por erro: um load-more que falhou deve
+            poder ser retentado no MESMO cursor). Erro inline ao lado, sem apagar a lista já pintada. */}
+        {cursor !== null && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={loadingMore}
+              onClick={() => void onLoadMore()}
+            >
               {mp.carregarMais}
             </Button>
+            {moreError && (
+              <span role="alert" className="text-sm font-medium text-fg">
+                {mp.listaErroMais}
+              </span>
+            )}
           </div>
         )}
       </SheetContent>

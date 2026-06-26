@@ -745,8 +745,13 @@ export const enUS: Messages = {
     // description is the aria-describedby (#181). "Load more" paginates; empty/error states localized.
     listaDescricao: 'Full list of cooks.',
     carregarMais: 'Load more',
+    // Page-1 loading state; X button label (≠ 'Back', which is navigation); the "load more" error is
+    // INLINE (never wipes the already-loaded list) and separate from the page-1 error.
+    listaCarregando: 'Loading…',
+    listaFechar: 'Close',
     listaVazia: 'No one here yet.',
     listaErro: "Couldn't load the list. Try again.",
+    listaErroMais: "Couldn't load more. Try again.",
   },
   comunidade: {
     titulo: 'Community',

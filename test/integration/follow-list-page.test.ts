@@ -192,6 +192,13 @@ describe('decodeFollowCursor (#307) — cursor opaco, malformado nunca lança', 
       expect(decodeFollowCursor(bad)).toBeNull()
     }
   })
+
+  it('estruturalmente-válido mas INJETÁVEL → null (nunca chega ao cast ::timestamptz/::uuid)', () => {
+    // Ambos passam o split do `|` mas falham a validação de conteúdo: `x|y` (ts não-data + id não-uuid)
+    // e ts-válido + id-não-uuid. Sem a validação, o bind `::timestamptz`/`::uuid` daria 500 na rota anon.
+    expect(decodeFollowCursor(encodeFollowCursor({ ts: 'x', id: 'y' }))).toBeNull()
+    expect(decodeFollowCursor(encodeFollowCursor({ ts: '2020-01-01', id: 'notauuid' }))).toBeNull()
+  })
 })
 
 describe('GET /api/u/[handle]/followers|following (#307) — rota anon pública', () => {
@@ -224,6 +231,18 @@ describe('GET /api/u/[handle]/followers|following (#307) — rota anon pública'
     expect(res.status).toBe(200)
     const body = (await res.json()) as { items: { handle: string }[] }
     expect(body.items.map((u) => u.handle)).toEqual(['mc-f'])
+  })
+
+  it('?cursor estruturalmente-válido mas injetável → 200 primeira página (não 500)', async () => {
+    const alvo = await seedUser({ email: 'inj@flp.test', name: 'Inj', handle: 'inj' })
+    const f = await seedUser({ email: 'injf@flp.test', name: 'InjF', handle: 'inj-f' })
+    await seedFollow(f, alvo)
+    // `x|y`: passa o split, mas `x` não é data e `y` não é uuid → decode null → primeira página.
+    const cur = encodeFollowCursor({ ts: 'x', id: 'y' })
+    const res = await followersReq('inj', `?cursor=${encodeURIComponent(cur)}`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { items: { handle: string }[] }
+    expect(body.items.map((u) => u.handle)).toEqual(['inj-f'])
   })
 
   it('handle inexistente → 404; soft-deletado → 404 (leak-safe)', async () => {

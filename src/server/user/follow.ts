@@ -26,20 +26,31 @@ export type FollowListPage = { items: FollowUser[]; nextCursor: string | null }
  * carregar texto e re-parsear `::timestamptz` é lossless) + a uuid da counterparty (desempate). */
 type FollowCursor = { ts: string; id: string }
 
+/** UUID canônico — valida o id da counterparty ANTES de bindá-lo `::uuid` (um id forjado daria
+ * `invalid input syntax for type uuid` → 500 numa rota anon). */
+const CURSOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
- * Codifica o cursor opaco (#307): base64url de `${created_at::text}|${counterpartyId}`. O `created_at`
+ * Codifica o cursor (#307): base64url de `${created_at::text}|${counterpartyId}`. O `created_at`
  * vai em TEXTO de precisão-cheia (micros incluídos) — um epoch float ou um `Date.toISOString()` truncaria
- * pra ms e PERDERIA linhas no boundary. O id da counterparty é interno mas sai SÓ aqui, dentro do blob
- * opaco (nunca no corpo `FollowUser`).
+ * pra ms e PERDERIA linhas no boundary. O id da counterparty é interno mas sai SÓ aqui, dentro do blob.
+ *
+ * "Opaco" aqui = OPACO À UI (a UI nunca o desmonta), NÃO confidencial: base64url é trivialmente
+ * decodificável, então um cliente curioso lê o `created_at` (micros) e a uuid interna da linha-boundary.
+ * Aceitável: o grafo de seguir é PÚBLICO (ADR-0024) e a uuid só serve de keyset (sem alavanca de
+ * enumeração além da própria lista pública). Se um dia esses valores precisarem ficar internos,
+ * assine/encripte o cursor (HMAC) — sem mudança funcional.
  */
 export function encodeFollowCursor({ ts, id }: FollowCursor): string {
   return Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url')
 }
 
 /**
- * Decodifica o cursor (#307). Tolerante: qualquer lixo (base64 inválido, sem separador, metade vazia)
- * vira `null` ⇒ o chamador trata como PRIMEIRA página, NUNCA lança (a rota é anon e não pode dar 500 por
- * um `?cursor=` adulterado). Parte no PRIMEIRO `|` (o uuid não tem `|`; o texto do timestamp também não).
+ * Decodifica o cursor (#307). Tolerante: qualquer lixo (base64 inválido, sem separador, metade vazia,
+ * timestamp não-parseável, id não-uuid) vira `null` ⇒ o chamador trata como PRIMEIRA página, NUNCA lança
+ * (a rota é anon e não pode dar 500 por um `?cursor=` adulterado). Parte no PRIMEIRO `|` (o uuid não tem
+ * `|`; o texto do timestamp também não). VALIDA o conteúdo (uuid + data parseável) ANTES de devolver, pra
+ * um payload estruturalmente-válido-mas-injetável (ex. `x|y`) jamais chegar ao cast `::timestamptz`/`::uuid`.
  */
 export function decodeFollowCursor(raw: string): FollowCursor | null {
   try {
@@ -49,6 +60,8 @@ export function decodeFollowCursor(raw: string): FollowCursor | null {
     const ts = decoded.slice(0, sep)
     const id = decoded.slice(sep + 1)
     if (ts.length === 0 || id.length === 0) return null
+    if (!CURSOR_UUID_RE.test(id)) return null // id forjado → primeira página (nunca cast `::uuid` quebrado)
+    if (!Number.isFinite(Date.parse(ts))) return null // ts não-data → idem (nunca `::timestamptz` quebrado)
     return { ts, id }
   } catch {
     return null

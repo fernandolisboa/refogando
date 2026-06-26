@@ -39,6 +39,31 @@ function mockFetch(replies: Reply[]) {
   return { impl, calls }
 }
 
+/** Stub de fetch CONTROLÁVEL: cada chamada devolve uma promise que só resolve quando o teste manda
+ * (`resolveNext`). Pra cravar o estado de carregamento (página 1 em voo) e a janela do duplo-clique. */
+function deferredFetch() {
+  const resolvers: Array<(r: Reply) => void> = []
+  const calls: string[] = []
+  const impl = vi.fn((url: unknown) => {
+    calls.push(String(url))
+    return new Promise<Response>((resolve) => {
+      resolvers.push((r: Reply) =>
+        resolve({ ok: r.ok, status: r.status ?? (r.ok ? 200 : 500), json: async () => r.body } as Response),
+      )
+    })
+  })
+  vi.stubGlobal('fetch', impl)
+  return {
+    impl,
+    calls,
+    async resolveNext(r: Reply) {
+      // espera a chamada existir (o efeito pode não ter rodado ainda) e resolve a mais antiga pendente.
+      await waitFor(() => expect(resolvers.length).toBeGreaterThan(0))
+      resolvers.shift()!(r)
+    },
+  }
+}
+
 function user(handle: string) {
   return { name: `Chef ${handle}`, handle, image: null }
 }
@@ -113,6 +138,51 @@ describe('FollowListModal — carregar mais', () => {
     renderModal()
     await screen.findByRole('link', { name: /solo/i })
     expect(screen.queryByRole('button', { name: MP.carregarMais })).toBeNull()
+  })
+
+  it('falha no "carregar mais": mantém a lista já carregada + erro inline + botão p/ retry', async () => {
+    const u = userEvent.setup()
+    mockFetch([
+      { ok: true, body: { items: [user('a'), user('b')], nextCursor: 'CUR1' } },
+      { ok: false, status: 500, body: {} }, // page 2 falha
+      { ok: true, body: { items: [user('c')], nextCursor: null } }, // retry OK
+    ])
+    renderModal()
+    await screen.findByRole('link', { name: /a$/i })
+    await u.click(screen.getByRole('button', { name: MP.carregarMais }))
+    // a falha NÃO apaga a lista; mostra erro inline; o botão segue lá pra retentar.
+    expect(await screen.findByText(MP.listaErroMais)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /a$/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /b$/i })).toBeInTheDocument()
+    const retry = screen.getByRole('button', { name: MP.carregarMais })
+    await u.click(retry)
+    await screen.findByRole('link', { name: /c$/i }) // retry appendou a página
+  })
+
+  it('duplo-clique no "carregar mais" NÃO appenda a página duas vezes (guarda em voo)', async () => {
+    const u = userEvent.setup()
+    const def = deferredFetch()
+    renderModal()
+    await def.resolveNext({ ok: true, body: { items: [user('p1'), user('p2')], nextCursor: 'CUR1' } })
+    await screen.findByRole('link', { name: /p1/i })
+    const more = screen.getByRole('button', { name: MP.carregarMais })
+    // 1º clique dispara a busca (botão fica disabled); o 2º não dispara nada.
+    await u.click(more)
+    await u.click(more)
+    await def.resolveNext({ ok: true, body: { items: [user('p3')], nextCursor: null } })
+    await screen.findByRole('link', { name: /p3/i })
+    // página 1 + UM único load-more = 2 chamadas (não 3); p3 não duplicou.
+    expect(def.impl).toHaveBeenCalledTimes(2)
+    expect(screen.getAllByRole('link', { name: /p3/i }).length).toBe(1)
+  })
+
+  it('página 1 em voo: mostra o estado de carregando', async () => {
+    const def = deferredFetch()
+    renderModal()
+    expect(await screen.findByText(MP.listaCarregando)).toBeInTheDocument()
+    await def.resolveNext({ ok: true, body: { items: [user('z')], nextCursor: null } })
+    await screen.findByRole('link', { name: /z/i })
+    expect(screen.queryByText(MP.listaCarregando)).toBeNull()
   })
 })
 
