@@ -770,6 +770,10 @@ export const ptBR = {
     seguidorContagem: '{n} seguidor',
     seguidoresContagem: '{n} seguidores',
     seguindoContagem: '{n} seguindo',
+    // Contador de RECEITAS na linha de stats (perfil estilo Instagram) — vem de `recipes.length` (sem
+    // nova query). Tem singular ("1 receita"), espelhando o de seguidores.
+    receitaContagem: '{n} receita',
+    receitasContagem: '{n} receitas',
     entrarParaSeguir: 'Entrar para seguir',
     erroSeguir: 'Não foi possível concluir. Tente de novo.',
     seguidoresTitulo: 'Seguidores',

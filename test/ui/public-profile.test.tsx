@@ -118,6 +118,37 @@ describe('PublicProfileView (#129)', () => {
     expect(card2).not.toHaveAttribute('href', '/recipes/r-2')
   })
 
+  it('linha de stats estilo Instagram: receitas (de recipes.length) · seguidores · seguindo, com âncoras', () => {
+    renderProfile(
+      baseProfile({
+        recipes: [
+          { recipeId: 'r-1', displayedTitle: 'Bolo de fubá', origin: 'ai_chat', slug: 'bolo-de-fuba' },
+          { recipeId: 'r-2', displayedTitle: 'Pão caseiro', origin: 'user_edited', slug: 'pao-caseiro' },
+        ],
+        social: {
+          followerCount: 2,
+          followingCount: 1,
+          followers: [
+            { name: 'Bob', handle: 'bob', image: null },
+            { name: 'Cara', handle: 'cara', image: null },
+          ],
+          following: [{ name: 'Dan', handle: 'dan', image: null }],
+        },
+      }),
+    )
+    // O contador de receitas vem de profile.recipes.length (sem nova query) → "2 receitas".
+    const receitas = screen.getByRole('link', { name: M.perfilPublico.receitasContagem.replace('{n}', '2') })
+    expect(receitas).toHaveAttribute('href', '#perfil-receitas')
+    const seguidores = screen.getByRole('link', { name: M.perfilPublico.seguidoresContagem.replace('{n}', '2') })
+    expect(seguidores).toHaveAttribute('href', '#perfil-seguidores')
+    const seguindo = screen.getByRole('link', { name: M.perfilPublico.seguindoContagem.replace('{n}', '1') })
+    expect(seguindo).toHaveAttribute('href', '#perfil-seguindo')
+    // As seções-alvo existem na MESMA página (acoplamento contador ⇄ âncora).
+    expect(document.getElementById('perfil-receitas')).not.toBeNull()
+    expect(document.getElementById('perfil-seguidores')).not.toBeNull()
+    expect(document.getElementById('perfil-seguindo')).not.toBeNull()
+  })
+
   // BUG 2: a foto de capa carrega no card do perfil (era o branch placeholder por falta de imageUrl).
   it('receita COM imageUrl renderiza <img> (não o placeholder); alt === título', () => {
     renderProfile(
@@ -165,23 +196,27 @@ describe('PublicProfileView (#129)', () => {
     expect(screen.queryByRole('img')).toBeNull()
   })
 
-  // BUG 1: os DOIS contadores ADJACENTES (seguidores → seguindo) + o botão por ÚLTIMO. Red-first:
-  // antes o DOM era seguidores / botão / seguindo (o botão ENCRAVADO no meio). Posicional no
-  // textContent + exatamente UM aria-live (o de seguidores; o "seguindo" é estático SSR).
-  it('a linha social: contadores adjacentes (seguidores → seguindo) + botão ao final', () => {
+  // Linha de stats estilo Instagram: a ORDEM é receitas → seguidores → seguindo num único <p>, e o
+  // BOTÃO vai numa LINHA ABAIXO (fora do <p>) — nunca encravado entre os contadores. Exatamente UM
+  // aria-live (no número de seguidores, o único mutável; receitas/seguindo são estáticos SSR).
+  it('a linha social: stats (receitas → seguidores → seguindo) + botão na LINHA ABAIXO', () => {
     const { container } = renderProfile(
       baseProfile({ social: { followerCount: 3, followingCount: 5, followers: [], following: [] } }),
     )
+    const receitasTxt = M.perfilPublico.receitasContagem.replace('{n}', '0')
     const seguidoresTxt = M.perfilPublico.seguidoresContagem.replace('{n}', '3')
     const seguindoTxt = M.perfilPublico.seguindoContagem.replace('{n}', '5')
-    const row = screen.getByText(seguidoresTxt).closest('div') as HTMLElement
-    // seguidores → seguindo → botão (nudge anon "Entrar para seguir"), nesta ordem exata.
-    expect(row.textContent).toMatch(
-      new RegExp(`${seguidoresTxt}[\\s\\S]*${seguindoTxt}[\\s\\S]*${M.perfilPublico.entrarParaSeguir}`),
+    // A linha de stats é o <p> que contém o contador de seguidores; ordem: receitas → seguidores → seguindo.
+    const statsP = screen.getByRole('link', { name: seguidoresTxt }).closest('p') as HTMLElement
+    expect(statsP.textContent?.replace(/\s+/g, ' ')).toMatch(
+      new RegExp(`${receitasTxt}[\\s\\S]*${seguidoresTxt}[\\s\\S]*${seguindoTxt}`),
     )
-    // aria-live SÓ no contador de seguidores (o único mutável). Um único nó na árvore inteira.
+    // O botão (nudge anon "Entrar para seguir") fica FORA do <p> de stats (numa linha abaixo).
+    expect(within(statsP).queryByText(M.perfilPublico.entrarParaSeguir)).toBeNull()
+    expect(screen.getByText(M.perfilPublico.entrarParaSeguir)).toBeInTheDocument()
+    // aria-live SÓ no NÚMERO de seguidores (o único mutável). Um único nó na árvore inteira.
     const live = container.querySelectorAll('[aria-live]')
     expect(live).toHaveLength(1)
-    expect(live[0]).toHaveTextContent(seguidoresTxt)
+    expect(live[0]).toHaveTextContent('3')
   })
 })
