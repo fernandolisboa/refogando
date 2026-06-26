@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+<!-- Refogando · "frigideira-lateral" — variante p/ fundo escuro (#3A2E25): corpo/cabo viram massa, aromaticos com contorno creme p/ contraste AA, fios de aroma em creme -->
+  <title>Refogando</title>
+  <!-- fios de aroma subindo (creme p/ ler no escuro) -->
+  <path d="M20 18 C17 14 23 12 20 7" fill="none" stroke="#FBF7EF" stroke-width="2" stroke-linecap="round"/>
+  <path d="M30 15 C33 11 27 9 30 4" fill="none" stroke="#FBF7EF" stroke-width="2" stroke-linecap="round"/>
+  <!-- aromaticos saltando — contorno creme garante o limite AA no fundo escuro -->
+  <ellipse cx="15" cy="31" rx="4" ry="3" fill="#4E8A5F" stroke="#FBF7EF" stroke-width="1.3" transform="rotate(-18 15 31)"/>
+  <circle cx="23" cy="25" r="3.6" fill="#C2553A" stroke="#FBF7EF" stroke-width="1.3"/>
+  <circle cx="28" cy="20" r="2.4" fill="#3F7A50" stroke="#FBF7EF" stroke-width="1.3"/>
+  <ellipse cx="33" cy="31" rx="3.8" ry="2.9" fill="#9E4430" stroke="#FBF7EF" stroke-width="1.3" transform="rotate(12 33 31)"/>
+  <!-- corpo da frigideira (perfil) em massa -->
+  <path d="M5 35 L43 35 C43 45 40 49 34 49 L14 49 C8 49 5 45 5 35 Z" fill="#F4EEE2"/>
+  <!-- cabo longo a direita -->
+  <line x1="42" y1="35" x2="60" y2="30" stroke="#F4EEE2" stroke-width="6" stroke-linecap="round"/>
+</svg>

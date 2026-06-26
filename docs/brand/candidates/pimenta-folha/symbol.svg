@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Conceito: paprica/pimenta abstrata que tambem le como folha (nervura + broto verde) — tempero + frescor -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Refogando">
+  <!-- corpo: pimenta/folha em terracota, ponta inferior nitida -->
+  <path d="M31 8
+           C42 10 49 18 49 30
+           C49 42 41 52 33 58
+           C27 52 15 42 15 30
+           C15 18 22 10 31 8 Z"
+        fill="#C2553A"/>
+  <!-- nervura central (midrib de folha) -->
+  <path d="M31 15 C30 27 31 41 33 54"
+        fill="none" stroke="#FBF7EF" stroke-width="3.6" stroke-linecap="round"/>
+  <!-- broto/folha verde (erva = frescor) sobre o ombro -->
+  <path d="M30 14
+           C26 9 28 3 33 2
+           C36 6 35 11 30 14 Z"
+        fill="#4E8A5F"/>
+</svg>

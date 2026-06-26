@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+  <!-- Variante p/ fundo escuro (#3A2E25): caule sobe p/ erva clara (#4E8A5F)
+       e a pimenta ganha keyline creme p/ a borda passar AA contra o escuro -->
+  <title>Refogando</title>
+  <!-- raminho: caule em erva mais clara p/ contraste no escuro -->
+  <path d="M22 50 C19 42 20 34 26 26 C28 23 30 20 31 16"
+        fill="none" stroke="#4E8A5F" stroke-width="3.4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- folhas de tras (keyline creme) -->
+  <path d="M0 0 C-3 -3 -3.5 -8 0 -12 C3.5 -8 3 -3 0 0 Z" fill="#4E8A5F"
+        stroke="#FBF7EF" stroke-width="1.2" transform="translate(21 45) rotate(-115)"/>
+  <path d="M0 0 C-3 -3 -3.5 -8 0 -12 C3.5 -8 3 -3 0 0 Z" fill="#4E8A5F"
+        stroke="#FBF7EF" stroke-width="1.2" transform="translate(23 34) rotate(-95)"/>
+  <!-- pimenta / paprica com keyline creme (borda AA contra o fundo escuro) -->
+  <path d="M36 12 C30 14 28 20 30 28 C32 40 36 48 38 52 C44 46 48 34 46 24 C45 16 41 12 36 12 Z"
+        fill="#C2553A" stroke="#FBF7EF" stroke-width="1.6" stroke-linejoin="round"/>
+  <!-- folha da frente -->
+  <path d="M0 0 C-3 -3 -3.5 -8 0 -12 C3.5 -8 3 -3 0 0 Z" fill="#4E8A5F"
+        stroke="#FBF7EF" stroke-width="1.2" transform="translate(28 22) rotate(-55)"/>
+  <!-- cabinho verde da pimenta -->
+  <path d="M34 13 C33 9 35 7 37 6 C38 8 37 11 38 13 Z" fill="#4E8A5F"
+        stroke="#FBF7EF" stroke-width="1"/>
+</svg>

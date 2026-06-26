@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Refogando">
+  <!-- Icone de app a 32px: fundo creme arredondado + simbolo simplificado -->
+  <rect x="0" y="0" width="32" height="32" rx="7" fill="#FBF7EF"/>
+  <!-- Simbolo simplificado (sem nucleo) para maxima nitidez -->
+  <g transform="translate(4 4) scale(0.375)">
+    <path d="M32 5
+             C 41 16, 47 25, 47 36
+             C 47 47, 40 55, 32 55
+             C 24 55, 17 47, 17 36
+             C 17 25, 23 16, 32 5 Z"
+          fill="#C2553A"/>
+    <g transform="rotate(-45 32 32)">
+      <line x1="12" y1="32" x2="41" y2="32"
+            stroke="#3A2E25" stroke-width="7" stroke-linecap="round"/>
+      <ellipse cx="45" cy="32" rx="8.5" ry="6.5" fill="#3A2E25"/>
+    </g>
+  </g>
+</svg>

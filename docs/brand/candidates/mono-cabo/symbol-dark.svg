@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+  <!-- mono-cabo (fundo escuro): R paprica com keyline creme p/ atingir AA sobre #3A2E25 -->
+  <title>Refogando</title>
+  <!-- camada de contorno creme (garante contraste AA) -->
+  <g fill="none" stroke="#FBF7EF" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="13.4" y="11.4" width="13.2" height="41.2" rx="4" fill="#FBF7EF" stroke="none"/>
+    <path d="M20 17 H31 A9 9 0 0 1 31 35 H21" stroke-width="11"/>
+    <path d="M22 33 L53 50" stroke-width="12"/>
+  </g>
+  <!-- R paprica por cima -->
+  <rect x="15" y="13" width="10" height="38" rx="3" fill="#C2553A"/>
+  <path d="M20 17 H31 A9 9 0 0 1 31 35 H21" fill="none" stroke="#C2553A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 33 L53 50" fill="none" stroke="#C2553A" stroke-width="9" stroke-linecap="round"/>
+  <!-- concha / colher: paprica com aro creme -->
+  <circle cx="53" cy="50" r="9" fill="#C2553A" stroke="#FBF7EF" stroke-width="1.6"/>
+</svg>

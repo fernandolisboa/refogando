@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+  <!-- Variante para fundo escuro (#3A2E25): R em creme, dot de paprica com contorno creme p/ AA. -->
+  <!-- R / frigideira (corpo creme) -->
+  <circle cx="32" cy="24" r="15" fill="#FBF7EF"/>
+  <rect x="15" y="10" width="9" height="42" rx="2.5" fill="#FBF7EF"/>
+  <path d="M33 35 L48 53" fill="none" stroke="#FBF7EF" stroke-width="9" stroke-linecap="round"/>
+  <!-- aro de paprica + superficie escura (contador do R) -->
+  <circle cx="33" cy="23" r="8" fill="#C2553A"/>
+  <circle cx="33" cy="23" r="7" fill="#3A2E25"/>
+  <!-- refogado: ponto de paprica com contorno creme (contraste AA no escuro) -->
+  <circle cx="34.5" cy="25" r="2.6" fill="#C2553A" stroke="#FBF7EF" stroke-width="1"/>
+  <!-- dois fios de aroma (creme) -->
+  <path d="M30 9 C 28 6 31 4 29.5 1.8" fill="none" stroke="#FBF7EF" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M36 9 C 38 6 35 4 36.5 1.8" fill="none" stroke="#FBF7EF" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

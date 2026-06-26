@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" role="img" aria-label="Refogando">
+  <!-- mono-cabo lockup: simbolo + wordmark serifado (Georgia) -->
+  <title>Refogando</title>
+  <!-- simbolo -->
+  <g transform="translate(4 4)">
+    <rect x="15" y="13" width="10" height="38" rx="3" fill="#9E4430"/>
+    <path d="M20 17 H31 A9 9 0 0 1 31 35 H21" fill="none" stroke="#9E4430" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 33 L53 50" fill="none" stroke="#9E4430" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="53" cy="50" r="9" fill="#C2553A"/>
+  </g>
+  <!-- wordmark -->
+  <text x="84" y="49" font-family="Georgia, 'Times New Roman', serif" font-size="38" letter-spacing="0.3" fill="#3A2E25">
+    <tspan fill="#9E4430">R</tspan>efogando
+  </text>
+</svg>

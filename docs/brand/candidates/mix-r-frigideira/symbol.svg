@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+<!-- Conceito: monograma "R" servido DENTRO de uma frigideira vista de cima — o disco/aro da panela e a moldura do R; cabo de tijolo a direita. -->
+<!-- handle (atras do disco) -->
+<rect x="46" y="27.5" width="16" height="9" rx="4.5" fill="#9E4430"/>
+<!-- disco: aro paprica + superficie cafe -->
+<circle cx="27" cy="32" r="23" fill="#C2553A"/>
+<circle cx="27" cy="32" r="19.5" fill="#3A2E25"/>
+<!-- R em creme -->
+<g fill="#FBF7EF">
+  <!-- stem + serifas -->
+  <rect x="19" y="17" width="8" height="30"/>
+  <rect x="14" y="17" width="13" height="3"/>
+  <rect x="13" y="44" width="16" height="3"/>
+  <!-- bowl com contador (evenodd) -->
+  <path fill-rule="evenodd" d="M25 17 C45 16, 45 33, 25 33 Z M27 20.5 C39 20.5, 39 29.5, 27 29.5 Z"/>
+  <!-- leg -->
+  <path d="M23 30 L32 30 L41 47 L33 47 Z"/>
+  <rect x="32" y="44" width="11" height="3"/>
+</g>
+</svg>

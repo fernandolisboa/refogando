@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+  <!-- variante p/ fundo escuro (#3A2E25): keyline creme p/ silhueta + contraste AA -->
+  <!-- cabo (atras do disco) c/ contorno creme p/ ler no escuro -->
+  <rect x="44" y="30.5" width="17" height="9" rx="4.5" fill="#9E4430" stroke="#FBF7EF" stroke-width="1.5"/>
+  <!-- keyline creme externo: lifta o disco do fundo escuro -->
+  <circle cx="26" cy="35" r="23" fill="none" stroke="#FBF7EF" stroke-width="1.5"/>
+  <!-- disco da frigideira: corpo cafe + aro fino paprica -->
+  <circle cx="26" cy="35" r="21" fill="#3A2E25" stroke="#C2553A" stroke-width="3"/>
+  <!-- aromatico verde (folha) -->
+  <path d="M19 23 Q24 28 19 33 Q14 28 19 23 Z" fill="#4E8A5F" stroke="#FBF7EF" stroke-width="1"/>
+  <!-- aromatico terracota (dado) -->
+  <circle cx="33" cy="29" r="5" fill="#C2553A" stroke="#FBF7EF" stroke-width="1"/>
+  <!-- aromatico creme (peca maior, ancora) -->
+  <rect x="18" y="37" width="12" height="12" rx="3.5" fill="#F4EEE2" stroke="#FBF7EF" stroke-width="1" transform="rotate(12 24 43)"/>
+  <!-- dois fios de aroma subindo (creme p/ contraste no escuro) -->
+  <path d="M21 16 C18 12 23 9 20 5" fill="none" stroke="#FBF7EF" stroke-width="3" stroke-linecap="round"/>
+  <path d="M31 15 C34 11 29 8 32 4" fill="none" stroke="#FBF7EF" stroke-width="3" stroke-linecap="round"/>
+</svg>

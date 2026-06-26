@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+  <!-- Conceito: monograma "R" serifado em cafe que cozinha — 3 volutas de vapor/aroma em paprica subindo do topo; R domina, vapor decora. -->
+  <g fill="none" stroke="#C2553A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 21 C16.8 16 26.8 12 21.2 6.5"/>
+    <path d="M32 20 C28 16 35.6 12.6 31 8.4"/>
+    <path d="M42 21 C47.2 16 37.2 12 42.8 6.5"/>
+  </g>
+  <text x="32" y="53.5" text-anchor="middle" font-family="Georgia, 'Times New Roman', 'Liberation Serif', serif" font-weight="bold" font-size="52" fill="#3A2E25">R</text>
+</svg>
