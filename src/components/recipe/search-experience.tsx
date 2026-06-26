@@ -123,6 +123,12 @@ export function SearchExperience({
   // AbortController SEPARADO da busca de Cozinheiros (#279): cancela a anterior a cada nova busca
   // (paralelo independente do /api/search — um responde sem o outro).
   const cooksAbortRef = useRef<AbortController | null>(null)
+  // #275: token de reentrância da busca MANUAL na web. Incrementa a cada clique no CTA; o handler
+  // captura o valor local e só transiciona para `done` se ainda for a corrida CORRENTE. Protege a
+  // corrida em que uma NOVA busca (nova digitação) ABORTA o fetch manual em voo: `discoverWeb` engole
+  // o AbortError, então sem este guarda (mais o boolean de conclusão) o `done` obsoleto pintaria o
+  // aviso "nada na web" indevidamente.
+  const webManualTokenRef = useRef(0)
 
   const hasCriteria =
     q.trim() !== '' ||
@@ -138,7 +144,10 @@ export function SearchExperience({
    * `q` alimenta a web (facetas não se aplicam a links externos).
    */
   const discoverWeb = useCallback(
-    async (term: string) => {
+    // #275: RETORNA um boolean — `true` só quando a busca COMPLETOU de verdade (res.ok + parse). `false`
+    // quando foi ABORTADA (corrida superada por nova busca) ou `!res.ok`. O handler manual usa isso para
+    // NÃO transicionar para `done` numa corrida abortada (que pintaria o aviso "nada na web" obsoleto).
+    async (term: string): Promise<boolean> => {
       webAbortRef.current?.abort()
       const controller = new AbortController()
       webAbortRef.current = controller
@@ -147,11 +156,13 @@ export function SearchExperience({
       url.searchParams.set('locale', locale)
       try {
         const res = await fetch(url, { signal: controller.signal })
-        if (!res.ok) return
+        if (!res.ok) return false
         const body = (await res.json()) as { results: WebLink[] }
         setWebLinks(body.results ?? [])
+        return true
       } catch {
         // AbortError ou rede caída: descoberta na web é assistiva — silencia (mantém só o local).
+        return false
       }
     },
     [locale],
@@ -167,9 +178,17 @@ export function SearchExperience({
   const handleWebManual = useCallback(async () => {
     const term = q.trim()
     if (term === '' || webManualState === 'loading') return
+    // Captura o token DESTA corrida. Só transiciona para `done` se, ao resolver, (a) este ainda for o
+    // último clique (token bate) E (b) a `discoverWeb` COMPLETOU (não foi abortada por uma nova busca).
+    // Corrida superada ⇒ `discoverWeb` devolve `false` e o reset de `doSearch` já devolveu o CTA a
+    // `idle`; sem este guarda, o `done` obsoleto pintaria o aviso "nada na web". NÃO há estado de erro
+    // vermelho — a degradação graciosa (aviso neutro só quando completou vazio) permanece.
+    const token = (webManualTokenRef.current += 1)
     setWebManualState('loading')
-    await discoverWeb(term)
-    setWebManualState('done')
+    const completed = await discoverWeb(term)
+    if (completed && webManualTokenRef.current === token) {
+      setWebManualState('done')
+    }
   }, [q, webManualState, discoverWeb])
 
   /**

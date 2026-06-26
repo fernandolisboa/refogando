@@ -161,6 +161,36 @@ function stubFetchRoutingDeferred(search: SearchResponse) {
   return { fetchMock: fetchMock as unknown as ReturnType<typeof vi.fn>, resolveWeb }
 }
 
+/**
+ * Variante de `stubFetchRoutingDeferred` que REPRODUZ o `AbortController` real: a resposta de
+ * `/api/discovery/web` fica diferida, MAS se o `signal` da requisição abortar (uma nova busca cancela a
+ * anterior via `webAbortRef.abort()`), o fetch REJEITA com `AbortError` — como o `fetch` do navegador.
+ * Usada para o cenário de CORRIDA (#275): um clique no CTA superado por nova digitação não pode acabar
+ * pintando o aviso "nada na web" obsoleto.
+ */
+function stubFetchRoutingWebAbortable(search: SearchResponse) {
+  let resolveWeb!: (links: WebLink[]) => void
+  let rejectWeb!: (err: unknown) => void
+  const webPromise = new Promise<WebLink[]>((res, rej) => {
+    resolveWeb = res
+    rejectWeb = rej
+  })
+  const fetchMock = vi.fn(async (input: unknown, init?: { signal?: AbortSignal }) => {
+    const url = String(input)
+    if (url.includes('/api/discovery/web')) {
+      // Reproduz o fetch real: abortar o signal REJEITA a requisição com AbortError.
+      init?.signal?.addEventListener('abort', () =>
+        rejectWeb(new DOMException('Aborted', 'AbortError')),
+      )
+      const links = await webPromise
+      return { ok: true, json: async () => ({ results: links }) }
+    }
+    return { ok: true, json: async () => search }
+  }) as unknown as typeof fetch
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock: fetchMock as unknown as ReturnType<typeof vi.fn>, resolveWeb }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -486,5 +516,37 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
     // Resolve → os links renderizam.
     resolveWeb(WEB_LINKS)
     await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+  })
+
+  it('C7 — clique SUPERADO por nova digitação NÃO pinta o aviso "nada na web" obsoleto (corrida)', async () => {
+    // Acervo suficiente ⇒ o auto-gate #164 NÃO dispara; o único fetch de web é o do clique manual,
+    // cuja resposta fica diferida e ABORTA quando a nova busca cancela a anterior.
+    const { resolveWeb } = stubFetchRoutingWebAbortable(localWith(3))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    // Clica o CTA → busca manual EM VOO (promise diferida; o botão mostra "buscando…").
+    await user.click(await screen.findByRole('button', { name: M.webManualCta }))
+    await screen.findByRole('button', { name: M.webManualBuscando })
+
+    // Nova digitação dispara nova busca → ABORTA o fetch manual em voo (corrida superada). O reset de
+    // `doSearch` devolve o CTA a `idle`; o `done` obsoleto da corrida abortada NÃO pode aparecer.
+    await user.type(box, 'x')
+
+    // A nova busca conclui e o CTA volta (idle); o aviso obsoleto "nada na web" NUNCA aparece.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: M.webManualCta })).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(M.webManualNada)).not.toBeInTheDocument()
+
+    // Resolver TARDE a web da corrida superada (já abortada) segue sem pintar o aviso obsoleto.
+    resolveWeb(WEB_LINKS)
+    await waitFor(() => {
+      expect(screen.queryByText(M.webManualNada)).not.toBeInTheDocument()
+    })
   })
 })
