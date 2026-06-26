@@ -741,6 +741,12 @@ export const enUS: Messages = {
     erroSeguir: "Couldn't complete. Try again.",
     seguidoresTitulo: 'Followers',
     seguindoTitulo: 'Following',
+    // Full list (#307) — "see all" modal opened by the counters. Title reuses followers/following; the
+    // description is the aria-describedby (#181). "Load more" paginates; empty/error states localized.
+    listaDescricao: 'Full list of cooks.',
+    carregarMais: 'Load more',
+    listaVazia: 'No one here yet.',
+    listaErro: "Couldn't load the list. Try again.",
   },
   comunidade: {
     titulo: 'Community',

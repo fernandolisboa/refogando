@@ -24,11 +24,12 @@
  * REVERT no erro (mensagem neutra), espelhando o `RecipeEngagementControls`. `credentials` PADRÃO
  * (same-origin) — o estado É viewer-personalizado, NUNCA `credentials:'omit'` (≠ feed anon).
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { useFollowToggle } from '@/hooks/use-follow-toggle'
+import { FollowListModal } from '@/components/profile/follow-list-modal'
 import type { Messages } from '@/i18n/messages'
 
 /**
@@ -41,11 +42,15 @@ function StatCounter({
   n,
   href,
   live,
+  onClick,
 }: {
   template: string
   n: number
   href?: string
   live?: boolean
+  /** Progressive enhancement (#307): seguidores/seguindo `preventDefault`→abrem o modal; receitas não
+   *  passa `onClick` (mantém a navegação-âncora). Sem JS, o `href` cai pro preview existente na página. */
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void
 }) {
   // O template tem o placeholder '{n}'; partir nele deixa o número isolado pra ir em <strong>.
   const [before = '', after = ''] = template.split('{n}')
@@ -59,7 +64,7 @@ function StatCounter({
     </>
   )
   return href ? (
-    <a href={href} className="transition-colors hover:text-fg">
+    <a href={href} onClick={onClick} className="transition-colors hover:text-fg">
       {inner}
     </a>
   ) : (
@@ -90,6 +95,9 @@ export function ProfileFollowSection({
   const [followerCount, setFollowerCount] = useState(initialFollowerCount)
   const [isSelf, setIsSelf] = useState(false)
   const [stateLoaded, setStateLoaded] = useState(false)
+  // Lista COMPLETA (#307): qual aba o modal mostra (null = fechado). Os contadores seguidores/seguindo
+  // abrem-na; receitas segue só a navegação-âncora.
+  const [listKind, setListKind] = useState<'followers' | 'following' | null>(null)
   // Seam ÚNICO do toggle (#278): isFollowing/busy/error otimistas + revert vivem em `useFollowToggle`,
   // compartilhado com o `CookFollowButton` do trilho. O `followerCount` (exclusivo do perfil) fica AQUI
   // e reconcilia pelo RETORNO do `toggle()` (corpo do servidor no sucesso; `null` no erro → reverte).
@@ -147,6 +155,14 @@ export function ProfileFollowSection({
           template={seguidoresTemplate}
           n={followerCount}
           href={followerCount > 0 ? '#perfil-seguidores' : undefined}
+          onClick={
+            followerCount > 0
+              ? (e) => {
+                  e.preventDefault()
+                  setListKind('followers')
+                }
+              : undefined
+          }
           live
         />
         <span aria-hidden="true">·</span>
@@ -154,6 +170,14 @@ export function ProfileFollowSection({
           template={mp.seguindoContagem}
           n={followingCount}
           href={followingCount > 0 ? '#perfil-seguindo' : undefined}
+          onClick={
+            followingCount > 0
+              ? (e) => {
+                  e.preventDefault()
+                  setListKind('following')
+                }
+              : undefined
+          }
         />
       </p>
       {/* BOTÃO numa LINHA ABAIXO dos contadores (≠ inline): Seguir/Seguindo (logado, não-próprio),
@@ -185,6 +209,17 @@ export function ProfileFollowSection({
           )}
         </div>
       ) : null}
+      {/* Modal da lista COMPLETA (#307) — controlado por `listKind`. Render único; `kind` cai pra
+          'followers' enquanto fechado (`open=false` ⇒ o modal não busca). Fechar ⇒ `listKind=null`. */}
+      <FollowListModal
+        handle={handle}
+        kind={listKind ?? 'followers'}
+        open={listKind !== null}
+        onOpenChange={(o) => {
+          if (!o) setListKind(null)
+        }}
+        labels={mp}
+      />
     </div>
   )
 }

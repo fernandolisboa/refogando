@@ -778,6 +778,12 @@ export const ptBR = {
     erroSeguir: 'Não foi possível concluir. Tente de novo.',
     seguidoresTitulo: 'Seguidores',
     seguindoTitulo: 'Seguindo',
+    // Lista COMPLETA (#307) — modal "ver todos" aberto pelos contadores. Título reusa seguidores/seguindo;
+    // a descrição é o aria-describedby (#181). "Carregar mais" pagina; vazio/erro localizados.
+    listaDescricao: 'Lista completa de cozinheiros.',
+    carregarMais: 'Carregar mais',
+    listaVazia: 'Ninguém por aqui ainda.',
+    listaErro: 'Não foi possível carregar a lista. Tente de novo.',
   },
   comunidade: {
     titulo: 'Comunidade',
