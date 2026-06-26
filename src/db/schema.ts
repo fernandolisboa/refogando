@@ -13,6 +13,7 @@ import {
   vector,
   index,
   uniqueIndex,
+  unique,
   primaryKey,
   check,
   customType,
@@ -46,6 +47,7 @@ import {
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { REPORT_STATUSES } from '@/domain/report'
+import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
 /**
@@ -96,6 +98,12 @@ export const strengthEnum = pgEnum('strength', STRENGTHS)
 // Status do Report (issue #18). Fonte única: REPORT_STATUSES de @/domain/report
 // (pending/resolved/rejected). Espelha roleEnum/strengthEnum importando do kernel.
 export const reportStatusEnum = pgEnum('report_status', REPORT_STATUSES)
+// Vocabulário culinário data-driven (issue #314, ADR-0025). O META fica no código:
+// `kind` = quais dimensões existem (só 'cozinha' no passo 1); `vocabulary_term_status` =
+// ciclo de vida de um termo. Fonte única: VOCABULARY_KINDS + VOCABULARY_TERM_STATUSES de
+// @/domain/vocabulary-term. QUAIS cozinhas existem vira DADO (linhas de vocabulary_term).
+export const vocabularyKindEnum = pgEnum('vocabulary_kind', VOCABULARY_KINDS)
+export const vocabularyTermStatusEnum = pgEnum('vocabulary_term_status', VOCABULARY_TERM_STATUSES)
 // Papel da fala na Transcrição durável (issue #15). Fonte única: TRANSCRIPT_ROLES de
 // @/domain/transcript (user/assistant) — espelha roleEnum/strengthEnum importando do
 // kernel. DB type 'transcript_role', DISTINTO de roleEnum (DB type 'role', papéis de
@@ -956,5 +964,40 @@ export const report = pgTable(
     index('report_recipe_status_idx').on(t.recipeId, t.status),
     // Fila do Curador: pending ordenada por data de criação.
     index('report_status_created_idx').on(t.status, t.createdAt),
+  ],
+)
+
+/**
+ * Termo de vocabulário data-driven (issue #314, ADR-0025 Fatia A). Substitui o pgEnum
+ * estático `cozinha` por uma TABELA: quais cozinhas existem vira dado curável (e o caminho
+ * "Outra" → sugestão → Curador). Esta fatia só CRIA e SEMEIA — nada lê ainda (o app segue
+ * no `cozinhaEnum`); o leitor/validação/virada-FK são #315–#318.
+ *
+ * `slug` é a chave natural (estável entre locales); os rótulos vivem em duas colunas
+ * NULLABLE bilíngues (ADR Decisão 2). `status` nasce 'suggested' por padrão (caminho
+ * "Outra"), mas a seed grava 'active' explicitamente.
+ */
+export const vocabularyTerm = pgTable(
+  'vocabulary_term',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: vocabularyKindEnum('kind').notNull(),
+    slug: text('slug').notNull(),
+    status: vocabularyTermStatusEnum('status').notNull().default('suggested'),
+    labelPtBr: text('label_pt_br'),
+    labelEnUs: text('label_en_us'),
+    sort: integer('sort').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // UNIQUE(slug) é uma CONSTRAINT real (unique()), NÃO uniqueIndex(): a virada #318
+    // referencia `slug` por FK, e o Postgres só aceita FK contra coluna respaldada por
+    // UNIQUE CONSTRAINT/PK — um índice único "solto" NÃO é alvo garantido. Mantida CRUA
+    // (slug puro, não parcial nem composta kind+slug) por ADR-0025 Decisão 3. NÃO trocar
+    // por uniqueIndex numa futura "padronização" — quebraria a FK da #318 silenciosamente.
+    unique('vocabulary_term_slug_uq').on(t.slug),
+    // Leitura do #315: termos de uma dimensão por status, já ordenados.
+    index('vocabulary_term_kind_status_sort_idx').on(t.kind, t.status, t.sort),
   ],
 )
