@@ -123,10 +123,10 @@ export function parseFacetParams(
   activeCozinhas: ReadonlySet<string>,
 ): EffectiveFacets {
   const facets: EffectiveFacets = {
-    // Cozinha data-driven (#316): pertencimento ao conjunto ATIVO injetado, não ao `COZINHAS`.
-    // O guard `v is Cozinha` é SÃO porque a borda injeta um conjunto enum-limitado (active ∩
-    // COZINHAS via `.filter(isCozinha)`) até a virada #318 — nenhum slug não-enumerável entra.
-    // A semântica de pertencimento vive em `isActiveCozinha` (fonte única); aqui só a narrow.
+    // Cozinha data-driven (#316/#318): pertencimento ao conjunto ATIVO injetado. Desde a virada
+    // #318 a coluna é `text` com FK p/ `vocabulary_term.slug` (sem cast `::cozinha[]`), então TODO
+    // slug ativo é válido — a borda injeta o conjunto ativo CRU (sem enum-bounding). O guard
+    // `v is Cozinha` (Cozinha=string) só narra; a semântica vive em `isActiveCozinha` (fonte única).
     cozinhas: enumValues(get('cozinha'), (v): v is Cozinha => isActiveCozinha(v, activeCozinhas)),
     categorias: enumValues(get('categoria'), isCategoria),
     tags: [

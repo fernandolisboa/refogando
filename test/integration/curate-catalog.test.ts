@@ -220,15 +220,22 @@ describe('POST /api/curate/recipes #19 — AC1 create', () => {
     const badLocaleCru = await create({ ...validCreateBody, originalLocale: 'pt-br' }, headers)
     expect(badLocaleCru.status).toBe(200) // canonicalLocale aceita 'pt-br' → 'pt-BR'
 
+    // slug NÃO-ativo (fora do vocabulário) → 400 dados_invalidos (controle: rejeição é por
+    // pertencimento ao conjunto ativo, não por enum — o pgEnum foi dropado na virada #318).
     const badCozinha = await create({ ...validCreateBody, cozinha: 'klingon' }, headers)
     expect(badCozinha.status).toBe(400)
+    expect(await badCozinha.json()).toEqual({ error: 'dados_invalidos' })
 
-    // #316: 'americana' está ATIVA na tabela (semeada) mas NÃO no enum até #318. A borda injeta
-    // active ∩ COZINHAS (`.filter(isCozinha)`), então a rejeita com 400 dados_invalidos —
-    // explicitamente NÃO 500/22P02 (o cast `::cozinha` nunca recebe o slug não-enumerável).
+    // #318 (virada): 'americana' está ATIVA na tabela e — desde a virada enum→text+FK — é STORÁVEL.
+    // Agora é ACEITA (200) e persiste cozinha='americana' (era 400 cozinha_invalida via enum-bounding).
     const americana = await create({ ...validCreateBody, cozinha: 'americana' }, headers)
-    expect(americana.status).toBe(400)
-    expect(await americana.json()).toEqual({ error: 'dados_invalidos' })
+    expect(americana.status).toBe(200)
+    const { id: americanaId } = (await americana.json()) as { id: string }
+    const [americanaRow] = await getDb()
+      .select({ cozinha: recipe.cozinha })
+      .from(recipe)
+      .where(eq(recipe.id, americanaId))
+    expect(americanaRow.cozinha).toBe('americana')
 
     const badUnidade = await create(
       { ...validCreateBody, ingredientes: [{ rawText: 'x', quantidade: null, unidade: 'galao' }] },

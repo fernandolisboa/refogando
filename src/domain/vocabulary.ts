@@ -7,8 +7,11 @@
  *
  * Forma das dimensões (honra ADR-0009: "faixas numéricas (porções, dificuldade)
  * validadas no app, porque o JSON Schema não suporta min/max"):
- *  - Cozinha e Restrição alimentar → ENUMS (conjuntos controlados, extensíveis).
- *  - Dificuldade e Porções        → FAIXAS NUMÉRICAS validadas no app.
+ *  - Cozinha → DATA-DRIVEN (#318, ADR-0025): saiu do enum estático e virou a tabela
+ *    `vocabulary_term`. `type Cozinha = string`; o pertencimento é checado contra o
+ *    CONJUNTO ATIVO injetado (`isActiveCozinha`), nunca contra um `as const`.
+ *  - Restrição alimentar → ENUM (conjunto controlado, extensível).
+ *  - Dificuldade e Porções → FAIXAS NUMÉRICAS validadas no app.
  *
  * Categoria (curso) e Tag (rótulo livre) NÃO pertencem a este kernel bidirecional:
  * são vocabulários separados (Briefing de geração não tem Categoria nem Tag).
@@ -18,24 +21,12 @@
  * ("qual cozinha combina com qual") — isso pertence aos consumidores (Busca/Briefing).
  */
 
-// ── Cozinha (cuisine): tradição gastronômica, vocabulário controlado ───────────
-export const COZINHAS = [
-  'italiana',
-  'japonesa',
-  'brasileira',
-  'baiana',
-  'mineira',
-  'mexicana',
-  'chinesa',
-  'indiana',
-  'tailandesa',
-  'francesa',
-  'arabe',
-  'portuguesa',
-  'mediterranea',
-  'peruana',
-] as const
-export type Cozinha = (typeof COZINHAS)[number]
+// ── Cozinha (cuisine): tradição gastronômica, DATA-DRIVEN (#318, ADR-0025) ─────
+// Saiu do enum estático `COZINHAS` (e do pgEnum `cozinha`) e virou a tabela `vocabulary_term`:
+// QUAIS cozinhas existem é DADO curável. O tipo é `string` (qualquer slug); o pertencimento ao
+// conjunto ATIVO é checado por `isActiveCozinha(value, activeCozinhas)` na borda. A seed das 14
+// antigas + 'americana' vive em `COZINHA_SEED` (@/domain/vocabulary-term), fonte da migração.
+export type Cozinha = string
 
 // ── Restrição alimentar: contrato de adequação (dieta/alergia/intolerância) ─────
 export const RESTRICOES = [
@@ -62,9 +53,12 @@ export const PORCOES: FaixaNumerica = { min: 1, max: 50 }
 // não é filtro de Busca nem constraint de Briefing.
 export const TEMPO_MIN: FaixaNumerica = { min: 1, max: 10080 }
 
-/** O kernel bidirecional: o que a Busca filtra e a criação estruturada constrange. */
+/**
+ * O kernel bidirecional: o que a Busca filtra e a criação estruturada constrange. Cozinha
+ * NÃO aparece mais aqui (#318): virou DATA-DRIVEN (tabela `vocabulary_term`), resolvida na
+ * borda, não um array estático do kernel. Restrição segue enum; dificuldade/porções, faixas.
+ */
 export const vocabularioCulinario = {
-  cozinhas: COZINHAS,
   restricoes: RESTRICOES,
   dificuldade: DIFICULDADE,
   porcoes: PORCOES,
@@ -116,20 +110,13 @@ export type Unidade = (typeof UNIDADES)[number]
 
 // ── Validadores PUROS ──────────────────────────────────────────────────────────
 
-export function isCozinha(value: string): value is Cozinha {
-  return (COZINHAS as readonly string[]).includes(value)
-}
-
 /**
- * Validador de cozinha DATA-DRIVEN (#316, ADR-0025 Decisão 4): pertencimento ao CONJUNTO
- * ATIVO injetado, em vez do `COZINHAS as const`. O conjunto vem da tabela `vocabulary_term`
- * (via `loadActiveCozinhaSlugs` na escrita ou `loadVocabulary` cacheado na leitura) — quem
- * resolve o conjunto é a BORDA; o validador só checa pertencimento, permanecendo PURO/SÍNCRONO.
- *
- * Convive com `isCozinha(value)` (acima): aquele segue ancorado no enum `cozinha`, usado pela
- * exibição do acervo (#317) e — temporariamente, até a virada #318 — como GUARDA de
- * enum-storability nas bordas (active ∩ COZINHAS), que mantém um slug ativo-mas-não-enumerável
- * (ex.: 'americana') fora do cast `::cozinha[]`/coluna enum.
+ * Validador de cozinha DATA-DRIVEN (#316/#318, ADR-0025 Decisão 4): pertencimento ao CONJUNTO
+ * ATIVO injetado. O conjunto vem da tabela `vocabulary_term` (via `loadActiveCozinhaSlugs` na
+ * escrita ou `loadVocabulary` cacheado na leitura) — quem resolve o conjunto é a BORDA; o
+ * validador só checa pertencimento, permanecendo PURO/SÍNCRONO. Desde a virada #318 NÃO há mais
+ * `isCozinha` ancorado no enum: `recipe.cozinha`/`briefing.cozinha` são `text` com FK p/
+ * `vocabulary_term.slug`, então a única regra de pertencimento é "está no conjunto ativo?".
  */
 export function isActiveCozinha(value: string, activeCozinhas: ReadonlySet<string>): boolean {
   return activeCozinhas.has(value)

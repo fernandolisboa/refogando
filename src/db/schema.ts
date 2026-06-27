@@ -19,7 +19,7 @@ import {
   customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
-import { COZINHAS, CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
+import { CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
 import {
   ORIGENS,
   VISIBILIDADES,
@@ -70,7 +70,9 @@ export const EMBEDDING_DIMENSIONS = 1536
  */
 
 // ── Enums (do kernel de domínio — fonte única) ─────────────────────────────────
-export const cozinhaEnum = pgEnum('cozinha', COZINHAS)
+// Cozinha NÃO é mais pgEnum (#318, ADR-0025): virou `text` com FK p/ `vocabulary_term.slug`
+// (data-driven). O pgEnum `cozinha` foi DROPADO na migração 0034 (DROP TYPE) — ver recipe.cozinha
+// e briefing.cozinha abaixo. Os demais enums seguem do kernel estático.
 export const categoriaEnum = pgEnum('categoria', CATEGORIAS)
 export const restricaoEnum = pgEnum('restricao', RESTRICOES)
 export const unidadeEnum = pgEnum('unidade', UNIDADES)
@@ -147,7 +149,11 @@ export const recipe = pgTable(
     // (NULL = catálogo/sistema — ADR-0011, inegociável).
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'restrict' }),
     originalLocale: text('original_locale').notNull(),
-    cozinha: cozinhaEnum('cozinha'),
+    // Cozinha DATA-DRIVEN (#318, ADR-0025): `text` com FK p/ `vocabulary_term.slug`, ON DELETE
+    // RESTRICT (preserva proveniência — um slug em uso nunca some sob a Receita). NULLABLE (default
+    // NULL — "sem cozinha"). Ref LAZY (arrow): `vocabularyTerm` é definido ADIANTE (~linha 980); um
+    // ref direto seria erro de ordenação/TDZ. Era o pgEnum `cozinha` até a virada #318.
+    cozinha: text('cozinha').references((): AnyPgColumn => vocabularyTerm.slug, { onDelete: 'restrict' }),
     categoria: categoriaEnum('categoria'),
     restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
     porcoes: integer('porcoes'),
@@ -722,7 +728,10 @@ export const appConfig = pgTable(
 // `user_id`); o Briefing é pendurado na sessão via `creation_session.briefing_id`.
 export const briefing = pgTable('briefing', {
   id: uuid('id').primaryKey().defaultRandom(),
-  cozinha: cozinhaEnum('cozinha'),
+  // Cozinha DATA-DRIVEN (#318, ADR-0025): espelha recipe.cozinha — `text` + FK p/
+  // `vocabulary_term.slug`, ON DELETE RESTRICT (briefing.cozinha é proveniência imutável,
+  // ADR-0006). Ref LAZY (arrow): `vocabularyTerm` é definido adiante. Era o pgEnum `cozinha`.
+  cozinha: text('cozinha').references((): AnyPgColumn => vocabularyTerm.slug, { onDelete: 'restrict' }),
   // Espelha recipe.restricoes: array NOT NULL default '{}' (nunca null; vazio = sem restrição).
   restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
   // NULLABLE (opcionais no pedido, como em recipe).
@@ -970,8 +979,8 @@ export const report = pgTable(
 /**
  * Termo de vocabulário data-driven (issue #314, ADR-0025 Fatia A). Substitui o pgEnum
  * estático `cozinha` por uma TABELA: quais cozinhas existem vira dado curável (e o caminho
- * "Outra" → sugestão → Curador). Esta fatia só CRIA e SEMEIA — nada lê ainda (o app segue
- * no `cozinhaEnum`); o leitor/validação/virada-FK são #315–#318.
+ * "Outra" → sugestão → Curador). Desde a virada #318 `recipe.cozinha`/`briefing.cozinha` são
+ * `text` com FK p/ `slug` (o pgEnum `cozinha` foi DROPADO) — esta tabela é a fonte única.
  *
  * `slug` é a chave natural (estável entre locales); os rótulos vivem em duas colunas
  * NULLABLE bilíngues (ADR Decisão 2). `status` nasce 'suggested' por padrão (caminho

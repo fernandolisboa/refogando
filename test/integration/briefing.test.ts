@@ -417,27 +417,26 @@ describe('POST /api/generations — Briefing estruturado (#11)', () => {
     })
   })
 
-  // 11a — #316 guarda de enum-storability na BORDA de escrita: 'americana' está ATIVA na tabela
-  // (15 slugs semeados), mas NÃO é enum-storável até a virada #318. A borda injeta active ∩ COZINHAS
-  // (`.filter(isCozinha)`), então 'americana' é rejeitada com 400 cozinha_invalida — explicitamente
-  // NÃO 500/22P02 (o cast `::cozinha` nunca recebe o slug). Prova o write-border filter.
-  it('#316: cozinha ATIVA-mas-não-no-enum (americana) → 400 cozinha_invalida, NÃO 500', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'americana@briefing.test' })
-    setClaudeClient(new ExplodingClaudeClient())
+  // 11a — #318 (virada enum→text+FK): 'americana' está ATIVA na tabela E agora é STORÁVEL. O briefing
+  // estruturado com cozinha='americana' NÃO é mais rejeitado na borda (era 400 cozinha_invalida via
+  // enum-bounding até #318) — a chamada PROSSEGUE até a geração e persiste briefing.cozinha='americana'.
+  // (Por isso troca-se o ExplodingClaudeClient por um Fake enlatado: o seam agora É tocado.)
+  it('#318: cozinha ATIVA data-driven (americana) → 201 + briefing.cozinha persiste americana', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'americana@briefing.test' })
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
 
     const res = await post(
       { mode: 'structured', briefing: { ...makeBriefing(), cozinha: 'americana' } },
       headers,
     )
-    expect(res.status).toBe(400)
-    await expect(res.json()).resolves.toMatchObject({ error: 'cozinha_invalida' })
-    expect(await countsBriefing(sql)).toEqual({
-      recipe: 0,
-      session: 0,
-      generation: 0,
-      briefing: 0,
-      briefingItem: 0,
-    })
+    expect(res.status).toBe(201)
+    // O PEDIDO foi persistido como proveniência com a cozinha americana (FK satisfeita: ativa).
+    const [b] = await getDb()
+      .select({ cozinha: briefing.cozinha })
+      .from(briefing)
+      .innerJoin(creationSession, eq(creationSession.briefingId, briefing.id))
+      .where(eq(creationSession.userId, userId))
+    expect(b.cozinha).toBe('americana')
   })
 
   // 12 — observacoes_muito_longas: 2001 chars + ExplodingClaudeClient → 400; nada persistido (E9).

@@ -20,7 +20,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import type { GenerationOutput } from '@/domain/generation'
 import type { TranscriptMessage } from '@/domain/transcript'
-import { RecipeGenSchema } from '@/domain/recipe-gen-schema'
+import { buildRecipeGenSchema } from '@/domain/recipe-gen-schema'
 import {
   IngredientExtractionSchema,
   EXTRACTION_MAX_TOKENS,
@@ -40,6 +40,11 @@ export type GenerationInput = {
   // o `req.signal`: se o cliente HTTP desconecta antes da destilação, o abort propaga ao SDK
   // e a chamada (parse) é cancelada — não se queima quota gerando p/ um cliente que sumiu.
   signal?: AbortSignal
+  // Conjunto ATIVO de slugs de cozinha (#318, ADR-0025 Decisão 4): constrange `cozinha` na saída
+  // structured (`buildRecipeGenSchema` → zodOutputFormat) ao vocabulário VIVO — o modelo só emite
+  // cozinhas ativas. OPCIONAL (back-compat): ausente/vazio ⇒ `z.string()` (sem constraint). A
+  // BORDA resolve o conjunto (loadActiveCozinhaSlugs); o FakeClaudeClient o ignora (devolve canned).
+  cozinhaSlugs?: readonly string[]
 }
 
 /**
@@ -101,12 +106,15 @@ export class RealClaudeClient implements ClaudeClient {
     const client = new Anthropic()
 
     try {
+      // #318: schema constrito ao conjunto ATIVO de cozinhas (data-driven, ADR-0025). Vazio ⇒
+      // z.string() (sem constraint). Mesmo schema p/ a chamada inicial E o reparo abaixo.
+      const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [])
       const params = {
         model: input.model,
         max_tokens: MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(RecipeGenSchema) },
+        output_config: { format: zodOutputFormat(schema) },
         // SEM prefill, SEM temperature custom, SEM thinking: claude-opus-4-8 rejeita
         // prefill/temperature com structured outputs (landmine §11).
       }

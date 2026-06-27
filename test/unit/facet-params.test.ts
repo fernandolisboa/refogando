@@ -5,21 +5,34 @@ import {
   EMPTY_FACETS,
   MAX_FACET_VALUES,
 } from '@/domain/facet-params'
-import { COZINHAS } from '@/domain/vocabulary'
 
 /**
  * Unit do parse de params de faceta (#10): degradação permissiva na borda (valor inválido
- * ⇒ descartado, NUNCA lança), validação contra o Vocabulário ANTES do bind em enum,
- * faixas numéricas, fold de tag, dedup, cap. Sem DB.
+ * ⇒ descartado, NUNCA lança), validação contra o Vocabulário ANTES do bind, faixas numéricas,
+ * fold de tag, dedup, cap. Sem DB.
  *
- * #316: cozinha virou DATA-DRIVEN — `parseFacetParams` recebe o conjunto ATIVO injetado. Os
- * casos pré-existentes injetam `ACTIVE = new Set(COZINHAS)` (as 14 enum-storáveis), provando
- * que o parse segue idêntico ao do enum. O caso americana injeta um conjunto com um slug
- * ativo-mas-não-no-enum, provando que a ACEITAÇÃO é dirigida pelo CONJUNTO, não por COZINHAS.
+ * #316/#318: cozinha é DATA-DRIVEN — `parseFacetParams` recebe o conjunto ATIVO injetado. Os
+ * casos injetam um `ACTIVE` literal de slugs ativos; a ACEITAÇÃO é dirigida pelo CONJUNTO (cozinha
+ * saiu do enum na virada #318), provando que o parse só consulta o conjunto, não um `as const`.
  */
 
-// Conjunto ATIVO injetado nos casos pré-existentes (as 14 cozinhas enum-storáveis).
-const ACTIVE = new Set<string>(COZINHAS)
+// Conjunto ATIVO injetado nos casos (slugs de cozinha ativos, data-driven da tabela vocabulary_term).
+const ACTIVE = new Set<string>([
+  'italiana',
+  'japonesa',
+  'brasileira',
+  'baiana',
+  'mineira',
+  'mexicana',
+  'chinesa',
+  'indiana',
+  'tailandesa',
+  'francesa',
+  'arabe',
+  'portuguesa',
+  'mediterranea',
+  'peruana',
+])
 
 /** Constrói o lookup `(k) => string | null` a partir de um objeto. */
 function get(params: Record<string, string>): (k: string) => string | null {
@@ -45,16 +58,14 @@ describe('parseFacetParams', () => {
     expect(f.cozinhas).toEqual(['japonesa'])
   })
 
-  it('cozinha: ACEITAÇÃO é dirigida pelo conjunto ATIVO injetado, não por COZINHAS (#316)', () => {
-    // 'americana' está ATIVO na tabela mas NÃO no enum `cozinha` (até a virada #318). Injetando-a
-    // no conjunto, o parse a aceita — prova que o validador é set-driven. O tipo de retorno é
-    // Cozinha[], então a checagem do slug não-enumerável precisa do cast `as string[]`.
-    const withAmericana = new Set<string>([...COZINHAS, 'americana'])
+  it('cozinha: ACEITAÇÃO é dirigida pelo conjunto ATIVO injetado (data-driven, #316/#318)', () => {
+    // 'americana' (data-driven) é aceita quando está no conjunto injetado — prova set-driven.
+    const withAmericana = new Set<string>([...ACTIVE, 'americana'])
     const f = parseFacetParams(get({ cozinha: 'italiana,americana' }), withAmericana)
-    expect(f.cozinhas as string[]).toEqual(['italiana', 'americana'])
+    expect(f.cozinhas).toEqual(['italiana', 'americana'])
     // E permanece rejeitada quando NÃO está no conjunto injetado.
     const g = parseFacetParams(get({ cozinha: 'italiana,americana' }), ACTIVE)
-    expect(g.cozinhas as string[]).toEqual(['italiana'])
+    expect(g.cozinhas).toEqual(['italiana'])
   })
 
   it('categoria: literal de enum válido', () => {

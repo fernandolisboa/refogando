@@ -19,7 +19,6 @@ import {
   type FacetasResolvidas,
 } from '@/domain/culinary-profile'
 import { loadVocabulary } from '@/server/vocabulary/load'
-import { isCozinha } from '@/domain/vocabulary'
 
 /**
  * Busca precisa (issue #6): FTS Postgres + unaccent, seccionada por origem.
@@ -106,11 +105,12 @@ export async function GET(request: Request): Promise<Response> {
   // de Perfil culinário resolve cozinha a partir do TEXTO LIVRE, sem param. Por isso gateamos em
   // `?cozinha` presente OU q0 não-vazio: aí (e SÓ aí) a faceta de cozinha pode importar. Quando
   // false, não há param de cozinha E a lente não roda em q vazio ⇒ o conjunto VAZIO é são e o
-  // early-return neutro segue sem tocar o DB. `.filter(isCozinha)` = guarda de enum-storability
-  // (até #318): mantém 'americana' fora do cast `::cozinha[]` → nunca 22P02.
+  // early-return neutro segue sem tocar o DB. Pós-virada #318 a coluna `recipe.cozinha` é `text`
+  // (cast `::text[]` na search.ts), então TODO slug ativo é um filtro válido — usa-se o conjunto
+  // ATIVO CRU (sem enum-bounding; 'americana' agora filtra de verdade).
   const needsActiveSet = url.searchParams.get('cozinha') !== null || q0.length > 0
   const activeCozinhas: ReadonlySet<string> = needsActiveSet
-    ? new Set((await loadVocabulary(db, 'cozinha', 'active')).map((v) => v.slug).filter(isCozinha))
+    ? new Set((await loadVocabulary(db, 'cozinha', 'active')).map((v) => v.slug))
     : new Set<string>()
 
   // #10: facetas EXPLÍCITAS da URL (validadas/degradadas na borda; valor inválido NUNCA

@@ -5,7 +5,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
-import { loadEnumStorableActiveCozinhas } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { classify } from '@/domain/generation'
 import {
   parseBriefing,
@@ -121,13 +121,19 @@ export async function POST(req: Request): Promise<Response> {
   // no Aviso (§4.4). Vazio em free_text.
   const alergMap = new Map<string, string[] | null>()
 
+  // Conjunto ATIVO de cozinhas, DATA-DRIVEN do DB DIRETO (#318, ADR-0025 Decisão 4, sem cache de
+  // leitura). HOISTED p/ FORA do ramo structured (carregado UMA vez): serve a parseBriefing (valida
+  // a cozinha do PEDIDO) E à chamada constrita generateRecipe abaixo (constrange a SAÍDA da IA ao
+  // vocabulário VIVO) — inclusive em `free_text`, que não valida Briefing mas precisa do constraint.
+  // Pós-virada #318 NÃO há mais enum-bounding: 'americana' (ativa) é storável/gerável; o conjunto é
+  // o slug-set CRU. Um único toque de DB (não duplica entre os modos).
+  const activeCozinhas = await loadActiveCozinhaSlugs(getDb())
+
   if (mode === 'structured') {
     // a. Valida shape + faixas + campo-mínimo do Briefing — TUDO antes do seam. O dedup
-    //    silencioso já está aplicado dentro de parseBriefing. Cozinha é DATA-DRIVEN (#316): o
-    //    conjunto ATIVO vem do DB DIRETO (ADR-0025 Decisão 4, sem cache de leitura), já limitado a
-    //    enum-armazenável (active ∩ COZINHAS) pelo helper — ponte temporária até a virada #318:
-    //    um slug ativo-mas-não-enumerável (ex.: 'americana') vira 400 cozinha_invalida, não 22P02/500.
-    const activeCozinhas = await loadEnumStorableActiveCozinhas(getDb())
+    //    silencioso já está aplicado dentro de parseBriefing. Cozinha é DATA-DRIVEN (#318): o
+    //    conjunto ATIVO (já carregado acima) vem do DB DIRETO — uma cozinha ativa qualquer
+    //    (inclusive 'americana') é aceita; só slug NÃO-ativo vira 400 cozinha_invalida.
     const parsed = parseBriefing(body.briefing, activeCozinhas)
     if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
     briefing = parsed.briefing
@@ -215,6 +221,9 @@ export async function POST(req: Request): Promise<Response> {
     systemPrompt,
     userPrompt,
     model,
+    // #318: constrange a cozinha da SAÍDA structured ao vocabulário VIVO (data-driven). Mesmo
+    // conjunto ATIVO hoisted acima — vale p/ structured E free_text (a IA só emite cozinhas vivas).
+    cozinhaSlugs: [...activeCozinhas],
   })
   const result = classify(out)
 
