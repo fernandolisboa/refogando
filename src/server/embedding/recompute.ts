@@ -39,7 +39,8 @@ export async function embedTranslation(
 
   // Espelha a coluna FTS search_vector (titulo + descricao).
   const text = `${tr.titulo ?? ''} ${tr.descricao ?? ''}`.trim()
-  const vector = await getEmbedder().embed(text) // LANÇA → propaga, stale intacto
+  // DOCUMENTO indexado: `RETRIEVAL_DOCUMENT` (par assimétrico com `RETRIEVAL_QUERY` na Busca).
+  const vector = await getEmbedder().embed(text, 'RETRIEVAL_DOCUMENT') // LANÇA → propaga, stale intacto
 
   // Upsert: a linha pode não existir ainda (1º embedding) ou já existir (re-embed).
   // stale limpa SÓ aqui (após o embed bem-sucedido).

@@ -8,8 +8,17 @@ import { EMBEDDING_DIMENSIONS } from '@/db/schema'
  * (sem SDK), espelhando o `ImageGenerator` (#132) — `fetch` direto no `:embedContent` com a key lida
  * PREGUIÇOSAMENTE no uso (build/typecheck e os testes — que injetam `FakeEmbedder` — nunca a exigem).
  */
+/**
+ * Tarefa do embedding (Gemini `taskType`). RECUPERAÇÃO ASSIMÉTRICA: documentos indexados com
+ * `RETRIEVAL_DOCUMENT`, consultas com `RETRIEVAL_QUERY`. Sem isso, query e documento compartilham a
+ * tarefa default e a geometria fica anisotrópica — textos curtos não-relacionados batem 0.5–0.6 de
+ * cosseno (ruído), sem janela limpa pra um piso de similaridade. Com o par, o sinal sobe e o ruído
+ * fica pra trás (medido contra o corpus real). Ausente ⇒ legado (nenhuma tarefa enviada).
+ */
+export type EmbeddingTaskType = 'RETRIEVAL_QUERY' | 'RETRIEVAL_DOCUMENT'
+
 export interface Embedder {
-  embed(text: string): Promise<number[]>
+  embed(text: string, taskType?: EmbeddingTaskType): Promise<number[]>
 }
 
 /**
@@ -42,7 +51,7 @@ export class RealEmbedder implements Embedder {
     return key
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, taskType?: EmbeddingTaskType): Promise<number[]> {
     const key = this.requireKey()
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(EMBEDDING_MODEL)}:embedContent`
 
@@ -52,6 +61,8 @@ export class RealEmbedder implements Embedder {
       body: JSON.stringify({
         content: { parts: [{ text }] },
         outputDimensionality: EMBEDDING_DIMENSIONS, // 1536 — casa a coluna vector(1536)
+        // Recuperação assimétrica (doc vs query) — só enviado quando o chamador especifica.
+        ...(taskType ? { taskType } : {}),
       }),
     })
     if (!res.ok) {
@@ -72,11 +83,11 @@ export class RealEmbedder implements Embedder {
 export class FakeEmbedder implements Embedder {
   constructor(
     private readonly dimensions = 8,
-    private readonly impl?: (text: string) => number[],
+    private readonly impl?: (text: string, taskType?: EmbeddingTaskType) => number[],
   ) {}
 
-  async embed(text: string): Promise<number[]> {
-    if (this.impl) return this.impl(text)
+  async embed(text: string, taskType?: EmbeddingTaskType): Promise<number[]> {
+    if (this.impl) return this.impl(text, taskType)
     // Vetor determinístico e barato: hash simples por caractere.
     const vec = new Array<number>(this.dimensions).fill(0)
     for (let i = 0; i < text.length; i++) {
