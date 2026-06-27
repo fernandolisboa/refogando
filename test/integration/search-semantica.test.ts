@@ -4,8 +4,8 @@ import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setEmbedder, resetDeps } from '@/server/deps'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
-import { embedTranslation, EMBEDDING_MODEL } from '@/server/embedding/recompute'
-import { searchRecipes } from '@/server/recipe/search'
+import { embedTranslation, EMBEDDING_MODEL, EMBEDDING_VERSION } from '@/server/embedding/recompute'
+import { searchRecipes, SEMANTIC_MIN_SIM } from '@/server/recipe/search'
 import { GET } from '@/app/api/search/route'
 import { recipeEmbedding } from '@/db/schema'
 import { EMPTY_FACETS } from '@/domain/facet-params'
@@ -139,7 +139,7 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
       })
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
-    expect(row.model).toBe(EMBEDDING_MODEL)
+    expect(row.model).toBe(EMBEDDING_VERSION)
     expect(row.dims).toBe(DIM)
     expect(row.stale).toBe(false)
   })
@@ -184,7 +184,7 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
     expect(row.stale).toBe(false)
-    expect(row.model).toBe(EMBEDDING_MODEL)
+    expect(row.model).toBe(EMBEDDING_VERSION)
     expect(row.cos).toBeCloseTo(0.9, 4) // recomputado (era ~0.1)
   })
 
@@ -213,6 +213,32 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
     expect(row.stale).toBe(true) // sinal preservado pra retry
     expect(row.model).toBe('old') // não tocado
     expect(row.cos).toBeCloseTo(0.1, 4) // vetor intacto
+  })
+})
+
+describe('camada semântica — taskType assimétrico (RETRIEVAL_DOCUMENT × RETRIEVAL_QUERY)', () => {
+  it('recompute embeda DOCUMENTO; a Busca consulta — cada caminho com SEU taskType (pareamento)', async () => {
+    // FakeEmbedder que CAPTURA (texto, taskType). Prova a fiação assimétrica sem tocar o Gemini real
+    // (caminho REAL é gate humano). KEYA por texto: o doc é 'Tapioca' (titulo) e a consulta é 'tapioca'
+    // (termo) — distintos por maiúscula, então um SWAP dos literais (DOC↔QUERY) FALHA aqui.
+    const seen: { text: string; taskType?: string }[] = []
+    setEmbedder(
+      new FakeEmbedder(DIM, (text, taskType) => {
+        seen.push({ text, taskType })
+        return QUERY_VEC
+      }),
+    )
+    const db = getDb()
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Tapioca', provenance: 'escrita_por_pessoa' })
+
+    await embedTranslation(db, recipeId, 'pt-BR') // caminho do DOCUMENTO (texto = titulo+descricao)
+    await searchBody('tapioca') // caminho da CONSULTA (porta alta GET, texto = termo)
+
+    const docCall = seen.find((s) => s.text === 'Tapioca') // documento indexado
+    const queryCall = seen.find((s) => s.text === 'tapioca') // consulta
+    expect(docCall?.taskType).toBe('RETRIEVAL_DOCUMENT')
+    expect(queryCall?.taskType).toBe('RETRIEVAL_QUERY')
   })
 })
 
@@ -343,10 +369,15 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
     expect(sugIds(body)).toContain(SN)
   })
 
-  it('AC3(b) discriminação do limiar 0.50: SM_above incluído, SM_below excluído', async () => {
+  it('AC3(b) discriminação do limiar (SEMANTIC_MIN_SIM): SM_above incluído, SM_below excluído', async () => {
     injectQueryEmbedder()
-    const above = await seedNeighbor('Bobó de camarão', 0.6) // > 0.50
-    const below = await seedNeighbor('Moqueca baiana', 0.4) // < 0.50
+    // VALOR: trava o piso longe do 0.50 antigo (que deixava ruído passar) — um revert silencioso pra
+    // 0.50 falha aqui. Deixa folga pra re-tune após o seed #238 (qualquer valor em [0.6, 1] passa).
+    expect(SEMANTIC_MIN_SIM).toBeGreaterThanOrEqual(0.6)
+    // DISCRIMINAÇÃO: RELATIVO ao piso (não crava o número) — margem 0.1 de cada lado (folga p/ o HNSW
+    // aproximado, como a versão 0.6/0.4 vs 0.5 fazia). Re-medir o piso não quebra esta parte.
+    const above = await seedNeighbor('Bobó de camarão', SEMANTIC_MIN_SIM + 0.1) // > limiar
+    const below = await seedNeighbor('Moqueca baiana', SEMANTIC_MIN_SIM - 0.1) // < limiar
     const { body } = await searchBody('qwerty')
     expect(sugIds(body)).toContain(above)
     expect(sugIds(body)).not.toContain(below)
@@ -354,7 +385,7 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
 
   it('AC3(b) US37 puro: tudo abaixo do limiar ⇒ sugestoes OMITIDA', async () => {
     injectQueryEmbedder()
-    await seedNeighbor('Curau de milho', 0.4) // < 0.50
+    await seedNeighbor('Curau de milho', 0.4) // < limiar
     await seedNeighbor('Pamonha', 0.0) // ortogonal
     const { body } = await searchBody('zxcvb')
     expect(secIds(body)).toHaveLength(0)
@@ -411,9 +442,9 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
 
   it('AC5 (prioridade requestLocale, O3): a chave de locale do DISTINCT ON é LOAD-BEARING', async () => {
     injectQueryEmbedder()
-    // Receita com DOIS embeddings CRUZANDO o limiar 0.50: pt-BR (requestLocale) cos 0.40
+    // Receita com DOIS embeddings CRUZANDO o limiar: pt-BR (requestLocale) cos 0.40
     // (ABAIXO) e en-US cos 0.95 (ACIMA). A chave `(re.locale = requestLocale) DESC` do
-    // DISTINCT ON faz a CTE escolher a linha pt-BR (0.40 < 0.50) ⇒ R é EXCLUÍDA de
+    // DISTINCT ON faz a CTE escolher a linha pt-BR (0.40 < limiar) ⇒ R é EXCLUÍDA de
     // sugestoes. Se essa chave fosse REMOVIDA, o DISTINCT ON cairia no menor distância
     // (en-US 0.95) e R apareceria ERRADAMENTE ⇒ a asserção falha na mutação da chave.
     const R = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
@@ -429,7 +460,7 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
     const { body } = await searchBody('hjkl', 'pt-BR')
     expect(secIds(body)).toHaveLength(0) // sem precisa ⇒ seções vazias
     expect(sugIds(body)).toContain(NB) // sugestoes presente (controle não-vácuo)
-    // R EXCLUÍDA: o DISTINCT ON pegou a linha pt-BR (0.40 < 0.50), via a chave de locale.
+    // R EXCLUÍDA: o DISTINCT ON pegou a linha pt-BR (0.40 < limiar), via a chave de locale.
     // Sem essa chave, pegaria en-US (0.95) e R apareceria — esta asserção quebra na mutação.
     expect(sugIds(body)).not.toContain(R)
   })

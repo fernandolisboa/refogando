@@ -11,10 +11,11 @@ import { getEmbedder } from '@/server/deps'
  * ADR-0011; a Busca nunca recomputa on-read — colidiria com a degradação).
  */
 
-// Modelo gravado em `recipe_embedding.model` (AC6) — fonte única no SEAM (`embedder.ts`); re-exportado
-// aqui pelos consumidores históricos. #119 plugou o Gemini real (`gemini-embedding-001`).
-export { EMBEDDING_MODEL } from '@/server/embedding/embedder'
-import { EMBEDDING_MODEL } from '@/server/embedding/embedder'
+// Nome do modelo na API + VERSÃO da geometria gravada em `recipe_embedding.model` — fonte única no
+// SEAM (`embedder.ts`); re-exportados aqui pelos consumidores históricos. #119 plugou o Gemini real;
+// #2 passou a gravar `EMBEDDING_VERSION` (geometria, não só o nome) p/ o reembed ser self-healing.
+export { EMBEDDING_MODEL, EMBEDDING_VERSION } from '@/server/embedding/embedder'
+import { EMBEDDING_VERSION } from '@/server/embedding/embedder'
 
 /**
  * Recompute de UMA linha de embedding `(recipe_id, locale)`. Lê a Tradução corrente,
@@ -39,30 +40,38 @@ export async function embedTranslation(
 
   // Espelha a coluna FTS search_vector (titulo + descricao).
   const text = `${tr.titulo ?? ''} ${tr.descricao ?? ''}`.trim()
-  const vector = await getEmbedder().embed(text) // LANÇA → propaga, stale intacto
+  // DOCUMENTO indexado: `RETRIEVAL_DOCUMENT` (par assimétrico com `RETRIEVAL_QUERY` na Busca).
+  const vector = await getEmbedder().embed(text, 'RETRIEVAL_DOCUMENT') // LANÇA → propaga, stale intacto
 
   // Upsert: a linha pode não existir ainda (1º embedding) ou já existir (re-embed).
   // stale limpa SÓ aqui (após o embed bem-sucedido).
   await db
     .insert(recipeEmbedding)
-    .values({ recipeId, locale, embedding: vector, model: EMBEDDING_MODEL, stale: false })
+    .values({ recipeId, locale, embedding: vector, model: EMBEDDING_VERSION, stale: false })
     .onConflictDoUpdate({
       target: [recipeEmbedding.recipeId, recipeEmbedding.locale],
-      set: { embedding: vector, model: EMBEDDING_MODEL, stale: false },
+      set: { embedding: vector, model: EMBEDDING_VERSION, stale: false },
     })
   return { ok: true }
 }
 
 /**
  * Predicado "esta Tradução PRECISA de embedding" (#119): não há linha `recipe_embedding` para
- * `(recipe_id, locale)`, OU há mas com vetor NULL (dormente), OU está `stale` (conteúdo mudou). É a
- * fonte tanto dos CANDIDATOS do backfill quanto da contagem de RESTANTES — definido uma vez. Usa o
- * LEFT JOIN externo `recipe_embedding`, então `isNull(recipeEmbedding.recipeId)` casa o "sem linha".
+ * `(recipe_id, locale)`, OU há mas com vetor NULL (dormente), OU está `stale` (conteúdo mudou), OU o
+ * vetor é de uma GEOMETRIA ANTIGA (`model <> EMBEDDING_VERSION` — #2). É a fonte tanto dos CANDIDATOS
+ * do backfill quanto da contagem de RESTANTES — definido uma vez. Usa o LEFT JOIN externo
+ * `recipe_embedding`, então `isNull(recipeEmbedding.recipeId)` casa o "sem linha".
+ *
+ * A 4ª cláusula torna o reembed SELF-HEALING: ao bumpar `EMBEDDING_VERSION` (ex.: ao adicionar
+ * `taskType`), o deploy passa a contar as linhas antigas como candidatas — o backfill (e o recompute
+ * on-write) as migra, sem `UPDATE ... SET stale` manual. `IS DISTINCT FROM` (não `<>`) trata `model`
+ * NULL como diferente (linha antiga sem tag também é candidata).
  */
 const NEEDS_EMBEDDING = or(
   isNull(recipeEmbedding.recipeId),
   isNull(recipeEmbedding.embedding),
   eq(recipeEmbedding.stale, true),
+  sql`${recipeEmbedding.model} IS DISTINCT FROM ${EMBEDDING_VERSION}`,
 )
 
 /**

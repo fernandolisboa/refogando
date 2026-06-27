@@ -171,7 +171,8 @@ export async function GET(request: Request): Promise<Response> {
   let queryVector: number[] | null = null
   if (q.length > 0) {
     try {
-      queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN))
+      // CONSULTA: `RETRIEVAL_QUERY` (par assimétrico com `RETRIEVAL_DOCUMENT` no índice).
+      queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN), 'RETRIEVAL_QUERY')
     } catch {
       queryVector = null
     }

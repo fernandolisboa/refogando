@@ -548,7 +548,12 @@ export function SearchExperience({
         )}
 
         {/* Vazio: a busca concluiu sem RECEITA. #279: só mostra "nenhum resultado" se TAMBÉM não há
-            Cozinheiro casando — senão o cluster acima carrega o resultado (cook casa, receita vazia). */}
+            Cozinheiro casando — senão o cluster acima carrega o resultado (cook casa, receita vazia).
+            #2: o estado vazio agora é HONESTO por construção — o piso 0.65 + taskType param de empurrar
+            sugestões-ruído (antes "feijoada" trazia 4 receitas aleatórias). As saídas da web já existem
+            (auto-gate #164 no acervo raso; CTA #275 no acervo suficiente) e a de IA está no topo (CTA
+            permanente); não duplicamos aqui (um CTA manual no caminho raso reintroduziria o flash que o
+            C2b guarda). O refino visual deste bloco vem no protótipo do #5. */}
         {isEmpty && cooks.length === 0 && <p className="text-muted">{m.semResultado}</p>}
 
         {/* Resultados: stale-while-revalidate — montados sempre que a última busca trouxe

@@ -50,8 +50,14 @@ const SECTION_CAP = 50
  * (bucket 2 / sugestões) precisam de similaridade >= este valor para entrar. Separa os
  * fortes/moderados que DEVEM aparecer dos fracos/off-target. Cosseno = 1 - distância
  * (`<=>` com vector_cosine_ops). NÃO é uma fórmula de fusão — só um piso de entrada.
+ *
+ * 0.65 (medido): com `taskType` (RETRIEVAL_QUERY/DOCUMENT) o sinal real fica ~0.69–0.71 e o
+ * RUÍDO de termos não-relacionados ~0.59–0.61 — 0.65 senta no meio dessa janela. O valor 0.50
+ * anterior era abaixo do piso de ruído do `gemini-embedding-001` (deixava "feijoada" casar polvo).
+ * Exportado pra suíte semântica semear acima/abaixo RELATIVO (sem cravar o número no teste).
+ * Re-validar contra o corpus após o seed do catálogo (#238).
  */
-const SEMANTIC_MIN_SIM = 0.5
+export const SEMANTIC_MIN_SIM = 0.65
 /** Cap anti-fan-out para sugestões (US38): um GET anônimo não draga o catálogo inteiro
  * por vizinhança. Por seção. (bucket 2 já respeita SECTION_CAP no caminho com precisa.) */
 const SEMANTIC_CAP = 10

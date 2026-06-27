@@ -6,7 +6,7 @@ import { POST } from '@/app/api/generations/route'
 import { getDb, setClaudeClient, setEmbedder } from '@/server/deps'
 import { FakeClaudeClient } from '@/server/claude/client'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
-import { EMBEDDING_MODEL } from '@/server/embedding/recompute'
+import { EMBEDDING_VERSION } from '@/server/embedding/recompute'
 import { recipeEmbedding } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
@@ -59,7 +59,7 @@ describe('Embedding na criação de receita (#119)', () => {
     const emb = await embeddingOf(recipeId, 'pt-BR') // originalLocale da geração
     expect(emb).toBeDefined()
     expect(emb.dims).toBe(EMBEDDING_DIMENSIONS)
-    expect(emb.model).toBe(EMBEDDING_MODEL)
+    expect(emb.model).toBe(EMBEDDING_VERSION)
     expect(emb.stale).toBe(false)
   })
 
