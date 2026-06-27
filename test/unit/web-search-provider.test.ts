@@ -84,7 +84,8 @@ describe('RealWebSearchProvider (#271) — consulta Brave + mapeamento', () => {
     expect(u.searchParams.get('q')).toBe('feijoada site:tudogostoso.com.br')
     expect(u.searchParams.get('count')).toBe(String(MAX_WEB_RESULTS))
     expect(u.searchParams.get('country')).toBe('BR')
-    expect(u.searchParams.get('search_lang')).toBe('pt')
+    // search_lang é enum fechado do Brave: pt-BR ⇒ 'pt-br' ('pt' dá HTTP 422 → []).
+    expect(u.searchParams.get('search_lang')).toBe('pt-br')
     const headers = calls[0].init?.headers as Record<string, string>
     expect(headers['x-subscription-token']).toBe(KEY)
   })
