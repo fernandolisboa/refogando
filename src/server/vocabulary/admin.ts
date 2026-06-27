@@ -41,6 +41,15 @@ export type AddCozinhaResult =
 export type MutateCozinhaResult = { ok: true; slug: string } | { ok: false; error: 'nao_encontrado' }
 
 /**
+ * Resultado de editar rótulos: além do `nao_encontrado` (WHERE sem match), distingue
+ * `rotulos_invalidos` (rótulo presente mas vazio/branco) — senão a rota mapearia uma falha de
+ * validação como 404 "não encontrada" numa cozinha que existe na lista logo acima do form.
+ */
+export type EditCozinhaResult =
+  | { ok: true; slug: string }
+  | { ok: false; error: 'nao_encontrado' | 'rotulos_invalidos' }
+
+/**
  * Lista as cozinhas que o Admin governa — DB-DIRETO (vê depreciadas + estado fresco), kind
  * 'cozinha' e status ∈ {active,deprecated}. Ordenado por (sort, slug). 'suggested'/'merged'/
  * 'rejected' NÃO aparecem aqui (são a fila do Curador #320, nunca esta superfície).
@@ -118,16 +127,16 @@ export async function editCozinhaLabels(
   db: Database,
   slug: string,
   labels: { labelPtBr?: string; labelEnUs?: string },
-): Promise<MutateCozinhaResult> {
+): Promise<EditCozinhaResult> {
   const set: { labelPtBr?: string; labelEnUs?: string; updatedAt: Date } = { updatedAt: new Date() }
   if (labels.labelPtBr !== undefined) {
     const v = typeof labels.labelPtBr === 'string' ? labels.labelPtBr.trim() : ''
-    if (v.length === 0) return { ok: false, error: 'nao_encontrado' }
+    if (v.length === 0) return { ok: false, error: 'rotulos_invalidos' }
     set.labelPtBr = v
   }
   if (labels.labelEnUs !== undefined) {
     const v = typeof labels.labelEnUs === 'string' ? labels.labelEnUs.trim() : ''
-    if (v.length === 0) return { ok: false, error: 'nao_encontrado' }
+    if (v.length === 0) return { ok: false, error: 'rotulos_invalidos' }
     set.labelEnUs = v
   }
 

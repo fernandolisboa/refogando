@@ -39,7 +39,7 @@ function renderNav(role: 'admin' | 'curador', path = '/admin/config') {
 }
 
 describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () => {
-  it('admin vê as 6 seções (Governança: Config, IA & Descoberta, Papéis + Curadoria)', () => {
+  it('admin vê as 7 seções (Governança: Config, IA & Descoberta, Cozinhas, Papéis + Curadoria)', () => {
     const nav = renderNav('admin')
     for (const label of [
       A.navConfig,

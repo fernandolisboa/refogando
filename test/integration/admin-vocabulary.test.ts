@@ -142,6 +142,17 @@ describe('/api/admin/vocabulary — editar rótulos', () => {
     expect(display.find((r) => r.slug === 'italiana')?.labelPtBr).toBe('Italianíssima')
   })
 
+  it('PATCH com rótulo em branco numa cozinha que existe → 400 rotulos_invalidos (não 404)', async () => {
+    const headers = await adminHeaders('blanklabel@vocab.test')
+    const res = await patch({ slug: 'italiana', labelPtBr: '   ' }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'rotulos_invalidos' })
+    // O rótulo NÃO foi sobrescrito (a função retorna antes do UPDATE).
+    __clearVocabularyCache()
+    const display = await loadVocabulary(getDb(), 'cozinha', 'display')
+    expect(display.find((r) => r.slug === 'italiana')?.labelPtBr).toBe('Italiana')
+  })
+
   it('PATCH sem campo mutante → 400 dados_invalidos', async () => {
     const headers = await adminHeaders('nodata@vocab.test')
     const res = await patch({ slug: 'italiana' }, headers)

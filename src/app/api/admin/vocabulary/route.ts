@@ -38,12 +38,11 @@ export async function POST(req: Request): Promise<Response> {
     labelPtBr?: unknown
     labelEnUs?: unknown
   }
-  if (
-    typeof body.slug !== 'string' ||
-    typeof body.labelPtBr !== 'string' ||
-    typeof body.labelEnUs !== 'string'
-  ) {
+  if (typeof body.slug !== 'string') {
     return Response.json({ error: 'slug_invalido' }, { status: 400 })
+  }
+  if (typeof body.labelPtBr !== 'string' || typeof body.labelEnUs !== 'string') {
+    return Response.json({ error: 'rotulos_invalidos' }, { status: 400 })
   }
 
   let result
@@ -94,7 +93,11 @@ export async function PATCH(req: Request): Promise<Response> {
         labelPtBr: body.labelPtBr as string | undefined,
         labelEnUs: body.labelEnUs as string | undefined,
       })
-      if (!r.ok) return Response.json({ error: r.error }, { status: 404 })
+      // Mapeia pela CHAVE: rótulo vazio é validação (400), não inexistência da linha (404).
+      if (!r.ok) {
+        const status = r.error === 'rotulos_invalidos' ? 400 : 404
+        return Response.json({ error: r.error }, { status })
+      }
     }
     if (hasStatus) {
       const r = await setCozinhaStatus(getDb(), body.slug, body.status as 'active' | 'deprecated')
