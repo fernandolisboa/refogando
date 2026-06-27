@@ -21,6 +21,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { Locale } from '@/i18n/locale'
 import { RecipeEditModal } from '@/components/recipe/recipe-edit-modal'
@@ -66,7 +67,9 @@ function mockFetch(byMethod: (method: string) => FetchResult) {
 function renderModal(view: RecipeView, locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeEditModal view={view} />
+      <WithCozinhaVocab>
+        <RecipeEditModal view={view} />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }
@@ -465,7 +468,9 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
 function renderDeriveModal(view: RecipeView, locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeEditModal view={view} mode="derive" locale={locale} />
+      <WithCozinhaVocab>
+        <RecipeEditModal view={view} mode="derive" locale={locale} />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }
@@ -593,7 +598,9 @@ describe('RecipeEditModal — modo DERIVE (#196)', () => {
     mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
     render(
       <LocaleProvider initialLocale="pt-BR">
-        <RecipeEditModal view={ownerView()} />
+        <WithCozinhaVocab>
+          <RecipeEditModal view={ownerView()} />
+        </WithCozinhaVocab>
       </LocaleProvider>,
     )
     await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.editar }))

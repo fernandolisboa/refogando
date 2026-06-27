@@ -2,7 +2,7 @@
  * Catálogo de chrome em pt-BR (issue #4). `Messages = typeof ptBR` ancora o shape;
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
-import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
+import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -194,24 +194,9 @@ export const ptBR = {
     copiaTitulo: 'Criando uma cópia',
     copiaAviso: 'Você está editando uma receita que não é sua — vamos criar uma cópia sua.',
   },
-  // Rótulo amigável por valor do enum COZINHAS (#56). `satisfies Record<Cozinha, string>`
-  // trava drift do enum (chave faltante/extra/typo) no site de definição.
-  cozinhaLabel: {
-    italiana: 'Italiana',
-    japonesa: 'Japonesa',
-    brasileira: 'Brasileira',
-    baiana: 'Baiana',
-    mineira: 'Mineira',
-    mexicana: 'Mexicana',
-    chinesa: 'Chinesa',
-    indiana: 'Indiana',
-    tailandesa: 'Tailandesa',
-    francesa: 'Francesa',
-    arabe: 'Árabe',
-    portuguesa: 'Portuguesa',
-    mediterranea: 'Mediterrânea',
-    peruana: 'Peruana',
-  } satisfies Record<Cozinha, string>,
+  // #317 (ADR-0025): `cozinhaLabel` saiu do i18n — os rótulos de cozinha agora vêm da tabela
+  // `vocabulary_term` (leitor #315), resolvidos por `domain/cozinha-label.ts`. O enum estático
+  // virou dado curado.
   // Rótulo amigável por valor do enum CATEGORIAS (#56).
   categoriaLabel: {
     entrada: 'Entrada',

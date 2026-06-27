@@ -16,6 +16,8 @@ vi.mock('next/link', () => ({
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { resolveCozinhaLabel } from '@/domain/cozinha-label'
+import { cozinhaVocabFixture } from '../helpers/cozinha-vocab'
 import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
@@ -53,8 +55,15 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
   }
 }
 
+// #317: a página resolve o rótulo de cozinha pelo leitor data-driven (escopo display) e passa
+// por prop ao componente PURO. Os testes espelham isso usando a fixture do seed (#314).
+const COZINHA_VOCAB = cozinhaVocabFixture('pt-BR')
+function cozinhaLabelOf(view: RecipeView): string | null {
+  return resolveCozinhaLabel(COZINHA_VOCAB, view.facets.cozinha)
+}
+
 function renderView(view: RecipeView) {
-  return render(<RecipeDetailView view={view} m={M} />)
+  return render(<RecipeDetailView view={view} m={M} cozinhaLabel={cozinhaLabelOf(view)} />)
 }
 
 afterEach(() => {

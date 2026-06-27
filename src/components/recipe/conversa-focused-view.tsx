@@ -25,6 +25,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { useConversationChat, type ChatMessage } from '@/hooks/use-conversation-chat'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { RecipeDetailView } from './recipe-detail-view'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
+import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { TranscriptModal } from './transcript-modal'
 
 /**
@@ -60,6 +62,7 @@ export function lastExchange(transcript: ChatMessage[]): {
 export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: string }) {
   const { locale, messages } = useLocale()
   const m = messages.conversa
+  const cozinhaVocab = useCozinhaVocab() // #317: rótulo de cozinha do leitor (contexto ativo)
   const session = useSession()
 
   const {
@@ -345,7 +348,11 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               )}
 
               {/* A Receita destilada como HERÓI — REUSO total. O `<h1>{view.name}` é o ÚNICO `<h1>`. */}
-              <RecipeDetailView view={view} m={messages} />
+              <RecipeDetailView
+                view={view}
+                m={messages}
+                cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+              />
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}

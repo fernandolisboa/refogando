@@ -27,7 +27,8 @@ import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { Search, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { COZINHAS, CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
@@ -341,10 +342,15 @@ export function SearchExperience({
     [],
   )
 
-  const cozinhaOptions: FacetOption[] = COZINHAS.map((value) => ({
-    value,
-    label: messages.cozinhaLabel[value],
-  }))
+  // #317: as opções de cozinha vêm do leitor data-driven via contexto (semeado no layout),
+  // não mais do enum estático `COZINHAS` × `messages.cozinhaLabel`. Já chegam localizadas.
+  const cozinhaVocab = useCozinhaVocab()
+  const cozinhaOptions: FacetOption[] = cozinhaVocab.map(({ value, label }) => ({ value, label }))
+  // Mapa slug→rótulo p/ o eco da Consulta resolvida (mantém o `?? v` lá: um slug selecionado
+  // na URL mas fora do escopo ativo cai no próprio slug).
+  const cozinhaLabelMap: Record<string, string> = Object.fromEntries(
+    cozinhaVocab.map((o) => [o.value, o.label]),
+  )
   const categoriaOptions: FacetOption[] = CATEGORIAS.map((value) => ({
     value,
     label: messages.categoriaLabel[value],
@@ -499,7 +505,7 @@ export function SearchExperience({
         <ResolvedQueryEcho
           consulta={data.consulta}
           label={m.consultaLabel}
-          cozinhaLabel={messages.cozinhaLabel}
+          cozinhaLabel={cozinhaLabelMap}
           categoriaLabel={messages.categoriaLabel}
           restricaoLabel={messages.restricaoLabel}
         />

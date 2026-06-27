@@ -24,7 +24,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldClassName } from '@/components/button'
 import {
-  COZINHAS,
   CATEGORIAS,
   RESTRICOES,
   UNIDADES,
@@ -32,6 +31,7 @@ import {
   DIFICULDADE,
   TEMPO_MIN,
 } from '@/domain/vocabulary'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { RecipeView } from '@/domain/recipe-read'
 
@@ -94,6 +94,7 @@ export function RecipeEditForm({
   const { locale: currentLocale, messages } = useLocale()
   const m = messages.edicaoPropria
   const mc = messages.criar // reusa rótulos de campo do create
+  const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const router = useRouter()
   const isDerive = mode === 'derive'
 
@@ -566,9 +567,10 @@ export function RecipeEditForm({
                 className={fieldClassName}
               >
                 <option value="">{mc.cozinhaNenhuma}</option>
-                {COZINHAS.map((c) => (
-                  <option key={c} value={c}>
-                    {messages.cozinhaLabel[c]}
+                {/* #317: opções de cozinha do leitor data-driven (contexto), já localizadas. */}
+                {cozinhaVocab.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </select>

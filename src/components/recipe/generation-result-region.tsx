@@ -19,6 +19,8 @@ import type { Messages } from '@/i18n/messages'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from './recipe-detail-view'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
+import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import type { GenerationResult } from '@/hooks/use-recipe-generation'
 
 export function GenerationResultRegion({
@@ -48,6 +50,9 @@ export function GenerationResultRegion({
   onCriarOutra: () => void
 }) {
   const m = messages.criar
+  // #317: rótulo de cozinha do leitor data-driven (contexto ATIVO do layout) — uma receita
+  // recém-gerada tem necessariamente cozinha ativa; ausente do escopo cai no próprio slug.
+  const cozinhaVocab = useCozinhaVocab()
 
   if (result.outcome === 'impossible') {
     // 'impossible' de verdade: nenhuma Receita foi criada.
@@ -102,7 +107,11 @@ export function GenerationResultRegion({
       )}
 
       {/* A Receita — REUSO total. O `<h1>{view.name}` aqui é o ÚNICO `<h1>`. */}
-      <RecipeDetailView view={view} m={messages} />
+      <RecipeDetailView
+        view={view}
+        m={messages}
+        cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         {/* A Receita JÁ está persistida (private). "Ver receita" só NAVEGA pro detalhe (#59),

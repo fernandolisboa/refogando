@@ -45,6 +45,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { Locale } from '@/i18n/locale'
 import { CreatePageClient } from '@/components/recipe/create-page-client'
@@ -65,7 +66,9 @@ function authed(): SessionState {
 function renderCreate(locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <CreatePageClient />
+      <WithCozinhaVocab>
+        <CreatePageClient />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }

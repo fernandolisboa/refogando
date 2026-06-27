@@ -46,7 +46,9 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
 import { shouldShowCatalogDisclosure } from '@/domain/catalog-disclosure-config'
+import { localizeCozinhaVocab, resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { loadCatalogDisclosureConfig } from '@/server/app-config'
+import { loadVocabulary } from '@/server/vocabulary/load'
 import { buildRecipeMetadata, buildRecipeJsonLd, serializeJsonLd } from '@/domain/recipe-seo'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
@@ -261,7 +263,7 @@ async function resolveCatalogDisclosure(origin: string): Promise<string | undefi
  * gateia por `voteCount != null` (presente no pool); `RecipeDetailActions` (client) resolve a
  * afordância dono/não-dono/visitante pela sessão do cliente.
  */
-function DetailChrome({
+async function DetailChrome({
   view,
   locale,
   reviewImage,
@@ -282,6 +284,14 @@ function DetailChrome({
   catalogDisclosure?: string
 }) {
   const messages = MESSAGES[locale]
+  // #317 (ADR-0025): rótulo de cozinha resolvido no boundary pelo leitor data-driven, escopo
+  // `display` (active + deprecated) — uma cozinha já GRAVADA que depois foi depreciada ainda
+  // renderiza o rótulo no acervo (só não é mais oferecida em criações novas). null ⇒ a linha some.
+  const cozinhaVocab = localizeCozinhaVocab(
+    await loadVocabulary(getDb(), 'cozinha', 'display'),
+    locale,
+  )
+  const cozinhaLabel = resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
       {/* JSON-LD Recipe (#234): só no caminho público. `dangerouslySetInnerHTML` é a forma idiomática
@@ -293,7 +303,12 @@ function DetailChrome({
       <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
         ← {messages.detalhe.voltarBusca}
       </Link>
-      <RecipeDetailView view={view} m={messages} catalogDisclosure={catalogDisclosure} />
+      <RecipeDetailView
+        view={view}
+        m={messages}
+        cozinhaLabel={cozinhaLabel}
+        catalogDisclosure={catalogDisclosure}
+      />
       {/* Engajamento (#62): gate pela presença do agregado de pool (`voteCount`). No caminho público
           o anônimo VÊ a contagem; `viewerVoted`/`viewerFavorited` ausentes (resolvidos no cliente). */}
       {view.voteCount != null && (
