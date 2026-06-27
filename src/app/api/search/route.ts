@@ -18,6 +18,8 @@ import {
   resolveCulinaryProfile,
   type FacetasResolvidas,
 } from '@/domain/culinary-profile'
+import { loadVocabulary } from '@/server/vocabulary/load'
+import { isCozinha } from '@/domain/vocabulary'
 
 /**
  * Busca precisa (issue #6): FTS Postgres + unaccent, seccionada por origem.
@@ -45,7 +47,10 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
  * na forma que o loader consome. Tags já vêm folded da lente; `parseFacetParams` re-aplica
  * `foldIntent` (idempotente sobre valor já folded).
  */
-function facetasFromResolution(facetas: FacetasResolvidas): EffectiveFacets {
+function facetasFromResolution(
+  facetas: FacetasResolvidas,
+  activeCozinhas: ReadonlySet<string>,
+): EffectiveFacets {
   const params: Record<string, string> = {}
   if (facetas.cozinhas?.length) params.cozinha = facetas.cozinhas.join(',')
   if (facetas.categorias?.length) params.categoria = facetas.categorias.join(',')
@@ -55,7 +60,7 @@ function facetasFromResolution(facetas: FacetasResolvidas): EffectiveFacets {
   if (facetas.dificuldade?.max !== undefined) params.dificuldade_max = String(facetas.dificuldade.max)
   if (facetas.porcoes?.min !== undefined) params.porcoes_min = String(facetas.porcoes.min)
   if (facetas.porcoes?.max !== undefined) params.porcoes_max = String(facetas.porcoes.max)
-  return parseFacetParams((k) => (k in params ? params[k] : null))
+  return parseFacetParams((k) => (k in params ? params[k] : null), activeCozinhas)
 }
 
 /**
@@ -91,9 +96,26 @@ export async function GET(request: Request): Promise<Response> {
   // VISÍVEL \x00-\x1f, mantendo este arquivo text-diffável.
   const q0 = stripControlChars(rawQ).trim()
 
+  // db hoisted UMA vez (reusado pelo conjunto-ativo de cozinhas E pelo searchRecipes adiante).
+  const db = getDb()
+
+  // #316: conjunto ATIVO de cozinhas, data-driven da tabela `vocabulary_term`. A leitura (faceta)
+  // PODE usar o cache (`loadVocabulary`, ADR-0025: cache permitido em leituras). Mas o load NÃO pode
+  // ser incondicional: o `await` quebraria o invariante do caminho neutro (q vazio sem faceta → SEM
+  // tocar o DB) e regrediria o caminho 500-proof. Gatear só em `?cozinha` é insuficiente — a lente
+  // de Perfil culinário resolve cozinha a partir do TEXTO LIVRE, sem param. Por isso gateamos em
+  // `?cozinha` presente OU q0 não-vazio: aí (e SÓ aí) a faceta de cozinha pode importar. Quando
+  // false, não há param de cozinha E a lente não roda em q vazio ⇒ o conjunto VAZIO é são e o
+  // early-return neutro segue sem tocar o DB. `.filter(isCozinha)` = guarda de enum-storability
+  // (até #318): mantém 'americana' fora do cast `::cozinha[]` → nunca 22P02.
+  const needsActiveSet = url.searchParams.get('cozinha') !== null || q0.length > 0
+  const activeCozinhas: ReadonlySet<string> = needsActiveSet
+    ? new Set((await loadVocabulary(db, 'cozinha', 'active')).map((v) => v.slug).filter(isCozinha))
+    : new Set<string>()
+
   // #10: facetas EXPLÍCITAS da URL (validadas/degradadas na borda; valor inválido NUNCA
   // 400/500, vira sem-filtro). Bindar string crua em coluna enum dispararia 22P02→500.
-  const explicitFacets = parseFacetParams((k) => url.searchParams.get(k))
+  const explicitFacets = parseFacetParams((k) => url.searchParams.get(k), activeCozinhas)
 
   // #10 lente Perfil culinário (AC4): SÓ roda quando NÃO há faceta explícita na URL.
   // Havendo qualquer faceta explícita, a lente é suprimida e as explícitas honradas
@@ -103,7 +125,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // Facetas EFETIVAS: explícitas verbatim OU resolvidas pela lente.
   const facets: EffectiveFacets =
-    lens?.resolved === true ? facetasFromResolution(lens.facetas) : explicitFacets
+    lens?.resolved === true ? facetasFromResolution(lens.facetas, activeCozinhas) : explicitFacets
 
   // q efetivo: q-restante da lente quando a lente rodou; senão q0. Quando a lente roda mas
   // NÃO resolve (resolved=false), remainingQuery devolve q0 VERBATIM (vírgulas byte-a-byte)
@@ -177,7 +199,6 @@ export async function GET(request: Request): Promise<Response> {
   const g = await requireSession(request)
   const viewerId = g.ok ? g.session.user.id : undefined
 
-  const db = getDb()
   const { hits, sugestoes } = await searchRecipes(db, {
     q,
     terms,

@@ -120,6 +120,21 @@ export function isCozinha(value: string): value is Cozinha {
   return (COZINHAS as readonly string[]).includes(value)
 }
 
+/**
+ * Validador de cozinha DATA-DRIVEN (#316, ADR-0025 Decisão 4): pertencimento ao CONJUNTO
+ * ATIVO injetado, em vez do `COZINHAS as const`. O conjunto vem da tabela `vocabulary_term`
+ * (via `loadActiveCozinhaSlugs` na escrita ou `loadVocabulary` cacheado na leitura) — quem
+ * resolve o conjunto é a BORDA; o validador só checa pertencimento, permanecendo PURO/SÍNCRONO.
+ *
+ * Convive com `isCozinha(value)` (acima): aquele segue ancorado no enum `cozinha`, usado pela
+ * exibição do acervo (#317) e — temporariamente, até a virada #318 — como GUARDA de
+ * enum-storability nas bordas (active ∩ COZINHAS), que mantém um slug ativo-mas-não-enumerável
+ * (ex.: 'americana') fora do cast `::cozinha[]`/coluna enum.
+ */
+export function isActiveCozinha(value: string, activeCozinhas: ReadonlySet<string>): boolean {
+  return activeCozinhas.has(value)
+}
+
 export function isRestricao(value: string): value is Restricao {
   return (RESTRICOES as readonly string[]).includes(value)
 }

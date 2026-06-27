@@ -9,6 +9,7 @@ import { PATCH as patchRoute } from '@/app/api/recipes/[id]/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation, seedRecipeIngredient, seedIngredient } from '../helpers/recipes'
+import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 
 /**
  * Edição IN-PLACE da PRÓPRIA receita (#21) — editar a sua receita (privada ou pública,
@@ -25,8 +26,11 @@ beforeAll(() => {
 
 // Editar campo traduzível ⇒ applyEdit re-embeda (issue #14 seam): plugamos o FakeEmbedder(1536)
 // (o RealEmbedder lança "não implementado"). setup.ts faz resetDeps() ANTES deste beforeEach.
-beforeEach(() => {
+// #316: a validação de cozinha do PATCH lê `vocabulary_term` (DB-direto); `truncateAll` apaga as
+// linhas por teste, então re-semeamos — senão o patch com `cozinha:'italiana'` seria recusado.
+beforeEach(async () => {
   setEmbedder(new FakeEmbedder(1536))
+  await seedVocabularyCozinhas(getDb())
 })
 
 afterAll(async () => {
@@ -366,6 +370,25 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     await patch(id, { titulo: 'X', cozinha: 'italiana', categoria: 'sobremesa' }, headers)
     const [row] = await getDb().select({ origin: recipe.origin }).from(recipe).where(eq(recipe.id, id))
     expect(row.origin).toBe('ai_chat')
+  })
+
+  // (k2) #316 borda data-driven da cozinha: valor enum-storável ATIVO ⇒ 200 + persiste; valor
+  //      ATIVO-mas-não-no-enum (americana, até #318) ⇒ 400 dados_invalidos, explicitamente NÃO 500.
+  it('(k2) PATCH cozinha: ativa-enumerável persiste; americana → 400 (não 500)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-cozinha@ex.com' })
+    const id = await seedOwnPrivate(userId) // cozinha brasileira
+
+    const ok = await patch(id, { cozinha: 'japonesa' }, headers)
+    expect(ok.status).toBe(200)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('japonesa')
+
+    const americana = await patch(id, { cozinha: 'americana' }, headers)
+    expect(americana.status).toBe(400)
+    await expect(americana.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
+    // a cozinha não mudou (rejeitada antes do efeito).
+    const [after] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(after.cozinha).toBe('japonesa')
   })
 
   // (l) id malformado ⇒ 404 sem 500; uuid inexistente ⇒ 404.

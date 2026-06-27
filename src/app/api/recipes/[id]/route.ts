@@ -9,7 +9,7 @@ import { loadGallery } from '@/server/recipe/image'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 import {
-  isCozinha,
+  isActiveCozinha,
   isCategoria,
   isRestricao,
   isUnidade,
@@ -21,6 +21,7 @@ import {
   type Restricao,
   type Unidade,
 } from '@/domain/vocabulary'
+import { loadEnumStorableActiveCozinhas } from '@/server/vocabulary/active-set'
 import { canonicalLocale } from '@/i18n/locale'
 import { editOwnRecipe, deleteOwnRecipe, type OwnRecipePatch } from '@/server/recipe/owner-edit'
 
@@ -262,7 +263,14 @@ export async function PATCH(
   }
 
   if (body.cozinha !== undefined) {
-    if (body.cozinha !== null && (typeof body.cozinha !== 'string' || !isCozinha(body.cozinha))) {
+    // Cozinha DATA-DRIVEN (#316): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
+    // dentro deste ramo (não paga ida ao banco em edição que não toca cozinha); já limitado a
+    // enum-armazenável pelo helper — ponte temporária até #318: slug ativo-mas-não-enumerável vira 400.
+    const activeCozinhas = await loadEnumStorableActiveCozinhas(db)
+    if (
+      body.cozinha !== null &&
+      (typeof body.cozinha !== 'string' || !isActiveCozinha(body.cozinha, activeCozinhas))
+    ) {
       return badRequest()
     }
     patch.cozinha = body.cozinha as Cozinha | null

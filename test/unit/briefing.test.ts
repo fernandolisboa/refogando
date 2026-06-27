@@ -3,17 +3,19 @@ import {
   STRENGTHS,
   isStrength,
   OBSERVACOES_MAX,
-  parseBriefing,
+  parseBriefing as parseBriefingRaw,
   dedupeBriefing,
   isBriefingVazio,
   buildBriefingPrompt,
   buildConversationPrompt,
   SYSTEM_PROMPT_DISTILLATION,
   briefingItemsParaAviso,
+  type BriefingParse,
 } from '@/domain/briefing'
 import type { Briefing, BriefingItem } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
+import { COZINHAS } from '@/domain/vocabulary'
 
 /**
  * Domínio puro do Briefing (#11, §7.2): PURO/TOTAL/SEM THROW, sem DB. Cobre parse de
@@ -21,7 +23,21 @@ import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
  * E1); dedup (restrições/itens, normalização/ordem); isBriefingVazio (incl. só-porcoes→true);
  * buildBriefingPrompt determinístico; briefingItemsParaAviso; a costura PURA com
  * decideRestrictionNotices; e o boundary de OBSERVACOES_MAX (2000 ok / 2001 erro).
+ *
+ * #316: cozinha virou DATA-DRIVEN — `parseBriefing` recebe o conjunto ATIVO injetado. Todos os
+ * casos pré-existentes passam por um wrapper que injeta um ACTIVE compartilhado (as 14 cozinhas +
+ * 'americana'), uma só fonte; assim o parse segue idêntico ao do enum para as 14, e os casos novos
+ * provam que a ACEITAÇÃO é dirigida pelo CONJUNTO ('americana' aceita só porque está no conjunto;
+ * 'marciana'/'paleo' seguem fora dele).
  */
+
+// Conjunto ATIVO compartilhado: as 14 enum-storáveis + 'americana' (ativo-mas-ainda-não-no-enum).
+const ACTIVE = new Set<string>([...COZINHAS, 'americana'])
+
+// Wrapper: injeta o ACTIVE compartilhado por default — os ~35 casos pré-existentes ficam intactos.
+function parseBriefing(raw: unknown, active: ReadonlySet<string> = ACTIVE): BriefingParse {
+  return parseBriefingRaw(raw, active)
+}
 
 // Fábrica de item válido (raw-text-only por default — catálogo ADIADO).
 function item(overrides: Partial<BriefingItem> = {}): BriefingItem {
@@ -108,6 +124,23 @@ describe('parseBriefing — shape ok', () => {
   it('porcoes/dificuldade null explícitos → aceitos como null', () => {
     const r = parseBriefing({ cozinha: 'mineira', porcoes: null, dificuldade: null })
     expect(r.ok).toBe(true)
+  })
+
+  it('cozinha ATIVA-mas-não-no-enum (americana) é aceita quando injetada no conjunto (#316)', () => {
+    // Aceitação dirigida pelo CONJUNTO, não por COZINHAS. O tipo é Cozinha|null, então a
+    // comparação do slug não-enumerável precisa do cast `as string`.
+    const r = parseBriefing({ cozinha: 'americana' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.briefing.cozinha as string).toBe('americana')
+  })
+
+  it('cozinha fora do conjunto injetado → cozinha_invalida (mesmo sendo string)', () => {
+    // 'americana' rejeitada quando o conjunto injetado é só as 14 enum-storáveis (sem americana).
+    expect(parseBriefing({ cozinha: 'americana' }, new Set<string>(COZINHAS))).toEqual({
+      ok: false,
+      error: 'cozinha_invalida',
+    })
   })
 })
 
