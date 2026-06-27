@@ -839,7 +839,7 @@ export const ptBR = {
     // Rótulos CURTOS da navegação por seção (#125, rotas aninhadas). `navAria` nomeia a
     // <nav> de seções para AT (distinta da nav principal do header).
     navAria: 'Seções do Console',
-    navConfig: 'Modelo padrão',
+    navConfig: 'IA',
     navPapeis: 'Papéis',
     navModeracao: 'Moderação',
     navTraducoes: 'Traduções',
@@ -872,10 +872,10 @@ export const ptBR = {
     vocabErroSlugEmUso: 'Já existe uma cozinha com esse slug.',
     vocabErroNaoEncontrado: 'Cozinha não encontrada.',
     vocabErroInterno: 'Algo deu errado. Tente de novo.',
-    // #268: a seção /admin/ai abriga geração de imagem + descoberta na web + embeddings — por isso
-    // "IA & Descoberta" (não só "Geração de imagem"). O Aviso do catálogo saiu daqui p/ a Curadoria.
-    navAi: 'IA & Descoberta',
-    // Seção /admin/ai (#134) — liga/desliga a geração de imagem por IA, modelo e tetos por papel.
+    // #268: a aba /admin/ai abriga a infra de BUSCA — descoberta na web + embeddings; a IA
+    // generativa (modelo de receita + geração de imagem + tetos) foi p/ a aba "IA" (/admin/config).
+    navAi: 'Descoberta',
+    // Seção "Geração de imagem" (#134) — vive na aba "IA" (/admin/config); liga/desliga, modelo e tetos.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
     aiHabilitadaLabel: 'Geração de imagem ligada',

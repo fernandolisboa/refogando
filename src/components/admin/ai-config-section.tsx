@@ -1,14 +1,15 @@
 'use client'
 
 /**
- * Config da geração de imagem por IA (#134) — Admin-only (a page `/admin/ai` revalida `min='admin'`
- * server-side; a API `/api/admin/config` reforça `requireRole 'admin'`). Liga/desliga a geração,
- * escolhe o modelo e edita os tetos diários por papel.
+ * Config da geração de imagem por IA (#134) — Admin-only (a page `/admin/config`, aba "IA", revalida
+ * `min='admin'` server-side; a API `/api/admin/config` reforça `requireRole 'admin'`). Liga/desliga a
+ * geração, escolhe o modelo e edita os tetos diários por papel. Mora na MESMA aba que o `ConfigSection`
+ * (modelo de chat/receita) desde o #268-follow-up (rename de rota é o #336).
  *
  * ADR-0010: consome os ROUTE HANDLERS `GET/PUT /api/admin/config` via `fetch` (NÃO Server Action). O
  * servidor é a verdade — a allowlist de modelos e a validação dos tetos vivem lá; aqui só ofertamos
  * os valores e renderizamos o que a rota devolve. PUT envia SÓ o eixo `imageGen` (o `defaultModel` de
- * chat é a seção `/admin/config`, atualizável em separado).
+ * chat é o `ConfigSection`, na mesma aba, atualizável em separado).
  *
  * Tetos: input numérico por papel; VAZIO = ilimitado (`null` — JSON não tem Infinity). Validação
  * cliente leve (inteiro ≥ 0 ou vazio) evita mandar lixo; o servidor revalida (config_invalida →
@@ -131,8 +132,8 @@ export function AiConfigSection() {
     }
     setSaving(true)
     try {
-      // Envia AMBOS os eixos da /admin/ai (imagem + teto de receita) num único PUT; o defaultModel de
-      // chat (seção /admin/config) é preservado pelo upsert parcial do route.
+      // Envia AMBOS os eixos desta seção (imagem + teto de receita) num único PUT; o defaultModel de
+      // chat (ConfigSection, mesma aba) é preservado pelo upsert parcial do route.
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },

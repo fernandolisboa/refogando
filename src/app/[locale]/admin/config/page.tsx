@@ -1,18 +1,27 @@
 /**
- * Seção Modelo padrão (#125, Governança) — admin-only. Revalida o papel server-side com
+ * Seção "IA" (#125/#268, Governança) — admin-only. Revalida o papel server-side com
  * `min='admin'`: um Curador batendo direto aqui é barrado (`AccessDenied`), não só pelo link
- * escondido. Monta o componente de seção EXISTENTE (sem mudar seu comportamento). A API
- * `/api/admin/config` ainda reforça `requireRole 'admin'`.
+ * escondido. A API `/api/admin/config` ainda reforça `requireRole 'admin'`.
+ *
+ * Reúne TODA a IA generativa: o modelo de geração padrão (receita/texto, `ConfigSection`) e a
+ * geração de imagem — modelo + tetos diários por papel (`AiConfigSection`). A infra de busca
+ * (descoberta na web + embeddings) mora na aba "Descoberta" (ai/page.tsx). A rota segue
+ * `/admin/config` (rename cosmético das URLs rastreado no #336).
  */
 import { SectionGate } from '../gate'
 import { ConfigSection } from '@/components/admin/config-section'
+import { AiConfigSection } from '@/components/admin/ai-config-section'
 
 export const runtime = 'nodejs'
 
 export default async function AdminConfigPage() {
   return (
     <SectionGate min="admin">
-      <ConfigSection />
+      <div className="flex flex-col gap-10">
+        <ConfigSection />
+        {/* #134/#167: geração de imagem — modelo + tetos diários por papel (admin-only). */}
+        <AiConfigSection />
+      </div>
     </SectionGate>
   )
 }
