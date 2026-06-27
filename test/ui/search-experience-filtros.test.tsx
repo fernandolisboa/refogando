@@ -102,6 +102,14 @@ describe('SearchExperience — trilha de filtros (#5 Direção C / #160)', () =>
     expect(btn).toHaveAttribute('aria-expanded', 'false')
     expect(btn).toHaveAttribute('aria-controls', 'search-filters')
 
+    // Contrato CSS-collapse (o jsdom não computa o stylesheet, então fixamos pelas CLASSES): recolhida,
+    // a trilha carrega `hidden` (display:none no mobile) — e NÃO a `flex` autônoma (só `lg:flex`). Sem
+    // isto, um refactor que removesse o toggle `hidden`/`lg:flex` deixaria o painel sempre aberto no
+    // mobile e a suíte seguiria verde.
+    const aside = document.getElementById('search-filters')!
+    expect(aside.classList.contains('hidden')).toBe(true)
+    expect(aside.classList.contains('flex')).toBe(false)
+
     // As 3 facetas existem (trilha permanente no desktop; o jsdom não esconde por CSS).
     expect(screen.getByText(M.filtroCozinha)).toBeInTheDocument()
     expect(screen.getByText(M.filtroCategoria)).toBeInTheDocument()
@@ -151,14 +159,18 @@ describe('SearchExperience — trilha de filtros (#5 Direção C / #160)', () =>
     })
     const callsAposSelecao = fetchMock.mock.calls.length
 
-    // Abre o disclosure (mobile): aria-expanded → true; a seleção sobrevive.
+    // Abre o disclosure (mobile): aria-expanded → true; a trilha troca `hidden`→`flex`; seleção sobrevive.
+    const aside = document.getElementById('search-filters')!
     await user.click(filtrosButton())
     expect(filtrosButton()).toHaveAttribute('aria-expanded', 'true')
+    expect(aside.classList.contains('flex')).toBe(true)
+    expect(aside.classList.contains('hidden')).toBe(false)
     expect(screen.getByLabelText('Brasileira')).toBeChecked()
 
-    // Fecha de novo: aria-expanded → false; seleção e contador intactos.
+    // Fecha de novo: aria-expanded → false; trilha volta a `hidden`; seleção e contador intactos.
     await user.click(filtrosButton())
     expect(filtrosButton()).toHaveAttribute('aria-expanded', 'false')
+    expect(aside.classList.contains('hidden')).toBe(true)
     expect(screen.getByLabelText('Brasileira')).toBeChecked()
     expect(filtrosButton()).toHaveTextContent(M.filtrosContagem.replace('{count}', '1'))
 
