@@ -22,6 +22,7 @@ import {
   type Unidade,
 } from '@/domain/vocabulary'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
 import { canonicalLocale } from '@/i18n/locale'
 import { editOwnRecipe, deleteOwnRecipe, type OwnRecipePatch } from '@/server/recipe/owner-edit'
 
@@ -178,6 +179,8 @@ type EditOwnBody = {
   passos?: unknown
   notas?: unknown
   cozinha?: unknown
+  // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre na EDIÇÃO. PRECEDÊNCIA sobre `cozinha`.
+  cozinhaOutra?: unknown
   categoria?: unknown
   restricoes?: unknown
   porcoes?: unknown
@@ -262,7 +265,21 @@ export async function PATCH(
     patch.notas = body.notas as string | null
   }
 
-  if (body.cozinha !== undefined) {
+  // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre tem PRECEDÊNCIA sobre `cozinha`. Aqui o slug é
+  // só VALIDADO e COMPUTADO (puro), BYPASSANDO de propósito o guard `isActiveCozinha` (um `suggested`
+  // é não-ativo por design); a MATERIALIZAÇÃO do termo fica DEFERIDA pra depois que TODO o corpo
+  // validar (logo antes de editOwnRecipe), pra que um 400 num campo posterior nunca deixe um termo
+  // órfão na fila do Curador (#320). Texto vazio/só-símbolo (slug vazio) OU longo demais ⇒ 400.
+  // Quando AUSENTE, segue o ramo `cozinha` (ativa ou limpa-p/-null).
+  let cozinhaOutraSlug: string | null = null
+  if (body.cozinhaOutra !== undefined) {
+    if (typeof body.cozinhaOutra !== 'string' || body.cozinhaOutra.trim() === '') return badRequest()
+    if (body.cozinhaOutra.trim().length > COZINHA_OUTRA_MAX) return badRequest()
+    const s = cozinhaSlugFromText(body.cozinhaOutra)
+    if (s == null) return badRequest()
+    cozinhaOutraSlug = s
+    patch.cozinha = s as Cozinha
+  } else if (body.cozinha !== undefined) {
     // Cozinha DATA-DRIVEN (#318): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
     // dentro deste ramo (não paga ida ao banco em edição que não toca cozinha). Pós-virada #318
     // (coluna `text` + FK) NÃO há enum-bounding: toda cozinha ATIVA (inclusive 'americana') é
@@ -355,6 +372,11 @@ export async function PATCH(
   } else {
     locale = parseRequestLocale(request)
   }
+
+  // "Outra" (#319): materializa o termo `suggested` SÓ depois que TODO o corpo validou (acima) —
+  // dedup-na-entrada idempotente. Deferir até aqui impede um termo órfão quando um campo posterior
+  // do PATCH devolve 400. A FK `recipe.cozinha` (gravada por editOwnRecipe a seguir) exige a linha.
+  if (cozinhaOutraSlug != null) await suggestCozinha(db, body.cozinhaOutra as string, viewerId)
 
   const result = await editOwnRecipe(db, { recipeId: id, viewerId, locale, patch })
   if (result.kind === 'translation_not_found') {

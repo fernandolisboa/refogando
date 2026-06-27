@@ -6,6 +6,7 @@ import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
 import { classify } from '@/domain/generation'
 import {
   parseBriefing,
@@ -96,6 +97,9 @@ export async function POST(req: Request): Promise<Response> {
     mode?: unknown
     briefing?: unknown
     freeText?: unknown
+    // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na AUTORIA structured. Top-level
+    // (NÃO dentro do briefing — `briefing.cozinha` fica null, validada contra o conjunto ativo).
+    cozinhaOutra?: unknown
   }
 
   // mode obrigatório + válido.
@@ -129,12 +133,47 @@ export async function POST(req: Request): Promise<Response> {
   // o slug-set CRU. Um único toque de DB (não duplica entre os modos).
   const activeCozinhas = await loadActiveCozinhaSlugs(getDb())
 
+  // "Outra" (#319, ADR-0025 Decisão 5): slug `suggested` materializado pós-validação do briefing.
+  // HOISTED p/ FORA do ramo structured (escopo de função) — o stamp pós-geração (no ponto de persist
+  // compartilhado) precisa enxergá-lo. Fica null nos demais modos (free_text não tem briefing).
+  let suggested: string | null = null
+
   if (mode === 'structured') {
+    // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na autoria. Aqui o slug é só
+    // COMPUTADO (puro, sem tocar o DB) e INJETADO no briefing ANTES da validação — a MATERIALIZAÇÃO
+    // do termo `suggested` fica DEFERIDA pra depois de TODOS os portões (ingrediente/quota/invalid).
+    // Por quê deferir: gravar o termo aqui deixava (i) órfãos num 400/429/502 e (ii) um caminho de
+    // ABUSO — um usuário no teto (429) repostava com `cozinhaOutra` distintos e cada slug novo
+    // inundava a fila do Curador (#320) BURLANDO o único limite da rota. Injetar o slug agora faz o
+    // parseBriefing (i) ACEITÁ-LO (conjunto ativo aumentado com ele) e (ii) contar um briefing "só
+    // Outra" (sem itens) como NÃO-vazio (senão isBriefingVazio devolveria 400 com a cozinha ainda
+    // null). Texto que dobra p/ slug vazio (só símbolo/espaço) OU longo demais ⇒ 400 cozinha_invalida
+    // (espelha a borda de edição PATCH; não produz silenciosamente uma receita sem cozinha).
+    let briefingInput: unknown = body.briefing
+    let cozinhasParaValidar = activeCozinhas
+    if (typeof body.cozinhaOutra === 'string' && body.cozinhaOutra.trim() !== '') {
+      if (body.cozinhaOutra.trim().length > COZINHA_OUTRA_MAX) {
+        return Response.json({ error: 'cozinha_invalida' }, { status: 400 })
+      }
+      suggested = cozinhaSlugFromText(body.cozinhaOutra)
+      if (suggested == null) {
+        return Response.json({ error: 'cozinha_invalida' }, { status: 400 })
+      }
+      cozinhasParaValidar = new Set([...activeCozinhas, suggested])
+      if (
+        typeof briefingInput === 'object' &&
+        briefingInput !== null &&
+        !Array.isArray(briefingInput)
+      ) {
+        briefingInput = { ...(briefingInput as Record<string, unknown>), cozinha: suggested }
+      }
+    }
+
     // a. Valida shape + faixas + campo-mínimo do Briefing — TUDO antes do seam. O dedup
     //    silencioso já está aplicado dentro de parseBriefing. Cozinha é DATA-DRIVEN (#318): o
-    //    conjunto ATIVO (já carregado acima) vem do DB DIRETO — uma cozinha ativa qualquer
-    //    (inclusive 'americana') é aceita; só slug NÃO-ativo vira 400 cozinha_invalida.
-    const parsed = parseBriefing(body.briefing, activeCozinhas)
+    //    conjunto ATIVO (já carregado acima, + o slug "Outra" injetado) vem do DB DIRETO — uma
+    //    cozinha ativa qualquer (inclusive 'americana') é aceita; só slug NÃO-ativo vira 400.
+    const parsed = parseBriefing(briefingInput, cozinhasParaValidar)
     if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
     briefing = parsed.briefing
 
@@ -232,6 +271,13 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
   }
 
+  // "Outra" (#319, ADR-0025 Decisão 5): MATERIALIZA o termo `suggested` SÓ AQUI — todos os portões
+  // passaram (ingrediente 400, quota 429, invalid 502). A FK `briefing.cozinha` (persistida no
+  // caminho impossible E no de sucesso, logo abaixo) exige a linha existir. Dedup-na-entrada
+  // idempotente e segura sob corrida (recomputa o MESMO slug de `suggested`). Deferir até aqui é o
+  // que impede termo órfão num 400/429/502 e fecha o abuso de inundar a fila do Curador no 429.
+  if (suggested != null) await suggestCozinha(getDb(), body.cozinhaOutra as string, ownerId)
+
   // O Briefing (o PEDIDO) é persistido como proveniência mesmo quando a entrega é
   // impossible (AC4): tabelas separadas da Receita, a sessão aponta para AMBOS.
   const persistBriefing: PersistBriefing | undefined = briefing
@@ -257,6 +303,13 @@ export async function POST(req: Request): Promise<Response> {
     await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText })
     return Response.json({ outcome: 'impossible', advisory: result.advisory }, { status: 200 })
   }
+
+  // "Outra" (#319, ADR-0025 Decisão 5): a IA emitiu `cozinha=null` (o slug `suggested` não está no
+  // `z.enum` dos ativos); o SERVIDOR estampa o slug pós-geração na Receita ENTREGUE. Só aqui (com
+  // Receita) — o ramo `impossible` retorna acima sem `result.recipe`. `briefing.cozinha=suggested`
+  // já flui via persistBriefing. A FK valida (a linha `suggested` existe); a contenção mantém o
+  // termo invisível em superfície pública até o Curador aprovar (#320). Publicar NÃO é bloqueado.
+  if (suggested != null) result.recipe.cozinha = suggested
 
   // success | degraded | playful → Receita privada + generation.
   const p = await persistGeneration({

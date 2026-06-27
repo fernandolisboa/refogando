@@ -121,6 +121,11 @@ export function CreateStructuredWizard({
   const [cur, setCur] = useState(0)
   const [bulkText, setBulkText] = useState('')
   const [cozinha, setCozinha] = useState<string>('')
+  // "Outra" (#319, ADR-0025 Decisão 5): `outraAtiva` liga o modo cozinha-livre (distinto do slug
+  // `cozinha`); `outra` é o texto digitado. Escolher um chip de slug desliga o modo Outra e
+  // vice-versa — os dois nunca coexistem (o servidor materializa o termo `suggested`).
+  const [outraAtiva, setOutraAtiva] = useState(false)
+  const [outra, setOutra] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
   const [porcoes, setPorcoes] = useState(PORCOES_DEFAULT)
   const [dificuldade, setDificuldade] = useState(1)
@@ -183,16 +188,21 @@ export function CreateStructuredWizard({
   }
 
   function buildBody() {
+    // "Outra" (#319): no modo Outra, `briefing.cozinha` vai null (o servidor rejeitaria texto livre
+    // contra o conjunto ativo) e o texto sobe em `cozinhaOutra` top-level — o servidor materializa o
+    // termo `suggested` e o estampa na Receita. Fora do modo Outra, segue o slug como hoje.
+    const cozinhaOutra = outraAtiva ? outra.trim() : ''
     return {
       mode: 'structured' as const,
       briefing: {
-        cozinha: cozinha || null,
+        cozinha: outraAtiva ? null : cozinha || null,
         restricoes,
         porcoes,
         dificuldade,
         observacoes: observacoes.trim() === '' ? null : observacoes,
         itens: briefingItens(),
       },
+      ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
     }
   }
 
@@ -220,6 +230,8 @@ export function CreateStructuredWizard({
     setCur(0)
     setBulkText('')
     setCozinha('')
+    setOutraAtiva(false)
+    setOutra('')
     setRestricoes([])
     setPorcoes(PORCOES_DEFAULT)
     setDificuldade(1)
@@ -486,13 +498,38 @@ export function CreateStructuredWizard({
                   {cozinhaVocab.map(({ value, label }) => (
                     <Chip
                       key={value}
-                      active={cozinha === value}
-                      onClick={() => setCozinha((prev) => (prev === value ? '' : value))}
+                      active={!outraAtiva && cozinha === value}
+                      onClick={() => {
+                        // escolher um slug desliga o modo Outra (mutuamente exclusivos).
+                        setOutraAtiva(false)
+                        setCozinha((prev) => (prev === value ? '' : value))
+                      }}
                     >
                       {label}
                     </Chip>
                   ))}
+                  {/* "Outra" (#319): liga o campo de texto livre; limpa o slug selecionado. */}
+                  <Chip
+                    active={outraAtiva}
+                    onClick={() => {
+                      setOutraAtiva((prev) => !prev)
+                      setCozinha('')
+                    }}
+                  >
+                    {w.cozinhaOutra}
+                  </Chip>
                 </div>
+                {outraAtiva && (
+                  <label className="flex flex-col gap-1 text-sm font-medium text-fg">
+                    {w.cozinhaOutraLabel}
+                    <Input
+                      type="text"
+                      value={outra}
+                      onChange={(e) => setOutra(e.target.value)}
+                      placeholder={w.cozinhaOutraPlaceholder}
+                    />
+                  </label>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <h2 className="font-display text-lg font-semibold tracking-tight text-fg">

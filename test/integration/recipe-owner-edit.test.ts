@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setEmbedder } from '@/server/deps'
 import { FakeEmbedder } from '@/server/embedding/embedder'
-import { recipe, recipeIngredient, recipeTranslation } from '@/db/schema'
+import { recipe, recipeIngredient, recipeTranslation, vocabularyTerm } from '@/db/schema'
 import { PATCH as patchRoute } from '@/app/api/recipes/[id]/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { seedSessionHeaders } from '../helpers/users'
@@ -44,6 +44,7 @@ type PatchBody = {
   passos?: string[] | null
   notas?: string | null
   cozinha?: string | null
+  cozinhaOutra?: string
   categoria?: string | null
   restricoes?: string[]
   porcoes?: number | null
@@ -395,6 +396,76 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     await expect(klingon.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
     const [after] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
     expect(after.cozinha).toBe('americana')
+  })
+
+  // (k3) #319 "Outra": cozinhaOutra cria/anexa termo suggested e grava o slug (bypassa isActiveCozinha);
+  //      precede `cozinha`; texto vazio ⇒ 400.
+  it('(k3) PATCH cozinhaOutra → recipe.cozinha = slug suggested + termo suggested criado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra@ex.com' })
+    const id = await seedOwnPrivate(userId) // cozinha brasileira
+
+    const res = await patch(id, { cozinhaOutra: 'Georgiana' }, headers)
+    expect(res.status).toBe(200)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('georgiana')
+
+    const terms = await getDb()
+      .select({ status: vocabularyTerm.status, labelPtBr: vocabularyTerm.labelPtBr })
+      .from(vocabularyTerm)
+      .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, 'georgiana')))
+    expect(terms).toHaveLength(1)
+    expect(terms[0].status).toBe('suggested')
+    expect(terms[0].labelPtBr).toBeNull()
+  })
+
+  it('(k3) cozinhaOutra PRECEDE cozinha quando ambos vêm no corpo', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-prec@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    const res = await patch(id, { cozinha: 'italiana', cozinhaOutra: 'Etíope' }, headers)
+    expect(res.status).toBe(200)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('etiope') // cozinhaOutra venceu
+  })
+
+  it('(k3) cozinhaOutra vazio / só-símbolo ⇒ 400 dados_invalidos', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-vazio@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    expect((await patch(id, { cozinhaOutra: '' }, headers)).status).toBe(400)
+    expect((await patch(id, { cozinhaOutra: '   ' }, headers)).status).toBe(400)
+    expect((await patch(id, { cozinhaOutra: '!!!' }, headers)).status).toBe(400)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('brasileira') // inalterada
+  })
+
+  it('(k3) cozinhaOutra longo demais (> 80 chars) ⇒ 400 sem materializar termo', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-longo@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    const longo = 'a'.repeat(120)
+    expect((await patch(id, { cozinhaOutra: longo }, headers)).status).toBe(400)
+    const terms = await getDb()
+      .select({ slug: vocabularyTerm.slug })
+      .from(vocabularyTerm)
+      .where(eq(vocabularyTerm.slug, 'a'.repeat(120)))
+    expect(terms).toHaveLength(0)
+  })
+
+  it('(k3) cozinhaOutra válido + campo posterior inválido ⇒ 400 e NENHUM termo órfão', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-orfao@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    // porcoes fora-de-faixa força 400 DEPOIS da validação de cozinhaOutra — o termo NÃO pode existir.
+    const res = await patch(id, { cozinhaOutra: 'Naoitiana', porcoes: -5 }, headers)
+    expect(res.status).toBe(400)
+    const terms = await getDb()
+      .select({ slug: vocabularyTerm.slug })
+      .from(vocabularyTerm)
+      .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, 'naoitiana')))
+    expect(terms).toHaveLength(0)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('brasileira') // inalterada
   })
 
   // (l) id malformado ⇒ 404 sem 500; uuid inexistente ⇒ 404.

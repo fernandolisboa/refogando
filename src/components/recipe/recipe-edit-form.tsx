@@ -40,6 +40,10 @@ type ItemDraft = { rawText: string; quantidade: string; unidade: string }
 
 type Dialog = 'none' | 'confirmPublic' | 'confirmDelete'
 
+// "Outra" (#319): valor-sentinela da opção cozinha-livre no <select> — `-` nas bordas garante que
+// slugify dobraria p/ vazio, então jamais colide com um slug de cozinha real.
+const OUTRA_SENTINEL = '__outra__'
+
 /** Prefill dos itens a partir da view (quantidade volta como string do numeric). */
 function itemsFromView(view: RecipeView): ItemDraft[] {
   const items = [...view.ingredients]
@@ -122,7 +126,15 @@ export function RecipeEditForm({
   const [descricao, setDescricao] = useState(view.body.descricao ?? '')
   const [passos, setPassos] = useState((view.body.passos ?? []).join('\n'))
   const [notas, setNotas] = useState(view.body.notas ?? '')
-  const [cozinha, setCozinha] = useState(view.facets.cozinha ?? '')
+  // "Outra" (#319, ADR-0025 Decisão 5): se a cozinha gravada NÃO está no vocabulário ATIVO (chips do
+  // hook), é um termo `suggested` ⇒ abre o form no modo Outra, com o campo PRÉ-PREENCHIDO com o SLUG
+  // (melhor texto disponível — os rótulos são NULL até a aprovação do Curador #320; o dono vê ~o que
+  // propôs, NÃO o texto verbatim). Esta é a ÚNICA superfície de leitura que mostra o texto sugerido.
+  const cozinhaSuggested =
+    view.facets.cozinha != null && !cozinhaVocab.some((o) => o.value === view.facets.cozinha)
+  const [cozinha, setCozinha] = useState(cozinhaSuggested ? '' : (view.facets.cozinha ?? ''))
+  const [outraAtiva, setOutraAtiva] = useState(cozinhaSuggested)
+  const [outra, setOutra] = useState(cozinhaSuggested ? (view.facets.cozinha ?? '') : '')
   const [categoria, setCategoria] = useState(view.facets.categoria ?? '')
   const [restricoes, setRestricoes] = useState<string[]>([...(view.facets.restricoes ?? [])])
   const [porcoes, setPorcoes] = useState(view.porcoes != null ? String(view.porcoes) : '')
@@ -226,7 +238,10 @@ export function RecipeEditForm({
       descricao: descricao.trim() === '' ? null : descricao,
       passos: passosArr.length > 0 ? passosArr : null,
       notas: notas.trim() === '' ? null : notas,
-      cozinha: cozinha === '' ? null : cozinha,
+      // "Outra" (#319): no modo Outra com texto, manda `cozinhaOutra` (o servidor materializa o termo
+      // `suggested` e ele tem PRECEDÊNCIA sobre `cozinha`). Senão, o slug ativo (ou null pra limpar).
+      cozinha: outraAtiva ? null : cozinha === '' ? null : cozinha,
+      ...(outraAtiva && outra.trim() !== '' ? { cozinhaOutra: outra.trim() } : {}),
       categoria: categoria === '' ? null : categoria,
       restricoes,
       porcoes: porcoes === '' ? null : Number(porcoes),
@@ -562,8 +577,17 @@ export function RecipeEditForm({
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
               {mc.cozinha}
               <select
-                value={cozinha}
-                onChange={(e) => setCozinha(e.target.value)}
+                value={outraAtiva ? OUTRA_SENTINEL : cozinha}
+                onChange={(e) => {
+                  // "Outra" (#319): a opção-sentinela liga o modo cozinha-livre; um slug o desliga.
+                  if (e.target.value === OUTRA_SENTINEL) {
+                    setOutraAtiva(true)
+                    setCozinha('')
+                  } else {
+                    setOutraAtiva(false)
+                    setCozinha(e.target.value)
+                  }
+                }}
                 className={fieldClassName}
               >
                 <option value="">{mc.cozinhaNenhuma}</option>
@@ -573,8 +597,21 @@ export function RecipeEditForm({
                     {label}
                   </option>
                 ))}
+                {/* "Outra" (#319): cozinha fora do vocabulário → vira sugestão pro Curador. */}
+                <option value={OUTRA_SENTINEL}>{messages.criarWizard.cozinhaOutra}</option>
               </select>
             </label>
+            {outraAtiva && (
+              <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+                {messages.criarWizard.cozinhaOutraLabel}
+                <Input
+                  type="text"
+                  value={outra}
+                  onChange={(e) => setOutra(e.target.value)}
+                  placeholder={messages.criarWizard.cozinhaOutraPlaceholder}
+                />
+              </label>
+            )}
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
               {messages.detalhe.categoria}
               <select

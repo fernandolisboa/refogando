@@ -45,11 +45,21 @@ export function localizeCozinhaVocab(
  *  - `slug == null` → `null` (faceta ausente; nada a renderizar — "ausente ≠ vazio").
  *  - achou a opção → o rótulo localizado.
  *  - não achou (slug fora do escopo carregado) → o próprio slug cru (defensivo, nunca quebra).
+ *
+ * `opts.unknownAsAbsent` (#319, ADR-0025 Decisão 5): quando `true` E o slug NÃO está nas opções
+ * carregadas, devolve `null` (ausente) em vez do slug cru — é a CONTENÇÃO da página de detalhe
+ * pública, onde um termo `suggested` (fora do escopo `display`) jamais deve renderizar o texto cru
+ * pra terceiros. Default `false` preserva o fallback-para-slug das superfícies do DONO/preview
+ * (generation-result-region, conversa-focused-view, create-conversa-experience), que mostram o
+ * slug ao próprio autor (permitido — "texto cru só pro dono + fila do Curador").
  */
 export function resolveCozinhaLabel(
   options: readonly CozinhaOption[],
   slug: string | null,
+  opts?: { unknownAsAbsent?: boolean },
 ): string | null {
   if (slug == null) return null
-  return options.find((o) => o.value === slug)?.label ?? slug
+  const found = options.find((o) => o.value === slug)?.label
+  if (found != null) return found
+  return opts?.unknownAsAbsent ? null : slug
 }

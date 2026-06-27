@@ -49,6 +49,7 @@ import { shouldShowCatalogDisclosure } from '@/domain/catalog-disclosure-config'
 import { localizeCozinhaVocab, resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { loadCatalogDisclosureConfig } from '@/server/app-config'
 import { loadVocabulary } from '@/server/vocabulary/load'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { buildRecipeMetadata, buildRecipeJsonLd, serializeJsonLd } from '@/domain/recipe-seo'
 import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
@@ -73,6 +74,10 @@ import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-loca
  */
 const loadPublicRecipeBySlugCached = cache(loadPublicRecipeBySlug)
 const loadRecipeSlugMapCached = cache(loadRecipeSlugMap)
+// #319 (ADR-0025 Decisão 5): conjunto ATIVO de cozinhas, memoizado por request — o caminho de
+// metadados E o de render compartilham UMA query (espelha loadRecipeSlugMapCached). Alimenta o
+// gate ACTIVE-ONLY de `recipeCuisine`/OG no builder PURO (suggested/deprecated ⇒ ausente no grafo).
+const loadActiveCozinhaSlugsCached = cache(loadActiveCozinhaSlugs)
 
 /**
  * Metadados indexáveis do detalhe (#232 OG, #233 canonical/hreflang/x-default/robots, #234 alimenta
@@ -98,8 +103,18 @@ export async function generateMetadata({
   if (route.kind === 'slug') {
     const rows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (rows != null) {
-      const slugMap = await loadRecipeSlugMapCached(getDb(), rows.recipe.id)
-      const input = buildRecipeSeoInputFromRows({ rows, locale, baseUrl, slugMap, eligible: true })
+      const [slugMap, activeCozinhas] = await Promise.all([
+        loadRecipeSlugMapCached(getDb(), rows.recipe.id),
+        loadActiveCozinhaSlugsCached(getDb()),
+      ])
+      const input = buildRecipeSeoInputFromRows({
+        rows,
+        locale,
+        baseUrl,
+        slugMap,
+        eligible: true,
+        activeCozinhas,
+      })
       return buildRecipeMetadata(input)
     }
   }
@@ -168,13 +183,17 @@ export default async function RecipeDetailPage({
       })
       // JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
       // aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
-      const slugMap = await loadRecipeSlugMapCached(getDb(), publicRows.recipe.id)
+      const [slugMap, activeCozinhas] = await Promise.all([
+        loadRecipeSlugMapCached(getDb(), publicRows.recipe.id),
+        loadActiveCozinhaSlugsCached(getDb()),
+      ])
       const seoInput = buildRecipeSeoInputFromRows({
         rows: publicRows,
         locale,
         baseUrl: getBaseUrlFromEnv(),
         slugMap,
         eligible: true,
+        activeCozinhas,
       })
       const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
       // #237: aviso de catálogo AI-assistido — CORTESIA editorial. Lê a config (DB direto, SEM cookie:
@@ -291,7 +310,12 @@ async function DetailChrome({
     await loadVocabulary(getDb(), 'cozinha', 'display'),
     locale,
   )
-  const cozinhaLabel = resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)
+  // #319 (ADR-0025 Decisão 5): `unknownAsAbsent` — um termo `suggested` (fora do escopo `display`)
+  // renderiza AUSENTE pra TODO mundo nesta página pública (contenção). A `deprecated` segue visível
+  // (está em `display`, resolve p/ rótulo). NÃO vaza o slug cru de uma cozinha pendente a terceiros.
+  const cozinhaLabel = resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha, {
+    unknownAsAbsent: true,
+  })
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
       {/* JSON-LD Recipe (#234): só no caminho público. `dangerouslySetInnerHTML` é a forma idiomática

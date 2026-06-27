@@ -478,6 +478,10 @@ export const enUS: Messages = {
     // Step 2 — Cuisine + Restrictions.
     cozinhaTitulo: 'Cuisine',
     cozinhaIntro: 'Where does the seasoning come from? Optional.',
+    // "Other" (#319): cuisine outside the vocabulary — becomes a suggestion for the Curator.
+    cozinhaOutra: 'Other',
+    cozinhaOutraLabel: 'Which cuisine?',
+    cozinhaOutraPlaceholder: 'e.g., Georgian cuisine',
     restricoesTitulo: 'Dietary restrictions',
     restricoesIntro: 'Mark what the recipe must respect. Declared, not verified.',
     // Step 3 — Details.

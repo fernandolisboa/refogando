@@ -505,6 +505,10 @@ export const ptBR = {
     // Passo 2 — Cozinha + Restrições.
     cozinhaTitulo: 'Cozinha',
     cozinhaIntro: 'De onde vem o tempero? Opcional.',
+    // "Outra" (#319): cozinha fora do vocabulário — vira sugestão pro Curador.
+    cozinhaOutra: 'Outra',
+    cozinhaOutraLabel: 'Qual cozinha?',
+    cozinhaOutraPlaceholder: 'Ex.: Cozinha georgiana',
     restricoesTitulo: 'Restrições alimentares',
     restricoesIntro: 'Marque o que a receita precisa respeitar. Declarado, não verificado.',
     // Passo 3 — Detalhes.

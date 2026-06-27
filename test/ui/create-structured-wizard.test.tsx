@@ -299,6 +299,38 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     })
   })
 
+  it('W7b — "Outra" (#319): chip alterna o campo livre; o POST manda briefing.cozinha null + cozinhaOutra', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } },
+      recipes: { status: 200, body: baseView() },
+    })
+    render(<Harness />)
+    await abrirWizard(user)
+
+    // Passo 1 → 2 (Cozinha).
+    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+
+    // O campo livre só aparece após clicar "Outra".
+    expect(screen.queryByLabelText(W.cozinhaOutraLabel)).toBeNull()
+    await user.click(screen.getByRole('button', { name: W.cozinhaOutra }))
+    const input = screen.getByLabelText(W.cozinhaOutraLabel)
+    await user.type(input, 'Comida Georgiana')
+
+    // Passo 2 → 3 → Gerar.
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.gerar }))
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/generations'))
+      expect(postCall).toBeDefined()
+      const body = JSON.parse(String((postCall![1] as RequestInit).body))
+      expect(body.briefing.cozinha).toBeNull()
+      expect(body.cozinhaOutra).toBe('Comida Georgiana')
+    })
+  })
+
   it('W8 — cap 429 dentro do wizard: mensagem amigável, sem GET, sem travar', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch({
