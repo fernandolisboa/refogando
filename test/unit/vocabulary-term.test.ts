@@ -8,7 +8,25 @@ import {
   isVocabularyTermStatus,
   COZINHA_SEED,
 } from '@/domain/vocabulary-term'
-import { COZINHAS } from '@/domain/vocabulary'
+
+// As 14 cozinhas que viviam no antigo pgEnum `cozinha` (dropado na virada #318). COZINHA_SEED é a
+// fonte única agora; este guard fixa as 14 LITERALMENTE pra um drift na seed (slug removido) falhar.
+const COZINHAS_HISTORICAS = [
+  'italiana',
+  'japonesa',
+  'brasileira',
+  'baiana',
+  'mineira',
+  'mexicana',
+  'chinesa',
+  'indiana',
+  'tailandesa',
+  'francesa',
+  'arabe',
+  'portuguesa',
+  'mediterranea',
+  'peruana',
+] as const
 
 /**
  * Kernel da tabela `vocabulary_term` (issue #314, ADR-0025 Fatia A). Puro — sem DB.
@@ -50,9 +68,9 @@ describe('vocabulary-term: COZINHA_SEED (fonte única da migração/helper)', ()
     expect(COZINHA_SEED).toHaveLength(15)
   })
 
-  it('cobre TODOS os slugs de COZINHAS (guard de drift com o enum atual)', () => {
+  it('cobre TODAS as 14 cozinhas históricas (guard de drift com o ex-enum)', () => {
     const seedSlugs = new Set(COZINHA_SEED.map((t) => t.slug))
-    for (const slug of COZINHAS) {
+    for (const slug of COZINHAS_HISTORICAS) {
       expect(seedSlugs.has(slug)).toBe(true)
     }
   })

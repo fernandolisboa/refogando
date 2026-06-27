@@ -372,9 +372,9 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     expect(row.origin).toBe('ai_chat')
   })
 
-  // (k2) #316 borda data-driven da cozinha: valor enum-storável ATIVO ⇒ 200 + persiste; valor
-  //      ATIVO-mas-não-no-enum (americana, até #318) ⇒ 400 dados_invalidos, explicitamente NÃO 500.
-  it('(k2) PATCH cozinha: ativa-enumerável persiste; americana → 400 (não 500)', async () => {
+  // (k2) #318 borda data-driven da cozinha (pós-virada enum→text+FK): toda cozinha ATIVA persiste
+  //      (inclusive 'americana', agora storável); só slug NÃO-ativo ⇒ 400 dados_invalidos (não 500).
+  it('(k2) PATCH cozinha: ativa persiste (incl. americana); slug não-ativo → 400 (não 500)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'oe-cozinha@ex.com' })
     const id = await seedOwnPrivate(userId) // cozinha brasileira
 
@@ -383,12 +383,18 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
     expect(row.cozinha).toBe('japonesa')
 
+    // 'americana' (ativa, data-driven) agora é ACEITA e persiste (era 400 via enum-bounding até #318).
     const americana = await patch(id, { cozinha: 'americana' }, headers)
-    expect(americana.status).toBe(400)
-    await expect(americana.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
-    // a cozinha não mudou (rejeitada antes do efeito).
+    expect(americana.status).toBe(200)
+    const [afterAmericana] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(afterAmericana.cozinha).toBe('americana')
+
+    // slug NÃO-ativo (fora do vocabulário) → 400 dados_invalidos, e a cozinha não muda.
+    const klingon = await patch(id, { cozinha: 'klingon' }, headers)
+    expect(klingon.status).toBe(400)
+    await expect(klingon.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
     const [after] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
-    expect(after.cozinha).toBe('japonesa')
+    expect(after.cozinha).toBe('americana')
   })
 
   // (l) id malformado ⇒ 404 sem 500; uuid inexistente ⇒ 404.

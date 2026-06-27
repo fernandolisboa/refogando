@@ -15,7 +15,12 @@ import {
 import type { Briefing, BriefingItem } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
-import { COZINHAS } from '@/domain/vocabulary'
+import { COZINHA_SEED } from '@/domain/vocabulary-term'
+
+// As 14 cozinhas históricas (ex-enum, dropado na virada #318). Cozinha é DATA-DRIVEN agora; os
+// casos injetam um conjunto ATIVO — derivado da FONTE ÚNICA COZINHA_SEED (sem 'americana', que é a
+// 15ª) pra não driftar de uma cópia literal; a aceitação é set-driven, não consulta um `as const`.
+const COZINHAS_ATIVAS = COZINHA_SEED.map((t) => t.slug).filter((s) => s !== 'americana')
 
 /**
  * Domínio puro do Briefing (#11, §7.2): PURO/TOTAL/SEM THROW, sem DB. Cobre parse de
@@ -24,15 +29,15 @@ import { COZINHAS } from '@/domain/vocabulary'
  * buildBriefingPrompt determinístico; briefingItemsParaAviso; a costura PURA com
  * decideRestrictionNotices; e o boundary de OBSERVACOES_MAX (2000 ok / 2001 erro).
  *
- * #316: cozinha virou DATA-DRIVEN — `parseBriefing` recebe o conjunto ATIVO injetado. Todos os
- * casos pré-existentes passam por um wrapper que injeta um ACTIVE compartilhado (as 14 cozinhas +
- * 'americana'), uma só fonte; assim o parse segue idêntico ao do enum para as 14, e os casos novos
- * provam que a ACEITAÇÃO é dirigida pelo CONJUNTO ('americana' aceita só porque está no conjunto;
- * 'marciana'/'paleo' seguem fora dele).
+ * #316/#318: cozinha virou DATA-DRIVEN — `parseBriefing` recebe o conjunto ATIVO injetado. Todos os
+ * casos pré-existentes passam por um wrapper que injeta um ACTIVE compartilhado (as 14 históricas +
+ * 'americana'), uma só fonte; assim o parse segue idêntico para as 14, e os casos novos provam que a
+ * ACEITAÇÃO é dirigida pelo CONJUNTO ('americana' aceita só porque está no conjunto; 'marciana'/'paleo'
+ * seguem fora dele).
  */
 
-// Conjunto ATIVO compartilhado: as 14 enum-storáveis + 'americana' (ativo-mas-ainda-não-no-enum).
-const ACTIVE = new Set<string>([...COZINHAS, 'americana'])
+// Conjunto ATIVO compartilhado: as 14 históricas + 'americana' (data-driven, ADR-0025).
+const ACTIVE = new Set<string>([...COZINHAS_ATIVAS, 'americana'])
 
 // Wrapper: injeta o ACTIVE compartilhado por default — os ~35 casos pré-existentes ficam intactos.
 function parseBriefing(raw: unknown, active: ReadonlySet<string> = ACTIVE): BriefingParse {
@@ -126,18 +131,17 @@ describe('parseBriefing — shape ok', () => {
     expect(r.ok).toBe(true)
   })
 
-  it('cozinha ATIVA-mas-não-no-enum (americana) é aceita quando injetada no conjunto (#316)', () => {
-    // Aceitação dirigida pelo CONJUNTO, não por COZINHAS. O tipo é Cozinha|null, então a
-    // comparação do slug não-enumerável precisa do cast `as string`.
+  it('cozinha data-driven (americana) é aceita quando injetada no conjunto (#316/#318)', () => {
+    // Aceitação dirigida pelo CONJUNTO. O tipo Cozinha é `string` desde #318.
     const r = parseBriefing({ cozinha: 'americana' })
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.briefing.cozinha as string).toBe('americana')
+    expect(r.briefing.cozinha).toBe('americana')
   })
 
   it('cozinha fora do conjunto injetado → cozinha_invalida (mesmo sendo string)', () => {
-    // 'americana' rejeitada quando o conjunto injetado é só as 14 enum-storáveis (sem americana).
-    expect(parseBriefing({ cozinha: 'americana' }, new Set<string>(COZINHAS))).toEqual({
+    // 'americana' rejeitada quando o conjunto injetado é só as 14 históricas (sem americana).
+    expect(parseBriefing({ cozinha: 'americana' }, new Set<string>(COZINHAS_ATIVAS))).toEqual({
       ok: false,
       error: 'cozinha_invalida',
     })

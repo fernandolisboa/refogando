@@ -4,7 +4,7 @@ import { makeSql } from '@/db/client'
 import { GET } from '@/app/api/search/route'
 import { getDb } from '@/server/deps'
 import { __clearVocabularyCache } from '@/server/vocabulary/load'
-import { seedFacetMatrix } from '../helpers/recipes'
+import { seedFacetMatrix, seedRecipe, seedTranslation } from '../helpers/recipes'
 import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 
 /**
@@ -318,7 +318,7 @@ describe('GET /api/search — Facetas + Perfil culinário (#10)', () => {
   it('AC5 robustez: input inválido → 200 (NUNCA 500/22P02)', async () => {
     await seedFacetMatrix()
 
-    // cozinha inválida descartada por parseFacetParams (isCozinha) ⇒ 200 (bindar cru ⇒ 22P02→500).
+    // cozinha NÃO-ativa descartada por parseFacetParams (não está no conjunto ativo) ⇒ 200.
     const xpto = await search('', { locale: 'pt-BR', cozinha: 'xpto' })
     expect(xpto.status).toBe(200)
 
@@ -333,17 +333,32 @@ describe('GET /api/search — Facetas + Perfil culinário (#10)', () => {
     expect(allIds(body).length).toBeGreaterThan(0)
   })
 
-  it('#316 read-border: ?cozinha=americana (ativa-mas-não-no-enum) → 200, faceta NÃO aplicada', async () => {
+  it('#318 read-border: ?cozinha=americana (ativa data-driven) → 200, AGORA aplica o filtro', async () => {
     const m = await seedFacetMatrix()
+    // Receita 'americana' com 'curry' no título: prova POSITIVA de que americana virou faceta ATIVA.
+    const americanaId = await seedRecipe({
+      origin: 'catalog',
+      originalLocale: 'pt-BR',
+      ownerId: null,
+      cozinha: 'americana',
+    })
+    await seedTranslation({
+      recipeId: americanaId,
+      locale: 'pt-BR',
+      titulo: 'Curry americano de abóbora',
+      provenance: 'escrita_por_pessoa',
+    })
 
-    // 'americana' está ATIVA na tabela (semeada), mas a borda de leitura injeta active ∩ COZINHAS
-    // (`.filter(isCozinha)`), mantendo-a FORA do cast `::cozinha[]` ⇒ 200, nunca 22P02/500.
+    // Pós-virada #318 a coluna é `text` (cast `::text[]`), então 'americana' é um filtro VÁLIDO e
+    // APLICADO (não mais descartado por enum-bounding): ?cozinha=americana retorna SÓ a americana
+    // e EXCLUI as demais cozinhas que casam 'curry' (F_jpDoce/F_itPrato/F_brDoce).
     const res = await search('curry', { locale: 'pt-BR', cozinha: 'americana' })
     expect(res.status).toBe(200)
     const body = (await res.json()) as SearchResponse
-    // americana DESCARTADA ⇒ sem filtro de cozinha ⇒ as receitas que casam 'curry' seguem presentes
-    // (se americana virasse filtro, nada casaria — nenhuma receita é 'americana' no enum).
-    expect(allIds(body)).toEqual(expect.arrayContaining([m.F_jpDoce, m.F_itPrato, m.F_brDoce]))
+    expect(allIds(body)).toContain(americanaId)
+    expect(allIds(body)).not.toContain(m.F_jpDoce)
+    expect(allIds(body)).not.toContain(m.F_itPrato)
+    expect(allIds(body)).not.toContain(m.F_brDoce)
   })
 
   it('reduce-to-#9: search("frango,limão,alho", match=all) sem faceta ≡ #9 (vírgula preservada)', async () => {

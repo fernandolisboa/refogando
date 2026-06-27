@@ -13,7 +13,7 @@ import {
   type Restricao,
   type Unidade,
 } from '@/domain/vocabulary'
-import { loadEnumStorableActiveCozinhas } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { createCatalogRecipe, type CreateCatalogRecipeInput } from '@/server/curate/create'
 
 /**
@@ -92,10 +92,10 @@ export async function POST(req: Request): Promise<Response> {
   // Enums escalares: presentes ⇒ válidos; ausentes/null ⇒ null.
   let cozinha: Cozinha | null = null
   if (body.cozinha !== undefined && body.cozinha !== null) {
-    // Cozinha DATA-DRIVEN (#316): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
-    // neste ramo, já limitado a enum-armazenável pelo helper — ponte temporária até #318: slug
-    // ativo-mas-não-enumerável (ex.: 'americana') vira 400 dados_invalidos, nunca 22P02/500.
-    const activeCozinhas = await loadEnumStorableActiveCozinhas(getDb())
+    // Cozinha DATA-DRIVEN (#318): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
+    // neste ramo. Pós-virada #318 (coluna `text` + FK) NÃO há enum-bounding: toda cozinha ATIVA
+    // (inclusive 'americana') é storável; só slug NÃO-ativo vira 400 dados_invalidos.
+    const activeCozinhas = await loadActiveCozinhaSlugs(getDb())
     if (typeof body.cozinha !== 'string' || !isActiveCozinha(body.cozinha, activeCozinhas)) {
       return badRequest()
     }

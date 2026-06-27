@@ -28,6 +28,7 @@ import { classify } from '@/domain/generation'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 /**
@@ -205,7 +206,10 @@ export async function regenerateRecipe(
   }
 
   // ── Claude (single-shot) → classify ──────────────────────────────────────────────
-  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model })
+  // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
+  // ATIVO do DB DIRETO (sem cache de escrita); a IA só re-emite cozinhas ativas na regeneração.
+  const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
+  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs })
   const result = classify(out)
 
   // invalid: erro de sistema puro → NADA persiste (ADR-0006).

@@ -152,8 +152,8 @@ function facetPredicates(facets: EffectiveFacets): SQL {
 
   return sql`
     AND (
-      cardinality(${sql.param(cozinhas)}::cozinha[]) = 0
-      OR r.cozinha = ANY (${sql.param(cozinhas)}::cozinha[])
+      cardinality(${sql.param(cozinhas)}::text[]) = 0
+      OR r.cozinha = ANY (${sql.param(cozinhas)}::text[])
     )
     AND (
       cardinality(${sql.param(categorias)}::categoria[]) = 0

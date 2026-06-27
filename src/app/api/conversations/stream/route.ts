@@ -16,6 +16,7 @@ import { renderAvisos } from '@/domain/recipe-read'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
 import { persistGeneration } from '@/server/generation/persist'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
@@ -265,12 +266,16 @@ export async function POST(req: Request): Promise<Response> {
 
         // 2ª chamada (ADR-0009): DESTILAÇÃO single-shot a partir da Transcrição (VERBATIM
         // o generateRecipe de #8). A estrutura nasce da SAÍDA do RecipeGenSchema.
+        // #318: constrange a cozinha destilada ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
+        // ATIVO do DB DIRETO, carregado aqui (já passamos do gate de abort/quota acima).
+        const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(getDb()))]
         const prompt = buildConversationPrompt(transcript)
         const out = await getClaudeClient().generateRecipe({
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,
           model,
           signal,
+          cozinhaSlugs,
         })
         const result = classify(out)
 

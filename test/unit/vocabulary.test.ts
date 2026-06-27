@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   CATEGORIAS,
-  COZINHAS,
   DIFICULDADE,
   PORCOES,
   RESTRICOES,
   UNIDADES,
   isActiveCozinha,
   isCategoria,
-  isCozinha,
   isDificuldadeValida,
   isPorcoesValidas,
   isRestricao,
@@ -17,20 +15,15 @@ import {
 } from '@/domain/vocabulary'
 
 describe('Vocabulário culinário — kernel (fonte única)', () => {
-  it('pertencimento de Cozinha', () => {
-    expect(isCozinha('italiana')).toBe(true)
-    expect(isCozinha('marciana')).toBe(false)
-  })
-
-  it('isActiveCozinha (#316): pertencimento ao conjunto ATIVO injetado, não a COZINHAS', () => {
+  it('isActiveCozinha (#316/#318): pertencimento ao conjunto ATIVO injetado (cozinha é data-driven)', () => {
+    // Cozinha saiu do enum (#318) — a ÚNICA regra é "está no conjunto ativo injetado?".
     // Presente no conjunto → aceito; ausente → recusado; conjunto vazio → tudo recusado.
     expect(isActiveCozinha('italiana', new Set(['italiana']))).toBe(true)
     expect(isActiveCozinha('italiana', new Set(['japonesa']))).toBe(false)
     expect(isActiveCozinha('italiana', new Set<string>())).toBe(false)
-    // Aceitação dirigida pelo conjunto, INDEPENDENTE de COZINHAS: 'americana' (ativo-mas-não-no-
-    // enum) é aceita quando injetada, provando que o validador não consulta o `as const`.
-    expect(isActiveCozinha('americana', new Set([...COZINHAS, 'americana']))).toBe(true)
-    expect(isActiveCozinha('americana', new Set(COZINHAS))).toBe(false)
+    // 'americana' (data-driven, nunca esteve num enum) é aceita só quando está no conjunto.
+    expect(isActiveCozinha('americana', new Set(['italiana', 'americana']))).toBe(true)
+    expect(isActiveCozinha('americana', new Set(['italiana', 'japonesa']))).toBe(false)
   })
 
   it('pertencimento de Restrição alimentar', () => {
@@ -53,9 +46,8 @@ describe('Vocabulário culinário — kernel (fonte única)', () => {
     expect(isPorcoesValidas(PORCOES.max + 1)).toBe(false)
   })
 
-  it('o kernel bidirecional expõe só cozinha/restrição/dificuldade/porções', () => {
+  it('o kernel bidirecional expõe só restrição/dificuldade/porções (cozinha saiu — data-driven #318)', () => {
     expect(Object.keys(vocabularioCulinario).sort()).toEqual([
-      'cozinhas',
       'dificuldade',
       'porcoes',
       'restricoes',
@@ -63,9 +55,7 @@ describe('Vocabulário culinário — kernel (fonte única)', () => {
   })
 
   it('o kernel é a fonte única: referencia os mesmos arrays canônicos', () => {
-    expect(vocabularioCulinario.cozinhas).toBe(COZINHAS)
     expect(vocabularioCulinario.restricoes).toBe(RESTRICOES)
-    expect(COZINHAS.length).toBeGreaterThan(0)
     expect(RESTRICOES.length).toBeGreaterThan(0)
   })
 

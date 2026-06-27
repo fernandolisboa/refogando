@@ -6,8 +6,9 @@ import type { VocabularyKind, VocabularyTermStatus } from '@/domain/vocabulary-t
 /**
  * Leitor de vocabulário data-driven (#315, ADR-0025 Decisão 4).
  *
- * PURAMENTE ADITIVA: ninguém consome ainda — o app segue lendo `cozinhaEnum`/`cozinhaLabel`.
- * Os consumidores chegam nas próximas fatias (validação #316, rótulos #317, virada #318).
+ * Consumido pela LEITURA (facetas da Busca #316, rótulos do acervo #317). A virada #318 trocou
+ * `recipe.cozinha`/`briefing.cozinha` enum→text com FK p/ `vocabulary_term.slug`: a tabela é a
+ * fonte única de QUAIS cozinhas existem (o pgEnum `cozinha` foi DROPADO).
  *
  * Duas SUPERFÍCIES de leitura (scopes), cada uma mapeando para os status que ela enxerga:
  *  - `active`  — facetas de busca + `z.enum` da geração: SÓ termos vivos.

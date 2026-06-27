@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { RECIPE_GEN_KINDS, RecipeGenSchema } from '@/domain/recipe-gen-schema'
+import {
+  RECIPE_GEN_KINDS,
+  RecipeGenSchema,
+  buildRecipeGenSchema,
+} from '@/domain/recipe-gen-schema'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 
 // Receita "miolo" completa e válida — base reutilizável nos casos abaixo.
@@ -92,9 +96,39 @@ describe('RecipeGenSchema — forma FLAT-OBJECT (§2 fallback)', () => {
     expect(parsed.receita?.notas).toBeNull()
   })
 
-  it('rejeita cozinha fora de COZINHAS', () => {
-    const receita = { ...receitaCompleta(), cozinha: 'marciana' }
-    expect(() => RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })).toThrow()
+  it('schema ESTÁTICO permissivo (cozinha=string): aceita qualquer string e null (#318)', () => {
+    // RecipeGenSchema = buildRecipeGenSchema([]) ⇒ cozinha cai em z.string().nullable(): o schema
+    // estático NÃO constrange a cozinha (a virada #318 tornou recipe.cozinha um `text`). Qualquer
+    // string E null passam — a constrição vive na chamada CONSTRITA (buildRecipeGenSchema(ativos)).
+    for (const cozinha of ['italiana', 'americana', 'qualquer', null]) {
+      const receita = { ...receitaCompleta(), cozinha }
+      expect(RecipeGenSchema.parse({ kind: 'success', receita, advisory: null }).receita?.cozinha).toBe(
+        cozinha,
+      )
+    }
+  })
+})
+
+describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', () => {
+  it('lista não-vazia: ACEITA slugs do conjunto, REJEITA fora dele', () => {
+    const schema = buildRecipeGenSchema(['italiana', 'americana'])
+    // dentro do conjunto → aceito (inclusive 'americana', nova/data-driven).
+    for (const cozinha of ['italiana', 'americana']) {
+      const receita = { ...receitaCompleta(), cozinha }
+      expect(schema.parse({ kind: 'success', receita, advisory: null }).receita?.cozinha).toBe(cozinha)
+    }
+    // fora do conjunto → rejeitado (z.enum constringe ao vocabulário VIVO).
+    const marciana = { ...receitaCompleta(), cozinha: 'marciana' }
+    expect(() => schema.parse({ kind: 'success', receita: marciana, advisory: null })).toThrow()
+  })
+
+  it('lista VAZIA: cai em z.string() — NUNCA estoura na construção; aceita qualquer string e null', () => {
+    // z.enum exige >=1 elemento (estouraria com tupla vazia) ⇒ o ramo vazio usa z.string().
+    const schema = buildRecipeGenSchema([])
+    for (const cozinha of ['qualquer', 'italiana', null]) {
+      const receita = { ...receitaCompleta(), cozinha }
+      expect(schema.parse({ kind: 'success', receita, advisory: null }).receita?.cozinha).toBe(cozinha)
+    }
   })
 
   it('rejeita kind fora do enum', () => {

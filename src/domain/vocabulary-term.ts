@@ -7,11 +7,10 @@
  * kernel (mesma forma de `report.ts`: array `as const` + tipo derivado + guard puro),
  * enquanto as cozinhas concretas viram a seed `COZINHA_SEED`.
  *
- * Esta fatia é PURAMENTE ADITIVA: a tabela nasce e é semeada, mas NADA ainda a lê — o
- * app continua lendo o `cozinhaEnum` (pgEnum) e o `cozinhaLabel` (i18n). O leitor (#315),
- * a validação (#316), os rótulos vindos da tabela (#317) e a virada enum→texto+FK (#318)
- * são as próximas fatias. A duplicação temporária com `COZINHAS`/`cozinhaLabel` é
- * sancionada pela ADR.
+ * Fatia A COMPLETA: a tabela é a FONTE ÚNICA das cozinhas. O leitor (#315), a validação por
+ * injeção (#316), os rótulos vindos da tabela (#317) e a virada enum→texto+FK (#318) já
+ * pousaram — `recipe.cozinha`/`briefing.cozinha` são `text` com FK p/ `slug`, o pgEnum `cozinha`
+ * e o mapa `cozinhaLabel` foram REMOVIDOS. `COZINHA_SEED` abaixo é a fonte do INSERT da migração.
  */
 
 // ── kind: quais DIMENSÕES de vocabulário existem (ADR-0025: só cozinha no passo 1) ──
@@ -50,14 +49,15 @@ export type VocabularyTermSeed = {
 }
 
 /**
- * Seed inicial da dimensão `cozinha`: as 14 cozinhas que hoje vivem no `cozinhaEnum`
- * (rótulos copiados VERBATIM de `cozinhaLabel` em src/i18n/messages — pt-BR e en-US) +
- * `americana` (nova, destrava o seed de catálogo #238). Todas nascem `active` na migração
- * — imediatamente usáveis como faceta. `sort` segue a ordem de COZINHAS, americana por
- * último (reversível: o leitor #315 re-ordena por este campo).
+ * Seed inicial da dimensão `cozinha`: as 14 cozinhas que viviam no antigo `cozinhaEnum`
+ * (rótulos pt-BR/en-US, fixados aqui — `cozinhaLabel` foi removido em #317) + `americana`
+ * (nova, destrava o seed de catálogo #238). Todas nascem `active` na migração — imediatamente
+ * usáveis como faceta. `sort` segue a ordem histórica das 14, americana por último (reversível:
+ * o leitor #315 re-ordena por este campo).
  *
  * Esta é a FONTE ÚNICA copiada pela migração 0033 (INSERT) e pelo helper de teste
- * (`seedVocabularyCozinhas`) — o teste puro guarda contra drift com COZINHAS.
+ * (`seedVocabularyCozinhas`) — o teste puro guarda contra drift com as 14 cozinhas
+ * históricas (literal `COZINHAS_HISTORICAS` em `vocabulary-term.test.ts`).
  */
 export const COZINHA_SEED: VocabularyTermSeed[] = [
   { slug: 'italiana', labelPtBr: 'Italiana', labelEnUs: 'Italian', sort: 0 },
