@@ -99,6 +99,7 @@ const layout = () => as(import('@/app/[locale]/admin/layout'))
 const index = () => as(import('@/app/[locale]/admin/page'))
 const config = () => as(import('@/app/[locale]/admin/config/page'))
 const ai = () => as(import('@/app/[locale]/admin/ai/page'))
+const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
 const users = () => as(import('@/app/[locale]/admin/users/page'))
 const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
 const translations = () => as(import('@/app/[locale]/admin/translations/page'))
@@ -156,6 +157,7 @@ describe('Seções admin-only (/admin/config, /admin/ai, /admin/users) — curad
   it.each([
     ['config', config],
     ['ai', ai],
+    ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('curador em /admin/%s → AccessDenied (gate, não link escondido)', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `cur-${_n}@routes.test`, role: 'curador' })
@@ -166,6 +168,7 @@ describe('Seções admin-only (/admin/config, /admin/ai, /admin/users) — curad
   it.each([
     ['config', config],
     ['ai', ai],
+    ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('admin em /admin/%s → render da seção', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `adm-${_n}@routes.test`, role: 'admin' })
@@ -176,6 +179,7 @@ describe('Seções admin-only (/admin/config, /admin/ai, /admin/users) — curad
   it.each([
     ['config', config],
     ['ai', ai],
+    ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('anon em /admin/%s → redirect', async (_n, mod) => {
     headersMock.current = new Headers()
