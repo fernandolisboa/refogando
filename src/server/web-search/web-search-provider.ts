@@ -156,11 +156,17 @@ function sourceNameFromUrl(url: string): string | null {
   return bareHost(url)
 }
 
-/** Locale da Busca → dicas de país/idioma do Brave (opcionais). Desconhecido ⇒ sem dica. */
+/**
+ * Locale da Busca → dicas de país/idioma do Brave (opcionais). Desconhecido ⇒ sem dica.
+ *
+ * `search_lang` é um ENUM FECHADO do Brave: pt-BR exige `'pt-br'` (NÃO `'pt'` — esse valor
+ * dá HTTP 422, que `queryBrave` engole pra `[]`, deixando TODA descoberta web em português
+ * silenciosamente vazia). `'en'` é válido no enum, então en-US fica como está.
+ */
 function braveLocaleParams(locale?: string): { country?: string; searchLang?: string } {
   switch (locale) {
     case 'pt-BR':
-      return { country: 'BR', searchLang: 'pt' }
+      return { country: 'BR', searchLang: 'pt-br' }
     case 'en-US':
       return { country: 'US', searchLang: 'en' }
     default:
