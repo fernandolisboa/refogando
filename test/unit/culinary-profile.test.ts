@@ -3,7 +3,10 @@ import {
   resolveCulinaryProfile,
   foldIntent,
   CULINARY_INTENT_MAP,
+  CULINARY_PROFILE_CITED_COZINHA_SLUGS,
+  isCozinhaCitedByCulinaryProfile,
 } from '@/domain/culinary-profile'
+import { COZINHA_SEED } from '@/domain/vocabulary-term'
 import { parseSearchTerms } from '@/domain/search-terms'
 
 /**
@@ -88,5 +91,25 @@ describe('resolveCulinaryProfile', () => {
   it('o mapa tem chaves pt-BR E en-US para os seeds (language-neutral)', () => {
     const keys = Object.keys(CULINARY_INTENT_MAP)
     expect(keys).toEqual(expect.arrayContaining(['asiatico', 'asian', 'leve', 'light']))
+  })
+})
+
+describe('cozinhas citadas pelo perfil culinário (#321 — guard de hard-delete)', () => {
+  it('o conjunto citado é exatamente {japonesa, chinesa, tailandesa, indiana}', () => {
+    expect([...CULINARY_PROFILE_CITED_COZINHA_SLUGS].sort()).toEqual(
+      ['chinesa', 'indiana', 'japonesa', 'tailandesa'],
+    )
+  })
+
+  it('é SUBconjunto dos slugs de COZINHA_SEED (não pode citar cozinha inexistente)', () => {
+    const seedSlugs = new Set(COZINHA_SEED.map((t) => t.slug))
+    for (const slug of CULINARY_PROFILE_CITED_COZINHA_SLUGS) {
+      expect(seedSlugs.has(slug)).toBe(true)
+    }
+  })
+
+  it('isCozinhaCitedByCulinaryProfile: true p/ citada, false p/ não-citada', () => {
+    expect(isCozinhaCitedByCulinaryProfile('japonesa')).toBe(true)
+    expect(isCozinhaCitedByCulinaryProfile('mexicana')).toBe(false)
   })
 })

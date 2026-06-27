@@ -50,6 +50,32 @@ export const CULINARY_INTENT_MAP = {
   dessert: { categorias: ['sobremesa'] },
 } as const satisfies Record<string, FacetasResolvidas>
 
+/**
+ * Slugs de cozinha CITADOS pelo perfil culinário, DERIVADOS do mapa (fonte única, nunca
+ * listados à mão — não pode driftar). O `CULINARY_INTENT_MAP` é `as const satisfies Record<…,
+ * FacetasResolvidas>`, então algumas entradas NÃO têm a chave `cozinhas`; coletamos com o
+ * narrowing `'cozinhas' in entry` (sem ele o tsc reclama do acesso a `.cozinhas`).
+ *
+ * Guarda da ADR-0025: (1) este conjunto é SUBconjunto dos slugs que existem de fato em
+ * `COZINHA_SEED` (travado pelo teste puro — o mapa nunca cita uma cozinha inexistente); (2) o
+ * Admin CRUD de cozinhas (#321) NÃO oferece hard-delete (só depreciar), então `isCozinhaCited…`
+ * está DORMENTE-mas-disponível: QUALQUER caminho FUTURO de delete DEVE consultá-lo para recusar
+ * remover um slug citado (a FK `recipe.cozinha`/`briefing.cozinha` é ON DELETE restrict —
+ * cinto-e-suspensório). NOTA de produto: DEPRECIAR uma cozinha citada (ex.: 'japonesa')
+ * enfraquece silenciosamente o mapa (a Busca resolve `?cozinha` contra o conjunto ATIVO), uma
+ * decisão futura — não desta issue.
+ */
+export const CULINARY_PROFILE_CITED_COZINHA_SLUGS: ReadonlySet<string> = new Set(
+  Object.values(CULINARY_INTENT_MAP).flatMap((entry) =>
+    'cozinhas' in entry ? entry.cozinhas : [],
+  ),
+)
+
+/** true sse o slug é citado pelo perfil culinário (#321: guard de hard-delete futuro). */
+export function isCozinhaCitedByCulinaryProfile(slug: string): boolean {
+  return CULINARY_PROFILE_CITED_COZINHA_SLUGS.has(slug)
+}
+
 /** Conectores ignorados na tokenização (stoplist mínima language-neutral). */
 const STOPWORDS = new Set(['e', 'and', 'com', 'with', 'de', 'of'])
 
