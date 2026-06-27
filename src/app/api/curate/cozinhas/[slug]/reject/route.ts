@@ -9,7 +9,8 @@ import { rejectCozinha } from '@/server/vocabulary/curate'
  * Devolve `{ ok:true }`.
  *
  * Corpo de erro `{ error:'<chave>' }` (literais de `curate.ts`). Mapa: nao_encontrado→404,
- * ja_resolvido→409.
+ * ja_resolvido→409. `requireRole` ANTES do decode (URIError não-autenticado não vira 500); decode
+ * malformado → 404; chamada embrulhada → `erro_interno` 500 (paridade c/ listagem).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -18,15 +19,24 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ): Promise<Response> {
-  const { slug: raw } = await params
-  const slug = decodeURIComponent(raw)
-
   const g = await requireRole(request, 'curador')
   if (!g.ok) return g.response
 
-  const res = await rejectCozinha(getDb(), { slug })
+  const { slug: raw } = await params
+  let slug: string
+  try {
+    slug = decodeURIComponent(raw)
+  } catch {
+    return Response.json({ error: 'nao_encontrado' }, { status: 404 })
+  }
 
-  if (res.ok) return Response.json({ ok: true }, { status: 200 })
-  const status = res.error === 'nao_encontrado' ? 404 : 409
-  return Response.json({ error: res.error }, { status })
+  try {
+    const res = await rejectCozinha(getDb(), { slug })
+
+    if (res.ok) return Response.json({ ok: true }, { status: 200 })
+    const status = res.error === 'nao_encontrado' ? 404 : 409
+    return Response.json({ error: res.error }, { status })
+  } catch {
+    return Response.json({ error: 'erro_interno' }, { status: 500 })
+  }
 }
