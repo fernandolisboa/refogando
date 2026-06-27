@@ -8,6 +8,7 @@
 import { SectionGate } from '../gate'
 import { ModerationQueue } from '@/components/admin/moderation-queue'
 import { ReviewQueue } from '@/components/admin/review-queue'
+import { CozinhaSuggestionQueue } from '@/components/admin/cozinha-suggestion-queue'
 
 export const runtime = 'nodejs'
 
@@ -17,6 +18,8 @@ export default async function AdminModerationPage() {
       <div className="flex flex-col gap-8">
         <ModerationQueue />
         <ReviewQueue />
+        {/* #320: fila REATIVA das cozinhas sugeridas pelo fluxo "Outra" (#319). */}
+        <CozinhaSuggestionQueue />
       </div>
     </SectionGate>
   )
