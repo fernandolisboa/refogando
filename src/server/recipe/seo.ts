@@ -80,8 +80,13 @@ export function buildRecipeSeoInputFromRows(args: {
   baseUrl: string
   slugMap: Partial<Record<Locale, string>>
   eligible: boolean
+  // #319 (ADR-0025 Decisão 5): conjunto de slugs de cozinha ATIVOS. Mantém o builder PURO+SÍNCRONO
+  // (sem db) — o caller carrega o set uma vez e o injeta. Uma cozinha `suggested`/`deprecated` NÃO
+  // está aqui ⇒ `recipeCuisine`/OG saem ausentes (contenção: o termo pendente não vira sinal
+  // indexável nem vaza o slug cru, mas o rótulo VISÍVEL do detalhe usa escopo `display` à parte).
+  activeCozinhas: Set<string>
 }): RecipeSeoInput {
-  const { rows, locale, baseUrl, slugMap, eligible } = args
+  const { rows, locale, baseUrl, slugMap, eligible, activeCozinhas } = args
   const m = MESSAGES[locale]
 
   // Leitura localizada ANÔNIMA: o mesmo motor puro do detalhe resolve nome/corpo/imagem/autoria/
@@ -125,7 +130,13 @@ export function buildRecipeSeoInputFromRows(args: {
     porcoes: view.porcoes,
     // Tempo total (#262, ADR-0023): da view JÁ carregada (sem query nova) → `totalTime` no JSON-LD.
     tempoTotalMin: view.tempoTotalMin,
-    cozinha: view.facets.cozinha,
+    // #319: recipeCuisine/OG são ACTIVE-ONLY por design — um slug `suggested` (ou `deprecated`) vira
+    // null aqui ⇒ o builder puro omite `recipeCuisine` (recipe-seo.ts) e o slug cru não aparece no
+    // grafo/OG. O rótulo VISÍVEL na página de detalhe usa escopo `display` à parte (deprecated ainda
+    // renderiza; suggested some via `unknownAsAbsent`) — split deliberado visível-mas-não-indexado
+    // (ADR-0025 Dec.5 / ADR-0020). NÃO "consertar" de volta para `view.facets.cozinha` cru.
+    cozinha:
+      view.facets.cozinha && activeCozinhas.has(view.facets.cozinha) ? view.facets.cozinha : null,
     categoria: view.facets.categoria,
     restricoes: view.facets.restricoes ?? [],
     // `createdAt` é opcional no tipo (vem do select em runtime); ausente ⇒ omite datePublished.

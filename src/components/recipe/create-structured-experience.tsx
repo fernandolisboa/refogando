@@ -58,6 +58,10 @@ type Mode = 'structured' | 'free_text'
 const FREE_TEXT_MIN = 10
 const FREE_TEXT_MAX = 2000
 
+// "Outra" (#319): valor-sentinela da opção cozinha-livre no <select>. Tem `-` ⇒ slugify dobraria
+// p/ vazio, então NUNCA colide com um slug de cozinha real (que jamais começa/termina com hífen).
+const OUTRA_SENTINEL = '__outra__'
+
 /** Rascunho de UM item do Briefing no formulário. `strength` NASCE 'required' (o servidor
  *  exige uma força válida em todo item). `ingredientId` nunca é exposto (catálogo ADIADO). */
 type ItemDraft = {
@@ -132,6 +136,10 @@ export function CreateStructuredExperience({
   const [freeText, setFreeText] = useState(seed)
 
   const [cozinha, setCozinha] = useState('')
+  // "Outra" (#319, ADR-0025 Decisão 5): cozinha-livre. `outraAtiva` liga o campo de texto (distinto
+  // do slug `cozinha`); o servidor materializa o termo `suggested` e o estampa na Receita.
+  const [outraAtiva, setOutraAtiva] = useState(false)
+  const [outra, setOutra] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
   const [porcoes, setPorcoes] = useState('')
   const [dificuldade, setDificuldade] = useState('')
@@ -258,10 +266,13 @@ export function CreateStructuredExperience({
   )
 
   function buildBody() {
+    // "Outra" (#319): no modo Outra, `briefing.cozinha` vai null e o texto sobe top-level em
+    // `cozinhaOutra` — o servidor materializa o termo `suggested`. Fora do modo, segue o slug.
+    const cozinhaOutra = outraAtiva ? outra.trim() : ''
     return {
       mode: 'structured' as const,
       briefing: {
-        cozinha: cozinha || null,
+        cozinha: outraAtiva ? null : cozinha || null,
         restricoes,
         porcoes: porcoes === '' ? null : Number(porcoes),
         dificuldade: dificuldade === '' ? null : Number(dificuldade),
@@ -274,19 +285,24 @@ export function CreateStructuredExperience({
           strength: it.strength,
         })),
       },
+      ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
     }
   }
 
   // Briefing "vazio" = sem item válido E sem cozinha E sem restrição E sem observação.
   // porções/dificuldade sozinhas NÃO contam (fiel a `isBriefingVazio`: são modificadores).
+  // "Outra" (#319) com texto conta como cozinha preenchida (não é briefing vazio).
   const briefingVazio =
     itensComTexto.length === 0 &&
     cozinha === '' &&
+    !(outraAtiva && outra.trim() !== '') &&
     restricoes.length === 0 &&
     observacoes.trim() === ''
 
   function resetCampos() {
     setCozinha('')
+    setOutraAtiva(false)
+    setOutra('')
     setRestricoes([])
     setPorcoes('')
     setDificuldade('')
@@ -570,8 +586,17 @@ export function CreateStructuredExperience({
           <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
             {m.cozinha}
             <select
-              value={cozinha}
-              onChange={(e) => setCozinha(e.target.value)}
+              value={outraAtiva ? OUTRA_SENTINEL : cozinha}
+              onChange={(e) => {
+                // "Outra" (#319): a opção-sentinela liga o modo cozinha-livre; qualquer slug o desliga.
+                if (e.target.value === OUTRA_SENTINEL) {
+                  setOutraAtiva(true)
+                  setCozinha('')
+                } else {
+                  setOutraAtiva(false)
+                  setCozinha(e.target.value)
+                }
+              }}
               className={inputCls}
             >
               <option value="">{m.cozinhaNenhuma}</option>
@@ -581,8 +606,21 @@ export function CreateStructuredExperience({
                   {label}
                 </option>
               ))}
+              {/* "Outra" (#319): cozinha fora do vocabulário → vira sugestão pro Curador. */}
+              <option value={OUTRA_SENTINEL}>{messages.criarWizard.cozinhaOutra}</option>
             </select>
           </label>
+          {outraAtiva && (
+            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:max-w-xs">
+              {messages.criarWizard.cozinhaOutraLabel}
+              <Input
+                type="text"
+                value={outra}
+                onChange={(e) => setOutra(e.target.value)}
+                placeholder={messages.criarWizard.cozinhaOutraPlaceholder}
+              />
+            </label>
+          )}
 
           {/* Restrições */}
           <FacetFieldset

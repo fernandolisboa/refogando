@@ -270,4 +270,22 @@ describe('RecipeEditForm (#21/#61)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(await screen.findByRole('alert')).toHaveTextContent(M.apagarErro)
   })
+
+  // #319 "Outra": cozinha gravada FORA do vocabulário ativo = termo suggested ⇒ abre em modo Outra,
+  // campo pré-preenchido com o SLUG; o Salvar manda cozinhaOutra (precedência) e cozinha null.
+  it('T8 — pré-preenche o modo Outra com o slug suggested e manda cozinhaOutra no PATCH', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch(() => ({ status: 200, body: { ok: true, was_public: false } }))
+    // 'georgiana' NÃO está no vocabulário ativo (COZINHA_SEED) ⇒ é um suggested.
+    renderForm(ownerView({ visibility: 'private', facets: { cozinha: 'georgiana', categoria: 'sobremesa', tags: [] } }))
+
+    // O campo livre já aparece pré-preenchido com o slug (melhor texto disponível até #320).
+    const input = screen.getByLabelText(ptBR.criarWizard.cozinhaOutraLabel)
+    expect(input).toHaveValue('georgiana')
+
+    await user.click(screen.getByRole('button', { name: M.editarPublicaConfirmar }))
+    const sent = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(sent.cozinhaOutra).toBe('georgiana')
+    expect(sent.cozinha).toBeNull()
+  })
 })

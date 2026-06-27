@@ -5,6 +5,11 @@ import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/
 import { buildRecipeMetadata, buildRecipeJsonLd } from '@/domain/recipe-seo'
 import { seedRecipe, seedTranslation, seedRecipeImage } from '../helpers/recipes'
 import { seedUser } from '../helpers/users'
+import { vocabularyTerm } from '@/db/schema'
+import { COZINHA_SEED } from '@/domain/vocabulary-term'
+
+/** Conjunto ATIVO injetado no builder PURO (#319): as 15 cozinhas semeadas. */
+const ACTIVE = new Set(COZINHA_SEED.map((t) => t.slug))
 
 const BRAND_OG = `${'https://refogando.com'}/opengraph-image.png`
 
@@ -98,6 +103,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       baseUrl: BASE,
       slugMap,
       eligible: true,
+      activeCozinhas: ACTIVE,
     })
 
     const meta = buildRecipeMetadata(input)
@@ -143,6 +149,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       baseUrl: BASE,
       slugMap,
       eligible: true,
+      activeCozinhas: ACTIVE,
     })
     const ld = buildRecipeJsonLd(input)
     expect(ld.recipeYield).toBe('6')
@@ -156,6 +163,43 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
     // datePublished = createdAt (ISO 8601 do banco) — só conferimos que é uma data válida não-vazia.
     expect(ld.datePublished).toBeTruthy()
     expect(Number.isNaN(Date.parse(ld.datePublished!))).toBe(false)
+  })
+
+  it('#319 CONTENÇÃO: cozinha SUGGESTED ⇒ recipeCuisine ausente E o slug cru NÃO aparece no JSON-LD', async () => {
+    // O termo `suggested` (fora do conjunto ATIVO) precisa existir p/ a FK de recipe.cozinha.
+    await getDb()
+      .insert(vocabularyTerm)
+      .values({ kind: 'cozinha', slug: 'georgiana', status: 'suggested' })
+      .onConflictDoNothing({ target: vocabularyTerm.slug })
+    const recipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      cozinha: 'georgiana', // pendente — NÃO está em ACTIVE
+    })
+    await seedTranslation({
+      recipeId,
+      locale: 'pt-BR',
+      titulo: 'Khachapuri',
+      provenance: 'escrita_por_pessoa',
+      slug: 'khachapuri-seo',
+    })
+
+    const rows = await loadPublicRecipeBySlug(db(), 'khachapuri-seo', 'pt-BR')
+    const slugMap = await loadRecipeSlugMap(db(), recipeId)
+    const input = buildRecipeSeoInputFromRows({
+      rows: rows!,
+      locale: 'pt-BR',
+      baseUrl: BASE,
+      slugMap,
+      eligible: true,
+      activeCozinhas: ACTIVE, // georgiana AUSENTE do set ativo
+    })
+    expect(input.cozinha).toBeNull() // gate ACTIVE-only zerou
+    const ld = buildRecipeJsonLd(input)
+    expect(ld.recipeCuisine).toBeUndefined()
+    // O slug cru não vaza em NENHUM lugar do grafo serializado (contenção total).
+    expect(JSON.stringify(ld)).not.toMatch(/georgiana/i)
   })
 
   it('imagem da receita ⇒ og:image + ld.image = a foto (URL absoluta), sem selo de IA no OG', async () => {
@@ -185,6 +229,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       baseUrl: BASE,
       slugMap,
       eligible: true,
+      activeCozinhas: ACTIVE,
     })
     const meta = buildRecipeMetadata(input)
     const images = meta.openGraph?.images
@@ -237,6 +282,7 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       baseUrl: BASE,
       slugMap,
       eligible: true,
+      activeCozinhas: ACTIVE,
     })
     // A imagem moderada NÃO entra no input (a view a escondeu) ⇒ og:image cai no card de marca.
     expect(input.imageUrl).toBeUndefined()

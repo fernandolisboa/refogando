@@ -85,4 +85,17 @@ describe('resolveCozinhaLabel: rótulo de UM slug gravado', () => {
   it('slug null → null (faceta ausente, nada a renderizar)', () => {
     expect(resolveCozinhaLabel(options, null)).toBeNull()
   })
+
+  // #319 (ADR-0025 Decisão 5): contenção da página pública — slug desconhecido vira AUSENTE.
+  it('unknownAsAbsent: slug fora do escopo → null (não vaza o slug cru de um suggested)', () => {
+    expect(resolveCozinhaLabel(options, 'georgiana', { unknownAsAbsent: true })).toBeNull()
+  })
+
+  it('unknownAsAbsent NÃO afeta slug conhecido (resolve normalmente)', () => {
+    expect(resolveCozinhaLabel(options, 'mexicana', { unknownAsAbsent: true })).toBe('Mexicana')
+  })
+
+  it('default (sem opts) mantém o fallback-para-slug das superfícies do dono', () => {
+    expect(resolveCozinhaLabel(options, 'georgiana')).toBe('georgiana')
+  })
 })
