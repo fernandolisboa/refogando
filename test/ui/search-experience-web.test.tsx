@@ -137,11 +137,6 @@ function webTrigger(title: string) {
   return screen.findByRole('button', { name: new RegExp(title) })
 }
 
-/** O `<details>` que embrulha as facetas (o que tem o summary "+ filtros"). Copiado do teste de filtros. */
-function disclosure(): HTMLDetailsElement {
-  const summary = screen.getByText((_content, el) => el?.tagName === 'SUMMARY' && /\+ filtros/.test(el.textContent ?? ''))
-  return summary.closest('details') as HTMLDetailsElement
-}
 
 /**
  * Variante de `stubFetchRouting` com a resposta de `/api/discovery/web` CONTROLÁVEL via promise diferida.
@@ -354,10 +349,13 @@ describe('SearchExperience — modal de importação (#169)', () => {
     await user.type(screen.getByRole('searchbox'), 'feijoada')
     await user.click(await webTrigger(WEB_LINKS[0].title))
 
-    await screen.findByRole('dialog')
-    // Convite de entrar (gerar/importar exige conta) — sem botão de confirmar import.
-    expect(screen.getByText(M.importarConviteTitulo)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    const dialog = await screen.findByRole('dialog')
+    // Convite de entrar (gerar/importar exige conta) — sem botão de confirmar import. #5 (Direção C): o
+    // acervo raso vazio ⇒ o estado VAZIO renderiza o convite "Gerar com IA" (que TAMBÉM tem um link
+    // "Entrar"). Por isso escopamos a asserção do sign-in ao DIÁLOGO (o real navegador inerte o fundo via
+    // aria-hidden; a colisão é artefato do jsdom). `importarConviteTitulo` é exclusivo do diálogo.
+    expect(within(dialog).getByText(M.importarConviteTitulo)).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
     expect(screen.queryByRole('button', { name: M.importarConfirmar })).not.toBeInTheDocument()
     // Nunca chamou o endpoint de import.
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/import'))).toBe(false)
@@ -461,8 +459,8 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
     const user = userEvent.setup()
     renderSearch()
 
-    // Abre os filtros e marca uma cozinha (busca SÓ por faceta, sem termo).
-    await user.click(within(disclosure()).getByText(M.filtros))
+    // Marca uma cozinha (busca SÓ por faceta, sem termo). #5: a trilha é permanente (sem disclosure
+    // `<details>`); o jsdom não esconde por CSS, então o chip já está no DOM — clique direto.
     await user.click(screen.getByLabelText('Brasileira'))
 
     // Sync POSITIVO: espera os resultados concluírem ANTES das asserções negativas.

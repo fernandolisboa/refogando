@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -50,6 +50,8 @@ function authed(): SessionState {
 }
 
 import { LocaleProvider } from '@/i18n/provider'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
 
@@ -60,7 +62,9 @@ const NAV = ptBR.nav
 function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience />
+      <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
+        <SearchExperience />
+      </CozinhaVocabProvider>
     </LocaleProvider>,
   )
 }
@@ -84,32 +88,47 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('SearchExperience — CTA "Gerar com IA" (#166)', () => {
-  it('C1 — logado: CTA visível SEM resultados (estado inicial) e leva ao /create', async () => {
+// #5 (ADR-0019 emenda): o "Gerar com IA" foi REBAIXADO do CTA permanente (#166) para o ESTADO VAZIO — a
+// saída de criação CONTEXTUAL quando a busca não acha nada. A lógica dos ramos (logado→link /create?q;
+// visitante→convite; pendente→otimista) é PRESERVADA, só RELOCADA. Estes testes provam (a) os ramos no
+// vazio e (b) o REBAIXAMENTO: gerar AUSENTE no repouso (idle) e AUSENTE quando há resultados. A entrada
+// SEMPRE-disponível pra criar é o "Criar" do header global (fora deste componente).
+describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emenda)', () => {
+  it('C1 — logado: AUSENTE no repouso; faceta sem resultado → cartão leva ao /create (sem ?q espúrio)', async () => {
     sessionState = authed()
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
     renderSearch()
 
-    // Estado inicial neutro: nenhum termo, nenhum resultado — mas o CTA já está lá.
+    // Repouso (logado): a dica aparece e o "Gerar com IA" NÃO (rebaixado — não é mais permanente).
     await screen.findByText(M.dicaInicialLogado)
-    const cta = screen.getByRole('link', { name: M.gerarComIa })
-    expect(cta).toBeInTheDocument()
-    // Sem termo: leva ao /create cru (sem ?q= vazio espúrio).
+    expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
+
+    // Busca SÓ por faceta (sem termo) que volta vazia → estado vazio → cartão "Gerar com IA".
+    await user.click(screen.getByLabelText(ptBR.categoriaLabel.sobremesa))
+    const cta = await screen.findByRole('link', { name: M.gerarComIa })
+    // Sem termo: leva ao /create cru (sem ?q= vazio espúrio) — preserva a guarda do ramo bare-/create.
     expect(cta).toHaveAttribute('href', '/create')
   })
 
-  it('C2 — logado: CTA visível COM resultados e leva ao /create?q=<termo>', async () => {
+  it('C2 — logado: termo sem resultado → cartão leva ao /create?q=<termo>', async () => {
+    sessionState = authed()
+    stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
+    const cta = await screen.findByRole('link', { name: M.gerarComIa })
+    // O href carrega o termo buscado, URL-encoded (espaço → %20).
+    expect(cta).toHaveAttribute('href', '/create?q=feijao%20tropeiro')
+  })
+
+  it('C2b — REBAIXAMENTO: COM resultados o "Gerar com IA" NÃO aparece (saiu do sempre-visível)', async () => {
     sessionState = authed()
     stubFetchOk({
       minhas: [],
       catalogo: [
-        {
-          recipeId: 'r1',
-          displayedTitle: 'Feijoada',
-          origin: 'catalog',
-          autoTranslationSignal: false,
-          isOwn: false,
-        },
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
       ],
       comunidade: [],
     })
@@ -117,44 +136,34 @@ describe('SearchExperience — CTA "Gerar com IA" (#166)', () => {
     renderSearch()
 
     await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
-
-    // Há resultados (a seção Catálogo apareceu) E o CTA segue presente.
+    // Há resultados (Catálogo) E o "Gerar com IA" NÃO está na tela (só no vazio).
     await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
-    const cta = screen.getByRole('link', { name: M.gerarComIa })
-    expect(cta).toBeInTheDocument()
-    // O href carrega o termo buscado, URL-encoded (espaço → %20).
-    expect(cta).toHaveAttribute('href', '/create?q=feijao%20tropeiro')
+    expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
+    expect(screen.queryByText(M.vazioGerarTitulo)).not.toBeInTheDocument()
   })
 
-  it('C3 — visitante: CTA mostra CONVITE de entrar (não um link pro /create)', async () => {
+  it('C3 — visitante: termo sem resultado → CONVITE de entrar (não link pro /create)', async () => {
     sessionState = anon()
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
     renderSearch()
 
-    // O rótulo "Gerar com IA" aparece como título da seção de convite.
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    // O rótulo "Gerar com IA" aparece como título da seção de convite (no vazio).
     await screen.findByText(M.gerarComIa)
     // NÃO há link pro /create para o visitante.
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
-
-    // Há um link de "Entrar" levando ao /sign-in (gerar exige conta).
-    const signIn = screen.getByRole('link', { name: NAV.signIn })
-    expect(signIn).toHaveAttribute('href', '/sign-in')
-    // O texto do convite reusa a cópia de minhasCriacoes (mesmo padrão do detalhe da Receita).
+    // Há um link de "Entrar" levando ao /sign-in (gerar exige conta) + a cópia do convite.
+    expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute('href', '/sign-in')
     expect(screen.getByText(MI.convidaEntrarTexto)).toBeInTheDocument()
   })
 
-  it('C4 — visitante: convite PERSISTE mesmo com resultados na tela', async () => {
+  it('C4 — REBAIXAMENTO: visitante COM resultados NÃO vê o convite (saiu do sempre-visível)', async () => {
     sessionState = anon()
     stubFetchOk({
       minhas: [],
       catalogo: [
-        {
-          recipeId: 'r1',
-          displayedTitle: 'Feijoada',
-          origin: 'catalog',
-          autoTranslationSignal: false,
-          isOwn: false,
-        },
+        { recipeId: 'r1', displayedTitle: 'Feijoada', origin: 'catalog', autoTranslationSignal: false, isOwn: false },
       ],
       comunidade: [],
     })
@@ -163,26 +172,21 @@ describe('SearchExperience — CTA "Gerar com IA" (#166)', () => {
 
     await user.type(screen.getByRole('searchbox'), 'feijao')
     await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
-
-    // Com resultados, o visitante segue vendo o convite (não vira link).
-    const convite = screen.getByText(M.gerarComIa).closest('section')!
-    expect(convite).toBeInTheDocument()
-    expect(within(convite).getByRole('link', { name: NAV.signIn })).toHaveAttribute(
-      'href',
-      '/sign-in',
-    )
-    expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
+    // Com resultados, o convite "Gerar com IA" NÃO aparece (rebaixado pro vazio).
+    expect(screen.queryByText(M.gerarComIa)).not.toBeInTheDocument()
+    expect(screen.queryByText(MI.convidaEntrarTexto)).not.toBeInTheDocument()
   })
 
-  it('C5 — sessão pendente: ramo logado (otimista, sem flash do convite)', async () => {
+  it('C5 — sessão pendente: vazio → ramo logado (otimista, sem flash do convite)', async () => {
     sessionState = { ...anon(), isPending: true }
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
     renderSearch()
 
-    // Enquanto resolve, o CTA é o link (não o convite) — evita piscar o convite pra quem
-    // já está logado.
+    await user.type(screen.getByRole('searchbox'), 'feijao')
+    // No vazio, enquanto a sessão resolve, o cartão é o LINK (não o convite).
     const cta = await screen.findByRole('link', { name: M.gerarComIa })
-    expect(cta).toHaveAttribute('href', '/create')
+    expect(cta).toHaveAttribute('href', '/create?q=feijao')
     expect(screen.queryByText(MI.convidaEntrarTexto)).not.toBeInTheDocument()
   })
 })

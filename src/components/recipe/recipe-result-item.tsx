@@ -107,7 +107,7 @@ export function RecipeResultItem({
               {kicker}
             </div>
           )}
-          <h3 className="font-display text-xl font-semibold leading-tight text-fg transition-colors group-hover:text-brand-ink">
+          <h3 className="font-display text-xl font-semibold leading-tight text-fg transition-colors group-hover:text-brand-ink sm:text-2xl">
             {displayedTitle}
           </h3>
         </Link>
@@ -120,23 +120,25 @@ export function RecipeResultItem({
           </p>
         )}
       </div>
-      {/* Thumbnail à direita (foto ou placeholder), com selo de IA sobreposto. */}
-      <div className="relative w-28 flex-none sm:w-32">
+      {/* #5 (Direção C): thumbnail PAISAGEM à direita (foto ou placeholder), com o selo de IA sobreposto.
+          Aspecto 3:2 + um pouco mais larga (152px no mock) p/ a linha editorial respirar. */}
+      <div className="relative w-32 flex-none sm:w-36">
         {imageUrl != null ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={displayedTitle}
             referrerPolicy="no-referrer"
-            className="aspect-[4/3] w-full rounded-md border border-border object-cover"
+            className="aspect-[3/2] w-full rounded-lg border border-border object-cover"
           />
         ) : (
-          <div className="flex aspect-[4/3] w-full items-center justify-center rounded-md border border-border bg-brand/[0.07] text-brand/40">
+          <div className="flex aspect-[3/2] w-full items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
             <ImageIcon className="size-5" strokeWidth={1.5} aria-hidden />
           </div>
         )}
+        {/* Selo "gerada por IA": pílula BRANCA com sombra leve e tinta escura (protótipo Direção C). */}
         {imageAiGenerated && aiLabel && (
-          <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-bg/90 px-1.5 py-0.5 text-[0.6rem] font-medium text-muted">
+          <span className="absolute left-2 top-2 rounded-full bg-bg px-2 py-0.5 text-[0.65rem] font-medium text-fg shadow-sm">
             {aiLabel}
           </span>
         )}

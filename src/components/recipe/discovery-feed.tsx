@@ -111,8 +111,12 @@ export function DiscoveryFeed({
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Subtítulo discreto do feed de repouso (a Descoberta). O `<h1>` é do pai. */}
-      <p className="text-muted">{mf.subtitulo}</p>
+      {/* #5 (Direção C): manchete serifada VISÍVEL do feed de repouso. É o ÚNICO heading visível da home
+          INDEXÁVEL (o `<h1>` do pai é sr-only) — dá estrutura crawlável; `<h2>` sob o `<h1>` da Busca. */}
+      <div className="flex flex-col gap-1">
+        <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{mf.titulo}</h2>
+        <p className="text-muted">{mf.subtitulo}</p>
+      </div>
 
       {items.length > 0 && (
         <ul className="flex flex-col">
@@ -156,12 +160,14 @@ export function DiscoveryFeed({
         </div>
       )}
 
-      {/* Live region: só mensagens efêmeras CURTAS. */}
+      {/* Live region: só mensagens efêmeras CURTAS. O fim do feed é em itálico serifado (Direção C). */}
       <div aria-live="polite" className="flex flex-col items-center gap-2 text-sm text-muted">
         {loadingMore && <p>{messages.system.loading}</p>}
         {loadMoreError && <p className="text-fg">{messages.system.error}</p>}
         {isEmpty && <p>{mf.vazio}</p>}
-        {endReached && items.length > 0 && <p>{mf.fim}</p>}
+        {endReached && items.length > 0 && (
+          <p className="font-display italic">{mf.fim}</p>
+        )}
       </div>
     </div>
   )

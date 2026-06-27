@@ -23,21 +23,20 @@ export function FacetFieldset({
 }) {
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="mb-1 text-sm font-medium text-fg">{legend}</legend>
-      {/* Cada opção é um CHIP arredondado (protótipo Checkbox.jsx): tinge de páprica quando
-          marcado (bg-brand/10 + borda + tinta de marca). Mantém o Radix Checkbox dentro pela
-          a11y e pelo estado; o pill é a casca. Páprica, nunca erva (erva = selo do Catálogo). */}
-      <div className="flex flex-wrap gap-2">
+      <legend className="mb-1 text-sm font-semibold text-fg">{legend}</legend>
+      {/* #5 (Direção C): LISTA VERTICAL de linhas de checkbox na trilha de filtros (era chip-pílula).
+          Cada opção é uma linha `quadradinho marcável + rótulo`, empilhada — o desenho da trilha de
+          188px. O Radix Checkbox é o controle (a11y/estado); marcado fica páprica (token de marca),
+          nunca erva (erva = selo do Catálogo). Texto da linha em tinta normal pra leitura calma. */}
+      <div className="flex flex-col gap-2">
         {options.map((option) => {
           const isChecked = selected.includes(option.value)
           return (
             <Label
               key={option.value}
               className={cn(
-                'inline-flex cursor-pointer select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-normal transition-colors duration-150 ease-out',
-                isChecked
-                  ? 'border-brand bg-brand/10 text-brand-ink'
-                  : 'border-border bg-surface text-fg',
+                'inline-flex cursor-pointer select-none items-center gap-2.5 text-sm font-normal text-fg transition-colors duration-150 ease-out',
+                isChecked && 'text-brand-ink',
               )}
             >
               <Checkbox checked={isChecked} onCheckedChange={() => onToggle(option.value)} />
