@@ -875,7 +875,7 @@ export const ptBR = {
     // #268: a aba /admin/ai abriga a infra de BUSCA — descoberta na web + embeddings; a IA
     // generativa (modelo de receita + geração de imagem + tetos) foi p/ a aba "IA" (/admin/config).
     navAi: 'Descoberta',
-    // Seção /admin/ai (#134) — liga/desliga a geração de imagem por IA, modelo e tetos por papel.
+    // Seção "Geração de imagem" (#134) — vive na aba "IA" (/admin/config); liga/desliga, modelo e tetos.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
     aiHabilitadaLabel: 'Geração de imagem ligada',

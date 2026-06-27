@@ -828,7 +828,7 @@ export const enUS: Messages = {
     // #268: the /admin/ai tab holds the SEARCH infra — web discovery + embeddings; generative AI
     // (recipe model + image generation + caps) moved to the "AI" tab (/admin/config).
     navAi: 'Discovery',
-    // /admin/ai section (#134) — toggle AI image generation, model and per-role daily caps.
+    // "Image generation" section (#134) — lives on the "AI" tab (/admin/config); toggle, model, caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',
     aiHabilitadaLabel: 'Image generation on',

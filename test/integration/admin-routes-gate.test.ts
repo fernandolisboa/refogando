@@ -35,6 +35,7 @@ vi.mock('next/headers', () => ({
 
 import { isValidElement, type ReactElement } from 'react'
 import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
+import { AiConfigSection } from '@/components/admin/ai-config-section'
 
 /** Busca recursiva por um TIPO de componente na árvore resolvida (children aninhados). */
 function containsType(node: unknown, target: unknown): boolean {
@@ -234,5 +235,26 @@ describe('Aviso do catálogo (#268) — admin-only DENTRO da seção Curadoria d
 
   it('curador → a seção do Aviso está AUSENTE (não vê o que a API recusaria com 403)', async () => {
     expect(containsType(await catalogTree('curador'), CatalogDisclosureConfigSection)).toBe(false)
+  })
+})
+
+// #334: a reorg IA × Descoberta é PURAMENTE colocação de seção (AiConfigSection saiu de /admin/ai e
+// foi pra /admin/config). O gate por papel (testado acima) não distingue isso — um revert acidental
+// (AiConfigSection de volta na /admin/ai) passaria no CI. Estes 2 testes PINAM a colocação reusando o
+// mesmo harness containsType/resolve do Aviso do catálogo.
+describe('Reorg abas IA × Descoberta (#334) — colocação da geração de imagem', () => {
+  async function pageTree(loader: () => Promise<PageModule>, email: string) {
+    const { headers } = await seedSessionHeaders({ email, role: 'admin' })
+    headersMock.current = headers
+    const { default: Component } = await loader()
+    return resolve(await Component())
+  }
+
+  it('aba "IA" (/admin/config) RENDERIZA a geração de imagem (AiConfigSection)', async () => {
+    expect(containsType(await pageTree(config, 'reorg-ia@routes.test'), AiConfigSection)).toBe(true)
+  })
+
+  it('aba "Descoberta" (/admin/ai) NÃO renderiza a geração de imagem (AiConfigSection)', async () => {
+    expect(containsType(await pageTree(ai, 'reorg-desc@routes.test'), AiConfigSection)).toBe(false)
   })
 })
