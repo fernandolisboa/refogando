@@ -17,6 +17,7 @@ import {
   isRestricao,
   isDificuldadeValida,
   isPorcoesValidas,
+  isActiveCozinha,
   type Cozinha,
   type Categoria,
   type Restricao,
@@ -125,7 +126,8 @@ export function parseFacetParams(
     // Cozinha data-driven (#316): pertencimento ao conjunto ATIVO injetado, não ao `COZINHAS`.
     // O guard `v is Cozinha` é SÃO porque a borda injeta um conjunto enum-limitado (active ∩
     // COZINHAS via `.filter(isCozinha)`) até a virada #318 — nenhum slug não-enumerável entra.
-    cozinhas: enumValues(get('cozinha'), (v): v is Cozinha => activeCozinhas.has(v)),
+    // A semântica de pertencimento vive em `isActiveCozinha` (fonte única); aqui só a narrow.
+    cozinhas: enumValues(get('cozinha'), (v): v is Cozinha => isActiveCozinha(v, activeCozinhas)),
     categorias: enumValues(get('categoria'), isCategoria),
     tags: [
       ...new Set(csvValues(get('tag')).map(foldIntent).filter((t) => t.length > 0)),

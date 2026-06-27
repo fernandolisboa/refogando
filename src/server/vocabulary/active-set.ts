@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { vocabularyTerm } from '@/db/schema'
+import { isCozinha } from '@/domain/vocabulary'
 
 /**
  * Leitor DB-DIRETO do conjunto ATIVO de cozinhas (#316, ADR-0025 Decisão 4).
@@ -19,4 +20,18 @@ export async function loadActiveCozinhaSlugs(db: Database): Promise<Set<string>>
     .from(vocabularyTerm)
     .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.status, 'active')))
   return new Set(rows.map((r) => r.slug))
+}
+
+/**
+ * Conjunto ATIVO ∩ enum-armazenável (`active` ∩ COZINHAS) p/ as bordas de ESCRITA (#316).
+ *
+ * Ponte TEMPORÁRIA de enum-storability até a virada #318: `recipe.cozinha` ainda é o pgEnum
+ * `cozinha` (14 valores, sem 'americana'); bindar um slug ativo-mas-não-enumerável na coluna
+ * dispararia `22P02`→500. O `.filter(isCozinha)` mantém esse slug FORA do destino enum → a borda
+ * o rejeita com 400 em vez de quebrar. Centraliza a ponte num ÚNICO ponto de remoção em #318
+ * (em vez de repeti-la em cada borda de escrita). A borda de LEITURA da Busca é exceção
+ * deliberada: ela parte do cache (`loadVocabulary`), não deste leitor DB-direto.
+ */
+export async function loadEnumStorableActiveCozinhas(db: Database): Promise<Set<string>> {
+  return new Set([...(await loadActiveCozinhaSlugs(db))].filter(isCozinha))
 }

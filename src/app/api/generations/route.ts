@@ -5,8 +5,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
 import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
-import { isCozinha } from '@/domain/vocabulary'
-import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { loadEnumStorableActiveCozinhas } from '@/server/vocabulary/active-set'
 import { classify } from '@/domain/generation'
 import {
   parseBriefing,
@@ -125,11 +124,10 @@ export async function POST(req: Request): Promise<Response> {
   if (mode === 'structured') {
     // a. Valida shape + faixas + campo-mínimo do Briefing — TUDO antes do seam. O dedup
     //    silencioso já está aplicado dentro de parseBriefing. Cozinha é DATA-DRIVEN (#316): o
-    //    conjunto ATIVO vem do DB DIRETO (ADR-0025 Decisão 4, sem cache de leitura). `.filter(
-    //    isCozinha)` é a guarda temporária de enum-storability (até a virada #318): mantém um
-    //    slug ativo-mas-não-enumerável (ex.: 'americana') FORA da coluna enum `cozinha` → 400
-    //    cozinha_invalida em vez de 22P02/500.
-    const activeCozinhas = new Set([...(await loadActiveCozinhaSlugs(getDb()))].filter(isCozinha))
+    //    conjunto ATIVO vem do DB DIRETO (ADR-0025 Decisão 4, sem cache de leitura), já limitado a
+    //    enum-armazenável (active ∩ COZINHAS) pelo helper — ponte temporária até a virada #318:
+    //    um slug ativo-mas-não-enumerável (ex.: 'americana') vira 400 cozinha_invalida, não 22P02/500.
+    const activeCozinhas = await loadEnumStorableActiveCozinhas(getDb())
     const parsed = parseBriefing(body.briefing, activeCozinhas)
     if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
     briefing = parsed.briefing
