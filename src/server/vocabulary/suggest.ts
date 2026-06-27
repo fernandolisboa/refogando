@@ -5,6 +5,29 @@ import { slugify } from '@/domain/handle'
 import { foldIntent } from '@/domain/culinary-profile'
 
 /**
+ * Teto de comprimento do texto livre "Outra" ANTES de virar slug (#319). `slugify` não limita
+ * tamanho, e `vocabulary_term.slug` é `text` cru sob UNIQUE + alvo das FKs `recipe.cozinha`/
+ * `briefing.cozinha`: sem este teto, um usuário autenticado poderia gravar uma chave de taxonomia
+ * de muitos KB. Espelha a disciplina de `MAX_FREE_TEXT_LENGTH` das outras bordas livres. Nome de
+ * cozinha é curto por natureza ⇒ 80 caracteres dão folga sem abrir abuso de armazenamento.
+ */
+export const COZINHA_OUTRA_MAX = 80
+
+/**
+ * Slug PURO do texto livre "Outra" (#319) — sem tocar o DB. Dobra `foldIntent`→`slugify` e devolve:
+ *  - `null` quando o resultado é vazio (texto só de símbolo/espaço: `'!!!'`, `'   '`) — o caller
+ *    trata como "sem cozinha"/entrada inválida (jamais um slug vazio que a FK apontaria);
+ *  - o slug controlado caso contrário.
+ * Separado de `suggestCozinha` para o write-path COMPUTAR o slug cedo (prompt/briefing/validação)
+ * sem MATERIALIZAR o termo antes de passar por todos os portões (teto/quota/validação) — ADR-0025
+ * Decisão 5: nada de termo órfão num 400/429/502.
+ */
+export function cozinhaSlugFromText(rawText: string): string | null {
+  const slug = slugify(foldIntent(rawText))
+  return slug === '' ? null : slug
+}
+
+/**
  * Fluxo "Outra" → termo `suggested` (issue #319, ADR-0025 Decisão 5).
  *
  * O usuário que não acha sua cozinha escolhe "Outra" e digita livre; este módulo transforma esse
@@ -37,8 +60,8 @@ export async function suggestCozinha(
   _recipeOwnerId?: string,
 ): Promise<string | null> {
   void _recipeOwnerId // v1: sem coluna de dono no termo; param fica por paridade/proveniência (#320).
-  const slug = slugify(foldIntent(rawText))
-  if (slug === '') return null
+  const slug = cozinhaSlugFromText(rawText)
+  if (slug == null) return null
 
   // UMA consulta, casando TODOS os status (a UNIQUE(slug) garante ≤1 linha): existe ⇒ reusa/anexa.
   const [existing] = await db

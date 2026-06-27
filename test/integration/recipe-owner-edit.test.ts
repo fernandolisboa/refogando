@@ -439,6 +439,35 @@ describe('PATCH /api/recipes/[id] — edição IN-PLACE da própria receita (#21
     expect(row.cozinha).toBe('brasileira') // inalterada
   })
 
+  it('(k3) cozinhaOutra longo demais (> 80 chars) ⇒ 400 sem materializar termo', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-longo@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    const longo = 'a'.repeat(120)
+    expect((await patch(id, { cozinhaOutra: longo }, headers)).status).toBe(400)
+    const terms = await getDb()
+      .select({ slug: vocabularyTerm.slug })
+      .from(vocabularyTerm)
+      .where(eq(vocabularyTerm.slug, 'a'.repeat(120)))
+    expect(terms).toHaveLength(0)
+  })
+
+  it('(k3) cozinhaOutra válido + campo posterior inválido ⇒ 400 e NENHUM termo órfão', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'oe-outra-orfao@ex.com' })
+    const id = await seedOwnPrivate(userId)
+
+    // porcoes fora-de-faixa força 400 DEPOIS da validação de cozinhaOutra — o termo NÃO pode existir.
+    const res = await patch(id, { cozinhaOutra: 'Naoitiana', porcoes: -5 }, headers)
+    expect(res.status).toBe(400)
+    const terms = await getDb()
+      .select({ slug: vocabularyTerm.slug })
+      .from(vocabularyTerm)
+      .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, 'naoitiana')))
+    expect(terms).toHaveLength(0)
+    const [row] = await getDb().select({ cozinha: recipe.cozinha }).from(recipe).where(eq(recipe.id, id))
+    expect(row.cozinha).toBe('brasileira') // inalterada
+  })
+
   // (l) id malformado ⇒ 404 sem 500; uuid inexistente ⇒ 404.
   it('(l) id não-uuid ⇒ 404; uuid inexistente ⇒ 404', async () => {
     const { headers } = await seedSessionHeaders({ email: 'oe-badid@ex.com' })
