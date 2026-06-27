@@ -25,8 +25,9 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
-import { Search, Sparkles } from 'lucide-react'
+import { Search, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
@@ -100,6 +101,12 @@ export function SearchExperience({
   const [data, setData] = useState<SearchResponse | null>(null)
   const [status, setStatus] = useState<Status>('idle')
 
+  // #5 (Direção C): a trilha de filtros é PERMANENTE no desktop (`lg:`) e vira um DISCLOSURE no mobile
+  // (botão "Filtros"). `filtersOpen` governa SÓ a abertura no mobile — no desktop a trilha ignora este
+  // estado (CSS `lg:flex`). Recolher/expandir é puro toggle de visibilidade: as facetas vivem no
+  // useState do pai, então não se perde seleção nem re-dispara busca (só uma instância no DOM).
+  const [filtersOpen, setFiltersOpen] = useState(false)
+
   // #164: links da WEB (ADR-0019) — seção SEPARADA, fora do ranking interno. Carregam DEPOIS de
   // /api/search (não bloqueiam os resultados locais) e SÓ quando o acervo local veio raso.
   const [webLinks, setWebLinks] = useState<WebLink[]>([])
@@ -113,6 +120,12 @@ export function SearchExperience({
   // #279: cluster de COZINHEIROS (ADR-0024) — busca PARALELA por nome/@handle, FORA do ranking de
   // receitas. Flutua acima das receitas quando casa alguém. Fetch independente de /api/search/cooks.
   const [cooks, setCooks] = useState<ProfileFollowUser[]>([])
+
+  // #5: status da busca de Cozinheiros, SÓ para não FLASHAR o cartão de estado vazio. O cluster e a busca
+  // de receitas resolvem em paralelo; sem isto, um termo que casa um Cozinheiro mas zero receitas pintaria
+  // o cartão "Nada por aqui — nem na comunidade" no intervalo até o cluster chegar (afirmação falsa, logo
+  // desmentida). `loading` enquanto a busca de cooks do termo CORRENTE está em voo ⇒ segura o cartão vazio.
+  const [cooksStatus, setCooksStatus] = useState<'idle' | 'loading' | 'done'>('idle')
 
   // AbortController da requisição em voo: cancelar a anterior quando os critérios mudam
   // (debounce) ou no unmount. Uma req cancelada NÃO vira estado de erro (AbortError é
@@ -209,13 +222,17 @@ export function SearchExperience({
       if (!res.ok) {
         // HTTP não-ok (rota degrada a 200, então isto é raro): limpa o cluster STALE da busca anterior.
         setCooks([])
+        setCooksStatus('done')
         return
       }
       const body = (await res.json()) as { cooks: ProfileFollowUser[] }
       setCooks(body.cooks ?? [])
-    } catch {
-      // AbortError (busca superada) ou rede caída: o cluster é assistivo — silencia (não limpa: o
-      // abort vem de uma nova busca que já vai semear; rede caída mantém o último resultado).
+      setCooksStatus('done')
+    } catch (err) {
+      // AbortError (busca superada): uma nova busca já re-setou `cooksStatus='loading'` — NÃO mexer (não
+      // limpa: o abort vem de uma nova busca que já vai semear). Rede caída: marca `done` para o estado
+      // vazio poder aparecer (não fica preso em `loading` suprimindo o cartão).
+      if (!(err instanceof DOMException && err.name === 'AbortError')) setCooksStatus('done')
     }
   }, [])
 
@@ -229,6 +246,7 @@ export function SearchExperience({
       setData(null)
       setWebLinks([])
       setCooks([])
+      setCooksStatus('idle')
       setStatus('idle')
       return
     }
@@ -239,10 +257,16 @@ export function SearchExperience({
     // pra busca-por-faceta). Independente do resultado das receitas.
     const cookTerm = q.trim()
     if (cookTerm.length >= 3) {
+      // #5: marca `loading` SÍNCRONO (antes de qualquer await) ⇒ quando a busca de receitas concluir
+      // vazia, o cartão vazio fica suprimido até a busca de cooks resolver (sem flash de "nada na
+      // comunidade" logo antes de um Cozinheiro aparecer). `discoverCooks` volta a `done` ao resolver.
+      setCooksStatus('loading')
       void discoverCooks(cookTerm)
     } else {
       cooksAbortRef.current?.abort()
       setCooks([])
+      // Sem busca de cooks (termo curto/faceta-only) ⇒ não há o que suprimir: o cartão vazio pode aparecer.
+      setCooksStatus('idle')
     }
 
     abortRef.current?.abort()
@@ -396,15 +420,18 @@ export function SearchExperience({
 
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
-      <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
-        {m.titulo}
-      </h1>
+      {/* #5 (ADR-0020 "a Descoberta é a home"): o `<h1>` é a IDENTIDADE da página E a fonte do `<title>`
+          de SEO (generateMetadata lê `busca.titulo`), renomeado "Descobrir receitas". Fica sr-only — o
+          mock Direção C não tem título visível; o heading VISÍVEL da home indexável é o do feed de repouso
+          (DiscoveryFeed `<h2>`). sr-only é clip-based (segue no DOM, crawlável), não display:none. */}
+      <h1 className="sr-only">{m.titulo}</h1>
 
-      {/* Busca EDITORIAL (protótipo RefoStage): input serifado sem moldura, com ícone de lupa
-          e uma borda inferior grossa. Busca ao vivo (debounce no efeito); Enter também dispara. */}
+      {/* Busca PILL persistente no topo (Direção C): lupa + input + × pra limpar (quando há termo). Busca
+          ao vivo (debounce no efeito); Enter também dispara. `role=search` + `<label>` sr-only PRÓPRIO
+          (`buscarLabel`, o propósito do campo — desacoplado do `<h1>`/título de SEO). */}
       <form
         role="search"
-        className="flex items-center gap-2.5 border-b-2 border-fg pb-2.5"
+        className="flex items-center gap-2.5 rounded-full border border-border bg-surface px-4 py-2.5 transition-colors focus-within:border-brand"
         onSubmit={(e) => {
           e.preventDefault()
           void doSearch()
@@ -412,7 +439,7 @@ export function SearchExperience({
       >
         <Search className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
         <label htmlFor="search-q" className="sr-only">
-          {m.titulo}
+          {m.buscarLabel}
         </label>
         <input
           id="search-q"
@@ -420,24 +447,19 @@ export function SearchExperience({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={m.placeholder}
-          className="w-full border-none bg-transparent font-display text-lg text-fg outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none"
+          className="w-full border-none bg-transparent text-fg outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none"
         />
+        {q.trim() !== '' && (
+          <button
+            type="button"
+            onClick={() => setQ('')}
+            className="-mr-1 shrink-0 rounded-full p-1 text-muted transition-colors hover:text-fg"
+          >
+            <span className="sr-only">{m.limparBusca}</span>
+            <X className="size-4" strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
       </form>
-
-      {/* #166: CTA PERMANENTE "Gerar com IA" — sempre visível (com e SEM resultados), porque
-          gerar é o mote do app. NÃO auto-dispara (a Busca nunca cria): logado → link pro fluxo
-          de criação `/create` PRÉ-PREENCHENDO o termo buscado; visitante → convite de entrar
-          (gerar exige conta). Vive logo abaixo do campo, antes dos resultados, pra estar sempre
-          ao alcance. `aria-hidden` no ícone (decorativo); o rótulo é o nome acessível do link. */}
-      <GerarComIaCta
-        q={q}
-        authed={authed}
-        sessionPending={session.isPending}
-        gerarLabel={m.gerarComIa}
-        conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
-        conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
-        signInLabel={messages.nav.signIn}
-      />
 
       {/* #278 (ADR-0024): trilho "Cozinheiros pra seguir" — SÓ na home (`home`) e SÓ em REPOUSO
           (`!hasCriteria`): é a companhia de descoberta do feed de repouso; ao buscar, a superfície é
@@ -446,126 +468,184 @@ export function SearchExperience({
           efêmero). Variante anônima/global = follow-up deferido. */}
       {home && !hasCriteria && <CooksToFollowRail />}
 
-      <div className="flex flex-col gap-4">
-        {/* #160: filtros RECOLHIDOS por padrão atrás de um disclosure NATIVO (mesmo padrão
-            `<details>/<summary>` do RecipeImageManager — sem lib). Recolher/expandir é só um
-            toggle de visibilidade do <details>: o estado das facetas vive no useState do pai,
-            então não se perde a seleção nem re-dispara a busca. O <summary> mostra "+ filtros"
-            com a contagem de facetas ativas. As 3 facetas vivem DENTRO do disclosure. */}
-        <details className="flex flex-col gap-4">
-          <summary className="cursor-pointer select-none text-sm font-medium text-muted hover:text-fg">
-            {filtrosLabel}
-          </summary>
-          <div className="mt-4 flex flex-col gap-4">
-            <FacetFieldset
-              legend={m.filtroCozinha}
-              options={cozinhaOptions}
-              selected={cozinha}
-              onToggle={toggle(setCozinha)}
-            />
-            <FacetFieldset
-              legend={m.filtroCategoria}
-              options={categoriaOptions}
-              selected={categoria}
-              onToggle={toggle(setCategoria)}
-            />
-            <FacetFieldset
-              legend={m.filtroRestricao}
-              options={restricaoOptions}
-              selected={restricao}
-              onToggle={toggle(setRestricao)}
-            />
+      {/* #5 (Direção C): grade [trilha de filtros | coluna principal]. Desktop (`lg:`): trilha à ESQUERDA
+          (col 1, permanente) + coluna principal à direita (col 2). Mobile: coluna única — barra de
+          ferramentas (com "Filtros") em cima, trilha como disclosure logo abaixo, depois os resultados.
+          Posicionamento EXPLÍCITO (`lg:col-start/row-start`) p/ a barra ficar DENTRO da coluna principal
+          (não atravessando a trilha), como no mock. */}
+      <div className="grid grid-cols-1 gap-x-7 gap-y-4 lg:grid-cols-[11.75rem_1fr]">
+        {/* Barra de ferramentas: "Filtros" (SÓ mobile) + eco "Resultados para X" + ordenação. Col 2 /
+            linha 1 (na coluna principal). No desktop a trilha é permanente ⇒ "Filtros" some (`lg:hidden`).
+            Em REPOUSO (`!hasCriteria`) a barra não tem conteúdo de desktop (Filtros é mobile; sort/eco só
+            com critério) ⇒ `lg:hidden` colapsa a linha vazia e a coluna principal sobe pra linha 1
+            (`lg:row-start-1`, abaixo), alinhando o feed ao topo da trilha (sem espaço morto no mock). */}
+        <div
+          className={cn(
+            'flex flex-wrap items-center justify-between gap-3 lg:col-start-2 lg:row-start-1',
+            !hasCriteria && 'lg:hidden',
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Disclosure MOBILE da trilha (WAI-ARIA disclosure: aria-expanded/-controls → `#search-filters`).
+                `type=button` (defensivo: fora do <form>, mas nunca submete). */}
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={filtersOpen}
+              aria-controls="search-filters"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-1.5 text-sm font-medium text-fg transition-colors hover:border-brand lg:hidden"
+            >
+              {filtrosLabel}
+            </button>
+            {q.trim() !== '' && (
+              <p className="text-sm text-muted">
+                {m.resultadosPara}{' '}
+                <strong className="font-semibold text-fg">{`“${q.trim()}”`}</strong>
+              </p>
+            )}
           </div>
-        </details>
+          {/* Ordenação da Comunidade (#62). Gateada por `hasResults` (não `hasCriteria`): o mock esconde a
+              ordenação no estado VAZIO/loading (ordenar zero resultados não faz sentido). Seguro contra o
+              "trap" do T-sort-D: `hasResults` é INVARIANTE a `sort` (sort só reordena a Comunidade; o nº de
+              itens não muda), então a visibilidade não oscila ao alternar — o usuário nunca fica preso em
+              Popularidade. Vive na barra, NÃO dentro da seção Comunidade (que some quando vazia). */}
+          {hasResults && (
+            <SortToggle
+              value={sort}
+              onChange={setSort}
+              options={[
+                { key: 'relevancia', label: messages.comunidade.toggleRelevancia },
+                { key: 'popularidade', label: messages.comunidade.togglePopularidade },
+              ]}
+              groupLabel={messages.comunidade.ordenarPor}
+              labelId="sort-toggle-label"
+            />
+          )}
+        </div>
 
-        {/* Ordenação da Comunidade (#62). Vive JUNTO do form (gateada por `hasCriteria`),
-            NÃO dentro da seção Comunidade: `SearchSection` se omite quando volta vazia, o
-            que faria o toggle DESAPARECER e prender o usuário em Popularidade. Aqui ele é
-            SEMPRE alcançável quando há busca ativa. Aplica-se só à Comunidade (o backend
-            ignora `sort` no Catálogo editorial); o rótulo deixa isso explícito. */}
-        {hasCriteria && (
-          <SortToggle
-            value={sort}
-            onChange={setSort}
-            options={[
-              { key: 'relevancia', label: messages.comunidade.toggleRelevancia },
-              { key: 'popularidade', label: messages.comunidade.togglePopularidade },
-            ]}
-            groupLabel={messages.comunidade.ordenarPor}
-            labelId="sort-toggle-label"
+        {/* TRILHA de filtros — col 1, linhas 1-2 (desktop permanente); mobile = disclosure (`hidden` até
+            abrir via "Filtros"). UMA instância no DOM: `hidden`/`lg:flex` só mostra/reposiciona — NUNCA
+            duplica facetas (senão getByLabelText casaria 2 e quebraria os testes). Recolher/expandir é
+            puro CSS: a seleção vive no pai, não re-dispara busca. LINHAS de checkbox (FacetFieldset). */}
+        <aside
+          id="search-filters"
+          className={cn(
+            'flex-col gap-6 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:flex',
+            filtersOpen ? 'flex' : 'hidden',
+          )}
+        >
+          <FacetFieldset
+            legend={m.filtroCozinha}
+            options={cozinhaOptions}
+            selected={cozinha}
+            onToggle={toggle(setCozinha)}
           />
-        )}
-      </div>
+          <FacetFieldset
+            legend={m.filtroCategoria}
+            options={categoriaOptions}
+            selected={categoria}
+            onToggle={toggle(setCategoria)}
+          />
+          <FacetFieldset
+            legend={m.filtroRestricao}
+            options={restricaoOptions}
+            selected={restricao}
+            onToggle={toggle(setRestricao)}
+          />
+        </aside>
 
-      {/* Consulta resolvida (#10) — eco READ-ONLY nesta fatia (Decisão 6). Mostra o que a
-          lente Perfil culinário entendeu do termo difuso. Some naturalmente quando há
-          faceta explícita (a API não ecoa `consulta` então). Gated por `status==='done'`:
-          nunca mostra a resolução de uma busca ANTERIOR junto de um erro/loading. */}
-      {status === 'done' && data?.consulta && (
-        <ResolvedQueryEcho
-          consulta={data.consulta}
-          label={m.consultaLabel}
-          cozinhaLabel={cozinhaLabelMap}
-          categoriaLabel={messages.categoriaLabel}
-          restricaoLabel={messages.restricaoLabel}
-        />
-      )}
+        {/* COLUNA PRINCIPAL — col 2. Linha 2 quando há barra (com critério); linha 1 em REPOUSO (a barra é
+            `lg:hidden`, então o feed sobe e alinha ao topo da trilha). Eco da consulta + repouso (FORA da
+            live region) + a região viva dos resultados de busca. */}
+        <div
+          className={cn(
+            'flex min-w-0 flex-col gap-8 lg:col-start-2',
+            hasCriteria ? 'lg:row-start-2' : 'lg:row-start-1',
+          )}
+        >
+          {/* Consulta resolvida (#10) — eco READ-ONLY (Decisão 6). Some quando há faceta explícita. Gated
+              por `status==='done'`: nunca mostra a resolução de uma busca ANTERIOR junto de erro/loading. */}
+          {status === 'done' && data?.consulta && (
+            <ResolvedQueryEcho
+              consulta={data.consulta}
+              label={m.consultaLabel}
+              cozinhaLabel={cozinhaLabelMap}
+              categoriaLabel={messages.categoriaLabel}
+              restricaoLabel={messages.restricaoLabel}
+            />
+          )}
 
-      {/* Região de estados/resultados. `aria-live="polite"` + `aria-busy` anunciam, a um
-          leitor de tela que permaneceu no campo, o fim do loading e o resultado da busca
-          (chegada de resultados, vazio ou erro) — sem recarregar a página. O texto VISÍVEL
-          de cada estado é o próprio conteúdo anunciado (sem duplicar nó SR-only, que faria
-          `findByText` casar dois elementos). */}
-      <div aria-live="polite" aria-busy={status === 'loading'} className="flex flex-col gap-8">
-        {/* #279: cluster de Cozinheiros — flutua no TOPO dos resultados (acima de qualquer estado de
-            receita) quando alguém casa o termo. Gated `status !== 'error'` (espelha a seção "Da web").
-            `key` = assinatura dos cooks ⇒ remonta ao trocar de busca, RESETANDO o "Ver todos" expandido
-            (sem setState em effect). Renderiza `null` quando não casa ninguém. */}
-        {status !== 'error' && (
-          <CookSearchCluster key={cooks.map((c) => c.handle).join(',')} cooks={cooks} />
-        )}
+          {/* #236 REPOUSO — FORA da live region (conteúdo NAVEGÁVEL, não status efêmero: a paginação do
+              feed não pode floodar o leitor de tela). home ⇒ feed SSR seeded (indexável, com `<h2>`
+              visível); Busca legada ⇒ dica inicial. Ao buscar/filtrar, sai daqui e a região viva assume. */}
+          {status === 'idle' &&
+            data === null &&
+            (home ? (
+              <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+            ) : (
+              <p className="text-muted">{dicaInicial}</p>
+            ))}
 
-        {status === 'error' && (
-          <div className="flex flex-col items-start gap-3">
-            <p className="text-fg">{messages.system.error}</p>
-            <Button variant="secondary" type="button" onClick={() => void doSearch()}>
-              {messages.system.retry}
-            </Button>
-          </div>
-        )}
+          {/* Região VIVA dos resultados de BUSCA. `aria-live=polite` + `aria-busy` anunciam fim de loading
+              e resultado (chegada/vazio/erro) sem recarregar. O texto VISÍVEL de cada estado é o anunciado
+              (sem duplicar nó SR-only, que faria `findByText` casar dois elementos). */}
+          <div aria-live="polite" aria-busy={status === 'loading'} className="flex flex-col gap-8">
+            {/* #279: cluster de Cozinheiros flutua no TOPO dos resultados quando alguém casa o termo.
+                Gated `status!=='error'` (espelha "Da web"); `key`=assinatura dos cooks (remonta ⇒ reseta
+                "Ver todos"). null quando ninguém casa. */}
+            {status !== 'error' && (
+              <CookSearchCluster key={cooks.map((c) => c.handle).join(',')} cooks={cooks} />
+            )}
 
-        {/* #236 REPOUSO: sem critério de busca, a superfície mostra o FEED da Descoberta já SEEDADO
-            pelo SSR (pool público, indexável) em vez da dica neutra. O `DiscoveryFeed` reflete a 1ª
-            página do crawler e pagina via /api/feed. Sem feed seeded (Busca legada montada fora da
-            home), cai na dica inicial de antes (não regride). A Busca, ao digitar/filtrar, troca este
-            bloco pelos resultados (refino inline). */}
-        {status === 'idle' && data === null && (
-          home ? (
-            <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
-          ) : (
-            <p className="text-muted">{dicaInicial}</p>
-          )
-        )}
+            {status === 'error' && (
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-fg">{messages.system.error}</p>
+                <Button variant="secondary" type="button" onClick={() => void doSearch()}>
+                  {messages.system.retry}
+                </Button>
+              </div>
+            )}
 
-        {/* Vazio: a busca concluiu sem RECEITA. #279: só mostra "nenhum resultado" se TAMBÉM não há
-            Cozinheiro casando — senão o cluster acima carrega o resultado (cook casa, receita vazia).
-            #2: o estado vazio agora é HONESTO por construção — o piso 0.65 + taskType param de empurrar
-            sugestões-ruído (antes "feijoada" trazia 4 receitas aleatórias). As saídas da web já existem
-            (auto-gate #164 no acervo raso; CTA #275 no acervo suficiente) e a de IA está no topo (CTA
-            permanente); não duplicamos aqui (um CTA manual no caminho raso reintroduziria o flash que o
-            C2b guarda). O refino visual deste bloco vem no protótipo do #5. */}
-        {isEmpty && cooks.length === 0 && <p className="text-muted">{m.semResultado}</p>}
+            {/* #5 (Direção C) + #279: estado VAZIO honesto — kicker (não-heading) + manchete serifada (h2) +
+                corpo (`semResultado`, reproposto p/ a copy do mock) + cartão "Gerar com IA" (a saída de
+                criação CONTEXTUAL). #2/C2b: SEM cartão "buscar na web" no caminho raso — o auto-gate #164
+                já acende a web (WebDiscoverySection abaixo, se houver links); um CTA-web aqui pintaria o
+                flash que o teste C2b guarda. A entrada SEMPRE-disponível pra criar é o "Criar" do header.
+                Só quando NÃO há Cozinheiro casando (senão o cluster acima É o resultado) E a busca de cooks
+                do termo corrente já assentou (`cooksStatus !== 'loading'`) — senão o cartão flasharia "nada
+                na comunidade" no intervalo até o cluster chegar (#5). */}
+            {isEmpty && cooks.length === 0 && cooksStatus !== 'loading' && (
+              <section
+                aria-labelledby="busca-vazio-titulo"
+                className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-6 py-6"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  {m.vazioKicker}
+                </span>
+                <h2 id="busca-vazio-titulo" className="font-display text-2xl font-semibold text-fg">
+                  {m.vazioTitulo}
+                </h2>
+                <p className="max-w-[54ch] text-sm text-muted">{m.semResultado}</p>
+                <GerarComIaCta
+                  q={q}
+                  authed={authed}
+                  sessionPending={session.isPending}
+                  gerarLabel={m.gerarComIa}
+                  cardTitulo={m.vazioGerarTitulo}
+                  cardTexto={m.vazioGerarTexto}
+                  conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
+                  conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
+                  signInLabel={messages.nav.signIn}
+                />
+              </section>
+            )}
 
-        {/* Resultados: stale-while-revalidate — montados sempre que a última busca trouxe
-            itens, INCLUSIVE durante o loading de uma re-busca (não pisca). Loading isolado
-            (linha de "Carregando…") só na PRIMEIRA busca (ainda sem `data`). No estado de
-            erro NÃO mostramos resultados stale: o erro substitui a lista (como antes). */}
-        {status === 'loading' && !hasResults && (
-          <p className="text-muted">{messages.system.loading}</p>
-        )}
+            {status === 'loading' && !hasResults && (
+              <p className="text-muted">{messages.system.loading}</p>
+            )}
 
-        {status !== 'error' && hasResults && data !== null && (
-          <div className="flex flex-col gap-8">
+            {status !== 'error' && hasResults && data !== null && (
+              <div className="flex flex-col gap-8">
             {/* #116/own-label: "Minhas" PRIMEIRO (próprias do viewer). Vazia p/ anônimo (a guarda
                 de seção vazia do SearchSection a omite) ⇒ busca de antes byte-a-byte na UI. */}
             <SearchSection
@@ -666,6 +746,8 @@ export function SearchExperience({
               nadaLabel={m.webManualNada}
             />
           )}
+          </div>
+        </div>
       </div>
     </Container>
   )
@@ -765,26 +847,29 @@ function WebManualCta({
 }
 
 /**
- * CTA permanente "Gerar com IA" (#166) — o mote do app, sempre visível na Busca (com e SEM
- * resultados). NÃO auto-dispara: a Busca nunca cria. Dois ramos, espelhando o gate do
- * `RecipeDetailActions` (a UI só escolhe a CÓPIA; o gate de escrita real é server-side):
+ * Cartão "Gerar com IA" do ESTADO VAZIO (#5, ADR-0019 emenda) — a saída de criação CONTEXTUAL quando a
+ * busca não acha nada. REBAIXADO do CTA permanente de antes (#166): a entrada SEMPRE-disponível pra criar
+ * é o "Criar" do header global; aqui é a ponte do "não achei, e agora?". NÃO auto-dispara: a Busca nunca
+ * cria. Dois ramos, espelhando o gate do `RecipeDetailActions` (a UI só escolhe a CÓPIA; o gate de escrita
+ * real é server-side):
  *
- *  - LOGADO → link pro fluxo de criação `/create?q=<termo>`, PRÉ-PREENCHENDO o texto livre com o
- *    termo buscado. A rota `/create` monta `CreateShellClient → CreateDrawer`, que lê o `?q` da URL
- *    e o repassa como `initialFreeText` ao Prompt aberto (ponte #166; a Busca nunca gera). Sem
- *    termo, leva ao `/create` cru (gerar do zero).
- *  - VISITANTE → convite de entrar (gerar exige conta), reusando `minhasCriacoes.convidaEntrar*`
- *    + `nav.signIn`, o mesmo padrão de convite do detalhe da Receita.
+ *  - LOGADO → CARTÃO com título/descrição + link pro fluxo de criação `/create?q=<termo>`, PRÉ-PREENCHENDO
+ *    o texto livre com o termo buscado. A rota `/create` monta `CreateShellClient → CreateDrawer`, que lê o
+ *    `?q` da URL e o repassa como `initialFreeText` (ponte; a Busca nunca gera). Sem termo (vazio por
+ *    faceta), leva ao `/create` cru (gerar do zero) — sem `?q=` espúrio.
+ *  - VISITANTE → convite de entrar (gerar exige conta), reusando `minhasCriacoes.convidaEntrar*` + `nav.signIn`.
  *
- * Enquanto a sessão resolve (`sessionPending`), mostra o ramo logado (otimista): o pior caso é
- * um clique que cai no gate de escrita do servidor — nunca um flash do convite pra quem está
- * logado. O ícone Sparkles é decorativo (`aria-hidden`); o rótulo nomeia o link/seção.
+ * Enquanto a sessão resolve (`sessionPending`), mostra o ramo logado (otimista): o pior caso é um clique
+ * que cai no gate de escrita do servidor — nunca um flash do convite pra quem está logado. O ícone Sparkles
+ * é decorativo (`aria-hidden`); o rótulo nomeia o link/seção.
  */
 function GerarComIaCta({
   q,
   authed,
   sessionPending,
   gerarLabel,
+  cardTitulo,
+  cardTexto,
   conviteTitulo,
   conviteTexto,
   signInLabel,
@@ -793,6 +878,8 @@ function GerarComIaCta({
   authed: boolean
   sessionPending: boolean
   gerarLabel: string
+  cardTitulo: string
+  cardTexto: string
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
@@ -800,19 +887,15 @@ function GerarComIaCta({
   // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
   if (!authed && !sessionPending) {
     return (
-      <section
-        aria-labelledby="gerar-ia-convite-titulo"
-        className="flex flex-col gap-3 rounded-md border border-border bg-surface px-4 py-3"
-      >
-        {/* O rótulo do convite é um <p> (não um <h2>) DE PROPÓSITO: a Busca reserva os headings
-            nível 2 às seções de RESULTADO (Catálogo/Comunidade/Minhas). `aria-labelledby` não
-            exige um heading no alvo — então o convite continua nomeado pro leitor de tela sem
-            poluir o outline do documento. */}
+      // #5: um <div> (não <section>) — a seção do estado VAZIO em volta já provê o landmark `region`
+      // nomeado; aninhar OUTRO landmark nomeado dentro da live region só adiciona verbosidade pro leitor
+      // de tela. O rótulo do convite segue um <p> (não <h2>): a Busca reserva os headings nível 2 às
+      // seções de RESULTADO.
+      <div className="flex flex-col gap-3 rounded-xl border border-brand/40 bg-brand/[0.04] px-4 py-4">
         <p
-          id="gerar-ia-convite-titulo"
-          className="flex items-center gap-2 font-display text-lg font-semibold text-fg"
+          className="flex items-center gap-2 font-display text-base font-semibold text-fg"
         >
-          <Sparkles className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
+          <Sparkles className="size-[18px] shrink-0 text-brand" strokeWidth={1.75} aria-hidden />
           {gerarLabel}
         </p>
         <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
@@ -824,16 +907,20 @@ function GerarComIaCta({
         {/* `conviteTitulo` ("Entre para fazer isso") dá o contexto extra pro leitor de tela — o
             rótulo VISÍVEL é o próprio "Gerar com IA". */}
         <span className="sr-only">{conviteTitulo}</span>
-      </section>
+      </div>
     )
   }
 
-  // Logado (ou sessão ainda resolvendo): link pro /create com o termo pré-preenchido. Só anexa
-  // `?q` quando há termo (sem `?q=` vazio espúrio na URL).
+  // Logado (ou sessão ainda resolvendo): CARTÃO com título/descrição + link pro /create com o termo
+  // pré-preenchido. Só anexa `?q` quando há termo (sem `?q=` vazio espúrio na URL).
   const href = q.trim() !== '' ? `/create?q=${encodeURIComponent(q.trim())}` : '/create'
   return (
-    <div>
-      <Button asChild>
+    <div className="flex flex-col gap-3 rounded-xl border border-brand/40 bg-brand/[0.04] px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="font-display text-base font-semibold text-fg">{cardTitulo}</p>
+        <p className="mt-1 text-sm text-muted">{cardTexto}</p>
+      </div>
+      <Button asChild className="shrink-0">
         <Link href={href}>
           <Sparkles className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden />
           {gerarLabel}

@@ -67,13 +67,29 @@ export const enUS: Messages = {
   } satisfies Record<Restricao, string>,
   // Tela de Busca (#56), mesma substância traduzida (ADR-0001, não byte-idêntica).
   busca: {
-    titulo: 'Search recipes',
-    placeholder: 'Type a dish, ingredient, or culinary style',
+    // #5 (Direção C): Search IS the discovery home (ADR-0020). `titulo` is the page IDENTITY — it is the
+    // `<h1>` (sr-only; the mock has no visible page title) AND the SEO `<title>` (generateMetadata). Hence
+    // "Discover recipes" (not "Search recipes", which only described the box). The INPUT label moved to
+    // `buscarLabel` so the `<h1>`/SEO title and the input's accessible name can differ.
+    titulo: 'Discover recipes',
+    // #5: sr-only label of the search <input> (the field's purpose, separate from the <h1>/SEO title).
+    buscarLabel: 'Search recipes',
+    placeholder: 'Search dishes, ingredients, styles…',
     buscar: 'Search',
+    // #5: sr-only label of the × button that clears the term (the pill hides the native × of search inputs).
+    limparBusca: 'Clear search',
+    // #5: prefix of the "Results for «term»" echo in the toolbar (the term goes in a <strong> with curly
+    // quotes in the component — not interpolated into the string).
+    resultadosPara: 'Results for',
     dicaInicial: 'Start typing a dish, ingredient, or style you like — or use the filters.',
     // #116: signed-in users also search their OWN recipes (private ones included).
     dicaInicialLogado: 'Start typing a dish, ingredient, or style — we search your recipes and the community’s.',
-    semResultado: 'No recipes found. Try another term or adjust the filters.',
+    // #5 (Direção C): the honest EMPTY state. `vazioKicker` (uppercase label) + `vazioTitulo` (serif
+    // headline) frame `semResultado` (body). `semResultado` was REPURPOSED to the mock's copy ("Search
+    // doesn't create…") — it stays the empty state's anchor text (referenced by the tests).
+    vazioKicker: 'No results',
+    vazioTitulo: 'Nothing here — not in the catalog, not in the community.',
+    semResultado: 'Search doesn’t create recipes. But you can take another path:',
     // #116/own-label: section of the viewer's OWN recipes (signed-in), shown FIRST. "Your recipe"
     // selo on the own item (search and feed), in place of "From the community".
     secaoMinhas: 'Yours',
@@ -88,22 +104,25 @@ export const enUS: Messages = {
     filtroCozinha: 'Cuisine',
     filtroCategoria: 'Category',
     filtroRestricao: 'Dietary restriction',
-    // #160: disclosure trigger that collapses the filters (collapsed by default on the home).
-    // `filtrosContagem` shows the number of active facets (cuisine+category+restriction sum);
-    // {count} is interpolated in the component via `.replace` (leaves of the type are string).
-    filtros: '+ filters',
-    filtrosContagem: '+ filters ({count})',
+    // #5 (Direção C): label of the "Filters" trigger (mobile) that collapses the facet rail. On DESKTOP
+    // the rail is permanent (left column); on MOBILE it becomes this disclosure button. `filtrosContagem`
+    // shows the number of active facets (cuisine+category+restriction sum); {count} is interpolated in the
+    // component via `.replace` (leaves of the type are string).
+    filtros: 'Filters',
+    filtrosContagem: 'Filters · {count}',
     // Authorship (#129): "by <name>" credit on a pool recipe item, linking /u/<handle>.
     // {name} interpolated in the component via `.replace` (leaves of the type are string).
     porAutor: 'by {name}',
     // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
     // The Claude Design prototype uses ✨ on this seal (RefoStage "Minhas criações"/Search).
     imagemSeloIa: '✨ AI-generated',
-    // #166: PERMANENT "Generate with AI" CTA — always visible on Search (with and without
-    // results), since generating is the heart of the app. It does NOT auto-fire: it links to
-    // /create?q=<term> pre-filling the free-text. Guests see the sign-in invite (reuses
-    // `minhasCriacoes.convidaEntrar*`).
+    // #5 (ADR-0019 amendment): "Generate with AI" DEMOTED from a permanent CTA to the EMPTY STATE (an
+    // exit card). It does NOT auto-fire (Search never creates): it links to /create?q=<term> pre-filling
+    // the free-text. Guests see the sign-in invite (reuses `minhasCriacoes.convidaEntrar*`). The
+    // always-available create entry is the global header "Criar". `vazioGerar*` = the empty-state card.
     gerarComIa: 'Generate with AI',
+    vazioGerarTitulo: 'Generate a recipe with AI',
+    vazioGerarTexto: 'We create a recipe from your search.',
     // #164: SEPARATE section of web links (ADR-0019) — appears ONLY when our own collection came back
     // SHALLOW. These are EXTERNAL links, marked "from the web", NOT stored nor ranked (Search only
     // finds). `daWebFonte` credits the source ("from the web · {fonte}"); {fonte} interpolated in the
@@ -142,6 +161,9 @@ export const enUS: Messages = {
   // para o chrome compartilhado; só os textos próprios do feed vivem aqui. `titulo`/`subtituloLogado`
   // saíram com a fusão (#236): o `<h1>` é o da Busca e o feed de repouso é sempre o pool público anônimo.
   feed: {
+    // #5 (Direção C): VISIBLE serif headline for the repouso feed — gives the INDEXABLE home a real
+    // heading (the `<h1>` is sr-only). Honest about the ordering (recency): the public pool, newest first.
+    titulo: 'Community recipes',
     subtitulo: 'What the community is cooking up, newest first.',
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',

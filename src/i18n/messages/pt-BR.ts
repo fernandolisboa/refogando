@@ -74,13 +74,29 @@ export const ptBR = {
   // distintos dos de SEÇÃO ("Catálogo"/"Comunidade") de propósito — desambigua heading
   // de etiqueta de item e lê melhor.
   busca: {
-    titulo: 'Buscar receitas',
-    placeholder: 'Digite um prato, ingrediente ou estilo culinário',
+    // #5 (Direção C): a Busca É a home-Descoberta (ADR-0020). O `titulo` é a IDENTIDADE da página —
+    // serve de `<h1>` (sr-only, o mock não tem título visível) E de `<title>` de SEO (generateMetadata).
+    // Por isso "Descobrir receitas" (não "Buscar receitas", que descrevia só a caixa). O rótulo do INPUT
+    // mudou-se pra `buscarLabel` (o propósito do campo), pra o `<h1>`/SEO e o label do input divergirem.
+    titulo: 'Descobrir receitas',
+    // #5: rótulo sr-only do <input> de busca (o propósito do campo, separado do <h1>/título de SEO).
+    buscarLabel: 'Buscar receitas',
+    placeholder: 'Buscar pratos, ingredientes, estilos…',
     buscar: 'Buscar',
+    // #5: rótulo sr-only do botão × que limpa o termo (a pílula esconde o × nativo do <input type=search>).
+    limparBusca: 'Limpar busca',
+    // #5: prefixo do eco "Resultados para «termo»" na barra de ferramentas (o termo entra num <strong>
+    // com aspas curvas no componente — não interpolado na string).
+    resultadosPara: 'Resultados para',
     dicaInicial: 'Comece digitando um prato, ingrediente ou estilo que você curte — ou use os filtros.',
     // #116: usuário LOGADO busca também nas PRÓPRIAS receitas (privadas inclusive).
     dicaInicialLogado: 'Comece digitando um prato, ingrediente ou estilo — buscamos nas suas receitas e nas da comunidade.',
-    semResultado: 'Nenhuma receita encontrada. Tente outro termo ou ajuste os filtros.',
+    // #5 (Direção C): o estado VAZIO honesto. `vazioKicker` (rótulo em caixa-alta) + `vazioTitulo`
+    // (manchete serifada) emolduram o `semResultado` (corpo). `semResultado` foi REPROPOSTO p/ a copy
+    // do mock ("a Busca não cria") — segue sendo o texto-âncora do vazio (referenciado pelos testes).
+    vazioKicker: 'Sem resultados',
+    vazioTitulo: 'Nada por aqui — nem no catálogo, nem na comunidade.',
+    semResultado: 'A busca não cria receitas. Mas dá pra seguir por outro caminho:',
     // #116/own-label: seção das PRÓPRIAS Receitas do viewer (logado), mostrada PRIMEIRO. Selo
     // "Sua receita" no item próprio (busca e feed), no lugar de "Da comunidade".
     secaoMinhas: 'Minhas',
@@ -95,21 +111,25 @@ export const ptBR = {
     filtroCozinha: 'Cozinha',
     filtroCategoria: 'Categoria',
     filtroRestricao: 'Restrição',
-    // #160: gatilho do disclosure que recolhe os filtros (recolhidos por padrão na home).
-    // `filtrosContagem` mostra o nº de facetas ativas (soma de cozinha+categoria+restrição);
-    // {count} é interpolado no componente via `.replace` (folhas do tipo são string).
-    filtros: '+ filtros',
-    filtrosContagem: '+ filtros ({count})',
+    // #5 (Direção C): rótulo do gatilho "Filtros" (mobile) que recolhe a trilha de facetas. No DESKTOP
+    // a trilha é permanente (à esquerda); no MOBILE vira este botão (disclosure). `filtrosContagem`
+    // mostra o nº de facetas ativas (soma de cozinha+categoria+restrição); {count} é interpolado via
+    // `.replace` (folhas do tipo são string).
+    filtros: 'Filtros',
+    filtrosContagem: 'Filtros · {count}',
     // Autoria (#129): crédito "por <nome>" no item de receita do pool, linkando /u/<handle>.
     // {name} interpolado no componente via `.replace` (folhas do tipo são string).
     porAutor: 'por {name}',
     // Selo "gerada por IA" (#132, ADR-0017) — sobre imagens ai_generated no card e no detalhe.
     // O protótipo do Claude Design usa o ✨ neste selo (RefoStage "Minhas criações"/Busca).
     imagemSeloIa: '✨ gerada por IA',
-    // #166: CTA PERMANENTE "Gerar com IA" — sempre visível na Busca (com e sem resultados),
-    // porque gerar é o mote do app. NÃO auto-dispara: leva a /create?q=<termo> pré-preenchendo
-    // o texto livre. Visitante vê o convite de entrar (reusa `minhasCriacoes.convidaEntrar*`).
+    // #5 (ADR-0019 emenda): "Gerar com IA" REBAIXADO do CTA permanente para o ESTADO VAZIO (cartão de
+    // saída). NÃO auto-dispara (a Busca nunca cria): leva a /create?q=<termo> pré-preenchendo o texto
+    // livre. Visitante vê o convite de entrar (reusa `minhasCriacoes.convidaEntrar*`). A entrada SEMPRE
+    // disponível pra criar é o "Criar" do header global. `vazioGerarTitulo`/`vazioGerarTexto` = o cartão.
     gerarComIa: 'Gerar com IA',
+    vazioGerarTitulo: 'Gerar receita com IA',
+    vazioGerarTexto: 'Criamos uma receita a partir da sua busca.',
     // #164: seção SEPARADA de links da web (ADR-0019) — só aparece quando o nosso acervo veio RASO.
     // São LINKS externos, marcados "da web", NÃO armazenados nem ranqueados (a Busca só encontra). O
     // `daWebFonte` credita a fonte ("da web · {fonte}"); {fonte} interpolado no componente via `.replace`.
@@ -150,6 +170,9 @@ export const ptBR = {
   // textos próprios do feed vivem aqui. O `titulo`/`subtituloLogado` saíram com a fusão (#236): o
   // `<h1>` é o da Busca e o feed de repouso é sempre o pool PÚBLICO anônimo (sem cópia "suas receitas").
   feed: {
+    // #5 (Direção C): manchete serifada VISÍVEL do feed de repouso — dá à home INDEXÁVEL um heading real
+    // (o `<h1>` é sr-only). Honesta com a ordenação (recência): o pool público, do mais novo ao mais antigo.
+    titulo: 'Receitas da comunidade',
     subtitulo: 'O que a comunidade anda cozinhando, do mais novo ao mais antigo.',
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, within, cleanup } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
@@ -34,10 +33,7 @@ vi.mock('@/lib/auth-client', () => ({
 
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
-import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
-
-const M = ptBR.busca
 
 // Provider com DOIS termos: um com rótulo (Brasileira) e um cujo rótulo é o próprio slug
 // (novacozinha) — modela o fallback de locale-ausente JÁ resolvido no servidor. 'italiana'
@@ -61,10 +57,6 @@ function renderSearch() {
   )
 }
 
-function disclosure(): HTMLDetailsElement {
-  return screen.getByText(M.filtros).closest('details') as HTMLDetailsElement
-}
-
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -72,14 +64,12 @@ afterEach(() => {
 })
 
 describe('faceta de Cozinha vem do leitor data-driven (#317)', () => {
-  it('renderiza o rótulo threadado, o fallback-slug, e OMITE cozinha fora do provider', async () => {
-    const user = userEvent.setup()
+  it('renderiza o rótulo threadado, o fallback-slug, e OMITE cozinha fora do provider', () => {
     renderSearch()
 
-    // Abre o disclosure de filtros para alcançar os chips de cozinha.
-    await user.click(within(disclosure()).getByText(M.filtros))
-
-    // Rótulo threadado (Brasileira) E o fallback servido como slug cru (novacozinha).
+    // #5 (Direção C): a trilha é permanente (sem mais disclosure `<details>`); o jsdom não esconde por
+    // CSS, então os chips de cozinha já estão no DOM — consulta direta. Rótulo threadado (Brasileira) E o
+    // fallback servido como slug cru (novacozinha).
     expect(screen.getByLabelText('Brasileira')).toBeInTheDocument()
     expect(screen.getByLabelText('novacozinha')).toBeInTheDocument()
 

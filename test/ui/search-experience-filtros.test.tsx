@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import type { SearchResponse } from '@/domain/recipe-search-read'
 
 /**
- * Teste de COMPONENTE jsdom do disclosure "+ filtros" (#160) — apresentação pura: recolher
- * as 3 facetas (Cozinha/Categoria/Restrição) atrás de um gatilho NATIVO `<details>/<summary>`,
- * recolhido por padrão, com contador de facetas ativas no rótulo. Sem mudança no contrato da
- * Busca: expandir/recolher só esconde/mostra a seção — não re-dispara nem zera a busca.
+ * Teste de COMPONENTE jsdom da TRILHA de filtros (#5 Direção C / #160) — apresentação pura. A trilha é
+ * PERMANENTE no desktop (`lg:`) e vira DISCLOSURE no mobile: um botão "Filtros" com `aria-expanded` +
+ * `aria-controls="search-filters"`. As 3 facetas (Cozinha/Categoria/Restrição) vivem numa ÚNICA instância
+ * no DOM (a `<aside>`); abrir/fechar é puro toggle de visibilidade (CSS) — sem re-disparar nem zerar a
+ * busca. O contador de facetas ativas vai no rótulo do botão ("Filtros · N"). jsdom não aplica CSS (sem
+ * stylesheet), então as facetas ficam sempre consultáveis — a "recolha" é observada via `aria-expanded`.
  *
  * Espelha os mocks canônicos do `search.test.tsx` (next/link → <a>; useSession → estado
  * mutável). O `setup.ts` já estende o expect com jest-dom e dá os polyfills do Radix.
@@ -76,10 +78,10 @@ function stubFetchOk(body: SearchResponse) {
   return fetchMock as unknown as ReturnType<typeof vi.fn>
 }
 
-/** O `<details>` que embrulha as facetas (o que tem o summary "+ filtros"). */
-function disclosure(): HTMLDetailsElement {
-  const summary = screen.getByText((_content, el) => el?.tagName === 'SUMMARY' && /\+ filtros/.test(el.textContent ?? ''))
-  return summary.closest('details') as HTMLDetailsElement
+/** O botão "Filtros" (gatilho mobile do disclosure da trilha). O rótulo carrega a contagem ("Filtros · N"),
+ * então casamos por prefixo. Os checkboxes têm role=checkbox (não button) ⇒ não colidem com este getByRole. */
+function filtrosButton(): HTMLButtonElement {
+  return screen.getByRole('button', { name: /^Filtros/ }) as HTMLButtonElement
 }
 
 beforeEach(() => {
@@ -91,28 +93,42 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
-  it('F1 — filtros nascem RECOLHIDOS por padrão (details sem `open`)', () => {
+describe('SearchExperience — trilha de filtros (#5 Direção C / #160)', () => {
+  it('F1 — RECOLHIDA por padrão no mobile (botão "Filtros" aria-expanded=false) + UMA instância de cada faceta', () => {
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     renderSearch()
 
-    const details = disclosure()
-    expect(details).toBeInTheDocument()
-    expect(details.open).toBe(false)
-    // As 3 facetas vivem DENTRO do disclosure (o gatilho é o caminho para elas).
-    expect(within(details).getByText(M.filtroCozinha)).toBeInTheDocument()
-    expect(within(details).getByText(M.filtroCategoria)).toBeInTheDocument()
-    expect(within(details).getByText(M.filtroRestricao)).toBeInTheDocument()
+    const btn = filtrosButton()
+    expect(btn).toHaveAttribute('aria-expanded', 'false')
+    expect(btn).toHaveAttribute('aria-controls', 'search-filters')
+
+    // Contrato CSS-collapse (o jsdom não computa o stylesheet, então fixamos pelas CLASSES): recolhida,
+    // a trilha carrega `hidden` (display:none no mobile) — e NÃO a `flex` autônoma (só `lg:flex`). Sem
+    // isto, um refactor que removesse o toggle `hidden`/`lg:flex` deixaria o painel sempre aberto no
+    // mobile e a suíte seguiria verde.
+    const aside = document.getElementById('search-filters')!
+    expect(aside.classList.contains('hidden')).toBe(true)
+    expect(aside.classList.contains('flex')).toBe(false)
+
+    // As 3 facetas existem (trilha permanente no desktop; o jsdom não esconde por CSS).
+    expect(screen.getByText(M.filtroCozinha)).toBeInTheDocument()
+    expect(screen.getByText(M.filtroCategoria)).toBeInTheDocument()
+    expect(screen.getByText(M.filtroRestricao)).toBeInTheDocument()
+
+    // UMA instância de cada checkbox — guarda contra rail-desktop + drawer-mobile DUPLICADOS (que
+    // casariam 2 elementos no jsdom e quebrariam getByLabelText/getByRole nestes 5 arquivos de teste).
+    expect(screen.getAllByLabelText('Brasileira')).toHaveLength(1)
+    expect(screen.getAllByLabelText(ptBR.categoriaLabel.sobremesa)).toHaveLength(1)
   })
 
-  it('F2 — sem seleção: o rótulo é "+ filtros" SEM contador', () => {
+  it('F2 — sem seleção: o rótulo do botão é "Filtros" SEM contador', () => {
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     renderSearch()
 
-    const summary = within(disclosure()).getByText(M.filtros)
-    expect(summary).toBeInTheDocument()
-    // Sem facetas ativas, não há contagem entre parênteses.
-    expect(summary.textContent).not.toMatch(/\(\d+\)/)
+    const btn = filtrosButton()
+    expect(btn).toHaveTextContent(M.filtros)
+    // Sem facetas ativas, não há contagem ("· N").
+    expect(btn.textContent).not.toMatch(/·/)
   })
 
   it('F3 — o contador reflete a soma das facetas ativas (cozinha+categoria+restrição)', async () => {
@@ -120,24 +136,19 @@ describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
     const user = userEvent.setup()
     renderSearch()
 
-    // Abre o disclosure para alcançar os chips.
-    await user.click(within(disclosure()).getByText(M.filtros))
-
-    // Marca uma Cozinha + uma Categoria = 2 facetas ativas.
+    // Marca uma Cozinha + uma Categoria = 2 facetas ativas (as facetas estão sempre no DOM).
     await user.click(screen.getByLabelText('Brasileira'))
     await user.click(screen.getByLabelText(ptBR.categoriaLabel.sobremesa))
 
-    const esperado = M.filtrosContagem.replace('{count}', '2')
-    expect(within(disclosure()).getByText(esperado)).toBeInTheDocument()
+    expect(filtrosButton()).toHaveTextContent(M.filtrosContagem.replace('{count}', '2'))
   })
 
-  it('F4 — recolher/expandir PRESERVA a seleção e NÃO re-dispara/zera a busca', async () => {
+  it('F4 — abrir/fechar (aria-expanded) PRESERVA a seleção e NÃO re-dispara/zera a busca', async () => {
     const fetchMock = stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     const user = userEvent.setup()
     renderSearch()
 
-    // Abre, marca uma faceta (dispara UMA busca, debounced).
-    await user.click(within(disclosure()).getByText(M.filtros))
+    // Marca uma faceta (dispara UMA busca, debounced).
     const chip = screen.getByLabelText('Brasileira') as HTMLInputElement
     await user.click(chip)
     expect(chip).toBeChecked()
@@ -148,22 +159,22 @@ describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
     })
     const callsAposSelecao = fetchMock.mock.calls.length
 
-    // Recolhe o disclosure (clica no summary com a contagem).
-    await user.click(within(disclosure()).getByText(M.filtrosContagem.replace('{count}', '1')))
-    expect(disclosure().open).toBe(false)
-
-    // Expande de novo.
-    await user.click(within(disclosure()).getByText(M.filtrosContagem.replace('{count}', '1')))
-    expect(disclosure().open).toBe(true)
-
-    // A seleção sobreviveu ao recolher/expandir (não foi zerada).
+    // Abre o disclosure (mobile): aria-expanded → true; a trilha troca `hidden`→`flex`; seleção sobrevive.
+    const aside = document.getElementById('search-filters')!
+    await user.click(filtrosButton())
+    expect(filtrosButton()).toHaveAttribute('aria-expanded', 'true')
+    expect(aside.classList.contains('flex')).toBe(true)
+    expect(aside.classList.contains('hidden')).toBe(false)
     expect(screen.getByLabelText('Brasileira')).toBeChecked()
-    // O contador segue refletindo a faceta ativa.
-    expect(
-      within(disclosure()).getByText(M.filtrosContagem.replace('{count}', '1')),
-    ).toBeInTheDocument()
 
-    // Recolher/expandir é PURO toggle do <details>: nenhuma busca nova foi disparada.
+    // Fecha de novo: aria-expanded → false; trilha volta a `hidden`; seleção e contador intactos.
+    await user.click(filtrosButton())
+    expect(filtrosButton()).toHaveAttribute('aria-expanded', 'false')
+    expect(aside.classList.contains('hidden')).toBe(true)
+    expect(screen.getByLabelText('Brasileira')).toBeChecked()
+    expect(filtrosButton()).toHaveTextContent(M.filtrosContagem.replace('{count}', '1'))
+
+    // Abrir/fechar é PURO toggle de UI: nenhuma busca nova foi disparada.
     await new Promise((r) => setTimeout(r, 400))
     expect(fetchMock.mock.calls.length).toBe(callsAposSelecao)
   })
