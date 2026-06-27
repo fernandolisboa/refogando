@@ -5,7 +5,7 @@ import { seedSessionHeaders, seedDeletedSessionHeaders } from '../helpers/users'
  * Gate de ROTA aninhada do Console (#125). Prova, contra Postgres real e sessões reais
  * (prior art `admin-config`/`roles`), que CADA rota filha revalida o papel server-side:
  *  - `/admin` (layout) e as seções de Curadoria exigem curador+ — usuario → denied, anon → redirect.
- *  - `/admin/config` e `/admin/users` exigem ADMIN — um CURADOR é barrado (denied), não só link
+ *  - `/admin/ia` e `/admin/users` exigem ADMIN — um CURADOR é barrado (denied), não só link
  *    escondido. Esta é a lição da #51: gate de verdade na rota, não afordância de UI.
  *
  * Mockamos só as seams de borda do servidor (`next/headers` → headers da sessão semeada;
@@ -98,8 +98,8 @@ const as = (m: Promise<unknown>): Promise<PageModule> => m as Promise<PageModule
 // apontam pro novo caminho; o gate de papel em si (o que este teste prova) não mudou.
 const layout = () => as(import('@/app/[locale]/admin/layout'))
 const index = () => as(import('@/app/[locale]/admin/page'))
-const config = () => as(import('@/app/[locale]/admin/config/page'))
-const ai = () => as(import('@/app/[locale]/admin/ai/page'))
+const config = () => as(import('@/app/[locale]/admin/ia/page'))
+const ai = () => as(import('@/app/[locale]/admin/descoberta/page'))
 const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
 const users = () => as(import('@/app/[locale]/admin/users/page'))
 const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
@@ -136,10 +136,10 @@ describe('Gate da rota /admin (layout, curador+)', () => {
 })
 
 describe('Index /admin redireciona para a primeira seção do papel', () => {
-  it('admin → /admin/config (Governança)', async () => {
+  it('admin → /admin/ia (Governança)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'adm@idx.test', role: 'admin' })
     headersMock.current = headers
-    expect(await run(index)).toEqual({ kind: 'redirect', to: '/admin/config' })
+    expect(await run(index)).toEqual({ kind: 'redirect', to: '/admin/ia' })
   })
 
   it('curador → /admin/moderation (Curadoria; sem Governança)', async () => {
@@ -154,7 +154,7 @@ describe('Index /admin redireciona para a primeira seção do papel', () => {
   })
 })
 
-describe('Seções admin-only (/admin/config, /admin/ai, /admin/users) — curador é BARRADO', () => {
+describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — curador é BARRADO', () => {
   it.each([
     ['config', config],
     ['ai', ai],
@@ -238,9 +238,9 @@ describe('Aviso do catálogo (#268) — admin-only DENTRO da seção Curadoria d
   })
 })
 
-// #334: a reorg IA × Descoberta é PURAMENTE colocação de seção (AiConfigSection saiu de /admin/ai e
-// foi pra /admin/config). O gate por papel (testado acima) não distingue isso — um revert acidental
-// (AiConfigSection de volta na /admin/ai) passaria no CI. Estes 2 testes PINAM a colocação reusando o
+// #334: a reorg IA × Descoberta é PURAMENTE colocação de seção (AiConfigSection saiu de /admin/descoberta e
+// foi pra /admin/ia). O gate por papel (testado acima) não distingue isso — um revert acidental
+// (AiConfigSection de volta na /admin/descoberta) passaria no CI. Estes 2 testes PINAM a colocação reusando o
 // mesmo harness containsType/resolve do Aviso do catálogo.
 describe('Reorg abas IA × Descoberta (#334) — colocação da geração de imagem', () => {
   async function pageTree(loader: () => Promise<PageModule>, email: string) {
@@ -250,11 +250,11 @@ describe('Reorg abas IA × Descoberta (#334) — colocação da geração de ima
     return resolve(await Component())
   }
 
-  it('aba "IA" (/admin/config) RENDERIZA a geração de imagem (AiConfigSection)', async () => {
+  it('aba "IA" (/admin/ia) RENDERIZA a geração de imagem (AiConfigSection)', async () => {
     expect(containsType(await pageTree(config, 'reorg-ia@routes.test'), AiConfigSection)).toBe(true)
   })
 
-  it('aba "Descoberta" (/admin/ai) NÃO renderiza a geração de imagem (AiConfigSection)', async () => {
+  it('aba "Descoberta" (/admin/descoberta) NÃO renderiza a geração de imagem (AiConfigSection)', async () => {
     expect(containsType(await pageTree(ai, 'reorg-desc@routes.test'), AiConfigSection)).toBe(false)
   })
 })

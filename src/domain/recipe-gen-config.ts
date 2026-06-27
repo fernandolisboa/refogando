@@ -22,7 +22,7 @@ export type RecipeGenCapByRole = Record<Role, number | null>
 /**
  * Defaults FIXOS do teto de geração de RECEITA. Mais folgados que os de imagem (imagem custa Gemini
  * por chamada; a receita é o core do produto e queremos atrito baixo): usuario 10/dia, curador 20/dia,
- * admin ilimitado. Reversível — o admin ajusta na `/admin/ai`.
+ * admin ilimitado. Reversível — o admin ajusta na `/admin/ia`.
  */
 export const DEFAULT_RECIPE_GEN_CAP_BY_ROLE: RecipeGenCapByRole = {
   usuario: 10,

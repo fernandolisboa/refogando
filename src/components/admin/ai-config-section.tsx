@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Config da geração de imagem por IA (#134) — Admin-only (a page `/admin/config`, aba "IA", revalida
+ * Config da geração de imagem por IA (#134) — Admin-only (a page `/admin/ia`, aba "IA", revalida
  * `min='admin'` server-side; a API `/api/admin/config` reforça `requireRole 'admin'`). Liga/desliga a
  * geração, escolhe o modelo e edita os tetos diários por papel. Mora na MESMA aba que o `ConfigSection`
  * (modelo de chat/receita) desde o #268-follow-up (rename de rota é o #336).

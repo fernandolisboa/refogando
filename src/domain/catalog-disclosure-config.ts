@@ -41,7 +41,7 @@ const MAX_TEXT_LENGTH = 500
 /**
  * Default: aviso DESLIGADO + texto padrão. Fail-safe por construção — o aviso é cortesia OPT-IN: só
  * aparece quando o admin o liga DELIBERADAMENTE. Antes disso o Catálogo renderiza exatamente como hoje
- * (sem a frase). Reversível pela `/admin/ai`. O texto vem preenchido para o admin editar a partir dele.
+ * (sem a frase). Reversível pela `/admin/catalog`. O texto vem preenchido para o admin editar a partir dele.
  */
 export const DEFAULT_CATALOG_DISCLOSURE_CONFIG: CatalogDisclosureConfig = {
   enabled: false,

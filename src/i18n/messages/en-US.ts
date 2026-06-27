@@ -792,7 +792,7 @@ export const enUS: Messages = {
     grupoPlataforma: 'Platform',
     grupoCuradoria: 'Curation',
     navAria: 'Console sections',
-    navConfig: 'AI',
+    navIa: 'AI',
     navPapeis: 'Roles',
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
@@ -825,10 +825,10 @@ export const enUS: Messages = {
     vocabErroSlugEmUso: 'A cuisine with that slug already exists.',
     vocabErroNaoEncontrado: 'Cuisine not found.',
     vocabErroInterno: 'Something went wrong. Try again.',
-    // #268: the /admin/ai tab holds the SEARCH infra — web discovery + embeddings; generative AI
-    // (recipe model + image generation + caps) moved to the "AI" tab (/admin/config).
-    navAi: 'Discovery',
-    // "Image generation" section (#134) — lives on the "AI" tab (/admin/config); toggle, model, caps.
+    // #268: the /admin/descoberta tab holds the SEARCH infra — web discovery + embeddings; generative AI
+    // (recipe model + image generation + caps) moved to the "AI" tab (/admin/ia).
+    navDescoberta: 'Discovery',
+    // "Image generation" section (#134) — lives on the "AI" tab (/admin/ia); toggle, model, caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',
     aiHabilitadaLabel: 'Image generation on',

@@ -4,11 +4,11 @@ import { decideSectionAccess } from '@/server/auth/admin-access'
 /**
  * Veredito PURO de acesso a uma SEÇÃO do Console por rota aninhada (#125). Generaliza
  * `decideAdminAccess` (que é o caso `min='curador'`): cada rota filha revalida o papel
- * server-side com o seu mínimo — `/admin/config` e `/admin/users` exigem 'admin',
+ * server-side com o seu mínimo — `/admin/ia` e `/admin/users` exigem 'admin',
  * `/admin/moderation|translations|catalog` exigem 'curador'. É a MESMA seam fail-closed
  * que o jsdom não alcança (`headers()`/`getSession` só no servidor).
  *
- * O ponto sensível (lição da #51): um Curador batendo direto em `/admin/config` (min='admin')
+ * O ponto sensível (lição da #51): um Curador batendo direto em `/admin/ia` (min='admin')
  * tem de cair em `denied` — gate, não só link escondido. E papel `null`/desconhecido NUNCA
  * passa, em qualquer mínimo.
  */

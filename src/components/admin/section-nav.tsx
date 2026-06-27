@@ -30,8 +30,8 @@ export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
   // Governança (admin-only) vem antes da Curadoria, espelhando a ordem dos grupos do Console.
   const governanca: Item[] = isAdmin
     ? [
-        { href: '/admin/config', label: m.navConfig },
-        { href: '/admin/ai', label: m.navAi },
+        { href: '/admin/ia', label: m.navIa },
+        { href: '/admin/descoberta', label: m.navDescoberta },
         { href: '/admin/vocabulario', label: m.navVocabulario },
         { href: '/admin/users', label: m.navPapeis },
       ]
