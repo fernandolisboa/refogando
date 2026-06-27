@@ -4,7 +4,7 @@ import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setEmbedder, resetDeps } from '@/server/deps'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
-import { embedTranslation, EMBEDDING_MODEL } from '@/server/embedding/recompute'
+import { embedTranslation, EMBEDDING_MODEL, EMBEDDING_VERSION } from '@/server/embedding/recompute'
 import { searchRecipes, SEMANTIC_MIN_SIM } from '@/server/recipe/search'
 import { GET } from '@/app/api/search/route'
 import { recipeEmbedding } from '@/db/schema'
@@ -139,7 +139,7 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
       })
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
-    expect(row.model).toBe(EMBEDDING_MODEL)
+    expect(row.model).toBe(EMBEDDING_VERSION)
     expect(row.dims).toBe(DIM)
     expect(row.stale).toBe(false)
   })
@@ -184,7 +184,7 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
     expect(row.stale).toBe(false)
-    expect(row.model).toBe(EMBEDDING_MODEL)
+    expect(row.model).toBe(EMBEDDING_VERSION)
     expect(row.cos).toBeCloseTo(0.9, 4) // recomputado (era ~0.1)
   })
 
@@ -217,13 +217,14 @@ describe('camada semântica #14 — recompute (embedTranslation)', () => {
 })
 
 describe('camada semântica — taskType assimétrico (RETRIEVAL_DOCUMENT × RETRIEVAL_QUERY)', () => {
-  it('recompute embeda DOCUMENTO; a Busca consulta — cada um com seu taskType', async () => {
-    // FakeEmbedder que CAPTURA o taskType recebido. Prova a fiação assimétrica (recuperação
-    // doc/query) sem tocar o Gemini real — o caminho REAL é gate humano (RealEmbedder lança sem key).
-    const seen: (string | undefined)[] = []
+  it('recompute embeda DOCUMENTO; a Busca consulta — cada caminho com SEU taskType (pareamento)', async () => {
+    // FakeEmbedder que CAPTURA (texto, taskType). Prova a fiação assimétrica sem tocar o Gemini real
+    // (caminho REAL é gate humano). KEYA por texto: o doc é 'Tapioca' (titulo) e a consulta é 'tapioca'
+    // (termo) — distintos por maiúscula, então um SWAP dos literais (DOC↔QUERY) FALHA aqui.
+    const seen: { text: string; taskType?: string }[] = []
     setEmbedder(
-      new FakeEmbedder(DIM, (_text, taskType) => {
-        seen.push(taskType)
+      new FakeEmbedder(DIM, (text, taskType) => {
+        seen.push({ text, taskType })
         return QUERY_VEC
       }),
     )
@@ -231,11 +232,13 @@ describe('camada semântica — taskType assimétrico (RETRIEVAL_DOCUMENT × RET
     const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
     await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Tapioca', provenance: 'escrita_por_pessoa' })
 
-    await embedTranslation(db, recipeId, 'pt-BR') // caminho do DOCUMENTO
-    await searchBody('tapioca') // caminho da CONSULTA (porta alta GET)
+    await embedTranslation(db, recipeId, 'pt-BR') // caminho do DOCUMENTO (texto = titulo+descricao)
+    await searchBody('tapioca') // caminho da CONSULTA (porta alta GET, texto = termo)
 
-    expect(seen).toContain('RETRIEVAL_DOCUMENT') // índice
-    expect(seen).toContain('RETRIEVAL_QUERY') // busca
+    const docCall = seen.find((s) => s.text === 'Tapioca') // documento indexado
+    const queryCall = seen.find((s) => s.text === 'tapioca') // consulta
+    expect(docCall?.taskType).toBe('RETRIEVAL_DOCUMENT')
+    expect(queryCall?.taskType).toBe('RETRIEVAL_QUERY')
   })
 })
 
@@ -368,8 +371,11 @@ describe('camada semântica #14 — porta alta (AC3/AC4/AC5)', () => {
 
   it('AC3(b) discriminação do limiar (SEMANTIC_MIN_SIM): SM_above incluído, SM_below excluído', async () => {
     injectQueryEmbedder()
-    // RELATIVO ao piso exportado (não crava o número): margem 0.1 de cada lado (folga p/ o HNSW
-    // aproximado, como a versão 0.6/0.4 vs 0.5 fazia). Re-medir o piso não quebra este teste.
+    // VALOR: trava o piso longe do 0.50 antigo (que deixava ruído passar) — um revert silencioso pra
+    // 0.50 falha aqui. Deixa folga pra re-tune após o seed #238 (qualquer valor em [0.6, 1] passa).
+    expect(SEMANTIC_MIN_SIM).toBeGreaterThanOrEqual(0.6)
+    // DISCRIMINAÇÃO: RELATIVO ao piso (não crava o número) — margem 0.1 de cada lado (folga p/ o HNSW
+    // aproximado, como a versão 0.6/0.4 vs 0.5 fazia). Re-medir o piso não quebra esta parte.
     const above = await seedNeighbor('Bobó de camarão', SEMANTIC_MIN_SIM + 0.1) // > limiar
     const below = await seedNeighbor('Moqueca baiana', SEMANTIC_MIN_SIM - 0.1) // < limiar
     const { body } = await searchBody('qwerty')

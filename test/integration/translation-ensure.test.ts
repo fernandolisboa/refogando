@@ -11,7 +11,7 @@ import {
   type TranslateOutput,
 } from '@/server/translation/translator'
 import { FakeEmbedder, ThrowingEmbedder, type Embedder } from '@/server/embedding/embedder'
-import { EMBEDDING_MODEL } from '@/server/embedding/recompute'
+import { EMBEDDING_VERSION } from '@/server/embedding/recompute'
 import { ensureTranslation } from '@/server/recipe/translation'
 import { recipeTranslation, recipeEmbedding } from '@/db/schema'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
@@ -96,7 +96,7 @@ describe('ensureTranslation #23 — AC1 (gera 2º locale sinalizado + embedding)
       })
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'en-US')))
-    expect(emb.model).toBe(EMBEDDING_MODEL)
+    expect(emb.model).toBe(EMBEDDING_VERSION)
     expect(emb.dims).toBe(DIM)
     expect(emb.stale).toBe(false)
 

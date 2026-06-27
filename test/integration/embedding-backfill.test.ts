@@ -5,7 +5,7 @@ import { makeSql } from '@/db/client'
 import { POST } from '@/app/api/admin/embeddings/recompute/route'
 import { getDb, setEmbedder } from '@/server/deps'
 import { FakeEmbedder, ThrowingEmbedder } from '@/server/embedding/embedder'
-import { EMBEDDING_MODEL } from '@/server/embedding/recompute'
+import { EMBEDDING_MODEL, EMBEDDING_VERSION } from '@/server/embedding/recompute'
 import { recipeEmbedding } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
@@ -115,7 +115,7 @@ describe('POST /api/admin/embeddings/recompute — backfill (#119)', () => {
       recipeId: jaTem,
       locale: 'pt-BR',
       embedding: new Array<number>(EMBEDDING_DIMENSIONS).fill(0.1),
-      model: EMBEDDING_MODEL,
+      model: EMBEDDING_VERSION, // versão CORRENTE ⇒ não é recandidato
       stale: false,
     })
     const falta = await seedRecipeNoEmbedding('Falta vetor')
@@ -132,5 +132,35 @@ describe('POST /api/admin/embeddings/recompute — backfill (#119)', () => {
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, jaTem), eq(recipeEmbedding.locale, 'pt-BR')))
     expect(e.first).toBeCloseTo(0.1)
+  })
+
+  it('self-healing (#2): vetor de GEOMETRIA ANTIGA (model <> EMBEDDING_VERSION) É reembedado', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'bf-oldgeo@ex.com', role: 'admin' })
+    setEmbedder(new FakeEmbedder(EMBEDDING_DIMENSIONS))
+    // Vetor VÁLIDO + stale=false, MAS tag de modelo antiga (pré-taskType): não há UPDATE manual,
+    // o predicado `model <> EMBEDDING_VERSION` é que o torna candidato (rollout self-healing).
+    const antiga = await seedRecipeNoEmbedding('Geometria antiga')
+    await seedEmbedding({
+      recipeId: antiga,
+      locale: 'pt-BR',
+      embedding: new Array<number>(EMBEDDING_DIMENSIONS).fill(0.1),
+      model: EMBEDDING_MODEL, // 'gemini-embedding-001' SEM o sufixo -retr ⇒ geometria antiga
+      stale: false,
+    })
+
+    const r = (await (await recompute(headers)).json()) as Body
+    expect(r.recomputed).toBe(1) // a linha antiga foi migrada SEM marcar stale à mão
+    expect(r.remaining).toBe(0)
+
+    // Reembedada: tag passa à versão CORRENTE e o vetor muda (1º componente deixa de ser 0.1).
+    const [e] = await getDb()
+      .select({
+        model: recipeEmbedding.model,
+        first: dsql`(${recipeEmbedding.embedding}::real[])[1]`.mapWith(Number),
+      })
+      .from(recipeEmbedding)
+      .where(and(eq(recipeEmbedding.recipeId, antiga), eq(recipeEmbedding.locale, 'pt-BR')))
+    expect(e.model).toBe(EMBEDDING_VERSION)
+    expect(e.first).not.toBeCloseTo(0.1)
   })
 })

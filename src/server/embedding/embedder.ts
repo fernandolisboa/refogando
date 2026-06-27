@@ -22,12 +22,22 @@ export interface Embedder {
 }
 
 /**
- * Modelo de embedding (gravado em `recipe_embedding.model`). Fonte ÚNICA aqui — `recompute.ts` o
- * re-exporta (não pode importar daqui sem ciclo: embedder ← deps ← recompute). `gemini-embedding-001`
- * (GA) suporta dimensão de saída flexível (MRL); pedimos `EMBEDDING_DIMENSIONS` (1536) p/ casar a
- * coluna `vector(1536)` — 50% do armazenamento da default (3072) com o mesmo MTEB.
+ * NOME do modelo na API do Gemini (vai no PATH de `:embedContent`). `gemini-embedding-001` (GA)
+ * suporta dimensão de saída flexível (MRL); pedimos `EMBEDDING_DIMENSIONS` (1536) p/ casar a coluna
+ * `vector(1536)` — 50% do armazenamento da default (3072) com o mesmo MTEB. NÃO mudar sem trocar o
+ * modelo de verdade (é o path da URL).
  */
 export const EMBEDDING_MODEL = 'gemini-embedding-001'
+
+/**
+ * VERSÃO da geometria do embedding, gravada em `recipe_embedding.model` (a coluna é o "o que produziu
+ * este vetor", não só o nome do modelo da API). Fonte ÚNICA aqui — `recompute.ts` re-exporta (sem
+ * ciclo: embedder ← deps ← recompute). BUMPE este valor sempre que a geometria mudar (modelo, dimensão,
+ * `taskType`, normalização): o `NEEDS_EMBEDDING` compara `model <> EMBEDDING_VERSION`, então um deploy
+ * marca as linhas da geometria antiga como candidatas e o backfill as reembeda — sem `UPDATE` manual,
+ * e o contador "restantes" do /admin mostra o pendente. `-retr` = par de recuperação RETRIEVAL_*.
+ */
+export const EMBEDDING_VERSION = `${EMBEDDING_MODEL}-retr`
 
 /** Forma mínima da resposta do `:embedContent` que consumimos (`embedding.values` = float[]). */
 type EmbedContentResponse = { embedding?: { values?: number[] } }
