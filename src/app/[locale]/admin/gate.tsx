@@ -12,7 +12,7 @@ import { AccessDenied } from '@/components/admin/access-denied'
  *
  * O `layout.tsx` chama com `min='curador'` (porta única do Console). Cada `page.tsx` de
  * seção chama de novo com o SEU mínimo ('admin' para Governança, 'curador' para Curadoria):
- * acesso direto a `/admin/config` por um Curador é barrado AQUI, não só por link escondido.
+ * acesso direto a `/admin/ia` por um Curador é barrado AQUI, não só por link escondido.
  *
  * Ler a sessão num Server Component é só leitura (não viola ADR-0010 — não é Server Action
  * nem regra de domínio). As rotas de API que as seções consomem por fetch reforçam o gate.

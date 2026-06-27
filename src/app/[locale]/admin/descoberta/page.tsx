@@ -1,11 +1,11 @@
 /**
  * Seção "Descoberta" (#268, Governança) — admin-only. Revalida o papel server-side com
  * `min='admin'` (um Curador batendo direto aqui é barrado por `AccessDenied`, não só pelo link
- * escondido). A API `/api/admin/config` ainda reforça `requireRole 'admin'`. Espelha config/page.tsx.
+ * escondido). A API `/api/admin/config` ainda reforça `requireRole 'admin'`. Espelha ia/page.tsx.
  *
  * Reúne a infra de BUSCA/descoberta: descoberta na web (allowlist de domínios) e os embeddings
  * da busca semântica. A config de IA generativa (modelo de receita + geração de imagem + tetos)
- * mora na aba "IA" (config/page.tsx). A rota segue `/admin/ai` (rename cosmético das URLs no #336).
+ * mora na aba "IA" (ia/page.tsx). Rota `/admin/descoberta` (renomeada de `/admin/ai` no #336).
  */
 import { SectionGate } from '../gate'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'

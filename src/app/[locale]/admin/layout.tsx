@@ -1,7 +1,7 @@
 /**
  * Layout do Console (#125) — aplica o gate de acesso UMA ÚNICA VEZ (porta única do /admin)
  * e desenha a chrome compartilhada: cabeçalho + navegação por seção. As seções viram rotas
- * aninhadas bookmarkáveis (`/admin/config`, `/admin/users`, `/admin/moderation`,
+ * aninhadas bookmarkáveis (`/admin/ia`, `/admin/users`, `/admin/moderation`,
  * `/admin/translations`, `/admin/catalog`); cada `page.tsx` REVALIDA o papel server-side
  * com o seu mínimo (Governança='admin', Curadoria='curador') — o gate é por rota, não só
  * link escondido.

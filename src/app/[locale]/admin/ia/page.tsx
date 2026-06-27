@@ -5,8 +5,8 @@
  *
  * Reúne TODA a IA generativa: o modelo de geração padrão (receita/texto, `ConfigSection`) e a
  * geração de imagem — modelo + tetos diários por papel (`AiConfigSection`). A infra de busca
- * (descoberta na web + embeddings) mora na aba "Descoberta" (ai/page.tsx). A rota segue
- * `/admin/config` (rename cosmético das URLs rastreado no #336).
+ * (descoberta na web + embeddings) mora na aba "Descoberta" (descoberta/page.tsx). Rota `/admin/ia`
+ * (renomeada de `/admin/config` no #336 p/ casar o label da aba).
  */
 import { SectionGate } from '../gate'
 import { ConfigSection } from '@/components/admin/config-section'

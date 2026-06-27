@@ -1,15 +1,15 @@
 'use client'
 
 /**
- * Config da DESCOBERTA na web (#164, ADR-0019) — Admin-only (a page `/admin/ai` revalida `min='admin'`
+ * Config da DESCOBERTA na web (#164, ADR-0019) — Admin-only (a page `/admin/descoberta` revalida `min='admin'`
  * server-side; a API `/api/admin/config` reforça `requireRole 'admin'`). Liga/desliga a busca na web e
  * edita a ALLOWLIST de domínios (fonte ÚNICA tanto do endpoint `/api/discovery/web` quanto do guard de
  * SSRF do import). O provedor concreto/credencial é GATE HUMANO de deploy — esta UI só prepara a config.
  *
  * ADR-0010: consome os ROUTE HANDLERS `GET/PUT /api/admin/config` via `fetch` (NÃO Server Action). O
  * servidor é a verdade — a validação/canonicalização da allowlist vive lá; aqui só ofertamos os campos
- * e renderizamos o que a rota devolve. PUT envia SÓ o eixo `webSearch` (os outros eixos da /admin/ai —
- * imagem + teto de receita — são da `AiConfigSection`, atualizáveis em separado pelo upsert parcial).
+ * e renderizamos o que a rota devolve. PUT envia SÓ o eixo `webSearch` (os outros eixos — imagem + teto
+ * de receita — são da `AiConfigSection`, na aba IA, atualizáveis em separado pelo upsert parcial).
  *
  * Allowlist: textarea com UM domínio por linha. Validação cliente é LEVE (split por linha, descarta
  * vazias); o servidor revalida/canonicaliza (config_invalida → `webErroConfig`). Cores: só tokens

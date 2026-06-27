@@ -17,7 +17,7 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-const pathMock = vi.hoisted(() => ({ current: '/admin/config' }))
+const pathMock = vi.hoisted(() => ({ current: '/admin/ia' }))
 vi.mock('next/navigation', () => ({
   usePathname: () => pathMock.current,
 }))
@@ -28,7 +28,7 @@ import { SectionNav } from '@/components/admin/section-nav'
 
 const A = ptBR.admin
 
-function renderNav(role: 'admin' | 'curador', path = '/admin/config') {
+function renderNav(role: 'admin' | 'curador', path = '/admin/ia') {
   pathMock.current = path
   render(
     <LocaleProvider initialLocale="pt-BR">
@@ -42,8 +42,8 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
   it('admin vê as 7 seções (Governança: IA, Descoberta, Cozinhas, Papéis + Curadoria)', () => {
     const nav = renderNav('admin')
     for (const label of [
-      A.navConfig,
-      A.navAi,
+      A.navIa,
+      A.navDescoberta,
       A.navVocabulario,
       A.navPapeis,
       A.navModeracao,
@@ -56,8 +56,8 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
 
   it('curador NÃO vê a Governança (IA, Descoberta, Cozinhas, Papéis); vê só a Curadoria', () => {
     const nav = renderNav('curador', '/admin/moderation')
-    expect(within(nav).queryByRole('link', { name: A.navConfig })).toBeNull()
-    expect(within(nav).queryByRole('link', { name: A.navAi })).toBeNull() // #134: admin-only
+    expect(within(nav).queryByRole('link', { name: A.navIa })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: A.navDescoberta })).toBeNull() // #134: admin-only
     expect(within(nav).queryByRole('link', { name: A.navVocabulario })).toBeNull() // #321: admin-only
     expect(within(nav).queryByRole('link', { name: A.navPapeis })).toBeNull()
     for (const label of [A.navModeracao, A.navTraducoes, A.navCatalogo]) {
@@ -71,7 +71,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     expect(within(nav).getByRole('group', { name: A.grupoCuradoria })).toBeInTheDocument()
     // O grupo Plataforma contém os links de Governança; o Curadoria, os de Curadoria.
     const plataforma = within(nav).getByRole('group', { name: A.grupoPlataforma })
-    expect(within(plataforma).getByRole('link', { name: A.navAi })).toBeInTheDocument()
+    expect(within(plataforma).getByRole('link', { name: A.navDescoberta })).toBeInTheDocument()
     const curadoria = within(nav).getByRole('group', { name: A.grupoCuradoria })
     expect(within(curadoria).getByRole('link', { name: A.navCatalogo })).toBeInTheDocument()
   })
@@ -89,7 +89,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
       'aria-current',
       'page',
     )
-    expect(within(nav).getByRole('link', { name: A.navConfig })).not.toHaveAttribute('aria-current')
+    expect(within(nav).getByRole('link', { name: A.navIa })).not.toHaveAttribute('aria-current')
   })
 
   it('#162: a tira de abas é ROLÁVEL no mobile (sem quebra de linha)', () => {
@@ -100,17 +100,17 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     expect(nav.className).toContain('whitespace-nowrap')
     expect(nav.className).not.toContain('flex-wrap')
     // A aba ativa preserva o indicador border-b-2.
-    const active = within(nav).getByRole('link', { name: A.navConfig })
+    const active = within(nav).getByRole('link', { name: A.navIa })
     expect(active.className).toContain('border-b-2')
   })
 
   it('links apontam para as rotas aninhadas corretas', () => {
     const nav = renderNav('admin')
-    expect(within(nav).getByRole('link', { name: A.navConfig })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: A.navIa })).toHaveAttribute(
       'href',
-      '/admin/config',
+      '/admin/ia',
     )
-    expect(within(nav).getByRole('link', { name: A.navAi })).toHaveAttribute('href', '/admin/ai')
+    expect(within(nav).getByRole('link', { name: A.navDescoberta })).toHaveAttribute('href', '/admin/descoberta')
     expect(within(nav).getByRole('link', { name: A.navPapeis })).toHaveAttribute(
       'href',
       '/admin/users',

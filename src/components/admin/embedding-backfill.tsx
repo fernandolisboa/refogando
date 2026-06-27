@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Backfill dos embeddings da busca semântica (#119) — Admin-only (a page `/admin/ai` revalida
+ * Backfill dos embeddings da busca semântica (#119) — Admin-only (a page `/admin/descoberta` revalida
  * `min='admin'`; a API `/api/admin/embeddings/recompute` reforça `requireRole 'admin'`). Recomputa,
  * em lote capado, os vetores das receitas que ainda não têm — para as nascidas antes do pipeline de
  * embedding-na-criação. Idempotente e RETOMÁVEL: a rota devolve `{ recomputed, remaining }`; o admin

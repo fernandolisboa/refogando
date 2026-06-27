@@ -13,11 +13,11 @@ import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config
  *
  * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
  *  - `defaultModel` (#5) — modelo de chat. allowlist EM CÓDIGO (muda mais rápido que migração).
- *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (a `/admin/ai`).
+ *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (aba IA, `/admin/ia`).
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
- *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a `/admin/ai`).
+ *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
  *    Record<Role, number|null> (`null` = ∞); a rota /api/generations lê este valor pelo teto.
- *  - `webSearch { enabled, allowlist }` (#164, ADR-0019) — descoberta na web (também a `/admin/ai`).
+ *  - `webSearch { enabled, allowlist }` (#164, ADR-0019) — descoberta na web (aba Descoberta, `/admin/descoberta`).
  *    A allowlist é fonte ÚNICA do endpoint `/api/discovery/web` E do guard de SSRF do import (#165).
  *  - `catalogDisclosure { enabled, text }` (#237, SEO #187) — aviso OPCIONAL "em colaboração entre
  *    curadoria e IA" exibido SÓ em receitas `origin=catalog` quando ligado. CORTESIA editorial — NUNCA
@@ -80,7 +80,7 @@ export async function PUT(req: Request): Promise<Response> {
   }
 
   // #167: teto de geração de RECEITA por papel (mesma validação do teto de imagem — null=∞ ou inteiro
-  // ≥0, exatamente os papéis conhecidos). Inválido ⇒ 400 config_invalida (mesma chave da UI /admin/ai).
+  // ≥0, exatamente os papéis conhecidos). Inválido ⇒ 400 config_invalida (mesma chave da UI /admin/ia).
   if (body.recipeGenCapByRole !== undefined) {
     const caps = parseRecipeGenCapByRole(body.recipeGenCapByRole)
     if (caps === null) return Response.json({ error: 'config_invalida' }, { status: 400 })

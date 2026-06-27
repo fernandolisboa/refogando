@@ -26,7 +26,7 @@ export type WebSearchConfig = {
 /**
  * Default: descoberta na web DESLIGADA e allowlist VAZIA. Fail-closed por construção — a ponte só
  * existe depois que o admin a liga E define domínios E o deploy tem credencial (gate humano). Antes
- * disso o endpoint devolve vazio e o import recusa toda URL externa. Reversível pela `/admin/ai`.
+ * disso o endpoint devolve vazio e o import recusa toda URL externa. Reversível pela `/admin/descoberta`.
  */
 export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
   enabled: false,

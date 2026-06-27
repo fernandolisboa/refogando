@@ -12,7 +12,7 @@
  * ADR-0010: consome os ROUTE HANDLERS `GET/PUT /api/admin/config` via `fetch` (NÃO Server Action). O
  * servidor é a verdade — a validação do texto (não-vazio, teto) vive lá; aqui só ofertamos os campos e
  * renderizamos o que a rota devolve. PUT envia SÓ o eixo `catalogDisclosure` (os outros eixos da
- * /admin/ai são de outras seções, atualizáveis em separado pelo upsert parcial). Espelha
+ * config são de outras seções — abas IA e Descoberta —, atualizáveis em separado pelo upsert parcial). Espelha
  * `web-search-config-section.tsx`. Cores: só tokens AA-verificados (#54); sem âmbar/accent.
  */
 import { useEffect, useState } from 'react'
