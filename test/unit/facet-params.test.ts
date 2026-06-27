@@ -5,6 +5,7 @@ import {
   EMPTY_FACETS,
   MAX_FACET_VALUES,
 } from '@/domain/facet-params'
+import { COZINHA_SEED } from '@/domain/vocabulary-term'
 
 /**
  * Unit do parse de params de faceta (#10): degradação permissiva na borda (valor inválido
@@ -17,22 +18,11 @@ import {
  */
 
 // Conjunto ATIVO injetado nos casos (slugs de cozinha ativos, data-driven da tabela vocabulary_term).
-const ACTIVE = new Set<string>([
-  'italiana',
-  'japonesa',
-  'brasileira',
-  'baiana',
-  'mineira',
-  'mexicana',
-  'chinesa',
-  'indiana',
-  'tailandesa',
-  'francesa',
-  'arabe',
-  'portuguesa',
-  'mediterranea',
-  'peruana',
-])
+// Derivado da FONTE ÚNICA COZINHA_SEED, sem 'americana' (a 15ª) — os casos de americana injetam um
+// conjunto que a inclui (linha ~64), provando que a aceitação é set-driven.
+const ACTIVE = new Set<string>(
+  COZINHA_SEED.map((t) => t.slug).filter((s) => s !== 'americana'),
+)
 
 /** Constrói o lookup `(k) => string | null` a partir de um objeto. */
 function get(params: Record<string, string>): (k: string) => string | null {

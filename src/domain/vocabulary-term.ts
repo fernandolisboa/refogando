@@ -56,7 +56,8 @@ export type VocabularyTermSeed = {
  * o leitor #315 re-ordena por este campo).
  *
  * Esta é a FONTE ÚNICA copiada pela migração 0033 (INSERT) e pelo helper de teste
- * (`seedVocabularyCozinhas`) — o teste puro guarda contra drift com COZINHAS.
+ * (`seedVocabularyCozinhas`) — o teste puro guarda contra drift com as 14 cozinhas
+ * históricas (literal `COZINHAS_HISTORICAS` em `vocabulary-term.test.ts`).
  */
 export const COZINHA_SEED: VocabularyTermSeed[] = [
   { slug: 'italiana', labelPtBr: 'Italiana', labelEnUs: 'Italian', sort: 0 },

@@ -15,25 +15,12 @@ import {
 import type { Briefing, BriefingItem } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import { decideRestrictionNotices } from '@/domain/recipe-restrictions'
+import { COZINHA_SEED } from '@/domain/vocabulary-term'
 
 // As 14 cozinhas históricas (ex-enum, dropado na virada #318). Cozinha é DATA-DRIVEN agora; os
-// casos injetam um conjunto ATIVO literal — a aceitação é set-driven, não consulta um `as const`.
-const COZINHAS_ATIVAS = [
-  'italiana',
-  'japonesa',
-  'brasileira',
-  'baiana',
-  'mineira',
-  'mexicana',
-  'chinesa',
-  'indiana',
-  'tailandesa',
-  'francesa',
-  'arabe',
-  'portuguesa',
-  'mediterranea',
-  'peruana',
-] as const
+// casos injetam um conjunto ATIVO — derivado da FONTE ÚNICA COZINHA_SEED (sem 'americana', que é a
+// 15ª) pra não driftar de uma cópia literal; a aceitação é set-driven, não consulta um `as const`.
+const COZINHAS_ATIVAS = COZINHA_SEED.map((t) => t.slug).filter((s) => s !== 'americana')
 
 /**
  * Domínio puro do Briefing (#11, §7.2): PURO/TOTAL/SEM THROW, sem DB. Cobre parse de
