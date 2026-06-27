@@ -14,7 +14,7 @@
  */
 
 import {
-  isCozinha,
+  isActiveCozinha,
   isRestricao,
   isUnidade,
   isPorcoesValidas,
@@ -87,17 +87,17 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  * → campo-mínimo-DE-ITEM (7b, ANTES do dedup) → dedup → campo-mínimo (briefing_vazio).
  * Faixas validadas AQUI, no app (ADR-0009). Cada falha devolve o PRIMEIRO erro.
  */
-export function parseBriefing(raw: unknown): BriefingParse {
+export function parseBriefing(raw: unknown, activeCozinhas: ReadonlySet<string>): BriefingParse {
   // 1. raw é objeto não-array.
   if (!isPlainObject(raw)) return { ok: false, error: 'briefing_invalido' }
 
-  // 2. cozinha: ausente/null OU isCozinha.
+  // 2. cozinha: ausente/null OU pertencente ao conjunto ATIVO injetado (#316, data-driven).
   let cozinha: Cozinha | null = null
   if (raw.cozinha != null) {
-    if (typeof raw.cozinha !== 'string' || !isCozinha(raw.cozinha)) {
+    if (typeof raw.cozinha !== 'string' || !isActiveCozinha(raw.cozinha, activeCozinhas)) {
       return { ok: false, error: 'cozinha_invalida' }
     }
-    cozinha = raw.cozinha
+    cozinha = raw.cozinha as Cozinha
   }
 
   // 3. restricoes: ausente → []; array de strings cada isRestricao.

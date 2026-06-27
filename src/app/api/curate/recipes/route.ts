@@ -3,6 +3,7 @@ import { getDb } from '@/server/deps'
 import { canonicalLocale } from '@/i18n/locale'
 import {
   isCozinha,
+  isActiveCozinha,
   isCategoria,
   isRestricao,
   isUnidade,
@@ -13,6 +14,7 @@ import {
   type Restricao,
   type Unidade,
 } from '@/domain/vocabulary'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { createCatalogRecipe, type CreateCatalogRecipeInput } from '@/server/curate/create'
 
 /**
@@ -91,8 +93,14 @@ export async function POST(req: Request): Promise<Response> {
   // Enums escalares: presentes ⇒ válidos; ausentes/null ⇒ null.
   let cozinha: Cozinha | null = null
   if (body.cozinha !== undefined && body.cozinha !== null) {
-    if (typeof body.cozinha !== 'string' || !isCozinha(body.cozinha)) return badRequest()
-    cozinha = body.cozinha
+    // Cozinha DATA-DRIVEN (#316): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
+    // neste ramo. `.filter(isCozinha)` = guarda temporária de enum-storability (até #318): slug
+    // ativo-mas-não-enumerável (ex.: 'americana') vira 400 dados_invalidos, nunca 22P02/500.
+    const activeCozinhas = new Set([...(await loadActiveCozinhaSlugs(getDb()))].filter(isCozinha))
+    if (typeof body.cozinha !== 'string' || !isActiveCozinha(body.cozinha, activeCozinhas)) {
+      return badRequest()
+    }
+    cozinha = body.cozinha as Cozinha
   }
   let categoria: Categoria | null = null
   if (body.categoria !== undefined && body.categoria !== null) {

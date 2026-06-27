@@ -6,6 +6,7 @@ import { isUuid } from '@/server/http/params'
 import { canonicalLocale } from '@/i18n/locale'
 import {
   isCozinha,
+  isActiveCozinha,
   isCategoria,
   isRestricao,
   isPorcoesValidas,
@@ -14,6 +15,7 @@ import {
   type Categoria,
   type Restricao,
 } from '@/domain/vocabulary'
+import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { editCatalogRecipe, type EditCatalogRecipeInput } from '@/server/curate/edit'
 
 /**
@@ -125,7 +127,14 @@ export async function PATCH(
   }
 
   if (body.cozinha !== undefined) {
-    if (body.cozinha !== null && (typeof body.cozinha !== 'string' || !isCozinha(body.cozinha))) {
+    // Cozinha DATA-DRIVEN (#316): conjunto ATIVO do DB DIRETO (ADR-0025 Decisão 4), carregado SÓ
+    // neste ramo. `.filter(isCozinha)` = guarda temporária de enum-storability (até #318): slug
+    // ativo-mas-não-enumerável (ex.: 'americana') vira 400 dados_invalidos, nunca 22P02/500.
+    const activeCozinhas = new Set([...(await loadActiveCozinhaSlugs(db))].filter(isCozinha))
+    if (
+      body.cozinha !== null &&
+      (typeof body.cozinha !== 'string' || !isActiveCozinha(body.cozinha, activeCozinhas))
+    ) {
       return badRequest()
     }
     patch.cozinha = body.cozinha as Cozinha | null

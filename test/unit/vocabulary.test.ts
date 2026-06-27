@@ -6,6 +6,7 @@ import {
   PORCOES,
   RESTRICOES,
   UNIDADES,
+  isActiveCozinha,
   isCategoria,
   isCozinha,
   isDificuldadeValida,
@@ -19,6 +20,17 @@ describe('Vocabulário culinário — kernel (fonte única)', () => {
   it('pertencimento de Cozinha', () => {
     expect(isCozinha('italiana')).toBe(true)
     expect(isCozinha('marciana')).toBe(false)
+  })
+
+  it('isActiveCozinha (#316): pertencimento ao conjunto ATIVO injetado, não a COZINHAS', () => {
+    // Presente no conjunto → aceito; ausente → recusado; conjunto vazio → tudo recusado.
+    expect(isActiveCozinha('italiana', new Set(['italiana']))).toBe(true)
+    expect(isActiveCozinha('italiana', new Set(['japonesa']))).toBe(false)
+    expect(isActiveCozinha('italiana', new Set<string>())).toBe(false)
+    // Aceitação dirigida pelo conjunto, INDEPENDENTE de COZINHAS: 'americana' (ativo-mas-não-no-
+    // enum) é aceita quando injetada, provando que o validador não consulta o `as const`.
+    expect(isActiveCozinha('americana', new Set([...COZINHAS, 'americana']))).toBe(true)
+    expect(isActiveCozinha('americana', new Set(COZINHAS))).toBe(false)
   })
 
   it('pertencimento de Restrição alimentar', () => {

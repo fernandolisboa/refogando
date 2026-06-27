@@ -5,13 +5,14 @@
  * 400/500 (política "nunca tela quebrada"). Validar na borda é OBRIGATÓRIO porque bindar
  * string crua numa coluna enum dispara `22P02`→500 — o loader só recebe literais válidos.
  *
- * Reusa os validadores do Vocabulário (`isCozinha`/`isCategoria`/`isRestricao`/
- * `isDificuldadeValida`/`isPorcoesValidas`). Tags normalizadas pelo MESMO fold de #9
- * (`foldIntent` de `culinary-profile.ts`) para casar o lado-tabela folded no SQL.
+ * Reusa os validadores do Vocabulário (`isCategoria`/`isRestricao`/`isDificuldadeValida`/
+ * `isPorcoesValidas`). Cozinha é DATA-DRIVEN (#316): o conjunto ATIVO chega injetado (param
+ * `activeCozinhas`), resolvido pela borda da tabela `vocabulary_term` — o parse só checa
+ * pertencimento, seguindo PURO. Tags normalizadas pelo MESMO fold de #9 (`foldIntent` de
+ * `culinary-profile.ts`) para casar o lado-tabela folded no SQL.
  */
 
 import {
-  isCozinha,
   isCategoria,
   isRestricao,
   isDificuldadeValida,
@@ -116,9 +117,15 @@ function parseFaixa(
  * Nomes EXATOS dos params (contrato de URL público, forks B/C):
  *  cozinha, categoria, tag, restricao (CSV) — dificuldade_min/max, porcoes_min/max (int).
  */
-export function parseFacetParams(get: (k: string) => string | null): EffectiveFacets {
+export function parseFacetParams(
+  get: (k: string) => string | null,
+  activeCozinhas: ReadonlySet<string>,
+): EffectiveFacets {
   const facets: EffectiveFacets = {
-    cozinhas: enumValues(get('cozinha'), isCozinha),
+    // Cozinha data-driven (#316): pertencimento ao conjunto ATIVO injetado, não ao `COZINHAS`.
+    // O guard `v is Cozinha` é SÃO porque a borda injeta um conjunto enum-limitado (active ∩
+    // COZINHAS via `.filter(isCozinha)`) até a virada #318 — nenhum slug não-enumerável entra.
+    cozinhas: enumValues(get('cozinha'), (v): v is Cozinha => activeCozinhas.has(v)),
     categorias: enumValues(get('categoria'), isCategoria),
     tags: [
       ...new Set(csvValues(get('tag')).map(foldIntent).filter((t) => t.length > 0)),

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
 import { eq, asc } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
@@ -8,6 +8,7 @@ import { FakeClaudeClient } from '@/server/claude/client'
 import { recipe, briefing, briefingItem, creationSession } from '@/db/schema'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedIngredient } from '../helpers/recipes'
+import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 import {
   cannedSuccess,
   cannedImpossible,
@@ -39,6 +40,13 @@ let sql: Sql
 
 beforeAll(() => {
   sql = makeSql(inject('databaseUrl'))
+})
+
+// #316: a validação de cozinha agora lê a tabela `vocabulary_term` (DB-direto). `truncateAll`
+// (setup.ts) apaga as LINHAS antes de cada teste, então re-semeamos as cozinhas ativas — senão o
+// 'brasileira' default de makeBriefing seria rejeitado (conjunto ativo ∅).
+beforeEach(async () => {
+  await seedVocabularyCozinhas(getDb())
 })
 
 afterAll(async () => {
@@ -400,6 +408,29 @@ describe('POST /api/generations — Briefing estruturado (#11)', () => {
     )
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'porcoes_fora_de_faixa' })
+    expect(await countsBriefing(sql)).toEqual({
+      recipe: 0,
+      session: 0,
+      generation: 0,
+      briefing: 0,
+      briefingItem: 0,
+    })
+  })
+
+  // 11a — #316 guarda de enum-storability na BORDA de escrita: 'americana' está ATIVA na tabela
+  // (15 slugs semeados), mas NÃO é enum-storável até a virada #318. A borda injeta active ∩ COZINHAS
+  // (`.filter(isCozinha)`), então 'americana' é rejeitada com 400 cozinha_invalida — explicitamente
+  // NÃO 500/22P02 (o cast `::cozinha` nunca recebe o slug). Prova o write-border filter.
+  it('#316: cozinha ATIVA-mas-não-no-enum (americana) → 400 cozinha_invalida, NÃO 500', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'americana@briefing.test' })
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await post(
+      { mode: 'structured', briefing: { ...makeBriefing(), cozinha: 'americana' } },
+      headers,
+    )
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'cozinha_invalida' })
     expect(await countsBriefing(sql)).toEqual({
       recipe: 0,
       session: 0,

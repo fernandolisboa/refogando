@@ -1,8 +1,11 @@
-import { afterAll, beforeAll, describe, it, expect, inject } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, it, expect, inject } from 'vitest'
 import type { Sql } from 'postgres'
 import { makeSql } from '@/db/client'
 import { GET } from '@/app/api/search/route'
+import { getDb } from '@/server/deps'
+import { __clearVocabularyCache } from '@/server/vocabulary/load'
 import { seedFacetMatrix } from '../helpers/recipes'
+import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 
 /**
  * Facetas + Perfil culinário + filtros do Vocabulário (issue #10) pela porta MAIS ALTA —
@@ -83,6 +86,15 @@ let sql: Sql
 
 beforeAll(() => {
   sql = makeSql(inject('databaseUrl'))
+})
+
+// #316: a borda de LEITURA da Busca resolve a cozinha pelo leitor CACHEADO (`loadVocabulary`). Duas
+// limpezas por teste: re-semear as cozinhas ativas (truncateAll apagou as linhas) E limpar o cache
+// do módulo (Map em memória que truncateAll NÃO toca — senão um snapshot vazio/estranho vazaria
+// dentro do TTL de 30s). Ordem: truncate global (setup.ts) → seed → clearCache.
+beforeEach(async () => {
+  await seedVocabularyCozinhas(getDb())
+  __clearVocabularyCache()
 })
 
 afterAll(async () => {
@@ -319,6 +331,19 @@ describe('GET /api/search — Facetas + Perfil culinário (#10)', () => {
     expect(textOk.status).toBe(200)
     const body = (await textOk.json()) as SearchResponse
     expect(allIds(body).length).toBeGreaterThan(0)
+  })
+
+  it('#316 read-border: ?cozinha=americana (ativa-mas-não-no-enum) → 200, faceta NÃO aplicada', async () => {
+    const m = await seedFacetMatrix()
+
+    // 'americana' está ATIVA na tabela (semeada), mas a borda de leitura injeta active ∩ COZINHAS
+    // (`.filter(isCozinha)`), mantendo-a FORA do cast `::cozinha[]` ⇒ 200, nunca 22P02/500.
+    const res = await search('curry', { locale: 'pt-BR', cozinha: 'americana' })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SearchResponse
+    // americana DESCARTADA ⇒ sem filtro de cozinha ⇒ as receitas que casam 'curry' seguem presentes
+    // (se americana virasse filtro, nada casaria — nenhuma receita é 'americana' no enum).
+    expect(allIds(body)).toEqual(expect.arrayContaining([m.F_jpDoce, m.F_itPrato, m.F_brDoce]))
   })
 
   it('reduce-to-#9: search("frango,limão,alho", match=all) sem faceta ≡ #9 (vírgula preservada)', async () => {

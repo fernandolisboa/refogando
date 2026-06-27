@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { POST as createRoute } from '@/app/api/curate/recipes/route'
 import { PATCH as editRoute } from '@/app/api/curate/recipes/[id]/route'
@@ -8,6 +8,7 @@ import { FakeEmbedder, type Embedder } from '@/server/embedding/embedder'
 import { recipe, recipeTranslation, recipeIngredient, recipeEmbedding, recipeTag, tag } from '@/db/schema'
 import { seedSessionHeaders, seedDeletedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation, seedEmbedding, seedRecipeTag } from '../helpers/recipes'
+import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 
 /**
  * Curadoria de CATÁLOGO editorial (issue #19) — AC1 create/edit/organizar + AC6 stale —
@@ -64,6 +65,12 @@ function getRecipe(id: string, locale: string): Promise<Response> {
     params: Promise.resolve({ id }),
   })
 }
+
+// #316: a validação de cozinha lê `vocabulary_term` (DB-direto). `truncateAll` apaga as linhas
+// antes de cada teste, então re-semeamos — senão 'brasileira'/'italiana'/'japonesa' seriam recusadas.
+beforeEach(async () => {
+  await seedVocabularyCozinhas(getDb())
+})
 
 const validCreateBody = {
   originalLocale: 'pt-BR',
@@ -215,6 +222,13 @@ describe('POST /api/curate/recipes #19 — AC1 create', () => {
 
     const badCozinha = await create({ ...validCreateBody, cozinha: 'klingon' }, headers)
     expect(badCozinha.status).toBe(400)
+
+    // #316: 'americana' está ATIVA na tabela (semeada) mas NÃO no enum até #318. A borda injeta
+    // active ∩ COZINHAS (`.filter(isCozinha)`), então a rejeita com 400 dados_invalidos —
+    // explicitamente NÃO 500/22P02 (o cast `::cozinha` nunca recebe o slug não-enumerável).
+    const americana = await create({ ...validCreateBody, cozinha: 'americana' }, headers)
+    expect(americana.status).toBe(400)
+    expect(await americana.json()).toEqual({ error: 'dados_invalidos' })
 
     const badUnidade = await create(
       { ...validCreateBody, ingredientes: [{ rawText: 'x', quantidade: null, unidade: 'galao' }] },
