@@ -40,7 +40,8 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { COZINHAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import { useRecipeGeneration, mapErroMensagem } from '@/hooks/use-recipe-generation'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
@@ -115,6 +116,7 @@ export function CreateStructuredExperience({
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.criar
+  const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const session = useSession()
 
   // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
@@ -573,9 +575,10 @@ export function CreateStructuredExperience({
               className={inputCls}
             >
               <option value="">{m.cozinhaNenhuma}</option>
-              {COZINHAS.map((c) => (
-                <option key={c} value={c}>
-                  {messages.cozinhaLabel[c]}
+              {/* #317: opções vêm do leitor data-driven (contexto), já localizadas. */}
+              {cozinhaVocab.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
                 </option>
               ))}
             </select>

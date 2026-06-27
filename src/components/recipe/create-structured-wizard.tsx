@@ -28,7 +28,8 @@ import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { COZINHAS, RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { cn } from '@/lib/utils'
 import {
   useRecipeGeneration,
@@ -93,6 +94,7 @@ export function CreateStructuredWizard({
 }) {
   const { locale, messages } = useLocale()
   const m = messages.criar
+  const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const w = messages.criarWizard
 
   // Destrutura o bag do motor no topo: o render lê variáveis planas (estado), e a `headingRef`
@@ -480,13 +482,14 @@ export function CreateStructuredWizard({
                 </h2>
                 <p className="text-sm text-muted">{w.cozinhaIntro}</p>
                 <div className="flex flex-wrap gap-2">
-                  {COZINHAS.map((c) => (
+                  {/* #317: chips de cozinha do leitor data-driven (contexto), já localizados. */}
+                  {cozinhaVocab.map(({ value, label }) => (
                     <Chip
-                      key={c}
-                      active={cozinha === c}
-                      onClick={() => setCozinha((prev) => (prev === c ? '' : c))}
+                      key={value}
+                      active={cozinha === value}
+                      onClick={() => setCozinha((prev) => (prev === value ? '' : value))}
                     >
-                      {messages.cozinhaLabel[c]}
+                      {label}
                     </Chip>
                   ))}
                 </div>

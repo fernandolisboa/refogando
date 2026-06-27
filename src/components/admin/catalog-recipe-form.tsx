@@ -30,13 +30,13 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FacetFieldset, type FacetOption } from '@/components/recipe/facet-fieldset'
 import {
-  COZINHAS,
   CATEGORIAS,
   RESTRICOES,
   UNIDADES,
   PORCOES,
   DIFICULDADE,
 } from '@/domain/vocabulary'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { SUPPORTED_LOCALES } from '@/i18n/locale'
 import type { Messages } from '@/i18n/messages'
 
@@ -93,6 +93,7 @@ export function CatalogRecipeForm({
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.curadoria
+  const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
 
   const [titulo, setTitulo] = useState('')
   const [originalLocale, setOriginalLocale] = useState<string>(locale)
@@ -398,9 +399,10 @@ export function CatalogRecipeForm({
                 className={fieldClassName}
               >
                 <option value="">{m.criarReceitaCozinhaNenhuma}</option>
-                {COZINHAS.map((c) => (
-                  <option key={c} value={c}>
-                    {messages.cozinhaLabel[c]}
+                {/* #317: opções de cozinha do leitor data-driven (contexto), já localizadas. */}
+                {cozinhaVocab.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </select>

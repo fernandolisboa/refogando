@@ -58,6 +58,8 @@ function authed(): SessionState {
 }
 
 import { LocaleProvider } from '@/i18n/provider'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
 
@@ -68,7 +70,9 @@ type WebLink = { title: string; url: string; sourceName: string }
 function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience />
+      <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
+        <SearchExperience />
+      </CozinhaVocabProvider>
     </LocaleProvider>,
   )
 }
@@ -459,7 +463,7 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
 
     // Abre os filtros e marca uma cozinha (busca SÓ por faceta, sem termo).
     await user.click(within(disclosure()).getByText(M.filtros))
-    await user.click(screen.getByLabelText(ptBR.cozinhaLabel.brasileira))
+    await user.click(screen.getByLabelText('Brasileira'))
 
     // Sync POSITIVO: espera os resultados concluírem ANTES das asserções negativas.
     await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })

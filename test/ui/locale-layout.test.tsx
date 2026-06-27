@@ -39,6 +39,13 @@ vi.mock('@/i18n/provider', () => ({
     </div>
   ),
 }))
+// #317: o layout passou a semear o vocabulário de cozinha (leitor DB → contexto). No jsdom não
+// há DB; mockamos o leitor p/ `[]` e o provider p/ passar os filhos — o foco do teste segue
+// sendo o <html lang> + initialLocale, não a faceta de cozinha.
+vi.mock('@/server/vocabulary/load', () => ({ loadVocabulary: async () => [] }))
+vi.mock('@/components/i18n/cozinha-vocab-provider', () => ({
+  CozinhaVocabProvider: ({ children }: { children: ReactNode }) => children,
+}))
 
 import LocaleLayout from '@/app/[locale]/layout'
 

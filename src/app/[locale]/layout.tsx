@@ -4,10 +4,14 @@ import type { ReactNode } from 'react'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { LocaleProvider } from '@/i18n/provider'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
+import { getDb } from '@/server/deps'
+import { loadVocabulary } from '@/server/vocabulary/load'
+import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
 
 export const metadata: Metadata = {
   title: 'Refogando',
@@ -45,15 +49,29 @@ export default async function LocaleLayout({
   // `initialTheme` para o toggle (client): 'light'/'dark' explícito. SiteFooter é client,
   // então a preferência é threadada do servidor (sem ler cookie no client).
   const initialTheme = themeClass
+
+  // Vocabulário de cozinha (#317, ADR-0025): resolvido UMA vez no ancestral comum de TODA
+  // rota e semeado no contexto (escopo `active` — só termos vivos viram opção em forms). O
+  // leitor tem cache de 30s por instância, então o roundtrip extra é amortizado. Como ESTE
+  // layout é a raiz de cada página, um erro do leitor (soluço do Neon) NÃO pode derrubar
+  // sign-in/erro/estáticas — degrada p/ `[]` (a faceta de cozinha some, o resto segue).
+  let cozinhaVocab: CozinhaOption[] = []
+  try {
+    cozinhaVocab = localizeCozinhaVocab(await loadVocabulary(getDb(), 'cozinha', 'active'), locale)
+  } catch {
+    cozinhaVocab = []
+  }
   return (
     <html lang={locale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
         <LocaleProvider initialLocale={locale}>
-          <SiteHeader />
-          {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
-              então mantém um único landmark main por documento. */}
-          <div className="flex flex-1 flex-col">{children}</div>
-          <SiteFooter initialTheme={initialTheme} />
+          <CozinhaVocabProvider value={cozinhaVocab}>
+            <SiteHeader />
+            {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
+                então mantém um único landmark main por documento. */}
+            <div className="flex flex-1 flex-col">{children}</div>
+            <SiteFooter initialTheme={initialTheme} />
+          </CozinhaVocabProvider>
         </LocaleProvider>
       </body>
     </html>

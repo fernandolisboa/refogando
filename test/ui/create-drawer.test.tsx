@@ -39,6 +39,7 @@ vi.mock('@/lib/auth-client', () => ({
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -76,10 +77,12 @@ function Harness(props: {
   const [open, setOpen] = useState(defaultOpen)
   return (
     <LocaleProvider initialLocale={locale}>
-      <button type="button" onClick={() => setOpen(true)}>
-        abrir-externo
-      </button>
-      <CreateDrawer open={open} onOpenChange={setOpen} {...seed} />
+      <WithCozinhaVocab>
+        <button type="button" onClick={() => setOpen(true)}>
+          abrir-externo
+        </button>
+        <CreateDrawer open={open} onOpenChange={setOpen} {...seed} />
+      </WithCozinhaVocab>
     </LocaleProvider>
   )
 }

@@ -9,8 +9,6 @@ import {
   COZINHA_SEED,
 } from '@/domain/vocabulary-term'
 import { COZINHAS } from '@/domain/vocabulary'
-import { ptBR } from '@/i18n/messages/pt-BR'
-import { enUS } from '@/i18n/messages/en-US'
 
 /**
  * Kernel da tabela `vocabulary_term` (issue #314, ADR-0025 Fatia A). Puro — sem DB.
@@ -76,17 +74,33 @@ describe('vocabulary-term: COZINHA_SEED (fonte única da migração/helper)', ()
   })
 
   /**
-   * Enquanto #314..#317 não colapsam a fonte, os rótulos vivem em DOIS lugares: a seed
-   * aqui e o `cozinhaLabel` do i18n. Sem este guard, um typo-fix num lado não propagaria
-   * pro outro e o #317 (rótulos vindos da tabela) embarcaria o valor velho. americana não
-   * tem entrada no enum/i18n (é nova), então fica de fora.
+   * #317 removeu o mapa `cozinhaLabel` do i18n — a TABELA (esta seed) virou a fonte única dos
+   * rótulos. Este guard deixa de comparar com o i18n (que não existe mais) e passa a fixar os
+   * rótulos esperados literalmente: um typo na seed (ex. apagar um acento) quebra aqui, sem
+   * depender de outra fonte. americana é nova (não estava no enum/i18n), então fica de fora.
    */
-  it('rótulos das 14 cozinhas atuais batem com cozinhaLabel do i18n (guard de drift)', () => {
+  it('rótulos das 14 cozinhas atuais são os esperados (guard contra typo na seed)', () => {
+    const esperado: Record<string, { ptBr: string; enUs: string }> = {
+      italiana: { ptBr: 'Italiana', enUs: 'Italian' },
+      japonesa: { ptBr: 'Japonesa', enUs: 'Japanese' },
+      brasileira: { ptBr: 'Brasileira', enUs: 'Brazilian' },
+      baiana: { ptBr: 'Baiana', enUs: 'Bahian' },
+      mineira: { ptBr: 'Mineira', enUs: 'Minas Gerais' },
+      mexicana: { ptBr: 'Mexicana', enUs: 'Mexican' },
+      chinesa: { ptBr: 'Chinesa', enUs: 'Chinese' },
+      indiana: { ptBr: 'Indiana', enUs: 'Indian' },
+      tailandesa: { ptBr: 'Tailandesa', enUs: 'Thai' },
+      francesa: { ptBr: 'Francesa', enUs: 'French' },
+      arabe: { ptBr: 'Árabe', enUs: 'Arabic' },
+      portuguesa: { ptBr: 'Portuguesa', enUs: 'Portuguese' },
+      mediterranea: { ptBr: 'Mediterrânea', enUs: 'Mediterranean' },
+      peruana: { ptBr: 'Peruana', enUs: 'Peruvian' },
+    }
     for (const t of COZINHA_SEED) {
       if (t.slug === 'americana') continue
-      const slug = t.slug as keyof typeof ptBR.cozinhaLabel
-      expect(t.labelPtBr).toBe(ptBR.cozinhaLabel[slug])
-      expect(t.labelEnUs).toBe(enUS.cozinhaLabel[slug])
+      expect(esperado[t.slug], `slug inesperado na seed: ${t.slug}`).toBeDefined()
+      expect(t.labelPtBr).toBe(esperado[t.slug].ptBr)
+      expect(t.labelEnUs).toBe(esperado[t.slug].enUs)
     }
   })
 })

@@ -25,6 +25,7 @@ import '@testing-library/jest-dom/vitest'
  */
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { CatalogCuration } from '@/components/admin/catalog-curation'
 
@@ -56,7 +57,9 @@ afterEach(() => {
 function renderForm() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <CatalogCuration />
+      <WithCozinhaVocab>
+        <CatalogCuration />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }

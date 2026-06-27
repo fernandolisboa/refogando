@@ -2,7 +2,7 @@
  * Catálogo de chrome em en-US (issue #4). Tipado como `Messages` (= typeof ptBR):
  * o compilador exige as MESMAS chaves do pt-BR; o teste de paridade T3 confirma em runtime.
  */
-import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
+import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
@@ -185,23 +185,8 @@ export const enUS: Messages = {
     copiaTitulo: 'Making a copy',
     copiaAviso: 'You’re editing a recipe that isn’t yours — we’ll make a copy for you.',
   },
-  // Rótulo amigável por valor do enum COZINHAS (#56), traduzido por locale.
-  cozinhaLabel: {
-    italiana: 'Italian',
-    japonesa: 'Japanese',
-    brasileira: 'Brazilian',
-    baiana: 'Bahian',
-    mineira: 'Minas Gerais',
-    mexicana: 'Mexican',
-    chinesa: 'Chinese',
-    indiana: 'Indian',
-    tailandesa: 'Thai',
-    francesa: 'French',
-    arabe: 'Arabic',
-    portuguesa: 'Portuguese',
-    mediterranea: 'Mediterranean',
-    peruana: 'Peruvian',
-  } satisfies Record<Cozinha, string>,
+  // #317 (ADR-0025): `cozinhaLabel` saiu do i18n — os rótulos de cozinha agora vêm da tabela
+  // `vocabulary_term` (leitor #315), resolvidos por `domain/cozinha-label.ts`.
   // Rótulo amigável por valor do enum CATEGORIAS (#56), traduzido por locale.
   categoriaLabel: {
     entrada: 'Starter',

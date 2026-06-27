@@ -48,6 +48,7 @@ vi.mock('@/lib/auth-client', () => ({
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -68,7 +69,9 @@ function authed(): SessionState {
 function renderConversation(locale: Locale = 'pt-BR', resumeSessionId?: string) {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <ConversaFocusedView resumeSessionId={resumeSessionId} />
+      <WithCozinhaVocab>
+        <ConversaFocusedView resumeSessionId={resumeSessionId} />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }

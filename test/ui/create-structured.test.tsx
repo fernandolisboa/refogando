@@ -37,6 +37,7 @@ vi.mock('@/lib/auth-client', () => ({
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -57,7 +58,9 @@ function authed(): SessionState {
 function renderCreate(locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <CreateStructuredExperience />
+      <WithCozinhaVocab>
+        <CreateStructuredExperience />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }
@@ -674,7 +677,9 @@ describe('CreateStructuredExperience — pré-preenchimento via ?q (#166)', () =
   function renderWithSeed(initialFreeText?: string, locale: Locale = 'pt-BR') {
     return render(
       <LocaleProvider initialLocale={locale}>
-        <CreateStructuredExperience initialFreeText={initialFreeText} />
+        <WithCozinhaVocab>
+          <CreateStructuredExperience initialFreeText={initialFreeText} />
+        </WithCozinhaVocab>
       </LocaleProvider>,
     )
   }

@@ -44,6 +44,8 @@ import { useConversationChat } from '@/hooks/use-conversation-chat'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { lastExchange } from './conversa-focused-view'
 import { RecipeDetailView } from './recipe-detail-view'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
+import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 
 export function CreateConversaExperience({
   resumeSessionId,
@@ -55,6 +57,7 @@ export function CreateConversaExperience({
   const { locale, messages } = useLocale()
   const m = messages.conversa
   const d = messages.criarDrawer
+  const cozinhaVocab = useCozinhaVocab() // #317: rótulo de cozinha do leitor (contexto ativo)
   const session = useSession()
 
   const {
@@ -294,7 +297,11 @@ export function CreateConversaExperience({
               )}
 
               {/* A Receita destilada como HERÓI — REUSO total. `<h1>{view.name}` é o ÚNICO `<h1>`. */}
-              <RecipeDetailView view={view} m={messages} />
+              <RecipeDetailView
+                view={view}
+                m={messages}
+                cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+              />
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}

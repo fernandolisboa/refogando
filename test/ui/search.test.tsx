@@ -52,6 +52,8 @@ function authed(): SessionState {
 }
 
 import { LocaleProvider } from '@/i18n/provider'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
 
@@ -70,7 +72,9 @@ const M = ptBR.busca
 function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience />
+      <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
+        <SearchExperience />
+      </CozinhaVocabProvider>
     </LocaleProvider>,
   )
 }
@@ -241,7 +245,7 @@ describe('SearchExperience (#56)', () => {
     renderSearch()
 
     // Marca o checkbox de Cozinha "Brasileira".
-    await user.click(screen.getByLabelText(ptBR.cozinhaLabel.brasileira))
+    await user.click(screen.getByLabelText('Brasileira'))
 
     await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
     const url = new URL(lastFetchUrl(fetchMock))

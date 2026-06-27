@@ -20,6 +20,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import { LocaleProvider, useLocale } from '@/i18n/provider'
+import { WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -66,7 +67,9 @@ function mockFetch(byMethod: (method: string) => FetchResult) {
 function renderForm(view: RecipeView, locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeEditForm view={view} />
+      <WithCozinhaVocab>
+        <RecipeEditForm view={view} />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }
@@ -84,8 +87,10 @@ function SwitchLocale({ to, label }: { to: Locale; label: string }) {
 function renderFormSwitchable(view: RecipeView, initialLocale: Locale, switchTo: Locale) {
   return render(
     <LocaleProvider initialLocale={initialLocale}>
-      <SwitchLocale to={switchTo} label="trocar-idioma" />
-      <RecipeEditForm view={view} />
+      <WithCozinhaVocab>
+        <SwitchLocale to={switchTo} label="trocar-idioma" />
+        <RecipeEditForm view={view} />
+      </WithCozinhaVocab>
     </LocaleProvider>,
   )
 }

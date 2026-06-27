@@ -50,6 +50,8 @@ function anon(): SessionState {
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { SearchExperience } from '@/components/recipe/search-experience'
 
 const M = ptBR.busca
@@ -57,7 +59,9 @@ const M = ptBR.busca
 function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience />
+      <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
+        <SearchExperience />
+      </CozinhaVocabProvider>
     </LocaleProvider>,
   )
 }
@@ -120,7 +124,7 @@ describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
     await user.click(within(disclosure()).getByText(M.filtros))
 
     // Marca uma Cozinha + uma Categoria = 2 facetas ativas.
-    await user.click(screen.getByLabelText(ptBR.cozinhaLabel.brasileira))
+    await user.click(screen.getByLabelText('Brasileira'))
     await user.click(screen.getByLabelText(ptBR.categoriaLabel.sobremesa))
 
     const esperado = M.filtrosContagem.replace('{count}', '2')
@@ -134,7 +138,7 @@ describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
 
     // Abre, marca uma faceta (dispara UMA busca, debounced).
     await user.click(within(disclosure()).getByText(M.filtros))
-    const chip = screen.getByLabelText(ptBR.cozinhaLabel.brasileira) as HTMLInputElement
+    const chip = screen.getByLabelText('Brasileira') as HTMLInputElement
     await user.click(chip)
     expect(chip).toBeChecked()
 
@@ -153,7 +157,7 @@ describe('SearchExperience — disclosure "+ filtros" (#160)', () => {
     expect(disclosure().open).toBe(true)
 
     // A seleção sobreviveu ao recolher/expandir (não foi zerada).
-    expect(screen.getByLabelText(ptBR.cozinhaLabel.brasileira)).toBeChecked()
+    expect(screen.getByLabelText('Brasileira')).toBeChecked()
     // O contador segue refletindo a faceta ativa.
     expect(
       within(disclosure()).getByText(M.filtrosContagem.replace('{count}', '1')),

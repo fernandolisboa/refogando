@@ -22,7 +22,7 @@
 import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
 import type { IngredientView, RecipeView } from '@/domain/recipe-read'
-import { isCategoria, isCozinha, isRestricao, isUnidade } from '@/domain/vocabulary'
+import { isCategoria, isRestricao, isUnidade } from '@/domain/vocabulary'
 import { formatDuracao } from '@/domain/tempo'
 import type { Messages } from '@/i18n/messages'
 import { ProvenanceBadge } from './provenance-badge'
@@ -81,10 +81,19 @@ function formatIngredient(item: IngredientView, m: Messages): string {
 export function RecipeDetailView({
   view,
   m,
+  cozinhaLabel = null,
   catalogDisclosure,
 }: {
   view: RecipeView
   m: Messages
+  /**
+   * #317 (ADR-0025): rótulo de cozinha JÁ resolvido pelo leitor data-driven (não mais por
+   * `m.cozinhaLabel`, que saiu do i18n). A página/preview resolve {slug→rótulo} no boundary
+   * (a página com escopo `display` p/ ainda renderizar uma cozinha depreciada; os previews de
+   * geração com o escopo `active` do contexto — receita recém-criada é necessariamente ativa)
+   * e passa o texto AQUI. `null` ⇒ faceta ausente (a linha some, "ausente ≠ vazio").
+   */
+  cozinhaLabel?: string | null
   /**
    * #237 (aviso de catálogo AI-assistido, SEO #187): TEXTO já resolvido do aviso editorial — presente
    * SÓ quando a página decidiu mostrá-lo (`shouldShowCatalogDisclosure`: receita de CATÁLOGO E config
@@ -108,10 +117,9 @@ export function RecipeDetailView({
       ? m.busca.seloCatalogo
       : m.busca.seloComunidade
 
-  // Cozinha/categoria são `string | null` (tipo largo) mas as colunas são enums PG —
-  // estreita com os type-guards (sem `as`); `?? valor` é defensivo p/ valor fora do enum.
-  const cozinha = view.facets.cozinha
-  const cozinhaLabel = cozinha == null ? null : isCozinha(cozinha) ? m.cozinhaLabel[cozinha] : cozinha
+  // Categoria é `string | null` (tipo largo) mas a coluna é enum PG — estreita com o
+  // type-guard (sem `as`); `?? valor` é defensivo p/ valor fora do enum. A cozinha (#317)
+  // NÃO é resolvida aqui: chega já localizada via prop `cozinhaLabel` (leitor data-driven).
   const categoria = view.facets.categoria
   const categoriaLabel =
     categoria == null ? null : isCategoria(categoria) ? m.categoriaLabel[categoria] : categoria
