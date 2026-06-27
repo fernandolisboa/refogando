@@ -792,7 +792,7 @@ export const enUS: Messages = {
     grupoPlataforma: 'Platform',
     grupoCuradoria: 'Curation',
     navAria: 'Console sections',
-    navConfig: 'Default model',
+    navConfig: 'AI',
     navPapeis: 'Roles',
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
@@ -825,9 +825,9 @@ export const enUS: Messages = {
     vocabErroSlugEmUso: 'A cuisine with that slug already exists.',
     vocabErroNaoEncontrado: 'Cuisine not found.',
     vocabErroInterno: 'Something went wrong. Try again.',
-    // #268: /admin/ai holds image generation + web discovery + embeddings → "AI & Discovery"
-    // (not just "Image generation"). The catalog disclosure moved out of here to Curation.
-    navAi: 'AI & Discovery',
+    // #268: the /admin/ai tab holds the SEARCH infra — web discovery + embeddings; generative AI
+    // (recipe model + image generation + caps) moved to the "AI" tab (/admin/config).
+    navAi: 'Discovery',
     // /admin/ai section (#134) — toggle AI image generation, model and per-role daily caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',

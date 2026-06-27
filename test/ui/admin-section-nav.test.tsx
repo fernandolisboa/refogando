@@ -39,7 +39,7 @@ function renderNav(role: 'admin' | 'curador', path = '/admin/config') {
 }
 
 describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () => {
-  it('admin vê as 7 seções (Governança: Config, IA & Descoberta, Cozinhas, Papéis + Curadoria)', () => {
+  it('admin vê as 7 seções (Governança: IA, Descoberta, Cozinhas, Papéis + Curadoria)', () => {
     const nav = renderNav('admin')
     for (const label of [
       A.navConfig,
@@ -54,7 +54,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     }
   })
 
-  it('curador NÃO vê a Governança (Config, IA & Descoberta, Cozinhas, Papéis); vê só a Curadoria', () => {
+  it('curador NÃO vê a Governança (IA, Descoberta, Cozinhas, Papéis); vê só a Curadoria', () => {
     const nav = renderNav('curador', '/admin/moderation')
     expect(within(nav).queryByRole('link', { name: A.navConfig })).toBeNull()
     expect(within(nav).queryByRole('link', { name: A.navAi })).toBeNull() // #134: admin-only
