@@ -145,6 +145,20 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     expect(replaceCalls.at(-1) ?? '').not.toContain('q=bolo')
   })
 
+  it('× DEVOLVE o foco ao input ao limpar (não dropa pro <body>; WCAG 2.4.3)', async () => {
+    stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
+    renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'bolo')
+    // O × (HomeSearchBar) só aparece com termo; clicar limpa E devolve o foco ao input — senão o
+    // botão se desmonta e o foco cairia no <body> (perdendo o lugar do teclado/leitor de tela).
+    await user.click(screen.getByRole('button', { name: ptBR.busca.limparBusca }))
+    expect(box).toHaveValue('')
+    expect(box).toHaveFocus()
+  })
+
   it('feed seeded VAZIO em repouso: mostra o estado neutro do feed (sem erro)', async () => {
     renderHome({ initialFeed: [], initialNextCursor: null })
     expect(screen.getByText(MF.vazio)).toBeInTheDocument()

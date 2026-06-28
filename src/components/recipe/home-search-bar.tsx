@@ -10,6 +10,7 @@
  * debounce, como o `onSubmit` de antes). a11y: `role=search`, `<label htmlFor>` sr-only PRÓPRIO
  * (`buscarLabel`, desacoplado do `<h1>`/título de SEO), e o × com texto sr-only (`limparBusca`).
  */
+import { useRef } from 'react'
 import { Search, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { cn } from '@/lib/utils'
@@ -20,23 +21,32 @@ export function HomeSearchBar() {
   const m = messages.busca
   const { q, setQ, submit } = useHomeSearch()
   const hasTerm = q.trim() !== ''
+  // #5: ref pro input pra DEVOLVER o foco a ele quando o × limpa o termo — senão o botão × se
+  // desmonta (hasTerm vira false) e o foco cai pro <body> (WCAG 2.4.3; é o UX nativo do search).
+  const inputRef = useRef<HTMLInputElement>(null)
   return (
     <form
       role="search"
       className={cn(
         'flex items-center gap-2.5 rounded-full border bg-surface px-4 py-2.5 transition-colors focus-within:border-brand',
-        hasTerm ? 'border-brand' : 'border-border',
+        hasTerm ? 'border-brand/55' : 'border-border',
       )}
       onSubmit={(e) => {
         e.preventDefault()
         submit()
       }}
     >
-      <Search className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+      {/* #5: lupa em páprica quando há termo (estados busca/vazio do mock), muted em repouso. */}
+      <Search
+        className={cn('size-[18px] shrink-0', hasTerm ? 'text-brand-ink' : 'text-muted')}
+        strokeWidth={1.75}
+        aria-hidden
+      />
       <label htmlFor="search-q" className="sr-only">
         {m.buscarLabel}
       </label>
       <input
+        ref={inputRef}
         id="search-q"
         type="search"
         value={q}
@@ -47,7 +57,10 @@ export function HomeSearchBar() {
       {hasTerm && (
         <button
           type="button"
-          onClick={() => setQ('')}
+          onClick={() => {
+            setQ('')
+            inputRef.current?.focus()
+          }}
           className="-mr-1 shrink-0 rounded-full p-1 text-muted transition-colors hover:text-fg"
         >
           <span className="sr-only">{m.limparBusca}</span>

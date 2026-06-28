@@ -730,7 +730,6 @@ export function SearchExperience({
               conviteTitulo: m.importarConviteTitulo,
               conviteTexto: m.importarConviteTexto,
               signInLabel: messages.nav.signIn,
-              daWebFonte: m.daWebFonte,
             }}
             // Sucesso (201): leva o usuário direto à receita importada (detalhe canônico). De lá,
             // "Minhas criações" a lista marcada como importada (#169). #231 (ADR-0020): a importada

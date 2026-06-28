@@ -43,7 +43,6 @@ const LABELS: ImportDialogLabels = {
   conviteTitulo: m.importarConviteTitulo,
   conviteTexto: m.importarConviteTexto,
   signInLabel: ptBR.nav.signIn,
-  daWebFonte: m.daWebFonte,
 }
 
 function renderDialog(over: Partial<Parameters<typeof ImportRecipeDialog>[0]> = {}) {

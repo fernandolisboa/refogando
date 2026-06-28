@@ -44,7 +44,6 @@ export type ImportDialogLabels = {
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
-  daWebFonte: string
 }
 
 type Status = 'idle' | 'importing' | 'error'
