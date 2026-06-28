@@ -46,10 +46,12 @@ export const RECOMMENDED_COOK_RECIPES_LIMIT = 3
 export const RECOMMENDED_COOKS_LIMIT = 8
 
 /**
- * Mínimo de candidatos para EXIBIR o trilho (AC "esconde quando candidatos < threshold"). Degrada
- * gracioso com pouca gente: abaixo disso o trilho some por inteiro. Reversível — knob de produto.
+ * Mínimo de candidatos para EXIBIR o trilho. `1` (pedido do dono, 2026-06-28): basta UM cozinheiro
+ * recomendado pra o trilho/3ª-coluna aparecer — sem piso de quantidade. Só o caso VAZIO (0) esconde (não
+ * faz sentido um trilho sem ninguém). Reversível — knob de produto (era 3; o degradar-gracioso-com-pouca-
+ * gente foi abrandado de propósito pra a 3ª coluna pintar cedo, inclusive pré-seed #238).
  */
-export const RECOMMENDED_COOKS_MIN = 3
+export const RECOMMENDED_COOKS_MIN = 1
 
 /**
  * Decide se o trilho aparece (gate de PRESENÇA, decisão de UI — o loader devolve a lista crua, sem

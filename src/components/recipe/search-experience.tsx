@@ -446,7 +446,7 @@ export function SearchExperience({
   // #278 (ADR-0024 emendado): o fetch dos "Cozinheiros em alta" é ELEVADO pra cá (era dentro do trilho) pra
   // o LAYOUT decidir NUM ÚNICO render se abre as 3 colunas das telas largas — sem coluna fantasma vazia no
   // caso anon/SSR/poucos-cozinheiros. `cooks` vem `[]` p/ Visitante/SSR (Modelo B), então `railVisible` só
-  // liga p/ logado, em REPOUSO (`!hasCriteria`) e com candidatos suficientes (`shouldShowRecommendedRail`).
+  // liga p/ logado, em REPOUSO (`!hasCriteria`) e com ≥1 cozinheiro (`shouldShowRecommendedRail`; só 0 esconde).
   // É a ÚNICA chave da largura larga (`xl:max-w-wide`) + da 3ª coluna abaixo — anon/busca ficam no layout
   // 2-col `reading` APROVADO (home indexável byte-idêntica).
   const { cooks: recommendedCooks } = useRecommendedCooks()
@@ -787,7 +787,7 @@ export function SearchExperience({
 
         {/* TRILHO "Cozinheiros em alta" (#278, ADR-0024 emendado) — 3ª coluna da grade. Item DIRETO da
             grade (irmão da coluna principal ⇒ FORA da live region, invariante #5). Renderiza SÓ quando
-            `railVisible` (logado + repouso + ≥MIN cozinheiros) — sem coluna fantasma vazia. `xl:col-start-3`
+            `railVisible` (logado + repouso + ≥1 cozinheiro) — sem coluna fantasma vazia. `xl:col-start-3`
             = coluna à DIREITA em telas largas; `lg:col-start-2 lg:row-start-2` = abaixo da coluna principal
             em laptops estreitos (1024–1279); mobile (col única): flui como ÚLTIMO item ⇒ no FIM do feed. */}
         {railVisible && (
