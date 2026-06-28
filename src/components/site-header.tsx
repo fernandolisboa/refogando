@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/sheet'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { HomeSearchBar } from '@/components/recipe/home-search-bar'
+import { useHomeSearch } from '@/components/recipe/home-search-context'
 import { cn } from '@/lib/utils'
 
 // O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
@@ -62,9 +63,14 @@ export function SiteHeader() {
   const rest = splitLocalePrefix(pathname ?? '/').rest
   const isActive = (href: string) =>
     href === '/' ? rest === '/' : rest === href || rest.startsWith(`${href}/`)
-  // #5: a linha de busca (HomeSearchBar) é a 2ª linha do header, mas SÓ na home (a Descoberta é a
-  // home, ADR-0020). Fora da home não há busca no header. `rest === '/'` espelha o `isActive('/')`.
+  // #5: a busca (HomeSearchBar) vive no header SÓ na home (a Descoberta é a home, ADR-0020). Fora da home
+  // não há busca no header. `rest === '/'` espelha o `isActive('/')`.
   const isHome = rest === '/'
+  // #278 (ADR-0024 emendado): `wide` = a home abriu as 3 colunas das telas largas (publicado pelo
+  // SearchExperience via HomeSearchProvider). Quando `true`, o header ALARGA junto (`xl:max-w-wide`) p/ a
+  // chrome (wordmark/Criar/Você) alinhar com as colunas do corpo — mesmas margens do mock. Anon/busca ⇒
+  // `false` ⇒ header na largura `page` (72rem) APROVADA. Fora da home, irrelevante (sem busca/3-col).
+  const { wide } = useHomeSearch()
 
   // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
   // fecha o painel ao navegar; no desktop o wrap é a identidade (link inline puro).
@@ -98,7 +104,15 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur">
-      <Container className="flex min-h-16 items-center gap-x-6 py-2">
+      {/* UMA linha que quebra (`flex-wrap`): em xl tudo cabe inline (wordmark · nav · busca · Criar ·
+          Você); abaixo de xl a busca (`w-full`) quebra pra 2ª linha. `xl:max-w-wide` SÓ quando a home abre
+          as 3 colunas (`wide`) — alinha a chrome com as colunas do corpo; senão fica em `page` (aprovado). */}
+      <Container
+        className={cn(
+          'flex min-h-16 flex-wrap items-center gap-x-6 gap-y-2 py-2 sm:gap-y-3',
+          isHome && wide && 'xl:max-w-wide',
+        )}
+      >
         <Link
           href="/"
           className="font-display text-2xl font-semibold tracking-tight text-brand-ink"
@@ -118,9 +132,15 @@ export function SiteHeader() {
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
         </nav>
         {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
-            espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). O idioma
-            (#162) e o ThemeToggle foram pro footer. */}
-        <div className="ml-auto hidden items-center gap-3 sm:flex">
+            espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). `ml-auto` empurra
+            à direita; em xl NA HOME a busca (`flex-1`) ocupa o meio, então o cluster larga o auto-margin
+            e fica DEPOIS da busca (`xl:order-3 xl:ml-0`). Fora da home, segue só `ml-auto`. */}
+        <div
+          className={cn(
+            'hidden items-center gap-3 sm:flex',
+            isHome ? 'ml-auto xl:order-3 xl:ml-0' : 'ml-auto',
+          )}
+        >
           {ctaButton}
           <AuthSlot />
         </div>
@@ -156,18 +176,19 @@ export function SiteHeader() {
             </div>
           </SheetContent>
         </Sheet>
-      </Container>
 
-      {/* #5 (protótipo final): LINHA 2 do header — a pílula de busca, SÓ na home, fundida à linha da
-          nav pela ÚNICA borda na base do `<header>`. Largura `reading` (52rem) p/ as bordas do pill
-          alinharem com a coluna de conteúdo (trilha+resultados) abaixo — o header é `page` (72rem), e
-          um pill 100% ali transbordaria a coluna. O termo vive no HomeSearchProvider (layout); aqui é
-          só a vista. Fora da home (`!isHome`) não há linha 2 ⇒ a borda fica sob a nav, como antes. */}
-      {isHome && (
-        <Container size="reading" className="pb-3">
-          <HomeSearchBar />
-        </Container>
-      )}
+        {/* Busca (HomeSearchBar) — UMA instância, DOM-LAST (preserva a ordem de foco APROVADA abaixo de
+            xl: wordmark→nav→Criar→Você→busca). SÓ na home (fora dela não há busca no header). Abaixo de
+            xl: `order-last w-full` ⇒ quebra pra 2ª linha; `max-w-reading mx-auto` ⇒ 52rem centrada,
+            alinhando com a coluna do corpo (== aprovado). Em xl (≥1280): `xl:order-2 xl:flex-1
+            xl:max-w-[35rem]` ⇒ INLINE e centrada entre a nav e o cluster (= mock). O termo vive no
+            HomeSearchProvider; aqui é só a vista. */}
+        {isHome && (
+          <div className="order-last mx-auto w-full max-w-reading pb-1 xl:order-2 xl:w-auto xl:max-w-[35rem] xl:flex-1 xl:pb-0">
+            <HomeSearchBar />
+          </div>
+        )}
+      </Container>
 
       {/* Drawer "Nova receita" (#191) — controlado pelo header; aberto pelo botão "Criar" do nav
           (desktop e mobile). Renderiza num Portal (Radix Dialog), por cima da chrome. */}

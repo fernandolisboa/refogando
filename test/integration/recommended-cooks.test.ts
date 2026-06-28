@@ -5,7 +5,15 @@ import { recipe, users } from '@/db/schema'
 import { loadRecommendedCooks } from '@/server/user/recommended-cooks'
 import { follow } from '@/server/user/follow'
 import { seedUser } from '../helpers/users'
-import { seedRecipe, seedVote, seedFavorite, seedRemovedFromPool } from '../helpers/recipes'
+import {
+  seedRecipe,
+  seedVote,
+  seedFavorite,
+  seedRemovedFromPool,
+  seedTranslation,
+  seedRecipeImage,
+} from '../helpers/recipes'
+import { RECOMMENDED_COOK_RECIPES_LIMIT } from '@/domain/recommended-cooks-read'
 
 /**
  * Loader do trilho "Cozinheiros pra seguir" (#278, ADR-0024) contra Postgres real. Cobre o RANKING por
@@ -42,6 +50,40 @@ async function seedVoters(n: number): Promise<string[]> {
 
 async function setCreatedAt(recipeId: string, iso: string): Promise<void> {
   await getDb().update(recipe).set({ createdAt: new Date(iso) }).where(eq(recipe.id, recipeId))
+}
+
+/**
+ * Semeia uma receita pública elegível COM título (tradução original confiável) + opcionalmente recência e
+ * imagem. Usado pelos testes do PREVIEW de receitas no cartão (ADR-0024 emendado): o trilho só mostra
+ * receitas com título exibível, então as do `seedCook` (sem tradução) NÃO entram no preview.
+ */
+async function seedTitledRecipe(opts: {
+  ownerId: string
+  titulo: string
+  locale?: string
+  createdAt?: string
+  image?: 'ai_generated' | 'user_photo' | 'moderated'
+  curatorId?: string
+}): Promise<string> {
+  const locale = opts.locale ?? 'pt-BR'
+  const recipeId = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: locale,
+    visibility: 'public',
+    ownerId: opts.ownerId,
+  })
+  await seedTranslation({ recipeId, locale, titulo: opts.titulo, provenance: 'escrita_por_pessoa' })
+  if (opts.createdAt) await setCreatedAt(recipeId, opts.createdAt)
+  if (opts.image === 'moderated') {
+    await seedRecipeImage({
+      recipeId,
+      provenance: 'ai_generated',
+      moderated: { curatorId: opts.curatorId! },
+    })
+  } else if (opts.image) {
+    await seedRecipeImage({ recipeId, provenance: opts.image })
+  }
+  return recipeId
 }
 
 describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
@@ -138,12 +180,77 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     expect(cooks.length).toBe(3)
   })
 
-  it('DTO = allowlist exata { name, handle, image, recipeCount } (sem id/email/role)', async () => {
+  it('DTO = allowlist exata { name, handle, image, recipeCount, recipes } (sem id/email/role)', async () => {
     await seedCook({ email: 'dto@c.test', handle: 'dto-cook', name: 'DTO Cook' })
     const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks).toHaveLength(1)
-    expect(Object.keys(cooks[0]).sort()).toEqual(['handle', 'image', 'name', 'recipeCount'])
-    expect(cooks[0]).toEqual({ name: 'DTO Cook', handle: 'dto-cook', image: null, recipeCount: 1 })
+    expect(Object.keys(cooks[0]).sort()).toEqual([
+      'handle',
+      'image',
+      'name',
+      'recipeCount',
+      'recipes',
+    ])
+    // `seedCook` semeia 1 receita SEM tradução ⇒ sem título exibível ⇒ preview vazio (recipeCount segue 1).
+    expect(cooks[0]).toEqual({
+      name: 'DTO Cook',
+      handle: 'dto-cook',
+      image: null,
+      recipeCount: 1,
+      recipes: [],
+    })
+  })
+})
+
+describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no cartão', () => {
+  it('traz ≤ N receitas mais NOVAS primeiro (cap + ordem), título localizado; recipeCount = total', async () => {
+    const cookId = await seedUser({ email: 'rico@c.test', handle: 'rico', name: 'Rico' })
+    // 4 elegíveis com datas crescentes; o preview = as 3 mais novas, newest-first.
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Mais antiga', createdAt: '2020-01-01T00:00:00.000Z' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Receita B', createdAt: '2021-01-01T00:00:00.000Z' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Receita C', createdAt: '2022-01-01T00:00:00.000Z' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Mais nova', createdAt: '2023-01-01T00:00:00.000Z' })
+
+    const cooks = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'pt-BR' })
+    const rico = cooks.find((c) => c.handle === 'rico')!
+    expect(rico.recipeCount).toBe(4) // contagem TOTAL elegível (≠ preview capado)
+    expect(rico.recipes).toHaveLength(RECOMMENDED_COOK_RECIPES_LIMIT) // capado em 3
+    expect(rico.recipes.map((r) => r.displayedTitle)).toEqual(['Mais nova', 'Receita C', 'Receita B'])
+  })
+
+  it('allowlist: cada receita do preview só carrega {recipeId, displayedTitle(, slug, imageUrl, imageAiGenerated)} — sem owner_id/email/role', async () => {
+    const cookId = await seedUser({ email: 'all@c.test', handle: 'allow', name: 'Allow' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Única' })
+    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const r = cooks.find((c) => c.handle === 'allow')!.recipes[0]
+    const allowed = ['recipeId', 'displayedTitle', 'slug', 'imageUrl', 'imageAiGenerated']
+    for (const k of Object.keys(r)) expect(allowed).toContain(k)
+    expect(r.recipeId).toBeTruthy()
+    expect(r.displayedTitle).toBe('Única')
+  })
+
+  it('imagem ai_generated ⇒ imageAiGenerated + imageUrl; imagem MODERADA some (sem imageUrl)', async () => {
+    const curatorId = await seedUser({ email: 'cur2@c.test', handle: 'cur2', role: 'curador' })
+    const cookId = await seedUser({ email: 'img@c.test', handle: 'imgs', name: 'Imgs' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Com IA', createdAt: '2023-01-01T00:00:00.000Z', image: 'ai_generated' })
+    await seedTitledRecipe({ ownerId: cookId, titulo: 'Moderada', createdAt: '2022-01-01T00:00:00.000Z', image: 'moderated', curatorId })
+
+    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const recipes = cooks.find((c) => c.handle === 'imgs')!.recipes
+    const comIa = recipes.find((r) => r.displayedTitle === 'Com IA')!
+    expect(comIa.imageAiGenerated).toBe(true)
+    expect(comIa.imageUrl).toBeTruthy()
+    const moderada = recipes.find((r) => r.displayedTitle === 'Moderada')!
+    expect(moderada.imageUrl).toBeUndefined() // imagem moderada não vaza (gate fora do elegível)
+    expect(moderada.imageAiGenerated).toBeUndefined()
+  })
+
+  it('cozinheiro com receita SEM tradução ⇒ preview vazio (mas ainda candidato por recipeCount)', async () => {
+    await seedCook({ email: 'semt@c.test', handle: 'sem-titulo' })
+    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const c = cooks.find((c) => c.handle === 'sem-titulo')!
+    expect(c.recipeCount).toBe(1)
+    expect(c.recipes).toEqual([])
   })
 })
 

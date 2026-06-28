@@ -8,7 +8,7 @@
  *
  * Allowlist (Modelo B / gate de DADOS, #269): o DTO NÃO carrega `id`/`email`/`role` — só o que o cartão
  * mostra (nome, @handle, avatar, contagem de receitas públicas elegíveis). Espelha `ProfileFollowUser`
- * (forma pública mínima) + `recipeCount`.
+ * (forma pública mínima) + `recipeCount` + um preview BOUNDED (≤3) das receitas do Cozinheiro.
  */
 export type RecommendedCook = {
   name: string
@@ -16,7 +16,31 @@ export type RecommendedCook = {
   image: string | null
   /** Quantas receitas PÚBLICAS ELEGÍVEIS o Cozinheiro tem (nunca conta privada/playful/moderada). */
   recipeCount: number
+  /**
+   * Preview das receitas PÚBLICAS ELEGÍVEIS mais NOVAS do Cozinheiro (≤ `RECOMMENDED_COOK_RECIPES_LIMIT`),
+   * pro cartão rico do protótipo de telas largas (ADR-0024 emendado). DISTINTO de `recipeCount` (que é a
+   * contagem TOTAL elegível). Allowlist: cada receita carrega SÓ o que o cartão mostra — NUNCA o
+   * `owner_id`/`email`/`role` do dono nem o `image_id`/`recipe_translation.id` interno.
+   */
+  recipes: RecommendedCookRecipe[]
 }
+
+/**
+ * Uma receita no preview do cartão de Cozinheiro recomendado (ADR-0024 emendado). Allowlist MÍNIMA: só
+ * o necessário pra o thumbnail + título + link canônico. `displayedTitle` é resolvido em TS (mesma regra
+ * do feed/busca, via `projectResult`) — NUNCA computado no SQL. `slug`/`imageUrl` ausentes ("ausente ≠
+ * vazio") quando não há slug no locale pedido / não há imagem.
+ */
+export type RecommendedCookRecipe = {
+  recipeId: string
+  displayedTitle: string
+  slug?: string
+  imageUrl?: string
+  imageAiGenerated?: boolean
+}
+
+/** Máximo de receitas no preview de CADA cartão (≤ por cozinheiro). Reversível — knob de produto. */
+export const RECOMMENDED_COOK_RECIPES_LIMIT = 3
 
 /** Máximo de cartões no trilho (top-N por popularidade). Reversível — knob de produto. */
 export const RECOMMENDED_COOKS_LIMIT = 8

@@ -1,9 +1,10 @@
 'use client'
 /**
- * Pílula de busca da home (#5 — protótipo "feed editorial"): lupa + input + × pra limpar. É a
- * LINHA 2 do `SiteHeader` (renderizada SÓ na home), fundida à linha da wordmark/nav por uma única
- * borda na base do header. O termo vive no `HomeSearchProvider` (elevado), então este componente é
- * só a vista — `SearchExperience` consome o mesmo `q` e faz o fetch.
+ * Pílula de busca da home (#5 — protótipo "feed editorial"): lupa + input + × pra limpar. Vive DENTRO do
+ * `SiteHeader` (renderizada SÓ na home): INLINE entre a nav e o cluster em telas largas (≥1280px), ou
+ * quebrada pra a 2ª linha do header abaixo disso. O termo vive no `HomeSearchProvider` (elevado), então
+ * este componente é só a vista — `SearchExperience` consome o mesmo `q` e faz o fetch. A posição/largura
+ * responsiva é do slot no `SiteHeader`; aqui é só o pill em si (`w-full` dentro do slot).
  *
  * Paridade com o mock: borda NEUTRA em repouso, TERRACOTA quando há termo (`q.trim() !== ''`, a mesma
  * condição que mostra o ×), mais `focus-within` como afago extra. Enter dispara `submit()` (bypassa o

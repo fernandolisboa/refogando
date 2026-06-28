@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import type { RecommendedCook } from '@/domain/recommended-cooks-read'
 
 /**
- * Trilho "Cozinheiros pra seguir" (#278) — ilha cliente. Mocka `useSession` + `next/link` + `fetch`.
- * Cobre Modelo B (null no SSR/anon/pendente — nada renderizado), o gate de limiar (esconde < MIN),
- * a renderização dos cartões e o clique Seguir (POST otimista).
+ * Trilho "Cozinheiros em alta" (#278, ADR-0024 emendado) — agora APRESENTACIONAL (recebe `cooks` por
+ * prop; o fetch + o gate de sessão vivem no hook `useRecommendedCooks`, testado à parte). Cobre o cartão
+ * rico: cabeçalho (nome, `@handle · N receitas`, Seguir, link de perfil), as receitas do preview (título
+ * serif + selo de IA acessível) e o clique Seguir (POST otimista, via `useFollowToggle`).
  */
 
 vi.mock('next/link', () => ({
@@ -19,32 +20,35 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-type SessionState = { data: unknown; error: unknown; isPending: boolean }
-let sessionState: SessionState
-vi.mock('@/lib/auth-client', () => ({ useSession: () => sessionState }))
+// `useFollowToggle` (dentro do CookFollowButton) usa `useSession` p/ o POST otimista — mock logado.
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => ({ data: { user: { id: 'u-1' } }, error: null, isPending: false }),
+}))
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { CooksToFollowRail } from '@/components/recipe/cooks-to-follow-rail'
 
 const M = ptBR.cozinheirosSugeridos
+const AI = ptBR.busca.imagemSeloIa
 
-const authed: SessionState = { data: { user: { id: 'u-1' } }, error: null, isPending: false }
-const anon: SessionState = { data: null, error: null, isPending: false }
-const pending: SessionState = { data: null, error: null, isPending: true }
-
-function cook(handle: string, name: string, recipeCount = 2): RecommendedCook {
-  return { handle, name, image: null, recipeCount }
+function cook(
+  handle: string,
+  name: string,
+  opts: { recipeCount?: number; recipes?: RecommendedCook['recipes'] } = {},
+): RecommendedCook {
+  return {
+    handle,
+    name,
+    image: null,
+    recipeCount: opts.recipeCount ?? 2,
+    recipes: opts.recipes ?? [],
+  }
 }
 
-/** Mocka fetch: /api/discovery/cooks → { cooks }; /api/u/.../follow → estado de seguir. */
-function mockFetch(cooks: RecommendedCook[]) {
-  const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-    const url = String(input)
-    if (url.includes('/api/discovery/cooks')) {
-      return { ok: true, status: 200, json: async () => ({ cooks }) } as Response
-    }
-    // toggle de seguir
+/** Mock do fetch SÓ pro toggle de seguir (a rota /api/u/.../follow). O trilho não busca mais (é prop). */
+function mockFollowFetch() {
+  const impl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     return {
       ok: true,
       status: 200,
@@ -55,11 +59,10 @@ function mockFetch(cooks: RecommendedCook[]) {
   return impl
 }
 
-function renderRail(session: SessionState) {
-  sessionState = session
+function renderRail(cooks: RecommendedCook[]) {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <CooksToFollowRail />
+      <CooksToFollowRail cooks={cooks} />
     </LocaleProvider>,
   )
 }
@@ -69,53 +72,59 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('CooksToFollowRail (#278)', () => {
-  it('Visitante: renderiza NADA e NÃO busca (Modelo B — home anon byte-idêntica)', () => {
-    const fetchMock = mockFetch([cook('a', 'A'), cook('b', 'B'), cook('c', 'C')])
-    const { container } = renderRail(anon)
+describe('CooksToFollowRail (#278) — cartão rico (apresentacional)', () => {
+  it('cooks vazio: renderiza NADA (defesa — o pai já gateia)', () => {
+    const { container } = renderRail([])
     expect(screen.queryByText(M.titulo)).toBeNull()
     expect(container).toBeEmptyDOMElement()
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('sessão pendente: renderiza NADA e NÃO busca', () => {
-    const fetchMock = mockFetch([cook('a', 'A'), cook('b', 'B'), cook('c', 'C')])
-    const { container } = renderRail(pending)
-    expect(container).toBeEmptyDOMElement()
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('logado, candidatos < MIN: trilho OCULTO (esconde abaixo do limiar)', async () => {
-    const fetchMock = mockFetch([cook('a', 'A'), cook('b', 'B')]) // 2 < MIN(3)
-    renderRail(authed)
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 0))
-    expect(screen.queryByText(M.titulo)).toBeNull()
-  })
-
-  it('logado, candidatos >= MIN: mostra o trilho com cartões (nome, @handle, contagem)', async () => {
-    mockFetch([cook('ana', 'Ana', 1), cook('beto', 'Beto', 2), cook('caio', 'Caio', 5)])
-    renderRail(authed)
-    expect(await screen.findByText(M.titulo)).toBeInTheDocument()
-    expect(screen.getByText('Ana')).toBeInTheDocument()
-    expect(screen.getByText('@beto')).toBeInTheDocument()
-    // singular vs plural da contagem
+  it('mostra o título da seção + cartões (nome, @handle · N receitas, Seguir, link de perfil)', () => {
+    mockFollowFetch()
+    renderRail([
+      cook('ritacozinha', 'Rita Souza', { recipeCount: 1 }),
+      cook('betonacozinha', 'Beto Lima', { recipeCount: 5 }),
+      cook('anaprado', 'Ana Prado', { recipeCount: 2 }),
+    ])
+    expect(screen.getByText(M.titulo)).toBeInTheDocument()
+    expect(screen.getByText('Rita Souza')).toBeInTheDocument()
+    expect(screen.getByText('@betonacozinha')).toBeInTheDocument()
+    // `@handle · N receitas` numa única linha, mas a contagem segue queryável (span próprio).
     expect(screen.getByText(M.receitaContagem.replace('{n}', '1'))).toBeInTheDocument()
     expect(screen.getByText(M.receitasContagem.replace('{n}', '5'))).toBeInTheDocument()
     // um botão Seguir por cartão
     expect(screen.getAllByRole('button', { name: M.seguir })).toHaveLength(3)
     // link pro perfil público
-    expect(screen.getByRole('link', { name: /Ana/ })).toHaveAttribute('href', '/u/ana')
+    expect(screen.getByRole('link', { name: /Rita Souza/ })).toHaveAttribute('href', '/u/ritacozinha')
+  })
+
+  it('renderiza as receitas do preview (título serif) + selo de IA ACESSÍVEL (aiLabel sr-only)', () => {
+    mockFollowFetch()
+    renderRail([
+      cook('rita', 'Rita', {
+        recipeCount: 2,
+        recipes: [
+          { recipeId: 'r1', displayedTitle: 'Strogonoff de frango', imageAiGenerated: true },
+          { recipeId: 'r2', displayedTitle: 'Frango xadrez caseiro' },
+        ],
+      }),
+      cook('beto', 'Beto'),
+      cook('ana', 'Ana'),
+    ])
+    expect(screen.getByText('Strogonoff de frango')).toBeInTheDocument()
+    expect(screen.getByText('Frango xadrez caseiro')).toBeInTheDocument()
+    // o selo de IA da receita gerada traz o rótulo localizado p/ leitor de tela (disclosure de IA).
+    expect(screen.getByText(AI)).toBeInTheDocument()
   })
 
   it('clicar Seguir: POST e flip para "Seguindo" (otimista, sem GET por item)', async () => {
-    const fetchMock = mockFetch([cook('ana', 'Ana'), cook('beto', 'Beto'), cook('caio', 'Caio')])
+    const fetchMock = mockFollowFetch()
     const user = userEvent.setup()
-    renderRail(authed)
+    renderRail([cook('ana', 'Ana'), cook('beto', 'Beto'), cook('caio', 'Caio')])
     const botoes = await screen.findAllByRole('button', { name: M.seguir })
     await user.click(botoes[0])
     expect(await screen.findByRole('button', { name: M.seguindo })).toBeInTheDocument()
-    // nenhum GET de estado por item: só o GET do trilho + o POST do clique.
+    // só o POST do clique (nenhum GET de estado por item).
     const followCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/u/'))
     expect(followCalls).toHaveLength(1)
     expect((followCalls[0][1] as RequestInit | undefined)?.method).toBe('POST')

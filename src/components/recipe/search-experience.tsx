@@ -37,6 +37,8 @@ import { SearchSection } from './search-section'
 import { SortToggle } from './sort-toggle'
 import { DiscoveryFeed } from './discovery-feed'
 import { CooksToFollowRail } from './cooks-to-follow-rail'
+import { useRecommendedCooks } from './use-recommended-cooks'
+import { shouldShowRecommendedRail } from '@/domain/recommended-cooks-read'
 import { CookSearchCluster } from './cook-search-cluster'
 import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
 import type { BadgeLabels } from './recipe-result-item'
@@ -96,7 +98,7 @@ export function SearchExperience({
   // o `q` sobe; todo o resto do estado fica aqui. `registerSubmit` deixa o Enter no pill disparar o
   // `doSearch` sem esperar o debounce (como o `onSubmit` da pílula de antes). Sem provider montado (a
   // Busca legada fora da home, ou testes do header), o default INERTE do contexto evita explodir.
-  const { q, setQ, registerSubmit } = useHomeSearch()
+  const { q, setQ, registerSubmit, setWide } = useHomeSearch()
   const [cozinha, setCozinha] = useState<string[]>([])
   const [categoria, setCategoria] = useState<string[]>([])
   const [restricao, setRestricao] = useState<string[]>([])
@@ -441,8 +443,29 @@ export function SearchExperience({
   // aparece (sem flash nem redundância). Espelha byte-a-byte o `localCount` de `doSearch`.
   const localCount = data ? data.minhas.length + data.catalogo.length + data.comunidade.length : 0
 
+  // #278 (ADR-0024 emendado): o fetch dos "Cozinheiros em alta" é ELEVADO pra cá (era dentro do trilho) pra
+  // o LAYOUT decidir NUM ÚNICO render se abre as 3 colunas das telas largas — sem coluna fantasma vazia no
+  // caso anon/SSR/poucos-cozinheiros. `cooks` vem `[]` p/ Visitante/SSR (Modelo B), então `railVisible` só
+  // liga p/ logado, em REPOUSO (`!hasCriteria`) e com candidatos suficientes (`shouldShowRecommendedRail`).
+  // É a ÚNICA chave da largura larga (`xl:max-w-wide`) + da 3ª coluna abaixo — anon/busca ficam no layout
+  // 2-col `reading` APROVADO (home indexável byte-idêntica).
+  const { cooks: recommendedCooks } = useRecommendedCooks()
+  const railVisible = home && !hasCriteria && shouldShowRecommendedRail(recommendedCooks.length)
+
+  // Publica `railVisible` no header (via HomeSearchProvider) pra ele ALARGAR junto (`xl:max-w-wide`) e a
+  // chrome alinhar com as 3 colunas do corpo. Reseta a `false` ao desmontar (sair da home) ou quando o
+  // trilho some (busca / poucos cozinheiros) — o header volta à largura `page` APROVADA.
+  useEffect(() => {
+    setWide(railVisible)
+    return () => setWide(false)
+  }, [railVisible, setWide])
+
   return (
-    <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
+    <Container
+      as="main"
+      size="reading"
+      className={cn('flex flex-col gap-8 py-8 sm:py-12', railVisible && 'xl:max-w-wide')}
+    >
       {/* #5 (ADR-0020 "a Descoberta é a home"): o `<h1>` é a IDENTIDADE da página E a fonte do `<title>`
           de SEO (generateMetadata lê `busca.titulo`), renomeado "Descobrir receitas". Fica sr-only — o
           mock Direção C não tem título visível; o heading VISÍVEL da home indexável é o do feed de repouso
@@ -454,19 +477,22 @@ export function SearchExperience({
           o consome (debounce + Enter via `registerSubmit`). O `<h1>` sr-only acima segue sendo a
           identidade da página E a fonte do `<title>` de SEO (generateMetadata lê `busca.titulo`). */}
 
-      {/* #278 (ADR-0024): trilho "Cozinheiros pra seguir" — SÓ na home (`home`) e SÓ em REPOUSO
-          (`!hasCriteria`): é a companhia de descoberta do feed de repouso; ao buscar, a superfície é
-          tomada pelos resultados e o trilho some. É uma ILHA SÓ-LOGADA que renderiza `null` no SSR/anon
-          (Modelo B — a home indexável segue byte-idêntica) e FORA da live region abaixo (não é status
-          efêmero). Variante anônima/global = follow-up deferido. */}
-      {home && !hasCriteria && <CooksToFollowRail />}
-
-      {/* #5 (Direção C): grade [trilha de filtros | coluna principal]. Desktop (`lg:`): trilha à ESQUERDA
-          (col 1, permanente) + coluna principal à direita (col 2). Mobile: coluna única — barra de
-          ferramentas (com "Filtros") em cima, trilha como disclosure logo abaixo, depois os resultados.
-          Posicionamento EXPLÍCITO (`lg:col-start/row-start`) p/ a barra ficar DENTRO da coluna principal
-          (não atravessando a trilha), como no mock. */}
-      <div className="grid grid-cols-1 gap-x-7 gap-y-4 lg:grid-cols-[11.75rem_1fr]">
+      {/* #5 (Direção C / 3 colunas): grade [trilha de filtros | coluna principal | cozinheiros].
+          - `lg:` (1024–1279): 2 colunas [trilha | principal], centradas em `reading` (52rem) = APROVADO.
+          - `xl:` (≥1280, SÓ com `railVisible`): 3 colunas [trilha 200px | leitura ≤700px | cozinheiros
+            300px], `justify-center` no container largo (96rem); `2xl:` sobe pros números do 1440p
+            (240/780/340 + gap 72px). O 3º track só existe quando o trilho VAI pintar — sem coluna
+            fantasma no caso anon/poucos-cozinheiros (a home indexável fica 2-col `reading`).
+          - Mobile: coluna única — barra de ferramentas em cima, trilha como disclosure, depois os
+            resultados; o trilho de cozinheiros recua pro FIM do feed (ver o item da grade abaixo).
+          Posicionamento EXPLÍCITO (`lg:`/`xl:col-start/row-start`) p/ cada bloco cair na sua coluna. */}
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-x-7 gap-y-4 lg:grid-cols-[11.75rem_1fr]',
+          railVisible &&
+            'xl:grid-cols-[12.5rem_minmax(0,43.75rem)_18.75rem] xl:justify-center xl:gap-x-12 2xl:grid-cols-[15rem_minmax(0,48.75rem)_21.25rem] 2xl:gap-x-[4.5rem]',
+        )}
+      >
         {/* Barra de ferramentas: "Filtros" (SÓ mobile) + eco "Resultados para X" + ordenação. Col 2 /
             linha 1 (na coluna principal). No desktop a trilha é permanente ⇒ "Filtros" some (`lg:hidden`).
             Em REPOUSO (`!hasCriteria`) a barra não tem conteúdo de desktop (Filtros é mobile; sort/eco só
@@ -758,6 +784,17 @@ export function SearchExperience({
           )}
           </div>
         </div>
+
+        {/* TRILHO "Cozinheiros em alta" (#278, ADR-0024 emendado) — 3ª coluna da grade. Item DIRETO da
+            grade (irmão da coluna principal ⇒ FORA da live region, invariante #5). Renderiza SÓ quando
+            `railVisible` (logado + repouso + ≥MIN cozinheiros) — sem coluna fantasma vazia. `xl:col-start-3`
+            = coluna à DIREITA em telas largas; `lg:col-start-2 lg:row-start-2` = abaixo da coluna principal
+            em laptops estreitos (1024–1279); mobile (col única): flui como ÚLTIMO item ⇒ no FIM do feed. */}
+        {railVisible && (
+          <div className="lg:col-start-2 lg:row-start-2 xl:col-start-3 xl:row-start-1">
+            <CooksToFollowRail cooks={recommendedCooks} />
+          </div>
+        )}
       </div>
     </Container>
   )

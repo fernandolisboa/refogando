@@ -80,6 +80,11 @@
   --container-page: 72rem;
   /* Coluna editorial estreita (detalhe/criar/perfil) — gera max-w-reading. Paridade com o protótipo. */
   --container-reading: 52rem;
+  /* Descoberta em 3 colunas (telas largas, ≥1280px) — gera max-w-wide. A home em REPOUSO com o trilho
+     de Cozinheiros visível abre pra [filtros | leitura | cozinheiros]; folga p/ o conteúdo 1440p (~94rem)
+     + padding. Só a home/Descoberta a usa (e só quando o trilho renderiza). Paridade com o protótipo
+     "refogando-3-colunas-telas-maiores". */
+  --container-wide: 96rem;
 
   /* Motion — curto, gentil; respeitado pelo gate prefers-reduced-motion no base. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
