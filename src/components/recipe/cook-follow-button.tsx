@@ -11,6 +11,7 @@
  */
 import { Button } from '@/components/ui/button'
 import { useFollowToggle } from '@/hooks/use-follow-toggle'
+import { cn } from '@/lib/utils'
 
 export type CookFollowLabels = {
   seguir: string
@@ -34,7 +35,12 @@ export function CookFollowButton({
    * `default` (páprica cheio).
    */
   variant?: 'secondary' | 'outline'
-  /** Classes extras (ex.: `rounded-full` + tinta de páprica do mock). Merge via `cn` no Button. */
+  /**
+   * Classes extras p/ o estado NÃO-SEGUINDO (ex.: `rounded-full` + tinta de páprica do mock). Aplicadas
+   * SÓ quando `!isFollowing` — no estado SEGUINDO o botão é `default` (fundo páprica + texto branco), e
+   * deixar `text-brand-ink` vazar pintaria "Seguindo" de páprica sobre páprica (texto invisível). Merge
+   * via `cn` no Button.
+   */
   className?: string
 }) {
   const { isFollowing, busy, error, toggle } = useFollowToggle({ handle, initialFollowing })
@@ -49,7 +55,7 @@ export function CookFollowButton({
         disabled={busy}
         aria-pressed={isFollowing}
         aria-busy={busy}
-        className={className ? `disabled:opacity-70 ${className}` : 'disabled:opacity-70'}
+        className={cn('disabled:opacity-70', !isFollowing && className)}
       >
         {isFollowing ? labels.seguindo : labels.seguir}
       </Button>

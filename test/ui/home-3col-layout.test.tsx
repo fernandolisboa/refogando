@@ -92,6 +92,10 @@ describe('Home 3 colunas — gate do trilho + layout', () => {
     expect(main.className).toContain('xl:max-w-wide')
     const grid = container.querySelector('[class*="grid-cols-1"]')!
     expect(grid.className).toContain('xl:grid-cols-[12.5rem')
+    // O wrapper do trilho cai na 3ª coluna em xl (e abaixo da principal em lg) — pega um col-start errado.
+    const railWrapper = railH.closest('section')!.parentElement!
+    expect(railWrapper.className).toContain('xl:col-start-3')
+    expect(railWrapper.className).toContain('lg:col-start-2')
   })
 
   it('Visitante (Modelo B): SEM trilho, SEM busca de cooks, layout 2-col reading (sem coluna fantasma)', async () => {

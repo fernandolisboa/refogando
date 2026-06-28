@@ -12,7 +12,7 @@
  * e quem já segue) com `?locale=` (o preview de receitas traz títulos LOCALIZADOS, ADR-0024 emendado).
  * Falha (erro/401/rede) ⇒ mantém `cooks: []` (assistivo — o trilho some). Re-busca quando o idioma muda.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import type { RecommendedCook } from '@/domain/recommended-cooks-read'
@@ -24,6 +24,9 @@ export function useRecommendedCooks(): { cooks: RecommendedCook[] } {
   const authed = !session.isPending && !session.error && !!session.data
 
   const [cooks, setCooks] = useState<RecommendedCook[]>([])
+  // Locale do preview ATUALMENTE exibido (os títulos das receitas são localizados). Permite limpar quando o
+  // idioma muda, pra um refetch que FALHE não deixar títulos no idioma antigo.
+  const appliedLocaleRef = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -33,15 +36,23 @@ export function useRecommendedCooks(): { cooks: RecommendedCook[] } {
       // já está vazio — sem re-render espúrio no SSR/anon (a home indexável fica byte-idêntica).
       if (!authed) {
         setCooks((prev) => (prev.length === 0 ? prev : []))
+        appliedLocaleRef.current = null
         return
+      }
+      // O idioma MUDOU desde o último preview aplicado ⇒ os títulos visíveis são de OUTRO idioma. Limpa
+      // ANTES de re-buscar (reflow breve, ação rara) pra que um refetch que volte !ok NÃO deixe títulos no
+      // idioma errado pendurados. Same-locale re-run (ex.: flip de sessão) NÃO limpa — sem flicker.
+      if (appliedLocaleRef.current !== null && appliedLocaleRef.current !== locale) {
+        setCooks((prev) => (prev.length === 0 ? prev : []))
       }
       try {
         const url = new URL('/api/discovery/cooks', window.location.origin)
         url.searchParams.set('locale', locale) // títulos do preview LOCALIZADOS (ADR-0024 emendado)
         const res = await fetch(url, { signal: controller.signal }) // COM cookie de sessão
-        if (!res.ok) return // erro/401: trilho assistivo — silencia (fica oculto)
+        if (!res.ok) return // erro/401: trilho assistivo — silencia (mantém vazio após a limpeza acima)
         const body = (await res.json()) as { cooks: RecommendedCook[] }
         setCooks(body.cooks ?? [])
+        appliedLocaleRef.current = locale
       } catch {
         // abort (desmontagem / troca de idioma) ou rede caída: mantém oculto.
       }

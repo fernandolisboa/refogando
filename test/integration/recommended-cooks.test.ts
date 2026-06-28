@@ -252,6 +252,32 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
     expect(c.recipeCount).toBe(1)
     expect(c.recipes).toEqual([])
   })
+
+  it('locale ≠ original: título inclui a tradução do locale PEDIDO + slug vem do req_t (alias wiring)', async () => {
+    // Receita original pt-BR + tradução en-US COM slug. Pedindo en-US, o título exibido deve TRAZER a
+    // tradução en-US e o slug deve ser o do en-US (req_t.slug) — trava a fiação req_t/orig_t da 2ª query
+    // (um swap de alias, ou puxar slug do orig_t, daria slug NULL ou título sem o en-US).
+    const cookId = await seedUser({ email: 'xloc@c.test', handle: 'xloc', name: 'Xloc' })
+    const recipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      ownerId: cookId,
+    })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Bolo de fubá', provenance: 'escrita_por_pessoa' })
+    await seedTranslation({
+      recipeId,
+      locale: 'en-US',
+      titulo: 'Cornmeal cake',
+      provenance: 'escrita_por_pessoa',
+      slug: 'cornmeal-cake',
+    })
+
+    const cooks = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'en-US' })
+    const r = cooks.find((c) => c.handle === 'xloc')!.recipes[0]
+    expect(r.displayedTitle).toContain('Cornmeal cake') // a tradução do locale PEDIDO entrou no título
+    expect(r.slug).toBe('cornmeal-cake') // slug do req_t (en-US), não do orig_t (pt-BR, sem slug)
+  })
 })
 
 describe('loadRecommendedCooks (#278) — exclusões', () => {

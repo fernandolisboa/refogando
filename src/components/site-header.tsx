@@ -67,9 +67,12 @@ export function SiteHeader() {
   // não há busca no header. `rest === '/'` espelha o `isActive('/')`.
   const isHome = rest === '/'
   // #278 (ADR-0024 emendado): `wide` = a home abriu as 3 colunas das telas largas (publicado pelo
-  // SearchExperience via HomeSearchProvider). Quando `true`, o header ALARGA junto (`xl:max-w-wide`) p/ a
-  // chrome (wordmark/Criar/Você) alinhar com as colunas do corpo — mesmas margens do mock. Anon/busca ⇒
-  // `false` ⇒ header na largura `page` (72rem) APROVADA. Fora da home, irrelevante (sem busca/3-col).
+  // SearchExperience via HomeSearchProvider). Quando `true`, o header ALARGA junto (`xl:max-w-wide`) pro
+  // MESMO container (96rem) do corpo — a chrome (wordmark/Criar/Você) passa a partilhar a MOLDURA/margens
+  // externas do corpo (como no mock). As COLUNAS do corpo centram DENTRO desse container (`justify-center`),
+  // então a wordmark fica na borda e a trilha de filtros um tico pra dentro — igual ao protótipo, que
+  // também centra as colunas. Anon/busca ⇒ `false` ⇒ header na largura `page` (72rem) APROVADA. Fora da
+  // home, irrelevante (sem busca/3-col).
   const { wide } = useHomeSearch()
 
   // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
@@ -181,10 +184,15 @@ export function SiteHeader() {
             xl: wordmark→nav→Criar→Você→busca). SÓ na home (fora dela não há busca no header). Abaixo de
             xl: `order-last w-full` ⇒ quebra pra 2ª linha; `max-w-reading mx-auto` ⇒ 52rem centrada,
             alinhando com a coluna do corpo (== aprovado). Em xl (≥1280): `xl:order-2 xl:flex-1
-            xl:max-w-[35rem]` ⇒ INLINE e centrada entre a nav e o cluster (= mock). O termo vive no
-            HomeSearchProvider; aqui é só a vista. */}
+            xl:max-w-[35rem]` (e 620px em 2xl) ⇒ INLINE e centrada entre a nav e o cluster (= mock). O
+            termo vive no HomeSearchProvider; aqui é só a vista.
+            TRADEOFF a11y CONSCIENTE (WCAG 2.4.3): em xl o `order-2` põe a busca VISUALMENTE antes do
+            cluster (Criar/Você), mas o tab segue o DOM (DOM-last) ⇒ o teclado alcança Criar/Você ANTES da
+            busca. Aceito: a alternativa (DOM entre nav e cluster) só MOVERIA o descasamento pra 2ª linha
+            do layout APROVADO abaixo de xl (um único slot no DOM + `order` CSS não satisfaz as duas linhas
+            sem duplicar a instância). Otimizamos o caso comum/aprovado (<xl, sem descasamento). */}
         {isHome && (
-          <div className="order-last mx-auto w-full max-w-reading pb-1 xl:order-2 xl:w-auto xl:max-w-[35rem] xl:flex-1 xl:pb-0">
+          <div className="order-last mx-auto w-full max-w-reading pb-1 xl:order-2 xl:w-auto xl:max-w-[35rem] xl:flex-1 xl:pb-0 2xl:max-w-[38.75rem]">
             <HomeSearchBar />
           </div>
         )}

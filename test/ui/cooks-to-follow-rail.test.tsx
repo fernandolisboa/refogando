@@ -129,4 +129,17 @@ describe('CooksToFollowRail (#278) — cartão rico (apresentacional)', () => {
     expect(followCalls).toHaveLength(1)
     expect((followCalls[0][1] as RequestInit | undefined)?.method).toBe('POST')
   })
+
+  it('estado SEGUINDO não herda a tinta de páprica do "Seguir" (legível, não páprica-sobre-páprica)', async () => {
+    mockFollowFetch()
+    const user = userEvent.setup()
+    renderRail([cook('ana', 'Ana'), cook('beto', 'Beto'), cook('caio', 'Caio')])
+    const seguir = (await screen.findAllByRole('button', { name: M.seguir }))[0]
+    // "Seguir" (não-seguindo) = contornado com tinta de marca (páprica).
+    expect(seguir).toHaveClass('text-brand-ink')
+    await user.click(seguir)
+    // "Seguindo" (default, fundo páprica) NÃO pode carregar text-brand-ink — senão o texto fica invisível.
+    const seguindo = await screen.findByRole('button', { name: M.seguindo })
+    expect(seguindo).not.toHaveClass('text-brand-ink')
+  })
 })

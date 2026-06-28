@@ -14,6 +14,8 @@ import { initials } from '@/lib/initials'
 
 const SIZES = {
   sm: { box: 'h-8 w-8', text: 'text-xs' },
+  // 42px — paridade com o CreatorCard do trilho "Cozinheiros em alta" (entre o sm de 32px e o lg de 80px).
+  md: { box: 'h-[42px] w-[42px]', text: 'text-sm' },
   lg: { box: 'h-20 w-20', text: 'text-2xl' },
 } as const
 

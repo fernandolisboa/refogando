@@ -76,7 +76,9 @@ function CreatorCard({
           href={`/u/${cook.handle}`}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-fg hover:underline"
         >
-          <Avatar src={cook.image} name={cook.name} alt={cook.name} size="sm" />
+          {/* alt="" (decorativo): o nome do cozinheiro está ADJACENTE no MESMO link — evita o leitor de
+              tela ler o nome duas vezes (mesma lógica do thumbnail da receita abaixo). 42px = mock. */}
+          <Avatar src={cook.image} name={cook.name} alt="" size="md" />
           <span className="flex min-w-0 flex-col">
             <span className="line-clamp-1 font-display text-sm font-semibold">{cook.name}</span>
             {/* `@handle · N receitas` numa única linha (spans separados p/ os asserts de contagem). */}
