@@ -184,9 +184,10 @@ export const enUS: Messages = {
     // CTA leads to Discovery (`/`), where the recommended-cooks rail lives (#278).
     vazioCta: 'Discover cooks',
   },
-  // "Cooks to follow" rail (#278, ADR-0024) — recommended by global popularity on the home.
+  // "Top cooks" rail (#278, ADR-0024 amended) — recommended by global popularity on the home, as a
+  // right-hand column on wide screens, each card showing 1–3 of the cook's recipes.
   cozinheirosSugeridos: {
-    titulo: 'Cooks to follow',
+    titulo: 'Top cooks',
     receitaContagem: '{n} recipe',
     receitasContagem: '{n} recipes',
     seguir: 'Follow',

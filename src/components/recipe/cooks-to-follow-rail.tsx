@@ -1,99 +1,142 @@
 'use client'
 /**
- * Trilho "Cozinheiros pra seguir" (#278, ADR-0024) — ilha cliente na home-Descoberta (Explorar). Lista
- * Cozinheiros recomendados por POPULARIDADE GLOBAL (votos+favoritos de terceiros), com botão Seguir.
+ * Trilho "Cozinheiros em alta" (#278, ADR-0024 emendado) — coluna à direita da home-Descoberta em telas
+ * largas (≥1280px); abaixo disso, seção no FIM do feed. Lista Cozinheiros recomendados por POPULARIDADE
+ * GLOBAL, cada CARTÃO com avatar + nome + `@handle · N receitas` + botão Seguir + um preview (1–3) das
+ * receitas do Cozinheiro (thumbnail + selo de IA + título serif). Paridade com o protótipo
+ * "refogando-3-colunas-telas-maiores" (CreatorCard).
  *
- * SÓ-LOGADO + Modelo B: renderiza `null` no SSR e para Visitante/sessão-pendente (a home anon/indexável
- * fica byte-idêntica — `useSession` é client-only/pendente no SSR, nunca semeia viewer no servidor).
- * Busca `/api/discovery/cooks` (COM cookie de sessão — per-viewer; exclui o próprio e quem já segue).
- * Some por inteiro abaixo do limiar (`shouldShowRecommendedRail`) — degrada gracioso com pouca gente.
- *
- * Dados LOCALE-INDEPENDENTES (nome/@handle/avatar, sem tradução) ⇒ busca keyed só em `[authed]` (troca de
- * idioma só re-rotula via `useLocale`, não re-busca). Cartões num trilho horizontal (`overflow-x-auto`):
- * fila no desktop, carrossel por swipe no mobile (sem lib). FORA de qualquer live region (não é status
- * efêmero). `<h2>` sob o `<h1>` "Busca" da `SearchExperience`. Cada cartão semeia o botão como
- * "não-seguindo" (já-seguidos vêm excluídos ⇒ sem GET por item).
+ * APRESENTACIONAL: recebe `cooks` por prop. O fetch + o gate de sessão (Modelo B: nada p/ anon/SSR) +
+ * o piso de exibição (`shouldShowRecommendedRail`) vivem no PAI (`SearchExperience` via
+ * `useRecommendedCooks`), pra o LAYOUT decidir num único render se abre a 3ª coluna — sem coluna fantasma
+ * vazia no caso anon/poucos-cozinheiros. Renderiza `null` quando vazio (defesa; o pai já gateia). FORA de
+ * qualquer live region (não é status efêmero). `<h2>` sob o `<h1>` sr-only da `SearchExperience`.
  */
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Sparkles } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
-import { useSession } from '@/lib/auth-client'
 import { Avatar } from '@/components/profile/avatar'
 import { CookFollowButton } from './cook-follow-button'
-import {
-  shouldShowRecommendedRail,
-  type RecommendedCook,
-} from '@/domain/recommended-cooks-read'
+import type { RecommendedCook, RecommendedCookRecipe } from '@/domain/recommended-cooks-read'
 
-export function CooksToFollowRail() {
+export function CooksToFollowRail({ cooks }: { cooks: RecommendedCook[] }) {
   const { messages } = useLocale()
   const m = messages.cozinheirosSugeridos
-  const session = useSession()
-  // Só busca depois que a sessão resolveu E está logado (Visitante/pendente ⇒ nada, sem 401 inútil).
-  const authed = !session.isPending && !session.error && !!session.data
+  // Selo de IA das receitas embutidas reusa o rótulo da Busca (já localizado), p/ disclosure consistente.
+  const aiLabel = messages.busca.imagemSeloIa
 
-  const [cooks, setCooks] = useState<RecommendedCook[]>([])
-  const [loaded, setLoaded] = useState(false)
-
-  useEffect(() => {
-    if (!authed) return
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        const res = await fetch('/api/discovery/cooks', { signal: controller.signal }) // COM cookie
-        if (!res.ok) return // erro/401: trilho assistivo — silencia (fica oculto)
-        const body = (await res.json()) as { cooks: RecommendedCook[] }
-        setCooks(body.cooks ?? [])
-        setLoaded(true)
-      } catch {
-        // abort (desmontagem) ou rede caída: mantém oculto.
-      }
-    })()
-    return () => controller.abort()
-  }, [authed])
-
-  // Visitante/pendente/carregando ⇒ nada (SSR e anon byte-idênticos: Modelo B). Abaixo do limiar ⇒
-  // some por inteiro (degrada gracioso). Só pinta com lista suficiente.
-  if (!authed || !loaded) return null
-  if (!shouldShowRecommendedRail(cooks.length)) return null
+  // Defesa: o pai só renderiza o trilho quando vai pintar (≥ MIN), mas null-em-vazio evita uma seção órfã.
+  if (cooks.length === 0) return null
 
   return (
-    <section aria-labelledby="cooks-to-follow-heading" className="flex flex-col gap-3">
-      <h2
-        id="cooks-to-follow-heading"
-        className="font-display text-lg font-semibold text-fg"
-      >
+    <section aria-labelledby="cooks-to-follow-heading" className="flex flex-col gap-4">
+      <h2 id="cooks-to-follow-heading" className="font-display text-lg font-semibold text-fg">
         {m.titulo}
       </h2>
-      <ul className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
-        {cooks.map((cook) => {
-          const countLabel = (cook.recipeCount === 1 ? m.receitaContagem : m.receitasContagem).replace(
-            '{n}',
-            String(cook.recipeCount),
-          )
-          return (
-            <li
-              key={cook.handle}
-              className="flex w-40 shrink-0 flex-col items-start gap-2 rounded-md border border-border bg-surface p-3"
-            >
-              <Link
-                href={`/u/${cook.handle}`}
-                className="flex w-full flex-col items-start gap-1.5 text-fg hover:underline"
-              >
-                <Avatar src={cook.image} name={cook.name} alt={cook.name} size="sm" />
-                <span className="line-clamp-1 font-display text-sm font-semibold">{cook.name}</span>
-                <span className="line-clamp-1 text-xs text-muted">@{cook.handle}</span>
-                <span className="text-xs text-muted">{countLabel}</span>
-              </Link>
-              <CookFollowButton
-                handle={cook.handle}
-                initialFollowing={false}
-                labels={{ seguir: m.seguir, seguindo: m.seguindo, erroSeguir: m.erroSeguir }}
-              />
-            </li>
-          )
-        })}
+      <ul className="flex flex-col gap-3">
+        {cooks.map((cook) => (
+          <li key={cook.handle}>
+            <CreatorCard cook={cook} labels={m} aiLabel={aiLabel} />
+          </li>
+        ))}
       </ul>
     </section>
+  )
+}
+
+/**
+ * Um cartão de Cozinheiro (CreatorCard do protótipo): cabeçalho (avatar + nome + `@handle · N receitas` +
+ * Seguir) e a lista de 1–3 receitas. O cabeçalho (avatar+nome+meta) é UM link pro perfil `/u/<handle>`; o
+ * Seguir é IRMÃO (não aninhado no link). As receitas são ESTÁTICAS (como no mock — o cartão é uma amostra,
+ * não um índice navegável): thumbnail decorativa + título serif; o selo de IA traz `aiLabel` sr-only.
+ */
+function CreatorCard({
+  cook,
+  labels,
+  aiLabel,
+}: {
+  cook: RecommendedCook
+  labels: {
+    receitaContagem: string
+    receitasContagem: string
+    seguir: string
+    seguindo: string
+    erroSeguir: string
+  }
+  aiLabel: string
+}) {
+  const countLabel = (cook.recipeCount === 1 ? labels.receitaContagem : labels.receitasContagem).replace(
+    '{n}',
+    String(cook.recipeCount),
+  )
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
+      <div className="flex items-center gap-3">
+        <Link
+          href={`/u/${cook.handle}`}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-fg hover:underline"
+        >
+          {/* alt="" (decorativo): o nome do cozinheiro está ADJACENTE no MESMO link — evita o leitor de
+              tela ler o nome duas vezes (mesma lógica do thumbnail da receita abaixo). 42px = mock. */}
+          <Avatar src={cook.image} name={cook.name} alt="" size="md" />
+          <span className="flex min-w-0 flex-col">
+            <span className="line-clamp-1 font-display text-sm font-semibold">{cook.name}</span>
+            {/* `@handle · N receitas` numa única linha (spans separados p/ os asserts de contagem). */}
+            <span className="line-clamp-1 text-xs text-muted">
+              <span>@{cook.handle}</span>
+              <span aria-hidden> · </span>
+              <span>{countLabel}</span>
+            </span>
+          </span>
+        </Link>
+        <CookFollowButton
+          handle={cook.handle}
+          initialFollowing={false}
+          variant="outline"
+          className="rounded-full border-brand/50 px-3.5 text-brand-ink hover:border-brand hover:bg-brand/10"
+          labels={{ seguir: labels.seguir, seguindo: labels.seguindo, erroSeguir: labels.erroSeguir }}
+        />
+      </div>
+      {cook.recipes.length > 0 && (
+        <ul className="flex flex-col">
+          {cook.recipes.map((recipe) => (
+            <CookRecipeRow key={recipe.recipeId} recipe={recipe} aiLabel={aiLabel} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Uma receita no preview do cartão (estática, espelha o mock): thumbnail 40px (foto ou moldura) com o selo
+ * de IA no canto + título serif (até 2 linhas). A thumbnail é DECORATIVA (`alt=""`) — o título adjacente já
+ * nomeia a receita (evita leitura dupla no leitor de tela). O selo de IA traz o `aiLabel` como texto
+ * sr-only (disclosure de IA — invariante de marca).
+ */
+function CookRecipeRow({ recipe, aiLabel }: { recipe: RecommendedCookRecipe; aiLabel: string }) {
+  return (
+    <li className="flex items-center gap-2.5 border-t border-border py-2 first:border-t-0">
+      <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-border bg-brand/[0.07]">
+        {recipe.imageUrl != null ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={recipe.imageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="size-full object-cover"
+          />
+        ) : null}
+        {recipe.imageAiGenerated && (
+          <span className="absolute bottom-0.5 right-0.5 flex size-3.5 items-center justify-center rounded-full bg-bg text-brand shadow-sm">
+            <Sparkles className="size-2.5" strokeWidth={2} aria-hidden />
+            <span className="sr-only">{aiLabel}</span>
+          </span>
+        )}
+      </div>
+      <span className="line-clamp-2 font-display text-sm font-semibold leading-snug text-fg">
+        {recipe.displayedTitle}
+      </span>
+    </li>
   )
 }

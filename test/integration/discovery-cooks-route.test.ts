@@ -62,14 +62,16 @@ describe('GET /api/discovery/cooks (#278)', () => {
     expect(handles).not.toContain('rota-a2') // U (a sessão) segue A → A excluído
   })
 
-  it('cada cook do corpo é allowlist { name, handle, image, recipeCount }', async () => {
+  it('cada cook do corpo é allowlist { name, handle, image, recipeCount, recipes }', async () => {
     const { headers } = await seedSessionHeaders({ email: 'dto@route.test' })
     await seedCook('c1@route.test', 'rota-c1')
     const res = await cooksReq(headers)
     const body = (await res.json()) as { cooks: Record<string, unknown>[] }
     expect(body.cooks.length).toBeGreaterThan(0)
     for (const c of body.cooks) {
-      expect(Object.keys(c).sort()).toEqual(['handle', 'image', 'name', 'recipeCount'])
+      // `recipes` é o preview bounded (ADR-0024 emendado); `seedCook` semeia receita SEM tradução ⇒
+      // preview vazio aqui, mas a chave existe. SEM id/email/role (do cozinheiro nem das receitas).
+      expect(Object.keys(c).sort()).toEqual(['handle', 'image', 'name', 'recipeCount', 'recipes'])
     }
   })
 })

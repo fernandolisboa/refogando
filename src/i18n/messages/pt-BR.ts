@@ -194,9 +194,10 @@ export const ptBR = {
     // CTA leva à Descoberta (`/`), onde vive o trilho de Cozinheiros recomendados (#278).
     vazioCta: 'Descobrir cozinheiros',
   },
-  // Trilho "Cozinheiros pra seguir" (#278, ADR-0024) — recomendados por popularidade global na home.
+  // Trilho "Cozinheiros em alta" (#278, ADR-0024 emendado) — recomendados por popularidade global na home,
+  // como coluna à direita em telas largas, cada cartão com 1–3 receitas do cozinheiro.
   cozinheirosSugeridos: {
-    titulo: 'Cozinheiros pra seguir',
+    titulo: 'Cozinheiros em alta',
     receitaContagem: '{n} receita',
     receitasContagem: '{n} receitas',
     seguir: 'Seguir',
