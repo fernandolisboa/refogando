@@ -62,6 +62,8 @@ import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 const M = ptBR.busca
 
@@ -71,7 +73,10 @@ function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
-        <SearchExperience />
+        <HomeSearchProvider>
+          <HomeSearchBar />
+          <SearchExperience />
+        </HomeSearchProvider>
       </CozinhaVocabProvider>
     </LocaleProvider>,
   )
@@ -196,8 +201,8 @@ afterEach(() => {
 })
 
 describe('SearchExperience — descoberta na web (#164)', () => {
-  it('W1 — acervo RASO (vazio): mostra a seção "Da web" com cartões marcados (gatilhos de import)', async () => {
-    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+  it('W1 — acervo RASO (1 resultado): mostra a seção "Da web" com cartões marcados (gatilhos de import)', async () => {
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -213,10 +218,9 @@ describe('SearchExperience — descoberta na web (#164)', () => {
     expect(trigger).toBeInTheDocument()
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
 
-    // Atribuição "da web · <fonte>" no cartão.
-    expect(
-      screen.getByText(M.daWebFonte.replace('{fonte}', WEB_LINKS[0].sourceName)),
-    ).toBeInTheDocument()
+    // #5 (protótipo final): a linha compacta credita a FONTE à direita + um chip "web".
+    expect(screen.getByText(WEB_LINKS[0].sourceName)).toBeInTheDocument()
+    expect(screen.getAllByText('web').length).toBeGreaterThan(0)
 
     // A descoberta na web FOI chamada (com o termo).
     expect(discoveryCalls(fetchMock).length).toBeGreaterThan(0)
@@ -256,7 +260,7 @@ describe('SearchExperience — descoberta na web (#164)', () => {
   })
 
   it('W4 — resultados da web NÃO entram no ranking interno (seção própria, gatilho, não RecipeResultItem)', async () => {
-    stubFetchRouting(emptyLocal, WEB_LINKS)
+    stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -277,7 +281,7 @@ describe('SearchExperience — descoberta na web (#164)', () => {
 describe('SearchExperience — modal de importação (#169)', () => {
   it('I1 — LOGADO: clicar num resultado da web abre o modal de confirmação (com "Ver no site")', async () => {
     sessionState = authed()
-    stubFetchRouting(emptyLocal, WEB_LINKS)
+    stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -298,7 +302,7 @@ describe('SearchExperience — modal de importação (#169)', () => {
 
   it('I2 — LOGADO: confirmar chama POST /api/recipes/import com a URL e navega à receita importada', async () => {
     sessionState = authed()
-    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS, {
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS, {
       status: 201,
       body: { recipeId: 'imp-99', visibility: 'private' },
     })
@@ -326,7 +330,7 @@ describe('SearchExperience — modal de importação (#169)', () => {
 
   it('I3 — LOGADO: 422 (site sem JSON-LD) mostra erro "não importável" e NÃO navega', async () => {
     sessionState = authed()
-    stubFetchRouting(emptyLocal, WEB_LINKS, { status: 422, body: { error: 'no_jsonld' } })
+    stubFetchRouting(localWith(1), WEB_LINKS, { status: 422, body: { error: 'no_jsonld' } })
     const user = userEvent.setup()
     renderSearch()
 
@@ -342,7 +346,7 @@ describe('SearchExperience — modal de importação (#169)', () => {
 
   it('I4 — VISITANTE: clicar num resultado da web abre o convite de entrar (não importa)', async () => {
     sessionState = anon()
-    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -363,7 +367,7 @@ describe('SearchExperience — modal de importação (#169)', () => {
 
   it('I5 — A11y: ESC fecha o modal', async () => {
     sessionState = authed()
-    stubFetchRouting(emptyLocal, WEB_LINKS)
+    stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -408,7 +412,7 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
   })
 
   it('C2 — auto-trigger (acervo RASO) acende a web SEM CTA (não-regressão #164, sem flash)', async () => {
-    stubFetchRouting(emptyLocal, WEB_LINKS)
+    stubFetchRouting(localWith(1), WEB_LINKS)
     const user = userEvent.setup()
     renderSearch()
 
@@ -420,13 +424,13 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
   })
 
   it('C2b — sem CTA enquanto a web AUTOMÁTICA está em voo (acervo raso, promise diferida)', async () => {
-    const { resolveWeb } = stubFetchRoutingDeferred(emptyLocal)
+    const { resolveWeb } = stubFetchRoutingDeferred(localWith(1))
     const user = userEvent.setup()
     renderSearch()
 
     await user.type(screen.getByRole('searchbox'), 'feijoada')
-    // Local raso concluído (vazio), web ainda em voo: o CTA NÃO pode piscar.
-    await screen.findByText(M.semResultado)
+    // Local raso concluído (1 resultado), web AUTOMÁTICA ainda em voo: o CTA manual #275 NÃO pode piscar.
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
     expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
 
     // Resolve a web automática → a seção "Da web" renderiza; o CTA segue ausente.
@@ -550,5 +554,121 @@ describe('SearchExperience — CTA manual buscar na web (#275)', () => {
     await waitFor(() => {
       expect(screen.queryByText(M.webManualNada)).not.toBeInTheDocument()
     })
+  })
+})
+
+// ── #5 (protótipo final): estado VAZIO com DOIS cartões (Gerar com IA + Buscar na web) ───────────
+// O mock final mostra o cartão MANUAL "Buscar na web" no estado VAZIO (não a "Da web" automática). O
+// auto-gate #164 agora só acende no acervo RASO-mas-NÃO-vazio (1..2, ou sugestões-only); no TRULY-empty
+// a web é OFERECIDA (botão "Buscar"), preservando fetch-só-por-ação. Reusa a máquina do #275.
+function withSugestoes(n: number): SearchResponse {
+  const sugestoes = Array.from({ length: n }, (_, i) => ({
+    recipeId: `s${i}`,
+    displayedTitle: `Sugestão ${i}`,
+    origin: 'ai_chat' as const,
+    autoTranslationSignal: false,
+    isOwn: false,
+  }))
+  return { minhas: [], catalogo: [], comunidade: [], sugestoes }
+}
+
+describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)', () => {
+  it('E1 — VAZIO + termo (visitante): cartão "Buscar na web" + convite Gerar; SEM "Da web" automática', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen vegano picante')
+
+    // Painel vazio honesto + o cartão MANUAL "Buscar na web" (botão "Buscar").
+    await screen.findByText(M.semResultado)
+    expect(screen.getByText(M.vazioWebTitulo)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: M.buscar })).toBeInTheDocument()
+    // A web NÃO auto-disparou no caminho TRULY-empty (o mock mostra o cartão, não "Da web").
+    expect(screen.queryByRole('heading', { name: M.secaoDaWeb })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('E2 — VAZIO + termo (logado): cartão Gerar (link /create?q) + cartão "Buscar na web"; sem auto-web', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen vegano picante')
+
+    // Os DOIS cartões do mock: Gerar (link pré-preenchido) + Buscar na web (botão).
+    const gerar = await screen.findByRole('link', { name: M.gerarComIa })
+    expect(gerar).toHaveAttribute('href', '/create?q=ramen%20vegano%20picante')
+    expect(screen.getByRole('button', { name: M.buscar })).toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('E3 — VAZIO: clicar "Buscar na web" dispara a descoberta e renderiza "Da web" (o cartão some)', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen vegano picante')
+    const buscar = await screen.findByRole('button', { name: M.buscar })
+    await user.click(buscar)
+
+    // A web foi chamada por AÇÃO; a seção "Da web" renderiza os links; o botão do cartão some (webLinks>0).
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    await webTrigger(WEB_LINKS[0].title)
+    expect(discoveryCalls(fetchMock).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
+  })
+
+  it('E4 — VAZIO por FACETA (sem termo): NÃO mostra o cartão "Buscar na web" (botão seria morto sem q)', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    // Busca SÓ por faceta (sem termo) que volta vazia → painel vazio, mas sem o cartão de web.
+    await user.click(screen.getByLabelText('Brasileira'))
+    await screen.findByText(M.semResultado)
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
+    // Gerar segue disponível (sem ?q espúrio).
+    expect(await screen.findByRole('link', { name: M.gerarComIa })).toHaveAttribute('href', '/create')
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('E5 — REGRESSÃO: sugestões-only (0 diretos, mas há "Talvez você queira") AINDA auto-dispara a web', async () => {
+    // localCount 0 mas hasResults via sugestões ⇒ NÃO é isEmpty ⇒ a web AUTO deve acender (o gate é
+    // `localCount < 3 && !isEmpty`; o bug `0 < localCount` deixaria este caso sem web nenhuma).
+    const fetchMock = stubFetchRouting(withSugestoes(2), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'curry')
+
+    // A seção de sugestões aparece E a "Da web" automática também (sem o painel vazio).
+    await screen.findByRole('heading', { name: M.talvezQueira, level: 2 })
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    expect(screen.queryByText(M.semResultado)).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBeGreaterThan(0)
+  })
+
+  it('E6 — GATE: localCount 2 auto-dispara a web; localCount 0 (vazio) NÃO', async () => {
+    // 2 locais (raso-não-vazio) ⇒ auto.
+    const fetchMock2 = stubFetchRouting(localWith(2), WEB_LINKS)
+    const user = userEvent.setup()
+    const { unmount } = renderSearch()
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('heading', { name: M.secaoDaWeb, level: 2 })
+    expect(discoveryCalls(fetchMock2).length).toBeGreaterThan(0)
+    unmount()
+    vi.unstubAllGlobals()
+
+    // 0 locais (vazio) ⇒ sem auto (cartão manual no lugar).
+    const fetchMock0 = stubFetchRouting(emptyLocal, WEB_LINKS)
+    renderSearch()
+    await user.type(screen.getByRole('searchbox'), 'inexistente')
+    await screen.findByText(M.semResultado)
+    expect(discoveryCalls(fetchMock0).length).toBe(0)
   })
 })

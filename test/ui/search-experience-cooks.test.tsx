@@ -29,6 +29,8 @@ vi.mock('@/lib/auth-client', () => ({ useSession: () => sessionState }))
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 const MB = ptBR.busca
 const MC = ptBR.buscaCozinheiros
@@ -58,7 +60,10 @@ function renderSearch() {
   sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience />
+      <HomeSearchProvider>
+        <HomeSearchBar />
+        <SearchExperience />
+      </HomeSearchProvider>
     </LocaleProvider>,
   )
 }

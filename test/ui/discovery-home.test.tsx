@@ -48,6 +48,8 @@ function anon(): SessionState {
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 const MF = ptBR.feed
 
@@ -66,11 +68,14 @@ function feedItem(recipeId: string, displayedTitle: string, slug?: string): Sear
 function renderHome(over: { initialFeed?: SearchResult[]; initialNextCursor?: string | null } = {}) {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience
-        home
-        initialFeed={over.initialFeed ?? []}
-        initialNextCursor={over.initialNextCursor ?? null}
-      />
+      <HomeSearchProvider>
+        <HomeSearchBar />
+        <SearchExperience
+          home
+          initialFeed={over.initialFeed ?? []}
+          initialNextCursor={over.initialNextCursor ?? null}
+        />
+      </HomeSearchProvider>
     </LocaleProvider>,
   )
 }

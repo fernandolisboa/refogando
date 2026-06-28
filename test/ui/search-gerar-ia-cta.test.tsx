@@ -54,6 +54,8 @@ import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 const M = ptBR.busca
 const MI = ptBR.minhasCriacoes
@@ -63,7 +65,10 @@ function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
-        <SearchExperience />
+        <HomeSearchProvider>
+          <HomeSearchBar />
+          <SearchExperience />
+        </HomeSearchProvider>
       </CozinhaVocabProvider>
     </LocaleProvider>,
   )

@@ -1,0 +1,59 @@
+'use client'
+/**
+ * Pílula de busca da home (#5 — protótipo "feed editorial"): lupa + input + × pra limpar. É a
+ * LINHA 2 do `SiteHeader` (renderizada SÓ na home), fundida à linha da wordmark/nav por uma única
+ * borda na base do header. O termo vive no `HomeSearchProvider` (elevado), então este componente é
+ * só a vista — `SearchExperience` consome o mesmo `q` e faz o fetch.
+ *
+ * Paridade com o mock: borda NEUTRA em repouso, TERRACOTA quando há termo (`q.trim() !== ''`, a mesma
+ * condição que mostra o ×), mais `focus-within` como afago extra. Enter dispara `submit()` (bypassa o
+ * debounce, como o `onSubmit` de antes). a11y: `role=search`, `<label htmlFor>` sr-only PRÓPRIO
+ * (`buscarLabel`, desacoplado do `<h1>`/título de SEO), e o × com texto sr-only (`limparBusca`).
+ */
+import { Search, X } from 'lucide-react'
+import { useLocale } from '@/i18n/provider'
+import { cn } from '@/lib/utils'
+import { useHomeSearch } from './home-search-context'
+
+export function HomeSearchBar() {
+  const { messages } = useLocale()
+  const m = messages.busca
+  const { q, setQ, submit } = useHomeSearch()
+  const hasTerm = q.trim() !== ''
+  return (
+    <form
+      role="search"
+      className={cn(
+        'flex items-center gap-2.5 rounded-full border bg-surface px-4 py-2.5 transition-colors focus-within:border-brand',
+        hasTerm ? 'border-brand' : 'border-border',
+      )}
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+    >
+      <Search className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
+      <label htmlFor="search-q" className="sr-only">
+        {m.buscarLabel}
+      </label>
+      <input
+        id="search-q"
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={m.placeholder}
+        className="w-full border-none bg-transparent text-fg outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none"
+      />
+      {hasTerm && (
+        <button
+          type="button"
+          onClick={() => setQ('')}
+          className="-mr-1 shrink-0 rounded-full p-1 text-muted transition-colors hover:text-fg"
+        >
+          <span className="sr-only">{m.limparBusca}</span>
+          <X className="size-4" strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
+    </form>
+  )
+}

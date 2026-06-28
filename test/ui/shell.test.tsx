@@ -66,9 +66,10 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     expect(within(nav).queryByText('Receitas')).not.toBeInTheDocument()
     // #277: a aba "Seguindo" é só-logada — AUSENTE para Visitante (sessão anon padrão deste teste).
     expect(within(nav).queryByText(ptBR.nav.seguindo)).not.toBeInTheDocument()
-    // Criar PRESENTE na nav; a entrada "Conversar" foi removida (#104 S6 — o Modo Conversa
-    // vive dentro de /create agora, não como um slot de nav próprio).
-    expect(within(nav).getByText('Criar')).toBeInTheDocument()
+    // #5 (protótipo final): "Criar" SAIU da nav pro cluster direito (banner), ao lado de "Você"/
+    // AuthSlot. Presente no header, AUSENTE da nav. "Conversar" foi removida (#104 S6).
+    expect(within(nav).queryByText('Criar')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).getByText('Criar')).toBeInTheDocument()
     expect(within(nav).queryByText('Conversar')).not.toBeInTheDocument()
     expect(screen.getByText('Entrar')).toBeInTheDocument()
     // #162: o seletor de idioma vive no FOOTER (não no header). Ausente do banner,
@@ -99,7 +100,7 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     document.documentElement.lang = 'pt-BR'
   })
 
-  it('logado: "Minhas criações" vem ANTES de "Criar" na nav (Criar é a CTA destacada por último)', () => {
+  it('#5: logado: nav = Explorar < Seguindo < Minhas criações (SEM "Criar"); "Criar" no cluster direito', () => {
     authMock.current = {
       data: { user: { id: 'u1', name: 'X', email: 'x@y.z', role: 'user', deletedAt: null } },
       error: null,
@@ -113,20 +114,42 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
       </LocaleProvider>,
     )
     const nav = screen.getByRole('navigation')
-    // #191: "Criar" virou um BOTÃO (abre o drawer), então a ordem mistura links + botão. Lê os
-    // itens de nav em ORDEM de DOM (links e botões) para asseverar "Minhas criações" antes de
-    // "Criar".
-    const labels = Array.from(nav.querySelectorAll('a, button')).map((el) => el.textContent)
-    const iMinhas = labels.indexOf('Minhas criações')
-    const iCriar = labels.indexOf('Criar')
-    expect(iMinhas).toBeGreaterThanOrEqual(0)
-    expect(iCriar).toBeGreaterThan(iMinhas)
-    // #277: "Seguindo" (logado) aparece ENTRE "Explorar" e "Minhas criações".
-    const iExplorar = labels.indexOf(ptBR.nav.home)
-    const iSeguindo = labels.indexOf(ptBR.nav.seguindo)
+    const navLabels = Array.from(nav.querySelectorAll('a, button')).map((el) => el.textContent)
+    // #5 (protótipo final): "Criar" SAIU da nav (foi pro cluster direito, ao lado de "Você").
+    expect(navLabels).not.toContain('Criar')
+    // #277: ordem dos links de nav: Explorar < Seguindo < Minhas criações.
+    const iExplorar = navLabels.indexOf(ptBR.nav.home)
+    const iSeguindo = navLabels.indexOf(ptBR.nav.seguindo)
+    const iMinhas = navLabels.indexOf('Minhas criações')
     expect(iExplorar).toBeGreaterThanOrEqual(0)
     expect(iSeguindo).toBeGreaterThan(iExplorar)
-    expect(iSeguindo).toBeLessThan(iMinhas)
+    expect(iMinhas).toBeGreaterThan(iSeguindo)
+    // "Criar" agora é um BOTÃO no header (banner), fora da nav.
+    expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Criar' })).toBeInTheDocument()
+  })
+
+  it('#5: a busca (HomeSearchBar) é a 2ª linha do header SÓ na home; ausente em rota não-home', () => {
+    // Home (rest === '/'): exatamente UM searchbox, com o nome acessível do label próprio (`buscarLabel`),
+    // dentro do banner. (Sem HomeSearchProvider aqui ⇒ o default INERTE do contexto evita explodir.)
+    navMock.pathname = '/pt-BR'
+    const { unmount } = render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+      </LocaleProvider>,
+    )
+    expect(screen.getAllByRole('searchbox')).toHaveLength(1)
+    expect(screen.getByRole('searchbox', { name: ptBR.busca.buscarLabel })).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).getByRole('searchbox')).toBeInTheDocument()
+    unmount()
+
+    // Rota NÃO-home (/following): ZERO searchbox no header.
+    navMock.pathname = '/pt-BR/following'
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <SiteHeader />
+      </LocaleProvider>,
+    )
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
   })
 
   it('#277: em /pt-BR/following, a aba "Seguindo" fica ATIVA (aria-current) e "Explorar" não', () => {

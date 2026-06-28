@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -80,14 +80,15 @@ afterEach(() => {
 })
 
 describe('ImportRecipeDialog (#169)', () => {
-  it('fechado por padrão: gatilho com aria-expanded=false e a atribuição "da web · <fonte>"', () => {
+  it('fechado por padrão: gatilho (linha compacta) com aria-expanded=false, chip "web" + a fonte', () => {
     renderDialog()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     const trigger = screen.getByRole('button', { name: new RegExp(LINK.title) })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(
-      screen.getByText(m.daWebFonte.replace('{fonte}', LINK.sourceName)),
-    ).toBeInTheDocument()
+    // #5 (protótipo final): a linha compacta traz o chip "web" + a FONTE à direita (atribuição
+    // completa fica no modal). O título + a fonte compõem o nome acessível do gatilho.
+    expect(within(trigger).getByText('web')).toBeInTheDocument()
+    expect(within(trigger).getByText(LINK.sourceName)).toBeInTheDocument()
   })
 
   it('sessionPending: ramo OTIMISTA (logado) — mostra confirmar, NÃO o convite de entrar', async () => {

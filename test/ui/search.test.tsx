@@ -56,6 +56,8 @@ import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { COZINHA_VOCAB_PT_BR } from '../helpers/cozinha-vocab'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 /**
  * Teste de COMPONENTE jsdom da Busca (#56) — seam de frontend da #54 (sem browser/
@@ -73,7 +75,12 @@ function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
-        <SearchExperience />
+        {/* #5: o searchbox MUDOU-SE pro header (HomeSearchBar). Montamos a barra + o cérebro sob o
+            MESMO HomeSearchProvider pra `getByRole('searchbox')` casar e o termo dirigir a busca. */}
+        <HomeSearchProvider>
+          <HomeSearchBar />
+          <SearchExperience />
+        </HomeSearchProvider>
       </CozinhaVocabProvider>
     </LocaleProvider>,
   )

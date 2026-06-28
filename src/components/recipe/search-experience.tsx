@@ -25,7 +25,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
-import { Search, Sparkles, X } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
@@ -41,6 +41,7 @@ import { CookSearchCluster } from './cook-search-cluster'
 import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
 import type { BadgeLabels } from './recipe-result-item'
 import { ImportRecipeDialog, type ImportDialogLabels, type WebLink } from './import-recipe-dialog'
+import { useHomeSearch } from './home-search-context'
 
 type Sort = 'relevancia' | 'popularidade'
 
@@ -90,7 +91,12 @@ export function SearchExperience({
   const authed = !session.isPending && !session.error && !!session.data
   const dicaInicial = authed ? m.dicaInicialLogado : m.dicaInicial
 
-  const [q, setQ] = useState('')
+  // #5 (protótipo final): o TERMO da busca foi ELEVADO ao HomeSearchProvider (layout) pra a pílula
+  // viver DENTRO do header (linha 2, só na home) enquanto este componente segue sendo o cérebro. Só
+  // o `q` sobe; todo o resto do estado fica aqui. `registerSubmit` deixa o Enter no pill disparar o
+  // `doSearch` sem esperar o debounce (como o `onSubmit` da pílula de antes). Sem provider montado (a
+  // Busca legada fora da home, ou testes do header), o default INERTE do contexto evita explodir.
+  const { q, setQ, registerSubmit } = useHomeSearch()
   const [cozinha, setCozinha] = useState<string[]>([])
   const [categoria, setCategoria] = useState<string[]>([])
   const [restricao, setRestricao] = useState<string[]>([])
@@ -302,8 +308,14 @@ export function SearchExperience({
       // disparamos a web (fetch independente, não-bloqueante). Acervo suficiente ⇒ NÃO chama (e
       // limpa qualquer link da web de uma busca anterior). Facetas-só (sem `q`) NÃO acionam a web.
       const localCount = body.minhas.length + body.catalogo.length + body.comunidade.length
+      // #5 (protótipo final): a web AUTO só acende no acervo RASO-mas-NÃO-vazio (1..2 locais, OU
+      // sugestões-only com 0 diretos). No TRULY-empty (`!hasAny` ≡ `isEmpty`) NÃO auto-dispara — o
+      // estado vazio passa a OFERECER o cartão "Buscar na web" (ação do usuário; o mock final mostra
+      // o cartão, sem "Da web" automática). `hasAny` INCLUI `sugestoes` (senão a busca sugestões-only,
+      // localCount 0, perderia a ponte web — regressão vs o `localCount < 3` de antes).
+      const hasAny = localCount > 0 || (body.sugestoes?.length ?? 0) > 0
       const term = q.trim()
-      if (term !== '' && localCount < SHALLOW_THRESHOLD) {
+      if (term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
         void discoverWeb(term)
       } else {
         webAbortRef.current?.abort()
@@ -326,6 +338,13 @@ export function SearchExperience({
       clearTimeout(t)
     }
   }, [doSearch])
+
+  // #5: registra o `doSearch` corrente como o `submit` do HomeSearchBar — Enter no pill dispara a
+  // busca AGORA (bypassa o debounce de 300ms), preservando o comportamento do `onSubmit` da pílula
+  // de antes. Re-registra quando `doSearch` muda de identidade (deps do useCallback).
+  useEffect(() => {
+    registerSubmit(() => void doSearch())
+  }, [doSearch, registerSubmit])
 
   /**
    * #236: REFLETE o estado de busca/filtro na URL (refino INLINE na MESMA superfície). REFINADO ⇒
@@ -355,8 +374,12 @@ export function SearchExperience({
       abortRef.current?.abort()
       webAbortRef.current?.abort()
       cooksAbortRef.current?.abort()
+      // #5: o `q` vive no provider de SESSÃO (layout), não morre com este componente. Ao SAIR da home
+      // (unmount) zera o termo — voltar à home depois cai em REPOUSO, não num refino obsoleto. `setQ`
+      // é estável (setter do useState do provider), então o cleanup roda só no unmount.
+      setQ('')
     }
-  }, [])
+  }, [setQ])
 
   const toggle = useCallback(
     (setter: React.Dispatch<React.SetStateAction<string[]>>) => (value: string) =>
@@ -426,40 +449,10 @@ export function SearchExperience({
           (DiscoveryFeed `<h2>`). sr-only é clip-based (segue no DOM, crawlável), não display:none. */}
       <h1 className="sr-only">{m.titulo}</h1>
 
-      {/* Busca PILL persistente no topo (Direção C): lupa + input + × pra limpar (quando há termo). Busca
-          ao vivo (debounce no efeito); Enter também dispara. `role=search` + `<label>` sr-only PRÓPRIO
-          (`buscarLabel`, o propósito do campo — desacoplado do `<h1>`/título de SEO). */}
-      <form
-        role="search"
-        className="flex items-center gap-2.5 rounded-full border border-border bg-surface px-4 py-2.5 transition-colors focus-within:border-brand"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void doSearch()
-        }}
-      >
-        <Search className="size-[18px] shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
-        <label htmlFor="search-q" className="sr-only">
-          {m.buscarLabel}
-        </label>
-        <input
-          id="search-q"
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={m.placeholder}
-          className="w-full border-none bg-transparent text-fg outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none"
-        />
-        {q.trim() !== '' && (
-          <button
-            type="button"
-            onClick={() => setQ('')}
-            className="-mr-1 shrink-0 rounded-full p-1 text-muted transition-colors hover:text-fg"
-          >
-            <span className="sr-only">{m.limparBusca}</span>
-            <X className="size-4" strokeWidth={1.75} aria-hidden />
-          </button>
-        )}
-      </form>
+      {/* #5 (protótipo final): a pílula de busca MUDOU-SE pra DENTRO do header (linha 2, só na home) —
+          ver `HomeSearchBar`/`SiteHeader`. O termo (`q`) vem do `HomeSearchProvider`; aqui o cérebro só
+          o consome (debounce + Enter via `registerSubmit`). O `<h1>` sr-only acima segue sendo a
+          identidade da página E a fonte do `<title>` de SEO (generateMetadata lê `busca.titulo`). */}
 
       {/* #278 (ADR-0024): trilho "Cozinheiros pra seguir" — SÓ na home (`home`) e SÓ em REPOUSO
           (`!hasCriteria`): é a companhia de descoberta do feed de repouso; ao buscar, a superfície é
@@ -606,14 +599,15 @@ export function SearchExperience({
               </div>
             )}
 
-            {/* #5 (Direção C) + #279: estado VAZIO honesto — kicker (não-heading) + manchete serifada (h2) +
-                corpo (`semResultado`, reproposto p/ a copy do mock) + cartão "Gerar com IA" (a saída de
-                criação CONTEXTUAL). #2/C2b: SEM cartão "buscar na web" no caminho raso — o auto-gate #164
-                já acende a web (WebDiscoverySection abaixo, se houver links); um CTA-web aqui pintaria o
-                flash que o teste C2b guarda. A entrada SEMPRE-disponível pra criar é o "Criar" do header.
-                Só quando NÃO há Cozinheiro casando (senão o cluster acima É o resultado) E a busca de cooks
-                do termo corrente já assentou (`cooksStatus !== 'loading'`) — senão o cartão flasharia "nada
-                na comunidade" no intervalo até o cluster chegar (#5). */}
+            {/* #5 (protótipo final) + #279: estado VAZIO honesto — kicker (não-heading) + manchete
+                serifada (h2) + corpo (`semResultado`, a copy do mock) + os DOIS cartões do mock:
+                "Gerar com IA" (saída de criação contextual) E "Buscar na web" (gatilho MANUAL — o mock
+                final mostra ESTE cartão no vazio, não a "Da web" automática; o auto-gate #164 agora só
+                acende no raso-NÃO-vazio). UM único `<section>` nomeado + UM h2; os cartões são `<div>`s
+                com título `<p>` (não h2/region aninhado dentro da live region — a11y). Só quando NÃO há
+                Cozinheiro casando (senão o cluster acima É o resultado) E a busca de cooks do termo
+                corrente já assentou (`cooksStatus !== 'loading'`) — senão o cartão flasharia "nada na
+                comunidade" no intervalo até o cluster chegar (#5). */}
             {isEmpty && cooks.length === 0 && cooksStatus !== 'loading' && (
               <section
                 aria-labelledby="busca-vazio-titulo"
@@ -626,17 +620,34 @@ export function SearchExperience({
                   {m.vazioTitulo}
                 </h2>
                 <p className="max-w-[54ch] text-sm text-muted">{m.semResultado}</p>
-                <GerarComIaCta
-                  q={q}
-                  authed={authed}
-                  sessionPending={session.isPending}
-                  gerarLabel={m.gerarComIa}
-                  cardTitulo={m.vazioGerarTitulo}
-                  cardTexto={m.vazioGerarTexto}
-                  conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
-                  conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
-                  signInLabel={messages.nav.signIn}
-                />
+                <div className="mt-1 flex flex-col gap-2.5">
+                  <GerarComIaCta
+                    q={q}
+                    authed={authed}
+                    sessionPending={session.isPending}
+                    gerarLabel={m.gerarComIa}
+                    cardTitulo={m.vazioGerarTitulo}
+                    cardTexto={m.vazioGerarTexto}
+                    conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
+                    conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
+                    signInLabel={messages.nav.signIn}
+                  />
+                  {/* Card "Buscar na web": SÓ com termo (`handleWebManual` early-returns sem `q` ⇒ na
+                      busca faceta-only o botão seria morto) e SÓ enquanto a web não populou (`webLinks`
+                      vazio) — ao popular, a `WebDiscoverySection` abaixo assume e este cartão some (sem
+                      ficar redundante acima dos resultados que ele produziu). */}
+                  {q.trim() !== '' && webLinks.length === 0 && (
+                    <BuscarNaWebCard
+                      state={webManualState}
+                      onSearch={handleWebManual}
+                      titulo={m.vazioWebTitulo}
+                      texto={m.vazioWebTexto}
+                      botaoLabel={m.buscar}
+                      buscandoLabel={m.webManualBuscando}
+                      nadaLabel={m.webManualNada}
+                    />
+                  )}
+                </div>
               </section>
             )}
 
@@ -787,7 +798,9 @@ function WebDiscoverySection({
         {heading}
       </h2>
       <p className="max-w-[60ch] text-sm text-muted">{descricao}</p>
-      <ul className="flex flex-col gap-3">
+      {/* #5 (protótipo final): linhas compactas com divisórias finas — border-top no <ul>, cada
+          gatilho traz a sua border-bottom (ver ImportRecipeDialog). */}
+      <ul className="border-t border-border">
         {links.map((link) => (
           <li key={link.url}>
             <ImportRecipeDialog
@@ -847,6 +860,58 @@ function WebManualCta({
 }
 
 /**
+ * #5 (protótipo final): cartão "Buscar na web" do ESTADO VAZIO — o gatilho MANUAL da descoberta na web
+ * no caminho TRULY-empty (o auto-gate #164 agora só acende no raso-NÃO-vazio). Reusa a máquina de
+ * estados do #275 (`handleWebManual` → `webManualState`): `idle` ⇒ botão "Buscar" (contornado, como no
+ * mock); `loading` ⇒ o mesmo botão disabled + `aria-busy` + "Buscando…"; `done` com a web vazia ⇒ aviso
+ * NEUTRO ("nada na web agora"), nunca erro vermelho. Quando a web POPULA, o PAI esconde este cartão
+ * (gate `webLinks.length === 0`) e a `WebDiscoverySection` abaixo assume — então `done` aqui ⇒ voltou
+ * vazio. É um `<div>` (não region/section) com título `<p>`: não aninha landmark/heading dentro da live
+ * region (a11y, espelha o `GerarComIaCta`). O botão é gateado no PAI por `q.trim() !== ''`.
+ */
+function BuscarNaWebCard({
+  state,
+  onSearch,
+  titulo,
+  texto,
+  botaoLabel,
+  buscandoLabel,
+  nadaLabel,
+}: {
+  state: 'idle' | 'loading' | 'done'
+  onSearch: () => void
+  titulo: string
+  texto: string
+  botaoLabel: string
+  buscandoLabel: string
+  nadaLabel: string
+}) {
+  const loading = state === 'loading'
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-bg px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="font-display text-base font-semibold text-fg">{titulo}</p>
+        <p className="mt-1 text-sm text-muted">{texto}</p>
+      </div>
+      {state === 'done' ? (
+        <p className="shrink-0 text-sm text-muted">{nadaLabel}</p>
+      ) : (
+        <Button
+          variant="outline"
+          type="button"
+          onClick={onSearch}
+          disabled={loading}
+          aria-busy={loading}
+          className="shrink-0"
+        >
+          {loading ? buscandoLabel : botaoLabel}
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/**
  * Cartão "Gerar com IA" do ESTADO VAZIO (#5, ADR-0019 emenda) — a saída de criação CONTEXTUAL quando a
  * busca não acha nada. REBAIXADO do CTA permanente de antes (#166): a entrada SEMPRE-disponível pra criar
  * é o "Criar" do header global; aqui é a ponte do "não achei, e agora?". NÃO auto-dispara: a Busca nunca
@@ -891,7 +956,7 @@ function GerarComIaCta({
       // nomeado; aninhar OUTRO landmark nomeado dentro da live region só adiciona verbosidade pro leitor
       // de tela. O rótulo do convite segue um <p> (não <h2>): a Busca reserva os headings nível 2 às
       // seções de RESULTADO.
-      <div className="flex flex-col gap-3 rounded-xl border border-brand/40 bg-brand/[0.04] px-4 py-4">
+      <div className="flex flex-col gap-3 rounded-xl border border-brand/50 bg-brand/[0.06] px-4 py-4">
         <p
           className="flex items-center gap-2 font-display text-base font-semibold text-fg"
         >
@@ -915,7 +980,7 @@ function GerarComIaCta({
   // pré-preenchido. Só anexa `?q` quando há termo (sem `?q=` vazio espúrio na URL).
   const href = q.trim() !== '' ? `/create?q=${encodeURIComponent(q.trim())}` : '/create'
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-brand/40 bg-brand/[0.04] px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
+    <div className="flex flex-col gap-3 rounded-xl border border-brand/50 bg-brand/[0.06] px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
         <p className="font-display text-base font-semibold text-fg">{cardTitulo}</p>
         <p className="mt-1 text-sm text-muted">{cardTexto}</p>
