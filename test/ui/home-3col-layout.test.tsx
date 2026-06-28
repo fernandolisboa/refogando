@@ -108,8 +108,15 @@ describe('Home 3 colunas — gate do trilho + layout', () => {
     expect(main.className).not.toContain('xl:max-w-wide')
   })
 
-  it('logado com < MIN cozinheiros: trilho OCULTO, layout 2-col (sem coluna fantasma)', async () => {
-    const fetchMock = stubFetch([rc('a'), rc('b')]) // 2 < 3
+  it('logado com 1 cozinheiro: trilho JÁ aparece + layout largo (sem piso de quantidade — dono 2026-06-28)', async () => {
+    stubFetch([rc('rita')]) // 1 só já basta
+    const { container } = renderHome(authed)
+    expect(await screen.findByRole('heading', { name: RAIL })).toBeInTheDocument()
+    expect(container.querySelector('main')!.className).toContain('xl:max-w-wide')
+  })
+
+  it('logado SEM cozinheiros (0): trilho OCULTO, layout 2-col (não mostra trilho vazio)', async () => {
+    const fetchMock = stubFetch([]) // 0 ⇒ só este caso esconde
     const { container } = renderHome(authed)
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/discovery/cooks'))).toBe(true))
     await new Promise((r) => setTimeout(r, 0))
