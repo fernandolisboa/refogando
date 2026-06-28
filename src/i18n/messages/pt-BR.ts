@@ -130,12 +130,15 @@ export const ptBR = {
     gerarComIa: 'Gerar com IA',
     vazioGerarTitulo: 'Gerar receita com IA',
     vazioGerarTexto: 'Criamos uma receita a partir da sua busca.',
+    // #5 (protótipo final): 2º cartão do estado VAZIO — "Buscar na web" (gatilho MANUAL). O mock final
+    // mostra ESTE cartão no vazio (não a "Da web" automática — o auto-gate #164 só acende no raso-não-
+    // vazio). O rótulo do botão reusa `buscar`="Buscar".
+    vazioWebTitulo: 'Buscar na web',
+    vazioWebTexto: 'Procurar essa receita em outros sites.',
     // #164: seção SEPARADA de links da web (ADR-0019) — só aparece quando o nosso acervo veio RASO.
-    // São LINKS externos, marcados "da web", NÃO armazenados nem ranqueados (a Busca só encontra). O
-    // `daWebFonte` credita a fonte ("da web · {fonte}"); {fonte} interpolado no componente via `.replace`.
+    // São LINKS externos, marcados "da web", NÃO armazenados nem ranqueados (a Busca só encontra).
     secaoDaWeb: 'Da web',
     daWebDescricao: 'Não achamos isso no nosso acervo ainda. Estes são links externos — abrem no site de origem.',
-    daWebFonte: 'da web · {fonte}',
     // #275: 2º gatilho EXPLÍCITO "buscar na web" ao FIM dos resultados — acende a web por AÇÃO do
     // usuário MESMO com acervo suficiente ("rolei até o fim e nada serviu"). Coexiste com o automático
     // (#164). Reusa a MESMA /api/discovery/web; degrada gracioso (aviso neutro, nunca erro vermelho).

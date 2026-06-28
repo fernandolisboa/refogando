@@ -30,6 +30,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { cn } from '@/lib/utils'
 
 // O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
@@ -61,6 +62,9 @@ export function SiteHeader() {
   const rest = splitLocalePrefix(pathname ?? '/').rest
   const isActive = (href: string) =>
     href === '/' ? rest === '/' : rest === href || rest.startsWith(`${href}/`)
+  // #5: a linha de busca (HomeSearchBar) é a 2ª linha do header, mas SÓ na home (a Descoberta é a
+  // home, ADR-0020). Fora da home não há busca no header. `rest === '/'` espelha o `isActive('/')`.
+  const isHome = rest === '/'
 
   // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
   // fecha o painel ao navegar; no desktop o wrap é a identidade (link inline puro).
@@ -109,15 +113,15 @@ export function SiteHeader() {
           {/* #277: aba "Seguindo" (logado) — feed das Receitas de quem o viewer segue, ao lado de
               "Explorar". Só-logada (a conta/Painel vive no AuthSlot à direita). */}
           {authed && navLink('/following', messages.nav.seguindo, identity)}
-          {/* "Minhas criações" (logado) vem ANTES de "Criar". "Criar" é a última e ganha um
-              leve destaque de CTA (borda em páprica), sem virar botão cheio. */}
+          {/* #5 (protótipo final): "Criar" SAIU da nav e foi pro CLUSTER DIREITO (ao lado de
+              "Você"/AuthSlot), espelhando o mock `[Criar][Você]`. No mobile segue no drawer. */}
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
-          {/* "Painel" saiu da nav (#267): agora é item do menu da conta (AuthSlot). */}
-          {ctaLink(identity)}
         </nav>
-        {/* Cluster direito do desktop: só o slot de conta. Escondido abaixo de `sm:` (vai pro
-            drawer). O idioma (#162) e o ThemeToggle foram pro footer. */}
+        {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
+            espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). O idioma
+            (#162) e o ThemeToggle foram pro footer. */}
         <div className="ml-auto hidden items-center gap-3 sm:flex">
+          {ctaButton}
           <AuthSlot />
         </div>
 
@@ -153,6 +157,17 @@ export function SiteHeader() {
           </SheetContent>
         </Sheet>
       </Container>
+
+      {/* #5 (protótipo final): LINHA 2 do header — a pílula de busca, SÓ na home, fundida à linha da
+          nav pela ÚNICA borda na base do `<header>`. Largura `reading` (52rem) p/ as bordas do pill
+          alinharem com a coluna de conteúdo (trilha+resultados) abaixo — o header é `page` (72rem), e
+          um pill 100% ali transbordaria a coluna. O termo vive no HomeSearchProvider (layout); aqui é
+          só a vista. Fora da home (`!isHome`) não há linha 2 ⇒ a borda fica sob a nav, como antes. */}
+      {isHome && (
+        <Container size="reading" className="pb-3">
+          <HomeSearchBar />
+        </Container>
+      )}
 
       {/* Drawer "Nova receita" (#191) — controlado pelo header; aberto pelo botão "Criar" do nav
           (desktop e mobile). Renderiza num Portal (Radix Dialog), por cima da chrome. */}

@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
@@ -66,11 +67,18 @@ export default async function LocaleLayout({
       <body className="flex min-h-svh flex-col">
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
-            <SiteHeader />
-            {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
-                então mantém um único landmark main por documento. */}
-            <div className="flex flex-1 flex-col">{children}</div>
-            <SiteFooter initialTheme={initialTheme} />
+            {/* #5 (protótipo final): o termo de busca (`q`) é ELEVADO aqui pra que a pílula viva
+                DENTRO do SiteHeader (linha 2, só na home) enquanto o cérebro da Busca segue em
+                SearchExperience (que é IRMÃO do header). `children` passa como PROP por este client
+                component ⇒ a página (server) e o feed SSR-seedado (indexável, ADR-0020) continuam
+                renderizados no servidor. O resto do estado da Busca NÃO sobe — só o `q`. */}
+            <HomeSearchProvider>
+              <SiteHeader />
+              {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
+                  então mantém um único landmark main por documento. */}
+              <div className="flex flex-1 flex-col">{children}</div>
+              <SiteFooter initialTheme={initialTheme} />
+            </HomeSearchProvider>
           </CozinhaVocabProvider>
         </LocaleProvider>
       </body>

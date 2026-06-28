@@ -44,7 +44,6 @@ export type ImportDialogLabels = {
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
-  daWebFonte: string
 }
 
 type Status = 'idle' | 'importing' | 'error'
@@ -134,20 +133,25 @@ export function ImportRecipeDialog({
     }
   }
 
-  const fonte = labels.daWebFonte.replace('{fonte}', link.sourceName)
-
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      {/* GATILHO = o card do resultado da web. `asChild` para o gatilho ser o próprio <button>
+      {/* GATILHO = a LINHA do resultado da web. `asChild` para o gatilho ser o próprio <button>
           (Radix liga aria-expanded/aria-controls). É um botão (abre modal), NÃO um <a> — o link
-          externo "Ver no site" vive DENTRO do modal (saída explícita). */}
+          externo "Ver no site" vive DENTRO do modal (saída explícita). #5 (protótipo final): linha
+          COMPACTA — chip "web" + título (páprica, 1 linha truncada) + fonte à direita; divisória por
+          border-bottom (o <ul> põe a border-top de cima). A atribuição completa vive no modal. */}
       <Dialog.Trigger asChild>
         <button
           type="button"
-          className="flex w-full flex-col gap-0.5 rounded-md border border-border bg-surface px-4 py-3 text-left hover:border-fg"
+          className="flex w-full items-center gap-2.5 border-b border-border py-2.5 text-left transition-colors hover:bg-surface"
         >
-          <span className="font-display text-base font-medium text-fg">{link.title}</span>
-          <span className="text-xs text-muted">{fonte}</span>
+          <span className="shrink-0 rounded border border-border px-1.5 py-px text-[0.625rem] font-medium text-muted">
+            web
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-brand-ink">
+            {link.title}
+          </span>
+          <span className="shrink-0 text-xs text-muted">{link.sourceName}</span>
         </button>
       </Dialog.Trigger>
 

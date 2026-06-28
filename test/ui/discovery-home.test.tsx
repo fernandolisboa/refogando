@@ -48,6 +48,8 @@ function anon(): SessionState {
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 const MF = ptBR.feed
 
@@ -66,11 +68,14 @@ function feedItem(recipeId: string, displayedTitle: string, slug?: string): Sear
 function renderHome(over: { initialFeed?: SearchResult[]; initialNextCursor?: string | null } = {}) {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <SearchExperience
-        home
-        initialFeed={over.initialFeed ?? []}
-        initialNextCursor={over.initialNextCursor ?? null}
-      />
+      <HomeSearchProvider>
+        <HomeSearchBar />
+        <SearchExperience
+          home
+          initialFeed={over.initialFeed ?? []}
+          initialNextCursor={over.initialNextCursor ?? null}
+        />
+      </HomeSearchProvider>
     </LocaleProvider>,
   )
 }
@@ -138,6 +143,20 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     const replaceCalls = routerReplace.mock.calls.map((c) => String(c[0]))
     // A última reflexão de URL NÃO tem o termo de busca (voltou ao repouso `/pt-BR`).
     expect(replaceCalls.at(-1) ?? '').not.toContain('q=bolo')
+  })
+
+  it('× DEVOLVE o foco ao input ao limpar (não dropa pro <body>; WCAG 2.4.3)', async () => {
+    stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    const user = userEvent.setup()
+    renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'bolo')
+    // O × (HomeSearchBar) só aparece com termo; clicar limpa E devolve o foco ao input — senão o
+    // botão se desmonta e o foco cairia no <body> (perdendo o lugar do teclado/leitor de tela).
+    await user.click(screen.getByRole('button', { name: ptBR.busca.limparBusca }))
+    expect(box).toHaveValue('')
+    expect(box).toHaveFocus()
   })
 
   it('feed seeded VAZIO em repouso: mostra o estado neutro do feed (sem erro)', async () => {

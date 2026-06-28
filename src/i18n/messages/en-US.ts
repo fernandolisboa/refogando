@@ -123,13 +123,15 @@ export const enUS: Messages = {
     gerarComIa: 'Generate with AI',
     vazioGerarTitulo: 'Generate a recipe with AI',
     vazioGerarTexto: 'We create a recipe from your search.',
+    // #5 (final prototype): 2nd card of the EMPTY state — "Search the web" (MANUAL trigger). The final
+    // mock shows THIS card on empty (not the automatic "From the web" — auto-gate #164 now only fires
+    // on shallow-NON-empty). The button label reuses `buscar`="Search".
+    vazioWebTitulo: 'Search the web',
+    vazioWebTexto: 'Look for this recipe on other sites.',
     // #164: SEPARATE section of web links (ADR-0019) — appears ONLY when our own collection came back
-    // SHALLOW. These are EXTERNAL links, marked "from the web", NOT stored nor ranked (Search only
-    // finds). `daWebFonte` credits the source ("from the web · {fonte}"); {fonte} interpolated in the
-    // component via `.replace`.
+    // SHALLOW. These are EXTERNAL links, marked "from the web", NOT stored nor ranked (Search only finds).
     secaoDaWeb: 'From the web',
     daWebDescricao: "We didn't find this in our collection yet. These are external links — they open on the source site.",
-    daWebFonte: 'from the web · {fonte}',
     // #275: explicit second "search the web" trigger at the END of the results — fires the web by the
     // user's ACTION even with enough local results ("scrolled to the end and nothing fit"). Coexists
     // with the automatic one (#164). Reuses the SAME /api/discovery/web; degrades gracefully.

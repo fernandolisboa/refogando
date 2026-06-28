@@ -34,6 +34,8 @@ vi.mock('@/lib/auth-client', () => ({
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 
 // Provider com DOIS termos: um com rótulo (Brasileira) e um cujo rótulo é o próprio slug
 // (novacozinha) — modela o fallback de locale-ausente JÁ resolvido no servidor. 'italiana'
@@ -51,7 +53,10 @@ function renderSearch() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <CozinhaVocabProvider value={VOCAB}>
-        <SearchExperience />
+        <HomeSearchProvider>
+          <HomeSearchBar />
+          <SearchExperience />
+        </HomeSearchProvider>
       </CozinhaVocabProvider>
     </LocaleProvider>,
   )
