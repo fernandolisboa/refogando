@@ -24,6 +24,7 @@
  */
 import { UUID_RE } from '@/server/http/params'
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
+import { isCatalogPubliclyCurated, type CurationStatus } from '@/domain/recipe-curation'
 
 /**
  * Status do redirect do link LEGADO `/{locale}/recipes/<uuid>` → slug canônico: **308**
@@ -134,7 +135,13 @@ export function eligibleForPublicRead(r: {
   visibility: string
   resultKind: string
   moderationRemovedAt: Date | null
+  curationStatus: CurationStatus
 }): boolean {
-  const community = r.ownerId == null || r.visibility === 'public'
+  // #238/ADR-0026: o ramo CATÁLOGO (owner-null) só é leitura pública/indexável quando CURADO
+  // (`approved`). Um rascunho pending/editing/rejected NÃO é público (nem no detalhe-por-slug,
+  // nem no sitemap/hreflang/JSON-LD, que reusam este predicado). `curationStatus` obrigatório
+  // no input ⇒ o compilador acha todo caller (load.ts/sitemap.ts/page) — fail-closed.
+  const community =
+    (r.ownerId == null && isCatalogPubliclyCurated(r.curationStatus)) || r.visibility === 'public'
   return community && r.resultKind !== 'playful' && r.moderationRemovedAt == null
 }

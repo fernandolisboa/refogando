@@ -305,6 +305,7 @@ export async function resolvePublicSlugForLocale(
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      curationStatus: recipe.curationStatus,
     })
     .from(recipeTranslation)
     .innerJoin(recipe, eq(recipeTranslation.recipeId, recipe.id))
@@ -317,6 +318,7 @@ export async function resolvePublicSlugForLocale(
       visibility: row.visibility,
       resultKind: row.resultKind,
       moderationRemovedAt: row.moderationRemovedAt,
+      curationStatus: row.curationStatus,
     })
   ) {
     return null
@@ -356,6 +358,7 @@ export async function loadPublicRecipeBySlug(
       visibility: recipe.visibility,
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      curationStatus: recipe.curationStatus,
     })
     .from(recipeTranslation)
     .innerJoin(recipe, eq(recipeTranslation.recipeId, recipe.id))
@@ -373,6 +376,7 @@ export async function loadPublicRecipeBySlug(
       visibility: gate.visibility,
       resultKind: gate.resultKind,
       moderationRemovedAt: gate.moderationRemovedAt,
+      curationStatus: gate.curationStatus,
     })
   ) {
     return null

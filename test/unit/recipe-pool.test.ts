@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { eligibleForPool } from '@/domain/recipe-pool'
+import { CURATION_STATUSES, type CurationStatus } from '@/domain/recipe-curation'
 
 /**
- * Predicado de POOL (issue #18 + #168) — matriz owner(null/owned) × visibility(public/private) ×
- * resultKind(playful/não) × moderationRemovedAt(null/set) × origin(web_imported/outro). Único
- * caminho elegível: no pool (owner NULL OU public), não-playful, NÃO removido por moderação, E
- * origin ≠ web_imported (ADR-0019: importada da web NUNCA entra no pool — cinto-e-suspensório).
+ * Predicado de POOL (issue #18 + #168 + #238) — matriz owner(null/owned) × visibility(public/private)
+ * × resultKind(playful/não) × moderationRemovedAt(null/set) × origin(web_imported/outro) ×
+ * curationStatus. Único caminho elegível: no pool — Catálogo (owner NULL) **e CURADO** (`approved`,
+ * #238/ADR-0026) OU public —, não-playful, NÃO removido por moderação, E origin ≠ web_imported.
  */
 
 const REMOVED = new Date('2026-06-18T00:00:00Z')
 
 describe('eligibleForPool', () => {
-  it('catálogo (owner NULL), success, não-removido ⇒ elegível', () => {
+  it('catálogo (owner NULL) APROVADO, success, não-removido ⇒ elegível', () => {
     expect(
       eligibleForPool({
         ownerId: null,
@@ -19,8 +20,24 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: null,
         origin: 'catalog',
+        curationStatus: 'approved',
       }),
     ).toBe(true)
+  })
+
+  it('catálogo (owner NULL) pending/editing/rejected ⇒ NÃO elegível (rascunho fora do pool, #238)', () => {
+    for (const curationStatus of ['pending', 'editing', 'rejected'] as CurationStatus[]) {
+      expect(
+        eligibleForPool({
+          ownerId: null,
+          visibility: 'private',
+          resultKind: 'success',
+          moderationRemovedAt: null,
+          origin: 'catalog',
+          curationStatus,
+        }),
+      ).toBe(false)
+    }
   })
 
   it('comunidade pública, success, não-removido ⇒ elegível', () => {
@@ -31,6 +48,7 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: null,
         origin: 'ai_chat',
+        curationStatus: 'not_required',
       }),
     ).toBe(true)
   })
@@ -43,11 +61,12 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: null,
         origin: 'ai_chat',
+        curationStatus: 'not_required',
       }),
     ).toBe(false)
   })
 
-  it('playful ⇒ NÃO elegível mesmo se pública/catálogo', () => {
+  it('playful ⇒ NÃO elegível mesmo se pública/catálogo-aprovado', () => {
     expect(
       eligibleForPool({
         ownerId: null,
@@ -55,6 +74,7 @@ describe('eligibleForPool', () => {
         resultKind: 'playful',
         moderationRemovedAt: null,
         origin: 'ai_chat',
+        curationStatus: 'approved',
       }),
     ).toBe(false)
     expect(
@@ -64,11 +84,12 @@ describe('eligibleForPool', () => {
         resultKind: 'playful',
         moderationRemovedAt: null,
         origin: 'ai_chat',
+        curationStatus: 'not_required',
       }),
     ).toBe(false)
   })
 
-  it('moderationRemovedAt setado ⇒ NÃO elegível, mesmo pública/catálogo/success (AC3)', () => {
+  it('moderationRemovedAt setado ⇒ NÃO elegível, mesmo pública/catálogo-aprovado/success (AC3)', () => {
     expect(
       eligibleForPool({
         ownerId: null,
@@ -76,6 +97,7 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: REMOVED,
         origin: 'catalog',
+        curationStatus: 'approved',
       }),
     ).toBe(false)
     expect(
@@ -85,14 +107,13 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: REMOVED,
         origin: 'ai_chat',
+        curationStatus: 'not_required',
       }),
     ).toBe(false)
   })
 
   // ── #168/ADR-0019: web_imported NUNCA no pool (cinto-e-suspensório) ──────────────
   it('web_imported ⇒ NÃO elegível mesmo se aparentar pública+success+não-removida', () => {
-    // Estado normalmente inalcançável (web_imported é sempre private), mas o gate barra de
-    // qualquer modo: defense-in-depth contra um bug que vazasse uma importada para public.
     expect(
       eligibleForPool({
         ownerId: 'u1',
@@ -100,6 +121,7 @@ describe('eligibleForPool', () => {
         resultKind: 'success',
         moderationRemovedAt: null,
         origin: 'web_imported',
+        curationStatus: 'not_required',
       }),
     ).toBe(false)
   })
@@ -110,13 +132,18 @@ describe('eligibleForPool', () => {
         for (const resultKind of ['success', 'degraded', 'playful']) {
           for (const moderationRemovedAt of [null, REMOVED]) {
             for (const origin of ['catalog', 'ai_chat', 'user_edited', 'web_imported']) {
-              const inPoolVisibility = ownerId == null || visibility === 'public'
-              const expected =
-                inPoolVisibility &&
-                resultKind !== 'playful' &&
-                moderationRemovedAt == null &&
-                origin !== 'web_imported'
-              expect(eligibleForPool({ ownerId, visibility, resultKind, moderationRemovedAt, origin })).toBe(expected)
+              for (const curationStatus of CURATION_STATUSES as readonly CurationStatus[]) {
+                const inPool =
+                  (ownerId == null && curationStatus === 'approved') || visibility === 'public'
+                const expected =
+                  inPool &&
+                  resultKind !== 'playful' &&
+                  moderationRemovedAt == null &&
+                  origin !== 'web_imported'
+                expect(
+                  eligibleForPool({ ownerId, visibility, resultKind, moderationRemovedAt, origin, curationStatus }),
+                ).toBe(expected)
+              }
             }
           }
         }

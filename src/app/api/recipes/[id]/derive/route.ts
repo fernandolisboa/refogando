@@ -128,9 +128,13 @@ export async function POST(
 
   const db = getDb()
 
-  // Gate barato: lê só owner_id + visibility da base.
+  // Gate barato: lê owner_id + visibility + curation_status da base.
   const [gate] = await db
-    .select({ ownerId: recipe.ownerId, visibility: recipe.visibility })
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      curationStatus: recipe.curationStatus,
+    })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
@@ -141,9 +145,10 @@ export async function POST(
     return Response.json({ error: 'derivar_da_propria' }, { status: 409 })
   }
 
-  // Privada de OUTRO (com dono e não-pública) ⇒ 404 leak-safe. Catálogo (ownerId NULL) e
-  // pública de outro PASSAM. Espelha o gate de leitura do GET (não vaza existência).
-  if (!isCommunityVisible(gate.ownerId, gate.visibility)) {
+  // Privada de OUTRO (com dono e não-pública) ⇒ 404 leak-safe. Catálogo (ownerId NULL) CURADO
+  // (#238: rascunho pending/editing/rejected NÃO é forkável — não vaza o draft cru) e pública de
+  // outro PASSAM. Espelha o gate de leitura do GET (não vaza existência).
+  if (!isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus)) {
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 

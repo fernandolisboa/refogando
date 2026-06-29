@@ -59,6 +59,8 @@ async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
       moderationRemovedAt: recipe.moderationRemovedAt,
       // #168: proveniência entra no gate de pool — web_imported nunca é votável/favoritável.
       origin: recipe.origin,
+      // #238: rascunho de catálogo (não-aprovado) não entra no pool — não-votável/favoritável.
+      curationStatus: recipe.curationStatus,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
