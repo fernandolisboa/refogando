@@ -18,6 +18,7 @@ import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary
 import type { Origin, Visibility, ResultKind, LineageKind, TranslationProvenance, ImageProvenance } from '@/domain/recipe'
 import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ReportStatus } from '@/domain/report'
+import type { CurationStatus } from '@/domain/recipe-curation'
 import { seedUser } from './users'
 
 /**
@@ -53,7 +54,14 @@ export async function seedRecipe(input: {
   // é `$type<DerivedDiff>` — o seed aceita a forma congelada do domínio.
   derivedDiff?: DerivedDiff | null
   schemaVersion?: number
+  // #238/ADR-0026: estado de curadoria. DEFAULT inteligente que espelha o backfill de prod —
+  // catálogo (owner-null) nasce `approved` (visível, como o catálogo legado pós-migração), receita
+  // de usuário nasce `not_required`. Override explícito p/ semear rascunho pending/editing/rejected
+  // (ex.: o teste de não-vazamento). Sem isto, toda fixture de catálogo cairia no default
+  // 'not_required' da coluna ⇒ invisível ⇒ ~dezenas de testes de catálogo quebrariam.
+  curationStatus?: CurationStatus
 }): Promise<string> {
+  const ownerIsNull = (input.ownerId ?? null) == null
   const [row] = await getDb()
     .insert(recipe)
     .values({
@@ -63,6 +71,7 @@ export async function seedRecipe(input: {
       visibility: input.visibility,
       resultKind: input.resultKind,
       ownerId: input.ownerId ?? null,
+      curationStatus: input.curationStatus ?? (ownerIsNull ? 'approved' : 'not_required'),
       cozinha: input.cozinha ?? null,
       categoria: input.categoria ?? null,
       restricoes: input.restricoes,

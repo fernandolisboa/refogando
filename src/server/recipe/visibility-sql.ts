@@ -9,8 +9,13 @@ import { sql, type SQL } from 'drizzle-orm'
  *
  * Ponto único de edição da regra de visibilidade-de-comunidade no SQL cru; um novo valor de
  * visibilidade (ex.: `unlisted`) é alterado SÓ aqui (+ no predicado puro e na condição
- * Drizzle). Recebe o alias da tabela `recipe` no escopo e devolve, byte-idêntico ao que estava
- * inline: `(<alias>.owner_id IS NULL OR <alias>.visibility = 'public')`.
+ * Drizzle). Recebe o alias da tabela `recipe` no escopo e devolve:
+ * `((<alias>.owner_id IS NULL AND <alias>.curation_status = 'approved') OR <alias>.visibility = 'public')`.
+ *
+ * #238/ADR-0026: o ramo CATÁLOGO (owner-null) ganha `AND curation_status='approved'` — um
+ * rascunho pending/editing/rejected NÃO é comunidade-visível. Espelha `isCatalogPubliclyCurated`
+ * + `isCommunityVisible`. A coluna é lida via alias (sem novo param). Faltar este AND aqui vaza
+ * rascunho cru na Busca/feed.
  *
  * O alias é validado contra um conjunto restrito (identificadores simples) — defensivo, já que
  * só literais do código (`'r'`/`'r2'`) o alimentam; nunca entrada de usuário.
@@ -19,7 +24,9 @@ export function communityVisibleSqlFragment(alias: string): SQL {
   if (!/^[a-z][a-z0-9_]*$/i.test(alias)) {
     throw new Error(`communityVisibleSqlFragment: alias inválido ${JSON.stringify(alias)}`)
   }
-  return sql.raw(`(${alias}.owner_id IS NULL OR ${alias}.visibility = 'public')`)
+  return sql.raw(
+    `((${alias}.owner_id IS NULL AND ${alias}.curation_status = 'approved') OR ${alias}.visibility = 'public')`,
+  )
 }
 
 /**
@@ -53,10 +60,13 @@ export function viewerReadableSqlFragment(alias: string, viewerId?: string): SQL
   // Com viewer: o prefixo (gate de comunidade + a coluna owner_id do viewer) sai de `sql.raw`
   // (só o alias literal do código entra ali); o `viewerId` é BINDADO como param do template
   // (`${viewerId}`) — postgres-js o envia separado do texto SQL (sem injeção). O fechamento
-  // `)` também é raw. Resultado:
-  //   (<alias>.owner_id IS NULL OR <alias>.visibility = 'public' OR <alias>.owner_id = $N)
+  // `)` também é raw. #238: o ramo catálogo (owner-null) ganha `AND curation_status='approved'`
+  // (rascunho não-aprovado não é comunidade-visível, nem pro viewer-logado — tráfego dominante).
+  // A 3ª arma (owner_id = viewer) é INTOCADA: as PRÓPRIAS receitas do viewer (owner-not-null,
+  // not_required) seguem visíveis por igualdade de dono, independente de curadoria. Resultado:
+  //   ((<alias>.owner_id IS NULL AND <alias>.curation_status = 'approved') OR <alias>.visibility = 'public' OR <alias>.owner_id = $N)
   return sql`${sql.raw(
-    `(${alias}.owner_id IS NULL OR ${alias}.visibility = 'public' OR ${alias}.owner_id = `,
+    `((${alias}.owner_id IS NULL AND ${alias}.curation_status = 'approved') OR ${alias}.visibility = 'public' OR ${alias}.owner_id = `,
   )}${viewerId}${sql.raw(')')}`
 }
 

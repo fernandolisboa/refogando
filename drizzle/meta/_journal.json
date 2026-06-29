@@ -246,6 +246,13 @@
       "when": 1782523406960,
       "tag": "0034_magical_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1782706213492,
+      "tag": "0035_gifted_tusk",
+      "breakpoints": true
     }
   ]
 }

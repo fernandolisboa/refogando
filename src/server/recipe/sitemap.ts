@@ -1,8 +1,9 @@
-import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation } from '@/db/schema'
 import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
 import type { SitemapRecipe } from '@/domain/sitemap'
+import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 
 /**
  * Query do sitemap (#235, ADR-0020) — carrega TODAS as Receitas INDEXÁVEIS (Catálogo + comunidade
@@ -47,9 +48,10 @@ export async function loadSitemapRecipes(db: Database): Promise<
     .innerJoin(recipeTranslation, eq(recipeTranslation.recipeId, recipe.id))
     .where(
       and(
-        // Eixo de comunidade (espelha `isCommunityVisible`/`eligibleForPublicRead`): Catálogo
-        // (owner NULL) OU publicada.
-        or(isNull(recipe.ownerId), eq(recipe.visibility, 'public')),
+        // Eixo de comunidade — fonte-única `communityVisibleCondition` (espelha `isCommunityVisible`/
+        // `eligibleForPublicRead`): Catálogo (owner NULL) **CURADO** (`approved`, #238/ADR-0026) OU
+        // publicada. Usa o single-source (não reimplementa inline) p/ o ramo de curadoria nunca faltar.
+        communityVisibleCondition(recipe),
         // Não-`playful` (gate de índice default-open).
         sql`${recipe.resultKind} <> 'playful'`,
         // Não-removida pela moderação.

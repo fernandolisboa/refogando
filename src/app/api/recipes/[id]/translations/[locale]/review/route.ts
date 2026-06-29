@@ -46,12 +46,16 @@ export async function POST(
       ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      curationStatus: recipe.curationStatus,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
+  // #238: o curador revisa a tradução en-US de catálogo APROVADO (en-US fica automatica_nao_revisada
+  // até aqui, ADR-0026 dec.5); um rascunho não-aprovado não é comunidade ⇒ 404 (curado primeiro).
   const isCommunity =
-    isCommunityVisible(gate.ownerId, gate.visibility) && gate.moderationRemovedAt == null
+    isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) &&
+    gate.moderationRemovedAt == null
   if (!isCommunity) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Confirma a existência da LINHA (404 leak-safe, separado do efeito idempotente).

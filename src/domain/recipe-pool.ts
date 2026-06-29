@@ -1,3 +1,5 @@
+import { isCatalogPubliclyCurated, type CurationStatus } from '@/domain/recipe-curation'
+
 /**
  * Elegibilidade de POOL da Receita — predicado PURO single-source (issue #18).
  *
@@ -25,9 +27,14 @@ export function eligibleForPool(r: {
   resultKind: string
   moderationRemovedAt: Date | null
   origin: string
+  curationStatus: CurationStatus
 }): boolean {
+  // #238/ADR-0026: o ramo CATÁLOGO (owner-null) só entra no pool quando CURADO (`approved`);
+  // um rascunho pending/editing/rejected fica de fora. `curationStatus` é obrigatório no input
+  // ⇒ o compilador acha todo gate que monta este objeto (fail-closed).
   return (
-    (r.ownerId == null || r.visibility === 'public') &&
+    ((r.ownerId == null && isCatalogPubliclyCurated(r.curationStatus)) ||
+      r.visibility === 'public') &&
     r.resultKind !== 'playful' &&
     r.moderationRemovedAt == null &&
     r.origin !== 'web_imported'

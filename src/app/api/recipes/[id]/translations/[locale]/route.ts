@@ -53,13 +53,15 @@ export async function POST(
       ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       moderationRemovedAt: recipe.moderationRemovedAt,
+      curationStatus: recipe.curationStatus,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
   const removed = gate.moderationRemovedAt != null
+  // #238: rascunho de catálogo (não-aprovado) não é comunidade ⇒ não serve/gera tradução pública.
   const canAccess =
-    (!removed && isCommunityVisible(gate.ownerId, gate.visibility)) ||
+    (!removed && isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus)) ||
     gate.ownerId === g.session.user.id
   if (!canAccess) return Response.json({ error: 'not_found' }, { status: 404 })
 

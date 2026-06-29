@@ -64,6 +64,8 @@ export async function GET(
       visibility: recipe.visibility,
       // #18: removida do pool pela moderação sai da leitura pública (não-dono → 404).
       moderationRemovedAt: recipe.moderationRemovedAt,
+      // #238: rascunho de catálogo (pending/editing/rejected) NÃO é leitura pública — anônimo → 404.
+      curationStatus: recipe.curationStatus,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
@@ -82,7 +84,8 @@ export async function GET(
   // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
   // parcimônia: nunca lemos a sessão no tráfego anônimo quente (a Busca linka direto pra cá).
   const isPublicRead =
-    isCommunityVisible(gate.ownerId, gate.visibility) && gate.moderationRemovedAt == null
+    isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) &&
+    gate.moderationRemovedAt == null
   const requestLocale = parseRequestLocale(request)
 
   let viewerId: string | undefined

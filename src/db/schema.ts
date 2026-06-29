@@ -47,6 +47,7 @@ import {
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { REPORT_STATUSES } from '@/domain/report'
+import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 
@@ -100,6 +101,10 @@ export const strengthEnum = pgEnum('strength', STRENGTHS)
 // Status do Report (issue #18). Fonte única: REPORT_STATUSES de @/domain/report
 // (pending/resolved/rejected). Espelha roleEnum/strengthEnum importando do kernel.
 export const reportStatusEnum = pgEnum('report_status', REPORT_STATUSES)
+// Estado de CURADORIA do catálogo (issue #238, ADR-0026). Fonte única: CURATION_STATUSES de
+// @/domain/recipe-curation (pending/editing/approved/rejected/not_required). Pré-publicação
+// EXCLUSIVA do catálogo (owner-null); receita de usuário é sempre `not_required`.
+export const curationStatusEnum = pgEnum('curation_status', CURATION_STATUSES)
 // Vocabulário culinário data-driven (issue #314, ADR-0025). O META fica no código:
 // `kind` = quais dimensões existem (só 'cozinha' no passo 1); `vocabulary_term_status` =
 // ciclo de vida de um termo. Fonte única: VOCABULARY_KINDS + VOCABULARY_TERM_STATUSES de
@@ -220,6 +225,21 @@ export const recipe = pgTable(
     moderationRemovedAt: timestamp('moderation_removed_at', { withTimezone: true }),
     moderationReason: text('moderation_reason'),
     moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
+    // ── Estado de CURADORIA do catálogo (issue #238, ADR-0026) ────────────────────
+    // Pré-publicação EXCLUSIVA do catálogo (owner-null): um rascunho — inclusive
+    // rascunhado por IA (o seed) — fica ESCONDIDO até um Curador aprovar. O gate de
+    // comunidade-visível passa a exigir `curation_status='approved'` no ramo owner-null
+    // (ver `recipe-curation.ts` isCatalogPubliclyCurated + os 4 espelhos de visibilidade).
+    // DEFAULT 'not_required' = receita de USUÁRIO (curadoria não se aplica; Visibilidade
+    // governa). ADD COLUMN com default constante = metadata-only (sem rewrite). O catálogo
+    // é setado explícito por createCatalogRecipe (pending no seed / approved hand-made);
+    // a migração faz backfill `WHERE owner_id IS NULL → approved` (não esconde o existente).
+    // reviewed_at/by = "quem curou / quando" (vale p/ aprovar E rejeitar); review_note =
+    // motivo da rejeição / nota. ON DELETE set null espelha moderatedBy.
+    curationStatus: curationStatusEnum('curation_status').notNull().default('not_required'),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewNote: text('review_note'),
     schemaVersion: integer('schema_version').notNull().default(SCHEMA_VERSION_RECEITA),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -233,6 +253,16 @@ export const recipe = pgTable(
     check(
       'recipe_moderation_consistency_chk',
       sql`(${t.moderationRemovedAt} IS NULL) = (${t.moderatedBy} IS NULL)`,
+    ),
+    // Consistência da curadoria (#238, espelha recipe_moderation_consistency_chk): reviewed_at e
+    // reviewed_by setados JUNTOS ou ambos NULL. Satisfeito por TODOS os caminhos: seed `pending`
+    // (ambos NULL), aprovação/rejeição (ambos set), backfill de catálogo legado → approved (ambos
+    // NULL = true=true). `review_note` fica FORA do CHECK (texto livre). NÃO acoplamos owner↔status
+    // por CHECK de propósito: o gate já é fail-closed (not_required em owner-null nunca casa
+    // ='approved'), e engessar a tabela quente não paga.
+    check(
+      'recipe_curation_review_consistency_chk',
+      sql`(${t.reviewedAt} IS NULL) = (${t.reviewedBy} IS NULL)`,
     ),
     // Consistência do tempo de preparo (#261, ADR-0023): o ativo só existe junto de um
     // total e nunca o excede (ativo-sozinho é impossível). NULL passa trivialmente —
@@ -252,6 +282,13 @@ export const recipe = pgTable(
     index('recipe_moderation_removed_idx')
       .on(t.moderationRemovedAt)
       .where(sql`${t.moderationRemovedAt} IS NOT NULL`),
+    // Fila do Curador de receitas (#238): o predicado é `curation_status IN ('pending','editing')`
+    // (os rascunhos ainda não decididos). Índice PARCIAL nesse predicado, ordenado por created_at
+    // (ordem da fila) — enxuto, espelha os outros índices parciais (a maioria é 'not_required'/
+    // 'approved').
+    index('recipe_curation_queue_idx')
+      .on(t.createdAt)
+      .where(sql`${t.curationStatus} IN ('pending', 'editing')`),
     // Índice parcial na FK image_id (#130): cobre o ref-count (COUNT recipe WHERE image_id = X)
     // que decide se o blob pode ser apagado. Parcial WHERE image_id IS NOT NULL — a maioria das
     // Receitas não tem imagem, então o índice fica enxuto (espelha recipe_owner_id_idx).

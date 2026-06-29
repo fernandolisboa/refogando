@@ -6,6 +6,7 @@ import {
   eligibleForPublicRead,
   LEGACY_UUID_REDIRECT_STATUS,
 } from '@/domain/recipe-detail-route'
+import type { CurationStatus } from '@/domain/recipe-curation'
 
 /**
  * Lógica PURA da rota de detalhe por slug (#230, ADR-0020) — sem DB, sem React, sem `next/*`.
@@ -71,6 +72,7 @@ describe('eligibleForPublicRead (gate de leitura pública = gate de indexação)
     visibility: 'public',
     resultKind: 'success',
     moderationRemovedAt: null as Date | null,
+    curationStatus: 'not_required' as CurationStatus,
   }
 
   it('comunidade (dono + pública) + não-playful + não-removida ⇒ legível/indexável', () => {
@@ -81,16 +83,32 @@ describe('eligibleForPublicRead (gate de leitura pública = gate de indexação)
     expect(eligibleForPublicRead({ ...base, visibility: 'private' })).toBe(false)
   })
 
-  it('Catálogo (ownerId NULL) + visibility=private ⇒ LEGÍVEL/indexável (eixo de comunidade)', () => {
+  it('Catálogo (ownerId NULL) APROVADO + visibility=private ⇒ LEGÍVEL/indexável (eixo de comunidade)', () => {
     // Carga de propósito: o Catálogo nasce visibility=private + ownerId NULL (createCatalogRecipe);
-    // o eixo owner-NULL abre a leitura (igual ao GET por uuid via isCommunityVisible), senão o
+    // o eixo owner-NULL CURADO abre a leitura (igual ao GET por uuid via isCommunityVisible), senão o
     // Catálogo inteiro cairia do índice/da leitura por slug (contra a exceção editorial do ADR).
-    expect(eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private' })).toBe(true)
+    expect(
+      eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private', curationStatus: 'approved' }),
+    ).toBe(true)
   })
 
-  it('Catálogo (ownerId NULL) playful ⇒ NÃO legível (playful sempre fora, mesmo no Catálogo)', () => {
+  it('Catálogo (ownerId NULL) pending/editing/rejected ⇒ NÃO legível (rascunho escondido, #238)', () => {
+    for (const curationStatus of ['pending', 'editing', 'rejected'] as CurationStatus[]) {
+      expect(
+        eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private', curationStatus }),
+      ).toBe(false)
+    }
+  })
+
+  it('Catálogo (ownerId NULL) APROVADO playful ⇒ NÃO legível (playful sempre fora, mesmo no Catálogo)', () => {
     expect(
-      eligibleForPublicRead({ ...base, ownerId: null, visibility: 'private', resultKind: 'playful' }),
+      eligibleForPublicRead({
+        ...base,
+        ownerId: null,
+        visibility: 'private',
+        resultKind: 'playful',
+        curationStatus: 'approved',
+      }),
     ).toBe(false)
   })
 

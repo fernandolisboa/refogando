@@ -45,6 +45,7 @@ async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
       origin: recipe.origin, // #168: gate de pool exclui web_imported (recipe-pool.ts)
+      curationStatus: recipe.curationStatus, // #238: rascunho de catálogo não-aprovado não é pool
     })
     .from(recipe)
     .where(eq(recipe.id, id))
