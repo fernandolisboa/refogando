@@ -9,8 +9,10 @@
  *   letra: outline de UMA letra brigaria com as outras). O vetor pixel-exato da marca é o
  *   favicon (frigideira-lateral), não a wordmark.
  * - Largura DETERMINÍSTICA via `textLength` + `lengthAdjust="spacingAndGlyphs"`: "Refogando"
- *   ocupa sempre a mesma extensão, qualquer que seja a serifa instalada — sem `overflow:visible`,
- *   sem vazar por cima da nav, sem folga variável. O vapor fica ancorado por isso.
+ *   ocupa sempre a mesma EXTENSÃO, qualquer que seja a serifa instalada — sem `overflow:visible`,
+ *   sem vazar por cima da nav, sem folga variável. (Isso fixa a largura da PALAVRA; o registro
+ *   vapor↔R é calibrado pra serifa primária (Iowan/Palatino) e degrada com elegância nas outras —
+ *   não é âncora por-glifo. A marca pixel-exata continua sendo o favicon vetorial.)
  * - Vapor DENTRO do viewBox (não conta com overflow): nada é cortado quando o header sticky rola.
  * - Cores por TOKEN (ADR-0015): letras = `currentColor` (quem usa passa `text-fg` → café no claro,
  *   creme no escuro); vapor = `stroke-brand` (páprica). No escuro `--color-brand` == `--color-brand-ink`,

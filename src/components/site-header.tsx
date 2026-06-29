@@ -117,9 +117,14 @@ export function SiteHeader() {
           isHome && wide && 'xl:max-w-wide',
         )}
       >
-        <Link href="/" className="inline-flex items-center text-fg">
-          {/* Wordmark "steam-R" (#270): o link herda o nome acessível "Refogando" do aria-label do
-              SVG. `text-fg` pinta as letras (café/creme via currentColor); o vapor é stroke-brand. */}
+        <Link
+          href="/"
+          aria-label={messages.app.name}
+          className="inline-flex items-center text-fg"
+        >
+          {/* Wordmark "steam-R" (#270): o nome acessível vive no próprio Link (aria-label) — não
+              depende de como o SVG interno está rotulado. `text-fg` pinta as letras (café/creme via
+              currentColor); o vapor é stroke-brand. */}
           <BrandWordmark name={messages.app.name} className="h-10" />
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
