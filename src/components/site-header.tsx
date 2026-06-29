@@ -29,6 +29,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { BrandWordmark } from '@/components/brand-wordmark'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
@@ -116,11 +117,10 @@ export function SiteHeader() {
           isHome && wide && 'xl:max-w-wide',
         )}
       >
-        <Link
-          href="/"
-          className="font-display text-2xl font-semibold tracking-tight text-brand-ink"
-        >
-          {messages.app.name}
+        <Link href="/" className="inline-flex items-center text-fg">
+          {/* Wordmark "steam-R" (#270): o link herda o nome acessível "Refogando" do aria-label do
+              SVG. `text-fg` pinta as letras (café/creme via currentColor); o vapor é stroke-brand. */}
+          <BrandWordmark name={messages.app.name} className="h-10" />
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
