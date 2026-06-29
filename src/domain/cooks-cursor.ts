@@ -17,11 +17,18 @@
  * um probe `limit+1`, nunca de `rows.length < limit`.
  */
 
-// Forma TEXTO do `timestamptz` do Postgres (`::text`) — réplica local (a de recipe-feed-read é privada).
+// Forma TEXTO do `timestamptz` do Postgres (`::text`) — com FAIXAS válidas (mês 01-12, dia 01-31, hora
+// 00-23, min/seg 00-59, offset 00-23[:00-59]). Sem as faixas, um cursor como `9999-99-99 99:99:99` passa
+// a regex e estoura `::timestamptz` → 500. NÃO usar `Date.parse` como guarda: `Date.parse('2026-06-29
+// 09:00:00-0300')` (forma legítima do `::text`) é NaN no V8 → rejeitaria cursores reais e travaria a paginação.
 const TIMESTAMPTZ_RE =
-  /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,9})?([+-]\d{2}(:?\d{2})?|Z)?$/
+  /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[ T]([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?([+-]([01]\d|2[0-3])(:?[0-5]\d)?|Z)?$/
 // Handle público (domain/handle.ts): [a-z0-9-], 3–30. Aqui basta "seguro de bindar" + plausível.
 const CURSOR_HANDLE_RE = /^[a-z0-9-]{1,30}$/
+// `score`/`rank` vão pra colunas `::int` (int4). Um inteiro fora da faixa int4 passa `Number.isInteger`
+// mas estoura o bind ("value out of range for integer") → 500 na rota /api/cooks (não-assistiva). Limita.
+const INT4_MIN = -2147483648
+const INT4_MAX = 2147483647
 
 /** Rejeita strings com controles C0 (codepoint < 0x20). O NUL faz o postgres-js estourar ao bindar um
  *  text param; o `name` livre, vindo de um cursor forjado, pode trazê-lo. Char-code (sem literal de
@@ -61,7 +68,7 @@ export function decodeRecsCursor(raw: string | null): RecsCursor | null {
   const p = asRecord(decodeJson(raw))
   if (!p) return null
   const { s, r, h } = p
-  if (typeof s !== 'number' || !Number.isInteger(s)) return null
+  if (typeof s !== 'number' || !Number.isInteger(s) || s < INT4_MIN || s > INT4_MAX) return null
   if (typeof r !== 'string' || !TIMESTAMPTZ_RE.test(r)) return null
   if (typeof h !== 'string' || !CURSOR_HANDLE_RE.test(h)) return null
   return { score: s, recency: r, handle: h }
@@ -75,10 +82,11 @@ export function decodeSearchCursor(raw: string | null): SearchCursor | null {
   const p = asRecord(decodeJson(raw))
   if (!p) return null
   const { k, n, h } = p
-  if (typeof k !== 'number' || !Number.isInteger(k)) return null
+  if (typeof k !== 'number' || !Number.isInteger(k) || k < INT4_MIN || k > INT4_MAX) return null
   // `name` é texto livre (bindado como param → injection-safe), mas rejeitamos control chars (o NUL
-  // estoura o bind) e limitamos o tamanho (um cursor forjado gigante não vira input ilimitado).
-  if (typeof n !== 'string' || n.length > 256 || hasControlChars(n)) return null
+  // estoura o bind) e limitamos o tamanho (anti-abuso). Teto folgado (1024) p/ não rejeitar um nome real
+  // longo — rejeitá-lo faria o cursor cair em page-1 e o cliente duplicar a 1ª página em loop.
+  if (typeof n !== 'string' || n.length > 1024 || hasControlChars(n)) return null
   if (typeof h !== 'string' || !CURSOR_HANDLE_RE.test(h)) return null
   return { rank: k, name: n, handle: h }
 }

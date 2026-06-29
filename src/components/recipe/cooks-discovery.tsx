@@ -63,7 +63,8 @@ export function CooksDiscovery({
 
   const mode: 'search' | 'recs' = dq.length >= COOK_MIN_SEARCH ? 'search' : 'recs'
   const cozinhaParam = selectedCozinhas.join(',')
-  const sig = `${mode}|${dq}|${cozinhaParam}` // assinatura da consulta atual
+  // No modo recs o TERMO não entra na assinatura — digitar 1–2 chars (ainda recs) não re-busca a lista.
+  const sig = mode === 'search' ? `search|${dq}|${cozinhaParam}` : `recs||${cozinhaParam}`
   const SEED_SIG = 'recs||'
 
   const tokenRef = useRef(0)
@@ -88,12 +89,15 @@ export function CooksDiscovery({
   // (re)carrega a 1ª página quando a assinatura OU o login muda. Pula SÓ o estado-seed inicial (recs
   // global anônimo), que o SSR já trouxe — evita um fetch redundante no caso anon mais comum.
   useEffect(() => {
+    // Pula a 1ª busca SÓ no estado-seed anon COM seed não-vazio (o SSR já o trouxe). Se o seed veio vazio
+    // (soluço do DB no SSR), NÃO pula → busca pra o anônimo se recuperar (não fica preso no vazio).
     const isSeedState = sig === SEED_SIG && !authed
     if (firstRun.current) {
       firstRun.current = false
-      if (isSeedState) return
+      if (isSeedState && initialCooks.length > 0) return
     }
     const token = ++tokenRef.current
+    setCursor(null) // zera o cursor JÁ — impede um load-more obsoleto disparar contra o cursor antigo
     setLoading(true)
     fetchPage(null)
       .then((res) => {
@@ -108,9 +112,11 @@ export function CooksDiscovery({
         setCursor(null)
         setLoading(false)
       })
-    // sig + authed cobrem todas as deps de fetchPage; reexecutar por identidade do callback duplicaria.
+    // sig+authed+locale cobrem TODAS as deps de fetchPage (locale entra p/ re-buscar os títulos no idioma
+    // novo após troca de locale — a instância persiste na navegação irmã); reexecutar pela identidade do
+    // callback duplicaria.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig, authed])
+  }, [sig, authed, locale])
 
   const loadMore = useCallback(() => {
     if (!cursor || loadingMore || loading) return

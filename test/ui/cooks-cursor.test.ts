@@ -36,6 +36,8 @@ describe('cooks-cursor — recomendações (score, recency, handle)', () => {
     ['score não-número', Buffer.from(JSON.stringify({ s: '1', r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')],
     ['recency não-timestamptz', Buffer.from(JSON.stringify({ s: 1, r: 'lixo', h: 'h-1' }), 'utf8').toString('base64url')],
     ['handle fora do charset', Buffer.from(JSON.stringify({ s: 1, r: '2026-06-29 12:00:00+00', h: 'Ana Maria!' }), 'utf8').toString('base64url')],
+    ['score fora da faixa int4 (overflow)', Buffer.from(JSON.stringify({ s: 9999999999, r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')],
+    ['data fora de faixa (mês 99)', Buffer.from(JSON.stringify({ s: 1, r: '9999-99-99 99:99:99', h: 'h-1' }), 'utf8').toString('base64url')],
   ])('forjado (%s) → null (nunca 500)', (_label, raw) => {
     expect(decodeRecsCursor(raw)).toBeNull()
   })
@@ -54,8 +56,9 @@ describe('cooks-cursor — busca (rank, name, handle)', () => {
   it.each([
     ['rank não-inteiro', Buffer.from(JSON.stringify({ k: 0.5, n: 'x', h: 'h-1' }), 'utf8').toString('base64url')],
     ['name não-string', Buffer.from(JSON.stringify({ k: 0, n: 7, h: 'h-1' }), 'utf8').toString('base64url')],
-    ['name gigante', Buffer.from(JSON.stringify({ k: 0, n: 'x'.repeat(257), h: 'h-1' }), 'utf8').toString('base64url')],
+    ['name gigante', Buffer.from(JSON.stringify({ k: 0, n: 'x'.repeat(1025), h: 'h-1' }), 'utf8').toString('base64url')],
     ['handle fora do charset', Buffer.from(JSON.stringify({ k: 0, n: 'x', h: 'WAT.' }), 'utf8').toString('base64url')],
+    ['rank fora da faixa int4 (overflow)', Buffer.from(JSON.stringify({ k: 9999999999, n: 'x', h: 'h-1' }), 'utf8').toString('base64url')],
   ])('forjado (%s) → null', (_label, raw) => {
     expect(decodeSearchCursor(raw)).toBeNull()
   })

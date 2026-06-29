@@ -9,12 +9,19 @@
 import { Container } from '@/components/container'
 import { AuthForm } from '@/components/auth/auth-form'
 import { isGoogleConfigured } from '@/server/auth/google'
+import { safeInternalPath } from '@/domain/safe-redirect'
 
-export default function SignUpPage() {
+// `?returnTo=` (#308): propagado pelo link entrar↔criar-conta; sanitizado na borda (anti open-redirect).
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>
+}) {
+  const { returnTo } = await searchParams
   return (
     <Container as="main" className="py-16">
       <div className="mx-auto w-full max-w-sm">
-        <AuthForm mode="sign-up" googleEnabled={isGoogleConfigured()} />
+        <AuthForm mode="sign-up" googleEnabled={isGoogleConfigured()} returnTo={safeInternalPath(returnTo)} />
       </div>
     </Container>
   )

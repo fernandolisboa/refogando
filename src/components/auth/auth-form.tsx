@@ -80,6 +80,10 @@ export function AuthForm({
   // Re-sanitiza por garantia (a page já passou pela guarda anti open-redirect). Email → push; Google →
   // callbackURL do OAuth. '/' preserva o comportamento anterior quando não há returnTo.
   const dest = safeInternalPath(returnTo)
+  // O link entrar↔criar-conta PROPAGA o returnTo (senão o anônimo que clicou "Seguir" o perderia ao
+  // trocar pra "Criar conta"). Sem returnTo, fica o href nu de antes.
+  const toggleBase = isSignUp ? '/sign-in' : '/sign-up'
+  const toggleHref = dest === '/' ? toggleBase : `${toggleBase}?returnTo=${encodeURIComponent(dest)}`
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -225,7 +229,7 @@ export function AuthForm({
       <p className="text-sm text-muted">
         {isSignUp ? messages.auth.jaTemConta : messages.auth.semConta}{' '}
         <Link
-          href={isSignUp ? '/sign-in' : '/sign-up'}
+          href={toggleHref}
           className="font-medium text-brand-ink hover:underline"
         >
           {isSignUp ? messages.nav.signIn : messages.auth.criarConta}

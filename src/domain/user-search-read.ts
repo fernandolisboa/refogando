@@ -6,7 +6,6 @@
  */
 import type { Role } from '@/domain/user'
 import { isUuid } from '@/domain/uuid'
-import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
 
 export type UserQueryKind = 'id' | 'handle' | 'email' | 'text'
 export type UserQuery = { kind: UserQueryKind; term: string }
@@ -82,15 +81,4 @@ export function projectAdminUserResult(row: UserSearchRow): AdminUserResult {
     role: row.role,
     email: row.email ?? null,
   }
-}
-
-/**
- * Projeção PÚBLICA de Cozinheiro (#279, cluster da Busca mesclada) — a allowlist MÍNIMA: SÓ
- * nome/@handle/avatar. Dropa `id` (o uuid interno NUNCA vai pro cliente), `role` (Cozinheiro é LENTE,
- * não papel) e `email` (PII — já nem é selecionada no caminho público). Reusa o tipo `ProfileFollowUser`
- * (mesma forma pública usada nas listas de seguidores #274 — sem terceiro DTO quase-idêntico). A
- * PROJEÇÃO é o gate de DADOS pro cliente; a rota NUNCA devolve a linha crua.
- */
-export function projectPublicCook(row: UserSearchRow): ProfileFollowUser {
-  return { name: row.name, handle: row.handle, image: row.image }
 }
