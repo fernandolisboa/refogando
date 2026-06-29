@@ -11,6 +11,7 @@
  */
 import { SectionGate, gateSection } from '../gate'
 import { CatalogCuration } from '@/components/admin/catalog-curation'
+import { CatalogRecipeQueue } from '@/components/admin/catalog-recipe-queue'
 import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 
 export const runtime = 'nodejs'
@@ -23,6 +24,8 @@ export default async function AdminCatalogPage() {
   return (
     <SectionGate min="curador">
       <div className="flex flex-col gap-10">
+        {/* #238/ADR-0026: fila de curadoria dos rascunhos de catálogo gerados por IA (o dono cura). */}
+        <CatalogRecipeQueue />
         <CatalogCuration />
         {/* #237/#268: aviso de catálogo AI-assistido — liga/desliga + texto (admin-only). */}
         {isAdmin && <CatalogDisclosureConfigSection />}
