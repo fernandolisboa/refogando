@@ -22,16 +22,19 @@ import { CATEGORIAS, type Categoria } from '@/domain/vocabulary'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import type { RecipeView, GalleryImage } from '@/domain/recipe-read'
 import type { CatalogQueueItem } from '@/server/curate/recipe-curation'
+import { CatalogEditModal } from '@/components/admin/catalog-edit-modal'
+import { CatalogImageControls } from '@/components/admin/catalog-image-controls'
 
 /** A fila chega via `res.json()` ⇒ `createdAt` vira STRING (não renderizamos data). */
 type QueueItem = Omit<CatalogQueueItem, 'createdAt'> & { createdAt: string }
 
-/** Corpo do rascunho carregado sob demanda (GET curador-aware) p/ o Curador VER antes de decidir. */
-type DraftDetail = {
-  translations: { locale: string; titulo: string; descricao: string | null; passos: string[] | null; notas: string | null }[]
-  ingredientes: { rawText: string | null; quantidade: string | null; unidade: string | null }[]
-}
+/**
+ * Corpo do rascunho carregado sob demanda (GET curador-aware, #238 emenda dec.9/10): o `RecipeView`
+ * (p/ Ver + pré-preencher o editor) + a `gallery` da linhagem (p/ o estúdio de imagem). Cacheado por id.
+ */
+type DraftDetail = { view: RecipeView; gallery: GalleryImage[] }
 
 export function CatalogRecipeQueue() {
   const { messages } = useLocale()
@@ -47,6 +50,8 @@ export function CatalogRecipeQueue() {
   const [note, setNote] = useState('')
   const [errorId, setErrorId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null) // #238: rascunho no modal de edição
+  const [imageOpenId, setImageOpenId] = useState<string | null>(null) // #238: estúdio de imagem inline
   const [detail, setDetail] = useState<Record<string, DraftDetail>>({})
   const [detailLoading, setDetailLoading] = useState<string | null>(null)
   // #238 follow-up: filtro (cozinha/categoria) + busca por título + paginação "Ver mais" — com 225
@@ -141,24 +146,84 @@ export function CatalogRecipeQueue() {
     })
   }
 
-  async function toggleExpand(id: string): Promise<void> {
+  /**
+   * Carrega o corpo curador-aware (RecipeView + gallery) sob demanda e cacheia por id. Compartilhado
+   * por Ver / Editar / Imagem. `locale` = o original do item (a língua de curadoria). Devolve o detalhe
+   * (ou null se falhou) p/ o caller (ex.: Editar só abre o modal se carregou).
+   */
+  async function ensureDetail(item: QueueItem): Promise<DraftDetail | null> {
+    if (detail[item.recipeId]) return detail[item.recipeId]
+    setDetailLoading(item.recipeId)
+    try {
+      const res = await fetch(`/api/curate/recipes/${item.recipeId}?locale=${encodeURIComponent(item.locale)}`)
+      if (!res.ok) return null
+      const body = (await res.json()) as DraftDetail
+      setDetail((prev) => ({ ...prev, [item.recipeId]: body }))
+      return body
+    } catch {
+      return null
+    } finally {
+      setDetailLoading(null)
+    }
+  }
+
+  async function toggleExpand(item: QueueItem): Promise<void> {
+    const id = item.recipeId
     if (expandedId === id) {
       setExpandedId(null)
       return
     }
     setExpandedId(id)
-    if (detail[id]) return
-    setDetailLoading(id)
+    await ensureDetail(item)
+  }
+
+  /** Abre o modal de edição (reusa o editor rico). Só abre se o detalhe carregou (senão erro). */
+  async function openEdit(item: QueueItem): Promise<void> {
+    const d = await ensureDetail(item)
+    if (d) setEditingId(item.recipeId)
+    else setErrorId(item.recipeId)
+  }
+
+  /** Abre/fecha o estúdio de imagem inline. */
+  async function toggleImage(item: QueueItem): Promise<void> {
+    const id = item.recipeId
+    if (imageOpenId === id) {
+      setImageOpenId(null)
+      return
+    }
+    setImageOpenId(id)
+    await ensureDetail(item)
+  }
+
+  /**
+   * Pós-save do modal de edição: fecha, re-busca o detalhe FRESCO (bypassa cache — a edição mudou o
+   * corpo) e atualiza o card na fila (titulo/facetas/porções/dificuldade refletem a edição sem reload
+   * geral). Falha de re-fetch ⇒ mantém o que tem (a edição já gravou no servidor).
+   */
+  async function onEditSaved(item: QueueItem): Promise<void> {
+    setEditingId(null)
     try {
-      const res = await fetch(`/api/curate/recipes/${id}`)
-      if (res.ok) {
-        const body = (await res.json()) as DraftDetail
-        setDetail((prev) => ({ ...prev, [id]: body }))
-      }
+      const res = await fetch(`/api/curate/recipes/${item.recipeId}?locale=${encodeURIComponent(item.locale)}`)
+      if (!res.ok) return
+      const d = (await res.json()) as DraftDetail
+      setDetail((prev) => ({ ...prev, [item.recipeId]: d }))
+      const v = d.view
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.recipeId === item.recipeId
+            ? {
+                ...q,
+                titulo: v.name,
+                cozinha: v.facets.cozinha ?? null,
+                categoria: v.facets.categoria ?? null,
+                porcoes: v.porcoes,
+                dificuldade: v.dificuldade,
+              }
+            : q,
+        ),
+      )
     } catch {
-      // silencioso — o bloco mostra "—" se não carregar; o Curador pode reabrir.
-    } finally {
-      setDetailLoading(null)
+      // mantém o card como está — a edição já está persistida no servidor.
     }
   }
 
@@ -266,28 +331,28 @@ export function CatalogRecipeQueue() {
                 {expandedId === item.recipeId &&
                   (() => {
                     const d = detail[item.recipeId]
-                    const t = d?.translations.find((x) => x.locale === item.locale) ?? d?.translations[0]
                     if (detailLoading === item.recipeId && !d) {
                       return <p className="text-sm text-muted">{sys.loading}</p>
                     }
+                    const v = d?.view
                     return (
                       <div className="flex flex-col gap-2 rounded-md border border-border bg-bg px-3 py-2 text-sm">
-                        {t?.descricao && <p className="text-fg">{t.descricao}</p>}
-                        {d && d.ingredientes.length > 0 && (
+                        {v?.body.descricao && <p className="text-fg">{v.body.descricao}</p>}
+                        {v && v.ingredients.length > 0 && (
                           <div>
                             <p className="font-medium text-fg">{m.filaIngredientes}</p>
                             <ul className="list-disc pl-5 text-muted">
-                              {d.ingredientes.map((ing, i) => (
+                              {v.ingredients.map((ing, i) => (
                                 <li key={i}>{ing.rawText ?? '—'}</li>
                               ))}
                             </ul>
                           </div>
                         )}
-                        {t?.passos && t.passos.length > 0 && (
+                        {v?.body.passos && v.body.passos.length > 0 && (
                           <div>
                             <p className="font-medium text-fg">{m.filaPreparo}</p>
                             <ol className="list-decimal pl-5 text-muted">
-                              {t.passos.map((p, i) => (
+                              {v.body.passos.map((p, i) => (
                                 <li key={i}>{p}</li>
                               ))}
                             </ol>
@@ -295,6 +360,16 @@ export function CatalogRecipeQueue() {
                         )}
                       </div>
                     )
+                  })()}
+                {/* #238: estúdio de imagem do catálogo (gerar/subir/selecionar), inline. */}
+                {imageOpenId === item.recipeId &&
+                  (() => {
+                    const d = detail[item.recipeId]
+                    if (detailLoading === item.recipeId && !d) {
+                      return <p className="text-sm text-muted">{sys.loading}</p>
+                    }
+                    if (!d) return null
+                    return <CatalogImageControls recipeId={item.recipeId} initialGallery={d.gallery} />
                   })()}
                 {rejectingId === item.recipeId ? (
                   <div className="flex flex-col gap-2">
@@ -352,7 +427,25 @@ export function CatalogRecipeQueue() {
                     >
                       {m.filaRejeitar}
                     </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void toggleExpand(item.recipeId)}>
+                    {/* #238: Editar (modal, editor rico) + Imagem (estúdio inline). */}
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void openEdit(item)}
+                      disabled={detailLoading === item.recipeId}
+                    >
+                      {m.filaEditar}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void toggleImage(item)}
+                    >
+                      {imageOpenId === item.recipeId ? m.filaImagemOcultar : m.filaImagem}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void toggleExpand(item)}>
                       {expandedId === item.recipeId ? m.filaOcultar : m.filaVer}
                     </Button>
                   </div>
@@ -414,6 +507,25 @@ export function CatalogRecipeQueue() {
           </ul>
         )}
       </details>
+
+      {/* #238: modal de edição (editor rico reusado). Único por vez; lê o RecipeView do cache. Se o
+          rascunho saiu da fila (aprovado/rejeitado) o `find` falha ⇒ o modal some sozinho. */}
+      {editingId &&
+        detail[editingId] &&
+        (() => {
+          const item = queue.find((q) => q.recipeId === editingId)
+          if (!item) return null
+          return (
+            <CatalogEditModal
+              view={detail[editingId].view}
+              open={true}
+              onOpenChange={(o) => {
+                if (!o) setEditingId(null)
+              }}
+              onSaved={() => void onEditSaved(item)}
+            />
+          )
+        })()}
     </section>
   )
 }
