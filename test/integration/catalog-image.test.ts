@@ -9,8 +9,8 @@ import { POST as approveRoute } from '@/app/api/curate/recipes/[id]/approve/rout
 import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator } from '@/server/images/image-generator'
-import { recipe, recipeImage, recipeIngredient } from '@/db/schema'
-import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
+import { recipe, recipeImage, recipeIngredient, imageGeneration } from '@/db/schema'
+import { seedRecipe, seedTranslation, seedRecipeIngredient, seedRecipeImage } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 
 /**
@@ -148,6 +148,16 @@ describe('Imagem de catálogo — comportamento', () => {
     expect(await imageIdOf(draft)).toBeNull()
   })
 
+  it('gerar escreve 1 linha de ledger com userId=curador, cost_usd e model NÃO-nulos (dec.11)', async () => {
+    const { headers: cur, userId: curId } = await curator()
+    const draft = await seedCatalogDraft()
+    await catGen(jsonReq(`http://localhost/x`, cur), ctx(draft))
+    const rows = await getDb().select().from(imageGeneration).where(eq(imageGeneration.userId, curId))
+    expect(rows.length).toBe(1) // ledger-tracked: o gasto de catálogo é registrado
+    expect(rows[0].costUsd).not.toBeNull() // custo REAL (usage+model threaded), nunca NULL silencioso
+    expect(rows[0].model).not.toBeNull()
+  })
+
   it('gerar duas vezes acumula a galeria (não descarta) e re-selecionar via select troca a face', async () => {
     const { headers: cur } = await curator()
     const draft = await seedCatalogDraft()
@@ -246,6 +256,18 @@ describe('Auto-gen na aprovação (best-effort)', () => {
     const res = await approveRoute(jsonReq(`http://localhost/x`, cur), ctx(draft))
     expect(res.status).toBe(200)
     expect(await countImages(draft)).toBe(1) // não acrescentou
+  })
+
+  it('aprovar com face MODERADA ⇒ GERA nova (dec.12: não publica com placeholder moderado)', async () => {
+    const { headers: cur, userId: curId } = await curator()
+    const draft = await seedCatalogDraft()
+    // face MODERADA selecionada (o curador #133 escondeu): hasNonModeratedFace=false ⇒ auto-gen gera.
+    await seedRecipeImage({ recipeId: draft, provenance: 'ai_generated', moderated: { curatorId: curId } })
+    expect(await countImages(draft)).toBe(1)
+
+    const res = await approveRoute(jsonReq(`http://localhost/x`, cur), ctx(draft))
+    expect(res.status).toBe(200)
+    expect(await countImages(draft)).toBe(2) // gerou uma face nova (não-moderada)
   })
 
   it('gerador INDISPONÍVEL ⇒ aprovação ainda 200 (best-effort não bloqueia)', async () => {

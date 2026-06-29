@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { getDb } from '@/server/deps'
+import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
+import { FakeImageStore } from '@/server/images/image-store'
+import { FakeImageGenerator } from '@/server/images/image-generator'
 import { recipe } from '@/db/schema'
 import { GET as queueGet } from '@/app/api/curate/recipes/queue/route'
 import { POST as approveRoute } from '@/app/api/curate/recipes/[id]/approve/route'
@@ -19,6 +21,14 @@ import { seedSessionHeaders } from '../helpers/users'
  */
 
 const db = () => getDb()
+
+// #238 (code-review H3): a rota de APROVAR agora injeta store/generator (auto-gen na aprovação). Sem
+// Fakes, `resetDeps` daria os seams REAIS (Gemini/Blob) → chamada de rede paga a cada aprovação. Os
+// Fakes mantêm a aprovação determinística e offline.
+beforeEach(() => {
+  setImageStore(new FakeImageStore())
+  setImageGenerator(new FakeImageGenerator())
+})
 
 async function pendingDraft(): Promise<string> {
   const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, curationStatus: 'pending' })

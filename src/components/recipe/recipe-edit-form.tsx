@@ -346,10 +346,16 @@ export function RecipeEditForm({
       // (o rascunho é escondido). Sucesso ⇒ `onSaved()` (a fila recarrega o item). Retorna ANTES do
       // fluxo de dono. O `buildPatch()` já manda ingredientes+tempos (a rota de curador agora aceita).
       if (isCatalog) {
+        // #238 (code-review H1): OMITE `locale` do body — senão `buildPatch` manda `currentLocale` (o
+        // idioma da UI do curador), e a rota gravaria o texto do `original_locale` (que o GET
+        // pré-preencheu) na tradução do idioma ERRADO (corrupção cross-locale + edição "some"). Sem
+        // `locale`, a rota cai em `gate.originalLocale` = o locale do prefill. Correto.
+        const patch: Record<string, unknown> = { ...buildPatch() }
+        delete patch.locale
         const res = await fetch(`/api/curate/recipes/${view.id}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(buildPatch()),
+          body: JSON.stringify(patch),
         })
         if (!res.ok) {
           setDialog('none')

@@ -12,7 +12,7 @@ import { POST as translationsGet } from '@/app/api/recipes/[id]/translations/[lo
 import { POST as translationsReview } from '@/app/api/recipes/[id]/translations/[locale]/review/route'
 import { GET as staleQueue } from '@/app/api/curate/translations/stale/route'
 import { POST as voteRoute } from '@/app/api/recipes/[id]/vote/route'
-import { seedRecipe, seedTranslation } from '../helpers/recipes'
+import { seedRecipe, seedTranslation, seedRecipeImage } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 import type { CurationStatus } from '@/domain/recipe-curation'
 
@@ -150,6 +150,26 @@ describe('Gate de curadoria de catálogo — rascunho não vaza em NENHUMA super
       const d = await seedCatalog(s, token)
       expect((await derive(d.id, headers)).status).toBe(404)
     }
+  })
+
+  // #238 (code-review H4) — VETOR NOVO: antes da emenda, um rascunho NÃO podia ter imagem (todo
+  // caminho de imagem own-gateia ⇒ catálogo 404). Agora o curador pode gerar/subir/selecionar uma
+  // face num PENDING. Prova que `image_id` setado num rascunho NÃO o vaza: o gate é por
+  // `curation_status`, não por imagem.
+  it('VETOR NOVO: rascunho PENDING com FACE selecionada não-moderada continua escondido', async () => {
+    const token = `imgleak${Date.now().toString(36)}`
+    const approved = await seedCatalog('approved', token)
+    const pending = await seedCatalog('pending', token)
+    await seedRecipeImage({ recipeId: approved.id, provenance: 'ai_generated' })
+    await seedRecipeImage({ recipeId: pending.id, provenance: 'ai_generated' })
+
+    const sm = await loadSitemapRecipes(db())
+    expect(sm.some((x) => x.recipeId === approved.id)).toBe(true)
+    expect(sm.some((x) => x.recipeId === pending.id)).toBe(false)
+    expect(await loadPublicRecipeBySlug(db(), pending.slug, 'pt-BR')).toBeNull()
+    const feed = await loadFeed(db(), { requestLocale: 'pt-BR', limit: 200, cursor: null })
+    expect(feed.some((r) => r.recipe_id === pending.id)).toBe(false)
+    expect((await getUuid(pending.id)).status).toBe(404)
   })
 })
 

@@ -122,10 +122,12 @@ export async function PATCH(
   // Gate de escopo: existe E origin='catalog' (404 leak-safe). Lê originalLocale p/ o
   // fallback de locale numa só ida.
   const [gate] = await db
-    .select({ origin: recipe.origin, originalLocale: recipe.originalLocale })
+    .select({ origin: recipe.origin, ownerId: recipe.ownerId, originalLocale: recipe.originalLocale })
     .from(recipe)
     .where(eq(recipe.id, id))
-  if (!gate || gate.origin !== 'catalog') return notFound()
+  // #238 (code-review M1): defense-in-depth `origin='catalog' && owner_id IS NULL` (espelha o GET e os
+  // 5 cores de imagem) — não afrouxa o gate p/ um só eixo.
+  if (!gate || gate.origin !== 'catalog' || gate.ownerId != null) return notFound()
 
   const body = (await req.json().catch(() => ({}))) as EditCatalogBody
 

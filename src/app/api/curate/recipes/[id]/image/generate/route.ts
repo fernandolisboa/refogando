@@ -12,6 +12,7 @@ import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
  * do retorno). `requireRole` ANTES de qualquer lookup (não vaza existência por status-code).
  */
 export const runtime = 'nodejs' // postgres-js + Buffer + fetch exigem Node, não Edge.
+export const maxDuration = 60 // a geração chama o Gemini (multi-segundo) — folga p/ não cortar no meio.
 
 export async function POST(
   req: Request,

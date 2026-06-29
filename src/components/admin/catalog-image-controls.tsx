@@ -135,8 +135,9 @@ export function CatalogImageControls({
         </div>
       </div>
 
-      {/* Galeria (re-selecionável). Só aparece com ≥ 2 itens (1 já é a face mostrada acima). */}
-      {gallery.length > 1 && (
+      {/* Galeria (re-selecionável). Aparece com ≥ 2 itens (1 já é a face acima) OU com 1 item SEM face
+          selecionada (code-review M3: senão a única imagem deselecionada fica inalcançável p/ re-usar). */}
+      {(gallery.length > 1 || (gallery.length === 1 && !face)) && (
         <ul className="flex flex-wrap gap-2">
           {gallery.map((img) => (
             <li key={img.id} className="relative">
