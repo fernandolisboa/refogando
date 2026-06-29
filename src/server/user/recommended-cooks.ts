@@ -8,6 +8,17 @@ import {
   type RecommendedCookRecipe,
 } from '@/domain/recommended-cooks-read'
 import { projectResult, type SearchHitRow } from '@/domain/recipe-search-read'
+import { encodeRecsCursor, type RecsCursor } from '@/domain/cooks-cursor'
+
+/** Uma página da Descoberta de Cozinheiros (#308): os cozinheiros + o cursor opaco da PRÓXIMA página
+ *  (`null` quando acabou — minado de um probe `limit+1`, NUNCA de `cooks.length < limit`). */
+export type RecommendedCooksPage = { cooks: RecommendedCook[]; nextCursor: string | null }
+
+/** Fragmento de filtro de Cozinha (multi, OR-dentro-do-eixo): array VAZIO ⇒ sem filtro (espelha
+ *  `server/recipe/search.ts`). `r` é o alias da `recipe` na query do chamador. */
+function cozinhaFilterSql(cozinhas: string[]) {
+  return sql`(cardinality(${sql.param(cozinhas)}::text[]) = 0 OR r.cozinha = ANY (${sql.param(cozinhas)}::text[]))`
+}
 
 /**
  * Loader do trilho "Cozinheiros pra seguir" (#278, ADR-0024) — ranqueia Cozinheiros por POPULARIDADE
@@ -52,10 +63,18 @@ import { projectResult, type SearchHitRow } from '@/domain/recipe-search-read'
  */
 export async function loadRecommendedCooks(
   db: Database,
-  args: { viewerId?: string; limit: number; requestLocale?: string },
-): Promise<RecommendedCook[]> {
+  args: {
+    viewerId?: string
+    limit: number
+    requestLocale?: string
+    cozinhas?: string[]
+    cursor?: RecsCursor | null
+  },
+): Promise<RecommendedCooksPage> {
   const { viewerId, limit } = args
   const requestLocale = args.requestLocale ?? DEFAULT_LOCALE
+  const cozinhas = args.cozinhas ?? []
+  const cursor = args.cursor ?? null
 
   // Exclusões per-viewer SÓ quando logado; anônimo/global NÃO binda NULL (omite as cláusulas).
   const viewerExclusionSql = viewerId
@@ -64,53 +83,92 @@ export async function loadRecommendedCooks(
       )`
     : sql``
 
-  type Row = { name: string; handle: string; image: string | null; recipe_count: number }
+  // Keyset all-DESC (#308): a próxima página = o que vem DEPOIS do cursor = a tupla lexicograficamente
+  // MENOR. Score/recency são AGREGADOS → o ranking vai numa CTE pra a comparação de linha valer no
+  // SELECT externo (não dá pra filtrar agregado no WHERE). Tiebreak = `handle` PÚBLICO (allowlist #269;
+  // `u.id` jamais sai da CTE). `recency::timestamptz` casa o cast — o cursor já validou a forma.
+  const keysetSql = cursor
+    ? sql`(ranked.score, ranked.recency, ranked.handle) < (${cursor.score}, ${cursor.recency}::timestamptz, ${cursor.handle})`
+    : sql`TRUE`
+
+  type Row = {
+    name: string
+    handle: string
+    image: string | null
+    recipe_count: number
+    score: number
+    recency_text: string
+  }
+  // Probe `limit+1`: descobre "tem próxima página?" sem um COUNT (mesma tese do feed/follow.ts).
   const rows = await db.execute<Row>(sql`
+    WITH ranked AS (
+      SELECT
+        u.name AS name,
+        u.handle AS handle,
+        u.image AS image,
+        count(DISTINCT r.id)::int AS recipe_count,
+        (COALESCE(sum(COALESCE(vc.c, 0)), 0) + COALESCE(sum(COALESCE(fc.c, 0)), 0))::int AS score,
+        max(r.created_at) AS recency
+      FROM users u
+      JOIN recipe r
+        ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
+      LEFT JOIN (
+        SELECT rv.recipe_id AS recipe_id, count(*)::int AS c
+        FROM recipe_vote rv JOIN recipe rr ON rr.id = rv.recipe_id
+        WHERE rv.user_id <> rr.owner_id -- apreço de TERCEIROS (auto-voto já barrado no write-path)
+        GROUP BY rv.recipe_id
+      ) vc ON vc.recipe_id = r.id
+      LEFT JOIN (
+        SELECT rf.recipe_id AS recipe_id, count(*)::int AS c
+        FROM recipe_favorite rf JOIN recipe rr ON rr.id = rf.recipe_id
+        WHERE rf.user_id <> rr.owner_id -- exclui auto-favorito (favoritar a própria é permitido)
+        GROUP BY rf.recipe_id
+      ) fc ON fc.recipe_id = r.id
+      WHERE u.deleted_at IS NULL
+        ${viewerExclusionSql}
+      GROUP BY u.id, u.name, u.handle, u.image
+    )
     SELECT
-      u.name AS name,
-      u.handle AS handle,
-      u.image AS image,
-      count(DISTINCT r.id)::int AS recipe_count
-    FROM users u
-    JOIN recipe r ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')}
-    LEFT JOIN (
-      SELECT rv.recipe_id AS recipe_id, count(*)::int AS c
-      FROM recipe_vote rv JOIN recipe rr ON rr.id = rv.recipe_id
-      WHERE rv.user_id <> rr.owner_id -- apreço de TERCEIROS (auto-voto já barrado no write-path)
-      GROUP BY rv.recipe_id
-    ) vc ON vc.recipe_id = r.id
-    LEFT JOIN (
-      SELECT rf.recipe_id AS recipe_id, count(*)::int AS c
-      FROM recipe_favorite rf JOIN recipe rr ON rr.id = rf.recipe_id
-      WHERE rf.user_id <> rr.owner_id -- exclui auto-favorito (favoritar a própria é permitido)
-      GROUP BY rf.recipe_id
-    ) fc ON fc.recipe_id = r.id
-    WHERE u.deleted_at IS NULL
-      ${viewerExclusionSql}
-    GROUP BY u.id, u.name, u.handle, u.image
-    ORDER BY
-      (COALESCE(sum(COALESCE(vc.c, 0)), 0) + COALESCE(sum(COALESCE(fc.c, 0)), 0)) DESC,
-      max(r.created_at) DESC,
-      u.id DESC
-    LIMIT ${limit}
+      ranked.name AS name,
+      ranked.handle AS handle,
+      ranked.image AS image,
+      ranked.recipe_count AS recipe_count,
+      ranked.score AS score,
+      ranked.recency::text AS recency_text
+    FROM ranked
+    WHERE ${keysetSql}
+    ORDER BY ranked.score DESC, ranked.recency DESC, ranked.handle DESC
+    LIMIT ${limit + 1}
   `)
 
-  // GUARD: pool vazio ⇒ retorna já (também evita `IN ()` inválido na 2ª query).
-  if (rows.length === 0) return []
+  const hasMore = rows.length > limit
+  const kept = hasMore ? rows.slice(0, limit) : rows
+  // GUARD: página vazia (cursor no fim, ou pool vazio) ⇒ sem 2ª query (também evita `IN ()` inválido).
+  if (kept.length === 0) return { cooks: [], nextCursor: null }
+
+  const last = kept[kept.length - 1]
+  const nextCursor =
+    hasMore && last
+      ? encodeRecsCursor({ score: last.score, recency: last.recency_text, handle: last.handle })
+      : null
 
   const recipesByHandle = await loadCookRecipePreviews(
     db,
-    rows.map((r) => r.handle),
+    kept.map((r) => r.handle),
     requestLocale,
+    cozinhas,
   )
 
-  return rows.map((row) => ({
-    name: row.name,
-    handle: row.handle,
-    image: row.image,
-    recipeCount: row.recipe_count,
-    recipes: recipesByHandle.get(row.handle) ?? [],
-  }))
+  return {
+    cooks: kept.map((row) => ({
+      name: row.name,
+      handle: row.handle,
+      image: row.image,
+      recipeCount: row.recipe_count,
+      recipes: recipesByHandle.get(row.handle) ?? [],
+    })),
+    nextCursor,
+  }
 }
 
 /**
@@ -126,6 +184,7 @@ async function loadCookRecipePreviews(
   db: Database,
   handles: string[],
   requestLocale: string,
+  cozinhas: string[],
 ): Promise<Map<string, RecommendedCookRecipe[]>> {
   const handleList = sql.join(
     handles.map((h) => sql`${h}`),
@@ -156,7 +215,8 @@ async function loadCookRecipePreviews(
         r.image_id AS image_id,
         ROW_NUMBER() OVER (PARTITION BY u.handle ORDER BY r.created_at DESC, r.id DESC) AS rn
       FROM users u
-      JOIN recipe r ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')}
+      JOIN recipe r
+        ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
       WHERE u.handle IN (${handleList}) AND u.deleted_at IS NULL
     )
     SELECT

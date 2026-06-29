@@ -36,7 +36,9 @@ export async function GET(request: Request): Promise<Response> {
     preferred: new URL(request.url).searchParams.get('locale'),
   })
 
-  const cooks = await loadRecommendedCooks(getDb(), {
+  // #308: `loadRecommendedCooks` agora pagina ⇒ retorna `{ cooks, nextCursor }`. O trilho (#278) é
+  // top-N sem paginação, então ignora `nextCursor` e não passa cozinha/cursor (defaults = sem filtro).
+  const { cooks } = await loadRecommendedCooks(getDb(), {
     viewerId,
     limit: RECOMMENDED_COOKS_LIMIT,
     requestLocale,
