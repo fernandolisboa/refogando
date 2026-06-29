@@ -191,22 +191,9 @@ export async function applyRecipeImageGeneration(input: {
     if (!quota.allowed) return { kind: 'quota', retryAfterMs: quota.retryAfterMs }
   }
 
-  // 4. Prompt: SEMPRE ancorado na receita ATUAL (#214). O base é montado PRIMEIRO; o override do
-  //    usuário NUNCA o substitui — vira sufixo de estilo trimado/limitado (composeImagePrompt).
-  const base = buildDishImagePrompt({
-    titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
-    cozinha: rows.recipe.cozinha ?? null,
-    categoria: rows.recipe.categoria ?? null,
-    ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
-  })
-  // #285: edição (imagem-base presente) usa o template de EDIÇÃO (ainda ancorado na receita — o prato
-  // segue sendo o sujeito, nunca substituído). Do zero ⇒ o template de geração de sempre.
-  const prompt = sourceImageId
-    ? composeEditImagePrompt(base, promptOverride)
-    : composeImagePrompt(base, promptOverride)
-
   // #285: AGORA (depois dos gates de cota) lê os BYTES da imagem-base (image-to-image). Erro de rede OU
-  // `get` null (blob sumiu) ⇒ 503 storage (espelha o try/catch do store.store; sem linha ⇒ sem slot).
+  // `get` null (blob sumiu) ⇒ 503 storage. Lido AQUI (no wrapper de DONO) e passado ao núcleo — o
+  // early-validate + a leak-safety da imagem-base são owner-específicos, ficam fora do núcleo.
   let source: { data: Buffer; contentType: string } | undefined
   if (sourceBlobUrl) {
     try {
@@ -217,15 +204,103 @@ export async function applyRecipeImageGeneration(input: {
     if (!source) return { kind: 'storage' }
   }
 
-  // 5. Gera (Gemini REST) com o MODELO da config. Falha ⇒ 503 (nenhuma linha nasce ⇒ nenhum slot).
+  // 4-7: NÚCLEO COMPARTILHADO (#238) — compõe o prompt (ancorado no prato #214) → gera → guarda →
+  //       insere recipe_image + ledger numa única tx. Owner NÃO auto-seleciona (preview deselecionado
+  //       #222: `image_id` intocado, a face só muda no "Usar esta"). O union do núcleo (generator/
+  //       storage/not_found) é sub-tipo de RecipeImageGenResult ⇒ passa direto; só o 'ok' é remapeado.
+  const core = await generateAndStoreGalleryImage({
+    db,
+    store,
+    generator,
+    recipeId: id,
+    lineageId,
+    actorUserId: userId,
+    content: {
+      titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
+      cozinha: rows.recipe.cozinha ?? null,
+      categoria: rows.recipe.categoria ?? null,
+      ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
+    },
+    model: genConfig.model,
+    promptOverride,
+    source,
+    sourceImageId,
+    reviewRequired,
+    autoSelect: false,
+  })
+  if (core.kind !== 'ok') return core
+  return { kind: 'ok', image: core.image, basePrompt: core.basePrompt }
+}
+
+/** Resultado do núcleo de geração+persistência (#238): `ok` carrega o id (pro caller selecionar/lote). */
+export type GenerateGalleryResult =
+  | { kind: 'ok'; imageId: string; image: GalleryImage; basePrompt: string }
+  | { kind: 'generator' } //  503 — geração por IA indisponível
+  | { kind: 'storage' } //    503 — ImageStore indisponível
+  | { kind: 'not_found' } //  404 — TOCTOU: a imagem-base sumiu entre o validate e o insert (FK 23503)
+
+/**
+ * Núcleo COMPARTILHADO de geração+persistência de imagem da galeria (#238, ADR-0026 emenda dec.10) —
+ * extraído de `applyRecipeImageGeneration` p/ reuso pelo caminho de CATÁLOGO (estúdio do curador
+ * #238, auto-gen na aprovação, script de lote). Recebe a Receita JÁ AUTORIZADA (o CALLER gateia:
+ * owner-gate OU `origin='catalog'`) e a fonte JÁ lida (image-to-image, só owner — o núcleo não conhece
+ * o caminho de dono). Faz: compõe o prompt (SEMPRE ancorado no prato #214; o override é sufixo de
+ * estilo, nunca substitui) → gera (Gemini) → guarda o blob → INSERE a `recipe_image` + ledger
+ * (`createGalleryImage`, ATÔMICO) [+ SELECIONA a face se `autoSelect`] numa ÚNICA tx → limpa o blob
+ * órfão se a tx falhar. `autoSelect=true` (catálogo) seta `image_id` na MESMA tx ⇒ `image_id IS NULL
+ * ⟺ sem linha de ledger ⟺ retry seguro` (sem cobrança dupla — fecha o HIGH do plan-review).
+ * `autoSelect=false` (owner) devolve preview DESELECIONADO (#222). Threada usage+model ao ledger
+ * (custo real, nunca NULL). RETORNA union (não LANÇA nas falhas esperadas) — o caller decide.
+ */
+export async function generateAndStoreGalleryImage(input: {
+  db: Database
+  store: ImageStore
+  generator: ImageGenerator
+  recipeId: string // já validado/autorizado pelo caller
+  lineageId: string
+  actorUserId: string // `created_by` da imagem + `user_id` do ledger (dono OU curador)
+  content: { titulo: string; cozinha: string | null; categoria: string | null; ingredientes: string[] }
+  model: string // genConfig.model (o que de fato foi pedido)
+  promptOverride?: string
+  source?: { data: Buffer; contentType: string } // image-to-image, JÁ lida (só owner)
+  sourceImageId?: string
+  reviewRequired: boolean
+  autoSelect: boolean // catálogo true (seta a face), owner false (preview)
+}): Promise<GenerateGalleryResult> {
+  const {
+    db,
+    store,
+    generator,
+    recipeId,
+    lineageId,
+    actorUserId,
+    content,
+    model,
+    promptOverride,
+    source,
+    sourceImageId,
+    reviewRequired,
+    autoSelect,
+  } = input
+
+  const base = buildDishImagePrompt({
+    titulo: content.titulo,
+    cozinha: content.cozinha,
+    categoria: content.categoria,
+    ingredientes: content.ingredientes,
+  })
+  // #285: edição (imagem-base presente) usa o template de EDIÇÃO (ainda ancorado no prato). Do zero ⇒ geração.
+  const prompt = sourceImageId
+    ? composeEditImagePrompt(base, promptOverride)
+    : composeImagePrompt(base, promptOverride)
+
   let generated
   try {
-    generated = await generator.generateDishImage({ prompt, model: genConfig.model, source })
+    generated = await generator.generateDishImage({ prompt, model, source })
   } catch {
     return { kind: 'generator' }
   }
 
-  // 6. Guarda os bytes no blob. Falha ⇒ 503 storage.
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({
@@ -237,52 +312,44 @@ export async function applyRecipeImageGeneration(input: {
     return { kind: 'storage' }
   }
 
-  // 7. ACRESCENTA a `recipe_image` (ai_generated) à galeria + grava o ledger — DESELECIONADA (NÃO
-  //    toca `image_id`, NÃO reapa). A face só muda no "Usar esta" (select). Se a tx falhar, o blob
-  //    novo fica órfão ⇒ limpa best-effort e relança (500 honesto). `lineageId` foi içado acima.
   let newImageId: string
   try {
     newImageId = await db.transaction(async (tx) => {
-      return createGalleryImage(tx, {
+      const imageId = await createGalleryImage(tx, {
         blobUrl,
         provenance: 'ai_generated',
-        userId,
+        userId: actorUserId,
         lineageId,
         writeLedger: true,
-        // #227/#285: geração COM refino OU edição (sourceImageId) marca review_required (sinal proativo
-        // do Curador, ADR-0022 dec.3/4).
         reviewRequired,
-        // #224: telemetria de custo (best-effort). O `usageMetadata` pode faltar (caminho ao vivo sem
-        // telemetria) ⇒ a linha do ledger nasce com usage/custo nulos. O modelo do gerador, quando
-        // ausente, cai no modelo da config (genConfig.model) — o que de fato foi pedido.
+        // #224: custo real no ledger (usage+model). Ausente ⇒ NULL honesto. NUNCA esquecer (senão R$ invisível).
         usage: generated.usageMetadata,
-        model: generated.model ?? genConfig.model,
-        // #285: parentesco da edição (image-to-image). undefined ⇒ gerada do zero (source_image_id null).
+        model: generated.model ?? model,
         sourceImageId,
       })
+      // #238 (H4): catálogo AUTO-SELECIONA na MESMA tx (insert+ledger+face atômicos ⇒ retry seguro, sem
+      // cobrança dupla). Owner NÃO seleciona (preview #222). NÃO reapa (a galeria mantém tudo).
+      if (autoSelect) {
+        await tx.update(recipe).set({ imageId, updatedAt: new Date() }).where(eq(recipe.id, recipeId))
+      }
+      return imageId
     })
   } catch (err) {
     await deleteOrphanBlob(store, blobUrl)
-    // #285: TOCTOU — se o dono APAGOU a imagem-base entre o SELECT inicial e este INSERT (janela que
-    // abrange store.get + a geração no Gemini), o FK de `source_image_id` estoura (23503). A fonte
-    // sumiu ⇒ é o mesmo caso de um id inexistente: 404, não um 500 cru. Qualquer outro erro relança.
+    // #285: TOCTOU — a imagem-base sumiu entre o SELECT e o INSERT ⇒ FK 23503 ⇒ 404 (não 500 cru).
     if (sourceImageId && pgCode(err) === '23503') return { kind: 'not_found' }
     throw err
   }
 
-  // Devolve a imagem-preview (deselecionada por construção — `image_id` não mudou) + o `basePrompt`
-  // (#223): o prompt-base montado da receita, pro modal exibir read-only. O refino NÃO entra aqui (é
-  // só o base; o servidor é quem compõe base+refino ao gerar — o cliente nunca recebe o composto).
-  // #225: uma preview recém-gerada nunca nasce moderada (`moderated: false`).
   return {
     kind: 'ok',
+    imageId: newImageId,
     image: {
       id: newImageId,
       url: blobUrl,
       aiGenerated: true,
-      selected: false,
+      selected: autoSelect,
       moderated: false,
-      // #285: o preview carrega o parentesco ⇒ o modal mostra "✨ Editada com IA" (vs "Gerada por IA").
       editedFromId: sourceImageId ?? null,
     },
     basePrompt: base,

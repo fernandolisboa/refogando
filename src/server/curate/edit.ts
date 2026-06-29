@@ -4,6 +4,8 @@ import { recipe, recipeTranslation, recipeTag, tag } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao } from '@/domain/vocabulary'
 import { isTranslatableField } from '@/domain/stale-rule'
 import { applyEdit } from '@/server/recipe/edit'
+import { replaceIngredients, type IngredientWriteInput } from '@/server/recipe/ingredients'
+import { conciliarTempoPreparo } from '@/domain/tempo'
 
 /**
  * Edição/“organização” de Receita de CATÁLOGO pelo Curador (issue #19, AC1/AC6).
@@ -47,6 +49,15 @@ export type EditCatalogRecipeInput = {
   restricoes?: Restricao[]
   porcoes?: number | null
   dificuldade?: number | null
+  // Tempo de preparo (#261, ADR-0023): a borda valida só a faixa por campo; a consistência
+  // ativo ≤ total é RECONCILIADA aqui (conciliarTempoPreparo) — senão o curador digitando
+  // ativo>total viola `recipe_tempo_consistency_chk` (500). Reconcilia sobre os DOIS (o form
+  // sempre manda ambos; um patch parcial lê o existente).
+  tempoAtivoMin?: number | null
+  tempoTotalMin?: number | null
+  // Ingredientes (#238, ADR-0026 emenda dec.9): reescreve a lista inteira via `replaceIngredients`
+  // (owner-agnóstico). Sem isto, o form de catálogo perderia edições de ingrediente SILENCIOSAMENTE.
+  ingredientes?: ReadonlyArray<IngredientWriteInput>
   tags?: string[]
 }
 
@@ -98,6 +109,26 @@ export async function editCatalogRecipe(
     changedFields.push('dificuldade')
   }
 
+  // Tempo de preparo (#261, ADR-0023): reconcilia sobre o estado MESCLADO (patch ?? existente). Sem
+  // este clamp (ativo > total ⇒ ativo null), um valor inconsistente do curador violaria o CHECK
+  // `recipe_tempo_consistency_chk` (500). O form de catálogo sempre manda os dois; um patch parcial
+  // (só uma faceta) lê a outra do banco. NÃO entra em changedFields (tempo não é traduzível/visual).
+  if (input.tempoAtivoMin !== undefined || input.tempoTotalMin !== undefined) {
+    let ativo = input.tempoAtivoMin
+    let total = input.tempoTotalMin
+    if (ativo === undefined || total === undefined) {
+      const [cur] = await db
+        .select({ tempoAtivoMin: recipe.tempoAtivoMin, tempoTotalMin: recipe.tempoTotalMin })
+        .from(recipe)
+        .where(eq(recipe.id, input.recipeId))
+      ativo = ativo !== undefined ? ativo : (cur?.tempoAtivoMin ?? null)
+      total = total !== undefined ? total : (cur?.tempoTotalMin ?? null)
+    }
+    const tempo = conciliarTempoPreparo(ativo, total)
+    recipePatch.tempoAtivoMin = tempo.tempoAtivoMin
+    recipePatch.tempoTotalMin = tempo.tempoTotalMin
+  }
+
   const touchesTranslatable = changedFields.some(isTranslatableField)
 
   // 1. UPDATE de conteúdo traduzível ANTES de tudo (o re-embed lê o texto novo) E como
@@ -126,6 +157,13 @@ export async function editCatalogRecipe(
       .update(recipe)
       .set({ ...recipePatch, updatedAt: new Date() })
       .where(eq(recipe.id, input.recipeId))
+  }
+
+  // 2b. Ingredientes (#238, ADR-0026 emenda dec.9): reescreve a lista inteira (mesmo helper do
+  //     owner-edit). Owner-agnóstico, escopado por recipeId — a autorização (origin='catalog') já
+  //     foi provada na borda. NÃO entra em changedFields (catálogo não dispara sugestão de imagem).
+  if (input.ingredientes !== undefined) {
+    await replaceIngredients(db, input.recipeId, input.ingredientes)
   }
 
   // 3. Tags (organizar): delete-all + re-insert por nome NORMALIZADO (lower+trim),

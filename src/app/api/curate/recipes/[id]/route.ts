@@ -3,20 +3,24 @@ import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { isUuid } from '@/server/http/params'
-import { canonicalLocale } from '@/i18n/locale'
+import { canonicalLocale, DEFAULT_LOCALE } from '@/i18n/locale'
 import {
   isActiveCozinha,
   isCategoria,
   isRestricao,
   isPorcoesValidas,
   isDificuldadeValida,
+  isTempoValido,
+  isUnidade,
   type Cozinha,
   type Categoria,
   type Restricao,
+  type Unidade,
 } from '@/domain/vocabulary'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { editCatalogRecipe, type EditCatalogRecipeInput } from '@/server/curate/edit'
-import { loadRecipeRows } from '@/server/recipe/load'
+import type { IngredientWriteInput } from '@/server/recipe/ingredients'
+import { loadCatalogCuratorView } from '@/server/curate/catalog-view'
 
 /**
  * PATCH /api/curate/recipes/[id] — edita/“organiza” Receita de CATÁLOGO (issue #19,
@@ -43,8 +47,14 @@ type EditCatalogBody = {
   restricoes?: unknown
   porcoes?: unknown
   dificuldade?: unknown
+  tempoAtivoMin?: unknown
+  tempoTotalMin?: unknown
+  ingredientes?: unknown
   tags?: unknown
 }
+
+/** Item de ingrediente cru do body (espelha a rota de dono). */
+type RawIngrediente = { rawText?: unknown; quantidade?: unknown; unidade?: unknown }
 
 function badRequest(): Response {
   return Response.json({ error: 'dados_invalidos' }, { status: 400 })
@@ -68,13 +78,15 @@ function optionalIntInRange(v: unknown, isFaixa: (n: number) => boolean): number
 }
 
 /**
- * GET /api/curate/recipes/[id] — leitura CURADOR-AWARE do corpo de um rascunho de catálogo
- * (#238, ADR-0026). O Curador precisa VER o conteúdo (descrição/ingredientes/passos) pra dar o
- * vouch editorial — mas o gate PÚBLICO esconde rascunhos pending/editing/rejected (e o `canManage`
- * é owner-strict ⇒ false p/ catálogo). Caminho SEPARADO do público: `requireRole('curador')` +
- * `origin='catalog'` (404 leak-safe), em QUALQUER curation_status. Reusa `loadRecipeRows`; projeta
- * só o necessário pra revisão (NUNCA expõe owner_id/id interno). Espelha como a fila de tradução
- * stale mostra receitas escondidas sem leak (CONTEXT.md).
+ * GET /api/curate/recipes/[id] — leitura CURADOR-AWARE de um rascunho de catálogo (#238, ADR-0026
+ * emenda dec.9/10). Devolve o `RecipeView` (conteúdo p/ pré-preencher o editor reusado — `mode='catalog'`)
+ * + a `gallery` da linhagem (p/ o estúdio de imagem do curador). O Curador precisa VER/editar o
+ * conteúdo e a imagem, mas o gate PÚBLICO esconde rascunhos e o `canManage` é owner-strict ⇒ false p/
+ * catálogo. Caminho SEPARADO do público: `requireRole('curador')` ANTES de qualquer lookup (não vaza
+ * existência por status-code) + `origin='catalog' && owner_id IS NULL` (404 leak-safe), em QUALQUER
+ * curation_status. A galeria vem como sibling top-level (autorizada pela borda) — NUNCA via o branch
+ * `canManage` do resolver público (que seguiria owner-estrito). `?locale` opcional escolhe o idioma da
+ * leitura (default DEFAULT_LOCALE = o original do seed). NUNCA expõe owner_id/id interno.
  */
 export async function GET(
   req: Request,
@@ -86,26 +98,13 @@ export async function GET(
   const g = await requireRole(req, 'curador')
   if (!g.ok) return g.response
 
-  const rows = await loadRecipeRows(getDb(), id)
-  if (!rows || rows.recipe.origin !== 'catalog') return notFound()
+  const localeParam = new URL(req.url).searchParams.get('locale')
+  const requestLocale = (localeParam && canonicalLocale(localeParam)) || DEFAULT_LOCALE
 
-  const translations = rows.translations.map((t) => ({
-    locale: t.locale,
-    titulo: t.titulo,
-    descricao: t.descricao,
-    passos: t.passos,
-    notas: t.notas,
-    provenance: t.provenance,
-  }))
-  const ingredientes = rows.ingredients.map((i) => ({
-    rawText: i.rawText,
-    quantidade: i.quantidade,
-    unidade: i.unidade,
-  }))
-  return Response.json(
-    { translations, ingredientes },
-    { status: 200, headers: { 'cache-control': 'no-store' } },
-  )
+  const result = await loadCatalogCuratorView(getDb(), id, requestLocale)
+  if (!result) return notFound()
+
+  return Response.json(result, { status: 200, headers: { 'cache-control': 'no-store' } })
 }
 
 export async function PATCH(
@@ -207,6 +206,44 @@ export async function PATCH(
     const v = optionalIntInRange(body.dificuldade, isDificuldadeValida)
     if (v === undefined) return badRequest()
     patch.dificuldade = v
+  }
+  // Tempo (#261): valida SÓ a faixa por campo; a consistência ativo ≤ total é reconciliada no
+  // editCatalogRecipe (conciliarTempoPreparo), espelhando a rota de dono.
+  if (body.tempoAtivoMin !== undefined) {
+    const v = optionalIntInRange(body.tempoAtivoMin, isTempoValido)
+    if (v === undefined) return badRequest()
+    patch.tempoAtivoMin = v
+  }
+  if (body.tempoTotalMin !== undefined) {
+    const v = optionalIntInRange(body.tempoTotalMin, isTempoValido)
+    if (v === undefined) return badRequest()
+    patch.tempoTotalMin = v
+  }
+  // Ingredientes (#238): reescreve do zero. Mesma validação da rota de dono — `quantidade` é
+  // numeric(10,3) ⇒ STRING|null (NUNCA number, ou perde precisão); `unidade` via isUnidade.
+  if (body.ingredientes !== undefined) {
+    if (!Array.isArray(body.ingredientes)) return badRequest()
+    const ingredientes: IngredientWriteInput[] = []
+    for (const raw of body.ingredientes as RawIngrediente[]) {
+      if (typeof raw !== 'object' || raw === null) return badRequest()
+      let unidade: Unidade | null = null
+      if (raw.unidade !== undefined && raw.unidade !== null) {
+        if (typeof raw.unidade !== 'string' || !isUnidade(raw.unidade)) return badRequest()
+        unidade = raw.unidade
+      }
+      let quantidade: string | null = null
+      if (raw.quantidade !== undefined && raw.quantidade !== null) {
+        if (typeof raw.quantidade !== 'string') return badRequest()
+        quantidade = raw.quantidade
+      }
+      let rawText: string | null = null
+      if (raw.rawText !== undefined && raw.rawText !== null) {
+        if (typeof raw.rawText !== 'string') return badRequest()
+        rawText = raw.rawText.length > 0 ? raw.rawText : null
+      }
+      ingredientes.push({ rawText, quantidade, unidade })
+    }
+    patch.ingredientes = ingredientes
   }
   if (body.tags !== undefined) {
     if (!Array.isArray(body.tags) || body.tags.some((t) => typeof t !== 'string')) {

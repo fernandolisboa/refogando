@@ -6,6 +6,7 @@ import type { ImageStore } from '@/server/images/image-store'
 import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
 import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
+import { replaceIngredients } from '@/server/recipe/ingredients'
 import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
 import { conciliarTempoPreparo } from '@/domain/tempo'
 
@@ -244,21 +245,9 @@ export async function editOwnRecipe(
     if (ingredientSetChanged(beforeLabels, ingredientes.map((i) => i.rawText ?? ''))) {
       changedFields.push('ingredientes')
     }
-    await db.transaction(async (tx) => {
-      await tx.delete(recipeIngredient).where(eq(recipeIngredient.recipeId, recipeId))
-      if (ingredientes.length > 0) {
-        await tx.insert(recipeIngredient).values(
-          ingredientes.map((it, i) => ({
-            recipeId,
-            ingredientId: null,
-            ordem: i,
-            quantidade: it.quantidade, // string|null
-            unidade: it.unidade,
-            rawText: it.rawText,
-          })),
-        )
-      }
-    })
+    // #238: o delete-all+reinsert virou `replaceIngredients` (owner-agnóstico, escopado por recipeId)
+    // p/ reuso na edição de catálogo. Comportamento idêntico (mesma tx, mesma forma de insert).
+    await replaceIngredients(db, recipeId, ingredientes)
   }
 
   // 4. Bump de updated_at em QUALQUER eixo que muda (invariante do módulo). Se o UPDATE da allowlist
