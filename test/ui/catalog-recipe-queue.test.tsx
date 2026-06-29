@@ -11,8 +11,14 @@ import '@testing-library/jest-dom/vitest'
  * aprovar (card some + POST), rejeitar com nota (move pra Rejeitadas), 409 reverte, vazio, falha+retry.
  */
 import { LocaleProvider } from '@/i18n/provider'
+import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { CatalogRecipeQueue } from '@/components/admin/catalog-recipe-queue'
+
+const COZINHAS = [
+  { value: 'italiana', label: 'Italiana' },
+  { value: 'japonesa', label: 'Japonesa' },
+]
 
 const M = ptBR.curadoria
 
@@ -36,12 +42,12 @@ function mockFetch(routes: Record<string, FetchResult | FetchResult[]>) {
 const A = '11111111-1111-1111-1111-111111111111'
 const B = '22222222-2222-2222-2222-222222222222'
 
-function pending(id: string, titulo: string) {
+function pending(id: string, titulo: string, cozinha = 'italiana') {
   return {
     recipeId: id,
     titulo,
     locale: 'pt-BR',
-    cozinha: 'italiana',
+    cozinha,
     categoria: 'prato_principal',
     porcoes: 4,
     dificuldade: 3,
@@ -54,7 +60,9 @@ function pending(id: string, titulo: string) {
 function renderQueue() {
   return render(
     <LocaleProvider initialLocale="pt-BR">
-      <CatalogRecipeQueue />
+      <CozinhaVocabProvider value={COZINHAS}>
+        <CatalogRecipeQueue />
+      </CozinhaVocabProvider>
     </LocaleProvider>,
   )
 }
@@ -69,7 +77,7 @@ describe('CatalogRecipeQueue', () => {
     mockFetch({ 'GET /api/curate/recipes/queue': { ok: true, status: 200, body: { queue: [pending(A, 'Carbonara')], rejected: [] } } })
     renderQueue()
     expect(await screen.findByText('Carbonara')).toBeInTheDocument()
-    expect(screen.getByText(/italiana/)).toBeInTheDocument()
+    expect(screen.getByText(/Cozinha: Italiana/)).toBeInTheDocument() // meta com rótulo localizado (não o slug)
   })
 
   it('aprovar: POST correto e o card some', async () => {
@@ -128,5 +136,48 @@ describe('CatalogRecipeQueue', () => {
     const retry = await screen.findByRole('button', { name: ptBR.system.retry })
     await userEvent.click(retry)
     expect(await screen.findByText('Carbonara')).toBeInTheDocument()
+  })
+
+  it('filtro por cozinha: mostra só a cozinha escolhida', async () => {
+    mockFetch({
+      'GET /api/curate/recipes/queue': {
+        ok: true,
+        status: 200,
+        body: { queue: [pending(A, 'Carbonara', 'italiana'), pending(B, 'Sushi', 'japonesa')], rejected: [] },
+      },
+    })
+    renderQueue()
+    await screen.findByText('Carbonara')
+    expect(screen.getByText('Sushi')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText(M.filaCozinha), 'japonesa')
+    expect(screen.queryByText('Carbonara')).not.toBeInTheDocument()
+    expect(screen.getByText('Sushi')).toBeInTheDocument()
+  })
+
+  it('busca por título filtra a lista', async () => {
+    mockFetch({
+      'GET /api/curate/recipes/queue': {
+        ok: true,
+        status: 200,
+        body: { queue: [pending(A, 'Carbonara'), pending(B, 'Tiramisù')], rejected: [] },
+      },
+    })
+    renderQueue()
+    await screen.findByText('Carbonara')
+    await userEvent.type(screen.getByLabelText(M.filtroBusca), 'tira')
+    expect(screen.queryByText('Carbonara')).not.toBeInTheDocument()
+    expect(screen.getByText('Tiramisù')).toBeInTheDocument()
+  })
+
+  it('paginação: mostra 20 + "Ver mais" revela o resto', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => pending(`r${i}`, `Receita ${i}`))
+    mockFetch({ 'GET /api/curate/recipes/queue': { ok: true, status: 200, body: { queue: many, rejected: [] } } })
+    renderQueue()
+    await screen.findByText('Receita 0')
+    expect(screen.getByText('Receita 19')).toBeInTheDocument()
+    expect(screen.queryByText('Receita 20')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(M.filaVerMais) }))
+    expect(screen.getByText('Receita 20')).toBeInTheDocument()
+    expect(screen.getByText('Receita 24')).toBeInTheDocument()
   })
 })
