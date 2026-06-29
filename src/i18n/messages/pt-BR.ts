@@ -1155,6 +1155,10 @@ export const ptBR = {
     filaRejeitadasVazia: 'Nenhuma rejeitada.',
     filaRestaurar: 'Restaurar à fila',
     filaRestaurando: 'Restaurando…',
+    filaVer: 'Ver receita',
+    filaOcultar: 'Ocultar',
+    filaIngredientes: 'Ingredientes',
+    filaPreparo: 'Modo de preparo',
   },
 } as const
 

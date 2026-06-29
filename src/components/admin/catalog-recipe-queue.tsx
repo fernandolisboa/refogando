@@ -24,6 +24,12 @@ import type { CatalogQueueItem } from '@/server/curate/recipe-curation'
 /** A fila chega via `res.json()` ⇒ `createdAt` vira STRING (não renderizamos data). */
 type QueueItem = Omit<CatalogQueueItem, 'createdAt'> & { createdAt: string }
 
+/** Corpo do rascunho carregado sob demanda (GET curador-aware) p/ o Curador VER antes de decidir. */
+type DraftDetail = {
+  translations: { locale: string; titulo: string; descricao: string | null; passos: string[] | null; notas: string | null }[]
+  ingredientes: { rawText: string | null; quantidade: string | null; unidade: string | null }[]
+}
+
 export function CatalogRecipeQueue() {
   const { messages } = useLocale()
   const m = messages.curadoria
@@ -37,6 +43,9 @@ export function CatalogRecipeQueue() {
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [errorId, setErrorId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<Record<string, DraftDetail>>({})
+  const [detailLoading, setDetailLoading] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -119,6 +128,27 @@ export function CatalogRecipeQueue() {
     })
   }
 
+  async function toggleExpand(id: string): Promise<void> {
+    if (expandedId === id) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(id)
+    if (detail[id]) return
+    setDetailLoading(id)
+    try {
+      const res = await fetch(`/api/curate/recipes/${id}`)
+      if (res.ok) {
+        const body = (await res.json()) as DraftDetail
+        setDetail((prev) => ({ ...prev, [id]: body }))
+      }
+    } catch {
+      // silencioso — o bloco mostra "—" se não carregar; o Curador pode reabrir.
+    } finally {
+      setDetailLoading(null)
+    }
+  }
+
   function meta(item: QueueItem): string {
     return [
       item.cozinha && `${m.filaCozinha}: ${item.cozinha}`,
@@ -161,6 +191,39 @@ export function CatalogRecipeQueue() {
                   <span className="font-medium">{item.titulo ?? '—'}</span>
                 </span>
                 <span className="text-xs text-muted">{meta(item)}</span>
+                {expandedId === item.recipeId &&
+                  (() => {
+                    const d = detail[item.recipeId]
+                    const t = d?.translations.find((x) => x.locale === item.locale) ?? d?.translations[0]
+                    if (detailLoading === item.recipeId && !d) {
+                      return <p className="text-sm text-muted">{sys.loading}</p>
+                    }
+                    return (
+                      <div className="flex flex-col gap-2 rounded-md border border-border bg-bg px-3 py-2 text-sm">
+                        {t?.descricao && <p className="text-fg">{t.descricao}</p>}
+                        {d && d.ingredientes.length > 0 && (
+                          <div>
+                            <p className="font-medium text-fg">{m.filaIngredientes}</p>
+                            <ul className="list-disc pl-5 text-muted">
+                              {d.ingredientes.map((ing, i) => (
+                                <li key={i}>{ing.rawText ?? '—'}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {t?.passos && t.passos.length > 0 && (
+                          <div>
+                            <p className="font-medium text-fg">{m.filaPreparo}</p>
+                            <ol className="list-decimal pl-5 text-muted">
+                              {t.passos.map((p, i) => (
+                                <li key={i}>{p}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 {rejectingId === item.recipeId ? (
                   <div className="flex flex-col gap-2">
                     <Textarea
@@ -216,6 +279,9 @@ export function CatalogRecipeQueue() {
                       }}
                     >
                       {m.filaRejeitar}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void toggleExpand(item.recipeId)}>
+                      {expandedId === item.recipeId ? m.filaOcultar : m.filaVer}
                     </Button>
                   </div>
                 )}

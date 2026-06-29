@@ -16,6 +16,7 @@ import {
 } from '@/domain/vocabulary'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { editCatalogRecipe, type EditCatalogRecipeInput } from '@/server/curate/edit'
+import { loadRecipeRows } from '@/server/recipe/load'
 
 /**
  * PATCH /api/curate/recipes/[id] — edita/“organiza” Receita de CATÁLOGO (issue #19,
@@ -64,6 +65,47 @@ function optionalIntInRange(v: unknown, isFaixa: (n: number) => boolean): number
   if (v === null) return null
   if (typeof v === 'number' && Number.isInteger(v) && isFaixa(v)) return v
   return undefined
+}
+
+/**
+ * GET /api/curate/recipes/[id] — leitura CURADOR-AWARE do corpo de um rascunho de catálogo
+ * (#238, ADR-0026). O Curador precisa VER o conteúdo (descrição/ingredientes/passos) pra dar o
+ * vouch editorial — mas o gate PÚBLICO esconde rascunhos pending/editing/rejected (e o `canManage`
+ * é owner-strict ⇒ false p/ catálogo). Caminho SEPARADO do público: `requireRole('curador')` +
+ * `origin='catalog'` (404 leak-safe), em QUALQUER curation_status. Reusa `loadRecipeRows`; projeta
+ * só o necessário pra revisão (NUNCA expõe owner_id/id interno). Espelha como a fila de tradução
+ * stale mostra receitas escondidas sem leak (CONTEXT.md).
+ */
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const { id } = await params
+  if (!isUuid(id)) return notFound()
+
+  const g = await requireRole(req, 'curador')
+  if (!g.ok) return g.response
+
+  const rows = await loadRecipeRows(getDb(), id)
+  if (!rows || rows.recipe.origin !== 'catalog') return notFound()
+
+  const translations = rows.translations.map((t) => ({
+    locale: t.locale,
+    titulo: t.titulo,
+    descricao: t.descricao,
+    passos: t.passos,
+    notas: t.notas,
+    provenance: t.provenance,
+  }))
+  const ingredientes = rows.ingredients.map((i) => ({
+    rawText: i.rawText,
+    quantidade: i.quantidade,
+    unidade: i.unidade,
+  }))
+  return Response.json(
+    { translations, ingredientes },
+    { status: 200, headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 export async function PATCH(

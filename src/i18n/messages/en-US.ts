@@ -1105,5 +1105,9 @@ export const enUS: Messages = {
     filaRejeitadasVazia: 'None rejected.',
     filaRestaurar: 'Restore to queue',
     filaRestaurando: 'Restoring…',
+    filaVer: 'View recipe',
+    filaOcultar: 'Hide',
+    filaIngredientes: 'Ingredients',
+    filaPreparo: 'Steps',
   },
 } as const

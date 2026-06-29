@@ -3,9 +3,15 @@ import { getDb } from '@/server/deps'
 import { loadSitemapRecipes } from '@/server/recipe/sitemap'
 import { loadFeed } from '@/server/recipe/feed'
 import { loadPublicRecipeBySlug } from '@/server/recipe/load'
+import { eq } from 'drizzle-orm'
+import { recipeTranslation } from '@/db/schema'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { GET as searchRoute } from '@/app/api/search/route'
 import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
+import { POST as translationsGet } from '@/app/api/recipes/[id]/translations/[locale]/route'
+import { POST as translationsReview } from '@/app/api/recipes/[id]/translations/[locale]/review/route'
+import { GET as staleQueue } from '@/app/api/curate/translations/stale/route'
+import { POST as voteRoute } from '@/app/api/recipes/[id]/vote/route'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 import type { CurationStatus } from '@/domain/recipe-curation'
@@ -144,5 +150,63 @@ describe('Gate de curadoria de catálogo — rascunho não vaza em NENHUMA super
       const d = await seedCatalog(s, token)
       expect((await derive(d.id, headers)).status).toBe(404)
     }
+  })
+})
+
+/**
+ * Regressão (MED-2 do code-review): superfícies owner-null que o teste acima não cobria. O fixture
+ * `seedRecipe` nasce `approved` p/ owner-null, então sem estes casos um caller que ESQUECESSE de
+ * passar `curation_status` passaria verde. Cada caso exercita um ESPELHO distinto (isCommunityVisible
+ * ×2, eligibleForPool, communityVisibleCondition) com um rascunho PENDING.
+ */
+describe('Gate de curadoria — tradução / pool / fila-stale escondem o rascunho', () => {
+  it('tradução read (logado não-dono): 404 pro rascunho, ≠404 pro aprovado', async () => {
+    const token = `tr${Date.now().toString(36)}`
+    const { headers } = await seedSessionHeaders({ email: `tr-${crypto.randomUUID()}@ex.com` })
+    const approved = await seedCatalog('approved', token)
+    const pending = await seedCatalog('pending', token)
+    const get = (id: string) =>
+      translationsGet(new Request(`http://localhost/api/recipes/${id}/translations/pt-BR`, { method: 'POST', headers }), {
+        params: Promise.resolve({ id, locale: 'pt-BR' }),
+      })
+    expect((await get(pending.id)).status).toBe(404)
+    expect((await get(approved.id)).status).not.toBe(404)
+  })
+
+  it('tradução review (curador): 404 pro rascunho', async () => {
+    const token = `rv${Date.now().toString(36)}`
+    const { headers } = await seedSessionHeaders({ email: `rv-${crypto.randomUUID()}@ex.com`, role: 'curador' })
+    const pending = await seedCatalog('pending', token)
+    const res = await translationsReview(
+      new Request(`http://localhost/api/recipes/${pending.id}/translations/en-US/review`, { method: 'POST', headers }),
+      { params: Promise.resolve({ id: pending.id, locale: 'en-US' }) },
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('pool (voto): 404 pro rascunho; aprovado é votável', async () => {
+    const token = `vt${Date.now().toString(36)}`
+    const { headers } = await seedSessionHeaders({ email: `vt-${crypto.randomUUID()}@ex.com` })
+    const approved = await seedCatalog('approved', token)
+    const pending = await seedCatalog('pending', token)
+    const vote = (id: string) =>
+      voteRoute(new Request(`http://localhost/api/recipes/${id}/vote`, { method: 'POST', headers }), {
+        params: Promise.resolve({ id }),
+      })
+    expect((await vote(pending.id)).status).toBe(404)
+    expect((await vote(approved.id)).status).not.toBe(404)
+  })
+
+  it('fila de tradução stale (curador): exclui o rascunho, inclui o aprovado', async () => {
+    const token = `st${Date.now().toString(36)}`
+    const { headers } = await seedSessionHeaders({ email: `st-${crypto.randomUUID()}@ex.com`, role: 'curador' })
+    const approved = await seedCatalog('approved', token)
+    const pending = await seedCatalog('pending', token)
+    await getDb().update(recipeTranslation).set({ stale: true }).where(eq(recipeTranslation.recipeId, approved.id))
+    await getDb().update(recipeTranslation).set({ stale: true }).where(eq(recipeTranslation.recipeId, pending.id))
+    const res = await staleQueue(new Request('http://localhost/api/curate/translations/stale', { headers }))
+    const text = JSON.stringify(await res.json())
+    expect(text).toContain(approved.id)
+    expect(text).not.toContain(pending.id)
   })
 })

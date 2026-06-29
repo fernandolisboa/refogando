@@ -8,14 +8,24 @@
 // seed imperfeito é seguro (nada público até curar).
 //
 // IDEMPOTENTE via LEDGER (`scripts/data/catalog-seed-applied.json`, seedKey→recipeId): re-rodar pula
-// os seedKeys já aplicados. Commitar o ledger após a rodada de prod registra o que foi semeado.
+// os seedKeys já aplicados. O ledger é gravado A CADA inserção (resume-safe). **Commitar o ledger
+// após a rodada de prod** registra o que foi semeado e é a fonte da idempotência futura.
+//
+// GUARDA ANTI-DUPLICAÇÃO: se o ledger está vazio mas o DB já tem rascunhos de catálogo pendentes, o
+// script ABORTA (re-run com ledger perdido?) — use `--force` pra inserir mesmo assim. PÓS-CRASH:
+// confira a contagem no DB (`SELECT count(*) FROM recipe WHERE owner_id IS NULL AND curation_status
+// IN ('pending','editing')`) vs. o ledger antes de re-rodar; rascunhos duplicados nascem ESCONDIDOS
+// (não vazam), mas poluem a fila do Curador — rejeite os extras.
 //
 // Uso:
 //   npm run seed-catalog              # insere os rascunhos pendentes
 //   npm run seed-catalog -- --dry-run # só valida os specs (lê o conjunto ativo de cozinhas), sem inserir
+//   npm run seed-catalog -- --force   # insere mesmo com a guarda anti-duplicação acesa
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { and, inArray, isNull } from 'drizzle-orm'
 import { makeSql, makeDb } from '@/db/client'
+import { recipe } from '@/db/schema'
 import {
   isCategoria,
   isRestricao,
@@ -119,6 +129,7 @@ function toInput(s: Spec) {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run')
+  const force = process.argv.includes('--force')
   const url =
     process.env.DATABASE_URL_UNPOOLED ||
     process.env.POSTGRES_URL_NON_POOLING ||
@@ -163,6 +174,23 @@ async function main() {
       const already = specs.filter((s) => ledger[s.seedKey]).length
       console.log(`[dry-run] inseriria ${specs.length - already}; ${already} já no ledger. Nada gravado.`)
       return
+    }
+
+    // Guarda anti-duplicação (MED-4): ledger vazio + já há rascunhos de catálogo pendentes no DB ⇒
+    // provável re-run com ledger perdido. Aborta (a menos de --force) pra não dobrar o catálogo.
+    if (Object.keys(ledger).length === 0 && !force) {
+      const existing = await db
+        .select({ id: recipe.id })
+        .from(recipe)
+        .where(and(isNull(recipe.ownerId), inArray(recipe.curationStatus, ['pending', 'editing'])))
+      const n = existing.length
+      if (n > 0) {
+        console.error(
+          `ABORTADO — ledger vazio mas há ${n} rascunho(s) de catálogo pendente(s) no DB (re-run com ledger perdido?). ` +
+            `Confira a contagem antes de prosseguir; use --force pra inserir mesmo assim.`,
+        )
+        process.exit(1)
+      }
     }
 
     for (const s of specs) {
