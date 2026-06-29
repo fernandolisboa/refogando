@@ -163,16 +163,28 @@ export async function POST(req: Request): Promise<Response> {
 
   const result = await createCatalogRecipe(getDb(), {
     originalLocale,
-    titulo: body.titulo,
-    descricao,
-    passos,
-    notas,
+    // Editorial hand-made (#19): UMA tradução, escrita por uma pessoa. #238: nasce 'approved'
+    // (a pessoa escreveu = curou), assinada pelo Curador da sessão (reviewedBy).
+    translations: [
+      {
+        locale: originalLocale,
+        titulo: body.titulo,
+        descricao,
+        passos,
+        notas,
+        provenance: 'escrita_por_pessoa',
+      },
+    ],
     cozinha,
     categoria,
     restricoes,
     porcoes,
     dificuldade,
+    tempoAtivoMin: null,
+    tempoTotalMin: null,
     ingredientes,
+    curationStatus: 'approved',
+    reviewedBy: g.session.user.id,
   })
 
   return Response.json({ id: result.recipeId }, { status: 200 })
