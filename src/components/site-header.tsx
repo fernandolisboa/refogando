@@ -29,7 +29,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { BrandWordmark } from '@/components/brand-wordmark'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
@@ -119,13 +118,9 @@ export function SiteHeader() {
       >
         <Link
           href="/"
-          aria-label={messages.app.name}
-          className="inline-flex items-center text-fg"
+          className="font-display text-2xl font-semibold tracking-tight text-brand-ink"
         >
-          {/* Wordmark "steam-R" (#270): o nome acessível vive no próprio Link (aria-label) — não
-              depende de como o SVG interno está rotulado. `text-fg` pinta as letras (café/creme via
-              currentColor); o vapor é stroke-brand. */}
-          <BrandWordmark name={messages.app.name} className="h-10" />
+          {messages.app.name}
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">

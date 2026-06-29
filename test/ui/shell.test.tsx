@@ -92,23 +92,6 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     expect(document.documentElement.lang).toBe('en-US')
   })
 
-  // #270: o wordmark virou SVG "steam-R". Regressão: o link da home preserva o NOME ACESSÍVEL
-  // "Refogando" (vem do aria-label do svg) e aponta pra "/". O wordmark do RODAPÉ é decorativo
-  // (aria-hidden) → não há um 2º role=img/link "Refogando" competindo na chrome.
-  it('#270: o link da home mantém o nome acessível "Refogando" → "/"; rodapé é decorativo', () => {
-    navMock.pathname = '/pt-BR'
-    render(
-      <LocaleProvider initialLocale="pt-BR">
-        <SiteHeader />
-        <SiteFooter />
-      </LocaleProvider>,
-    )
-    const homeLink = screen.getByRole('link', { name: ptBR.app.name })
-    expect(homeLink).toHaveAttribute('href', '/')
-    // Só UM role=img "Refogando" na chrome (o do header); o do rodapé é aria-hidden.
-    expect(screen.getAllByRole('img', { name: ptBR.app.name })).toHaveLength(1)
-  })
-
   afterEach(() => {
     authMock.current = authMock.anon
     navMock.push.mockClear()
