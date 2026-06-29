@@ -3,6 +3,12 @@ import type { Database } from '@/db/client'
 import { users } from '@/db/schema'
 import { escapeLike } from '@/server/sql/like'
 import { classifyUserQuery, type UserSearchRow } from '@/domain/user-search-read'
+import { eligiblePublicRecipeSqlFragment } from '@/server/recipe/visibility-sql'
+import { encodeSearchCursor, type SearchCursor } from '@/domain/cooks-cursor'
+import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
+
+/** Uma página da busca de Cozinheiros (#308): os cooks (já allowlisted) + o cursor da PRÓXIMA página. */
+export type CookSearchPage = { cooks: ProfileFollowUser[]; nextCursor: string | null }
 
 const DEFAULT_LIMIT = 10
 
@@ -96,22 +102,87 @@ export async function searchUsers(
 }
 
 /**
- * Busca PÚBLICA de Cozinheiros (#279) — o caminho da Descoberta. Reusa `searchUsers` (mesmo ranking
- * força-de-match, mesmo gate de soft-delete) mas restringe a superfície ao que o AC pede: SÓ nome +
- * @handle. Barra explicitamente:
- *  - `kind === 'id'`: um `q` com cara de UUID faria `searchUsers` resolver a PK → vazaria um oráculo
- *    anônimo `uuid interno → {nome, @handle, avatar}` (o owner_id que o resto do código nunca expõe).
- *  - `kind === 'email'`: PII — `includeEmail=false` já corta no loader; barrar aqui é cinto-e-suspensório.
- *  - `term.length < COOK_MIN_TERM_LEN` (3): ruído + abaixo do trigrama (seq scan). Mede o termo
- *    CLASSIFICADO (pós-`@`), não o `q` cru — senão `@ab` (3 chars) passaria com term 'ab' de 2 chars.
- * `includeEmail=false` é FIXO (a coluna email nem é selecionada) e o limite é SERVER-controlled
- * (`COOK_SEARCH_LIMIT`, nunca o `?limit=` do cliente — anti-DoS). Devolve linhas cruas; a rota projeta
- * pra `ProfileFollowUser` (allowlist) via `projectPublicCook`.
+ * Busca PÚBLICA de Cozinheiros (#279 cluster + #308 Descoberta dedicada). NÃO reusa `searchUsers` (que
+ * fica PURO p/ o admin #269): #308 exige filtro de Cozinha + paginação keyset, que pedem CTE + EXISTS —
+ * então tem query PRÓPRIA, mas com o MESMO ranking força-de-match (exato>prefixo>substring) e gate de
+ * soft-delete. Barra `id` (vazaria o oráculo uuid→perfil), `email` (PII) e termo < `COOK_MIN_TERM_LEN`.
+ *
+ * **Allowlist (#269/Modelo B):** seleciona SÓ `name/handle/image` — `id`/`role`/`email` NEM entram no
+ * SQL. O cursor é `(rank, name, handle)` — tiebreak no `handle` PÚBLICO (page 1 incluída, pra page1↔page2
+ * não desalinharem), NUNCA no id. Limite SERVER-controlled (`COOK_SEARCH_LIMIT`, nunca o `?limit=`).
+ *
+ * **Filtro de Cozinha (#308):** `EXISTS (receita pública elegível na cozinha)`, anexado SÓ quando há
+ * cozinha — sem cozinha, o cluster #279 segue IDÊNTICO (casa qualquer usuário por nome/@handle, sem
+ * exigir receita). Com cozinha, exige ≥1 receita elegível na(s) cozinha(s) (OR-dentro-do-eixo).
  */
-export async function searchCooks(db: Database, q: string): Promise<UserSearchRow[]> {
-  const parsed = classifyUserQuery(q)
+export async function searchCooks(
+  db: Database,
+  opts: { q: string; cozinhas?: string[]; cursor?: SearchCursor | null; limit?: number },
+): Promise<CookSearchPage> {
+  const parsed = classifyUserQuery(opts.q)
   if (!parsed || parsed.kind === 'id' || parsed.kind === 'email' || parsed.term.length < COOK_MIN_TERM_LEN) {
-    return []
+    return { cooks: [], nextCursor: null }
   }
-  return searchUsers(db, { q, includeEmail: false, limit: COOK_SEARCH_LIMIT })
+  const cozinhas = opts.cozinhas ?? []
+  const cursor = opts.cursor ?? null
+  const limit = opts.limit ?? COOK_SEARCH_LIMIT
+  const esc = escapeLike(parsed.term)
+  const starts = `${esc}%`
+  const contains = `%${esc}%`
+
+  // Mesmo ranking de `searchUsers`: 0 exato (case-insensitive), 1 prefixo, 2 substring. `handle`-kind
+  // ranqueia só o handle; `text`-kind o MENOR entre nome e handle. Termo SEMPRE escapado + bindado.
+  const rankSql =
+    parsed.kind === 'handle'
+      ? sql`case when users.handle ilike ${esc} then 0 when users.handle ilike ${starts} then 1 else 2 end`
+      : sql`least(
+          case when users.name ilike ${esc} then 0 when users.name ilike ${starts} then 1 else 2 end,
+          case when users.handle ilike ${esc} then 0 when users.handle ilike ${starts} then 1 else 2 end
+        )`
+  const matchSql =
+    parsed.kind === 'handle'
+      ? sql`users.handle ilike ${contains}`
+      : sql`(users.name ilike ${contains} OR users.handle ilike ${contains})`
+  // Cozinha SÓ quando pedida ⇒ cluster #279 (sem cozinha) intacto (não exige receita).
+  const cozinhaExistsSql = cozinhas.length
+    ? sql`AND EXISTS (
+        SELECT 1 FROM recipe r
+        WHERE r.owner_id = users.id AND ${eligiblePublicRecipeSqlFragment('r')}
+          AND r.cozinha = ANY (${sql.param(cozinhas)}::text[])
+      )`
+    : sql``
+  // Keyset all-ASC (rank,name,handle): próxima página = tupla lexicograficamente MAIOR. CTE expõe o
+  // `rank` (CASE não pode ir no WHERE direto). `name` livre é bindado como param (injection-safe).
+  const keysetSql = cursor
+    ? sql`(matched.rank, matched.name, matched.handle) > (${cursor.rank}, ${cursor.name}, ${cursor.handle})`
+    : sql`TRUE`
+
+  type Row = { name: string; handle: string; image: string | null; rank: number }
+  const rows = await db.execute<Row>(sql`
+    WITH matched AS (
+      SELECT
+        users.name AS name,
+        users.handle AS handle,
+        users.image AS image,
+        (${rankSql})::int AS rank
+      FROM users
+      WHERE users.deleted_at IS NULL AND ${matchSql}
+        ${cozinhaExistsSql}
+    )
+    SELECT matched.name AS name, matched.handle AS handle, matched.image AS image, matched.rank AS rank
+    FROM matched
+    WHERE ${keysetSql}
+    ORDER BY matched.rank ASC, matched.name ASC, matched.handle ASC
+    LIMIT ${limit + 1}
+  `)
+
+  const hasMore = rows.length > limit
+  const kept = hasMore ? rows.slice(0, limit) : rows
+  const last = kept[kept.length - 1]
+  const nextCursor =
+    hasMore && last ? encodeSearchCursor({ rank: last.rank, name: last.name, handle: last.handle }) : null
+  return {
+    cooks: kept.map((r) => ({ name: r.name, handle: r.handle, image: r.image })),
+    nextCursor,
+  }
 }

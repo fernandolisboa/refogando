@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/search/cooks/route'
 import { COOK_SEARCH_LIMIT } from '@/server/user/search'
 import { seedUser } from '../helpers/users'
+import { seedRecipe } from '../helpers/recipes'
 
 /**
  * Busca PÚBLICA de Cozinheiros (#279, ADR-0024) — rota GET /api/search/cooks contra Postgres real.
@@ -20,6 +21,14 @@ async function cooksOf(query: string): Promise<{ name: string; handle: string; i
   expect(res.status).toBe(200) // cookie-free: NUNCA 401
   const body = (await res.json()) as { cooks: { name: string; handle: string; image: string | null }[] }
   return body.cooks
+}
+
+async function cooksPageOf(
+  query: string,
+): Promise<{ cooks: { handle: string }[]; nextCursor: string | null }> {
+  const res = await cooksReq(query)
+  expect(res.status).toBe(200)
+  return (await res.json()) as { cooks: { handle: string }[]; nextCursor: string | null }
 }
 
 describe('GET /api/search/cooks (#279) — casa por nome/@handle', () => {
@@ -104,5 +113,51 @@ describe('GET /api/search/cooks (#279) — gates de segurança/privacidade', () 
     }
     const cooks = await cooksOf('?q=mariana&limit=99999')
     expect(cooks.length).toBeLessThanOrEqual(COOK_SEARCH_LIMIT)
+  })
+})
+
+describe('GET /api/search/cooks (#308) — filtro de cozinha', () => {
+  it('com ?cozinha=: só quem tem receita pública elegível na cozinha; SEM cozinha: casa por nome mesmo sem receita (cluster #279 intacto)', async () => {
+    const aIta = await seedUser({ email: 'ai@cs.test', name: 'Ana Italiana', handle: 'ana-ita' })
+    await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: aIta, cozinha: 'italiana' as never })
+    const aJap = await seedUser({ email: 'aj@cs.test', name: 'Ana Japonesa', handle: 'ana-jap' })
+    await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: aJap, cozinha: 'japonesa' as never })
+    await seedUser({ email: 'as@cs.test', name: 'Ana Sem Receita', handle: 'ana-sem' })
+
+    // SEM cozinha: casa os três por "ana" — NÃO exige receita (comportamento herdado do cluster #279).
+    expect((await cooksPageOf('?q=ana')).cooks.map((c) => c.handle).sort()).toEqual(['ana-ita', 'ana-jap', 'ana-sem'])
+    // cozinha=italiana: só ana-ita.
+    expect((await cooksPageOf('?q=ana&cozinha=italiana')).cooks.map((c) => c.handle)).toEqual(['ana-ita'])
+    // multi italiana,japonesa: ana-ita + ana-jap (ana-sem cai fora — sem receita elegível).
+    expect((await cooksPageOf('?q=ana&cozinha=italiana,japonesa')).cooks.map((c) => c.handle).sort()).toEqual(['ana-ita', 'ana-jap'])
+    // cozinha forjada/sem receita ⇒ vazio (bound-param, nunca 500).
+    expect((await cooksPageOf('?q=ana&cozinha=NAO%00EXISTE')).cooks).toEqual([])
+  })
+})
+
+describe('GET /api/search/cooks (#308) — paginação keyset', () => {
+  it('pagina TODOS sem dup/skip; nextCursor null no fim', async () => {
+    for (let i = 0; i < COOK_SEARCH_LIMIT + 2; i++) {
+      await seedUser({ email: `pg${i}@cs.test`, name: `Cook Pag ${i}`, handle: `cook-pag-${String(i).padStart(2, '0')}` })
+    }
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let p = 0; p < 6; p++) {
+      const page = await cooksPageOf(`?q=cook-pag${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`)
+      seen.push(...page.cooks.map((c) => c.handle))
+      cursor = page.nextCursor
+      if (!cursor) break
+    }
+    expect(seen.length).toBe(COOK_SEARCH_LIMIT + 2)
+    expect(new Set(seen).size).toBe(COOK_SEARCH_LIMIT + 2) // sem duplicar
+    expect(seen).toContain('cook-pag-00')
+    expect(seen).toContain(`cook-pag-${String(COOK_SEARCH_LIMIT + 1).padStart(2, '0')}`)
+  })
+
+  it('cursor forjado → primeira página (nunca 500)', async () => {
+    await seedUser({ email: 'cf@cs.test', name: 'Cursor Forjado', handle: 'cursor-forjado' })
+    const res = await cooksReq('?q=cursor-forjado&cursor=!!!lixo!!!')
+    expect(res.status).toBe(200)
+    expect((await res.json() as { cooks: { handle: string }[] }).cooks.map((c) => c.handle)).toEqual(['cursor-forjado'])
   })
 })
