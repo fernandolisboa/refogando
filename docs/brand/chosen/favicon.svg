@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Refogando">
+<!-- Refogando favicon/app-icon (#270, opcao 7 "frigideira-lateral"). Arte = symbol.svg EXATO
+     (4 aromaticos + 2 fios de aroma), so com fundo creme arredondado e um leve inset. -->
+  <title>Refogando</title>
+  <rect width="64" height="64" rx="14" fill="#FBF7EF"/>
+  <g transform="translate(9.3 9.3) scale(0.71)">
+    <!-- 2 fios de aroma subindo -->
+    <path d="M20 18 C17 14 23 12 20 7" fill="none" stroke="#3A2E25" stroke-width="2" stroke-linecap="round"/>
+    <path d="M30 15 C33 11 27 9 30 4" fill="none" stroke="#3A2E25" stroke-width="2" stroke-linecap="round"/>
+    <!-- 4 aromaticos saltando do refogado -->
+    <ellipse cx="15" cy="31" rx="4" ry="3" fill="#4E8A5F" transform="rotate(-18 15 31)"/>
+    <circle cx="23" cy="25" r="3.6" fill="#C2553A"/>
+    <circle cx="28" cy="20" r="2.4" fill="#3F7A50"/>
+    <ellipse cx="33" cy="31" rx="3.8" ry="2.9" fill="#9E4430" transform="rotate(12 33 31)"/>
+    <!-- corpo da frigideira (perfil) -->
+    <path d="M5 35 L43 35 C43 45 40 49 34 49 L14 49 C8 49 5 45 5 35 Z" fill="#3A2E25"/>
+    <!-- cabo longo a direita -->
+    <line x1="42" y1="35" x2="60" y2="30" stroke="#3A2E25" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
