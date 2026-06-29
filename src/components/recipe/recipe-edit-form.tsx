@@ -85,7 +85,7 @@ export function RecipeEditForm({
    * No modo derive, o toggle de Visibilidade e o Apagar ficam ESCONDIDOS (a derivada ainda não
    * existe pra publicar e a base não é sua).
    */
-  mode?: 'own' | 'derive'
+  mode?: 'own' | 'derive' | 'catalog'
   /** Locale do POST /derive (`?locale`); ignorado no modo own (usa o locale atual do provider). */
   locale?: string
   onSaved?: () => void
@@ -101,6 +101,11 @@ export function RecipeEditForm({
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const router = useRouter()
   const isDerive = mode === 'derive'
+  // #238 (ADR-0026 emenda dec.9): edição de rascunho de CATÁLOGO pelo curador. Reusa o editor rico,
+  // mas o Salvar bate na rota de CURADOR (`PATCH /api/curate/recipes/[id]`), sem publish/unpublish nem
+  // confirm-pública (a publicação é a fila de curadoria, não o toggle do dono), e o pós-save recarrega
+  // a FILA (não navega pro detalhe público). Visibilidade/Apagar/"Outra cozinha" ficam escondidos.
+  const isCatalog = mode === 'catalog'
 
   // Visibilidade ATUAL no servidor (prefill do toggle rascunho). `view.visibility` é owner-gated:
   // sempre presente no detalhe do dono; default defensivo 'private' se faltar.
@@ -118,7 +123,9 @@ export function RecipeEditForm({
   // privada e o Usuário publica depois, no detalhe dela.
   const isWebImported = view.origin === 'web_imported'
   const isPlayful = view.resultKind === 'playful'
-  const showVisibilityToggle = !isDerive && !isWebImported && !isPlayful
+  // #238: catálogo NÃO tem toggle de visibilidade (a publicação é a curadoria). `showVisibilityToggle`
+  // defaultava TRUE p/ catálogo (isDerive/isWebImported/isPlayful todos false) → gateado por !isCatalog.
+  const showVisibilityToggle = !isDerive && !isCatalog && !isWebImported && !isPlayful
   const [draftPublic, setDraftPublic] = useState(initialPublic)
 
   // ── Estado do formulário, prefilled da view ─────────────────────────────────
@@ -130,8 +137,14 @@ export function RecipeEditForm({
   // hook), é um termo `suggested` ⇒ abre o form no modo Outra, com o campo PRÉ-PREENCHIDO com o SLUG
   // (melhor texto disponível — os rótulos são NULL até a aprovação do Curador #320; o dono vê ~o que
   // propôs, NÃO o texto verbatim). Esta é a ÚNICA superfície de leitura que mostra o texto sugerido.
+  // #238: no modo catálogo NÃO ativamos o modo "Outra" pra slug fora do vocabulário — o curador edita
+  // só cozinhas ATIVAS, e a rota de curador ignora `cozinhaOutra`. Sem este guard, o prefill abriria
+  // `outraAtiva=true` e o buildPatch mandaria `cozinha:null` → ZERARIA a cozinha no Salvar (achado do
+  // plan-review). Forçado false ⇒ o select pré-preenche o slug cru (ou vazio se não-ativo).
   const cozinhaSuggested =
-    view.facets.cozinha != null && !cozinhaVocab.some((o) => o.value === view.facets.cozinha)
+    !isCatalog &&
+    view.facets.cozinha != null &&
+    !cozinhaVocab.some((o) => o.value === view.facets.cozinha)
   const [cozinha, setCozinha] = useState(cozinhaSuggested ? '' : (view.facets.cozinha ?? ''))
   const [outraAtiva, setOutraAtiva] = useState(cozinhaSuggested)
   const [outra, setOutra] = useState(cozinhaSuggested ? (view.facets.cozinha ?? '') : '')
@@ -329,6 +342,24 @@ export function RecipeEditForm({
     setSaving(true)
     setErrorKey(null)
     try {
+      // #238: catálogo — PATCH na rota de CURADOR, SEM visibilidade nem navegação pro detalhe público
+      // (o rascunho é escondido). Sucesso ⇒ `onSaved()` (a fila recarrega o item). Retorna ANTES do
+      // fluxo de dono. O `buildPatch()` já manda ingredientes+tempos (a rota de curador agora aceita).
+      if (isCatalog) {
+        const res = await fetch(`/api/curate/recipes/${view.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(buildPatch()),
+        })
+        if (!res.ok) {
+          setDialog('none')
+          setErrorKey('save')
+          return
+        }
+        setDialog('none')
+        onSaved?.()
+        return
+      }
       // ── (1) Conteúdo ──────────────────────────────────────────────────────────
       const res = await fetch(`/api/recipes/${view.id}`, {
         method: 'PATCH',
@@ -597,8 +628,11 @@ export function RecipeEditForm({
                     {label}
                   </option>
                 ))}
-                {/* "Outra" (#319): cozinha fora do vocabulário → vira sugestão pro Curador. */}
-                <option value={OUTRA_SENTINEL}>{messages.criarWizard.cozinhaOutra}</option>
+                {/* "Outra" (#319): cozinha fora do vocabulário → vira sugestão pro Curador. ESCONDIDA no
+                    modo catálogo (#238): a rota de curador não materializa sugestão de cozinha. */}
+                {!isCatalog && (
+                  <option value={OUTRA_SENTINEL}>{messages.criarWizard.cozinhaOutra}</option>
+                )}
               </select>
             </label>
             {outraAtiva && (
@@ -749,7 +783,9 @@ export function RecipeEditForm({
               ? messages.system.loading
               : isDerive
                 ? messages.minhasCriacoes.criarMinhaVersao
-                : m.editarPublicaConfirmar}
+                : isCatalog
+                  ? messages.curadoria.filaEditarSalvar
+                  : m.editarPublicaConfirmar}
           </Button>
           {/* #192: Cancelar fecha o modal sem gravar (só na variante modal). */}
           {onCancel && (
@@ -757,8 +793,9 @@ export function RecipeEditForm({
               {m.editarPublicaCancelar}
             </Button>
           )}
-          {/* #196: Apagar fica SÓ no modo own — a base derivada não é sua, não há o que apagar. */}
-          {!isDerive && (
+          {/* #196/#238: Apagar fica SÓ no modo own — derive (base não é sua) e catálogo (a remoção é
+              REJEITAR na fila de curadoria, não apagar a linha) o escondem. */}
+          {!isDerive && !isCatalog && (
             <Button
               type="button"
               variant="secondary"
