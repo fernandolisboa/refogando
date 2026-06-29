@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "grant-role": "node --env-file=.env.local scripts/grant-role.mjs",
-    "backfill-recipe-slugs": "tsx --env-file=.env.local scripts/backfill-recipe-slugs.ts"
+    "backfill-recipe-slugs": "tsx --env-file=.env.local scripts/backfill-recipe-slugs.ts",
+    "seed-catalog": "tsx --env-file=.env.local scripts/seed-catalog.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.104.1",
