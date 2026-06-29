@@ -1109,5 +1109,11 @@ export const enUS: Messages = {
     filaOcultar: 'Hide',
     filaIngredientes: 'Ingredients',
     filaPreparo: 'Steps',
+    filtroTodasCozinhas: 'All cuisines',
+    filtroTodasCategorias: 'All categories',
+    filtroBusca: 'Search by title…',
+    filaVerMais: 'Show more',
+    filaSemFiltro: 'No pending recipes match this filter.',
+    filaContagem: 'pending',
   },
 } as const

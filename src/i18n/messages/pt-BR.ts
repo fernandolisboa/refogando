@@ -1159,6 +1159,12 @@ export const ptBR = {
     filaOcultar: 'Ocultar',
     filaIngredientes: 'Ingredientes',
     filaPreparo: 'Modo de preparo',
+    filtroTodasCozinhas: 'Todas as cozinhas',
+    filtroTodasCategorias: 'Todas as categorias',
+    filtroBusca: 'Buscar por título…',
+    filaVerMais: 'Ver mais',
+    filaSemFiltro: 'Nenhuma receita pendente com esse filtro.',
+    filaContagem: 'pendentes',
   },
 } as const
 

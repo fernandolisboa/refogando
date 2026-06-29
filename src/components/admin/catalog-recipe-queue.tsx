@@ -15,9 +15,12 @@
  * SEM `router.refresh()`: o estado local é autoritativo. `createdAt` chega como STRING (não Date).
  * Cores: só neutros/brand AA (espelha as outras filas do Curador).
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
+import { CATEGORIAS, type Categoria } from '@/domain/vocabulary'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { CatalogQueueItem } from '@/server/curate/recipe-curation'
 
@@ -46,6 +49,16 @@ export function CatalogRecipeQueue() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<Record<string, DraftDetail>>({})
   const [detailLoading, setDetailLoading] = useState<string | null>(null)
+  // #238 follow-up: filtro (cozinha/categoria) + busca por título + paginação "Ver mais" — com 225
+  // pendentes a lista era um scroll enorme. Filtragem CLIENT-SIDE (a fila é só-metadados, ≤225 itens,
+  // e encolhe ao curar): instantâneo, sem round-trip. cozinha/categoria via vocabulário data-driven.
+  const cozinhaVocab = useCozinhaVocab()
+  const cozLabel = useMemo(() => new Map(cozinhaVocab.map((c) => [c.value, c.label])), [cozinhaVocab])
+  const [cozinhaFilter, setCozinhaFilter] = useState('')
+  const [categoriaFilter, setCategoriaFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const PAGE = 20
+  const [visibleCount, setVisibleCount] = useState(PAGE)
 
   async function load() {
     setLoading(true)
@@ -151,8 +164,8 @@ export function CatalogRecipeQueue() {
 
   function meta(item: QueueItem): string {
     return [
-      item.cozinha && `${m.filaCozinha}: ${item.cozinha}`,
-      item.categoria && `${m.filaCategoria}: ${item.categoria}`,
+      item.cozinha && `${m.filaCozinha}: ${cozLabel.get(item.cozinha) ?? item.cozinha}`,
+      item.categoria && `${m.filaCategoria}: ${messages.categoriaLabel[item.categoria as Categoria]}`,
       item.porcoes != null && `${m.filaPorcoes}: ${item.porcoes}`,
       item.dificuldade != null && `${m.filaDificuldade}: ${item.dificuldade}`,
     ]
@@ -160,11 +173,68 @@ export function CatalogRecipeQueue() {
       .join(' · ')
   }
 
+  const filtered = queue.filter(
+    (q) =>
+      (!cozinhaFilter || q.cozinha === cozinhaFilter) &&
+      (!categoriaFilter || q.categoria === categoriaFilter) &&
+      (!search.trim() || (q.titulo ?? '').toLowerCase().includes(search.trim().toLowerCase())),
+  )
+  const shown = filtered.slice(0, visibleCount)
+
+  /** Muda um filtro/busca e RESETA a paginação ("Ver mais") pra a 1ª página do novo recorte. */
+  function onFilter(setter: (v: string) => void, v: string): void {
+    setter(v)
+    setVisibleCount(PAGE)
+  }
+  const selectCls = 'rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-fg'
+
   return (
     <section aria-labelledby="catalog-queue-titulo" className="flex flex-col gap-4">
       <h3 id="catalog-queue-titulo" className="text-base font-semibold text-fg">
         {m.filaTitulo}
       </h3>
+
+      {!loading && !loadError && queue.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label={m.filaCozinha}
+            value={cozinhaFilter}
+            onChange={(e) => onFilter(setCozinhaFilter, e.target.value)}
+            className={selectCls}
+          >
+            <option value="">{m.filtroTodasCozinhas}</option>
+            {cozinhaVocab.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={m.filaCategoria}
+            value={categoriaFilter}
+            onChange={(e) => onFilter(setCategoriaFilter, e.target.value)}
+            className={selectCls}
+          >
+            <option value="">{m.filtroTodasCategorias}</option>
+            {CATEGORIAS.map((c) => (
+              <option key={c} value={c}>
+                {messages.categoriaLabel[c]}
+              </option>
+            ))}
+          </select>
+          <Input
+            type="search"
+            aria-label={m.filtroBusca}
+            placeholder={m.filtroBusca}
+            value={search}
+            onChange={(e) => onFilter(setSearch, e.target.value)}
+            className="w-44"
+          />
+          <span className="text-xs text-muted">
+            {filtered.length} {m.filaContagem}
+          </span>
+        </div>
+      )}
 
       <div aria-live="polite" aria-busy={loading} className="flex flex-col gap-2">
         {loading ? (
@@ -180,9 +250,11 @@ export function CatalogRecipeQueue() {
           </div>
         ) : queue.length === 0 ? (
           <p className="text-sm text-muted">{m.filaVazia}</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-muted">{m.filaSemFiltro}</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {queue.map((item) => (
+            {shown.map((item) => (
               <li
                 key={item.recipeId}
                 className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3"
@@ -295,6 +367,18 @@ export function CatalogRecipeQueue() {
           </ul>
         )}
       </div>
+
+      {!loading && !loadError && filtered.length > visibleCount && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="self-start"
+          onClick={() => setVisibleCount((v) => v + PAGE)}
+        >
+          {m.filaVerMais} ({filtered.length - visibleCount})
+        </Button>
+      )}
 
       {/* Rejeitadas (tombstones) — rever / restaurar à fila. */}
       <details className="flex flex-col gap-2">
