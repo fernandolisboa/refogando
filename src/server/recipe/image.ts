@@ -368,7 +368,7 @@ export async function generateAndStoreGalleryImage(input: {
  * ⇒ tokens/custo NULOS, a linha ainda é gravada (o teto conta por contagem, #167). `cost_usd` numeric
  * ⇒ string no insert. Re-selecionar/enviar não passam por aqui com `writeLedger` ⇒ não geram linha.
  */
-async function createGalleryImage(
+export async function createGalleryImage(
   tx: Tx,
   args: {
     blobUrl: string

@@ -1,8 +1,11 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeTranslation } from '@/db/schema'
+import { recipe, recipeTranslation, recipeImage } from '@/db/schema'
 import { CURATION_QUEUE_STATUSES, type CurationStatus } from '@/domain/recipe-curation'
 import { embedTranslation } from '@/server/embedding/recompute'
+import type { ImageStore } from '@/server/images/image-store'
+import type { ImageGenerator } from '@/server/images/image-generator'
+import { applyCatalogImageGeneration } from '@/server/curate/catalog-image'
 
 /**
  * Fila de CURADORIA de RECEITAS de catálogo (#238, ADR-0026) — análoga à fila proativa de imagens
@@ -97,8 +100,13 @@ export async function approveCatalogRecipe(input: {
   db: Database
   recipeId: string // já validado uuid pelo route
   curatorId: string // session.user.id (route passou pelo requireRole 'curador')
+  // #238 (ADR-0026 emenda dec.12): auto-gerar imagem na aprovação, SE faltar face não-moderada.
+  // Injetados pela rota (getImageStore/getImageGenerator). Ausentes ⇒ aprovação sem auto-gen (a
+  // assinatura é ADITIVA-opcional: os testes existentes sem args seguem verdes).
+  store?: ImageStore
+  generator?: ImageGenerator
 }): Promise<CurationActionResult> {
-  const { db, recipeId, curatorId } = input
+  const { db, recipeId, curatorId, store, generator } = input
 
   const result = await db.transaction(async (tx) => {
     const r = await loadCatalogDraftForUpdate(tx, recipeId)
@@ -138,6 +146,29 @@ export async function approveCatalogRecipe(input: {
       await embedTranslation(db, recipeId, locale)
     } catch {
       // embedder indisponível — a busca semântica fica dormente até o backfill (#119).
+    }
+  }
+
+  // Auto-gen de imagem (#238, ADR-0026 emenda dec.12), POR ÚLTIMO (a chamada Gemini é multi-segundo;
+  // os embeddings, retryable, vêm antes). SÓ se a rota injetou os seams E a receita não tem face
+  // NÃO-MODERADA (skip-if-has-image; pula se o curador já gerou/subiu uma pela fila — sem cobrança
+  // dupla; gera se a face é moderada, p/ não publicar com placeholder). BEST-EFFORT: o núcleo devolve
+  // union (falha = VALOR, não throw); o try/catch só blinda throw inesperado. A aprovação JÁ committou
+  // ⇒ NUNCA é desfeita/bloqueada por falha de imagem (o approve sempre devolve 200; o script de lote
+  // #238 cobre o que faltar). AUTO-SELECIONA (autoSelect=true no núcleo) ⇒ aprovada vai pública c/ face.
+  if (store && generator) {
+    try {
+      const [face] = await db
+        .select({ moderatedAt: recipeImage.moderatedAt })
+        .from(recipe)
+        .innerJoin(recipeImage, eq(recipe.imageId, recipeImage.id))
+        .where(eq(recipe.id, recipeId))
+      const hasNonModeratedFace = face != null && face.moderatedAt == null
+      if (!hasNonModeratedFace) {
+        await applyCatalogImageGeneration({ db, store, generator, id: recipeId, curatorId })
+      }
+    } catch {
+      // imagem é best-effort: NUNCA desfaz/bloqueia a aprovação já committada.
     }
   }
   return result
