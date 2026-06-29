@@ -132,14 +132,15 @@ describe('FollowingFeed (#277)', () => {
     expect(screen.getByText(MF.fim)).toBeInTheDocument()
   })
 
-  it('logado SEM nada no feed: empty state cause-neutro (h2) + CTA "Descobrir cozinheiros" → /', async () => {
+  it('logado SEM nada no feed: empty state cause-neutro (h2) + CTA "Descobrir cozinheiros" → /cooks', async () => {
     mockFetch(() => ({ body: { feed: [], nextCursor: null } }))
     renderFollowing(authed())
 
     const heading = await screen.findByRole('heading', { name: M.vazioTitulo })
     expect(heading.tagName).toBe('H2')
     expect(screen.getByText(M.vazioCorpo)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: M.vazioCta })).toHaveAttribute('href', '/')
+    // #308: o CTA agora leva à Descoberta de Cozinheiros dedicada.
+    expect(screen.getByRole('link', { name: M.vazioCta })).toHaveAttribute('href', '/cooks')
     expect(screen.queryByRole('button', { name: MF.carregarMais })).not.toBeInTheDocument()
   })
 

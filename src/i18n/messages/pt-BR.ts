@@ -203,6 +203,19 @@ export const ptBR = {
     seguir: 'Seguir',
     seguindo: 'Seguindo',
     erroSeguir: 'Não deu pra atualizar. Tente de novo.',
+    // #308: link no fim do trilho → Descoberta de Cozinheiros dedicada.
+    verMais: 'Ver mais',
+  },
+  // Descoberta de Cozinheiros dedicada (#308, `/cooks`) — busca + filtro de cozinha + lista paginada.
+  descobrirCozinheiros: {
+    titulo: 'Descobrir cozinheiros',
+    subtitulo: 'Encontre cozinheiros para seguir.',
+    buscarLabel: 'Buscar cozinheiros',
+    buscarPlaceholder: 'Nome ou @handle',
+    cozinhaLabel: 'Cozinha',
+    vazioBusca: 'Nenhum cozinheiro encontrado.',
+    vazioLista: 'Ainda não há cozinheiros para mostrar.',
+    carregando: 'Carregando…',
   },
   // Cluster de Cozinheiros na Busca mesclada (#279, ADR-0024) — flutua acima das receitas por força-de-match.
   buscaCozinheiros: {
