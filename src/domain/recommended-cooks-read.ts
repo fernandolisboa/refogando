@@ -45,6 +45,10 @@ export const RECOMMENDED_COOK_RECIPES_LIMIT = 3
 /** Máximo de cartões no trilho (top-N por popularidade). Reversível — knob de produto. */
 export const RECOMMENDED_COOKS_LIMIT = 8
 
+/** Tamanho de página da Descoberta de Cozinheiros dedicada (#308, `/cooks` — scroll infinito). Maior
+ *  que o trilho (8) porque é um diretório navegável, não uma vitrine. Reversível — knob de produto. */
+export const COOKS_DIRECTORY_PAGE_SIZE = 24
+
 /**
  * Mínimo de candidatos para EXIBIR o trilho. `1` (pedido do dono, 2026-06-28): basta UM cozinheiro
  * recomendado pra o trilho/3ª-coluna aparecer — sem piso de quantidade. Só o caso VAZIO (0) esconde (não

@@ -218,7 +218,8 @@ export function FollowingFeed() {
           <h2 className="font-display text-xl font-semibold text-fg">{m.vazioTitulo}</h2>
           <p className="text-muted">{m.vazioCorpo}</p>
           <Button asChild>
-            <Link href="/">{m.vazioCta}</Link>
+            {/* #308: leva à Descoberta de Cozinheiros dedicada (`/cooks`), não mais à home. */}
+            <Link href="/cooks">{m.vazioCta}</Link>
           </Button>
         </div>
       )}

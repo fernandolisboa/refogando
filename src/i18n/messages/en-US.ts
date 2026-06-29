@@ -193,6 +193,19 @@ export const enUS: Messages = {
     seguir: 'Follow',
     seguindo: 'Following',
     erroSeguir: "Couldn't update. Try again.",
+    // #308: link at the end of the rail → dedicated Discover cooks surface.
+    verMais: 'See more',
+  },
+  // Dedicated Discover cooks surface (#308, `/cooks`) — search + cuisine filter + paginated list.
+  descobrirCozinheiros: {
+    titulo: 'Discover cooks',
+    subtitulo: 'Find cooks to follow.',
+    buscarLabel: 'Search cooks',
+    buscarPlaceholder: 'Name or @handle',
+    cozinhaLabel: 'Cuisine',
+    vazioBusca: 'No cooks found.',
+    vazioLista: 'No cooks to show yet.',
+    carregando: 'Loading…',
   },
   // Cooks cluster in the merged Search (#279, ADR-0024) — floats above recipes by match strength.
   buscaCozinheiros: {

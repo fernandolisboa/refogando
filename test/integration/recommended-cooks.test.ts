@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import { recipe, users } from '@/db/schema'
 import { loadRecommendedCooks } from '@/server/user/recommended-cooks'
+import { decodeRecsCursor } from '@/domain/cooks-cursor'
 import { follow } from '@/server/user/follow'
 import { seedUser } from '../helpers/users'
 import {
@@ -98,7 +99,7 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     await seedFavorite({ userId: voters[1], recipeId: mid.recipeId })
     await seedFavorite({ userId: voters[0], recipeId: baixo.recipeId })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['pop', 'mid', 'baixo'])
   })
 
@@ -120,7 +121,7 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     const quatro = await seedCook({ email: 'quatro@c.test', handle: 'quatro' })
     for (const v of await seedVoters(4)) await seedVote({ userId: v, recipeId: quatro.recipeId })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     // CORRETO 6>5>4 ⇒ seis, cinco, quatro. Um fan-out (cinco=6) empataria com seis e a recência jogaria
     // cinco à frente ⇒ esta asserção FALHARIA — é o que a torna um guarda real da multiplicação.
     expect(cooks.map((c) => c.handle)).toEqual(['seis', 'cinco', 'quatro'])
@@ -137,7 +138,7 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     const solo = await seedCook({ email: 'solo@c.test', handle: 'solo' })
     await seedVote({ userId: voters[0], recipeId: solo.recipeId }) // 1
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     const multi = cooks.find((c) => c.handle === 'multi')
     expect(multi?.recipeCount).toBe(2)
     expect(cooks.map((c) => c.handle)).toEqual(['multi', 'solo']) // 3 > 1
@@ -153,7 +154,7 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     const terceiro = await seedCook({ email: 'ter@c.test', handle: 'tem-um' })
     await seedFavorite({ userId: outro, recipeId: terceiro.recipeId })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['tem-um', 'self-only'])
   })
 
@@ -164,25 +165,25 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     await setCreatedAt(velho.recipeId, '2020-01-01T00:00:00.000Z')
     await setCreatedAt(novo.recipeId, '2025-01-01T00:00:00.000Z')
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['novo', 'velho'])
   })
 
   it('Cozinheiro com score 0 ainda é candidato (≥1 receita pública elegível)', async () => {
     await seedCook({ email: 'zero@c.test', handle: 'zero' })
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['zero'])
   })
 
   it('respeita o limit (top-N)', async () => {
     for (let i = 0; i < 5; i++) await seedCook({ email: `lim-${i}@c.test`, handle: `lim-${i}` })
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 3 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 3 })
     expect(cooks.length).toBe(3)
   })
 
   it('DTO = allowlist exata { name, handle, image, recipeCount, recipes } (sem id/email/role)', async () => {
     await seedCook({ email: 'dto@c.test', handle: 'dto-cook', name: 'DTO Cook' })
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks).toHaveLength(1)
     expect(Object.keys(cooks[0]).sort()).toEqual([
       'handle',
@@ -211,7 +212,7 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Receita C', createdAt: '2022-01-01T00:00:00.000Z' })
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Mais nova', createdAt: '2023-01-01T00:00:00.000Z' })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'pt-BR' })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'pt-BR' })
     const rico = cooks.find((c) => c.handle === 'rico')!
     expect(rico.recipeCount).toBe(4) // contagem TOTAL elegível (≠ preview capado)
     expect(rico.recipes).toHaveLength(RECOMMENDED_COOK_RECIPES_LIMIT) // capado em 3
@@ -221,7 +222,7 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
   it('allowlist: cada receita do preview só carrega {recipeId, displayedTitle(, slug, imageUrl, imageAiGenerated)} — sem owner_id/email/role', async () => {
     const cookId = await seedUser({ email: 'all@c.test', handle: 'allow', name: 'Allow' })
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Única' })
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     const r = cooks.find((c) => c.handle === 'allow')!.recipes[0]
     const allowed = ['recipeId', 'displayedTitle', 'slug', 'imageUrl', 'imageAiGenerated']
     for (const k of Object.keys(r)) expect(allowed).toContain(k)
@@ -235,7 +236,7 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Com IA', createdAt: '2023-01-01T00:00:00.000Z', image: 'ai_generated' })
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Moderada', createdAt: '2022-01-01T00:00:00.000Z', image: 'moderated', curatorId })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     const recipes = cooks.find((c) => c.handle === 'imgs')!.recipes
     const comIa = recipes.find((r) => r.displayedTitle === 'Com IA')!
     expect(comIa.imageAiGenerated).toBe(true)
@@ -247,7 +248,7 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
 
   it('cozinheiro com receita SEM tradução ⇒ preview vazio (mas ainda candidato por recipeCount)', async () => {
     await seedCook({ email: 'semt@c.test', handle: 'sem-titulo' })
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     const c = cooks.find((c) => c.handle === 'sem-titulo')!
     expect(c.recipeCount).toBe(1)
     expect(c.recipes).toEqual([])
@@ -273,7 +274,7 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
       slug: 'cornmeal-cake',
     })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'en-US' })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50, requestLocale: 'en-US' })
     const r = cooks.find((c) => c.handle === 'xloc')!.recipes[0]
     expect(r.displayedTitle).toContain('Cornmeal cake') // a tradução do locale PEDIDO entrou no título
     expect(r.slug).toBe('cornmeal-cake') // slug do req_t (en-US), não do orig_t (pt-BR, sem slug)
@@ -284,7 +285,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
   it('exclui o próprio viewer (self)', async () => {
     const me = await seedCook({ email: 'me@c.test', handle: 'me-cook' })
     await seedCook({ email: 'outro@c.test', handle: 'outro-cook' })
-    const cooks = await loadRecommendedCooks(getDb(), { viewerId: me.cookId, limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { viewerId: me.cookId, limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['outro-cook'])
   })
 
@@ -293,7 +294,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     const seguido = await seedCook({ email: 'seg@c.test', handle: 'seguido' })
     await seedCook({ email: 'nao-seg@c.test', handle: 'nao-seguido' })
     await follow(getDb(), viewerId, seguido.cookId)
-    const cooks = await loadRecommendedCooks(getDb(), { viewerId, limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { viewerId, limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['nao-seguido'])
   })
 
@@ -301,7 +302,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     await seedCook({ email: 'vivo@c.test', handle: 'vivo' })
     const morto = await seedCook({ email: 'morto@c.test', handle: 'morto' })
     await getDb().update(users).set({ deletedAt: new Date() }).where(eq(users.id, morto.cookId))
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['vivo'])
   })
 
@@ -331,7 +332,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     // o único elegível
     await seedCook({ email: 'ok@c.test', handle: 'elegivel' })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['elegivel'])
   })
 
@@ -346,7 +347,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     const pub = await seedCook({ email: 'pub@c.test', handle: 'pub' })
     await seedVote({ userId: voters[0], recipeId: pub.recipeId })
 
-    const cooks = await loadRecommendedCooks(getDb(), { limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['pub', 'mix'])
     expect(cooks.find((c) => c.handle === 'mix')?.recipeCount).toBe(1)
   })
@@ -358,7 +359,99 @@ describe('loadRecommendedCooks (#278) — caminho anônimo/global (viewerId unde
     const a = await seedCook({ email: 'ga@c.test', handle: 'g-a' })
     const b = await seedCook({ email: 'gb@c.test', handle: 'g-b' })
     await follow(getDb(), a.cookId, b.cookId) // a segue b — irrelevante sem viewer
-    const cooks = await loadRecommendedCooks(getDb(), { viewerId: undefined, limit: 50 })
+    const { cooks } = await loadRecommendedCooks(getDb(), { viewerId: undefined, limit: 50 })
     expect(cooks.map((c) => c.handle).sort()).toEqual(['g-a', 'g-b'])
+  })
+})
+
+/** Cozinheiro com UMA receita pública elegível numa cozinha específica. */
+async function seedCookCozinha(opts: { email: string; handle: string; cozinha: string }) {
+  const cookId = await seedUser({ email: opts.email, handle: opts.handle })
+  const recipeId = await seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    ownerId: cookId,
+    cozinha: opts.cozinha as never,
+  })
+  return { cookId, recipeId }
+}
+
+describe('loadRecommendedCooks (#308) — filtro de cozinha (multi, OR-dentro-do-eixo)', () => {
+  it('só cozinheiros com receita elegível na(s) cozinha(s); vazio = sem filtro', async () => {
+    await seedCookCozinha({ email: 'i@c.test', handle: 'ita', cozinha: 'italiana' })
+    await seedCookCozinha({ email: 'j@c.test', handle: 'jap', cozinha: 'japonesa' })
+    await seedCookCozinha({ email: 'b@c.test', handle: 'bra', cozinha: 'brasileira' })
+
+    const all = await loadRecommendedCooks(getDb(), { limit: 50, cozinhas: [] })
+    expect(all.cooks.map((c) => c.handle).sort()).toEqual(['bra', 'ita', 'jap'])
+
+    const so = await loadRecommendedCooks(getDb(), { limit: 50, cozinhas: ['italiana'] })
+    expect(so.cooks.map((c) => c.handle)).toEqual(['ita'])
+
+    const multi = await loadRecommendedCooks(getDb(), { limit: 50, cozinhas: ['italiana', 'japonesa'] })
+    expect(multi.cooks.map((c) => c.handle).sort()).toEqual(['ita', 'jap'])
+
+    const nenhum = await loadRecommendedCooks(getDb(), { limit: 50, cozinhas: ['mexicana'] })
+    expect(nenhum.cooks).toEqual([])
+  })
+
+  it('score E recipeCount ficam ESCOPADOS na cozinha (votos de outra cozinha não contam)', async () => {
+    const voters = await seedVoters(3)
+    const cookId = await seedUser({ email: 'dois@c.test', handle: 'dois-cozinhas' })
+    const ita = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: cookId, cozinha: 'italiana' as never })
+    const jap = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: cookId, cozinha: 'japonesa' as never })
+    for (const v of voters) await seedVote({ userId: v, recipeId: jap }) // 3 votos NA JAPONESA
+    await seedVote({ userId: voters[0], recipeId: ita }) // 1 voto na italiana
+    // outro cozinheiro italiano com 2 votos → deve passar à frente quando filtramos italiana (2 > 1).
+    const rival = await seedCookCozinha({ email: 'riv@c.test', handle: 'rival-ita', cozinha: 'italiana' })
+    await seedVote({ userId: voters[0], recipeId: rival.recipeId })
+    await seedVote({ userId: voters[1], recipeId: rival.recipeId })
+
+    const f = await loadRecommendedCooks(getDb(), { limit: 50, cozinhas: ['italiana'] })
+    // dois-cozinhas conta SÓ a italiana: recipeCount 1, score 1 (os 3 votos da japonesa NÃO entram).
+    expect(f.cooks.find((c) => c.handle === 'dois-cozinhas')?.recipeCount).toBe(1)
+    expect(f.cooks.map((c) => c.handle)).toEqual(['rival-ita', 'dois-cozinhas']) // 2 > 1 no escopo italiano
+  })
+})
+
+describe('loadRecommendedCooks (#308) — paginação keyset', () => {
+  it('percorre TODOS sem dup/skip; nextCursor null no fim', async () => {
+    // scores distintos 5..1 ⇒ ordem determinística sem empate.
+    for (const [h, score] of [['c5', 5], ['c4', 4], ['c3', 3], ['c2', 2], ['c1', 1]] as const) {
+      const cook = await seedCook({ email: `${h}@c.test`, handle: h })
+      for (const v of await seedVoters(score)) await seedVote({ userId: v, recipeId: cook.recipeId })
+    }
+    const seen: string[] = []
+    let cursor: string | null = null
+    for (let i = 0; i < 20; i++) {
+      const page = await loadRecommendedCooks(getDb(), { limit: 2, cursor: cursor ? decodeRecsCursor(cursor) : null })
+      seen.push(...page.cooks.map((c) => c.handle))
+      cursor = page.nextCursor
+      if (!cursor) break
+    }
+    expect(seen).toEqual(['c5', 'c4', 'c3', 'c2', 'c1']) // todos, em ordem, sem duplicar nem pular
+  })
+
+  it('keyset estável no EMPATE de score: desempata por recência, depois handle', async () => {
+    // dois cozinheiros score 0 (sem votos), recência distinta ⇒ recência manda; limit 1 atravessa o empate.
+    const novo = await seedCook({ email: 'novo@c.test', handle: 'aaa-novo' })
+    const velho = await seedCook({ email: 'velho@c.test', handle: 'zzz-velho' })
+    await setCreatedAt(novo.recipeId, '2026-06-29T12:00:00Z') // mais nova ⇒ vem primeiro
+    await setCreatedAt(velho.recipeId, '2020-01-01T00:00:00Z')
+    const p1 = await loadRecommendedCooks(getDb(), { limit: 1 })
+    expect(p1.cooks.map((c) => c.handle)).toEqual(['aaa-novo'])
+    const p2 = await loadRecommendedCooks(getDb(), { limit: 1, cursor: decodeRecsCursor(p1.nextCursor!) })
+    expect(p2.cooks.map((c) => c.handle)).toEqual(['zzz-velho'])
+    expect(p2.nextCursor).toBeNull()
+  })
+
+  it('nextCursor NÃO vaza o id interno (allowlist #269) — só score/recency/handle', async () => {
+    await seedCook({ email: 'x@c.test', handle: 'aaa' })
+    await seedCook({ email: 'y@c.test', handle: 'bbb' })
+    const page = await loadRecommendedCooks(getDb(), { limit: 1 })
+    expect(page.nextCursor).not.toBeNull()
+    const decoded = Buffer.from(page.nextCursor as string, 'base64url').toString('utf8')
+    expect(decoded).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i) // sem UUID interno
   })
 })

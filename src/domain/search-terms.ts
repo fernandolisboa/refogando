@@ -48,6 +48,24 @@ export function parseSearchTerms(q: string): string[] {
 }
 
 /**
+ * Fatia `?cozinha=` por vírgula → sanitiza C0 + trim + lowercase → dropa vazios → DEDUP → capa.
+ * Pura. SEM validação contra o vocabulário (bound-param: cozinha desconhecida casa 0 linhas,
+ * injection-safe — evita um round-trip de DB na borda); o teto barra um `?cozinha=` abusivo.
+ * Multi = OR-dentro-do-eixo (#308). Reusada por /api/cooks e /api/search/cooks.
+ */
+export function parseCozinhasParam(raw: string | null): string[] {
+  if (!raw) return []
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((c) => stripControlChars(c).trim().toLowerCase())
+        .filter((c) => c.length > 0 && c.length <= 40),
+    ),
+  ].slice(0, 20)
+}
+
+/**
  * Mode permissivo: `'all'` só quando explícito; qualquer outro valor (ausente, lixo,
  * `'any'`) → `'any'` (default). Pura.
  */
