@@ -11,12 +11,20 @@
 import { Container } from '@/components/container'
 import { AuthForm } from '@/components/auth/auth-form'
 import { isGoogleConfigured } from '@/server/auth/google'
+import { safeInternalPath } from '@/domain/safe-redirect'
 
-export default function SignInPage() {
+// `?returnTo=` (#308): pra onde voltar após o login (ex.: o anônimo que clicou "Seguir" na Descoberta de
+// Cozinheiros). Sanitizado pela guarda anti open-redirect ANTES de chegar ao client (defesa na borda).
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>
+}) {
+  const { returnTo } = await searchParams
   return (
     <Container as="main" className="py-16">
       <div className="mx-auto w-full max-w-sm">
-        <AuthForm mode="sign-in" googleEnabled={isGoogleConfigured()} />
+        <AuthForm mode="sign-in" googleEnabled={isGoogleConfigured()} returnTo={safeInternalPath(returnTo)} />
       </div>
     </Container>
   )

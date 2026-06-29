@@ -23,6 +23,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
+import { safeInternalPath } from '@/domain/safe-redirect'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -63,10 +64,22 @@ function mapErrorToKey(code: string | undefined): ErrorKey {
   }
 }
 
-export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: boolean }) {
+export function AuthForm({
+  mode,
+  googleEnabled,
+  returnTo = '/',
+}: {
+  mode: Mode
+  googleEnabled: boolean
+  /** Caminho INTERNO pra onde voltar pós-login (#308). Default '/' (Busca/home). */
+  returnTo?: string
+}) {
   const { messages } = useLocale()
   const router = useRouter()
   const isSignUp = mode === 'sign-up'
+  // Re-sanitiza por garantia (a page já passou pela guarda anti open-redirect). Email → push; Google →
+  // callbackURL do OAuth. '/' preserva o comportamento anterior quando não há returnTo.
+  const dest = safeInternalPath(returnTo)
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -87,7 +100,7 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
       const handlers = {
         onSuccess: () => {
           router.refresh()
-          router.push('/')
+          router.push(dest)
         },
         onError: (ctx: AuthErrorCtx) => {
           setErrorKey(mapErrorToKey(ctx.error.code))
@@ -110,7 +123,7 @@ export function AuthForm({ mode, googleEnabled }: { mode: Mode; googleEnabled: b
     setErrorKey(null)
     try {
       await signIn.social(
-        { provider: 'google' },
+        { provider: 'google', callbackURL: dest },
         {
           onError: (ctx: AuthErrorCtx) => {
             setErrorKey(mapErrorToKey(ctx.error.code))
