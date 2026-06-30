@@ -72,6 +72,16 @@ estado pré-#357: `raw_text` = linha completa, exibida verbatim.
 - **Over-strip de porção** (~618): se NÃO reverter os dados, essas precisam reprocessamento (restaurar a
   palavra de porção OU re-derivar a medida).
 
+## Fluxo de trabalho (o de SEMPRE — seguir à risca)
+
+Seguir o pipeline do `CLAUDE.md`: cada passo num **subagente especializado com CONTEXTO NOVO** (spawn
+fresco por passo), nunca tudo no mesmo contexto. Os 8 passos por issue: **1 Explorar → 2 Planejar →
+3 Revisar o plano → 4 Corrigir o plano → 5 Implementar → 6 Code-review (MÚLTIPLOS subagentes em
+paralelo: bugs/correção, segurança, qualidade, performance, aderência aos ADRs/CONTEXT.md) → 7 Corrigir
+→ 8 Validar e fechar**. Antes de escrever o display novo, re-grelar o domínio (`/grill-with-docs`).
+Esta sessão (45→46) NÃO seguiu isso à risca (fez muito inline) — o dono pediu explicitamente para
+voltar a spawnar os subagentes em contexto novo.
+
 ## Princípios inegociáveis / landmines
 
 - **Nunca corromper/perder dado sem reversibilidade** — o ledger é a rede; use-o.
@@ -101,4 +111,4 @@ estado pré-#357: `raw_text` = linha completa, exibida verbatim.
 
 ## Prompt de kickoff (copiar e colar numa sessão nova)
 
-Reverter (ou refazer) o conserto de medida de ingrediente da Direção B (PR #357, mergeado na main 6027301), que o dono REPROVOU ao ver na tela de produção. Leia primeiro docs/handoffs/46-desfazer-refazer-medida-direcao-b-display-plurais.md e o que ele referencia. Os 3 problemas vistos ao vivo: (1) o rótulo da unidade não pluraliza ("3 dente", "4 colher de sopa", "2 louro") — decisão "zero gramática" do ADR ficou ruim; (2) o em-dash "—" é feio, inconsistente (contável não tem dash, não-contável tem) e às vezes não renderiza, o dono prefere "de"/prosa natural; (3) a migração over-stripou palavras de porção ("4 folhas de alga nori"→"alga nori", "2 folhas de louro"→"louro") em ~618 linhas. Tudo é reversível: git revert do merge 6027301 volta o display do #354 (raw_text exibido verbatim), e o ledger scripts/data/strip-measure-applied.json tem o before→after de 1887 linhas pra restaurar raw_text (reverter os DADOS antes ou junto do código, senão a tela mostra nome sem medida). NÃO pré-decida: grele com o dono (/grill-with-docs) entre reverter tudo (volta pro #354) ou manter a medida estruturada como fonte e refazer SÓ o display com prosa natural + plurais corretos (plurais moram no Ingrediente canônico do ADR-0012, hoje deferido; heurística de plural é frágil). As 7 linhas sinalizadas ficaram intactas e são moot se reverter. Princípios: nunca perca dado sem o ledger, valide na superfície REAL de produção (não só teste verde), branch+PR nunca direto na main.
+Reverter (ou refazer) o conserto de medida de ingrediente da Direção B (PR #357, mergeado na main 6027301), que o dono REPROVOU ao ver na tela de produção. Leia primeiro docs/handoffs/46-desfazer-refazer-medida-direcao-b-display-plurais.md e o que ele referencia. Os 3 problemas vistos ao vivo: (1) o rótulo da unidade não pluraliza ("3 dente", "4 colher de sopa", "2 louro") — decisão "zero gramática" do ADR ficou ruim; (2) o em-dash "—" é feio, inconsistente (contável não tem dash, não-contável tem) e às vezes não renderiza, o dono prefere "de"/prosa natural; (3) a migração over-stripou palavras de porção ("4 folhas de alga nori"→"alga nori", "2 folhas de louro"→"louro") em ~618 linhas. Tudo é reversível: git revert do merge 6027301 volta o display do #354 (raw_text exibido verbatim), e o ledger scripts/data/strip-measure-applied.json tem o before→after de 1887 linhas pra restaurar raw_text (reverter os DADOS antes ou junto do código, senão a tela mostra nome sem medida). NÃO pré-decida: grele com o dono (/grill-with-docs) entre reverter tudo (volta pro #354) ou manter a medida estruturada como fonte e refazer SÓ o display com prosa natural + plurais corretos (plurais moram no Ingrediente canônico do ADR-0012, hoje deferido; heurística de plural é frágil). As 7 linhas sinalizadas ficaram intactas e são moot se reverter. Princípios: nunca perca dado sem o ledger, valide na superfície REAL de produção (não só teste verde), branch+PR nunca direto na main. SIGA O FLUXO DE SEMPRE do CLAUDE.md: cada passo num subagente especializado com CONTEXTO NOVO (spawn fresco por passo — explorar/planejar/revisar plano/corrigir plano/implementar/code-review com múltiplos subagentes em paralelo/corrigir/validar), não faça tudo inline; re-grele o domínio com /grill-with-docs antes de mexer no display.
