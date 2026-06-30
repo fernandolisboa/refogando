@@ -150,7 +150,7 @@ function parseInstructions(v: unknown): string[] {
 
 // Unidades reconhecíveis no texto cru de ingrediente → nosso enum `Unidade`. Best-effort, conservador:
 // só aliases comuns PT/EN sem ambiguidade. O que não casar fica como rawText puro (qty/unidade null).
-const UNIT_ALIASES: Record<string, Unidade> = {
+export const UNIT_ALIASES: Record<string, Unidade> = {
   // métricas (PT/EN compartilham)
   g: 'g', grama: 'g', gramas: 'g', gram: 'g', grams: 'g',
   kg: 'kg', quilo: 'kg', quilos: 'kg', kilogram: 'kg', kilograms: 'kg', kilo: 'kg',
@@ -184,6 +184,12 @@ const LEADING_CONNECTORS = new Set(['de', 'do', 'da', 'dos', 'das', 'of'])
  * (best-effort: a medida segue embutida — caso de borda, ex. "sal a gosto"). Preserva o casing/
  * acentos do nome original (só normaliza para CASAR a unidade). Aceita inteiro/decimal (vírgula OU
  * ponto) e a fração unicode comum ½. NÃO tenta NLP — conservador.
+ *
+ * LIMITAÇÃO best-effort conhecida (import-only, ADR-0019 — importada é PRIVADA e editável): um nome
+ * cujo PRIMEIRO token é um alias de unidade seguido de conector ("1 dente de leão" = dandelion) é
+ * sobre-stripado p/ "leão" (o "dente" vira unidade). É o mesmo padrão do caso DESEJADO e comum
+ * ("1 dente de alho" → "alho"; "1 fatia de pão" → "pão"), indistinguível sem léxico — aceito como
+ * miss raro; o dono corrige a importada editando.
  */
 function parseQuantityUnit(raw: string): {
   quantidade: string | null

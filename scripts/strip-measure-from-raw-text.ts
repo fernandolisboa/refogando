@@ -30,6 +30,7 @@ import {
   looksAlreadyClean,
   stillEmbedsMeasure,
   validateStrippedName,
+  stripLeadingConnector,
   buildStripUserPrompt,
   STRIP_SYSTEM_PROMPT,
 } from './lib/measure-strip'
@@ -83,7 +84,8 @@ function saveLedger(ledger: Ledger): void {
 }
 
 type Decision =
-  | { kind: 'skip-clean'; row: Row }
+  | { kind: 'skip-clean'; row: Row } // sem medida estruturada → não toca o modelo
+  | { kind: 'would-call'; row: Row } // só --no-ai: iria ao modelo (preview de escopo)
   | { kind: 'change'; row: Row; after: string }
   | { kind: 'noop'; row: Row } // modelo confirmou que já estava limpo (sem mudança)
   | { kind: 'flagged'; row: Row; candidate: string; reason: string }
@@ -93,10 +95,11 @@ type Decision =
 async function decide(row: Row, noAi: boolean): Promise<Decision> {
   const before = (row.rawText ?? '').trim()
   if (looksAlreadyClean(row.quantidade, row.unidade)) return { kind: 'skip-clean', row }
-  if (noAi) return { kind: 'noop', row } // preview de escopo: conta como "iria ao modelo"
-  const candidate = await aiStrip(row)
-  if (candidate == null) return { kind: 'ai-failed', row }
-  const v = validateStrippedName(before, candidate)
+  if (noAi) return { kind: 'would-call', row } // preview de escopo: NÃO chama o modelo
+  const raw = await aiStrip(row)
+  if (raw == null) return { kind: 'ai-failed', row }
+  const candidate = stripLeadingConnector(raw) // limpa resíduo "de farinha" → "farinha"
+  const v = validateStrippedName(before, candidate, row.unidade)
   if (!v.ok) return { kind: 'flagged', row, candidate, reason: v.reason }
   const after = candidate.trim()
   return after !== before ? { kind: 'change', row, after } : { kind: 'noop', row }
@@ -124,6 +127,7 @@ async function main() {
   let changed = 0
   let noop = 0
   let clean = 0
+  let wouldCall = 0
   const flagged: { id: string; before: string; candidate: string; reason: string; owned: boolean }[] = []
   const failed: { id: string; before: string }[] = []
   const ownerChanges: { id: string; before: string; after: string }[] = []
@@ -159,6 +163,8 @@ async function main() {
         if (d.kind === 'skip-clean') {
           clean++
           if (!dryRun && !noAi) ledger[d.row.id] = { before: d.row.rawText ?? '', after: d.row.rawText ?? '', method: 'already-clean' }
+        } else if (d.kind === 'would-call') {
+          wouldCall++
         } else if (d.kind === 'noop') {
           noop++
           if (!dryRun && !noAi) ledger[d.row.id] = { before: d.row.rawText ?? '', after: d.row.rawText ?? '', method: 'ai-noop' }
@@ -202,8 +208,10 @@ async function main() {
     }
 
     console.log(
-      `\nResumo: ${changed} alteradas, ${noop} já-limpas-confirmadas, ${clean} sem-medida-puladas, ` +
-        `${flagged.length} sinalizadas, ${failed.length} falhas. ${dryRun ? '(DRY-RUN — nada gravado.)' : ''}`,
+      noAi
+        ? `\nResumo (NO-AI): ${wouldCall} iriam ao modelo, ${clean} sem-medida-puladas. (Preview de escopo — nada gravado, modelo não tocado.)`
+        : `\nResumo: ${changed} alteradas, ${noop} já-limpas-confirmadas, ${clean} sem-medida-puladas, ` +
+            `${flagged.length} sinalizadas, ${failed.length} falhas. ${dryRun ? '(DRY-RUN — nada gravado.)' : ''}`,
     )
 
     // ── Verificação: quantas linhas AINDA aparentam ter medida embutida? ──────

@@ -96,6 +96,10 @@ describe('formatIngredientLine — composição medida + nome (Direção B)', ()
     expect(formatIngredientLine(ing({ rawText: 'folhas de louro' }), m)).toBe('folhas de louro')
   })
 
+  it('unidade não-contável SEM quantidade ⇒ larga o rótulo órfão (nada de "g — arroz"), só o nome', () => {
+    expect(formatIngredientLine(ing({ rawText: 'arroz', quantidade: null, unidade: 'g' }), m)).toBe('arroz')
+  })
+
   it('o token cru do enum NUNCA aparece (unidade é sempre LOCALIZADA)', () => {
     const line = formatIngredientLine(ing({ rawText: 'azeite', quantidade: '2', unidade: 'colher_de_sopa' }), m)
     expect(line).not.toMatch(/colher_de_sopa/)

@@ -53,11 +53,10 @@ export function formatIngredientLine(item: IngredientView, m: Messages): string 
   }
 
   // Não-contável (demais unidades do enum) OU unidade fora do enum (defensivo, sai crua):
-  // compõe "{qtd} {unitLabel} — {nome}" (em-dash). Sem unidade mas com quantidade cai no
-  // ramo final ("{qtd} {nome}").
+  // compõe "{qtd} {unitLabel} — {nome}" (em-dash). SÓ com quantidade — sem ela, a unidade
+  // sozinha não é medida ("g — arroz" não diz nada); larga o rótulo órfão e exibe só o nome.
   if (unidade != null) {
-    const medida = [qtd, formatUnidade(unidade, m)].filter((p) => p != null && p !== '').join(' ')
-    return medida !== '' ? `${medida} — ${nome}` : nome
+    return qtd != null ? `${qtd} ${formatUnidade(unidade, m)} — ${nome}` : nome
   }
 
   // Sem unidade: quantidade solta (ex.: "3 cenouras médias") OU só o nome.

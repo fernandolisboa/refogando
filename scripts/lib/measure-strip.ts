@@ -8,8 +8,15 @@
  * testáveis aqui. Nada de DB, nada de SDK.
  */
 
+import { UNIT_ALIASES } from '@/domain/recipe-import-parse'
+
 // Frases de "a gosto"/"q.b." (+ equivalentes EN) que indicam medida não-mensurável embutida no texto.
 const TASTE_PHRASE_RE = /(a\s+gosto|à\s+gosto|q\.?\s?b\.?|quanto\s+baste|to\s+taste|as\s+needed)/i
+
+// Conectores líderes ("de"/"of"…) que ligam a medida ao nome — REMOVÍVEIS, não palavras do nome.
+const CONNECTORS = new Set(['de', 'do', 'da', 'dos', 'das', 'of'])
+// Palavras das frases "a gosto"/"q.b." (normalizadas) — removíveis quando a unidade é a_gosto/q_b.
+const TASTE_WORDS = new Set(['a', 'gosto', 'q', 'b', 'qb', 'quanto', 'baste', 'to', 'taste', 'as', 'needed'])
 
 /** Normaliza p/ comparar palavras: minúsculas, sem acento, só alfanumérico ('Açúcar,' → 'acucar'). */
 export function normalizeWord(s: string): string {
@@ -44,29 +51,78 @@ export function stillEmbedsMeasure(rawText: string | null, unidade: string | nul
   return false
 }
 
+/** Palavras (normalizadas) das formas de superfície de UMA unidade do enum — REMOVÍVEIS (são medida,
+ * não nome). Fonte única: o `UNIT_ALIASES` do importador (+ o próprio slug do enum, ex.
+ * colher_de_sopa → colher/de/sopa). Vazio quando `unidade` é null. */
+function unitSurfaceWords(unidade: string | null): Set<string> {
+  const out = new Set<string>()
+  if (unidade == null) return out
+  for (const part of unidade.split('_')) {
+    const n = normalizeWord(part)
+    if (n !== '') out.add(n)
+  }
+  for (const [surface, u] of Object.entries(UNIT_ALIASES)) {
+    if (u !== unidade) continue
+    for (const word of surface.split(/\s+/)) {
+      const n = normalizeWord(word)
+      if (n !== '') out.add(n)
+    }
+  }
+  return out
+}
+
+/** Um token do original é parte da MEDIDA (removível) — número, conector, palavra-de-unidade, ou
+ * (em a_gosto/q_b) palavra da frase "a gosto"? Senão é palavra do NOME, que TEM de sobreviver. */
+function isMeasureWord(token: string, unidade: string | null): boolean {
+  const n = normalizeWord(token)
+  if (n === '') return true // pontuação/fração solta (½) — removível
+  if (/^\d+$/.test(n)) return true // número (incl. "1/2"→"12")
+  if (CONNECTORS.has(n)) return true
+  if (unitSurfaceWords(unidade).has(n)) return true
+  if ((unidade === 'a_gosto' || unidade === 'q_b') && TASTE_WORDS.has(n)) return true
+  return false
+}
+
 export type StripValidation = { ok: true } | { ok: false; reason: string }
 
 /**
- * GUARD anti-alucinação da saída do modelo: o `nome` proposto tem de ser uma REDUÇÃO do original
- * (o modelo só TIRA a medida — não inventa, não traduz, não reescreve). Rejeita se:
+ * GUARD anti-alucinação da saída do modelo: o `nome` proposto tem de ser uma REDUÇÃO do original que
+ * só TIRA a MEDIDA — não inventa, não traduz, não reescreve, e (crucial) NÃO DROPA palavra do nome.
+ * Cruza com a `unidade` conhecida pra separar palavra-de-medida de palavra-de-nome. Rejeita se:
  *  - vazio (após trim);
  *  - mais COMPRIDO que o original (strip só encurta);
- *  - introduz um TOKEN novo (palavra ausente no original, ignorando acento/caixa) — pega
- *    rephrase/tradução/alucinação;
- *  - introduz um DÍGITO ausente no original (a medida SAI, não entra).
+ *  - introduz um TOKEN novo (palavra ausente no original, ignorando acento/caixa) — pega tradução/rephrase;
+ *  - introduz um DÍGITO ausente no original (a medida SAI, não entra);
+ *  - SUME com uma palavra do NOME (token do original que NÃO é medida e não aparece no candidato) —
+ *    pega a omissão, a classe de alucinação mais natural de um "tira o texto" ("queijo parmesão ralado"
+ *    → "parmesão" é REJEITADO).
  * Linha rejeitada mantém o `raw_text` original e é SINALIZADA pro dono revisar à mão (nunca corrompe).
  */
-export function validateStrippedName(original: string, candidate: string): StripValidation {
+export function validateStrippedName(
+  original: string,
+  candidate: string,
+  unidade: string | null,
+): StripValidation {
   const orig = original.trim()
   const cand = candidate.trim()
   if (cand === '') return { ok: false, reason: 'nome vazio' }
   if (cand.length > orig.length) return { ok: false, reason: 'nome mais comprido que o original' }
 
+  const candTokens = cand.split(/\s+/).map(normalizeWord).filter((w) => w !== '')
+  const candSet = new Set(candTokens)
+
   const origTokens = new Set(orig.split(/\s+/).map(normalizeWord).filter((w) => w !== ''))
-  for (const w of cand.split(/\s+/)) {
+  for (const n of candTokens) {
+    if (!origTokens.has(n)) return { ok: false, reason: `token novo "${n}" (não estava no original)` }
+  }
+
+  // Toda palavra do NOME (token do original que não é medida) TEM de sobreviver — pega a omissão.
+  for (const w of orig.split(/\s+/)) {
+    if (isMeasureWord(w, unidade)) continue
     const n = normalizeWord(w)
-    if (n === '') continue
-    if (!origTokens.has(n)) return { ok: false, reason: `token novo "${w}" (não estava no original)` }
+    if (n !== '' && !candSet.has(n)) {
+      return { ok: false, reason: `palavra do nome sumiu "${w}"` }
+    }
   }
 
   const origDigits = new Set(orig.match(/\d/g) ?? [])
@@ -74,6 +130,14 @@ export function validateStrippedName(original: string, candidate: string): Strip
     if (!origDigits.has(d)) return { ok: false, reason: `dígito novo "${d}"` }
   }
   return { ok: true }
+}
+
+/** Tira UM conector líder ("de"/"of"…) do candidato — limpa um resíduo tipo "de farinha" → "farinha".
+ * Só o PRIMEIRO token, e só se for conector; preserva "queijo de Minas" (conector no meio fica). */
+export function stripLeadingConnector(name: string): string {
+  const words = name.trim().split(/\s+/)
+  if (words.length > 1 && CONNECTORS.has(normalizeWord(words[0]))) return words.slice(1).join(' ')
+  return name.trim()
 }
 
 /** System prompt (fixo) do modelo barato que tira a medida do nome. */
