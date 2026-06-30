@@ -86,7 +86,8 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     facets: { cozinha: 'mineira', categoria: 'prato_principal', tags: [] },
     porcoes: 4,
     dificuldade: 2,
-    // rawText = NOME sem a medida (ADR-0012 Adendo); a exibição compõe "medida — nome".
+    // rawText = NOME sem a medida (ADR-0012 Adendo 2); a exibição compõe prosa natural com plural
+    // ("2 xícaras de feijão").
     ingredients: [{ ordem: 1, quantidade: '2.000', unidade: 'xicara', rawText: 'feijão' }],
     translations: [],
     autoTranslationSignal: false,
@@ -277,9 +278,12 @@ describe('ConversaFocusedView (#60/#104)', () => {
 
     expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: baseView().name })).toBeInTheDocument()
-    // Corpo lido CRU pelo 2º GET (trava ausência de wrapper): a LINHA de ingrediente COMPOSTA
-    // da medida estruturada + nome ("2 xícara — feijão").
-    expect(screen.getByText(`2 ${ptBR.unidadeLabel.xicara} — feijão`)).toBeInTheDocument()
+    // Corpo lido CRU pelo 2º GET (trava ausência de wrapper): a LINHA de ingrediente COMPOSTA em
+    // prosa natural — unidade flexionada pela quantidade (qty 2 → "xícaras") + conector ("2 xícaras
+    // de feijão"), ADR-0012 Adendo 2.
+    expect(
+      screen.getByText(`2 ${ptBR.unidadeLabelPlural.xicara} ${ptBR.unidadeConector} feijão`),
+    ).toBeInTheDocument()
 
     // Exatamente UM heading nível 1: o nome da Receita (conversa.titulo virou <h2>).
     const h1s = screen.getAllByRole('heading', { level: 1 })

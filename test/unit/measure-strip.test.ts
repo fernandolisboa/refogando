@@ -7,6 +7,12 @@ import {
   stripTrailingNoise,
   normalizeWord,
   buildStripUserPrompt,
+  stripLeadingQuantity,
+  deterministicStrip,
+  detectRepair,
+  assertCleanName,
+  beginsWithQuantityToken,
+  headLooksSingular,
 } from '../../scripts/lib/measure-strip'
 
 /**
@@ -138,5 +144,147 @@ describe('buildStripUserPrompt', () => {
   })
   it('sem medida estruturada ⇒ "(nenhuma)"', () => {
     expect(buildStripUserPrompt('arroz', null, null)).toContain('(nenhuma)')
+  })
+})
+
+/**
+ * Helpers DETERMINÍSTICOS da REPARAÇÃO (Track B): reconhecem a quantidade-líder de prosa em qualquer
+ * forma (inteiro/decimal/fração-barra/glifo/mista/escrita), refazem o strip SEM modelo e classificam
+ * uma linha como over-strip (o modelo da migração comeu uma palavra de PORÇÃO genuína), still-embeds
+ * (ainda carrega a medida no texto) ou none (já casa o strip determinístico — NÃO tocar; é o caso das
+ * frações tipo "1/2 xícara de óleo" → "óleo", que NÃO podem ser corrompidas).
+ */
+describe('stripLeadingQuantity — reconhecedor abrangente de quantidade-líder', () => {
+  it('inteiro + palavra de porção ⇒ tira só o número', () => {
+    expect(stripLeadingQuantity('4 folhas de alga nori')).toEqual({
+      rest: 'folhas de alga nori',
+      hadQuantity: true,
+    })
+  })
+  it('fração barra (\\d+/\\d+)', () => {
+    expect(stripLeadingQuantity('1/2 xícara de óleo')).toEqual({ rest: 'xícara de óleo', hadQuantity: true })
+  })
+  it('glifo de fração vulgar (½) e inteiro grudado (2½)', () => {
+    expect(stripLeadingQuantity('½ xícara de vinho')).toEqual({ rest: 'xícara de vinho', hadQuantity: true })
+    expect(stripLeadingQuantity('2½ xícaras de farinha')).toEqual({ rest: 'xícaras de farinha', hadQuantity: true })
+  })
+  it('mista "\\d+ e 1/2" e "\\d+ e meia"', () => {
+    expect(stripLeadingQuantity('1 e 1/2 xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
+    expect(stripLeadingQuantity('1 e meia xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
+  })
+  it('número escrito: meia/meio e três quartos', () => {
+    expect(stripLeadingQuantity('Meia xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
+    expect(stripLeadingQuantity('Três quartos de xícara de água')).toEqual({
+      rest: 'de xícara de água',
+      hadQuantity: true,
+    })
+  })
+  it('decimal com vírgula/ponto', () => {
+    expect(stripLeadingQuantity('1,5 kg de batata')).toEqual({ rest: 'kg de batata', hadQuantity: true })
+    expect(stripLeadingQuantity('320 g de arroz arbóreo')).toEqual({ rest: 'g de arroz arbóreo', hadQuantity: true })
+  })
+  it('sem quantidade-líder ⇒ hadQuantity false, texto intacto', () => {
+    expect(stripLeadingQuantity('arroz arbóreo')).toEqual({ rest: 'arroz arbóreo', hadQuantity: false })
+    expect(stripLeadingQuantity('folhas de alga nori')).toEqual({ rest: 'folhas de alga nori', hadQuantity: false })
+  })
+})
+
+describe('deterministicStrip — refaz o strip da medida SEM modelo', () => {
+  it('contável: tira só o número, MANTÉM a palavra de porção', () => {
+    expect(deterministicStrip('4 folhas de alga nori', 'unidade')).toBe('folhas de alga nori')
+  })
+  it('não-contável: tira número + alias da unidade + conector', () => {
+    expect(deterministicStrip('320 g de arroz arbóreo', 'g')).toBe('arroz arbóreo')
+    expect(deterministicStrip('2 colheres de sopa de azeite', 'colher_de_sopa')).toBe('azeite')
+    expect(deterministicStrip('1/2 xícara de óleo', 'xicara')).toBe('óleo')
+    expect(deterministicStrip('1 dente de alho', 'dente')).toBe('alho')
+  })
+  it('conector ANTES da unidade ("três quartos de xícara de água")', () => {
+    expect(deterministicStrip('Três quartos de xícara de água', 'xicara')).toBe('água')
+  })
+  it('a_gosto/q_b: tira a frase não-mensurável do fim', () => {
+    expect(deterministicStrip('sal a gosto', 'a_gosto')).toBe('sal')
+    expect(deterministicStrip('fermento q.b.', 'q_b')).toBe('fermento')
+  })
+})
+
+describe('detectRepair — classifica over-strip | still-embeds | none', () => {
+  it('over-strip: o modelo comeu a palavra de porção ⇒ restaura', () => {
+    expect(
+      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'alga nori', unidade: 'unidade' }),
+    ).toEqual({ kind: 'over-strip', restored: 'folhas de alga nori' })
+    expect(
+      detectRepair({ ledgerBefore: '1 ramo de tomilho fresco', current: 'tomilho fresco', unidade: 'unidade' }),
+    ).toEqual({ kind: 'over-strip', restored: 'ramo de tomilho fresco' })
+  })
+  it("none nas linhas de FRAÇÃO ('1/2 xícara de óleo' → 'óleo'): casa o strip determinístico, NÃO toca", () => {
+    expect(
+      detectRepair({ ledgerBefore: '1/2 xícara de óleo', current: 'óleo', unidade: 'xicara' }),
+    ).toEqual({ kind: 'none', restored: 'óleo' })
+    expect(
+      detectRepair({ ledgerBefore: '½ xícara de óleo', current: 'óleo', unidade: 'xicara' }),
+    ).toEqual({ kind: 'none', restored: 'óleo' })
+  })
+  it('none num strip legítimo (núcleo intacto, sem porção perdida)', () => {
+    expect(
+      detectRepair({ ledgerBefore: '320 g de arroz arbóreo', current: 'arroz arbóreo', unidade: 'g' }),
+    ).toEqual({ kind: 'none', restored: 'arroz arbóreo' })
+    expect(
+      detectRepair({ ledgerBefore: '1 cebola picada', current: 'cebola picada', unidade: 'unidade' }),
+    ).toEqual({ kind: 'none', restored: 'cebola picada' })
+  })
+  it('still-embeds numa linha SINALIZADA ("2 dentes de alho fatiados" intacta) ⇒ restaura', () => {
+    expect(
+      detectRepair({
+        ledgerBefore: '2 dentes de alho fatiados',
+        current: '2 dentes de alho fatiados',
+        unidade: 'dente',
+      }),
+    ).toEqual({ kind: 'still-embeds', restored: 'alho fatiados' })
+  })
+  it('still-embeds sem ledger (vazamento pós-migração) ⇒ restaura do texto atual', () => {
+    expect(
+      detectRepair({ ledgerBefore: null, current: '200 g de farinha', unidade: 'g' }),
+    ).toEqual({ kind: 'still-embeds', restored: 'farinha' })
+  })
+  it('idempotente: já restaurado ⇒ none', () => {
+    expect(
+      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'folhas de alga nori', unidade: 'unidade' }),
+    ).toEqual({ kind: 'none', restored: 'folhas de alga nori' })
+  })
+})
+
+describe('assertCleanName / beginsWithQuantityToken — falha-alto se o nome começa com quantidade', () => {
+  it('throws quando começa com fração/glifo/fragmento "e 1/2"', () => {
+    expect(() => assertCleanName('1/2 cebola')).toThrow()
+    expect(() => assertCleanName('½ xícara de óleo')).toThrow()
+    expect(() => assertCleanName('e 1/2 xícara')).toThrow()
+  })
+  it('passa num nome limpo', () => {
+    expect(() => assertCleanName('folhas de alga nori')).not.toThrow()
+    expect(() => assertCleanName('alga nori')).not.toThrow()
+  })
+  it('beginsWithQuantityToken espelha a decisão', () => {
+    expect(beginsWithQuantityToken('1/2 cebola')).toBe(true)
+    expect(beginsWithQuantityToken('½ xícara')).toBe(true)
+    expect(beginsWithQuantityToken('e 1/2 xícara')).toBe(true)
+    expect(beginsWithQuantityToken('folhas de alga nori')).toBe(false)
+  })
+})
+
+describe('headLooksSingular — primeira palavra de conteúdo (NÃO a última)', () => {
+  it('singular (não termina em s) ⇒ true', () => {
+    expect(headLooksSingular('ovo')).toBe(true)
+    expect(headLooksSingular('cebola picada')).toBe(true)
+  })
+  it('plural na PRIMEIRA palavra ⇒ false', () => {
+    expect(headLooksSingular('cebolas')).toBe(false)
+    expect(headLooksSingular('gemas de ovo')).toBe(false)
+    expect(headLooksSingular('escalopes finos de vitela')).toBe(false)
+    expect(headLooksSingular('folhas de alga nori')).toBe(false)
+  })
+  it('vazio ⇒ false', () => {
+    expect(headLooksSingular('')).toBe(false)
+    expect(headLooksSingular('   ')).toBe(false)
   })
 })

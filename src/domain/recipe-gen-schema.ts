@@ -57,7 +57,7 @@ const IngredienteGen = z.object({
   nome: z
     .string()
     .describe(
-      "nome do ingrediente SEM quantidade/unidade — ex.: 'arroz arbóreo', nunca '320 g de arroz arbóreo'; a medida vai em quantidade + unidade",
+      "nome do ingrediente SEM o número e SEM a unidade do enum (g, kg, ml, l, colher de sopa/chá, xícara, dente, fatia, pitada) — ex.: 'arroz arbóreo', nunca '320 g de arroz arbóreo'. MANTENHA palavras de porção/recipiente que NÃO são unidades do enum (folha, talo, ramo, maço, lata, punhado): '4 folhas de alga nori' → nome 'folhas de alga nori', quantidade 4, unidade 'unidade'. A medida vai em quantidade + unidade.",
     ), // → recipe_ingredient.raw_text
   quantidade: z.string().regex(QUANTIDADE_RE).nullable(), // → recipe_ingredient.quantidade (numeric|null)
   unidade: z.enum(UNIDADES).nullable(), // → recipe_ingredient.unidade

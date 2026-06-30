@@ -16,7 +16,8 @@
     "backfill-recipe-slugs": "tsx --env-file=.env.local scripts/backfill-recipe-slugs.ts",
     "seed-catalog": "tsx --env-file=.env.local scripts/seed-catalog.ts",
     "images-catalog": "tsx --env-file=.env.local scripts/images-catalog.ts",
-    "strip-measure": "tsx --env-file=.env.local scripts/strip-measure-from-raw-text.ts"
+    "strip-measure": "tsx --env-file=.env.local scripts/strip-measure-from-raw-text.ts",
+    "restore-overstrip": "tsx --env-file=.env.local scripts/restore-overstrip.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.104.1",

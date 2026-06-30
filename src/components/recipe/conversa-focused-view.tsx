@@ -351,6 +351,7 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
               <RecipeDetailView
                 view={view}
                 m={messages}
+                locale={locale}
                 cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
               />
 

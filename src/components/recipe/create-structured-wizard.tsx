@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { cn } from '@/lib/utils'
 import {
@@ -181,7 +182,8 @@ export function CreateStructuredWizard({
       .map((it) => ({
         ingredientId: null,
         rawText: it.rawText.trim(),
-        quantidade: it.quantidade.trim() === '' ? null : it.quantidade.trim(),
+        // Digitado localizado → string-ponto canônica (ou null); a zod do servidor é o guard final.
+        quantidade: parseQuantityInput(it.quantidade),
         unidade: it.unidade || null,
         strength: 'required' as const,
       }))

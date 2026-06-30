@@ -300,6 +300,7 @@ export function CreateConversaExperience({
               <RecipeDetailView
                 view={view}
                 m={messages}
+                locale={locale}
                 cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
               />
 

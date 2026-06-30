@@ -79,7 +79,7 @@ export function buildRecipeSeoInputFromRows(args: {
 
   const ingredients = [...view.ingredients]
     .sort((a, b) => a.ordem - b.ordem)
-    .map((item) => formatIngredientLine(item, m))
+    .map((item) => formatIngredientLine(item, m, locale))
     .filter((line) => line !== '')
 
   return {

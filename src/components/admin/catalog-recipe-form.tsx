@@ -38,6 +38,7 @@ import {
 } from '@/domain/vocabulary'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { SUPPORTED_LOCALES } from '@/i18n/locale'
+import { parseQuantityInput } from '@/domain/quantity-format'
 import type { Messages } from '@/i18n/messages'
 
 /**
@@ -208,7 +209,8 @@ export function CatalogRecipeForm({
       dificuldade: parseIntOuNull(dificuldade),
       ingredientes: itensComTexto.map((it) => ({
         rawText: it.rawText.trim(),
-        quantidade: it.quantidade.trim() === '' ? null : it.quantidade.trim(),
+        // Curador digita localizado → string-ponto canônica (ou null); a zod da rota rejeita inválido.
+        quantidade: parseQuantityInput(it.quantidade),
         unidade: it.unidade || null,
       })),
     }

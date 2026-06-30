@@ -38,7 +38,7 @@ type QueueItem = Omit<CatalogQueueItem, 'createdAt'> & { createdAt: string }
 type DraftDetail = { view: RecipeView; gallery: GalleryImage[] }
 
 export function CatalogRecipeQueue() {
-  const { messages } = useLocale()
+  const { messages, locale } = useLocale()
   const m = messages.curadoria
   const sys = messages.system
 
@@ -346,7 +346,7 @@ export function CatalogRecipeQueue() {
                               {v.ingredients.map((ing, i) => (
                                 // COMPÕE "medida — nome" (raw_text é o NOME, sem a medida — ADR-0012
                                 // Adendo); render cru mostraria só o nome, escondendo a medida do curador.
-                                <li key={i}>{formatIngredientLine(ing, messages) || '—'}</li>
+                                <li key={i}>{formatIngredientLine(ing, messages, locale) || '—'}</li>
                               ))}
                             </ul>
                           </div>

@@ -118,6 +118,243 @@ export function stripLeadingConnector(name: string): string {
   return name.trim()
 }
 
+// ╔══════════════════════════════════════════════════════════════════════════════════════════╗
+// ║ REPARAÇÃO DETERMINÍSTICA (Track B) — refaz o strip SEM modelo e classifica o que consertar. ║
+// ╚══════════════════════════════════════════════════════════════════════════════════════════╝
+//
+// A migração-IA (`strip-measure-from-raw-text.ts`) deixou DOIS resíduos: (a) OVER-STRIP — o modelo
+// comeu uma palavra de PORÇÃO genuína ("4 folhas de alga nori" → "alga nori", perdendo "folhas",
+// que o contrato Direção B manda MANTER no nome); (b) STILL-EMBEDS — linhas SINALIZADAS pelo guard
+// (mantidas como vieram) e vazamentos pós-migração que AINDA carregam a medida no texto. Estes
+// helpers refazem o strip de forma 100% determinística (cruzando o texto com a medida estruturada
+// conhecida) pra um script de REPARAÇÃO restaurar o original (over-strip) ou limpar o resíduo
+// (still-embeds). A FRAÇÃO é o bloqueio crítico: "1/2 xícara de óleo" + unidade=xicara reduz a "óleo"
+// — IGUAL ao atual ⇒ classificado 'none' ⇒ NÃO tocado (nunca corrompido).
+
+// Glifos de fração vulgar Unicode (½ ⅓ ⅔ ¼ ¾ …) que aparecem como quantidade-líder na prosa.
+const FRACTION_GLYPHS = '½⅓⅔¼¾⅛⅜⅝⅞⅕⅖⅗⅘⅙⅚'
+
+// Reconhecedor da QUANTIDADE-LÍDER em prosa, em TODAS as formas (ordem = mais específica primeiro;
+// a alternância do JS é left-to-right, então a mista "1 e 1/2" precede o inteiro solto "1"). O
+// lookahead `(?=\s|$|[,;.])` exige fronteira após a quantidade — evita casar "um" dentro de "umbigo"
+// ou "2" em "2%". O ramo glifo aceita inteiro grudado ("2½"); o ramo escrito cobre meia/meio + as
+// frações escritas comuns (três quartos / dois terços / um quarto) e os inteiros um|uma|dois|duas|três.
+const LEADING_QTY_RE = new RegExp(
+  '^(?:' +
+    `\\d+(?:[.,]\\d+)?\\s+e\\s+(?:meia|meio|\\d+\\/\\d+|[${FRACTION_GLYPHS}])` + // mista: "1 e 1/2", "1 e meia"
+    '|tr[eê]s\\s+quartos|dois\\s+ter[çc]os|um\\s+quarto|um\\s+ter[çc]o' + // frações escritas (multi-palavra)
+    '|\\d+\\/\\d+' + // fração barra "1/2", "3/4"
+    `|\\d*[${FRACTION_GLYPHS}]` + // glifo (com inteiro grudado opcional): "½", "2½"
+    '|\\d+(?:[.,]\\d+)?' + // decimal/inteiro: "1", "1,5", "320"
+    '|meia|meio|uma|duas|dois|tr[eê]s|um' + // números/frações escritos (1 palavra)
+    ')(?=\\s|$|[,;.])',
+  'i',
+)
+
+/**
+ * Reconhece e REMOVE a quantidade-líder em prosa (qualquer forma) do começo do texto. Devolve o RESTO
+ * (sem a quantidade, trim de separadores líderes) e `hadQuantity`. NÃO toca alias de unidade nem
+ * conector — só a quantidade numérica/escrita. Base de `deterministicStrip` e `beginsWithQuantityToken`.
+ */
+export function stripLeadingQuantity(text: string): { rest: string; hadQuantity: boolean } {
+  const t = (text ?? '').trim()
+  const m = LEADING_QTY_RE.exec(t)
+  if (!m) return { rest: t, hadQuantity: false }
+  const rest = t.slice(m[0].length).replace(/^[\s,;.]+/, '')
+  return { rest, hadQuantity: true }
+}
+
+// Alias de unidade do ENUM (forma normalizada por palavra → valor do enum) — SELF-CONTAINED (não
+// importa de recipe-import-parse.ts; é fronteira do Track A. Drift é aceitável p/ um script one-off).
+// Só as unidades NÃO-CONTÁVEIS entram (são as que viram alias-de-medida no texto); 'unidade' contável
+// e 'a_gosto'/'q_b' não têm alias removível por aqui. Chaves já NORMALIZADAS (normalizeWord por palavra,
+// juntadas por espaço): "colher de chá" → "colher de cha"; "xícara" → "xicara".
+const ENUM_UNIT_ALIASES: Record<string, string> = {
+  g: 'g', grama: 'g', gramas: 'g', gram: 'g', grams: 'g',
+  kg: 'kg', quilo: 'kg', quilos: 'kg', kilogram: 'kg', kilograms: 'kg', kilo: 'kg',
+  ml: 'ml', milliliter: 'ml', milliliters: 'ml', mililitro: 'ml', mililitros: 'ml',
+  l: 'l', litro: 'l', litros: 'l', liter: 'l', liters: 'l',
+  'colher de sopa': 'colher_de_sopa', 'colheres de sopa': 'colher_de_sopa',
+  tablespoon: 'colher_de_sopa', tablespoons: 'colher_de_sopa', tbsp: 'colher_de_sopa',
+  'colher de cha': 'colher_de_cha', 'colheres de cha': 'colher_de_cha',
+  teaspoon: 'colher_de_cha', teaspoons: 'colher_de_cha', tsp: 'colher_de_cha',
+  xicara: 'xicara', xicaras: 'xicara', cup: 'xicara', cups: 'xicara',
+  dente: 'dente', dentes: 'dente', clove: 'dente', cloves: 'dente',
+  fatia: 'fatia', fatias: 'fatia', slice: 'fatia', slices: 'fatia',
+  pitada: 'pitada', pitadas: 'pitada', pinch: 'pitada', pinches: 'pitada',
+}
+
+// Unidades NÃO-CONTÁVEIS: as que carregam alias-de-medida removível do texto ("g", "xícara", "dente"…).
+// 'unidade' (contável) e 'a_gosto'/'q_b' (não-mensuráveis) ficam de fora — não têm alias a tirar.
+const NON_COUNTABLE = new Set([
+  'g', 'kg', 'ml', 'l', 'colher_de_sopa', 'colher_de_cha', 'xicara', 'dente', 'fatia', 'pitada',
+])
+
+/** `true` se a unidade é NÃO-CONTÁVEL (carrega alias-de-medida removível: g, xícara, dente, colher…).
+ * 'unidade' (contável), 'a_gosto'/'q_b' e null ⇒ false. Usado pra escopar a sanidade "suspected-
+ * fraction": só uma linha de unidade NÃO-contável com fração-líder reintroduziria o alias se fosse
+ * mal-classificada como over-strip — a tripwire que deve ficar em 0. */
+export function isNonCountableUnit(unidade: string | null): boolean {
+  return unidade != null && NON_COUNTABLE.has(unidade)
+}
+
+// Conjunto de TODAS as palavras (normalizadas) que aparecem em algum alias — pra detectar resíduo de
+// medida nas "palavras largadas" (ver detectRepair): se o modelo só largou conector/alias, ele estava
+// CERTO e o atual é mais limpo (none); só restauramos quando uma palavra GENUÍNA (porção) foi perdida.
+const ALIAS_WORD_SET = new Set(
+  Object.keys(ENUM_UNIT_ALIASES).flatMap((k) => k.split(' ')),
+)
+
+// Frase não-mensurável ("a gosto"/"q.b."/…) no FIM — a "medida" de a_gosto/q_b. Tirada de `raw_text`
+// só quando a unidade estruturada é a_gosto/q_b (aí a frase É a medida embutida).
+const TRAILING_TASTE_RE = /[\s,]*(a\s+gosto|à\s+gosto|q\.?\s?b\.?|quanto\s+baste|to\s+taste|as\s+needed)\s*$/i
+
+/** Tira UM conector líder ("de"/"of"…) se houver MAIS de uma palavra OU se sobra texto não-conector. */
+function dropOneLeadingConnector(text: string): string {
+  const words = text.trim().split(/\s+/)
+  if (words.length > 1 && CONNECTORS.has(normalizeWord(words[0]))) return words.slice(1).join(' ')
+  return text.trim()
+}
+
+/** Tira o alias de unidade líder (1–3 palavras, o mais LONGO primeiro) que mapeia pra ESTA unidade. */
+function dropLeadingUnitAlias(text: string, unidade: string): string {
+  const words = text.trim().split(/\s+/)
+  for (let n = Math.min(3, words.length); n >= 1; n--) {
+    const key = words.slice(0, n).map(normalizeWord).filter((w) => w !== '').join(' ')
+    if (ENUM_UNIT_ALIASES[key] === unidade) return words.slice(n).join(' ')
+  }
+  return text.trim()
+}
+
+/**
+ * Refaz o strip da MEDIDA do texto de forma 100% determinística, cruzando-o com a `unidade`
+ * estruturada conhecida: tira a quantidade-líder → UM conector → (se a unidade é não-contável) o
+ * alias da unidade → UM conector. Para a_gosto/q_b, tira a frase não-mensurável do FIM. MANTÉM todo o
+ * resto (palavras de porção como "folhas"/"ramo"/"talo" SOBREVIVEM quando a unidade é contável/null).
+ * É a FONTE da verdade do nome esperado — `detectRepair` compara o atual contra isto.
+ */
+export function deterministicStrip(before: string, unidade: string | null): string {
+  let t = stripLeadingQuantity(before).rest
+  t = dropOneLeadingConnector(t) // conector ANTES da unidade ("três quartos DE xícara …")
+  if (unidade != null && NON_COUNTABLE.has(unidade)) {
+    t = dropLeadingUnitAlias(t, unidade)
+    t = dropOneLeadingConnector(t) // conector DEPOIS da unidade ("xícara DE óleo")
+  }
+  if (unidade === 'a_gosto' || unidade === 'q_b') {
+    t = t.replace(TRAILING_TASTE_RE, '').trim()
+  }
+  return t.trim()
+}
+
+/** Palavras (normalizadas) de `s`, sem vazios. */
+function normWords(s: string): string[] {
+  return (s ?? '')
+    .trim()
+    .split(/\s+/)
+    .map(normalizeWord)
+    .filter((w) => w !== '')
+}
+
+/** `inner` é um SUFIXO-por-palavras ESTRITO de `outer` (mesmas palavras finais, mais curto)? */
+function isWordSuffix(inner: string, outer: string): boolean {
+  const a = normWords(inner)
+  const b = normWords(outer)
+  if (a.length === 0 || a.length >= b.length) return false
+  const start = b.length - a.length
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[start + i]) return false
+  }
+  return true
+}
+
+/** Uma palavra largada é só RESÍDUO de medida (conector/alias/quantidade) — não uma palavra genuína? */
+function isMeasureResidueWord(normWord: string): boolean {
+  if (CONNECTORS.has(normWord)) return true
+  if (ALIAS_WORD_SET.has(normWord)) return true
+  if (beginsWithQuantityToken(normWord)) return true
+  return false
+}
+
+export type RepairKind = 'still-embeds' | 'over-strip' | 'none'
+
+/**
+ * Classifica UMA linha contra (ledger `before` | `raw_text` atual | `unidade` ao vivo) e devolve o
+ * nome RESTAURADO determinístico:
+ *  - STILL-EMBEDS: o texto ATUAL ainda carrega a medida (prefixo de quantidade OU frase a-gosto) →
+ *    restaura limpando o atual (`deterministicStrip(current)`). Pega as SINALIZADAS + vazamentos.
+ *  - OVER-STRIP: comparado ao que o strip determinístico faria do ORIGINAL, o atual perdeu palavras-
+ *    líderes GENUÍNAS (porção) — é um sufixo estrito do determinístico e o que foi largado NÃO é só
+ *    conector/alias/quantidade → restaura o determinístico (que MANTÉM a porção).
+ *  - NONE: já casa o strip determinístico (inclui as frações "1/2 xícara de óleo"→"óleo": NÃO tocar) —
+ *    ou é uma reescrita que não dá pra reparar com segurança (deixa pro humano via outro caminho).
+ * IDEMPOTENTE: re-rodar sobre um já-restaurado dá 'none'.
+ */
+export function detectRepair(args: {
+  ledgerBefore: string | null
+  current: string
+  unidade: string | null
+}): { kind: RepairKind; restored: string } {
+  const current = (args.current ?? '').trim()
+
+  // A. STILL-EMBEDS — o ATUAL ainda embute a medida (prefixo de quantidade ou frase a-gosto/q.b.).
+  if (beginsWithQuantityToken(current) || stillEmbedsMeasure(current, args.unidade)) {
+    return { kind: 'still-embeds', restored: deterministicStrip(current, args.unidade).trim() }
+  }
+
+  // B. OVER-STRIP — o modelo comeu palavra(s) de porção genuína(s) ante o strip determinístico.
+  const before = (args.ledgerBefore ?? '').trim()
+  if (before !== '') {
+    const det = deterministicStrip(before, args.unidade).trim()
+    if (det !== '' && det !== current && isWordSuffix(current, det)) {
+      const dropped = normWords(det).slice(0, normWords(det).length - normWords(current).length)
+      // Só restaura se ALGUMA palavra largada for GENUÍNA (porção) — se foram só conector/alias, o
+      // modelo limpou certo (o atual é mais limpo) ⇒ none.
+      if (dropped.some((w) => !isMeasureResidueWord(w))) {
+        return { kind: 'over-strip', restored: det }
+      }
+    }
+  }
+
+  return { kind: 'none', restored: current }
+}
+
+/**
+ * `true` se o nome COMEÇA com um token de quantidade — em qualquer forma (dígito, fração-barra, glifo,
+ * número escrito meia/meio/um/uma/…), OU o fragmento residual "e 1/2" (a parte fracionária de uma mista
+ * cujo inteiro já foi removido). Usado pra FALHAR-ALTO antes de gravar (`assertCleanName`).
+ */
+export function beginsWithQuantityToken(name: string): boolean {
+  const t = (name ?? '').trim()
+  if (t === '') return false
+  if (stripLeadingQuantity(t).hadQuantity) return true
+  // resíduo "e 1/2 …" / "e meia …": fragmento de uma fração mista cujo inteiro já saiu.
+  if (new RegExp(`^e\\s+(?:\\d+(?:[.,]\\d+)?(?:\\/\\d+)?|[${FRACTION_GLYPHS}]|meia|meio)(?=\\s|$|[,;.])`, 'i').test(t)) {
+    return true
+  }
+  return false
+}
+
+/** GUARD de gravação: ESTOURA se o nome começa com token de quantidade (nunca grava nome "sujo"). */
+export function assertCleanName(name: string): void {
+  if (beginsWithQuantityToken(name)) {
+    throw new Error(`Nome começa com token de quantidade (não-limpo, NÃO gravar): "${name}"`)
+  }
+}
+
+/**
+ * A PRIMEIRA palavra de conteúdo do nome parece SINGULAR (não termina em "s")? Heurística pra montar a
+ * lista-do-humano (P3): quando a quantidade > 1 mas o nome começa singular ("4 ovo", "2 escalope") o
+ * dono revisa à mão — NUNCA pluralizamos automaticamente (plurais especiais coração/mão/-ão vivem no
+ * nome). Olha a PRIMEIRA palavra (o núcleo-cabeça, "gemas de ovo" → "gemas"), não a última.
+ */
+export function headLooksSingular(rawText: string): boolean {
+  const t = (rawText ?? '').trim()
+  if (t === '') return false
+  const first = normalizeWord(t.split(/\s+/)[0])
+  if (first === '') return false
+  return !first.endsWith('s')
+}
+
 /** System prompt (fixo) do modelo barato que tira a medida do nome. */
 export const STRIP_SYSTEM_PROMPT = [
   'Você normaliza nomes de ingredientes de receitas.',

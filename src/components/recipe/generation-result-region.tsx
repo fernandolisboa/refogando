@@ -110,6 +110,7 @@ export function GenerationResultRegion({
       <RecipeDetailView
         view={view}
         m={messages}
+        locale={locale}
         cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
       />
 

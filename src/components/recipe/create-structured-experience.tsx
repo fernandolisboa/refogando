@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import { useRecipeGeneration, mapErroMensagem } from '@/hooks/use-recipe-generation'
@@ -213,7 +214,9 @@ export function CreateStructuredExperience({
       }
       const novas: ItemDraft[] = data.items.map((it) => ({
         rawText: it.rawText,
-        quantidade: it.quantidade ?? '',
+        // A extração devolve a `quantidade` canônica (string-ponto); `formatQuantityInput` a torna
+        // editável e localizada no campo ("2,5" pt / "2.5" en), sem zeros do numeric.
+        quantidade: formatQuantityInput(it.quantidade, locale),
         unidade: it.unidade ?? '',
         strength: it.strength,
       }))
@@ -280,7 +283,8 @@ export function CreateStructuredExperience({
         itens: itensComTexto.map((it) => ({
           ingredientId: null,
           rawText: it.rawText.trim(),
-          quantidade: it.quantidade.trim() === '' ? null : it.quantidade.trim(),
+          // Digitado localizado → string-ponto canônica (ou null); a zod do servidor é o guard final.
+          quantidade: parseQuantityInput(it.quantidade),
           unidade: it.unidade || null,
           strength: it.strength,
         })),
