@@ -43,11 +43,10 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     facets: { cozinha: 'mexicana', categoria: 'prato_principal', tags: ['picante'] },
     porcoes: 4,
     dificuldade: 2,
-    // `rawText` é a LINHA HUMANA COMPLETA (inclui a medida), como TODA origem de produção a grava;
-    // `quantidade`/`unidade` são metadados ESTRUTURADOS (não se recompõem no display, senão duplicam
-    // — `formatIngredientLine`). A linha é exibida VERBATIM.
+    // `rawText` é o NOME do ingrediente SEM a medida (ADR-0012 Adendo 2026-06-30); `quantidade`/
+    // `unidade` são a fonte ÚNICA da medida. A exibição COMPÕE "medida — nome" (`formatIngredientLine`).
     ingredients: [
-      { ordem: 1, quantidade: '2.500', unidade: 'colher_de_sopa', rawText: '2 colheres de sopa de feijão' },
+      { ordem: 1, quantidade: '2.500', unidade: 'colher_de_sopa', rawText: 'feijão' },
     ],
     translations: [],
     // #161: por padrão a leitura NÃO repousa em tradução automática (sem selo). Cada caso que
@@ -102,17 +101,15 @@ describe('RecipeDetailView (#57)', () => {
     const h1 = screen.getByRole('heading', { level: 1 })
     expect(h1).toHaveTextContent('Texas Chili (chili do Texas)')
 
-    // Seção Ingredientes + item: a LINHA HUMANA (`rawText`) é exibida VERBATIM — UMA vez.
+    // Seção Ingredientes + item: a medida estruturada é COMPOSTA com o nome — quantidade normalizada
+    // ('2.500'→'2.5'), unidade LOCALIZADA, em-dash, UMA vez: "2.5 colher de sopa — feijão".
     expect(
       screen.getByRole('heading', { name: M.detalhe.ingredientes, level: 2 }),
     ).toBeInTheDocument()
-    expect(screen.getByText('2 colheres de sopa de feijão')).toBeInTheDocument()
-    // REGRESSÃO (#bug medida duplicada): a medida estruturada NÃO é re-prefixada na linha — nada de
-    // "2.5 colher de sopa — 2 colheres de sopa de feijão".
-    expect(
-      screen.queryByText(`2.5 ${M.unidadeLabel.colher_de_sopa} — 2 colheres de sopa de feijão`),
-    ).toBeNull()
-    expect(screen.queryByText(/—\s*2 colheres de sopa de feijão/)).toBeNull()
+    expect(screen.getByText(`2.5 ${M.unidadeLabel.colher_de_sopa} — feijão`)).toBeInTheDocument()
+    // REGRESSÃO (bug da medida duplicada do #354): a medida NÃO aparece duas vezes — o nome já vem
+    // SEM medida, então nada de "2.5 colher de sopa — 2 colheres de sopa de feijão".
+    expect(screen.queryByText(/colher de sopa.*colher/)).toBeNull()
     // O token cru do enum NÃO vaza na tela.
     expect(screen.queryByText(/colher_de_sopa/)).toBeNull()
     expect(screen.queryByText(/2\.500/)).toBeNull()

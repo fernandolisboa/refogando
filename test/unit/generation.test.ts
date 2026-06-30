@@ -21,7 +21,7 @@ function makeReceita(overrides: Partial<ReceitaGenT> = {}): ReceitaGenT {
     restricoes: [],
     porcoes: 4,
     dificuldade: 3,
-    ingredientes: [{ rawText: '1 xícara de arroz arbóreo', quantidade: '1', unidade: 'xicara' }],
+    ingredientes: [{ nome: 'arroz arbóreo', quantidade: '1', unidade: 'xicara' }],
     ...overrides,
   }
 }
@@ -169,7 +169,7 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
 
   it('quantidade "a gosto" (não-numérica) num ingrediente → invalid (NÃO chega ao DB)', () => {
     const recipe = makeReceita({
-      ingredientes: [{ rawText: 'sal a gosto', quantidade: 'a gosto', unidade: 'a_gosto' }],
+      ingredientes: [{ nome: 'sal', quantidade: 'a gosto', unidade: 'a_gosto' }],
     })
     expect(
       classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
@@ -178,7 +178,7 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
 
   it('quantidade "2,5" (vírgula-decimal) → invalid', () => {
     const recipe = makeReceita({
-      ingredientes: [{ rawText: '2,5 xícaras', quantidade: '2,5', unidade: 'xicara' }],
+      ingredientes: [{ nome: 'farinha', quantidade: '2,5', unidade: 'xicara' }],
     })
     expect(
       classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
@@ -187,7 +187,7 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
 
   it('quantidade "" (string vazia) → invalid', () => {
     const recipe = makeReceita({
-      ingredientes: [{ rawText: 'arroz', quantidade: '', unidade: 'xicara' }],
+      ingredientes: [{ nome: 'arroz', quantidade: '', unidade: 'xicara' }],
     })
     expect(
       classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
@@ -197,8 +197,8 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
   it('quantidade numérica válida ("2.500") e null preservam o outcome do modelo', () => {
     const recipe = makeReceita({
       ingredientes: [
-        { rawText: '2.5 xícaras de farinha', quantidade: '2.500', unidade: 'xicara' },
-        { rawText: 'sal a gosto', quantidade: null, unidade: 'a_gosto' },
+        { nome: 'farinha', quantidade: '2.500', unidade: 'xicara' },
+        { nome: 'sal', quantidade: null, unidade: 'a_gosto' },
       ],
     })
     expect(

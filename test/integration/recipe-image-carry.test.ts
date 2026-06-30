@@ -272,8 +272,9 @@ describe('Carry-forward da Imagem (#131) — REGENERAR', () => {
   it('predecessora COM imagem mas regeneração IDÊNTICA (título/cozinha/ingredientes) ⇒ herda + silenciosa', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'regen-same@ic.test' })
     // Casa o cannedSuccess() default: título 'Arroz de forno', cozinha 'brasileira', e o MESMO
-    // conjunto de rawText dos ingredientes — então a comparação visual não acha mudança.
-    const pred = await seedRegenerable(userId, 'Arroz de forno', ['2 xícaras de arroz cozido', 'sal a gosto'])
+    // conjunto de NOMES de ingrediente (sem medida — ADR-0009 Adendo) — então a comparação visual
+    // não acha mudança.
+    const pred = await seedRegenerable(userId, 'Arroz de forno', ['arroz cozido', 'sal'])
     const imageId = await attachImage(pred)
 
     const res = await regenerate(pred, headers)

@@ -86,8 +86,8 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     facets: { cozinha: 'mineira', categoria: 'prato_principal', tags: [] },
     porcoes: 4,
     dificuldade: 2,
-    // rawText = linha humana COMPLETA (inclui a medida), como toda origem grava; exibida verbatim.
-    ingredients: [{ ordem: 1, quantidade: '2.000', unidade: 'xicara', rawText: '2 xícaras de feijão' }],
+    // rawText = NOME sem a medida (ADR-0012 Adendo); a exibição compõe "medida — nome".
+    ingredients: [{ ordem: 1, quantidade: '2.000', unidade: 'xicara', rawText: 'feijão' }],
     translations: [],
     autoTranslationSignal: false,
     ...over,
@@ -277,8 +277,9 @@ describe('ConversaFocusedView (#60/#104)', () => {
 
     expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: baseView().name })).toBeInTheDocument()
-    // Corpo lido CRU pelo 2º GET (trava ausência de wrapper): a LINHA de ingrediente (rawText verbatim).
-    expect(screen.getByText('2 xícaras de feijão')).toBeInTheDocument()
+    // Corpo lido CRU pelo 2º GET (trava ausência de wrapper): a LINHA de ingrediente COMPOSTA
+    // da medida estruturada + nome ("2 xícara — feijão").
+    expect(screen.getByText(`2 ${ptBR.unidadeLabel.xicara} — feijão`)).toBeInTheDocument()
 
     // Exatamente UM heading nível 1: o nome da Receita (conversa.titulo virou <h2>).
     const h1s = screen.getAllByRole('heading', { level: 1 })

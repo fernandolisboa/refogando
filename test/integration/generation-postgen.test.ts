@@ -68,7 +68,7 @@ describe('POST /api/generations — Aviso pós-geração (#87)', () => {
         undefined,
         cannedSuccess({
           restricoes: ['sem_gluten'],
-          ingredientes: [{ rawText: 'farinha de trigo', quantidade: '200.000', unidade: 'g' }],
+          ingredientes: [{ nome: 'farinha de trigo', quantidade: '200.000', unidade: 'g' }],
         }),
       ),
     )
@@ -105,7 +105,7 @@ describe('POST /api/generations — Aviso pós-geração (#87)', () => {
         undefined,
         cannedSuccess({
           restricoes: ['sem_gluten'],
-          ingredientes: [{ rawText: 'wheat flour', quantidade: '200.000', unidade: 'g' }],
+          ingredientes: [{ nome: 'wheat flour', quantidade: '200.000', unidade: 'g' }],
         }),
       ),
     )
@@ -311,7 +311,7 @@ describe('POST /api/generations — modo prompt aberto free_text (#88)', () => {
         undefined,
         cannedSuccess({
           restricoes: ['sem_gluten'],
-          ingredientes: [{ rawText: 'farinha de trigo', quantidade: '300.000', unidade: 'g' }],
+          ingredientes: [{ nome: 'farinha de trigo', quantidade: '300.000', unidade: 'g' }],
         }),
       ),
     )

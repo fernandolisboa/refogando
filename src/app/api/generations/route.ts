@@ -363,7 +363,8 @@ export async function POST(req: Request): Promise<Response> {
     : []
   const postAvisos = decidePostGenerationRestrictionNotices({
     restricoes: result.recipe.restricoes,
-    ingredientes: result.recipe.ingredientes,
+    // gen schema emite `nome` (sem medida); o motor de aviso escaneia o TEXTO do item por alérgeno.
+    ingredientes: result.recipe.ingredientes.map((i) => ({ rawText: i.nome })),
   }).avisos
   const vistas = new Set<string>()
   const combinados: RestrictionNotice[] = []

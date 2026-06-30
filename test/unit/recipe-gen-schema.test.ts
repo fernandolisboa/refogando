@@ -20,8 +20,8 @@ function receitaCompleta(): ReceitaGenT {
     porcoes: 4,
     dificuldade: 3,
     ingredientes: [
-      { rawText: '1 xícara de arroz arbóreo', quantidade: '1', unidade: 'xicara' },
-      { rawText: 'cogumelos a gosto', quantidade: null, unidade: 'a_gosto' },
+      { nome: 'arroz arbóreo', quantidade: '1', unidade: 'xicara' },
+      { nome: 'cogumelos', quantidade: null, unidade: 'a_gosto' },
     ],
   }
 }
@@ -140,7 +140,7 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
   it('rejeita quantidade numérica (deve ser string|null)', () => {
     const receita = receitaCompleta()
     receita.ingredientes[0] = {
-      rawText: '2 xícaras de farinha',
+      nome: 'farinha',
       // número cru viola o contrato string|null
       quantidade: 2 as unknown as string,
       unidade: 'xicara',
@@ -151,7 +151,7 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
   it('rejeita quantidade string não-numérica ("a gosto" / "2,5" / "")', () => {
     for (const q of ['a gosto', '2,5', '']) {
       const receita = receitaCompleta()
-      receita.ingredientes[0] = { rawText: 'algo', quantidade: q, unidade: 'xicara' }
+      receita.ingredientes[0] = { nome: 'algo', quantidade: q, unidade: 'xicara' }
       expect(() =>
         RecipeGenSchema.parse({ kind: 'success', receita, advisory: null }),
       ).toThrow()
@@ -161,8 +161,8 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
   it('aceita quantidade numérica válida ("2.500") e null', () => {
     const receita = receitaCompleta()
     receita.ingredientes = [
-      { rawText: '2.5 xícaras', quantidade: '2.500', unidade: 'xicara' },
-      { rawText: 'sal a gosto', quantidade: null, unidade: 'a_gosto' },
+      { nome: 'farinha', quantidade: '2.500', unidade: 'xicara' },
+      { nome: 'sal', quantidade: null, unidade: 'a_gosto' },
     ]
     const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
     expect(parsed.receita?.ingredientes[0].quantidade).toBe('2.500')

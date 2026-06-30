@@ -30,9 +30,10 @@ export function makeReceita(overrides: Partial<ReceitaGenT> = {}): ReceitaGenT {
     restricoes: ['sem_gluten'],
     porcoes: 4,
     dificuldade: 2,
+    // Gen schema emite `nome` (sem medida) — a medida vai em quantidade/unidade (ADR-0009 Adendo).
     ingredientes: [
-      { rawText: '2 xícaras de arroz cozido', quantidade: '2.000', unidade: 'xicara' },
-      { rawText: 'sal a gosto', quantidade: null, unidade: 'a_gosto' },
+      { nome: 'arroz cozido', quantidade: '2.000', unidade: 'xicara' },
+      { nome: 'sal', quantidade: null, unidade: 'a_gosto' },
     ],
     ...overrides,
   }

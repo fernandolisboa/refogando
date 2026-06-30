@@ -185,20 +185,20 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     expect(screen.getByText(W.itemPosicao.replace('{atual}', '1').replace('{total}', '1'))).toBeInTheDocument()
 
     // Preenche o item 1.
-    const nome1 = screen.getByPlaceholderText(/cebola grande/i)
+    const nome1 = screen.getByPlaceholderText(/cebola/i)
     await user.type(nome1, 'cebola roxa')
 
     // Adiciona outro → vai pro item 2 (pager "2 de 2"), campo limpo. (o botão tem o prefixo "+")
     await user.click(screen.getByRole('button', { name: new RegExp(W.adicionarOutro) }))
     expect(screen.getByText(W.itemPosicao.replace('{atual}', '2').replace('{total}', '2'))).toBeInTheDocument()
-    const nome2 = screen.getByPlaceholderText(/cebola grande/i)
+    const nome2 = screen.getByPlaceholderText(/cebola/i)
     expect(nome2).toHaveValue('')
     await user.type(nome2, 'alho-poró')
 
     // Volta pro item 1 pelo botão "anterior": o valor preenchido foi preservado.
     await user.click(screen.getByRole('button', { name: W.itemAnterior }))
     expect(screen.getByText(W.itemPosicao.replace('{atual}', '1').replace('{total}', '2'))).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/cebola grande/i)).toHaveValue('cebola roxa')
+    expect(screen.getByPlaceholderText(/cebola/i)).toHaveValue('cebola roxa')
   })
 
   it('W4 — alterna para "de uma vez": textarea bulk substitui o pager', async () => {
@@ -220,7 +220,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     render(<Harness />)
     await abrirWizard(user)
 
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'tomate')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'tomate')
     await user.click(screen.getByRole('button', { name: W.continuar }))
     expect(screen.getByRole('heading', { name: W.cozinhaTitulo })).toBeInTheDocument()
 
@@ -229,7 +229,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     const voltares = screen.getAllByRole('button', { name: D.voltar })
     await user.click(voltares[voltares.length - 1])
     expect(screen.getByRole('heading', { name: W.ingredientesTitulo })).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/cebola grande/i)).toHaveValue('tomate')
+    expect(screen.getByPlaceholderText(/cebola/i)).toHaveValue('tomate')
   })
 
   it('W6 — gera ponta-a-ponta: POST mode `structured` com o Briefing → gerando → gerada', async () => {
@@ -243,7 +243,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     await abrirWizard(user)
 
     // Passo 1: um ingrediente.
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
     await user.click(screen.getByRole('button', { name: W.continuar }))
     // Passo 2 → 3.
     await user.click(screen.getByRole('button', { name: W.continuar }))
@@ -309,7 +309,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     await abrirWizard(user)
 
     // Passo 1 → 2 (Cozinha).
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
     await user.click(screen.getByRole('button', { name: W.continuar }))
 
     // O campo livre só aparece após clicar "Outra".
@@ -339,7 +339,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     render(<Harness />)
     await abrirWizard(user)
 
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.gerar }))
@@ -361,7 +361,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     render(<Harness />)
     await abrirWizard(user)
 
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.gerar }))
@@ -382,7 +382,7 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     await abrirWizard(user)
 
     // Monta um Briefing mínimo e dispara "Gerar receita" (POST em voo, não resolvido).
-    await user.type(screen.getByPlaceholderText(/cebola grande/i), 'feijão')
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.continuar }))
     await user.click(screen.getByRole('button', { name: W.gerar }))

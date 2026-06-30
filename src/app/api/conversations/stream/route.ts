@@ -318,7 +318,8 @@ export async function POST(req: Request): Promise<Response> {
           // Aviso pós-geração (#87/ADR-0004): só pós-geração (sem Briefing). Não-bloqueante.
           const postAvisos = decidePostGenerationRestrictionNotices({
             restricoes: result.recipe.restricoes,
-            ingredientes: result.recipe.ingredientes,
+            // gen schema emite `nome` (sem medida); o motor de aviso escaneia o TEXTO por alérgeno.
+            ingredientes: result.recipe.ingredientes.map((i) => ({ rawText: i.nome })),
           }).avisos
           const avisos = renderAvisos(postAvisos, requestLocale)
           const frame: TerminalFrame = {
