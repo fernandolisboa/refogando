@@ -38,10 +38,8 @@ import { notFound, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
-import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
-import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
-import { RecipeStatusChip } from '@/components/recipe/recipe-status-chip'
+import { RecipeManagementArea } from '@/components/recipe/recipe-management-area'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
@@ -348,25 +346,13 @@ async function DetailChrome({
           canManage={view.canManage ?? false}
         />
       )}
-      {/* Chip de status (#195) — owner-gated (`canManage`); ausente no caminho público. */}
-      {view.canManage && view.visibility && (
-        <RecipeStatusChip visibility={view.visibility} m={messages} />
-      )}
-      {/* Gestão da Imagem (#130/#222) — owner-gated; ausente no caminho público. A galeria vem
-          owner-gated na view (`view.gallery`); ausente ⇒ lista vazia (defensivo). */}
-      {view.canManage && (
-        <RecipeImageManager
-          recipeId={view.id}
-          hasImage={view.imageUrl != null}
-          gallery={view.gallery ?? []}
-          reviewSuggested={reviewImage}
-          aiGenEnabled={view.imageGenEnabled ?? true}
-          imageGenBlocked={view.imageGenBlocked ?? false}
-        />
-      )}
-      {/* Afordâncias (#61): dono (gestão) vs não-dono ("Criar minha versão") vs visitante (convite) —
-          o client component decide pela sessão; o caminho público mostra o convite/derivar. */}
-      <RecipeDetailActions view={view} locale={locale} />
+      {/* Gestão + afordâncias (#195/#130/#222/#61) num ÚNICO island client. No caminho do DONO/dinâmico
+          (`view.canManage`) renderiza a gestão direto; no caminho PÚBLICO/cacheável resolve a posse NO
+          CLIENTE (`useSession` + fetch da view do dono) — assim o DONO vendo a PRÓPRIA receita pública
+          pela URL canônica vê Editar/status/imagem em vez de "Criar minha versão", sem quebrar a
+          cacheabilidade (nada de cookie no servidor público). `key={view.id}`: remonta por receita
+          (não carrega a view do dono anterior numa navegação detalhe→detalhe in-place). */}
+      <RecipeManagementArea key={view.id} view={view} locale={locale} reviewImage={reviewImage} />
     </Container>
   )
 }
