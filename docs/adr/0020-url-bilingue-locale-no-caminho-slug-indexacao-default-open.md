@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Decisão 7 revertida por ADR-0027 (2026-06-30):** o JSON-LD passou a emitir **`aggregateRating`** — não por abandono do princípio ("não forjar rating"), e sim porque agora existe **nota genuína de 1–5★** (Avaliação). O markup usa a **média crua + contagem reais** (nunca o score Bayesiano interno), **visível na página**; o gate de indexação segue inalterado.
+
 O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cookie** e a URL de detalhe era **`/recipes/<uuid>`**. Para perseguir **descoberta orgânica nos dois mercados (pt-BR e en-US)** e **links compartilháveis que passem no crivo** (devs reais como público), a URL e a camada de descoberta mudam:
 
 ```
@@ -32,7 +34,7 @@ O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cooki
 - **Redirect da raiz = temporário (302/307)** porque o destino **varia por `Accept-Language`**; 301 cacheado quebraria isso. O **301 do slug legado** é o oposto: a troça UUID→slug é permanente.
 - **Slug congelado** porque **estabilidade de URL é sagrada** em SEO: uma URL boa indexada vale mais que um slug sempre "bonitinho". Renomear, revisar tradução ou republicar **não** pode mexer na URL.
 - **Indexação default-open (sem gate humano)** porque o app é *publicação dirigida pelo usuário* (ADR-0003) e *segurança proporcional*: usuário publica, o Google vê — sem curador no meio. Qualidade é **reativa** (Aviso de restrição, Moderação reativa) e, à frente, por sinal automático de anomalia; nunca auditoria fiscal sobre receita correta. O alcance (orgânico) vale mais que o risco de qualidade de uma tradução automática — risco que o Google trata como conteúdo "thin"/abuso de reputação, e que é **reversível via robots** se aparecer.
-- **Sem estrelas** mantém a integridade (Voto não é nota — ADR-0002). O **card social sem selo de IA** é decisão consciente: ali a imagem de IA é vitrine, não aviso (o selo in-app de ADR-0017 segue).
+- **Sem estrelas** mantém a integridade (Voto não é nota — ADR-0003; **revertido por ADR-0027**, que traz a Avaliação 1–5★ genuína). O **card social sem selo de IA** é decisão consciente: ali a imagem de IA é vitrine, não aviso (o selo in-app de ADR-0017 segue).
 
 ## Alternativas rejeitadas
 
@@ -43,7 +45,7 @@ O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cooki
 - **UUID na URL de página** — opaco, amador. Rejeitada: slug puro, UUID interno.
 - **Gate de índice por revisão humana (curadoria ou tradução revisada)** — rejeitado: vira auditoria fiscal sobre receita correta, contra a postura default-open/proporcional do app (ADR-0003, Aviso de restrição, Moderação reativa). Qualidade é reativa + sinal automático de anomalia, não pré-gate.
 - **Gate de índice por `origin`** (só `catalog` indexa) — descartado: indexação é default-open (pública + não-`playful` + não-removida); a origem não restringe o que entra no Google.
-- **`aggregateRating` mapeando Voto→estrela** — Voto não é nota; forjar viola política. Rejeitada.
+- **`aggregateRating` mapeando Voto→estrela** — Voto não é nota; forjar viola política. Rejeitada. **(Revertida por ADR-0027:** a Avaliação 1–5★ é nota genuína, não Voto forjado — o `aggregateRating` passa a ser emitido com a média crua + contagem reais.)
 - **OG com selo de IA composto** na foto `ai_generated` — descartado: no card a imagem de IA é vitrine, não aviso, e o público percebe; o selo fica só nas superfícies in-app (ADR-0017).
 
 ## Consequências

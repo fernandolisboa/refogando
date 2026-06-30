@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Consumidor adicionado por ADR-0028 (2026-06-30):** o aviso de **resolução** de uma sugestão de cozinha (aprovar/mesclar/rejeitar) passa a viver na **caixa de notificações** (tipo `cuisine_suggestion_resolved`); sugestão **multi-sugeridor** → N notificações (uma por sugeridor).
+
 A `Cozinha` deixa de ser um `pgEnum` hard-coded e passa a ser um **vocabulário controlado data-driven**: a lista de cozinhas vive numa tabela (`vocabulary_term`), gerida sem deploy, e ganha um caminho de **extensão por curadoria** — o usuário que não acha sua cozinha escolhe **"Outra"**, digita livre, e a sugestão cai na **fila do Curador**. A decisão central, da qual as outras derivam: **continuar CONTROLADO (não abrir pra texto livre)** — o kernel bidirecional (Busca filtra ∩ criação estruturada constrange) exige um conjunto fechado-num-instante, bilíngue e curado; o que muda é só **onde** esse conjunto vive (banco, não código). Escopo do v1 = **só `cozinha`**, com o mecanismo genérico o bastante pra `restrição` entrar na fase 2 sem retrabalho. Origem: o dono questionou ter de mexer em código pra adicionar uma cozinha (gatilho: a faceta `americana` do #238). Este ADR foi endurecido por uma revisão adversarial de 4 lentes antes de aceito.
 
 ## Decisões
