@@ -21,9 +21,10 @@
  */
 import Link from 'next/link'
 import { classifySection, type SearchSection } from '@/domain/recipe'
-import type { IngredientView, RecipeView } from '@/domain/recipe-read'
-import { isCategoria, isRestricao, isUnidade } from '@/domain/vocabulary'
+import type { RecipeView } from '@/domain/recipe-read'
+import { isCategoria, isRestricao } from '@/domain/vocabulary'
 import { formatDuracao } from '@/domain/tempo'
+import { formatIngredientLine } from '@/domain/ingredient-line'
 import type { Messages } from '@/i18n/messages'
 import { ProvenanceBadge } from './provenance-badge'
 import { RestrictionWarning } from './restriction-warning'
@@ -38,24 +39,6 @@ const CHIP_BASE =
   'inline-flex items-center border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted'
 
 /**
- * Normaliza a `quantidade` (string do `numeric(10,3)`, ex. `'2.500'`) tirando zeros à
- * direita: `'2.500'`→`'2.5'`, `'3.000'`→`'3'`. Valores que não convertem em número
- * (livre/inesperado) caem no original — nunca vira `NaN` na tela.
- */
-function formatQuantidade(quantidade: string): string {
-  const n = Number(quantidade)
-  return Number.isFinite(n) ? String(n) : quantidade
-}
-
-/**
- * Localiza a unidade do enum `UNIDADES` (tokens machine-readable: `colher_de_sopa`,
- * `a_gosto`, …) via `m.unidadeLabel`. Valor fora do enum (defensivo) sai cru.
- */
-function formatUnidade(unidade: string, m: Messages): string {
-  return isUnidade(unidade) ? m.unidadeLabel[unidade] : unidade
-}
-
-/**
  * Nome de exibição da FONTE (#169, ADR-0019): o `source.name` (publisher legível) quando há; senão
  * o HOST da URL sem o prefixo `www.` (ex. `panelinha.com.br`). Defensivo: URL inválida (não deveria
  * — a rota só importa http(s)) cai na própria string crua, nunca quebra a tela.
@@ -67,15 +50,6 @@ function sourceDisplayName(source: { url: string; name?: string }): string {
   } catch {
     return source.url
   }
-}
-
-/** Junta as partes não-nulas de um ingrediente numa linha legível: `qtd unidade — texto`. */
-function formatIngredient(item: IngredientView, m: Messages): string {
-  const quantidade = item.quantidade != null && item.quantidade !== '' ? formatQuantidade(item.quantidade) : null
-  const unidade = item.unidade != null && item.unidade !== '' ? formatUnidade(item.unidade, m) : null
-  const medida = [quantidade, unidade].filter((p) => p != null && p !== '').join(' ')
-  if (medida && item.rawText) return `${medida} — ${item.rawText}`
-  return medida || item.rawText || ''
 }
 
 export function RecipeDetailView({
@@ -129,7 +103,7 @@ export function RecipeDetailView({
   // linha vazia, que renderizaria um marcador de lista solto). Mantém `ordem` p/ a key.
   const ingredientLines = [...view.ingredients]
     .sort((a, b) => a.ordem - b.ordem)
-    .map((item) => ({ ordem: item.ordem, text: formatIngredient(item, m) }))
+    .map((item) => ({ ordem: item.ordem, text: formatIngredientLine(item, m) }))
     .filter((line) => line.text !== '')
 
   const hasScalars =
