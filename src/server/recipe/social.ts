@@ -3,6 +3,7 @@ import type { Database } from '@/db/client'
 import { recipe, recipeVote, recipeFavorite } from '@/db/schema'
 import { decideVote } from '@/domain/vote'
 import { eligibleForPool } from '@/domain/recipe-pool'
+import { loadSocialState } from '@/server/recipe/load'
 
 /**
  * Núcleo com efeito de Voto + Favorito (issue #16, ADR-0003). Espelha o estilo de
@@ -131,4 +132,41 @@ export async function applyFavorite(input: {
   }
 
   return { kind: 'ok', viewerFavorited: action === 'favorite' }
+}
+
+export type ViewerSocialState =
+  | { kind: 'ok'; viewerVoted: boolean; viewerFavorited: boolean; isOwner: boolean }
+  | { kind: 'not_found' } // 404 — inexistente / fora do pool (leak-safe)
+
+/**
+ * Estado social do PRÓPRIO viewer para uma Receita do pool — leitura SÓ-LEITURA que o caminho
+ * PÚBLICO/cacheável da página de detalhe (ADR-0020) NÃO pode entregar no servidor: ele lê ANÔNIMO
+ * (sem cookie) pra ficar cacheável, então `viewerVoted`/`viewerFavorited` saem ausentes. Os controles
+ * de engajamento (client) resolvem isto AQUI quando logado, hidratando voto/favorito reais em vez de
+ * cair no convite "Entrar para...".
+ *
+ * MESMO pool-gate LEAK-SAFE de votar/favoritar (`loadPoolGate`): fora do pool ⇒ `not_found` (404, não
+ * vaza existência de Receita privada de outro — espelha o GET/vote). `isOwner` (dono do pool, owner
+ * NULL nunca casa) deixa a UI esconder o botão de voto do dono (não-autovoto, AC2) SEM um clique que
+ * só ganharia 422. NÃO escreve nada; `viewerVoted`/`viewerFavorited` são SEMPRE do `userId` da sessão.
+ */
+export async function loadViewerSocialState(input: {
+  db: Database
+  id: string // já validado como uuid pelo route
+  userId: string // session.user.id (route já passou pelo requireSession)
+}): Promise<ViewerSocialState> {
+  const { db, id, userId } = input
+
+  const gate = await loadPoolGate(db, id)
+  if (!gate) return { kind: 'not_found' }
+
+  // includeVoteCount:false — a página pública já trouxe a contagem (agregado anônimo/cacheável);
+  // aqui só interessa o estado PESSOAL (EXISTS por (userId, id) nas duas tabelas).
+  const social = await loadSocialState(db, { id, viewerId: userId, includeVoteCount: false })
+  return {
+    kind: 'ok',
+    viewerVoted: social.viewerVoted ?? false,
+    viewerFavorited: social.viewerFavorited ?? false,
+    isOwner: gate.ownerId === userId,
+  }
 }
