@@ -16,10 +16,10 @@
  * é > 0 — a seção-alvo só renderiza com ≥ 1 (contador e lista concordam: ambos gateiam soft-deleted);
  * contador 0 = texto puro, sem link (não há âncora pra onde ir).
  *
- * Diferente do `RecipeEngagementControls` (que recebe o estado do viewer por PROPS de SSR): o perfil é
- * ANÔN-CACHEÁVEL (Modelo B/ADR-0020), então NÃO há seed SSR do "eu sigo?". A ilha BUSCA o estado client-
- * side (`GET /api/u/<handle>/follow` → `{isFollowing, isSelf}`) SÓ quando a sessão resolve logada — anon
- * nunca toca a API (evita 401-spam). `isSelf` vem do SERVIDOR (compara `session.user.id`, confiável —
+ * MESMO padrão do caminho público do `RecipeEngagementControls` (`GET /api/recipes/<id>/social`): o
+ * perfil é ANÔN-CACHEÁVEL (Modelo B/ADR-0020), então NÃO há seed SSR do "eu sigo?". A ilha BUSCA o estado
+ * client-side (`GET /api/u/<handle>/follow` → `{isFollowing, isSelf}`) SÓ quando a sessão resolve logada —
+ * anon nunca toca a API (evita 401-spam). `isSelf` vem do SERVIDOR (compara `session.user.id`, confiável —
  * não o cast não-tipado de `session.user.handle`); próprio perfil ⇒ sem botão. Otimismo no clique com
  * REVERT no erro (mensagem neutra), espelhando o `RecipeEngagementControls`. `credentials` PADRÃO
  * (same-origin) — o estado É viewer-personalizado, NUNCA `credentials:'omit'` (≠ feed anon).

@@ -3,7 +3,17 @@
 /**
  * Controles de Engajamento da Comunidade (#62) — bloco de VOTO + FAVORITO na tela de
  * detalhe. Irmão do `RecipeDetailView` (que continua PURO, sem hooks): a page renderiza
- * isto SÓ quando a Receita está no POOL público (algum dos campos sociais presente).
+ * isto SÓ quando a Receita está no POOL público (`voteCount` presente).
+ *
+ * ESTADO DO VIEWER (votou?/favoritou?), duas origens (#230, ADR-0020):
+ *  - Caminho do DONO (dinâmico, cookie): o server JÁ resolve e passa `initialViewerVoted`/
+ *    `initialViewerFavorited` ⇒ render direto, sem fetch.
+ *  - Caminho PÚBLICO/cacheável: o server lê ANÔNIMO (sem cookie) pra ficar cacheável, então
+ *    AMBOS chegam `undefined`. Aqui é que o flash de "Entrar para votar" pra quem ESTÁ logado
+ *    morava: o componente precisa resolver o estado NO CLIENTE. Com sessão (`useSession`), se
+ *    logado, busca `GET /api/recipes/[id]/social` e hidrata voto/favorito/dono reais; se anônimo,
+ *    mostra o convite "Entrar para..."; enquanto a sessão/fetch pendem, não pisca nem botão nem
+ *    convite (só a contagem read-only).
  *
  * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{vote,unvote,favorite,
  * unfavorite}` via `fetch` (NÃO Server Action). O servidor é a verdade — impõe sessão
@@ -20,8 +30,9 @@
  * (ADR-0015: exclusivo do Aviso de restrição) e accent/accent-surface também (reservados a
  * `origin=catalog`, ADR-0015) — Popularidade é eixo separado, NUNCA colore confiança.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -41,15 +52,17 @@ export function RecipeEngagementControls({
 }) {
   const { messages } = useLocale()
   const m = messages.comunidade
+  const session = useSession()
 
-  // Anônimo = AUSÊNCIA dos DOIS campos de viewer (saem juntos do server). Não inferir de
-  // voteCount (que existe pra anônimo no pool). Anônimo ⇒ controles viram CONVITE A ENTRAR,
-  // sem tocar a API (que daria 401).
-  const isAnon = initialViewerVoted === undefined && initialViewerFavorited === undefined
+  // O server entregou o estado do viewer? SÓ o caminho do DONO (dinâmico, com cookie) o faz; o
+  // caminho PÚBLICO/cacheável (ADR-0020) lê anônimo e DEIXA ambos ausentes — daí resolvemos no
+  // cliente. "Resolvido pelo server" = QUALQUER um dos dois presente (saem juntos do loader).
+  const serverResolved = initialViewerVoted !== undefined || initialViewerFavorited !== undefined
 
-  // O DONO não vota na própria Receita (AC2 — o servidor reforça com 422). O botão de voto
-  // some; a CONTAGEM read-only e o FAVORITAR permanecem (dono pode favoritar a própria).
-  const showVote = !canManage
+  // Sessão do cliente (espelha RecipeDetailActions): só conta como logado quando RESOLVIDA, sem erro
+  // e com dados. Enquanto pende, não decidimos nada (evita flash do convite pra quem está logado).
+  const sessionSettled = !session.isPending
+  const loggedIn = sessionSettled && !session.error && !!session.data
 
   const [voted, setVoted] = useState(!!initialViewerVoted)
   const [favorited, setFavorited] = useState(!!initialViewerFavorited)
@@ -58,6 +71,62 @@ export function RecipeEngagementControls({
   const [favBusy, setFavBusy] = useState(false)
   const [voteError, setVoteError] = useState(false)
   const [favError, setFavError] = useState(false)
+  // Quando o server NÃO resolveu (caminho público), o estado do viewer chega de um fetch client-side.
+  // `clientResolved` parte de `serverResolved`: já resolvido no caminho do dono (nada a buscar). No
+  // caminho público vira true quando o GET /social responde (ou falha — degradação graciosa).
+  const [clientResolved, setClientResolved] = useState(serverResolved)
+  // Dono resolvido no cliente (caminho público não traz `canManage`): esconde o voto do próprio dono.
+  const [ownerClient, setOwnerClient] = useState(false)
+
+  // Caminho público + logado: resolve voto/favorito/dono do PRÓPRIO viewer (a página é cacheável e não
+  // pode personalizar no server). Anônimo NÃO busca (daria 401 e o convite "Entrar" é o certo). O fetch
+  // dispara quando a sessão vira logada; falha ⇒ resolve com os defaults (não-votado/não-favoritado),
+  // pra não travar logado no convite nem quebrar — o server corrige no clique.
+  useEffect(() => {
+    if (serverResolved || !loggedIn) return
+    let cancelled = false
+    fetch(`/api/recipes/${recipeId}/social`)
+      .then(async (res) => {
+        if (cancelled) return
+        if (res.ok) {
+          const body = (await res.json()) as {
+            viewerVoted?: boolean
+            viewerFavorited?: boolean
+            isOwner?: boolean
+          }
+          setVoted(!!body.viewerVoted)
+          setFavorited(!!body.viewerFavorited)
+          setOwnerClient(!!body.isOwner)
+        }
+        setClientResolved(true)
+      })
+      .catch(() => {
+        if (!cancelled) setClientResolved(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [recipeId, serverResolved, loggedIn])
+
+  // O DONO não vota na própria Receita (AC2 — o servidor reforça com 422). O botão de voto some; a
+  // CONTAGEM read-only e o FAVORITAR permanecem (dono pode favoritar a própria). `canManage` vem só no
+  // caminho do dono; no público o dono é descoberto pelo fetch (`ownerClient`).
+  const showVote = !canManage && !ownerClient
+
+  // Três estados de renderização do bloco de ação:
+  //  - 'interactive': server resolveu (caminho do dono) OU já hidratamos o logado (caminho público).
+  //  - 'anon': sessão resolvida e SEM login ⇒ convite "Entrar para...".
+  //  - 'pending': sessão ainda pende OU logado mas o GET /social ainda não voltou ⇒ sem botões nem
+  //    convite (a contagem read-only fica), evitando o flash de "Entrar" pra quem está logado.
+  const mode: 'interactive' | 'anon' | 'pending' = serverResolved
+    ? 'interactive'
+    : !sessionSettled
+      ? 'pending'
+      : !loggedIn
+        ? 'anon'
+        : clientResolved
+          ? 'interactive'
+          : 'pending'
 
   async function handleVote() {
     if (voteBusy) return
@@ -156,7 +225,7 @@ export function RecipeEngagementControls({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        {isAnon ? (
+        {mode === 'pending' ? null : mode === 'anon' ? (
           <>
             {showVote && (
               <Button asChild variant="secondary">

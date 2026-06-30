@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -26,6 +26,25 @@ vi.mock('next/link', () => ({
     </a>
   ),
 }))
+
+// `useSession` (#230 follow-up): o componente agora resolve o estado do viewer no cliente quando o
+// caminho público não o entregou. Mockamos o cliente Better Auth com uma sessão controlável por teste.
+const authMock = vi.hoisted(() => ({
+  session: { data: null as unknown, isPending: false, error: null as unknown },
+}))
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => authMock.session,
+}))
+
+/** Define o estado da sessão mockada antes do render. */
+function setSession(state: 'logged-in' | 'anon' | 'pending') {
+  authMock.session =
+    state === 'logged-in'
+      ? { data: { user: { id: 'u1' } }, isPending: false, error: null }
+      : state === 'anon'
+        ? { data: null, isPending: false, error: null }
+        : { data: null, isPending: true, error: null }
+}
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -95,6 +114,12 @@ function semCorReservada(container: HTMLElement) {
   expect(container.querySelector('[class*="aviso"]')).toBeNull()
   expect(container.querySelector('[class*="accent"]')).toBeNull()
 }
+
+beforeEach(() => {
+  // Default: LOGADO. Os testes de caminho do DONO (estado do viewer vem por prop ⇒ `serverResolved`)
+  // não disparam fetch nem dependem disto; os de caminho público sobrescrevem por teste.
+  setSession('logged-in')
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -178,8 +203,9 @@ describe('RecipeEngagementControls (#62)', () => {
 
   it('T5 — ANÔNIMO: dois links /sign-in, contagem read-only, sem botão, sem fetch', async () => {
     const user = userEvent.setup()
+    setSession('anon')
     const fetchMock = mockFetch({ status: 200, body: {} })
-    // Sem viewerVoted/viewerFavorited ⇒ anônimo; voteCount presente (pool).
+    // Sem viewerVoted/viewerFavorited (caminho público) + sessão anônima ⇒ convite a entrar.
     renderControls({ initialVoteCount: 5, canManage: false })
 
     const votoLink = screen.getByRole('link', { name: M.convidaEntrarVoto })
@@ -239,5 +265,96 @@ describe('RecipeEngagementControls (#62)', () => {
     expect(screen.getByRole('button', { name: enUS.comunidade.favoritar })).toBeInTheDocument()
     // Pluralização en-US: 1 → singular "1 vote".
     expect(screen.getByText('1 vote')).toBeInTheDocument()
+  })
+
+  // ── Caminho PÚBLICO/cacheável (#230, ADR-0020): server NÃO entrega estado do viewer (lê anônimo).
+  //    O componente o resolve NO CLIENTE via GET /api/recipes/[id]/social quando logado. Este era o
+  //    bug: logado via sempre "Entrar para votar/favoritar". ────────────────────────────────────────
+
+  it('T8 — LOGADO no caminho público: GET /social hidrata voto/favorito reais (sem convite)', async () => {
+    setSession('logged-in')
+    // Sem initialViewer* ⇒ caminho público; o fetch resolve o estado do PRÓPRIO viewer.
+    const fetchMock = mockFetch({
+      status: 200,
+      body: { viewerVoted: true, viewerFavorited: false, isOwner: false },
+    })
+    renderControls({ initialVoteCount: 5 })
+
+    // Hidrata: voto vira "Votado" (aria-pressed), favoritar disponível e NÃO-pressionado.
+    const votado = await screen.findByRole('button', { name: M.votado })
+    expect(votado).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: M.favoritar })).toHaveAttribute('aria-pressed', 'false')
+
+    // Bateu no endpoint certo (estado do viewer), via GET (sem method).
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/social')
+
+    // O BUG: NÃO mostra mais o convite "Entrar para..." pra quem está logado.
+    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
+    expect(screen.queryByRole('link', { name: M.convidaEntrarFavorito })).toBeNull()
+  })
+
+  it('T9 — LOGADO DONO no caminho público (isOwner): esconde voto, favoritar funcional', async () => {
+    setSession('logged-in')
+    mockFetch({ status: 200, body: { viewerVoted: false, viewerFavorited: true, isOwner: true } })
+    renderControls({ initialVoteCount: 5 })
+
+    // Favorito hidratado (dono pode favoritar a própria).
+    expect(await screen.findByRole('button', { name: M.favoritado })).toBeInTheDocument()
+    // Voto AUSENTE: dono não vota na própria (AC2), descoberto pelo `isOwner` do fetch.
+    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
+    // Contagem read-only permanece visível.
+    expect(screen.getByText('5 votos')).toBeInTheDocument()
+  })
+
+  it('T10 — sessão PENDENTE no caminho público: nem convite nem botões (só contagem), sem fetch', () => {
+    setSession('pending')
+    const fetchMock = mockFetch({ status: 200, body: {} })
+    renderControls({ initialVoteCount: 5 })
+
+    // Contagem read-only fica; nada de flash de "Entrar" nem de botões enquanto a sessão pende.
+    expect(screen.getByText('5 votos')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.favoritar })).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('T11 — GET /social FALHA (logado): degrada pra botões interativos (defaults), nunca convite', async () => {
+    setSession('logged-in')
+    mockFetch({ reject: true })
+    renderControls({ initialVoteCount: 5 })
+
+    // Degradação graciosa: botões interativos com defaults (não-votado/não-favoritado), nunca o
+    // convite "Entrar" (o usuário está logado) nem crash. O server corrige no clique.
+    const votar = await screen.findByRole('button', { name: M.votar })
+    expect(votar).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: M.favoritar })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
+  })
+
+  it('T12 — LOGADO via caminho público hidratado: clicar VOTA de fato (POST /vote)', async () => {
+    const user = userEvent.setup()
+    setSession('logged-in')
+    // Mock por URL: GET /social hidrata (não votado); POST /vote confirma.
+    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0])
+      const body = url.endsWith('/social')
+        ? { viewerVoted: false, viewerFavorited: false, isOwner: false }
+        : { voteCount: 6, viewerVoted: true }
+      return { ok: true, status: 200, json: async () => body } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderControls({ initialVoteCount: 5 })
+
+    // Espera a hidratação (botão "Votar" interativo disponível).
+    const votar = await screen.findByRole('button', { name: M.votar })
+    await user.click(votar)
+
+    // Votou de verdade pelo endpoint real (não "Entrar para votar").
+    expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/recipes/r-1/vote')).toBe(true)
+    const votado = await screen.findByRole('button', { name: M.votado })
+    expect(votado).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('6 votos')).toBeInTheDocument()
   })
 })

@@ -12,6 +12,7 @@ import { POST as unfavoriteRoute } from '@/app/api/recipes/[id]/unfavorite/route
 import { POST as publishRoute } from '@/app/api/recipes/[id]/publish/route'
 import { POST as unpublishRoute } from '@/app/api/recipes/[id]/unpublish/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
+import { GET as socialGet } from '@/app/api/recipes/[id]/social/route'
 import { GET as searchRoute } from '@/app/api/search/route'
 import { seedSessionHeaders, seedDeletedSessionHeaders } from '../helpers/users'
 import {
@@ -71,6 +72,11 @@ function unpublish(id: string, headers?: Headers): Promise<Response> {
 }
 function get(id: string, headers?: Headers): Promise<Response> {
   return recipeGet(new Request(`http://localhost/api/recipes/${id}`, { headers }), {
+    params: Promise.resolve({ id }),
+  })
+}
+function social(id: string, headers?: Headers): Promise<Response> {
+  return socialGet(new Request(`http://localhost/api/recipes/${id}/social`, { headers }), {
     params: Promise.resolve({ id }),
   })
 }
@@ -458,5 +464,143 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     const after = await get(id)
     const view = (await after.json()) as { voteCount?: number }
     expect(view.voteCount).toBe(2)
+  })
+})
+
+/**
+ * GET /api/recipes/[id]/social (#230 follow-up) — estado social do PRÓPRIO viewer pro caminho
+ * PÚBLICO/cacheável do detalhe (que lê anônimo, sem cookie). Espelha as garantias da rota de voto:
+ * sessão (401), pool-gate leak-safe (404), `isOwner` p/ esconder o voto do dono, e per-viewer
+ * (no-store, nunca vaza estado alheio).
+ */
+type SocialBody = { viewerVoted: boolean; viewerFavorited: boolean; isOwner: boolean }
+
+describe('GET /api/recipes/[id]/social (#230 follow-up)', () => {
+  it('logado NÃO-dono no pool: reflete o próprio voto/favorito; isOwner=false; no-store', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'soc-viewer@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    // Antes de qualquer ação: ambos false, isOwner false.
+    const before = await social(id, headers)
+    expect(before.status).toBe(200)
+    expect((await before.json()) as SocialBody).toEqual({
+      viewerVoted: false,
+      viewerFavorited: false,
+      isOwner: false,
+    })
+
+    await vote(id, headers)
+    await favorite(id, headers)
+
+    const after = await social(id, headers)
+    expect(after.status).toBe(200)
+    expect(after.headers.get('cache-control')).toBe('no-store')
+    expect((await after.json()) as SocialBody).toEqual({
+      viewerVoted: true,
+      viewerFavorited: true,
+      isOwner: false,
+    })
+  })
+
+  it('DONO no pool: isOwner=true; reflete o próprio favorito (votar na própria é impossível)', async () => {
+    const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'soc-own2@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    await favorite(id, ownerHeaders) // dono pode favoritar a própria
+
+    const res = await social(id, ownerHeaders)
+    expect(res.status).toBe(200)
+    expect((await res.json()) as SocialBody).toEqual({
+      viewerVoted: false,
+      viewerFavorited: true,
+      isOwner: true,
+    })
+  })
+
+  it('Catálogo (owner NULL): isOwner=false p/ qualquer logado; reflete o voto', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'soc-cat@ex.com' })
+    const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Feijoada', provenance: 'escrita_por_pessoa' })
+    await vote(id, headers)
+
+    const res = await social(id, headers)
+    expect(res.status).toBe(200)
+    expect((await res.json()) as SocialBody).toEqual({
+      viewerVoted: true,
+      viewerFavorited: false,
+      isOwner: false, // owner NULL nunca casa com o viewer
+    })
+  })
+
+  it('leak-safe: terceiro logado NÃO vê o voto/favorito alheio (ambos false)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-leak-owner@ex.com' })
+    const { headers: voterHeaders } = await seedSessionHeaders({ email: 'soc-leak-voter@ex.com' })
+    const { headers: otherHeaders } = await seedSessionHeaders({ email: 'soc-leak-other@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    await vote(id, voterHeaders)
+    await favorite(id, voterHeaders)
+
+    const res = await social(id, otherHeaders)
+    expect(res.status).toBe(200)
+    expect((await res.json()) as SocialBody).toEqual({
+      viewerVoted: false,
+      viewerFavorited: false,
+      isOwner: false,
+    })
+  })
+
+  it('anônimo ⇒ 401 nao_autenticado (antes do DB)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-anon-owner@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    const res = await social(id) // sem headers
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
+  })
+
+  it('conta soft-deletada ⇒ 401 conta_desativada', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-del-owner@ex.com' })
+    const { headers } = await seedDeletedSessionHeaders({ email: 'soc-del-viewer@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    const res = await social(id, headers)
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: 'conta_desativada' })
+  })
+
+  it('privada de OUTRO ⇒ 404 leak-safe (gate de pool, não vaza existência)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-priv-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'soc-priv-viewer@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_structured',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      ownerId: owner,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Segredo', provenance: 'escrita_por_pessoa' })
+
+    const res = await social(id, headers)
+    expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toMatchObject({ error: 'not_found' })
+  })
+
+  it('playful ⇒ 404 (fora do pool)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'soc-play-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'soc-play-viewer@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      resultKind: 'playful',
+      ownerId: owner,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Zoeira', provenance: 'escrita_por_pessoa' })
+
+    const res = await social(id, headers)
+    expect(res.status).toBe(404)
+  })
+
+  it('id não-uuid ⇒ 404 (curto-circuito isUuid); uuid inexistente ⇒ 404', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'soc-badid@ex.com' })
+    expect((await social('not-a-uuid', headers)).status).toBe(404)
+    expect((await social('00000000-0000-0000-0000-000000000000', headers)).status).toBe(404)
   })
 })
