@@ -99,7 +99,7 @@ async function decide(row: Row, noAi: boolean): Promise<Decision> {
   const raw = await aiStrip(row)
   if (raw == null) return { kind: 'ai-failed', row }
   const candidate = stripLeadingConnector(raw) // limpa resíduo "de farinha" → "farinha"
-  const v = validateStrippedName(before, candidate, row.unidade)
+  const v = validateStrippedName(before, candidate)
   if (!v.ok) return { kind: 'flagged', row, candidate, reason: v.reason }
   const after = candidate.trim()
   return after !== before ? { kind: 'change', row, after } : { kind: 'noop', row }

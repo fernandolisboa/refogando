@@ -8,15 +8,11 @@
  * testáveis aqui. Nada de DB, nada de SDK.
  */
 
-import { UNIT_ALIASES } from '@/domain/recipe-import-parse'
-
 // Frases de "a gosto"/"q.b." (+ equivalentes EN) que indicam medida não-mensurável embutida no texto.
 const TASTE_PHRASE_RE = /(a\s+gosto|à\s+gosto|q\.?\s?b\.?|quanto\s+baste|to\s+taste|as\s+needed)/i
 
 // Conectores líderes ("de"/"of"…) que ligam a medida ao nome — REMOVÍVEIS, não palavras do nome.
 const CONNECTORS = new Set(['de', 'do', 'da', 'dos', 'das', 'of'])
-// Palavras das frases "a gosto"/"q.b." (normalizadas) — removíveis quando a unidade é a_gosto/q_b.
-const TASTE_WORDS = new Set(['a', 'gosto', 'q', 'b', 'qb', 'quanto', 'baste', 'to', 'taste', 'as', 'needed'])
 
 /** Normaliza p/ comparar palavras: minúsculas, sem acento, só alfanumérico ('Açúcar,' → 'acucar'). */
 export function normalizeWord(s: string): string {
@@ -51,58 +47,42 @@ export function stillEmbedsMeasure(rawText: string | null, unidade: string | nul
   return false
 }
 
-/** Palavras (normalizadas) das formas de superfície de UMA unidade do enum — REMOVÍVEIS (são medida,
- * não nome). Fonte única: o `UNIT_ALIASES` do importador (+ o próprio slug do enum, ex.
- * colher_de_sopa → colher/de/sopa). Vazio quando `unidade` é null. */
-function unitSurfaceWords(unidade: string | null): Set<string> {
-  const out = new Set<string>()
-  if (unidade == null) return out
-  for (const part of unidade.split('_')) {
-    const n = normalizeWord(part)
-    if (n !== '') out.add(n)
-  }
-  for (const [surface, u] of Object.entries(UNIT_ALIASES)) {
-    if (u !== unidade) continue
-    for (const word of surface.split(/\s+/)) {
-      const n = normalizeWord(word)
-      if (n !== '') out.add(n)
-    }
-  }
-  return out
+/**
+ * Tira do FIM do texto o "ruído" que NÃO faz parte do núcleo do nome e que o modelo pode legitimamente
+ * largar: parêntese final ("(cerca de 1,2 kg)"), frase de propósito ("para servir/untar/decorar/…") e
+ * a frase não-mensurável ("a gosto"/"q.b."). Usado só pra achar a palavra-NÚCLEO do nome (o head).
+ */
+export function stripTrailingNoise(s: string): string {
+  let t = s.trim()
+  t = t.replace(/\s*\([^)]*\)\s*$/, '').trim() // parêntese final
+  t = t.replace(/\s+para\s+\S.*$/i, '').trim() // "… para servir/untar/…"
+  t = t.replace(/[\s,]*(a\s+gosto|à\s+gosto|q\.?\s?b\.?|quanto\s+baste|to\s+taste|as\s+needed)\s*$/i, '').trim()
+  return t
 }
 
-/** Um token do original é parte da MEDIDA (removível) — número, conector, palavra-de-unidade, ou
- * (em a_gosto/q_b) palavra da frase "a gosto"? Senão é palavra do NOME, que TEM de sobreviver. */
-function isMeasureWord(token: string, unidade: string | null): boolean {
-  const n = normalizeWord(token)
-  if (n === '') return true // pontuação/fração solta (½) — removível
-  if (/^\d+$/.test(n)) return true // número (incl. "1/2"→"12")
-  if (CONNECTORS.has(n)) return true
-  if (unitSurfaceWords(unidade).has(n)) return true
-  if ((unidade === 'a_gosto' || unidade === 'q_b') && TASTE_WORDS.has(n)) return true
-  return false
+/** A última palavra de CONTEÚDO do nome (o "head"/núcleo) — âncora confiável: a medida vem ANTES
+ * (prefixo: "320 g de …") e o ruído de propósito vem DEPOIS (tirado por `stripTrailingNoise`). */
+function lastContentWord(s: string): string | null {
+  const words = stripTrailingNoise(s).split(/\s+/).map(normalizeWord).filter((w) => w !== '')
+  return words.length > 0 ? words[words.length - 1] : null
 }
 
 export type StripValidation = { ok: true } | { ok: false; reason: string }
 
 /**
  * GUARD anti-alucinação da saída do modelo: o `nome` proposto tem de ser uma REDUÇÃO do original que
- * só TIRA a MEDIDA — não inventa, não traduz, não reescreve, e (crucial) NÃO DROPA palavra do nome.
- * Cruza com a `unidade` conhecida pra separar palavra-de-medida de palavra-de-nome. Rejeita se:
+ * só TIRA a MEDIDA — não inventa, não traduz, e (crucial) NÃO DROPA o NÚCLEO do nome. Rejeita se:
  *  - vazio (após trim);
  *  - mais COMPRIDO que o original (strip só encurta);
  *  - introduz um TOKEN novo (palavra ausente no original, ignorando acento/caixa) — pega tradução/rephrase;
  *  - introduz um DÍGITO ausente no original (a medida SAI, não entra);
- *  - SUME com uma palavra do NOME (token do original que NÃO é medida e não aparece no candidato) —
- *    pega a omissão, a classe de alucinação mais natural de um "tira o texto" ("queijo parmesão ralado"
- *    → "parmesão" é REJEITADO).
+ *  - SOME com a palavra-NÚCLEO do nome (a última palavra de conteúdo do original, fora o ruído de
+ *    propósito) — pega a omissão corruptora ("100 g de queijo parmesão ralado" → "parmesão" REJEITADO,
+ *    "300 g de azeite de oliva extra virgem" → "azeite" REJEITADO), SEM barrar o strip benéfico de
+ *    palavras de porção/recipiente ("4 folhas de alga nori" → "alga nori" PASSA, núcleo "nori" intacto).
  * Linha rejeitada mantém o `raw_text` original e é SINALIZADA pro dono revisar à mão (nunca corrompe).
  */
-export function validateStrippedName(
-  original: string,
-  candidate: string,
-  unidade: string | null,
-): StripValidation {
+export function validateStrippedName(original: string, candidate: string): StripValidation {
   const orig = original.trim()
   const cand = candidate.trim()
   if (cand === '') return { ok: false, reason: 'nome vazio' }
@@ -116,13 +96,11 @@ export function validateStrippedName(
     if (!origTokens.has(n)) return { ok: false, reason: `token novo "${n}" (não estava no original)` }
   }
 
-  // Toda palavra do NOME (token do original que não é medida) TEM de sobreviver — pega a omissão.
-  for (const w of orig.split(/\s+/)) {
-    if (isMeasureWord(w, unidade)) continue
-    const n = normalizeWord(w)
-    if (n !== '' && !candSet.has(n)) {
-      return { ok: false, reason: `palavra do nome sumiu "${w}"` }
-    }
+  // O NÚCLEO do nome (última palavra de conteúdo) TEM de sobreviver — pega a omissão corruptora sem
+  // barrar o strip de porção/propósito (que mexe só no prefixo/sufixo de ruído, não no head).
+  const head = lastContentWord(orig)
+  if (head != null && !candSet.has(head)) {
+    return { ok: false, reason: `palavra-núcleo do nome sumiu "${head}"` }
   }
 
   const origDigits = new Set(orig.match(/\d/g) ?? [])

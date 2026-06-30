@@ -4,6 +4,7 @@ import {
   stillEmbedsMeasure,
   validateStrippedName,
   stripLeadingConnector,
+  stripTrailingNoise,
   normalizeWord,
   buildStripUserPrompt,
 } from '../../scripts/lib/measure-strip'
@@ -49,39 +50,62 @@ describe('stillEmbedsMeasure — verificação pós-migração', () => {
   })
 })
 
-describe('validateStrippedName — guard anti-alucinação', () => {
+describe('validateStrippedName — guard anti-alucinação (preserva o NÚCLEO)', () => {
   it('redução legítima (medida removida) ⇒ ok', () => {
-    expect(validateStrippedName('320 g de arroz arbóreo', 'arroz arbóreo', 'g')).toEqual({ ok: true })
-    expect(validateStrippedName('2 xícaras de farinha', 'farinha', 'xicara')).toEqual({ ok: true })
-    expect(validateStrippedName('sal a gosto', 'sal', 'a_gosto')).toEqual({ ok: true })
-    expect(validateStrippedName('Açúcar refinado', 'Açúcar refinado', null)).toEqual({ ok: true }) // já limpo
-    expect(validateStrippedName('100 g de queijo parmesão ralado', 'queijo parmesão ralado', 'g')).toEqual({ ok: true })
+    expect(validateStrippedName('320 g de arroz arbóreo', 'arroz arbóreo')).toEqual({ ok: true })
+    expect(validateStrippedName('2 xícaras de farinha', 'farinha')).toEqual({ ok: true })
+    expect(validateStrippedName('sal a gosto', 'sal')).toEqual({ ok: true })
+    expect(validateStrippedName('Açúcar refinado', 'Açúcar refinado')).toEqual({ ok: true }) // já limpo
+    expect(validateStrippedName('100 g de queijo parmesão ralado', 'queijo parmesão ralado')).toEqual({ ok: true })
   })
-  it('DROPAR palavra do NOME ⇒ rejeita (a omissão é a alucinação mais natural de "tira o texto")', () => {
-    // o modelo dropa "queijo" e "ralado" — passava no guard antigo (subset, menor, sem dígito novo).
-    expect(validateStrippedName('100 g de queijo parmesão ralado', 'parmesão', 'g').ok).toBe(false)
-    expect(validateStrippedName('300 g de azeite de oliva extra virgem', 'azeite', 'g').ok).toBe(false)
+  it('strip BENÉFICO de porção/recipiente/propósito ⇒ ok (núcleo intacto)', () => {
+    // o modelo larga palavras de porção/recipiente que NÃO são a unidade estruturada — desejável.
+    expect(validateStrippedName('4 folhas de alga nori', 'alga nori')).toEqual({ ok: true })
+    expect(validateStrippedName('1 ramo de tomilho fresco', 'tomilho fresco')).toEqual({ ok: true })
+    expect(validateStrippedName('Três quartos de xícara de água', 'água')).toEqual({ ok: true })
+    // propósito no fim ("para servir/untar") é ruído — largá-lo mantém o núcleo.
+    expect(validateStrippedName('Manteiga para untar', 'Manteiga')).toEqual({ ok: true })
+    expect(validateStrippedName('Folhas de alface para servir', 'folhas de alface')).toEqual({ ok: true })
+    // parêntese final ("(cerca de 1,2 kg)") é ruído.
+    expect(validateStrippedName('1 frango cortado em pedaços (cerca de 1,2 kg)', 'frango cortado em pedaços')).toEqual({ ok: true })
+  })
+  it('DROPAR o NÚCLEO do nome ⇒ rejeita (omissão corruptora)', () => {
+    // dropa "queijo" e "ralado" (o núcleo "ralado" some) — passava no guard antigo (subset/menor).
+    expect(validateStrippedName('100 g de queijo parmesão ralado', 'parmesão').ok).toBe(false)
+    // dropa "de oliva extra virgem" (núcleo "virgem" some) — perde o nome.
+    expect(validateStrippedName('300 g de azeite de oliva extra virgem', 'azeite').ok).toBe(false)
   })
   it('vazio ⇒ rejeita', () => {
-    expect(validateStrippedName('sal a gosto', '   ', 'a_gosto').ok).toBe(false)
+    expect(validateStrippedName('sal a gosto', '   ').ok).toBe(false)
   })
   it('mais comprido que o original ⇒ rejeita', () => {
-    expect(validateStrippedName('sal', 'sal refinado especial', 'a_gosto').ok).toBe(false)
+    expect(validateStrippedName('sal', 'sal refinado especial').ok).toBe(false)
   })
   it('token NOVO (tradução/rephrase) ⇒ rejeita', () => {
     // "branco" não estava em "açúcar mascavo"
-    expect(validateStrippedName('2 xícaras de açúcar mascavo', 'açúcar branco', 'xicara').ok).toBe(false)
+    expect(validateStrippedName('2 xícaras de açúcar mascavo', 'açúcar branco').ok).toBe(false)
     // tradução: "flour" não estava em "farinha de trigo"
-    expect(validateStrippedName('200 g de farinha de trigo', 'wheat flour', 'g').ok).toBe(false)
+    expect(validateStrippedName('200 g de farinha de trigo', 'wheat flour').ok).toBe(false)
   })
   it('dígito NOVO ⇒ rejeita', () => {
-    expect(validateStrippedName('320 g de arroz', '32 arroz', 'g').ok).toBe(false)
+    expect(validateStrippedName('320 g de arroz', '32 arroz').ok).toBe(false)
   })
   it('dígito legítimo do nome (presente no original) ⇒ ok', () => {
-    expect(validateStrippedName('200 ml de leite 2%', 'leite 2%', 'ml')).toEqual({ ok: true })
+    expect(validateStrippedName('200 ml de leite 2%', 'leite 2%')).toEqual({ ok: true })
   })
   it('acento/caixa NÃO contam como token novo nem como sumiço', () => {
-    expect(validateStrippedName('2 dentes de ALHO', 'alho', 'dente')).toEqual({ ok: true })
+    expect(validateStrippedName('2 dentes de ALHO', 'alho')).toEqual({ ok: true })
+  })
+})
+
+describe('stripTrailingNoise', () => {
+  it('tira parêntese final, propósito e frase "a gosto"', () => {
+    expect(stripTrailingNoise('frango (cerca de 1,2 kg)')).toBe('frango')
+    expect(stripTrailingNoise('manteiga para untar')).toBe('manteiga')
+    expect(stripTrailingNoise('sal a gosto')).toBe('sal')
+  })
+  it('preserva um nome sem ruído', () => {
+    expect(stripTrailingNoise('azeite de oliva extra virgem')).toBe('azeite de oliva extra virgem')
   })
 })
 

@@ -150,7 +150,7 @@ function parseInstructions(v: unknown): string[] {
 
 // Unidades reconhecíveis no texto cru de ingrediente → nosso enum `Unidade`. Best-effort, conservador:
 // só aliases comuns PT/EN sem ambiguidade. O que não casar fica como rawText puro (qty/unidade null).
-export const UNIT_ALIASES: Record<string, Unidade> = {
+const UNIT_ALIASES: Record<string, Unidade> = {
   // métricas (PT/EN compartilham)
   g: 'g', grama: 'g', gramas: 'g', gram: 'g', grams: 'g',
   kg: 'kg', quilo: 'kg', quilos: 'kg', kilogram: 'kg', kilograms: 'kg', kilo: 'kg',
