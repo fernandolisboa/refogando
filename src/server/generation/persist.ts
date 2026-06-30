@@ -302,7 +302,7 @@ export async function persistGeneration(
           ordem: index,
           quantidade: item.quantidade,
           unidade: item.unidade,
-          rawText: item.rawText,
+          rawText: item.nome, // gen schema emite `nome` (sem medida) → coluna raw_text (ADR-0009 Adendo)
         })),
       )
     }

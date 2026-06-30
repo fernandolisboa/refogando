@@ -273,7 +273,7 @@ export async function regenerateRecipe(
         {
           titulo: result.recipe.titulo,
           cozinha: result.recipe.cozinha,
-          ingredientes: result.recipe.ingredientes.map((i) => i.rawText ?? ''),
+          ingredientes: result.recipe.ingredientes.map((i) => i.nome),
         },
       ),
     })

@@ -41,10 +41,12 @@ describe('parseImportedRecipe (#165)', () => {
     expect(r.recipe.originalLocale).toBe('pt-BR')
     expect(r.recipe.passos).toEqual(['Misture tudo', 'Asse por 40 minutos'])
     expect(r.recipe.sourceName).toBe('Cozinha da Vovó')
-    // best-effort de qty/unidade: "2 xícaras..." → 2 / xicara; "3 ovos" → 3 / null; "sal a gosto" → null/null
+    // best-effort: a medida vai para qty/unidade e é TIRADA do nome (rawText = nome SEM medida,
+    // ADR-0012 Adendo). "2 xícaras de farinha" → 2 / xicara / "farinha"; "3 ovos" → 3 / null /
+    // "ovos"; "sal a gosto" (sem número líder) → null/null e o nome fica cru ("sal a gosto").
     expect(r.recipe.ingredientes).toEqual([
-      { rawText: '2 xícaras de farinha', quantidade: '2', unidade: 'xicara' },
-      { rawText: '3 ovos', quantidade: '3', unidade: null },
+      { rawText: 'farinha', quantidade: '2', unidade: 'xicara' },
+      { rawText: 'ovos', quantidade: '3', unidade: null },
       { rawText: 'sal a gosto', quantidade: null, unidade: null },
     ])
   })
@@ -119,11 +121,37 @@ describe('parseImportedRecipe (#165)', () => {
     )
     expect(r.ok).toBe(true)
     if (!r.ok) return
+    // medida TIRADA do nome; o conector líder ("of") some, o nome preserva o casing original.
     expect(r.recipe.ingredientes).toEqual([
-      { rawText: '2 tablespoons olive oil', quantidade: '2', unidade: 'colher_de_sopa' },
-      { rawText: '500 g flour', quantidade: '500', unidade: 'g' },
-      { rawText: '3 cloves garlic', quantidade: '3', unidade: 'dente' },
+      { rawText: 'olive oil', quantidade: '2', unidade: 'colher_de_sopa' },
+      { rawText: 'flour', quantidade: '500', unidade: 'g' },
+      { rawText: 'garlic', quantidade: '3', unidade: 'dente' },
       { rawText: 'a handful of salt', quantidade: null, unidade: null },
+    ])
+  })
+
+  it('TIRA a medida do nome: número + unidade + conector ("320 g de arroz arbóreo" → "arroz arbóreo")', () => {
+    const r = parseImportedRecipe(
+      htmlWith({
+        '@type': 'Recipe',
+        name: 'Risoto',
+        inLanguage: 'pt-BR',
+        recipeIngredient: [
+          '320 g de arroz arbóreo',
+          '2 colheres de sopa de azeite',
+          '½ xícara de vinho branco',
+          '4 ovos',
+        ],
+      }),
+      SRC,
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.recipe.ingredientes).toEqual([
+      { rawText: 'arroz arbóreo', quantidade: '320', unidade: 'g' },
+      { rawText: 'azeite', quantidade: '2', unidade: 'colher_de_sopa' },
+      { rawText: 'vinho branco', quantidade: '0.5', unidade: 'xicara' },
+      { rawText: 'ovos', quantidade: '4', unidade: null },
     ])
   })
 

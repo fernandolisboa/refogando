@@ -8,30 +8,59 @@ import { isUnidade } from '@/domain/vocabulary'
  * duplicação sustentava o bug da medida DUPLICADA ("320 g — 320 g de arroz arbóreo"), pois só uma
  * cópia seria corrigida. Unificado pra nunca mais divergir.
  *
- * CONTRATO: `rawText` é a LINHA DE EXIBIÇÃO do ingrediente — a LINHA HUMANA COMPLETA, com a medida.
- * É assim que TODA origem de produção a grava: IA (`ai_*`) e seed de catálogo (o modelo devolve "320 g
- * de arroz arbóreo"), `web_imported` (`recipe-import-parse`: "rawText carrega tudo"), `derive` (herda
- * da base), e o form de edição do dono (pré-preenche e edita a linha completa). O schema reforça:
- * "'a gosto' vive em rawText". `quantidade`/`unidade` são metadados ESTRUTURADOS ADVISÓRIOS
- * (escala/filtro/linking canônico) — o display NÃO os recompõe, senão duplica a medida. Logo: EXIBE
- * `rawText` direto; só quando falta (dado malformado) cai na medida estruturada como fallback.
+ * CONTRATO (ADR-0012 Adendo 2026-06-30, Direção B): a medida estruturada (`quantidade`/`unidade`) é
+ * a fonte ÚNICA da medida; `rawText` é o NOME do ingrediente SEM a medida ("arroz arbóreo", nunca
+ * "320 g de arroz arbóreo"). A exibição COMPÕE "medida — nome" — em-dash, ZERO gramática (não
+ * pluraliza a unidade, sem conector "de", locale-neutro):
+ *   - não-contável (`g/kg/ml/l/colher_de_sopa/colher_de_cha/xicara/dente/fatia/pitada`):
+ *     `"{qtd} {unitLabel} — {nome}"`;
+ *   - contável (`unidade`): LARGA a palavra "unidade" → `"{qtd} {nome}"` ("2 cebolas"; o plural
+ *     estático já vem no nome);
+ *   - `a_gosto`/`q_b`: SUFIXO → `"{nome} — a gosto"` / `"{nome} — q.b."`;
+ *   - sem unidade mas COM quantidade (ex.: importação "3 cenouras médias") → `"{qtd} {nome}"`;
+ *   - sem medida (qty null + unidade null): só `"{nome}"`.
  *
- * RESSALVA (contrato dividido): os forms HUMANOS de catálogo (`catalog-recipe-form`) e de edição
- * (`recipe-edit-form`) têm campos SEPARADOS de quantidade/unidade e PODERIAM gravar `rawText` só-nome.
- * Os placeholders agora guiam a LINHA COMPLETA (ex.: "500 g de feijão preto") pra conformar ao
- * contrato; verificado no DB de prod: 0 linhas são só-nome (todas trazem a medida embutida). Se uma
- * só-nome for gravada com medida estruturada à parte, o display mostra só o nome (a medida advisória
- * não é recomposta) — tradeoff aceito pra eliminar a duplicação; unificar o write-path (parsear a
- * linha como o importador faz) fica de follow-up.
+ * Escalar por porções (futuro) = `quantidade × ratio` (aritmética, não IA); a flexão de plural sob
+ * escala virá do Ingrediente canônico (deferido). A exibição estática NÃO flexiona: o nome já nasce
+ * concordando com a quantidade gerada.
+ *
+ * FALLBACK defensivo (nome ausente/vazio — não ocorre em prod pós-migração de `raw_text`→nome):
+ * exibe só a medida estruturada localizada, ao menos. Supera o remendo do PR #354, que exibia
+ * `rawText` cru (a linha humana completa) — agora a linha é COMPOSTA da fonte única.
  */
 export function formatIngredientLine(item: IngredientView, m: Messages): string {
-  const raw = item.rawText?.trim()
-  if (raw) return raw
-  // Fallback defensivo (rawText ausente/vazio): a medida estruturada, ao menos.
-  const quantidade =
+  const nome = item.rawText?.trim() ?? ''
+  const qtd =
     item.quantidade != null && item.quantidade !== '' ? formatQuantidade(item.quantidade) : null
-  const unidade = item.unidade != null && item.unidade !== '' ? formatUnidade(item.unidade, m) : null
-  return [quantidade, unidade].filter((p) => p != null && p !== '').join(' ')
+  const unidade = item.unidade != null && item.unidade !== '' ? item.unidade : null
+
+  // FALLBACK defensivo: sem nome, exibe só a medida estruturada (quantidade + unidade localizada).
+  // Em prod (pós-migração) `nome` é sempre o nome do ingrediente; este ramo é rede contra dado
+  // malformado, e preserva o comportamento anterior do helper para esse caso de borda.
+  if (nome === '') {
+    const u = unidade != null ? formatUnidade(unidade, m) : null
+    return [qtd, u].filter((p) => p != null && p !== '').join(' ')
+  }
+
+  // `a_gosto`/`q_b`: não-mensuráveis → SUFIXO; a quantidade (se houver, defensivo) é ignorada.
+  if (unidade === 'a_gosto' || unidade === 'q_b') {
+    return `${nome} — ${formatUnidade(unidade, m)}`
+  }
+
+  // Contável (`unidade`): larga a palavra "unidade" → "{qtd} {nome}" ("2 cebolas").
+  if (unidade === 'unidade') {
+    return qtd != null ? `${qtd} ${nome}` : nome
+  }
+
+  // Não-contável (demais unidades do enum) OU unidade fora do enum (defensivo, sai crua):
+  // compõe "{qtd} {unitLabel} — {nome}" (em-dash). SÓ com quantidade — sem ela, a unidade
+  // sozinha não é medida ("g — arroz" não diz nada); larga o rótulo órfão e exibe só o nome.
+  if (unidade != null) {
+    return qtd != null ? `${qtd} ${formatUnidade(unidade, m)} — ${nome}` : nome
+  }
+
+  // Sem unidade: quantidade solta (ex.: "3 cenouras médias") OU só o nome.
+  return qtd != null ? `${qtd} ${nome}` : nome
 }
 
 /** Tira zeros à direita do `numeric(10,3)` (`'2.500'`→`'2.5'`); não-número cai no cru (nunca `NaN`). */

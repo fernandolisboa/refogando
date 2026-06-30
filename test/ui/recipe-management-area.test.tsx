@@ -59,7 +59,7 @@ function ownerView(over: Partial<RecipeView> = {}): RecipeView {
     facets: { cozinha: 'brasileira', categoria: 'sobremesa', tags: [] },
     porcoes: 4,
     dificuldade: 2,
-    ingredients: [{ ordem: 0, quantidade: '2.000', unidade: 'xicara', rawText: '2 xícaras de farinha' }],
+    ingredients: [{ ordem: 0, quantidade: '2.000', unidade: 'xicara', rawText: 'farinha' }],
     translations: [],
     autoTranslationSignal: false,
     canManage: true,

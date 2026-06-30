@@ -126,11 +126,12 @@ export const CANONICAL_IMPORTED_RECIPE: ImportedRecipe = {
   ],
   notas: null,
   originalLocale: 'pt-BR',
+  // `rawText` = NOME sem a medida (ADR-0012 Adendo): a medida vive em quantidade/unidade.
   ingredientes: [
-    { rawText: '3 cenouras médias', quantidade: '3', unidade: 'unidade' },
-    { rawText: '4 ovos', quantidade: '4', unidade: null },
-    { rawText: '2 xícaras de açúcar', quantidade: '2', unidade: 'xicara' },
-    { rawText: '2 xícaras de farinha de trigo', quantidade: '2', unidade: 'xicara' },
+    { rawText: 'cenouras médias', quantidade: '3', unidade: 'unidade' },
+    { rawText: 'ovos', quantidade: '4', unidade: null },
+    { rawText: 'açúcar', quantidade: '2', unidade: 'xicara' },
+    { rawText: 'farinha de trigo', quantidade: '2', unidade: 'xicara' },
   ],
   sourceName: 'Cozinha da Vovó',
 }

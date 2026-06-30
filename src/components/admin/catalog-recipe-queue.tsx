@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { RecipeView, GalleryImage } from '@/domain/recipe-read'
+import { formatIngredientLine } from '@/domain/ingredient-line'
 import type { CatalogQueueItem } from '@/server/curate/recipe-curation'
 import { CatalogEditModal } from '@/components/admin/catalog-edit-modal'
 import { CatalogImageControls } from '@/components/admin/catalog-image-controls'
@@ -343,7 +344,9 @@ export function CatalogRecipeQueue() {
                             <p className="font-medium text-fg">{m.filaIngredientes}</p>
                             <ul className="list-disc pl-5 text-muted">
                               {v.ingredients.map((ing, i) => (
-                                <li key={i}>{ing.rawText ?? '—'}</li>
+                                // COMPÕE "medida — nome" (raw_text é o NOME, sem a medida — ADR-0012
+                                // Adendo); render cru mostraria só o nome, escondendo a medida do curador.
+                                <li key={i}>{formatIngredientLine(ing, messages) || '—'}</li>
                               ))}
                             </ul>
                           </div>

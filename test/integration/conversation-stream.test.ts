@@ -306,7 +306,7 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
         undefined,
         cannedSuccess({
           restricoes: ['sem_lactose'],
-          ingredientes: [{ rawText: 'leite integral', quantidade: '500.000', unidade: 'ml' }],
+          ingredientes: [{ nome: 'leite integral', quantidade: '500.000', unidade: 'ml' }],
         }),
         cannedTokens(),
       ),

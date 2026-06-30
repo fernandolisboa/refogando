@@ -45,12 +45,20 @@ export const RECIPE_GEN_KINDS = ['success', 'degraded', 'playful', 'impossible']
 // `quantidade` casa com `recipe_ingredient.quantidade` `numeric(10,3)`: null OU
 // numérico válido ('-' opcional, até 7 inteiros, '.' + 1-3 fracionários). Defense-
 // in-depth na fronteira do schema — structured output PODE tratar o pattern como
-// advisory, então o guard real é `classify` (generation.ts). 'a gosto' vive em rawText.
+// advisory, então o guard real é `classify` (generation.ts). A medida é ESTRUTURADA
+// (quantidade/unidade), NUNCA repetida no `nome` (ADR-0012/0009 Adendo 2026-06-30).
 const QUANTIDADE_RE = /^-?\d{1,7}(\.\d{1,3})?$/
 
-// Item de ingrediente: nasce com rawText (linking canônico é #9/#19).
+// Item de ingrediente: o campo de texto é o `nome` SEM a medida (ADR-0009 Adendo 2026-06-30) —
+// a medida é a fonte ÚNICA em quantidade/unidade; o nome do campo + o `.describe` são os sinais
+// que o structured output lê pra não despejar a linha-com-medida aqui. Mapeia para
+// `recipe_ingredient.raw_text` (sem rename de coluna). Linking canônico é #9/#19 (diferido).
 const IngredienteGen = z.object({
-  rawText: z.string(), // → recipe_ingredient.raw_text
+  nome: z
+    .string()
+    .describe(
+      "nome do ingrediente SEM quantidade/unidade — ex.: 'arroz arbóreo', nunca '320 g de arroz arbóreo'; a medida vai em quantidade + unidade",
+    ), // → recipe_ingredient.raw_text
   quantidade: z.string().regex(QUANTIDADE_RE).nullable(), // → recipe_ingredient.quantidade (numeric|null)
   unidade: z.enum(UNIDADES).nullable(), // → recipe_ingredient.unidade
 })
