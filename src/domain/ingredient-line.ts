@@ -8,12 +8,21 @@ import { isUnidade } from '@/domain/vocabulary'
  * duplicação sustentava o bug da medida DUPLICADA ("320 g — 320 g de arroz arbóreo"), pois só uma
  * cópia seria corrigida. Unificado pra nunca mais divergir.
  *
- * CONTRATO de `rawText`: é a LINHA HUMANA COMPLETA do ingrediente — INCLUI a medida — em TODA origem
- * de produção: IA (`ai_*`), seed de catálogo, `web_imported`, derive, e o que o form coleta (o campo
- * tem placeholder "Ex.: 1 cebola grande"; o schema diz "'a gosto' vive em rawText"). `quantidade`/
- * `unidade` são metadados ESTRUTURADOS (escala/filtro/linking canônico), NÃO se recompõem no display
- * — recompor com `${medida} — ${rawText}` duplicava a medida. Logo: EXIBE `rawText` direto. Só quando
- * ele falta (dado malformado, não ocorre em produção) cai na medida estruturada como fallback.
+ * CONTRATO: `rawText` é a LINHA DE EXIBIÇÃO do ingrediente — a LINHA HUMANA COMPLETA, com a medida.
+ * É assim que TODA origem de produção a grava: IA (`ai_*`) e seed de catálogo (o modelo devolve "320 g
+ * de arroz arbóreo"), `web_imported` (`recipe-import-parse`: "rawText carrega tudo"), `derive` (herda
+ * da base), e o form de edição do dono (pré-preenche e edita a linha completa). O schema reforça:
+ * "'a gosto' vive em rawText". `quantidade`/`unidade` são metadados ESTRUTURADOS ADVISÓRIOS
+ * (escala/filtro/linking canônico) — o display NÃO os recompõe, senão duplica a medida. Logo: EXIBE
+ * `rawText` direto; só quando falta (dado malformado) cai na medida estruturada como fallback.
+ *
+ * RESSALVA (contrato dividido): os forms HUMANOS de catálogo (`catalog-recipe-form`) e de edição
+ * (`recipe-edit-form`) têm campos SEPARADOS de quantidade/unidade e PODERIAM gravar `rawText` só-nome.
+ * Os placeholders agora guiam a LINHA COMPLETA (ex.: "500 g de feijão preto") pra conformar ao
+ * contrato; verificado no DB de prod: 0 linhas são só-nome (todas trazem a medida embutida). Se uma
+ * só-nome for gravada com medida estruturada à parte, o display mostra só o nome (a medida advisória
+ * não é recomposta) — tradeoff aceito pra eliminar a duplicação; unificar o write-path (parsear a
+ * linha como o importador faz) fica de follow-up.
  */
 export function formatIngredientLine(item: IngredientView, m: Messages): string {
   const raw = item.rawText?.trim()
