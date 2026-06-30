@@ -52,9 +52,17 @@ export function RecipeManagementArea({
   const sessionSettled = !session.isPending
   const loggedIn = sessionSettled && !session.error && !!session.data
 
-  // View do dono resolvida no cliente (caminho público + dono). `null` até resolver / se não-dono.
+  // Resolução da posse no caminho público:
+  //  - 'idle'      → ainda buscando (ou nem começou).
+  //  - 'owner'     → o servidor confirmou `canManage` (view do dono em `ownerView`).
+  //  - 'not-owner' → resposta DEFINITIVA de não-posse (200 sem canManage = pública de outro; 404 = privada
+  //                  de outro / inexistente). Pode mostrar "Criar minha versão" com segurança.
+  //  - 'error'     → INDETERMINADO (5xx/401/rede/JSON inválido): NÃO sabemos se é o dono ⇒ não arriscamos
+  //                  a afordância errada (mostrar "Criar minha versão" ao próprio dono faria ele DERIVAR
+  //                  uma cópia em vez de editar). Recupera no reload/navegação.
+  type Resolution = 'idle' | 'owner' | 'not-owner' | 'error'
   const [ownerView, setOwnerView] = useState<RecipeView | null>(null)
-  const [fetchDone, setFetchDone] = useState(false)
+  const [resolution, setResolution] = useState<Resolution>('idle')
 
   useEffect(() => {
     // PATH 2 (server já sabe) ou anônimo (nunca é dono) ⇒ não busca.
@@ -63,15 +71,23 @@ export function RecipeManagementArea({
     fetch(`/api/recipes/${view.id}?locale=${encodeURIComponent(locale)}`, { cache: 'no-store' })
       .then(async (res) => {
         if (cancelled) return
-        // SÓ confia no `canManage` do SERVIDOR (posse imposta pela sessão; 404 leak-safe a não-dono).
+        // SÓ confia no `canManage` do SERVIDOR (posse imposta pela sessão; nunca re-deriva no cliente).
         if (res.ok) {
           const v = (await res.json()) as RecipeView
-          if (v?.canManage) setOwnerView(v)
+          if (v?.canManage) {
+            setOwnerView(v)
+            setResolution('owner')
+          } else {
+            setResolution('not-owner') // pública de outro: 200 sem canManage.
+          }
+        } else if (res.status === 404) {
+          setResolution('not-owner') // 404 leak-safe: privada de outro / inexistente — não-gerenciável.
+        } else {
+          setResolution('error') // 5xx/401/etc: indeterminado.
         }
-        setFetchDone(true)
       })
       .catch(() => {
-        if (!cancelled) setFetchDone(true)
+        if (!cancelled) setResolution('error') // rede caiu / JSON inválido: indeterminado.
       })
     return () => {
       cancelled = true
@@ -100,12 +116,18 @@ export function RecipeManagementArea({
   if (serverManaged) return ownerControls(view, reviewImage)
 
   // PATH 1 (público):
+  // DONO já resolvido = STICKY (checado ANTES de !loggedIn): um blip transitório da sessão (refetch on
+  // focus devolvendo erro/null) NÃO deve jogar o dono de volta pro convite "Entrar"/derivar. (PATH 1 não
+  // tem o hint reviewImage ⇒ false.)
+  if (resolution === 'owner' && ownerView) return ownerControls(ownerView, false)
   if (!sessionSettled) return null // sessão resolvendo — espera (sem flash).
   // Anônimo: `RecipeDetailActions` resolve o convite pela própria sessão (sem fetch).
   if (!loggedIn) return <RecipeDetailActions view={view} locale={locale} />
-  if (!fetchDone) return null // logado, resolvendo posse — espera (evita flash de "Criar minha versão").
-  // Dono: gestão a partir da view buscada (PATH 1 não tem o hint reviewImage ⇒ false).
-  if (ownerView) return ownerControls(ownerView, false)
-  // Logado e NÃO-dono (ou fetch falhou): "Criar minha versão" / derivar.
-  return <RecipeDetailActions view={view} locale={locale} />
+  // Não-dono DEFINITIVO (pública de outro / 404): "Criar minha versão" / derivar.
+  if (resolution === 'not-owner') return <RecipeDetailActions view={view} locale={locale} />
+  // Em voo ('idle') OU indeterminado ('error'): NADA. Evita o flash de "Criar minha versão" enquanto
+  // resolve, e — no erro — evita mostrar a afordância ERRADA ao próprio dono (derivaria em vez de editar).
+  // O custo é uma região vazia breve pro logado-não-dono (maioria) — preço de não piscar a afordância
+  // errada; recupera no reload/navegação. (Derivar continua disponível pra não-dono assim que resolve.)
+  return null
 }

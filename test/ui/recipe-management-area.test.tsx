@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 import type { RecipeView } from '@/domain/recipe-read'
@@ -165,11 +165,39 @@ describe('RecipeManagementArea', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('PATH 1 + DONO mas fetch FALHA: degrada pra "Criar minha versão" (sem crash)', async () => {
-    mockFetch({ reject: true })
-    renderArea(publicView())
+  it('PATH 1 + fetch FALHA (rede): NADA — nunca a afordância errada ("Criar minha versão") ao dono', async () => {
+    // Erro indeterminado: pode ser o DONO. Mostrar "Criar minha versão" o faria DERIVAR em vez de editar.
+    const fetchMock = mockFetch({ reject: true })
+    const { container } = renderArea(publicView())
 
-    expect(await screen.findByRole('button', { name: M.minhasCriacoes.criarMinhaVersao })).toBeInTheDocument()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: M.minhasCriacoes.criarMinhaVersao })).toBeNull()
     expect(screen.queryByRole('button', { name: M.minhasCriacoes.editar })).toBeNull()
+    await waitFor(() => expect(container).toBeEmptyDOMElement())
+  })
+
+  it('PATH 1 + 5xx (indeterminado): NADA renderizado (não arrisca a afordância errada)', async () => {
+    const fetchMock = mockFetch({ status: 503, body: { error: 'oops' } })
+    const { container } = renderArea(publicView())
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await waitFor(() => expect(container).toBeEmptyDOMElement())
+    expect(screen.queryByRole('button', { name: M.minhasCriacoes.criarMinhaVersao })).toBeNull()
+  })
+
+  it('PATH 1 + DONO resolvido é STICKY: um blip da sessão NÃO volta pra convite/derivar', async () => {
+    mockFetch({ status: 200, body: ownerView() })
+    const { rerender } = renderArea(publicView())
+    expect(await screen.findByRole('button', { name: M.minhasCriacoes.editar })).toBeInTheDocument()
+
+    // A sessão "pisca" pra anônima (refetch on focus devolvendo null/erro) — a gestão NÃO pode sumir.
+    setSession('anon')
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeManagementArea view={publicView()} locale="pt-BR" reviewImage={false} />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('button', { name: M.minhasCriacoes.editar })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: M.nav.signIn })).toBeNull()
   })
 })

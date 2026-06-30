@@ -350,9 +350,15 @@ async function DetailChrome({
           (`view.canManage`) renderiza a gestão direto; no caminho PÚBLICO/cacheável resolve a posse NO
           CLIENTE (`useSession` + fetch da view do dono) — assim o DONO vendo a PRÓPRIA receita pública
           pela URL canônica vê Editar/status/imagem em vez de "Criar minha versão", sem quebrar a
-          cacheabilidade (nada de cookie no servidor público). `key={view.id}`: remonta por receita
-          (não carrega a view do dono anterior numa navegação detalhe→detalhe in-place). */}
-      <RecipeManagementArea key={view.id} view={view} locale={locale} reviewImage={reviewImage} />
+          cacheabilidade (nada de cookie no servidor público). `key` inclui id E locale: remonta por
+          receita (não carrega a view do dono anterior numa nav detalhe→detalhe in-place) E por idioma
+          (a view do dono buscada é localizada — troca de locale in-place busca de novo, sem stale). */}
+      <RecipeManagementArea
+        key={`${view.id}:${locale}`}
+        view={view}
+        locale={locale}
+        reviewImage={reviewImage}
+      />
     </Container>
   )
 }
