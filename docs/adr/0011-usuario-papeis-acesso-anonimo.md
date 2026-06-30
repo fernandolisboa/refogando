@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Emendado por ADR-0027 (2026-06-30):** as capacidades de papel listadas abaixo mudaram — o Usuário **não vota nem favorita** mais; ele **avalia** (Avaliação 1–5★), **coleciona** (Salvar + Coleções) e segue. Onde se lê "vota/favorita", considere "avalia/coleciona". O RBAC 3-tier segue intacto (ver ADR-0014).
+
 ## Identidade e propriedade
 
 Existe uma entidade **Usuário** com id estável. Dois conceitos distintos:

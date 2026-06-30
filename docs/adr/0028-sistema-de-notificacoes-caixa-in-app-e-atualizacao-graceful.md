@@ -1,0 +1,47 @@
+# ADR-0028 — Sistema de notificações: caixa in-app (pull, dado estruturado) + atualização graceful do cliente (sem toast)
+
+Status: aceito
+
+O ADR-0024 deixou **notificações** explicitamente deferidas ("avisar quando te seguem"). O dono retomou o tema pedindo um **sistema de notificações** maior, e a origem concreta foi um incômodo de **atualização**: num app anterior, iPhones "não atualizavam" — sem certeza se era **bundle cacheado** pós-deploy ou **papel velho** (promoveu um usuário a admin e a UI seguia mostrando usuário comum). Esta ADR separa os dois bichos que o pedido juntou e resolve cada um: uma **caixa de notificações** (eventos por usuário, persistidos) e um **aviso de atualização do app** (efêmero, client-side) — e, ao investigar, descobre que o "papel velho" **já está resolvido no servidor**, sobrando só uma defasagem de cliente que se conserta **sem toast e sem perder trabalho**.
+
+## Decisões
+
+1. **Dois mecanismos distintos sob a mesma palavra "notificação".** **(I) Caixa de notificações** — eventos **por Usuário, persistidos, com lido/não-lido**. **(II) Aviso de atualização do app** — **não** é por usuário, **não** persiste; é um sinal client-side pós-deploy. Compartilham, no máximo, host de UI; no resto são coisas separadas e ficam em decisões separadas abaixo.
+
+2. **Caixa v1 = in-app, pull.** Um **sininho** com contador de não-lidas; lista e contador são **buscados** (no carregamento da página + ao **focar a aba**, com poll leve opcional de backstop). **Sem push, sem e-mail, sem realtime** (websocket/SSE) no v1: notificação de receita não é urgente como chat, e nenhuma dessas infra existe hoje (recon: só há o `manifest`, nenhum service worker; better-auth **não manda e-mail**). Push (exige SW + VAPID + permissão), e-mail (exige provedor, bom pra "resumo" futuro) e realtime (pesado no serverless da Vercel) ficam **deferidos**.
+
+3. **A Notificação guarda dado estruturado, nunca frase pronta.** A linha persiste **tipo + ator + referências** (ids), e o **texto é renderizado e localizado na hora**, no **locale de quem lê** — coerente com o app bilíngue (ADR-0001). Bônus de correção: se o ator trocar de @handle ou a receita for renomeada/moderada, a notificação **re-renderiza do dado vivo**, sem texto velho congelado. **Uma notificação por evento** no v1; **agregação** ("12 pessoas avaliaram") é refino **deferido** (volume baixo pré-lançamento).
+
+4. **Catálogo de eventos do v1.** **Social:** nova **Avaliação** na sua receita; **novo seguidor** (retoma o que o ADR-0024 deferiu). **Loop-closers** (você fica sabendo do que te afeta): sua **sugestão de cozinha** aprovada/rejeitada/mesclada (ADR-0025); sua **receita** removida do pool pelo Curador (com motivo); sua **avaliação** removida; sua **imagem** moderada; você **restringido** (bloqueio de geração de imagem, #226). **Fica de fora por princípio:** **"fulano salvou sua receita"** — barrado pela **privacidade do Salvar** (ADR-0027): notificar vazaria quem salvou (marco agregado anônimo, "salva 10×", é deferido); **deixar de seguir** — silencioso (ADR-0024); **resposta/@menção/"IA terminou"** — não existem (sem fórum/thread; menção deferida; geração é síncrona/streamed).
+
+5. **Aviso de atualização do app = graceful, SEM toast e SEM perda de trabalho.** O dono ficou reticente quanto ao toast e não quer auto-refresh que derrube trabalho em andamento. A investigação separou os dois sub-problemas:
+   - **(B) Papel velho — já resolvido no servidor.** `auth.ts` tem `cookieCache: { enabled: false }`: o **papel é lido vivo do DB a cada request**, então promover um Usuário reflete no **próximo request** — **sem re-logar** (o token **não carrega** o papel). A defasagem mora **só no cliente**: a chrome lê o papel por `useSession` no **`AuthSlot`** (o `useSession` do `site-header` só decide "logado?"), que **cacheia e não refaz sozinho** quando um admin muda o papel de **outra** pessoa. **Fix:** o `useSession` que lê papel (`AuthSlot`) faz **refetch no foco da aba / ao navegar** — a chrome se corrige em segundos, sem reload, sem toast. **Não é re-login; é refetch de cliente.**
+   - **(A) Bundle velho pós-deploy.** Sem toast: **(A1)** confiar no **auto-cura do Next** — ao **navegar** depois de um deploy, o App Router faz navegação dura sozinho quando bate num chunk que mudou (quem navega se cura; só a aba parada fica presa); **(A2)** **reload quieto na fronteira de navegação** quando há update pendente — a pessoa já estava trocando de tela, então **não perde nada**.
+   - **Rede de segurança real:** o que protege contra "perder a receita no meio do trabalho" não é evitar refresh, é **persistir o rascunho** (o Modo conversa já é retomável — CONTEXT.md). Com o rascunho salvo, qualquer reload é seguro.
+   - **Nome:** **"atualização do app"**, **nunca "nova versão"** — "nova versão" já é a **regeneração de receita** (a "nova versão" da linhagem — ADR-0005/0006) no i18n.
+
+## Por quê
+
+- **In-app + pull é proporcional ao app de hoje.** Notificação de receita não é tempo-real; pull (no load + foco) é barato, roda no serverless e dispensa SW/realtime/e-mail que não existem. Construir push/e-mail/realtime agora seria infra pesada antes da dor.
+- **Dado estruturado + localização na renderização** é a única forma honesta num app bilíngue: congelar a frase perderia o i18n e envelheceria (ator renomeado, receita moderada). Também molda o schema (sem coluna de texto pronto).
+- **O catálogo segue os invariantes já travados:** não notificar save respeita a **privacidade do Salvar** (ADR-0027); unfollow silencioso respeita o ADR-0024; os loop-closers fecham laços que o usuário **iniciou** (sugestão de cozinha, report) ou que o **afetam** (moderação/restrição) — transparência, não vaidade.
+- **O toast resolvia o problema errado.** O incômodo do iPhone era provavelmente **papel velho** (B), que **não** é cache de deploy. E mesmo o (A) tem caminho graceful (auto-cura + fronteira de navegação) que entrega "sempre fresco" **sem nag e sem perder trabalho** — o objetivo do dono desde o começo. Custo marginal de cada tipo de evento é baixo **depois** que a caixa existe; o caro é a caixa.
+
+## Alternativas rejeitadas
+
+- **Toast "nova versão disponível" com botão.** Era a ideia inicial (o dono já preferia toast a auto-refresh); reconsiderada e **rejeitada** a favor do pacote graceful (refetch-no-foco + auto-cura + fronteira de navegação), que não interrompe e não arrisca trabalho. Reversível: se a aba-parada-nunca-navega virar dor real, dá pra reintroduzir um aviso discreto.
+- **Auto-refresh por timer.** Derruba trabalho em andamento. Rejeitado de cara pelo dono.
+- **Push / e-mail / realtime no v1.** Infra pesada (SW+VAPID; provedor de e-mail; canal persistente no serverless) pra um sinal não-urgente. Deferidos.
+- **Texto da notificação congelado na linha.** Perde i18n e envelhece. Rejeitado — dado estruturado + render localizado.
+- **Notificar "fulano salvou sua receita".** Vaza quem salvou, contra a privacidade do Salvar (ADR-0027). Rejeitado (no máximo marco agregado anônimo, deferido).
+- **Server-render da chrome dependente de papel** (em vez de `useSession`). Mexeria na home anônima/cacheável (ADR-0020) por um ganho pequeno; o refetch-no-foco resolve mais barato. Rejeitado.
+
+## Consequências
+
+- **Schema (migração só GERADA; migrate-on-deploy):** nova tabela `notification` — `id`, `recipient_id` (FK `users`, ON DELETE cascade), `type` (enum de domínio: `review_on_recipe`, `new_follower`, `cuisine_suggestion_resolved`, `recipe_moderated`, `review_moderated`, `image_moderated`, `account_restricted`), `actor_id` (FK `users`, nullable — ações de sistema/Curador podem não ter ator exibível), referências do sujeito (`recipe_id`/`review_id`/… nullable conforme o tipo), `read_at` (nullable), `created_at`. Índice `(recipient_id, created_at)` e parcial para não-lidas (`WHERE read_at IS NULL`). **Sem coluna de texto** (render localizado). Vigiar o `.sql` gerado.
+- **Emissão:** cada ponto que hoje já faz a ação (aplicar avaliação, seguir, aprovar/rejeitar sugestão de cozinha, moderar receita/avaliação/imagem, restringir conta) passa a **inserir uma linha** de notificação — emissão best-effort, fora do caminho crítico da ação. Uma **sugestão de cozinha multi-sugeridor** (ADR-0025) resolve em **N notificações** (uma por `recipient_id`) — o schema já cobre. **Soft-delete/anonimização:** ator soft-deletado → a notificação degrada (render sem nome), não some.
+- **Leitura:** rota de pull **só-logada** (contador + lista paginada), `no-store`; marcar-como-lido em lote (ao abrir a caixa) e/ou por item. UI: sininho na chrome + painel. Render do texto via mapa `type → mensagem(locale, refs)` no i18n.
+- **Atualização graceful:** (B) **`refetch` do `useSession` no foco/navegação** (o `cookieCache:false` do servidor já garante o papel vivo — só falta o cliente refazer); (A) **auto-cura do Next na navegação** + **reload quieto na fronteira de navegação** quando houver mismatch de build; **persistência de rascunho** tratada como investimento de resiliência à parte. **Não** introduz toast nem endpoint de versão pro nudge. (Se um dia quiser detecção explícita de build, `generateBuildId` + `/api/version` é o gancho — fora do v1.)
+- **Retoma o ADR-0024** (notificações saem do "deferido"). **Não toca** ADR-0020 (home anônima/indexável intacta — a caixa é só-logada, não indexável).
+- **Glossário:** Notificação, Aviso de atualização do app (novos).
+- **Não implementado** — direção da iniciativa; execução vem depois (PRD → issues).
