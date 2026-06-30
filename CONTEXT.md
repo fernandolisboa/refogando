@@ -165,8 +165,8 @@ Insumo reutilizável e **language-neutral** (id estável), nome/aliases traduzid
 _Avoid_: Insumo; Item (sozinho); tratar como texto livre.
 
 **Item de receita**:
-A ocorrência de um Ingrediente numa Receita: quantidade numérica + unidade + nota + `raw_text`, com FK **opcional** pro canônico (resolvida best-effort). Quantidade e unidade são invariantes (não traduzíveis).
-_Avoid_: lista como texto solto sem quantidade estruturada; quantidade como string.
+A ocorrência de um Ingrediente numa Receita: quantidade numérica + unidade + nota + `raw_text`, com FK **opcional** pro canônico (resolvida best-effort). Quantidade e unidade são invariantes (não traduzíveis) e são a **fonte única da medida** — nunca repetidas em `raw_text`. `raw_text` é o **nome/texto do ingrediente SEM a medida** ("arroz arbóreo", não "320 g de arroz arbóreo"): enquanto o canônico não resolve, `raw_text` É o nome exibido; quando resolve, o nome canônico (traduzido) o supera. A **exibição compõe** "medida + nome" (`quantidade` × `ratio` permite escalar por porções sem IA — operação aritmética, não geração); o texto nunca é a fonte da medida.
+_Avoid_: lista como texto solto sem quantidade estruturada; quantidade como string; **medida embutida no `raw_text`** (duplica a medida, impede escalar, torna a receita inconsistente).
 
 **Receita derivada**:
 Cópia de uma Receita criada quando o usuário edita uma que não é sua (catálogo ou de outro): `origin=user_edited`, ponteiro pra base + diff do que mudou (ADR-0005). A base nunca é mutada. **Contraste — edição da própria receita é _in-place_:** quando o Owner edita uma receita que **é sua**, a **mesma** Receita é alterada (mesma identidade, mesma proveniência; **nunca forka** nem vira `user_edited`). Derivar (forkar) só acontece ao editar uma que **não é sua**.
