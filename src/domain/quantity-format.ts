@@ -78,15 +78,23 @@ export function formatQuantityInput(value: string | null, locale: string): strin
 }
 
 /**
- * SUBMIT: texto do formulário → string-ponto canônica (ou `null` se vazio). Troca a vírgula decimal por
- * ponto (nunca emitimos agrupamento, então é seguro) e, se casa o formato numérico aceito, normaliza
- * via `Number` (corta zeros: "1.250" → "1.25"). Fora do formato, devolve o texto cru e deixa a zod do
- * servidor rejeitar.
+ * SUBMIT: texto do formulário → string-ponto canônica (ou `null` se vazio), LOCALE-AWARE. O separador
+ * DECIMAL é por locale (vírgula em pt, ponto em en); o outro é o de MILHAR. Troca o decimal por ponto e,
+ * se casa o formato numérico aceito, normaliza via `Number` (corta zeros: "1.250" en → "1.25").
+ *
+ * SEGURANÇA (sem colapso silencioso de milhar): se a entrada CONTÉM o separador de milhar (en "1,000",
+ * pt "1.000"), devolve o texto CRU inalterado — a zod do servidor o rejeita (preserva o erro PRÉ-PR).
+ * Antes, o cego "primeira vírgula→ponto" virava "1,000" (mil) em "1" em silêncio. Fora do formato,
+ * devolve o cru e deixa a zod rejeitar.
  */
-export function parseQuantityInput(raw: string): string | null {
+export function parseQuantityInput(raw: string, locale: string): string | null {
   const trimmed = raw.trim()
   if (trimmed === '') return null
-  const dotted = trimmed.replace(',', '.')
+  const decimalSep = locale.startsWith('pt') ? ',' : '.'
+  const groupSep = decimalSep === ',' ? '.' : ','
+  // Separador de milhar presente ⇒ NÃO colapsa em silêncio: devolve cru, a zod do servidor rejeita.
+  if (trimmed.includes(groupSep)) return trimmed
+  const dotted = trimmed.replace(decimalSep, '.')
   if (/^-?\d{1,7}(\.\d{1,3})?$/.test(dotted)) {
     return String(Number(dotted))
   }

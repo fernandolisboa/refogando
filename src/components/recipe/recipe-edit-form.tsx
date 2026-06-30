@@ -244,9 +244,9 @@ export function RecipeEditForm({
       .filter((it) => it.rawText.trim() !== '' || it.quantidade.trim() !== '' || it.unidade !== '')
       .map((it) => ({
         rawText: it.rawText.trim() === '' ? null : it.rawText.trim(),
-        // O usuário digita localizado ("2,5"); `parseQuantityInput` devolve a string-ponto canônica
-        // ("2.5") ou null. A zod da rota é o guard final (rejeita texto inválido).
-        quantidade: parseQuantityInput(it.quantidade),
+        // O usuário digita localizado ("2,5"); `parseQuantityInput` (locale-aware) devolve a string-ponto
+        // canônica ("2.5") ou null. A zod da rota é o guard final (rejeita texto inválido / milhar).
+        quantidade: parseQuantityInput(it.quantidade, currentLocale),
         unidade: it.unidade === '' ? null : it.unidade,
       }))
     return {

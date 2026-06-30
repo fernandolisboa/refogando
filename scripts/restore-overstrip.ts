@@ -26,7 +26,8 @@ import { eq } from 'drizzle-orm'
 import { makeSql, makeDb } from '@/db/client'
 import { recipe, recipeIngredient, recipeTranslation } from '@/db/schema'
 import { formatIngredientLine } from '@/domain/ingredient-line'
-import { ptBR } from '@/i18n/messages/pt-BR'
+import { MESSAGES } from '@/i18n/messages'
+import { canonicalLocale, DEFAULT_LOCALE } from '@/i18n/locale'
 import type { IngredientView } from '@/domain/recipe-read'
 import {
   detectRepair,
@@ -34,6 +35,7 @@ import {
   assertCleanName,
   headLooksSingular,
   stillEmbedsMeasure,
+  stillEmbedsMeasureStrict,
   isNonCountableUnit,
 } from './lib/measure-strip'
 
@@ -72,6 +74,7 @@ type Staged = {
   kind: 'over-strip' | 'still-embeds'
   quantidade: string | null
   unidade: string | null
+  originalLocale: string // locale-de-origem da receita — preview compõe a linha NELE (não fixo pt-BR)
   owned: boolean
   title: string
 }
@@ -94,12 +97,18 @@ function saveJson(file: string, data: unknown): void {
 }
 
 /** Linha COMPOSTA exibida ao dono (o que ele de fato VÊ) = formatIngredientLine sobre o nome
- * restaurado + a medida estruturada AO VIVO, locale pt-BR. NÃO o `raw_text` cru — o RENDER final. */
-function composedLine(restored: string, quantidade: string | null, unidade: string | null): string {
+ * restaurado + a medida estruturada AO VIVO, no LOCALE-DE-ORIGEM da receita (o dono revisa "3 cloves of
+ * garlic" no catálogo en-US, não "3 dentes de garlic"). NÃO o `raw_text` cru — o RENDER final.
+ * Locale desconhecido cai no DEFAULT_LOCALE (pt-BR). */
+function composedLine(
+  restored: string,
+  quantidade: string | null,
+  unidade: string | null,
+  originalLocale: string,
+): string {
+  const locale = canonicalLocale(originalLocale) ?? DEFAULT_LOCALE
   const item: IngredientView = { ordem: 0, quantidade, unidade, rawText: restored }
-  // Assinatura NOVA (Track A, em paralelo): formatIngredientLine(item, m, locale). Em runtime o arg
-  // extra é inócuo; o tsc desta worktree pode reclamar até o Track A integrar (esperado).
-  return formatIngredientLine(item, ptBR, 'pt-BR')
+  return formatIngredientLine(item, MESSAGES[locale], locale)
 }
 
 /** O ORIGINAL começa com uma fração (barra ou glifo)? Compõe a tripwire "suspected-fraction": uma
@@ -190,7 +199,12 @@ async function main() {
     for (const row of pending) {
       const before = oldLedger[row.id]?.before ?? null
       const current = (row.rawText ?? '').trim()
-      const r = detectRepair({ ledgerBefore: before, current, unidade: row.unidade })
+      const r = detectRepair({
+        ledgerBefore: before,
+        current,
+        quantidade: row.quantidade,
+        unidade: row.unidade,
+      })
       if (r.kind === 'none') continue
 
       const owned = row.ownerId != null
@@ -221,6 +235,7 @@ async function main() {
         kind: r.kind,
         quantidade: row.quantidade,
         unidade: row.unidade,
+        originalLocale: row.originalLocale,
         owned,
         title,
       })
@@ -241,7 +256,7 @@ async function main() {
     const printStaged = (s: Staged) => {
       const scope = s.owned ? 'DONO' : 'catálogo'
       console.log(`  • [${scope}] "${s.current}"  →  raw_text "${s.restored}"`)
-      console.log(`        render: "${composedLine(s.restored, s.quantidade, s.unidade)}"   (${s.title})`)
+      console.log(`        render: "${composedLine(s.restored, s.quantidade, s.unidade, s.originalLocale)}"   (${s.title})`)
     }
 
     console.log(`\n── (a) OVER-STRIP (${overStrip.length}) — palavra de porção devolvida ──`)
@@ -313,10 +328,13 @@ async function main() {
 
     // ── POST-RUN: re-varre o estado autoritativo. Alvo após a rodada real: 0 linhas embutindo medida
     //    (falsos-positivos como nomes que começam com número são aceitáveis — a lista é p/ conferência).
+    //    Usa `stillEmbedsMeasureStrict` (FIX 3) — o MESMO reconhecedor abrangente de `detectRepair`
+    //    (todas as formas de líder, não só `^(½|\d)`), pra a verificação CASAR a detecção e não relatar
+    //    "0 restantes" falso quando ainda há um líder ESCRITO (meia/três quartos…) embutido.
     const after: { rawText: string | null; unidade: string | null }[] = await db
       .select({ rawText: recipeIngredient.rawText, unidade: recipeIngredient.unidade })
       .from(recipeIngredient)
-    const remaining = after.filter((r) => stillEmbedsMeasure(r.rawText, r.unidade))
+    const remaining = after.filter((r) => stillEmbedsMeasureStrict(r.rawText, r.unidade))
     console.log(
       `\nVERIFICAÇÃO (heurística "ainda embute medida"): ${remaining.length} linha(s) ` +
         `${dryRun ? '— estado PRÉ-reparo (dry-run não grava); rode pra valer pra zerar.' : '— alvo: 0 (confira os falsos-positivos).'}`,

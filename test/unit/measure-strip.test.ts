@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   looksAlreadyClean,
   stillEmbedsMeasure,
+  stillEmbedsMeasureStrict,
   validateStrippedName,
   stripLeadingConnector,
   stripTrailingNoise,
@@ -53,6 +54,29 @@ describe('stillEmbedsMeasure — verificação pós-migração', () => {
   it('vazio/null ⇒ false', () => {
     expect(stillEmbedsMeasure(null, 'g')).toBe(false)
     expect(stillEmbedsMeasure('   ', 'g')).toBe(false)
+  })
+})
+
+describe('stillEmbedsMeasureStrict — varredura pós-reparo alinhada ao detector (FIX 3)', () => {
+  it('pega o que o prefixo /^(½|\\d)/ de stillEmbedsMeasure NÃO pega: número ESCRITO líder', () => {
+    // a heurística estreita não vê "meia"/"três quartos"; a estrita usa beginsWithQuantityToken.
+    expect(stillEmbedsMeasure('meia xícara de óleo', 'xicara')).toBe(false)
+    expect(stillEmbedsMeasureStrict('meia xícara de óleo', 'xicara')).toBe(true)
+    expect(stillEmbedsMeasureStrict('três quartos de xícara de água', 'xicara')).toBe(true)
+  })
+  it('número/fração-glifo líder ⇒ true (igual à heurística estreita)', () => {
+    expect(stillEmbedsMeasureStrict('320 g de arroz arbóreo', 'g')).toBe(true)
+    expect(stillEmbedsMeasureStrict('½ xícara de vinho', 'xicara')).toBe(true)
+  })
+  it('a_gosto/q_b com a frase ainda no texto ⇒ true (sufixo)', () => {
+    expect(stillEmbedsMeasureStrict('sal a gosto', 'a_gosto')).toBe(true)
+    expect(stillEmbedsMeasureStrict('fermento q.b.', 'q_b')).toBe(true)
+  })
+  it('nome limpo ⇒ false; vazio/null ⇒ false', () => {
+    expect(stillEmbedsMeasureStrict('arroz arbóreo', 'g')).toBe(false)
+    expect(stillEmbedsMeasureStrict('alho fatiados', 'dente')).toBe(false)
+    expect(stillEmbedsMeasureStrict(null, 'g')).toBe(false)
+    expect(stillEmbedsMeasureStrict('   ', 'g')).toBe(false)
   })
 })
 
@@ -159,33 +183,82 @@ describe('stripLeadingQuantity — reconhecedor abrangente de quantidade-líder'
     expect(stripLeadingQuantity('4 folhas de alga nori')).toEqual({
       rest: 'folhas de alga nori',
       hadQuantity: true,
+      value: 4,
     })
   })
   it('fração barra (\\d+/\\d+)', () => {
-    expect(stripLeadingQuantity('1/2 xícara de óleo')).toEqual({ rest: 'xícara de óleo', hadQuantity: true })
+    expect(stripLeadingQuantity('1/2 xícara de óleo')).toEqual({
+      rest: 'xícara de óleo',
+      hadQuantity: true,
+      value: 0.5,
+    })
   })
   it('glifo de fração vulgar (½) e inteiro grudado (2½)', () => {
-    expect(stripLeadingQuantity('½ xícara de vinho')).toEqual({ rest: 'xícara de vinho', hadQuantity: true })
-    expect(stripLeadingQuantity('2½ xícaras de farinha')).toEqual({ rest: 'xícaras de farinha', hadQuantity: true })
+    expect(stripLeadingQuantity('½ xícara de vinho')).toEqual({
+      rest: 'xícara de vinho',
+      hadQuantity: true,
+      value: 0.5,
+    })
+    expect(stripLeadingQuantity('2½ xícaras de farinha')).toEqual({
+      rest: 'xícaras de farinha',
+      hadQuantity: true,
+      value: 2.5,
+    })
   })
   it('mista "\\d+ e 1/2" e "\\d+ e meia"', () => {
-    expect(stripLeadingQuantity('1 e 1/2 xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
-    expect(stripLeadingQuantity('1 e meia xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
+    expect(stripLeadingQuantity('1 e 1/2 xícara de leite')).toEqual({
+      rest: 'xícara de leite',
+      hadQuantity: true,
+      value: 1.5,
+    })
+    expect(stripLeadingQuantity('1 e meia xícara de leite')).toEqual({
+      rest: 'xícara de leite',
+      hadQuantity: true,
+      value: 1.5,
+    })
   })
   it('número escrito: meia/meio e três quartos', () => {
-    expect(stripLeadingQuantity('Meia xícara de leite')).toEqual({ rest: 'xícara de leite', hadQuantity: true })
+    expect(stripLeadingQuantity('Meia xícara de leite')).toEqual({
+      rest: 'xícara de leite',
+      hadQuantity: true,
+      value: 0.5,
+    })
     expect(stripLeadingQuantity('Três quartos de xícara de água')).toEqual({
       rest: 'de xícara de água',
       hadQuantity: true,
+      value: 0.75,
     })
   })
   it('decimal com vírgula/ponto', () => {
-    expect(stripLeadingQuantity('1,5 kg de batata')).toEqual({ rest: 'kg de batata', hadQuantity: true })
-    expect(stripLeadingQuantity('320 g de arroz arbóreo')).toEqual({ rest: 'g de arroz arbóreo', hadQuantity: true })
+    expect(stripLeadingQuantity('1,5 kg de batata')).toEqual({
+      rest: 'kg de batata',
+      hadQuantity: true,
+      value: 1.5,
+    })
+    expect(stripLeadingQuantity('320 g de arroz arbóreo')).toEqual({
+      rest: 'g de arroz arbóreo',
+      hadQuantity: true,
+      value: 320,
+    })
   })
-  it('sem quantidade-líder ⇒ hadQuantity false, texto intacto', () => {
-    expect(stripLeadingQuantity('arroz arbóreo')).toEqual({ rest: 'arroz arbóreo', hadQuantity: false })
-    expect(stripLeadingQuantity('folhas de alga nori')).toEqual({ rest: 'folhas de alga nori', hadQuantity: false })
+  it('sem quantidade-líder ⇒ hadQuantity false, value null, texto intacto', () => {
+    expect(stripLeadingQuantity('arroz arbóreo')).toEqual({
+      rest: 'arroz arbóreo',
+      hadQuantity: false,
+      value: null,
+    })
+    expect(stripLeadingQuantity('folhas de alga nori')).toEqual({
+      rest: 'folhas de alga nori',
+      hadQuantity: false,
+      value: null,
+    })
+  })
+  it('extração do VALOR numérico do líder (todas as formas)', () => {
+    expect(stripLeadingQuantity('1/2 xícara de óleo').value).toBe(0.5)
+    expect(stripLeadingQuantity('½ xícara de vinho').value).toBe(0.5)
+    expect(stripLeadingQuantity('Meia xícara de leite').value).toBe(0.5)
+    expect(stripLeadingQuantity('2 dentes de alho').value).toBe(2)
+    expect(stripLeadingQuantity('1 e 1/2 xícara de leite').value).toBe(1.5)
   })
 })
 
@@ -211,26 +284,26 @@ describe('deterministicStrip — refaz o strip da medida SEM modelo', () => {
 describe('detectRepair — classifica over-strip | still-embeds | none', () => {
   it('over-strip: o modelo comeu a palavra de porção ⇒ restaura', () => {
     expect(
-      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'alga nori', unidade: 'unidade' }),
+      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'alga nori', quantidade: '4', unidade: 'unidade' }),
     ).toEqual({ kind: 'over-strip', restored: 'folhas de alga nori' })
     expect(
-      detectRepair({ ledgerBefore: '1 ramo de tomilho fresco', current: 'tomilho fresco', unidade: 'unidade' }),
+      detectRepair({ ledgerBefore: '1 ramo de tomilho fresco', current: 'tomilho fresco', quantidade: '1', unidade: 'unidade' }),
     ).toEqual({ kind: 'over-strip', restored: 'ramo de tomilho fresco' })
   })
   it("none nas linhas de FRAÇÃO ('1/2 xícara de óleo' → 'óleo'): casa o strip determinístico, NÃO toca", () => {
     expect(
-      detectRepair({ ledgerBefore: '1/2 xícara de óleo', current: 'óleo', unidade: 'xicara' }),
+      detectRepair({ ledgerBefore: '1/2 xícara de óleo', current: 'óleo', quantidade: '0.5', unidade: 'xicara' }),
     ).toEqual({ kind: 'none', restored: 'óleo' })
     expect(
-      detectRepair({ ledgerBefore: '½ xícara de óleo', current: 'óleo', unidade: 'xicara' }),
+      detectRepair({ ledgerBefore: '½ xícara de óleo', current: 'óleo', quantidade: '0.5', unidade: 'xicara' }),
     ).toEqual({ kind: 'none', restored: 'óleo' })
   })
   it('none num strip legítimo (núcleo intacto, sem porção perdida)', () => {
     expect(
-      detectRepair({ ledgerBefore: '320 g de arroz arbóreo', current: 'arroz arbóreo', unidade: 'g' }),
+      detectRepair({ ledgerBefore: '320 g de arroz arbóreo', current: 'arroz arbóreo', quantidade: '320', unidade: 'g' }),
     ).toEqual({ kind: 'none', restored: 'arroz arbóreo' })
     expect(
-      detectRepair({ ledgerBefore: '1 cebola picada', current: 'cebola picada', unidade: 'unidade' }),
+      detectRepair({ ledgerBefore: '1 cebola picada', current: 'cebola picada', quantidade: '1', unidade: 'unidade' }),
     ).toEqual({ kind: 'none', restored: 'cebola picada' })
   })
   it('still-embeds numa linha SINALIZADA ("2 dentes de alho fatiados" intacta) ⇒ restaura', () => {
@@ -238,19 +311,50 @@ describe('detectRepair — classifica over-strip | still-embeds | none', () => {
       detectRepair({
         ledgerBefore: '2 dentes de alho fatiados',
         current: '2 dentes de alho fatiados',
+        quantidade: '2',
         unidade: 'dente',
       }),
     ).toEqual({ kind: 'still-embeds', restored: 'alho fatiados' })
   })
   it('still-embeds sem ledger (vazamento pós-migração) ⇒ restaura do texto atual', () => {
     expect(
-      detectRepair({ ledgerBefore: null, current: '200 g de farinha', unidade: 'g' }),
+      detectRepair({ ledgerBefore: null, current: '200 g de farinha', quantidade: '200', unidade: 'g' }),
     ).toEqual({ kind: 'still-embeds', restored: 'farinha' })
   })
   it('idempotente: já restaurado ⇒ none', () => {
     expect(
-      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'folhas de alga nori', unidade: 'unidade' }),
+      detectRepair({ ledgerBefore: '4 folhas de alga nori', current: 'folhas de alga nori', quantidade: '4', unidade: 'unidade' }),
     ).toEqual({ kind: 'none', restored: 'folhas de alga nori' })
+  })
+
+  // ── FIX 1 (data-safety): só trata o número-líder como medida embutida quando ele CORROBORA a medida
+  //    estruturada. Um nome que legitimamente começa com número (qty/unidade null, ou número ≠ qty)
+  //    NUNCA pode ter o token-líder removido em silêncio.
+  it('nome que COMEÇA com número mas SEM medida estruturada ⇒ none (NÃO toca)', () => {
+    // "7 grãos" / null / null — "7 grãos" É o nome; não há medida pra vazar.
+    expect(
+      detectRepair({ ledgerBefore: null, current: '7 grãos', quantidade: null, unidade: null }),
+    ).toEqual({ kind: 'none', restored: '7 grãos' })
+    // "1 cm de gengibre ralado" / null / null — método 'already-clean' em prod; o "1 cm" é o nome.
+    expect(
+      detectRepair({ ledgerBefore: null, current: '1 cm de gengibre ralado', quantidade: null, unidade: null }),
+    ).toEqual({ kind: 'none', restored: '1 cm de gengibre ralado' })
+  })
+  it('número-líder que NÃO iguala a quantidade estruturada ⇒ none (não corrobora)', () => {
+    // "5 especiarias" / qty 1 — 5 ≠ 1, o "5" faz parte do nome.
+    expect(
+      detectRepair({ ledgerBefore: null, current: '5 especiarias', quantidade: '1', unidade: 'unidade' }),
+    ).toEqual({ kind: 'none', restored: '5 especiarias' })
+    // "200 g de 7 grãos" já migrada p/ current "7 grãos" / qty 200 — 7 ≠ 200, "7 grãos" é o nome.
+    expect(
+      detectRepair({ ledgerBefore: '200 g de 7 grãos', current: '7 grãos', quantidade: '200', unidade: 'g' }),
+    ).toEqual({ kind: 'none', restored: '7 grãos' })
+  })
+  it('número-líder CORROBORA a quantidade estruturada ⇒ still-embeds (vazou ⇒ tira)', () => {
+    // "2 dentes de alho fatiados" / qty 2 — 2 == 2, a medida vazou no texto ⇒ limpa.
+    expect(
+      detectRepair({ ledgerBefore: null, current: '2 dentes de alho fatiados', quantidade: '2', unidade: 'dente' }),
+    ).toEqual({ kind: 'still-embeds', restored: 'alho fatiados' })
   })
 })
 

@@ -210,7 +210,7 @@ export function CatalogRecipeForm({
       ingredientes: itensComTexto.map((it) => ({
         rawText: it.rawText.trim(),
         // Curador digita localizado → string-ponto canônica (ou null); a zod da rota rejeita inválido.
-        quantidade: parseQuantityInput(it.quantidade),
+        quantidade: parseQuantityInput(it.quantidade, locale),
         unidade: it.unidade || null,
       })),
     }

@@ -284,7 +284,7 @@ export function CreateStructuredExperience({
           ingredientId: null,
           rawText: it.rawText.trim(),
           // Digitado localizado → string-ponto canônica (ou null); a zod do servidor é o guard final.
-          quantidade: parseQuantityInput(it.quantidade),
+          quantidade: parseQuantityInput(it.quantidade, locale),
           unidade: it.unidade || null,
           strength: it.strength,
         })),

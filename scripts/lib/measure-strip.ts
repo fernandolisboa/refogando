@@ -48,6 +48,21 @@ export function stillEmbedsMeasure(rawText: string | null, unidade: string | nul
 }
 
 /**
+ * Variante ESTRITA da verificação pós-reparo, ALINHADA com `detectRepair`: usa o MESMO reconhecedor
+ * abrangente de quantidade-líder (`beginsWithQuantityToken` — todas as formas: dígito/fração-barra/
+ * glifo/número escrito meia|três quartos…, não só o prefixo estreito `^(½|\d)` de `stillEmbedsMeasure`)
+ * OU a frase a-gosto/q.b. quando a unidade é a_gosto/q_b. A varredura PÓS-RODADA usa esta pra não relatar
+ * "0 restantes" falso quando ainda há um líder ESCRITO embutido que o prefixo estreito não pegaria.
+ */
+export function stillEmbedsMeasureStrict(rawText: string | null, unidade: string | null): boolean {
+  const t = (rawText ?? '').trim()
+  if (t === '') return false
+  if (beginsWithQuantityToken(t)) return true
+  if ((unidade === 'a_gosto' || unidade === 'q_b') && TASTE_PHRASE_RE.test(t)) return true
+  return false
+}
+
+/**
  * Tira do FIM do texto o "ruído" que NÃO faz parte do núcleo do nome e que o modelo pode legitimamente
  * largar: parêntese final ("(cerca de 1,2 kg)"), frase de propósito ("para servir/untar/decorar/…") e
  * a frase não-mensurável ("a gosto"/"q.b."). Usado só pra achar a palavra-NÚCLEO do nome (o head).
@@ -151,17 +166,81 @@ const LEADING_QTY_RE = new RegExp(
   'i',
 )
 
+// Valor numérico de cada glifo de fração vulgar — pra extrair o VALOR do token-líder (corroboração).
+const FRACTION_GLYPH_VALUE: Record<string, number> = {
+  '½': 1 / 2, '⅓': 1 / 3, '⅔': 2 / 3, '¼': 1 / 4, '¾': 3 / 4,
+  '⅛': 1 / 8, '⅜': 3 / 8, '⅝': 5 / 8, '⅞': 7 / 8,
+  '⅕': 1 / 5, '⅖': 2 / 5, '⅗': 3 / 5, '⅘': 4 / 5, '⅙': 1 / 6, '⅚': 5 / 6,
+}
+
+// Valor numérico dos números/frações ESCRITOS (chave normalizada: minúscula, sem acento, espaço único).
+const WRITTEN_QTY_VALUE: Record<string, number> = {
+  meia: 0.5, meio: 0.5, um: 1, uma: 1, dois: 2, duas: 2, tres: 3,
+  'um quarto': 0.25, 'tres quartos': 0.75, 'dois tercos': 2 / 3, 'um terco': 1 / 3,
+}
+
+/**
+ * VALOR numérico de um token de quantidade-líder em prosa (o `m[0]` casado por `LEADING_QTY_RE`), em
+ * qualquer forma — inteiro/decimal (vírgula→ponto), fração-barra "1/2", glifo "½"/"2½", mista "1 e 1/2"/
+ * "2 e meia", e número/fração ESCRITO (meia/um/dois/três/um quarto/três quartos/dois terços). `null`
+ * quando não dá pra extrair um número. Usado pela CORROBORAÇÃO de `detectRepair` (o líder só conta como
+ * medida embutida quando IGUALA a `quantidade` estruturada).
+ */
+function parseLeadingQtyValue(token: string): number | null {
+  const t = token.trim()
+  if (t === '') return null
+
+  // mista: "<inteiro> e <fração>" ("1 e 1/2", "2 e meia", "1 e ½")
+  const mixed = /^(\d+(?:[.,]\d+)?)\s+e\s+(.+)$/i.exec(t)
+  if (mixed) {
+    const whole = Number(mixed[1].replace(',', '.'))
+    const frac = parseLeadingQtyValue(mixed[2])
+    return Number.isFinite(whole) && frac != null ? whole + frac : null
+  }
+
+  // fração-barra: "1/2", "3/4"
+  const bar = /^(\d+)\/(\d+)$/.exec(t)
+  if (bar) {
+    const den = Number(bar[2])
+    return den !== 0 ? Number(bar[1]) / den : null
+  }
+
+  // glifo (com inteiro grudado opcional): "½", "2½"
+  const glyph = new RegExp(`^(\\d*)([${FRACTION_GLYPHS}])$`).exec(t)
+  if (glyph) {
+    const whole = glyph[1] === '' ? 0 : Number(glyph[1])
+    const g = FRACTION_GLYPH_VALUE[glyph[2]]
+    return g != null && Number.isFinite(whole) ? whole + g : null
+  }
+
+  // decimal/inteiro: "1", "1,5", "320"
+  if (/^\d+(?:[.,]\d+)?$/.test(t)) {
+    const n = Number(t.replace(',', '.'))
+    return Number.isFinite(n) ? n : null
+  }
+
+  // escrito (1 ou multi-palavra): normaliza p/ a chave de WRITTEN_QTY_VALUE.
+  const key = t
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return key in WRITTEN_QTY_VALUE ? WRITTEN_QTY_VALUE[key] : null
+}
+
 /**
  * Reconhece e REMOVE a quantidade-líder em prosa (qualquer forma) do começo do texto. Devolve o RESTO
- * (sem a quantidade, trim de separadores líderes) e `hadQuantity`. NÃO toca alias de unidade nem
- * conector — só a quantidade numérica/escrita. Base de `deterministicStrip` e `beginsWithQuantityToken`.
+ * (sem a quantidade, trim de separadores líderes), `hadQuantity` e o `value` numérico do líder casado
+ * (ou `null` se não-parseável). NÃO toca alias de unidade nem conector — só a quantidade numérica/escrita.
+ * Base de `deterministicStrip`, `beginsWithQuantityToken` e da corroboração de `detectRepair`.
  */
-export function stripLeadingQuantity(text: string): { rest: string; hadQuantity: boolean } {
+export function stripLeadingQuantity(text: string): { rest: string; hadQuantity: boolean; value: number | null } {
   const t = (text ?? '').trim()
   const m = LEADING_QTY_RE.exec(t)
-  if (!m) return { rest: t, hadQuantity: false }
+  if (!m) return { rest: t, hadQuantity: false, value: null }
   const rest = t.slice(m[0].length).replace(/^[\s,;.]+/, '')
-  return { rest, hadQuantity: true }
+  return { rest, hadQuantity: true, value: parseLeadingQtyValue(m[0]) }
 }
 
 // Alias de unidade do ENUM (forma normalizada por palavra → valor do enum) — SELF-CONTAINED (não
@@ -278,30 +357,50 @@ function isMeasureResidueWord(normWord: string): boolean {
 export type RepairKind = 'still-embeds' | 'over-strip' | 'none'
 
 /**
- * Classifica UMA linha contra (ledger `before` | `raw_text` atual | `unidade` ao vivo) e devolve o
- * nome RESTAURADO determinístico:
- *  - STILL-EMBEDS: o texto ATUAL ainda carrega a medida (prefixo de quantidade OU frase a-gosto) →
- *    restaura limpando o atual (`deterministicStrip(current)`). Pega as SINALIZADAS + vazamentos.
+ * Classifica UMA linha contra (ledger `before` | `raw_text` atual | `quantidade`/`unidade` ao vivo) e
+ * devolve o nome RESTAURADO determinístico:
+ *  - STILL-EMBEDS (a-gosto): unidade a_gosto/q_b com a frase não-mensurável ainda no texto → limpa o atual.
+ *  - STILL-EMBEDS (número CORROBORADO): o número-líder do texto IGUALA a `quantidade` estruturada ⇒ a
+ *    medida vazou no nome → limpa o atual (`deterministicStrip(current)`). Pega as SINALIZADAS + vazamentos.
  *  - OVER-STRIP: comparado ao que o strip determinístico faria do ORIGINAL, o atual perdeu palavras-
  *    líderes GENUÍNAS (porção) — é um sufixo estrito do determinístico e o que foi largado NÃO é só
  *    conector/alias/quantidade → restaura o determinístico (que MANTÉM a porção).
  *  - NONE: já casa o strip determinístico (inclui as frações "1/2 xícara de óleo"→"óleo": NÃO tocar) —
  *    ou é uma reescrita que não dá pra reparar com segurança (deixa pro humano via outro caminho).
+ *
+ * DATA-SAFETY (FIX 1): o número-líder só é tratado como medida embutida quando CORROBORA a medida
+ * estruturada (líder == `quantidade`). Um nome que legitimamente COMEÇA com número mas SEM medida que o
+ * iguale — "1 cm de gengibre ralado"/null/null, "7 grãos"/null/null, "5 especiarias"/qty 1 — cai em
+ * NONE (ou over-strip se o ledger pedir), NUNCA é auto-stripado. `assertCleanName` é o guard final.
  * IDEMPOTENTE: re-rodar sobre um já-restaurado dá 'none'.
  */
 export function detectRepair(args: {
   ledgerBefore: string | null
   current: string
+  quantidade: string | null
   unidade: string | null
 }): { kind: RepairKind; restored: string } {
   const current = (args.current ?? '').trim()
 
-  // A. STILL-EMBEDS — o ATUAL ainda embute a medida (prefixo de quantidade ou frase a-gosto/q.b.).
-  if (beginsWithQuantityToken(current) || stillEmbedsMeasure(current, args.unidade)) {
+  // A. TASTE still-embeds — unidade a_gosto/q_b com a frase não-mensurável ainda no texto ("sal a gosto").
+  if (
+    (args.unidade === 'a_gosto' || args.unidade === 'q_b') &&
+    stillEmbedsMeasure(current, args.unidade)
+  ) {
     return { kind: 'still-embeds', restored: deterministicStrip(current, args.unidade).trim() }
   }
 
-  // B. OVER-STRIP — o modelo comeu palavra(s) de porção genuína(s) ante o strip determinístico.
+  // B. NUMBER still-embeds CORROBORADO — o número-líder do texto IGUALA a `quantidade` estruturada ⇒ a
+  //    medida VAZOU no nome. SEM corroboração (qty null, ou líder ≠ qty) NÃO toca (data-safety FIX 1).
+  if (args.quantidade != null && args.quantidade !== '') {
+    const lead = stripLeadingQuantity(current)
+    const q = Number(args.quantidade.replace(',', '.'))
+    if (lead.hadQuantity && lead.value != null && Number.isFinite(q) && Math.abs(lead.value - q) < 1e-3) {
+      return { kind: 'still-embeds', restored: deterministicStrip(current, args.unidade).trim() }
+    }
+  }
+
+  // C. OVER-STRIP — o modelo comeu palavra(s) de porção genuína(s) ante o strip determinístico.
   const before = (args.ledgerBefore ?? '').trim()
   if (before !== '') {
     const det = deterministicStrip(before, args.unidade).trim()

@@ -94,26 +94,41 @@ describe('formatQuantityInput — valor editável (sem glifo)', () => {
   })
 })
 
-describe('parseQuantityInput — texto do formulário → string-ponto canônica', () => {
-  it('vírgula vira ponto: "2,5" → "2.5"', () => {
-    expect(parseQuantityInput('2,5')).toBe('2.5')
+describe('parseQuantityInput — texto do formulário → string-ponto canônica (locale-aware)', () => {
+  it('pt: vírgula decimal vira ponto: "2,5" → "2.5"', () => {
+    expect(parseQuantityInput('2,5', 'pt-BR')).toBe('2.5')
+  })
+
+  it('en: ponto decimal preservado: "2.5" → "2.5"', () => {
+    expect(parseQuantityInput('2.5', 'en-US')).toBe('2.5')
   })
 
   it('"" → null (campo vazio = sem medida)', () => {
-    expect(parseQuantityInput('')).toBe(null)
-    expect(parseQuantityInput('   ')).toBe(null)
+    expect(parseQuantityInput('', 'pt-BR')).toBe(null)
+    expect(parseQuantityInput('   ', 'pt-BR')).toBe(null)
+    expect(parseQuantityInput('', 'en-US')).toBe(null)
   })
 
-  it('normaliza zeros à direita: "1.250" → "1.25"', () => {
-    expect(parseQuantityInput('1.250')).toBe('1.25')
+  it('en: separador de MILHAR "1,000" NÃO colapsa em silêncio → cru "1,000" (zod do servidor rejeita)', () => {
+    // o bug: ponto-cego pré-locale virava "1,000" (mil) em "1" silenciosamente.
+    expect(parseQuantityInput('1,000', 'en-US')).toBe('1,000')
   })
 
-  it('inteiro: "3" → "3"', () => {
-    expect(parseQuantityInput('3')).toBe('3')
+  it('pt: separador de MILHAR "1.000" NÃO colapsa em silêncio → cru "1.000"', () => {
+    expect(parseQuantityInput('1.000', 'pt-BR')).toBe('1.000')
+  })
+
+  it('en: normaliza zeros à direita do decimal: "1.250" → "1.25"', () => {
+    expect(parseQuantityInput('1.250', 'en-US')).toBe('1.25')
+  })
+
+  it('inteiro: "3" → "3" (ambos locales)', () => {
+    expect(parseQuantityInput('3', 'pt-BR')).toBe('3')
+    expect(parseQuantityInput('3', 'en-US')).toBe('3')
   })
 
   it('texto inválido sai cru (a zod do servidor rejeita): "abc" → "abc"', () => {
-    expect(parseQuantityInput('abc')).toBe('abc')
+    expect(parseQuantityInput('abc', 'pt-BR')).toBe('abc')
   })
 })
 
@@ -121,7 +136,7 @@ describe('round-trip — format(1000) → parse → "1000" (sem agrupamento que 
   it('formatQuantityInput(1000) round-trips', () => {
     const shown = formatQuantityInput('1000', 'pt-BR')
     expect(shown).toBe('1000')
-    expect(parseQuantityInput(shown)).toBe('1000')
+    expect(parseQuantityInput(shown, 'pt-BR')).toBe('1000')
   })
 
   it('formatQuantityDisplay(1000) também é "1000" (sem ponto de milhar)', () => {
@@ -131,6 +146,12 @@ describe('round-trip — format(1000) → parse → "1000" (sem agrupamento que 
   it('round-trip de fração editável: 2.5 → "2,5" → "2.5"', () => {
     const shown = formatQuantityInput('2.500', 'pt-BR')
     expect(shown).toBe('2,5')
-    expect(parseQuantityInput(shown)).toBe('2.5')
+    expect(parseQuantityInput(shown, 'pt-BR')).toBe('2.5')
+  })
+
+  it('round-trip en: 2.5 → "2.5" → "2.5"', () => {
+    const shown = formatQuantityInput('2.500', 'en-US')
+    expect(shown).toBe('2.5')
+    expect(parseQuantityInput(shown, 'en-US')).toBe('2.5')
   })
 })
