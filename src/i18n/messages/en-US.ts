@@ -1073,7 +1073,7 @@ export const enUS: Messages = {
     criarReceitaDescricaoCampo: 'Description',
     criarReceitaIngredientes: 'Ingredients',
     criarReceitaIngrediente: 'Ingredient',
-    criarReceitaIngredientePlaceholder: 'E.g., black beans',
+    criarReceitaIngredientePlaceholder: 'E.g., 500 g of black beans',
     criarReceitaQuantidade: 'Amount',
     criarReceitaQuantidadePlaceholder: 'E.g., 500',
     criarReceitaUnidade: 'Unit',

@@ -12,11 +12,11 @@ import { and, isNotNull, eq } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipeTranslation } from '@/db/schema'
 import type { LoadedRecipeRows } from '@/server/recipe/load'
-import { resolveRecipeView, type IngredientView } from '@/domain/recipe-read'
+import { resolveRecipeView } from '@/domain/recipe-read'
 import type { RecipeSeoInput } from '@/domain/recipe-seo'
 import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
-import { MESSAGES, type Messages } from '@/i18n/messages'
-import { isUnidade } from '@/domain/vocabulary'
+import { MESSAGES } from '@/i18n/messages'
+import { formatIngredientLine } from '@/domain/ingredient-line'
 
 /**
  * Mapa `{ locale → slug }` SÓ dos locales que TÊM tradução pública COM slug (slug NÃO-NULL). É o
@@ -39,32 +39,6 @@ export async function loadRecipeSlugMap(
     if (loc && row.slug) map[loc] = row.slug
   }
   return map
-}
-
-/**
- * Linha legível de UM ingrediente para o `recipeIngredient` do JSON-LD: `qtd unidade — texto`.
- * Espelha `formatIngredient` do `RecipeDetailView` (mesma substância exibida ao leitor); a unidade
- * vira rótulo localizado via `MESSAGES[locale]`. Item totalmente vazio ⇒ string vazia (descartada).
- */
-function formatIngredientLine(item: IngredientView, m: Messages): string {
-  const quantidade =
-    item.quantidade != null && item.quantidade !== '' ? formatQuantidade(item.quantidade) : null
-  const unidade =
-    item.unidade != null && item.unidade !== '' ? formatUnidade(item.unidade, m) : null
-  const medida = [quantidade, unidade].filter((p) => p != null && p !== '').join(' ')
-  if (medida && item.rawText) return `${medida} — ${item.rawText}`
-  return medida || item.rawText || ''
-}
-
-/** Tira zeros à direita do `numeric(10,3)` (`'2.500'`→`'2.5'`); não-número cai no cru. */
-function formatQuantidade(quantidade: string): string {
-  const n = Number(quantidade)
-  return Number.isFinite(n) ? String(n) : quantidade
-}
-
-/** Rótulo localizado da unidade do enum (token machine-readable → label); fora do enum sai cru. */
-function formatUnidade(unidade: string, m: Messages): string {
-  return isUnidade(unidade) ? m.unidadeLabel[unidade] : unidade
 }
 
 /**

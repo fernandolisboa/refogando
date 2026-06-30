@@ -1123,7 +1123,7 @@ export const ptBR = {
     criarReceitaDescricaoCampo: 'Descrição',
     criarReceitaIngredientes: 'Ingredientes',
     criarReceitaIngrediente: 'Ingrediente',
-    criarReceitaIngredientePlaceholder: 'Ex.: feijão preto',
+    criarReceitaIngredientePlaceholder: 'Ex.: 500 g de feijão preto',
     criarReceitaQuantidade: 'Quantidade',
     criarReceitaQuantidadePlaceholder: 'Ex.: 500',
     criarReceitaUnidade: 'Unidade',

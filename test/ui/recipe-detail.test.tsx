@@ -43,10 +43,12 @@ function baseView(over: Partial<RecipeView> = {}): RecipeView {
     facets: { cozinha: 'mexicana', categoria: 'prato_principal', tags: ['picante'] },
     porcoes: 4,
     dificuldade: 2,
-    // `unidade` é valor REAL do enum UNIDADES (token machine-readable); `quantidade` vem
-    // como string do `numeric(10,3)` com zeros à direita (ex. '2.500') — ambos exercitam
-    // a localização da unidade e a normalização da quantidade na view.
-    ingredients: [{ ordem: 1, quantidade: '2.500', unidade: 'colher_de_sopa', rawText: 'feijão' }],
+    // `rawText` é a LINHA HUMANA COMPLETA (inclui a medida), como TODA origem de produção a grava;
+    // `quantidade`/`unidade` são metadados ESTRUTURADOS (não se recompõem no display, senão duplicam
+    // — `formatIngredientLine`). A linha é exibida VERBATIM.
+    ingredients: [
+      { ordem: 1, quantidade: '2.500', unidade: 'colher_de_sopa', rawText: '2 colheres de sopa de feijão' },
+    ],
     translations: [],
     // #161: por padrão a leitura NÃO repousa em tradução automática (sem selo). Cada caso que
     // exercita o selo sobrescreve `autoTranslationSignal: true`.
@@ -100,15 +102,18 @@ describe('RecipeDetailView (#57)', () => {
     const h1 = screen.getByRole('heading', { level: 1 })
     expect(h1).toHaveTextContent('Texas Chili (chili do Texas)')
 
-    // Seção Ingredientes + item: quantidade normalizada ('2.500'→'2.5'), unidade
-    // LOCALIZADA (token 'colher_de_sopa'→ rótulo amigável), nunca o token cru.
+    // Seção Ingredientes + item: a LINHA HUMANA (`rawText`) é exibida VERBATIM — UMA vez.
     expect(
       screen.getByRole('heading', { name: M.detalhe.ingredientes, level: 2 }),
     ).toBeInTheDocument()
+    expect(screen.getByText('2 colheres de sopa de feijão')).toBeInTheDocument()
+    // REGRESSÃO (#bug medida duplicada): a medida estruturada NÃO é re-prefixada na linha — nada de
+    // "2.5 colher de sopa — 2 colheres de sopa de feijão".
     expect(
-      screen.getByText(`2.5 ${M.unidadeLabel.colher_de_sopa} — feijão`),
-    ).toBeInTheDocument()
-    // O token cru NÃO vaza na tela.
+      screen.queryByText(`2.5 ${M.unidadeLabel.colher_de_sopa} — 2 colheres de sopa de feijão`),
+    ).toBeNull()
+    expect(screen.queryByText(/—\s*2 colheres de sopa de feijão/)).toBeNull()
+    // O token cru do enum NÃO vaza na tela.
     expect(screen.queryByText(/colher_de_sopa/)).toBeNull()
     expect(screen.queryByText(/2\.500/)).toBeNull()
 
