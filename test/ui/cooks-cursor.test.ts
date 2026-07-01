@@ -24,7 +24,7 @@ describe('cooks-cursor — recomendações (score, recency, handle)', () => {
     }
   })
 
-  it('score 0 é válido (cozinheiro sem votos ainda)', () => {
+  it('score 0 é válido (cozinheiro sem apreço ainda)', () => {
     expect(decodeRecsCursor(encodeRecsCursor({ score: 0, recency: '2026-06-29 12:00:00+00', handle: 'h-1' }))).not.toBeNull()
   })
 

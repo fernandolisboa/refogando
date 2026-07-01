@@ -11,7 +11,6 @@ import { POST as STREAM } from '@/app/api/conversations/stream/route'
 import { POST as CREATION_SESSIONS } from '@/app/api/creation-sessions/route'
 import { POST as DERIVE } from '@/app/api/recipes/[id]/derive/route'
 import { POST as REGENERATE } from '@/app/api/recipes/[id]/regenerate/route'
-import { POST as VOTE } from '@/app/api/recipes/[id]/vote/route'
 import { POST as SAVE } from '@/app/api/recipes/[id]/save/route'
 import { POST as PUBLISH } from '@/app/api/recipes/[id]/publish/route'
 import { POST as REPORT } from '@/app/api/recipes/[id]/report/route'
@@ -291,14 +290,6 @@ describe('Contrato anônimo — ESCRITA/GERAÇÃO fail-closed (401)', () => {
     const target = await seedPublicTarget('publish-target@anon.test')
 
     const res = await callDyn(PUBLISH, target, 'POST', {})
-    expect(res.status).toBe(401)
-    await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
-  })
-
-  it('POST /api/recipes/[id]/vote anônimo → 401 (votar exige conta)', async () => {
-    const target = await seedPublicTarget('vote-target@anon.test')
-
-    const res = await callDyn(VOTE, target, 'POST', {})
     expect(res.status).toBe(401)
     await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
   })

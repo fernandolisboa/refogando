@@ -8,7 +8,6 @@ import {
   recipeTag,
   tag,
   ingredient,
-  recipeVote,
   recipeSave,
   users,
 } from '@/db/schema'
@@ -172,54 +171,29 @@ export async function loadRecipeTranslationContext(
 }
 
 /**
- * Estado SOCIAL leak-safe da Receita (#16): o agregado público `voteCount` e o estado do
- * PRÓPRIO viewer (`viewerVoted`/`viewerSaved`). O chamador (GET route) decide O QUE
- * pedir conforme o gate de leitura:
- *  - `includeVoteCount`: só quando a Receita está no POOL (isPublicRead). Em owned-private
- *    NÃO pedir (o agregado não é conteúdo de pool) ⇒ `voteCount: undefined`.
- *  - `viewerId`: quando presente, carrega `viewerVoted`/`viewerSaved` (EXISTS por
- *    (userId, id) nas duas tabelas). Ausente ⇒ ambos `undefined` (anônimo).
+ * Estado SOCIAL leak-safe da Receita (#16/#362): o estado do PRÓPRIO viewer (`viewerSaved`). O
+ * chamador (GET route) decide se pede:
+ *  - `viewerId`: quando presente, carrega `viewerSaved` (EXISTS por (userId, id) em
+ *    `recipe_save`). Ausente ⇒ `undefined` (anônimo).
  *
- * As leituras pedidas são independentes ⇒ disparadas em paralelo. Retorna só o que foi
- * pedido (campos não pedidos ficam `undefined`).
+ * A leitura pedida é disparada só quando há `viewerId`. Retorna só o que foi pedido (campos
+ * não pedidos ficam `undefined`).
  */
 export type SocialState = {
-  voteCount?: number
-  viewerVoted?: boolean
   viewerSaved?: boolean
 }
 
 export async function loadSocialState(
   db: Database,
-  input: { id: string; viewerId?: string; includeVoteCount: boolean },
+  input: { id: string; viewerId?: string },
 ): Promise<SocialState> {
-  const { id, viewerId, includeVoteCount } = input
+  const { id, viewerId } = input
 
   const tasks: Array<Promise<void>> = []
   const out: SocialState = {}
 
-  if (includeVoteCount) {
-    tasks.push(
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(recipeVote)
-        .where(eq(recipeVote.recipeId, id))
-        .then(([r]) => {
-          out.voteCount = r?.count ?? 0
-        }),
-    )
-  }
-
   if (viewerId != null) {
     tasks.push(
-      db
-        .select({ one: sql<number>`1` })
-        .from(recipeVote)
-        .where(and(eq(recipeVote.userId, viewerId), eq(recipeVote.recipeId, id)))
-        .limit(1)
-        .then((rows) => {
-          out.viewerVoted = rows.length > 0
-        }),
       db
         .select({ one: sql<number>`1` })
         .from(recipeSave)

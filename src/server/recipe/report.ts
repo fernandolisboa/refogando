@@ -8,10 +8,10 @@ import { decideModerationReason } from '@/domain/report'
  * Núcleo com efeito de Report (issue #18, ADR-0003). Espelha o estilo de `social.ts`:
  * discriminated union que o route mapeia para HTTP — rota fina e DRY.
  *
- * Qualquer Usuário autenticado reporta uma Receita do POOL. O gate é o MESMO de
- * voto/salvar (`eligibleForPool` — gate de pool, NÃO de ownership): só se reporta o que
- * está visível no pool. Fora do pool (privada de outro / playful / removida / inexistente)
- * ⇒ not_found (404, não vaza existência — coerente com o GET/vote).
+ * Qualquer Usuário autenticado reporta uma Receita do POOL. O gate é o MESMO de leitura de
+ * pool (`eligibleForPool` — gate de pool, NÃO de ownership): só se reporta o que está visível
+ * no pool. Fora do pool (privada de outro / playful / removida / inexistente)
+ * ⇒ not_found (404, não vaza existência — coerente com o GET por uuid).
  *
  * O Report mira a RECEITA (recipe_id), não a tradução: a moderação tem identidade única
  * entre locales (AC4). Múltiplos reports por Receita são permitidos (a fila agrega; dedup
@@ -35,7 +35,7 @@ export type ReportResult =
 /**
  * Gate barato + elegibilidade de POOL (lê owner_id + visibility + result_kind +
  * moderation_removed_at). Devolve o `Gate` quando a Receita está no pool; `null` quando
- * inexistente OU fora do pool. MESMO predicado de `social.ts loadPoolGate` (recipe-pool.ts).
+ * inexistente OU fora do pool. MESMO predicado `eligibleForPool` (recipe-pool.ts).
  */
 async function loadPoolGate(db: Database, id: string): Promise<Gate | null> {
   const [gate] = await db

@@ -1,6 +1,6 @@
 /**
- * Regra de domínio da AVALIAÇÃO — módulo PURO (issue #363, ADR-0027). Espelha o padrão
- * `decide*` de `vote.ts` (decisão total/determinística, zero DB/I/O).
+ * Regra de domínio da AVALIAÇÃO — módulo PURO (issue #363, ADR-0027): decisão total/
+ * determinística, zero DB/I/O.
  *
  * Decide os julgamentos de borda da Avaliação: nota 1–5 VÁLIDA, comentário NORMALIZADO
  * (trim + cap) e NÃO-AUTO-AVALIAÇÃO. Avaliar a PRÓPRIA Receita é rejeitado
@@ -8,8 +8,8 @@
  * NUNCA casa com um `reviewerId` (string) ⇒ Catálogo é sempre avaliável (AC "comunidade E
  * catálogo"). A UNICIDADE (1 por par) NÃO mora aqui: é a UNIQUE `(user_id, recipe_id)` +
  * `ON CONFLICT DO UPDATE` no servidor. A ELEGIBILIDADE de POOL também NÃO mora aqui: fica no
- * gate do servidor (`loadReviewGate` reusando `eligibleForPool`) — o MESMO split de
- * `decideVote`/`loadPoolGate`.
+ * gate do servidor (`loadReviewGate` reusando `eligibleForPool`) — a decisão pura e o gate de
+ * pool são camadas separadas.
  *
  * LANDMINE (sem rede de banco): NÃO há CHECK de auto-avaliação no schema (owner_id mora em
  * `recipe`, não em `recipe_review`; um CHECK cross-table exigiria trigger). Logo, ESTE

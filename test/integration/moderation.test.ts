@@ -3,14 +3,13 @@ import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
-import { recipe, report, recipeTranslation, recipeEmbedding, recipeVote, recipeSave } from '@/db/schema'
+import { recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '@/db/schema'
 import { POST as reportRoute } from '@/app/api/recipes/[id]/report/route'
 import { GET as reportsQueueRoute } from '@/app/api/curate/reports/route'
 import { POST as removeRoute } from '@/app/api/curate/reports/[id]/remove/route'
 import { POST as keepRoute } from '@/app/api/curate/reports/[id]/keep/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { GET as searchRoute } from '@/app/api/search/route'
-import { POST as voteRoute } from '@/app/api/recipes/[id]/vote/route'
 import { POST as saveRoute } from '@/app/api/recipes/[id]/save/route'
 import { POST as publishRoute } from '@/app/api/recipes/[id]/publish/route'
 import { POST as unpublishRoute } from '@/app/api/recipes/[id]/unpublish/route'
@@ -22,7 +21,6 @@ import {
   seedTranslation,
   seedReport,
   seedRemovedFromPool,
-  seedVote,
   seedSave,
 } from '../helpers/recipes'
 
@@ -78,11 +76,6 @@ function get(id: string, headers?: Headers): Promise<Response> {
 }
 function search(qs: string): Promise<Response> {
   return searchRoute(new Request(`http://localhost/api/search?${qs}`))
-}
-function vote(id: string, headers?: Headers): Promise<Response> {
-  return voteRoute(new Request(`http://localhost/api/recipes/${id}/vote`, { method: 'POST', headers }), {
-    params: Promise.resolve({ id }),
-  })
 }
 function save(id: string, headers?: Headers): Promise<Response> {
   return saveRoute(new Request(`http://localhost/api/recipes/${id}/save`, { method: 'POST', headers }), {
@@ -253,7 +246,7 @@ describe('Moderação reativa (#18)', () => {
   })
 
   // ── AC3: remover-do-pool distinto de despublicar; owner mantém a linha privada ────
-  it('AC3 removida: some da busca (pt-BR+en-US) e do GET anônimo/não-dono; DONO ainda lê (sem voteCount)', async () => {
+  it('AC3 removida: some da busca (pt-BR+en-US) e do GET anônimo/não-dono; DONO ainda lê', async () => {
     const { userId: owner, headers: ownerH } = await seedSessionHeaders({ email: 'ac3-owner@ex.com' })
     const { headers: otherH } = await seedSessionHeaders({ email: 'ac3-other@ex.com' })
     const { userId: curId } = await seedSessionHeaders({ email: 'ac3-cur@ex.com', role: 'curador' })
@@ -270,11 +263,10 @@ describe('Moderação reativa (#18)', () => {
     expect((await get(id)).status).toBe(404)
     expect((await get(id, otherH)).status).toBe(404)
 
-    // DONO ainda lê a própria linha privada (200, sem voteCount)
+    // DONO ainda lê a própria linha privada (200)
     const mine = await get(id, ownerH)
     expect(mine.status).toBe(200)
-    const view = (await mine.json()) as { voteCount?: number; canManage?: boolean; moderationReason?: unknown }
-    expect(view.voteCount).toBeUndefined() // fora do pool ⇒ omitido
+    const view = (await mine.json()) as { canManage?: boolean; moderationReason?: unknown }
     expect(view.canManage).toBe(true)
     expect(view.moderationReason).toBeUndefined() // moderation_reason NUNCA chega à view
 
@@ -425,10 +417,10 @@ describe('Moderação reativa (#18)', () => {
     expect(cfgPut.status).toBe(403)
   })
 
-  // ── keep + persistência de votos/saves + idempotência ────────────────────────
-  it('keep mantém no pool; votos/saves sobrevivem à remoção; voto em removida ⇒ 404; já-resolvido ⇒ 409', async () => {
+  // ── keep + persistência de saves + idempotência ─────────────────────────────
+  it('keep mantém no pool; saves sobrevivem à remoção; save em removida ⇒ 404; já-resolvido ⇒ 409', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'k-owner@ex.com' })
-    const { userId: voterId, headers: voterH } = await seedSessionHeaders({ email: 'k-voter@ex.com' })
+    const { headers: saverH } = await seedSessionHeaders({ email: 'k-saver@ex.com' })
     const { userId: favId } = await seedSessionHeaders({ email: 'k-fav@ex.com' })
     const { headers: reporter } = await seedSessionHeaders({ email: 'k-reporter@ex.com' })
     const { headers: curador } = await seedSessionHeaders({ email: 'k-cur@ex.com', role: 'curador' })
@@ -443,18 +435,15 @@ describe('Moderação reativa (#18)', () => {
     const sKeep = (await (await search('q=cebola')).json()) as { comunidade: { recipeId: string }[] }
     expect(sKeep.comunidade.map((r) => r.recipeId)).toContain(keepId)
 
-    // remove: votos/saves pré-existentes PERSISTEM (sem DELETE)
+    // remove: saves pré-existentes PERSISTEM (sem DELETE)
     const remId = await seedPublicCommunity(owner, 'Torta de limão')
-    await seedVote({ userId: voterId, recipeId: remId })
     await seedSave({ userId: favId, recipeId: remId })
     const repRem = ((await (await reportRecipe(remId, { reason: 'x' }, reporter)).json()) as { reportId: string }).reportId
     expect((await remove(repRem, { reason: 'fora' }, curador)).status).toBe(200)
-    expect((await getDb().select().from(recipeVote).where(eq(recipeVote.recipeId, remId))).length).toBe(1)
     expect((await getDb().select().from(recipeSave).where(eq(recipeSave.recipeId, remId))).length).toBe(1)
 
-    // votar/salvar numa removida ⇒ 404 (quem salvou deixa de ver, igual despublicar)
-    expect((await vote(remId, voterH)).status).toBe(404)
-    expect((await save(remId, voterH)).status).toBe(404)
+    // salvar numa removida ⇒ 404 (quem salvou deixa de ver, igual despublicar)
+    expect((await save(remId, saverH)).status).toBe(404)
 
     // anti-corrida: remove/keep sobre report não-pending ⇒ 409 ja_resolvido
     const dup = await remove(repRem, { reason: 'de novo' }, curador)

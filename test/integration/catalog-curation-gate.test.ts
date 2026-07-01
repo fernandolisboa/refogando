@@ -11,7 +11,7 @@ import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
 import { POST as translationsGet } from '@/app/api/recipes/[id]/translations/[locale]/route'
 import { POST as translationsReview } from '@/app/api/recipes/[id]/translations/[locale]/review/route'
 import { GET as staleQueue } from '@/app/api/curate/translations/stale/route'
-import { POST as voteRoute } from '@/app/api/recipes/[id]/vote/route'
+import { POST as saveRoute } from '@/app/api/recipes/[id]/save/route'
 import { seedRecipe, seedTranslation, seedRecipeImage } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 import type { CurationStatus } from '@/domain/recipe-curation'
@@ -204,17 +204,17 @@ describe('Gate de curadoria — tradução / pool / fila-stale escondem o rascun
     expect(res.status).toBe(404)
   })
 
-  it('pool (voto): 404 pro rascunho; aprovado é votável', async () => {
-    const token = `vt${Date.now().toString(36)}`
-    const { headers } = await seedSessionHeaders({ email: `vt-${crypto.randomUUID()}@ex.com` })
+  it('pool (salvar): 404 pro rascunho; aprovado é salvável', async () => {
+    const token = `sv${Date.now().toString(36)}`
+    const { headers } = await seedSessionHeaders({ email: `sv-${crypto.randomUUID()}@ex.com` })
     const approved = await seedCatalog('approved', token)
     const pending = await seedCatalog('pending', token)
-    const vote = (id: string) =>
-      voteRoute(new Request(`http://localhost/api/recipes/${id}/vote`, { method: 'POST', headers }), {
+    const save = (id: string) =>
+      saveRoute(new Request(`http://localhost/api/recipes/${id}/save`, { method: 'POST', headers }), {
         params: Promise.resolve({ id }),
       })
-    expect((await vote(pending.id)).status).toBe(404)
-    expect((await vote(approved.id)).status).not.toBe(404)
+    expect((await save(pending.id)).status).toBe(404)
+    expect((await save(approved.id)).status).not.toBe(404)
   })
 
   it('fila de tradução stale (curador): exclui o rascunho, inclui o aprovado', async () => {

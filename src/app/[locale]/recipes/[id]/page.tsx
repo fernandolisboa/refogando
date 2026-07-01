@@ -58,7 +58,6 @@ import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
 import {
   loadPublicRecipeBySlug,
-  loadSocialState,
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
@@ -165,20 +164,15 @@ export default async function RecipeDetailPage({
   if (route.kind === 'slug') {
     const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
-      // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
-      // dinâmico). `viewerVoted`/`viewerSaved` ficam AUSENTES (anônimo) — o estado do viewer é
-      // resolvido no cliente pelos controles quando logado. Mantém a rota cacheável.
-      const social = await loadSocialState(getDb(), {
-        id: publicRows.recipe.id,
-        includeVoteCount: true,
-      })
+      // Caminho PÚBLICO anônimo/cacheável (sem cookie — não personaliza nem força dinâmico).
+      // `viewerSaved` fica AUSENTE (anônimo) — o estado do viewer é resolvido no cliente pelos
+      // controles quando logado. Mantém a rota cacheável.
       const view = resolveRecipeView({
         recipe: publicRows.recipe,
         translations: publicRows.translations,
         ingredients: publicRows.ingredients,
         tags: publicRows.tags,
         requestLocale: locale,
-        voteCount: social.voteCount,
         ...(publicRows.author ? { author: publicRows.author } : {}),
         ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
         ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
@@ -269,8 +263,8 @@ export default async function RecipeDetailPage({
   // já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
   const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
   // Avaliações (#363) no caminho do dono: para uma privada, `loadRecipeReviews` devolve `null`
-  // (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Desacopla de
-  // voteCount e NÃO passa por resolveRecipeView.
+  // (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Sinal
+  // INDEPENDENTE de pool (não passa por resolveRecipeView), reusado pelo gate de engajamento.
   const reviews = serializeReviews(await loadRecipeReviews(getDb(), { id: ownerUuid }))
   return (
     <DetailChrome
@@ -314,8 +308,9 @@ async function resolveCatalogDisclosure(origin: string): Promise<string | undefi
  * Chrome compartilhada do detalhe — a MESMA tela só-leitura para o caminho público e o do dono. Os
  * controles de gestão (status/imagem) já são gateados por `view.canManage` (presente SÓ pro dono,
  * AUSENTE no caminho público): a vista pública nunca os renderiza. `RecipeEngagementControls`
- * gateia por `voteCount != null` (presente no pool); `RecipeDetailActions` (client) resolve a
- * afordância dono/não-dono/visitante pela sessão do cliente.
+ * gateia por `reviews != null` (sinal de pool) OU `view.canManage` (dono monta pra Salvar a própria,
+ * inclusive privada); `RecipeDetailActions` (client) resolve a afordância dono/não-dono/visitante
+ * pela sessão do cliente.
  */
 async function DetailChrome({
   view,
@@ -372,28 +367,25 @@ async function DetailChrome({
         cozinhaLabel={cozinhaLabel}
         catalogDisclosure={catalogDisclosure}
       />
-      {/* Engajamento (#62/#362): monta quando há agregado de pool (`voteCount`, caminho público) OU
-          quando o DONO gerencia a própria receita (`canManage`) — inclusive a PRIVADA, que não tem
-          `voteCount` (fora do pool) mas PRECISA do botão Salvar (AC6: "salva-se a própria — inclusive
-          privada"). Nesse caso o controle esconde a contagem/voto ausentes e mostra só Salvar. No
-          caminho público o anônimo VÊ a contagem; `viewerVoted`/`viewerSaved` ausentes (resolvidos no
-          cliente). `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o React
-          reusaria a instância (props mudam, `useState` NÃO re-inicializa), carregando voto/contagem/
+      {/* Engajamento (#62/#362): monta quando a Receita está no POOL (`reviews != null` — o MESMO
+          sinal de pool INDEPENDENTE que a seção de Avaliações usa)
+          OU quando o DONO gerencia a própria receita (`canManage`) — inclusive a PRIVADA, que fica
+          FORA do pool (`reviews == null`) mas PRECISA do botão Salvar (AC6: "salva-se a própria —
+          inclusive privada"). No caminho público `viewerSaved` chega ausente (anônimo, resolvido no
+          cliente). `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o
+          React reusaria a instância (props mudam, `useState` NÃO re-inicializa), carregando o
           estado-do-viewer da receita anterior (e o fetch client-side só corrige depois). A key força
           estado fresco. */}
-      {(view.voteCount != null || view.canManage) && (
+      {(reviews != null || view.canManage) && (
         <RecipeEngagementControls
           key={view.id}
           recipeId={view.id}
-          initialVoteCount={view.voteCount}
-          initialViewerVoted={view.viewerVoted}
           initialViewerSaved={view.viewerSaved}
-          canManage={view.canManage ?? false}
         />
       )}
       {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews
-          devolveu o pool), NÃO em voteCount (que esta épica aposenta). `key={view.id}`: remonta por
-          receita (estado do widget não vaza numa nav detalhe→detalhe in-place). */}
+          devolveu o pool). `key={view.id}`: remonta por receita (estado do widget não vaza numa nav
+          detalhe→detalhe in-place). */}
       {reviews != null && (
         <RecipeReviewSection
           key={view.id}

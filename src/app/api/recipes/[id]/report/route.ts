@@ -4,7 +4,7 @@ import { isUuid } from '@/server/http/params'
 import { createReport } from '@/server/recipe/report'
 
 /**
- * Reportar uma Receita do pool (issue #18, AC1). Route FINO espelhando vote: valida uuid →
+ * Reportar uma Receita do pool (issue #18, AC1). Route FINO espelhando save: valida uuid →
  * 404; exige SESSÃO (NÃO papel — qualquer Usuário autenticado reporta) → 401 ANTES de tocar
  * o DB (anônimo = zero efeito); delega a `createReport`, que faz o gate de POOL (só receita
  * visível é reportável) + motivo obrigatório + INSERT na fila. Mapeia o discriminator.

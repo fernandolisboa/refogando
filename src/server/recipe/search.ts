@@ -262,7 +262,8 @@ export type SearchLoaderResult = {
  * Corpo do subquery de SAVES por receita (#368, ADR-0027/0028) COMPARTILHADO entre os DOIS sites de join
  * físicos: o `visible` (ON r.id) e o bucket-2 semântico (ON s.recipe_id). Fatorar o CORPO garante que a
  * self-exclusão NÃO derive entre as cópias (achado B2). LANDMINE B1-sec: self-save é PERMITIDO no
- * write-path (≠ voto), então o RANKING deve excluir o auto-save (`rf.user_id <> rr.owner_id`) — senão o
+ * write-path (o save é marcador pessoal do dono), então o RANKING deve excluir o auto-save
+ * (`rf.user_id <> rr.owner_id`) — senão o
  * dono infla a própria receita salvando-a. NULL-safe pro CATÁLOGO (owner NULL): `rr.owner_id IS NULL OR
  * ...` (`NULL <> x` é NULL ⇒ a linha do catálogo sumiria). `count(*)::int` = number (não string de bigint).
  *
@@ -377,7 +378,7 @@ export async function searchRecipes(
   // bucket de exatidao e SO para section='comunidade' (Catalogo intocado — ADR-0003).
   const isPopularidade = args.sort === 'popularidade' ? sql`true` : sql`false`
 
-  // #368 (ADR-0027/0028): a mistura de POPULARIDADE substitui a chave de contagem-de-votos do #16. cfg (pesos/m/tau)
+  // #368 (ADR-0027/0028): a mistura de POPULARIDADE substitui a antiga chave de contagem do #16. cfg (pesos/m/tau)
   // + C (média GLOBAL da nota — prior da Bayesiana) carregados 1× por request, SÓ sob sort=popularidade
   // (gate de PERF: os LEFT JOIN agregados de save/nota e a coluna popularity_score só materializam nesse
   // caso; varrer recipe_save/recipe_review a cada Busca de relevância seria desperdício). Sob relevancia a

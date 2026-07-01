@@ -11,8 +11,8 @@ import { isCatalogPubliclyCurated, type CurationStatus } from '@/domain/recipe-c
  * é DISTINTO de despublicar (AC3), e as duas dimensões são ortogonais (republicar não
  * ressuscita uma Receita moderada).
  *
- * Esta função é a fonte única do predicado em JS (`social.ts loadPoolGate` + os núcleos de
- * `report.ts`/`moderation.ts`). `search.ts` é SQL cru e NÃO pode chamar JS — lá o predicado
+ * Esta função é a fonte única do predicado em JS (os núcleos de `review.ts`/`report.ts`/
+ * `moderation.ts`). `search.ts` é SQL cru e NÃO pode chamar JS — lá o predicado
  * `AND moderation_removed_at IS NULL` é replicado verbatim em cada gate, com comentário
  * apontando para aqui (faltar UM gate = vaza Receita removida).
  *
@@ -46,7 +46,7 @@ export function eligibleForPool(r: {
  * PRÓPRIA receita mesmo PRIVADA ("pra montar o caderno"). O ramo de ownership dispensa a
  * visibilidade pública mas MANTÉM as demais barreiras do pool (não-playful, não-removida-
  * por-moderação, não-importada-da-web). Receita privada de OUTRO segue fora ⇒ 404 leak-safe.
- * NÃO afeta Voto: voto continua em eligibleForPool (pool público + não-autovoto).
+ * O pool público puro (leitura/report/avaliação) segue em `eligibleForPool`.
  */
 export function eligibleToSaveByViewer(
   r: {

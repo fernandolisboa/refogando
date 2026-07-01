@@ -18,7 +18,7 @@ import { RECOMMENDED_COOK_RECIPES_LIMIT } from '@/domain/recommended-cooks-read'
 
 /**
  * Loader do trilho "Cozinheiros pra seguir" (#278→#368, ADR-0024/0027/0028) contra Postgres real. O
- * apreço mudou de `votos+favoritos` (contagem inteira) pra a MISTURA `cookScore = wSave·ln(1+total_saves)
+ * apreço mudou da antiga contagem inteira pra a MISTURA `cookScore = wSave·ln(1+total_saves)
  * + wNota·bayes(cook_avg, cook_count, C, m)` — SEM frescor aditivo (a recência é o desempate do keyset).
  *
  * A FILA é carregada pelo sinal de SAVES (ln monotônico ⇒ mais saves = score maior). Nos testes que

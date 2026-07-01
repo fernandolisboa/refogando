@@ -7,7 +7,7 @@
  * Ambos = base64url de JSON via `Buffer` (utf8): o `name` da busca pode ter acento/unicode, então NÃO
  * dá pra usar `btoa` (Latin1) como o cursor do feed; só rotas/loaders (Node) os tocam, nunca o cliente
  * (que os devolve verbatim). OPACOS À UI, NÃO secretos — carregam só a posição keyset; o leak via
- * base64 é dos mesmos campos públicos do #307 (popularidade de votos/saves públicos, timestamp de
+ * base64 é dos mesmos campos públicos do #307 (popularidade por saves públicos, timestamp de
  * receita pública, handle público). **ALLOWLIST (#269/Modelo B): o tiebreak é o `handle` PÚBLICO — o
  * `id` interno NUNCA entra no cursor.**
  *

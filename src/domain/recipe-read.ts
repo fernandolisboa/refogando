@@ -180,17 +180,12 @@ export type ResolveInput = {
    */
   viewerId?: string
   /**
-   * Estado social (#16) — campos ADITIVOS opcionais que o SERVER (que conhece sessão+pool)
+   * Estado social (#16/#362) — campo ADITIVO opcional que o SERVER (que conhece sessão+pool)
    * calcula e passa. `resolveRecipeView` apenas PROJETA (não decide gate/pool):
-   *  - `voteCount`: agregado PÚBLICO. O server só o passa quando a Receita está no POOL
-   *    (isPublicRead) — omitido em owned-private (necessariamente 0, irrelevante, e não é
-   *    conteúdo de pool). Quando `undefined`, a vista OMITE `voteCount`.
-   *  - `viewerVoted`/`viewerSaved`: estado do PRÓPRIO viewer. O server só os carrega
-   *    quando há `viewerId`. A projeção é gateada por `viewerId != null` (viewer-self,
-   *    distinto de canManage que é owner-only): anônimo ⇒ ausentes.
+   *  - `viewerSaved`: estado do PRÓPRIO viewer. O server só o carrega quando há `viewerId`.
+   *    A projeção é gateada por `viewerId != null` (viewer-self, distinto de canManage que é
+   *    owner-only): anônimo ⇒ ausente.
    */
-  voteCount?: number
-  viewerVoted?: boolean
   viewerSaved?: boolean
   /**
    * Autoria (#129) — `name` + `handle` PÚBLICOS do dono, que o server carrega via JOIN em `users`
@@ -433,19 +428,11 @@ export type RecipeView = {
    */
   vinculoPerdido?: boolean
   /**
-   * Contagem de votos (#16, ADR-0003) — agregado PÚBLICO (Popularidade). Presente SÓ
-   * quando a Receita está no POOL (o server só passa `voteCount` para receitas legíveis
-   * publicamente); AUSENTE em owned-private (mesma regra "ausente ≠ vazio" — omitido, não
-   * 0). NÃO é gateado por ownership: anônimo no pool VÊ a contagem.
+   * Estado do PRÓPRIO viewer (#16/#362) — `viewerSaved`. Presente SÓ quando há `viewerId`
+   * (ator autenticado vê SÓ o próprio estado); AUSENTE para anônimo. NÃO gateado por ownership
+   * (viewer-self, distinto de canManage owner-only): um usuário logado vê seu próprio save mesmo
+   * na Receita de outro / no Catálogo.
    */
-  voteCount?: number
-  /**
-   * Estado do PRÓPRIO viewer (#16) — `viewerVoted`/`viewerSaved`. Presentes SÓ quando
-   * há `viewerId` (ator autenticado vê SÓ o próprio estado); AUSENTES para anônimo. Saem
-   * JUNTOS. NÃO gateados por ownership (viewer-self, distinto de canManage owner-only): um
-   * usuário logado vê seu próprio voto/save mesmo na Receita de outro / no Catálogo.
-   */
-  viewerVoted?: boolean
   viewerSaved?: boolean
 }
 
@@ -785,16 +772,11 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
           ...(input.recipe.parentRecipeId == null ? { vinculoPerdido: true } : {}),
         }
       : {}),
-    // Social (#16): `voteCount` agregado PÚBLICO, presente só quando o server o passou
-    // (i.e. a Receita está no pool) — espelha a regra "ausente ≠ vazio". Independente de
-    // viewerId/ownership.
-    ...(input.voteCount != null ? { voteCount: input.voteCount } : {}),
-    // Estado do PRÓPRIO viewer (#16): presente SÓ com viewerId (viewer-self, NÃO
-    // owner-only). Os DOIS saem juntos; default false (server passa só quando logado).
-    // ADITIVO e estruturalmente incapaz de tocar `avisos` (AC4/ADR-0004).
+    // Estado do PRÓPRIO viewer (#16/#362): presente SÓ com viewerId (viewer-self, NÃO
+    // owner-only). Default false (server passa só quando logado). ADITIVO e estruturalmente
+    // incapaz de tocar `avisos` (AC4/ADR-0004).
     ...(input.viewerId != null
       ? {
-          viewerVoted: input.viewerVoted ?? false,
           viewerSaved: input.viewerSaved ?? false,
         }
       : {}),

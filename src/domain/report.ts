@@ -19,7 +19,7 @@ export function isReportStatus(v: string): v is ReportStatus {
 /**
  * Validador PURO do motivo (AC2: o Curador remove do pool REGISTRANDO O MOTIVO; o mesmo
  * motivo obrigatório vale para criar um Report). Espelha o padrão `decide*` de
- * `recipe-visibility.ts`/`vote.ts`: decisão pura, zero DB/I/O. Único validador de motivo,
+ * `recipe-visibility.ts`: decisão pura, zero DB/I/O. Único validador de motivo,
  * reusado por `createReport` E por `applyModerationRemove` — o motivo nunca é opcional.
  */
 export function decideModerationReason(input: { reason: string }): { allowed: boolean } {
