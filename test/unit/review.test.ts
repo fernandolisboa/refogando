@@ -70,6 +70,29 @@ describe('decideReview — comentário (normalização/validação)', () => {
     },
   )
 
+  it('NUL (U+0000) é removido do comentário — sanitizado (permitido), NUNCA chega ao Postgres (evita 500)', () => {
+    expect(
+      decideReview({ reviewerId: 'u1', recipeOwnerId: 'u2', rating: 5, comment: 'abc\x00def' }),
+    ).toEqual({ allowed: true, comment: 'abcdef' })
+  })
+
+  it('comentário só de NUL ⇒ comment null (ausente após stripping + trim)', () => {
+    expect(
+      decideReview({ reviewerId: 'u1', recipeOwnerId: 'u2', rating: 5, comment: '\x00\x00' }),
+    ).toEqual({ allowed: true, comment: null })
+  })
+
+  it('quebras de linha long-form (\\n/\\t) são PRESERVADAS (só o NUL é removido)', () => {
+    expect(
+      decideReview({
+        reviewerId: 'u1',
+        recipeOwnerId: 'u2',
+        rating: 5,
+        comment: 'linha 1\nlinha 2\tfim',
+      }),
+    ).toEqual({ allowed: true, comment: 'linha 1\nlinha 2\tfim' })
+  })
+
   it('comentário no limite do cap ⇒ permitido; acima do cap ⇒ invalid_comment', () => {
     const atCap = 'x'.repeat(MAX_REVIEW_COMMENT_LEN)
     expect(

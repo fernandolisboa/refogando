@@ -41,9 +41,13 @@ export function decideReview(input: {
     return { allowed: false, reason: 'invalid_rating' }
   }
 
-  // 2) Comentário: só string conta; trim; cap; '' → null. Um valor não-string (objeto/número)
-  //    vira '' (ausente) — NUNCA bind de `[object Object]` num text param nem 500.
-  const c = typeof input.comment === 'string' ? input.comment.trim() : ''
+  // 2) Comentário: só string conta; NUL (U+0000) removido; trim; cap; '' → null. Um valor
+  //    não-string (objeto/número) vira '' (ausente) — NUNCA bind de `[object Object]` num text
+  //    param nem 500. O NUL sobrevive ao trim() e o Postgres o REJEITA em param text → 500 não
+  //    tratado (mesmo perigo documentado em search-terms.ts); tiramos SÓ o NUL (não a classe C0
+  //    inteira) para preservar \n/\t de um comentário long-form (a UI renderiza whitespace-pre-line).
+  const c =
+    typeof input.comment === 'string' ? input.comment.replace(/\x00/g, '').trim() : ''
   if (c.length > MAX_REVIEW_COMMENT_LEN) {
     return { allowed: false, reason: 'invalid_comment' }
   }
