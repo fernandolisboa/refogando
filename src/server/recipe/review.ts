@@ -147,9 +147,15 @@ export async function applyReview(input: {
   // delete: sem checagem de nota/auto/comentário; idempotente (no-op se não existe). Ainda
   // pool-gated (fora do pool ⇒ 404), consistente com `unvote` — as avaliações PERSISTEM
   // através de despublicar (o gate 404 nesse caso é intencional, não apaga a linha).
+  //
+  // #366 (M4): a avaliação MODERADA pelo Curador NÃO é apagável pelo autor — `isNull(moderatedAt)`
+  // no WHERE torna o delete um NO-OP sobre uma linha moderada. Sem isso, o autor apagaria a linha
+  // (junto com moderated_*) e re-postaria pra ressuscitar (o upsert nasce moderated_at NULL),
+  // derrotando a moderação. A moderação é DURÁVEL (in-model, como recipe/recipe_image). Avaliação
+  // não-moderada apaga normal.
   await db
     .delete(recipeReview)
-    .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id)))
+    .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id), isNull(recipeReview.moderatedAt)))
   const agg = await loadAggregate(db, id)
   return { kind: 'ok', ...agg, viewerRating: null, viewerComment: null }
 }
@@ -199,7 +205,9 @@ export async function loadRecipeReviews(
 export type ViewerReviewResult =
   | {
       kind: 'ok'
-      viewerReview: { rating: number; comment: string | null } | null
+      // #366: `id` da PRÓPRIA avaliação do viewer (viewer-scoped, leak-safe — gateado por sessão) para
+      // a UI esconder o "Reportar" na própria linha da lista pública (o autor edita/apaga, não reporta).
+      viewerReview: { id: string; rating: number; comment: string | null } | null
       isOwner: boolean
     }
   | { kind: 'not_found' } // 404 — inexistente / fora do pool (leak-safe)
@@ -218,14 +226,14 @@ export async function loadViewerReview(
   if (!gate) return { kind: 'not_found' }
 
   const [row] = await db
-    .select({ rating: recipeReview.rating, comment: recipeReview.comment })
+    .select({ id: recipeReview.id, rating: recipeReview.rating, comment: recipeReview.comment })
     .from(recipeReview)
     .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id)))
     .limit(1)
 
   return {
     kind: 'ok',
-    viewerReview: row ? { rating: row.rating, comment: row.comment } : null,
+    viewerReview: row ? { id: row.id, rating: row.rating, comment: row.comment } : null,
     isOwner: gate.ownerId === userId,
   }
 }

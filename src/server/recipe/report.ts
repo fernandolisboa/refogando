@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, report } from '@/db/schema'
+import { recipe, recipeReview, report } from '@/db/schema'
 import { eligibleForPool } from '@/domain/recipe-pool'
 import { decideModerationReason } from '@/domain/report'
 
@@ -75,4 +75,56 @@ export async function createReport(input: {
     .returning({ id: report.id })
 
   return { kind: 'ok', reportId: row.id }
+}
+
+export type ReviewReportResult =
+  | { kind: 'ok'; reportId: string } // 201
+  | { kind: 'not_found' } //            404 — inexistente / fora do pool / já moderada
+  | { kind: 'invalid_reason' } //       400 — motivo vazio
+
+/**
+ * Núcleo com efeito de Report de uma AVALIAÇÃO (issue #366, ADR-0027). Espelha `createReport`:
+ * gate de POOL leak-safe ANTES do motivo, motivo obrigatório, INSERT na fila (agora com `review_id`).
+ *
+ * O gate mira a RECEITA DONA da avaliação (`eligibleForPool`, fonte única): só se reporta avaliação de
+ * receita visível no pool — fora dele ⇒ 404, sem vazar existência. E a avaliação JÁ MODERADA ⇒ 404 (M5:
+ * conteúdo já-oculto não gera ruído de pendências, e o oráculo 201-vs-404 fica fechado). Auto-report da
+ * própria avaliação é PERMITIDO/harmless (AC "qualquer usuário").
+ */
+export async function createReviewReport(input: {
+  db: Database
+  reviewId: string // já validado como uuid pelo route
+  reporterId: string // session.user.id (route já passou pelo requireSession)
+  reason: string
+}): Promise<ReviewReportResult> {
+  const { db, reviewId, reporterId, reason } = input
+
+  // A avaliação + o gate de pool da receita dona, numa query. `!row` = avaliação inexistente.
+  const [row] = await db
+    .select({
+      moderatedAt: recipeReview.moderatedAt,
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      resultKind: recipe.resultKind,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+      origin: recipe.origin,
+      curationStatus: recipe.curationStatus,
+    })
+    .from(recipeReview)
+    .innerJoin(recipe, eq(recipe.id, recipeReview.recipeId))
+    .where(eq(recipeReview.id, reviewId))
+  if (!row) return { kind: 'not_found' }
+  // M5: avaliação já moderada ⇒ 404 (não reporta conteúdo já-oculto).
+  if (row.moderatedAt != null) return { kind: 'not_found' }
+  // Gate de pool leak-safe ANTES do motivo (receita fora do pool ⇒ 404, sem revelar validade do motivo).
+  if (!eligibleForPool(row)) return { kind: 'not_found' }
+
+  if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' }
+
+  const [inserted] = await db
+    .insert(report)
+    .values({ reviewId, reporterId, reason })
+    .returning({ id: report.id })
+
+  return { kind: 'ok', reportId: inserted.id }
 }

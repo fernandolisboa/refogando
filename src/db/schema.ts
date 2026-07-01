@@ -1144,13 +1144,22 @@ export const notification = pgTable(
 //
 // MÚLTIPLOS reports por Receita são permitidos (a fila agrega; a 1ª remoção preserva a
 // proveniência — ver moderation.ts). Dedup por (recipe,reporter) é followup, não-AC.
+//
+// POLIMORFISMO DE ALVO (#366): o Report deixa de mirar SÓ a Receita — passa a poder mirar
+// UMA Avaliação (`review_id`). `recipe_id` vira NULLABLE e um CHECK exige EXATAMENTE UM alvo
+// (recipe XOR review). Reportar uma Avaliação leva a `applyReviewModeration` (moderação da
+// unidade INTEIRA da avaliação, espelha remove-image). O alvo-review espelha `notification.reviewId`
+// (FK cascade): apagar a Avaliação limpa seus reports (sem órfãos).
 export const report = pgTable(
   'report',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    recipeId: uuid('recipe_id')
-      .notNull()
-      .references(() => recipe.id, { onDelete: 'cascade' }),
+    // #366: NULLABLE (era NOT NULL) — um Report mira a Receita OU uma Avaliação, nunca ambos
+    // (CHECK `report_target_chk`). FK cascade mantido.
+    recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'cascade' }),
+    // #366: alvo-Avaliação. Nullable; FK cascade (precedente EXATO: notification.reviewId). Apagar
+    // a Avaliação limpa seus reports. recipeReview é declarado ACIMA → a FK resolve.
+    reviewId: uuid('review_id').references(() => recipeReview.id, { onDelete: 'cascade' }),
     reporterId: uuid('reporter_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -1167,8 +1176,13 @@ export const report = pgTable(
   (t) => [
     // Agrupamento por Receita + filtro de status (quantos pending por Receita).
     index('report_recipe_status_idx').on(t.recipeId, t.status),
+    // #366: agrupamento por Avaliação + filtro de status (quantos pending por avaliação).
+    index('report_review_status_idx').on(t.reviewId, t.status),
     // Fila do Curador: pending ordenada por data de criação.
     index('report_status_created_idx').on(t.status, t.createdAt),
+    // #366: EXATAMENTE UM alvo — recipe XOR review (backstop de banco do polimorfismo). As linhas
+    // legadas (recipe_id set, review_id null) passam: false <> true = TRUE.
+    check('report_target_chk', sql`(${t.recipeId} is null) <> (${t.reviewId} is null)`),
   ],
 )
 

@@ -24,6 +24,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { ORIGENS, RESULT_KINDS, type Origin, type ResultKind } from '@/domain/recipe'
 import type { ReportQueueItem } from '@/server/curate/reports'
 
+/** Variante alvo-RECEITA da fila (#366) — carrega os campos flat (recipeId/origin/ownerId/…). */
+type RecipeReportItem = Extract<ReportQueueItem, { target: 'recipe' }>
+
 export function ModerationQueue() {
   const { messages } = useLocale()
   const m = messages.moderacao
@@ -36,12 +39,13 @@ export function ModerationQueue() {
   // Qual ação está em voo no card ocupado — distingue o rótulo "Removendo…" (Receita) de
   // "Removendo imagem…" (só a foto) e "Bloqueando…" (geração do autor, #226) para não piscar
   // os botões ao mesmo tempo (#133/#226).
-  const [busyAction, setBusyAction] = useState<'remove' | 'image' | 'block' | null>(null)
+  const [busyAction, setBusyAction] = useState<'remove' | 'image' | 'block' | 'review' | null>(null)
   const [errorId, setErrorId] = useState<string | null>(null)
   const [errorKey, setErrorKey] = useState<
     | 'erroJaResolvido'
     | 'erroMotivo'
     | 'erroSemImagem'
+    | 'erroSemAvaliacao'
     | 'erroGenerico'
     | 'erroUsuarioNaoEncontrado'
     | null
@@ -219,8 +223,54 @@ export function ModerationQueue() {
     }
   }
 
+  /**
+   * "Remover avaliação" (#366) — espelha `handleRemove` (motivo OBRIGATÓRIO, forma otimista que reverte
+   * no erro), mas POST em `.../remove-review`: o Curador esconde a avaliação INTEIRA (nota+comentário+foto)
+   * do público. Resolve o report ⇒ o card sai da fila. Mapeia 422 `sem_avaliacao` (o report NÃO mira uma
+   * avaliação) → `erroSemAvaliacao`. Só existe no card de alvo-avaliação.
+   */
+  async function handleRemoveReview(item: ReportQueueItem) {
+    const reason = (reasonDraft[item.id] ?? '').trim()
+    if (busyId || reason.length === 0) return
+    setBusyId(item.id)
+    setBusyAction('review')
+    clearError()
+    const snapshot = items
+    setItems((prev) => prev.filter((it) => it.id !== item.id))
+    try {
+      const res = await fetch(`/api/curate/reports/${item.id}/remove-review`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        setItems(snapshot)
+        setErrorId(item.id)
+        setErrorKey(
+          body?.error === 'ja_resolvido'
+            ? 'erroJaResolvido'
+            : body?.error === 'sem_avaliacao'
+              ? 'erroSemAvaliacao'
+              : body?.error === 'dados_invalidos'
+                ? 'erroMotivo'
+                : 'erroGenerico',
+        )
+      } else {
+        setRemovingId(null)
+      }
+    } catch {
+      setItems(snapshot)
+      setErrorId(item.id)
+      setErrorKey('erroGenerico')
+    } finally {
+      setBusyId(null)
+      setBusyAction(null)
+    }
+  }
+
   /** O autor deste card está bloqueado? Override local (pós-ação) vence o valor do servidor. */
-  function isOwnerBlocked(item: ReportQueueItem): boolean {
+  function isOwnerBlocked(item: RecipeReportItem): boolean {
     if (item.ownerId == null) return false
     return ownerBlockOverride[item.ownerId] ?? item.ownerImageGenBlocked
   }
@@ -232,7 +282,7 @@ export function ModerationQueue() {
    * NÃO some (a Receita segue na fila — bloquear o autor é ortogonal a resolver o report). Só atualiza
    * o override local do rótulo do autor. NÃO resolve o report. Catálogo (sem dono) nunca chama isto.
    */
-  async function handleToggleImageGenBlock(item: ReportQueueItem) {
+  async function handleToggleImageGenBlock(item: RecipeReportItem) {
     if (item.ownerId == null || busyId) return
     const willBlock = !isOwnerBlocked(item)
     const reason = willBlock ? (blockReasonDraft[item.id] ?? '').trim() : ''
@@ -299,7 +349,119 @@ export function ModerationQueue() {
           <p className="text-sm text-muted">{m.filaVazia}</p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {items.map((item) => (
+            {items.map((item) =>
+              item.target === 'review' ? (
+                // #366: card de report de uma AVALIAÇÃO — o Curador julga o conteúdo (nota+comentário+
+                // autor) e REMOVE a avaliação inteira ou MANTÉM (keep). Sem remover-do-pool/imagem/bloqueio.
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3"
+                >
+                  <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+                    <dt className="font-medium text-fg">{m.avaliacaoDe}</dt>
+                    <dd className="text-muted">
+                      {item.review.authorName ??
+                        (item.review.authorHandle ? `@${item.review.authorHandle}` : '—')}
+                    </dd>
+                    <dt className="font-medium text-fg">{m.avaliacaoNota}</dt>
+                    <dd className="text-muted">
+                      <span aria-hidden="true">
+                        {'★'.repeat(item.review.rating)}
+                        {'☆'.repeat(Math.max(0, 5 - item.review.rating))}
+                      </span>{' '}
+                      {item.review.rating}
+                    </dd>
+                    <dt className="font-medium text-fg">{m.avaliacaoComentario}</dt>
+                    <dd className="text-muted whitespace-pre-line">
+                      {item.review.comment != null && item.review.comment !== ''
+                        ? item.review.comment
+                        : m.avaliacaoSemComentario}
+                    </dd>
+                    <dt className="font-medium text-fg">{m.motivoReport}</dt>
+                    <dd className="text-muted">{item.reason}</dd>
+                    <dt className="font-medium text-fg">{m.status}</dt>
+                    <dd className="text-muted">{m.statusPendente}</dd>
+                  </dl>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleKeep(item)}
+                      disabled={busyId === item.id}
+                      className="disabled:opacity-70"
+                    >
+                      {m.manter}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        clearError()
+                        setRemovingId(removingId === item.id ? null : item.id)
+                      }}
+                      disabled={busyId === item.id}
+                      aria-expanded={removingId === item.id}
+                      className="disabled:opacity-70"
+                    >
+                      {m.removerAvaliacao}
+                    </Button>
+                  </div>
+
+                  {removingId === item.id && (
+                    <div className="flex flex-col gap-2">
+                      <label className="flex flex-col gap-1 text-sm font-medium text-fg">
+                        {m.motivoRemocao}
+                        <Textarea
+                          value={reasonDraft[item.id] ?? ''}
+                          onChange={(e) =>
+                            setReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))
+                          }
+                          placeholder={m.motivoPlaceholder}
+                          aria-required="true"
+                          rows={2}
+                        />
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleRemoveReview(item)}
+                          disabled={
+                            busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
+                          }
+                          aria-busy={busyId === item.id && busyAction === 'review'}
+                          className="disabled:opacity-70"
+                        >
+                          {busyId === item.id && busyAction === 'review'
+                            ? m.removendoAvaliacao
+                            : m.confirmarRemocao}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setRemovingId(null)}
+                          disabled={busyId === item.id}
+                          className="disabled:opacity-70"
+                        >
+                          {m.cancelar}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {errorId === item.id && errorKey && (
+                    <p
+                      role="alert"
+                      className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+                    >
+                      {m[errorKey]}
+                    </p>
+                  )}
+                </li>
+              ) : (
               <li
                 key={item.id}
                 className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3"
@@ -501,7 +663,8 @@ export function ModerationQueue() {
                   </p>
                 )}
               </li>
-            ))}
+              ),
+            )}
           </ul>
         )}
       </div>

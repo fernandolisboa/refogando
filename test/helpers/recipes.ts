@@ -4,6 +4,7 @@ import {
   recipe,
   recipeTranslation,
   recipeImage,
+  recipeReview,
   ingredient,
   ingredientTranslation,
   recipeIngredient,
@@ -260,11 +261,14 @@ export async function seedCollectionItem(input: {
 // ── Moderação reativa: Report + remoção do pool (issue #18) ─────────────────────
 
 /**
- * Insere uma linha de Report crua (issue #18). `reporterId` DEVE ser um id REAL de
- * Usuário (FK validada). Default status='pending' (entra na fila). Devolve o report id.
+ * Insere uma linha de Report crua (issue #18/#366). `reporterId` DEVE ser um id REAL de
+ * Usuário (FK validada). O alvo é EXATAMENTE UM: `recipeId` (receita) OU `reviewId` (avaliação) —
+ * o CHECK `report_target_chk` rejeita ambos/nenhum. Default status='pending' (entra na fila).
+ * Devolve o report id.
  */
 export async function seedReport(input: {
-  recipeId: string
+  recipeId?: string | null
+  reviewId?: string | null
   reporterId: string
   reason?: string
   status?: ReportStatus
@@ -272,12 +276,45 @@ export async function seedReport(input: {
   const [row] = await getDb()
     .insert(report)
     .values({
-      recipeId: input.recipeId,
+      recipeId: input.recipeId ?? null,
+      reviewId: input.reviewId ?? null,
       reporterId: input.reporterId,
       reason: input.reason ?? 'motivo de teste',
       status: input.status,
     })
     .returning({ id: report.id })
+  return row.id
+}
+
+/**
+ * Insere uma Avaliação crua (issue #363/#366) e devolve o id. `userId`/`recipeId` DEVEM ser ids REAIS
+ * (FKs validadas; UNIQUE por par). `moderated` semeia a avaliação JÁ moderada (#366), respeitando o
+ * CHECK `recipe_review_moderation_consistency_chk` (seta `moderated_at` E `moderated_by` juntos);
+ * `curatorId` deve ser id real. Mirror de `seedRecipeImage`.
+ */
+export async function seedReview(input: {
+  userId: string
+  recipeId: string
+  rating: number
+  comment?: string | null
+  moderated?: { curatorId: string; reason?: string }
+}): Promise<string> {
+  const [row] = await getDb()
+    .insert(recipeReview)
+    .values({
+      userId: input.userId,
+      recipeId: input.recipeId,
+      rating: input.rating,
+      comment: input.comment ?? null,
+      ...(input.moderated
+        ? {
+            moderatedAt: new Date(),
+            moderatedReason: input.moderated.reason ?? 'avaliação moderada em teste',
+            moderatedBy: input.moderated.curatorId,
+          }
+        : {}),
+    })
+    .returning({ id: recipeReview.id })
   return row.id
 }
 

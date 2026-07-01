@@ -82,6 +82,30 @@ function ownedReport(ownerImageGenBlocked = false) {
   }
 }
 
+/** #366: report de uma AVALIAÇÃO — a fila carrega o conteúdo (nota+comentário+autor) pro Curador julgar. */
+function reviewReport() {
+  return {
+    reports: [
+      {
+        id: 'r1',
+        target: 'review',
+        reason: 'comentário ofensivo',
+        reporterId: 'u1',
+        status: 'pending',
+        createdAt: '2026-06-18T00:00:00.000Z',
+        review: {
+          id: 'rev-1',
+          recipeId: RID,
+          rating: 2,
+          comment: 'texto abusivo da avaliação',
+          authorName: 'Ana',
+          authorHandle: 'ana',
+        },
+      },
+    ],
+  }
+}
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -329,5 +353,74 @@ describe('ModerationQueue (#63 AC4)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroUsuarioNaoEncontrado)
     // Falhou ⇒ continua não-bloqueado (não virou "Desbloquear").
     expect(screen.queryByRole('button', { name: M.desbloquearGeracao })).toBeNull()
+  })
+
+  // ── #366: card de report de uma AVALIAÇÃO ─────────────────────────────────────────
+  it('#366 card de avaliação: mostra conteúdo (nota+comentário+autor) + "Manter" + "Remover avaliação"', async () => {
+    mockFetch({ 'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport() } })
+    renderQueue()
+
+    expect(await screen.findByText('texto abusivo da avaliação')).toBeInTheDocument()
+    expect(screen.getByText('comentário ofensivo')).toBeInTheDocument() // motivo do report
+    expect(screen.getByRole('button', { name: M.manter })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: M.removerAvaliacao })).toBeInTheDocument()
+    // NÃO há ações de receita nesse card (remover-do-pool / remover-só-imagem não se aplicam).
+    expect(screen.queryByRole('button', { name: M.remover })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.removerImagem })).toBeNull()
+  })
+
+  it('#366 remover avaliação: motivo obrigatório, POST remove-review, card some', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport() },
+      [`POST /api/curate/reports/r1/remove-review`]: { ok: true, status: 200, body: { ok: true } },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+
+    await user.click(await screen.findByRole('button', { name: M.removerAvaliacao }))
+    const confirmar = screen.getByRole('button', { name: M.confirmarRemocao })
+    expect(confirmar).toBeDisabled() // motivo OBRIGATÓRIO
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'viola diretrizes')
+    expect(confirmar).toBeEnabled()
+    await user.click(confirmar)
+
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove-review'))!
+    expect(String(post[0])).toBe('/api/curate/reports/r1/remove-review')
+    expect((post[1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'viola diretrizes' })
+    expect(screen.queryByText('texto abusivo da avaliação')).toBeNull() // card some
+  })
+
+  it('#366 422 sem_avaliacao ao remover avaliação: card VOLTA + mensagem específica', async () => {
+    mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport() },
+      [`POST /api/curate/reports/r1/remove-review`]: {
+        ok: false,
+        status: 422,
+        body: { error: 'sem_avaliacao' },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+    await user.click(await screen.findByRole('button', { name: M.removerAvaliacao }))
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'x')
+    await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroSemAvaliacao)
+    expect(screen.getByText('texto abusivo da avaliação')).toBeInTheDocument() // voltou
+  })
+
+  it('#366 manter (keep) num report de avaliação: POST keep, card some', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport() },
+      [`POST /api/curate/reports/r1/keep`]: { ok: true, status: 200, body: { ok: true } },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+    await user.click(await screen.findByRole('button', { name: M.manter }))
+
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/keep'))!
+    expect(String(post[0])).toBe('/api/curate/reports/r1/keep')
+    expect(screen.queryByText('texto abusivo da avaliação')).toBeNull()
   })
 })

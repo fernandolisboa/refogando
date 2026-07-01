@@ -47,14 +47,20 @@ const M = ptBR.avaliacoes
 
 /** Mocka `fetch` por URL: um mapa de sufixo→resposta. `mine` só GET; `reviews` POST/DELETE/GET. */
 function mockFetchByUrl(handlers: {
-  mine?: { viewerReview: { rating: number; comment: string | null } | null; isOwner: boolean }
+  mine?: { viewerReview: { id?: string; rating: number; comment: string | null } | null; isOwner: boolean }
   save?: unknown
   list?: unknown
   fail?: boolean
+  // #366: POST /api/reviews/[id]/report
+  report?: { ok: boolean; status: number; body: unknown }
 }) {
   const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
     const url = String(args[0])
     const method = ((args[1] as RequestInit | undefined)?.method ?? 'GET').toUpperCase()
+    if (url.endsWith('/report')) {
+      const r = handlers.report ?? { ok: true, status: 201, body: { reportId: 'rep-1' } }
+      return { ok: r.ok, status: r.status, json: async () => r.body } as Response
+    }
     if (url.endsWith('/reviews/mine')) {
       return { ok: true, status: 200, json: async () => handlers.mine ?? { viewerReview: null, isOwner: false } } as Response
     }
@@ -212,5 +218,67 @@ describe('RecipeReviewSection (#363)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroEnviar)
     expect(container.querySelector('[class*="aviso"]')).toBeNull()
     expect(container.querySelector('[class*="accent"]')).toBeNull()
+  })
+
+  // ── #366: "Reportar" por avaliação ────────────────────────────────────────────────
+  it('#366 logado não-autor ⇒ "Reportar" aparece; motivo + envio ⇒ estado "Reportado"', async () => {
+    const user = userEvent.setup()
+    setSession('logged-in')
+    mockFetchByUrl({
+      mine: { viewerReview: null, isOwner: false }, // sem avaliação própria ⇒ nenhuma linha é "minha"
+      report: { ok: true, status: 201, body: { reportId: 'rep-1' } },
+    })
+    renderSection({
+      initialAverage: 5,
+      initialCount: 1,
+      initialReviews: [makeReview({ id: 'rev-outra', rating: 5, comment: 'de outra pessoa' })],
+    })
+
+    // "Reportar" aparece na avaliação de terceiro. Ao abrir, o botão vira o SUBMIT (mesmo rótulo).
+    await user.click(await screen.findByRole('button', { name: M.reportar }))
+
+    // revela o motivo; submit desabilitado vazio, habilita ao digitar.
+    const submit = screen.getByRole('button', { name: M.reportar })
+    expect(submit).toBeDisabled()
+    await user.type(screen.getByLabelText(M.motivoReport), 'ofensivo')
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+
+    // sucesso ⇒ estado "Reportado" e some o botão de reportar.
+    expect(await screen.findByText(M.reportado)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: M.reportar })).toBeNull()
+  })
+
+  it('#366 esconde "Reportar" na PRÓPRIA avaliação (casada por id do /mine)', async () => {
+    setSession('logged-in')
+    mockFetchByUrl({ mine: { viewerReview: { id: 'rev-minha', rating: 4, comment: 'minha' }, isOwner: false } })
+    renderSection({
+      initialAverage: 4,
+      initialCount: 2,
+      initialReviews: [
+        makeReview({ id: 'rev-minha', rating: 4, comment: 'minha' }),
+        makeReview({ id: 'rev-outra', rating: 5, comment: 'de outra' }),
+      ],
+    })
+    // após o /mine resolver (myReviewId='rev-minha'), só a de terceiro oferece "Reportar".
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: M.reportar })).toHaveLength(1),
+    )
+  })
+
+  it('#366 dono (canManage) vê "Reportar" nas avaliações de terceiros e NENHUM controle de remover', async () => {
+    setSession('logged-in')
+    mockFetchByUrl({})
+    renderSection({
+      canManage: true,
+      initialAverage: 5,
+      initialCount: 1,
+      initialReviews: [makeReview({ id: 'rev-outra', rating: 5, comment: 'de outra' })],
+    })
+    // dono reporta as de terceiros…
+    expect(await screen.findByRole('button', { name: M.reportar })).toBeInTheDocument()
+    // …mas NÃO tem widget de avaliar (auto-avaliação barrada) nem qualquer ação "remover" na seção.
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByRole('button', { name: M.apagar })).toBeNull()
   })
 })

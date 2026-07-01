@@ -930,6 +930,13 @@ export const ptBR = {
     convidaEntrar: 'Entrar para avaliar',
     erroEnviar: 'Não foi possível enviar sua avaliação. Tente de novo.',
     erroApagar: 'Não foi possível apagar sua avaliação. Tente de novo.',
+    // #366: reportar a avaliação de outra pessoa (report→Curador). O autor NÃO reporta a própria;
+    // ninguém REMOVE (só o Curador, na fila). Sucesso ⇒ estado "Reportado" desabilitado.
+    reportar: 'Reportar',
+    reportado: 'Reportado',
+    motivoReport: 'Motivo do report',
+    cancelarReport: 'Cancelar',
+    erroReport: 'Não foi possível reportar. Tente de novo.',
   },
   // Console de administração (#63). Namespaces FLAT (o tipo `Messages` só aceita 1 nível):
   // os rótulos de VALOR de enum (origin/resultKind/provenance) viram chaves planas, e o
@@ -1124,6 +1131,15 @@ export const ptBR = {
     motivoBloqueioGeracao: 'Motivo do bloqueio',
     motivoBloqueioPlaceholder: 'Explique por que o autor perde a geração de imagem por IA',
     erroUsuarioNaoEncontrado: 'Não foi possível encontrar o autor desta receita.',
+    // #366: card de report de uma AVALIAÇÃO. O Curador remove a avaliação INTEIRA (nota+comentário+
+    // foto) — remoção LÓGICA — ou MANTÉM (keep, único descarte). O dono NÃO tem ação aqui.
+    avaliacaoDe: 'Avaliação de {autor}',
+    avaliacaoNota: 'Nota',
+    avaliacaoComentario: 'Comentário',
+    avaliacaoSemComentario: 'Sem comentário',
+    removerAvaliacao: 'Remover avaliação',
+    removendoAvaliacao: 'Removendo avaliação…',
+    erroSemAvaliacao: 'Este report não é de uma avaliação.',
   },
   // #227 (ADR-0022 dec.3): fila PROATIVA e NÃO-BLOQUEANTE do Curador — gerações por IA COM refino.
   // A imagem segue pública (default-open, ADR-0020); o Curador só monitora e pode REMOVER (moderar,

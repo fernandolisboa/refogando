@@ -281,6 +281,13 @@
       "when": 1782878320855,
       "tag": "0039_freezing_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1782882232754,
+      "tag": "0040_glorious_blue_shield",
+      "breakpoints": true
     }
   ]
 }

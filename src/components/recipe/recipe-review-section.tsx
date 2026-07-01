@@ -86,6 +86,16 @@ export function RecipeReviewSection({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // #366: id da PRÓPRIA avaliação do viewer (esconde "Reportar" na própria linha da lista); estado do
+  // affordance de reportar por review: qual form está aberto, o rascunho de motivo, quais já foram
+  // reportadas (estado "Reportado" desabilitado), qual está em voo e qual tem erro.
+  const [myReviewId, setMyReviewId] = useState<string | null>(null)
+  const [reportingId, setReportingId] = useState<string | null>(null)
+  const [reportReason, setReportReason] = useState<Record<string, string>>({})
+  const [reportedIds, setReportedIds] = useState<Record<string, boolean>>({})
+  const [reportBusyId, setReportBusyId] = useState<string | null>(null)
+  const [reportErrorId, setReportErrorId] = useState<string | null>(null)
+
   // Logado não-dono: resolve a PRÓPRIA avaliação (a página é cacheável, o server lê anônimo).
   // Anônimo/dono não busca. Falha ⇒ NÃO resolve o viewer: o widget fica escondido (o servidor
   // não confirmou que este viewer não é o dono, e o dono nunca pode ver o controle de avaliar).
@@ -97,10 +107,11 @@ export function RecipeReviewSection({
         if (cancelled) return
         if (res.ok) {
           const body = (await res.json()) as {
-            viewerReview: { rating: number; comment: string | null } | null
+            viewerReview: { id: string; rating: number; comment: string | null } | null
             isOwner: boolean
           }
           setOwnerClient(!!body.isOwner)
+          setMyReviewId(body.viewerReview?.id ?? null)
           if (body.viewerReview) {
             setRating(body.viewerReview.rating)
             setComment(body.viewerReview.comment ?? '')
@@ -189,6 +200,33 @@ export function RecipeReviewSection({
       setError(m.erroApagar)
     } finally {
       setBusy(false)
+    }
+  }
+
+  // #366: reporta a avaliação de outra pessoa → POST /api/reviews/[reviewId]/report {reason}. Motivo
+  // obrigatório (o servidor reimpõe 400). Sucesso ⇒ estado "Reportado" desabilitado. NENHUMA ação de
+  // remover (só o Curador remove, na fila do painel).
+  async function handleReport(reviewId: string) {
+    const reason = (reportReason[reviewId] ?? '').trim()
+    if (reportBusyId != null || reason.length === 0) return
+    setReportBusyId(reviewId)
+    setReportErrorId(null)
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/report`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (!res.ok) {
+        setReportErrorId(reviewId)
+        return
+      }
+      setReportedIds((prev) => ({ ...prev, [reviewId]: true }))
+      setReportingId(null)
+    } catch {
+      setReportErrorId(reviewId)
+    } finally {
+      setReportBusyId(null)
     }
   }
 
@@ -310,6 +348,74 @@ export function RecipeReviewSection({
               </div>
               {r.comment != null && r.comment !== '' && (
                 <p className="text-sm text-foreground whitespace-pre-line">{r.comment}</p>
+              )}
+
+              {/* #366: "Reportar" — só logado, e nunca na própria avaliação (o autor edita/apaga; o
+                  dono da receita reporta as de terceiros, NUNCA remove). O botão revela o motivo; ao
+                  abrir, é SUBSTITUÍDO pelo form (Reportar=enviar + Cancelar), sem ação de remover. */}
+              {loggedIn && r.id !== myReviewId && (
+                <div className="mt-1 flex flex-col gap-2">
+                  {reportedIds[r.id] ? (
+                    <span className="text-xs font-medium text-muted">{m.reportado}</span>
+                  ) : reportingId === r.id ? (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor={`report-motivo-${r.id}`}>{m.motivoReport}</Label>
+                      <Textarea
+                        id={`report-motivo-${r.id}`}
+                        value={reportReason[r.id] ?? ''}
+                        onChange={(e) =>
+                          setReportReason((prev) => ({ ...prev, [r.id]: e.target.value }))
+                        }
+                        rows={2}
+                        aria-required="true"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleReport(r.id)}
+                          disabled={
+                            reportBusyId === r.id || (reportReason[r.id] ?? '').trim().length === 0
+                          }
+                          aria-busy={reportBusyId === r.id}
+                        >
+                          {m.reportar}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setReportingId(null)}
+                          disabled={reportBusyId === r.id}
+                        >
+                          {m.cancelarReport}
+                        </Button>
+                      </div>
+                      {reportErrorId === r.id && (
+                        <Alert variant="info" role="alert">
+                          <AlertDescription className="font-medium text-foreground">
+                            {m.erroReport}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setReportErrorId(null)
+                          setReportingId(r.id)
+                        }}
+                        aria-expanded={false}
+                      >
+                        {m.reportar}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </li>
           ))

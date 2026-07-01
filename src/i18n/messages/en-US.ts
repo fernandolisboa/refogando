@@ -870,6 +870,13 @@ export const enUS: Messages = {
     convidaEntrar: 'Sign in to review',
     erroEnviar: 'Could not submit your review. Try again.',
     erroApagar: 'Could not delete your review. Try again.',
+    // #366: report someone else's review (report→Curator). The author does NOT report their own; nobody
+    // REMOVES (only the Curator, from the queue). On success ⇒ disabled "Reported" state.
+    reportar: 'Report',
+    reportado: 'Reported',
+    motivoReport: 'Report reason',
+    cancelarReport: 'Cancel',
+    erroReport: 'Could not report. Try again.',
   },
   admin: {
     titulo: 'Admin console',
@@ -1054,6 +1061,15 @@ export const enUS: Messages = {
     motivoBloqueioGeracao: 'Reason for the block',
     motivoBloqueioPlaceholder: 'Explain why the author loses AI image generation',
     erroUsuarioNaoEncontrado: "Couldn't find this recipe's author.",
+    // #366: card for a report about a REVIEW. The Curator removes the WHOLE review (rating+comment+
+    // photo) — a logical removal — or KEEPS it (keep, the only dismissal). The owner has no action here.
+    avaliacaoDe: 'Review by {autor}',
+    avaliacaoNota: 'Rating',
+    avaliacaoComentario: 'Comment',
+    avaliacaoSemComentario: 'No comment',
+    removerAvaliacao: 'Remove review',
+    removendoAvaliacao: 'Removing review…',
+    erroSemAvaliacao: 'This report is not about a review.',
   },
   // #227 (ADR-0022 dec.3): PROACTIVE, NON-BLOCKING Curator queue — AI generations WITH the author's
   // refinement. The image stays public (default-open, ADR-0020); the Curator only monitors and can
