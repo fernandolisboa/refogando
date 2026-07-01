@@ -292,10 +292,11 @@ describe('POST/PUT/DELETE/GET /api/recipes/[id]/reviews (#363)', () => {
     await postReview(id, { rating: 5 }, a)
     await postReview(id, { rating: 1 }, b)
 
-    // modera a nota 1 direto no DB.
+    // modera a nota 1 direto no DB (moderatedAt + moderatedBy juntos — o CHECK de consistência
+    // `(moderated_at IS NULL) = (moderated_by IS NULL)` exige os dois; qualquer user vivo serve de curador).
     await getDb()
       .update(recipeReview)
-      .set({ moderatedAt: new Date() })
+      .set({ moderatedAt: new Date(), moderatedBy: owner })
       .where(and(eq(recipeReview.recipeId, id), eq(recipeReview.rating, 1)))
 
     const get = await getReviews(id)
