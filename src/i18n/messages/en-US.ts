@@ -29,6 +29,17 @@ export const enUS: Messages = {
     menu: 'Menu',
     menuDescricao: 'Site navigation and account',
   },
+  // Notifications inbox (#371, ADR-0028): bell in the chrome (logged-in only) + panel. Same FLAT-key
+  // shape as pt-BR (the `Messages` type derives only 2 levels — no sub-objects); `renderNotification`
+  // picks the key by type and interpolates `{name}` via `String.replace`.
+  notifications: {
+    ariaLabel: 'Notifications',
+    tituloPainel: 'Notifications',
+    vazio: 'No notifications yet',
+    novoSeguidor: '{name} started following you',
+    novoSeguidorAnon: 'Someone started following you',
+    generico: 'You have a new notification',
+  },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
   // Light/dark theme toggle (ADR-0018), in the header. `light`/`dark` name the action's
   // TARGET (a11y): the aria-label changes with the current theme ("Switch to light/dark theme").

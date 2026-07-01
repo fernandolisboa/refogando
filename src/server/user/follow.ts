@@ -68,9 +68,23 @@ export function decodeFollowCursor(raw: string): FollowCursor | null {
   }
 }
 
-/** Cria a aresta follower→followee (idempotente: re-seguir colide na PK → no-op, sem 23505). */
-export async function follow(db: Database, followerId: string, followeeId: string): Promise<void> {
-  await db.insert(userFollow).values({ followerId, followeeId }).onConflictDoNothing()
+/**
+ * Cria a aresta follower→followee (idempotente: re-seguir colide na PK → no-op, sem 23505). Devolve
+ * `true` SÓ quando uma aresta NOVA foi de fato inserida — o `.returning()` sob `onConflictDoNothing`
+ * vem `[]` no conflito e `[row]` no insert (sinal race-safe pela PK composta). O caller usa isso pra
+ * emitir a notificação `new_follower` UMA vez por evento (ADR-0028): re-follow / double-POST não duplica.
+ */
+export async function follow(
+  db: Database,
+  followerId: string,
+  followeeId: string,
+): Promise<boolean> {
+  const rows = await db
+    .insert(userFollow)
+    .values({ followerId, followeeId })
+    .onConflictDoNothing()
+    .returning({ followerId: userFollow.followerId })
+  return rows.length > 0
 }
 
 /** Remove a aresta (idempotente: deixar de seguir sem seguir = 0 linhas, sem erro). */

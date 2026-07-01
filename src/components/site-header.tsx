@@ -20,6 +20,7 @@ import { splitLocalePrefix } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { AuthSlot } from '@/components/auth-slot'
+import { NotificationBell } from '@/components/notification-bell'
 import {
   Sheet,
   SheetClose,
@@ -145,6 +146,8 @@ export function SiteHeader() {
           )}
         >
           {ctaButton}
+          {/* Sininho de notificações (#371, só-logado; retorna null p/ anon ⇒ chrome anon intacta). */}
+          <NotificationBell />
           <AuthSlot />
         </div>
 
@@ -174,7 +177,9 @@ export function SiteHeader() {
             </nav>
             {/* Área de CONTA dentro do painel: o mesmo AuthSlot do desktop (avatar/nome/Sair, ou
                 "Entrar" pro Visitante). Não fecha por SheetClose — "Sair" precisa do seu onClick. */}
-            <div className="mt-auto border-t border-border pt-4">
+            <div className="mt-auto flex items-center gap-3 border-t border-border pt-4">
+              {/* Sininho também na área de conta do drawer mobile (null p/ anon). */}
+              <NotificationBell />
               <AuthSlot />
             </div>
           </SheetContent>
