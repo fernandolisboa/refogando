@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation'
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
@@ -65,6 +66,10 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
+        {/* Atualização graceful (#372, ADR-0028 dec 5-A2): rede de segurança silenciosa, sem DOM
+            (retorna null), independente de provider/locale/sessão. Montado incondicionalmente ⇒
+            o visitante anônimo também se beneficia do reload quieto pós-deploy. */}
+        <AppUpdateGuard />
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
             {/* #5 (protótipo final): o termo de busca (`q`) é ELEVADO aqui pra que a pílula viva

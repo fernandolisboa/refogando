@@ -23,7 +23,9 @@
  *   (`/admin`, só curador+) e Sair (signOut + refetch). "Painel" e "Sair" deixaram a nav/cluster
  *   e passaram a morar AQUI; por isso o gating de papel (#125/#51, fail-closed) também vive aqui.
  */
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession, signOut } from '@/lib/auth-client'
@@ -42,6 +44,44 @@ import { decideRole } from '@/domain/access'
 export function AuthSlot() {
   const { messages } = useLocale()
   const { data: session, isPending, error, refetch } = useSession()
+  const pathname = usePathname()
+  // `firstNavRef` e os dois efeitos ficam ACIMA de todos os early returns (regra dos hooks:
+  // ordem incondicional). São PURAMENTE aditivos — não mudam nada do comportamento abaixo.
+  const firstNavRef = useRef(true)
+
+  // Atualização graceful (B), ADR-0028 dec 5: o servidor lê o papel VIVO do DB a cada request
+  // (`cookieCache:false`), então promover alguém reflete no próximo request — só falta o cliente
+  // refazer o get-session. O `useSession` do AuthSlot cacheia e não refaz sozinho quando um admin
+  // muda o papel de OUTRA pessoa. Efeito A: refetch no foco da aba / ao ficar visível.
+  useEffect(() => {
+    if (isPending) return // sem listeners enquanto pendente; re-roda quando isPending vira false
+    const onFocus = () => refetch()
+    // LANDMINE: `visibilitychange` também dispara ao ESCONDER — só agir em 'visible'.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refetch()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+    // Voltar pra aba dispara `focus` E `visibilitychange` → dois get-session idempotentes;
+    // intencional e inofensivo (não "consertar"). Anônimo também instala — get-session anônimo
+    // inofensivo; o benefício do visitante ao update vem do AppUpdateGuard, não deste refetch.
+  }, [refetch, isPending])
+
+  // Efeito B: refetch ao NAVEGAR (soft nav). O AuthSlot mora no SiteHeader persistente, então o
+  // `useSession` nunca refaz sozinho numa navegação client-side; isto fecha a metade "ao navegar"
+  // do ADR-0028 dec 5(B) — a promoção de papel reflete conforme a pessoa clica, sem reload.
+  useEffect(() => {
+    if (firstNavRef.current) {
+      // Pula a 1ª execução pra não duplicar o fetch de mount do próprio useSession.
+      firstNavRef.current = false
+      return
+    }
+    refetch()
+  }, [refetch, pathname])
 
   // Carregando: reserva o espaço (altura ~igual ao btnPrimarySm, largura mínima cobrindo
   // "Entrar"/"Sair"/nome curto) pra a barra não pular quando a sessão resolver.
