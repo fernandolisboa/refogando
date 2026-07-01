@@ -6,6 +6,7 @@ import {
   uuid,
   text,
   integer,
+  smallint,
   numeric,
   boolean,
   timestamp,
@@ -942,6 +943,73 @@ export const recipeSave = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.recipeId] }),
     index('recipe_save_recipe_id_idx').on(t.recipeId),
+  ],
+)
+
+// ── Engajamento: Avaliação (issue #363, ADR-0027) ─────────────────────────────
+//
+// A Avaliação é distinta do Voto (que esta épica APOSENTA): nota 1–5★ + comentário
+// opcional, UMA por (Usuário, Receita), e alimenta a MÉDIA genuína (aggregateRating).
+// Mira a RECEITA (recipe_id, NÃO o locale): a avaliação vale idêntica entre pt-BR/en-US
+// (cross-locale, como recipe_vote/report). FK ON DELETE cascade em ambas (sem órfãos):
+// apagar Usuário ou Receita limpa a avaliação; despublicar é UPDATE de visibility, NUNCA
+// DELETE ⇒ as avaliações PERSISTEM (mesma garantia AC5 do voto).
+//
+// `moderated_at` alimenta o SEAM de LEITURA: `loadRecipeReviews`/`loadAggregate` filtram
+// `moderated_at IS NULL` desde o dia 1, então a fatia da moderação (#366) vira SÓ um escritor.
+// As colunas `photo_url` (#365) e `moderated_reason`/`moderated_by` (#366) já ficam RESERVADAS
+// aqui (sem leitor nem escritor na #363), no idioma de `recipe`/`recipe_image`: incluem o CHECK de
+// consistência `(moderated_at IS NULL)=(moderated_by IS NULL)` e `moderated_by` é ON DELETE set
+// null. Como NÃO há caminho de escrita de moderação nesta fatia, o CHECK nunca é violado e o branch
+// set-null nunca dispara. LANDMINE p/ a #366 (o futuro escritor de moderação): SET NULL zera
+// `moderated_by` mantendo `moderated_at` setado ⇒ violaria o CHECK e abortaria o DELETE do Curador
+// (erasure LGPD). Ao LIGAR a escrita, ancore `moderated_by` numa coluna imune a set-null.
+//
+// NÃO há CHECK de auto-avaliação (owner_id mora em `recipe`, cross-table). `decideReview`
+// (src/domain/review.ts) é a ÚNICA guarda; `applyReview` (src/server/recipe/review.ts) é o
+// ÚNICO escritor de recipe_review e o único a chamar `decideReview`. Qualquer FUTURO segundo
+// escritor (ex.: o emit da notificação #371 "nova avaliação na sua receita" — enganchar DENTRO
+// de `applyReview`) DEVE passar por `decideReview`, ou a guarda de auto-avaliação fura.
+export const recipeReview = pgTable(
+  'recipe_review',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    rating: smallint('rating').notNull(),
+    comment: text('comment'),
+    // Foto do prato cozinhado (ADR-0027 dec.4) — coluna RESERVADA aqui; o upload (só câmera/arquivo,
+    // NUNCA IA) e a exibição são a fatia da foto (#366). Sem eixo de proveniência (é sempre do usuário).
+    photoUrl: text('photo_url'),
+    // Moderação da Avaliação (unidade INTEIRA, reativa report→Curador — fatia futura). Colunas
+    // RESERVADAS + CHECK/índice de consistência já modelados no idioma do recipe_image: a leitura quente
+    // já filtra `moderated_at IS NULL` desde já, e moderatedBy é ON DELETE set null (apagar o Curador
+    // não apaga o registro). Sem caminho de escrita de moderação nesta fatia.
+    moderatedAt: timestamp('moderated_at', { withTimezone: true }),
+    moderatedReason: text('moderated_reason'),
+    moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Backstop de DB pro range 1–5 (a guarda de verdade é decideReview no servidor).
+    check('recipe_review_rating_chk', sql`${t.rating} between 1 and 5`),
+    // Consistência de moderação (espelha recipe_image): moderado ⟺ tem quem moderou.
+    check(
+      'recipe_review_moderation_consistency_chk',
+      sql`(${t.moderatedAt} is null) = (${t.moderatedBy} is null)`,
+    ),
+    // 1 Avaliação por (user, receita) — também o backstop de concorrência do upsert.
+    unique('recipe_review_user_recipe_uq').on(t.userId, t.recipeId),
+    // Índice PARCIAL cobrindo a leitura quente `WHERE recipe_id=? AND moderated_at IS NULL`
+    // (AVG/COUNT/lista). Idioma de `recipe_moderation_removed_idx`/`recipe_image_moderated_idx`.
+    index('recipe_review_recipe_id_idx')
+      .on(t.recipeId)
+      .where(sql`${t.moderatedAt} is null`),
   ],
 )
 

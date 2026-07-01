@@ -861,6 +861,27 @@ export const ptBR = {
     erroVoto: 'Não foi possível votar. Tente de novo.',
     erroSalvar: 'Não foi possível salvar. Tente de novo.',
   },
+  // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`
+  // (o Voto está sendo aposentado). Plurais compostos via `.replace('{n}'/'{media}', …)` no
+  // componente (folhas do tipo `Messages` são string).
+  avaliacoes: {
+    titulo: 'Avaliações',
+    editar: 'Editar',
+    apagar: 'Apagar',
+    enviar: 'Enviar',
+    salvando: 'Salvando…',
+    comentarioLabel: 'Comentário (opcional)',
+    comentarioPlaceholder: 'Conte como ficou…',
+    notaLabel: 'Sua nota',
+    estrela: '{n} estrela',
+    estrelas: '{n} estrelas',
+    media: '★ {media} · {n} avaliações',
+    mediaUma: '★ {media} · 1 avaliação',
+    semAvaliacoes: 'Ainda sem avaliações. Seja a primeira pessoa a avaliar.',
+    convidaEntrar: 'Entrar para avaliar',
+    erroEnviar: 'Não foi possível enviar sua avaliação. Tente de novo.',
+    erroApagar: 'Não foi possível apagar sua avaliação. Tente de novo.',
+  },
   // Console de administração (#63). Namespaces FLAT (o tipo `Messages` só aceita 1 nível):
   // os rótulos de VALOR de enum (origin/resultKind/provenance) viram chaves planas, e o
   // COMPONENTE monta lookups `satisfies Record<Enum,string>` a partir delas para travar drift.

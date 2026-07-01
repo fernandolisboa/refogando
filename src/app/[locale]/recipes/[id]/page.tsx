@@ -39,6 +39,10 @@ import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
+import {
+  RecipeReviewSection,
+  type ReviewViewSerialized,
+} from '@/components/recipe/recipe-review-section'
 import { RecipeManagementArea } from '@/components/recipe/recipe-management-area'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
@@ -58,6 +62,7 @@ import {
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
+import { loadRecipeReviews } from '@/server/recipe/review'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
 import { getBaseUrl, getBaseUrlFromEnv } from '@/server/http/base-url'
 import { handleResponse } from '@/server/http/handle-response'
@@ -198,6 +203,11 @@ export default async function RecipeDetailPage({
       // mantém o caminho público anônimo/cacheável) e resolve o TEXTO só quando deve mostrar (catálogo +
       // ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
       const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
+      // Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora
+      // do pool ⇒ a seção some (gate independente de voteCount, que esta épica aposenta).
+      const reviews = serializeReviews(
+        await loadRecipeReviews(getDb(), { id: publicRows.recipe.id }),
+      )
       return (
         <DetailChrome
           view={view}
@@ -205,6 +215,7 @@ export default async function RecipeDetailPage({
           reviewImage={false}
           jsonLd={jsonLd}
           catalogDisclosure={catalogDisclosure}
+          reviews={reviews}
         />
       )
     }
@@ -252,14 +263,35 @@ export default async function RecipeDetailPage({
   // JSON da rota /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
   // já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
   const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
+  // Avaliações (#363) no caminho do dono: para uma privada, `loadRecipeReviews` devolve `null`
+  // (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Desacopla de
+  // voteCount e NÃO passa por resolveRecipeView.
+  const reviews = serializeReviews(await loadRecipeReviews(getDb(), { id: ownerUuid }))
   return (
     <DetailChrome
       view={view}
       locale={locale}
       reviewImage={sp.reviewImage === '1'}
       catalogDisclosure={catalogDisclosure}
+      reviews={reviews}
     />
   )
+}
+
+/** Reviews prontos p/ RSC → client (Dates viram ISO). `null` = fora do pool ⇒ seção oculta. */
+type SerializedReviews = {
+  average: number | null
+  count: number
+  reviews: ReviewViewSerialized[]
+} | null
+
+function serializeReviews(r: Awaited<ReturnType<typeof loadRecipeReviews>>): SerializedReviews {
+  if (r == null) return null
+  return {
+    average: r.average,
+    count: r.count,
+    reviews: r.reviews.map((x) => ({ ...x, createdAt: x.createdAt.toISOString() })),
+  }
 }
 
 /**
@@ -286,6 +318,7 @@ async function DetailChrome({
   reviewImage,
   jsonLd,
   catalogDisclosure,
+  reviews,
 }: {
   view: RecipeView
   locale: Locale
@@ -299,6 +332,8 @@ async function DetailChrome({
   jsonLd?: string
   /** #237: texto do aviso de catálogo AI-assistido — presente só quando deve mostrar (catálogo + ligado). */
   catalogDisclosure?: string
+  /** #363: agregado + lista de Avaliações (serializado). `null`/ausente ⇒ fora do pool ⇒ seção oculta. */
+  reviews?: SerializedReviews
 }) {
   const messages = MESSAGES[locale]
   // #317 (ADR-0025): rótulo de cozinha resolvido no boundary pelo leitor data-driven, escopo
@@ -348,6 +383,19 @@ async function DetailChrome({
           initialVoteCount={view.voteCount}
           initialViewerVoted={view.viewerVoted}
           initialViewerSaved={view.viewerSaved}
+          canManage={view.canManage ?? false}
+        />
+      )}
+      {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews
+          devolveu o pool), NÃO em voteCount (que esta épica aposenta). `key={view.id}`: remonta por
+          receita (estado do widget não vaza numa nav detalhe→detalhe in-place). */}
+      {reviews != null && (
+        <RecipeReviewSection
+          key={view.id}
+          recipeId={view.id}
+          initialReviews={reviews.reviews}
+          initialAverage={reviews.average}
+          initialCount={reviews.count}
           canManage={view.canManage ?? false}
         />
       )}
