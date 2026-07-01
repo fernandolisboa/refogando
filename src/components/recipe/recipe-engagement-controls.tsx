@@ -1,37 +1,41 @@
 'use client'
 
 /**
- * Controles de Engajamento da Comunidade (#62/#362) — bloco de SALVAR na tela de detalhe.
- * Irmão do `RecipeDetailView` (que continua PURO, sem hooks): a page renderiza isto quando a
- * Receita está no POOL público OU quando o DONO gerencia a própria (inclusive a privada — AC6).
+ * Controle de SALVAR do detalhe (#62/#362) — um ÍCONE de bookmark no topo (ao lado do "Voltar",
+ * acima da foto), não mais uma seção "Comunidade" com botão de texto. Irmão do `RecipeDetailView`
+ * (que continua PURO): a page o renderiza no topo-direito quando a Receita está no POOL público OU
+ * quando o DONO gerencia a própria (inclusive a privada — AC6).
  *
  * ESTADO DO VIEWER (salvou?), duas origens (#230, ADR-0020):
  *  - Caminho do DONO (dinâmico, cookie): o server JÁ resolve e passa `initialViewerSaved` ⇒
  *    render direto, sem fetch.
  *  - Caminho PÚBLICO/cacheável: o server lê ANÔNIMO (sem cookie) pra ficar cacheável, então
- *    `initialViewerSaved` chega `undefined`. Aqui é que o flash de "Entrar para salvar" pra quem
- *    ESTÁ logado morava: o componente precisa resolver o estado NO CLIENTE. Com sessão
+ *    `initialViewerSaved` chega `undefined`. O componente resolve o estado NO CLIENTE: com sessão
  *    (`useSession`), se logado, busca `GET /api/recipes/[id]/social` e hidrata o save real; se
- *    anônimo, mostra o convite "Entrar para..."; enquanto a sessão/fetch pendem, não pisca nem
- *    botão nem convite.
+ *    anônimo, o bookmark vira um link "Entrar para salvar"; enquanto a sessão/fetch pendem, nada
+ *    pisca (nem bookmark nem convite).
  *
  * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{save,unsave}` via `fetch` (NÃO
  * Server Action). O servidor é a verdade — impõe sessão (401) e o gate de salvar (404); isto é
  * AFORDÂNCIA: aplica otimismo no clique, espelha a resposta no sucesso, REVERTE no erro com
- * mensagem neutra única (não diferencia 401/404 pro usuário). `/save` e `/unsave` devolvem SÓ
- * `{viewerSaved}` — o handler lê apenas essa fatia.
+ * mensagem neutra única. `/save` e `/unsave` devolvem SÓ `{viewerSaved}`.
  *
  * Cores: só tokens já AA-verificados na #54 (brand/neutros). ÂMBAR (`aviso-*`) é PROIBIDO
  * (ADR-0015: exclusivo do Aviso de restrição) e accent/accent-surface também (reservados a
- * `origin=catalog`, ADR-0015).
+ * `origin=catalog`, ADR-0015). O bookmark PREENCHE (`fill`) na cor da marca quando salvo.
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Bookmark, FolderPlus } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
+
+const ICON_BUTTON =
+  'inline-flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-brand/10 hover:text-brand-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40'
 
 export function RecipeEngagementControls({
   recipeId,
@@ -57,14 +61,10 @@ export function RecipeEngagementControls({
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveError, setSaveError] = useState(false)
   // Quando o server NÃO resolveu (caminho público), o estado do viewer chega de um fetch client-side.
-  // `clientResolved` parte de `serverResolved`: já resolvido no caminho do dono (nada a buscar). No
-  // caminho público vira true quando o GET /social responde (ou falha — degradação graciosa).
   const [clientResolved, setClientResolved] = useState(serverResolved)
 
   // Caminho público + logado: resolve o save do PRÓPRIO viewer (a página é cacheável e não pode
-  // personalizar no server). Anônimo NÃO busca (daria 401 e o convite "Entrar" é o certo). O fetch
-  // dispara quando a sessão vira logada; falha ⇒ resolve com o default (não-salvo), pra não travar
-  // logado no convite nem quebrar — o server corrige no clique.
+  // personalizar no server). Anônimo NÃO busca (daria 401 e o convite "Entrar" é o certo).
   useEffect(() => {
     if (serverResolved || !loggedIn) return
     let cancelled = false
@@ -85,11 +85,8 @@ export function RecipeEngagementControls({
     }
   }, [recipeId, serverResolved, loggedIn])
 
-  // Três estados de renderização do bloco de ação:
-  //  - 'interactive': server resolveu (caminho do dono) OU já hidratamos o logado (caminho público).
-  //  - 'anon': sessão resolvida e SEM login ⇒ convite "Entrar para...".
-  //  - 'pending': sessão ainda pende OU logado mas o GET /social ainda não voltou ⇒ sem botões nem
-  //    convite, evitando o flash de "Entrar" pra quem está logado.
+  // Três modos: 'interactive' (server resolveu OU logado hidratado), 'anon' (sessão resolvida sem
+  // login ⇒ link "Entrar para..."), 'pending' (sessão/fetch pendem ⇒ nada, evita flash).
   const mode: 'interactive' | 'anon' | 'pending' = serverResolved
     ? 'interactive'
     : !sessionSettled
@@ -121,9 +118,6 @@ export function RecipeEngagementControls({
       // /save e /unsave devolvem SÓ `{viewerSaved}` — lê APENAS essa fatia.
       const body = (await res.json()) as { viewerSaved: boolean }
       setSaved(body.viewerSaved)
-      // Sem `router.refresh()`: o corpo do POST é autoritativo e nada na page deriva do save,
-      // então o round-trip full-page seria descartado (os props frescos só alimentam
-      // inicializadores de `useState`, que não re-rodam sem remontar).
     } catch {
       setSaved(prevSaved)
       setSaveError(true)
@@ -133,88 +127,102 @@ export function RecipeEngagementControls({
   }
 
   return (
-    <section
-      aria-labelledby="engajamento-titulo"
-      className="flex flex-col gap-3 rounded-md border border-border bg-surface px-4 py-3"
-    >
-      <h2 id="engajamento-titulo" className="font-display text-lg font-semibold text-fg">
-        {m.titulo}
-      </h2>
-
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-1">
         {mode === 'pending' ? null : mode === 'anon' ? (
-          <Button asChild variant="secondary">
-            <Link href="/sign-in">{m.convidaEntrarSalvar}</Link>
-          </Button>
+          // Anônimo: o bookmark É o convite — leva ao /sign-in (rótulo acessível = "Entrar para salvar").
+          <Link href="/sign-in" aria-label={m.convidaEntrarSalvar} className={ICON_BUTTON}>
+            <Bookmark className="size-5" strokeWidth={1.5} aria-hidden />
+          </Link>
         ) : (
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={saveBusy}
-            aria-pressed={saved}
-            aria-busy={saveBusy}
-            variant={saved ? 'default' : 'secondary'}
-            className="disabled:opacity-70"
-          >
-            {saved ? m.salvo : m.salvar}
-          </Button>
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saveBusy}
+              aria-label={saved ? m.salvo : m.salvar}
+              aria-pressed={saved}
+              aria-busy={saveBusy}
+              className={cn(ICON_BUTTON, 'disabled:opacity-70', saved && 'text-brand-ink')}
+            >
+              <Bookmark
+                className="size-5"
+                strokeWidth={1.5}
+                fill={saved ? 'currentColor' : 'none'}
+                aria-hidden
+              />
+            </button>
+            {/* Coleção (#364): só quando SALVA (o server barra add de não-salva). Popover ancorado
+                ao bookmark — não uma seção. Fecha ao clicar-fora/Escape (Radix). */}
+            {saved && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={messages.colecoes.adicionarAColecao}
+                    className={ICON_BUTTON}
+                  >
+                    <FolderPlus className="size-5" strokeWidth={1.5} aria-hidden />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent>
+                  <CollectionPanel recipeId={recipeId} />
+                </PopoverContent>
+              </Popover>
+            )}
+          </>
         )}
       </div>
 
-      {/* Picker de Coleção (#364): só quando a Receita está SALVA (o server barra add de não-salva).
-          Some ao dessalvar. Reusa /api/recipes/[id]/collections + /api/me/collections/[id]/items. */}
-      {mode === 'interactive' && saved && <CollectionPicker recipeId={recipeId} />}
-
       {saveError && (
-        <Alert variant="info" role="alert">
-          <AlertDescription className="font-medium text-foreground">
-            {m.erroSalvar}
-          </AlertDescription>
-        </Alert>
+        <p role="alert" className="text-sm font-medium text-fg">
+          {m.erroSalvar}
+        </p>
       )}
-    </section>
+    </div>
   )
 }
 
 /**
- * Picker de Coleção do detalhe (#364) — disclosure lazy: só busca a membership ao abrir. Cada
- * coleção é um checkbox (contains); marcar/desmarcar chama POST/DELETE de `items` com otimismo +
- * revert. Criar coleção inline (POST /api/me/collections) já adiciona a Receita à nova pasta.
- * Renderizado só quando a Receita está SALVA (o server rejeita add de não-salva com 422).
+ * Painel de Coleção do detalhe (#364) — conteúdo do Popover ancorado ao bookmark. Carrega a
+ * membership ao MONTAR (o Popover só monta ao abrir). Cada coleção é um checkbox (contains);
+ * marcar/desmarcar chama POST/DELETE de `items` com otimismo + revert. Criar coleção inline
+ * (POST /api/me/collections) já adiciona a Receita à nova pasta. Renderizado só quando a Receita
+ * está SALVA (o server rejeita add de não-salva com 422).
  */
 type Membership = { id: string; name: string; contains: boolean }
 
-function CollectionPicker({ recipeId }: { recipeId: string }) {
+function CollectionPanel({ recipeId }: { recipeId: string }) {
   const { messages } = useLocale()
   const m = messages.colecoes
-  const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Membership[] | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('loading')
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  async function load() {
-    setStatus('loading')
-    try {
-      const res = await fetch(`/api/recipes/${recipeId}/collections`)
-      if (!res.ok) {
-        setStatus('error')
-        return
-      }
-      const body = (await res.json()) as { collections: Membership[] }
-      setItems(body.collections)
-      setStatus('idle')
-    } catch {
-      setStatus('error')
+  useEffect(() => {
+    // `status` já nasce 'loading' (useState); o Popover só monta este painel ao abrir, então o
+    // fetch dispara uma vez por abertura. `recipeId` é estável enquanto o painel está montado.
+    let cancelled = false
+    fetch(`/api/recipes/${recipeId}/collections`)
+      .then(async (res) => {
+        if (cancelled) return
+        if (!res.ok) {
+          setStatus('error')
+          return
+        }
+        const body = (await res.json()) as { collections: Membership[] }
+        setItems(body.collections)
+        setStatus('idle')
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error')
+      })
+    return () => {
+      cancelled = true
     }
-  }
-
-  function toggleOpen() {
-    const next = !open
-    setOpen(next)
-    if (next && items === null) void load()
-  }
+  }, [recipeId])
 
   async function toggleMembership(id: string, contains: boolean) {
     // Otimista: alterna já; reverte no erro.
@@ -272,69 +280,54 @@ function CollectionPicker({ recipeId }: { recipeId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <Button
-        type="button"
-        variant="secondary"
-        aria-expanded={open}
-        onClick={toggleOpen}
-        className="self-start"
-      >
-        {m.adicionarAColecao}
-      </Button>
-      {open && (
-        <div className="flex flex-col gap-3 rounded-md border border-border bg-bg p-3">
-          {status === 'loading' && <p className="text-sm text-muted">{messages.system.loading}</p>}
-          {status === 'error' && (
-            <p role="alert" className="text-sm font-medium text-fg">
-              {m.erroCarregar}
-            </p>
-          )}
-          {items != null && items.length > 0 && (
-            <ul className="flex flex-col gap-1.5">
-              {items.map((c) => (
-                <li key={c.id}>
-                  <label className="flex items-center gap-2 text-sm text-fg">
-                    <input
-                      type="checkbox"
-                      checked={c.contains}
-                      onChange={() => toggleMembership(c.id, c.contains)}
-                      className="size-4 accent-brand"
-                    />
-                    <span>{c.name}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )}
-          {items != null && items.length === 0 && (
-            <p className="text-sm text-muted">{m.semColecoes}</p>
-          )}
-          <form onSubmit={handleCreate} className="flex flex-wrap items-center gap-2">
-            <label htmlFor={`nova-col-${recipeId}`} className="sr-only">
-              {m.nomeColecao}
-            </label>
-            <Input
-              id={`nova-col-${recipeId}`}
-              value={newName}
-              onChange={(e) => {
-                setNewName(e.target.value)
-                setCreateError(null)
-              }}
-              placeholder={m.novaColecao}
-              maxLength={60}
-              className="w-48"
-            />
-            <Button type="submit" variant="secondary" disabled={creating || newName.trim() === ''}>
-              {m.criar}
-            </Button>
-          </form>
-          {createError != null && (
-            <p role="alert" className="text-sm font-medium text-fg">
-              {createError}
-            </p>
-          )}
-        </div>
+    <div className="flex flex-col gap-3">
+      <p className="font-display text-sm font-semibold text-fg">{m.adicionarAColecao}</p>
+      {status === 'loading' && <p className="text-sm text-muted">{messages.system.loading}</p>}
+      {status === 'error' && (
+        <p role="alert" className="text-sm font-medium text-fg">
+          {m.erroCarregar}
+        </p>
+      )}
+      {items != null && items.length > 0 && (
+        <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+          {items.map((c) => (
+            <li key={c.id}>
+              <label className="flex items-center gap-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={c.contains}
+                  onChange={() => toggleMembership(c.id, c.contains)}
+                  className="size-4 accent-brand"
+                />
+                <span>{c.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {items != null && items.length === 0 && <p className="text-sm text-muted">{m.semColecoes}</p>}
+      <form onSubmit={handleCreate} className="flex flex-col gap-2">
+        <label htmlFor={`nova-col-${recipeId}`} className="sr-only">
+          {m.nomeColecao}
+        </label>
+        <Input
+          id={`nova-col-${recipeId}`}
+          value={newName}
+          onChange={(e) => {
+            setNewName(e.target.value)
+            setCreateError(null)
+          }}
+          placeholder={m.novaColecao}
+          maxLength={60}
+        />
+        <Button type="submit" variant="secondary" disabled={creating || newName.trim() === ''}>
+          {m.criar}
+        </Button>
+      </form>
+      {createError != null && (
+        <p role="alert" className="text-sm font-medium text-fg">
+          {createError}
+        </p>
       )}
     </div>
   )

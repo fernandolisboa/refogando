@@ -356,10 +356,26 @@ async function DetailChrome({
       {jsonLd != null && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       )}
-      {/* Voltar à busca: primeiro elemento, muted; href estável "/" (a home É a busca). */}
-      <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
-        ← {messages.detalhe.voltarBusca}
-      </Link>
+      {/* Topo: "Voltar" (muted, href estável "/" — a home É a busca) à ESQUERDA e o bookmark de
+          SALVAR à DIREITA, acima da foto. `justify-between` dá ao link a largura do conteúdo (antes
+          ele esticava a coluna toda por ser flex-item). O bookmark (#62/#362) monta quando a Receita
+          está no POOL (`reviews != null` — o MESMO sinal de pool INDEPENDENTE que a seção de
+          Avaliações usa) OU quando o DONO gerencia a própria (`canManage`) — inclusive a PRIVADA, que
+          fica FORA do pool (`reviews == null`) mas PRECISA do Salvar (AC6). No caminho público
+          `viewerSaved` chega ausente (anônimo, resolvido no cliente). `key={view.id}`: REMONTA por
+          receita (numa nav detalhe→detalhe in-place o estado-do-viewer não vaza da anterior). */}
+      <div className="flex items-start justify-between gap-4">
+        <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
+          ← {messages.detalhe.voltar}
+        </Link>
+        {(reviews != null || view.canManage) && (
+          <RecipeEngagementControls
+            key={view.id}
+            recipeId={view.id}
+            initialViewerSaved={view.viewerSaved}
+          />
+        )}
+      </div>
       <RecipeDetailView
         view={view}
         m={messages}
@@ -367,22 +383,6 @@ async function DetailChrome({
         cozinhaLabel={cozinhaLabel}
         catalogDisclosure={catalogDisclosure}
       />
-      {/* Engajamento (#62/#362): monta quando a Receita está no POOL (`reviews != null` — o MESMO
-          sinal de pool INDEPENDENTE que a seção de Avaliações usa)
-          OU quando o DONO gerencia a própria receita (`canManage`) — inclusive a PRIVADA, que fica
-          FORA do pool (`reviews == null`) mas PRECISA do botão Salvar (AC6: "salva-se a própria —
-          inclusive privada"). No caminho público `viewerSaved` chega ausente (anônimo, resolvido no
-          cliente). `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o
-          React reusaria a instância (props mudam, `useState` NÃO re-inicializa), carregando o
-          estado-do-viewer da receita anterior (e o fetch client-side só corrige depois). A key força
-          estado fresco. */}
-      {(reviews != null || view.canManage) && (
-        <RecipeEngagementControls
-          key={view.id}
-          recipeId={view.id}
-          initialViewerSaved={view.viewerSaved}
-        />
-      )}
       {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews
           devolveu o pool). `key={view.id}`: remonta por receita (estado do widget não vaza numa nav
           detalhe→detalhe in-place). */}
