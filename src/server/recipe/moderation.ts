@@ -214,7 +214,7 @@ export async function applyReviewModeration(input: {
 }): Promise<ReviewModerationResult> {
   const { db, reportId, curatorId, reason } = input
 
-  return db.transaction(async (tx) => {
+  const { result, authorId, reviewId, recipeId } = await db.transaction(async (tx) => {
     // Report + o alvo-avaliação. FOR UPDATE single-table (SÓ report; NÃO juntar recipe_review aqui —
     // FOR UPDATE no lado nulável de outer join estoura no Postgres). Ordem das guardas: existência →
     // pending → motivo → alvo-existe (espelha applyImageModeration).
@@ -223,19 +223,29 @@ export async function applyReviewModeration(input: {
       .from(report)
       .where(eq(report.id, reportId))
       .for('update')
-    if (!row) return { kind: 'not_found' as const }
-    if (row.status !== 'pending') return { kind: 'already_resolved' as const }
-    if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' as const }
+    if (!row)
+      return { result: { kind: 'not_found' as const }, authorId: null, reviewId: null, recipeId: null }
+    if (row.status !== 'pending')
+      return { result: { kind: 'already_resolved' as const }, authorId: null, reviewId: null, recipeId: null }
+    if (!decideModerationReason({ reason }).allowed)
+      return { result: { kind: 'invalid_reason' as const }, authorId: null, reviewId: null, recipeId: null }
     // report de RECEITA (reviewId null) chegou no endpoint de avaliação ⇒ 422 (endpoint errado).
-    if (row.reviewId == null) return { kind: 'no_review' as const }
+    if (row.reviewId == null)
+      return { result: { kind: 'no_review' as const }, authorId: null, reviewId: null, recipeId: null }
 
     // Estado atual da avaliação (FOR UPDATE, tabela única — sem outer join). Preserva a 1ª moderação.
+    // #374: também traz o AUTOR (`userId`) e a `recipeId` p/ ancorar a notificação `review_moderated`.
     const [rev] = await tx
-      .select({ moderatedAt: recipeReview.moderatedAt })
+      .select({
+        moderatedAt: recipeReview.moderatedAt,
+        authorId: recipeReview.userId,
+        recipeId: recipeReview.recipeId,
+      })
       .from(recipeReview)
       .where(eq(recipeReview.id, row.reviewId))
       .for('update')
-    if (!rev) return { kind: 'not_found' as const } // defensivo (o cascade torna isto improvável)
+    if (!rev)
+      return { result: { kind: 'not_found' as const }, authorId: null, reviewId: null, recipeId: null } // defensivo (o cascade torna isto improvável)
     const alreadyModerated = rev.moderatedAt != null
 
     if (!alreadyModerated) {
@@ -253,8 +263,30 @@ export async function applyReviewModeration(input: {
       .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
       .where(eq(report.id, reportId))
 
-    return alreadyModerated ? { kind: 'ok_already_moderated' as const } : { kind: 'ok' as const }
+    return {
+      result: alreadyModerated
+        ? { kind: 'ok_already_moderated' as const }
+        : { kind: 'ok' as const },
+      authorId: rev.authorId,
+      reviewId: row.reviewId,
+      recipeId: rev.recipeId,
+    }
   })
+
+  // #374: notifica o AUTOR da avaliação na PRIMEIRA moderação genuína (kind==='ok'); NÃO em
+  // `ok_already_moderated` (2ª moderação não re-notifica). `actorId = null` (moderação IMPESSOAL —
+  // não expõe o Curador). Pós-commit, `db` de topo (fora da tx), best-effort (a moderação NUNCA
+  // falha/rola-back por causa da notificação).
+  if (result.kind === 'ok' && authorId != null) {
+    await emitNotification(db, {
+      recipientId: authorId,
+      type: 'review_moderated',
+      actorId: null,
+      recipeId,
+      reviewId,
+    })
+  }
+  return result
 }
 
 export async function keepReport(input: {

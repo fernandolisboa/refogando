@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isNotificationType,
   renderNotification,
+  renderStars,
   NOTIFICATION_TYPES,
 } from '@/domain/notification'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -70,13 +71,43 @@ describe('renderNotification (#371) — texto localizado do dado estruturado', (
     )
   })
 
-  it('review_moderated ainda não é emitido nesta fatia (#374) → texto genérico', () => {
-    expect(renderNotification(ptBR.notifications, 'review_moderated', {})).toBe(
-      'Você tem uma nova notificação',
+  // Eventos N3 de avaliação (#374): review_on_recipe interpola ATOR (o avaliador) + estrelas da nota
+  // VIVA; review_moderated é impessoal (sem ator — não expõe o Curador) e mostra as estrelas da nota.
+  it('review_on_recipe com ator + nota interpola {name} e {stars} nos dois locales', () => {
+    expect(
+      renderNotification(ptBR.notifications, 'review_on_recipe', { actorName: 'Ana', rating: 4 }),
+    ).toBe('Ana avaliou sua receita (4★)')
+    expect(
+      renderNotification(enUS.notifications, 'review_on_recipe', { actorName: 'Ana', rating: 4 }),
+    ).toBe('Ana rated your recipe (4★)')
+  })
+
+  it('review_on_recipe com ator degradado (soft-deletado, nome null/vazio) usa a variante anônima', () => {
+    expect(
+      renderNotification(ptBR.notifications, 'review_on_recipe', { actorName: null, rating: 5 }),
+    ).toBe('Sua receita recebeu uma avaliação (5★)')
+    expect(
+      renderNotification(enUS.notifications, 'review_on_recipe', { actorName: '  ', rating: 5 }),
+    ).toBe('Your recipe received a rating (5★)')
+  })
+
+  it('review_moderated → mensagem impessoal (sem ator) com as estrelas da nota removida, nos dois locales', () => {
+    expect(renderNotification(ptBR.notifications, 'review_moderated', { rating: 3 })).toBe(
+      'Sua avaliação (3★) foi removida por um moderador',
     )
-    expect(renderNotification(enUS.notifications, 'review_moderated', {})).toBe(
-      'You have a new notification',
+    expect(renderNotification(enUS.notifications, 'review_moderated', { rating: 3 })).toBe(
+      'Your review (3★) was removed by a moderator',
     )
+  })
+
+  it('renderStars: 1..5 → "N★"; null/undefined → string vazia (defensivo, PURO)', () => {
+    expect(renderStars(1)).toBe('1★')
+    expect(renderStars(2)).toBe('2★')
+    expect(renderStars(3)).toBe('3★')
+    expect(renderStars(4)).toBe('4★')
+    expect(renderStars(5)).toBe('5★')
+    expect(renderStars(null)).toBe('')
+    expect(renderStars(undefined)).toBe('')
   })
 
   it('isNotificationType aceita os tipos do catálogo e rejeita desconhecidos', () => {

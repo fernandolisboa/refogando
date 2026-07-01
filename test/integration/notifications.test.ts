@@ -11,11 +11,13 @@ import {
   NOTIFICATIONS_PAGE_SIZE,
 } from '@/server/notification'
 import { approveCozinha, mergeCozinha, rejectCozinha } from '@/server/vocabulary/curate'
-import { applyModerationRemove, applyImageModeration } from '@/server/recipe/moderation'
+import { applyModerationRemove, applyImageModeration, applyReviewModeration } from '@/server/recipe/moderation'
+import { applyReview } from '@/server/recipe/review'
 import { setImageGenRestriction } from '@/server/curate/restriction'
-import type { NotificationType } from '@/domain/notification'
+import { renderNotification, type NotificationType } from '@/domain/notification'
+import { ptBR } from '@/i18n/messages/pt-BR'
 import { seedUser, seedSessionHeaders } from '../helpers/users'
-import { seedRecipe, seedRecipeImage, seedReport } from '../helpers/recipes'
+import { seedRecipe, seedRecipeImage, seedReport, seedReview } from '../helpers/recipes'
 
 /**
  * Caixa de Notificações (#371, ADR-0028) contra Postgres real. Cobre: o fio do emit (`new_follower` no
@@ -487,6 +489,173 @@ describe('emit account_restricted (#373) — bloqueio de geração → usuário 
     expect(u.blockedAt).not.toBeNull()
     // Nenhuma notificação criada (insert engolido).
     expect(await notifsFor(target)).toHaveLength(0)
+    expect(errSpy).toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+})
+
+/**
+ * Eventos N3 de AVALIAÇÃO (#374, ADR-0028) contra Postgres real. `review_on_recipe` → pro DONO da
+ * receita, SÓ na CRIAÇÃO (edição não re-notifica), nunca em auto-avaliação (barrada) nem catálogo
+ * (owner null); `actorId` = avaliador (nome pode aparecer). `review_moderated` → pro AUTOR da
+ * avaliação, só na 1ª moderação; `actorId` null (impessoal). As estrelas são DADO VIVO (join em
+ * recipe_review no loadNotifications) — editar a nota muda o texto renderizado. Best-effort dos dois.
+ */
+
+/** Semeia uma receita pública de comunidade (no pool) com dono; sem tradução (o gate não exige). */
+async function seedPoolRecipe(ownerId: string | null): Promise<string> {
+  return seedRecipe({
+    origin: 'ai_chat',
+    originalLocale: 'pt-BR',
+    visibility: 'public',
+    resultKind: 'success',
+    ownerId,
+  })
+}
+
+describe('emit review_on_recipe (#374) — nova avaliação → dono', () => {
+  it('CRIAÇÃO → 1 notif pro dono (actor=avaliador, recipeId, reviewId); EDIÇÃO não re-notifica', async () => {
+    const owner = await seedUser({ email: 'ror-o@n.test' })
+    const reviewer = await seedUser({ email: 'ror-r@n.test' })
+    const rid = await seedPoolRecipe(owner)
+
+    const res = await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 4, comment: 'ótimo' })
+    expect(res.kind).toBe('ok')
+    const rows = await notifsFor(owner)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ type: 'review_on_recipe', actorId: reviewer, recipeId: rid })
+    expect(rows[0].reviewId).toBeTruthy()
+
+    // 2º save do MESMO avaliador = EDIÇÃO (upsert) → NÃO emite 2ª notificação.
+    const res2 = await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 2 })
+    expect(res2.kind).toBe('ok')
+    expect(await notifsFor(owner)).toHaveLength(1)
+  })
+
+  it('self-review (dono avalia a própria) → auto_review, 0 notif', async () => {
+    const owner = await seedUser({ email: 'ror-self@n.test' })
+    const rid = await seedPoolRecipe(owner)
+    const res = await applyReview({ db: getDb(), id: rid, userId: owner, action: 'save', rating: 5 })
+    expect(res.kind).toBe('auto_review')
+    expect(await notifsFor(owner)).toHaveLength(0)
+    expect(await countByType('review_on_recipe')).toBe(0)
+  })
+
+  it('catálogo (owner null) → avaliação vale, mas 0 notif (sem destinatário)', async () => {
+    const reviewer = await seedUser({ email: 'ror-cat@n.test' })
+    const rid = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    const res = await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 4 })
+    expect(res.kind).toBe('ok')
+    expect(await countByType('review_on_recipe')).toBe(0)
+  })
+
+  it('estrelas VIVAS: loadNotifications junta o rating; editar a nota muda o texto renderizado', async () => {
+    const owner = await seedUser({ email: 'ror-live-o@n.test' })
+    const reviewer = await seedUser({ email: 'ror-live-r@n.test', name: 'Bia', handle: 'bia-ror' })
+    const rid = await seedPoolRecipe(owner)
+    await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 4 })
+
+    const page = await loadNotifications(getDb(), owner)
+    expect(page.notifications).toHaveLength(1)
+    const n = page.notifications[0]
+    expect(n.refs.rating).toBe(4)
+    expect(renderNotification(ptBR.notifications, n.type, n.refs)).toBe('Bia avaliou sua receita (4★)')
+
+    // O avaliador EDITA a nota → o join reflete o valor novo (dado vivo, ADR-0028).
+    await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 2 })
+    const page2 = await loadNotifications(getDb(), owner)
+    const n2 = page2.notifications[0]
+    expect(n2.refs.rating).toBe(2)
+    expect(renderNotification(ptBR.notifications, n2.type, n2.refs)).toBe('Bia avaliou sua receita (2★)')
+  })
+
+  it('best-effort: applyReview SUCEDE e a avaliação PERSISTE mesmo se o insert da notificação falhar', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const owner = await seedUser({ email: 'ror-be-o@n.test' })
+    const reviewer = await seedUser({ email: 'ror-be-r@n.test' })
+    const rid = await seedPoolRecipe(owner)
+    // Proxy que quebra SÓ `insert(notification)` (o emit pós-upsert); `insert(recipe_review)` (o
+    // upsert), select/etc. delegam ao db real → a avaliação é gravada, só a notificação falha.
+    const realDb = getDb()
+    const flakyDb = new Proxy(realDb, {
+      get(t, p, r) {
+        if (p === 'insert')
+          return (table: unknown) =>
+            table === notification
+              ? { values: () => Promise.reject(new Error('boom')) }
+              : (t as Database).insert(table as never)
+        return Reflect.get(t, p, r)
+      },
+    }) as unknown as Database
+
+    const res = await applyReview({ db: flakyDb, id: rid, userId: reviewer, action: 'save', rating: 5 })
+    expect(res.kind).toBe('ok') // a avaliação NÃO falhou
+    // a avaliação PERSISTIU (via loadNotifications não dá — checa direto pela contagem por tipo).
+    expect(await countByType('review_on_recipe')).toBe(0) // nenhuma notificação (insert engolido)
+    expect(errSpy).toHaveBeenCalled()
+    errSpy.mockRestore()
+  })
+})
+
+describe('emit review_moderated (#374) — moderação de avaliação → autor', () => {
+  it('1ª moderação → 1 notif pro AUTOR (actorId null, recipeId/reviewId setados); ok_already_moderated não re-notifica', async () => {
+    const owner = await seedUser({ email: 'rvm-o@n.test' })
+    const author = await seedUser({ email: 'rvm-a@n.test' })
+    const curator = await seedUser({ email: 'rvm-c@n.test', role: 'curador' })
+    const reporter = await seedUser({ email: 'rvm-rep@n.test' })
+    const rid = await seedPoolRecipe(owner)
+    const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 3, comment: 'meh' })
+    const rep1 = await seedReport({ reviewId, reporterId: reporter })
+
+    const res = await applyReviewModeration({ db: getDb(), reportId: rep1, curatorId: curator, reason: 'ofensivo' })
+    expect(res.kind).toBe('ok')
+    const rows = await notifsFor(author)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ type: 'review_moderated', actorId: null, recipeId: rid, reviewId })
+
+    // 2º report da MESMA avaliação → ok_already_moderated → NÃO emite 2ª.
+    const rep2 = await seedReport({ reviewId, reporterId: reporter })
+    const res2 = await applyReviewModeration({ db: getDb(), reportId: rep2, curatorId: curator, reason: 'de novo' })
+    expect(res2.kind).toBe('ok_already_moderated')
+    expect(await notifsFor(author)).toHaveLength(1)
+  })
+
+  it('estrelas da nota removida no render (dado vivo pelo join)', async () => {
+    const owner = await seedUser({ email: 'rvm-live-o@n.test' })
+    const author = await seedUser({ email: 'rvm-live-a@n.test' })
+    const curator = await seedUser({ email: 'rvm-live-c@n.test', role: 'curador' })
+    const rid = await seedPoolRecipe(owner)
+    const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 5 })
+    const rep = await seedReport({ reviewId, reporterId: owner })
+    await applyReviewModeration({ db: getDb(), reportId: rep, curatorId: curator, reason: 'x' })
+
+    const page = await loadNotifications(getDb(), author)
+    expect(page.notifications).toHaveLength(1)
+    const n = page.notifications[0]
+    expect(n.refs.rating).toBe(5) // a linha moderada PERSISTE (soft-delete) → o join sobrevive
+    expect(renderNotification(ptBR.notifications, n.type, n.refs)).toBe(
+      'Sua avaliação (5★) foi removida por um moderador',
+    )
+  })
+
+  it('best-effort: a moderação SUCEDE mesmo se o insert da notificação falhar (engolido)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const owner = await seedUser({ email: 'rvm-be-o@n.test' })
+    const author = await seedUser({ email: 'rvm-be-a@n.test' })
+    const curator = await seedUser({ email: 'rvm-be-c@n.test', role: 'curador' })
+    const rid = await seedPoolRecipe(owner)
+    const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 2 })
+    const rep = await seedReport({ reviewId, reporterId: owner })
+    // A moderação roda em db.transaction (tx.update); o emit pós-commit usa db.insert → só ele quebra.
+    const flakyDb = Object.assign(Object.create(getDb()), {
+      insert: () => ({ values: () => Promise.reject(new Error('boom')) }),
+    }) as Database
+
+    const res = await applyReviewModeration({ db: flakyDb, reportId: rep, curatorId: curator, reason: 'removida' })
+    expect(res.kind).toBe('ok') // a moderação NÃO falhou
+    // A avaliação foi moderada (lida pelo db real).
+    const rows = await notifsFor(author)
+    expect(rows).toHaveLength(0) // nenhuma notificação (insert engolido)
     expect(errSpy).toHaveBeenCalled()
     errSpy.mockRestore()
   })

@@ -5,6 +5,7 @@ import { decideReview } from '@/domain/review'
 import { eligibleForPool } from '@/domain/recipe-pool'
 import type { CurationStatus } from '@/domain/recipe-curation'
 import type { ImageStore } from '@/server/images/image-store'
+import { emitNotification } from '@/server/notification'
 
 /**
  * Núcleo com efeito da AVALIAÇÃO (issue #363, ADR-0027). Espelha `social.ts`: discriminated
@@ -191,8 +192,11 @@ export async function applyReview(input: {
 
     // C3: o set do upsert monta por SPREAD (o objeto mutável não tipa). keep ⇒ NÃO inclui photoUrl
     // (mantém a existente); set/clear ⇒ inclui o valor final. INSERT fresco: keep/clear nascem null.
+    // #374: o RETURNING dá o `reviewId` da linha upsertada (criação OU edição), para ancorar a
+    // notificação `review_on_recipe` (só na criação — ver abaixo).
+    let reviewId: string
     try {
-      await db
+      const [upserted] = await db
         .insert(recipeReview)
         .values({
           userId,
@@ -210,6 +214,8 @@ export async function applyReview(input: {
             ...(photo.kind !== 'keep' ? { photoUrl: finalPhotoUrl } : {}),
           },
         })
+        .returning({ id: recipeReview.id })
+      reviewId = upserted.id
     } catch (err) {
       // Órfão residual (erro de DB APÓS o store bem-sucedido, raro): apaga best-effort o blob
       // recém-criado e re-lança (a rota vira 500 cru; nada foi persistido).
@@ -221,6 +227,21 @@ export async function applyReview(input: {
         }
       }
       throw err
+    }
+
+    // #374: NOVA avaliação → notifica o DONO da receita, best-effort, SÓ NA CRIAÇÃO (`existing`
+    // ausente ⇒ era um INSERT; edição não re-notifica). Pula o catálogo (`ownerId === null`, sem
+    // destinatário). `decideReview` já garantiu avaliador≠dono ⇒ o destinatário nunca é o próprio.
+    // Fora de qualquer transação (o upsert já persistiu); `emitNotification` engole erro (a avaliação
+    // NUNCA falha por causa da notificação). `actorId = userId` (o avaliador PODE mostrar o nome).
+    if (existing === undefined && gate.ownerId !== null) {
+      await emitNotification(db, {
+        recipientId: gate.ownerId,
+        type: 'review_on_recipe',
+        actorId: userId,
+        recipeId: id,
+        reviewId,
+      })
     }
 
     const agg = await loadAggregate(db, id)

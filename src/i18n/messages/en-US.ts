@@ -43,6 +43,10 @@ export const enUS: Messages = {
     receitaModerada: 'One of your recipes was removed from discovery by a moderator',
     imagemModerada: 'One of your images was moderated',
     contaRestringida: 'Your account was restricted (image generation is blocked)',
+    // N3 review events (#374): {name} = reviewer name (actor variant only); {stars} = rendered rating.
+    avaliacaoNaReceita: '{name} rated your recipe ({stars})',
+    avaliacaoNaReceitaAnon: 'Your recipe received a rating ({stars})',
+    avaliacaoModerada: 'Your review ({stars}) was removed by a moderator',
     generico: 'You have a new notification',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },

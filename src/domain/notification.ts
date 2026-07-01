@@ -37,6 +37,21 @@ export type NotificationRefs = {
   actorName?: string | null
   actorHandle?: string | null
   recipeTitle?: string | null
+  // #374: NOTA (1–5) da avaliação-sujeito, para os eventos de avaliação. É DADO VIVO — hidratado por
+  // `loadNotifications` via LEFT JOIN em `recipe_review` (sem coluna nova); reflete edições posteriores
+  // da nota (ADR-0028 "dado vivo"). `null` quando não há avaliação/rating (ex.: `new_follower`).
+  rating?: number | null
+}
+
+/**
+ * #374: renderiza a NOTA (1–5) como número + ★ (ex.: "4★") — casa o display de estrelas da página
+ * (`recipe-review-section`) sem a ambiguidade de glifos cheios/vazios num texto de uma linha. PURO e
+ * defensivo: `null`/`undefined`/não-finito → string vazia (o template só mostra os parênteses vazios;
+ * a notificação NÃO some por uma nota ausente).
+ */
+export function renderStars(rating: number | null | undefined): string {
+  if (rating == null || !Number.isFinite(rating)) return ''
+  return `${rating}★`
 }
 
 /**
@@ -58,6 +73,20 @@ export function renderNotification(
       const name = refs.actorName?.trim()
       return name ? msgs.novoSeguidor.replace('{name}', name) : msgs.novoSeguidorAnon
     }
+    // Evento N3 (#374): NOVA avaliação na sua receita → mostra o ATOR (avaliador) + as estrelas da
+    // nota VIVA. Ator degradado (soft-deletado, nome null/vazio) → variante anônima (a notificação
+    // NÃO some). As estrelas vêm de `refs.rating` (hidratado pelo join vivo).
+    case 'review_on_recipe': {
+      const name = refs.actorName?.trim()
+      const stars = renderStars(refs.rating)
+      return name
+        ? msgs.avaliacaoNaReceita.replace('{name}', name).replace('{stars}', stars)
+        : msgs.avaliacaoNaReceitaAnon.replace('{stars}', stars)
+    }
+    // Evento N3 (#374): sua avaliação foi removida pelo Curador — IMPESSOAL (sem ator; não expõe o
+    // Curador), mostra as estrelas da nota removida (informativo). Nota via `refs.rating` (join vivo).
+    case 'review_moderated':
+      return msgs.avaliacaoModerada.replace('{stars}', renderStars(refs.rating))
     // Eventos N2 (#373): mensagens genéricas localizadas, impessoais (ação de Curador/sistema — sem
     // ator interpolado) e sem o motivo livre embutido (não localizável; surfacing deferido).
     case 'cuisine_suggestion_resolved':
@@ -69,7 +98,7 @@ export function renderNotification(
     case 'account_restricted':
       return msgs.contaRestringida
     default:
-      // `review_moderated` ainda não é emitido nesta fatia (é #374): texto genérico seguro.
+      // Tipos ainda não ligados a um render específico → texto genérico seguro (tracer bullet).
       return msgs.generico
   }
 }

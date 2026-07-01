@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { notification, users } from '@/db/schema'
+import { notification, recipeReview, users } from '@/db/schema'
 import type { NotificationType, NotificationRefs } from '@/domain/notification'
 
 /**
@@ -141,6 +141,10 @@ export async function loadNotifications(
       actorName: aliveActor,
       actorHandle: aliveHandle,
       actorImage: aliveImage,
+      // #374: NOTA da avaliação-sujeito, DADO VIVO — LEFT JOIN em `recipe_review` pelo `review_id` da
+      // notificação (sem coluna nova). Reflete edições posteriores da nota; `null` p/ notificações sem
+      // avaliação (ex.: `new_follower`). A avaliação moderada PERSISTE (soft-delete) ⇒ o join sobrevive.
+      rating: recipeReview.rating,
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       // SERVER-ONLY (nunca no DTO): alimenta só o cursor opaco da próxima página.
@@ -148,6 +152,7 @@ export async function loadNotifications(
     })
     .from(notification)
     .leftJoin(users, eq(users.id, notification.actorId))
+    .leftJoin(recipeReview, eq(recipeReview.id, notification.reviewId))
     .where(and(...conditions))
     .orderBy(desc(notification.createdAt), asc(notification.id))
     .limit(limit + 1)
@@ -157,7 +162,7 @@ export async function loadNotifications(
   const notifications: NotificationDTO[] = kept.map((r) => ({
     id: r.id,
     type: r.type,
-    refs: { actorName: r.actorName, actorHandle: r.actorHandle, recipeTitle: null },
+    refs: { actorName: r.actorName, actorHandle: r.actorHandle, recipeTitle: null, rating: r.rating },
     actorImage: r.actorImage,
     readAt: r.readAt ? r.readAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
