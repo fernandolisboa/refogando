@@ -332,12 +332,16 @@ async function DetailChrome({
         cozinhaLabel={cozinhaLabel}
         catalogDisclosure={catalogDisclosure}
       />
-      {/* Engajamento (#62): gate pela presença do agregado de pool (`voteCount`). No caminho público
-          o anônimo VÊ a contagem; `viewerVoted`/`viewerSaved` ausentes (resolvidos no cliente).
-          `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o React reusaria
-          a instância (props mudam, `useState` NÃO re-inicializa), carregando voto/contagem/estado-do-viewer
-          da receita anterior (e o fetch client-side só corrige depois). A key força estado fresco. */}
-      {view.voteCount != null && (
+      {/* Engajamento (#62/#362): monta quando há agregado de pool (`voteCount`, caminho público) OU
+          quando o DONO gerencia a própria receita (`canManage`) — inclusive a PRIVADA, que não tem
+          `voteCount` (fora do pool) mas PRECISA do botão Salvar (AC6: "salva-se a própria — inclusive
+          privada"). Nesse caso o controle esconde a contagem/voto ausentes e mostra só Salvar. No
+          caminho público o anônimo VÊ a contagem; `viewerVoted`/`viewerSaved` ausentes (resolvidos no
+          cliente). `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o React
+          reusaria a instância (props mudam, `useState` NÃO re-inicializa), carregando voto/contagem/
+          estado-do-viewer da receita anterior (e o fetch client-side só corrige depois). A key força
+          estado fresco. */}
+      {(view.voteCount != null || view.canManage) && (
         <RecipeEngagementControls
           key={view.id}
           recipeId={view.id}
