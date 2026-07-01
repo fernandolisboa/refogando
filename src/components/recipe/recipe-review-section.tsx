@@ -38,6 +38,13 @@ export type ReviewViewSerialized = {
   createdAt: string // ISO — a página serializa Dates antes de passar
 }
 
+/** Corpo do GET /reviews/mine — estado per-viewer (id/dono/moderação da própria avaliação). */
+type MineBody = {
+  viewerReview: { id: string; rating: number; comment: string | null } | null
+  isOwner: boolean
+  moderated?: boolean
+}
+
 const MAX_STARS = 5
 
 /** Estrelas SÓ-LEITURA (exibição de uma nota). Preenchidas até `value`, vazias depois. */
@@ -83,8 +90,22 @@ export function RecipeReviewSection({
   const [hasReview, setHasReview] = useState(false)
   const [viewerResolved, setViewerResolved] = useState(false)
   const [ownerClient, setOwnerClient] = useState(false)
+  // #366: a PRÓPRIA avaliação do viewer foi MODERADA (removida pelo Curador). Quando true, trocamos o
+  // widget editável por um aviso só-leitura — o delete é no-op durável no servidor, então não oferecemos
+  // Editar/Apagar que mentiriam sucesso e a linha reapareceria no reload.
+  const [viewerModerated, setViewerModerated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // #366: id da PRÓPRIA avaliação do viewer (esconde "Reportar" na própria linha da lista); estado do
+  // affordance de reportar por review: qual form está aberto, o rascunho de motivo, quais já foram
+  // reportadas (estado "Reportado" desabilitado), qual está em voo e qual tem erro.
+  const [myReviewId, setMyReviewId] = useState<string | null>(null)
+  const [reportingId, setReportingId] = useState<string | null>(null)
+  const [reportReason, setReportReason] = useState<Record<string, string>>({})
+  const [reportedIds, setReportedIds] = useState<Record<string, boolean>>({})
+  const [reportBusyId, setReportBusyId] = useState<string | null>(null)
+  const [reportErrorId, setReportErrorId] = useState<string | null>(null)
 
   // Logado não-dono: resolve a PRÓPRIA avaliação (a página é cacheável, o server lê anônimo).
   // Anônimo/dono não busca. Falha ⇒ NÃO resolve o viewer: o widget fica escondido (o servidor
@@ -95,18 +116,7 @@ export function RecipeReviewSection({
     fetch(`/api/recipes/${recipeId}/reviews/mine`)
       .then(async (res) => {
         if (cancelled) return
-        if (res.ok) {
-          const body = (await res.json()) as {
-            viewerReview: { rating: number; comment: string | null } | null
-            isOwner: boolean
-          }
-          setOwnerClient(!!body.isOwner)
-          if (body.viewerReview) {
-            setRating(body.viewerReview.rating)
-            setComment(body.viewerReview.comment ?? '')
-            setHasReview(true)
-          }
-        }
+        if (res.ok) applyMineBody((await res.json()) as MineBody)
         setViewerResolved(true)
       })
       .catch(() => {
@@ -117,6 +127,33 @@ export function RecipeReviewSection({
       cancelled = true
     }
   }, [recipeId, canManage, loggedIn])
+
+  // #366/#F3: aplica o corpo do GET /reviews/mine ao estado do viewer. `id`/moderação vêm daqui —
+  // `myReviewId` precisa refrescar após ENVIAR (senão "Reportar" aparece na própria linha recém-criada
+  // até o reload) e o flag `moderated` também.
+  function applyMineBody(body: MineBody) {
+    setOwnerClient(!!body.isOwner)
+    setMyReviewId(body.viewerReview?.id ?? null)
+    setViewerModerated(!!body.moderated)
+    if (body.viewerReview) {
+      setRating(body.viewerReview.rating)
+      setComment(body.viewerReview.comment ?? '')
+      setHasReview(true)
+    }
+  }
+
+  // Re-busca a PRÓPRIA avaliação após escrever (envio/apagar) — mantém `myReviewId`/`moderated`
+  // coerentes sem reload. Silencioso na falha (o POST/DELETE já é autoritativo pro estado próprio).
+  async function refreshMine() {
+    if (canManage || !loggedIn) return
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/reviews/mine`)
+      if (!res.ok) return
+      applyMineBody((await res.json()) as MineBody)
+    } catch {
+      // silencioso.
+    }
+  }
 
   async function refreshList() {
     try {
@@ -161,6 +198,8 @@ export function RecipeReviewSection({
       setAverage(body.average)
       setCount(body.count)
       await refreshList()
+      // #F3: refresca `myReviewId` (a linha recém-criada não deve oferecer "Reportar" a si mesma).
+      await refreshMine()
     } catch {
       setError(m.erroEnviar)
     } finally {
@@ -185,10 +224,39 @@ export function RecipeReviewSection({
       setAverage(body.average)
       setCount(body.count)
       await refreshList()
+      // #F3: mantém `myReviewId`/`moderated` coerentes após apagar (sem reload).
+      await refreshMine()
     } catch {
       setError(m.erroApagar)
     } finally {
       setBusy(false)
+    }
+  }
+
+  // #366: reporta a avaliação de outra pessoa → POST /api/reviews/[reviewId]/report {reason}. Motivo
+  // obrigatório (o servidor reimpõe 400). Sucesso ⇒ estado "Reportado" desabilitado. NENHUMA ação de
+  // remover (só o Curador remove, na fila do painel).
+  async function handleReport(reviewId: string) {
+    const reason = (reportReason[reviewId] ?? '').trim()
+    if (reportBusyId != null || reason.length === 0) return
+    setReportBusyId(reviewId)
+    setReportErrorId(null)
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/report`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      if (!res.ok) {
+        setReportErrorId(reviewId)
+        return
+      }
+      setReportedIds((prev) => ({ ...prev, [reviewId]: true }))
+      setReportingId(null)
+    } catch {
+      setReportErrorId(reviewId)
+    } finally {
+      setReportBusyId(null)
     }
   }
 
@@ -204,8 +272,10 @@ export function RecipeReviewSection({
 
   const starLabel = (n: number) => (n === 1 ? m.estrela : m.estrelas).replace('{n}', String(n))
 
-  // Widget de nota: aparece só quando logado, não-dono e resolvido.
-  const showWidget = !canManage && !ownerClient && loggedIn && viewerResolved
+  // Widget de nota: aparece só quando logado, não-dono, resolvido — e NÃO moderado (#366: uma
+  // avaliação própria moderada é só-leitura; sem estrelas/Editar/Apagar, só o aviso de remoção).
+  const showWidget = !canManage && !ownerClient && loggedIn && viewerResolved && !viewerModerated
+  const showRemovedNotice = !canManage && !ownerClient && loggedIn && viewerResolved && viewerModerated
   const showAnonInvite = !canManage && sessionSettled && !loggedIn
 
   return (
@@ -279,6 +349,16 @@ export function RecipeReviewSection({
         </div>
       )}
 
+      {/* #366: avaliação própria MODERADA (removida pelo Curador) — aviso só-leitura no lugar do
+          widget. Sem estrelas/Editar/Apagar: o delete é no-op durável no servidor (não mente). */}
+      {showRemovedNotice && (
+        <div className="border-t border-border pt-3">
+          <p role="status" className="text-sm font-medium text-muted">
+            {m.suaAvaliacaoRemovida}
+          </p>
+        </div>
+      )}
+
       {/* Convite pra anônimo. */}
       {showAnonInvite && (
         <div className="border-t border-border pt-3">
@@ -310,6 +390,74 @@ export function RecipeReviewSection({
               </div>
               {r.comment != null && r.comment !== '' && (
                 <p className="text-sm text-foreground whitespace-pre-line">{r.comment}</p>
+              )}
+
+              {/* #366: "Reportar" — só logado, e nunca na própria avaliação (o autor edita/apaga; o
+                  dono da receita reporta as de terceiros, NUNCA remove). O botão revela o motivo; ao
+                  abrir, é SUBSTITUÍDO pelo form (Reportar=enviar + Cancelar), sem ação de remover. */}
+              {loggedIn && r.id !== myReviewId && (
+                <div className="mt-1 flex flex-col gap-2">
+                  {reportedIds[r.id] ? (
+                    <span className="text-xs font-medium text-muted">{m.reportado}</span>
+                  ) : reportingId === r.id ? (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor={`report-motivo-${r.id}`}>{m.motivoReport}</Label>
+                      <Textarea
+                        id={`report-motivo-${r.id}`}
+                        value={reportReason[r.id] ?? ''}
+                        onChange={(e) =>
+                          setReportReason((prev) => ({ ...prev, [r.id]: e.target.value }))
+                        }
+                        rows={2}
+                        aria-required="true"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => void handleReport(r.id)}
+                          disabled={
+                            reportBusyId === r.id || (reportReason[r.id] ?? '').trim().length === 0
+                          }
+                          aria-busy={reportBusyId === r.id}
+                        >
+                          {m.reportar}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setReportingId(null)}
+                          disabled={reportBusyId === r.id}
+                        >
+                          {m.cancelarReport}
+                        </Button>
+                      </div>
+                      {reportErrorId === r.id && (
+                        <Alert variant="info" role="alert">
+                          <AlertDescription className="font-medium text-foreground">
+                            {m.erroReport}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setReportErrorId(null)
+                          setReportingId(r.id)
+                        }}
+                        aria-expanded={false}
+                      >
+                        {m.reportar}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </li>
           ))

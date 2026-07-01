@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeImage, report } from '@/db/schema'
+import { recipe, recipeImage, recipeReview, report } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
 
 /**
@@ -46,7 +46,9 @@ export async function applyModerationRemove(input: {
       .select({
         reportId: report.id,
         status: report.status,
-        recipeId: report.recipeId,
+        // #366: `report.recipeId` virou nullable (alvo pode ser avaliação). Aqui o INNER JOIN recipe já
+        // exige recipeId não-nulo em runtime; selecionar `recipe.id` (PK, non-null) narra o tipo.
+        recipeId: recipe.id,
         moderationRemovedAt: recipe.moderationRemovedAt,
       })
       .from(report)
@@ -139,6 +141,75 @@ export async function applyImageModeration(input: {
     }
 
     // Resolve SÓ este report. A Receita CONTINUA no pool (NÃO toca recipe.moderation_*).
+    await tx
+      .update(report)
+      .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
+      .where(eq(report.id, reportId))
+
+    return alreadyModerated ? { kind: 'ok_already_moderated' as const } : { kind: 'ok' as const }
+  })
+}
+
+/**
+ * MODERAR UMA AVALIAÇÃO (issue #366, ADR-0027) — o Curador remove a Avaliação reportada (a unidade
+ * INTEIRA: nota + comentário + foto), de forma LÓGICA, setando `recipe_review.moderated_*`. A leitura
+ * quente (`loadRecipeReviews`/`loadAggregate`) já filtra `moderated_at IS NULL` desde a #363 — esta é
+ * a fatia do WRITE. Espelha `applyImageModeration` 1:1: transação, FOR UPDATE single-table (nunca no
+ * lado nulável de um outer join), preserva a proveniência da 1ª moderação, resolve o report.
+ *
+ * O DONO da Receita NÃO tem esta ação — só reportar. A remoção existe SÓ atrás de requireRole('curador')
+ * (Admin herda via ROLE_RANK). `no_review` (422) blinda o endpoint contra um report de RECEITA.
+ */
+export type ReviewModerationResult =
+  | { kind: 'ok' } //                   200 — moderou a avaliação agora
+  | { kind: 'ok_already_moderated' } // 200 — avaliação já moderada; só resolveu este report
+  | { kind: 'not_found' } //            404 — report inexistente
+  | { kind: 'invalid_reason' } //       400 — motivo vazio
+  | { kind: 'already_resolved' } //     409 — report já não está pending
+  | { kind: 'no_review' } //            422 — o report reportado NÃO mira uma avaliação (é de receita)
+
+export async function applyReviewModeration(input: {
+  db: Database
+  reportId: string // já validado uuid pelo route
+  curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
+  reason: string
+}): Promise<ReviewModerationResult> {
+  const { db, reportId, curatorId, reason } = input
+
+  return db.transaction(async (tx) => {
+    // Report + o alvo-avaliação. FOR UPDATE single-table (SÓ report; NÃO juntar recipe_review aqui —
+    // FOR UPDATE no lado nulável de outer join estoura no Postgres). Ordem das guardas: existência →
+    // pending → motivo → alvo-existe (espelha applyImageModeration).
+    const [row] = await tx
+      .select({ status: report.status, reviewId: report.reviewId })
+      .from(report)
+      .where(eq(report.id, reportId))
+      .for('update')
+    if (!row) return { kind: 'not_found' as const }
+    if (row.status !== 'pending') return { kind: 'already_resolved' as const }
+    if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' as const }
+    // report de RECEITA (reviewId null) chegou no endpoint de avaliação ⇒ 422 (endpoint errado).
+    if (row.reviewId == null) return { kind: 'no_review' as const }
+
+    // Estado atual da avaliação (FOR UPDATE, tabela única — sem outer join). Preserva a 1ª moderação.
+    const [rev] = await tx
+      .select({ moderatedAt: recipeReview.moderatedAt })
+      .from(recipeReview)
+      .where(eq(recipeReview.id, row.reviewId))
+      .for('update')
+    if (!rev) return { kind: 'not_found' as const } // defensivo (o cascade torna isto improvável)
+    const alreadyModerated = rev.moderatedAt != null
+
+    if (!alreadyModerated) {
+      // Remoção LÓGICA: seta as 3 colunas JUNTAS (o CHECK `(moderated_at IS NULL)=(moderated_by IS NULL)`
+      // estoura se setar só uma). A linha PERSISTE; só some do público/agregado.
+      await tx
+        .update(recipeReview)
+        .set({ moderatedAt: sql`now()`, moderatedReason: reason, moderatedBy: curatorId })
+        .where(eq(recipeReview.id, row.reviewId))
+    }
+
+    // Resolve SÓ este report (outros pending da mesma avaliação seguem na fila).
     await tx
       .update(report)
       .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
