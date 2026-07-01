@@ -370,10 +370,16 @@ describe('Moderação de avaliação (#366)', () => {
     // autor ainda vê a PRÓPRIA avaliação moderada (mine não filtra moderatedAt)
     const mine = await getMine(id, aH)
     expect(mine.status).toBe(200)
-    const mineBody = (await mine.json()) as { viewerReview: { id: string; rating: number } | null; isOwner: boolean }
+    const mineBody = (await mine.json()) as {
+      viewerReview: { id: string; rating: number } | null
+      isOwner: boolean
+      moderated: boolean
+    }
     expect(mineBody.viewerReview).not.toBeNull()
     expect(mineBody.viewerReview?.id).toBe(reviewId)
     expect(mineBody.isOwner).toBe(false)
+    // #366/F2: a rota expõe `moderated` pra UI trocar o widget por um aviso só-leitura.
+    expect(mineBody.moderated).toBe(true)
 
     // editar mantém moderada
     expect((await postReview(id, { rating: 2 }, aH)).status).toBe(200)

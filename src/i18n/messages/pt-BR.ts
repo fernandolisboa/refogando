@@ -930,6 +930,9 @@ export const ptBR = {
     convidaEntrar: 'Entrar para avaliar',
     erroEnviar: 'Não foi possível enviar sua avaliação. Tente de novo.',
     erroApagar: 'Não foi possível apagar sua avaliação. Tente de novo.',
+    // #366: a própria avaliação do viewer foi MODERADA (removida pelo Curador). Estado só-leitura —
+    // sem estrelas/Editar/Apagar (o delete é no-op no servidor; não oferecemos a ação que mente).
+    suaAvaliacaoRemovida: 'Sua avaliação foi removida por um moderador.',
     // #366: reportar a avaliação de outra pessoa (report→Curador). O autor NÃO reporta a própria;
     // ninguém REMOVE (só o Curador, na fila). Sucesso ⇒ estado "Reportado" desabilitado.
     reportar: 'Reportar',
@@ -1133,7 +1136,7 @@ export const ptBR = {
     erroUsuarioNaoEncontrado: 'Não foi possível encontrar o autor desta receita.',
     // #366: card de report de uma AVALIAÇÃO. O Curador remove a avaliação INTEIRA (nota+comentário+
     // foto) — remoção LÓGICA — ou MANTÉM (keep, único descarte). O dono NÃO tem ação aqui.
-    avaliacaoDe: 'Avaliação de {autor}',
+    avaliacaoDe: 'Autor da avaliação',
     avaliacaoNota: 'Nota',
     avaliacaoComentario: 'Comentário',
     avaliacaoSemComentario: 'Sem comentário',

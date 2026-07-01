@@ -870,6 +870,9 @@ export const enUS: Messages = {
     convidaEntrar: 'Sign in to review',
     erroEnviar: 'Could not submit your review. Try again.',
     erroApagar: 'Could not delete your review. Try again.',
+    // #366: the viewer's own review was MODERATED (removed by the Curator). Read-only state —
+    // no stars/Edit/Delete (the delete is a server no-op; we don't offer the lying action).
+    suaAvaliacaoRemovida: 'Your review was removed by a moderator.',
     // #366: report someone else's review (report→Curator). The author does NOT report their own; nobody
     // REMOVES (only the Curator, from the queue). On success ⇒ disabled "Reported" state.
     reportar: 'Report',
@@ -1063,7 +1066,7 @@ export const enUS: Messages = {
     erroUsuarioNaoEncontrado: "Couldn't find this recipe's author.",
     // #366: card for a report about a REVIEW. The Curator removes the WHOLE review (rating+comment+
     // photo) — a logical removal — or KEEPS it (keep, the only dismissal). The owner has no action here.
-    avaliacaoDe: 'Review by {autor}',
+    avaliacaoDe: 'Review author',
     avaliacaoNota: 'Rating',
     avaliacaoComentario: 'Comment',
     avaliacaoSemComentario: 'No comment',

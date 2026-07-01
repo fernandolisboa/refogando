@@ -38,6 +38,13 @@ export type ReviewViewSerialized = {
   createdAt: string // ISO — a página serializa Dates antes de passar
 }
 
+/** Corpo do GET /reviews/mine — estado per-viewer (id/dono/moderação da própria avaliação). */
+type MineBody = {
+  viewerReview: { id: string; rating: number; comment: string | null } | null
+  isOwner: boolean
+  moderated?: boolean
+}
+
 const MAX_STARS = 5
 
 /** Estrelas SÓ-LEITURA (exibição de uma nota). Preenchidas até `value`, vazias depois. */
@@ -83,6 +90,10 @@ export function RecipeReviewSection({
   const [hasReview, setHasReview] = useState(false)
   const [viewerResolved, setViewerResolved] = useState(false)
   const [ownerClient, setOwnerClient] = useState(false)
+  // #366: a PRÓPRIA avaliação do viewer foi MODERADA (removida pelo Curador). Quando true, trocamos o
+  // widget editável por um aviso só-leitura — o delete é no-op durável no servidor, então não oferecemos
+  // Editar/Apagar que mentiriam sucesso e a linha reapareceria no reload.
+  const [viewerModerated, setViewerModerated] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,19 +116,7 @@ export function RecipeReviewSection({
     fetch(`/api/recipes/${recipeId}/reviews/mine`)
       .then(async (res) => {
         if (cancelled) return
-        if (res.ok) {
-          const body = (await res.json()) as {
-            viewerReview: { id: string; rating: number; comment: string | null } | null
-            isOwner: boolean
-          }
-          setOwnerClient(!!body.isOwner)
-          setMyReviewId(body.viewerReview?.id ?? null)
-          if (body.viewerReview) {
-            setRating(body.viewerReview.rating)
-            setComment(body.viewerReview.comment ?? '')
-            setHasReview(true)
-          }
-        }
+        if (res.ok) applyMineBody((await res.json()) as MineBody)
         setViewerResolved(true)
       })
       .catch(() => {
@@ -128,6 +127,33 @@ export function RecipeReviewSection({
       cancelled = true
     }
   }, [recipeId, canManage, loggedIn])
+
+  // #366/#F3: aplica o corpo do GET /reviews/mine ao estado do viewer. `id`/moderação vêm daqui —
+  // `myReviewId` precisa refrescar após ENVIAR (senão "Reportar" aparece na própria linha recém-criada
+  // até o reload) e o flag `moderated` também.
+  function applyMineBody(body: MineBody) {
+    setOwnerClient(!!body.isOwner)
+    setMyReviewId(body.viewerReview?.id ?? null)
+    setViewerModerated(!!body.moderated)
+    if (body.viewerReview) {
+      setRating(body.viewerReview.rating)
+      setComment(body.viewerReview.comment ?? '')
+      setHasReview(true)
+    }
+  }
+
+  // Re-busca a PRÓPRIA avaliação após escrever (envio/apagar) — mantém `myReviewId`/`moderated`
+  // coerentes sem reload. Silencioso na falha (o POST/DELETE já é autoritativo pro estado próprio).
+  async function refreshMine() {
+    if (canManage || !loggedIn) return
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/reviews/mine`)
+      if (!res.ok) return
+      applyMineBody((await res.json()) as MineBody)
+    } catch {
+      // silencioso.
+    }
+  }
 
   async function refreshList() {
     try {
@@ -172,6 +198,8 @@ export function RecipeReviewSection({
       setAverage(body.average)
       setCount(body.count)
       await refreshList()
+      // #F3: refresca `myReviewId` (a linha recém-criada não deve oferecer "Reportar" a si mesma).
+      await refreshMine()
     } catch {
       setError(m.erroEnviar)
     } finally {
@@ -196,6 +224,8 @@ export function RecipeReviewSection({
       setAverage(body.average)
       setCount(body.count)
       await refreshList()
+      // #F3: mantém `myReviewId`/`moderated` coerentes após apagar (sem reload).
+      await refreshMine()
     } catch {
       setError(m.erroApagar)
     } finally {
@@ -242,8 +272,10 @@ export function RecipeReviewSection({
 
   const starLabel = (n: number) => (n === 1 ? m.estrela : m.estrelas).replace('{n}', String(n))
 
-  // Widget de nota: aparece só quando logado, não-dono e resolvido.
-  const showWidget = !canManage && !ownerClient && loggedIn && viewerResolved
+  // Widget de nota: aparece só quando logado, não-dono, resolvido — e NÃO moderado (#366: uma
+  // avaliação própria moderada é só-leitura; sem estrelas/Editar/Apagar, só o aviso de remoção).
+  const showWidget = !canManage && !ownerClient && loggedIn && viewerResolved && !viewerModerated
+  const showRemovedNotice = !canManage && !ownerClient && loggedIn && viewerResolved && viewerModerated
   const showAnonInvite = !canManage && sessionSettled && !loggedIn
 
   return (
@@ -314,6 +346,16 @@ export function RecipeReviewSection({
               <AlertDescription className="font-medium text-foreground">{error}</AlertDescription>
             </Alert>
           )}
+        </div>
+      )}
+
+      {/* #366: avaliação própria MODERADA (removida pelo Curador) — aviso só-leitura no lugar do
+          widget. Sem estrelas/Editar/Apagar: o delete é no-op durável no servidor (não mente). */}
+      {showRemovedNotice && (
+        <div className="border-t border-border pt-3">
+          <p role="status" className="text-sm font-medium text-muted">
+            {m.suaAvaliacaoRemovida}
+          </p>
         </div>
       )}
 

@@ -30,7 +30,7 @@ export async function GET(
   if (res.kind === 'not_found') return Response.json({ error: 'not_found' }, { status: 404 })
 
   return Response.json(
-    { viewerReview: res.viewerReview, isOwner: res.isOwner },
+    { viewerReview: res.viewerReview, isOwner: res.isOwner, moderated: res.moderated },
     { headers: { 'cache-control': 'no-store' } },
   )
 }

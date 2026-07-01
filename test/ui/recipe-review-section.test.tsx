@@ -47,7 +47,11 @@ const M = ptBR.avaliacoes
 
 /** Mocka `fetch` por URL: um mapa de sufixo→resposta. `mine` só GET; `reviews` POST/DELETE/GET. */
 function mockFetchByUrl(handlers: {
-  mine?: { viewerReview: { id?: string; rating: number; comment: string | null } | null; isOwner: boolean }
+  mine?: {
+    viewerReview: { id?: string; rating: number; comment: string | null } | null
+    isOwner: boolean
+    moderated?: boolean
+  }
   save?: unknown
   list?: unknown
   fail?: boolean
@@ -264,6 +268,22 @@ describe('RecipeReviewSection (#363)', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: M.reportar })).toHaveLength(1),
     )
+  })
+
+  it('#366 avaliação PRÓPRIA moderada ⇒ aviso só-leitura, sem Editar/Apagar/estrelas', async () => {
+    setSession('logged-in')
+    mockFetchByUrl({
+      mine: { viewerReview: { id: 'rev-minha', rating: 4, comment: 'minha' }, isOwner: false, moderated: true },
+    })
+    renderSection({ initialAverage: null, initialCount: 0, initialReviews: [] })
+
+    // aviso de remoção aparece após o /mine resolver…
+    expect(await screen.findByText(M.suaAvaliacaoRemovida)).toBeInTheDocument()
+    // …e o widget editável NÃO: sem estrelas (radiogroup), sem Editar, sem Apagar, sem Enviar.
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.queryByRole('button', { name: M.editar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.apagar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.enviar })).toBeNull()
   })
 
   it('#366 dono (canManage) vê "Reportar" nas avaliações de terceiros e NENHUM controle de remover', async () => {

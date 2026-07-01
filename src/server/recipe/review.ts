@@ -209,6 +209,10 @@ export type ViewerReviewResult =
       // a UI esconder o "Reportar" na própria linha da lista pública (o autor edita/apaga, não reporta).
       viewerReview: { id: string; rating: number; comment: string | null } | null
       isOwner: boolean
+      // #366: a própria avaliação foi MODERADA (removida pelo Curador). NÃO filtramos a linha (o autor
+      // ainda precisa saber que existe), mas a UI troca o widget editável por um aviso só-leitura — o
+      // delete é no-op durável no servidor (M4), então não oferecemos a ação que mente.
+      moderated: boolean
     }
   | { kind: 'not_found' } // 404 — inexistente / fora do pool (leak-safe)
 
@@ -226,7 +230,12 @@ export async function loadViewerReview(
   if (!gate) return { kind: 'not_found' }
 
   const [row] = await db
-    .select({ id: recipeReview.id, rating: recipeReview.rating, comment: recipeReview.comment })
+    .select({
+      id: recipeReview.id,
+      rating: recipeReview.rating,
+      comment: recipeReview.comment,
+      moderatedAt: recipeReview.moderatedAt,
+    })
     .from(recipeReview)
     .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id)))
     .limit(1)
@@ -235,5 +244,6 @@ export async function loadViewerReview(
     kind: 'ok',
     viewerReview: row ? { id: row.id, rating: row.rating, comment: row.comment } : null,
     isOwner: gate.ownerId === userId,
+    moderated: row?.moderatedAt != null,
   }
 }
