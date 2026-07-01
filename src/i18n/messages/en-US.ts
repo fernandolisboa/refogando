@@ -325,7 +325,7 @@ export const enUS: Messages = {
     removerNomeFonteCancela: 'Cancel',
     removerNomeFonteErro: "We couldn't remove it right now. Try again.",
     // Back link at the top of the detail (#57) → "/" (home IS search).
-    voltarBusca: 'Back to search',
+    voltar: 'Back',
     // Recipe image management (#130) — owner block.
     imagemTitulo: 'Dish photo',
     imagemDescricao: 'Add a photo of your recipe. It shows on the detail page and in search.',

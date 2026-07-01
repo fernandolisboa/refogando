@@ -352,7 +352,7 @@ export const ptBR = {
     removerNomeFonteCancela: 'Cancelar',
     removerNomeFonteErro: 'Não foi possível remover agora. Tente de novo.',
     // Link de volta no topo do detalhe (#57) → "/" (a home É a busca).
-    voltarBusca: 'Voltar à busca',
+    voltar: 'Voltar',
     // Gestão da Imagem da receita (#130) — bloco do dono.
     imagemTitulo: 'Foto do prato',
     imagemDescricao: 'Adicione uma foto da sua receita. Ela aparece no detalhe e na busca.',
