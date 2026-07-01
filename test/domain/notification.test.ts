@@ -82,6 +82,17 @@ describe('renderNotification (#371) — texto localizado do dado estruturado', (
     ).toBe('Ana rated your recipe (4★)')
   })
 
+  it('review_on_recipe: nome do avaliador contendo o token literal "{stars}" NÃO corrompe a renderização', () => {
+    // Nome livre do usuário = "{stars}". Como interpolamos {stars} (confiável) ANTES de {name}, o nome
+    // aparece literal e a nota renderiza correta (a ordem inversa deixaria o nome injetar o token).
+    expect(
+      renderNotification(ptBR.notifications, 'review_on_recipe', { actorName: '{stars}', rating: 4 }),
+    ).toBe('{stars} avaliou sua receita (4★)')
+    expect(
+      renderNotification(enUS.notifications, 'review_on_recipe', { actorName: '{stars}', rating: 4 }),
+    ).toBe('{stars} rated your recipe (4★)')
+  })
+
   it('review_on_recipe com ator degradado (soft-deletado, nome null/vazio) usa a variante anônima', () => {
     expect(
       renderNotification(ptBR.notifications, 'review_on_recipe', { actorName: null, rating: 5 }),

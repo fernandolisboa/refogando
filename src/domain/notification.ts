@@ -79,8 +79,11 @@ export function renderNotification(
     case 'review_on_recipe': {
       const name = refs.actorName?.trim()
       const stars = renderStars(refs.rating)
+      // Interpola `{stars}` (valor CONFIÁVEL) ANTES de `{name}` (nome livre do usuário): a string
+      // de estrelas nunca contém `{name}`, então fazer o nome por último impede injeção de token
+      // (um avaliador chamado literalmente "{stars}" não corrompe a renderização).
       return name
-        ? msgs.avaliacaoNaReceita.replace('{name}', name).replace('{stars}', stars)
+        ? msgs.avaliacaoNaReceita.replace('{stars}', stars).replace('{name}', name)
         : msgs.avaliacaoNaReceitaAnon.replace('{stars}', stars)
     }
     // Evento N3 (#374): sua avaliação foi removida pelo Curador — IMPESSOAL (sem ator; não expõe o

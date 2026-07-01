@@ -195,6 +195,12 @@ export async function applyReview(input: {
     // #374: o RETURNING dá o `reviewId` da linha upsertada (criação OU edição), para ancorar a
     // notificação `review_on_recipe` (só na criação — ver abaixo).
     let reviewId: string
+    // #374: `wasInsert` = a linha foi CRIADA (não editada), derivado ATOMICAMENTE do próprio upsert
+    // via `xmax = 0` (idioma Postgres: linha recém-inserida tem xmax 0; ON CONFLICT DO UPDATE deixa
+    // xmax != 0). É a fonte da decisão de notificar — o SELECT `existing` acima (para `prevPhotoUrl`)
+    // roda antes do commit e, sob double-submit concorrente, os dois veriam `undefined` e notificariam
+    // em dobro; `xmax` fecha essa corrida numa única sentença.
+    let wasInsert: boolean
     try {
       const [upserted] = await db
         .insert(recipeReview)
@@ -214,8 +220,9 @@ export async function applyReview(input: {
             ...(photo.kind !== 'keep' ? { photoUrl: finalPhotoUrl } : {}),
           },
         })
-        .returning({ id: recipeReview.id })
+        .returning({ id: recipeReview.id, inserted: sql<boolean>`(xmax = 0)` })
       reviewId = upserted.id
+      wasInsert = upserted.inserted
     } catch (err) {
       // Órfão residual (erro de DB APÓS o store bem-sucedido, raro): apaga best-effort o blob
       // recém-criado e re-lança (a rota vira 500 cru; nada foi persistido).
@@ -229,12 +236,13 @@ export async function applyReview(input: {
       throw err
     }
 
-    // #374: NOVA avaliação → notifica o DONO da receita, best-effort, SÓ NA CRIAÇÃO (`existing`
-    // ausente ⇒ era um INSERT; edição não re-notifica). Pula o catálogo (`ownerId === null`, sem
-    // destinatário). `decideReview` já garantiu avaliador≠dono ⇒ o destinatário nunca é o próprio.
-    // Fora de qualquer transação (o upsert já persistiu); `emitNotification` engole erro (a avaliação
-    // NUNCA falha por causa da notificação). `actorId = userId` (o avaliador PODE mostrar o nome).
-    if (existing === undefined && gate.ownerId !== null) {
+    // #374: NOVA avaliação → notifica o DONO da receita, best-effort, SÓ NA CRIAÇÃO (`wasInsert`,
+    // derivado atomicamente do upsert — edição não re-notifica, nem sob double-submit concorrente).
+    // Pula o catálogo (`ownerId === null`, sem destinatário). `decideReview` já garantiu avaliador≠dono
+    // ⇒ o destinatário nunca é o próprio. Fora de qualquer transação (o upsert já persistiu);
+    // `emitNotification` engole erro (a avaliação NUNCA falha por causa da notificação). `actorId =
+    // userId` (o avaliador PODE mostrar o nome).
+    if (wasInsert && gate.ownerId !== null) {
       await emitNotification(db, {
         recipientId: gate.ownerId,
         type: 'review_on_recipe',
