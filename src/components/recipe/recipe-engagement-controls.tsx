@@ -2,36 +2,31 @@
 
 /**
  * Controle de SALVAR do detalhe (#62/#362) — um ÍCONE de bookmark no topo (ao lado do "Voltar",
- * acima da foto), não mais uma seção "Comunidade" com botão de texto. Irmão do `RecipeDetailView`
- * (que continua PURO): a page o renderiza no topo-direito quando a Receita está no POOL público OU
- * quando o DONO gerencia a própria (inclusive a privada — AC6).
+ * acima da foto), não mais uma seção "Comunidade" com botão de texto. Estilo Instagram: o CLIQUE
+ * salva (e o bookmark PREENCHE na cor da marca) e, no hover (com atraso) OU no próprio clique/teclado,
+ * abre um POPOVER de Coleções ancorado no bookmark — sem um segundo ícone.
  *
  * ESTADO DO VIEWER (salvou?), duas origens (#230, ADR-0020):
- *  - Caminho do DONO (dinâmico, cookie): o server JÁ resolve e passa `initialViewerSaved` ⇒
- *    render direto, sem fetch.
- *  - Caminho PÚBLICO/cacheável: o server lê ANÔNIMO (sem cookie) pra ficar cacheável, então
- *    `initialViewerSaved` chega `undefined`. O componente resolve o estado NO CLIENTE: com sessão
- *    (`useSession`), se logado, busca `GET /api/recipes/[id]/social` e hidrata o save real; se
- *    anônimo, o bookmark vira um link "Entrar para salvar"; enquanto a sessão/fetch pendem, nada
- *    pisca (nem bookmark nem convite).
+ *  - Caminho do DONO (dinâmico, cookie): o server JÁ resolve e passa `initialViewerSaved` ⇒ render
+ *    direto, sem fetch.
+ *  - Caminho PÚBLICO/cacheável: o server lê ANÔNIMO (sem cookie), então `initialViewerSaved` chega
+ *    `undefined` — o componente resolve no cliente: logado, busca `GET /api/recipes/[id]/social`;
+ *    anônimo, o bookmark vira um link "Entrar para salvar"; enquanto pende, nada pisca.
  *
- * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{save,unsave}` via `fetch` (NÃO
- * Server Action). O servidor é a verdade — impõe sessão (401) e o gate de salvar (404); isto é
- * AFORDÂNCIA: aplica otimismo no clique, espelha a resposta no sucesso, REVERTE no erro com
- * mensagem neutra única. `/save` e `/unsave` devolvem SÓ `{viewerSaved}`.
+ * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{save,unsave}` via `fetch`. O servidor
+ * é a verdade (401/404); isto é AFORDÂNCIA (otimismo no clique, espelha no sucesso, REVERTE no erro).
  *
- * Cores: só tokens já AA-verificados na #54 (brand/neutros). ÂMBAR (`aviso-*`) é PROIBIDO
- * (ADR-0015: exclusivo do Aviso de restrição) e accent/accent-surface também (reservados a
- * `origin=catalog`, ADR-0015). O bookmark PREENCHE (`fill`) na cor da marca quando salvo.
+ * Cores: só tokens AA (#54) brand/neutros. ÂMBAR (`aviso-*`) e accent/accent-surface PROIBIDOS
+ * (ADR-0015). O bookmark PREENCHE (`fill`) na cor da marca quando salvo.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Bookmark, FolderPlus } from 'lucide-react'
+import { Bookmark } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 const ICON_BUTTON =
@@ -52,19 +47,15 @@ export function RecipeEngagementControls({
   // caminho PÚBLICO/cacheável (ADR-0020) lê anônimo e DEIXA ausente — daí resolvemos no cliente.
   const serverResolved = initialViewerSaved !== undefined
 
-  // Sessão do cliente (espelha RecipeDetailActions): só conta como logado quando RESOLVIDA, sem erro
-  // e com dados. Enquanto pende, não decidimos nada (evita flash do convite pra quem está logado).
   const sessionSettled = !session.isPending
   const loggedIn = sessionSettled && !session.error && !!session.data
 
   const [saved, setSaved] = useState(!!initialViewerSaved)
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveError, setSaveError] = useState(false)
-  // Quando o server NÃO resolveu (caminho público), o estado do viewer chega de um fetch client-side.
   const [clientResolved, setClientResolved] = useState(serverResolved)
 
-  // Caminho público + logado: resolve o save do PRÓPRIO viewer (a página é cacheável e não pode
-  // personalizar no server). Anônimo NÃO busca (daria 401 e o convite "Entrar" é o certo).
+  // Caminho público + logado: resolve o save do PRÓPRIO viewer (página cacheável). Anônimo NÃO busca.
   useEffect(() => {
     if (serverResolved || !loggedIn) return
     let cancelled = false
@@ -85,8 +76,6 @@ export function RecipeEngagementControls({
     }
   }, [recipeId, serverResolved, loggedIn])
 
-  // Três modos: 'interactive' (server resolveu OU logado hidratado), 'anon' (sessão resolvida sem
-  // login ⇒ link "Entrar para..."), 'pending' (sessão/fetch pendem ⇒ nada, evita flash).
   const mode: 'interactive' | 'anon' | 'pending' = serverResolved
     ? 'interactive'
     : !sessionSettled
@@ -96,6 +85,32 @@ export function RecipeEngagementControls({
         : clientResolved
           ? 'interactive'
           : 'pending'
+
+  // Popover de Coleção: abre no hover (com intenção — atraso ~240ms) OU no clique/teclado; fecha com
+  // uma folga (140ms) pra o mouse conseguir viajar do bookmark até o painel sem sumir. Escape e
+  // clique-fora fecham (Radix, via `onOpenChange`).
+  const [open, setOpen] = useState(false)
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  function clearTimers() {
+    if (openTimer.current) clearTimeout(openTimer.current)
+    if (closeTimer.current) clearTimeout(closeTimer.current)
+    openTimer.current = null
+    closeTimer.current = null
+  }
+  function scheduleOpen() {
+    clearTimers()
+    openTimer.current = setTimeout(() => setOpen(true), 240)
+  }
+  function scheduleClose() {
+    clearTimers()
+    closeTimer.current = setTimeout(() => setOpen(false), 140)
+  }
+  function openNow() {
+    clearTimers()
+    setOpen(true)
+  }
+  useEffect(() => () => clearTimers(), [])
 
   async function handleSave() {
     if (saveBusy) return
@@ -115,7 +130,6 @@ export function RecipeEngagementControls({
         setSaveError(true)
         return
       }
-      // /save e /unsave devolvem SÓ `{viewerSaved}` — lê APENAS essa fatia.
       const body = (await res.json()) as { viewerSaved: boolean }
       setSaved(body.viewerSaved)
     } catch {
@@ -126,53 +140,75 @@ export function RecipeEngagementControls({
     }
   }
 
+  // Garante o SAVE base (Todos) sem alternar — usado quando se marca uma Coleção numa Receita ainda
+  // não-salva (o server barra add de não-salva; salvar primeiro faz o bookmark encher também).
+  async function ensureSaved(): Promise<boolean> {
+    if (saved) return true
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/save`, { method: 'POST' })
+      if (!res.ok) {
+        setSaveError(true)
+        return false
+      }
+      const body = (await res.json()) as { viewerSaved: boolean }
+      setSaved(!!body.viewerSaved)
+      return !!body.viewerSaved
+    } catch {
+      setSaveError(true)
+      return false
+    }
+  }
+
+  if (mode === 'pending') return null
+
+  if (mode === 'anon') {
+    // Anônimo: o bookmark É o convite — leva ao /sign-in. Sem popover (não há o que organizar).
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <Link href="/sign-in" aria-label={m.convidaEntrarSalvar} className={ICON_BUTTON}>
+          <Bookmark className="size-5" strokeWidth={1.5} aria-hidden />
+        </Link>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1">
-        {mode === 'pending' ? null : mode === 'anon' ? (
-          // Anônimo: o bookmark É o convite — leva ao /sign-in (rótulo acessível = "Entrar para salvar").
-          <Link href="/sign-in" aria-label={m.convidaEntrarSalvar} className={ICON_BUTTON}>
-            <Bookmark className="size-5" strokeWidth={1.5} aria-hidden />
-          </Link>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saveBusy}
-              aria-label={saved ? m.salvo : m.salvar}
-              aria-pressed={saved}
-              aria-busy={saveBusy}
-              className={cn(ICON_BUTTON, 'disabled:opacity-70', saved && 'text-brand-ink')}
-            >
-              <Bookmark
-                className="size-5"
-                strokeWidth={1.5}
-                fill={saved ? 'currentColor' : 'none'}
-                aria-hidden
-              />
-            </button>
-            {/* Coleção (#364): só quando SALVA (o server barra add de não-salva). Popover ancorado
-                ao bookmark — não uma seção. Fecha ao clicar-fora/Escape (Radix). */}
-            {saved && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={messages.colecoes.adicionarAColecao}
-                    className={ICON_BUTTON}
-                  >
-                    <FolderPlus className="size-5" strokeWidth={1.5} aria-hidden />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent>
-                  <CollectionPanel recipeId={recipeId} />
-                </PopoverContent>
-              </Popover>
-            )}
-          </>
-        )}
-      </div>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverAnchor asChild>
+          <button
+            type="button"
+            onClick={() => {
+              void handleSave()
+              openNow()
+            }}
+            onMouseEnter={scheduleOpen}
+            onMouseLeave={scheduleClose}
+            disabled={saveBusy}
+            aria-label={saved ? m.salvo : m.salvar}
+            aria-pressed={saved}
+            aria-busy={saveBusy}
+            className={cn(ICON_BUTTON, 'disabled:opacity-70', saved && 'text-brand-ink')}
+          >
+            <Bookmark
+              className="size-5"
+              strokeWidth={1.5}
+              fill={saved ? 'currentColor' : 'none'}
+              aria-hidden
+            />
+          </button>
+        </PopoverAnchor>
+        <PopoverContent
+          onMouseEnter={clearTimers}
+          onMouseLeave={scheduleClose}
+          onOpenAutoFocus={(e) => {
+            // Aberto por HOVER não deve roubar o foco (só o teclado tabula pra dentro).
+            e.preventDefault()
+          }}
+        >
+          <CollectionPanel recipeId={recipeId} saved={saved} ensureSaved={ensureSaved} />
+        </PopoverContent>
+      </Popover>
 
       {saveError && (
         <p role="alert" className="text-sm font-medium text-fg">
@@ -184,15 +220,22 @@ export function RecipeEngagementControls({
 }
 
 /**
- * Painel de Coleção do detalhe (#364) — conteúdo do Popover ancorado ao bookmark. Carrega a
- * membership ao MONTAR (o Popover só monta ao abrir). Cada coleção é um checkbox (contains);
- * marcar/desmarcar chama POST/DELETE de `items` com otimismo + revert. Criar coleção inline
- * (POST /api/me/collections) já adiciona a Receita à nova pasta. Renderizado só quando a Receita
- * está SALVA (o server rejeita add de não-salva com 422).
+ * Painel de Coleção do detalhe (#364) — conteúdo do Popover ancorado ao bookmark (estilo Instagram).
+ * Carrega a membership ao MONTAR (o Popover só monta ao abrir). Cada coleção é um checkbox (contains);
+ * marcar numa Receita ainda NÃO-salva chama `ensureSaved()` primeiro (o server rejeita add de
+ * não-salva com 422). Criar coleção inline já adiciona a Receita à nova pasta.
  */
 type Membership = { id: string; name: string; contains: boolean }
 
-function CollectionPanel({ recipeId }: { recipeId: string }) {
+function CollectionPanel({
+  recipeId,
+  saved,
+  ensureSaved,
+}: {
+  recipeId: string
+  saved: boolean
+  ensureSaved: () => Promise<boolean>
+}) {
   const { messages } = useLocale()
   const m = messages.colecoes
   const [items, setItems] = useState<Membership[] | null>(null)
@@ -202,8 +245,7 @@ function CollectionPanel({ recipeId }: { recipeId: string }) {
   const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
-    // `status` já nasce 'loading' (useState); o Popover só monta este painel ao abrir, então o
-    // fetch dispara uma vez por abertura. `recipeId` é estável enquanto o painel está montado.
+    // `status` já nasce 'loading' (useState); o Popover só monta este painel ao abrir.
     let cancelled = false
     fetch(`/api/recipes/${recipeId}/collections`)
       .then(async (res) => {
@@ -225,9 +267,13 @@ function CollectionPanel({ recipeId }: { recipeId: string }) {
   }, [recipeId])
 
   async function toggleMembership(id: string, contains: boolean) {
-    // Otimista: alterna já; reverte no erro.
+    // Otimista: alterna já; reverte no erro. Ao ADICIONAR numa Receita não-salva, salva antes.
     setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains: !contains } : c)) ?? prev)
     try {
+      if (!contains && !saved) {
+        const ok = await ensureSaved()
+        if (!ok) throw new Error('save_failed')
+      }
       const res = contains
         ? await fetch(`/api/me/collections/${id}/items/${recipeId}`, { method: 'DELETE' })
         : await fetch(`/api/me/collections/${id}/items`, {
@@ -235,9 +281,7 @@ function CollectionPanel({ recipeId }: { recipeId: string }) {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ recipeId }),
           })
-      if (!res.ok) {
-        setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains } : c)) ?? prev)
-      }
+      if (!res.ok) throw new Error('item_failed')
     } catch {
       setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains } : c)) ?? prev)
     }
@@ -249,6 +293,14 @@ function CollectionPanel({ recipeId }: { recipeId: string }) {
     setCreating(true)
     setCreateError(null)
     try {
+      // Criar coleção já implica salvar a Receita (a nova coleção recebe a Receita).
+      if (!saved) {
+        const ok = await ensureSaved()
+        if (!ok) {
+          setCreateError(m.erro)
+          return
+        }
+      }
       const res = await fetch('/api/me/collections', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -260,7 +312,6 @@ function CollectionPanel({ recipeId }: { recipeId: string }) {
         return
       }
       const body = (await res.json()) as { collection: { id: string; name: string } }
-      // Já adiciona a Receita à coleção recém-criada (best-effort).
       await fetch(`/api/me/collections/${body.collection.id}/items`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

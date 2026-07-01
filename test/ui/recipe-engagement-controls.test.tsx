@@ -51,6 +51,7 @@ import type { Locale } from '@/i18n/locale'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 
 const M = ptBR.comunidade
+const MC = ptBR.colecoes
 
 type FetchResult = { status: number; body: unknown } | { reject: true }
 
@@ -58,7 +59,14 @@ type FetchResult = { status: number; body: unknown } | { reject: true }
 function mockFetch(result: FetchResult | (() => Promise<FetchResult>)) {
   const impl = vi.fn(async (...args: Parameters<typeof fetch>) => {
     const url = String(args[0])
-    if (!url.includes('/api/recipes/')) throw new Error(`fetch não mockado: ${url}`)
+    if (!url.includes('/api/recipes/') && !url.includes('/api/me/collections'))
+      throw new Error(`fetch não mockado: ${url}`)
+    // O Popover de Coleção (novo #364/Instagram) monta ao abrir (hover/clique/teclado) e busca
+    // `/collections` — responde INÓCUO aqui pra não interferir nos testes de SAVE nem consumir a
+    // promise DEFERIDA do `/save` (T5). Os testes dedicados de Coleção usam o próprio mock.
+    if (url.includes('/collections')) {
+      return { ok: true, status: 200, json: async () => ({ collections: [] }) } as Response
+    }
     const r = typeof result === 'function' ? await result() : result
     if ('reject' in r) throw new TypeError('network down')
     return {
@@ -272,5 +280,59 @@ describe('RecipeEngagementControls (#62/#362)', () => {
     // Salvou de verdade pelo endpoint real (não "Entrar para salvar").
     expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/recipes/r-1/save')).toBe(true)
     expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
+  })
+
+  // ── Popover de Coleção (#364, estilo Instagram): o BOOKMARK abre o painel de coleções (não há um
+  //    2º ícone). Clique salva + abre; hover abre com intenção; marcar coleção auto-salva. ────────
+  it('T12 — clicar no bookmark SALVA e ABRE o popover com as coleções', async () => {
+    const user = userEvent.setup()
+    // GET /social hidrata (público, não salvo); GET /collections lista uma coleção; POST /save salva.
+    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0])
+      const body = url.endsWith('/collections')
+        ? { collections: [{ id: 'c1', name: 'Sobremesas', contains: false }] }
+        : url.endsWith('/social')
+          ? { viewerSaved: false, isOwner: false }
+          : { viewerSaved: true }
+      return { ok: true, status: 200, json: async () => body } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderControls({})
+
+    await user.click(await screen.findByRole('button', { name: M.salvar }))
+
+    // Salvou (bookmark pressionado) E o popover abriu mostrando a coleção seedada.
+    expect(await screen.findByRole('button', { name: M.salvo })).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByText('Sobremesas')).toBeInTheDocument()
+    expect(screen.getByText(MC.adicionarAColecao)).toBeInTheDocument()
+  })
+
+  it('T13 — HOVER abre o popover sem salvar; marcar coleção AUTO-SALVA (POST /save → POST item)', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      const url = String(args[0])
+      const body = url.endsWith('/collections')
+        ? { collections: [{ id: 'c1', name: 'Sobremesas', contains: false }] }
+        : { viewerSaved: true }
+      return { ok: true, status: 200, json: async () => body } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    // Caminho do DONO (server-resolved), NÃO salvo ⇒ interativo direto, sem convite.
+    renderControls({ initialViewerSaved: false })
+
+    // Hover abre o popover (com intenção ~240ms) SEM salvar; o bookmark segue "Salvar".
+    await user.hover(screen.getByRole('button', { name: M.salvar }))
+    const check = await screen.findByRole('checkbox', { name: 'Sobremesas' })
+    expect(screen.getByRole('button', { name: M.salvar })).toHaveAttribute('aria-pressed', 'false')
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).match(/\/(save|unsave)$/))).toBe(false)
+
+    // Marcar a coleção numa receita NÃO-salva: salva antes (POST /save), depois adiciona o item.
+    await user.click(check)
+    expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/recipes/r-1/save')).toBe(true)
+    expect(
+      fetchMock.mock.calls.some(
+        (c) => String(c[0]) === '/api/me/collections/c1/items' && (c[1] as RequestInit)?.method === 'POST',
+      ),
+    ).toBe(true)
   })
 })

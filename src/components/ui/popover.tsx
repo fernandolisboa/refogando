@@ -24,6 +24,13 @@ function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimiti
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
+// Âncora SEM ser o gatilho: posiciona o Popover relativo a um elemento cuja INTERAÇÃO nós
+// controlamos à mão (hover/foco/clique) — o gatilho padrão do Radix abriria no clique e brigaria
+// com o clique-pra-salvar do bookmark.
+function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
+}
+
 function PopoverContent({
   className,
   align = 'end',
@@ -47,4 +54,4 @@ function PopoverContent({
   )
 }
 
-export { Popover, PopoverTrigger, PopoverContent }
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent }
