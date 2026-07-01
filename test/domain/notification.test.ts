@@ -34,11 +34,47 @@ describe('renderNotification (#371) — texto localizado do dado estruturado', (
     )
   })
 
-  it('tipo ainda não implementado nesta fatia cai no texto genérico', () => {
+  it('cuisine_suggestion_resolved → mensagem genérica localizada (sem interpolação de ator)', () => {
+    expect(renderNotification(ptBR.notifications, 'cuisine_suggestion_resolved', {})).toBe(
+      'Sua sugestão de cozinha foi analisada',
+    )
+    expect(renderNotification(enUS.notifications, 'cuisine_suggestion_resolved', {})).toBe(
+      'Your cuisine suggestion was reviewed',
+    )
+  })
+
+  it('recipe_moderated → mensagem genérica localizada (sem interpolação de ator)', () => {
     expect(renderNotification(ptBR.notifications, 'recipe_moderated', {})).toBe(
-      'Você tem uma nova notificação',
+      'Uma receita sua foi removida da descoberta por um moderador',
+    )
+    expect(renderNotification(enUS.notifications, 'recipe_moderated', {})).toBe(
+      'One of your recipes was removed from discovery by a moderator',
+    )
+  })
+
+  it('image_moderated → mensagem genérica localizada (sem interpolação de ator)', () => {
+    expect(renderNotification(ptBR.notifications, 'image_moderated', {})).toBe(
+      'Uma imagem sua foi moderada',
+    )
+    expect(renderNotification(enUS.notifications, 'image_moderated', {})).toBe(
+      'One of your images was moderated',
+    )
+  })
+
+  it('account_restricted → mensagem genérica localizada (sem interpolação de ator)', () => {
+    expect(renderNotification(ptBR.notifications, 'account_restricted', {})).toBe(
+      'Sua conta foi restringida (geração de imagem bloqueada)',
     )
     expect(renderNotification(enUS.notifications, 'account_restricted', {})).toBe(
+      'Your account was restricted (image generation is blocked)',
+    )
+  })
+
+  it('review_moderated ainda não é emitido nesta fatia (#374) → texto genérico', () => {
+    expect(renderNotification(ptBR.notifications, 'review_moderated', {})).toBe(
+      'Você tem uma nova notificação',
+    )
+    expect(renderNotification(enUS.notifications, 'review_moderated', {})).toBe(
       'You have a new notification',
     )
   })

@@ -58,8 +58,18 @@ export function renderNotification(
       const name = refs.actorName?.trim()
       return name ? msgs.novoSeguidor.replace('{name}', name) : msgs.novoSeguidorAnon
     }
+    // Eventos N2 (#373): mensagens genéricas localizadas, impessoais (ação de Curador/sistema — sem
+    // ator interpolado) e sem o motivo livre embutido (não localizável; surfacing deferido).
+    case 'cuisine_suggestion_resolved':
+      return msgs.sugestaoCozinhaResolvida
+    case 'recipe_moderated':
+      return msgs.receitaModerada
+    case 'image_moderated':
+      return msgs.imagemModerada
+    case 'account_restricted':
+      return msgs.contaRestringida
     default:
-      // Os outros 6 tipos do enum ainda não são emitidos nesta fatia (tracer bullet): texto genérico.
+      // `review_moderated` ainda não é emitido nesta fatia (é #374): texto genérico seguro.
       return msgs.generico
   }
 }

@@ -1,7 +1,8 @@
-import { and, asc, count, desc, eq } from 'drizzle-orm'
+import { and, asc, count, desc, eq, isNotNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { briefing, recipe, vocabularyTerm } from '@/db/schema'
 import { slugify } from '@/domain/handle'
+import { emitNotification } from '@/server/notification'
 
 /**
  * Fila do CURADOR para a dimensão `cozinha` (issue #320, ADR-0025 Decisão 5 — curadoria REATIVA).
@@ -77,6 +78,19 @@ export async function listSuggestedCozinhas(db: Database): Promise<SuggestedCozi
   return rows
 }
 
+/**
+ * Sugeridores a notificar (#373, ADR-0028): donos DISTINTOS de receita anexada a `slug`. Roda DENTRO
+ * da transação e ANTES de qualquer `.set({cozinha})` (que reescreve/nula o ponteiro) — captura a
+ * fotografia da lista de destinatários. Pula `owner_id NULL` (catálogo — sem destinatário).
+ */
+async function distinctSuggesterOwnerIds(tx: Database, slug: string): Promise<string[]> {
+  const rows = await tx
+    .selectDistinct({ ownerId: recipe.ownerId })
+    .from(recipe)
+    .where(and(eq(recipe.cozinha, slug), isNotNull(recipe.ownerId)))
+  return rows.map((r) => r.ownerId).filter((id): id is string => id != null)
+}
+
 /** `sort` do próximo termo de cozinha = maior sort + 1 (anexa ao fim, igual a `admin.addCozinha`). */
 async function nextCozinhaSort(tx: Database): Promise<number> {
   const [maxRow] = await tx
@@ -113,7 +127,7 @@ export async function approveCozinha(
     return { ok: false, error: 'rotulos_invalidos' }
   }
 
-  return db.transaction(async (tx) => {
+  const { result, notifyOwnerIds } = await db.transaction(async (tx) => {
     // FOR UPDATE na tabela ÚNICA `vocabulary_term` (NUNCA cruzando o LEFT JOIN de recipe — FOR UPDATE
     // no lado nulável de outer join estoura no Postgres; ver moderation.ts).
     const [row] = await tx
@@ -121,8 +135,13 @@ export async function approveCozinha(
       .from(vocabularyTerm)
       .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, input.slug)))
       .for('update')
-    if (!row) return { ok: false, error: 'nao_encontrado' as const }
-    if (row.status !== 'suggested') return { ok: false, error: 'ja_resolvido' as const }
+    if (!row) return { result: { ok: false as const, error: 'nao_encontrado' as const }, notifyOwnerIds: [] }
+    if (row.status !== 'suggested')
+      return { result: { ok: false as const, error: 'ja_resolvido' as const }, notifyOwnerIds: [] }
+
+    // Sugeridores DISTINTOS ANTES de qualquer reescrita de `recipe.cozinha` (correção de slug) — captura
+    // a fotografia p/ o fan-out; a notificação sai SÓ após o commit (best-effort, com o `db` de topo).
+    const notifyOwnerIds = await distinctSuggesterOwnerIds(tx, input.slug)
 
     const nextSort = await nextCozinhaSort(tx)
 
@@ -132,13 +151,13 @@ export async function approveCozinha(
         .update(vocabularyTerm)
         .set({ status: 'active', labelPtBr, labelEnUs, sort: nextSort, updatedAt: new Date() })
         .where(eq(vocabularyTerm.slug, input.slug))
-      return { ok: true, slug: input.slug }
+      return { result: { ok: true as const, slug: input.slug }, notifyOwnerIds }
     }
 
     // Correção de slug canônico: valida o NOVO slug antes de tocar o banco.
     const newSlug = input.newSlug
     if (newSlug.length === 0 || slugify(newSlug) !== newSlug) {
-      return { ok: false, error: 'slug_invalido' as const }
+      return { result: { ok: false as const, error: 'slug_invalido' as const }, notifyOwnerIds: [] }
     }
 
     // INSERE o pai novo PRIMEIRO (FK-safe). Colisão (incl. lápide) → returning vazio → slug_em_uso.
@@ -147,7 +166,8 @@ export async function approveCozinha(
       .values({ kind: 'cozinha', slug: newSlug, status: 'active', labelPtBr, labelEnUs, sort: nextSort })
       .onConflictDoNothing({ target: vocabularyTerm.slug })
       .returning({ slug: vocabularyTerm.slug })
-    if (inserted.length === 0) return { ok: false, error: 'slug_em_uso' as const }
+    if (inserted.length === 0)
+      return { result: { ok: false as const, error: 'slug_em_uso' as const }, notifyOwnerIds: [] }
 
     // Reaponta os filhos old→new (todos os donos), depois tomba o antigo (agora sem referências).
     await tx.update(recipe).set({ cozinha: newSlug }).where(eq(recipe.cozinha, input.slug))
@@ -156,8 +176,17 @@ export async function approveCozinha(
       .update(vocabularyTerm)
       .set({ status: 'merged', updatedAt: new Date() })
       .where(eq(vocabularyTerm.slug, input.slug))
-    return { ok: true, slug: newSlug }
+    return { result: { ok: true as const, slug: newSlug }, notifyOwnerIds }
   })
+
+  // Fan-out DEPOIS do commit, com o `db` de topo (NUNCA o tx): um insert falho não pode dar rollback na
+  // aprovação (best-effort, `emitNotification` já engole erro). Só no primeiro-evento genuíno (ok).
+  if (result.ok) {
+    for (const ownerId of notifyOwnerIds) {
+      await emitNotification(db, { recipientId: ownerId, type: 'cuisine_suggestion_resolved' })
+    }
+  }
+  return result
 }
 
 /**
@@ -171,14 +200,15 @@ export async function mergeCozinha(
   db: Database,
   input: { slug: string; target: string },
 ): Promise<MergeCozinhaResult> {
-  return db.transaction(async (tx) => {
+  const { result, notifyOwnerIds } = await db.transaction(async (tx) => {
     const [row] = await tx
       .select({ status: vocabularyTerm.status })
       .from(vocabularyTerm)
       .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, input.slug)))
       .for('update')
-    if (!row) return { ok: false, error: 'nao_encontrado' as const }
-    if (row.status !== 'suggested') return { ok: false, error: 'ja_resolvido' as const }
+    if (!row) return { result: { ok: false as const, error: 'nao_encontrado' as const }, notifyOwnerIds: [] }
+    if (row.status !== 'suggested')
+      return { result: { ok: false as const, error: 'ja_resolvido' as const }, notifyOwnerIds: [] }
 
     // O alvo precisa ser uma cozinha ATIVA (existente, viva). Auto-merge (target===slug) cai aqui
     // como alvo_invalido (a própria sugerida não é 'active').
@@ -192,7 +222,10 @@ export async function mergeCozinha(
           eq(vocabularyTerm.status, 'active'),
         ),
       )
-    if (!target) return { ok: false, error: 'alvo_invalido' as const }
+    if (!target) return { result: { ok: false as const, error: 'alvo_invalido' as const }, notifyOwnerIds: [] }
+
+    // Sugeridores DISTINTOS ANTES de repontar `recipe.cozinha` (o `.set` reescreve o ponteiro).
+    const notifyOwnerIds = await distinctSuggesterOwnerIds(tx, input.slug)
 
     await tx.update(recipe).set({ cozinha: input.target }).where(eq(recipe.cozinha, input.slug))
     // briefing.cozinha NÃO é tocado (imutável; segue apontando a lápide, FK válida — a linha persiste).
@@ -200,8 +233,16 @@ export async function mergeCozinha(
       .update(vocabularyTerm)
       .set({ status: 'merged', updatedAt: new Date() })
       .where(eq(vocabularyTerm.slug, input.slug))
-    return { ok: true }
+    return { result: { ok: true as const }, notifyOwnerIds }
   })
+
+  // Fan-out pós-commit, `db` de topo, só no primeiro-evento (ok) — best-effort.
+  if (result.ok) {
+    for (const ownerId of notifyOwnerIds) {
+      await emitNotification(db, { recipientId: ownerId, type: 'cuisine_suggestion_resolved' })
+    }
+  }
+  return result
 }
 
 /**
@@ -215,14 +256,18 @@ export async function rejectCozinha(
   db: Database,
   input: { slug: string },
 ): Promise<RejectCozinhaResult> {
-  return db.transaction(async (tx) => {
+  const { result, notifyOwnerIds } = await db.transaction(async (tx) => {
     const [row] = await tx
       .select({ status: vocabularyTerm.status })
       .from(vocabularyTerm)
       .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, input.slug)))
       .for('update')
-    if (!row) return { ok: false, error: 'nao_encontrado' as const }
-    if (row.status !== 'suggested') return { ok: false, error: 'ja_resolvido' as const }
+    if (!row) return { result: { ok: false as const, error: 'nao_encontrado' as const }, notifyOwnerIds: [] }
+    if (row.status !== 'suggested')
+      return { result: { ok: false as const, error: 'ja_resolvido' as const }, notifyOwnerIds: [] }
+
+    // Sugeridores DISTINTOS ANTES de anular `recipe.cozinha` (o `.set(null)` apaga o ponteiro).
+    const notifyOwnerIds = await distinctSuggesterOwnerIds(tx, input.slug)
 
     await tx.update(recipe).set({ cozinha: null }).where(eq(recipe.cozinha, input.slug))
     // briefing.cozinha NÃO é tocado (imutável). NUNCA toca visibility.
@@ -230,6 +275,14 @@ export async function rejectCozinha(
       .update(vocabularyTerm)
       .set({ status: 'rejected', updatedAt: new Date() })
       .where(eq(vocabularyTerm.slug, input.slug))
-    return { ok: true }
+    return { result: { ok: true as const }, notifyOwnerIds }
   })
+
+  // Fan-out pós-commit, `db` de topo, só no primeiro-evento (ok) — best-effort.
+  if (result.ok) {
+    for (const ownerId of notifyOwnerIds) {
+      await emitNotification(db, { recipientId: ownerId, type: 'cuisine_suggestion_resolved' })
+    }
+  }
+  return result
 }

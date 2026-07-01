@@ -38,6 +38,11 @@ export const enUS: Messages = {
     vazio: 'No notifications yet',
     novoSeguidor: '{name} started following you',
     novoSeguidorAnon: 'Someone started following you',
+    // N2 curation/moderation events (#373): impersonal, no actor, no free-text reason embedded.
+    sugestaoCozinhaResolvida: 'Your cuisine suggestion was reviewed',
+    receitaModerada: 'One of your recipes was removed from discovery by a moderator',
+    imagemModerada: 'One of your images was moderated',
+    contaRestringida: 'Your account was restricted (image generation is blocked)',
     generico: 'You have a new notification',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },

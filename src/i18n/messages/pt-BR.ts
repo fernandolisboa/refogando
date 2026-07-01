@@ -43,6 +43,12 @@ export const ptBR = {
     novoSeguidor: '{name} começou a seguir você',
     // Ator soft-deletado (nome degradado a null) — variante sem nome, a notificação NÃO some.
     novoSeguidorAnon: 'Alguém começou a seguir você',
+    // Eventos N2 de curadoria/moderação (#373, ADR-0028): ações impessoais (Curador/sistema),
+    // SEM interpolação de ator e SEM o motivo livre embutido (surfacing do motivo é refino deferido).
+    sugestaoCozinhaResolvida: 'Sua sugestão de cozinha foi analisada',
+    receitaModerada: 'Uma receita sua foi removida da descoberta por um moderador',
+    imagemModerada: 'Uma imagem sua foi moderada',
+    contaRestringida: 'Sua conta foi restringida (geração de imagem bloqueada)',
     // Fallback dos tipos ainda não ligados nesta fatia (tracer bullet).
     generico: 'Você tem uma nova notificação',
   },

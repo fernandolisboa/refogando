@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { users } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
+import { emitNotification } from '@/server/notification'
 
 /**
  * Restrição GRANULAR de geração de imagem por IA (#226, ADR-0022 dec.3 / 1º gancho do ADR-0007) —
@@ -36,7 +37,7 @@ export async function setImageGenRestriction(input: {
 }): Promise<ImageGenRestrictionResult> {
   const { db, curatorId, targetUserId, blocked, reason } = input
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Carrega o estado ATUAL do alvo (existência + bloqueio vigente). FOR UPDATE serializa
     // bloqueios/desbloqueios concorrentes do mesmo usuário (preserva a 1ª proveniência sob corrida).
     const [target] = await tx
@@ -73,4 +74,11 @@ export async function setImageGenRestriction(input: {
       .where(eq(users.id, targetUserId))
     return { kind: 'ok' as const }
   })
+
+  // #373: notifica o USUÁRIO restrito SÓ no bloqueio recém-aplicado (blocked && kind==='ok'); nunca em
+  // `ok_already_blocked` (re-bloqueio) nem no desbloquear. Pós-commit, `db` de topo, best-effort.
+  if (blocked && result.kind === 'ok') {
+    await emitNotification(db, { recipientId: targetUserId, type: 'account_restricted' })
+  }
+  return result
 }
