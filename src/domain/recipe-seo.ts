@@ -83,8 +83,13 @@ export type RecipeSeoInput = {
    * dono/privado/não-elegível). Default `true` (o load público só devolve dados quando elegível).
    */
   eligible?: boolean
-  /** Contagem de votos (#16) — IGNORADA de propósito: Voto ≠ nota, nunca vira aggregateRating (#234). */
-  voteCount?: number
+  /**
+   * Agregado de AVALIAÇÃO (#367, ADR-0027 dec.6) — média CRUA + contagem REAL, já filtrado
+   * `moderated_at IS NULL` + autor vivo pela borda (`loadRecipeReviews`). Presente SÓ quando
+   * `count ≥ 1`; ausente/null ⇒ SEM `aggregateRating` no JSON-LD. NUNCA o Bayesiano (esse só
+   * ORDENA o ranking, #368) — o markup carrega a média genuína que o usuário vê na página.
+   */
+  rating?: { value: number; count: number } | null
 }
 
 /**
@@ -150,7 +155,7 @@ export type RestrictedDiet =
   | 'https://schema.org/VeganDiet'
   | 'https://schema.org/VegetarianDiet'
 
-/** Forma do objeto JSON-LD `schema.org/Recipe` que emitimos (subset tipado — sem `aggregateRating`). */
+/** Forma do objeto JSON-LD `schema.org/Recipe` que emitimos (subset tipado). */
 export type RecipeJsonLd = {
   '@context': 'https://schema.org'
   '@type': 'Recipe'
@@ -178,6 +183,17 @@ export type RecipeJsonLd = {
   suitableForDiet?: RestrictedDiet[]
   /** Data de publicação ← `recipe.createdAt` (ISO 8601). */
   datePublished?: string
+  /**
+   * Agregado de avaliações (#367, ADR-0027 dec.6) — emitido SÓ com `rating.count ≥ 1` E receita
+   * indexável (mesmo gate noindex). `ratingValue` = média CRUA arredondada a 1 casa (casa com o
+   * display da página); `ratingCount` = `reviewCount` = contagem REAL. NUNCA o Bayesiano (#368).
+   */
+  aggregateRating?: {
+    '@type': 'AggregateRating'
+    ratingValue: number
+    ratingCount: number
+    reviewCount: number
+  }
 }
 
 /**
@@ -214,8 +230,10 @@ export function minutosParaISO8601(minutos: number | null | undefined): string |
  * absoluta). Proveniência: `author: Person` quando há dono humano; `isBasedOn` (a fonte externa)
  * quando importada da web (`source`) — NUNCA um autor humano inventado pra importada/catálogo.
  *
- * SEM `aggregateRating`/estrelas: `voteCount` é IGNORADO (Voto ≠ nota — não expomos voto como
- * rating, ADR de SEO). `publisher` = a marca (organização editorial).
+ * `aggregateRating` (#367, ADR-0027 dec.6): emitido SÓ com ≥1 avaliação genuína não-moderada
+ * (`rating.count ≥ 1`, já filtrada pela borda) E receita indexável (mesmo gate noindex) — média
+ * CRUA arredondada a 1 casa + contagem REAL; NUNCA o Bayesiano (que só ordena o ranking, #368).
+ * `publisher` = a marca (organização editorial).
  *
  * Campos da ADR-0020 dec.7 mapeados quando a view os traz: `recipeYield`←porções, `recipeCuisine`←
  * cozinha, `recipeCategory`←categoria, `datePublished`←createdAt, `suitableForDiet`←restrições (só as
@@ -254,6 +272,21 @@ export function buildRecipeJsonLd(input: RecipeSeoInput): RecipeJsonLd {
   if (input.cozinha) ld.recipeCuisine = input.cozinha
   if (input.categoria) ld.recipeCategory = input.categoria
   if (input.datePublished) ld.datePublished = input.datePublished
+  // aggregateRating (#367, ADR-0027 dec.6): SÓ com ≥1 avaliação não-moderada (contagem REAL, já
+  // filtrada `moderated_at IS NULL` pela borda) E receita indexável — o MESMO gate noindex de
+  // `buildRecipeMetadata` (eligible !== false). Média CRUA (nunca o Bayesiano — dois números, dois
+  // empregos: o Bayesiano só ORDENA #368; a média crua é o que o usuário VÊ e o que vai pro markup),
+  // arredondada a 1 casa p/ casar com o display da seção de Avaliações (o Google exige que o número
+  // do markup esteja VISÍVEL na página). `ratingCount` = `reviewCount` = a contagem real.
+  const eligible = input.eligible !== false
+  if (eligible && input.rating && input.rating.count >= 1) {
+    ld.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: Math.round(input.rating.value * 10) / 10,
+      ratingCount: input.rating.count,
+      reviewCount: input.rating.count,
+    }
+  }
   // suitableForDiet: SÓ os tokens com mapa LOSSLESS p/ RestrictedDiet (lossy ⇒ omitido — nunca
   // structured data inválido). Vazio após filtrar ⇒ não emite a chave.
   if (input.restricoes && input.restricoes.length > 0) {

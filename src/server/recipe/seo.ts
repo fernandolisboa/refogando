@@ -59,8 +59,13 @@ export function buildRecipeSeoInputFromRows(args: {
   // está aqui ⇒ `recipeCuisine`/OG saem ausentes (contenção: o termo pendente não vira sinal
   // indexável nem vaza o slug cru, mas o rótulo VISÍVEL do detalhe usa escopo `display` à parte).
   activeCozinhas: Set<string>
+  // #367 (ADR-0027 dec.6): agregado de AVALIAÇÃO da MESMA leitura cookie-free do detalhe
+  // (`loadRecipeReviews` — já filtra `moderated_at IS NULL` + autor vivo). Vira `rating` no input
+  // SÓ com `count ≥ 1` (senão AUSENTE ⇒ o builder puro não emite `aggregateRating`). Média CRUA —
+  // NUNCA o Bayesiano (que só ordena o ranking, #368). Ausente ⇒ receita sem avaliações no grafo.
+  rating?: { average: number | null; count: number }
 }): RecipeSeoInput {
-  const { rows, locale, baseUrl, slugMap, eligible, activeCozinhas } = args
+  const { rows, locale, baseUrl, slugMap, eligible, activeCozinhas, rating } = args
   const m = MESSAGES[locale]
 
   // Leitura localizada ANÔNIMA: o mesmo motor puro do detalhe resolve nome/corpo/imagem/autoria/
@@ -116,5 +121,10 @@ export function buildRecipeSeoInputFromRows(args: {
     // `createdAt` é opcional no tipo (vem do select em runtime); ausente ⇒ omite datePublished.
     ...(rows.recipe.createdAt ? { datePublished: rows.recipe.createdAt.toISOString() } : {}),
     eligible,
+    // #367: só passa `rating` com ≥1 avaliação (aí `average` nunca é null); o builder emite
+    // `aggregateRating` com a média CRUA. Sem avaliações ⇒ chave ausente ⇒ sem markup de rating.
+    ...(rating && rating.count >= 1
+      ? { rating: { value: rating.average ?? 0, count: rating.count } }
+      : {}),
   }
 }

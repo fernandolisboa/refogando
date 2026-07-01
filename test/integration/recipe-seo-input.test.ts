@@ -3,8 +3,9 @@ import { getDb } from '@/server/deps'
 import { loadPublicRecipeBySlug } from '@/server/recipe/load'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
 import { buildRecipeMetadata, buildRecipeJsonLd } from '@/domain/recipe-seo'
-import { seedRecipe, seedTranslation, seedRecipeImage } from '../helpers/recipes'
+import { seedRecipe, seedTranslation, seedRecipeImage, seedReview } from '../helpers/recipes'
 import { seedUser } from '../helpers/users'
+import { loadRecipeReviews } from '@/server/recipe/review'
 import { vocabularyTerm } from '@/db/schema'
 import { COZINHA_SEED } from '@/domain/vocabulary-term'
 
@@ -120,7 +121,63 @@ describe('buildRecipeSeoInputFromRows — monta o RecipeSeoInput da Receita púb
       { '@type': 'HowToStep', text: 'Bata.' },
       { '@type': 'HowToStep', text: 'Asse.' },
     ])
-    expect(JSON.stringify(ld)).not.toMatch(/aggregateRating/i)
+    // Sem `rating` passado (nenhuma avaliação semeada) ⇒ SEM aggregateRating (#367).
+    expect('aggregateRating' in ld).toBe(false)
+  })
+
+  it('#367: N avaliações não-moderadas ⇒ aggregateRating (média CRUA + contagem REAL); a MODERADA não conta', async () => {
+    // Prova ponta-a-ponta que o agregado que alimenta o JSON-LD vem de `loadRecipeReviews` (cookie-
+    // free, filtra `moderated_at IS NULL` + autor vivo) e que o builder emite exatamente esse número
+    // (média crua, nunca Bayesiano). A avaliação moderada (removida pelo Curador) NÃO entra na média.
+    const recipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+    })
+    await seedTranslation({
+      recipeId,
+      locale: 'pt-BR',
+      titulo: 'Bem Avaliada',
+      provenance: 'escrita_por_pessoa',
+      slug: 'bem-avaliada-seo',
+    })
+    const curatorId = await seedUser({
+      email: `seo-rate-cur-${crypto.randomUUID()}@ex.com`,
+      role: 'curador',
+    })
+    const u1 = await seedUser({ email: `seo-rate-1-${crypto.randomUUID()}@ex.com` })
+    const u2 = await seedUser({ email: `seo-rate-2-${crypto.randomUUID()}@ex.com` })
+    const u3 = await seedUser({ email: `seo-rate-3-${crypto.randomUUID()}@ex.com` })
+    await seedReview({ userId: u1, recipeId, rating: 5 })
+    await seedReview({ userId: u2, recipeId, rating: 4 })
+    // Moderada pelo Curador — some do agregado (moderated_at NOT NULL filtrado).
+    await seedReview({ userId: u3, recipeId, rating: 1, moderated: { curatorId } })
+
+    // O MESMO loader cookie-free que o caminho público usa (sem query nova no builder).
+    const reviews = await loadRecipeReviews(db(), { id: recipeId })
+    expect(reviews).not.toBeNull()
+    // média crua = (5+4)/2 = 4.5, contagem 2 (a moderada NÃO conta).
+    expect(reviews!.count).toBe(2)
+    expect(reviews!.average).toBe(4.5)
+
+    const rows = await loadPublicRecipeBySlug(db(), 'bem-avaliada-seo', 'pt-BR')
+    const slugMap = await loadRecipeSlugMap(db(), recipeId)
+    const input = buildRecipeSeoInputFromRows({
+      rows: rows!,
+      locale: 'pt-BR',
+      baseUrl: BASE,
+      slugMap,
+      eligible: true,
+      activeCozinhas: ACTIVE,
+      rating: { average: reviews!.average, count: reviews!.count },
+    })
+    const ld = buildRecipeJsonLd(input)
+    expect(ld.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.5,
+      ratingCount: 2,
+      reviewCount: 2,
+    })
   })
 
   it('mapeia recipeYield/recipeCuisine/recipeCategory/suitableForDiet/datePublished da linha (ADR-0020 dec.7)', async () => {
