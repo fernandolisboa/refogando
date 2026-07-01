@@ -1,15 +1,15 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
-import { applyFavorite } from '@/server/recipe/social'
+import { applySave } from '@/server/recipe/social'
 
 /**
- * Desfavoritar uma Receita (issue #16, ADR-0003). Route FINO espelhando favorite: valida
- * uuid → 404; exige SESSÃO → 401 antes do DB (anônimo = zero efeito, AC6); delega a
- * `applyFavorite(action:'unfavorite')` — DELETE idempotente (no-op se não favoritou).
- * Mapeia o discriminator.
+ * Desfazer o Salvar de uma Receita (issue #16/#362, ADR-0003/0027). Route FINO espelhando
+ * save: valida uuid → 404; exige SESSÃO → 401 antes do DB (anônimo = zero efeito, AC6);
+ * delega a `applySave(action:'unsave')` — DELETE idempotente (no-op se não salvou). Mapeia o
+ * discriminator.
  *
- * Resposta 200: `{ viewerFavorited:false }`.
+ * Resposta 200: `{ viewerSaved:false }`.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -24,11 +24,11 @@ export async function POST(
   const g = await requireSession(request)
   if (!g.ok) return g.response
 
-  const res = await applyFavorite({ db: getDb(), id, userId: g.session.user.id, action: 'unfavorite' })
+  const res = await applySave({ db: getDb(), id, userId: g.session.user.id, action: 'unsave' })
 
   switch (res.kind) {
     case 'ok':
-      return Response.json({ viewerFavorited: res.viewerFavorited }, { status: 200 })
+      return Response.json({ viewerSaved: res.viewerSaved }, { status: 200 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }

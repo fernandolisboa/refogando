@@ -6,7 +6,7 @@ import { resolveLocale } from '@/i18n/locale'
 
 /**
  * Trilho "Cozinheiros em alta" (#278, ADR-0024 emendado): GET → `{ cooks }`, os Cozinheiros recomendados
- * por POPULARIDADE GLOBAL (votos+favoritos de terceiros), EXCLUINDO o próprio viewer e quem ele já segue.
+ * por POPULARIDADE GLOBAL (votos+saves de terceiros), EXCLUINDO o próprio viewer e quem ele já segue.
  * Cada cartão traz um preview (≤3) das receitas do Cozinheiro.
  *
  * SÓ-LOGADO (v1, espelha `/api/feed/following`): `requireSession` ANTES do DB ⇒ Visitante/conta-

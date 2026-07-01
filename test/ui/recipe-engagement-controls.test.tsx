@@ -7,12 +7,12 @@ import type { ReactNode } from 'react'
 /**
  * Teste de COMPONENTE jsdom dos controles de Engajamento da Comunidade (#62) — seam de
  * frontend da #54 (sem browser/Postgres). `fetch` é mockado no SHAPE REAL e DISJUNTO das
- * rotas (vote/unvote ⇒ `{voteCount, viewerVoted}`; favorite/unfavorite ⇒ `{viewerFavorited}`
+ * rotas (vote/unvote ⇒ `{voteCount, viewerVoted}`; save/unsave ⇒ `{viewerSaved}`
  * SÓ). `next/link` é mockado; o locale é real. O componente NÃO usa `useRouter`: o corpo
- * do POST é autoritativo e nada na page deriva de voto/favorito, então não há
+ * do POST é autoritativo e nada na page deriva de voto/save, então não há
  * `router.refresh()` (round-trip full-page descartado) a mockar/assertar.
  * (LocaleProvider). Cobre AC1 (botões no detalhe), AC2 (não-autovoto na UI via canManage),
- * AC4 (estado visível quando autenticado), favorito-anônimo, dono-no-pool, e a robustez
+ * AC4 (estado visível quando autenticado), save-anônimo, dono-no-pool, e a robustez
  * (otimismo → reversão no erro, sem âmbar).
  *
  * ADR-0015: ÂMBAR (`aviso-*`) e accent (`accent`/`accent-surface`) são PROIBIDOS aqui —
@@ -83,7 +83,7 @@ function deferred() {
 type Props = {
   initialVoteCount?: number
   initialViewerVoted?: boolean
-  initialViewerFavorited?: boolean
+  initialViewerSaved?: boolean
   canManage?: boolean
   locale?: Locale
 }
@@ -92,7 +92,7 @@ function renderControls(opts: Props = {}) {
   const {
     initialVoteCount,
     initialViewerVoted,
-    initialViewerFavorited,
+    initialViewerSaved,
     canManage = false,
     locale = 'pt-BR',
   } = opts
@@ -102,7 +102,7 @@ function renderControls(opts: Props = {}) {
         recipeId="r-1"
         initialVoteCount={initialVoteCount}
         initialViewerVoted={initialViewerVoted}
-        initialViewerFavorited={initialViewerFavorited}
+        initialViewerSaved={initialViewerSaved}
         canManage={canManage}
       />
     </LocaleProvider>,
@@ -130,7 +130,7 @@ describe('RecipeEngagementControls (#62)', () => {
   it('T1 — votar (autenticado, 200): botão alterna, contagem sobe (plural)', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch({ status: 200, body: { voteCount: 4, viewerVoted: true } })
-    renderControls({ initialVoteCount: 3, initialViewerVoted: false, initialViewerFavorited: false })
+    renderControls({ initialVoteCount: 3, initialViewerVoted: false, initialViewerSaved: false })
 
     expect(screen.getByText('3 votos')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: M.votar }))
@@ -147,7 +147,7 @@ describe('RecipeEngagementControls (#62)', () => {
   it('T2 — desfazer voto (200): contagem cai a 1 (SINGULAR), botão volta a "Votar"', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch({ status: 200, body: { voteCount: 1, viewerVoted: false } })
-    renderControls({ initialVoteCount: 2, initialViewerVoted: true, initialViewerFavorited: false })
+    renderControls({ initialVoteCount: 2, initialViewerVoted: true, initialViewerSaved: false })
 
     expect(screen.getByText('2 votos')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: M.votado }))
@@ -160,17 +160,17 @@ describe('RecipeEngagementControls (#62)', () => {
     expect(screen.queryByText('1 votos')).not.toBeInTheDocument()
   })
 
-  it('T3 — favoritar (200) NÃO regride voto/contagem (shapes disjuntos)', async () => {
+  it('T3 — salvar (200) NÃO regride voto/contagem (shapes disjuntos)', async () => {
     const user = userEvent.setup()
-    // /favorite devolve SÓ {viewerFavorited} — nunca voteCount/viewerVoted.
-    const fetchMock = mockFetch({ status: 200, body: { viewerFavorited: true } })
-    renderControls({ initialVoteCount: 5, initialViewerVoted: true, initialViewerFavorited: false })
+    // /save devolve SÓ {viewerSaved} — nunca voteCount/viewerVoted.
+    const fetchMock = mockFetch({ status: 200, body: { viewerSaved: true } })
+    renderControls({ initialVoteCount: 5, initialViewerVoted: true, initialViewerSaved: false })
 
-    await user.click(screen.getByRole('button', { name: M.favoritar }))
+    await user.click(screen.getByRole('button', { name: M.salvar }))
 
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/favorite')
-    const favoritado = await screen.findByRole('button', { name: M.favoritado })
-    expect(favoritado).toHaveAttribute('aria-pressed', 'true')
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/save')
+    const salvo = await screen.findByRole('button', { name: M.salvo })
+    expect(salvo).toHaveAttribute('aria-pressed', 'true')
 
     // Voto INTACTO: continua "Votado", aria-pressed=true, contagem "5 votos".
     const votado = screen.getByRole('button', { name: M.votado })
@@ -178,46 +178,46 @@ describe('RecipeEngagementControls (#62)', () => {
     expect(screen.getByText('5 votos')).toBeInTheDocument()
   })
 
-  it('T4 — DONO (canManage) não vê botão de voto, mas vê favoritar', () => {
-    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerFavorited: false })
+  it('T4 — DONO (canManage) não vê botão de voto, mas vê salvar', () => {
+    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerSaved: false })
 
     expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
-    expect(screen.getByRole('button', { name: M.favoritar })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: M.salvar })).toBeInTheDocument()
   })
 
-  it('T-dono-pool — dono no pool: contagem read-only + favoritar FUNCIONAL', async () => {
+  it('T-dono-pool — dono no pool: contagem read-only + salvar FUNCIONAL', async () => {
     const user = userEvent.setup()
-    const fetchMock = mockFetch({ status: 200, body: { viewerFavorited: true } })
-    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerFavorited: false })
+    const fetchMock = mockFetch({ status: 200, body: { viewerSaved: true } })
+    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerSaved: false })
 
     // Contagem read-only VISÍVEL; botão de voto AUSENTE.
     expect(screen.getByText('5 votos')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
 
-    // Favoritar PRESENTE e FUNCIONAL (dono pode favoritar a própria).
-    await user.click(screen.getByRole('button', { name: M.favoritar }))
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/favorite')
-    expect(await screen.findByRole('button', { name: M.favoritado })).toBeInTheDocument()
+    // Salvar PRESENTE e FUNCIONAL (dono pode salvar a própria).
+    await user.click(screen.getByRole('button', { name: M.salvar }))
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/save')
+    expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
   })
 
   it('T5 — ANÔNIMO: dois links /sign-in, contagem read-only, sem botão, sem fetch', async () => {
     const user = userEvent.setup()
     setSession('anon')
     const fetchMock = mockFetch({ status: 200, body: {} })
-    // Sem viewerVoted/viewerFavorited (caminho público) + sessão anônima ⇒ convite a entrar.
+    // Sem viewerVoted/viewerSaved (caminho público) + sessão anônima ⇒ convite a entrar.
     renderControls({ initialVoteCount: 5, canManage: false })
 
     const votoLink = screen.getByRole('link', { name: M.convidaEntrarVoto })
-    const favLink = screen.getByRole('link', { name: M.convidaEntrarFavorito })
+    const favLink = screen.getByRole('link', { name: M.convidaEntrarSalvar })
     expect(votoLink).toHaveAttribute('href', '/sign-in')
     expect(favLink).toHaveAttribute('href', '/sign-in')
 
     expect(screen.getByText('5 votos')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.favoritar })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.favoritado })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.salvo })).toBeNull()
 
     // Clicar em qualquer link NÃO toca a API (anônimo).
     await user.click(votoLink)
@@ -232,7 +232,7 @@ describe('RecipeEngagementControls (#62)', () => {
     const { container } = renderControls({
       initialVoteCount: 2,
       initialViewerVoted: false,
-      initialViewerFavorited: false,
+      initialViewerSaved: false,
     })
 
     await user.click(screen.getByRole('button', { name: M.votar }))
@@ -259,47 +259,47 @@ describe('RecipeEngagementControls (#62)', () => {
       locale: 'en-US',
       initialVoteCount: 1,
       initialViewerVoted: false,
-      initialViewerFavorited: false,
+      initialViewerSaved: false,
     })
     expect(screen.getByRole('button', { name: enUS.comunidade.votar })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: enUS.comunidade.favoritar })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: enUS.comunidade.salvar })).toBeInTheDocument()
     // Pluralização en-US: 1 → singular "1 vote".
     expect(screen.getByText('1 vote')).toBeInTheDocument()
   })
 
   // ── Caminho PÚBLICO/cacheável (#230, ADR-0020): server NÃO entrega estado do viewer (lê anônimo).
   //    O componente o resolve NO CLIENTE via GET /api/recipes/[id]/social quando logado. Este era o
-  //    bug: logado via sempre "Entrar para votar/favoritar". ────────────────────────────────────────
+  //    bug: logado via sempre "Entrar para votar/salvar". ────────────────────────────────────────
 
-  it('T8 — LOGADO no caminho público: GET /social hidrata voto/favorito reais (sem convite)', async () => {
+  it('T8 — LOGADO no caminho público: GET /social hidrata voto/save reais (sem convite)', async () => {
     setSession('logged-in')
     // Sem initialViewer* ⇒ caminho público; o fetch resolve o estado do PRÓPRIO viewer.
     const fetchMock = mockFetch({
       status: 200,
-      body: { viewerVoted: true, viewerFavorited: false, isOwner: false },
+      body: { viewerVoted: true, viewerSaved: false, isOwner: false },
     })
     renderControls({ initialVoteCount: 5 })
 
-    // Hidrata: voto vira "Votado" (aria-pressed), favoritar disponível e NÃO-pressionado.
+    // Hidrata: voto vira "Votado" (aria-pressed), salvar disponível e NÃO-pressionado.
     const votado = await screen.findByRole('button', { name: M.votado })
     expect(votado).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: M.favoritar })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: M.salvar })).toHaveAttribute('aria-pressed', 'false')
 
     // Bateu no endpoint certo (estado do viewer), via GET (sem method).
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/social')
 
     // O BUG: NÃO mostra mais o convite "Entrar para..." pra quem está logado.
     expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
-    expect(screen.queryByRole('link', { name: M.convidaEntrarFavorito })).toBeNull()
+    expect(screen.queryByRole('link', { name: M.convidaEntrarSalvar })).toBeNull()
   })
 
-  it('T9 — LOGADO DONO no caminho público (isOwner): esconde voto, favoritar funcional', async () => {
+  it('T9 — LOGADO DONO no caminho público (isOwner): esconde voto, salvar funcional', async () => {
     setSession('logged-in')
-    mockFetch({ status: 200, body: { viewerVoted: false, viewerFavorited: true, isOwner: true } })
+    mockFetch({ status: 200, body: { viewerVoted: false, viewerSaved: true, isOwner: true } })
     renderControls({ initialVoteCount: 5 })
 
-    // Favorito hidratado (dono pode favoritar a própria).
-    expect(await screen.findByRole('button', { name: M.favoritado })).toBeInTheDocument()
+    // Save hidratado (dono pode salvar a própria).
+    expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
     // Voto AUSENTE: dono não vota na própria (AC2), descoberto pelo `isOwner` do fetch.
     expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
@@ -316,7 +316,7 @@ describe('RecipeEngagementControls (#62)', () => {
     expect(screen.getByText('5 votos')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
     expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.favoritar })).toBeNull()
+    expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -325,11 +325,11 @@ describe('RecipeEngagementControls (#62)', () => {
     mockFetch({ reject: true })
     renderControls({ initialVoteCount: 5 })
 
-    // Degradação graciosa: botões interativos com defaults (não-votado/não-favoritado), nunca o
+    // Degradação graciosa: botões interativos com defaults (não-votado/não-salvo), nunca o
     // convite "Entrar" (o usuário está logado) nem crash. O server corrige no clique.
     const votar = await screen.findByRole('button', { name: M.votar })
     expect(votar).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: M.favoritar })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: M.salvar })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
   })
 
@@ -340,7 +340,7 @@ describe('RecipeEngagementControls (#62)', () => {
     const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
       const url = String(args[0])
       const body = url.endsWith('/social')
-        ? { viewerVoted: false, viewerFavorited: false, isOwner: false }
+        ? { viewerVoted: false, viewerSaved: false, isOwner: false }
         : { voteCount: 6, viewerVoted: true }
       return { ok: true, status: 200, json: async () => body } as Response
     })

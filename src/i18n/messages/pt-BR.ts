@@ -678,12 +678,12 @@ export const ptBR = {
     chipRotulo: 'Visibilidade',
   },
   // Edição IN-PLACE + apagar a PRÓPRIA receita (#21). Confirmar editar a pública (história #277:
-  // a mudança fica visível a quem favoritou), apagar com aviso de irreversibilidade (#157), e o
+  // a mudança fica visível a quem salvou), apagar com aviso de irreversibilidade (#157), e o
   // rótulo de "vínculo perdido" quando a base de uma derivada foi apagada (#289).
   edicaoPropria: {
     editarPublicaTitulo: 'Editar receita pública',
     editarPublicaAviso:
-      'Esta receita é pública. Suas mudanças ficam visíveis para quem já a favoritou ou está vendo na comunidade.',
+      'Esta receita é pública. Suas mudanças ficam visíveis para quem já a salvou ou está vendo na comunidade.',
     editarPublicaConfirmar: 'Salvar mudanças',
     editarPublicaCancelar: 'Cancelar',
     apagarTitulo: 'Apagar receita',
@@ -851,15 +851,15 @@ export const ptBR = {
     // string — função quebraria o tipo e a paridade). Precedente: `aviso.contradicao`.
     votos: '{n} votos',
     voto: '{n} voto',
-    favoritar: 'Favoritar',
-    favoritado: 'Favoritado',
+    salvar: 'Salvar',
+    salvo: 'Salvo',
     ordenarPor: 'Ordenar a Comunidade por',
     toggleRelevancia: 'Relevância',
     togglePopularidade: 'Popularidade',
     convidaEntrarVoto: 'Entrar para votar',
-    convidaEntrarFavorito: 'Entrar para favoritar',
+    convidaEntrarSalvar: 'Entrar para salvar',
     erroVoto: 'Não foi possível votar. Tente de novo.',
-    erroFavorito: 'Não foi possível favoritar. Tente de novo.',
+    erroSalvar: 'Não foi possível salvar. Tente de novo.',
   },
   // Console de administração (#63). Namespaces FLAT (o tipo `Messages` só aceita 1 nível):
   // os rótulos de VALOR de enum (origin/resultKind/provenance) viram chaves planas, e o

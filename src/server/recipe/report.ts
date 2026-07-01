@@ -9,7 +9,7 @@ import { decideModerationReason } from '@/domain/report'
  * discriminated union que o route mapeia para HTTP — rota fina e DRY.
  *
  * Qualquer Usuário autenticado reporta uma Receita do POOL. O gate é o MESMO de
- * voto/favorito (`eligibleForPool` — gate de pool, NÃO de ownership): só se reporta o que
+ * voto/salvar (`eligibleForPool` — gate de pool, NÃO de ownership): só se reporta o que
  * está visível no pool. Fora do pool (privada de outro / playful / removida / inexistente)
  * ⇒ not_found (404, não vaza existência — coerente com o GET/vote).
  *

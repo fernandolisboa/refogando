@@ -8,7 +8,7 @@
  *
  * ADR-0010: consome os ROUTE HANDLERS via `fetch`; o servidor é a verdade (reimpõe ownership/
  * allowlist). Confirmação de editar PÚBLICA (história #277): quando a Receita é pública, o Salvar
- * abre o diálogo de confirmação ANTES do PATCH (a mudança fica visível a quem favoritou).
+ * abre o diálogo de confirmação ANTES do PATCH (a mudança fica visível a quem salvou).
  *
  * Diálogo (apagar E confirmar-pública): `role="dialog"` + `aria-modal`, fecha no Escape, foco
  * inicial no botão primário e foco RETORNA ao gatilho ao fechar (trap simples — Tab cicla entre

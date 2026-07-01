@@ -9,7 +9,7 @@ import {
   tag,
   ingredient,
   recipeVote,
-  recipeFavorite,
+  recipeSave,
   users,
 } from '@/db/schema'
 import type { RecipeAuthor, RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
@@ -173,11 +173,11 @@ export async function loadRecipeTranslationContext(
 
 /**
  * Estado SOCIAL leak-safe da Receita (#16): o agregado público `voteCount` e o estado do
- * PRÓPRIO viewer (`viewerVoted`/`viewerFavorited`). O chamador (GET route) decide O QUE
+ * PRÓPRIO viewer (`viewerVoted`/`viewerSaved`). O chamador (GET route) decide O QUE
  * pedir conforme o gate de leitura:
  *  - `includeVoteCount`: só quando a Receita está no POOL (isPublicRead). Em owned-private
  *    NÃO pedir (o agregado não é conteúdo de pool) ⇒ `voteCount: undefined`.
- *  - `viewerId`: quando presente, carrega `viewerVoted`/`viewerFavorited` (EXISTS por
+ *  - `viewerId`: quando presente, carrega `viewerVoted`/`viewerSaved` (EXISTS por
  *    (userId, id) nas duas tabelas). Ausente ⇒ ambos `undefined` (anônimo).
  *
  * As leituras pedidas são independentes ⇒ disparadas em paralelo. Retorna só o que foi
@@ -186,7 +186,7 @@ export async function loadRecipeTranslationContext(
 export type SocialState = {
   voteCount?: number
   viewerVoted?: boolean
-  viewerFavorited?: boolean
+  viewerSaved?: boolean
 }
 
 export async function loadSocialState(
@@ -222,11 +222,11 @@ export async function loadSocialState(
         }),
       db
         .select({ one: sql<number>`1` })
-        .from(recipeFavorite)
-        .where(and(eq(recipeFavorite.userId, viewerId), eq(recipeFavorite.recipeId, id)))
+        .from(recipeSave)
+        .where(and(eq(recipeSave.userId, viewerId), eq(recipeSave.recipeId, id)))
         .limit(1)
         .then((rows) => {
-          out.viewerFavorited = rows.length > 0
+          out.viewerSaved = rows.length > 0
         }),
     )
   }

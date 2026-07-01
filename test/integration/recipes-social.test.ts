@@ -4,11 +4,11 @@ import { PostgresError } from 'postgres'
 import { eq, and } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
-import { recipeVote, recipeFavorite } from '@/db/schema'
+import { recipeVote, recipeSave } from '@/db/schema'
 import { POST as voteRoute } from '@/app/api/recipes/[id]/vote/route'
 import { POST as unvoteRoute } from '@/app/api/recipes/[id]/unvote/route'
-import { POST as favoriteRoute } from '@/app/api/recipes/[id]/favorite/route'
-import { POST as unfavoriteRoute } from '@/app/api/recipes/[id]/unfavorite/route'
+import { POST as saveRoute } from '@/app/api/recipes/[id]/save/route'
+import { POST as unsaveRoute } from '@/app/api/recipes/[id]/unsave/route'
 import { POST as publishRoute } from '@/app/api/recipes/[id]/publish/route'
 import { POST as unpublishRoute } from '@/app/api/recipes/[id]/unpublish/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
@@ -20,10 +20,11 @@ import {
   seedTranslation,
   seedIngredient,
   seedRecipeIngredient,
+  seedRemovedFromPool,
 } from '../helpers/recipes'
 
 /**
- * Voto + Favorito + estado leak-safe pela porta mais alta (issue #16, ADR-0003).
+ * Voto + Salvar + estado leak-safe pela porta mais alta (issue #16/#362, ADR-0003/0027).
  * `setup.ts` aponta o DI para o Postgres descartável e trunca antes de cada teste.
  * Invariantes cruas (PK composta 23505) usam um cliente RAW postgres-js (`makeSql`).
  * Modelo de invocação: recipes-publish.test.ts (Request cru + params Promise).
@@ -50,13 +51,13 @@ function unvote(id: string, headers?: Headers): Promise<Response> {
     params: Promise.resolve({ id }),
   })
 }
-function favorite(id: string, headers?: Headers): Promise<Response> {
-  return favoriteRoute(new Request(`http://localhost/api/recipes/${id}/favorite`, { method: 'POST', headers }), {
+function save(id: string, headers?: Headers): Promise<Response> {
+  return saveRoute(new Request(`http://localhost/api/recipes/${id}/save`, { method: 'POST', headers }), {
     params: Promise.resolve({ id }),
   })
 }
-function unfavorite(id: string, headers?: Headers): Promise<Response> {
-  return unfavoriteRoute(new Request(`http://localhost/api/recipes/${id}/unfavorite`, { method: 'POST', headers }), {
+function unsave(id: string, headers?: Headers): Promise<Response> {
+  return unsaveRoute(new Request(`http://localhost/api/recipes/${id}/unsave`, { method: 'POST', headers }), {
     params: Promise.resolve({ id }),
   })
 }
@@ -89,15 +90,15 @@ async function countVotes(id: string): Promise<number> {
   const rows = await getDb().select().from(recipeVote).where(eq(recipeVote.recipeId, id))
   return rows.length
 }
-async function countFavorites(id: string): Promise<number> {
-  const rows = await getDb().select().from(recipeFavorite).where(eq(recipeFavorite.recipeId, id))
+async function countSaves(id: string): Promise<number> {
+  const rows = await getDb().select().from(recipeSave).where(eq(recipeSave.recipeId, id))
   return rows.length
 }
-async function favoriteExists(userId: string, id: string): Promise<boolean> {
+async function saveExists(userId: string, id: string): Promise<boolean> {
   const rows = await getDb()
     .select()
-    .from(recipeFavorite)
-    .where(and(eq(recipeFavorite.userId, userId), eq(recipeFavorite.recipeId, id)))
+    .from(recipeSave)
+    .where(and(eq(recipeSave.userId, userId), eq(recipeSave.recipeId, id)))
   return rows.length > 0
 }
 
@@ -115,9 +116,9 @@ async function seedPublicCommunity(ownerId: string): Promise<string> {
 }
 
 type VoteBody = { voteCount: number; viewerVoted: boolean }
-type FavBody = { viewerFavorited: boolean }
+type SaveBody = { viewerSaved: boolean }
 
-describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () => {
+describe('POST /api/recipes/[id]/{vote,unvote,save,unsave} (#16)', () => {
   // ── AC1: idempotência + desfazer ───────────────────────────────────────────────
   it('AC1 votar 2× (mesmo user,recipe) ⇒ ambas 200, voteCount=1; unvote ⇒ 0; re-unvote ⇒ no-op', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'ac1-owner@ex.com' })
@@ -144,28 +145,28 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     expect((await reUn.json()) as VoteBody).toEqual({ voteCount: 0, viewerVoted: false })
   })
 
-  it('AC1 favoritar 2× ⇒ ambas 200, 1 linha; unfavorite ⇒ 0; re-unfavorite ⇒ no-op', async () => {
+  it('AC1 salvar 2× ⇒ ambas 200, 1 linha; unsave ⇒ 0; re-unsave ⇒ no-op', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'ac1f-owner@ex.com' })
     const { headers } = await seedSessionHeaders({ email: 'ac1f-fav@ex.com' })
     const id = await seedPublicCommunity(owner)
 
-    const first = await favorite(id, headers)
+    const first = await save(id, headers)
     expect(first.status).toBe(200)
-    expect((await first.json()) as FavBody).toEqual({ viewerFavorited: true })
+    expect((await first.json()) as SaveBody).toEqual({ viewerSaved: true })
 
-    const second = await favorite(id, headers)
+    const second = await save(id, headers)
     expect(second.status).toBe(200)
-    expect((await second.json()) as FavBody).toEqual({ viewerFavorited: true })
-    expect(await countFavorites(id)).toBe(1)
+    expect((await second.json()) as SaveBody).toEqual({ viewerSaved: true })
+    expect(await countSaves(id)).toBe(1)
 
-    const un = await unfavorite(id, headers)
+    const un = await unsave(id, headers)
     expect(un.status).toBe(200)
-    expect((await un.json()) as FavBody).toEqual({ viewerFavorited: false })
-    expect(await countFavorites(id)).toBe(0)
+    expect((await un.json()) as SaveBody).toEqual({ viewerSaved: false })
+    expect(await countSaves(id)).toBe(0)
 
-    const reUn = await unfavorite(id, headers)
+    const reUn = await unsave(id, headers)
     expect(reUn.status).toBe(200)
-    expect((await reUn.json()) as FavBody).toEqual({ viewerFavorited: false })
+    expect((await reUn.json()) as SaveBody).toEqual({ viewerSaved: false })
   })
 
   it('AC1 smoke de schema: INSERT cru duplicado em recipe_vote ⇒ PostgresError 23505 (PK composta)', async () => {
@@ -205,22 +206,79 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     expect(await countVotes(id)).toBe(0)
   })
 
-  it('AC2 dono FAVORITA a própria receita ⇒ 200 (favorito é marcador pessoal, não popularidade)', async () => {
+  it('AC2 dono SALVA a própria receita ⇒ 200 (save é marcador pessoal, não popularidade)', async () => {
     const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'ac2f-owner@ex.com' })
     const id = await seedPublicCommunity(owner)
 
-    const res = await favorite(id, ownerHeaders)
+    const res = await save(id, ownerHeaders)
     expect(res.status).toBe(200)
-    expect((await res.json()) as FavBody).toEqual({ viewerFavorited: true })
-    expect(await countFavorites(id)).toBe(1)
+    expect((await res.json()) as SaveBody).toEqual({ viewerSaved: true })
+    expect(await countSaves(id)).toBe(1)
+  })
+
+  // ── AC6 (#362/ADR-0027 D2): escape-hatch de ownership — salvar a PRÓPRIA privada ───
+  it('AC6 dono SALVA a PRÓPRIA receita PRIVADA ⇒ 200; GET /social vê viewerSaved:true, isOwner:true', async () => {
+    const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'ownpriv-save@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_structured',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      ownerId: owner,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Caderno', provenance: 'escrita_por_pessoa' })
+
+    const res = await save(id, ownerHeaders)
+    expect(res.status).toBe(200)
+    expect((await res.json()) as SaveBody).toEqual({ viewerSaved: true })
+    expect(await countSaves(id)).toBe(1)
+
+    const soc = await social(id, ownerHeaders)
+    expect(soc.status).toBe(200)
+    expect((await soc.json()) as SocialBody).toEqual({
+      viewerVoted: false,
+      viewerSaved: true,
+      isOwner: true,
+    })
+  })
+
+  it('AC6 leak-safe: SAVE em receita PRIVADA de OUTRO ⇒ 404 e GET /social ⇒ 404 (nada gravado)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'otherpriv-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'otherpriv-saver@ex.com' })
+    const id = await seedRecipe({
+      origin: 'ai_structured',
+      originalLocale: 'pt-BR',
+      visibility: 'private',
+      ownerId: owner,
+    })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Segredo alheio', provenance: 'escrita_por_pessoa' })
+
+    const res = await save(id, headers)
+    expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toMatchObject({ error: 'not_found' })
+    expect(await countSaves(id)).toBe(0)
+
+    const soc = await social(id, headers)
+    expect(soc.status).toBe(404)
+  })
+
+  it('escape-hatch respeita moderação: dono NÃO salva a PRÓPRIA receita removida do pool ⇒ 404', async () => {
+    const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'ownmod-owner@ex.com' })
+    const { userId: curator } = await seedSessionHeaders({ email: 'ownmod-curator@ex.com' })
+    // Pública do dono, depois REMOVIDA do pool por moderação (owner === viewer, mas barreira mantida).
+    const id = await seedPublicCommunity(owner)
+    await seedRemovedFromPool({ recipeId: id, curatorId: curator })
+
+    const res = await save(id, ownerHeaders)
+    expect(res.status).toBe(404)
+    expect(await countSaves(id)).toBe(0)
   })
 
   // ── AC6: anônimo → 401, zero efeito; conta desativada → 401 ─────────────────────
   it.each<[string, (id: string, h?: Headers) => Promise<Response>]>([
     ['vote', vote],
     ['unvote', unvote],
-    ['favorite', favorite],
-    ['unfavorite', unfavorite],
+    ['save', save],
+    ['unsave', unsave],
   ])('AC6 anônimo %s ⇒ 401 nao_autenticado e ZERO efeito no DB', async (_name, route) => {
     const { userId: owner } = await seedSessionHeaders({ email: `ac6-owner-${_name}@ex.com` })
     const id = await seedPublicCommunity(owner)
@@ -229,7 +287,7 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     expect(res.status).toBe(401)
     await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
     expect(await countVotes(id)).toBe(0)
-    expect(await countFavorites(id)).toBe(0)
+    expect(await countSaves(id)).toBe(0)
   })
 
   it('AC6 conta soft-deletada ⇒ 401 conta_desativada (vote), zero efeito', async () => {
@@ -306,7 +364,7 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
   })
 
   // ── Catálogo votável + leak-safe (gate de POOL ≠ ownership) ──────────────────────
-  it('Catálogo (owner NULL) é votável/favoritável ⇒ 200; GET do mesmo user vê viewerVoted/viewerFavorited', async () => {
+  it('Catálogo (owner NULL) é votável/salvável ⇒ 200; GET do mesmo user vê viewerVoted/viewerSaved', async () => {
     const { headers } = await seedSessionHeaders({ email: 'cat-user@ex.com' })
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Feijoada', provenance: 'escrita_por_pessoa' })
@@ -314,26 +372,26 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     const v = await vote(id, headers)
     expect(v.status).toBe(200)
     expect((await v.json()) as VoteBody).toEqual({ voteCount: 1, viewerVoted: true })
-    const f = await favorite(id, headers)
+    const f = await save(id, headers)
     expect(f.status).toBe(200)
 
-    // GET com headers do MESMO usuário ⇒ viewerVoted/viewerFavorited true + voteCount.
+    // GET com headers do MESMO usuário ⇒ viewerVoted/viewerSaved true + voteCount.
     const mine = await get(id, headers)
     expect(mine.status).toBe(200)
     const view = (await mine.json()) as {
       viewerVoted?: boolean
-      viewerFavorited?: boolean
+      viewerSaved?: boolean
       voteCount?: number
       canManage?: boolean
     }
     expect(view.viewerVoted).toBe(true)
-    expect(view.viewerFavorited).toBe(true)
+    expect(view.viewerSaved).toBe(true)
     expect(view.voteCount).toBe(1)
     // Catálogo nunca tem dono ⇒ nunca canManage (leak-safe de gestão preservado).
     expect(view.canManage).toBeUndefined()
   })
 
-  it('leak-safe: GET ANÔNIMO de Catálogo votado ⇒ viewerVoted/viewerFavorited AUSENTES; voteCount presente', async () => {
+  it('leak-safe: GET ANÔNIMO de Catálogo votado ⇒ viewerVoted/viewerSaved AUSENTES; voteCount presente', async () => {
     const { headers } = await seedSessionHeaders({ email: 'cat-voter2@ex.com' })
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Feijoada', provenance: 'escrita_por_pessoa' })
@@ -341,9 +399,9 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
 
     const anon = await get(id) // sem headers
     expect(anon.status).toBe(200)
-    const view = (await anon.json()) as { viewerVoted?: boolean; viewerFavorited?: boolean; voteCount?: number }
+    const view = (await anon.json()) as { viewerVoted?: boolean; viewerSaved?: boolean; voteCount?: number }
     expect(view.viewerVoted).toBeUndefined()
-    expect(view.viewerFavorited).toBeUndefined()
+    expect(view.viewerSaved).toBeUndefined()
     expect(view.voteCount).toBe(1) // agregado público presente p/ anônimo no pool
   })
 
@@ -356,9 +414,9 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
 
     const res = await get(id, otherHeaders)
     expect(res.status).toBe(200)
-    const view = (await res.json()) as { viewerVoted?: boolean; viewerFavorited?: boolean; voteCount?: number }
+    const view = (await res.json()) as { viewerVoted?: boolean; viewerSaved?: boolean; voteCount?: number }
     expect(view.viewerVoted).toBe(false) // presente (logado) mas próprio estado: não votou
-    expect(view.viewerFavorited).toBe(false)
+    expect(view.viewerSaved).toBe(false)
     expect(view.voteCount).toBe(1) // agregado público
   })
 
@@ -411,8 +469,8 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     expect(view.voteCount).toBe(3) // e o agregado coexiste com o aviso
   })
 
-  // ── AC5: despublicar preserva votos; some p/ favoritador; republicar mantém ──────
-  it('AC5 round-trip: unpublish PRESERVA votos/favoritos; some do pool; republicar mantém contagem', async () => {
+  // ── AC5: despublicar preserva votos; some p/ salvor; republicar mantém ──────
+  it('AC5 round-trip: unpublish PRESERVA votos/saves; some do pool; republicar mantém contagem', async () => {
     const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'ac5-owner@ex.com' })
     const { userId: favId, headers: favHeaders } = await seedSessionHeaders({ email: 'ac5-fav@ex.com' })
     const { headers: voter2 } = await seedSessionHeaders({ email: 'ac5-voter2@ex.com' })
@@ -424,21 +482,21 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Chili da casa', provenance: 'escrita_por_pessoa' })
 
-    // N=2 votos (favId + voter2), M=1 favorito (favId).
+    // N=2 votos (favId + voter2), M=1 save (favId).
     await vote(id, favHeaders)
     await vote(id, voter2)
-    await favorite(id, favHeaders)
+    await save(id, favHeaders)
     expect(await countVotes(id)).toBe(2)
-    expect(await countFavorites(id)).toBe(1)
+    expect(await countSaves(id)).toBe(1)
 
     // despublica (dono).
     const unp = await unpublish(id, ownerHeaders)
     expect(unp.status).toBe(200)
 
-    // votos/favoritos PERSISTEM (unpublish é UPDATE, não DELETE).
+    // votos/saves PERSISTEM (unpublish é UPDATE, não DELETE).
     expect(await countVotes(id)).toBe(2)
-    expect(await countFavorites(id)).toBe(1)
-    expect(await favoriteExists(favId, id)).toBe(true) // a linha de favorito existe no DB
+    expect(await countSaves(id)).toBe(1)
+    expect(await saveExists(favId, id)).toBe(true) // a linha de save existe no DB
 
     // some do pool: busca da Comunidade NÃO traz a despublicada.
     const s1 = (await (await search('q=chili&sort=popularidade')).json()) as {
@@ -446,7 +504,7 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
     }
     expect(s1.comunidade.map((r) => r.recipeId)).not.toContain(id)
 
-    // favoritador faz GET ⇒ 404 (privada de outro): favorito existe, mas a receita saiu do pool.
+    // salvor faz GET ⇒ 404 (privada de outro): save existe, mas a receita saiu do pool.
     const favGet = await get(id, favHeaders)
     expect(favGet.status).toBe(404)
 
@@ -473,10 +531,10 @@ describe('POST /api/recipes/[id]/{vote,unvote,favorite,unfavorite} (#16)', () =>
  * sessão (401), pool-gate leak-safe (404), `isOwner` p/ esconder o voto do dono, e per-viewer
  * (no-store, nunca vaza estado alheio).
  */
-type SocialBody = { viewerVoted: boolean; viewerFavorited: boolean; isOwner: boolean }
+type SocialBody = { viewerVoted: boolean; viewerSaved: boolean; isOwner: boolean }
 
 describe('GET /api/recipes/[id]/social (#230 follow-up)', () => {
-  it('logado NÃO-dono no pool: reflete o próprio voto/favorito; isOwner=false; no-store', async () => {
+  it('logado NÃO-dono no pool: reflete o próprio voto/save; isOwner=false; no-store', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'soc-owner@ex.com' })
     const { headers } = await seedSessionHeaders({ email: 'soc-viewer@ex.com' })
     const id = await seedPublicCommunity(owner)
@@ -486,33 +544,33 @@ describe('GET /api/recipes/[id]/social (#230 follow-up)', () => {
     expect(before.status).toBe(200)
     expect((await before.json()) as SocialBody).toEqual({
       viewerVoted: false,
-      viewerFavorited: false,
+      viewerSaved: false,
       isOwner: false,
     })
 
     await vote(id, headers)
-    await favorite(id, headers)
+    await save(id, headers)
 
     const after = await social(id, headers)
     expect(after.status).toBe(200)
     expect(after.headers.get('cache-control')).toBe('no-store')
     expect((await after.json()) as SocialBody).toEqual({
       viewerVoted: true,
-      viewerFavorited: true,
+      viewerSaved: true,
       isOwner: false,
     })
   })
 
-  it('DONO no pool: isOwner=true; reflete o próprio favorito (votar na própria é impossível)', async () => {
+  it('DONO no pool: isOwner=true; reflete o próprio save (votar na própria é impossível)', async () => {
     const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'soc-own2@ex.com' })
     const id = await seedPublicCommunity(owner)
-    await favorite(id, ownerHeaders) // dono pode favoritar a própria
+    await save(id, ownerHeaders) // dono pode salvar a própria
 
     const res = await social(id, ownerHeaders)
     expect(res.status).toBe(200)
     expect((await res.json()) as SocialBody).toEqual({
       viewerVoted: false,
-      viewerFavorited: true,
+      viewerSaved: true,
       isOwner: true,
     })
   })
@@ -527,24 +585,24 @@ describe('GET /api/recipes/[id]/social (#230 follow-up)', () => {
     expect(res.status).toBe(200)
     expect((await res.json()) as SocialBody).toEqual({
       viewerVoted: true,
-      viewerFavorited: false,
+      viewerSaved: false,
       isOwner: false, // owner NULL nunca casa com o viewer
     })
   })
 
-  it('leak-safe: terceiro logado NÃO vê o voto/favorito alheio (ambos false)', async () => {
+  it('leak-safe: terceiro logado NÃO vê o voto/save alheio (ambos false)', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'soc-leak-owner@ex.com' })
     const { headers: voterHeaders } = await seedSessionHeaders({ email: 'soc-leak-voter@ex.com' })
     const { headers: otherHeaders } = await seedSessionHeaders({ email: 'soc-leak-other@ex.com' })
     const id = await seedPublicCommunity(owner)
     await vote(id, voterHeaders)
-    await favorite(id, voterHeaders)
+    await save(id, voterHeaders)
 
     const res = await social(id, otherHeaders)
     expect(res.status).toBe(200)
     expect((await res.json()) as SocialBody).toEqual({
       viewerVoted: false,
-      viewerFavorited: false,
+      viewerSaved: false,
       isOwner: false,
     })
   })

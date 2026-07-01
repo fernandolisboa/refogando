@@ -650,7 +650,7 @@ export const enUS: Messages = {
   edicaoPropria: {
     editarPublicaTitulo: 'Edit public recipe',
     editarPublicaAviso:
-      "This recipe is public. Your changes will be visible to anyone who favorited it or is viewing it in the community.",
+      "This recipe is public. Your changes will be visible to anyone who saved it or is viewing it in the community.",
     editarPublicaConfirmar: 'Save changes',
     editarPublicaCancelar: 'Cancel',
     apagarTitulo: 'Delete recipe',
@@ -806,15 +806,15 @@ export const enUS: Messages = {
     votado: 'Voted',
     votos: '{n} votes',
     voto: '{n} vote',
-    favoritar: 'Favorite',
-    favoritado: 'Favorited',
+    salvar: 'Save',
+    salvo: 'Saved',
     ordenarPor: 'Sort the Community by',
     toggleRelevancia: 'Relevance',
     togglePopularidade: 'Popularity',
     convidaEntrarVoto: 'Sign in to vote',
-    convidaEntrarFavorito: 'Sign in to favorite',
+    convidaEntrarSalvar: 'Sign in to save',
     erroVoto: 'Could not vote. Try again.',
-    erroFavorito: 'Could not favorite. Try again.',
+    erroSalvar: 'Could not save. Try again.',
   },
   admin: {
     titulo: 'Admin console',

@@ -11,7 +11,7 @@ import {
   recipeTag,
   recipeEmbedding,
   recipeVote,
-  recipeFavorite,
+  recipeSave,
   report,
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
@@ -211,7 +211,7 @@ export async function seedEmbedding(input: {
     })
 }
 
-// ── Social: Voto + Favorito (issue #16) ─────────────────────────────────────────
+// ── Social: Voto + Salvar (issue #16/#362) ──────────────────────────────────────
 
 /**
  * Insere uma linha de voto crua (issue #16). O `userId` DEVE ser um id REAL de Usuário
@@ -222,9 +222,9 @@ export async function seedVote(input: { userId: string; recipeId: string }): Pro
   await getDb().insert(recipeVote).values({ userId: input.userId, recipeId: input.recipeId })
 }
 
-/** Insere uma linha de favorito crua (issue #16). Mesma forma/contrato de `seedVote`. */
-export async function seedFavorite(input: { userId: string; recipeId: string }): Promise<void> {
-  await getDb().insert(recipeFavorite).values({ userId: input.userId, recipeId: input.recipeId })
+/** Insere uma linha de save cru (issue #16/#362). Mesma forma/contrato de `seedVote`. */
+export async function seedSave(input: { userId: string; recipeId: string }): Promise<void> {
+  await getDb().insert(recipeSave).values({ userId: input.userId, recipeId: input.recipeId })
 }
 
 // ── Moderação reativa: Report + remoção do pool (issue #18) ─────────────────────

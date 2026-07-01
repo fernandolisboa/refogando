@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { eligibleForPool } from '@/domain/recipe-pool'
+import { eligibleForPool, eligibleToSaveByViewer } from '@/domain/recipe-pool'
 import { CURATION_STATUSES, type CurationStatus } from '@/domain/recipe-curation'
 
 /**
@@ -149,5 +149,71 @@ describe('eligibleForPool', () => {
         }
       }
     }
+  })
+})
+
+/**
+ * Predicado de SALVAR (issue #362/ADR-0027 D2) — o pool público MAIS um escape-hatch de ownership: o
+ * DONO salva a PRÓPRIA receita mesmo PRIVADA ("pra montar o caderno"), mantendo as demais barreiras
+ * (não-playful, não-removida, não-web). Privada de OUTRO fica fora ⇒ 404 leak-safe.
+ */
+describe('eligibleToSaveByViewer', () => {
+  const VIEWER = 'viewer-1'
+  const base = {
+    visibility: 'private',
+    resultKind: 'success',
+    moderationRemovedAt: null as Date | null,
+    origin: 'ai_chat',
+    curationStatus: 'not_required' as CurationStatus,
+  }
+
+  it('própria receita PRIVADA (owner === viewer) ⇒ salvável (escape-hatch)', () => {
+    expect(eligibleToSaveByViewer({ ...base, ownerId: VIEWER }, VIEWER)).toBe(true)
+  })
+
+  it('receita PRIVADA de OUTRO ⇒ NÃO salvável (leak-safe)', () => {
+    expect(eligibleToSaveByViewer({ ...base, ownerId: 'other' }, VIEWER)).toBe(false)
+  })
+
+  it('pública de outro ⇒ salvável (delega a eligibleForPool)', () => {
+    expect(
+      eligibleToSaveByViewer({ ...base, ownerId: 'other', visibility: 'public' }, VIEWER),
+    ).toBe(true)
+  })
+
+  it('catálogo aprovado (owner NULL) ⇒ salvável (delega a eligibleForPool; null nunca casa o viewer)', () => {
+    expect(
+      eligibleToSaveByViewer(
+        { ...base, ownerId: null, origin: 'catalog', curationStatus: 'approved' },
+        VIEWER,
+      ),
+    ).toBe(true)
+  })
+
+  it('catálogo rascunho (owner NULL, pending) ⇒ NÃO salvável', () => {
+    expect(
+      eligibleToSaveByViewer(
+        { ...base, ownerId: null, origin: 'catalog', curationStatus: 'pending' },
+        VIEWER,
+      ),
+    ).toBe(false)
+  })
+
+  it('própria privada mas playful ⇒ NÃO salvável (escape-hatch mantém a barreira)', () => {
+    expect(
+      eligibleToSaveByViewer({ ...base, ownerId: VIEWER, resultKind: 'playful' }, VIEWER),
+    ).toBe(false)
+  })
+
+  it('própria privada mas removida por moderação ⇒ NÃO salvável', () => {
+    expect(
+      eligibleToSaveByViewer({ ...base, ownerId: VIEWER, moderationRemovedAt: REMOVED }, VIEWER),
+    ).toBe(false)
+  })
+
+  it('própria privada mas web_imported ⇒ NÃO salvável', () => {
+    expect(
+      eligibleToSaveByViewer({ ...base, ownerId: VIEWER, origin: 'web_imported' }, VIEWER),
+    ).toBe(false)
   })
 })

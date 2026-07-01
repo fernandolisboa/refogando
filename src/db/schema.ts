@@ -894,13 +894,13 @@ export const transcriptMessage = pgTable(
   ],
 )
 
-// ── Social: Voto + Favorito (issue #16, ADR-0003) ──────────────────────────────
+// ── Social: Voto + Salvar (issue #16/#362, ADR-0003/0027) ──────────────────────
 //
-// Relações PURAS (sem payload): cada linha é "este Usuário votou/favoritou esta
+// Relações PURAS (sem payload): cada linha é "este Usuário votou/salvou esta
 // Receita". Estrutura IDÊNTICA entre as duas, espelhando recipeTag/recipeEmbedding:
 //  - PK composta (user_id, recipe_id): satisfaz AC1 (votar 2× = UM voto — a re-inserção
 //    colide na PK) E cobre o lookup leak-safe "este viewer votou?" (EXISTS por PK).
-//    Desfazer = DELETE da linha (sem updatedAt/deletedAt — voto/favorito são descartáveis).
+//    Desfazer = DELETE da linha (sem updatedAt/deletedAt — voto/save são descartáveis).
 //  - FK ON DELETE cascade em AMBAS (sem órfãos): apagar Usuário ou Receita limpa os votos.
 //    Despublicar é UPDATE de visibility, NUNCA DELETE ⇒ os votos PERSISTEM (AC5).
 //  - índice btree em recipe_id: cobre COUNT(*) WHERE recipe_id=? (a Popularidade) e o
@@ -928,8 +928,8 @@ export const recipeVote = pgTable(
   ],
 )
 
-export const recipeFavorite = pgTable(
-  'recipe_favorite',
+export const recipeSave = pgTable(
+  'recipe_save',
   {
     userId: uuid('user_id')
       .notNull()
@@ -941,7 +941,7 @@ export const recipeFavorite = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.recipeId] }),
-    index('recipe_favorite_recipe_id_idx').on(t.recipeId),
+    index('recipe_save_recipe_id_idx').on(t.recipeId),
   ],
 )
 
@@ -980,7 +980,7 @@ export const userFollow = pgTable(
 // ENTRADA da moderação: qualquer Usuário autenticado reporta uma Receita do POOL; a linha
 // entra na FILA do Curador (status='pending'). O Report mira a RECEITA (recipe_id, não o
 // locale): a moderação tem identidade única entre pt-BR/en-US (AC4 — uma decisão afeta a
-// Receita em TODOS os locales). Estrutura espelha recipeVote/recipeFavorite (FK cascade ao
+// Receita em TODOS os locales). Estrutura espelha recipeVote/recipeSave (FK cascade ao
 // recipe/users), mas COM payload (reason/status/resolução) — não é relação pura.
 //
 // MÚLTIPLOS reports por Receita são permitidos (a fila agrega; a 1ª remoção preserva a
