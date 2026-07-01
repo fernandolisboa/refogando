@@ -983,14 +983,27 @@ export const recipeReview = pgTable(
       .references(() => recipe.id, { onDelete: 'cascade' }),
     rating: smallint('rating').notNull(),
     comment: text('comment'),
-    // Seam de leitura da moderação (#366): filtrado por `moderated_at IS NULL` desde já.
+    // Foto do prato cozinhado (ADR-0027 dec.4) — coluna RESERVADA aqui; o upload (só câmera/arquivo,
+    // NUNCA IA) e a exibição são a fatia da foto (#366). Sem eixo de proveniência (é sempre do usuário).
+    photoUrl: text('photo_url'),
+    // Moderação da Avaliação (unidade INTEIRA, reativa report→Curador — fatia futura). Colunas
+    // RESERVADAS + CHECK/índice de consistência já modelados no idioma do recipe_image: a leitura quente
+    // já filtra `moderated_at IS NULL` desde já, e moderatedBy é ON DELETE set null (apagar o Curador
+    // não apaga o registro). Sem caminho de escrita de moderação nesta fatia.
     moderatedAt: timestamp('moderated_at', { withTimezone: true }),
+    moderatedReason: text('moderated_reason'),
+    moderatedBy: uuid('moderated_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     // Backstop de DB pro range 1–5 (a guarda de verdade é decideReview no servidor).
     check('recipe_review_rating_chk', sql`${t.rating} between 1 and 5`),
+    // Consistência de moderação (espelha recipe_image): moderado ⟺ tem quem moderou.
+    check(
+      'recipe_review_moderation_consistency_chk',
+      sql`(${t.moderatedAt} is null) = (${t.moderatedBy} is null)`,
+    ),
     // 1 Avaliação por (user, receita) — também o backstop de concorrência do upsert.
     unique('recipe_review_user_recipe_uq').on(t.userId, t.recipeId),
     // Índice PARCIAL cobrindo a leitura quente `WHERE recipe_id=? AND moderated_at IS NULL`
