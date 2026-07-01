@@ -190,6 +190,11 @@ export default async function RecipeDetailPage({
         loadRecipeSlugMapCached(getDb(), publicRows.recipe.id),
         loadActiveCozinhaSlugsCached(getDb()),
       ])
+      // Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora
+      // do pool ⇒ a seção some. O MESMO agregado (média CRUA + contagem REAL, já filtrado
+      // `moderated_at IS NULL`) alimenta o `aggregateRating` do JSON-LD (#367) — SEM query nova; o
+      // número do markup casa com o exibido na página. Carregado ANTES de montar o SEO input.
+      const reviewData = await loadRecipeReviews(getDb(), { id: publicRows.recipe.id })
       const seoInput = buildRecipeSeoInputFromRows({
         rows: publicRows,
         locale,
@@ -197,17 +202,17 @@ export default async function RecipeDetailPage({
         slugMap,
         eligible: true,
         activeCozinhas,
+        // Defensivo: `null` (fora do pool) ⇒ sem rating ⇒ sem aggregateRating. count 0 idem (a borda gateia).
+        ...(reviewData
+          ? { rating: { average: reviewData.average, count: reviewData.count } }
+          : {}),
       })
       const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
       // #237: aviso de catálogo AI-assistido — CORTESIA editorial. Lê a config (DB direto, SEM cookie:
       // mantém o caminho público anônimo/cacheável) e resolve o TEXTO só quando deve mostrar (catálogo +
       // ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
       const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
-      // Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora
-      // do pool ⇒ a seção some (gate independente de voteCount, que esta épica aposenta).
-      const reviews = serializeReviews(
-        await loadRecipeReviews(getDb(), { id: publicRows.recipe.id }),
-      )
+      const reviews = serializeReviews(reviewData)
       return (
         <DetailChrome
           view={view}

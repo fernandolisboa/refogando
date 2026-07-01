@@ -19,7 +19,8 @@ import {
  *  - canonical = slug do locale CORRENTE; hreflang SÓ pros locales que TÊM tradução pública com
  *    slug + x-default → DEFAULT_LOCALE (#233). NÃO inventa URL de locale inexistente.
  *  - robots index/follow pra elegível; noindex pra não-elegível (#233).
- *  - JSON-LD sem `aggregateRating`/estrelas; ingredientes/passos/imagem/inLanguage (#234).
+ *  - JSON-LD emite `aggregateRating` (#367) SÓ com ≥1 avaliação não-moderada E receita indexável
+ *    (média CRUA arredondada a 1 casa, nunca Bayesiano); ingredientes/passos/imagem/inLanguage (#234).
  */
 
 const BASE = 'https://refogando.com'
@@ -171,12 +172,6 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
     expect(ld.image).toBe(url)
   })
 
-  it('NUNCA emite aggregateRating/estrelas (Voto ≠ nota)', () => {
-    const ld = buildRecipeJsonLd(baseInput({ voteCount: 42 }))
-    expect(JSON.stringify(ld)).not.toMatch(/aggregateRating|ratingValue|reviewCount/i)
-    expect('aggregateRating' in ld).toBe(false)
-  })
-
   it('author quando há dono humano (sem fonte)', () => {
     const ld = buildRecipeJsonLd(baseInput({ author: { name: 'Maria', handle: 'maria' } }))
     expect(ld.author).toEqual({ '@type': 'Person', name: 'Maria' })
@@ -247,6 +242,76 @@ describe('buildRecipeJsonLd — schema.org/Recipe (#234)', () => {
   })
 })
 
+describe('buildRecipeJsonLd — aggregateRating (#367, ADR-0027 dec.6)', () => {
+  it('emite aggregateRating com média CRUA + contagem REAL quando count ≥ 1 e elegível (default)', () => {
+    // Média genuína de Avaliação (#363/ADR-0027 dec.6) vira `AggregateRating`. `ratingCount` E
+    // `reviewCount` = a contagem REAL (dois nomes do mesmo número no schema.org).
+    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 4.6, count: 23 } }))
+    expect(ld.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.6,
+      ratingCount: 23,
+      reviewCount: 23,
+    })
+  })
+
+  it('OMITE aggregateRating quando count === 0', () => {
+    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 0, count: 0 } }))
+    expect('aggregateRating' in ld).toBe(false)
+  })
+
+  it('OMITE aggregateRating quando rating ausente OU null (sem avaliações)', () => {
+    expect('aggregateRating' in buildRecipeJsonLd(baseInput())).toBe(false)
+    expect('aggregateRating' in buildRecipeJsonLd(baseInput({ rating: null }))).toBe(false)
+  })
+
+  it('OMITE aggregateRating quando NÃO elegível (noindex/privado) mesmo com count ≥ 1', () => {
+    // Mesmo gate do robots noindex (#233): uma receita fora do índice não emite structured data
+    // de rating pro grafo. `eligible: false` cala o aggregateRating ainda que haja avaliações.
+    const ld = buildRecipeJsonLd(baseInput({ eligible: false, rating: { value: 5, count: 10 } }))
+    expect('aggregateRating' in ld).toBe(false)
+  })
+
+  it('emite p/ COMUNIDADE (com autor humano) E p/ CATÁLOGO (sem autor) — o builder é agnóstico', () => {
+    const comunidade = buildRecipeJsonLd(
+      baseInput({ author: { name: 'Maria', handle: 'maria' }, rating: { value: 4.2, count: 8 } }),
+    )
+    expect(comunidade.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.2,
+      ratingCount: 8,
+      reviewCount: 8,
+    })
+    const catalogo = buildRecipeJsonLd(
+      baseInput({ author: undefined, rating: { value: 4.2, count: 8 } }),
+    )
+    expect(catalogo.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.2,
+      ratingCount: 8,
+      reviewCount: 8,
+    })
+  })
+
+  it('NUNCA Bayesiano: o ratingValue emitido é EXATAMENTE a média crua passada (5★ em 1 avaliação)', () => {
+    // O Bayesiano (#368) só ORDENA o ranking (suprime 5★/1 nota); o MARKUP carrega a média crua
+    // genuína, INALTERADA — o builder não faz nenhuma transformação estatística.
+    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 5, count: 1 } }))
+    expect(ld.aggregateRating?.ratingValue).toBe(5)
+    expect(ld.aggregateRating?.ratingCount).toBe(1)
+    expect(ld.aggregateRating?.reviewCount).toBe(1)
+  })
+
+  it('arredonda ratingValue a 1 casa decimal (casa com o display da página: 4,3333 → 4,3)', () => {
+    // O Google exige que o número do markup esteja VISÍVEL na página; a seção de Avaliações mostra
+    // a média com 1 casa (toLocaleString), então o markup usa a MESMA precisão.
+    const ld = buildRecipeJsonLd(baseInput({ rating: { value: 4.3333, count: 9 } }))
+    expect(ld.aggregateRating?.ratingValue).toBe(4.3)
+    const ld2 = buildRecipeJsonLd(baseInput({ rating: { value: 4.35, count: 4 } }))
+    expect(ld2.aggregateRating?.ratingValue).toBe(4.4)
+  })
+})
+
 describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', () => {
   const PAYLOAD = '</script><script>alert(1)</script>'
 
@@ -286,6 +351,23 @@ describe('serializeJsonLd — string segura pro <script> (XSS de </script>)', ()
       expect(flat).toContain(PAYLOAD) // o dado original sobrevive ao round-trip
     })
   }
+
+  it('serializa um objeto COM aggregateRating (#367) válido e ainda escapa o `<`', () => {
+    const ld = buildRecipeJsonLd(
+      baseInput({ name: `Bolo ${PAYLOAD}`, rating: { value: 4.6, count: 23 } }),
+    )
+    const s = serializeJsonLd(ld)
+    expect(s).not.toContain('</script>')
+    expect(s).toContain('\\u003c')
+    expect(() => JSON.parse(s)).not.toThrow()
+    const parsed = JSON.parse(s)
+    expect(parsed.aggregateRating).toEqual({
+      '@type': 'AggregateRating',
+      ratingValue: 4.6,
+      ratingCount: 23,
+      reviewCount: 23,
+    })
+  })
 })
 
 describe('minutosParaISO8601 (#262, ADR-0023 dec.4)', () => {
