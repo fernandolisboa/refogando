@@ -57,6 +57,9 @@ export type ReportQueueItem =
         recipeId: string
         rating: number
         comment: string | null
+        // #365: FOTO reportável — mostrada AO CURADOR (rota gated, não é leak público) pra ele julgar
+        // e remover com visibilidade. `null` quando a avaliação não tem foto.
+        photoUrl: string | null
         authorName: string | null
         authorHandle: string | null
       }
@@ -86,6 +89,7 @@ export async function listReportQueue(db: Database): Promise<ReportQueueItem[]> 
       reviewRecipeId: recipeReview.recipeId,
       reviewRating: recipeReview.rating,
       reviewComment: recipeReview.comment,
+      reviewPhotoUrl: recipeReview.photoUrl,
       authorName: author.name,
       authorHandle: author.handle,
     })
@@ -114,6 +118,7 @@ export async function listReportQueue(db: Database): Promise<ReportQueueItem[]> 
           recipeId: r.reviewRecipeId as string,
           rating: r.reviewRating as number,
           comment: r.reviewComment,
+          photoUrl: r.reviewPhotoUrl,
           authorName: r.authorName,
           authorHandle: r.authorHandle,
         },

@@ -4,6 +4,7 @@ import { recipe, recipeReview, users } from '@/db/schema'
 import { decideReview } from '@/domain/review'
 import { eligibleForPool } from '@/domain/recipe-pool'
 import type { CurationStatus } from '@/domain/recipe-curation'
+import type { ImageStore } from '@/server/images/image-store'
 
 /**
  * Núcleo com efeito da AVALIAÇÃO (issue #363, ADR-0027). Espelha `social.ts`: discriminated
@@ -43,9 +44,23 @@ export type ReviewView = {
   id: string
   rating: number
   comment: string | null
+  // #365 (ADR-0027): FOTO opcional do prato (upload/câmera, NUNCA IA). URL pública do blob no
+  // `ImageStore` — nunca vira `recipe_image`/`lineage_id`/proveniência; é do AVALIADOR, não do dono.
+  photoUrl: string | null
   author: { name: string | null; handle: string | null }
   createdAt: Date
 }
+
+/**
+ * #365: descritor do que fazer com a FOTO no upsert da avaliação. Evita a ambiguidade
+ * undefined/null: `keep` mantém a foto atual (edição de nota/comentário sem tocar a foto);
+ * `set` grava os bytes JÁ LIMPOS (re-encodados server-side, sem EXIF/GPS) que a rota passou;
+ * `clear` remove a foto. O route mapeia o multipart pra este descritor.
+ */
+export type ReviewPhoto =
+  | { kind: 'keep' }
+  | { kind: 'set'; data: Buffer; contentType: string }
+  | { kind: 'clear' }
 
 export type ReviewResult =
   | {
@@ -54,11 +69,18 @@ export type ReviewResult =
       count: number
       viewerRating: number | null
       viewerComment: string | null
+      // #365 — o BLOB é gerido pela rota (best-effort, só o que é NOSSO). No SAVE: `prevPhotoUrl`
+      // (foto antes do upsert) + `finalPhotoUrl` (foto após) ⇒ a rota apaga a superseded se mudou.
+      // No DELETE: `deletedPhotoUrl` (foto da linha REALMENTE apagada; null se no-op/moderada ⇒ blob fica).
+      prevPhotoUrl: string | null
+      finalPhotoUrl: string | null
+      deletedPhotoUrl: string | null
     } // 200
   | { kind: 'not_found' } //       404 — inexistente / fora do pool
   | { kind: 'auto_review' } //     422 — avaliar a própria
   | { kind: 'invalid_rating' } //  400
   | { kind: 'invalid_comment' } // 400
+  | { kind: 'storage_error' } //   503 — o ImageStore falhou; a avaliação NÃO foi mutada
 
 /**
  * Gate barato + elegibilidade de POOL — devolve o `Gate` quando a Receita está no pool
@@ -116,6 +138,11 @@ export async function applyReview(input: {
   action: 'save' | 'delete'
   rating?: number
   comment?: unknown
+  // #365: descritor da FOTO (default `keep`). `set` traz os bytes JÁ LIMPOS (a rota re-encoda via
+  // sharp, sem EXIF/GPS). O store é feito AQUI (pós-gate) — save rejeitado nunca queima o storage.
+  photo?: ReviewPhoto
+  // #365: seam de storage (getImageStore()). Só o SAVE-com-foto usa; delete/keep/clear não tocam.
+  store?: ImageStore
 }): Promise<ReviewResult> {
   const { db, id, userId, action } = input
 
@@ -131,17 +158,81 @@ export async function applyReview(input: {
     })
     if (!d.allowed) return { kind: d.reason }
 
-    // Upsert com o comentário NORMALIZADO — 1 por (user, receita) via UNIQUE (edita sob conflito).
-    await db
-      .insert(recipeReview)
-      .values({ userId, recipeId: id, rating: input.rating!, comment: d.comment })
-      .onConflictDoUpdate({
-        target: [recipeReview.userId, recipeReview.recipeId],
-        set: { rating: input.rating!, comment: d.comment, updatedAt: sql`now()` },
-      })
+    const photo: ReviewPhoto = input.photo ?? { kind: 'keep' }
+    const store = input.store
+
+    // C4: a foto ANTERIOR vem de um SELECT prévio (o RETURNING do upsert só daria a linha PÓS-op).
+    const [existing] = await db
+      .select({ photoUrl: recipeReview.photoUrl })
+      .from(recipeReview)
+      .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id)))
+      .limit(1)
+    const prevPhotoUrl = existing?.photoUrl ?? null
+
+    // C2: o STORE roda SÓ AQUI — depois do gate de pool E do decideReview. Um save rejeitado
+    // (auto_review / fora do pool / nota inválida) NUNCA armazena um blob (zero churn/órfão).
+    // Falha do store ⇒ `storage_error` (503) ANTES de qualquer mutação ⇒ a avaliação fica intacta.
+    let storedUrl: string | null = null
+    if (photo.kind === 'set') {
+      if (!store) throw new Error('applyReview: store obrigatório para anexar foto à avaliação')
+      try {
+        ;({ url: storedUrl } = await store.store({
+          data: photo.data,
+          contentType: 'image/webp',
+          pathPrefix: 'reviews',
+        }))
+      } catch {
+        return { kind: 'storage_error' }
+      }
+    }
+
+    // Valor final da coluna: keep→prev (não muda); set→a URL recém-gravada; clear→null.
+    const finalPhotoUrl = photo.kind === 'keep' ? prevPhotoUrl : storedUrl
+
+    // C3: o set do upsert monta por SPREAD (o objeto mutável não tipa). keep ⇒ NÃO inclui photoUrl
+    // (mantém a existente); set/clear ⇒ inclui o valor final. INSERT fresco: keep/clear nascem null.
+    try {
+      await db
+        .insert(recipeReview)
+        .values({
+          userId,
+          recipeId: id,
+          rating: input.rating!,
+          comment: d.comment,
+          photoUrl: photo.kind === 'set' ? storedUrl : null,
+        })
+        .onConflictDoUpdate({
+          target: [recipeReview.userId, recipeReview.recipeId],
+          set: {
+            rating: input.rating!,
+            comment: d.comment,
+            updatedAt: sql`now()`,
+            ...(photo.kind !== 'keep' ? { photoUrl: finalPhotoUrl } : {}),
+          },
+        })
+    } catch (err) {
+      // Órfão residual (erro de DB APÓS o store bem-sucedido, raro): apaga best-effort o blob
+      // recém-criado e re-lança (a rota vira 500 cru; nada foi persistido).
+      if (storedUrl && store?.owns(storedUrl)) {
+        try {
+          await store.delete(storedUrl)
+        } catch {
+          // órfão tolerável.
+        }
+      }
+      throw err
+    }
 
     const agg = await loadAggregate(db, id)
-    return { kind: 'ok', ...agg, viewerRating: input.rating!, viewerComment: d.comment }
+    return {
+      kind: 'ok',
+      ...agg,
+      viewerRating: input.rating!,
+      viewerComment: d.comment,
+      prevPhotoUrl,
+      finalPhotoUrl,
+      deletedPhotoUrl: null,
+    }
   }
 
   // delete: sem checagem de nota/auto/comentário; idempotente (no-op se não existe). Ainda
@@ -153,11 +244,25 @@ export async function applyReview(input: {
   // (junto com moderated_*) e re-postaria pra ressuscitar (o upsert nasce moderated_at NULL),
   // derrotando a moderação. A moderação é DURÁVEL (in-model, como recipe/recipe_image). Avaliação
   // não-moderada apaga normal.
-  await db
+  //
+  // #365 (C11): o `.returning({ photoUrl })` devolve a linha REALMENTE apagada — `null` quando o
+  // delete foi no-op (não existia OU moderada). A rota só apaga o blob quando `deletedPhotoUrl`
+  // veio preenchido (linha não-moderada apagada); em moderada a foto persiste oculta (como #366).
+  const [deleted] = await db
     .delete(recipeReview)
     .where(and(eq(recipeReview.userId, userId), eq(recipeReview.recipeId, id), isNull(recipeReview.moderatedAt)))
+    .returning({ photoUrl: recipeReview.photoUrl })
+  const deletedPhotoUrl = deleted?.photoUrl ?? null
   const agg = await loadAggregate(db, id)
-  return { kind: 'ok', ...agg, viewerRating: null, viewerComment: null }
+  return {
+    kind: 'ok',
+    ...agg,
+    viewerRating: null,
+    viewerComment: null,
+    prevPhotoUrl: null,
+    finalPhotoUrl: null,
+    deletedPhotoUrl,
+  }
 }
 
 /** Cap SERVER-controlled da lista (paginação por cursor deferida). Protege o payload SSR/GET. */
@@ -182,6 +287,7 @@ export async function loadRecipeReviews(
       id: recipeReview.id,
       rating: recipeReview.rating,
       comment: recipeReview.comment,
+      photoUrl: recipeReview.photoUrl,
       authorName: users.name,
       authorHandle: users.handle,
       createdAt: recipeReview.createdAt,
@@ -196,6 +302,7 @@ export async function loadRecipeReviews(
     id: r.id,
     rating: r.rating,
     comment: r.comment,
+    photoUrl: r.photoUrl,
     author: { name: r.authorName, handle: r.authorHandle },
     createdAt: r.createdAt,
   }))
@@ -207,7 +314,8 @@ export type ViewerReviewResult =
       kind: 'ok'
       // #366: `id` da PRÓPRIA avaliação do viewer (viewer-scoped, leak-safe — gateado por sessão) para
       // a UI esconder o "Reportar" na própria linha da lista pública (o autor edita/apaga, não reporta).
-      viewerReview: { id: string; rating: number; comment: string | null } | null
+      // #365: `photoUrl` prefilla o preview da foto ao editar a própria avaliação.
+      viewerReview: { id: string; rating: number; comment: string | null; photoUrl: string | null } | null
       isOwner: boolean
       // #366: a própria avaliação foi MODERADA (removida pelo Curador). NÃO filtramos a linha (o autor
       // ainda precisa saber que existe), mas a UI troca o widget editável por um aviso só-leitura — o
@@ -234,6 +342,7 @@ export async function loadViewerReview(
       id: recipeReview.id,
       rating: recipeReview.rating,
       comment: recipeReview.comment,
+      photoUrl: recipeReview.photoUrl,
       moderatedAt: recipeReview.moderatedAt,
     })
     .from(recipeReview)
@@ -242,7 +351,9 @@ export async function loadViewerReview(
 
   return {
     kind: 'ok',
-    viewerReview: row ? { id: row.id, rating: row.rating, comment: row.comment } : null,
+    viewerReview: row
+      ? { id: row.id, rating: row.rating, comment: row.comment, photoUrl: row.photoUrl }
+      : null,
     isOwner: gate.ownerId === userId,
     moderated: row?.moderatedAt != null,
   }

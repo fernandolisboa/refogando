@@ -940,6 +940,15 @@ export const ptBR = {
     motivoReport: 'Motivo do report',
     cancelarReport: 'Cancelar',
     erroReport: 'Não foi possível reportar. Tente de novo.',
+    // #365: FOTO do prato na avaliação (upload/câmera, SEM IA). Adicionar/trocar/remover + erros de
+    // tipo/tamanho/envio; `fotoAlt` é o texto alternativo (conteúdo/prova, não decorativo).
+    adicionarFoto: 'Adicionar foto',
+    trocarFoto: 'Trocar foto',
+    removerFoto: 'Remover foto',
+    fotoTipoInvalido: 'Use uma imagem JPG, PNG ou WebP.',
+    fotoGrande: 'Imagem muito grande. Tente uma menor.',
+    erroFoto: 'Não foi possível enviar a foto. Tente de novo.',
+    fotoAlt: 'Foto do prato',
   },
   // Console de administração (#63). Namespaces FLAT (o tipo `Messages` só aceita 1 nível):
   // os rótulos de VALOR de enum (origin/resultKind/provenance) viram chaves planas, e o
@@ -1140,6 +1149,9 @@ export const ptBR = {
     avaliacaoNota: 'Nota',
     avaliacaoComentario: 'Comentário',
     avaliacaoSemComentario: 'Sem comentário',
+    // #365: a FOTO reportada, mostrada ao Curador (rota gated) pra julgar com visibilidade.
+    avaliacaoFoto: 'Foto',
+    avaliacaoFotoAlt: 'Foto da avaliação',
     removerAvaliacao: 'Remover avaliação',
     removendoAvaliacao: 'Removendo avaliação…',
     erroSemAvaliacao: 'Este report não é de uma avaliação.',

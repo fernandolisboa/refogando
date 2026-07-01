@@ -377,6 +377,20 @@ export function ModerationQueue() {
                         ? item.review.comment
                         : m.avaliacaoSemComentario}
                     </dd>
+                    {/* #365: a FOTO reportada — o Curador julga com visibilidade (rota gated). */}
+                    {item.review.photoUrl && (
+                      <>
+                        <dt className="font-medium text-fg">{m.avaliacaoFoto}</dt>
+                        <dd className="text-muted">
+                          <img
+                            src={item.review.photoUrl}
+                            alt={m.avaliacaoFotoAlt}
+                            loading="lazy"
+                            className="max-h-40 w-auto rounded-md border border-border object-contain"
+                          />
+                        </dd>
+                      </>
+                    )}
                     <dt className="font-medium text-fg">{m.motivoReport}</dt>
                     <dd className="text-muted">{item.reason}</dd>
                     <dt className="font-medium text-fg">{m.status}</dt>
