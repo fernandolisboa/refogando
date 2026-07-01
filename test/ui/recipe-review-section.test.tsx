@@ -26,6 +26,10 @@ vi.mock('@/lib/auth-client', () => ({
   useSession: () => authMock.session,
 }))
 
+// #365: jsdom não tem canvas — mockamos `resizeImage` (devolve um webp pequeno, tipo aceito).
+const resizeImage = vi.fn(async (): Promise<Blob> => new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/webp' }))
+vi.mock('@/lib/image-resize', () => ({ resizeImage: () => resizeImage() }))
+
 function setSession(state: 'logged-in' | 'anon' | 'pending') {
   authMock.session =
     state === 'logged-in'
@@ -48,7 +52,12 @@ const M = ptBR.avaliacoes
 /** Mocka `fetch` por URL: um mapa de sufixo→resposta. `mine` só GET; `reviews` POST/DELETE/GET. */
 function mockFetchByUrl(handlers: {
   mine?: {
-    viewerReview: { id?: string; rating: number; comment: string | null } | null
+    viewerReview: {
+      id?: string
+      rating: number
+      comment: string | null
+      photoUrl?: string | null
+    } | null
     isOwner: boolean
     moderated?: boolean
   }
@@ -86,6 +95,7 @@ function makeReview(over: Partial<ReviewViewSerialized> = {}): ReviewViewSeriali
     id: over.id ?? crypto.randomUUID(),
     rating: over.rating ?? 5,
     comment: over.comment ?? null,
+    photoUrl: over.photoUrl ?? null,
     author: over.author ?? { name: 'Ana', handle: 'ana' },
     createdAt: over.createdAt ?? new Date().toISOString(),
   }
@@ -121,6 +131,7 @@ function renderSection(opts: {
 beforeEach(() => {
   setSession('anon')
   mockFetchByUrl({})
+  resizeImage.mockClear()
 })
 
 afterEach(() => {
@@ -300,5 +311,99 @@ describe('RecipeReviewSection (#363)', () => {
     // …mas NÃO tem widget de avaliar (auto-avaliação barrada) nem qualquer ação "remover" na seção.
     expect(screen.queryByRole('radiogroup')).toBeNull()
     expect(screen.queryByRole('button', { name: M.apagar })).toBeNull()
+  })
+
+  // ── #365: FOTO do prato na avaliação ──────────────────────────────────────────────
+  it('#365 input de foto tem accept="image/*" + capture="environment" (câmera mobile, SEM IA)', async () => {
+    setSession('logged-in')
+    mockFetchByUrl({ mine: { viewerReview: null, isOwner: false } })
+    renderSection({})
+    const input = await screen.findByLabelText(M.adicionarFoto)
+    expect(input).toHaveAttribute('type', 'file')
+    expect(input).toHaveAttribute('accept', 'image/*')
+    expect(input).toHaveAttribute('capture', 'environment')
+  })
+
+  it('#365 escolher foto + enviar ⇒ POST multipart (FormData com o arquivo + rating), sem content-type', async () => {
+    const user = userEvent.setup()
+    setSession('logged-in')
+    const fetchMock = mockFetchByUrl({
+      mine: { viewerReview: null, isOwner: false },
+      save: { average: 5, count: 1, viewerRating: 5, viewerComment: null },
+      list: { average: 5, count: 1, reviews: [makeReview({ rating: 5 })] },
+    })
+    renderSection({})
+
+    const stars = await screen.findAllByRole('radio')
+    await user.click(stars[4]) // nota 5
+    const input = await screen.findByLabelText(M.adicionarFoto)
+    await user.upload(input, new File([new Uint8Array([9, 9, 9])], 'prato.png', { type: 'image/png' }))
+    expect(resizeImage).toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: M.enviar }))
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === '/api/recipes/r-1/reviews' && (c[1] as RequestInit)?.method === 'POST',
+      )
+      expect(post).toBeTruthy()
+      const init = post![1] as RequestInit
+      expect(init.body).toBeInstanceOf(FormData)
+      const fd = init.body as FormData
+      expect(fd.get('file')).toBeInstanceOf(Blob)
+      expect(fd.get('rating')).toBe('5')
+      // o browser seta o boundary — NÃO mandamos content-type manual.
+      expect(init.headers).toBeUndefined()
+    })
+    expect(await screen.findByText('★ 5,0 · 1 avaliação')).toBeInTheDocument()
+  })
+
+  it('#365 review com foto ⇒ <img alt=fotoAlt> na lista', () => {
+    renderSection({
+      initialAverage: 5,
+      initialCount: 1,
+      initialReviews: [
+        makeReview({
+          photoUrl: 'https://x.public.blob.vercel-storage.com/reviews/1.webp',
+          comment: 'olha que lindo',
+        }),
+      ],
+    })
+    const img = screen.getByAltText(M.fotoAlt) as HTMLImageElement
+    expect(img).toBeInTheDocument()
+    expect(img.getAttribute('src')).toContain('/reviews/1.webp')
+    expect(img).toHaveAttribute('loading', 'lazy')
+  })
+
+  it('#365 "Remover foto" na edição ⇒ envio manda removePhoto=1 (multipart)', async () => {
+    const user = userEvent.setup()
+    setSession('logged-in')
+    const fetchMock = mockFetchByUrl({
+      mine: {
+        viewerReview: {
+          id: 'rev-minha',
+          rating: 4,
+          comment: 'boa',
+          photoUrl: 'https://x.public.blob.vercel-storage.com/reviews/old.webp',
+        },
+        isOwner: false,
+      },
+      save: { average: 4, count: 1, viewerRating: 4, viewerComment: 'boa' },
+      list: { average: 4, count: 1, reviews: [makeReview({ rating: 4 })] },
+    })
+    renderSection({ initialAverage: 4, initialCount: 1 })
+
+    // após o /mine, a foto existente habilita "Remover foto".
+    await user.click(await screen.findByRole('button', { name: M.removerFoto }))
+    await user.click(screen.getByRole('button', { name: M.editar }))
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) => String(c[0]) === '/api/recipes/r-1/reviews' && (c[1] as RequestInit)?.method === 'POST',
+      )
+      expect(post).toBeTruthy()
+      const fd = (post![1] as RequestInit).body as FormData
+      expect(fd.get('removePhoto')).toBe('1')
+      expect(fd.get('file')).toBeNull()
+    })
   })
 })

@@ -83,7 +83,7 @@ function ownedReport(ownerImageGenBlocked = false) {
 }
 
 /** #366: report de uma AVALIAÇÃO — a fila carrega o conteúdo (nota+comentário+autor) pro Curador julgar. */
-function reviewReport() {
+function reviewReport(photoUrl: string | null = null) {
   return {
     reports: [
       {
@@ -98,6 +98,8 @@ function reviewReport() {
           recipeId: RID,
           rating: 2,
           comment: 'texto abusivo da avaliação',
+          // #365: a foto reportada é mostrada ao Curador (rota gated).
+          photoUrl,
           authorName: 'Ana',
           authorHandle: 'ana',
         },
@@ -408,6 +410,23 @@ describe('ModerationQueue (#63 AC4)', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroSemAvaliacao)
     expect(screen.getByText('texto abusivo da avaliação')).toBeInTheDocument() // voltou
+  })
+
+  it('#365 card de avaliação COM foto: renderiza a <img> reportada pro Curador julgar', async () => {
+    const url = 'https://x.public.blob.vercel-storage.com/reviews/rep.webp'
+    mockFetch({ 'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport(url) } })
+    renderQueue()
+
+    const img = (await screen.findByAltText(M.avaliacaoFotoAlt)) as HTMLImageElement
+    expect(img).toBeInTheDocument()
+    expect(img.getAttribute('src')).toBe(url)
+  })
+
+  it('#365 card de avaliação SEM foto: nenhuma <img> de foto', async () => {
+    mockFetch({ 'GET /api/curate/reports': { ok: true, status: 200, body: reviewReport(null) } })
+    renderQueue()
+    await screen.findByText('texto abusivo da avaliação')
+    expect(screen.queryByAltText(M.avaliacaoFotoAlt)).toBeNull()
   })
 
   it('#366 manter (keep) num report de avaliação: POST keep, card some', async () => {

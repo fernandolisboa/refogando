@@ -21,10 +21,11 @@
  * Cores: só tokens brand/neutros AA-verificados. SEM âmbar (`aviso-*`), SEM accent/accent-surface
  * (ADR-0015 reserva-os ao eixo catálogo/restrição) — nem nas estrelas.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
+import { resizeImage } from '@/lib/image-resize'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -34,18 +35,39 @@ export type ReviewViewSerialized = {
   id: string
   rating: number
   comment: string | null
+  // #365: FOTO do prato (upload/câmera, NUNCA IA). URL pública do blob; null quando não há foto.
+  photoUrl: string | null
   author: { name: string | null; handle: string | null }
   createdAt: string // ISO — a página serializa Dates antes de passar
 }
 
 /** Corpo do GET /reviews/mine — estado per-viewer (id/dono/moderação da própria avaliação). */
 type MineBody = {
-  viewerReview: { id: string; rating: number; comment: string | null } | null
+  viewerReview: { id: string; rating: number; comment: string | null; photoUrl: string | null } | null
   isOwner: boolean
   moderated?: boolean
 }
 
 const MAX_STARS = 5
+
+/** #365: cap de tamanho da foto (2 MB) — espelha o border do servidor; o cliente já redimensiona. */
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024
+/** Tipos aceitos após o resize (webp no happy-path). heic/gif de fallback caem aqui e são recusados. */
+const ACCEPTED_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+/** Extensão do arquivo redimensionado (só pro nome no FormData; o servidor re-encoda de qualquer forma). */
+function extForPhoto(type: string): string {
+  if (type === 'image/png') return 'png'
+  if (type === 'image/jpeg') return 'jpg'
+  return 'webp'
+}
+/** Cria um object-URL de preview; `null` em ambientes sem suporte (jsdom) — a foto não some por isso. */
+function makeObjectUrl(blob: Blob): string | null {
+  try {
+    return URL.createObjectURL(blob)
+  } catch {
+    return null
+  }
+}
 
 /** Estrelas SÓ-LEITURA (exibição de uma nota). Preenchidas até `value`, vazias depois. */
 function StarsReadonly({ value, label }: { value: number; label: string }) {
@@ -97,6 +119,16 @@ export function RecipeReviewSection({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // #365: estado da FOTO do prato. `photoFile` = novo blob (já redimensionado) a enviar; `photoPreview`
+  // = object-URL do blob escolhido; `removePhoto` = pediu pra tirar a foto atual; `existingPhotoUrl` =
+  // a foto já salva (vinda do /mine, prefill); `photoError` = erro inline de tipo/tamanho/envio da foto.
+  const [photoFile, setPhotoFile] = useState<Blob | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [removePhoto, setRemovePhoto] = useState(false)
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
   // #366: id da PRÓPRIA avaliação do viewer (esconde "Reportar" na própria linha da lista); estado do
   // affordance de reportar por review: qual form está aberto, o rascunho de motivo, quais já foram
   // reportadas (estado "Reportado" desabilitado), qual está em voo e qual tem erro.
@@ -135,11 +167,77 @@ export function RecipeReviewSection({
     setOwnerClient(!!body.isOwner)
     setMyReviewId(body.viewerReview?.id ?? null)
     setViewerModerated(!!body.moderated)
+    // #365: a foto já salva (prefill do preview de edição). O servidor é a verdade.
+    setExistingPhotoUrl(body.viewerReview?.photoUrl ?? null)
     if (body.viewerReview) {
       setRating(body.viewerReview.rating)
       setComment(body.viewerReview.comment ?? '')
       setHasReview(true)
     }
+  }
+
+  /** Revoga o object-URL de preview atual (se houver) — evita vazamento ao trocar/limpar a foto. */
+  function revokePreview() {
+    if (photoPreview) {
+      try {
+        URL.revokeObjectURL(photoPreview)
+      } catch {
+        // ambiente sem suporte — nada a revogar.
+      }
+    }
+  }
+
+  /** Limpa o value do input pra permitir re-selecionar o MESMO arquivo (onChange só dispara se muda). */
+  function resetPhotoInput() {
+    if (photoInputRef.current) photoInputRef.current.value = ''
+  }
+
+  // #365: escolher a foto → REDIMENSIONA no client PRIMEIRO (re-encoda webp, tira EXIF no happy-path,
+  // fica sob o cap de body da Vercel). Valida tipo+tamanho do resultado; heic/gif que o resize não
+  // converteu caem no guard de tipo. NUNCA envia o arquivo cru — o servidor re-encoda de novo (backstop).
+  async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPhotoError(null)
+    try {
+      const blob = await resizeImage(file, { maxDim: 1024 })
+      if (!ACCEPTED_PHOTO_TYPES.has(blob.type)) {
+        setPhotoError(m.fotoTipoInvalido)
+        resetPhotoInput()
+        return
+      }
+      if (blob.size > MAX_PHOTO_BYTES) {
+        setPhotoError(m.fotoGrande)
+        resetPhotoInput()
+        return
+      }
+      revokePreview()
+      setPhotoFile(blob)
+      setPhotoPreview(makeObjectUrl(blob))
+      setRemovePhoto(false)
+    } catch {
+      setPhotoError(m.erroFoto)
+    } finally {
+      resetPhotoInput()
+    }
+  }
+
+  /** #365: marca a foto atual pra remoção (some do preview; o envio manda `removePhoto`). */
+  function onRemovePhoto() {
+    revokePreview()
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setRemovePhoto(true)
+    setPhotoError(null)
+  }
+
+  /** Reseta o estado da foto após um envio bem-sucedido (o /mine traz a URL nova). */
+  function resetPhotoState() {
+    revokePreview()
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setRemovePhoto(false)
+    setPhotoError(null)
   }
 
   // Re-busca a PRÓPRIA avaliação após escrever (envio/apagar) — mantém `myReviewId`/`moderated`
@@ -177,11 +275,25 @@ export function RecipeReviewSection({
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/recipes/${recipeId}/reviews`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ rating, comment: comment.trim() === '' ? null : comment.trim() }),
-      })
+      const trimmed = comment.trim()
+      // #365: com mudança de foto (nova ou remoção) → multipart (o browser seta o boundary; NÃO
+      // mandamos content-type). Sem foto → JSON, exatamente como antes (regressão preservada).
+      const hasPhotoChange = photoFile != null || removePhoto
+      let res: Response
+      if (hasPhotoChange) {
+        const fd = new FormData()
+        fd.append('rating', String(rating))
+        if (trimmed !== '') fd.append('comment', trimmed)
+        if (photoFile) fd.append('file', photoFile, `foto.${extForPhoto(photoFile.type)}`)
+        else if (removePhoto) fd.append('removePhoto', '1')
+        res = await fetch(`/api/recipes/${recipeId}/reviews`, { method: 'POST', body: fd })
+      } else {
+        res = await fetch(`/api/recipes/${recipeId}/reviews`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ rating, comment: trimmed === '' ? null : trimmed }),
+        })
+      }
       if (!res.ok) {
         setError(m.erroEnviar)
         return
@@ -197,8 +309,10 @@ export function RecipeReviewSection({
       setComment(body.viewerComment ?? '')
       setAverage(body.average)
       setCount(body.count)
+      resetPhotoState()
       await refreshList()
-      // #F3: refresca `myReviewId` (a linha recém-criada não deve oferecer "Reportar" a si mesma).
+      // #F3: refresca `myReviewId` (a linha recém-criada não deve oferecer "Reportar" a si mesma) +
+      // #365: `existingPhotoUrl` (o preview de edição passa a refletir a foto recém-gravada).
       await refreshMine()
     } catch {
       setError(m.erroEnviar)
@@ -278,6 +392,11 @@ export function RecipeReviewSection({
   const showRemovedNotice = !canManage && !ownerClient && loggedIn && viewerResolved && viewerModerated
   const showAnonInvite = !canManage && sessionSettled && !loggedIn
 
+  // #365: foto a exibir no widget — o pick novo vence; senão a existente (a menos que marcada p/ remoção).
+  const photoDisplaySrc = photoFile ? photoPreview : removePhoto ? null : existingPhotoUrl
+  // "Remover foto" só faz sentido quando há uma foto em jogo (nova ou já salva não-removida).
+  const canRemovePhoto = photoFile != null || (existingPhotoUrl != null && !removePhoto)
+
   return (
     <section
       aria-labelledby="avaliacoes-titulo"
@@ -328,6 +447,54 @@ export function RecipeReviewSection({
               rows={3}
               disabled={busy}
             />
+          </div>
+
+          {/* #365: FOTO do prato (upload/câmera, SEM IA). `capture="environment"` abre a câmera
+              traseira no mobile; `accept="image/*"`. NENHUMA affordance de gerar por IA aqui. */}
+          <div className="flex flex-col gap-2">
+            {photoDisplaySrc && (
+              <img
+                src={photoDisplaySrc}
+                alt={m.fotoAlt}
+                className="max-h-48 w-auto rounded-md border border-border object-contain"
+              />
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild variant="secondary" size="sm">
+                <label
+                  className={
+                    busy ? 'cursor-not-allowed opacity-70 pointer-events-none' : 'cursor-pointer'
+                  }
+                >
+                  {photoDisplaySrc ? m.trocarFoto : m.adicionarFoto}
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={onPickPhoto}
+                    disabled={busy}
+                    className="sr-only"
+                  />
+                </label>
+              </Button>
+              {canRemovePhoto && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={onRemovePhoto}
+                  disabled={busy}
+                >
+                  {m.removerFoto}
+                </Button>
+              )}
+            </div>
+            {photoError != null && (
+              <p role="alert" className="text-xs font-medium text-foreground">
+                {photoError}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -390,6 +557,16 @@ export function RecipeReviewSection({
               </div>
               {r.comment != null && r.comment !== '' && (
                 <p className="text-sm text-foreground whitespace-pre-line">{r.comment}</p>
+              )}
+
+              {/* #365: FOTO do prato da avaliação (contida, sem CLS; alt é conteúdo/prova). */}
+              {r.photoUrl && (
+                <img
+                  src={r.photoUrl}
+                  alt={m.fotoAlt}
+                  loading="lazy"
+                  className="mt-1 max-h-64 w-auto rounded-md border border-border object-contain"
+                />
               )}
 
               {/* #366: "Reportar" — só logado, e nunca na própria avaliação (o autor edita/apaga; o

@@ -29,6 +29,7 @@ export async function GET(
   const res = await loadViewerReview(getDb(), { id, userId: g.session.user.id })
   if (res.kind === 'not_found') return Response.json({ error: 'not_found' }, { status: 404 })
 
+  // #365: `viewerReview` já inclui `photoUrl` (prefill do preview ao editar a própria avaliação).
   return Response.json(
     { viewerReview: res.viewerReview, isOwner: res.isOwner, moderated: res.moderated },
     { headers: { 'cache-control': 'no-store' } },

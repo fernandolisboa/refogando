@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { and, eq } from 'drizzle-orm'
+import sharp from 'sharp'
+import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
-import { getDb } from '@/server/deps'
-import { recipeReview, users } from '@/db/schema'
+import { getDb, setImageStore } from '@/server/deps'
+import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
+import { recipeImage, recipeReview, users } from '@/db/schema'
 import {
   POST as reviewPost,
   PUT as reviewPut,
@@ -374,5 +376,246 @@ describe('GET /api/recipes/[id]/reviews/mine (#363)', () => {
     const priv = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', visibility: 'private', ownerId: owner })
     await seedTranslation({ recipeId: priv, locale: 'pt-BR', titulo: 'Segredo', provenance: 'escrita_por_pessoa' })
     expect((await getMine(priv, other)).status).toBe(404)
+  })
+})
+
+// ── #365: FOTO da avaliação (upload/câmera, SEM IA) ───────────────────────────────
+describe('POST/DELETE /api/recipes/[id]/reviews — foto (#365, ADR-0027)', () => {
+  let store: FakeImageStore
+  beforeEach(() => {
+    // O beforeEach global (setup.ts) já rodou resetDeps(); injetamos um Fake fresco por teste
+    // (espelha me-avatar) pra NUNCA tocar a rede e poder inspecionar `.blobs`.
+    store = new FakeImageStore()
+    setImageStore(store)
+  })
+
+  /** Imagem REAL e pequena (sharp decodifica) — o border re-encoda via sharp (strip de EXIF). */
+  async function realImageFile(name = 'prato.png', type: 'image/png' | 'image/jpeg' | 'image/webp' = 'image/png'): Promise<File> {
+    const base = sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 200, g: 60, b: 40 } } })
+    const buf =
+      type === 'image/jpeg' ? await base.jpeg().toBuffer() : type === 'image/webp' ? await base.webp().toBuffer() : await base.png().toBuffer()
+    return new File([new Uint8Array(buf)], name, { type })
+  }
+
+  /** Invoca o POST com corpo multipart (espelha me-avatar `postReq`). O Request seta o boundary. */
+  function postMultipart(
+    id: string,
+    fields: { rating?: number | string; comment?: string; file?: File; removePhoto?: string },
+    headers?: Headers,
+  ): Promise<Response> {
+    const fd = new FormData()
+    if (fields.rating !== undefined) fd.append('rating', String(fields.rating))
+    if (fields.comment !== undefined) fd.append('comment', fields.comment)
+    if (fields.file) fd.append('file', fields.file)
+    if (fields.removePhoto !== undefined) fd.append('removePhoto', fields.removePhoto)
+    return reviewPost(new Request(`http://localhost/api/recipes/${id}/reviews`, { method: 'POST', body: fd, headers }), {
+      params: Promise.resolve({ id }),
+    })
+  }
+
+  async function photoUrlOf(id: string, userId: string): Promise<string | null> {
+    const [row] = await getDb()
+      .select({ photoUrl: recipeReview.photoUrl })
+      .from(recipeReview)
+      .where(and(eq(recipeReview.recipeId, id), eq(recipeReview.userId, userId)))
+    return row?.photoUrl ?? null
+  }
+  async function countRecipeImages(): Promise<number> {
+    const [row] = await getDb().select({ n: dsql<number>`count(*)::int` }).from(recipeImage)
+    return row?.n ?? 0
+  }
+
+  it('anexa foto ao CRIAR ⇒ photo_url gravado, blob guardado (webp), review pública mostra a foto', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-create-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-create-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const res = await postMultipart(id, { rating: 5, comment: 'ficou lindo', file: await realImageFile() }, headers)
+    expect(res.status).toBe(200)
+
+    const url = await photoUrlOf(id, uid)
+    expect(url).toBeTruthy()
+    expect(store.owns(url!)).toBe(true)
+    expect(store.blobs.has(url!)).toBe(true)
+    // C1: os bytes armazenados são o WEBP re-encodado pelo sharp (não os bytes crus enviados).
+    expect(store.blobs.get(url!)!.contentType).toBe('image/webp')
+
+    // a review PÚBLICA (GET cookie-free) expõe a foto.
+    const get = await getReviews(id)
+    const body = (await get.json()) as ListBody & { reviews: { photoUrl: string | null }[] }
+    expect(body.reviews[0].photoUrl).toBe(url)
+  })
+
+  it('editar TROCANDO a foto ⇒ blob antigo apagado, novo presente, photo_url = novo', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-swap-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-swap-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    await postMultipart(id, { rating: 4, file: await realImageFile('a.png') }, headers)
+    const first = await photoUrlOf(id, uid)
+    expect(store.blobs.has(first!)).toBe(true)
+
+    const res = await postMultipart(id, { rating: 5, file: await realImageFile('b.png') }, headers)
+    expect(res.status).toBe(200)
+    const second = await photoUrlOf(id, uid)
+
+    expect(second).not.toBe(first)
+    expect(store.blobs.has(first!)).toBe(false) // antigo apagado (superseded)
+    expect(store.blobs.has(second!)).toBe(true) // novo presente
+  })
+
+  it('editar REMOVENDO a foto (removePhoto) ⇒ photo_url null, blob antigo apagado', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-rm-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-rm-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    await postMultipart(id, { rating: 4, file: await realImageFile() }, headers)
+    const url = await photoUrlOf(id, uid)
+    expect(store.blobs.has(url!)).toBe(true)
+
+    const res = await postMultipart(id, { rating: 4, removePhoto: '1' }, headers)
+    expect(res.status).toBe(200)
+    expect(await photoUrlOf(id, uid)).toBeNull()
+    expect(store.blobs.has(url!)).toBe(false)
+  })
+
+  it('editar SEM tocar a foto (keep, JSON) ⇒ mantém a foto existente', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-keep-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-keep-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    await postMultipart(id, { rating: 4, file: await realImageFile() }, headers)
+    const url = await photoUrlOf(id, uid)
+
+    // edição via JSON (sem foto) NÃO mexe na photo_url (keep).
+    const res = await postReview(id, { rating: 2, comment: 'mudei a nota' }, headers)
+    expect(res.status).toBe(200)
+    expect(await photoUrlOf(id, uid)).toBe(url)
+    expect(store.blobs.has(url!)).toBe(true)
+  })
+
+  it('APAGAR review com foto ⇒ blob apagado', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-del-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-del-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    await postMultipart(id, { rating: 5, file: await realImageFile() }, headers)
+    const url = await photoUrlOf(id, uid)
+    expect(store.blobs.has(url!)).toBe(true)
+
+    const del = await deleteReview(id, headers)
+    expect(del.status).toBe(200)
+    expect(store.blobs.has(url!)).toBe(false)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('APAGAR review MODERADA (no-op) ⇒ blob NÃO apagado (foto persiste oculta)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-moddel-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-moddel-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    await postMultipart(id, { rating: 5, file: await realImageFile() }, headers)
+    const url = await photoUrlOf(id, uid)
+
+    // modera a linha direto no DB (moderatedAt + moderatedBy juntos — CHECK de consistência).
+    await getDb()
+      .update(recipeReview)
+      .set({ moderatedAt: new Date(), moderatedBy: owner })
+      .where(and(eq(recipeReview.recipeId, id), eq(recipeReview.userId, uid)))
+
+    const del = await deleteReview(id, headers)
+    expect(del.status).toBe(200)
+    // M4: delete de moderada é no-op ⇒ deletedPhotoUrl null ⇒ o blob PERSISTE.
+    expect(store.blobs.has(url!)).toBe(true)
+    expect(await countRows(id)).toBe(1) // a linha (moderada) persiste
+  })
+
+  it('tipo inválido ⇒ 400 tipo_invalido, nada armazenado, nada gravado', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-tipo-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-tipo-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const bad = new File(['oi'], 'a.txt', { type: 'text/plain' })
+    const res = await postMultipart(id, { rating: 5, file: bad }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('bytes não-decodificáveis (type forjado) ⇒ 400 tipo_invalido (sharp recusa), nada armazenado', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-garbage-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-garbage-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const forged = new File([new Uint8Array([1, 2, 3, 4])], 'x.png', { type: 'image/png' })
+    const res = await postMultipart(id, { rating: 5, file: forged }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('acima de 2MB ⇒ 400 arquivo_grande (checado ANTES de ler os bytes)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-grande-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-grande-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const tooBig = new File([new Uint8Array(2 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })
+    const res = await postMultipart(id, { rating: 5, file: tooBig }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'arquivo_grande' })
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('storage indisponível ⇒ 503 storage_indisponivel, avaliação NÃO criada', async () => {
+    setImageStore(new ThrowingImageStore())
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-503-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-503-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const res = await postMultipart(id, { rating: 5, file: await realImageFile() }, headers)
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toMatchObject({ error: 'storage_indisponivel' })
+    // store falha ANTES do upsert ⇒ a avaliação não existe (nada parcial).
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('GATE antes do STORE: auto-avaliação COM foto ⇒ 422 e NENHUM blob guardado', async () => {
+    const { userId: owner, headers } = await seedSessionHeaders({ email: 'foto-gate-owner@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const res = await postMultipart(id, { rating: 5, file: await realImageFile() }, headers)
+    expect(res.status).toBe(422)
+    await expect(res.json()).resolves.toMatchObject({ error: 'auto_avaliacao' })
+    // C2: o store roda DEPOIS do gate+decideReview ⇒ save rejeitado nunca queima o storage.
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('anexar foto NÃO cria linha em recipe_image (só o cano de blob; sem IA/lineage)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-noimg-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-noimg-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const before = await countRecipeImages()
+    const res = await postMultipart(id, { rating: 5, file: await realImageFile() }, headers)
+    expect(res.status).toBe(200)
+    expect(await countRecipeImages()).toBe(before) // NENHUMA entidade recipe_image tocada
+  })
+
+  it('caminho JSON sem foto continua funcionando (regressão) ⇒ photo_url null', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-json-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-json-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const res = await postReview(id, { rating: 4, comment: 'sem foto' }, headers)
+    expect(res.status).toBe(200)
+    expect(await photoUrlOf(id, uid)).toBeNull()
+
+    const get = await getReviews(id)
+    const body = (await get.json()) as ListBody & { reviews: { photoUrl: string | null }[] }
+    expect(body.reviews[0].photoUrl).toBeNull()
   })
 })

@@ -880,6 +880,15 @@ export const enUS: Messages = {
     motivoReport: 'Report reason',
     cancelarReport: 'Cancel',
     erroReport: 'Could not report. Try again.',
+    // #365: dish PHOTO on a review (upload/camera, NO AI). Add/change/remove + type/size/upload errors;
+    // `fotoAlt` is the alt text (content/proof, not decorative).
+    adicionarFoto: 'Add photo',
+    trocarFoto: 'Change photo',
+    removerFoto: 'Remove photo',
+    fotoTipoInvalido: 'Use a JPG, PNG or WebP image.',
+    fotoGrande: 'Image too large. Try a smaller one.',
+    erroFoto: 'Could not upload the photo. Try again.',
+    fotoAlt: 'Photo of the dish',
   },
   admin: {
     titulo: 'Admin console',
@@ -1070,6 +1079,9 @@ export const enUS: Messages = {
     avaliacaoNota: 'Rating',
     avaliacaoComentario: 'Comment',
     avaliacaoSemComentario: 'No comment',
+    // #365: the reported PHOTO, shown to the Curator (gated route) to judge with visibility.
+    avaliacaoFoto: 'Photo',
+    avaliacaoFotoAlt: 'Review photo',
     removerAvaliacao: 'Remove review',
     removendoAvaliacao: 'Removing review…',
     erroSemAvaliacao: 'This report is not about a review.',
