@@ -48,8 +48,9 @@ function cozinhaFilterSql(cozinhas: string[]) {
  * `sc` (saves) e `rc` (soma+contagem de notas) são subqueries SEPARADAS (uma linha por recipe_id). NUNCA
  * juntar `recipe_save × recipe_review` direto (multiplicaria as linhas). No nível do cozinheiro:
  * `total_saves = sum(sc.saves)`, `cook_count = sum(rc.rcount)`, `cook_avg = sum(rc.rsum)/nullif(sum(rc.rcount),0)`
- * (média VERDADEIRA, não avg-de-avgs). LANDMINES no `rc`: `moderated_at IS NULL` (nota moderada não infla)
- * + `ru.deleted_at IS NULL` (autor soft-deletado fora) + self-exclusão. `sc`/`rc` excluem auto-apreço
+ * (média VERDADEIRA, não avg-de-avgs). LANDMINES: no `rc` `moderated_at IS NULL` (nota moderada não infla)
+ * + `ru.deleted_at IS NULL` (autor soft-deletado fora); no `sc` `su.deleted_at IS NULL` (saver soft-deletado
+ * fora) — os DOIS honram o MESMO universo vivo (apreciador não soft-deletado). `sc`/`rc` excluem auto-apreço
  * (`x.user_id <> rr.owner_id`): salvar/avaliar... salvar a PRÓPRIA receita é permitido (social.ts), então
  * sem o filtro um Cozinheiro subiria sozinho apreciando o próprio trabalho (o owner do cozinheiro é
  * não-null ⇒ `<>` direto, sem o ramo NULL do catálogo). C = média global da nota (prior; fallback 3.0).
@@ -152,7 +153,9 @@ export async function loadRecommendedCooks(
         ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
       LEFT JOIN (
         SELECT rf.recipe_id AS recipe_id, count(*)::int AS saves
-        FROM recipe_save rf JOIN recipe rr ON rr.id = rf.recipe_id
+        FROM recipe_save rf
+        JOIN recipe rr ON rr.id = rf.recipe_id
+        JOIN users su ON su.id = rf.user_id AND su.deleted_at IS NULL -- saver soft-deletado fora (mesmo universo vivo da nota)
         WHERE rf.user_id <> rr.owner_id -- exclui auto-save (salvar a própria é permitido; owner não-null ⇒ <> direto)
         GROUP BY rf.recipe_id
       ) sc ON sc.recipe_id = r.id

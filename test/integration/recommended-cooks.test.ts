@@ -25,8 +25,9 @@ import { RECOMMENDED_COOK_RECIPES_LIMIT } from '@/domain/recommended-cooks-read'
  * ISOLAM o save, as notas ficam ausentes OU todas em `rating=3` (com `setup.ts` truncando antes, o C
  * global vira 3.0 e `bayes(3,·,3,·)=3` pra todos ⇒ o termo de nota fica FLAT e não distorce a ordem).
  * Cobre: ordem por save, anti-fan-out (save×nota NÃO multiplica), self-exclusão (auto-save/auto-nota),
- * nota MODERADA excluída, autor soft-deletado excluído, recência de desempate e o cursor FLOAT
- * (arredondado a 6 casas) caminhando TODAS as páginas sem duplicar/pular.
+ * nota MODERADA excluída, autor de nota soft-deletado excluído, SAVER soft-deletado excluído (mesmo universo
+ * vivo), recência de desempate e o cursor FLOAT (arredondado a 6 casas) caminhando TODAS as páginas sem
+ * duplicar/pular.
  *
  * As receitas do `seedCook` são semeadas SEM tradução: o ranking não junta `recipe_translation`.
  */
@@ -171,10 +172,13 @@ describe('loadRecommendedCooks (#368) — ranking pela mistura de popularidade',
   })
 
   it('autor de nota soft-deletado NÃO infla o cozinheiro', async () => {
-    // delAuthor: 1 save + 5 notas 5★ de autores que são soft-deletados DEPOIS (não contam). ok: 2 saves.
+    // delAuthor: 1 save + 20 notas 5★ de autores soft-deletados DEPOIS (não contam). ok: 2 saves.
+    // SHARP (não-vácuo): 20 notas ⇒ se o filtro `ru.deleted_at IS NULL` do `rc` caísse, bayes(5,20,C=3,m=20)=4.0
+    // e o score VAZADO de delAuthor (ln(2)+4.0=4.693) FURARIA ok (ln(3)+3.0=4.099), invertendo a ordem. Com o
+    // filtro, as notas somem, delAuthor cai pra ln(2)+3.0=3.693 e ok (2 saves) fica na frente.
     const delAuthor = await seedCook({ email: 'dela@c.test', handle: 'del-author' })
     await addSaves(delAuthor.recipeId, 1)
-    const reviewers = await seedOthers(5)
+    const reviewers = await seedOthers(20)
     for (const uid of reviewers) await seedReview({ userId: uid, recipeId: delAuthor.recipeId, rating: 5 })
     await getDb().update(users).set({ deletedAt: new Date() }).where(inArray(users.id, reviewers))
     const ok = await seedCook({ email: 'okc@c.test', handle: 'ok-cook' })
@@ -182,6 +186,21 @@ describe('loadRecommendedCooks (#368) — ranking pela mistura de popularidade',
 
     const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['ok-cook', 'del-author'])
+  })
+
+  it('saver soft-deletado NÃO infla o cozinheiro', async () => {
+    // vivo-saver: 1 save de usuário VIVO. morto-saver: 2 saves de usuários soft-deletados DEPOIS (não contam).
+    // SHARP: sem o `su.deleted_at IS NULL` do `sc`, morto-saver marcaria ln(3)+3.0=4.099 e FURARIA vivo-saver
+    // (ln(2)+3.0=3.693). Com o filtro, os saves de mortos somem ⇒ vivo-saver (1 save vivo) fica na frente.
+    const vivoSaver = await seedCook({ email: 'vs@c.test', handle: 'vivo-saver' })
+    await addSaves(vivoSaver.recipeId, 1)
+    const mortoSaver = await seedCook({ email: 'ms@c.test', handle: 'morto-saver' })
+    const savers = await seedOthers(2)
+    for (const uid of savers) await seedSave({ userId: uid, recipeId: mortoSaver.recipeId })
+    await getDb().update(users).set({ deletedAt: new Date() }).where(inArray(users.id, savers))
+
+    const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
+    expect(cooks.map((c) => c.handle)).toEqual(['vivo-saver', 'morto-saver'])
   })
 
   it('nota NÃO-moderada de terceiro CONTA (desempata acima do prior)', async () => {

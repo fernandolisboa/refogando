@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, it, expect, inject } from 'vitest'
 import type { Sql } from 'postgres'
+import { inArray } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
+import { users } from '@/db/schema'
 import { searchRecipes } from '@/server/recipe/search'
 import { EMBEDDING_MODEL } from '@/server/embedding/recompute'
 import { EMPTY_FACETS } from '@/domain/facet-params'
@@ -19,7 +21,9 @@ import { seedUser } from '../helpers/users'
  * cold-start"); as receitas são semeadas com `created_at` ~= now() ⇒ frescor ~igual pra todas ⇒ não
  * distorce a ordem DENTRO de um bucket. LANDMINES cobertas: self-save NÃO infla (write-path permite, o
  * ranking exclui), nota MODERADA NÃO infla (visível E bucket-2 semântico sob popularidade — o combo M1
- * que quebraria com created_at ausente no semanticSelectSql), catálogo imune, relevancia byte-idêntica.
+ * que quebraria com created_at ausente no semanticSelectSql), nota de AUTOR soft-deletado E SAVE de saver
+ * soft-deletado NÃO inflam (mesmo universo vivo — casa loadAggregate/C), catálogo imune, relevancia
+ * byte-idêntica.
  *
  * Vetores 1536-dim PINADOS (base canônica), bind via literal pgvector.
  */
@@ -247,6 +251,69 @@ describe('Busca da Comunidade — ordenação por Popularidade (#368)', () => {
     })
     // Se a moderada vazasse, `low` (nota alta) subiria; correto ⇒ `high` (2 saves) fica na frente.
     expect(indexOf(hits, high)).toBeLessThan(indexOf(hits, low))
+  })
+
+  // LANDMINE (mesmo universo vivo): a NOTA de um autor SOFT-DELETADO não infla — espelha loadAggregate/C. A
+  // fila fica pelo save. SHARP/não-vácuo: se o filtro `u.deleted_at IS NULL` do ratingAggBodySql caísse,
+  // bayes(5,20,C=3,m=20)=4.0 e o score vazado de `low` (ln(2)+4.0=4.693) furaria `high` (ln(3)+3.0=4.099),
+  // invertendo o bucket. O C global segue filtrando o autor morto ⇒ C=3.0 nos dois cenários.
+  it('nota de autor SOFT-DELETADO NÃO infla (tier visível): mais saves vence, autor morto ignorado', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `del-owner-${crypto.randomUUID()}@ex.com` })
+    const high = await seedCommunity(owner, 'Chili bem salvo', null)
+    await addSaves(high, 2, 'del-high') // 2 saves, 0 notas
+    const low = await seedCommunity(owner, 'Chili nota de morto', null)
+    await addSaves(low, 1, 'del-low')
+    // 20 notas 5★ de autores DISTINTOS, soft-deletados DEPOIS ⇒ não contam (nem no C, nem no agregado).
+    const reviewers: string[] = []
+    for (let i = 0; i < 20; i++) {
+      const uid = await seedUser({ email: `del-rev-${i}-${crypto.randomUUID()}@ex.com` })
+      reviewers.push(uid)
+      await seedReview({ userId: uid, recipeId: low, rating: 5 })
+    }
+    await db.update(users).set({ deletedAt: new Date() }).where(inArray(users.id, reviewers))
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+      sort: 'popularidade',
+    })
+    // Se a nota do autor morto vazasse, `low` subiria; correto ⇒ `high` (2 saves) fica na frente.
+    expect(indexOf(hits, high)).toBeLessThan(indexOf(hits, low))
+  })
+
+  // LANDMINE (mesmo universo vivo do SAVE): o save de um usuário SOFT-DELETADO não infla — casa a NOTA (os
+  // dois excluem apreciador morto). SHARP: se o `JOIN users ... deleted_at IS NULL` do savesAggBodySql caísse,
+  // `morto` (2 saves de mortos) marcaria ln(3)+3.0=4.099 e furaria `vivo` (ln(2)+3.0=3.693). Com o filtro os
+  // saves de mortos somem ⇒ `vivo` (1 save vivo) fica na frente.
+  it('save de usuário SOFT-DELETADO NÃO infla (tier visível): saver morto ignorado', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `dsave-owner-${crypto.randomUUID()}@ex.com` })
+    const vivo = await seedCommunity(owner, 'Chili salvo por vivo', null)
+    await addSaves(vivo, 1, 'dsave-vivo') // 1 save de usuário VIVO
+    const morto = await seedCommunity(owner, 'Chili salvo por mortos', null)
+    const savers: string[] = []
+    for (let i = 0; i < 2; i++) {
+      const uid = await seedUser({ email: `dsave-morto-${i}-${crypto.randomUUID()}@ex.com` })
+      savers.push(uid)
+      await seedSave({ userId: uid, recipeId: morto })
+    }
+    await db.update(users).set({ deletedAt: new Date() }).where(inArray(users.id, savers))
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+      sort: 'popularidade',
+    })
+    expect(indexOf(hits, vivo)).toBeLessThan(indexOf(hits, morto))
   })
 
   // Não-vácuo do filtro: uma nota NÃO-moderada idêntica DE FATO conta (a fila inverte). Como C = média

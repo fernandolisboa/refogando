@@ -7,7 +7,9 @@
  *
  * TRÊS SINAIS (ADR-0027 dec.5): SAVE (apreço abundante, low-friction — evita o cold-start), NOTA
  * (qualidade, via Bayesiana com shrinkage) e FRESCOR (recência, decay exponencial). Self-apreciação é
- * excluída no write-path do SQL, não aqui (isto é aritmética pura).
+ * excluída no write-path do SQL, não aqui (isto é aritmética pura). MESMO UNIVERSO VIVO nos dois sinais
+ * de apreço: o SQL descarta save E nota de apreciador soft-deletado (`deleted_at IS NULL`), pra o SAVE não
+ * inflar por um usuário morto enquanto a NOTA dele já cai fora.
  *
  * FRESCOR / TAU / M = CALIBRAGEM REVERSÍVEL: a FORMA (exp-decay + Bayesiana) é travada pelo ADR-0027
  * dec.5; os NÚMEROS (DEFAULT_POPULARITY_CONFIG) são knobs de produto, ajustáveis pelo admin sem deploy.

@@ -266,12 +266,18 @@ export type SearchLoaderResult = {
  * dono infla a própria receita salvando-a. NULL-safe pro CATÁLOGO (owner NULL): `rr.owner_id IS NULL OR
  * ...` (`NULL <> x` é NULL ⇒ a linha do catálogo sumiria). `count(*)::int` = number (não string de bigint).
  *
+ * MESMO UNIVERSO VIVO que a NOTA (ratingAggBodySql / loadGlobalRatingAverage): `JOIN users su ... AND
+ * su.deleted_at IS NULL` DESCARTA o save de quem foi soft-deletado — senão o apreço de um usuário morto
+ * seguiria inflando `wSave·ln(1+saves)` enquanto a nota dele já cai fora, quebrando a invariante do módulo.
+ * `recipe_save.user_id` é NOT NULL (componente da PK) ⇒ o JOIN é seguro, sem tratamento de NULL.
+ *
  * LANDMINE: NENHUM backtick dentro deste template. Comentários ficam AQUI, fora do `sql\`...\``.
  */
 const savesAggBodySql = sql`
   SELECT rf.recipe_id AS recipe_id, count(*)::int AS saves
   FROM recipe_save rf
   JOIN recipe rr ON rr.id = rf.recipe_id
+  JOIN users su ON su.id = rf.user_id AND su.deleted_at IS NULL
   WHERE (rr.owner_id IS NULL OR rf.user_id <> rr.owner_id)
   GROUP BY rf.recipe_id
 `
