@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -11,6 +11,13 @@ vi.mock('next/link', () => ({
       {children}
     </a>
   ),
+}))
+
+// #372: AuthSlot passou a ler `usePathname` (refetch ao navegar). Controlado por variável de
+// módulo; a mudança de pathname é exercitada via rerender.
+let mockPathname = '/pt-BR'
+vi.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
 }))
 
 // Factory de mock de sessão — shape COMPLETO de useSession (data/error/isPending/
@@ -70,6 +77,11 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
   beforeEach(() => {
     mockSession = fakeSession()
     signOut.mockClear()
+    mockPathname = '/pt-BR'
+  })
+  afterEach(() => {
+    // Restaura qualquer override de visibilityState pra não vazar entre testes no jsdom compartilhado.
+    vi.restoreAllMocks()
   })
 
   it('anônimo: mostra Entrar com href /sign-in, sem gatilho de conta nem Sair', () => {
@@ -219,6 +231,78 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     await openMenu(user, 'Ana')
     await user.click(screen.getByTestId('fora'))
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+  })
+
+  // #372 (ADR-0028 dec 5-B): refetch no foco / ao ficar visível / ao navegar — a chrome corrige
+  // papel velho em segundos, sem reload, sem toast.
+  it('refetcha no foco da aba e ao ficar visível', () => {
+    mockSession = authed()
+    renderSlot('pt-BR')
+    // O useSession já fez o fetch de mount (não instrumentado aqui); zeramos pra medir só os eventos.
+    mockSession.refetch.mockClear()
+
+    window.dispatchEvent(new Event('focus'))
+    expect(mockSession.refetch).toHaveBeenCalledTimes(1)
+
+    // Voltar a ficar visível também refetcha (dupla-chamada com focus é intencional/idempotente).
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(mockSession.refetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('visibilitychange com hide NÃO refetcha (guard do landmine)', () => {
+    mockSession = authed()
+    renderSlot('pt-BR')
+    mockSession.refetch.mockClear()
+
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(mockSession.refetch).not.toHaveBeenCalled()
+  })
+
+  it('refetcha ao navegar (pathname muda), pulando a 1ª renderização', () => {
+    mockSession = authed()
+    const { rerender } = renderSlot('pt-BR')
+    // Sem navegação ainda: o efeito B pula o 1º run (não duplica o fetch de mount do useSession).
+    mockSession.refetch.mockClear()
+
+    mockPathname = '/pt-BR/receitas'
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthSlot />
+      </LocaleProvider>,
+    )
+    expect(mockSession.refetch).toHaveBeenCalled()
+  })
+
+  it('promoção de papel reflete sem re-login (após refetch server-side)', async () => {
+    const user = userEvent.setup()
+    mockSession = authed({ role: 'usuario' })
+    const { rerender, unmount } = renderSlot('pt-BR')
+    await openMenu(user, 'Ana')
+    expect(screen.queryByRole('menuitem', { name: ptBR.nav.painel })).not.toBeInTheDocument()
+    // Fecha o menu portaleado antes de reabrir (flake conhecido da suíte ui).
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    // Modela o estado do servidor pós-refetch (admin promoveu esta pessoa a curador).
+    mockSession = authed({ role: 'curador' })
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthSlot />
+      </LocaleProvider>,
+    )
+    await openMenu(user, 'Ana')
+    expect(screen.getByRole('menuitem', { name: ptBR.nav.painel })).toHaveAttribute('href', '/admin')
+    unmount()
+  })
+
+  it('isPending não instala listeners de foco (efeito A com early-return)', () => {
+    mockSession = fakeSession({ isPending: true })
+    renderSlot('pt-BR')
+    mockSession.refetch.mockClear()
+    window.dispatchEvent(new Event('focus'))
+    expect(mockSession.refetch).not.toHaveBeenCalled()
   })
 
   it('isPending: espaçador com dimensão (aria-hidden), sem piscar Entrar/Sair', () => {
