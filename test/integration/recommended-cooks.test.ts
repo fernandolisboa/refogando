@@ -9,7 +9,7 @@ import { seedUser } from '../helpers/users'
 import {
   seedRecipe,
   seedVote,
-  seedFavorite,
+  seedSave,
   seedRemovedFromPool,
   seedTranslation,
   seedRecipeImage,
@@ -18,12 +18,12 @@ import { RECOMMENDED_COOK_RECIPES_LIMIT } from '@/domain/recommended-cooks-read'
 
 /**
  * Loader do trilho "Cozinheiros pra seguir" (#278, ADR-0024) contra Postgres real. Cobre o RANKING por
- * popularidade (apreço de TERCEIROS = votos+favoritos, somados; recência como desempate), as EXCLUSÕES
+ * popularidade (apreço de TERCEIROS = votos+saves, somados; recência como desempate), as EXCLUSÕES
  * (self, já-seguidos, soft-deletado, sem-receita-pública-elegível), o gate de elegibilidade (privada/
  * playful/moderada/web-imported/catálogo NUNCA contam nem aparecem) e a allowlist do DTO.
  *
  * As receitas são semeadas SEM tradução de propósito: a query do trilho não junta `recipe_translation`
- * (mostra só nome/@handle/avatar do Cozinheiro). Votos/favoritos são inseridos por OUTROS usuários
+ * (mostra só nome/@handle/avatar do Cozinheiro). Votos/saves são inseridos por OUTROS usuários
  * (apreço de terceiros) salvo nos testes que exercitam o filtro de auto-apreço.
  */
 
@@ -40,7 +40,7 @@ async function seedCook(opts: { email: string; handle: string; name?: string; re
   return { cookId, recipeId }
 }
 
-/** Vários "outros" usuários (votantes/favoritadores distintos do dono). */
+/** Vários "outros" usuários (votantes/salvadores distintos do dono). */
 async function seedVoters(n: number): Promise<string[]> {
   const ids: string[] = []
   for (let i = 0; i < n; i++) {
@@ -88,35 +88,35 @@ async function seedTitledRecipe(opts: {
 }
 
 describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
-  it('ordena por apreço de terceiros (votos+favoritos) desc', async () => {
+  it('ordena por apreço de terceiros (votos+saves) desc', async () => {
     const voters = await seedVoters(4)
     const pop = await seedCook({ email: 'pop@c.test', handle: 'pop' }) // 3 votos
-    const mid = await seedCook({ email: 'mid@c.test', handle: 'mid' }) // 1 voto + 1 favorito
-    const baixo = await seedCook({ email: 'baixo@c.test', handle: 'baixo' }) // 1 favorito
+    const mid = await seedCook({ email: 'mid@c.test', handle: 'mid' }) // 1 voto + 1 save
+    const baixo = await seedCook({ email: 'baixo@c.test', handle: 'baixo' }) // 1 save
 
     for (const v of voters.slice(0, 3)) await seedVote({ userId: v, recipeId: pop.recipeId })
     await seedVote({ userId: voters[0], recipeId: mid.recipeId })
-    await seedFavorite({ userId: voters[1], recipeId: mid.recipeId })
-    await seedFavorite({ userId: voters[0], recipeId: baixo.recipeId })
+    await seedSave({ userId: voters[1], recipeId: mid.recipeId })
+    await seedSave({ userId: voters[0], recipeId: baixo.recipeId })
 
     const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['pop', 'mid', 'baixo'])
   })
 
-  it('SOMA voto+favorito NA MESMA receita sem multiplicar (anti fan-out)', async () => {
-    // seis: 6 votos de terceiros = score 6 (SEM favoritos ⇒ fan-out impossível). Semeado PRIMEIRO
+  it('SOMA voto+save NA MESMA receita sem multiplicar (anti fan-out)', async () => {
+    // seis: 6 votos de terceiros = score 6 (SEM saves ⇒ fan-out impossível). Semeado PRIMEIRO
     // (receita mais antiga) de propósito: num bug de multiplicação, `cinco` empata em 6 e o desempate
     // por recência colocaria `cinco` (receita mais nova) À FRENTE de `seis` — quebrando a ordem abaixo.
     const seis = await seedCook({ email: 'seis@c.test', handle: 'seis' })
     for (const v of await seedVoters(6)) await seedVote({ userId: v, recipeId: seis.recipeId })
-    // cinco: 2 votos + 3 favoritos NA MESMA receita = score 5 CORRETO (um JOIN ingênuo daria 2×3 = 6).
+    // cinco: 2 votos + 3 saves NA MESMA receita = score 5 CORRETO (um JOIN ingênuo daria 2×3 = 6).
     const cinco = await seedCook({ email: 'cinco@c.test', handle: 'cinco' })
     const v5 = await seedVoters(5)
     await seedVote({ userId: v5[0], recipeId: cinco.recipeId })
     await seedVote({ userId: v5[1], recipeId: cinco.recipeId })
-    await seedFavorite({ userId: v5[2], recipeId: cinco.recipeId })
-    await seedFavorite({ userId: v5[3], recipeId: cinco.recipeId })
-    await seedFavorite({ userId: v5[4], recipeId: cinco.recipeId })
+    await seedSave({ userId: v5[2], recipeId: cinco.recipeId })
+    await seedSave({ userId: v5[3], recipeId: cinco.recipeId })
+    await seedSave({ userId: v5[4], recipeId: cinco.recipeId })
     // quatro: 4 votos = score 4.
     const quatro = await seedCook({ email: 'quatro@c.test', handle: 'quatro' })
     for (const v of await seedVoters(4)) await seedVote({ userId: v, recipeId: quatro.recipeId })
@@ -144,15 +144,15 @@ describe('loadRecommendedCooks (#278) — ranking por popularidade', () => {
     expect(cooks.map((c) => c.handle)).toEqual(['multi', 'solo']) // 3 > 1
   })
 
-  it('AUTO-favorito e AUTO-voto NÃO levantam o score (apreço de terceiros)', async () => {
+  it('AUTO-save e AUTO-voto NÃO levantam o score (apreço de terceiros)', async () => {
     const outro = (await seedVoters(1))[0]
-    // selfOnly: o dono favorita E vota na própria receita (raw insert burla o write-path). Score 0.
+    // selfOnly: o dono salva E vota na própria receita (raw insert burla o write-path). Score 0.
     const selfOnly = await seedCook({ email: 'self@c.test', handle: 'self-only' })
-    await seedFavorite({ userId: selfOnly.cookId, recipeId: selfOnly.recipeId })
+    await seedSave({ userId: selfOnly.cookId, recipeId: selfOnly.recipeId })
     await seedVote({ userId: selfOnly.cookId, recipeId: selfOnly.recipeId })
-    // umDeTerceiro: 1 favorito de OUTRO. Score 1 → fica ACIMA do selfOnly (que conta 0).
+    // umDeTerceiro: 1 save de OUTRO. Score 1 → fica ACIMA do selfOnly (que conta 0).
     const terceiro = await seedCook({ email: 'ter@c.test', handle: 'tem-um' })
-    await seedFavorite({ userId: outro, recipeId: terceiro.recipeId })
+    await seedSave({ userId: outro, recipeId: terceiro.recipeId })
 
     const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     expect(cooks.map((c) => c.handle)).toEqual(['tem-um', 'self-only'])

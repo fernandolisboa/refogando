@@ -18,12 +18,12 @@ import {
   seedTag,
   linkRecipeTag,
   seedVote,
-  seedFavorite,
+  seedSave,
 } from '../helpers/recipes'
 
 /**
  * APAGAR a própria receita (#21) — HARD delete: um único `DELETE FROM recipe WHERE id AND
- * owner_id` que CASCATEIA os filhos (traduções/itens/tags/votos/favoritos/embedding/report)
+ * owner_id` que CASCATEIA os filhos (traduções/itens/tags/votos/saves/embedding/report)
  * e faz SET NULL nas refs FRACAS (parent_recipe_id de derivadas de terceiros, etc). Porta
  * mais alta (handler DELETE). Modelo: recipe-derive.test.ts.
  */
@@ -79,7 +79,7 @@ async function countTable(table: string, recipeId: string): Promise<number> {
   return r.c
 }
 
-/** Semeia uma receita do dono com tradução + ingrediente + tag + voto + favorito. */
+/** Semeia uma receita do dono com tradução + ingrediente + tag + voto + save. */
 async function seedOwnComplete(ownerId: string, voterId: string, visibility: 'private' | 'public'): Promise<string> {
   const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility, ownerId })
   await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Receita', provenance: 'escrita_por_pessoa' })
@@ -87,13 +87,13 @@ async function seedOwnComplete(ownerId: string, voterId: string, visibility: 'pr
   const tagId = await seedTag('teste')
   await linkRecipeTag(id, tagId)
   await seedVote({ userId: voterId, recipeId: id })
-  await seedFavorite({ userId: voterId, recipeId: id })
+  await seedSave({ userId: voterId, recipeId: id })
   return id
 }
 
 describe('DELETE /api/recipes/[id] — apagar a própria receita (#21)', () => {
   // (a) apagar a própria ⇒ 204; linha some; filhos cascatam (contagens = 0).
-  it('(a) apagar a própria ⇒ 204; linha some; cascata zera traduções/itens/tags/votos/favoritos', async () => {
+  it('(a) apagar a própria ⇒ 204; linha some; cascata zera traduções/itens/tags/votos/saves', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'del-own@ex.com' })
     const { userId: voterId } = await seedSessionHeaders({ email: 'del-voter@ex.com' })
     const id = await seedOwnComplete(userId, voterId, 'private')
@@ -106,7 +106,7 @@ describe('DELETE /api/recipes/[id] — apagar a própria receita (#21)', () => {
     expect(await countTable('recipe_ingredient', id)).toBe(0)
     expect(await countTable('recipe_tag', id)).toBe(0)
     expect(await countTable('recipe_vote', id)).toBe(0)
-    expect(await countTable('recipe_favorite', id)).toBe(0)
+    expect(await countTable('recipe_save', id)).toBe(0)
   })
 
   // (b) apagar uma base de DERIVADA de TERCEIRO ⇒ derivada sobrevive com snapshot;

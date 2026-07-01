@@ -274,7 +274,7 @@ export async function editOwnRecipe(
 /**
  * HARD-delete da própria Receita (#21). Um único `DELETE FROM recipe WHERE id AND owner_id`:
  *  - CASCATEIA os filhos (recipe_translation/recipe_ingredient/recipe_tag/recipe_vote/
- *    recipe_favorite/recipe_embedding/report — todos ON DELETE cascade FROM recipe).
+ *    recipe_save/recipe_embedding/report — todos ON DELETE cascade FROM recipe).
  *  - SET-NULL nas refs FRACAS (parent_recipe_id de derivadas de TERCEIROS, creation_session.
  *    recipe_id, generation.recipe_id) ⇒ uma derivada de outro SOBREVIVE com snapshot completo,
  *    só perde o ponteiro pra base (história #157/#288).

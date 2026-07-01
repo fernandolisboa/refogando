@@ -40,3 +40,33 @@ export function eligibleForPool(r: {
     r.origin !== 'web_imported'
   )
 }
+
+/**
+ * Salvável PELO viewer (#362/ADR-0027 D2). Além do pool público, o DONO pode salvar a
+ * PRÓPRIA receita mesmo PRIVADA ("pra montar o caderno"). O ramo de ownership dispensa a
+ * visibilidade pública mas MANTÉM as demais barreiras do pool (não-playful, não-removida-
+ * por-moderação, não-importada-da-web). Receita privada de OUTRO segue fora ⇒ 404 leak-safe.
+ * NÃO afeta Voto: voto continua em eligibleForPool (pool público + não-autovoto).
+ */
+export function eligibleToSaveByViewer(
+  r: {
+    ownerId: string | null
+    visibility: string
+    resultKind: string
+    moderationRemovedAt: Date | null
+    origin: string
+    curationStatus: CurationStatus
+  },
+  viewerId: string,
+): boolean {
+  if (eligibleForPool(r)) return true
+  // Ramo de ownership: catálogo tem ownerId==null (null === string ⇒ false, tratado só pelo
+  // pool acima). Receita pública própria já passou pelo pool ⇒ aqui só dispara para a
+  // PRÓPRIA receita NÃO-pública, mantendo as demais barreiras.
+  return (
+    r.ownerId === viewerId &&
+    r.resultKind !== 'playful' &&
+    r.moderationRemovedAt == null &&
+    r.origin !== 'web_imported'
+  )
+}

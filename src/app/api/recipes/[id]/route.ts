@@ -103,8 +103,8 @@ export async function GET(
     // Ramo público COM cookie (com OU sem dono — #16): só vale descobrir o requester quando
     // há cookie (pula o anônimo puro — perf). Antes (#59) este ramo exigia `ownerId != null`,
     // o que NUNCA resolvia o viewerId no Catálogo (ownerId NULL); mas Catálogo É
-    // votável/favoritável (#16), então um logado que favoritou no Catálogo precisa ver
-    // `viewerFavorited` no detalhe. Resolver a sessão sempre que houver cookie corrige isso.
+    // votável/salvável (#16), então um logado que salvou no Catálogo precisa ver
+    // `viewerSaved` no detalhe. Resolver a sessão sempre que houver cookie corrige isso.
     // Lê só `g.ok`/`g.session`; JAMAIS `g.response` (leitura pública permanece
     // anônima-friendly, nunca vira 401/404 aqui). A sessão NÃO gateia a carga ⇒ sobrepomos
     // `requireSession` e `loadRecipeRows` (colapsa o round-trip serial do logado quente).
@@ -118,7 +118,7 @@ export async function GET(
   if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
 
   // Estado social (#16): `voteCount` SÓ no pool (isPublicRead) — omitido em owned-private;
-  // `viewerVoted`/`viewerFavorited` SÓ quando há viewerId. #134: a config de geração-por-IA
+  // `viewerVoted`/`viewerSaved` SÓ quando há viewerId. #134: a config de geração-por-IA
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
   // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
@@ -149,7 +149,7 @@ export async function GET(
     viewerId,
     voteCount: social.voteCount,
     viewerVoted: social.viewerVoted,
-    viewerFavorited: social.viewerFavorited,
+    viewerSaved: social.viewerSaved,
     imageGenEnabled,
     imageGenBlocked,
     gallery,
@@ -386,7 +386,7 @@ export async function PATCH(
     return Response.json({ error: 'translation_not_found' }, { status: 404 })
   }
 
-  // was_public (história #277): a UI confirma "isto fica visível a quem favoritou" SÓ na pública.
+  // was_public (história #277): a UI confirma "isto fica visível a quem salvou" SÓ na pública.
   // imageReviewSuggested (#131): a UI sugere revisar a foto após uma mudança visual numa Receita
   // com imagem (edição in-place mantém o mesmo image_id; só a sugestão importa).
   return Response.json(

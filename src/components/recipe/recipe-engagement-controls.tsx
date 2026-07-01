@@ -1,29 +1,29 @@
 'use client'
 
 /**
- * Controles de Engajamento da Comunidade (#62) — bloco de VOTO + FAVORITO na tela de
+ * Controles de Engajamento da Comunidade (#62/#362) — bloco de VOTO + SALVAR na tela de
  * detalhe. Irmão do `RecipeDetailView` (que continua PURO, sem hooks): a page renderiza
  * isto SÓ quando a Receita está no POOL público (`voteCount` presente).
  *
- * ESTADO DO VIEWER (votou?/favoritou?), duas origens (#230, ADR-0020):
+ * ESTADO DO VIEWER (votou?/salvou?), duas origens (#230, ADR-0020):
  *  - Caminho do DONO (dinâmico, cookie): o server JÁ resolve e passa `initialViewerVoted`/
- *    `initialViewerFavorited` ⇒ render direto, sem fetch.
+ *    `initialViewerSaved` ⇒ render direto, sem fetch.
  *  - Caminho PÚBLICO/cacheável: o server lê ANÔNIMO (sem cookie) pra ficar cacheável, então
  *    AMBOS chegam `undefined`. Aqui é que o flash de "Entrar para votar" pra quem ESTÁ logado
  *    morava: o componente precisa resolver o estado NO CLIENTE. Com sessão (`useSession`), se
- *    logado, busca `GET /api/recipes/[id]/social` e hidrata voto/favorito/dono reais; se anônimo,
+ *    logado, busca `GET /api/recipes/[id]/social` e hidrata voto/save/dono reais; se anônimo,
  *    mostra o convite "Entrar para..."; enquanto a sessão/fetch pendem, não pisca nem botão nem
  *    convite (só a contagem read-only).
  *
- * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{vote,unvote,favorite,
- * unfavorite}` via `fetch` (NÃO Server Action). O servidor é a verdade — impõe sessão
- * (401), não-autovoto (422 `auto_voto`) e o gate de pool (404); isto é AFORDÂNCIA: aplica
+ * ADR-0010: consome os ROUTE HANDLERS `POST /api/recipes/[id]/{vote,unvote,save,
+ * unsave}` via `fetch` (NÃO Server Action). O servidor é a verdade — impõe sessão
+ * (401), não-autovoto (422 `auto_voto`) e o gate de pool/salvar (404); isto é AFORDÂNCIA: aplica
  * otimismo no clique, espelha a resposta no sucesso, REVERTE no erro com mensagem neutra
  * única (não diferencia 401/422/404 pro usuário).
  *
  * Shapes de resposta DISJUNTOS (verificado no backend #16): vote/unvote devolvem
- * `{voteCount, viewerVoted}`; favorite/unfavorite devolvem APENAS `{viewerFavorited}`. Por
- * isso cada handler lê SÓ a sua fatia — favoritar NUNCA mexe em voteCount/voted (um spread
+ * `{voteCount, viewerVoted}`; save/unsave devolvem APENAS `{viewerSaved}`. Por
+ * isso cada handler lê SÓ a sua fatia — salvar NUNCA mexe em voteCount/voted (um spread
  * do objeto inteiro zeraria o voto).
  *
  * Cores: só tokens já AA-verificados na #54 (brand/neutros). ÂMBAR (`aviso-*`) é PROIBIDO
@@ -41,13 +41,13 @@ export function RecipeEngagementControls({
   recipeId,
   initialVoteCount,
   initialViewerVoted,
-  initialViewerFavorited,
+  initialViewerSaved,
   canManage,
 }: {
   recipeId: string
   initialVoteCount?: number
   initialViewerVoted?: boolean
-  initialViewerFavorited?: boolean
+  initialViewerSaved?: boolean
   canManage: boolean
 }) {
   const { messages } = useLocale()
@@ -57,7 +57,7 @@ export function RecipeEngagementControls({
   // O server entregou o estado do viewer? SÓ o caminho do DONO (dinâmico, com cookie) o faz; o
   // caminho PÚBLICO/cacheável (ADR-0020) lê anônimo e DEIXA ambos ausentes — daí resolvemos no
   // cliente. "Resolvido pelo server" = QUALQUER um dos dois presente (saem juntos do loader).
-  const serverResolved = initialViewerVoted !== undefined || initialViewerFavorited !== undefined
+  const serverResolved = initialViewerVoted !== undefined || initialViewerSaved !== undefined
 
   // Sessão do cliente (espelha RecipeDetailActions): só conta como logado quando RESOLVIDA, sem erro
   // e com dados. Enquanto pende, não decidimos nada (evita flash do convite pra quem está logado).
@@ -65,12 +65,12 @@ export function RecipeEngagementControls({
   const loggedIn = sessionSettled && !session.error && !!session.data
 
   const [voted, setVoted] = useState(!!initialViewerVoted)
-  const [favorited, setFavorited] = useState(!!initialViewerFavorited)
+  const [saved, setSaved] = useState(!!initialViewerSaved)
   const [voteCount, setVoteCount] = useState<number | undefined>(initialVoteCount)
   const [voteBusy, setVoteBusy] = useState(false)
-  const [favBusy, setFavBusy] = useState(false)
+  const [saveBusy, setSaveBusy] = useState(false)
   const [voteError, setVoteError] = useState(false)
-  const [favError, setFavError] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   // Quando o server NÃO resolveu (caminho público), o estado do viewer chega de um fetch client-side.
   // `clientResolved` parte de `serverResolved`: já resolvido no caminho do dono (nada a buscar). No
   // caminho público vira true quando o GET /social responde (ou falha — degradação graciosa).
@@ -78,9 +78,9 @@ export function RecipeEngagementControls({
   // Dono resolvido no cliente (caminho público não traz `canManage`): esconde o voto do próprio dono.
   const [ownerClient, setOwnerClient] = useState(false)
 
-  // Caminho público + logado: resolve voto/favorito/dono do PRÓPRIO viewer (a página é cacheável e não
+  // Caminho público + logado: resolve voto/save/dono do PRÓPRIO viewer (a página é cacheável e não
   // pode personalizar no server). Anônimo NÃO busca (daria 401 e o convite "Entrar" é o certo). O fetch
-  // dispara quando a sessão vira logada; falha ⇒ resolve com os defaults (não-votado/não-favoritado),
+  // dispara quando a sessão vira logada; falha ⇒ resolve com os defaults (não-votado/não-salvo),
   // pra não travar logado no convite nem quebrar — o server corrige no clique.
   useEffect(() => {
     if (serverResolved || !loggedIn) return
@@ -91,11 +91,11 @@ export function RecipeEngagementControls({
         if (res.ok) {
           const body = (await res.json()) as {
             viewerVoted?: boolean
-            viewerFavorited?: boolean
+            viewerSaved?: boolean
             isOwner?: boolean
           }
           setVoted(!!body.viewerVoted)
-          setFavorited(!!body.viewerFavorited)
+          setSaved(!!body.viewerSaved)
           setOwnerClient(!!body.isOwner)
         }
         setClientResolved(true)
@@ -109,7 +109,7 @@ export function RecipeEngagementControls({
   }, [recipeId, serverResolved, loggedIn])
 
   // O DONO não vota na própria Receita (AC2 — o servidor reforça com 422). O botão de voto some; a
-  // CONTAGEM read-only e o FAVORITAR permanecem (dono pode favoritar a própria). `canManage` vem só no
+  // CONTAGEM read-only e o SALVAR permanecem (dono pode salvar a própria). `canManage` vem só no
   // caminho do dono; no público o dono é descoberto pelo fetch (`ownerClient`).
   const showVote = !canManage && !ownerClient
 
@@ -154,7 +154,7 @@ export function RecipeEngagementControls({
       const body = (await res.json()) as { voteCount?: number; viewerVoted: boolean }
       // Servidor é a verdade: corrige o otimismo SÓ na fatia de voto. NÃO chamamos
       // `router.refresh()`: o corpo do POST já é autoritativo (o estado exibido vem dele) e
-      // nada na page deriva de voto/favorito (o `RecipeDetailView` não os lê), então um
+      // nada na page deriva de voto/save (o `RecipeDetailView` não os lê), então um
       // re-fetch server-side da árvore inteira seria trabalho descartado — os props frescos
       // só alimentam inicializadores de `useState`, que não re-rodam sem remontar.
       setVoted(body.viewerVoted)
@@ -168,35 +168,35 @@ export function RecipeEngagementControls({
     }
   }
 
-  async function handleFavorite() {
-    if (favBusy) return
-    setFavBusy(true)
-    setFavError(false)
+  async function handleSave() {
+    if (saveBusy) return
+    setSaveBusy(true)
+    setSaveError(false)
 
-    const prevFavorited = favorited
-    setFavorited(!prevFavorited)
+    const prevSaved = saved
+    setSaved(!prevSaved)
 
     try {
       const res = await fetch(
-        `/api/recipes/${recipeId}/${prevFavorited ? 'unfavorite' : 'favorite'}`,
+        `/api/recipes/${recipeId}/${prevSaved ? 'unsave' : 'save'}`,
         { method: 'POST' },
       )
       if (!res.ok) {
-        setFavorited(prevFavorited)
-        setFavError(true)
+        setSaved(prevSaved)
+        setSaveError(true)
         return
       }
-      // /favorite e /unfavorite devolvem SÓ `{viewerFavorited}` — lê APENAS essa fatia.
+      // /save e /unsave devolvem SÓ `{viewerSaved}` — lê APENAS essa fatia.
       // NUNCA spread/replace do objeto de estado (zeraria voteCount/voted).
-      const body = (await res.json()) as { viewerFavorited: boolean }
-      setFavorited(body.viewerFavorited)
+      const body = (await res.json()) as { viewerSaved: boolean }
+      setSaved(body.viewerSaved)
       // Sem `router.refresh()`: idem handleVote — o corpo do POST é autoritativo e nada na
-      // page deriva do favorito, então o round-trip full-page seria descartado.
+      // page deriva do save, então o round-trip full-page seria descartado.
     } catch {
-      setFavorited(prevFavorited)
-      setFavError(true)
+      setSaved(prevSaved)
+      setSaveError(true)
     } finally {
-      setFavBusy(false)
+      setSaveBusy(false)
     }
   }
 
@@ -233,7 +233,7 @@ export function RecipeEngagementControls({
               </Button>
             )}
             <Button asChild variant="secondary">
-              <Link href="/sign-in">{m.convidaEntrarFavorito}</Link>
+              <Link href="/sign-in">{m.convidaEntrarSalvar}</Link>
             </Button>
           </>
         ) : (
@@ -253,14 +253,14 @@ export function RecipeEngagementControls({
             )}
             <Button
               type="button"
-              onClick={handleFavorite}
-              disabled={favBusy}
-              aria-pressed={favorited}
-              aria-busy={favBusy}
-              variant={favorited ? 'default' : 'secondary'}
+              onClick={handleSave}
+              disabled={saveBusy}
+              aria-pressed={saved}
+              aria-busy={saveBusy}
+              variant={saved ? 'default' : 'secondary'}
               className="disabled:opacity-70"
             >
-              {favorited ? m.favoritado : m.favoritar}
+              {saved ? m.salvo : m.salvar}
             </Button>
           </>
         )}
@@ -273,10 +273,10 @@ export function RecipeEngagementControls({
           </AlertDescription>
         </Alert>
       )}
-      {favError && (
+      {saveError && (
         <Alert variant="info" role="alert">
           <AlertDescription className="font-medium text-foreground">
-            {m.erroFavorito}
+            {m.erroSalvar}
           </AlertDescription>
         </Alert>
       )}

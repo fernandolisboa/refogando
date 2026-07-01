@@ -161,7 +161,7 @@ export default async function RecipeDetailPage({
     const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
       // Contagem de votos: agregado PÚBLICO de pool — anônimo, sem cookie (não personaliza nem força
-      // dinâmico). `viewerVoted`/`viewerFavorited` ficam AUSENTES (anônimo) — o estado do viewer é
+      // dinâmico). `viewerVoted`/`viewerSaved` ficam AUSENTES (anônimo) — o estado do viewer é
       // resolvido no cliente pelos controles quando logado. Mantém a rota cacheável.
       const social = await loadSocialState(getDb(), {
         id: publicRows.recipe.id,
@@ -333,7 +333,7 @@ async function DetailChrome({
         catalogDisclosure={catalogDisclosure}
       />
       {/* Engajamento (#62): gate pela presença do agregado de pool (`voteCount`). No caminho público
-          o anônimo VÊ a contagem; `viewerVoted`/`viewerFavorited` ausentes (resolvidos no cliente).
+          o anônimo VÊ a contagem; `viewerVoted`/`viewerSaved` ausentes (resolvidos no cliente).
           `key={view.id}`: REMONTA por receita — numa navegação detalhe→detalhe in-place o React reusaria
           a instância (props mudam, `useState` NÃO re-inicializa), carregando voto/contagem/estado-do-viewer
           da receita anterior (e o fetch client-side só corrige depois). A key força estado fresco. */}
@@ -343,7 +343,7 @@ async function DetailChrome({
           recipeId={view.id}
           initialVoteCount={view.voteCount}
           initialViewerVoted={view.viewerVoted}
-          initialViewerFavorited={view.viewerFavorited}
+          initialViewerSaved={view.viewerSaved}
           canManage={view.canManage ?? false}
         />
       )}

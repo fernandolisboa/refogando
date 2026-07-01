@@ -185,13 +185,13 @@ export type ResolveInput = {
    *  - `voteCount`: agregado PÚBLICO. O server só o passa quando a Receita está no POOL
    *    (isPublicRead) — omitido em owned-private (necessariamente 0, irrelevante, e não é
    *    conteúdo de pool). Quando `undefined`, a vista OMITE `voteCount`.
-   *  - `viewerVoted`/`viewerFavorited`: estado do PRÓPRIO viewer. O server só os carrega
+   *  - `viewerVoted`/`viewerSaved`: estado do PRÓPRIO viewer. O server só os carrega
    *    quando há `viewerId`. A projeção é gateada por `viewerId != null` (viewer-self,
    *    distinto de canManage que é owner-only): anônimo ⇒ ausentes.
    */
   voteCount?: number
   viewerVoted?: boolean
-  viewerFavorited?: boolean
+  viewerSaved?: boolean
   /**
    * Autoria (#129) — `name` + `handle` PÚBLICOS do dono, que o server carrega via JOIN em `users`
    * sobre `recipe.owner_id`. Insumo do crédito "por <name>" linkando `/u/<handle>` no detalhe.
@@ -440,13 +440,13 @@ export type RecipeView = {
    */
   voteCount?: number
   /**
-   * Estado do PRÓPRIO viewer (#16) — `viewerVoted`/`viewerFavorited`. Presentes SÓ quando
+   * Estado do PRÓPRIO viewer (#16) — `viewerVoted`/`viewerSaved`. Presentes SÓ quando
    * há `viewerId` (ator autenticado vê SÓ o próprio estado); AUSENTES para anônimo. Saem
    * JUNTOS. NÃO gateados por ownership (viewer-self, distinto de canManage owner-only): um
-   * usuário logado vê seu próprio voto/favorito mesmo na Receita de outro / no Catálogo.
+   * usuário logado vê seu próprio voto/save mesmo na Receita de outro / no Catálogo.
    */
   viewerVoted?: boolean
-  viewerFavorited?: boolean
+  viewerSaved?: boolean
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
@@ -795,7 +795,7 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     ...(input.viewerId != null
       ? {
           viewerVoted: input.viewerVoted ?? false,
-          viewerFavorited: input.viewerFavorited ?? false,
+          viewerSaved: input.viewerSaved ?? false,
         }
       : {}),
   }
