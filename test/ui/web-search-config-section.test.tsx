@@ -164,7 +164,7 @@ describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
     // um sugerido AUSENTE segue habilitado.
     expect(
       screen.getByRole('button', {
-        name: A.webSugeridoAdicionarAria.replace('{dominio}', 'panelinha.com.br'),
+        name: A.webSugeridoAdicionarAria.replace('{dominio}', 'cybercook.com.br'),
       }),
     ).toBeEnabled()
   })

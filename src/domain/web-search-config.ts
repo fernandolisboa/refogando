@@ -40,12 +40,47 @@ export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
 const MAX_ALLOWLIST = 50
 
 /**
- * Canonicaliza um domínio cru da allowlist: trim + minúsculo + remove `www.` líder + remove um ponto
- * final. Devolve `null` para entradas que NÃO são um hostname plausível (vazio, com espaço, com
- * esquema/porta/caminho, sem ponto). Mantém a comparação de domínio simples e robusta (`isUrlAllowed`
- * casa o host da URL contra estes valores canônicos).
+ * DENYLIST de ToS (#394, `docs/legal/revisao-tos-allowlist.md` §4.3) — fonte ÚNICA. Domínios com
+ * cláusula de Termos de Uso lida VERBATIM que colide com a conduta do app (automação / reprodução /
+ * armazenamento em banco). Guard em CÓDIGO: `canonicalizeDomain` os rejeita, então NEM o admin pode
+ * adicioná-los à allowlist por engano (o host exato E qualquer subdomínio — mesma lógica de rótulo de
+ * `hostMatchesAllowlist`). Só RESTRINGE acesso → risco jurídico zero. REVERSÍVEL: se o jurídico
+ * entender a cláusula inoponível, remove-se o host daqui. Entradas em forma canônica (minúsculo, sem
+ * `www.`). Os 7 domínios "revisar manual" (§4.5) NÃO entram aqui — ficam de fora por curadoria, não por
+ * trava (falta leitura verbatim).
  */
-export function canonicalizeDomain(raw: unknown): string | null {
+export const TOS_DENYLIST: readonly string[] = [
+  // panelinha.com.br — ToS 3.3 veda "qualquer sistema automatizado, inclusive... 'robôs', 'spiders',
+  // 'scripts' ou 'offline readers'"; 6.2 veda "toda e qualquer forma de reprodução... total ou parcial".
+  'panelinha.com.br',
+  // guiadacozinha.com.br — Propriedade Intelectual: proíbe "download de nosso conteúdo para armazená-lo
+  // em banco de dados" e criar "base de dados ou serviço que possa concorrer... com a plataforma".
+  'guiadacozinha.com.br',
+  // foodnetwork.com — ToS (Scripps Networks): vedam "robot or spider... to copy or 'scrape' the
+  // Websites or Website Content for any purpose without the express written permission".
+  'foodnetwork.com',
+]
+
+/**
+ * Um host cai na denylist de ToS se ele É um domínio vetado OU um SUBDOMÍNIO dele. Espelha a lógica de
+ * rótulo de `hostMatchesAllowlist` (boundary via ponto: `evil-panelinha.com.br` NÃO casa
+ * `panelinha.com.br`). O host chega já canônico (minúsculo, sem `www.`, sem ponto final). PURO.
+ */
+function hostMatchesDenylist(host: string): boolean {
+  for (const domain of TOS_DENYLIST) {
+    if (host === domain || host.endsWith('.' + domain)) return true
+  }
+  return false
+}
+
+/**
+ * Normaliza um domínio cru para a forma canônica (trim + minúsculo + sem `www.` líder + sem ponto
+ * final), SEM aplicar a denylist. Devolve `null` para entradas que NÃO são um hostname plausível
+ * (vazio, com espaço, com esquema/porta/caminho, sem ponto). Base compartilhada por
+ * `canonicalizeDomain` (que ainda aplica o guard de ToS) e por `deniedDomainsIn` (que precisa
+ * reconhecer o host vetado ANTES de rejeitá-lo, pra reportar o motivo). PURO.
+ */
+function normalizeHost(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   let d = raw.trim().toLowerCase()
   if (d === '') return null
@@ -58,6 +93,46 @@ export function canonicalizeDomain(raw: unknown): string | null {
   // Caracteres válidos de hostname (rótulos alfanuméricos + hífen, separados por ponto).
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return null
   return d
+}
+
+/**
+ * Canonicaliza um domínio cru da allowlist: trim + minúsculo + remove `www.` líder + remove um ponto
+ * final. Devolve `null` para entradas que NÃO são um hostname plausível (vazio, com espaço, com
+ * esquema/porta/caminho, sem ponto) OU para hosts vetados por ToS (`TOS_DENYLIST`, host exato ou
+ * subdomínio — #394). Mantém a comparação de domínio simples e robusta (`isUrlAllowed` casa o host da
+ * URL contra estes valores canônicos).
+ */
+export function canonicalizeDomain(raw: unknown): string | null {
+  const d = normalizeHost(raw)
+  if (d === null) return null
+  // #394: guard de ToS — hosts vetados (e subdomínios) NUNCA viram allowlist, nem por engano do admin.
+  if (hostMatchesDenylist(d)) return null
+  return d
+}
+
+/**
+ * Os domínios de um PUT cru de `webSearch` que caem na denylist de ToS (host exato ou subdomínio), na
+ * forma canônica e sem repetição. Vazio = nenhum vetado. Usado pela rota admin pra devolver 400 com
+ * MOTIVO claro (`dominio_vetado` + a lista) em vez do genérico `config_invalida` — sem engolir a
+ * rejeição em silêncio. Aceita o objeto `webSearch` cru OU um array cru; lixo ⇒ `[]`. PURO.
+ */
+export function deniedDomainsIn(rawWebSearch: unknown): string[] {
+  const rawAllowlist = Array.isArray(rawWebSearch)
+    ? rawWebSearch
+    : typeof rawWebSearch === 'object' && rawWebSearch !== null
+      ? (rawWebSearch as { allowlist?: unknown }).allowlist
+      : undefined
+  if (!Array.isArray(rawAllowlist)) return []
+  const denied: string[] = []
+  const seen = new Set<string>()
+  for (const item of rawAllowlist) {
+    const h = normalizeHost(item)
+    if (h !== null && hostMatchesDenylist(h) && !seen.has(h)) {
+      seen.add(h)
+      denied.push(h)
+    }
+  }
+  return denied
 }
 
 /**

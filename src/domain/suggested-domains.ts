@@ -14,24 +14,18 @@ import { canonicalizeDomain } from '@/domain/web-search-config'
 /**
  * Listas curadas por locale-origem. Renderizadas as DUAS (a allowlist é global — pt-BR e en-US consomem
  * a mesma), sob rótulos "Brasil"/"Internacional". Todas as entradas já são CANÔNICAS (minúsculas, sem
- * `www.`, hostname válido) — o teste de paridade trava isso.
+ * `www.`, hostname válido) — o teste de paridade trava isso. NÃO pode conter domínio da `TOS_DENYLIST`
+ * (#394): sugerir um host que a allowlist rejeita seria um chip morto e contradiz o guard de ToS — por
+ * isso panelinha/guiadacozinha/foodnetwork saíram desta lista.
  */
 export const SUGGESTED_DOMAINS: { 'pt-BR': string[]; 'en-US': string[] } = {
   'pt-BR': [
     'tudogostoso.com.br',
-    'panelinha.com.br',
     'cybercook.com.br',
     'receiteria.com.br',
-    'guiadacozinha.com.br',
     'receitasnestle.com.br',
   ],
-  'en-US': [
-    'allrecipes.com',
-    'simplyrecipes.com',
-    'seriouseats.com',
-    'foodnetwork.com',
-    'bbcgoodfood.com',
-  ],
+  'en-US': ['allrecipes.com', 'simplyrecipes.com', 'seriouseats.com', 'bbcgoodfood.com'],
 }
 
 /** Conjunto dos domínios CANÔNICOS já presentes no texto (linhas-lixo viram null e são descartadas). */

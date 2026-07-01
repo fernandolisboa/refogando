@@ -4,6 +4,8 @@ import {
   parseAllowlist,
   parseWebSearchConfig,
   isUrlAllowed,
+  deniedDomainsIn,
+  TOS_DENYLIST,
   DEFAULT_WEB_SEARCH_CONFIG,
 } from '@/domain/web-search-config'
 
@@ -16,7 +18,7 @@ import {
 describe('canonicalizeDomain', () => {
   it('minúsculo + tira www. + ponto final', () => {
     expect(canonicalizeDomain('WWW.TudoGostoso.com.br')).toBe('tudogostoso.com.br')
-    expect(canonicalizeDomain('panelinha.com.br.')).toBe('panelinha.com.br')
+    expect(canonicalizeDomain('tudogostoso.com.br.')).toBe('tudogostoso.com.br')
     expect(canonicalizeDomain('  exemplo.com  ')).toBe('exemplo.com')
   })
 
@@ -51,6 +53,72 @@ describe('parseAllowlist', () => {
   it('acima do teto ⇒ null', () => {
     const big = Array.from({ length: 51 }, (_, i) => `d${i}.com`)
     expect(parseAllowlist(big)).toBeNull()
+  })
+})
+
+describe('TOS_DENYLIST — guard de domínios vetados por ToS (#394)', () => {
+  it('a const lista os 3 hosts vetados, em forma canônica', () => {
+    expect([...TOS_DENYLIST]).toEqual(
+      expect.arrayContaining(['panelinha.com.br', 'guiadacozinha.com.br', 'foodnetwork.com']),
+    )
+    // Cada entrada já é canônica por si (sem www., minúsculo, hostname válido) — mas NÃO passa por
+    // canonicalizeDomain (que a rejeita de propósito). Garante que ninguém digitou lixo na const.
+    for (const d of TOS_DENYLIST) {
+      expect(d).toBe(d.trim().toLowerCase())
+      expect(d.startsWith('www.')).toBe(false)
+      expect(d.includes('.')).toBe(true)
+    }
+  })
+
+  it('canonicalizeDomain rejeita o host EXATO vetado (e variações www./maiúscula/ponto)', () => {
+    expect(canonicalizeDomain('panelinha.com.br')).toBeNull()
+    expect(canonicalizeDomain('WWW.Panelinha.com.br')).toBeNull()
+    expect(canonicalizeDomain('foodnetwork.com.')).toBeNull()
+    expect(canonicalizeDomain('guiadacozinha.com.br')).toBeNull()
+  })
+
+  it('canonicalizeDomain rejeita SUBDOMÍNIOS dos hosts vetados', () => {
+    expect(canonicalizeDomain('m.panelinha.com.br')).toBeNull()
+    expect(canonicalizeDomain('blog.foodnetwork.com')).toBeNull()
+    expect(canonicalizeDomain('www.receitas.guiadacozinha.com.br')).toBeNull()
+  })
+
+  it('NÃO rejeita look-alikes que só compartilham sufixo (boundary de rótulo)', () => {
+    // `evil-panelinha.com.br` NÃO é subdomínio de `panelinha.com.br` — o ponto delimita o rótulo.
+    expect(canonicalizeDomain('evil-panelinha.com.br')).toBe('evil-panelinha.com.br')
+    expect(canonicalizeDomain('notfoodnetwork.com')).toBe('notfoodnetwork.com')
+  })
+
+  it('parseAllowlist: um vetado no lote ⇒ rejeita o LOTE inteiro (null), como qualquer inválido', () => {
+    expect(parseAllowlist(['tudogostoso.com.br', 'panelinha.com.br'])).toBeNull()
+    expect(parseAllowlist(['a.com', 'm.foodnetwork.com', 'b.com'])).toBeNull()
+    // lote 100% limpo continua passando
+    expect(parseAllowlist(['tudogostoso.com.br', 'cybercook.com.br'])).toEqual([
+      'tudogostoso.com.br',
+      'cybercook.com.br',
+    ])
+  })
+
+  it('parseWebSearchConfig rejeita a config quando a allowlist inclui um vetado', () => {
+    expect(
+      parseWebSearchConfig({ enabled: true, allowlist: ['guiadacozinha.com.br'] }),
+    ).toEqual({ ok: false })
+  })
+
+  it('deniedDomainsIn reporta os hosts vetados do PUT cru (host exato + subdomínio, dedup canônico)', () => {
+    expect(
+      deniedDomainsIn({ enabled: true, allowlist: ['tudogostoso.com.br', 'WWW.Panelinha.com.br'] }),
+    ).toEqual(['panelinha.com.br'])
+    // reporta cada host ofensor como digitado (normalizado) — inclusive subdomínio distinto do root
+    expect(deniedDomainsIn({ enabled: true, allowlist: ['m.foodnetwork.com', 'foodnetwork.com'] })).toEqual([
+      'm.foodnetwork.com',
+      'foodnetwork.com',
+    ])
+    // aceita também um array cru; nenhum vetado ⇒ vazio
+    expect(deniedDomainsIn(['tudogostoso.com.br', 'cybercook.com.br'])).toEqual([])
+    // entradas não-array / lixo ⇒ vazio (não estoura)
+    expect(deniedDomainsIn({ enabled: true, allowlist: 'x' })).toEqual([])
+    expect(deniedDomainsIn(null)).toEqual([])
   })
 })
 
