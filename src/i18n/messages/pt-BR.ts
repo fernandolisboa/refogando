@@ -31,6 +31,21 @@ export const ptBR = {
     menu: 'Menu',
     menuDescricao: 'Navegação do site e conta',
   },
+  // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
+  // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
+  // `renderNotification` escolhe a chave por tipo e interpola `{name}` por `String.replace`. Chaves
+  // FLAT (a seção é folha-de-string): o tipo `Messages` deriva só 2 níveis, então nada de sub-objeto.
+  notifications: {
+    ariaLabel: 'Notificações',
+    tituloPainel: 'Notificações',
+    vazio: 'Nenhuma notificação',
+    // Evento `new_follower` — {name} = nome do ator (interpolado na renderização).
+    novoSeguidor: '{name} começou a seguir você',
+    // Ator soft-deletado (nome degradado a null) — variante sem nome, a notificação NÃO some.
+    novoSeguidorAnon: 'Alguém começou a seguir você',
+    // Fallback dos tipos ainda não ligados nesta fatia (tracer bullet).
+    generico: 'Você tem uma nova notificação',
+  },
   locale: { label: 'Idioma', ptBR: 'Português (Brasil)', enUS: 'Inglês (EUA)' },
   // Toggle de tema claro/escuro (ADR-0018), no header. `light`/`dark` nomeiam o DESTINO da
   // ação (a11y): o aria-label muda conforme o tema atual ("Mudar para o tema claro/escuro").

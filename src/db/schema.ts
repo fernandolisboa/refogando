@@ -51,6 +51,7 @@ import { REPORT_STATUSES } from '@/domain/report'
 import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
+import { NOTIFICATION_TYPES } from '@/domain/notification'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -117,6 +118,10 @@ export const vocabularyTermStatusEnum = pgEnum('vocabulary_term_status', VOCABUL
 // kernel. DB type 'transcript_role', DISTINTO de roleEnum (DB type 'role', papéis de
 // Usuário): o TS id é `transcriptRoleEnum`, NUNCA `roleEnum` (já em uso ~linha 71).
 export const transcriptRoleEnum = pgEnum('transcript_role', TRANSCRIPT_ROLES)
+// Tipo do evento de Notificação (issue #371, ADR-0028). Fonte única: NOTIFICATION_TYPES de
+// @/domain/notification. Os 7 tipos do catálogo v1 entram de uma vez (completude do enum), mas só
+// `new_follower` é EMITIDO nesta fatia. DB type 'notification_type'.
+export const notificationTypeEnum = pgEnum('notification_type', NOTIFICATION_TYPES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -1040,6 +1045,39 @@ export const userFollow = pgTable(
     check('user_follow_not_self_chk', sql`${t.followerId} <> ${t.followeeId}`),
     index('user_follow_followee_id_idx').on(t.followeeId),
     index('user_follow_follower_id_idx').on(t.followerId),
+  ],
+)
+
+// Caixa de Notificações (#371, ADR-0028) — um EVENTO por Usuário, persistido, com lido/não-lido.
+// Guarda DADO ESTRUTURADO (tipo + ator + referências do sujeito), NUNCA frase pronta: o texto é
+// renderizado e localizado na leitura (renderNotification), então sem coluna de texto.
+//  - recipient_id → users ON DELETE cascade: apagar o dono limpa a caixa dele (sem órfãos).
+//  - actor_id → users ON DELETE set null: ações de sistema/Curador podem não ter ator; e um hard-delete
+//    (LGPD, #276/#298) preserva a linha degradando o ator. Soft-delete (deleted_at) NÃO é DELETE ⇒ a
+//    linha persiste e a LEITURA colapsa a identidade do ator (nome/handle/imagem) por isNull(deleted_at).
+//  - recipe_id/review_id → ON DELETE cascade: referências do sujeito conforme o tipo (NULL p/ new_follower).
+//  - índice (recipient_id, created_at) p/ a lista paginada + parcial de NÃO-LIDAS (contador). E um índice
+//    de cobertura em actor_id: o set-null do hard-delete de um ator varreria a tabela sem ele.
+export const notification = pgTable(
+  'notification',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    recipientId: uuid('recipient_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: notificationTypeEnum('type').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'cascade' }),
+    reviewId: uuid('review_id').references(() => recipeReview.id, { onDelete: 'cascade' }),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('notification_recipient_created_idx').on(t.recipientId, t.createdAt),
+    index('notification_recipient_unread_idx')
+      .on(t.recipientId)
+      .where(sql`${t.readAt} is null`),
+    index('notification_actor_id_idx').on(t.actorId),
   ],
 )
 

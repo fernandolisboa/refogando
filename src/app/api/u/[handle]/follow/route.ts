@@ -4,6 +4,7 @@ import { users } from '@/db/schema'
 import { requireSession } from '@/server/auth/guard'
 import { normalizeHandle } from '@/domain/handle'
 import { follow, unfollow, viewerFollows, countFollowers } from '@/server/user/follow'
+import { emitNotification } from '@/server/notification'
 
 /**
  * Seguir / deixar de seguir um Cozinheiro (#274, ADR-0024) — `POST`/`DELETE`/`GET`
@@ -51,7 +52,13 @@ export async function POST(request: Request, { params }: Ctx): Promise<Response>
     return Response.json({ error: 'auto_seguir' }, { status: 422 })
   }
   const db = getDb()
-  await follow(db, followerId, followeeId)
+  // Só emite a notificação quando uma aresta NOVA nasceu (ADR-0028: uma por evento). `follow` é
+  // idempotente ⇒ re-seguir / double-POST devolve `false` e NÃO notifica. Emissão best-effort (o
+  // próprio `emitNotification` engole falhas) — nunca derruba o seguir.
+  const created = await follow(db, followerId, followeeId)
+  if (created) {
+    await emitNotification(db, { recipientId: followeeId, type: 'new_follower', actorId: followerId })
+  }
   return Response.json({ isFollowing: true, followerCount: await countFollowers(db, followeeId) })
 }
 
