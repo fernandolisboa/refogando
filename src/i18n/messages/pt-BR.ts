@@ -891,13 +891,11 @@ export const ptBR = {
     apagar: 'Apagar',
     salvarNome: 'Salvar',
     cancelar: 'Cancelar',
-    fechar: 'Fechar',
     // Confirmação de apagar (deixa claro que os saves permanecem).
     confirmarApagar: 'Apagar esta coleção? As receitas continuam salvas.',
     // Picker no detalhe.
     adicionarAColecao: 'Adicionar a coleção',
-    gerenciarColecoes: 'Coleções',
-    // Contador de itens por coleção (singular + plural, {n}).
+    // Contador de itens por coleção (singular + plural, {n}) — rótulo acessível do chip.
     itemContagem: '{n} receita',
     itensContagem: '{n} receitas',
     // Estados vazios.

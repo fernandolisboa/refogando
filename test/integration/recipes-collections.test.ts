@@ -403,14 +403,46 @@ describe('Gate de visibilidade dos salvos (moderação reativa)', () => {
     expect(await idsOf(await getSaved(a.headers))).toEqual([ownPriv]) // rb sumiu
     expect(await idsOf(await getItems(c, a.headers))).toEqual([]) // sumiu da coleção também
     expect(await saveExists(a.userId, rb)).toBe(true) // o save PERSISTE
+    expect(await itemCountRaw(c)).toBe(1) // a ARESTA collection_item persiste CRUA (só a leitura filtra)
 
     // Volta a PÚBLICA → reaparece (leitura, não linha, mudou).
     await getDb().update(recipe).set({ visibility: 'public' }).where(eq(recipe.id, rb))
     expect(new Set(await idsOf(await getSaved(a.headers)))).toEqual(new Set([rb, ownPriv]))
+    expect(await idsOf(await getItems(c, a.headers))).toEqual([rb]) // o item REAPARECE na coleção (não foi deletado)
 
     // Curador REMOVE do pool → some de novo (dimensão ortogonal à visibilidade).
     await seedRemovedFromPool({ recipeId: rb, curatorId: b.userId })
     expect(await idsOf(await getSaved(a.headers))).toEqual([ownPriv])
+  })
+
+  it('itemCount da lista de coleções é gateado — o chip bate com a lista aberta (F3)', async () => {
+    const a = await session()
+    const b = await session()
+    const rb = await seedPublicOwned(b.userId, 'Pública de B')
+    await save(rb, a.headers)
+    const c = await seedCollection({ userId: a.userId, name: 'Gateada' })
+    await addItem(c, rb, a.headers)
+
+    const countOf = async (id: string): Promise<number> => {
+      const list = (await (await listCollections(a.headers)).json()) as { collections: Summary[] }
+      return list.collections.find((x) => x.id === id)!.itemCount
+    }
+
+    // Pública: o chip conta 1 e a lista abre com o item.
+    expect(await countOf(c)).toBe(1)
+    expect(await idsOf(await getItems(c, a.headers))).toEqual([rb])
+
+    // B torna PRIVADA → o chip cai pra 0 (gateado, bate com a lista) e a lista abre vazia;
+    // a aresta collection_item PERSISTE crua (só a leitura filtra).
+    await getDb().update(recipe).set({ visibility: 'private' }).where(eq(recipe.id, rb))
+    expect(await countOf(c)).toBe(0)
+    expect(await idsOf(await getItems(c, a.headers))).toEqual([])
+    expect(await itemCountRaw(c)).toBe(1)
+
+    // Volta a PÚBLICA → o chip volta a 1 e o item reaparece.
+    await getDb().update(recipe).set({ visibility: 'public' }).where(eq(recipe.id, rb))
+    expect(await countOf(c)).toBe(1)
+    expect(await idsOf(await getItems(c, a.headers))).toEqual([rb])
   })
 })
 

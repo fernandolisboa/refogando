@@ -126,13 +126,22 @@ export function SavedRecipesView() {
     }
   }
 
-  async function handleRename(id: string, name: string) {
-    const res = await fetch(`/api/me/collections/${id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    if (res.ok) await loadCollections()
+  async function handleRename(id: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch(`/api/me/collections/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        return { ok: false, error: body.error }
+      }
+      await loadCollections()
+      return { ok: true }
+    } catch {
+      return { ok: false }
+    }
   }
 
   async function handleDelete(id: string) {
@@ -179,6 +188,10 @@ export function SavedRecipesView() {
               key={c.id}
               label={c.name}
               count={c.itemCount}
+              countLabel={(c.itemCount === 1 ? m.itemContagem : m.itensContagem).replace(
+                '{n}',
+                String(c.itemCount),
+              )}
               selected={selected === c.id}
               onSelect={() => setSelected(c.id)}
             />
@@ -292,11 +305,13 @@ function errorMessage(code: string | undefined, m: ReturnType<typeof useLocale>[
 function SelectorChip({
   label,
   count,
+  countLabel,
   selected,
   onSelect,
 }: {
   label: string
   count?: number
+  countLabel?: string
   selected: boolean
   onSelect: () => void
 }) {
@@ -314,7 +329,11 @@ function SelectorChip({
       }
     >
       <span>{label}</span>
-      {count != null && <span className="text-xs text-muted">{count}</span>}
+      {count != null && (
+        <span className="text-xs text-muted" aria-label={countLabel}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
@@ -327,21 +346,30 @@ function CollectionActions({
 }: {
   collection: Summary | undefined
   m: ReturnType<typeof useLocale>['messages']['colecoes']
-  onRename: (id: string, name: string) => void
+  onRename: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>
   onDelete: (id: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
+  // Erro do rename (nome inválido/duplicado) — espelha `createError` do formulário de criar.
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState(false)
 
   if (!collection) return null
 
   if (editing) {
     return (
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-          onRename(collection.id, value)
-          setEditing(false)
+          if (renaming) return
+          setRenaming(true)
+          setRenameError(null)
+          const res = await onRename(collection.id, value)
+          setRenaming(false)
+          // Só fecha no sucesso; falha (409/400) mantém o form aberto e mostra o erro.
+          if (res.ok) setEditing(false)
+          else setRenameError(errorMessage(res.error, m))
         }}
         className="flex flex-wrap items-center gap-2"
       >
@@ -351,17 +379,32 @@ function CollectionActions({
         <Input
           id="renomear-colecao"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value)
+            setRenameError(null)
+          }}
           maxLength={60}
           autoFocus
           className="w-56"
         />
-        <Button type="submit" variant="secondary" disabled={value.trim() === ''}>
+        <Button type="submit" variant="secondary" disabled={renaming || value.trim() === ''}>
           {m.salvarNome}
         </Button>
-        <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setEditing(false)
+            setRenameError(null)
+          }}
+        >
           {m.cancelar}
         </Button>
+        {renameError != null && (
+          <p role="alert" className="w-full text-sm font-medium text-fg">
+            {renameError}
+          </p>
+        )}
       </form>
     )
   }
@@ -373,6 +416,7 @@ function CollectionActions({
         variant="ghost"
         onClick={() => {
           setValue(collection.name)
+          setRenameError(null)
           setEditing(true)
         }}
       >

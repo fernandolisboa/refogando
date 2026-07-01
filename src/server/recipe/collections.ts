@@ -182,7 +182,15 @@ export async function applyCollectionAddItem(input: {
       .for('update')
     if (!savedRow) return { kind: 'not_saved' as const }
 
-    await tx.insert(collectionItem).values({ collectionId, recipeId }).onConflictDoNothing()
+    try {
+      await tx.insert(collectionItem).values({ collectionId, recipeId }).onConflictDoNothing()
+    } catch (e) {
+      // Corrida: se a MESMA sessão apaga a coleção entre o ownership-check e o INSERT, a FK
+      // (collection_item.collection_id → collection) dispara 23503 — mapeia pra not_found
+      // (mantém o contrato tipado; nunca 500). A save row já está travada FOR UPDATE.
+      if (pgCode(e) === '23503') return { kind: 'not_found' as const }
+      throw e
+    }
     return { kind: 'ok' as const }
   })
 }
@@ -215,10 +223,12 @@ export async function applyCollectionRemoveItem(input: {
 // ── Leitores ─────────────────────────────────────────────────────────────────────
 
 /**
- * Lista as Coleções do usuário com a contagem de itens. LEFT JOIN + COUNT(recipe_id) (C9: NÃO
- * `count(*)` — a coleção vazia dá 1 linha all-NULL e `count(*)` daria 1 errado; `count(recipe_id)`
- * conta NULLs como 0). Ordena por nome. `itemCount` conta a aresta CRUA (sem gate de visibilidade —
- * é só o tamanho da pasta; a leitura dos ITENS é que gateia).
+ * Lista as Coleções do usuário com a contagem de itens. LEFT JOIN + COUNT(recipe.id) (C9: NÃO
+ * `count(*)` — a coleção vazia dá 1 linha all-NULL e `count(*)` daria 1 errado; `count(recipe.id)`
+ * conta NULLs como 0). Ordena por nome. `itemCount` é GATEADO por visibilidade (C1) para BATER com
+ * `loadCollectionItems`: o MESMO gate (`viewerReadableSqlFragment` + as 3 guardas de pool) vive na
+ * cláusula ON do 2º LEFT JOIN (`recipe`), então uma aresta cuja Receita ficou invisível não conta
+ * (o chip não diverge da lista aberta), e a coleção vazia segue em 0 (recipe.id NULL).
  */
 export async function loadCollections(input: {
   db: Database
@@ -230,10 +240,20 @@ export async function loadCollections(input: {
       id: collection.id,
       name: collection.name,
       createdAt: collection.createdAt,
-      itemCount: sql<number>`count(${collectionItem.recipeId})::int`,
+      itemCount: sql<number>`count(${recipe.id})::int`,
     })
     .from(collection)
     .leftJoin(collectionItem, eq(collectionItem.collectionId, collection.id))
+    .leftJoin(
+      recipe,
+      and(
+        eq(recipe.id, collectionItem.recipeId),
+        viewerReadableSqlFragment('recipe', userId),
+        ne(recipe.resultKind, 'playful'),
+        isNull(recipe.moderationRemovedAt),
+        ne(recipe.origin, 'web_imported'),
+      ),
+    )
     .where(eq(collection.userId, userId))
     .groupBy(collection.id)
     .orderBy(asc(collection.name))
@@ -382,8 +402,9 @@ type RecipeListBaseRow = {
 }
 
 /**
- * Segunda query (traduções) + montagem PURA — fatorada de `listMyRecipes` (list-mine.ts:56-118)
- * pra `loadSavedRecipes`/`loadCollectionItems` não forkarem a projeção. Preserva a ORDEM de `rows`
+ * Segunda query (traduções) + montagem PURA — espelha a projeção de card de `list-mine.ts`
+ * (invariante congelada; não deduplicado) pra `loadSavedRecipes`/`loadCollectionItems` não
+ * forkarem a projeção. Preserva a ORDEM de `rows`
  * (o caller já ordenou); colhe o slug do `requestLocale` (#231) e delega a `resolveRecipeListItem`.
  */
 async function hydrateRecipeListItems(
