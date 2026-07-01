@@ -87,7 +87,8 @@ export function RecipeReviewSection({
   const [error, setError] = useState<string | null>(null)
 
   // Logado não-dono: resolve a PRÓPRIA avaliação (a página é cacheável, o server lê anônimo).
-  // Anônimo/dono não busca. Falha ⇒ resolve com defaults (não trava logado sem widget).
+  // Anônimo/dono não busca. Falha ⇒ NÃO resolve o viewer: o widget fica escondido (o servidor
+  // não confirmou que este viewer não é o dono, e o dono nunca pode ver o controle de avaliar).
   useEffect(() => {
     if (canManage || !loggedIn) return
     let cancelled = false
@@ -109,7 +110,8 @@ export function RecipeReviewSection({
         setViewerResolved(true)
       })
       .catch(() => {
-        if (!cancelled) setViewerResolved(true)
+        // Falha de rede: deixa `viewerResolved` false ⇒ widget escondido (preserva a garantia de
+        // que o dono não vê o controle; um não-dono legítimo pode recarregar a página).
       })
     return () => {
       cancelled = true

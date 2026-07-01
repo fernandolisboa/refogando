@@ -866,8 +866,6 @@ export const ptBR = {
   // componente (folhas do tipo `Messages` são string).
   avaliacoes: {
     titulo: 'Avaliações',
-    avaliar: 'Avaliar',
-    suaAvaliacao: 'Sua avaliação',
     editar: 'Editar',
     apagar: 'Apagar',
     enviar: 'Enviar',

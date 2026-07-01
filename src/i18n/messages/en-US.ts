@@ -818,8 +818,6 @@ export const enUS: Messages = {
   },
   avaliacoes: {
     titulo: 'Reviews',
-    avaliar: 'Rate',
-    suaAvaliacao: 'Your review',
     editar: 'Edit',
     apagar: 'Delete',
     enviar: 'Submit',

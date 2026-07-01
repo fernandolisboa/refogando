@@ -955,16 +955,15 @@ export const recipeSave = pgTable(
 // apagar Usuário ou Receita limpa a avaliação; despublicar é UPDATE de visibility, NUNCA
 // DELETE ⇒ as avaliações PERSISTEM (mesma garantia AC5 do voto).
 //
-// `moderated_at` é a ÚNICA coluna de moderação nesta fatia — existe SÓ como SEAM de LEITURA:
-// `loadRecipeReviews`/`loadAggregate` filtram `moderated_at IS NULL` desde o dia 1, então a
-// fatia da moderação (#366) vira SÓ um escritor. NÃO adicionamos `moderated_by`/`moderated_reason`/
-// `photo_url` aqui — não têm leitor nem escritor na #363; cada fatia (#365 foto, #366 moderação)
-// adiciona a própria coluna na própria migração. DELIBERADAMENTE SEM o CHECK
-// `(moderated_at IS NULL)=(moderated_by IS NULL)` que recipe/recipe_image usam: combinado com
-// onDelete:'set null' ele quebra a exclusão de qualquer conta moderadora (SET NULL zera
-// moderated_by enquanto moderated_at fica setado → violação do CHECK → o DELETE do Usuário aborta,
-// travando a erasure LGPD). A #366 é dona da forma das colunas de moderação e acopla o CHECK de
-// consistência a uma coluna imune a set-null.
+// `moderated_at` alimenta o SEAM de LEITURA: `loadRecipeReviews`/`loadAggregate` filtram
+// `moderated_at IS NULL` desde o dia 1, então a fatia da moderação (#366) vira SÓ um escritor.
+// As colunas `photo_url` (#365) e `moderated_reason`/`moderated_by` (#366) já ficam RESERVADAS
+// aqui (sem leitor nem escritor na #363), no idioma de `recipe`/`recipe_image`: incluem o CHECK de
+// consistência `(moderated_at IS NULL)=(moderated_by IS NULL)` e `moderated_by` é ON DELETE set
+// null. Como NÃO há caminho de escrita de moderação nesta fatia, o CHECK nunca é violado e o branch
+// set-null nunca dispara. LANDMINE p/ a #366 (o futuro escritor de moderação): SET NULL zera
+// `moderated_by` mantendo `moderated_at` setado ⇒ violaria o CHECK e abortaria o DELETE do Curador
+// (erasure LGPD). Ao LIGAR a escrita, ancore `moderated_by` numa coluna imune a set-null.
 //
 // NÃO há CHECK de auto-avaliação (owner_id mora em `recipe`, cross-table). `decideReview`
 // (src/domain/review.ts) é a ÚNICA guarda; `applyReview` (src/server/recipe/review.ts) é o
