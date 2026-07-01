@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npm run db:migrate && npm run build"
+  "buildCommand": "npm run db:migrate && npm run build",
+  "ignoreCommand": "bash scripts/vercel-ignore.sh"
 }
