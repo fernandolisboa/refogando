@@ -16,11 +16,24 @@
 # de teste — por isso o test passa sem nenhuma variável de ambiente.
 name: CI
 
+# `paths-ignore`: mudança SÓ de documentação (docs/** ou qualquer .md) NÃO roda a CI —
+# um handoff/ADR/README não afeta typecheck/lint/build/test. `main` não tem branch
+# protection (sem required check), então pular a CI num PR de doc NÃO trava o merge
+# (o merge é manual via `gh pr merge`). Qualquer arquivo de código/config fora desses
+# paths dispara a CI normalmente. O deploy da Vercel é pulado à parte (scripts/vercel-ignore.sh).
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**/*.md'
 
 # Cancela runs antigos do mesmo PR/branch quando chega um push novo.
 concurrency:
