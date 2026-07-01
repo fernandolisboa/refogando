@@ -28,3 +28,29 @@ Decisão:
 Trade-off aceito: o em-dash lê um pouco mais mecânico que a prosa natural ("2 colher de sopa" em vez de "colheres"), em troca de medida estruturada confiável, escala sem IA e zero manutenção de gramática por locale.
 
 Migração dos dados existentes (medida embutida no `raw_text`): **script único assistido por IA** — dada a linha + a `quantidade`/`unidade` **já corretas**, devolve só o nome (tarefa de **linguagem**, one-off, ≠ a aritmética da escala). Roda **antes** de retomar a curadoria; o catálogo é **HITL** (curador revisa cada um, ADR-0026) como rede de segurança. Supera o remendo anterior (PR #354, que exibia `raw_text` cru — "texto solto sem quantidade estruturada", anti-padrão do CONTEXT.md).
+
+## Adendo 2 (2026-06-30) — Reprovação do "zero gramática"; exibição em prosa natural com plural correto
+
+A Direção B (Adendo anterior) foi implementada (PR #357) e **reprovada pelo dono ao ver na tela de produção** — lição reforçada: **validar na superfície real**, não só em teste verde (ver [verificar-arte-na-superficie-real]). Três falhas concretas, vistas ao vivo:
+
+1. **A unidade não flexionava** ("3 dente", "4 colher de sopa", "2 louro"). A decisão "zero gramática" (não pluralizar a unidade) leu como **amador** — "site escrito errado parece email de phishing", e joga o custo de conserto pro Curador, linha a linha (responsabilidade que **cresce exponencialmente**).
+2. **O em-dash "—" era ruim**: feio, **inconsistente** (contável não levava traço, não-contável levava) e às vezes **não renderizava** na fonte de produção.
+3. **A migração assistida por IA over-stripou palavras de porção** que não cabem no enum de unidades: "4 folhas de alga nori" → "alga nori"; "2 folhas de louro" → "2 louro". **101 linhas** afetadas (91 quebradas na tela). É perda de **dado**, não só display.
+
+Causa raiz do item 3: o **enum fechado** de unidades (`g/kg/ml/l/colher_de_sopa/colher_de_cha/xicara/dente/fatia/pitada/unidade/a_gosto/q_b`) **não representa** palavras de porção/recipiente abertas — "folha", "talo", "ramo", "maço", "lata", "punhado", "pacote", "vidro", "caixa". Quando a contagem é uma dessas, a "unidade" **pertence ao nome**, não ao campo estruturado.
+
+Decisão (mantém `quantidade`/`unidade` como **fonte única da medida**; corrige a EXIBIÇÃO e repara o dado — **revoga só o "zero gramática" da unidade**):
+
+- A exibição **compõe prosa natural com plural correto**, em "de":
+  - não-contável: `"{qtd} {unidade flexionada} de {nome}"` — "3 dentes de alho", "200 g de farinha", "2 colheres de sopa de azeite". A flexão da **unidade** é um **rótulo plural estático** por unidade do enum (conjunto **fechado**, todas **regulares**: colher→colheres, dente→dentes, xícara→xícaras, fatia→fatias, pitada→pitadas; `g/kg/ml/l` invariáveis). Plural escolhido pela quantidade (qty ≠ 1 → plural; fração < 1 → singular). **Sem traço.**
+  - contável (`unidade`): `"{qtd} {nome}"` — "2 cebolas".
+  - `a_gosto`/`q_b`: **sufixo** — "sal a gosto", "farinha q.b.".
+- **O NOME nunca é flexionado no render.** O nome já nasce concordando com a quantidade na geração/fonte; flexionar nome arbitrário no display quebraria os **plurais especiais** do pt-BR (-ão → -ões/-ãos/-ães **por dicionário**; -il, -s, -x, -m; concordância de sintagma "ovos mexidos"). A flexão de nome **sob escala** continua diferida ao **Ingrediente canônico** (formas singular/plural na tabela de tradução do ADR-0001) — não a um heurístico de string.
+- **Números são formatados por locale** (`Intl.NumberFormat`): pt-BR vírgula, en-US ponto, **sem casas decimais forçadas** (zeros à direita cortados). Frações comuns viram **glifos** (½ ⅓ ⅔ ¼ ¾ ⅛…), inclusive misto ("2½ colheres"); o que não casa numa fração comum cai no decimal localizado. Vale pra exibição **e** pro formulário de edição (que cuspia o `numeric(10,3)` cru "3.000").
+
+Reparo do dado existente (one-time, **ledgerado e reversível**, supera a migração com IA do PR #357):
+
+- **Over-strip (101 linhas, 91 quebradas):** restauração **determinística** a partir do `before` do ledger — remove só o número líder (e a unidade do enum + conector, quando a unidade estruturada é do enum), **mantendo** a palavra de porção no nome ("folhas de alga nori", qty=4, `unidade='unidade'` → "4 folhas de alga nori"). **Sem IA.**
+- **Cauda de plural da geração (~uma dúzia):** itens contáveis (`unidade` ou qty solta) com qty > 1 e nome no singular ("ovo" qty 10 → leria "10 ovo"). Decisão do dono: **não** flexionar o nome por código — **listar** essas linhas para correção humana (Curador no catálogo HITL; o dono nas suas). Zero risco de cuspir um "corações" errado.
+
+Trade-off revisto: paga-se um rótulo plural estático por unidade (conjunto fechado, trivial) e um formatador de número/fração, em troca de **tom profissional** na superfície pública e **menos trabalho manual** do Curador. O "zero gramática" do Adendo anterior fica **revogado para a unidade**; o nome continua não-flexionado no render — a diferença é que a unidade é **fechada e regular**, o nome é **aberto e cheio de casos especiais**.

@@ -33,6 +33,7 @@ import {
 } from '@/domain/vocabulary'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import type { RecipeView } from '@/domain/recipe-read'
 
 /** Rascunho de UM ingrediente no formulário (espelha o create estruturado, sem força). */
@@ -44,13 +45,14 @@ type Dialog = 'none' | 'confirmPublic' | 'confirmDelete'
 // slugify dobraria p/ vazio, então jamais colide com um slug de cozinha real.
 const OUTRA_SENTINEL = '__outra__'
 
-/** Prefill dos itens a partir da view (quantidade volta como string do numeric). */
-function itemsFromView(view: RecipeView): ItemDraft[] {
+/** Prefill dos itens a partir da view. A `quantidade` volta como `numeric(10,3)` cru ("3.000");
+ *  `formatQuantityInput` a torna editável e localizada ("3", "2,5") — mata o bug do "3.000" no campo. */
+function itemsFromView(view: RecipeView, locale: string): ItemDraft[] {
   const items = [...view.ingredients]
     .sort((a, b) => a.ordem - b.ordem)
     .map((it) => ({
       rawText: it.rawText ?? '',
-      quantidade: it.quantidade ?? '',
+      quantidade: formatQuantityInput(it.quantidade, locale),
       unidade: it.unidade ?? '',
     }))
   return items.length > 0 ? items : [{ rawText: '', quantidade: '', unidade: '' }]
@@ -162,7 +164,7 @@ export function RecipeEditForm({
   const [tempoTotalMin, setTempoTotalMin] = useState(
     view.tempoTotalMin != null ? String(view.tempoTotalMin) : '',
   )
-  const [itens, setItens] = useState<ItemDraft[]>(itemsFromView(view))
+  const [itens, setItens] = useState<ItemDraft[]>(itemsFromView(view, currentLocale))
 
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -242,7 +244,9 @@ export function RecipeEditForm({
       .filter((it) => it.rawText.trim() !== '' || it.quantidade.trim() !== '' || it.unidade !== '')
       .map((it) => ({
         rawText: it.rawText.trim() === '' ? null : it.rawText.trim(),
-        quantidade: it.quantidade.trim() === '' ? null : it.quantidade.trim(),
+        // O usuário digita localizado ("2,5"); `parseQuantityInput` (locale-aware) devolve a string-ponto
+        // canônica ("2.5") ou null. A zod da rota é o guard final (rejeita texto inválido / milhar).
+        quantidade: parseQuantityInput(it.quantidade, currentLocale),
         unidade: it.unidade === '' ? null : it.unidade,
       }))
     return {

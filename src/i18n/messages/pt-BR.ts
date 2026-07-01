@@ -266,6 +266,30 @@ export const ptBR = {
     a_gosto: 'a gosto',
     q_b: 'q.b.',
   } satisfies Record<Unidade, string>,
+  // Rótulo PLURAL por unidade (ADR-0012 Adendo 2): a exibição flexiona a UNIDADE pela quantidade
+  // (qty ≠ 1 → plural; fração < 1 → singular) — "3 dentes de alho", "2 colheres de sopa de azeite".
+  // Conjunto FECHADO e REGULAR (colher→colheres, dente→dentes, xícara→xícaras, fatia→fatias,
+  // pitada→pitadas); `g/kg/ml/l` invariáveis. O NOME do ingrediente NUNCA é flexionado (plurais
+  // especiais do pt-BR moram lá). `unidade`/`a_gosto`/`q_b` nunca são lidos pelo caminho plural
+  // (contável larga a palavra; a_gosto/q.b. são sufixo) — presentes só para satisfazer o Record.
+  unidadeLabelPlural: {
+    g: 'g',
+    kg: 'kg',
+    ml: 'ml',
+    l: 'l',
+    colher_de_sopa: 'colheres de sopa',
+    colher_de_cha: 'colheres de chá',
+    xicara: 'xícaras',
+    unidade: 'unidades',
+    dente: 'dentes',
+    fatia: 'fatias',
+    pitada: 'pitadas',
+    a_gosto: 'a gosto',
+    q_b: 'q.b.',
+  } satisfies Record<Unidade, string>,
+  // Conector LOCALIZADO entre medida e nome na linha do ingrediente ("200 g DE farinha"). String
+  // (não objeto) — a unidade não-contável compõe "{qtd} {unidade flexionada} {conector} {nome}".
+  unidadeConector: 'de',
   // Página de detalhe da Receita (#57): headings/rótulos da leitura localizada. Os SELOS
   // de proveniência REUSAM busca.seloCatalogo/seloComunidade (mesmo conceito/componente
   // ProvenanceBadge da #56) — não duplicar aqui.
@@ -1211,9 +1235,15 @@ export const ptBR = {
  * como objeto de chaves numéricas), não pelo tipo.
  */
 export type Messages = {
-  [Section in keyof typeof ptBR]: {
-    [Key in keyof (typeof ptBR)[Section]]: (typeof ptBR)[Section][Key] extends readonly string[]
-      ? readonly string[]
-      : string
-  }
+  // Uma SEÇÃO de topo costuma ser um objeto de folhas (`{ chave: 'texto' }`); o ramo escalar abaixo
+  // libera uma seção que é uma STRING direta (ex.: `unidadeConector: 'de'`), traduzível como folha
+  // de topo sem virar `{ k: v }` artificial. Nenhuma seção-objeto existente casa `extends string`,
+  // então o ramo é puramente ADITIVO (não muda o tipo das seções atuais).
+  [Section in keyof typeof ptBR]: (typeof ptBR)[Section] extends string
+    ? string
+    : {
+        [Key in keyof (typeof ptBR)[Section]]: (typeof ptBR)[Section][Key] extends readonly string[]
+          ? readonly string[]
+          : string
+      }
 }

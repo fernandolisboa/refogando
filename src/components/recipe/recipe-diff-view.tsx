@@ -15,6 +15,7 @@
 import { useLocale } from '@/i18n/provider'
 import type { DerivedDiff } from '@/domain/recipe-diff'
 import { isRestricao } from '@/domain/vocabulary'
+import { formatQuantityDisplay } from '@/domain/quantity-format'
 
 /** Junta de/para num texto legível ("a → b"), tratando null como travessão. */
 function dePara(de: string | null, para: string | null): string {
@@ -30,9 +31,13 @@ export function RecipeDiffView({
   diff: DerivedDiff
   vinculoPerdido?: boolean
 }) {
-  const { messages } = useLocale()
+  const { messages, locale } = useLocale()
   const m = messages.minhasCriacoes
   const md = messages.derivada
+
+  // Quantidade no diff é número cru do `numeric(10,3)` ("3.000") — formata localizado (vírgula/fração,
+  // sem zeros à toa) antes do "de → para". null/'' ficam intactos (viram travessão no `dePara`).
+  const fmtQ = (v: string | null) => (v == null || v === '' ? v : formatQuantityDisplay(v, locale))
 
   const { ingredientes, restricoes, campos } = diff
 
@@ -115,7 +120,7 @@ export function RecipeDiffView({
                 <ul role="list" className="flex flex-col gap-0.5">
                   {ingredientes.quantidadeAlterada.map((q, i) => (
                     <li key={`qty-${i}`}>
-                      {q.nome}: {dePara(q.de, q.para)}
+                      {q.nome}: {dePara(fmtQ(q.de), fmtQ(q.para))}
                     </li>
                   ))}
                 </ul>

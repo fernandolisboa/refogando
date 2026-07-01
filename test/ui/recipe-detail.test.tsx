@@ -64,7 +64,7 @@ function cozinhaLabelOf(view: RecipeView): string | null {
 }
 
 function renderView(view: RecipeView) {
-  return render(<RecipeDetailView view={view} m={M} cozinhaLabel={cozinhaLabelOf(view)} />)
+  return render(<RecipeDetailView view={view} m={M} locale="pt-BR" cozinhaLabel={cozinhaLabelOf(view)} />)
 }
 
 afterEach(() => {
@@ -81,7 +81,7 @@ describe('RecipeDetailView (#57)', () => {
     expect(img).toHaveAttribute('alt', 'Texas Chili (chili do Texas)') // alt = nome da Receita
 
     // Sem imageUrl ⇒ estado limpo (nenhuma <img>).
-    rerender(<RecipeDetailView view={baseView()} m={M} />)
+    rerender(<RecipeDetailView view={baseView()} m={M} locale="pt-BR" />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
@@ -90,7 +90,7 @@ describe('RecipeDetailView (#57)', () => {
     const { rerender } = renderView(baseView({ imageUrl: url, imageAiGenerated: true }))
     expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
 
-    rerender(<RecipeDetailView view={baseView({ imageUrl: url })} m={M} />)
+    rerender(<RecipeDetailView view={baseView({ imageUrl: url })} m={M} locale="pt-BR" />)
     expect(screen.queryByText(M.busca.imagemSeloIa)).not.toBeInTheDocument()
   })
 
@@ -101,16 +101,19 @@ describe('RecipeDetailView (#57)', () => {
     const h1 = screen.getByRole('heading', { level: 1 })
     expect(h1).toHaveTextContent('Texas Chili (chili do Texas)')
 
-    // Seção Ingredientes + item: a medida estruturada é COMPOSTA com o nome — quantidade normalizada
-    // ('2.500'→'2.5'), unidade LOCALIZADA, em-dash, UMA vez: "2.5 colher de sopa — feijão".
+    // Seção Ingredientes + item: PROSA NATURAL com plural correto (ADR-0012 Adendo 2) — a fração
+    // '2.500' vira o glifo misto '2½', a UNIDADE flexiona pela quantidade ('colheres de sopa', qty>1)
+    // e o conector localizado 'de' liga ao nome: "2½ colheres de sopa de feijão".
     expect(
       screen.getByRole('heading', { name: M.detalhe.ingredientes, level: 2 }),
     ).toBeInTheDocument()
-    expect(screen.getByText(`2.5 ${M.unidadeLabel.colher_de_sopa} — feijão`)).toBeInTheDocument()
+    expect(
+      screen.getByText(`2½ ${M.unidadeLabelPlural.colher_de_sopa} ${M.unidadeConector} feijão`),
+    ).toBeInTheDocument()
     // REGRESSÃO (bug da medida duplicada do #354): a medida NÃO aparece duas vezes — o nome já vem
-    // SEM medida, então nada de "2.5 colher de sopa — 2 colheres de sopa de feijão".
-    expect(screen.queryByText(/colher de sopa.*colher/)).toBeNull()
-    // O token cru do enum NÃO vaza na tela.
+    // SEM medida, então nada de "2½ colheres de sopa de 2½ colheres de sopa de feijão".
+    expect(screen.queryByText(/colheres de sopa.*colheres de sopa/)).toBeNull()
+    // O token cru do enum NÃO vaza na tela, nem o numeric(10,3) cru.
     expect(screen.queryByText(/colher_de_sopa/)).toBeNull()
     expect(screen.queryByText(/2\.500/)).toBeNull()
 
@@ -366,7 +369,7 @@ describe('RecipeDetailView (#57)', () => {
 
   it('T12 — #237: renderiza o aviso de catálogo quando a página passa o texto (catálogo + ligado)', () => {
     render(
-      <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} catalogDisclosure={DISCLOSURE} />,
+      <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" catalogDisclosure={DISCLOSURE} />,
     )
     // O texto configurável aparece, rotulado como bloco "Sobre este catálogo" (aside, não heading).
     const aviso = screen.getByText(DISCLOSURE)
@@ -377,7 +380,7 @@ describe('RecipeDetailView (#57)', () => {
   })
 
   it('T13 — #237: SEM o prop (desligado) o aviso some — Catálogo renderiza como hoje, com o selo intacto', () => {
-    render(<RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} />)
+    render(<RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" />)
     expect(screen.queryByText(DISCLOSURE)).toBeNull()
     expect(screen.queryByRole('complementary', { name: M.detalhe.catalogoAvisoRotulo })).toBeNull()
     // Selo obrigatório de catálogo permanece.
@@ -395,6 +398,7 @@ describe('RecipeDetailView (#57)', () => {
         <RecipeDetailView
           view={baseView({ origin: 'ai_chat', imageUrl: url, imageAiGenerated: true })}
           m={M}
+          locale="pt-BR"
           catalogDisclosure={disclosure}
         />,
       )

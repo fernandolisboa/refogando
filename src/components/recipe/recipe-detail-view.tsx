@@ -55,11 +55,19 @@ function sourceDisplayName(source: { url: string; name?: string }): string {
 export function RecipeDetailView({
   view,
   m,
+  locale,
   cozinhaLabel = null,
   catalogDisclosure,
 }: {
   view: RecipeView
   m: Messages
+  /**
+   * Locale corrente da chrome — usado SÓ para formatar número/fração da medida na linha do
+   * ingrediente (`formatIngredientLine`): vírgula pt / ponto en, glifos de fração. Os rótulos de
+   * texto já chegam resolvidos em `m`; este é o eixo numérico (ADR-0012 Adendo 2). Todos os 4
+   * callers têm o locale em escopo (página/preview).
+   */
+  locale: string
   /**
    * #317 (ADR-0025): rótulo de cozinha JÁ resolvido pelo leitor data-driven (não mais por
    * `m.cozinhaLabel`, que saiu do i18n). A página/preview resolve {slug→rótulo} no boundary
@@ -103,7 +111,7 @@ export function RecipeDetailView({
   // linha vazia, que renderizaria um marcador de lista solto). Mantém `ordem` p/ a key.
   const ingredientLines = [...view.ingredients]
     .sort((a, b) => a.ordem - b.ordem)
-    .map((item) => ({ ordem: item.ordem, text: formatIngredientLine(item, m) }))
+    .map((item) => ({ ordem: item.ordem, text: formatIngredientLine(item, m, locale) }))
     .filter((line) => line.text !== '')
 
   const hasScalars =

@@ -252,6 +252,26 @@ export const enUS: Messages = {
     a_gosto: 'to taste',
     q_b: 'as needed',
   } satisfies Record<Unidade, string>,
+  // Rótulo PLURAL por unidade (ADR-0012 Adendo 2): a unidade flexiona pela quantidade; o NOME
+  // nunca. Conjunto fechado/regular; `g/kg/ml/l` invariáveis. `unidade`/`a_gosto`/`q_b` nunca
+  // são lidos pelo caminho plural — presentes só para satisfazer o Record.
+  unidadeLabelPlural: {
+    g: 'g',
+    kg: 'kg',
+    ml: 'ml',
+    l: 'l',
+    colher_de_sopa: 'tablespoons',
+    colher_de_cha: 'teaspoons',
+    xicara: 'cups',
+    unidade: 'units',
+    dente: 'cloves',
+    fatia: 'slices',
+    pitada: 'pinches',
+    a_gosto: 'to taste',
+    q_b: 'as needed',
+  } satisfies Record<Unidade, string>,
+  // Conector LOCALIZADO entre medida e nome ("200 g OF flour"). String (espelha pt-BR `unidadeConector`).
+  unidadeConector: 'of',
   // Página de detalhe da Receita (#57), mesma substância traduzida (ADR-0001, não
   // byte-idêntica). Selos de proveniência REUSAM busca.seloCatalogo/seloComunidade.
   detalhe: {

@@ -328,6 +328,7 @@ async function DetailChrome({
       <RecipeDetailView
         view={view}
         m={messages}
+        locale={locale}
         cozinhaLabel={cozinhaLabel}
         catalogDisclosure={catalogDisclosure}
       />
