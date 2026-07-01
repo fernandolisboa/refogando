@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeReview, report } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
+import { emitNotification } from '@/server/notification'
 
 /**
  * Núcleo com efeito da MODERAÇÃO do Curador (issue #18, ADR-0003/0011). Espelha o estilo
@@ -39,7 +40,7 @@ export async function applyModerationRemove(input: {
 }): Promise<ModerationResult> {
   const { db, reportId, curatorId, reason } = input
 
-  return db.transaction(async (tx) => {
+  const { result, ownerId, recipeId } = await db.transaction(async (tx) => {
     // Carrega o report + o estado de moderação ATUAL da Receita-alvo (necessário para
     // preservar a proveniência da 1ª remoção). FOR UPDATE serializa removes concorrentes.
     const [row] = await tx
@@ -49,17 +50,21 @@ export async function applyModerationRemove(input: {
         // #366: `report.recipeId` virou nullable (alvo pode ser avaliação). Aqui o INNER JOIN recipe já
         // exige recipeId não-nulo em runtime; selecionar `recipe.id` (PK, non-null) narra o tipo.
         recipeId: recipe.id,
+        // #373: dono da Receita, destinatário da notificação `recipe_moderated` (null p/ catálogo).
+        ownerId: recipe.ownerId,
         moderationRemovedAt: recipe.moderationRemovedAt,
       })
       .from(report)
       .innerJoin(recipe, eq(recipe.id, report.recipeId))
       .where(eq(report.id, reportId))
       .for('update')
-    if (!row) return { kind: 'not_found' as const }
-    if (row.status !== 'pending') return { kind: 'already_resolved' as const }
+    if (!row) return { result: { kind: 'not_found' as const }, ownerId: null, recipeId: null }
+    if (row.status !== 'pending')
+      return { result: { kind: 'already_resolved' as const }, ownerId: null, recipeId: null }
 
     // Motivo obrigatório (AC2) — após existência/pending, antes de qualquer write.
-    if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' as const }
+    if (!decideModerationReason({ reason }).allowed)
+      return { result: { kind: 'invalid_reason' as const }, ownerId: null, recipeId: null }
 
     const alreadyRemoved = row.moderationRemovedAt != null
 
@@ -83,8 +88,19 @@ export async function applyModerationRemove(input: {
       .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
       .where(eq(report.id, reportId))
 
-    return alreadyRemoved ? { kind: 'ok_already_removed' as const } : { kind: 'ok' as const }
+    return {
+      result: alreadyRemoved ? { kind: 'ok_already_removed' as const } : { kind: 'ok' as const },
+      ownerId: row.ownerId,
+      recipeId: row.recipeId,
+    }
   })
+
+  // #373: notifica o dono na PRIMEIRA remoção genuína (kind==='ok'); pula catálogo (owner null) e o
+  // `ok_already_removed` (2ª remoção não re-notifica). Pós-commit, `db` de topo, best-effort.
+  if (result.kind === 'ok' && ownerId != null) {
+    await emitNotification(db, { recipientId: ownerId, type: 'recipe_moderated', recipeId })
+  }
+  return result
 }
 
 /**
@@ -110,19 +126,28 @@ export async function applyImageModeration(input: {
 }): Promise<ImageModerationResult> {
   const { db, reportId, curatorId, reason } = input
 
-  return db.transaction(async (tx) => {
+  const { result, ownerId, recipeId } = await db.transaction(async (tx) => {
     // Report + a imagem ATUAL da Receita-alvo. FOR UPDATE serializa (innerJoin recipe; NÃO juntar
     // recipe_image aqui — FOR UPDATE no lado nulável de outer join estoura no Postgres).
     const [row] = await tx
-      .select({ status: report.status, imageId: recipe.imageId })
+      .select({
+        status: report.status,
+        imageId: recipe.imageId,
+        // #373: destinatário da notificação `image_moderated` = dono da RECEITA da imagem (a imagem é
+        // a cara pública da receita); + recipeId p/ ancorar a notificação. Catálogo (owner null) → pula.
+        recipeId: recipe.id,
+        ownerId: recipe.ownerId,
+      })
       .from(report)
       .innerJoin(recipe, eq(recipe.id, report.recipeId))
       .where(eq(report.id, reportId))
       .for('update')
-    if (!row) return { kind: 'not_found' as const }
-    if (row.status !== 'pending') return { kind: 'already_resolved' as const }
-    if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' as const }
-    if (row.imageId == null) return { kind: 'no_image' as const }
+    if (!row) return { result: { kind: 'not_found' as const }, ownerId: null, recipeId: null }
+    if (row.status !== 'pending')
+      return { result: { kind: 'already_resolved' as const }, ownerId: null, recipeId: null }
+    if (!decideModerationReason({ reason }).allowed)
+      return { result: { kind: 'invalid_reason' as const }, ownerId: null, recipeId: null }
+    if (row.imageId == null) return { result: { kind: 'no_image' as const }, ownerId: null, recipeId: null }
 
     // Estado atual da imagem (FOR UPDATE, tabela única — sem outer join). Preserva a 1ª moderação.
     const [img] = await tx
@@ -146,8 +171,21 @@ export async function applyImageModeration(input: {
       .set({ status: 'resolved', resolvedAt: sql`now()`, resolvedBy: curatorId })
       .where(eq(report.id, reportId))
 
-    return alreadyModerated ? { kind: 'ok_already_moderated' as const } : { kind: 'ok' as const }
+    return {
+      result: alreadyModerated
+        ? { kind: 'ok_already_moderated' as const }
+        : { kind: 'ok' as const },
+      ownerId: row.ownerId,
+      recipeId: row.recipeId,
+    }
   })
+
+  // #373: notifica o dono da receita na PRIMEIRA moderação genuína (kind==='ok'); pula catálogo (owner
+  // null) e `ok_already_moderated`. Pós-commit, `db` de topo, best-effort.
+  if (result.kind === 'ok' && ownerId != null) {
+    await emitNotification(db, { recipientId: ownerId, type: 'image_moderated', recipeId })
+  }
+  return result
 }
 
 /**
