@@ -53,6 +53,7 @@ import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 import { NOTIFICATION_TYPES } from '@/domain/notification'
+import { DSAR_EVENT_TYPES } from '@/domain/dsar'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -123,6 +124,10 @@ export const transcriptRoleEnum = pgEnum('transcript_role', TRANSCRIPT_ROLES)
 // @/domain/notification. Os 7 tipos do catálogo v1 entram de uma vez (completude do enum), mas só
 // `new_follower` é EMITIDO nesta fatia. DB type 'notification_type'.
 export const notificationTypeEnum = pgEnum('notification_type', NOTIFICATION_TYPES)
+// Tipo do evento de auditoria DSAR (issue #395, GAP-5). Fonte única: DSAR_EVENT_TYPES de @/domain/dsar.
+// Os 4 tipos do ciclo de vida do pedido do titular entram de uma vez (completude do enum); só
+// `DSAR_FULFILLED` é EMITIDO nesta fatia (por clearSourceAttribution). DB type 'dsar_event_type'.
+export const dsarEventTypeEnum = pgEnum('dsar_event_type', DSAR_EVENT_TYPES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -1203,5 +1208,61 @@ export const vocabularyTerm = pgTable(
     unique('vocabulary_term_slug_uq').on(t.slug),
     // Leitura do #315: termos de uma dimensão por status, já ordenados.
     index('vocabulary_term_kind_status_sort_idx').on(t.kind, t.status, t.sort),
+  ],
+)
+
+/**
+ * Trilha de auditoria DSAR — APPEND-ONLY (issue #395, GAP-5; `docs/legal/takedown-e-remocao-titular.md` §5).
+ *
+ * Prova de conformidade dos pedidos do titular (LGPD Art. 18; Res. CD/ANPD 15/2024 Art. 10). A tabela é
+ * um LOG imutável: a aplicação SÓ faz INSERT/SELECT (`recordDsarEvent`/`countDsarEvents` em
+ * `src/server/legal/dsar-audit.ts`) — NÃO há caminho de UPDATE nem DELETE dos registros. Não há timestamp
+ * `updatedAt` de propósito (uma linha nunca muda). Retenção mínima de 5 anos (sem job de expurgo por ora).
+ *
+ * MINIMIZAÇÃO: o `DSAR_FULFILLED` NUNCA guarda o dado removido (ex.: o `source_name` do autor) em claro —
+ * senão a auditoria vira cópia do que se pediu para apagar. Guarda o `payload_hash` (SHA-256 do payload
+ * canônico `{ recipeIds, removedSourceName, ts }`) — prova o que foi feito sem re-armazenar o nome. O
+ * `details` (jsonb) carrega só metadados NÃO-sensíveis (ex.: `recipeIds` internos, contagem). O CHECK
+ * `dsar_fulfilled_hash_chk` garante no banco que todo `DSAR_FULFILLED` tem hash.
+ *
+ * As colunas por-tipo são NULLABLE (um único evento usa só as suas): `channel`/`requestType` (RECEIVED),
+ * `verificationMethod` (IDENTITY_VERIFIED), `payloadHash` (FULFILLED), `reason` (REJECTED). `caseId`
+ * correlaciona o ciclo de vida de um pedido do operador (GAP-4); `actorId` é quem disparou (dono no
+ * self-service, ou o Encarregado) — FK `set null` (apagar o ator NÃO apaga a prova).
+ */
+export const dsarAuditEvent = pgTable(
+  'dsar_audit_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventType: dsarEventTypeEnum('event_type').notNull(),
+    // Correlaciona os eventos de UM pedido (received → verified → fulfilled/rejected). Nullable: o
+    // self-service do dono (clearSourceAttribution) não abre ticket. Opaco (sem FK — o ticket é externo).
+    caseId: uuid('case_id'),
+    // Quem disparou (dono no self-service; Encarregado no fluxo do operador). set null: prova sobrevive
+    // à exclusão da conta. Nullable p/ pedidos do titular B (autor de terceiro, sem conta).
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    // DSAR_RECEIVED: canal de intake (ex.: 'self_service' | 'web_form' | 'email') + tipo do pedido.
+    channel: text('channel'),
+    requestType: text('request_type'),
+    // DSAR_IDENTITY_VERIFIED: método de verificação (texto livre do operador).
+    verificationMethod: text('verification_method'),
+    // DSAR_FULFILLED: SHA-256 (hex) do payload canônico. NUNCA o nome em claro (ver docstring).
+    payloadHash: text('payload_hash'),
+    // DSAR_REJECTED: motivo da recusa.
+    reason: text('reason'),
+    // Metadados estruturados NÃO-sensíveis (ids internos, contagens). NUNCA dado pessoal do titular.
+    details: jsonb('details').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Correlação por ticket (fluxo do operador) — só quando caseId presente.
+    index('dsar_audit_event_case_idx').on(t.caseId, t.createdAt),
+    // Varredura cronológica por tipo (auditoria/relatório de conformidade).
+    index('dsar_audit_event_type_created_idx').on(t.eventType, t.createdAt),
+    // Rede de banco do invariante central: todo DSAR_FULFILLED carrega um hash (nunca fica sem prova).
+    check(
+      'dsar_fulfilled_hash_chk',
+      sql`${t.eventType} <> 'DSAR_FULFILLED' or ${t.payloadHash} is not null`,
+    ),
   ],
 )
