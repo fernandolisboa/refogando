@@ -1256,4 +1256,192 @@ export const enUS: Messages = {
     filaImagemTipoInvalido: 'Invalid format (use JPG, PNG, or WebP).',
     filaImagemGrande: 'Image too large (max 2 MB).',
   },
+  // Privacy Policy (#398 / #276) — legal DRAFT rendered on a GATED route (unlinked, noindex). Keys are
+  // FLAT within the section (the `Messages` type derives only 2 levels): string leaves or
+  // `readonly string[]` (lists/tables by index). `{...}` placeholders render as a VISIBLE TODO badge in
+  // the component (never "published" as final text). To publish: fill the `{...}`, obtain legal sign-off
+  // (#276), then add the link and remove the noindex.
+  privacidade: {
+    metaTitulo: 'Privacy Policy — Refogando',
+    titulo: 'Privacy Policy',
+    rascunhoAviso:
+      'DRAFT for legal review — not legal advice. This text has not yet been reviewed or signed off by a lawyer and is not published. The highlighted fields are placeholders to be filled, and the points marked "[validate]" await professional confirmation.',
+
+    parteATitulo: 'Part (a) — Privacy Policy',
+    resumoTitulo: '30-second summary',
+    resumoItens: [
+      'Refogando is a bilingual (pt-BR / en-US) AI recipe app.',
+      'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
+      'We do not sell your data. We share it only with service providers that make the app work (hosting, database, AI).',
+      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: {e-mail do encarregado}. We respond within 15 days.',
+      'This text may change; we notify you when it does.',
+    ],
+
+    s1Titulo: '1. Who we are (identification of the controller) — Art. 9, III',
+    s1Corpo: [
+      'The data controller is {razão social}, tax ID (CNPJ) {CNPJ}, headquartered at {endereço}, responsible for the Refogando app ({URL do app}).',
+      'If the project is currently operated by an individual, [validate] with the lawyer the correct way to identify the controller.',
+    ],
+
+    s2Titulo: '2. Contact of the controller and the data protection officer (DPO) — Art. 9, IV; Art. 41',
+    s2Itens: [
+      'Data protection officer (DPO): {nome do encarregado}.',
+      'Contact e-mail for privacy matters and exercising rights: {e-mail do encarregado}.',
+      'Response time: we answer data subject requests within 15 days (LGPD, Art. 19, II).',
+    ],
+    s2Gap: 'GAP to resolve: today there is no published privacy channel or announced officer. The officer e-mail must be defined and published before this policy is published.',
+
+    s3Titulo: '3. What we use your data for (specific purpose) — Art. 9, I; Art. 6, I',
+    s3Intro:
+      'We process personal data only for specific, informed purposes. Each activity follows the Data / Purpose / Legal basis / Retention pattern.',
+    s3Nota:
+      'The full inventory of account/usage data is still to be finalized with the team and validated; the table below is the skeleton of the confirmed processing activities. The Web Discovery feature is detailed in Part (b).',
+
+    rotuloDados: 'Data',
+    rotuloFinalidade: 'Purpose',
+    rotuloBaseLegal: 'Legal basis',
+    rotuloRetencao: 'Retention',
+
+    s31Titulo: '3.1. User account and authentication',
+    s31Valores: [
+      'e-mail, display name/identifier (handle), login credentials and {a completar: demais campos de conta}.',
+      'create and maintain your account, authenticate access and enable use of the app.',
+      'performance of a contract with the data subject — Art. 7, V of the LGPD. [validate]',
+      'while the account exists; after deletion, we erase or anonymize within {prazo}. [validate term]',
+    ],
+    s32Titulo: '3.2. Content created in the app (recipes, collections, ratings)',
+    s32Valores: [
+      'recipes you create, save, rate and organize; language preferences; text content you write.',
+      'deliver the app functionality (store and display your content, build collections, feed and search).',
+      'performance of a contract — Art. 7, V. [validate]',
+      'while the account exists or until you delete the content.',
+    ],
+    s33Titulo: '3.3. AI-generated images and AI-assisted content',
+    s33Valores: [
+      'prompts and images you generate; usage metadata (for cost/quota control).',
+      'generate dish images and support recipe creation; enforce usage limits.',
+      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX. [validate]',
+      '{a completar}.',
+    ],
+    s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
+    s34Corpo:
+      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground). [validate]',
+
+    s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
+    s4Itens: [
+      'How: data is processed by electronic means, on servers of contracted service providers (see item 5). We apply appropriate security measures (Art. 46), including access control by authentication and authorization by ownership.',
+      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it (item 3) or for a legal obligation. When the purpose ends, we erase or anonymize the data (Art. 15/16). Specific terms: [validate / complete the retention table].',
+    ],
+
+    s5Titulo: '5. Who we share with (shared use) — Art. 9, V',
+    s5Intro:
+      'We do not sell personal data. We share it with processors (service providers that process data on our behalf, under contract) strictly to operate the app:',
+    s5Cabecalho: ['Provider', 'For what', 'Category'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5ParaQue: [
+      'App hosting',
+      'Database',
+      'Image generation and search embeddings',
+      'Text generation/assistance',
+      'External link search in "Web Discovery"',
+    ],
+    s5Categorias: [
+      'Infrastructure processor',
+      'Infrastructure processor',
+      'AI processor',
+      'AI processor',
+      'Search processor',
+    ],
+    s5Nota: 'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes.',
+    s5Transferencia:
+      'International transfer: some providers process data outside Brazil. The basis and safeguards for international data transfer (LGPD, Arts. 33 to 36) must be [validated] and reflected here.',
+
+    s6Titulo: '6. Responsibilities of the processing agents — Art. 9, VI; Arts. 37–39',
+    s6Itens: [
+      '{razão social} acts as controller and is responsible for the decisions about the processing.',
+      'The providers in item 5 act as processors, processing data according to our instructions and under contract.',
+      'We keep (or will start keeping — [validate/implement]) a record of processing operations (Art. 37) and adopt security measures (Art. 46). In the event of a security incident with relevant risk, we notify the ANPD and the data subjects (Art. 48).',
+    ],
+
+    s7Titulo: '7. Your rights (data subject rights) — Art. 9, VII; Art. 18',
+    s7Intro:
+      'You, the data subject, have the rights granted by Art. 18 of the LGPD, upon request, among them:',
+    s7Direitos: [
+      'Confirmation that processing exists;',
+      'Access to the data;',
+      'Correction of incomplete, inaccurate or outdated data;',
+      'Anonymization, blocking or deletion of unnecessary or excessive data, or data processed in noncompliance;',
+      'Portability to another provider, upon request;',
+      'Deletion of data processed with consent (except for the cases in Art. 16);',
+      'Information about the entities with which we share data;',
+      'Information about the possibility of not giving consent and the consequences;',
+      'Withdrawal of consent;',
+      'When processing is based on legitimate interest, the right to object and to request information (Art. 18, §2, and Art. 37). [validate]',
+    ],
+    s7ComoExercer:
+      'How to exercise: write to {e-mail do encarregado}. We respond within 15 days (Art. 19, II). You may also petition the National Data Protection Authority (ANPD).',
+    s7Gap: 'GAP to resolve: today there is no complete self-service endpoint (access/portability/account deletion). We recommend implementing the Art. 18 rights-handling flow and, until then, answering requests manually within the 15-day term.',
+
+    s8Titulo: '8. Changes to this policy',
+    s8Corpo:
+      'We may update this policy. When there is a relevant change, we will notify you via {canal} and record the version and date of each change.',
+
+    parteBTitulo: 'Part (b) — "Web Discovery"',
+    resumoBTitulo: 'Summary of this section',
+    resumoBItens: [
+      'When you import a recipe from an external site, we keep two things about the origin: the author/site name and the link (URL) — solely to credit the source.',
+      'We do not copy the photo or the author text (an imported recipe is born without an image and without a description).',
+      'An imported recipe is always private — you cannot publish or republish it.',
+      'The personal data here is the name of the third-party recipe author — and you, the author, can request the removal of your name (the credit then shows only the site).',
+    ],
+
+    b1Titulo: 'b.1. What Web Discovery is',
+    b1Corpo: [
+      'Refogando can show, in search, some links to recipes from external sites (marked "from the web"), drawn from a closed list of domains we approve one by one (allowlist; search provider: Brave). If you click and confirm, the app imports that recipe into your private collection.',
+    ],
+    b1Itens: [
+      'Search never creates or republishes third-party content. Linking ≠ importing; importing ≠ republishing.',
+      'The allowlist is the single source of domains (managed by admin; with limits on domains queried and results per search).',
+      'Technical guard-rails already implemented: respect for robots.txt (RFC 9309), an identified User-Agent (RefogandoBot/1.0), a courtesy rate-limit and search/import only on an explicit user action — never automatic background crawling.',
+    ],
+
+    b2Titulo: 'b.2. Who is the data subject here',
+    b2Corpo:
+      'The personal data processed in this feature is the name of the third-party recipe author/publisher — that is, the data subject is the author of the external recipe, not the app user. This distinction matters for exercising rights (item b.5).',
+
+    b3Titulo: 'b.3. What data we collect, for what, on what basis and for how long',
+    b3Rotulos: ['Data', 'What we do NOT collect', 'Purpose', 'Legal basis', 'Retention'],
+    b3Valores: [
+      'Only two attribution fields, stored solely on imported recipes: the human-readable author/site name and the public source URL. Every recipe that is not imported leaves these two fields empty.',
+      'We do not copy the photo (an imported recipe is born without an image) or the author text / headnote. This keeps the third-party data surface to a minimum and avoids copying the expressive layer protected by copyright.',
+      'Give credit to the source ("source: … (link)") — honoring the moral right of attribution (Law 9,610/98) — and send traffic back to the source site. Attribution is mandatory, not optional.',
+      'Legitimate interest — LGPD Art. 7, IX. Alternative/complementary ground to be validated: data made manifestly public by the data subject (Art. 7, §4). [validate which basis prevails and whether a documented LIA is required under Art. 10.]',
+      'While the imported recipe exists in the user’s private collection, or until the author requests removal of the name (item b.5), or until the user deletes the recipe. When the name is removed, the credit shows only the site (host) derived from the URL.',
+    ],
+
+    b4Titulo: 'b.4. Sharing in this feature',
+    b4Corpo:
+      'To find the external links, we query the Brave search provider (processor), sending the search term restricted to the allowlist domains. The import itself is a copy made at the user’s request, stored privately in their account — it is not republished or shared with third parties.',
+
+    b5Titulo: 'b.5. Data subject rights (external recipe author) and how to exercise them — Art. 18',
+    b5Intro:
+      'If you are the author of a recipe that was imported into Refogando and want to remove your name from the attribution, you have that right (Art. 18, IV; and the right to object to processing based on legitimate interest, Art. 18, §2 — [validate]).',
+    b5ComoFunciona: [
+      'Removal clears only the author name; the source URL remains, because attribution is mandatory. After removal, the credit is downgraded to the site name (host) derived from the URL, and the "view on site" link remains.',
+      'Removal only takes effect when there is in fact a human name distinct from the host; otherwise it is a no-op.',
+      'Removal is not reversible to the original name — which is appropriate for the right to removal.',
+    ],
+    b5Gap: 'Important OPEN GAP: today the name removal can only be triggered by the logged-in owner of the imported recipe — not by an external author. There is no public channel through which the data subject (source author) can request removal of their name, nor a published officer/takedown channel. This section must not go live announcing a right that does not yet have a channel: the channel must exist together with publication.',
+    b5Contato:
+      'Officer contact for this purpose (to be published): {nome do encarregado} — {e-mail do encarregado} — response within 15 days.',
+
+    todoRotulo: 'field to be filled in',
+    gapRotulo: 'Open gap',
+    rodapeVersaoRotulo: 'Version',
+    rodapeVersao: 'v0 (draft)',
+    rodapeDataRotulo: 'Date',
+    rodapeData: '2026-07-01',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'DRAFT — awaiting legal review',
+  },
 } as const
