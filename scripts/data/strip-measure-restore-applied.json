@@ -1,0 +1,668 @@
+{
+  "00def052-b6cd-4a45-ac47-45324ff1c0a9": {
+    "originalBefore": "4 folhas de alga nori",
+    "overStripped": "alga nori",
+    "restored": "folhas de alga nori",
+    "kind": "over-strip"
+  },
+  "029d6ee2-9389-482b-9444-1f0a7ec58519": {
+    "originalBefore": "4 vagens de cardamomo",
+    "overStripped": "cardamomo",
+    "restored": "vagens de cardamomo",
+    "kind": "over-strip"
+  },
+  "02a61512-ed86-4789-bbbb-fa2045c757a0": {
+    "originalBefore": "4 talos de cebolinha em tiras",
+    "overStripped": "cebolinha em tiras",
+    "restored": "talos de cebolinha em tiras",
+    "kind": "over-strip"
+  },
+  "03abcb84-d502-4f3c-9d2e-da2727a2037a": {
+    "originalBefore": "2 talos de capim-santo amassados",
+    "overStripped": "capim-santo amassados",
+    "restored": "talos de capim-santo amassados",
+    "kind": "over-strip"
+  },
+  "0523c9da-a464-4067-827c-4dd23c9c0b08": {
+    "originalBefore": "4 folhas de limão kaffir",
+    "overStripped": "limão kaffir",
+    "restored": "folhas de limão kaffir",
+    "kind": "over-strip"
+  },
+  "0589fe12-cd5b-4565-beff-54f8b5b21320": {
+    "originalBefore": "2 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "05bc2cb3-e1e0-400b-9bae-2b27ec0b4935": {
+    "originalBefore": "2 folhas de alga nori cortadas em tiras",
+    "overStripped": "alga nori cortadas em tiras",
+    "restored": "folhas de alga nori cortadas em tiras",
+    "kind": "over-strip"
+  },
+  "066b07c3-5425-429b-8a43-f016a6b6ad97": {
+    "originalBefore": "1 ramo de tomilho fresco",
+    "overStripped": "tomilho fresco",
+    "restored": "ramo de tomilho fresco",
+    "kind": "over-strip"
+  },
+  "07ac8964-600a-4355-a321-5150a677ae69": {
+    "originalBefore": "2 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "0bf7b718-c014-4e26-b09e-3f7719c3da36": {
+    "originalBefore": "4 folhas de limão kaffir",
+    "overStripped": "limão kaffir",
+    "restored": "folhas de limão kaffir",
+    "kind": "over-strip"
+  },
+  "14ff847f-0f28-4da4-965c-73e8ab4f4fba": {
+    "originalBefore": "1 ramo de tomilho",
+    "overStripped": "tomilho",
+    "restored": "ramo de tomilho",
+    "kind": "over-strip"
+  },
+  "18712a73-128b-432a-887d-b753216d5567": {
+    "originalBefore": "1/2 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "1cd29ed3-9e49-4950-bc50-3f43f2431f09": {
+    "originalBefore": "4 folhas de alface",
+    "overStripped": "alface",
+    "restored": "folhas de alface",
+    "kind": "over-strip"
+  },
+  "2053831c-cb61-4951-b82b-0bd5be1e4c16": {
+    "originalBefore": "2 talos de salsão picados",
+    "overStripped": "salsão picados",
+    "restored": "talos de salsão picados",
+    "kind": "over-strip"
+  },
+  "23806ac9-c27d-4cee-ba74-830156a9cf42": {
+    "originalBefore": "30 folhas de massa para guioza",
+    "overStripped": "massa para guioza",
+    "restored": "folhas de massa para guioza",
+    "kind": "over-strip"
+  },
+  "24647dff-5ced-4d9d-b156-c0737088c9d6": {
+    "originalBefore": "1 rolo de massa folhada",
+    "overStripped": "massa folhada",
+    "restored": "rolo de massa folhada",
+    "kind": "over-strip"
+  },
+  "248418d9-735f-49fd-8b5c-095089ac8f04": {
+    "originalBefore": "2 dentes de alho fatiados",
+    "overStripped": "2 dentes de alho fatiados",
+    "restored": "alho fatiados",
+    "kind": "still-embeds"
+  },
+  "29212922-2202-4207-a98c-910ae4af1253": {
+    "originalBefore": "4 vagens de cardamomo",
+    "overStripped": "cardamomo",
+    "restored": "vagens de cardamomo",
+    "kind": "over-strip"
+  },
+  "2dc3c05f-36c5-4dc7-8ccd-6f50098c72d0": {
+    "originalBefore": "5 folhas de limão kaffir",
+    "overStripped": "limão kaffir",
+    "restored": "folhas de limão kaffir",
+    "kind": "over-strip"
+  },
+  "32a3e39b-6c7c-465c-9ba2-d2796996c009": {
+    "originalBefore": "1 talo de salsão picado",
+    "overStripped": "salsão picado",
+    "restored": "talo de salsão picado",
+    "kind": "over-strip"
+  },
+  "3383a5a8-5694-4196-aad2-3f2ed6d4798e": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "38a9dce3-353e-4445-b878-25dc1f38e452": {
+    "originalBefore": "1 pacote de miojo",
+    "overStripped": "miojo",
+    "restored": "pacote de miojo",
+    "kind": "over-strip"
+  },
+  "39774f46-627f-4c16-bbe4-f193a9518e37": {
+    "originalBefore": "2 talos de salsão picados",
+    "overStripped": "salsão picados",
+    "restored": "talos de salsão picados",
+    "kind": "over-strip"
+  },
+  "39b6cc16-7f7d-437d-865e-4dd849e867c6": {
+    "originalBefore": "1 maço de salsinha",
+    "overStripped": "salsinha",
+    "restored": "maço de salsinha",
+    "kind": "over-strip"
+  },
+  "3c1be4fe-68d1-4140-ae28-2e706afaf574": {
+    "originalBefore": "1 maço de salsinha",
+    "overStripped": "salsinha",
+    "restored": "maço de salsinha",
+    "kind": "over-strip"
+  },
+  "3c5ebebb-b5e3-44e3-a38d-e6eb8d51bea2": {
+    "originalBefore": "2 talos de cebolinha picados",
+    "overStripped": "cebolinha picados",
+    "restored": "talos de cebolinha picados",
+    "kind": "over-strip"
+  },
+  "3c822621-f292-4f3b-9574-79e0b63cc546": {
+    "originalBefore": "8 folhas de sálvia",
+    "overStripped": "sálvia",
+    "restored": "folhas de sálvia",
+    "kind": "over-strip"
+  },
+  "3e990387-27c1-46aa-9205-f39d0f3829c4": {
+    "originalBefore": "30 folhas de parreira em conserva",
+    "overStripped": "parreira em conserva",
+    "restored": "folhas de parreira em conserva",
+    "kind": "over-strip"
+  },
+  "3f97c897-c08f-49fd-b06b-6aa8c7a1745f": {
+    "originalBefore": "2 paus de canela",
+    "overStripped": "canela",
+    "restored": "paus de canela",
+    "kind": "over-strip"
+  },
+  "400b4559-0e86-4fb4-a0fe-701c23a34024": {
+    "originalBefore": "1 tira de casca de laranja",
+    "overStripped": "casca de laranja",
+    "restored": "tira de casca de laranja",
+    "kind": "over-strip"
+  },
+  "41c8a777-3987-4278-b3b2-7cd6792cd4b2": {
+    "originalBefore": "1 maço de hortelã fresca",
+    "overStripped": "hortelã fresca",
+    "restored": "maço de hortelã fresca",
+    "kind": "over-strip"
+  },
+  "4459540e-bd57-4e7c-b5a9-df3d5dc76c8c": {
+    "originalBefore": "2 ramos de tomilho",
+    "overStripped": "tomilho",
+    "restored": "ramos de tomilho",
+    "kind": "over-strip"
+  },
+  "451f0803-b4f5-4fd7-9c93-d7543b15d13c": {
+    "originalBefore": "2 talos de cebolinha picados",
+    "overStripped": "cebolinha picados",
+    "restored": "talos de cebolinha picados",
+    "kind": "over-strip"
+  },
+  "470ce0ab-6bb5-4a7f-8290-039507ab74a0": {
+    "originalBefore": "1 maço de cebolinha verde picadinha",
+    "overStripped": "cebolinha verde picadinha",
+    "restored": "maço de cebolinha verde picadinha",
+    "kind": "over-strip"
+  },
+  "493c1c88-659c-474b-942f-fea5c54c7081": {
+    "originalBefore": "40 folhas de uva em conserva",
+    "overStripped": "uva em conserva",
+    "restored": "folhas de uva em conserva",
+    "kind": "over-strip"
+  },
+  "4b8a6b47-adee-48ab-8719-090cae8942c9": {
+    "originalBefore": "1 maço de salsinha",
+    "overStripped": "salsinha",
+    "restored": "maço de salsinha",
+    "kind": "over-strip"
+  },
+  "501261cc-1a0f-4e11-9a1f-5489a01761a4": {
+    "originalBefore": "3 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "50e63d45-58f3-40df-b4f7-6a4244590815": {
+    "originalBefore": "1 pedaço de gengibre ralado",
+    "overStripped": "gengibre ralado",
+    "restored": "pedaço de gengibre ralado",
+    "kind": "over-strip"
+  },
+  "529c4eae-2fc8-4bbb-ace9-80c689eec9d6": {
+    "originalBefore": "2 talos de cebolinha picados",
+    "overStripped": "cebolinha picados",
+    "restored": "talos de cebolinha picados",
+    "kind": "over-strip"
+  },
+  "533102e4-8b30-4582-9760-90d32f1f56e4": {
+    "originalBefore": "3 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "539d586b-e2b0-4b3d-ada8-b9f6ff9978b0": {
+    "originalBefore": "1 ramo de tomilho",
+    "overStripped": "tomilho",
+    "restored": "ramo de tomilho",
+    "kind": "over-strip"
+  },
+  "54f5bd26-6f32-45fe-a2f6-62ec566bea2b": {
+    "originalBefore": "12 folhas de massa para rolinho primavera",
+    "overStripped": "massa para rolinho primavera",
+    "restored": "folhas de massa para rolinho primavera",
+    "kind": "over-strip"
+  },
+  "55812937-6130-4955-b8a5-c7bca17c3d92": {
+    "originalBefore": "1 maço de salsinha picada",
+    "overStripped": "salsinha picada",
+    "restored": "maço de salsinha picada",
+    "kind": "over-strip"
+  },
+  "57dd8ec4-a918-424b-9151-dc2e83a51602": {
+    "originalBefore": "1 folha de louro",
+    "overStripped": "louro",
+    "restored": "folha de louro",
+    "kind": "over-strip"
+  },
+  "5b40527f-538e-4608-a63c-0f9448a12ca5": {
+    "originalBefore": "2 dentes de alho fatiados",
+    "overStripped": "2 dentes de alho fatiados",
+    "restored": "alho fatiados",
+    "kind": "still-embeds"
+  },
+  "5e6a211b-32a2-4565-b63e-6ce98123294f": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "5fd03d5c-4848-44db-9567-c12aa2e487ae": {
+    "originalBefore": "1 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "62f111ff-db7f-4a43-a629-047d07ef52cd": {
+    "originalBefore": "12 folhas de massa para rolinho primavera",
+    "overStripped": "massa para rolinho primavera",
+    "restored": "folhas de massa para rolinho primavera",
+    "kind": "over-strip"
+  },
+  "63a6787a-7c75-4b2b-b288-3a3630ecba7a": {
+    "originalBefore": "2 talos de cebolinha picados",
+    "overStripped": "2 talos de cebolinha picados",
+    "restored": "talos de cebolinha picados",
+    "kind": "still-embeds"
+  },
+  "69348d47-002f-498e-9ecd-5ad34efa035a": {
+    "originalBefore": "2 talos de cebolinha picada",
+    "overStripped": "cebolinha picada",
+    "restored": "talos de cebolinha picada",
+    "kind": "over-strip"
+  },
+  "69ca0342-5585-4c03-8dff-7cbea271d302": {
+    "originalBefore": "1 bulbo de funcho",
+    "overStripped": "funcho",
+    "restored": "bulbo de funcho",
+    "kind": "over-strip"
+  },
+  "6df5a0a0-e774-4dfc-a0d7-07e97a9518cd": {
+    "originalBefore": "1 maço de hortelã",
+    "overStripped": "hortelã",
+    "restored": "maço de hortelã",
+    "kind": "over-strip"
+  },
+  "6e841a73-0e7d-4420-b9ad-d87e4e2c19cb": {
+    "originalBefore": "2 maços de coentro batidos com água",
+    "overStripped": "coentro batidos com água",
+    "restored": "maços de coentro batidos com água",
+    "kind": "over-strip"
+  },
+  "6fc65f6d-1173-4dc5-aa7b-d1f69f061f4d": {
+    "originalBefore": "6 filés de anchova",
+    "overStripped": "anchova",
+    "restored": "filés de anchova",
+    "kind": "over-strip"
+  },
+  "7773e8f5-f00b-4ca1-8cc4-3bbb81da130f": {
+    "originalBefore": "1 filé de peito de frango em cubos",
+    "overStripped": "peito de frango em cubos",
+    "restored": "filé de peito de frango em cubos",
+    "kind": "over-strip"
+  },
+  "7ad397f7-b701-48c3-b554-3068c0e43b78": {
+    "originalBefore": "4 maços de salsinha fresca",
+    "overStripped": "salsinha fresca",
+    "restored": "maços de salsinha fresca",
+    "kind": "over-strip"
+  },
+  "7f184626-f7d6-42ef-b87e-55e07b1aac17": {
+    "originalBefore": "2 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "7fb65857-ceab-45dd-954b-2ffac5e0b68a": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "8072b3eb-75c6-4160-82de-6882a4c5fd06": {
+    "originalBefore": "1/2 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "839942b3-d01a-4d3b-a82c-c7591961865d": {
+    "originalBefore": "1 maço de coentro",
+    "overStripped": "coentro",
+    "restored": "maço de coentro",
+    "kind": "over-strip"
+  },
+  "8622f0b6-ed8c-4c6a-a8af-c1a15763f8c9": {
+    "originalBefore": "1 maço de couve cavolo nero (ou couve comum)",
+    "overStripped": "couve cavolo nero (ou couve comum)",
+    "restored": "maço de couve cavolo nero (ou couve comum)",
+    "kind": "over-strip"
+  },
+  "86f90e68-b9c5-46d0-81d8-d6526934281d": {
+    "originalBefore": "1 maço de hortelã fresca",
+    "overStripped": "hortelã fresca",
+    "restored": "maço de hortelã fresca",
+    "kind": "over-strip"
+  },
+  "89cda94f-1b8c-40df-be4b-301fe7e9e5e1": {
+    "originalBefore": "1 maço de couve-manteiga",
+    "overStripped": "couve-manteiga",
+    "restored": "maço de couve-manteiga",
+    "kind": "over-strip"
+  },
+  "8a6ee0d5-cc76-4392-bfd5-d1e77abe1bbf": {
+    "originalBefore": "2 porções de macarrão para ramen",
+    "overStripped": "macarrão para ramen",
+    "restored": "porções de macarrão para ramen",
+    "kind": "over-strip"
+  },
+  "8d0460da-82d9-4135-aea0-4a29099623b9": {
+    "originalBefore": "1 pato inteiro de cerca de 2 kg",
+    "overStripped": "1 pato inteiro de cerca de 2 kg",
+    "restored": "pato inteiro de cerca de 2 kg",
+    "kind": "still-embeds"
+  },
+  "8e091ce2-a763-424e-8743-5c86e2fce4e7": {
+    "originalBefore": "1 lata de leite condensado",
+    "overStripped": "leite condensado",
+    "restored": "lata de leite condensado",
+    "kind": "over-strip"
+  },
+  "8ff8cc0d-4072-4457-a954-49d11f18d6ac": {
+    "originalBefore": "1 pau de canela",
+    "overStripped": "canela",
+    "restored": "pau de canela",
+    "kind": "over-strip"
+  },
+  "92538f94-48b6-4222-b4e8-0a825dcc8294": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "94a8d295-2319-41f4-932b-b1a8992b26e0": {
+    "originalBefore": "1 pacote de massa filo",
+    "overStripped": "massa filo",
+    "restored": "pacote de massa filo",
+    "kind": "over-strip"
+  },
+  "98476ad8-a021-4e97-ba43-58da465ee241": {
+    "originalBefore": "2 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "9e989b92-b0dc-4307-9b9b-0bb33c2cd5ed": {
+    "originalBefore": "4 espigas de milho",
+    "overStripped": "milho",
+    "restored": "espigas de milho",
+    "kind": "over-strip"
+  },
+  "9efd1e09-dea6-4c13-a437-7e8ebeb4d8cd": {
+    "originalBefore": "1 maço de endro (dill) picado",
+    "overStripped": "endro (dill) picado",
+    "restored": "maço de endro (dill) picado",
+    "kind": "over-strip"
+  },
+  "a152be7a-8fe7-45b1-a3b2-5d91b94443d7": {
+    "originalBefore": "1 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "a87d47f3-fd4d-4a82-8b12-7546c80940fc": {
+    "originalBefore": "1 ramo de folhas de curry",
+    "overStripped": "folhas de curry",
+    "restored": "ramo de folhas de curry",
+    "kind": "over-strip"
+  },
+  "a8ded83b-ad15-4a76-a000-f0d807637dda": {
+    "originalBefore": "8 folhas de sálvia fresca",
+    "overStripped": "sálvia fresca",
+    "restored": "folhas de sálvia fresca",
+    "kind": "over-strip"
+  },
+  "ad69f4bd-099d-465a-8cc4-ee05d5482d83": {
+    "originalBefore": "2 maços de salsa picada bem fina",
+    "overStripped": "salsa picada bem fina",
+    "restored": "maços de salsa picada bem fina",
+    "kind": "over-strip"
+  },
+  "b765b215-3f5e-4d61-9f04-906d509237ac": {
+    "originalBefore": "1 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "b8b4d2db-a834-4499-ac46-0fc587dea212": {
+    "originalBefore": "1 cabeça de alho descascada",
+    "overStripped": "alho descascada",
+    "restored": "cabeça de alho descascada",
+    "kind": "over-strip"
+  },
+  "b9b2a413-0cde-4d47-b81e-a79cb9d60785": {
+    "originalBefore": "1 pau de canela",
+    "overStripped": "canela",
+    "restored": "pau de canela",
+    "kind": "over-strip"
+  },
+  "ba622cbd-32c8-42e3-a648-df420d84d39f": {
+    "originalBefore": "1 maço de coentro",
+    "overStripped": "coentro",
+    "restored": "maço de coentro",
+    "kind": "over-strip"
+  },
+  "bd232092-ce64-4f19-aa11-0298367bbdf9": {
+    "originalBefore": "2 paus de canela",
+    "overStripped": "canela",
+    "restored": "paus de canela",
+    "kind": "over-strip"
+  },
+  "bdbef287-2e52-4af1-b1b0-911923bfb4f0": {
+    "originalBefore": "1 maço de salsa",
+    "overStripped": "salsa",
+    "restored": "maço de salsa",
+    "kind": "over-strip"
+  },
+  "c7746d0f-29e8-4ce4-bd90-93e525f8cbe6": {
+    "originalBefore": "1 maço de couve fatiada fina",
+    "overStripped": "couve fatiada fina",
+    "restored": "maço de couve fatiada fina",
+    "kind": "over-strip"
+  },
+  "c8ae893f-2a40-4456-96e4-0dc8f9f0fdd7": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "ca542478-805a-4f1a-b09f-3558b7b55eb1": {
+    "originalBefore": "4 dentes de alho fatiados",
+    "overStripped": "4 dentes de alho fatiados",
+    "restored": "alho fatiados",
+    "kind": "still-embeds"
+  },
+  "cb741289-a43a-45d3-a7f9-8411f33c3fc7": {
+    "originalBefore": "1 maço de coentro fresco",
+    "overStripped": "coentro fresco",
+    "restored": "maço de coentro fresco",
+    "kind": "over-strip"
+  },
+  "cc6642d7-1ccd-434f-b8ea-fa589bd04a22": {
+    "originalBefore": "1 lata de leite condensado",
+    "overStripped": "leite condensado",
+    "restored": "lata de leite condensado",
+    "kind": "over-strip"
+  },
+  "ccb8774d-dcfa-498d-90ad-49ba8ad06575": {
+    "originalBefore": "1 pedaço de gengibre ralado",
+    "overStripped": "gengibre ralado",
+    "restored": "pedaço de gengibre ralado",
+    "kind": "over-strip"
+  },
+  "ccdfabc6-fb12-4b7e-a7a7-b19d29573671": {
+    "originalBefore": "1 talo de salsão picado",
+    "overStripped": "salsão picado",
+    "restored": "talo de salsão picado",
+    "kind": "over-strip"
+  },
+  "ce456ffb-28bc-4ea9-b7a3-2675b0bb4139": {
+    "originalBefore": "1 maço de cheiro-verde picado",
+    "overStripped": "cheiro-verde picado",
+    "restored": "maço de cheiro-verde picado",
+    "kind": "over-strip"
+  },
+  "ce8c11d7-34c1-43aa-bbd1-a1188612bc2e": {
+    "originalBefore": "1 maço de coentro picado",
+    "overStripped": "coentro picado",
+    "restored": "maço de coentro picado",
+    "kind": "over-strip"
+  },
+  "d310741d-2470-4a67-8565-1a690c961034": {
+    "originalBefore": "1 fava de baunilha",
+    "overStripped": "baunilha",
+    "restored": "fava de baunilha",
+    "kind": "over-strip"
+  },
+  "d5e58162-21ad-4df6-beb2-7139979907ae": {
+    "originalBefore": "4 vagens de cardamomo",
+    "overStripped": "cardamomo",
+    "restored": "vagens de cardamomo",
+    "kind": "over-strip"
+  },
+  "d70ef2f2-efcf-4f12-a0d5-f4af0c45c0be": {
+    "originalBefore": "1 pacote de miojo (descarte o tempero industrial)",
+    "overStripped": "miojo (descarte o tempero industrial)",
+    "restored": "pacote de miojo (descarte o tempero industrial)",
+    "kind": "over-strip"
+  },
+  "da656697-cb84-4858-9988-728674de3e2b": {
+    "originalBefore": "1 lata de leite evaporado",
+    "overStripped": "leite evaporado",
+    "restored": "lata de leite evaporado",
+    "kind": "over-strip"
+  },
+  "de1802bb-d4f5-406c-a3ec-f12dca6906c5": {
+    "originalBefore": "3 dentes de alho picados",
+    "overStripped": "3 dentes de alho picados",
+    "restored": "alho picados",
+    "kind": "still-embeds"
+  },
+  "def19955-51fd-4de1-9cea-a457366b385d": {
+    "originalBefore": "10 gemas de ovo",
+    "overStripped": "ovo",
+    "restored": "gemas de ovo",
+    "kind": "over-strip"
+  },
+  "e244a6dd-5c8b-4d01-8964-520a47171b4b": {
+    "originalBefore": "2 maços de coentro batidos",
+    "overStripped": "coentro batidos",
+    "restored": "maços de coentro batidos",
+    "kind": "over-strip"
+  },
+  "e35de76c-5a45-4597-a62a-784ac1ad2284": {
+    "originalBefore": "1 folha de louro",
+    "overStripped": "louro",
+    "restored": "folha de louro",
+    "kind": "over-strip"
+  },
+  "e41b406b-5ba2-461a-b666-4894c1e3a5e7": {
+    "originalBefore": "10 folhas de manjericão fresco",
+    "overStripped": "manjericão fresco",
+    "restored": "folhas de manjericão fresco",
+    "kind": "over-strip"
+  },
+  "e6a445c6-3e04-4950-a045-faa94f8b958f": {
+    "originalBefore": "2 talos de cebolinha em rodelas",
+    "overStripped": "cebolinha em rodelas",
+    "restored": "talos de cebolinha em rodelas",
+    "kind": "over-strip"
+  },
+  "e8a5c2dc-de8d-486d-b772-8244ccc1e386": {
+    "originalBefore": "12 folhas de manjericão fresco",
+    "overStripped": "manjericão fresco",
+    "restored": "folhas de manjericão fresco",
+    "kind": "over-strip"
+  },
+  "e8e764b5-1e68-49b7-b264-71d1f7d23932": {
+    "originalBefore": "24 folhas de massa para wonton",
+    "overStripped": "massa para wonton",
+    "restored": "folhas de massa para wonton",
+    "kind": "over-strip"
+  },
+  "e9126721-1601-47d6-80d4-0c455d5fbb73": {
+    "originalBefore": "2 folhas de louro",
+    "overStripped": "louro",
+    "restored": "folhas de louro",
+    "kind": "over-strip"
+  },
+  "ed20b715-bc8b-4f06-a4ea-17d7086c13fa": {
+    "originalBefore": "1 maço de hortelã picada",
+    "overStripped": "hortelã picada",
+    "restored": "maço de hortelã picada",
+    "kind": "over-strip"
+  },
+  "f07dd35a-e583-463f-8139-a647a00892ed": {
+    "originalBefore": "1 ou 2 laranjas",
+    "overStripped": "laranjas",
+    "restored": "ou 2 laranjas",
+    "kind": "over-strip"
+  },
+  "f57ecc64-2dc4-466d-b28e-58e44b882eb8": {
+    "originalBefore": "5 folhas de limão kaffir",
+    "overStripped": "limão kaffir",
+    "restored": "folhas de limão kaffir",
+    "kind": "over-strip"
+  },
+  "f595b5fc-8f4d-4337-84bf-6c68a74325ef": {
+    "originalBefore": "1 talo de salsão picado",
+    "overStripped": "salsão picado",
+    "restored": "talo de salsão picado",
+    "kind": "over-strip"
+  },
+  "f98bddfb-eda2-4293-b732-3d562cfb29cc": {
+    "originalBefore": "3 talos de capim-santo amassados",
+    "overStripped": "capim-santo amassados",
+    "restored": "talos de capim-santo amassados",
+    "kind": "over-strip"
+  },
+  "fb5d3f0c-1399-498e-8f20-e5424c0f9ad8": {
+    "originalBefore": "4 dentes de alho amassados",
+    "overStripped": "4 dentes de alho amassados",
+    "restored": "alho amassados",
+    "kind": "still-embeds"
+  },
+  "fc0f329d-698e-4b89-b5b8-218141caa919": {
+    "originalBefore": "1 pedaço de gengibre fatiado",
+    "overStripped": "gengibre fatiado",
+    "restored": "pedaço de gengibre fatiado",
+    "kind": "over-strip"
+  }
+}
