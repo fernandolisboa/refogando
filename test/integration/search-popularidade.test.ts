@@ -5,17 +5,23 @@ import { getDb } from '@/server/deps'
 import { searchRecipes } from '@/server/recipe/search'
 import { EMBEDDING_MODEL } from '@/server/embedding/recompute'
 import { EMPTY_FACETS } from '@/domain/facet-params'
-import { seedRecipe, seedTranslation, seedEmbedding, seedVote } from '../helpers/recipes'
+import { seedRecipe, seedTranslation, seedEmbedding, seedSave, seedReview } from '../helpers/recipes'
 import { seedUser } from '../helpers/users'
 
 /**
- * Ordenação por Popularidade na Busca da COMUNIDADE (issue #16, ADR-0003), exercitando o
- * loader `searchRecipes` direto (mesma forma de search-semantica.test.ts). A chave de
- * Popularidade entra DENTRO do tier de exatidão (NUNCA acima — ADR-0008) e SÓ na Comunidade
- * (Catálogo editorial intocado). Sob sort=relevancia/ausente o ORDER BY colapsa byte-a-byte
- * no de hoje (#14). `setup.ts` trunca antes de cada teste.
+ * Ordenação por Popularidade na Busca da COMUNIDADE (issue #16→#368, ADR-0003/0027/0028), exercitando o
+ * loader `searchRecipes` direto. A chave de Popularidade agora é a MISTURA (save + nota Bayesiana +
+ * frescor) — não mais `vote_count`. Entra DENTRO do tier de exatidão (NUNCA acima — ADR-0008) e SÓ na
+ * Comunidade (Catálogo editorial intocado). Sob sort=relevancia/ausente o ORDER BY colapsa byte-a-byte no
+ * de hoje (#14). `setup.ts` trunca antes de cada teste (⇒ C global = fallback 3.0 quando não há nota viva).
  *
- * Vetores 1536-dim PINADOS (eK = base canônica), bind via literal pgvector `'[...]'`.
+ * A FILA é carregada pelo sinal de SAVES (abundante, low-friction — o racional do ADR "Save evita o
+ * cold-start"); as receitas são semeadas com `created_at` ~= now() ⇒ frescor ~igual pra todas ⇒ não
+ * distorce a ordem DENTRO de um bucket. LANDMINES cobertas: self-save NÃO infla (write-path permite, o
+ * ranking exclui), nota MODERADA NÃO infla (visível E bucket-2 semântico sob popularidade — o combo M1
+ * que quebraria com created_at ausente no semanticSelectSql), catálogo imune, relevancia byte-idêntica.
+ *
+ * Vetores 1536-dim PINADOS (base canônica), bind via literal pgvector.
  */
 
 let sql: Sql
@@ -49,11 +55,12 @@ async function seedCommunity(
   ownerId: string,
   titulo: string,
   cos: number | null,
+  id?: string,
 ): Promise<string> {
-  const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
-  await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo, provenance: 'escrita_por_pessoa' })
-  if (cos !== null) await seedEmbedding({ recipeId: id, locale: 'pt-BR', embedding: vecCos(cos), model: EMBEDDING_MODEL })
-  return id
+  const recipeId = await seedRecipe({ id, origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+  await seedTranslation({ recipeId, locale: 'pt-BR', titulo, provenance: 'escrita_por_pessoa' })
+  if (cos !== null) await seedEmbedding({ recipeId, locale: 'pt-BR', embedding: vecCos(cos), model: EMBEDDING_MODEL })
+  return recipeId
 }
 
 /** Receita de CATÁLOGO (owner NULL, visibility default). Título + embedding opcional. */
@@ -64,25 +71,41 @@ async function seedCatalog(titulo: string, cos: number | null, id?: string): Pro
   return recipeId
 }
 
-/** Vota N vezes na Receita, cada voto por um Usuário DISTINTO (PK composta). */
-async function castVotes(recipeId: string, n: number, tag: string): Promise<void> {
+/** N saves de terceiros DISTINTOS (cada um um Usuário novo ≠ dono). */
+async function addSaves(recipeId: string, n: number, tag: string): Promise<void> {
   for (let i = 0; i < n; i++) {
-    const uid = await seedUser({ email: `vote-${tag}-${i}-${crypto.randomUUID()}@ex.com` })
-    await seedVote({ userId: uid, recipeId })
+    const uid = await seedUser({ email: `save-${tag}-${i}-${crypto.randomUUID()}@ex.com` })
+    await seedSave({ userId: uid, recipeId })
   }
 }
 
-describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
-  // AC3a (posição da chave): popularidade NÃO sobrepõe o tiering ADR-0008.
-  it('AC3a precisa-zero-voto ranqueia ACIMA de só-semântica-muito-votada sob popularidade', async () => {
-    const db = getDb()
-    const owner = await seedUser({ email: `ac3a-owner-${crypto.randomUUID()}@ex.com` })
+/** N avaliações de terceiros DISTINTOS, todas com `rating`, opcionalmente JÁ moderadas. */
+async function addReviews(
+  recipeId: string,
+  n: number,
+  rating: number,
+  tag: string,
+  moderatedBy?: string,
+): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    const uid = await seedUser({ email: `rev-${tag}-${i}-${crypto.randomUUID()}@ex.com` })
+    await seedReview({
+      userId: uid,
+      recipeId,
+      rating,
+      ...(moderatedBy ? { moderated: { curatorId: moderatedBy } } : {}),
+    })
+  }
+}
 
-    // (i) PRECISA bucket-1 (título casa "Chili"), cosseno fraco, ZERO votos.
-    const precise = await seedCommunity(owner, 'Chili de carne', 0.2)
-    // (ii) SÓ-SEMÂNTICA bucket-2 (título NÃO casa "Chili"), cosseno forte, MUITOS votos.
-    const semantic = await seedCommunity(owner, 'Ensopado apimentado da casa', 0.9)
-    await castVotes(semantic, 5, 'ac3a')
+describe('Busca da Comunidade — ordenação por Popularidade (#368)', () => {
+  // Tiering (ADR-0008): popularidade NÃO sobrepõe o bucket de exatidão.
+  it('precisa-zero-save ranqueia ACIMA de só-semântica-muito-salva sob popularidade', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `tier-owner-${crypto.randomUUID()}@ex.com` })
+    const precise = await seedCommunity(owner, 'Chili de carne', 0.2) // bucket-1, 0 saves
+    const semantic = await seedCommunity(owner, 'Ensopado apimentado da casa', 0.9) // bucket-2
+    await addSaves(semantic, 5, 'tier')
 
     const { hits } = await searchRecipes(db, {
       q: 'Chili',
@@ -93,56 +116,18 @@ describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
       queryVector: QUERY_VEC,
       sort: 'popularidade',
     })
-    const iPrecise = indexOf(hits, precise)
-    const iSemantic = indexOf(hits, semantic)
-    expect(iPrecise).toBeGreaterThanOrEqual(0) // bucket 1 presente
-    expect(iSemantic).toBeGreaterThanOrEqual(0) // bucket 2 presente (mesma seção comunidade)
-    // Popularidade NÃO sobe a bucket-2: a precisa-zero-voto continua ACIMA.
-    expect(iPrecise).toBeLessThan(iSemantic)
+    expect(indexOf(hits, precise)).toBeGreaterThanOrEqual(0)
+    expect(indexOf(hits, semantic)).toBeGreaterThanOrEqual(0)
+    expect(indexOf(hits, precise)).toBeLessThan(indexOf(hits, semantic))
   })
 
-  // AC3a (dentro do tier): popularidade ordena entre pares do MESMO bucket.
-  it('AC3a duas Comunidade no MESMO bucket: a mais votada vem primeiro sob popularidade', async () => {
+  it('DENTRO do bucket: a mais salva vem primeiro sob popularidade', async () => {
     const db = getDb()
-    const owner = await seedUser({ email: `ac3a2-owner-${crypto.randomUUID()}@ex.com` })
-
-    // Ambas casam "Chili" no título (bucket 1, sinal de precisa IDÊNTICO via title_match),
-    // SEM embedding (cosine 0 nos dois) ⇒ só a chave de popularidade desempata.
+    const owner = await seedUser({ email: `insidebucket-${crypto.randomUUID()}@ex.com` })
     const less = await seedCommunity(owner, 'Chili suave', null)
     const more = await seedCommunity(owner, 'Chili picante', null)
-    await castVotes(more, 3, 'ac3a2-more')
-    await castVotes(less, 1, 'ac3a2-less')
-
-    const { hits } = await searchRecipes(db, {
-      q: 'Chili',
-      terms: ['Chili'],
-      mode: 'any',
-      requestLocale: 'pt-BR',
-      facets: EMPTY_FACETS,
-      queryVector: null, // sem semântica: isola a chave de popularidade no bucket 1
-      sort: 'popularidade',
-    })
-    const iMore = indexOf(hits, more)
-    const iLess = indexOf(hits, less)
-    expect(iMore).toBeGreaterThanOrEqual(0)
-    expect(iLess).toBeGreaterThanOrEqual(0)
-    expect(iMore).toBeLessThan(iLess) // mais votada primeiro DENTRO do tier
-  })
-
-  // AC3a (relevância default): sob sort ausente, popularidade NÃO atua — empate cai no
-  // tiebreaker recipe_id (a chave de popularidade é inerte).
-  it('AC3a sob relevância (sort ausente) a popularidade NÃO reordena o mesmo bucket', async () => {
-    const db = getDb()
-    const owner = await seedUser({ email: `ac3a3-owner-${crypto.randomUUID()}@ex.com` })
-    // PKs pinados: LO < HI lexicalmente ⇒ sob relevância (sem popularidade) o tiebreaker
-    // recipe_id ASC coloca LO ACIMA de HI, MESMO com HI mais votada.
-    const LO = '00000000-0000-4000-8000-0000000000a1'
-    const HI = '00000000-0000-4000-8000-0000000000b2'
-    const lo = await seedRecipe({ id: LO, origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: owner })
-    await seedTranslation({ recipeId: lo, locale: 'pt-BR', titulo: 'Chili A', provenance: 'escrita_por_pessoa' })
-    const hi = await seedRecipe({ id: HI, origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: owner })
-    await seedTranslation({ recipeId: hi, locale: 'pt-BR', titulo: 'Chili B', provenance: 'escrita_por_pessoa' })
-    await castVotes(hi, 9, 'ac3a3-hi') // HI muito votada, mas relevância ignora votos
+    await addSaves(more, 3, 'more')
+    await addSaves(less, 1, 'less')
 
     const { hits } = await searchRecipes(db, {
       q: 'Chili',
@@ -151,28 +136,40 @@ describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
       requestLocale: 'pt-BR',
       facets: EMPTY_FACETS,
       queryVector: null,
-      // sort ausente ⇒ 'relevancia'
+      sort: 'popularidade',
     })
-    const iLo = indexOf(hits, lo)
-    const iHi = indexOf(hits, hi)
-    expect(iLo).toBeGreaterThanOrEqual(0)
-    expect(iHi).toBeGreaterThanOrEqual(0)
-    // Sob relevância, recipe_id ASC (LO < HI) ⇒ LO acima, apesar de HI ter 9 votos.
-    expect(iLo).toBeLessThan(iHi)
+    expect(indexOf(hits, more)).toBeGreaterThanOrEqual(0)
+    expect(indexOf(hits, less)).toBeGreaterThanOrEqual(0)
+    expect(indexOf(hits, more)).toBeLessThan(indexOf(hits, less))
   })
 
-  // AC3b (guarda do Catálogo load-bearing): Popularidade NÃO se aplica ao Catálogo.
-  it('AC3b Catálogo mantém a ordem de relevância sob popularidade (votos não reordenam)', async () => {
+  it('sob relevância (sort ausente) a popularidade NÃO reordena o mesmo bucket', async () => {
     const db = getDb()
-    // Dois catálogos no MESMO bucket-1 (ambos casam "Chili"), SEM embedding (cosine 0).
-    // PKs pinados: FIRST < SECOND ⇒ sob relevância (tiebreak recipe_id ASC) FIRST vem antes.
-    // Damos a FIRST ZERO votos e a SECOND MUITOS votos: se a popularidade VAZASSE para o
-    // Catálogo, SECOND subiria; a guarda de section='comunidade' impede isso.
+    const owner = await seedUser({ email: `rel-${crypto.randomUUID()}@ex.com` })
+    const LO = '00000000-0000-4000-8000-0000000000a1'
+    const HI = '00000000-0000-4000-8000-0000000000b2'
+    const lo = await seedCommunity(owner, 'Chili A', null, LO)
+    const hi = await seedCommunity(owner, 'Chili B', null, HI)
+    await addSaves(hi, 9, 'rel-hi') // HI muito salva, mas relevância ignora popularidade
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+    })
+    expect(indexOf(hits, lo)).toBeLessThan(indexOf(hits, hi)) // recipe_id ASC (LO<HI) apesar dos 9 saves
+  })
+
+  it('Catálogo mantém a ordem de relevância sob popularidade (saves não reordenam)', async () => {
+    const db = getDb()
     const FIRST = '00000000-0000-4000-8000-0000000000c1'
     const SECOND = '00000000-0000-4000-8000-0000000000d2'
     const first = await seedCatalog('Chili editorial um', null, FIRST)
     const second = await seedCatalog('Chili editorial dois', null, SECOND)
-    await castVotes(second, 7, 'ac3b-second') // muitos votos no que viria DEPOIS por relevância
+    await addSaves(second, 7, 'cat-second') // muitos saves no que viria DEPOIS por relevância
 
     const { hits } = await searchRecipes(db, {
       q: 'Chili',
@@ -183,23 +180,16 @@ describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
       queryVector: null,
       sort: 'popularidade',
     })
-    const iFirst = indexOf(hits, first)
-    const iSecond = indexOf(hits, second)
-    expect(iFirst).toBeGreaterThanOrEqual(0)
-    expect(iSecond).toBeGreaterThanOrEqual(0)
-    // Catálogo IGNORA popularidade ⇒ ordem de relevância (recipe_id ASC) preservada:
-    // FIRST (0 votos) continua ANTES de SECOND (7 votos).
-    expect(iFirst).toBeLessThan(iSecond)
+    // Catálogo IGNORA popularidade ⇒ recipe_id ASC preservado (FIRST antes de SECOND).
+    expect(indexOf(hits, first)).toBeLessThan(indexOf(hits, second))
   })
 
-  // AC3b (COALESCE / NULLS-FIRST): Comunidade com 0 votos no conjunto popularidade não
-  // sobe ao topo por NULLS-FIRST do DESC (COALESCE(...,0) força int 0, não NULL).
-  it('AC3b Comunidade com 0 votos NÃO precede a mais votada (COALESCE evita NULLS-FIRST)', async () => {
+  it('Comunidade com 0 sinal NÃO precede a mais salva (popularity_score nunca NULL ⇒ sem NULLS-FIRST)', async () => {
     const db = getDb()
-    const owner = await seedUser({ email: `ac3b2-owner-${crypto.randomUUID()}@ex.com` })
-    const zero = await seedCommunity(owner, 'Chili sem votos', null)
-    const voted = await seedCommunity(owner, 'Chili votado', null)
-    await castVotes(voted, 4, 'ac3b2')
+    const owner = await seedUser({ email: `zero-${crypto.randomUUID()}@ex.com` })
+    const zero = await seedCommunity(owner, 'Chili sem saves', null)
+    const saved = await seedCommunity(owner, 'Chili salvo', null)
+    await addSaves(saved, 4, 'zero')
 
     const { hits } = await searchRecipes(db, {
       q: 'Chili',
@@ -210,21 +200,150 @@ describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
       queryVector: null,
       sort: 'popularidade',
     })
-    expect(indexOf(hits, voted)).toBeLessThan(indexOf(hits, zero)) // votada primeiro; 0 não vai ao topo
+    expect(indexOf(hits, saved)).toBeLessThan(indexOf(hits, zero))
   })
 
-  // Regressão (UNION ALL / byte-idêntico): a busca semântica roda sem erro de SQL sob
-  // popularidade E sob relevância; relevância produz a MESMA ordem que o baseline (sort
-  // ausente). Prova a aridade intacta do UNION ALL do bucket2 com a coluna vote_count nova.
-  it('regressão: popularidade e relevância rodam sem erro SQL; relevância == baseline byte-a-byte', async () => {
+  // LANDMINE B1-sec: self-save é permitido no write-path, mas NÃO infla o ranking.
+  it('self-save do dono NÃO infla (tier visível)', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `self-${crypto.randomUUID()}@ex.com` })
+    const selfSaved = await seedCommunity(owner, 'Chili do dono', null)
+    await seedSave({ userId: owner, recipeId: selfSaved }) // AUTO-save (raw) — deve ser ignorado
+    const third = await seedCommunity(owner, 'Chili de terceiro', null)
+    await addSaves(third, 1, 'self-third') // 1 save de OUTRO ⇒ deve superar o auto-save
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+      sort: 'popularidade',
+    })
+    expect(indexOf(hits, third)).toBeLessThan(indexOf(hits, selfSaved))
+  })
+
+  // LANDMINE M3 + B1-math: nota MODERADA NÃO conta; a fila fica pelo save. Não-vácuo: se a moderada
+  // vazasse, o de MENOS saves (com 20 notas 5★ moderadas) furaria o de MAIS saves.
+  it('nota MODERADA NÃO infla (tier visível): mais saves vence, moderada ignorada', async () => {
+    const db = getDb()
+    const curator = await seedUser({ email: `cur-${crypto.randomUUID()}@ex.com`, role: 'curador' })
+    const owner = await seedUser({ email: `mod-owner-${crypto.randomUUID()}@ex.com` })
+    const high = await seedCommunity(owner, 'Chili muito salvo', null)
+    await addSaves(high, 2, 'mod-high') // 2 saves, 0 notas
+    const low = await seedCommunity(owner, 'Chili nota moderada', null)
+    await addSaves(low, 1, 'mod-low')
+    await addReviews(low, 20, 5, 'mod-low', curator) // 20 notas 5★ MAS moderadas ⇒ não contam
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+      sort: 'popularidade',
+    })
+    // Se a moderada vazasse, `low` (nota alta) subiria; correto ⇒ `high` (2 saves) fica na frente.
+    expect(indexOf(hits, high)).toBeLessThan(indexOf(hits, low))
+  })
+
+  // Não-vácuo do filtro: uma nota NÃO-moderada idêntica DE FATO conta (a fila inverte). Como C = média
+  // GLOBAL, com notas altas SÓ na receita testada C sobe junto e o Bayesiano não dá lift — então um
+  // "lastro" de notas BAIXAS (numa receita que não casa a busca) puxa o C pra baixo, e aí as 5★ do
+  // `rated` de fato o levantam sobre o prior. Isso prova que o termo de nota está VIVO no SQL.
+  it('nota NÃO-moderada CONTA: com C controlado abaixo, a receita bem avaliada sobe (termo de nota vivo)', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `live-owner-${crypto.randomUUID()}@ex.com` })
+    // Lastro: 10 notas 1★ numa receita que NÃO casa "Chili" (não aparece nos hits, mas entra no C global).
+    const ballast = await seedCommunity(owner, 'Bolo de lastro', null)
+    await addReviews(ballast, 10, 1, 'ballast') // C global ~= (10*1 + 10*5)/20 = 3.0
+    const high = await seedCommunity(owner, 'Chili salvo vivo', null)
+    await addSaves(high, 2, 'live-high') // 2 saves, 0 notas ⇒ termo de nota = C
+    const rated = await seedCommunity(owner, 'Chili bem avaliado vivo', null)
+    await addSaves(rated, 1, 'live-rated')
+    await addReviews(rated, 10, 5, 'live-rated') // 10 notas 5★ vivas ⇒ bayes(5,10,3,20)≈3.67 > C=3
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: null,
+      sort: 'popularidade',
+    })
+    // rated: ln(2)+~3.67 ≈ 4.36 ; high: ln(3)+3.0 ≈ 4.10 ⇒ rated à frente (a nota viva sobrepõe o save-a-mais).
+    expect(indexOf(hits, rated)).toBeLessThan(indexOf(hits, high))
+  })
+
+  // LANDMINE M1 (o combo que quebraria com created_at ausente no semanticSelectSql): sort=popularidade +
+  // queryVector + hit BUCKET-2 semântico com nota MODERADA. Deve RODAR sem erro E a moderada não inflar.
+  it('bucket-2 sob popularidade+vetor: roda sem erro; nota moderada no só-semântico NÃO infla', async () => {
+    const db = getDb()
+    const curator = await seedUser({ email: `b2-cur-${crypto.randomUUID()}@ex.com`, role: 'curador' })
+    const owner = await seedUser({ email: `b2-owner-${crypto.randomUUID()}@ex.com` })
+    // bucket-1 activator (título casa "Chili") pra o bucket-2 entrar nas seções (não virar sugestões).
+    await seedCommunity(owner, 'Chili base', 0.2)
+    // Dois só-semânticos (título NÃO casa "Chili"), cosseno IGUAL (0.9) ⇒ empate de cosseno ⇒ a
+    // popularidade desempata DENTRO do bucket-2.
+    const Y = '00000000-0000-4000-8000-0000000000e1' // id menor
+    const X = '00000000-0000-4000-8000-0000000000f2' // id maior
+    const y = await seedCommunity(owner, 'Ensopado apimentado Y', 0.9, Y)
+    await addSaves(y, 2, 'b2-y') // 2 saves, 0 notas
+    const x = await seedCommunity(owner, 'Caldo picante X', 0.9, X)
+    await addSaves(x, 1, 'b2-x')
+    await addReviews(x, 20, 5, 'b2-x', curator) // moderadas ⇒ não contam
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+      sort: 'popularidade',
+    })
+    expect(indexOf(hits, y)).toBeGreaterThanOrEqual(0) // bucket-2 presente (created_at fix ⇒ sem 500)
+    expect(indexOf(hits, x)).toBeGreaterThanOrEqual(0)
+    // Y (2 saves) supera X (1 save); se a moderada de X vazasse, X furaria a fila.
+    expect(indexOf(hits, y)).toBeLessThan(indexOf(hits, x))
+  })
+
+  // LANDMINE B1-sec no bucket-2: self-save num só-semântico também não infla.
+  it('self-save NÃO infla no bucket-2', async () => {
+    const db = getDb()
+    const owner = await seedUser({ email: `b2self-${crypto.randomUUID()}@ex.com` })
+    await seedCommunity(owner, 'Chili base dois', 0.2) // activator bucket-1
+    const selfSaved = await seedCommunity(owner, 'Ensopado do dono', 0.9)
+    await seedSave({ userId: owner, recipeId: selfSaved }) // auto-save (ignorado — self-exclusão)
+    const third = await seedCommunity(owner, 'Caldo de terceiro', 0.9)
+    await addSaves(third, 1, 'b2self-third')
+
+    const { hits } = await searchRecipes(db, {
+      q: 'Chili',
+      terms: ['Chili'],
+      mode: 'any',
+      requestLocale: 'pt-BR',
+      facets: EMPTY_FACETS,
+      queryVector: QUERY_VEC,
+      sort: 'popularidade',
+    })
+    expect(indexOf(hits, third)).toBeLessThan(indexOf(hits, selfSaved))
+  })
+
+  // Regressão (UNION ALL / byte-idêntico): popularidade e relevância rodam sem erro; relevância produz a
+  // MESMA ordem que o baseline (sort ausente). Prova a aridade intacta do UNION ALL com popularity_score.
+  it('popularidade e relevância rodam sem erro SQL; relevância == baseline byte-a-byte', async () => {
     const db = getDb()
     const owner = await seedUser({ email: `reg-owner-${crypto.randomUUID()}@ex.com` })
-    // Mistura: precisa (bucket 1) + só-semântica (bucket 2) na Comunidade + um catálogo.
     const p = await seedCommunity(owner, 'Sopa de mandioca', 0.2)
     const s = await seedCommunity(owner, 'Caldo verde da vovó', 0.9) // só-semântica
     const cat = await seedCatalog('Sopa de cebola', 0.3)
-    await castVotes(s, 2, 'reg-s')
-    await castVotes(p, 1, 'reg-p')
+    await addSaves(s, 2, 'reg-s')
+    await addSaves(p, 1, 'reg-p')
+    await addReviews(p, 3, 4, 'reg-p') // um pouco de nota viva pra exercitar o termo Bayesiano
 
     const args = {
       q: 'Sopa',
@@ -234,13 +353,10 @@ describe('Busca da Comunidade — ordenação por Popularidade (#16)', () => {
       facets: EMPTY_FACETS,
       queryVector: QUERY_VEC,
     }
-    // Roda sob popularidade (exercita o bucket2 UNION ALL com vote_count): sem erro de SQL.
     const pop = await searchRecipes(db, { ...args, sort: 'popularidade' })
     expect(pop.hits.length).toBeGreaterThan(0)
-    // Todas as 4 fixtures aparecem (cap não as corta).
     expect(pop.hits.map((h) => h.recipe_id)).toEqual(expect.arrayContaining([p, s, cat]))
 
-    // sort=relevancia explícito === sort ausente === baseline byte-a-byte (mesma ordem).
     const relExplicit = await searchRecipes(db, { ...args, sort: 'relevancia' })
     const baseline = await searchRecipes(db, args) // sem sort
     expect(relExplicit.hits.map((h) => h.recipe_id)).toEqual(baseline.hits.map((h) => h.recipe_id))

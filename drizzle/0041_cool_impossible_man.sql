@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ADD COLUMN "popularity_config" jsonb DEFAULT '{"wSave":1,"wNota":1,"wNovo":0.5,"m":20,"tauDays":30}'::jsonb NOT NULL;

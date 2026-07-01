@@ -9,6 +9,8 @@ import {
 } from '@/domain/recommended-cooks-read'
 import { projectResult, type SearchHitRow } from '@/domain/recipe-search-read'
 import { encodeRecsCursor, type RecsCursor } from '@/domain/cooks-cursor'
+import { loadPopularityConfig } from '@/server/app-config'
+import { loadGlobalRatingAverage } from '@/server/recipe/popularity'
 
 /** Uma página da Descoberta de Cozinheiros (#308): os cozinheiros + o cursor opaco da PRÓXIMA página
  *  (`null` quando acabou — minado de um probe `limit+1`, NUNCA de `cooks.length < limit`). */
@@ -21,25 +23,36 @@ function cozinhaFilterSql(cozinhas: string[]) {
 }
 
 /**
- * Loader do trilho "Cozinheiros pra seguir" (#278, ADR-0024) — ranqueia Cozinheiros por POPULARIDADE
- * GLOBAL: o APREÇO DE TERCEIROS (votos + saves de OUTROS) às suas receitas PÚBLICAS ELEGÍVEIS, com
- * RECÊNCIA (receita elegível mais nova) como DESEMPATE. v1 não-personalizada (sem boost por gosto/grafo
- * — Camada B deferida). NUNCA realimenta o ranking do feed nem o gate de indexação (módulo SEPARADO;
- * popularidade ≠ autoridade — CONTEXT.md). SEM migração: agregação sem índice composto é ACEITA no v1
- * (tabelas minúsculas), mesma filosofia do cursor do feed; índice deferido (vira #279/futuro).
+ * Loader do trilho "Cozinheiros pra seguir" (#278→#368, ADR-0024/0027/0028) — ranqueia Cozinheiros por
+ * POPULARIDADE GLOBAL: a MISTURA (save + nota Bayesiana) do APREÇO DE TERCEIROS às suas receitas PÚBLICAS
+ * ELEGÍVEIS, com RECÊNCIA (receita elegível mais nova) como DESEMPATE. v1 não-personalizada (sem boost
+ * por gosto/grafo — Camada B deferida). NUNCA realimenta o ranking do feed nem o gate de indexação
+ * (módulo SEPARADO; popularidade ≠ autoridade — CONTEXT.md). SEM migração nova: agregação sem índice
+ * composto é ACEITA no v1 (tabelas minúsculas); índice deferido.
+ *
+ * SCORE TIME-INDEPENDENTE (M2): `cookScore = wSave·ln(1+saves) + wNota·bayes(cook_avg, cook_count, C, m)`
+ * — SEM termo de frescor aditivo. O `/cooks` PAGINA por keyset `(score, recency, handle)`; um score com
+ * `now()` mudaria a cada request e o cozinheiro da borda DUPLICARIA a cada "load more". A recência
+ * (`max(created_at)`) fica de DESEMPATE no ORDER BY, realizando "frescor" de forma reproduzível. O score
+ * é ARREDONDADO a 6 casas (`round(...::numeric,6)::float8`) — a MESMA precisão no CTE e no cursor, pra a
+ * borda do keyset ser reproduzível (senão float64 recomputado divergiria do valor carregado no cursor).
  *
  * CANDIDATO = Cozinheiro com ≥1 receita pública elegível. O `JOIN recipe ON r.owner_id = u.id AND
  * <gate elegível>` exclui POR CONSTRUÇÃO: o catálogo (owner NULL nunca casa a igualdade) e quem só tem
- * privada/playful/moderada/web-imported. Score PODE ser 0 (cozinheiro novo, sem votos ainda) — ainda é
- * candidato, ordenado depois dos com score positivo. O piso de exibição (esconder se < threshold) é
- * decisão de UI (`shouldShowRecommendedRail`); este loader devolve a lista crua até `limit`.
+ * privada/playful/moderada/web-imported. Score pode ser o piso `wNota·C` (cozinheiro novo, 0 sinal) —
+ * ainda é candidato; a recência flutua o mais novo ao topo do cluster de 0-sinal. O piso de exibição
+ * (esconder se < threshold) é decisão de UI (`shouldShowRecommendedRail`); este loader devolve a lista
+ * crua até `limit`.
  *
- * APREÇO DE TERCEIROS: os sub-selects `vc`/`fc` PRÉ-AGREGAM votos/saves POR receita (uma linha por
- * recipe_id) ANTES do LEFT JOIN — sem isso, juntar as duas tabelas-detalhe direto multiplicaria as
- * linhas (fan-out votos×saves) e inflaria o score. Ambos excluem auto-apreço (`x.user_id <>
- * rr.owner_id`): salvar a PRÓPRIA receita é permitido (social.ts), então sem o filtro um Cozinheiro
- * subiria sozinho salvando o próprio trabalho. Votos já são auto-livres no write-path; o filtro
- * espelhado é cinto-e-suspensório e deixa a intenção ("apreço de terceiros") explícita no SQL.
+ * AGREGAÇÃO (M4 — sem mean-of-means nem fan-out): CADA fonte é PRÉ-AGREGADA por recipe_id ANTES do join —
+ * `sc` (saves) e `rc` (soma+contagem de notas) são subqueries SEPARADAS (uma linha por recipe_id). NUNCA
+ * juntar `recipe_save × recipe_review` direto (multiplicaria as linhas). No nível do cozinheiro:
+ * `total_saves = sum(sc.saves)`, `cook_count = sum(rc.rcount)`, `cook_avg = sum(rc.rsum)/nullif(sum(rc.rcount),0)`
+ * (média VERDADEIRA, não avg-de-avgs). LANDMINES no `rc`: `moderated_at IS NULL` (nota moderada não infla)
+ * + `ru.deleted_at IS NULL` (autor soft-deletado fora) + self-exclusão. `sc`/`rc` excluem auto-apreço
+ * (`x.user_id <> rr.owner_id`): salvar/avaliar... salvar a PRÓPRIA receita é permitido (social.ts), então
+ * sem o filtro um Cozinheiro subiria sozinho apreciando o próprio trabalho (o owner do cozinheiro é
+ * não-null ⇒ `<>` direto, sem o ramo NULL do catálogo). C = média global da nota (prior; fallback 3.0).
  *
  * EXCLUSÕES por viewer (só quando LOGADO — `viewerId` definido): o próprio (`u.id <> viewerId`) e quem
  * já segue (`NOT EXISTS` no `user_follow`). As cláusulas só são ANEXADAS com `viewerId` presente — o
@@ -47,10 +60,10 @@ function cozinhaFilterSql(cozinhas: string[]) {
  * (não `IN`) é à prova de conjunto-vazio (sem o footgun do `IN ()`). Cozinheiro soft-deletado some via
  * `u.deleted_at IS NULL`.
  *
- * GATE DE DADOS (Modelo B / #269): o SELECT projeta SÓ `name/handle/image/recipe_count` — `id`, o score
- * e a recência são EXPRESSÕES de ORDER BY (nunca selecionadas), e `email`/`role` jamais entram. `::int`
- * nos agregados garante number (não a string de um bigint). A invariante de allowlist é estrutural: o
- * `id` interno não sai do SQL.
+ * GATE DE DADOS (Modelo B / #269): o SELECT projeta SÓ `name/handle/image/recipe_count` — `id` NUNCA sai
+ * (a recência sai como `::text` só pro cursor keyset; o score é interno ao ranking), e `email`/`role`
+ * jamais entram. `::int`/`::float8` nos agregados garantem number (não a string de um bigint/numeric). A
+ * invariante de allowlist é estrutural: o `id` interno não sai do SQL. O score NUNCA entra no DTO cliente.
  *
  * PREVIEW DE RECEITAS (ADR-0024 emendado): cada Cozinheiro carrega ≤ `RECOMMENDED_COOK_RECIPES_LIMIT`
  * receitas (cartão rico do protótipo de telas largas). Resolvido por uma SEGUNDA query (window-function),
@@ -76,6 +89,11 @@ export async function loadRecommendedCooks(
   const cozinhas = args.cozinhas ?? []
   const cursor = args.cursor ?? null
 
+  // #368: constantes da mistura + C (média global da nota, prior da Bayesiana). Carregados 1× por
+  // request. Fallback 3.0 em TS (número real, NUNCA NULL — senão o CASE ELSE C ⇒ NULL ⇒ NULLS FIRST).
+  const cfg = await loadPopularityConfig(db)
+  const C = (await loadGlobalRatingAverage(db)) ?? 3.0
+
   // Exclusões per-viewer SÓ quando logado; anônimo/global NÃO binda NULL (omite as cláusulas).
   const viewerExclusionSql = viewerId
     ? sql`AND u.id <> ${viewerId} AND NOT EXISTS (
@@ -87,8 +105,10 @@ export async function loadRecommendedCooks(
   // MENOR. Score/recency são AGREGADOS → o ranking vai numa CTE pra a comparação de linha valer no
   // SELECT externo (não dá pra filtrar agregado no WHERE). Tiebreak = `handle` PÚBLICO (allowlist #269;
   // `u.id` jamais sai da CTE). `recency::timestamptz` casa o cast — o cursor já validou a forma.
+  // #368: `score` agora é float8 (arredondado a 6 casas no CTE) — o cursor carrega esse mesmo float e
+  // aqui é bindado `::float8` (mesma precisão ⇒ a borda do keyset é reproduzível, sem dup/skip).
   const keysetSql = cursor
-    ? sql`(ranked.score, ranked.recency, ranked.handle) < (${cursor.score}, ${cursor.recency}::timestamptz, ${cursor.handle})`
+    ? sql`(ranked.score, ranked.recency, ranked.handle) < (${cursor.score}::float8, ${cursor.recency}::timestamptz, ${cursor.handle})`
     : sql`TRUE`
 
   type Row = {
@@ -107,23 +127,45 @@ export async function loadRecommendedCooks(
         u.handle AS handle,
         u.image AS image,
         count(DISTINCT r.id)::int AS recipe_count,
-        (COALESCE(sum(COALESCE(vc.c, 0)), 0) + COALESCE(sum(COALESCE(fc.c, 0)), 0))::int AS score,
+        -- #368: cookScore = wSave*ln(1+total_saves) + wNota*bayes(cook_avg, cook_count, C, m). LANDMINE
+        -- math B1: TODA divisão castada a float8 (m/(v+m) inteiro truncaria a 0 e o prior sumiria).
+        -- cook_avg = sum(rsum)/nullif(sum(rcount),0) (média VERDADEIRA — M4). round a 6 casas (M2:
+        -- reprodutível no keyset). SEM frescor aditivo (a recência é o desempate do ORDER BY, não do score).
+        round((
+          ${cfg.wSave}::float8 * ln(1 + COALESCE(sum(COALESCE(sc.saves, 0)), 0)::float8)
+          + ${cfg.wNota}::float8 * (
+              CASE WHEN COALESCE(sum(COALESCE(rc.rcount, 0)), 0) > 0
+                THEN (COALESCE(sum(COALESCE(rc.rcount, 0)), 0)::float8
+                        / (COALESCE(sum(COALESCE(rc.rcount, 0)), 0)::float8 + ${cfg.m}::float8))
+                     * (COALESCE(sum(COALESCE(rc.rsum, 0)), 0)::float8
+                        / nullif(COALESCE(sum(COALESCE(rc.rcount, 0)), 0), 0)::float8)
+                   + (${cfg.m}::float8
+                        / (COALESCE(sum(COALESCE(rc.rcount, 0)), 0)::float8 + ${cfg.m}::float8))
+                     * ${C}::float8
+                ELSE ${C}::float8
+              END
+            )
+        )::numeric, 6)::float8 AS score,
         max(r.created_at) AS recency
       FROM users u
       JOIN recipe r
         ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
       LEFT JOIN (
-        SELECT rv.recipe_id AS recipe_id, count(*)::int AS c
-        FROM recipe_vote rv JOIN recipe rr ON rr.id = rv.recipe_id
-        WHERE rv.user_id <> rr.owner_id -- apreço de TERCEIROS (auto-voto já barrado no write-path)
-        GROUP BY rv.recipe_id
-      ) vc ON vc.recipe_id = r.id
-      LEFT JOIN (
-        SELECT rf.recipe_id AS recipe_id, count(*)::int AS c
+        SELECT rf.recipe_id AS recipe_id, count(*)::int AS saves
         FROM recipe_save rf JOIN recipe rr ON rr.id = rf.recipe_id
-        WHERE rf.user_id <> rr.owner_id -- exclui auto-save (salvar a própria é permitido)
+        WHERE rf.user_id <> rr.owner_id -- exclui auto-save (salvar a própria é permitido; owner não-null ⇒ <> direto)
         GROUP BY rf.recipe_id
-      ) fc ON fc.recipe_id = r.id
+      ) sc ON sc.recipe_id = r.id
+      LEFT JOIN (
+        SELECT rv.recipe_id AS recipe_id, sum(rv.rating)::float8 AS rsum, count(*)::int AS rcount
+        FROM recipe_review rv
+        JOIN users ru ON ru.id = rv.user_id
+        JOIN recipe rr ON rr.id = rv.recipe_id
+        WHERE rv.moderated_at IS NULL -- LANDMINE: nota moderada não infla (M3)
+          AND ru.deleted_at IS NULL -- autor soft-deletado fora (casa loadAggregate/C)
+          AND rv.user_id <> rr.owner_id -- exclui auto-avaliação (owner não-null ⇒ <> direto)
+        GROUP BY rv.recipe_id
+      ) rc ON rc.recipe_id = r.id
       WHERE u.deleted_at IS NULL
         ${viewerExclusionSql}
       GROUP BY u.id, u.name, u.handle, u.image

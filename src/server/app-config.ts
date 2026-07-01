@@ -19,6 +19,11 @@ import {
   DEFAULT_CATALOG_DISCLOSURE_CONFIG,
   type CatalogDisclosureConfig,
 } from '@/domain/catalog-disclosure-config'
+import {
+  DEFAULT_POPULARITY_CONFIG,
+  parsePopularityConfig,
+  type PopularityConfig,
+} from '@/domain/popularity'
 
 /**
  * Leitura do singleton `app_config` (issues #5/#134) — fonte ÚNICA da config de app, usada tanto pelo
@@ -42,6 +47,8 @@ export type AppConfig = {
   webSearch: WebSearchConfig
   // #237: aviso OPCIONAL de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável.
   catalogDisclosure: CatalogDisclosureConfig
+  // #368: constantes da mistura de popularidade (pesos + m + tauDays) — ranking da Busca e do trilho.
+  popularity: PopularityConfig
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
@@ -53,8 +60,13 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
       webSearch: DEFAULT_WEB_SEARCH_CONFIG,
       catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
+      popularity: DEFAULT_POPULARITY_CONFIG,
     }
   }
+  // #368: re-valida na leitura — jsonb legado/editado à mão com lixo (peso negativo, m<=0, Infinity
+  // serializado como null, etc.) cai no DEFAULT (fail-safe), nunca envenena o ranking com uma config
+  // inválida. Mesma disciplina do webSearch.allowlist / imageGen.model.
+  const parsedPopularity = parsePopularityConfig(row.popularityConfig)
   return {
     defaultModel: row.defaultModel,
     imageGen: {
@@ -78,7 +90,13 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
           ? row.catalogDisclosureText.trim()
           : DEFAULT_CATALOG_DISCLOSURE_CONFIG.text,
     },
+    popularity: parsedPopularity.ok ? parsedPopularity.value : DEFAULT_POPULARITY_CONFIG,
   }
+}
+
+/** Atalho: só a config de popularidade (#368) — usada pelo loader da Busca e do trilho de Cozinheiros. */
+export async function loadPopularityConfig(db: Database): Promise<PopularityConfig> {
+  return (await loadAppConfig(db)).popularity
 }
 
 /** Atalho: só a config do aviso de catálogo AI-assistido (#237) — usada pelo detalhe da Receita. */
