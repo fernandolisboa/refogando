@@ -11,7 +11,7 @@ import { emitNotification } from '@/server/notification'
  * Núcleo com efeito da AVALIAÇÃO (issue #363, ADR-0027). Espelha `social.ts`: discriminated
  * unions que o route mapeia para HTTP — rotas finas e DRY.
  *
- * GATE DE POOL, NÃO de ownership (como voto/favorito): o Catálogo é PÚBLICO e DEVE ser
+ * GATE DE POOL, NÃO de ownership (como salvar/reportar): o Catálogo é PÚBLICO e DEVE ser
  * avaliável. O gate (`loadReviewGate`) replica o gate de LEITURA canônico do GET/search via
  * `eligibleForPool` (fonte única) — receita privada de outro/playful/web_imported/rascunho de
  * catálogo ⇒ not_found (404, não vaza existência). O gate DISPARA ANTES de qualquer checagem
@@ -85,9 +85,8 @@ export type ReviewResult =
 
 /**
  * Gate barato + elegibilidade de POOL — devolve o `Gate` quando a Receita está no pool
- * (avaliável); `null` quando inexistente OU fora do pool. Cópia VERBATIM de `social.ts
- * loadPoolGate` (não importado de lá pra evitar contenção com a fatia #362). MESMO predicado
- * (`eligibleForPool`), fonte única compartilhada.
+ * (avaliável); `null` quando inexistente OU fora do pool. Aplica `eligibleForPool`
+ * (recipe-pool.ts, fonte única compartilhada); espelha o gate de pool de `report.ts`.
  */
 async function loadReviewGate(db: Database, id: string): Promise<Gate | null> {
   const [gate] = await db

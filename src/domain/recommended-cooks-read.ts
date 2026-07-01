@@ -2,7 +2,7 @@
  * Trilho "Cozinheiros pra seguir" (#278, ADR-0024) — DTO público + knobs do trilho de recomendados.
  *
  * v1 = popularidade GLOBAL (não-personalizada): ranqueia Cozinheiros pelo APREÇO DE TERCEIROS às suas
- * receitas públicas elegíveis (votos + saves), recência como desempate. NUNCA realimenta o ranking
+ * receitas públicas elegíveis (saves), recência como desempate. NUNCA realimenta o ranking
  * do feed nem o gate de indexação (popularidade ≠ autoridade — CONTEXT.md). Camada B (personalizada por
  * gosto/grafo) e qualquer boost pago ficam DEFERIDOS (fora do v1).
  *

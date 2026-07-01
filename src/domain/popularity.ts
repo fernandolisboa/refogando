@@ -1,6 +1,6 @@
 /**
  * Popularidade (issue #368, ADR-0027/0028) — módulo PURO: tipos + defaults + a MISTURA ponderada que
- * substitui `vote_count` (Busca) e `apreço=votos+favoritos` (Cozinheiros). Sem DB/I/O: as funções são
+ * governa o ranking da Busca e dos Cozinheiros. Sem DB/I/O: as funções são
  * a fonte da verdade da FORMA do score; o SQL de `search.ts`/`recommended-cooks.ts` espelha a fórmula
  * EXATA (com `::float8` em toda divisão — divisão inteira zeraria o prior). As constantes tunáveis
  * vivem em `app_config` (`parsePopularityConfig` valida o PUT do admin).

@@ -5,7 +5,7 @@ import { isUuid } from '@/server/http/params'
 import { applyReview, loadRecipeReviews, type ReviewPhoto } from '@/server/recipe/review'
 
 /**
- * Avaliação de uma Receita do pool (issue #363, ADR-0027). Routes FINOS espelhando vote/report.
+ * Avaliação de uma Receita do pool (issue #363, ADR-0027). Routes FINOS espelhando save/report.
  *
  * POST/PUT (ambos = upsert/salvar; PUT é alias semântico): valida uuid → 404; exige SESSÃO → 401
  * ANTES do DB (anônimo = zero efeito); parse defensivo do body (malformado ⇒ 400, nunca 500);

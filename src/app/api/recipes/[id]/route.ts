@@ -41,7 +41,7 @@ import { editOwnRecipe, deleteOwnRecipe, type OwnRecipePatch } from '@/server/re
  *
  * #18 (moderação): uma Receita removida do pool pelo Curador (moderation_removed_at) sai
  * da leitura pública (anônimo/não-dono → 404), SEM tocar `visibility` — o Owner CONTINUA
- * dono da linha privada (lê/gerencia a própria, sem voteCount). Remover-do-pool ≠
+ * dono da linha privada (lê/gerencia a própria). Remover-do-pool ≠
  * despublicar; as duas dimensões são ortogonais (ver recipe-pool.ts).
  */
 
@@ -77,8 +77,8 @@ export async function GET(
   //
   // #18: uma Receita removida do pool NÃO é leitura pública (isPublicRead=false) — anônimo/
   // não-dono cai no ramo privado → 404 (não vaza). O Owner da própria removida cai no ramo
-  // privado, confirma ownership e lê a linha privada (200, SEM voteCount — fora do pool).
-  // Remover-do-pool NÃO toca `visibility` (≠ despublicar, AC3).
+  // privado, confirma ownership e lê a linha privada (200). Remover-do-pool NÃO toca
+  // `visibility` (≠ despublicar, AC3).
   //
   // `viewerId` (#59) habilita os campos de gestão (`canManage`/`visibility`/`resultKind`)
   // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
@@ -117,13 +117,12 @@ export async function GET(
   }
   if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
 
-  // Estado social (#16): `voteCount` SÓ no pool (isPublicRead) — omitido em owned-private;
-  // `viewerVoted`/`viewerSaved` SÓ quando há viewerId. #134: a config de geração-por-IA
+  // Estado social (#16/#362): `viewerSaved` SÓ quando há viewerId. #134: a config de geração-por-IA
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
   // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
   const [social, imageGenEnabled, imageGenBlocked, gallery] = await Promise.all([
-    loadSocialState(db, { id, viewerId, includeVoteCount: isPublicRead }),
+    loadSocialState(db, { id, viewerId }),
     isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
     // #226: a restrição GRANULAR de geração-por-IA do usuário (flag por-conta do Curador), owner-gated
     // como imageGenEnabled — a flag é por-USUÁRIO e a ação de gerar é owner-only ⇒ é o bloqueio do
@@ -147,8 +146,6 @@ export async function GET(
     ...rows,
     requestLocale,
     viewerId,
-    voteCount: social.voteCount,
-    viewerVoted: social.viewerVoted,
     viewerSaved: social.viewerSaved,
     imageGenEnabled,
     imageGenBlocked,

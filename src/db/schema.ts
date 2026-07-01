@@ -909,40 +909,17 @@ export const transcriptMessage = pgTable(
   ],
 )
 
-// ── Social: Voto + Salvar (issue #16/#362, ADR-0003/0027) ──────────────────────
+// ── Social: Salvar (issue #16/#362, ADR-0003/0027) ─────────────────────────────
 //
-// Relações PURAS (sem payload): cada linha é "este Usuário votou/salvou esta
-// Receita". Estrutura IDÊNTICA entre as duas, espelhando recipeTag/recipeEmbedding:
-//  - PK composta (user_id, recipe_id): satisfaz AC1 (votar 2× = UM voto — a re-inserção
-//    colide na PK) E cobre o lookup leak-safe "este viewer votou?" (EXISTS por PK).
-//    Desfazer = DELETE da linha (sem updatedAt/deletedAt — voto/save são descartáveis).
-//  - FK ON DELETE cascade em AMBAS (sem órfãos): apagar Usuário ou Receita limpa os votos.
-//    Despublicar é UPDATE de visibility, NUNCA DELETE ⇒ os votos PERSISTEM (AC5).
-//  - índice btree em recipe_id: cobre COUNT(*) WHERE recipe_id=? (a Popularidade) e o
-//    LEFT JOIN agregado na Busca da Comunidade.
-//
-// NÃO há CHECK de não-autovoto (owner_id mora em `recipe`, não aqui; um CHECK cross-table
-// exigiria trigger). O não-autovoto é imposto no SERVIDOR (src/server/recipe/social.ts via
-// src/domain/vote.ts) — `applyVote` é o ÚNICO escritor de recipe_vote e o único a chamar
-// `decideVote`. Qualquer FUTURO escritor de voto DEVE chamar `decideVote` (risco residual
-// documentado, sem rede de banco).
-export const recipeVote = pgTable(
-  'recipe_vote',
-  {
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    recipeId: uuid('recipe_id')
-      .notNull()
-      .references(() => recipe.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.recipeId] }),
-    index('recipe_vote_recipe_id_idx').on(t.recipeId),
-  ],
-)
-
+// Relação PURA (sem payload): cada linha é "este Usuário salvou esta Receita", espelhando
+// recipeTag/recipeEmbedding:
+//  - PK composta (user_id, recipe_id): satisfaz a idempotência (salvar 2× = UM save — a
+//    re-inserção colide na PK) E cobre o lookup leak-safe "este viewer salvou?" (EXISTS por PK).
+//    Desfazer = DELETE da linha (sem updatedAt/deletedAt — o save é descartável).
+//  - FK ON DELETE cascade (sem órfãos): apagar Usuário ou Receita limpa os saves.
+//    Despublicar é UPDATE de visibility, NUNCA DELETE ⇒ os saves PERSISTEM (AC5).
+//  - índice btree em recipe_id: cobre COUNT(*) WHERE recipe_id=? (a Popularidade, #368) e os
+//    agregados sociais.
 export const recipeSave = pgTable(
   'recipe_save',
   {
@@ -1015,12 +992,11 @@ export const collectionItem = pgTable(
 
 // ── Engajamento: Avaliação (issue #363, ADR-0027) ─────────────────────────────
 //
-// A Avaliação é distinta do Voto (que esta épica APOSENTA): nota 1–5★ + comentário
-// opcional, UMA por (Usuário, Receita), e alimenta a MÉDIA genuína (aggregateRating).
-// Mira a RECEITA (recipe_id, NÃO o locale): a avaliação vale idêntica entre pt-BR/en-US
-// (cross-locale, como recipe_vote/report). FK ON DELETE cascade em ambas (sem órfãos):
-// apagar Usuário ou Receita limpa a avaliação; despublicar é UPDATE de visibility, NUNCA
-// DELETE ⇒ as avaliações PERSISTEM (mesma garantia AC5 do voto).
+// A Avaliação é nota 1–5★ + comentário opcional, UMA por (Usuário, Receita), e alimenta a
+// MÉDIA genuína (aggregateRating). Mira a RECEITA (recipe_id, NÃO o locale): a avaliação vale
+// idêntica entre pt-BR/en-US (cross-locale, como report). FK ON DELETE cascade em ambas (sem
+// órfãos): apagar Usuário ou Receita limpa a avaliação; despublicar é UPDATE de visibility,
+// NUNCA DELETE ⇒ as avaliações PERSISTEM (AC5).
 //
 // `moderated_at` alimenta o SEAM de LEITURA: `loadRecipeReviews`/`loadAggregate` filtram
 // `moderated_at IS NULL` desde o dia 1, então a fatia da moderação (#366) vira SÓ um escritor.
@@ -1081,7 +1057,7 @@ export const recipeReview = pgTable(
 )
 
 // Grafo de SEGUIR (#274, ADR-0024) — aresta dirigida `follower → followee` entre Usuários. Espelha
-// `recipe_vote`: par ÚNICO via PK composta (re-seguir colide na PK = idempotente), DELETE da linha =
+// `recipe_save`: par ÚNICO via PK composta (re-seguir colide na PK = idempotente), DELETE da linha =
 // deixar de seguir (sem updatedAt/deletedAt — a aresta é descartável). Seguir é ASSIMÉTRICO e público
 // (modelo Instagram, NÃO amizade) e NUNCA dá acesso a conteúdo privado (é só assinatura de descoberta).
 //  - FK ON DELETE cascade em AMBAS as colunas (sem órfãos): apagar QUALQUER um dos Usuários limpa a
@@ -1148,7 +1124,7 @@ export const notification = pgTable(
 // ENTRADA da moderação: qualquer Usuário autenticado reporta uma Receita do POOL; a linha
 // entra na FILA do Curador (status='pending'). O Report mira a RECEITA (recipe_id, não o
 // locale): a moderação tem identidade única entre pt-BR/en-US (AC4 — uma decisão afeta a
-// Receita em TODOS os locales). Estrutura espelha recipeVote/recipeSave (FK cascade ao
+// Receita em TODOS os locales). Estrutura espelha recipeSave (FK cascade ao
 // recipe/users), mas COM payload (reason/status/resolução) — não é relação pura.
 //
 // MÚLTIPLOS reports por Receita são permitidos (a fila agrega; a 1ª remoção preserva a

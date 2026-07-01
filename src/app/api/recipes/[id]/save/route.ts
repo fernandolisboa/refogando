@@ -4,10 +4,10 @@ import { isUuid } from '@/server/http/params'
 import { applySave } from '@/server/recipe/social'
 
 /**
- * Salvar uma Receita (issue #16/#362, ADR-0003/0027). Route FINO espelhando vote:
+ * Salvar uma Receita (issue #16/#362, ADR-0003/0027). Route FINO:
  * valida uuid → 404; exige SESSÃO → 401 antes do DB (anônimo = zero efeito, AC6); delega
  * a `applySave(action:'save')` — gate de SALVAR (pool público OU a PRÓPRIA receita mesmo
- * PRIVADA, #362 AC6) + INSERT idempotente. SEM não-autovoto (salvar a própria é permitido).
+ * PRIVADA, #362 AC6) + INSERT idempotente. SEM barreira de autoria (salvar a própria é permitido).
  * Mapeia o discriminator.
  *
  * Resposta 200: `{ viewerSaved }` (estado do próprio ator — nunca vaza estado alheio).

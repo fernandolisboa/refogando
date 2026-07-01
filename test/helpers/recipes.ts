@@ -11,7 +11,6 @@ import {
   tag,
   recipeTag,
   recipeEmbedding,
-  recipeVote,
   recipeSave,
   collection,
   collectionItem,
@@ -214,18 +213,13 @@ export async function seedEmbedding(input: {
     })
 }
 
-// ── Social: Voto + Salvar (issue #16/#362) ──────────────────────────────────────
+// ── Social: Salvar (issue #16/#362) ─────────────────────────────────────────────
 
 /**
- * Insere uma linha de voto crua (issue #16). O `userId` DEVE ser um id REAL de Usuário
+ * Insere uma linha de save crua (issue #16/#362). O `userId` DEVE ser um id REAL de Usuário
  * (ex. o devolvido por `seedSessionHeaders`/`seedUser`) — a FK p/ users.id é validada.
  * Idempotente por PK composta; não usa ON CONFLICT (o seed assume linha nova).
  */
-export async function seedVote(input: { userId: string; recipeId: string }): Promise<void> {
-  await getDb().insert(recipeVote).values({ userId: input.userId, recipeId: input.recipeId })
-}
-
-/** Insere uma linha de save cru (issue #16/#362). Mesma forma/contrato de `seedVote`. */
 export async function seedSave(input: { userId: string; recipeId: string }): Promise<void> {
   await getDb().insert(recipeSave).values({ userId: input.userId, recipeId: input.recipeId })
 }

@@ -793,7 +793,7 @@ export const enUS: Messages = {
     // Accessible label for the social links block.
     linksLabel: 'Links',
     // Social (#274, ADR-0024) — Cook voice. Counters use the '{n}' placeholder (.replace in the
-    // component); nudge mirrors `comunidade.convidaEntrarVoto`.
+    // component); nudge mirrors `comunidade.convidaEntrarSalvar`.
     seguir: 'Follow',
     seguindo: 'Following',
     // Follower count has a singular ("1 follower"); "following" is invariant, one key suffices.
@@ -822,18 +822,12 @@ export const enUS: Messages = {
   },
   comunidade: {
     titulo: 'Community',
-    votar: 'Vote',
-    votado: 'Voted',
-    votos: '{n} votes',
-    voto: '{n} vote',
     salvar: 'Save',
     salvo: 'Saved',
     ordenarPor: 'Sort the Community by',
     toggleRelevancia: 'Relevance',
     togglePopularidade: 'Popularity',
-    convidaEntrarVoto: 'Sign in to vote',
     convidaEntrarSalvar: 'Sign in to save',
-    erroVoto: 'Could not vote. Try again.',
     erroSalvar: 'Could not save. Try again.',
   },
   colecoes: {

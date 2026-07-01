@@ -843,10 +843,10 @@ export const ptBR = {
     // Rótulo acessível do bloco de links sociais.
     linksLabel: 'Links',
     // Social (#274, ADR-0024) — voz Cozinheiro. Contadores com placeholder '{n}' (.replace no
-    // componente); nudge espelha `comunidade.convidaEntrarVoto`.
+    // componente); nudge espelha `comunidade.convidaEntrarSalvar`.
     seguir: 'Seguir',
     seguindo: 'Seguindo',
-    // Contador de seguidores tem singular ("1 seguidor") — espelha `comunidade.voto`/`votos`. O de
+    // Contador de seguidores tem singular ("1 seguidor") — como o de receitas abaixo. O de
     // "seguindo" é gerúndio invariante ("1 seguindo" / "2 seguindo"), uma chave só basta.
     seguidorContagem: '{n} seguidor',
     seguidoresContagem: '{n} seguidores',
@@ -873,20 +873,12 @@ export const ptBR = {
   },
   comunidade: {
     titulo: 'Comunidade',
-    votar: 'Votar',
-    votado: 'Votado',
-    // Plural composto no componente via `.replace('{n}', …)` (folhas do tipo `Messages` são
-    // string — função quebraria o tipo e a paridade). Precedente: `aviso.contradicao`.
-    votos: '{n} votos',
-    voto: '{n} voto',
     salvar: 'Salvar',
     salvo: 'Salvo',
     ordenarPor: 'Ordenar a Comunidade por',
     toggleRelevancia: 'Relevância',
     togglePopularidade: 'Popularidade',
-    convidaEntrarVoto: 'Entrar para votar',
     convidaEntrarSalvar: 'Entrar para salvar',
-    erroVoto: 'Não foi possível votar. Tente de novo.',
     erroSalvar: 'Não foi possível salvar. Tente de novo.',
   },
   // Coleções (#364, ADR-0027) — pastas PRIVADAS sobre o Salvar. Namespace próprio. A página
@@ -923,9 +915,9 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
-  // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`
-  // (o Voto está sendo aposentado). Plurais compostos via `.replace('{n}'/'{media}', …)` no
-  // componente (folhas do tipo `Messages` são string).
+  // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
+  // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
+  // `Messages` são string).
   avaliacoes: {
     titulo: 'Avaliações',
     editar: 'Editar',

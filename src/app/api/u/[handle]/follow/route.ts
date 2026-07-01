@@ -10,7 +10,7 @@ import { emitNotification } from '@/server/notification'
  * Seguir / deixar de seguir um Cozinheiro (#274, ADR-0024) — `POST`/`DELETE`/`GET`
  * `/api/u/<handle>/follow`. Exige sessão (anon → 401). Assimétrico e SEM aprovação; idempotente.
  *
- * DIVERGÊNCIA DELIBERADA do split `/vote` + `/unvote`: aqui a relação é UMA só (a aresta
+ * DIVERGÊNCIA DELIBERADA do split `/save` + `/unsave`: aqui a relação é UMA só (a aresta
  * follower→followee), então `POST` (segue) / `DELETE` (deixa) / `GET` (estado) no MESMO recurso é o
  * shape RESTful natural — e o `GET` de ESTADO é novo de propósito (o perfil é anon-cacheável, então
  * a ilha client busca o "eu sigo?" aqui em vez de receber por SSR). O `GET` é viewer-personalizado →

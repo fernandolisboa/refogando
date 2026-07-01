@@ -5,14 +5,12 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
 /**
- * Teste de COMPONENTE jsdom dos controles de Engajamento da Comunidade (#62) — seam de
- * frontend da #54 (sem browser/Postgres). `fetch` é mockado no SHAPE REAL e DISJUNTO das
- * rotas (vote/unvote ⇒ `{voteCount, viewerVoted}`; save/unsave ⇒ `{viewerSaved}`
- * SÓ). `next/link` é mockado; o locale é real. O componente NÃO usa `useRouter`: o corpo
- * do POST é autoritativo e nada na page deriva de voto/save, então não há
- * `router.refresh()` (round-trip full-page descartado) a mockar/assertar.
- * (LocaleProvider). Cobre AC1 (botões no detalhe), AC2 (não-autovoto na UI via canManage),
- * AC4 (estado visível quando autenticado), save-anônimo, dono-no-pool, e a robustez
+ * Teste de COMPONENTE jsdom dos controles de Engajamento da Comunidade (#62/#362) — seam de
+ * frontend (sem browser/Postgres). `fetch` é mockado no SHAPE REAL das rotas (save/unsave ⇒
+ * `{viewerSaved}`; GET /social ⇒ `{viewerSaved, isOwner}`). `next/link` é mockado; o locale é
+ * real (LocaleProvider). O componente NÃO usa `useRouter`: o corpo do POST é autoritativo e nada
+ * na page deriva do save, então não há `router.refresh()` a mockar/assertar. Cobre o botão Salvar
+ * no detalhe, save-anônimo, dono-salva-a-própria, hidratação no caminho público, e a robustez
  * (otimismo → reversão no erro, sem âmbar).
  *
  * ADR-0015: ÂMBAR (`aviso-*`) e accent (`accent`/`accent-surface`) são PROIBIDOS aqui —
@@ -27,7 +25,7 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// `useSession` (#230 follow-up): o componente agora resolve o estado do viewer no cliente quando o
+// `useSession` (#230 follow-up): o componente resolve o estado do viewer no cliente quando o
 // caminho público não o entregou. Mockamos o cliente Better Auth com uma sessão controlável por teste.
 const authMock = vi.hoisted(() => ({
   session: { data: null as unknown, isPending: false, error: null as unknown },
@@ -81,30 +79,15 @@ function deferred() {
 }
 
 type Props = {
-  initialVoteCount?: number
-  initialViewerVoted?: boolean
   initialViewerSaved?: boolean
-  canManage?: boolean
   locale?: Locale
 }
 
 function renderControls(opts: Props = {}) {
-  const {
-    initialVoteCount,
-    initialViewerVoted,
-    initialViewerSaved,
-    canManage = false,
-    locale = 'pt-BR',
-  } = opts
+  const { initialViewerSaved, locale = 'pt-BR' } = opts
   return render(
     <LocaleProvider initialLocale={locale}>
-      <RecipeEngagementControls
-        recipeId="r-1"
-        initialVoteCount={initialVoteCount}
-        initialViewerVoted={initialViewerVoted}
-        initialViewerSaved={initialViewerSaved}
-        canManage={canManage}
-      />
+      <RecipeEngagementControls recipeId="r-1" initialViewerSaved={initialViewerSaved} />
     </LocaleProvider>,
   )
 }
@@ -126,235 +109,168 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('RecipeEngagementControls (#62)', () => {
-  it('T1 — votar (autenticado, 200): botão alterna, contagem sobe (plural)', async () => {
+describe('RecipeEngagementControls (#62/#362)', () => {
+  it('T1 — salvar (200, server-resolved): botão alterna para "Salvo"', async () => {
     const user = userEvent.setup()
-    const fetchMock = mockFetch({ status: 200, body: { voteCount: 4, viewerVoted: true } })
-    renderControls({ initialVoteCount: 3, initialViewerVoted: false, initialViewerSaved: false })
-
-    expect(screen.getByText('3 votos')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: M.votar }))
-
-    const call = fetchMock.mock.calls[0]
-    expect(String(call[0])).toBe('/api/recipes/r-1/vote')
-    expect((call[1] as RequestInit).method).toBe('POST')
-
-    const votado = await screen.findByRole('button', { name: M.votado })
-    expect(votado).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('4 votos')).toBeInTheDocument()
-  })
-
-  it('T2 — desfazer voto (200): contagem cai a 1 (SINGULAR), botão volta a "Votar"', async () => {
-    const user = userEvent.setup()
-    const fetchMock = mockFetch({ status: 200, body: { voteCount: 1, viewerVoted: false } })
-    renderControls({ initialVoteCount: 2, initialViewerVoted: true, initialViewerSaved: false })
-
-    expect(screen.getByText('2 votos')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: M.votado }))
-
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/unvote')
-    const votar = await screen.findByRole('button', { name: M.votar })
-    expect(votar).toHaveAttribute('aria-pressed', 'false')
-    // Pluralização: 1 → SINGULAR.
-    expect(screen.getByText('1 voto')).toBeInTheDocument()
-    expect(screen.queryByText('1 votos')).not.toBeInTheDocument()
-  })
-
-  it('T3 — salvar (200) NÃO regride voto/contagem (shapes disjuntos)', async () => {
-    const user = userEvent.setup()
-    // /save devolve SÓ {viewerSaved} — nunca voteCount/viewerVoted.
     const fetchMock = mockFetch({ status: 200, body: { viewerSaved: true } })
-    renderControls({ initialVoteCount: 5, initialViewerVoted: true, initialViewerSaved: false })
+    renderControls({ initialViewerSaved: false })
 
     await user.click(screen.getByRole('button', { name: M.salvar }))
 
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/save')
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
     const salvo = await screen.findByRole('button', { name: M.salvo })
     expect(salvo).toHaveAttribute('aria-pressed', 'true')
-
-    // Voto INTACTO: continua "Votado", aria-pressed=true, contagem "5 votos".
-    const votado = screen.getByRole('button', { name: M.votado })
-    expect(votado).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('5 votos')).toBeInTheDocument()
   })
 
-  it('T4 — DONO (canManage) não vê botão de voto, mas vê salvar', () => {
-    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerSaved: false })
+  it('T2 — dessalvar (200): botão volta a "Salvar"', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({ status: 200, body: { viewerSaved: false } })
+    renderControls({ initialViewerSaved: true })
 
-    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
-    expect(screen.getByRole('button', { name: M.salvar })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: M.salvo }))
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/unsave')
+    const salvar = await screen.findByRole('button', { name: M.salvar })
+    expect(salvar).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('T-dono-pool — dono no pool: contagem read-only + salvar FUNCIONAL', async () => {
+  it('T3 — DONO/server-resolved: salvar a própria FUNCIONAL (sem fetch de hidratação)', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch({ status: 200, body: { viewerSaved: true } })
-    renderControls({ canManage: true, initialVoteCount: 5, initialViewerVoted: false, initialViewerSaved: false })
+    // `initialViewerSaved` presente ⇒ serverResolved ⇒ interativo direto, sem GET /social.
+    renderControls({ initialViewerSaved: false })
 
-    // Contagem read-only VISÍVEL; botão de voto AUSENTE.
-    expect(screen.getByText('5 votos')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
-
-    // Salvar PRESENTE e FUNCIONAL (dono pode salvar a própria).
     await user.click(screen.getByRole('button', { name: M.salvar }))
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/save')
     expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
+    // Nunca bateu no /social (estado veio por prop).
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/social'))).toBe(false)
   })
 
-  it('T5 — ANÔNIMO: dois links /sign-in, contagem read-only, sem botão, sem fetch', async () => {
+  it('T4 — ANÔNIMO: link /sign-in para salvar, sem botão, sem fetch', async () => {
     const user = userEvent.setup()
     setSession('anon')
     const fetchMock = mockFetch({ status: 200, body: {} })
-    // Sem viewerVoted/viewerSaved (caminho público) + sessão anônima ⇒ convite a entrar.
-    renderControls({ initialVoteCount: 5, canManage: false })
+    // Sem initialViewerSaved (caminho público) + sessão anônima ⇒ convite a entrar.
+    renderControls({})
 
-    const votoLink = screen.getByRole('link', { name: M.convidaEntrarVoto })
-    const favLink = screen.getByRole('link', { name: M.convidaEntrarSalvar })
-    expect(votoLink).toHaveAttribute('href', '/sign-in')
-    expect(favLink).toHaveAttribute('href', '/sign-in')
+    const salvarLink = screen.getByRole('link', { name: M.convidaEntrarSalvar })
+    expect(salvarLink).toHaveAttribute('href', '/sign-in')
 
-    expect(screen.getByText('5 votos')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
     expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.salvo })).toBeNull()
 
-    // Clicar em qualquer link NÃO toca a API (anônimo).
-    await user.click(votoLink)
-    await user.click(favLink)
+    // Clicar no link NÃO toca a API (anônimo).
+    await user.click(salvarLink)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('T6 — erro no voto: OTIMISMO → REVERSÃO + alerta neutro, sem âmbar/accent', async () => {
+  it('T5 — erro no salvar: OTIMISMO → REVERSÃO + alerta neutro, sem âmbar/accent', async () => {
     const user = userEvent.setup()
     const d = deferred()
     mockFetch(d.factory)
-    const { container } = renderControls({
-      initialVoteCount: 2,
-      initialViewerVoted: false,
-      initialViewerSaved: false,
-    })
+    const { container } = renderControls({ initialViewerSaved: false })
 
-    await user.click(screen.getByRole('button', { name: M.votar }))
+    await user.click(screen.getByRole('button', { name: M.salvar }))
 
-    // Estado OTIMISTA enquanto pendente: vira "Votado", aria-pressed=true, contagem 3, busy.
-    const otimista = screen.getByRole('button', { name: M.votado })
+    // Estado OTIMISTA enquanto pendente: vira "Salvo", aria-pressed=true, busy.
+    const otimista = screen.getByRole('button', { name: M.salvo })
     expect(otimista).toHaveAttribute('aria-pressed', 'true')
     expect(otimista).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByText('3 votos')).toBeInTheDocument()
 
-    // Servidor recusa (422 auto_voto = defesa em profundidade) ⇒ REVERSÃO.
-    d.release({ status: 422, body: { error: 'auto_voto' } })
+    // Servidor recusa (404 fora do pool = defesa em profundidade) ⇒ REVERSÃO.
+    d.release({ status: 404, body: { error: 'not_found' } })
 
     const alerta = await screen.findByRole('alert')
-    expect(alerta).toHaveTextContent(M.erroVoto)
-    const revertido = screen.getByRole('button', { name: M.votar })
+    expect(alerta).toHaveTextContent(M.erroSalvar)
+    const revertido = screen.getByRole('button', { name: M.salvar })
     expect(revertido).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByText('2 votos')).toBeInTheDocument()
     semCorReservada(container)
   })
 
-  it('T7 — en-US: rótulos traduzidos', () => {
-    renderControls({
-      locale: 'en-US',
-      initialVoteCount: 1,
-      initialViewerVoted: false,
-      initialViewerSaved: false,
-    })
-    expect(screen.getByRole('button', { name: enUS.comunidade.votar })).toBeInTheDocument()
+  it('T6 — en-US: rótulos traduzidos', () => {
+    renderControls({ locale: 'en-US', initialViewerSaved: false })
     expect(screen.getByRole('button', { name: enUS.comunidade.salvar })).toBeInTheDocument()
-    // Pluralização en-US: 1 → singular "1 vote".
-    expect(screen.getByText('1 vote')).toBeInTheDocument()
   })
 
   // ── Caminho PÚBLICO/cacheável (#230, ADR-0020): server NÃO entrega estado do viewer (lê anônimo).
   //    O componente o resolve NO CLIENTE via GET /api/recipes/[id]/social quando logado. Este era o
-  //    bug: logado via sempre "Entrar para votar/salvar". ────────────────────────────────────────
+  //    bug: logado via sempre "Entrar para salvar". ─────────────────────────────────────────────
 
-  it('T8 — LOGADO no caminho público: GET /social hidrata voto/save reais (sem convite)', async () => {
+  it('T7 — LOGADO no caminho público: GET /social hidrata o save real (sem convite)', async () => {
     setSession('logged-in')
-    // Sem initialViewer* ⇒ caminho público; o fetch resolve o estado do PRÓPRIO viewer.
+    // Sem initialViewerSaved ⇒ caminho público; o fetch resolve o estado do PRÓPRIO viewer.
     const fetchMock = mockFetch({
       status: 200,
-      body: { viewerVoted: true, viewerSaved: false, isOwner: false },
+      body: { viewerSaved: false, isOwner: false },
     })
-    renderControls({ initialVoteCount: 5 })
+    renderControls({})
 
-    // Hidrata: voto vira "Votado" (aria-pressed), salvar disponível e NÃO-pressionado.
-    const votado = await screen.findByRole('button', { name: M.votado })
-    expect(votado).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: M.salvar })).toHaveAttribute('aria-pressed', 'false')
+    // Hidrata: salvar disponível e NÃO-pressionado.
+    const salvar = await screen.findByRole('button', { name: M.salvar })
+    expect(salvar).toHaveAttribute('aria-pressed', 'false')
 
     // Bateu no endpoint certo (estado do viewer), via GET (sem method).
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/recipes/r-1/social')
 
     // O BUG: NÃO mostra mais o convite "Entrar para..." pra quem está logado.
-    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
     expect(screen.queryByRole('link', { name: M.convidaEntrarSalvar })).toBeNull()
   })
 
-  it('T9 — LOGADO DONO no caminho público (isOwner): esconde voto, salvar funcional', async () => {
+  it('T8 — LOGADO DONO no caminho público (viewerSaved via /social): mostra "Salvo"', async () => {
     setSession('logged-in')
-    mockFetch({ status: 200, body: { viewerVoted: false, viewerSaved: true, isOwner: true } })
-    renderControls({ initialVoteCount: 5 })
+    mockFetch({ status: 200, body: { viewerSaved: true, isOwner: true } })
+    renderControls({})
 
     // Save hidratado (dono pode salvar a própria).
     expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
-    // Voto AUSENTE: dono não vota na própria (AC2), descoberto pelo `isOwner` do fetch.
-    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.votado })).toBeNull()
-    // Contagem read-only permanece visível.
-    expect(screen.getByText('5 votos')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: M.convidaEntrarSalvar })).toBeNull()
   })
 
-  it('T10 — sessão PENDENTE no caminho público: nem convite nem botões (só contagem), sem fetch', () => {
+  it('T9 — sessão PENDENTE no caminho público: nem convite nem botão, sem fetch', () => {
     setSession('pending')
     const fetchMock = mockFetch({ status: 200, body: {} })
-    renderControls({ initialVoteCount: 5 })
+    renderControls({})
 
-    // Contagem read-only fica; nada de flash de "Entrar" nem de botões enquanto a sessão pende.
-    expect(screen.getByText('5 votos')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
-    expect(screen.queryByRole('button', { name: M.votar })).toBeNull()
+    // Nada de flash de "Entrar" nem de botões enquanto a sessão pende.
+    expect(screen.queryByRole('link', { name: M.convidaEntrarSalvar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('T11 — GET /social FALHA (logado): degrada pra botões interativos (defaults), nunca convite', async () => {
+  it('T10 — GET /social FALHA (logado): degrada pra botão interativo (default), nunca convite', async () => {
     setSession('logged-in')
     mockFetch({ reject: true })
-    renderControls({ initialVoteCount: 5 })
+    renderControls({})
 
-    // Degradação graciosa: botões interativos com defaults (não-votado/não-salvo), nunca o
-    // convite "Entrar" (o usuário está logado) nem crash. O server corrige no clique.
-    const votar = await screen.findByRole('button', { name: M.votar })
-    expect(votar).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('button', { name: M.salvar })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: M.convidaEntrarVoto })).toBeNull()
+    // Degradação graciosa: botão interativo com default (não-salvo), nunca o convite "Entrar"
+    // (o usuário está logado) nem crash. O server corrige no clique.
+    const salvar = await screen.findByRole('button', { name: M.salvar })
+    expect(salvar).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('link', { name: M.convidaEntrarSalvar })).toBeNull()
   })
 
-  it('T12 — LOGADO via caminho público hidratado: clicar VOTA de fato (POST /vote)', async () => {
+  it('T11 — LOGADO via caminho público hidratado: clicar SALVA de fato (POST /save)', async () => {
     const user = userEvent.setup()
     setSession('logged-in')
-    // Mock por URL: GET /social hidrata (não votado); POST /vote confirma.
+    // Mock por URL: GET /social hidrata (não salvo); POST /save confirma.
     const fetchMock = vi.fn(async (...args: Parameters<typeof fetch>) => {
       const url = String(args[0])
       const body = url.endsWith('/social')
-        ? { viewerVoted: false, viewerSaved: false, isOwner: false }
-        : { voteCount: 6, viewerVoted: true }
+        ? { viewerSaved: false, isOwner: false }
+        : { viewerSaved: true }
       return { ok: true, status: 200, json: async () => body } as Response
     })
     vi.stubGlobal('fetch', fetchMock)
-    renderControls({ initialVoteCount: 5 })
+    renderControls({})
 
-    // Espera a hidratação (botão "Votar" interativo disponível).
-    const votar = await screen.findByRole('button', { name: M.votar })
-    await user.click(votar)
+    // Espera a hidratação (botão "Salvar" interativo disponível).
+    const salvar = await screen.findByRole('button', { name: M.salvar })
+    await user.click(salvar)
 
-    // Votou de verdade pelo endpoint real (não "Entrar para votar").
-    expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/recipes/r-1/vote')).toBe(true)
-    const votado = await screen.findByRole('button', { name: M.votado })
-    expect(votado).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('6 votos')).toBeInTheDocument()
+    // Salvou de verdade pelo endpoint real (não "Entrar para salvar").
+    expect(fetchMock.mock.calls.some((c) => String(c[0]) === '/api/recipes/r-1/save')).toBe(true)
+    expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
   })
 })
