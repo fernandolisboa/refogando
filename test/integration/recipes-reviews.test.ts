@@ -14,6 +14,7 @@ import {
 } from '@/app/api/recipes/[id]/reviews/route'
 import { GET as mineGet } from '@/app/api/recipes/[id]/reviews/mine/route'
 import { POST as unpublishRoute } from '@/app/api/recipes/[id]/unpublish/route'
+import { applyReview } from '@/server/recipe/review'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
 
@@ -397,6 +398,15 @@ describe('POST/DELETE /api/recipes/[id]/reviews — foto (#365, ADR-0027)', () =
     return new File([new Uint8Array(buf)], name, { type })
   }
 
+  /** PNG cor-sólida de dimensão arbitrária (F1: bomba de pixels vs. imagem legítima grande). Cor
+   * sólida comprime MUITO, então mesmo 5000×5000 fica bem abaixo do cap de 2 MB de BYTES. */
+  async function solidPngFile(width: number, height: number, name: string): Promise<File> {
+    const buf = await sharp({ create: { width, height, channels: 3, background: { r: 120, g: 80, b: 40 } } })
+      .png()
+      .toBuffer()
+    return new File([new Uint8Array(buf)], name, { type: 'image/png' })
+  }
+
   /** Invoca o POST com corpo multipart (espelha me-avatar `postReq`). O Request seta o boundary. */
   function postMultipart(
     id: string,
@@ -605,6 +615,67 @@ describe('POST/DELETE /api/recipes/[id]/reviews — foto (#365, ADR-0027)', () =
     expect(await countRecipeImages()).toBe(before) // NENHUMA entidade recipe_image tocada
   })
 
+  it('F1: PNG 5000×5000 (25 MP, bomba de descompressão) ⇒ 400 tipo_invalido, nada armazenado/gravado', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-bomb-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'foto-bomb-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    // 5000×5000 = 25 MP (> limite de 24 MP), mas cor sólida comprime p/ ~0,33 MB ⇒ PASSA o cap de
+    // BYTES (2 MB). Sem clamp de PIXELS, o decode explode p/ ~750 MB RGBA e OOMa a função (1024 MB
+    // na Vercel). `limitInputPixels: 24_000_000` faz o sharp LANÇAR ⇒ o catch mapeia p/ 400, não 500.
+    const bomb = await solidPngFile(5000, 5000, 'bomb.png')
+    expect(bomb.size).toBeLessThan(2 * 1024 * 1024) // passa o cap de bytes (o clamp de pixels é o que barra)
+    const res = await postMultipart(id, { rating: 5, file: bomb }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('F1: imagem legítima grande (3000×2000) ⇒ 200 e blob GRAVADO com dimensão ≤2048', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-resize-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-resize-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    // 3000×2000 = 6 MP (sob o limite): ACEITA, mas o `.resize(fit:inside, withoutEnlargement)` LIMITA
+    // a dimensão do blob gravado a 2048 mesmo se o cliente for burlado (o servidor é o backstop).
+    const big = await solidPngFile(3000, 2000, 'big.png')
+    expect(big.size).toBeLessThan(2 * 1024 * 1024)
+    const res = await postMultipart(id, { rating: 5, file: big }, headers)
+    expect(res.status).toBe(200)
+
+    const url = await photoUrlOf(id, uid)
+    const blob = store.blobs.get(url!)!
+    const meta = await sharp(Buffer.from(blob.bytes)).metadata()
+    expect(meta.width!).toBeLessThanOrEqual(2048)
+    expect(meta.height!).toBeLessThanOrEqual(2048)
+  })
+
+  it('C1/F2: EXIF/GPS é REMOVIDO no re-encode ⇒ o blob gravado NÃO carrega metadata (não vaza local)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-exif-owner@ex.com' })
+    const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-exif-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    // Entrada JPEG COM EXIF (Copyright) + GPS (lat/long): se o servidor um dia adicionasse
+    // `.withMetadata()` por regressão, o GPS SOBREVIVERIA na foto pública. Sanidade abaixo prova que a
+    // entrada de fato carrega EXIF ⇒ o teste é significativo (não passa vacuamente).
+    const exifBuf = await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 1, g: 2, b: 3 } } })
+      // IFD3 é a GPS IFD no libvips/sharp (o "GPS" tag group). Copyright em IFD0 + lat/long em IFD3.
+      .withExif({ IFD0: { Copyright: 'x' }, IFD3: { GPSLatitude: '10/1 0/1 0/1', GPSLongitude: '20/1 0/1 0/1' } })
+      .jpeg()
+      .toBuffer()
+    expect((await sharp(exifBuf).metadata()).exif).toBeDefined()
+    const withExifFile = new File([new Uint8Array(exifBuf)], 'gps.jpg', { type: 'image/jpeg' })
+
+    const res = await postMultipart(id, { rating: 5, file: withExifFile }, headers)
+    expect(res.status).toBe(200)
+
+    const url = await photoUrlOf(id, uid)
+    const blob = store.blobs.get(url!)!
+    const meta = await sharp(Buffer.from(blob.bytes)).metadata()
+    expect(meta.exif).toBeUndefined() // nenhum EXIF/GPS sobrevive ao re-encode (pin do C1)
+  })
+
   it('caminho JSON sem foto continua funcionando (regressão) ⇒ photo_url null', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'foto-json-owner@ex.com' })
     const { userId: uid, headers } = await seedSessionHeaders({ email: 'foto-json-user@ex.com' })
@@ -617,5 +688,47 @@ describe('POST/DELETE /api/recipes/[id]/reviews — foto (#365, ADR-0027)', () =
     const get = await getReviews(id)
     const body = (await get.json()) as ListBody & { reviews: { photoUrl: string | null }[] }
     expect(body.reviews[0].photoUrl).toBeNull()
+  })
+})
+
+// ── #F3: reap do blob órfão quando o upsert falha DEPOIS de um store bem-sucedido ─────────────
+describe('applyReview — órfão de blob reapado quando o upsert lança (#365 C4/#F3)', () => {
+  it('store OK mas upsert LANÇA ⇒ rejeita, blob reapado (best-effort), nenhuma linha persiste', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'orphan-owner@ex.com' })
+    const { userId: uid } = await seedSessionHeaders({ email: 'orphan-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const fakeStore = new FakeImageStore()
+    // Proxy que LANÇA só em `insert` (o upsert) e delega TODO o resto ao DB real — assim o gate de
+    // pool, o decideReview e o SELECT-prévio da foto rodam de verdade, o store guarda o blob, e só o
+    // upsert dispara o catch de reap. Espelha "o DB caiu DEPOIS de o store ter gravado o blob".
+    const throwingDb = new Proxy(getDb(), {
+      get(t, p, r) {
+        if (p === 'insert')
+          return () => {
+            throw new Error('boom-upsert')
+          }
+        return Reflect.get(t, p, r)
+      },
+    })
+
+    const clean = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 1, g: 2, b: 3 } } })
+      .webp()
+      .toBuffer()
+    await expect(
+      applyReview({
+        db: throwingDb,
+        store: fakeStore,
+        id,
+        userId: uid,
+        action: 'save',
+        rating: 5,
+        comment: 'x',
+        photo: { kind: 'set', data: Buffer.from(clean), contentType: 'image/webp' },
+      }),
+    ).rejects.toThrow('boom-upsert')
+
+    expect(fakeStore.blobs.size).toBe(0) // o blob recém-gravado foi reapado no catch (não vira órfão)
+    expect(await countRows(id)).toBe(0) // nada persistiu
   })
 })

@@ -160,6 +160,21 @@ export function RecipeReviewSection({
     }
   }, [recipeId, canManage, loggedIn])
 
+  // #F4: revoga o object-URL de preview no UNMOUNT (escolheu foto e navegou fora antes de enviar) —
+  // os revokes imperativos (pick/remove/reset) cobrem a troca; este cobre o desmonte. Depende de
+  // `photoPreview` pra revogar sempre a URL VIVA (a cleanup roda com o valor do render anterior).
+  useEffect(() => {
+    return () => {
+      if (photoPreview) {
+        try {
+          URL.revokeObjectURL(photoPreview)
+        } catch {
+          // ambiente sem suporte — nada a revogar.
+        }
+      }
+    }
+  }, [photoPreview])
+
   // #366/#F3: aplica o corpo do GET /reviews/mine ao estado do viewer. `id`/moderação vêm daqui —
   // `myReviewId` precisa refrescar após ENVIAR (senão "Reportar" aparece na própria linha recém-criada
   // até o reload) e o flag `moderated` também.
@@ -559,7 +574,9 @@ export function RecipeReviewSection({
                 <p className="text-sm text-foreground whitespace-pre-line">{r.comment}</p>
               )}
 
-              {/* #365: FOTO do prato da avaliação (contida, sem CLS; alt é conteúdo/prova). */}
+              {/* #365 (#F5): FOTO do prato da avaliação — `<img>` cru contido (max-h + object-contain),
+                  consistente com a convenção de avatar/recipe-image do repo; `alt` é conteúdo/prova,
+                  `loading="lazy"` adia o fetch fora da tela. */}
               {r.photoUrl && (
                 <img
                   src={r.photoUrl}

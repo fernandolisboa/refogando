@@ -67,11 +67,22 @@ async function parseMultipart(
     }
     // C1: re-encoda pra webp com `.rotate()` (assa a orientação EXIF) — sharp DESCARTA todo o
     // metadata (sem `.withMetadata()`), então GPS/EXIF NÃO vazam na foto pública.
+    // F1 (anti-DoS): o cap de 2 MB de BYTES não limita PIXELS — um PNG ~0.74 MB muito compressível
+    // (ex.: 16000×16000 cor sólida) decodifica p/ ~1 GB RGBA e OOMa a função (1024 MB na Vercel).
+    // `limitInputPixels` faz o sharp LANÇAR em entrada > 24 MP (bomba de descompressão barrada; 24 MP
+    // é generoso p/ foto de celular legítima e o cliente já redimensiona p/ ~1 MP). O `.resize` com
+    // fit:inside + withoutEnlargement LIMITA a dimensão do blob GRAVADO (≤2048) mesmo com cliente
+    // hostil/burlado, sem ampliar imagem pequena. Um throw do sharp cai no catch → 400 tipo_invalido.
     let clean: Buffer
     try {
-      clean = await sharp(Buffer.from(await file.arrayBuffer())).rotate().webp({ quality: 82 }).toBuffer()
+      clean = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 24_000_000 })
+        .rotate()
+        .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toBuffer()
     } catch {
-      // Bytes que o sharp não decodifica (arquivo corrompido / não-imagem com type forjado) → 400.
+      // Bytes que o sharp não decodifica (arquivo corrompido / não-imagem com type forjado) OU
+      // entrada acima do limite de pixels (bomba de descompressão) → 400 (nunca 500/OOM).
       return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
     }
     return { ok: true, rating, comment, photo: { kind: 'set', data: clean, contentType: 'image/webp' } }
