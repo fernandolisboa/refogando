@@ -274,6 +274,13 @@
       "when": 1782872344802,
       "tag": "0038_minor_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1782878320855,
+      "tag": "0039_freezing_paibok",
+      "breakpoints": true
     }
   ]
 }

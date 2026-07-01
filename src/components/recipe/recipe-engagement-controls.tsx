@@ -36,6 +36,7 @@ import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export function RecipeEngagementControls({
   recipeId,
@@ -266,6 +267,10 @@ export function RecipeEngagementControls({
         )}
       </div>
 
+      {/* Picker de Coleção (#364): só quando a Receita está SALVA (o server barra add de não-salva).
+          Some ao dessalvar. Reusa /api/recipes/[id]/collections + /api/me/collections/[id]/items. */}
+      {mode === 'interactive' && saved && <CollectionPicker recipeId={recipeId} />}
+
       {voteError && (
         <Alert variant="info" role="alert">
           <AlertDescription className="font-medium text-foreground">
@@ -282,4 +287,185 @@ export function RecipeEngagementControls({
       )}
     </section>
   )
+}
+
+/**
+ * Picker de Coleção do detalhe (#364) — disclosure lazy: só busca a membership ao abrir. Cada
+ * coleção é um checkbox (contains); marcar/desmarcar chama POST/DELETE de `items` com otimismo +
+ * revert. Criar coleção inline (POST /api/me/collections) já adiciona a Receita à nova pasta.
+ * Renderizado só quando a Receita está SALVA (o server rejeita add de não-salva com 422).
+ */
+type Membership = { id: string; name: string; contains: boolean }
+
+function CollectionPicker({ recipeId }: { recipeId: string }) {
+  const { messages } = useLocale()
+  const m = messages.colecoes
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<Membership[] | null>(null)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  async function load() {
+    setStatus('loading')
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}/collections`)
+      if (!res.ok) {
+        setStatus('error')
+        return
+      }
+      const body = (await res.json()) as { collections: Membership[] }
+      setItems(body.collections)
+      setStatus('idle')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  function toggleOpen() {
+    const next = !open
+    setOpen(next)
+    if (next && items === null) void load()
+  }
+
+  async function toggleMembership(id: string, contains: boolean) {
+    // Otimista: alterna já; reverte no erro.
+    setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains: !contains } : c)) ?? prev)
+    try {
+      const res = contains
+        ? await fetch(`/api/me/collections/${id}/items/${recipeId}`, { method: 'DELETE' })
+        : await fetch(`/api/me/collections/${id}/items`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ recipeId }),
+          })
+      if (!res.ok) {
+        setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains } : c)) ?? prev)
+      }
+    } catch {
+      setItems((prev) => prev?.map((c) => (c.id === id ? { ...c, contains } : c)) ?? prev)
+    }
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    if (creating) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const res = await fetch('/api/me/collections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        setCreateError(collectionErrorMessage(body.error, m))
+        return
+      }
+      const body = (await res.json()) as { collection: { id: string; name: string } }
+      // Já adiciona a Receita à coleção recém-criada (best-effort).
+      await fetch(`/api/me/collections/${body.collection.id}/items`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ recipeId }),
+      })
+      setNewName('')
+      setItems((prev) =>
+        [...(prev ?? []), { id: body.collection.id, name: body.collection.name, contains: true }].sort(
+          (a, b) => a.name.localeCompare(b.name),
+        ),
+      )
+    } catch {
+      setCreateError(m.erro)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        aria-expanded={open}
+        onClick={toggleOpen}
+        className="self-start"
+      >
+        {m.adicionarAColecao}
+      </Button>
+      {open && (
+        <div className="flex flex-col gap-3 rounded-md border border-border bg-bg p-3">
+          {status === 'loading' && <p className="text-sm text-muted">{messages.system.loading}</p>}
+          {status === 'error' && (
+            <p role="alert" className="text-sm font-medium text-fg">
+              {m.erroCarregar}
+            </p>
+          )}
+          {items != null && items.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {items.map((c) => (
+                <li key={c.id}>
+                  <label className="flex items-center gap-2 text-sm text-fg">
+                    <input
+                      type="checkbox"
+                      checked={c.contains}
+                      onChange={() => toggleMembership(c.id, c.contains)}
+                      className="size-4 accent-brand"
+                    />
+                    <span>{c.name}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {items != null && items.length === 0 && (
+            <p className="text-sm text-muted">{m.semColecoes}</p>
+          )}
+          <form onSubmit={handleCreate} className="flex flex-wrap items-center gap-2">
+            <label htmlFor={`nova-col-${recipeId}`} className="sr-only">
+              {m.nomeColecao}
+            </label>
+            <Input
+              id={`nova-col-${recipeId}`}
+              value={newName}
+              onChange={(e) => {
+                setNewName(e.target.value)
+                setCreateError(null)
+              }}
+              placeholder={m.novaColecao}
+              maxLength={60}
+              className="w-48"
+            />
+            <Button type="submit" variant="secondary" disabled={creating || newName.trim() === ''}>
+              {m.criar}
+            </Button>
+          </form>
+          {createError != null && (
+            <p role="alert" className="text-sm font-medium text-fg">
+              {createError}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Código de erro do servidor → mensagem localizada da Coleção; default = genérico. */
+function collectionErrorMessage(
+  code: string | undefined,
+  m: ReturnType<typeof useLocale>['messages']['colecoes'],
+): string {
+  switch (code) {
+    case 'nome_invalido':
+      return m.erroNomeInvalido
+    case 'nome_duplicado':
+      return m.erroNomeDuplicado
+    case 'limite_colecoes':
+      return m.erroLimite
+    default:
+      return m.erro
+  }
 }
