@@ -28,15 +28,27 @@ describe('cooks-cursor — recomendações (score, recency, handle)', () => {
     expect(decodeRecsCursor(encodeRecsCursor({ score: 0, recency: '2026-06-29 12:00:00+00', handle: 'h-1' }))).not.toBeNull()
   })
 
+  // #368: o score da Popularidade é FLOAT (mistura Bayesiana), não mais int — o decoder aceita
+  // qualquer número FINITO (fração e magnitudes grandes são válidas; só o não-finito/não-número é
+  // rejeitado). A coluna alvo é float8, então "overflow int4" deixou de ser um problema.
+  it.each([
+    ['fração (score Bayesiano)', 1.5],
+    ['negativo', -0.25],
+    ['magnitude grande (era "overflow int4")', 9999999999],
+  ])('score float finito (%s) é válido → decodifica', (_label, s) => {
+    const raw = Buffer.from(JSON.stringify({ s, r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')
+    expect(decodeRecsCursor(raw)).toEqual({ score: s, recency: '2026-06-29 12:00:00+00', handle: 'h-1' })
+  })
+
   it.each([
     ['base64 lixo', '!!!not-base64!!!'],
     ['vazio', ''],
     ['json não-objeto', Buffer.from('"x"', 'utf8').toString('base64url')],
-    ['score não-inteiro', Buffer.from(JSON.stringify({ s: 1.5, r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')],
     ['score não-número', Buffer.from(JSON.stringify({ s: '1', r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')],
+    // 1e999 é JSON válido que JSON.parse resolve como Infinity → Number.isFinite false → null (nunca bind).
+    ['score não-finito (1e999→Infinity)', Buffer.from('{"s":1e999,"r":"2026-06-29 12:00:00+00","h":"h-1"}', 'utf8').toString('base64url')],
     ['recency não-timestamptz', Buffer.from(JSON.stringify({ s: 1, r: 'lixo', h: 'h-1' }), 'utf8').toString('base64url')],
     ['handle fora do charset', Buffer.from(JSON.stringify({ s: 1, r: '2026-06-29 12:00:00+00', h: 'Ana Maria!' }), 'utf8').toString('base64url')],
-    ['score fora da faixa int4 (overflow)', Buffer.from(JSON.stringify({ s: 9999999999, r: '2026-06-29 12:00:00+00', h: 'h-1' }), 'utf8').toString('base64url')],
     ['data fora de faixa (mês 99)', Buffer.from(JSON.stringify({ s: 1, r: '9999-99-99 99:99:99', h: 'h-1' }), 'utf8').toString('base64url')],
   ])('forjado (%s) → null (nunca 500)', (_label, raw) => {
     expect(decodeRecsCursor(raw)).toBeNull()

@@ -6,6 +6,7 @@ import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-con
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { parseWebSearchConfig } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
+import { parsePopularityConfig, type PopularityConfig } from '@/domain/popularity'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -47,6 +48,7 @@ export async function PUT(req: Request): Promise<Response> {
     recipeGenCapByRole?: unknown
     webSearch?: unknown
     catalogDisclosure?: unknown
+    popularity?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -61,6 +63,7 @@ export async function PUT(req: Request): Promise<Response> {
     webSearchAllowlist: string[]
     catalogDisclosureEnabled: boolean
     catalogDisclosureText: string
+    popularityConfig: PopularityConfig
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -105,6 +108,15 @@ export async function PUT(req: Request): Promise<Response> {
     if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.catalogDisclosureEnabled = parsed.value.enabled
     set.catalogDisclosureText = parsed.value.text
+  }
+
+  // #368: constantes da mistura de popularidade (pesos + m + tauDays). O parse REJEITA Infinity/NaN/
+  // negativo/m<=0/tau<=0 (fechado, `Number.isFinite`); inválido ⇒ 400 config_invalida. Substituição
+  // COMPLETA do eixo (a UI sempre envia os 5 campos). Sem deploy: o ranking relê a config por request.
+  if (body.popularity !== undefined) {
+    const parsed = parsePopularityConfig(body.popularity)
+    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.popularityConfig = parsed.value
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

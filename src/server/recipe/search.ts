@@ -4,6 +4,9 @@ import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
 import type { SearchHitRow } from '@/domain/recipe-search-read'
 import { type EffectiveFacets, isFacetsEmpty } from '@/domain/facet-params'
 import type { SortMode } from '@/domain/sort-params'
+import { loadPopularityConfig } from '@/server/app-config'
+import { loadGlobalRatingAverage } from '@/server/recipe/popularity'
+import type { PopularityConfig } from '@/domain/popularity'
 
 /**
  * Loader FTS multi-row da Busca (issue #6, §3.4; estendido pela #9, §3.1). Diverge de
@@ -118,6 +121,7 @@ function semanticSelectSql(
         r.origin AS origin,
         r.original_locale AS original_locale,
         r.owner_id AS owner_id,
+        r.created_at AS created_at, -- #368/M1: bucket-2 lê FROM semantic s; o frescor precisa do created_at aqui (senão 500)
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section
       FROM recipe_embedding re
       JOIN recipe r ON r.id = re.recipe_id
@@ -254,6 +258,77 @@ export type SearchLoaderResult = {
   sugestoes: SearchHitRow[]
 }
 
+/**
+ * Corpo do subquery de SAVES por receita (#368, ADR-0027/0028) COMPARTILHADO entre os DOIS sites de join
+ * físicos: o `visible` (ON r.id) e o bucket-2 semântico (ON s.recipe_id). Fatorar o CORPO garante que a
+ * self-exclusão NÃO derive entre as cópias (achado B2). LANDMINE B1-sec: self-save é PERMITIDO no
+ * write-path (≠ voto), então o RANKING deve excluir o auto-save (`rf.user_id <> rr.owner_id`) — senão o
+ * dono infla a própria receita salvando-a. NULL-safe pro CATÁLOGO (owner NULL): `rr.owner_id IS NULL OR
+ * ...` (`NULL <> x` é NULL ⇒ a linha do catálogo sumiria). `count(*)::int` = number (não string de bigint).
+ *
+ * MESMO UNIVERSO VIVO que a NOTA (ratingAggBodySql / loadGlobalRatingAverage): `JOIN users su ... AND
+ * su.deleted_at IS NULL` DESCARTA o save de quem foi soft-deletado — senão o apreço de um usuário morto
+ * seguiria inflando `wSave·ln(1+saves)` enquanto a nota dele já cai fora, quebrando a invariante do módulo.
+ * `recipe_save.user_id` é NOT NULL (componente da PK) ⇒ o JOIN é seguro, sem tratamento de NULL.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template. Comentários ficam AQUI, fora do `sql\`...\``.
+ */
+const savesAggBodySql = sql`
+  SELECT rf.recipe_id AS recipe_id, count(*)::int AS saves
+  FROM recipe_save rf
+  JOIN recipe rr ON rr.id = rf.recipe_id
+  JOIN users su ON su.id = rf.user_id AND su.deleted_at IS NULL
+  WHERE (rr.owner_id IS NULL OR rf.user_id <> rr.owner_id)
+  GROUP BY rf.recipe_id
+`
+
+/**
+ * Corpo do subquery de NOTA por receita (#368) COMPARTILHADO entre os 2 sites de join (B2). LANDMINES:
+ * `moderated_at IS NULL` (nota moderada não infla — M3) + `u.deleted_at IS NULL` (autor soft-deletado
+ * fora, casa `loadAggregate`/o C global) + self-exclusão NULL-safe pro catálogo. Emite `rsum` (soma) e
+ * `v` (contagem): a média R = `rsum/nullif(v,0)` é computada na fórmula do score (média VERDADEIRA, não
+ * avg-de-avgs). `sum(...)::float8` (não string); `count(*)::int` (number).
+ *
+ * LANDMINE: NENHUM backtick dentro deste template.
+ */
+const ratingAggBodySql = sql`
+  SELECT rv.recipe_id AS recipe_id, sum(rv.rating)::float8 AS rsum, count(*)::int AS v
+  FROM recipe_review rv
+  JOIN users u ON u.id = rv.user_id
+  JOIN recipe rr ON rr.id = rv.recipe_id
+  WHERE rv.moderated_at IS NULL
+    AND u.deleted_at IS NULL
+    AND (rr.owner_id IS NULL OR rv.user_id <> rr.owner_id)
+  GROUP BY rv.recipe_id
+`
+
+/**
+ * Expressão SQL do score de POPULARIDADE de RECEITA (#368) — espelha `popularityScore` (domain/popularity)
+ * termo a termo. LANDMINE math B1: TODA divisão tem `::float8` nos DOIS operandos. `m/(v+m)` com `m` e `v`
+ * INTEIROS seria DIVISÃO INTEIRA no Postgres (trunca a 0 pra todo v>=1) ⇒ o prior sumiria e o ranking
+ * inteiro sairia errado. `saves`/`rsum`/`v` vêm dos LEFT JOIN agregados (`sv`/`rt`); NULL (sem save/nota)
+ * ⇒ COALESCE 0 ⇒ o CASE cai em C (prior puro). O frescor lê `createdAt` (r ou s, conforme o braço) e
+ * clampa idade negativa (GREATEST(0,...)). `C` já vem bindado como número real (fallback 3.0 em TS, nunca
+ * NULL). Tudo `::float8`.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template.
+ */
+function popularityScoreSql(cfg: PopularityConfig, C: number, createdAt: SQL): SQL {
+  return sql`
+    ${cfg.wSave}::float8 * ln(1 + COALESCE(sv.saves, 0)::float8)
+    + ${cfg.wNota}::float8 * (
+        CASE WHEN COALESCE(rt.v, 0) > 0
+          THEN (rt.v::float8 / (rt.v::float8 + ${cfg.m}::float8)) * (rt.rsum / nullif(rt.v, 0)::float8)
+             + (${cfg.m}::float8 / (rt.v::float8 + ${cfg.m}::float8)) * ${C}::float8
+          ELSE ${C}::float8
+        END
+      )
+    + ${cfg.wNovo}::float8 * exp(
+        - GREATEST(0, EXTRACT(EPOCH FROM (now() - ${createdAt})) / 86400.0) / ${cfg.tauDays}::float8
+      )
+  `
+}
+
 export async function searchRecipes(
   db: Database,
   args: {
@@ -264,10 +339,10 @@ export async function searchRecipes(
     facets: EffectiveFacets
     queryVector: number[] | null
     /**
-     * Ordenação da Busca da COMUNIDADE (#16, ADR-0003). 'popularidade' re-ranqueia a
-     * Comunidade por vote_count DENTRO do tier de exatidão (NUNCA acima — ADR-0008);
-     * 'relevancia' (default) é o ranking híbrido de hoje, byte-a-byte. O Catálogo é
-     * editorial e IGNORA sort (a chave de popularidade é gateada por section='comunidade').
+     * Ordenação da Busca da COMUNIDADE (#16→#368, ADR-0003/0027/0028). 'popularidade' re-ranqueia a
+     * Comunidade pela MISTURA de popularidade (save + nota Bayesiana + frescor) DENTRO do tier de
+     * exatidão (NUNCA acima — ADR-0008); 'relevancia' (default) é o ranking híbrido de hoje, byte-a-byte.
+     * O Catálogo é editorial e IGNORA sort (a chave de popularidade é gateada por section='comunidade').
      */
     sort?: SortMode
     /**
@@ -301,6 +376,35 @@ export async function searchRecipes(
   // constante 0 e o ORDER BY cai BYTE-A-BYTE no de hoje (#14). A chave entra DEPOIS do
   // bucket de exatidao e SO para section='comunidade' (Catalogo intocado — ADR-0003).
   const isPopularidade = args.sort === 'popularidade' ? sql`true` : sql`false`
+
+  // #368 (ADR-0027/0028): a mistura de POPULARIDADE substitui a chave de contagem-de-votos do #16. cfg (pesos/m/tau)
+  // + C (média GLOBAL da nota — prior da Bayesiana) carregados 1× por request, SÓ sob sort=popularidade
+  // (gate de PERF: os LEFT JOIN agregados de save/nota e a coluna popularity_score só materializam nesse
+  // caso; varrer recipe_save/recipe_review a cada Busca de relevância seria desperdício). Sob relevancia a
+  // coluna colapsa a 0::float8 em TODO braço do UNION ALL (aridade intacta) e o ORDER BY cai byte-a-byte no
+  // de hoje. Os CORPOS dos subqueries (savesAggBodySql/ratingAggBodySql) são COMPARTILHADOS entre os 2
+  // sites de join físicos (visible ON r.id, bucket-2 ON s.recipe_id) — os guardas (self-exclusão +
+  // moderated_at + deleted-author) NÃO podem derivar entre as cópias (achado B2). Catálogo intocado (a
+  // chave é gateada a section='comunidade' no ORDER BY).
+  const isPop = args.sort === 'popularidade'
+  let savesJoinSql: SQL = sql``
+  let ratingJoinSql: SQL = sql``
+  let bucket2SavesJoinSql: SQL = sql``
+  let bucket2RatingJoinSql: SQL = sql``
+  let popularityColVisibleSql: SQL = sql`0::float8`
+  let popularityColBucket2Sql: SQL = sql`0::float8`
+  if (isPop) {
+    const cfg = await loadPopularityConfig(db)
+    // Fallback 3.0 bindado em TS como número real — NUNCA NULL (senão o CASE ELSE C ⇒ NULL ⇒ NULLS FIRST
+    // no DESC ⇒ receitas de 0-nota ao topo, quebrando o guarda-corpo (b)).
+    const C = (await loadGlobalRatingAverage(db)) ?? 3.0
+    savesJoinSql = sql`LEFT JOIN (${savesAggBodySql}) sv ON sv.recipe_id = r.id`
+    ratingJoinSql = sql`LEFT JOIN (${ratingAggBodySql}) rt ON rt.recipe_id = r.id`
+    bucket2SavesJoinSql = sql`LEFT JOIN (${savesAggBodySql}) sv ON sv.recipe_id = s.recipe_id`
+    bucket2RatingJoinSql = sql`LEFT JOIN (${ratingAggBodySql}) rt ON rt.recipe_id = s.recipe_id`
+    popularityColVisibleSql = popularityScoreSql(cfg, C, sql`r.created_at`)
+    popularityColBucket2Sql = popularityScoreSql(cfg, C, sql`s.created_at`)
+  }
 
   // #10 faceta-only: ha facetas E o q efetivo NAO tem letra/digito (nem titulo nem
   // ingrediente podem casar => `combined` esta garantidamente vazio). Cobre q=''
@@ -385,18 +489,11 @@ export async function searchRecipes(
   // captura). ATENCAO: em Postgres `NaN = NaN` e TRUE (float8) -- entao `x = x` NAO filtra
   // NaN. O teste correto e `cosine_sim <> 'NaN'::float8` (FALSE p/ NaN => excluido; TRUE p/
   // finito => mantido).
-  // #16 (bucket 2): mesma gate por sort que `visible`. O alias de join e `s` (semantic), nao
-  // `r`, entao a copia inline do JOIN agregado e da coluna nao reusa voteCountJoinSql/
-  // voteCountColSql (que falam de `r`/`vc`). Sob relevancia a coluna e a constante 0 e o JOIN
-  // some — aridade do UNION ALL mantida (a coluna vote_count na MESMA posicao em todo ramo).
-  const bucket2VoteCountColSql =
-    args.sort === 'popularidade' ? sql`COALESCE(vc.vote_count, 0)` : sql`0`
-  const bucket2VoteCountJoinSql =
-    args.sort === 'popularidade'
-      ? sql`LEFT JOIN (
-        SELECT recipe_id, COUNT(*) AS vote_count FROM recipe_vote GROUP BY recipe_id
-      ) vc ON vc.recipe_id = s.recipe_id`
-      : sql``
+  // #368 (bucket 2): mesma gate por sort que `visible`. O alias de join e `s` (semantic), entao os
+  // LEFT JOIN agregados sao ON s.recipe_id (bucket2SavesJoinSql/bucket2RatingJoinSql, montados acima com
+  // os MESMOS corpos do visible — B2). A coluna popularity_score usa `s.created_at` pro frescor (M1: o
+  // semanticSelectSql passou a expor created_at). Sob relevancia a coluna e a constante 0::float8 e os
+  // JOINs somem — aridade do UNION ALL mantida (popularity_score na MESMA posicao em todo ramo).
   const bucket2Sql = hasVector
     ? sql`
       UNION ALL
@@ -410,9 +507,10 @@ export async function searchRecipes(
         0::double precision AS title_rank,
         s.cosine_sim AS cosine_sim,
         s.section AS section,
-        ${bucket2VoteCountColSql} AS vote_count
+        ${popularityColBucket2Sql} AS popularity_score
       FROM semantic s
-      ${bucket2VoteCountJoinSql}
+      ${bucket2SavesJoinSql}
+      ${bucket2RatingJoinSql}
       WHERE s.cosine_sim >= ${SEMANTIC_MIN_SIM}
         AND s.cosine_sim <> 'NaN'::float8
         AND EXISTS (
@@ -430,29 +528,14 @@ export async function searchRecipes(
   // 0); o caminho #6/#9 le de `combined c JOIN recipe r` + cosine via LEFT JOIN semantic
   // (NULL-safe) e (quando hasVector) o bucket 2 de so-semanticos. O gate canonico e as
   // facetas re-incluidos em AMBOS os ramos (faceta nunca afrouxa o gate).
-  // #16: agregado de votos por Receita, juntado por LEFT JOIN em CADA ramo de `visible`
-  // (mesma posicao de coluna em TODOS os SELECTs do UNION ALL — senao a aridade quebra).
-  // Subquery agregada (nao correlacionada) reusada nos tres ramos via o mesmo fragmento.
+  // #368: os LEFT JOIN agregados de save/nota (savesJoinSql/ratingJoinSql, montados acima com os corpos
+  // COMPARTILHADOS, ON r.id) e a coluna popularity_score (popularityColVisibleSql) entram em CADA ramo de
+  // `visible` (mesma posicao de coluna em TODO SELECT do UNION ALL — senao a aridade quebra).
   //
-  // PERF (#16, gate por sort): a coluna vote_count SO e consumida na chave de Popularidade
-  // do ORDER BY, gateada por `${isPopularidade}`. Sob sort=relevancia (default, e TODO o
-  // Catalogo — que nunca usa Popularidade) a chave colapsa a constante 0 e vote_count NAO e
-  // projetado (displayTailSql so projeta recipe_id/origin/original_locale/section). O ORDER
-  // BY colapsa, mas o JOIN agregado NAO — ele executaria de qualquer jeito, varrendo a
-  // recipe_vote INTEIRA (sem WHERE) a cada Busca pra produzir um valor descartado. Entao so
-  // emitimos o LEFT JOIN agregado + a coluna real quando sort=popularidade; senao a coluna e
-  // a constante `0 AS vote_count` e o JOIN some. A aridade do UNION ALL fica intacta (todos
-  // os ramos emitem a coluna vote_count, so que constante 0 quando inerte).
-  const voteCountJoinSql =
-    args.sort === 'popularidade'
-      ? sql`LEFT JOIN (
-        SELECT recipe_id, COUNT(*) AS vote_count FROM recipe_vote GROUP BY recipe_id
-      ) vc ON vc.recipe_id = r.id`
-      : sql``
-  // Expressao da coluna vote_count nos ramos do `visible` (facetOnly + combined): COUNT
-  // coalescido quando ha o JOIN (popularidade); constante 0 quando o JOIN some (relevancia).
-  const voteCountColSql =
-    args.sort === 'popularidade' ? sql`COALESCE(vc.vote_count, 0)` : sql`0`
+  // PERF (gate por sort): a coluna popularity_score SO e consumida na chave de Popularidade do ORDER BY,
+  // gateada por `${isPopularidade}`. Sob relevancia (default + TODO o Catalogo) os JOINs somem (varrer
+  // recipe_save/recipe_review a cada Busca pra um valor descartado seria desperdicio) e a coluna vira a
+  // constante 0::float8. A aridade do UNION ALL fica intacta (todo ramo emite popularity_score).
 
   const visibleSource = facetOnly
     ? sql`
@@ -466,9 +549,10 @@ export async function searchRecipes(
         0::double precision AS title_rank,
         0::double precision AS cosine_sim,
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
-        ${voteCountColSql} AS vote_count
+        ${popularityColVisibleSql} AS popularity_score
       FROM recipe r
-      ${voteCountJoinSql}
+      ${savesJoinSql}
+      ${ratingJoinSql}
       WHERE r.result_kind <> 'playful'
         AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
@@ -485,11 +569,12 @@ export async function searchRecipes(
         c.title_rank AS title_rank,
         ${cosineSelectSql} AS cosine_sim,
         CASE WHEN r.origin = 'catalog' THEN 'catalogo' ELSE 'comunidade' END AS section,
-        ${voteCountColSql} AS vote_count
+        ${popularityColVisibleSql} AS popularity_score
       FROM combined c
       JOIN recipe r ON r.id = c.recipe_id
       ${semanticJoinSql}
-      ${voteCountJoinSql}
+      ${savesJoinSql}
+      ${ratingJoinSql}
       WHERE r.result_kind <> 'playful'
         AND ${viewerReadableSqlFragment('r', viewerId)}
         AND r.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
@@ -661,15 +746,16 @@ export async function searchRecipes(
           PARTITION BY visible.section
           ORDER BY
             (visible.overlap + CASE WHEN visible.title_match THEN 1 ELSE 0 END > 0) DESC,
-            -- #16: Popularidade entra DEPOIS do bucket de exatidao e SO na Comunidade
-            -- (Catalogo intocado, ADR-0003). Sob sort=relevancia (isPopularidade=false) o
-            -- CASE rende a constante 0 (chave inerte) e o ORDER BY colapsa byte-a-byte no de
-            -- hoje. COALESCE(vote_count,0) ja vem do visible (coluna coalescida); o ELSE 0
-            -- mantem o tipo int em ambos os ramos (evita NULLS-FIRST do DESC).
+            -- #368: Popularidade (mistura save+nota+frescor) entra DEPOIS do bucket de exatidao
+            -- e SO na Comunidade (Catalogo intocado, ADR-0003). Sob sort=relevancia
+            -- (isPopularidade=false) o CASE rende a constante 0::float8 (chave inerte) e o ORDER
+            -- BY colapsa byte-a-byte no de hoje. visible.popularity_score ja vem do visible
+            -- (float8 real sob popularidade, 0::float8 constante sob relevancia); o ELSE 0::float8
+            -- mantem o tipo float8 em ambos os ramos (evita NULLS-FIRST do DESC).
             CASE
               WHEN visible.section = 'comunidade' AND ${isPopularidade}
-              THEN COALESCE(visible.vote_count, 0)
-              ELSE 0
+              THEN visible.popularity_score
+              ELSE 0::float8
             END DESC,
             (visible.overlap + CASE WHEN visible.title_match THEN 1 ELSE 0 END) DESC,
             visible.cosine_sim DESC,

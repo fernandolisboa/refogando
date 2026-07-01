@@ -47,6 +47,7 @@ import {
 } from '@/domain/recipe-gen-config'
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
+import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
 import { REPORT_STATUSES } from '@/domain/report'
 import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
@@ -757,6 +758,14 @@ export const appConfig = pgTable(
     catalogDisclosureText: text('catalog_disclosure_text')
       .notNull()
       .default(DEFAULT_CATALOG_DISCLOSURE_CONFIG.text),
+    // #368 (ADR-0027/0028): constantes da mistura de POPULARIDADE (pesos wSave/wNota/wNovo + m + tauDays)
+    // — a FORMA está no ADR (Bayesiana + exp-decay); os NÚMEROS são calibragem reversível ajustável sem
+    // deploy. jsonb PopularityConfig na MESMA linha singleton (espelha os demais eixos de config). O
+    // read-path re-valida (parsePopularityConfig) — linha legada/editada à mão com lixo cai no DEFAULT.
+    popularityConfig: jsonb('popularity_config')
+      .$type<PopularityConfig>()
+      .notNull()
+      .default(DEFAULT_POPULARITY_CONFIG),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

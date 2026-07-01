@@ -1,6 +1,7 @@
 /**
  * Cursores keyset OPACOS da Descoberta de Cozinheiros (#308). Dois formatos:
- *  - **recomendações** `(score:int, recency:timestamptz, handle)` — ordem all-DESC;
+ *  - **recomendações** `(score:float, recency:timestamptz, handle)` — ordem all-DESC (#368: o score
+ *    virou a mistura de popularidade, um FLOAT arredondado a 6 casas — não mais um inteiro de contagem);
  *  - **busca**         `(rank:int, name:text, handle)` — ordem all-ASC.
  *
  * Ambos = base64url de JSON via `Buffer` (utf8): o `name` da busca pode ter acento/unicode, então NÃO
@@ -11,10 +12,10 @@
  * `id` interno NUNCA entra no cursor.**
  *
  * Decodificar é TOLERANTE e VALIDA o VALOR de cada campo ANTES de devolver — base64 inválido, forma
- * errada, `score`/`rank` não-inteiro, `recency` fora do formato timestamptz, `handle` fora do charset,
- * ou control char (o NUL estoura o bind do postgres-js) ⇒ `null`, e o chamador trata como PRIMEIRA
- * página. As rotas são públicas: um `?cursor=` adulterado JAMAIS pode virar 500. O cursor é minado de
- * um probe `limit+1`, nunca de `rows.length < limit`.
+ * errada, `score` não-finito (NaN/±Infinity) ou `rank` não-inteiro, `recency` fora do formato
+ * timestamptz, `handle` fora do charset, ou control char (o NUL estoura o bind do postgres-js) ⇒ `null`,
+ * e o chamador trata como PRIMEIRA página. As rotas são públicas: um `?cursor=` adulterado JAMAIS pode
+ * virar 500. O cursor é minado de um probe `limit+1`, nunca de `rows.length < limit`.
  */
 
 // Forma TEXTO do `timestamptz` do Postgres (`::text`) — com FAIXAS válidas (mês 01-12, dia 01-31, hora
@@ -25,8 +26,9 @@ const TIMESTAMPTZ_RE =
   /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[ T]([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d{1,9})?([+-]([01]\d|2[0-3])(:?[0-5]\d)?|Z)?$/
 // Handle público (domain/handle.ts): [a-z0-9-], 3–30. Aqui basta "seguro de bindar" + plausível.
 const CURSOR_HANDLE_RE = /^[a-z0-9-]{1,30}$/
-// `score`/`rank` vão pra colunas `::int` (int4). Um inteiro fora da faixa int4 passa `Number.isInteger`
-// mas estoura o bind ("value out of range for integer") → 500 na rota /api/cooks (não-assistiva). Limita.
+// `rank` (cursor de BUSCA) vai pra uma coluna `::int` (int4). Um inteiro fora da faixa int4 passa
+// `Number.isInteger` mas estoura o bind ("value out of range for integer") → 500 na rota (não-assistiva).
+// Limita. (O `score` do cursor de RECOMENDAÇÕES é float8 desde o #368 — não usa estes limites.)
 const INT4_MIN = -2147483648
 const INT4_MAX = 2147483647
 
@@ -68,7 +70,10 @@ export function decodeRecsCursor(raw: string | null): RecsCursor | null {
   const p = asRecord(decodeJson(raw))
   if (!p) return null
   const { s, r, h } = p
-  if (typeof s !== 'number' || !Number.isInteger(s) || s < INT4_MIN || s > INT4_MAX) return null
+  // #368: `score` é FLOAT (mistura de popularidade, arredondada a 6 casas no CTE) — não mais um inteiro
+  // de contagem. Aceita qualquer float finito; rejeita NaN/±Infinity (que quebrariam o bind ::float8 e a
+  // comparação keyset). `Number.isFinite` já cobre os dois (NaN e ±Infinity são não-finitos).
+  if (typeof s !== 'number' || !Number.isFinite(s)) return null
   if (typeof r !== 'string' || !TIMESTAMPTZ_RE.test(r)) return null
   if (typeof h !== 'string' || !CURSOR_HANDLE_RE.test(h)) return null
   return { score: s, recency: r, handle: h }

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { GET, PUT } from '@/app/api/admin/config/route'
+import { getDb } from '@/server/deps'
+import { loadAppConfig } from '@/server/app-config'
 import { seedSessionHeaders } from '../helpers/users'
 import { DEFAULT_IMAGE_MODEL, type ImageGenConfig } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
 
 /**
  * Config de app — GET/PUT admin-only (T8, #5.AC2; #134). Prova: Usuário e Curador negados (403);
@@ -310,5 +314,76 @@ describe('/api/admin/config — catalogDisclosure (#237, admin-only)', () => {
     expect(
       (await put({ catalogDisclosure: { enabled: true, text: 'x' } }, headers)).status,
     ).toBe(403)
+  })
+})
+
+// ── #368: popularity { wSave, wNota, wNovo, m, tauDays } (mistura de popularidade, ADR-0027/0028) ──
+describe('/api/admin/config — popularity (#368, admin-only)', () => {
+  const okPopularity: PopularityConfig = { wSave: 2, wNota: 1, wNovo: 0.25, m: 15, tauDays: 45 }
+
+  it('GET traz popularity com o DEFAULT em código quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { popularity: PopularityConfig }
+    expect(body.popularity).toEqual(DEFAULT_POPULARITY_CONFIG)
+  })
+
+  it('PUT popularity válido persiste e GET relê (round-trip) — sem afetar defaultModel', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-put@cfg.test', role: 'admin' })
+    const putRes = await put({ popularity: okPopularity }, headers)
+    expect(putRes.status).toBe(200)
+    const putBody = (await putRes.json()) as { defaultModel: string; popularity: PopularityConfig }
+    expect(putBody.popularity).toEqual(okPopularity)
+    expect(putBody.defaultModel).toBe('claude-opus-4-8') // eixo de chat preservado (default)
+    const getBody = (await (await get(headers)).json()) as { popularity: PopularityConfig }
+    expect(getBody.popularity).toEqual(okPopularity)
+  })
+
+  it('PUT popularity NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-iso@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect((await put({ popularity: okPopularity }, headers)).status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      popularity: PopularityConfig
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.popularity).toEqual(okPopularity)
+  })
+
+  it('aceita peso 0 (desliga um termo)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-zero@cfg.test', role: 'admin' })
+    const res = await put({ popularity: { ...okPopularity, wNovo: 0 } }, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      popularity: { ...okPopularity, wNovo: 0 },
+    })
+  })
+
+  it('PUT popularity inválido → 400 config_invalida (Infinity, negativo, m<=0, tau<=0, campo faltando)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-bad@cfg.test', role: 'admin' })
+    expect((await put({ popularity: { ...okPopularity, wSave: Infinity } }, headers)).status).toBe(400)
+    expect((await put({ popularity: { ...okPopularity, wNota: -1 } }, headers)).status).toBe(400)
+    expect((await put({ popularity: { ...okPopularity, m: 0 } }, headers)).status).toBe(400)
+    expect((await put({ popularity: { ...okPopularity, tauDays: -5 } }, headers)).status).toBe(400)
+    const bad = await put({ popularity: { wSave: 1, wNota: 1, wNovo: 1, m: 20 } }, headers) // sem tauDays
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('read-path FAIL-SAFE: jsonb corrompido cai no DEFAULT (não vaza config inválida pro ranking)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-corrupt@cfg.test', role: 'admin' })
+    // Grava uma config VÁLIDA (cria o singleton) e corrompe a coluna DIRETO no banco (burla o PUT:
+    // simula uma linha legada/editada à mão com peso negativo + m<=0 — o parse deve rejeitar e cair no DEFAULT).
+    expect((await put({ popularity: okPopularity }, headers)).status).toBe(200)
+    await getDb().execute(
+      sql`UPDATE app_config SET popularity_config = '{"wSave":-1,"wNota":1,"wNovo":0.5,"m":0,"tauDays":30}'::jsonb WHERE id = true`,
+    )
+    const cfg = await loadAppConfig(getDb())
+    expect(cfg.popularity).toEqual(DEFAULT_POPULARITY_CONFIG)
+  })
+
+  it('popularity PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pop-cur@cfg.test', role: 'curador' })
+    expect((await put({ popularity: okPopularity }, headers)).status).toBe(403)
   })
 })
