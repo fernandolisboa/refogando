@@ -49,6 +49,13 @@ export const ptBR = {
     receitaModerada: 'Uma receita sua foi removida da descoberta por um moderador',
     imagemModerada: 'Uma imagem sua foi moderada',
     contaRestringida: 'Sua conta foi restringida (geração de imagem bloqueada)',
+    // Eventos N3 de avaliação (#374, ADR-0028): {name} = nome do avaliador (só no com-ator);
+    // {stars} = a nota renderizada (ex.: "4★", `renderStars` no domínio, DADO VIVO via join).
+    avaliacaoNaReceita: '{name} avaliou sua receita ({stars})',
+    // Avaliador soft-deletado (nome degradado a null) — variante sem nome, a notificação NÃO some.
+    avaliacaoNaReceitaAnon: 'Sua receita recebeu uma avaliação ({stars})',
+    // Sua avaliação foi removida pelo Curador — impessoal (sem ator), mostra as estrelas da nota.
+    avaliacaoModerada: 'Sua avaliação ({stars}) foi removida por um moderador',
     // Fallback dos tipos ainda não ligados nesta fatia (tracer bullet).
     generico: 'Você tem uma nova notificação',
   },
