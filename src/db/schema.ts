@@ -951,6 +951,59 @@ export const recipeSave = pgTable(
   ],
 )
 
+// ── Coleções: pastas PRIVADAS sobre o Salvar (issue #364, ADR-0027) ────────────
+//
+// A Coleção é uma pasta PRIVADA de UM usuário; `collection_item` é a aresta M:N que põe uma
+// Receita SALVA em 0+ coleções (uma Receita pode estar em várias; uma coleção agrupa várias).
+// "Todos" = TODOS os saves (não é uma coleção materializada); uma coleção nomeada é um SUBCONJUNTO.
+//
+//  - `collection`: `UNIQUE(user_id, name)` (uma pessoa não repete nome de pasta — case-sensitive
+//    exact-after-trim no v1; case-insensitive exigiria índice funcional `lower(name)`, deferido).
+//    FK user_id ON DELETE cascade (apagar o Usuário apaga as pastas). Índice em user_id cobre o
+//    "minhas coleções". Tudo PRIVADO: nenhuma leitura é anônima; o servidor escopa por user_id.
+//  - `collection_item`: PK composta (collection_id, recipe_id) ⇒ idempotente (add 2× = 1 linha).
+//    FK collection_id ON DELETE cascade (apagar a pasta limpa os itens) E recipe_id ON DELETE
+//    cascade (apagar a Receita limpa a aresta). Índice em recipe_id cobre o cleanup ao dessalvar.
+//
+// SAVE É A FONTE DA VERDADE (invariante #364): dessalvar (DELETE em recipe_save) NÃO dispara
+// nenhuma FK cascade sobre collection_item (o cascade só liga por recipe, não por save). Por isso
+// `applyUnsave` (src/server/recipe/social.ts) apaga, na MESMA transação, os collection_item daquele
+// (user, recipe) — senão a Receita ficaria numa coleção sem estar salva (viola collection_item ⊆
+// saves). E `applyCollectionAddItem` só admite Receita JÁ salva (trava a save row FOR UPDATE contra
+// a corrida com o unsave). Nenhum CHECK cobre isso (é cross-table); o servidor é a rede.
+export const collection = pgTable(
+  'collection',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('collection_user_name_uq').on(t.userId, t.name),
+    index('collection_user_id_idx').on(t.userId),
+  ],
+)
+
+export const collectionItem = pgTable(
+  'collection_item',
+  {
+    collectionId: uuid('collection_id')
+      .notNull()
+      .references(() => collection.id, { onDelete: 'cascade' }),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectionId, t.recipeId] }),
+    index('collection_item_recipe_id_idx').on(t.recipeId),
+  ],
+)
+
 // ── Engajamento: Avaliação (issue #363, ADR-0027) ─────────────────────────────
 //
 // A Avaliação é distinta do Voto (que esta épica APOSENTA): nota 1–5★ + comentário

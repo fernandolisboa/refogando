@@ -12,6 +12,8 @@ import {
   recipeEmbedding,
   recipeVote,
   recipeSave,
+  collection,
+  collectionItem,
   report,
 } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
@@ -225,6 +227,34 @@ export async function seedVote(input: { userId: string; recipeId: string }): Pro
 /** Insere uma linha de save cru (issue #16/#362). Mesma forma/contrato de `seedVote`. */
 export async function seedSave(input: { userId: string; recipeId: string }): Promise<void> {
   await getDb().insert(recipeSave).values({ userId: input.userId, recipeId: input.recipeId })
+}
+
+// ── Coleções: pastas privadas M:N sobre o Salvar (issue #364) ────────────────────
+
+/**
+ * Insere uma Coleção crua (#364) e devolve o uuid retornado. `userId` DEVE ser id REAL de
+ * Usuário (FK validada). `name` é único por (user_id, name) — o caller garante nomes distintos.
+ */
+export async function seedCollection(input: { userId: string; name: string }): Promise<string> {
+  const [row] = await getDb()
+    .insert(collection)
+    .values({ userId: input.userId, name: input.name })
+    .returning({ id: collection.id })
+  return row.id
+}
+
+/**
+ * Insere uma aresta collection_item crua (#364). NÃO garante o invariante `⊆ saves` (o teste que
+ * precisar dele deve semear o `seedSave` correspondente) — é uma fábrica atômica, como `seedSave`.
+ * Idempotente por PK composta; assume linha nova (sem ON CONFLICT).
+ */
+export async function seedCollectionItem(input: {
+  collectionId: string
+  recipeId: string
+}): Promise<void> {
+  await getDb()
+    .insert(collectionItem)
+    .values({ collectionId: input.collectionId, recipeId: input.recipeId })
 }
 
 // ── Moderação reativa: Report + remoção do pool (issue #18) ─────────────────────

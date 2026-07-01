@@ -1,6 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, sql, inArray } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeVote, recipeSave } from '@/db/schema'
+import { recipe, recipeVote, recipeSave, collection, collectionItem } from '@/db/schema'
 import { decideVote } from '@/domain/vote'
 import { eligibleForPool, eligibleToSaveByViewer } from '@/domain/recipe-pool'
 import type { CurationStatus } from '@/domain/recipe-curation'
@@ -141,9 +141,23 @@ export async function applySave(input: {
   if (action === 'save') {
     await db.insert(recipeSave).values({ userId, recipeId: id }).onConflictDoNothing()
   } else {
-    await db
-      .delete(recipeSave)
-      .where(and(eq(recipeSave.userId, userId), eq(recipeSave.recipeId, id)))
+    // DESSALVAR = fonte da verdade (#364): apaga a save row E, na MESMA transação, os
+    // `collection_item` daquele (user, recipe) — o cascade da FK NÃO cobre isto (dessalvar
+    // apaga `recipe_save`, não `recipe`), então uma Receita ficaria numa Coleção sem estar
+    // salva (viola collection_item ⊆ saves). O subquery escopa aos collection_id DAQUELE
+    // usuário: nunca toca a coleção de outro que também salvou esta mesma Receita.
+    await db.transaction(async (tx) => {
+      await tx.delete(recipeSave).where(and(eq(recipeSave.userId, userId), eq(recipeSave.recipeId, id)))
+      await tx.delete(collectionItem).where(
+        and(
+          eq(collectionItem.recipeId, id),
+          inArray(
+            collectionItem.collectionId,
+            tx.select({ id: collection.id }).from(collection).where(eq(collection.userId, userId)),
+          ),
+        ),
+      )
+    })
   }
 
   return { kind: 'ok', viewerSaved: action === 'save' }

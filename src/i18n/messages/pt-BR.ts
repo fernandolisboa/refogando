@@ -876,6 +876,40 @@ export const ptBR = {
     erroVoto: 'Não foi possível votar. Tente de novo.',
     erroSalvar: 'Não foi possível salvar. Tente de novo.',
   },
+  // Coleções (#364, ADR-0027) — pastas PRIVADAS sobre o Salvar. Namespace próprio. A página
+  // /me/saved lista "Todos" (todos os saves) + as coleções; o picker do detalhe adiciona/remove.
+  // Contadores compostos via `.replace('{n}', …)` no componente (folhas do tipo são string).
+  colecoes: {
+    titulo: 'Salvos',
+    subtitulo: 'Suas receitas salvas, organizadas em coleções.',
+    todos: 'Todos',
+    colecoes: 'Coleções',
+    novaColecao: 'Nova coleção',
+    nomeColecao: 'Nome da coleção',
+    criar: 'Criar',
+    renomear: 'Renomear',
+    apagar: 'Apagar',
+    salvarNome: 'Salvar',
+    cancelar: 'Cancelar',
+    // Confirmação de apagar (deixa claro que os saves permanecem).
+    confirmarApagar: 'Apagar esta coleção? As receitas continuam salvas.',
+    // Picker no detalhe.
+    adicionarAColecao: 'Adicionar a coleção',
+    // Contador de itens por coleção (singular + plural, {n}) — rótulo acessível do chip.
+    itemContagem: '{n} receita',
+    itensContagem: '{n} receitas',
+    // Estados vazios.
+    vazio: 'Você ainda não salvou nenhuma receita.',
+    vazioColecao: 'Nenhuma receita nesta coleção ainda.',
+    semColecoes: 'Você ainda não criou nenhuma coleção.',
+    // Erros (nome inválido/duplicado/limite) + genéricos.
+    erroNomeInvalido: 'Escolha um nome (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma coleção com esse nome.',
+    erroLimite: 'Você atingiu o limite de coleções.',
+    erro: 'Algo deu errado. Tente de novo.',
+    erroCarregar: 'Não foi possível carregar. Tente de novo.',
+    precisaEntrar: 'Entre na sua conta para ver seus salvos.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`
   // (o Voto está sendo aposentado). Plurais compostos via `.replace('{n}'/'{media}', …)` no
   // componente (folhas do tipo `Messages` são string).
