@@ -356,6 +356,27 @@ describe('detectRepair — classifica over-strip | still-embeds | none', () => {
       detectRepair({ ledgerBefore: null, current: '2 dentes de alho fatiados', quantidade: '2', unidade: 'dente' }),
     ).toEqual({ kind: 'still-embeds', restored: 'alho fatiados' })
   })
+
+  it('a_gosto/q_b: NÃO re-adiciona palavra de porção over-stripada (o sufixo já cobre) ⇒ none', () => {
+    // "1 punhado de manjericão tailandês" virou "manjericão tailandês"; com a_gosto o nome over-stripado
+    // já é o mais limpo ("manjericão tailandês a gosto"). Re-adicionar "punhado de" daria redundância.
+    expect(
+      detectRepair({
+        ledgerBefore: '1 punhado de manjericão tailandês',
+        current: 'manjericão tailandês',
+        quantidade: null,
+        unidade: 'a_gosto',
+      }),
+    ).toEqual({ kind: 'none', restored: 'manjericão tailandês' })
+    expect(
+      detectRepair({
+        ledgerBefore: 'Algumas gotas de amargo de angostura',
+        current: 'amargo de angostura',
+        quantidade: null,
+        unidade: 'q_b',
+      }),
+    ).toEqual({ kind: 'none', restored: 'amargo de angostura' })
+  })
 })
 
 describe('assertCleanName / beginsWithQuantityToken — falha-alto se o nome começa com quantidade', () => {
@@ -386,6 +407,12 @@ describe('headLooksSingular — primeira palavra de conteúdo (NÃO a última)',
     expect(headLooksSingular('gemas de ovo')).toBe(false)
     expect(headLooksSingular('escalopes finos de vitela')).toBe(false)
     expect(headLooksSingular('folhas de alga nori')).toBe(false)
+  })
+  it('composto hifenizado: a cabeça (1º segmento) já plural ⇒ false (não falso-positivo)', () => {
+    expect(headLooksSingular('cravos-da-índia')).toBe(false)
+    expect(headLooksSingular('tomates-cereja cortados ao meio')).toBe(false)
+    // cabeça singular continua sinalizada (genuína): "suco de limões" → "suco"
+    expect(headLooksSingular('suco de limões')).toBe(true)
   })
   it('vazio ⇒ false', () => {
     expect(headLooksSingular('')).toBe(false)

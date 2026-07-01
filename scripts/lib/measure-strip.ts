@@ -401,8 +401,11 @@ export function detectRepair(args: {
   }
 
   // C. OVER-STRIP — o modelo comeu palavra(s) de porção genuína(s) ante o strip determinístico.
+  //    EXCEÇÃO a_gosto/q_b: o sufixo ("a gosto"/"q.b.") já carrega a imprecisão; re-adicionar a palavra
+  //    de porção dá redundância ("punhado de manjericão a gosto"). O nome over-stripado já é o mais
+  //    limpo ("manjericão a gosto") — deixa como está.
   const before = (args.ledgerBefore ?? '').trim()
-  if (before !== '') {
+  if (before !== '' && args.unidade !== 'a_gosto' && args.unidade !== 'q_b') {
     const det = deterministicStrip(before, args.unidade).trim()
     if (det !== '' && det !== current && isWordSuffix(current, det)) {
       const dropped = normWords(det).slice(0, normWords(det).length - normWords(current).length)
@@ -449,9 +452,12 @@ export function assertCleanName(name: string): void {
 export function headLooksSingular(rawText: string): boolean {
   const t = (rawText ?? '').trim()
   if (t === '') return false
-  const first = normalizeWord(t.split(/\s+/)[0])
-  if (first === '') return false
-  return !first.endsWith('s')
+  // Em compostos hifenizados ("cravos-da-índia", "tomates-cereja") a CABEÇA é o 1º segmento
+  // ("cravos"/"tomates"), que já está no plural — olha ele, não o token inteiro (que terminaria
+  // em "índia"/"cereja" e daria falso-positivo de singular).
+  const head = normalizeWord(t.split(/\s+/)[0].split('-')[0])
+  if (head === '') return false
+  return !head.endsWith('s')
 }
 
 /** System prompt (fixo) do modelo barato que tira a medida do nome. */
