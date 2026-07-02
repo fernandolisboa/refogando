@@ -1029,6 +1029,28 @@ export const enUS: Messages = {
     backfillResultadoParcial:
       'Recomputed: {recomputados} · remaining: {restantes}. The embedding service stopped (no key or rate limit). Run again later.',
     backfillErro: 'Could not recompute. Try again.',
+    // External author (data subject B, no account) intake — #396/GAP-4. Removes the source NAME in bulk
+    // by name/URL, without requiring the recipe to belong to the operator. Keeps the URL; irreversible.
+    takedownTitulo: 'Remove attribution (author request)',
+    takedownDescricao:
+      "Handles an external site author who asked to have their name removed. Removes the source name from ALL imported recipes (including users' private ones) matching the name or URL. The source URL is kept (attribution then shows only the site). Run the preview before removing.",
+    takedownNomeLabel: 'Displayed source name',
+    takedownNomePlaceholder: 'e.g., Grandma’s Kitchen',
+    takedownUrlLabel: 'Source URL',
+    takedownUrlPlaceholder: 'https://site.com/recipe',
+    takedownCaseIdLabel: 'DSAR ticket ID (optional)',
+    takedownCaseIdPlaceholder: 'ticket uuid, if any',
+    takedownPrevia: 'Preview',
+    takedownPreviaRodando: 'Searching…',
+    takedownRemover: 'Remove name',
+    takedownRemovendo: 'Removing…',
+    takedownPreviaResultado: 'Matched: {casaram} · with a name to remove: {removiveis}.',
+    takedownNomesRemovidos: 'Names that will be removed',
+    takedownRemovido: 'Name removed from {removiveis} recipe(s). URL preserved.',
+    takedownNada: 'No recipe with a human name to remove matched the criteria.',
+    takedownCriterioObrigatorio: 'Provide at least the source name OR URL.',
+    takedownCaseIdInvalido: 'Invalid ticket ID (must be a uuid).',
+    takedownErro: 'Could not complete. Try again.',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role.',
     erroGenerico: 'Something went wrong. Try again.',

@@ -20,6 +20,27 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
  * NUNCA 403 — não vaza existência (ADR-0011). Espelha o gate do GET/publish.
  */
 
+/**
+ * Núcleo PURO da decisão "há um nome de fonte HUMANO a remover desta Receita?" — fonte ÚNICA da regra,
+ * reusada pelo self-service (`clearSourceAttribution`, abaixo) E pelo fluxo do operador/Encarregado
+ * (`operatorClearSourceAttribution`, #396/GAP-4). Zerar `source_name` só faz sentido quando:
+ *  - `origin === 'web_imported'` (só a importada carrega atribuição — ADR-0019); E
+ *  - há `sourceUrl` (sem ele o botão se esconde — paridade exata botão↔servidor); E
+ *  - o nome NÃO é apenas o host (`sourceNameIsHost` — a MESMA normalização das duas pontas).
+ * Fora disso é no-op idempotente (nada a remover): não-importada, sem nome, ou nome que já é o host.
+ */
+export function hasRemovableSourceName(row: {
+  origin: string
+  sourceName: string | null
+  sourceUrl: string | null
+}): boolean {
+  return (
+    row.origin === 'web_imported' &&
+    row.sourceUrl != null &&
+    !sourceNameIsHost(row.sourceName, row.sourceUrl)
+  )
+}
+
 export type ClearAttributionResult =
   | { kind: 'ok'; view: RecipeView } // 200 — view montada (limpou OU no-op idempotente)
   | { kind: 'not_found' } //            404 — inexistente / não-dono / catálogo
@@ -49,12 +70,9 @@ export async function clearSourceAttribution(input: {
 
   // 3. Limpa SÓ se é importada com um nome HUMANO (≠ host). Senão é no-op idempotente: nada a remover
   //    (não-importada, sem nome, ou nome que já é o host) ⇒ 200 sem UPDATE redundante nem bump de
-  //    updatedAt. A normalização nome-vs-host é a MESMA do botão (domínio puro `sourceNameIsHost`).
-  const hasRemovableName =
-    gate.origin === 'web_imported' &&
-    gate.sourceUrl != null && // espelha a construção de view.source (sem sourceUrl o botão se esconde) — paridade exata botão↔servidor, não só por invariante
-    !sourceNameIsHost(gate.sourceName, gate.sourceUrl)
-  if (hasRemovableName) {
+  //    updatedAt. A decisão é o núcleo PURO `hasRemovableSourceName` — MESMA regra/normalização do botão
+  //    e do fluxo do operador (#396), não duplicada aqui.
+  if (hasRemovableSourceName(gate)) {
     // O nome a remover é humano (≠ host) ⇒ non-null aqui (sourceNameIsHost(null,·) === true excluiria).
     const removedSourceName = gate.sourceName as string
     const ts = new Date()
