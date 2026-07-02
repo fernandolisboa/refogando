@@ -1537,6 +1537,77 @@ export const ptBR = {
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'RASCUNHO — aguardando revisão jurídica',
   },
+
+  // Página "Seus direitos" + formulário público de intake (#399, GAP-2). GATED (noindex, sem link,
+  // fora do sitemap) até o sign-off jurídico e a criação da caixa do encarregado. Seção NOVA e distinta.
+  seusDireitos: {
+    metaTitulo: 'Seus direitos / Privacidade — Refogando',
+    titulo: 'Seus direitos',
+    rascunhoAviso:
+      'RASCUNHO para revisão jurídica — não constitui parecer, e esta página ainda não está publicada. O canal só será anunciado quando o e-mail do encarregado existir e houver sign-off jurídico. Os campos destacados são placeholders a preencher.',
+    intro:
+      'Você tem direitos sobre os seus dados pessoais (LGPD, Art. 18): confirmação, acesso, correção, eliminação, oposição e outros. Nesta página explicamos como exercê-los e você pode abrir um pedido pelo formulário abaixo. Respondemos em até 15 dias (Art. 19, II).',
+
+    titularATitulo: 'Você tem conta no Refogando',
+    titularACorpo:
+      'Se você é usuário do app, boa parte dos seus direitos é atendida direto na sua conta (perfil, receitas, coleções). Para o que ainda não é self-service, use o formulário abaixo ou o e-mail de privacidade — sempre dentro do prazo de 15 dias.',
+    titularBTitulo: 'Você é autor de uma receita importada da web',
+    titularBCorpo:
+      'Se uma receita sua foi importada de um site externo para o Refogando, guardamos apenas o seu nome (crédito) e o link de origem — nunca a foto nem o texto autoral. Você pode pedir a remoção do seu nome (o crédito passa a exibir só o site) ou a remoção integral. Você NÃO precisa ter conta: use o formulário abaixo.',
+
+    fluxoTitulo: 'Como funciona o pedido',
+    fluxoPassos: [
+      'Você envia o pedido pelo formulário (ou pelo e-mail de privacidade), identificando o conteúdo (link de origem e/ou nome exibido) e o que deseja.',
+      'Abrimos um protocolo e registramos a data de recebimento — é quando começa a contar o prazo de 15 dias (Art. 19, II).',
+      'Confirmamos a sua identidade do modo mais simples possível (em regra, a correspondência com o contato já ligado à origem). Não exigimos documentos como condição (Art. 6º, III).',
+      'Executamos o pedido e respondemos dentro do prazo, informando o que foi feito — ou, em caso de recusa justificada, o motivo.',
+    ],
+    prazoNota: 'Prazo de resposta: até 15 dias corridos, contados do recebimento (LGPD, Art. 19, II).',
+    naoExigimosDocumentos:
+      'Coletamos apenas o mínimo necessário para localizar o conteúdo e atender o pedido. Não exigimos documentos nem dados pessoais adicionais como condição (Art. 6º, III — necessidade).',
+
+    canalTitulo: 'Canal de contato',
+    canalCorpo:
+      'Encarregado pelo tratamento de dados (DPO): {nome do encarregado}. E-mail para privacidade e exercício de direitos: {e-mail do encarregado}.',
+    canalGap:
+      'Pendência: ainda não existe canal público de privacidade publicado nem encarregado anunciado. Esta página não anuncia um canal que não existe — o e-mail acima é um placeholder e o formulário abaixo é a base do canal a ser publicado após o sign-off.',
+
+    formTitulo: 'Abrir um pedido',
+    formIntro:
+      'Preencha o pedido abaixo. Informe o link de origem e/ou o nome exibido para localizarmos o conteúdo, e descreva o que você deseja.',
+    formTipoRotulo: 'Tipo de pedido',
+    formTipoNameRemoval: 'Remover o meu nome do crédito (mantendo o link)',
+    formTipoFullRemoval: 'Remover integralmente a receita importada',
+    formTipoOther: 'Outro pedido sobre meus dados',
+    formUrlRotulo: 'Link de origem (URL)',
+    formUrlPlaceholder: 'https://site-de-origem.com/receita',
+    formNomeRotulo: 'Nome exibido no crédito',
+    formNomePlaceholder: 'Ex.: Cozinha da Vovó',
+    formIdentificacaoDica: 'Informe ao menos um: o link de origem OU o nome exibido.',
+    formPedidoRotulo: 'Seu pedido',
+    formPedidoPlaceholder: 'Descreva o que você deseja (ex.: remover meu nome do crédito desta receita).',
+    formContatoRotulo: 'E-mail para resposta (opcional)',
+    formContatoPlaceholder: 'seu@email.com',
+    formContatoDica: 'Opcional. Se informar, usamos apenas para responder a este pedido.',
+    formEnviar: 'Enviar pedido',
+    formEnviando: 'Enviando…',
+    formSucessoTitulo: 'Pedido recebido',
+    formSucessoCorpo:
+      'Recebemos o seu pedido e registramos a data de recebimento. Responderemos em até 15 dias. Guarde o número de protocolo abaixo.',
+    formProtocoloRotulo: 'Protocolo',
+    erroPedido: 'Descreva o seu pedido para continuar.',
+    erroIdentificacao: 'Informe ao menos um: o link de origem ou o nome exibido.',
+    erroEnvio: 'Não foi possível enviar o pedido agora. Tente novamente em instantes.',
+
+    todoRotulo: 'campo a preencher',
+    gapRotulo: 'Pendência',
+    rodapeVersaoRotulo: 'Versão',
+    rodapeVersao: 'v0 (rascunho)',
+    rodapeDataRotulo: 'Data',
+    rodapeData: '2026-07-01',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'RASCUNHO — aguardando revisão jurídica',
+  },
 } as const
 
 /**
