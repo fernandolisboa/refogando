@@ -611,8 +611,18 @@ export const users = pgTable(
     // tipa a leitura/escrita do jsonb (o driver devolve `unknown` cru). Esses links são
     // renderizados CLICÁVEIS no perfil público (#129): a validação de esquema é a fronteira.
     links: jsonb('links').$type<ProfileLink[]>().notNull().default(sql`'[]'::jsonb`),
-    // Soft delete (D4): só a coluna agora; máscara/endpoint deferidos.
+    // Soft delete (D4): bloqueio lógico da conta. `requireSession` barra deletedAt != null (401
+    // conta_desativada). É o BLOQUEIO da eliminação DSAR (#401, LGPD Art. 18 VI / Art. 16): o
+    // pedido de eliminação seta deletedAt (bloqueia+desloga) JUNTO com a anonimização da PII.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // Eliminação DSAR — carimbo de ANONIMIZAÇÃO (#401, LGPD Art. 18 VI). DISTINTO de deletedAt
+    // (bloqueio): anonymizedAt marca que a PII do titular (email/name/handle/avatar/bio/links/locale)
+    // FOI destruída/estabilizada de forma irreversível. Os dois são setados juntos na eliminação
+    // self-service, mas a coluna separada (a) distingue um bloqueio simples de uma erasure de PII e
+    // (b) ancora o EXPURGO FÍSICO pós-retenção (Art. 16), um job futuro: candidatos = anonymizedAt
+    // mais velho que o prazo de retenção. NULLABLE, sem default: ADD COLUMN metadata-only (sem
+    // rewrite) na tabela populada; contas existentes nascem NULL (não anonimizadas).
+    anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).
     // A APLICAÇÃO de ban segue deferida (ADR-0007); aqui são colunas inertes
     // (default false / null) — nada lê para gating agora.
