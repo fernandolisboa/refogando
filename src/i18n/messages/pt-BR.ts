@@ -1121,6 +1121,30 @@ export const ptBR = {
     takedownCriterioObrigatorio: 'Informe ao menos o nome OU a URL da fonte.',
     takedownCaseIdInvalido: 'ID de ticket inválido (precisa ser um uuid).',
     takedownErro: 'Não foi possível concluir. Tente de novo.',
+    // Escalada além do nome (titular B) — #397/GAP-3. Desvincular a URL inteira ou apagar a importada.
+    // A POLÍTICA de quando usar aguarda o sign-off jurídico (#276); o mecanismo não decide sozinho.
+    escalonarTitulo: 'Escalar além do nome (desvincular URL / apagar importada)',
+    escalonarAviso:
+      'A POLÍTICA de QUANDO escalar (desvincular a URL ou apagar a receita) aguarda o sign-off jurídico (#276). Este mecanismo não decide sozinho — use só sob orientação. Reaproveita o nome/URL preenchidos acima.',
+    escalonarAcaoLabel: 'Ação',
+    escalonarAcaoUnlink: 'Desvincular URL (zera URL e nome)',
+    escalonarAcaoDelete: 'Apagar receita importada (irreversível)',
+    escalonarPrevia: 'Prévia do escalonamento',
+    escalonarPreviaRodando: 'Buscando…',
+    escalonarPreviaResultado: '{casaram} receita(s) importada(s) casaram o critério.',
+    escalonarUrlsAfetadas: 'URLs que serão removidas',
+    escalonarNomesAfetados: 'Nomes que serão removidos',
+    // Aviso lido ANTES de confirmar a ação destrutiva: a seleção é OR (união), não AND (interseção),
+    // e o efeito é irreversível. Preencher nome E url arrasta a UNIÃO das duas buscas.
+    escalonarUniaoAviso:
+      'Atenção: a seleção é por nome OU URL (união) — preencher os dois casa TODAS as receitas com aquele nome MAIS todas com aquela URL, não a interseção. Confira o escopo acima; a ação é IRREVERSÍVEL.',
+    escalonarConfirmUnlink: 'Confirmar: desvincular URL',
+    escalonarConfirmDelete: 'Confirmar: apagar importada',
+    escalonarAplicando: 'Aplicando…',
+    escalonarUnlinkOk: 'URL e nome desvinculados de {n} receita(s).',
+    escalonarDeleteOk: '{n} receita(s) importada(s) apagada(s).',
+    escalonarNada: 'Nenhuma receita importada casou o critério.',
+    escalonarErro: 'Não foi possível concluir a escalada. Tente de novo.',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel.',
     erroGenerico: 'Algo deu errado. Tente de novo.',

@@ -1051,6 +1051,30 @@ export const enUS: Messages = {
     takedownCriterioObrigatorio: 'Provide at least the source name OR URL.',
     takedownCaseIdInvalido: 'Invalid ticket ID (must be a uuid).',
     takedownErro: 'Could not complete. Try again.',
+    // Escalation beyond the name (subject B) — #397/GAP-3. Unlink the whole URL or delete the import.
+    // The POLICY of when to use it awaits legal sign-off (#276); the mechanism does not decide alone.
+    escalonarTitulo: 'Escalate beyond the name (unlink URL / delete import)',
+    escalonarAviso:
+      'The POLICY of WHEN to escalate (unlink the URL or delete the recipe) awaits legal sign-off (#276). This mechanism does not decide on its own — use only under guidance. It reuses the name/URL entered above.',
+    escalonarAcaoLabel: 'Action',
+    escalonarAcaoUnlink: 'Unlink URL (clears URL and name)',
+    escalonarAcaoDelete: 'Delete imported recipe (irreversible)',
+    escalonarPrevia: 'Escalation preview',
+    escalonarPreviaRodando: 'Searching…',
+    escalonarPreviaResultado: '{casaram} imported recipe(s) matched the criteria.',
+    escalonarUrlsAfetadas: 'URLs that will be removed',
+    escalonarNomesAfetados: 'Names that will be removed',
+    // Warning read BEFORE confirming the destructive action: selection is OR (union), not AND
+    // (intersection), and the effect is irreversible. Filling name AND url drags in the union.
+    escalonarUniaoAviso:
+      'Warning: selection is by name OR URL (union) — filling both matches ALL recipes with that name PLUS all with that URL, not the intersection. Check the scope above; this action is IRREVERSIBLE.',
+    escalonarConfirmUnlink: 'Confirm: unlink URL',
+    escalonarConfirmDelete: 'Confirm: delete import',
+    escalonarAplicando: 'Applying…',
+    escalonarUnlinkOk: 'URL and name unlinked from {n} recipe(s).',
+    escalonarDeleteOk: '{n} imported recipe(s) deleted.',
+    escalonarNada: 'No imported recipe matched the criteria.',
+    escalonarErro: 'Could not complete the escalation. Try again.',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role.',
     erroGenerico: 'Something went wrong. Try again.',

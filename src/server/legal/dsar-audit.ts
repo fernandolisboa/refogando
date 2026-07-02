@@ -20,21 +20,35 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
 type DsarAuditDb = Database | Tx
 
 /**
- * Payload do `DSAR_FULFILLED` que é HASHEADO (nunca persistido em claro). O `removedSourceName` é o
- * único dado sensível — entra SÓ no hash (prova o que foi removido sem re-armazenar o nome). O
- * `sort()` dos `recipeIds` torna o hash estável independente da ordem de entrada.
+ * Payload do `DSAR_FULFILLED` que é HASHEADO (nunca persistido em claro). `removedSourceName` (e, na
+ * escalada #397, `removedSourceUrl`) são os dados sensíveis — entram SÓ no hash (provam o que foi
+ * removido sem re-armazenar o dado). O `sort()` dos `recipeIds` torna o hash estável independente da
+ * ordem de entrada.
+ *
+ * `removedSourceUrl` é OPCIONAL (#397/GAP-3): a remoção-de-nome do #396 só zera `source_name`, então
+ * omite este campo — e o hash sai BYTE-IDÊNTICO ao de antes (retrocompatível). A escalada além do nome
+ * (desvincular URL / apagar importada) também remove a `source_url` — que PODE conter o nome do titular
+ * (`blog-da-maria-silva.com/...`, §4.1) —, então captura a URL no hash como prova.
  */
 export type DsarFulfillmentPayload = {
   recipeIds: string[]
   removedSourceName: string
+  removedSourceUrl?: string
   ts: string // ISO-8601
 }
 
-/** SHA-256 (hex) do payload canônico do `DSAR_FULFILLED`. PURO/determinístico. */
+/**
+ * SHA-256 (hex) do payload canônico do `DSAR_FULFILLED`. PURO/determinístico. `removedSourceUrl` só
+ * entra no canônico quando PRESENTE (spread condicional após `removedSourceName`) — sem ele o JSON é
+ * idêntico ao histórico do #396, então hashes antigos continuam reproduzíveis (retrocompatível).
+ */
 export function hashDsarFulfillment(payload: DsarFulfillmentPayload): string {
   const canonical = JSON.stringify({
     recipeIds: [...payload.recipeIds].sort(),
     removedSourceName: payload.removedSourceName,
+    ...(payload.removedSourceUrl !== undefined
+      ? { removedSourceUrl: payload.removedSourceUrl }
+      : {}),
     ts: payload.ts,
   })
   return createHash('sha256').update(canonical).digest('hex')
