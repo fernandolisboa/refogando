@@ -50,7 +50,7 @@ export function OperatorAttributionSection() {
   const [escAction, setEscAction] = useState<EscalateAction>('url_unlink')
   const [escBusy, setEscBusy] = useState<'idle' | 'previa' | 'aplicar'>('idle')
   const [escResult, setEscResult] = useState<EscalateResult | null>(null)
-  const [escErrorKey, setEscErrorKey] = useState<'caseId' | 'generico' | null>(null)
+  const [escErrorKey, setEscErrorKey] = useState<'criterio' | 'caseId' | 'generico' | null>(null)
 
   const hasCriteria = sourceName.trim() !== '' || sourceUrl.trim() !== ''
   // A confirmação destrutiva exige uma PRÉVIA recém-rodada, com a MESMA ação e escopo não-vazio.
@@ -110,7 +110,7 @@ export function OperatorAttributionSection() {
     if (escBusy !== 'idle') return
     if (!hasCriteria) {
       resetEscalate()
-      setErrorKey('criterio') // reaproveita o alerta de critério do bloco de cima
+      setEscErrorKey('criterio') // estado do PRÓPRIO bloco de escalada (não o do clear #396)
       return
     }
     setEscBusy(apply ? 'aplicar' : 'previa')
@@ -151,11 +151,13 @@ export function OperatorAttributionSection() {
           : null
 
   const escErrorText =
-    escErrorKey === 'caseId'
-      ? m.takedownCaseIdInvalido
-      : escErrorKey === 'generico'
-        ? m.escalonarErro
-        : null
+    escErrorKey === 'criterio'
+      ? m.takedownCriterioObrigatorio
+      : escErrorKey === 'caseId'
+        ? m.takedownCaseIdInvalido
+        : escErrorKey === 'generico'
+          ? m.escalonarErro
+          : null
 
   return (
     <section aria-labelledby="takedown-titulo" className="flex flex-col gap-3">
@@ -324,6 +326,18 @@ export function OperatorAttributionSection() {
             {m.escalonarAcaoDelete}
           </label>
         </fieldset>
+
+        {/* Aviso lido ANTES de confirmar: a seleção é OR (união), não AND (interseção), e a ação é
+            irreversível — só aparece junto da confirmação destrutiva (canConfirm), quando o operador
+            já viu o escopo e está prestes a aplicar. */}
+        {canConfirm && (
+          <p
+            role="note"
+            className="max-w-[60ch] rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+          >
+            {m.escalonarUniaoAviso}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button

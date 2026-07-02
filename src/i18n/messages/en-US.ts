@@ -1064,6 +1064,10 @@ export const enUS: Messages = {
     escalonarPreviaResultado: '{casaram} imported recipe(s) matched the criteria.',
     escalonarUrlsAfetadas: 'URLs that will be removed',
     escalonarNomesAfetados: 'Names that will be removed',
+    // Warning read BEFORE confirming the destructive action: selection is OR (union), not AND
+    // (intersection), and the effect is irreversible. Filling name AND url drags in the union.
+    escalonarUniaoAviso:
+      'Warning: selection is by name OR URL (union) — filling both matches ALL recipes with that name PLUS all with that URL, not the intersection. Check the scope above; this action is IRREVERSIBLE.',
     escalonarConfirmUnlink: 'Confirm: unlink URL',
     escalonarConfirmDelete: 'Confirm: delete import',
     escalonarAplicando: 'Applying…',

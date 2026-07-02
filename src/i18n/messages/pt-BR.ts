@@ -1134,6 +1134,10 @@ export const ptBR = {
     escalonarPreviaResultado: '{casaram} receita(s) importada(s) casaram o critério.',
     escalonarUrlsAfetadas: 'URLs que serão removidas',
     escalonarNomesAfetados: 'Nomes que serão removidos',
+    // Aviso lido ANTES de confirmar a ação destrutiva: a seleção é OR (união), não AND (interseção),
+    // e o efeito é irreversível. Preencher nome E url arrasta a UNIÃO das duas buscas.
+    escalonarUniaoAviso:
+      'Atenção: a seleção é por nome OU URL (união) — preencher os dois casa TODAS as receitas com aquele nome MAIS todas com aquela URL, não a interseção. Confira o escopo acima; a ação é IRREVERSÍVEL.',
     escalonarConfirmUnlink: 'Confirmar: desvincular URL',
     escalonarConfirmDelete: 'Confirmar: apagar importada',
     escalonarAplicando: 'Aplicando…',

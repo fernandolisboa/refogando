@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { POST } from '@/app/api/admin/attribution/escalate/route'
-import { getDb } from '@/server/deps'
-import { recipe, dsarAuditEvent } from '@/db/schema'
+import { getDb, setImageStore } from '@/server/deps'
+import { recipe, recipeImage, dsarAuditEvent } from '@/db/schema'
+import { FakeImageStore } from '@/server/images/image-store'
 import { seedSessionHeaders } from '../helpers/users'
-import { seedRecipe, seedTranslation } from '../helpers/recipes'
+import { seedRecipe, seedTranslation, seedRecipeImage } from '../helpers/recipes'
 
 /**
  * ESCALADA além do nome (titular B) pelo operador — #397/GAP-3 (`docs/legal/
@@ -17,6 +18,15 @@ import { seedRecipe, seedTranslation } from '../helpers/recipes'
 
 const NAME = 'Cozinha da Vovó'
 const URL_A = 'https://exemplo.com/receitas/bolo'
+
+// #146: o record_deletion reapa o blob órfão injetando o ImageStore (a rota lê `getImageStore()` só no
+// apply de record_deletion). FakeImageStore por teste (host `fake-blob.local` que `owns` reconhece) —
+// `blobs` prova o blob apagado/preservado. Roda APÓS o resetDeps() do setup.ts global (zera o override).
+let store: FakeImageStore
+beforeEach(() => {
+  store = new FakeImageStore()
+  setImageStore(store)
+})
 
 function withJson(headers?: Headers): Headers {
   const h = new Headers(headers)
@@ -71,6 +81,15 @@ async function loadSource(id: string) {
     .from(recipe)
     .where(eq(recipe.id, id))
   return row // undefined se apagada
+}
+
+/** #146: a linha recipe_image (pelo id) ainda existe? (prova do reap/ref-count no record_deletion.) */
+async function imageExists(imageId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: recipeImage.id })
+    .from(recipeImage)
+    .where(eq(recipeImage.id, imageId))
+  return row != null
 }
 
 async function loadDsarEventsByActor(actorId: string) {
@@ -302,5 +321,101 @@ describe('POST /api/admin/attribution/escalate (#397 GAP-3) — record_deletion'
     expect(body.recipeIds).toHaveLength(0)
     expect(await loadSource(rAi)).toBeDefined() // intacta
     expect(await loadDsarEventsByActor(admin.userId)).toHaveLength(0)
+  })
+})
+
+describe('POST /api/admin/attribution/escalate (#397 GAP-3) — record_deletion reapa blob órfão (#146)', () => {
+  it('web_imported COM imagem → apaga a receita E reapa a recipe_image + o blob (ref-count = 0)', async () => {
+    const admin = await seedSessionHeaders({ email: 'esc-d-img@ex.com', role: 'admin' })
+    const alice = await seedSessionHeaders({ email: 'esc-d-img-a@ex.com' })
+    const id = await seedImported({ ownerId: alice.userId, sourceName: NAME, sourceUrl: URL_A })
+    // Guarda o blob no Fake (URL em fake-blob.local, que `owns` reconhece) e aponta a recipe_image pra ele.
+    const { url } = await store.store({
+      data: Buffer.from([1, 2, 3, 4]),
+      contentType: 'image/webp',
+      pathPrefix: 'recipes',
+    })
+    const imageId = await seedRecipeImage({ recipeId: id, blobUrl: url })
+    expect(store.blobs.has(url)).toBe(true)
+
+    const res = await escalatePost(
+      { action: 'record_deletion', sourceUrl: URL_A, apply: true },
+      admin.headers,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { recipeIds: string[] }
+    expect(body.recipeIds).toEqual([id])
+
+    expect(await loadSource(id)).toBeUndefined() // receita APAGADA
+    expect(await imageExists(imageId)).toBe(false) // recipe_image órfã reapada (nenhuma versão referencia)
+    expect(store.blobs.has(url)).toBe(false) // blob apagado pós-commit (store.owns ⇒ deletou)
+  })
+
+  it('imagem COMPARTILHADA por uma versão FORA do critério (ref-count > 1) → apaga só a que casou, PRESERVA a imagem/blob', async () => {
+    const admin = await seedSessionHeaders({ email: 'esc-d-shared@ex.com', role: 'admin' })
+    const alice = await seedSessionHeaders({ email: 'esc-d-shared-a@ex.com' })
+    // rDel casa (nome NAME); rKeep NÃO casa (nome diferente) mas COMPARTILHA o MESMO blob.
+    const rDel = await seedImported({ ownerId: alice.userId, sourceName: NAME, sourceUrl: URL_A })
+    const rKeep = await seedImported({
+      ownerId: alice.userId,
+      sourceName: 'Outro Chef',
+      sourceUrl: 'https://z.com/y',
+    })
+    const { url } = await store.store({
+      data: Buffer.from([9, 9, 9, 9]),
+      contentType: 'image/webp',
+      pathPrefix: 'recipes',
+    })
+    const imageId = await seedRecipeImage({ recipeId: rDel, blobUrl: url }) // cria a imagem, aponta rDel
+    await getDb().update(recipe).set({ imageId }).where(eq(recipe.id, rKeep)) // rKeep compartilha a MESMA imagem
+
+    const res = await escalatePost(
+      { action: 'record_deletion', sourceName: NAME, apply: true },
+      admin.headers,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { recipeIds: string[] }
+    expect(body.recipeIds).toEqual([rDel]) // só a que casou o nome
+
+    expect(await loadSource(rDel)).toBeUndefined() // apagada
+    expect(await loadSource(rKeep)).toBeDefined() // fora do critério: sobrevive
+    // rKeep ainda referencia a imagem ⇒ ref-count > 0 ⇒ NÃO reapa (guarda contra double-reap / blob em uso).
+    expect(await imageExists(imageId)).toBe(true)
+    expect(store.blobs.has(url)).toBe(true)
+  })
+})
+
+describe('POST /api/admin/attribution/escalate (#397 GAP-3) — semântica de UNIÃO (nome OU url)', () => {
+  it('nome E url preenchidos apagam a UNIÃO (todas com aquele nome MAIS todas com aquela url), não a interseção', async () => {
+    const admin = await seedSessionHeaders({ email: 'esc-uniao@ex.com', role: 'admin' })
+    const alice = await seedSessionHeaders({ email: 'esc-uniao-a@ex.com' })
+    // Casa SÓ por nome (url diferente), SÓ por url (nome diferente), e nenhuma (fora dos dois).
+    const soNome = await seedImported({
+      ownerId: alice.userId,
+      sourceName: NAME,
+      sourceUrl: 'https://a.com/1',
+    })
+    const soUrl = await seedImported({
+      ownerId: alice.userId,
+      sourceName: 'Outro Autor',
+      sourceUrl: URL_A,
+    })
+    const nenhum = await seedImported({
+      ownerId: alice.userId,
+      sourceName: 'Terceiro',
+      sourceUrl: 'https://c.com/3',
+    })
+
+    // Preenche nome E url: a seleção é OR (união), não AND (interseção) — trava/documenta a semântica.
+    const res = await escalatePost(
+      { action: 'record_deletion', sourceName: NAME, sourceUrl: URL_A, apply: true },
+      admin.headers,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { recipeIds: string[] }
+    expect(new Set(body.recipeIds)).toEqual(new Set([soNome, soUrl])) // casa por nome OU por url
+    expect(await loadSource(soNome)).toBeUndefined()
+    expect(await loadSource(soUrl)).toBeUndefined()
+    expect(await loadSource(nenhum)).toBeDefined() // fora dos dois critérios: sobrevive
   })
 })

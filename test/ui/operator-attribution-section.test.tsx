@@ -208,6 +208,34 @@ describe('OperatorAttributionSection — escalada além do nome (#397 GAP-3)', (
     expect(screen.getByText('https://exemplo.com/r', { selector: 'li' })).toBeInTheDocument()
     // A confirmação destrutiva agora está disponível.
     expect(screen.getByRole('button', { name: A.escalonarConfirmUnlink })).toBeInTheDocument()
+    // E, junto dela, o aviso de UNIÃO (nome OU url) + IRREVERSÍVEL para o operador ler antes de confirmar.
+    expect(screen.getByText(A.escalonarUniaoAviso)).toBeInTheDocument()
+  })
+
+  it('o aviso de UNIÃO/irreversível só aparece junto da confirmação (não antes da prévia)', async () => {
+    mockEscalateFetch(() => ({
+      ok: true,
+      status: 200,
+      body: {
+        applied: false,
+        action: 'url_unlink',
+        matched: 1,
+        recipeIds: ['a'],
+        distinctSourceNames: ['X'],
+        distinctSourceUrls: ['https://exemplo.com/r'],
+      },
+    }))
+    const user = userEvent.setup()
+    renderSection()
+
+    // Antes de qualquer prévia: sem aviso (não há confirmação destrutiva à vista).
+    expect(screen.queryByText(A.escalonarUniaoAviso)).toBeNull()
+
+    await user.type(screen.getByLabelText(A.takedownUrlLabel), 'https://exemplo.com/r')
+    await user.click(screen.getByRole('button', { name: A.escalonarPrevia }))
+
+    // Depois da prévia com escopo > 0: o aviso aparece ao lado da confirmação.
+    expect(await screen.findByText(A.escalonarUniaoAviso)).toBeInTheDocument()
   })
 
   it('apagar importada: prévia → confirmar → POST apply:true e copy de deleção', async () => {
