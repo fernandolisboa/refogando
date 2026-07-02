@@ -17,7 +17,7 @@ import { appConfig } from '@/db/schema'
  * termo vazio → vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade).
  */
 
-const DOMAINS = ['tudogostoso.com.br', 'panelinha.com.br']
+const DOMAINS = ['tudogostoso.com.br', 'cybercook.com.br']
 
 /** Liga a descoberta na web e define a allowlist no singleton app_config. */
 async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<void> {
@@ -99,11 +99,11 @@ describe('GET /api/discovery/web (#164)', () => {
   })
 
   it('defesa em profundidade: link cujo host saiu da allowlist é FILTRADO na saída', async () => {
-    // Allowlist só com panelinha; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
-    await seedWebSearch(true, ['panelinha.com.br'])
+    // Allowlist só com cybercook; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
+    await seedWebSearch(true, ['cybercook.com.br'])
     setWebSearchProvider(
       new FakeWebSearchProvider([
-        { title: 'Bom', url: 'https://panelinha.com.br/r/1', sourceName: 'Panelinha' },
+        { title: 'Bom', url: 'https://cybercook.com.br/r/1', sourceName: 'CyberCook' },
         { title: 'Fora', url: 'https://evil.test/r/2', sourceName: 'Evil' },
       ]),
     )
@@ -111,6 +111,6 @@ describe('GET /api/discovery/web (#164)', () => {
     const res = await get('feijoada')
     const links = await results(res)
     // O Fake já filtra pela allowlist; o endpoint re-filtra (defesa dupla). Só o host listado sobra.
-    expect(links.map((l) => l.url)).toEqual(['https://panelinha.com.br/r/1'])
+    expect(links.map((l) => l.url)).toEqual(['https://cybercook.com.br/r/1'])
   })
 })

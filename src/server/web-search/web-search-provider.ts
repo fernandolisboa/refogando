@@ -201,8 +201,8 @@ export const CANONICAL_WEB_RESULTS: WebSearchResult[] = [
   },
   {
     title: 'Feijoada à Brasileira',
-    url: 'https://panelinha.com.br/receita/feijoada',
-    sourceName: 'Panelinha',
+    url: 'https://cybercook.com.br/receita/feijoada',
+    sourceName: 'CyberCook',
   },
 ]
 
