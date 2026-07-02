@@ -216,21 +216,21 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
   it('PUT webSearch válido persiste (allowlist CANONICALIZADA) e GET relê (round-trip)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ws-put@cfg.test', role: 'admin' })
     const putRes = await put(
-      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'panelinha.com.br'] } },
+      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'cybercook.com.br'] } },
       headers,
     )
     expect(putRes.status).toBe(200)
     const putBody = (await putRes.json()) as { webSearch: { enabled: boolean; allowlist: string[] } }
     expect(putBody.webSearch).toEqual({
       enabled: true,
-      allowlist: ['tudogostoso.com.br', 'panelinha.com.br'], // minúsculo, sem www.
+      allowlist: ['tudogostoso.com.br', 'cybercook.com.br'], // minúsculo, sem www.
     })
 
     const getBody = (await (await get(headers)).json()) as {
       webSearch: { enabled: boolean; allowlist: string[] }
     }
     expect(getBody.webSearch.enabled).toBe(true)
-    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'panelinha.com.br'])
+    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'cybercook.com.br'])
   })
 
   it('PUT webSearch NÃO zera os outros eixos (defaultModel preservado)', async () => {
@@ -252,6 +252,32 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
     const bad = await put({ webSearch: { enabled: 'sim', allowlist: [] } }, headers)
     expect(bad.status).toBe(400)
     await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('PUT webSearch com domínio vetado por ToS (#394) → 400 dominio_vetado (host exato e subdomínio)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-deny@cfg.test', role: 'admin' })
+    // host exato vetado no lote (junto de um domínio limpo) ⇒ rejeita o lote inteiro com motivo claro
+    const exact = await put(
+      { webSearch: { enabled: true, allowlist: ['tudogostoso.com.br', 'panelinha.com.br'] } },
+      headers,
+    )
+    expect(exact.status).toBe(400)
+    await expect(exact.json()).resolves.toMatchObject({
+      error: 'dominio_vetado',
+      domains: ['panelinha.com.br'],
+    })
+    // subdomínio de um host vetado também é barrado
+    const sub = await put(
+      { webSearch: { enabled: true, allowlist: ['m.foodnetwork.com'] } },
+      headers,
+    )
+    expect(sub.status).toBe(400)
+    await expect(sub.json()).resolves.toMatchObject({ error: 'dominio_vetado' })
+    // e a config NÃO foi persistida (o eixo continua no default vazio/desligado)
+    const body = (await (await get(headers)).json()) as {
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(body.webSearch).toEqual({ enabled: false, allowlist: [] })
   })
 
   it('webSearch PUT é admin-only: Curador → 403', async () => {

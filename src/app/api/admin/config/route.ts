@@ -4,7 +4,7 @@ import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
-import { parseWebSearchConfig } from '@/domain/web-search-config'
+import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
 import { parsePopularityConfig, type PopularityConfig } from '@/domain/popularity'
 
@@ -95,7 +95,15 @@ export async function PUT(req: Request): Promise<Response> {
   // lixo). Substituição COMPLETA do eixo (a UI sempre envia os 2 campos).
   if (body.webSearch !== undefined) {
     const parsed = parseWebSearchConfig(body.webSearch)
-    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    if (!parsed.ok) {
+      // #394: distingue "domínio vetado por ToS" (denylist em código) de "config malformada", pra a
+      // rejeição vir com MOTIVO claro (não engolir em silêncio). A denylist é reversível/jurídica.
+      const denied = deniedDomainsIn(body.webSearch)
+      if (denied.length > 0) {
+        return Response.json({ error: 'dominio_vetado', domains: denied }, { status: 400 })
+      }
+      return Response.json({ error: 'config_invalida' }, { status: 400 })
+    }
     set.webSearchEnabled = parsed.value.enabled
     set.webSearchAllowlist = parsed.value.allowlist
   }
