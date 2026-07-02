@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/me/erasure/route'
 import { GET as GET_ME } from '@/app/api/me/route'
 import { getDb } from '@/server/deps'
-import { account, dsarAuditEvent, recipe, recipeReview, session, users } from '@/db/schema'
+import { account, dsarAuditEvent, recipe, recipeReview, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
@@ -57,6 +57,14 @@ async function countAccounts(userId: string): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(account)
     .where(eq(account.userId, userId))
+  return row?.n ?? 0
+}
+
+async function countVerificationsFor(email: string): Promise<number> {
+  const [row] = await getDb()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(verification)
+    .where(eq(verification.identifier, email))
   return row?.n ?? 0
 }
 
@@ -187,6 +195,30 @@ describe('/api/me/erasure — eliminação conservadora do titular (#401)', () =
       .from(dsarAuditEvent)
       .where(and(eq(dsarAuditEvent.actorId, userId), eq(dsarAuditEvent.requestType, 'account_erasure')))
     expect(n).toBe(1)
+  })
+
+  it('expurga a PII residual em `verification` (e-mail real em claro), de forma idempotente', async () => {
+    const email = 'reset-pendente@erasure.test'
+    const userId = await seedUser({ email })
+    // Simula um token de reset-de-senha / verificação-de-e-mail pendente: o `identifier` guarda o
+    // e-mail REAL em claro. Sem o expurgo, essa linha sobreviveria à eliminação até expirar.
+    await getDb().insert(verification).values({
+      identifier: email,
+      value: 'token-secreto',
+      expiresAt: new Date(Date.now() + 3_600_000),
+    })
+    expect(await countVerificationsFor(email)).toBe(1)
+
+    const first = await eraseOwnAccount(getDb(), { userId })
+    expect(first.kind).toBe('erased')
+
+    // (a) Nenhuma linha de verificação com o e-mail real sobrevive à eliminação.
+    expect(await countVerificationsFor(email)).toBe(0)
+
+    // (b) Idempotente: re-eliminar (email já é a sentinela) é no-op — não estoura nem re-apaga.
+    const second = await eraseOwnAccount(getDb(), { userId })
+    expect(second.kind).toBe('already_erased')
+    expect(await countVerificationsFor(email)).toBe(0)
   })
 
   it('não toca outra conta (sem IDOR): eliminar A preserva a PII de B', async () => {

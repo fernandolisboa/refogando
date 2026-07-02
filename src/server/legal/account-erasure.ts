@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { account, session, users } from '@/db/schema'
+import { account, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 
@@ -15,8 +15,12 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
  *     direito de eliminação).
  *  2. BLOQUEIA a conta: `deletedAt` (o gate de `requireSession` passa a barrar com 401) + carimba
  *     `anonymizedAt` (marca a erasure e ancora o expurgo físico pós-retenção — job FUTURO).
- *  3. DESLOGA/INVALIDA: apaga TODAS as `session` do usuário (logout em todo lugar) e as linhas de
- *     `account` (credenciais/tokens OAuth — remove PII de login e impede re-login).
+ *  3. DESLOGA/INVALIDA: apaga TODAS as `session` do usuário (logout em todo lugar), as linhas de
+ *     `account` (credenciais/tokens OAuth — remove PII de login e impede re-login) e as linhas de
+ *     `verification` cujo `identifier` é o e-mail REAL do titular (tokens de reset-de-senha /
+ *     verificação-de-e-mail pendentes guardam o e-mail em claro; sobreviveriam à eliminação até
+ *     expirar — expurgamos essa PII residual na mesma tx). Não é gate de auth (a `account` já foi
+ *     apagada), é higiene de PII no fluxo cujo propósito é justamente removê-la.
  *  4. AUDITA: grava um evento `DSAR_RECEIVED` (canal `self_service`) na MESMA transação (atomicidade:
  *     ou elimina-E-audita, ou nada — espelha `clearSourceAttribution`/`createTakedownTicket`).
  *
@@ -45,12 +49,18 @@ export async function eraseOwnAccount(
   return db.transaction(async (tx) => {
     // Guarda a linha contra corrida e confirma o estado atual (existe? já eliminada?).
     const [current] = await tx
-      .select({ id: users.id, deletedAt: users.deletedAt })
+      .select({ id: users.id, email: users.email, deletedAt: users.deletedAt })
       .from(users)
       .where(eq(users.id, userId))
       .for('update')
     if (!current) return { kind: 'not_found' as const }
     if (current.deletedAt != null) return { kind: 'already_erased' as const }
+
+    // Captura o e-mail REAL do titular ANTES de sobrescrevê-lo (passo 1) — é a chave para achar as
+    // linhas de `verification` pendentes a expurgar (passo 3). Guarda a idempotência: só é PII a
+    // apagar quando o e-mail atual ainda NÃO é a sentinela anonimizada desta conta (2ª chamada nem
+    // chega aqui pelo guard de `deletedAt`, mas o check mantém o DELETE um no-op seguro).
+    const oldEmail = current.email
 
     // 1+2. Anonimiza a PII e bloqueia/carimba. WHERE deletedAt IS NULL: só a 1ª eliminação escreve
     // (idempotência no próprio SQL, além do guard acima).
@@ -75,6 +85,11 @@ export async function eraseOwnAccount(
     // 3. Desloga em todo lugar + remove credenciais/tokens (PII de login).
     const revoked = await tx.delete(session).where(eq(session.userId, userId)).returning({ id: session.id })
     await tx.delete(account).where(eq(account.userId, userId))
+    // Expurga tokens de verificação/reset pendentes cujo `identifier` é o e-mail REAL (PII em claro).
+    // Guardado contra a sentinela p/ manter idempotência (2ª execução = no-op).
+    if (oldEmail !== anon.email) {
+      await tx.delete(verification).where(eq(verification.identifier, oldEmail))
+    }
 
     // 4. Trilha de auditoria (append-only, minimizada): só metadados NÃO-sensíveis (contagem de
     //    sessões revogadas + o fato de anonimizar). NUNCA a PII removida em claro.
