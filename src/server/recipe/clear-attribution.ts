@@ -5,6 +5,7 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { sourceNameIsHost } from '@/domain/source-host'
 import { loadRecipeRows } from '@/server/recipe/load'
+import { recordDsarEvent } from '@/server/legal/dsar-audit'
 
 /**
  * Núcleo com efeito de REMOVER o nome da fonte de uma Receita importada (#272 LGPD, ADR-0019). Espelha
@@ -54,10 +55,27 @@ export async function clearSourceAttribution(input: {
     gate.sourceUrl != null && // espelha a construção de view.source (sem sourceUrl o botão se esconde) — paridade exata botão↔servidor, não só por invariante
     !sourceNameIsHost(gate.sourceName, gate.sourceUrl)
   if (hasRemovableName) {
-    await db
-      .update(recipe)
-      .set({ sourceName: null, updatedAt: new Date() }) // SÓ sourceName; NUNCA toca origin/sourceUrl
-      .where(and(eq(recipe.id, id), eq(recipe.ownerId, userId))) // autoriza também na escrita
+    // O nome a remover é humano (≠ host) ⇒ non-null aqui (sourceNameIsHost(null,·) === true excluiria).
+    const removedSourceName = gate.sourceName as string
+    const ts = new Date()
+    // Remoção EFETIVA + auditoria DSAR na MESMA transação (GAP-5, #395): ou remove-e-audita, ou nada —
+    // nunca zera o nome sem deixar a trilha append-only. O `DSAR_FULFILLED` grava só o HASH do que mudou
+    // ({ recipeIds, removedSourceName, ts }); o nome NUNCA vai em claro (senão a auditoria copia o dado
+    // que se pediu para apagar). No-op idempotente NÃO entra aqui ⇒ não gera evento espúrio.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(recipe)
+        .set({ sourceName: null, updatedAt: ts }) // SÓ sourceName; NUNCA toca origin/sourceUrl
+        .where(and(eq(recipe.id, id), eq(recipe.ownerId, userId))) // autoriza também na escrita
+      await recordDsarEvent(tx, {
+        eventType: 'DSAR_FULFILLED',
+        actorId: userId, // self-service: o dono acionou a remoção do próprio nome de fonte
+        channel: 'self_service',
+        requestType: 'name_removal',
+        fulfillment: { recipeIds: [id], removedSourceName, ts: ts.toISOString() },
+        details: { recipeIds: [id] }, // ids internos (não-sensíveis); o nome só existe no hash
+      })
+    })
   }
 
   // 4. Monta a view atualizada (mesma forma/locale do GET) — a UI seta o estado da resposta + refresh.
