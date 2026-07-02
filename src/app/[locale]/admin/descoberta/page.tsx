@@ -10,6 +10,7 @@
 import { SectionGate } from '../gate'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
+import { OperatorAttributionSection } from '@/components/admin/operator-attribution-section'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,8 @@ export default async function AdminAiPage() {
         <WebSearchConfigSection />
         {/* #119: backfill dos embeddings da busca semântica (recompute em lote, admin-only). */}
         <EmbeddingBackfill />
+        {/* #396/GAP-4: atendimento ao autor externo (titular B) — remover atribuição (nome) em lote. */}
+        <OperatorAttributionSection />
       </div>
     </SectionGate>
   )

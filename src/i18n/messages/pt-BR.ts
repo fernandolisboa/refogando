@@ -1099,6 +1099,27 @@ export const ptBR = {
     backfillResultadoParcial:
       'Recomputados: {recomputados} · faltam: {restantes}. O serviço de embedding parou (sem chave ou limite). Rode de novo mais tarde.',
     backfillErro: 'Não foi possível recomputar. Tente de novo.',
+    // Atendimento ao autor externo (titular B, sem conta) — #396/GAP-4. Remove o NOME da fonte em lote
+    // por nome/URL, sem exigir que a receita seja do operador. Mantém a URL; irreversível pro nome.
+    takedownTitulo: 'Remover atribuição (pedido do autor)',
+    takedownDescricao:
+      'Atende o autor de um site externo que pediu para tirar o nome dele. Remove o nome da fonte de TODAS as receitas importadas (inclusive privadas de usuários) que casem o nome ou a URL. A URL de origem é mantida (a atribuição passa a mostrar só o site). Rode a prévia antes de remover.',
+    takedownNomeLabel: 'Nome exibido da fonte',
+    takedownNomePlaceholder: 'Ex.: Cozinha da Vovó',
+    takedownUrlLabel: 'URL de origem',
+    takedownUrlPlaceholder: 'https://site.com/receita',
+    takedownCaseIdLabel: 'ID do ticket DSAR (opcional)',
+    takedownCaseIdPlaceholder: 'uuid do ticket, se houver',
+    takedownPrevia: 'Prévia',
+    takedownPreviaRodando: 'Buscando…',
+    takedownRemover: 'Remover nome',
+    takedownRemovendo: 'Removendo…',
+    takedownPreviaResultado: 'Casaram: {casaram} · com nome a remover: {removiveis}.',
+    takedownRemovido: 'Nome removido de {removiveis} receita(s). URL preservada.',
+    takedownNada: 'Nenhuma receita com nome humano a remover casou o critério.',
+    takedownCriterioObrigatorio: 'Informe ao menos o nome OU a URL da fonte.',
+    takedownCaseIdInvalido: 'ID de ticket inválido (precisa ser um uuid).',
+    takedownErro: 'Não foi possível concluir. Tente de novo.',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel.',
     erroGenerico: 'Algo deu errado. Tente de novo.',
