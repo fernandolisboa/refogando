@@ -1045,6 +1045,7 @@ export const enUS: Messages = {
     takedownRemover: 'Remove name',
     takedownRemovendo: 'Removing…',
     takedownPreviaResultado: 'Matched: {casaram} · with a name to remove: {removiveis}.',
+    takedownNomesRemovidos: 'Names that will be removed',
     takedownRemovido: 'Name removed from {removiveis} recipe(s). URL preserved.',
     takedownNada: 'No recipe with a human name to remove matched the criteria.',
     takedownCriterioObrigatorio: 'Provide at least the source name OR URL.',

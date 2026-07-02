@@ -51,11 +51,11 @@ describe('OperatorAttributionSection (#396 GAP-4)', () => {
     expect(screen.getByRole('button', { name: A.takedownRemover })).toBeDisabled()
   })
 
-  it('prévia: preenche nome → POST apply:false + mostra contagem', async () => {
+  it('prévia: preenche nome → POST apply:false + mostra contagem e o nome distinto', async () => {
     const { calls } = mockFetch({
       ok: true,
       status: 200,
-      body: { applied: false, matched: 3, recipeIds: ['a', 'b'] },
+      body: { applied: false, matched: 3, recipeIds: ['a', 'b'], distinctSourceNames: ['Cozinha da Vovó'] },
     })
     const user = userEvent.setup()
     renderSection()
@@ -72,13 +72,41 @@ describe('OperatorAttributionSection (#396 GAP-4)', () => {
         A.takedownPreviaResultado.replace('{casaram}', '3').replace('{removiveis}', '2'),
       ),
     ).toBeInTheDocument()
+    // A prévia expõe o rótulo + o nome distinto que será zerado (não só a contagem).
+    expect(screen.getByText(A.takedownNomesRemovidos)).toBeInTheDocument()
+    expect(screen.getByText('Cozinha da Vovó', { selector: 'li' })).toBeInTheDocument()
+  })
+
+  it('prévia por nome+url: lista TODOS os nomes distintos que casaram (inclui o arrastado pela url)', async () => {
+    // Cenário do achado: o ramo de URL casa outro import da MESMA url com um nome DIFERENTE do que o
+    // operador digitou — a prévia precisa mostrar esse nome para conferência antes de aplicar.
+    mockFetch({
+      ok: true,
+      status: 200,
+      body: {
+        applied: false,
+        matched: 2,
+        recipeIds: ['a', 'b'],
+        distinctSourceNames: ['Cozinha da Vovó', 'Marca Nova'],
+      },
+    })
+    const user = userEvent.setup()
+    renderSection()
+
+    await user.type(screen.getByLabelText(A.takedownNomeLabel), 'Cozinha da Vovó')
+    await user.type(screen.getByLabelText(A.takedownUrlLabel), 'https://exemplo.com/r')
+    await user.click(screen.getByRole('button', { name: A.takedownPrevia }))
+
+    expect(await screen.findByText(A.takedownNomesRemovidos)).toBeInTheDocument()
+    expect(screen.getByText('Cozinha da Vovó', { selector: 'li' })).toBeInTheDocument()
+    expect(screen.getByText('Marca Nova', { selector: 'li' })).toBeInTheDocument()
   })
 
   it('remover: POST apply:true + mostra quantas tiveram o nome removido', async () => {
     const { calls } = mockFetch({
       ok: true,
       status: 200,
-      body: { applied: true, matched: 2, recipeIds: ['a', 'b'] },
+      body: { applied: true, matched: 2, recipeIds: ['a', 'b'], distinctSourceNames: ['Chef'] },
     })
     const user = userEvent.setup()
     renderSection()
@@ -94,7 +122,11 @@ describe('OperatorAttributionSection (#396 GAP-4)', () => {
   })
 
   it('remover sem casar nada removível → copy "nada a remover"', async () => {
-    mockFetch({ ok: true, status: 200, body: { applied: true, matched: 1, recipeIds: [] } })
+    mockFetch({
+      ok: true,
+      status: 200,
+      body: { applied: true, matched: 1, recipeIds: [], distinctSourceNames: [] },
+    })
     const user = userEvent.setup()
     renderSection()
 

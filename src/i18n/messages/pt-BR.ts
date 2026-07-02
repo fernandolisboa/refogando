@@ -1115,6 +1115,7 @@ export const ptBR = {
     takedownRemover: 'Remover nome',
     takedownRemovendo: 'Removendo…',
     takedownPreviaResultado: 'Casaram: {casaram} · com nome a remover: {removiveis}.',
+    takedownNomesRemovidos: 'Nomes que serão removidos',
     takedownRemovido: 'Nome removido de {removiveis} receita(s). URL preservada.',
     takedownNada: 'Nenhuma receita com nome humano a remover casou o critério.',
     takedownCriterioObrigatorio: 'Informe ao menos o nome OU a URL da fonte.',

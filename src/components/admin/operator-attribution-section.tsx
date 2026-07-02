@@ -15,7 +15,12 @@ import { useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 
-type ClearResult = { applied: boolean; matched: number; recipeIds: string[] }
+type ClearResult = {
+  applied: boolean
+  matched: number
+  recipeIds: string[]
+  distinctSourceNames: string[]
+}
 
 export function OperatorAttributionSection() {
   const { messages } = useLocale()
@@ -175,15 +180,29 @@ export function OperatorAttributionSection() {
           </p>
         )}
         {result && !errorText && (
-          <p role="status" className="font-medium text-fg">
-            {result.applied
-              ? result.recipeIds.length === 0
-                ? m.takedownNada
-                : m.takedownRemovido.replace('{removiveis}', String(result.recipeIds.length))
-              : m.takedownPreviaResultado
-                  .replace('{casaram}', String(result.matched))
-                  .replace('{removiveis}', String(result.recipeIds.length))}
-          </p>
+          <div role="status" className="flex flex-col gap-2 font-medium text-fg">
+            <p>
+              {result.applied
+                ? result.recipeIds.length === 0
+                  ? m.takedownNada
+                  : m.takedownRemovido.replace('{removiveis}', String(result.recipeIds.length))
+                : m.takedownPreviaResultado
+                    .replace('{casaram}', String(result.matched))
+                    .replace('{removiveis}', String(result.recipeIds.length))}
+            </p>
+            {/* Prévia: lista os nomes DISTINTOS que serão zerados, para o operador conferir o escopo
+                (um match por URL pode arrastar outro import da mesma url com nome diferente). */}
+            {!result.applied && result.distinctSourceNames.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-sm text-muted">{m.takedownNomesRemovidos}</span>
+                <ul className="list-disc pl-5 text-fg">
+                  {result.distinctSourceNames.map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </section>

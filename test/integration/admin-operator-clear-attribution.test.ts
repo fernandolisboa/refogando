@@ -135,15 +135,50 @@ describe('POST /api/admin/attribution/clear (#396 GAP-4) — comportamento', () 
 
     const res = await clearPost({ sourceName: NAME }, admin.headers) // apply omitido = prévia
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { applied: boolean; matched: number; recipeIds: string[] }
+    const body = (await res.json()) as {
+      applied: boolean
+      matched: number
+      recipeIds: string[]
+      distinctSourceNames: string[]
+    }
     expect(body.applied).toBe(false)
     expect(body.matched).toBe(2)
     expect(new Set(body.recipeIds)).toEqual(new Set([rA, rB]))
+    // A prévia expõe os nomes DISTINTOS que seriam zerados (ambas as receitas têm o mesmo nome).
+    expect(body.distinctSourceNames).toEqual([NAME])
 
     // Prévia NÃO muta nem audita.
     expect((await loadSource(rA)).sourceName).toBe(NAME)
     expect((await loadSource(rB)).sourceName).toBe(NAME)
     expect(await loadDsarEventsByActor(admin.userId)).toHaveLength(0)
+  })
+
+  it('prévia com nome+url: o ramo de URL arrasta outro import da MESMA url com nome DIFERENTE → expõe os dois nomes', async () => {
+    const admin = await seedSessionHeaders({ email: 'op-scope@ex.com', role: 'admin' })
+    const alice = await seedSessionHeaders({ email: 'op-scope-alice@ex.com' })
+    const bob = await seedSessionHeaders({ email: 'op-scope-bob@ex.com' })
+    // Mesma URL, nomes diferentes (site trocou de marca entre imports).
+    const rPedido = await seedImported({ ownerId: alice.userId, sourceName: NAME, sourceUrl: URL_A })
+    const rArrastado = await seedImported({
+      ownerId: bob.userId,
+      sourceName: 'Marca Nova',
+      sourceUrl: URL_A,
+    })
+
+    // Operador preenche nome E url: o ramo de URL casa rArrastado, cujo nome NÃO foi pedido.
+    const res = await clearPost({ sourceName: NAME, sourceUrl: URL_A }, admin.headers)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      applied: boolean
+      matched: number
+      recipeIds: string[]
+      distinctSourceNames: string[]
+    }
+    expect(new Set(body.recipeIds)).toEqual(new Set([rPedido, rArrastado]))
+    // A prévia lista AMBOS os nomes (ordenados) — 'Marca Nova' fica visível antes de aplicar.
+    expect(body.distinctSourceNames).toEqual(['Cozinha da Vovó', 'Marca Nova'])
+    // Continua sem mutar.
+    expect((await loadSource(rArrastado)).sourceName).toBe('Marca Nova')
   })
 
   it('remove por nome em lote (privadas de OUTROS donos); url + origin preservados; 1 DSAR_FULFILLED com hash', async () => {
