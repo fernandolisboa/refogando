@@ -1444,4 +1444,75 @@ export const enUS: Messages = {
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'DRAFT — awaiting legal review',
   },
+
+  // "Your rights" page + public intake form (#399, GAP-2). GATED (noindex, no link, out of the sitemap)
+  // until legal sign-off and the officer inbox exists. New, distinct section.
+  seusDireitos: {
+    metaTitulo: 'Your rights / Privacy — Refogando',
+    titulo: 'Your rights',
+    rascunhoAviso:
+      'DRAFT for legal review — not legal advice, and this page is not yet published. The channel will only be announced once the officer email exists and legal sign-off is in place. Highlighted fields are placeholders to be filled in.',
+    intro:
+      'You have rights over your personal data (LGPD, Art. 18): confirmation, access, correction, deletion, objection and others. This page explains how to exercise them, and you can open a request via the form below. We respond within 15 days (Art. 19, II).',
+
+    titularATitulo: 'You have a Refogando account',
+    titularACorpo:
+      'If you are an app user, many of your rights are handled directly in your account (profile, recipes, collections). For anything not yet self-service, use the form below or the privacy email — always within the 15-day deadline.',
+    titularBTitulo: 'You are the author of a recipe imported from the web',
+    titularBCorpo:
+      'If a recipe of yours was imported from an external site into Refogando, we keep only your name (credit) and the source link — never the photo or the authorial text. You may request removal of your name (the credit then shows only the site) or full removal. You do NOT need an account: use the form below.',
+
+    fluxoTitulo: 'How a request works',
+    fluxoPassos: [
+      'You send the request via the form (or the privacy email), identifying the content (source link and/or displayed name) and what you want.',
+      'We open a case and record the date of receipt — that is when the 15-day deadline starts to run (Art. 19, II).',
+      'We confirm your identity as simply as possible (usually correspondence with the contact already tied to the source). We do not require documents as a condition (Art. 6º, III).',
+      'We carry out the request and reply within the deadline, stating what was done — or, in case of a justified refusal, the reason.',
+    ],
+    prazoNota: 'Response time: up to 15 calendar days from receipt (LGPD, Art. 19, II).',
+    naoExigimosDocumentos:
+      'We collect only the minimum needed to locate the content and handle the request. We do not require documents or additional personal data as a condition (Art. 6º, III — necessity).',
+
+    canalTitulo: 'Contact channel',
+    canalCorpo:
+      'Data protection officer (DPO): {nome do encarregado}. Email for privacy and exercising your rights: {e-mail do encarregado}.',
+    canalGap:
+      'Open gap: there is not yet a published public privacy channel nor an announced officer. This page does not announce a channel that does not exist — the email above is a placeholder, and the form below is the basis for the channel to be published after sign-off.',
+
+    formTitulo: 'Open a request',
+    formIntro:
+      'Fill in your request below. Provide the source link and/or the displayed name so we can locate the content, and describe what you want.',
+    formTipoRotulo: 'Request type',
+    formTipoNameRemoval: 'Remove my name from the credit (keeping the link)',
+    formTipoFullRemoval: 'Fully remove the imported recipe',
+    formTipoOther: 'Another request about my data',
+    formUrlRotulo: 'Source link (URL)',
+    formUrlPlaceholder: 'https://source-site.com/recipe',
+    formNomeRotulo: 'Name shown in the credit',
+    formNomePlaceholder: 'e.g., Grandma’s Kitchen',
+    formIdentificacaoDica: 'Provide at least one: the source link OR the displayed name.',
+    formPedidoRotulo: 'Your request',
+    formPedidoPlaceholder: 'Describe what you want (e.g., remove my name from the credit of this recipe).',
+    formContatoRotulo: 'Email for our reply (optional)',
+    formContatoPlaceholder: 'you@email.com',
+    formContatoDica: 'Optional. If provided, we use it only to reply to this request.',
+    formEnviar: 'Send request',
+    formEnviando: 'Sending…',
+    formSucessoTitulo: 'Request received',
+    formSucessoCorpo:
+      'We have received your request and recorded the date of receipt. We will reply within 15 days. Please keep the case number below.',
+    formProtocoloRotulo: 'Case number',
+    erroPedido: 'Please describe your request to continue.',
+    erroIdentificacao: 'Provide at least one: the source link or the displayed name.',
+    erroEnvio: 'We could not send your request right now. Please try again shortly.',
+
+    todoRotulo: 'field to be filled in',
+    gapRotulo: 'Open gap',
+    rodapeVersaoRotulo: 'Version',
+    rodapeVersao: 'v0 (draft)',
+    rodapeDataRotulo: 'Date',
+    rodapeData: '2026-07-01',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'DRAFT — awaiting legal review',
+  },
 } as const

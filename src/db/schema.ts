@@ -1266,3 +1266,43 @@ export const dsarAuditEvent = pgTable(
     ),
   ],
 )
+
+/**
+ * Tickets do formulário PÚBLICO de intake (issue #399, GAP-2; `docs/legal/takedown-e-remocao-titular.md`
+ * §2). Cada envio do titular (autor externo sem conta — titular B) abre UM ticket com a `received_at` que
+ * MARCA o início do SLA de 15 dias (Art. 19, II). A gravação do ticket emite `DSAR_RECEIVED` na MESMA
+ * transação (`createTakedownTicket` em `src/server/legal/takedown-intake.ts`) — o `dsar_audit_event.case_id`
+ * aponta de volta para o `id` deste ticket.
+ *
+ * MINIMIZAÇÃO (Art. 6º, III): guarda só o necessário para localizar o conteúdo e entender o pedido —
+ * `source_url` e/ou `display_name` (ao menos um; validado no domínio) + `message`. `contact_email` é
+ * OPCIONAL (retorno ao titular; nunca condição). NENHUM documento é exigido. Sem `updated_at`: o `status`
+ * evolui pelo fluxo do operador (fora desta fatia), mas a fatia mínima só INSERE (recebimento).
+ */
+export const takedownTicket = pgTable(
+  'takedown_ticket',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Tipo do pedido (name_removal | full_removal | other). Texto (espelha dsar_audit_event.request_type);
+    // o domínio (`normalizeTakedownIntake`) garante um valor conhecido antes do INSERT.
+    requestType: text('request_type').notNull(),
+    // Identificação do conteúdo: URL de origem E/OU nome exibido. Ao menos um é não-nulo (regra de domínio).
+    sourceUrl: text('source_url'),
+    displayName: text('display_name'),
+    // O pedido em texto livre (obrigatório). Saneado (strip C0) na borda — anti-500.
+    message: text('message').notNull(),
+    // Contato OPCIONAL para resposta (não é condição de atendimento — Art. 6º, III). Nullable.
+    contactEmail: text('contact_email'),
+    // Locale em que o formulário foi enviado (metadado; ajuda a responder no idioma do titular).
+    locale: text('locale'),
+    // Status do ciclo de vida do ticket. Nasce 'received'; a evolução (verified/fulfilled/rejected) é do
+    // fluxo do operador (GAP-4/GAP-7). Base para a varredura de SLA sobre tickets abertos.
+    status: text('status').notNull().default('received'),
+    // Data de RECEBIMENTO = início do SLA de 15 dias. Um ticket nasce recebido (defaultNow).
+    receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Varredura do SLA: tickets por status em ordem de recebimento (o job de alertas 10/13/15 — GAP-7).
+    index('takedown_ticket_status_received_idx').on(t.status, t.receivedAt),
+  ],
+)
