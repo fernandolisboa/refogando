@@ -1327,6 +1327,194 @@ export const ptBR = {
     filaImagemTipoInvalido: 'Formato inválido (use JPG, PNG ou WebP).',
     filaImagemGrande: 'Imagem muito grande (máx. 2 MB).',
   },
+  // Política de Privacidade (#398 / #276) — RASCUNHO jurídico renderizado numa rota GATED (não-linkada,
+  // noindex). Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
+  // `readonly string[]` (listas/tabelas por índice). Placeholders `{...}` são renderizados como BADGE de
+  // TODO visível pelo componente (nunca "publicados" como texto final). Ao publicar: preencher os `{...}`,
+  // obter o sign-off jurídico (#276), então adicionar o link e remover o noindex.
+  privacidade: {
+    metaTitulo: 'Política de Privacidade — Refogando',
+    titulo: 'Política de Privacidade',
+    rascunhoAviso:
+      'RASCUNHO para revisão jurídica — não constitui parecer. Este texto ainda não foi revisado nem assinado por um advogado e não está publicado. Os campos destacados são placeholders a preencher, e os pontos marcados "[validar]" aguardam confirmação profissional.',
+
+    parteATitulo: 'Parte (a) — Política de Privacidade',
+    resumoTitulo: 'Resumo em 30 segundos',
+    resumoItens: [
+      'O Refogando é um app de receitas com IA, bilíngue (pt-BR / en-US).',
+      'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
+      'Não vendemos seus dados. Compartilhamos apenas com prestadores de serviço que fazem o app funcionar (hospedagem, banco, IA).',
+      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: {e-mail do encarregado}. Respondemos em até 15 dias.',
+      'Este texto pode mudar; avisamos quando mudar.',
+    ],
+
+    s1Titulo: '1. Quem somos (identificação do controlador) — Art. 9º, III',
+    s1Corpo: [
+      'O controlador dos dados é {razão social}, CNPJ {CNPJ}, com sede em {endereço}, responsável pelo aplicativo Refogando ({URL do app}).',
+      'Se hoje o projeto é operado por pessoa física, [validar] com o advogado a forma correta de identificar o controlador.',
+    ],
+
+    s2Titulo: '2. Contato do controlador e do encarregado (DPO) — Art. 9º, IV; Art. 41',
+    s2Itens: [
+      'Encarregado pelo tratamento de dados (DPO): {nome do encarregado}.',
+      'E-mail de contato para assuntos de privacidade e exercício de direitos: {e-mail do encarregado}.',
+      'Prazo de resposta: respondemos a pedidos dos titulares em até 15 dias (LGPD, Art. 19, II).',
+    ],
+    s2Gap: 'GAP a resolver: hoje não há canal de privacidade publicado nem encarregado anunciado. É necessário definir e publicar o e-mail do encarregado antes de publicar esta política.',
+
+    s3Titulo: '3. Para que usamos seus dados (finalidade específica) — Art. 9º, I; Art. 6º, I',
+    s3Intro:
+      'Tratamos dados pessoais apenas para finalidades específicas e informadas. Cada atividade segue o padrão Dados / Finalidade / Base legal / Retenção.',
+    s3Nota:
+      'O inventário completo de dados de conta/uso ainda será fechado com a equipe e validado; o quadro abaixo é o esqueleto dos tratamentos confirmados. A feature de Descoberta na web está detalhada na Parte (b).',
+
+    rotuloDados: 'Dados',
+    rotuloFinalidade: 'Finalidade',
+    rotuloBaseLegal: 'Base legal',
+    rotuloRetencao: 'Retenção',
+
+    s31Titulo: '3.1. Conta de usuário e autenticação',
+    s31Valores: [
+      'e-mail, nome/identificador de exibição (handle), credenciais de login e {a completar: demais campos de conta}.',
+      'criar e manter sua conta, autenticar o acesso e permitir o uso do app.',
+      'execução de contrato com o titular — Art. 7º, V da LGPD. [validar]',
+      'enquanto a conta existir; após a exclusão, eliminamos ou anonimizamos em {prazo}. [validar prazo]',
+    ],
+    s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações)',
+    s32Valores: [
+      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve.',
+      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca).',
+      'execução de contrato — Art. 7º, V. [validar]',
+      'enquanto a conta existir ou até você apagar o conteúdo.',
+    ],
+    s33Titulo: '3.3. Imagens geradas por IA e conteúdo assistido por IA',
+    s33Valores: [
+      'prompts e imagens que você gera; metadados de uso (para controle de custo/cota).',
+      'gerar imagens de pratos e apoiar a criação de receitas; controlar limites de uso.',
+      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX. [validar]',
+      '{a completar}.',
+    ],
+    s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
+    s34Corpo:
+      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo). [validar]',
+
+    s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
+    s4Itens: [
+      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (ver item 5). Aplicamos medidas de segurança compatíveis (Art. 46), incluindo controle de acesso por autenticação e autorização por titularidade.',
+      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica (item 3) ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Art. 15/16). Prazos específicos: [validar / completar a tabela de retenção].',
+    ],
+
+    s5Titulo: '5. Com quem compartilhamos (uso compartilhado) — Art. 9º, V',
+    s5Intro:
+      'Não vendemos dados pessoais. Compartilhamos com operadores (prestadores de serviço que tratam dados em nosso nome, sob contrato) estritamente para operar o app:',
+    s5Cabecalho: ['Prestador', 'Para quê', 'Categoria'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5ParaQue: [
+      'Hospedagem do aplicativo',
+      'Banco de dados',
+      'Geração de imagens e embeddings de busca',
+      'Geração/assistência de texto',
+      'Busca de links externos na "Descoberta na web"',
+    ],
+    s5Categorias: [
+      'Operador de infraestrutura',
+      'Operador de infraestrutura',
+      'Operador de IA',
+      'Operador de IA',
+      'Operador de busca',
+    ],
+    s5Nota: 'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing.',
+    s5Transferencia:
+      'Transferência internacional: alguns prestadores processam dados fora do Brasil. É preciso [validar] a base e as salvaguardas de transferência internacional (LGPD, Arts. 33 a 36) e refletir isso aqui.',
+
+    s6Titulo: '6. Responsabilidades dos agentes de tratamento — Art. 9º, VI; Arts. 37–39',
+    s6Itens: [
+      '{razão social} atua como controlador e é responsável pelas decisões sobre o tratamento.',
+      'Os prestadores do item 5 atuam como operadores, tratando dados conforme nossas instruções e sob contrato.',
+      'Mantemos (ou passaremos a manter — [validar/implementar]) registro das operações de tratamento (Art. 37) e adotamos medidas de segurança (Art. 46). Em caso de incidente de segurança com risco relevante, comunicamos a ANPD e os titulares (Art. 48).',
+    ],
+
+    s7Titulo: '7. Seus direitos (direitos do titular) — Art. 9º, VII; Art. 18',
+    s7Intro:
+      'Você, titular dos dados, tem os direitos garantidos pelo Art. 18 da LGPD, mediante requisição, entre eles:',
+    s7Direitos: [
+      'Confirmação da existência de tratamento;',
+      'Acesso aos dados;',
+      'Correção de dados incompletos, inexatos ou desatualizados;',
+      'Anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade;',
+      'Portabilidade a outro fornecedor, mediante requisição;',
+      'Eliminação dos dados tratados com consentimento (ressalvadas as hipóteses do Art. 16);',
+      'Informação sobre entidades com as quais compartilhamos dados;',
+      'Informação sobre a possibilidade de não fornecer consentimento e as consequências;',
+      'Revogação do consentimento;',
+      'Quando o tratamento se basear em legítimo interesse, o direito de opor-se e de solicitar informações (Art. 18, §2º, e Art. 37). [validar]',
+    ],
+    s7ComoExercer:
+      'Como exercer: escreva para {e-mail do encarregado}. Respondemos em até 15 dias (Art. 19, II). Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
+    s7Gap: 'GAP a resolver: hoje não existe endpoint self-service completo (acesso/portabilidade/eliminação de conta). Recomenda-se implementar o fluxo de atendimento aos direitos do Art. 18 e, até lá, atender os pedidos manualmente dentro do prazo de 15 dias.',
+
+    s8Titulo: '8. Alterações desta política',
+    s8Corpo:
+      'Podemos atualizar esta política. Quando houver mudança relevante, avisaremos por {canal} e registraremos a versão e a data de cada alteração.',
+
+    parteBTitulo: 'Parte (b) — "Descoberta na web"',
+    resumoBTitulo: 'Resumo desta seção',
+    resumoBItens: [
+      'Quando você importa uma receita de um site externo, guardamos duas coisas sobre a origem: o nome do autor/site e o link (URL) — só para creditar a fonte.',
+      'Não copiamos a foto nem o texto autoral (a receita importada nasce sem imagem e sem descrição).',
+      'A receita importada é sempre privada — você não pode publicá-la nem republicá-la.',
+      'O dado pessoal aqui é o nome do autor da receita de terceiro — e você, autor, pode pedir a remoção do seu nome (o crédito passa a exibir só o site).',
+    ],
+
+    b1Titulo: 'b.1. O que é a Descoberta na web',
+    b1Corpo: [
+      'O Refogando pode mostrar, na busca, alguns links de receitas de sites externos (marcados "da web"), a partir de uma lista fechada de domínios que aprovamos um a um (allowlist; provedor de busca: Brave). Se você clica e confirma, o app importa aquela receita para a sua coleção privada.',
+    ],
+    b1Itens: [
+      'A busca nunca cria nem republica conteúdo de terceiros. Linkar ≠ importar; importar ≠ republicar.',
+      'A allowlist é a fonte única de domínios (gerida por admin; com limites de domínios consultados e de resultados por busca).',
+      'Guard-rails técnicos já implementados: respeito ao robots.txt (RFC 9309), User-Agent identificado (RefogandoBot/1.0), rate-limit de cortesia e busca/import só por ação explícita do usuário — nunca crawl automático de fundo.',
+    ],
+
+    b2Titulo: 'b.2. Quem é o titular do dado aqui',
+    b2Corpo:
+      'O dado pessoal tratado nesta feature é o nome do autor/publisher da receita de terceiro — ou seja, o titular é o autor da receita externa, e não o usuário do app. Essa distinção importa para o exercício de direitos (item b.5).',
+
+    b3Titulo: 'b.3. Que dados coletamos, para quê, com que base e por quanto tempo',
+    b3Rotulos: ['Dados', 'O que NÃO coletamos', 'Finalidade', 'Base legal', 'Retenção'],
+    b3Valores: [
+      'Apenas dois campos de atribuição, gravados só em receitas importadas: o nome legível do autor/site e a URL pública de origem. Toda receita que não é importada deixa esses dois campos vazios.',
+      'Não copiamos a foto (a receita importada nasce sem imagem) nem o texto autoral / headnote. Isso reduz ao mínimo a superfície de dado de terceiros e evita copiar a camada expressiva protegida por direito autoral.',
+      'Dar o crédito à fonte ("fonte: … (link)") — cumprindo o direito moral de atribuição (Lei 9.610/98) — e mandar tráfego de volta ao site de origem. A atribuição é obrigatória, não opcional.',
+      'Legítimo interesse — LGPD Art. 7º, IX. Fundamento alternativo/complementar a validar: dado tornado manifestamente público pelo titular (Art. 7º, §4º). [validar qual base prevalece e se é necessária uma LIA documentada, conforme Art. 10.]',
+      'Enquanto a receita importada existir na coleção privada do usuário, ou até o autor pedir a remoção do nome (item b.5), ou até o usuário apagar a receita. Ao remover o nome, o crédito passa a exibir apenas o site (host) derivado da URL.',
+    ],
+
+    b4Titulo: 'b.4. Compartilhamento nesta feature',
+    b4Corpo:
+      'Para encontrar os links externos, consultamos o provedor de busca Brave (operador), enviando o termo de busca restrito aos domínios da allowlist. A importação é uma cópia feita a pedido do usuário, guardada de forma privada na conta dele — não é republicada nem compartilhada com terceiros.',
+
+    b5Titulo: 'b.5. Direitos do titular (autor da receita externa) e como exercer — Art. 18',
+    b5Intro:
+      'Se você é autor de uma receita que foi importada para o Refogando e quer remover o seu nome da atribuição, você tem esse direito (Art. 18, IV; e o direito de oposição ao tratamento fundado em legítimo interesse, Art. 18, §2º — [validar]).',
+    b5ComoFunciona: [
+      'A remoção zera apenas o nome do autor; a URL de origem permanece, porque a atribuição é obrigatória. Após a remoção, o crédito é rebaixado ao nome do site (host) derivado da URL, e o link "ver no site" continua.',
+      'A remoção só tem efeito quando há de fato um nome humano distinto do host; caso contrário é uma operação sem efeito.',
+      'A remoção não é reversível para o nome original — o que é adequado ao direito de remoção.',
+    ],
+    b5Gap: 'PENDÊNCIA importante: hoje a remoção do nome só pode ser acionada pelo dono logado da receita importada — não por um autor externo. Não existe canal público pelo qual o titular (autor da fonte) possa pedir a remoção do seu nome, nem encarregado/canal de takedown publicado. Esta seção não deve ir ao ar anunciando um direito que ainda não tem canal: o canal precisa existir junto com a publicação.',
+    b5Contato:
+      'Contato do encarregado para esta finalidade (a publicar): {nome do encarregado} — {e-mail do encarregado} — resposta em até 15 dias.',
+
+    todoRotulo: 'campo a preencher',
+    gapRotulo: 'Pendência',
+    rodapeVersaoRotulo: 'Versão',
+    rodapeVersao: 'v0 (rascunho)',
+    rodapeDataRotulo: 'Data',
+    rodapeData: '2026-07-01',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'RASCUNHO — aguardando revisão jurídica',
+  },
 } as const
 
 /**
