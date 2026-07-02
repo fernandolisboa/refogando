@@ -1300,6 +1300,13 @@ export const takedownTicket = pgTable(
     status: text('status').notNull().default('received'),
     // Data de RECEBIMENTO = início do SLA de 15 dias. Um ticket nasce recebido (defaultNow).
     receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+    // GAP-7 (#400): nível de alerta de SLA já REGISTRADO para o ticket (none|yellow|red|overdue). A
+    // varredura diária (`scanDsarSla`) só AVANÇA este valor conforme a idade cruza 10/13/15 dias —
+    // registrar o nível AQUI (em vez de emitir e-mail: não há mailer/canal, human-gated) é o "alerta"
+    // queryável e IDEMPOTENTE (não re-alerta o mesmo nível 2x). Nasce 'none'.
+    slaLevel: text('sla_level').notNull().default('none'),
+    // Quando a última transição de `sla_level` foi registrada (metadado do alerta). Nulo até o 1º alerta.
+    slaAlertedAt: timestamp('sla_alerted_at', { withTimezone: true }),
   },
   (t) => [
     // Varredura do SLA: tickets por status em ordem de recebimento (o job de alertas 10/13/15 — GAP-7).

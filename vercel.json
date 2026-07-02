@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run db:migrate && npm run build",
-  "ignoreCommand": "bash scripts/vercel-ignore.sh"
+  "ignoreCommand": "bash scripts/vercel-ignore.sh",
+  "crons": [
+    {
+      "path": "/api/cron/dsar-sla",
+      "schedule": "0 9 * * *"
+    }
+  ]
 }
