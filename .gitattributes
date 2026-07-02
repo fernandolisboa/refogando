@@ -1,0 +1,5 @@
+# Normaliza terminação de linha pra LF no repo, independente do que o
+# working tree local tiver (ex.: editor Windows escrevendo CRLF por engano).
+# Sem isso, um arquivo com CRLF na working tree aparece como "modificado"
+# mesmo depois de reverter — o git recompara os mesmos bytes CRLF de novo.
+* text=auto eol=lf
