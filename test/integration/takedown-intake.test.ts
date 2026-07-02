@@ -128,4 +128,39 @@ describe('POST /api/legal/takedown (#399 intake público)', () => {
     const t = await loadTicket(ticketId)
     expect(t.message.includes(NUL)).toBe(false) // NUL neutralizado (viraria 500 no postgres-js)
   })
+
+  it('locale: ?locale suportado → grava a forma canônica; inválido/NUL → null (nunca text cru)', async () => {
+    const valido = { displayName: 'X', message: 'oi' }
+    const okRes = await post(valido, 'http://localhost/api/legal/takedown?locale=EN-US')
+    expect(okRes.status).toBe(201)
+    const okId = ((await okRes.json()) as { ticketId: string }).ticketId
+    expect((await loadTicket(okId)).locale).toBe('en-US') // canonizado, não 'EN-US' cru
+
+    const NUL = String.fromCharCode(0)
+    const badRes = await post(valido, `http://localhost/api/legal/takedown?locale=${NUL}xx`)
+    expect(badRes.status).toBe(201) // não 500 — o locale não-suportado não vai cru pro banco
+    const badId = ((await badRes.json()) as { ticketId: string }).ticketId
+    expect((await loadTicket(badId)).locale).toBeNull() // desconhecido → null (capado por construção)
+  })
+
+  it('throttle por IP: 2º envio do mesmo IP dentro da janela → 429 (sem criar ticket nem vazar corpo)', async () => {
+    // IP de teste (RFC 5737), único p/ não colidir com o throttle módulo-escopo compartilhado no arquivo.
+    const ip = '203.0.113.7'
+    const fire = () =>
+      POST(
+        new Request('http://localhost/api/legal/takedown', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+          body: JSON.stringify({ displayName: 'Flood', message: 'primeiro pedido' }),
+        }),
+      )
+    // Disparados juntos: o `tryAcquire` roda SÍNCRONO no topo do handler (antes do 1º await/DB), então o
+    // 2º cai na janela do 1º independentemente da latência do Postgres — determinístico, sem clock falso.
+    const [first, second] = await Promise.all([fire(), fire()])
+    expect(first.status).toBe(201) // 1º adquire a janela
+    expect(second.status).toBe(429) // 2º barrado
+    const body = (await second.json()) as { error?: string; ticketId?: string }
+    expect(body.ticketId).toBeUndefined() // não abriu ticket
+    expect(body.error).toBe('rate_limited') // chave genérica, sem SQL/stack
+  })
 })

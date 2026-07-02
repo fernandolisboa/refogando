@@ -104,8 +104,28 @@ describe('normalizeTakedownIntake (#399 — validacao do intake publico)', () =>
     if (r.ok) {
       const joined = JSON.stringify(r.value)
       expect(joined.includes(NUL)).toBe(false) // o NUL que estoura o postgres-js nao sobrevive
-      expect(r.value.message).toBe('linha1 linha2') // C0 -> espaco
+      expect(r.value.message).toBe('linha1 linha2') // C0 (NUL) -> espaco
     }
+  })
+
+  it('mensagem preserva \\n e \\t (textarea) mas remove NUL/\\r (anti-500)', () => {
+    const NUL = String.fromCharCode(0)
+    const r = normalizeTakedownIntake({
+      displayName: 'X',
+      message: `linha1\nlinha2\tcol${NUL}fim\r`,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // \n e \t sobrevivem (parágrafos do textarea); NUL -> espaço; \r -> espaço (trimado no fim).
+      expect(r.value.message).toBe('linha1\nlinha2\tcol fim')
+      expect(r.value.message.includes(NUL)).toBe(false)
+    }
+  })
+
+  it('campos CURTOS (nome/url) continuam achatando \\n/\\t (só a mensagem preserva)', () => {
+    const r = normalizeTakedownIntake({ displayName: 'linha1\nlinha2', message: 'oi' })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.displayName).toBe('linha1 linha2') // C0 -> espaço no campo curto
   })
 
   it('campos nao-string sao ignorados (numero/objeto -> null, nunca crash)', () => {

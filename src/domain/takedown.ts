@@ -9,9 +9,11 @@ import { stripControlChars } from '@/domain/search-terms'
  * entender o pedido — URL de origem e/ou nome exibido + o pedido em texto. NÃO exige documento nem
  * qualquer PII adicional como condição. O contato de retorno é OPCIONAL (não bloqueia o envio).
  *
- * Anti-500: cada campo passa por `stripControlChars` (U+0000..U+001F → espaço) ANTES de ir ao banco —
- * um NUL sobrevive ao `trim()` e o postgres-js estoura (→ 500) num param `text` com NUL. Mesmo
- * sanitizador da borda da Busca (`@/domain/search-terms`), fonte única.
+ * Anti-500: cada campo passa por um saneador de bytes de controle C0 (U+0000..U+001F) ANTES de ir ao
+ * banco — um NUL sobrevive ao `trim()` e o postgres-js estoura (→ 500) num param `text` com NUL. Campos
+ * CURTOS (url/nome/contato) usam `stripControlChars` da borda da Busca (`@/domain/search-terms`, fonte
+ * única): todo C0 → espaço. O campo LONGO (`message`, de um `<textarea>`) usa `cleanLongText`: mesma
+ * remoção de C0, MAS preserva `\t` e `\n` — o operador lê os parágrafos do pedido; só o NUL/C0 perigoso sai.
  */
 
 /** Tipos de pedido oferecidos no formulário. `other` é o fallback permissivo (nunca 500 por tipo cru). */
@@ -61,15 +63,28 @@ function cleanShort(v: unknown): string | null {
 }
 
 /**
+ * C0 (U+0000..U+001F) EXCETO tab (U+0009) e newline (U+000A). Usada só no campo LONGO (`message`): mantém
+ * o invariante anti-500 (o NUL, U+0000, está na classe removida) mas preserva os separadores que um
+ * `<textarea>` produz — sem esses dois, os parágrafos do pedido virariam uma linha só. `\r` (U+000D) sai
+ * (→ espaço); o corpo chega do form como JSON, cujo `.value` normaliza quebras para `\n`.
+ */
+const C0_EXCEPT_TAB_NL = /[\x00-\x08\x0b-\x1f]/g
+
+/** Sanitiza o campo LONGO (`message`): remove C0 perigoso → espaço, preservando `\t` e `\n`. Pura. */
+function cleanLongText(s: string): string {
+  return s.replace(C0_EXCEPT_TAB_NL, ' ')
+}
+
+/**
  * Normaliza + valida o corpo do formulário público de intake. PURA. Regras:
  *  - `requestType`: um tipo conhecido, ou `other` (fallback — nunca rejeita por tipo).
  *  - `message` (o pedido): obrigatório e não-vazio após sanitizar → senão `pedido_obrigatorio`.
  *  - identificação: exige AO MENOS um de `sourceUrl`/`displayName` → senão `identificacao_obrigatoria`.
  *  - `contactEmail`: OPCIONAL (não é condição de atendimento — Art. 6º, III); apenas saneado.
  *
- * `message` usa `stripControlChars`, que troca também `\n` por espaço — aceitável: o ticket é lido pelo
- * operador e o requisito duro é anti-500 (NUL). A identificação vem ANTES da checagem de tipo por
- * clareza; a ordem dos erros é message → identificação (o pedido é o núcleo).
+ * `message` usa `cleanLongText`: preserva `\t`/`\n` (os parágrafos do `<textarea>`) e remove o resto do
+ * C0 — incluindo o NUL, o único que estouraria o postgres-js. A identificação vem ANTES da checagem de
+ * tipo por clareza; a ordem dos erros é message → identificação (o pedido é o núcleo).
  */
 export function normalizeTakedownIntake(input: TakedownIntakeInput): TakedownValidation {
   const requestType =
@@ -83,7 +98,7 @@ export function normalizeTakedownIntake(input: TakedownIntakeInput): TakedownVal
 
   const message =
     typeof input.message === 'string'
-      ? stripControlChars(input.message).trim().slice(0, TAKEDOWN_MESSAGE_MAX)
+      ? cleanLongText(input.message).trim().slice(0, TAKEDOWN_MESSAGE_MAX)
       : ''
   if (message.length === 0) return { ok: false, error: 'pedido_obrigatorio' }
 
