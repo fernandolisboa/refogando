@@ -101,6 +101,7 @@ const layout = () => as(import('@/app/[locale]/admin/layout'))
 const index = () => as(import('@/app/[locale]/admin/page'))
 const config = () => as(import('@/app/[locale]/admin/ia/page'))
 const ai = () => as(import('@/app/[locale]/admin/descoberta/page'))
+const comparador = () => as(import('@/app/[locale]/admin/comparador/page'))
 const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
 const users = () => as(import('@/app/[locale]/admin/users/page'))
 const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
@@ -159,6 +160,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('curador em /admin/%s → AccessDenied (gate, não link escondido)', async (_n, mod) => {
@@ -170,6 +172,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('admin em /admin/%s → render da seção', async (_n, mod) => {
@@ -181,6 +184,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
   ] as const)('anon em /admin/%s → redirect', async (_n, mod) => {

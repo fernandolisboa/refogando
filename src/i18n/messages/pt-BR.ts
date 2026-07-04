@@ -1033,6 +1033,27 @@ export const ptBR = {
     // #268: a aba /admin/descoberta abriga a infra de BUSCA — descoberta na web + embeddings; a IA
     // generativa (modelo de receita + geração de imagem + tetos) foi p/ a aba "IA" (/admin/ia).
     navDescoberta: 'Descoberta',
+    // ── #425 (ADR-0029 dec.7): Comparador de prompt antes/depois (Governança, admin-only). ──
+    navComparador: 'Comparador',
+    comparadorTitulo: 'Comparador de prompt (antes/depois)',
+    comparadorDescricao:
+      'Portão de qualidade: roda briefings fixos pelo prompt velho (congelado) vs. o novo (vivo) e mostra a receita lado a lado. Não salva nada.',
+    comparadorRodar: 'Rodar comparação',
+    comparadorRodando: 'Rodando…',
+    comparadorGerarImagem: 'Gerar imagem (mais lento)',
+    comparadorVelho: 'Velho',
+    comparadorNovo: 'Novo',
+    comparadorSystemPrompt: 'Prompt de sistema',
+    comparadorIngredientes: 'Ingredientes',
+    comparadorPassos: 'Passos',
+    comparadorSemReceita: 'Sem receita entregue.',
+    comparadorErro: 'Falha ao rodar esta comparação.',
+    comparadorImagemAlt: 'Imagem gerada do prato',
+    comparadorOutcomeSuccess: 'sucesso',
+    comparadorOutcomeDegraded: 'degradado',
+    comparadorOutcomePlayful: 'lúdico',
+    comparadorOutcomeImpossible: 'impossível',
+    comparadorOutcomeInvalid: 'inválido',
     // Seção "Geração de imagem" (#134) — vive na aba "IA" (/admin/ia); liga/desliga, modelo e tetos.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
