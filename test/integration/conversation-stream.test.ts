@@ -54,6 +54,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async echo(): Promise<string> {
     throw new Error('ExplodingClaudeClient.echo não devia ser chamado')
   }
+  async generateRecipeVariants(): Promise<never> {
+    throw new Error('generateRecipeVariants não devia ser chamado')
+  }
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: generateRecipe não devia ser chamado')
   }
@@ -507,6 +510,9 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
       async generateRecipe(): Promise<GenerationOutput> {
         recipeCalled = true
         return cannedSuccess()
+      }
+      async generateRecipeVariants(): Promise<GenerationOutput[]> {
+        throw new Error('generateRecipeVariants não devia ser chamado')
       }
       async extractIngredients(): Promise<{ kind: 'parse_failed' }> {
         return { kind: 'parse_failed' }

@@ -483,6 +483,37 @@ describe('buildSystemPrompt — seam de composição (ADR-0029, #420)', () => {
     const b: AxisFragmentContributor = () => 'B.'
     expect(composeSystemPrompt('BASE.', [a, b], NEUTRAL_AXES)).toBe('BASE. A. B.')
   })
+
+  // #423 (ADR-0029 dec.6) — eixo `variacaoDivergente` ("gerar 2, o usuário escolhe").
+  it('composeSystemPrompt: o eixo variacaoDivergente ANEXA a instrução de divergência (contribuidor-fake)', () => {
+    const contrib: AxisFragmentContributor = (a) =>
+      a.variacaoDivergente
+        ? 'Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: ' +
+          a.variacaoDivergente.poloA +
+          ' vs ' +
+          a.variacaoDivergente.poloB +
+          '. ' +
+          a.variacaoDivergente.instrucao
+        : null
+    const axes = { variacaoDivergente: { poloA: 'tradicional', poloB: 'criativa', instrucao: 'divirja no método.' } }
+    const composed = composeSystemPrompt('BASE.', [contrib], axes)
+    expect(composed).toBe(
+      'BASE. Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: tradicional vs criativa. divirja no método.',
+    )
+  })
+
+  it('buildSystemPrompt(briefing, {variacaoDivergente}) anexa a instrução via o REGISTRO real', () => {
+    const axes = { variacaoDivergente: { poloA: 'rápida', poloB: 'caprichada', instrucao: 'varie o empratamento.' } }
+    const withAxis = buildSystemPrompt('briefing', axes)
+    const base = buildSystemPrompt('briefing')
+    // O registro real anexa o fragmento (começa com o base + a instrução de DUAS variações).
+    expect(withAxis.startsWith(base)).toBe(true)
+    expect(withAxis).toContain('Gere DUAS variações')
+    expect(withAxis).toContain('rápida vs caprichada')
+    expect(withAxis).toContain('varie o empratamento.')
+    // Sem o eixo (NEUTRAL) ⇒ base byte-a-byte (back-compat inegociável).
+    expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(base)
+  })
 })
 
 describe('promptStampFor — carimbo de versão (ADR-0029, #420)', () => {

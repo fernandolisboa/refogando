@@ -28,6 +28,11 @@ import {
   type ImageGenCapByRole,
 } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import {
+  DEFAULT_RECIPE_VARIANT_CONFIG,
+  type RecipeVariantConfig,
+} from '@/domain/recipe-variant-config'
+import { Textarea } from '@/components/ui/textarea'
 
 type CapsForm = Record<Role, string>
 
@@ -66,6 +71,8 @@ export function AiConfigSection() {
   const [recipeCaps, setRecipeCaps] = useState<CapsForm>(() =>
     capsToForm({ usuario: 10, curador: 20, admin: null }),
   )
+  // #423: variação de geração ("gerar 2, o usuário escolhe") — liga/desliga + eixo de divergência.
+  const [variant, setVariant] = useState<RecipeVariantConfig>(DEFAULT_RECIPE_VARIANT_CONFIG)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -78,11 +85,17 @@ export function AiConfigSection() {
     admin: m.papelAdmin,
   }
 
-  function applyConfig(cfg: { imageGen: ImageGenConfig; recipeGenCapByRole: RecipeGenCapByRole }) {
+  function applyConfig(cfg: {
+    imageGen: ImageGenConfig
+    recipeGenCapByRole: RecipeGenCapByRole
+    recipeVariant: RecipeVariantConfig
+  }) {
     setEnabled(cfg.imageGen.enabled)
     setModel(cfg.imageGen.model)
     setCaps(capsToForm(cfg.imageGen.dailyCapByRole))
     setRecipeCaps(capsToForm(cfg.recipeGenCapByRole))
+    // Defensivo: uma resposta sem `recipeVariant` (legada) cai no DEFAULT, nunca deixa o estado undefined.
+    setVariant(cfg.recipeVariant ?? DEFAULT_RECIPE_VARIANT_CONFIG)
   }
 
   async function load() {
@@ -97,6 +110,7 @@ export function AiConfigSection() {
       const body = (await res.json()) as {
         imageGen: ImageGenConfig
         recipeGenCapByRole: RecipeGenCapByRole
+        recipeVariant: RecipeVariantConfig
       }
       // Inline (não via `applyConfig`): assim `load` fecha SÓ sobre setters estáveis + a pura
       // `capsToForm` (módulo) ⇒ o effect de montagem não acusa exhaustive-deps (espelha config-section).
@@ -104,6 +118,7 @@ export function AiConfigSection() {
       setModel(body.imageGen.model)
       setCaps(capsToForm(body.imageGen.dailyCapByRole))
       setRecipeCaps(capsToForm(body.recipeGenCapByRole))
+      setVariant(body.recipeVariant ?? DEFAULT_RECIPE_VARIANT_CONFIG)
     } catch {
       setLoadError(true)
     } finally {
@@ -130,14 +145,29 @@ export function AiConfigSection() {
       setStatus('error')
       return
     }
+    // #423: pólos/instrução não podem ser vazios (o servidor revalida — parseRecipeVariantConfig).
+    if (variant.poloA.trim() === '' || variant.poloB.trim() === '' || variant.instrucao.trim() === '') {
+      setErrorKey('erroConfig')
+      setStatus('error')
+      return
+    }
     setSaving(true)
     try {
-      // Envia AMBOS os eixos desta seção (imagem + teto de receita) num único PUT; o defaultModel de
+      // Envia os eixos desta seção (imagem + teto de receita + variação) num único PUT; o defaultModel de
       // chat (ConfigSection, mesma aba) é preservado pelo upsert parcial do route.
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ imageGen: { enabled, model, dailyCapByRole }, recipeGenCapByRole }),
+        body: JSON.stringify({
+          imageGen: { enabled, model, dailyCapByRole },
+          recipeGenCapByRole,
+          recipeVariant: {
+            enabled: variant.enabled,
+            poloA: variant.poloA,
+            poloB: variant.poloB,
+            instrucao: variant.instrucao,
+          },
+        }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
@@ -148,6 +178,7 @@ export function AiConfigSection() {
       const body = (await res.json()) as {
         imageGen: ImageGenConfig
         recipeGenCapByRole: RecipeGenCapByRole
+        recipeVariant: RecipeVariantConfig
       }
       applyConfig(body)
       setStatus('saved')
@@ -272,6 +303,63 @@ export function AiConfigSection() {
                   </label>
                 ))}
               </div>
+            </fieldset>
+
+            {/* #423: variação de geração ("gerar 2, o usuário escolhe") — liga/desliga + eixo de
+                divergência (poloA/poloB/instrucao), editável sem deploy. */}
+            <fieldset className="flex flex-col gap-3 border-t border-border pt-4">
+              <legend className="text-sm font-medium text-fg">{m.aiVariacaoLabel}</legend>
+              <p className="text-xs text-muted">{m.aiVariacaoAjuda}</p>
+              <label className="flex items-center gap-2 text-sm font-medium text-fg">
+                <input
+                  type="checkbox"
+                  checked={variant.enabled}
+                  onChange={(e) => {
+                    setVariant((v) => ({ ...v, enabled: e.target.checked }))
+                    setStatus('idle')
+                  }}
+                  className="size-4 rounded border-border"
+                />
+                {m.aiVariacaoHabilitadaLabel}
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <label className="flex flex-col gap-1 text-sm font-medium text-fg">
+                  {m.aiVariacaoPoloA}
+                  <Input
+                    type="text"
+                    value={variant.poloA}
+                    onChange={(e) => {
+                      setVariant((v) => ({ ...v, poloA: e.target.value }))
+                      setStatus('idle')
+                    }}
+                    className="w-56"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-fg">
+                  {m.aiVariacaoPoloB}
+                  <Input
+                    type="text"
+                    value={variant.poloB}
+                    onChange={(e) => {
+                      setVariant((v) => ({ ...v, poloB: e.target.value }))
+                      setStatus('idle')
+                    }}
+                    className="w-56"
+                  />
+                </label>
+              </div>
+              <label className="flex flex-col gap-1 text-sm font-medium text-fg">
+                {m.aiVariacaoInstrucao}
+                <Textarea
+                  rows={2}
+                  value={variant.instrucao}
+                  onChange={(e) => {
+                    setVariant((v) => ({ ...v, instrucao: e.target.value }))
+                    setStatus('idle')
+                  }}
+                  className="resize-y"
+                />
+              </label>
             </fieldset>
 
             <Button

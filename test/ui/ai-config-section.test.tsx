@@ -65,6 +65,14 @@ function configBody(
       curador: over.recipeCurador ?? 20,
       admin: over.recipeAdmin ?? null,
     },
+    // #423: a config de variação vem sempre da API (loadAppConfig a inclui). Default DESLIGADO.
+    recipeVariant: {
+      enabled: false,
+      poloA: 'tradicional',
+      poloB: 'com um toque criativo',
+      instrucao:
+        'Mantenha as duas fiéis ao pedido; divirjam no método e nos ingredientes de destaque, não na identidade do prato.',
+    },
   }
 }
 
@@ -138,6 +146,14 @@ describe('AiConfigSection (#134 + #167)', () => {
         dailyCapByRole: { usuario: 2, curador: 5, admin: null },
       },
       recipeGenCapByRole: { usuario: 7, curador: 20, admin: null },
+      // #423: a seção também envia o eixo de variação (default, não editado neste caso).
+      recipeVariant: {
+        enabled: false,
+        poloA: 'tradicional',
+        poloB: 'com um toque criativo',
+        instrucao:
+          'Mantenha as duas fiéis ao pedido; divirjam no método e nos ingredientes de destaque, não na identidade do prato.',
+      },
     })
     expect(await screen.findByText(A.salvo)).toBeInTheDocument()
   })

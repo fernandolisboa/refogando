@@ -58,6 +58,7 @@ export function RecipeDetailView({
   locale,
   cozinhaLabel = null,
   catalogDisclosure,
+  nameHeadingLevel = 'h1',
 }: {
   view: RecipeView
   m: Messages
@@ -87,7 +88,14 @@ export function RecipeDetailView({
    * são renderizados em caminhos SEPARADOS abaixo, independentes deste prop (ligado OU desligado).
    */
   catalogDisclosure?: string
+  /**
+   * #423: nível do heading do NOME da Receita. Default `h1` (invariante 1-h1 dos callers single). A
+   * REGIÃO DE ESCOLHA "gerar 2" mostra DUAS RecipeDetailView lado a lado ⇒ passa `h2` (o `<h1>` do
+   * documento é o título da região), evitando dois `<h1>`. Só troca a TAG; o estilo do nome é o mesmo.
+   */
+  nameHeadingLevel?: 'h1' | 'h2'
 }) {
+  const NameHeading = nameHeadingLevel
   // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
   // distinto de Catálogo/Comunidade — não é conteúdo do pool, é cópia privada creditada à fonte. A
   // variante visual reusa `comunidade` (neutra) na primitiva (sem cor nova); só o RÓTULO muda.
@@ -151,9 +159,9 @@ export function RecipeDetailView({
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
         <div className="flex flex-col gap-1.5">
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
+          <NameHeading className="font-display text-4xl font-semibold tracking-tight text-fg">
             {view.name}
-          </h1>
+          </NameHeading>
           {/* Selo "tradução automática" (#161): toque LEVE (text-xs muted), guiado SÓ pela
               proveniência (`autoTranslationSignal`). Reusa o rótulo i18n já existente
               (busca.traducaoAutomatica) — mesmo conceito do kicker da Busca/Feed, não duplicar. */}

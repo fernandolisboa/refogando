@@ -64,21 +64,16 @@ const IngredienteGen = z.object({
 })
 
 /**
- * Constrói o schema canônico de geração constrangendo `cozinha` ao CONJUNTO ATIVO injetado
- * (#318, ADR-0025 Decisão 4). `cozinhaSlugs` vem da tabela `vocabulary_term` (resolvido na
- * BORDA); a chamada constrita da Anthropic passa o conjunto ATIVO para o modelo só emitir
- * cozinhas vivas. Conjunto VAZIO ⇒ `z.string()` (z.enum exige >=1 elemento — estouraria na
- * construção); senão `z.enum(slugs)`. A virada #318 trocou `recipe.cozinha` enum→text, então
- * `string|null` é o tipo CORRETO da coluna.
+ * Receita "miolo" — 1:1 com recipe + recipe_translation (locale original), com `cozinha` constrita ao
+ * CONJUNTO ATIVO injetado (#318, ADR-0025 Decisão 4). Conjunto VAZIO ⇒ `z.string()` (z.enum exige >=1
+ * elemento — estouraria na construção); senão `z.enum(slugs)`. Fonte ÚNICA da forma da Receita gerada,
+ * reusada pelo schema single (`buildRecipeGenSchema`) E pelo schema-lista (`buildRecipeGenListSchema`).
  */
-export function buildRecipeGenSchema(cozinhaSlugs: readonly string[]) {
+function buildReceitaGenSchema(cozinhaSlugs: readonly string[]) {
   const cozinhaSchema =
-    cozinhaSlugs.length > 0
-      ? z.enum(cozinhaSlugs as [string, ...string[]])
-      : z.string()
+    cozinhaSlugs.length > 0 ? z.enum(cozinhaSlugs as [string, ...string[]]) : z.string()
 
-  // Receita "miolo" — 1:1 com recipe + recipe_translation (locale original).
-  const ReceitaGen = z.object({
+  return z.object({
     titulo: z.string(), // → recipe_translation.titulo (notNull)
     descricao: z.string().nullable(), // → recipe_translation.descricao
     passos: z.array(z.string()), // → recipe_translation.passos
@@ -96,16 +91,53 @@ export function buildRecipeGenSchema(cozinhaSlugs: readonly string[]) {
     tempoTotalMin: z.number().int().nullable().optional(), // → recipe.tempo_total_min
     ingredientes: z.array(IngredienteGen), // → recipe_ingredient[]
   })
+}
 
-  // FLAT-OBJECT: um único z.object (sem discriminated union → sem anyOf/$defs, que o
+/**
+ * Constrói o schema canônico de geração constrangendo `cozinha` ao CONJUNTO ATIVO injetado
+ * (#318, ADR-0025 Decisão 4). `cozinhaSlugs` vem da tabela `vocabulary_term` (resolvido na
+ * BORDA); a chamada constrita da Anthropic passa o conjunto ATIVO para o modelo só emitir
+ * cozinhas vivas. A virada #318 trocou `recipe.cozinha` enum→text, então `string|null` é o
+ * tipo CORRETO da coluna.
+ */
+export function buildRecipeGenSchema(cozinhaSlugs: readonly string[]) {
+  // FLAT-OBJECT: um único z.object (sem discriminated union → sem anyOf-de-$ref/$defs, que o
   // endpoint rejeita). `receita` é nullable; a regra "impossible ⇒ receita null" vive
   // no app (classify). `advisory` é IRMÃO de `receita` (Comentário consultivo FORA da
   // Receita — ADR-0009).
   return z.object({
     kind: z.enum(RECIPE_GEN_KINDS),
-    receita: ReceitaGen.nullable(),
+    receita: buildReceitaGenSchema(cozinhaSlugs).nullable(),
     advisory: z.string().nullable(),
   })
+}
+
+/**
+ * Schema-LISTA de geração para "gerar 2, o usuário escolhe" (#423, ADR-0029 dec.6). Uma ÚNICA chamada
+ * structured devolve `{ variacoes: [<item>, <item>] }` — a variedade vem do PROMPT (o Opus 4.8 rejeita
+ * sampling), NÃO do schema. Cada item é o MESMO flat object de `buildRecipeGenSchema` (kind/receita/
+ * advisory) + `variacao` (o rótulo do pólo auto-atribuído pela IA, ex. "tradicional"/"com um toque
+ * criativo"). Cada item passa pelo MESMO `classify` (via `classifyVariants`).
+ *
+ * ⚠️ SEM `.min(2).max(2)` (nem `.length(2)`) NO ARRAY — VERIFICADO empiricamente com o `zodOutputFormat`
+ * atual: QUALQUER limite de tamanho no array faz o zod HOISTAR o item para `$defs` + `$ref`, e o endpoint
+ * de structured outputs REJEITA `$defs` com 400 (o MESMO erro que matou a discriminated-union no §9 do
+ * #8). O `z.array(item)` PLANO não emite `$defs`/`$ref` (só o `anyOf` benigno das facetas `.nullable()`,
+ * que o schema single já usa em produção). A cardinalidade EXATA-2 é garantida (a) pelo PROMPT ("Gere
+ * DUAS variações") e (b) no APP — o cliente exige `parsed.variacoes.length === 2`, senão trata como
+ * `parse_failed` do lote (erro de geração; NÃO degrada silenciosamente — ADR-0029).
+ */
+export function buildRecipeGenListSchema(cozinhaSlugs: readonly string[]) {
+  const item = z.object({
+    kind: z.enum(RECIPE_GEN_KINDS),
+    receita: buildReceitaGenSchema(cozinhaSlugs).nullable(),
+    advisory: z.string().nullable(),
+    // Rótulo do pólo AUTO-ATRIBUÍDO pela IA (o eixo de divergência config-driven que o prompt injeta) —
+    // vira `generation.variant_label` (sinal de qual pólo o usuário guardou/escolheu).
+    variacao: z.string(),
+  })
+  // `z.array(item)` PLANO (sem bound — ver o aviso ⚠️ acima). EXATO-2 no prompt + validação no app.
+  return z.object({ variacoes: z.array(item) })
 }
 
 /**
@@ -117,3 +149,13 @@ export const RecipeGenSchema = buildRecipeGenSchema([])
 
 export type RecipeGen = z.infer<typeof RecipeGenSchema>
 export type ReceitaGenT = NonNullable<RecipeGen['receita']>
+
+/**
+ * Schema-lista ESTÁTICO permissivo (cozinha = `z.string().nullable()`) — deriva os tipos do lote de
+ * variações (#423). O RealClaudeClient constrói a versão CONSTRITA por chamada (`buildRecipeGenListSchema
+ * (ativos)`); este export serve os value/type-imports (client default, testes).
+ */
+export const RecipeGenListSchema = buildRecipeGenListSchema([])
+export type RecipeGenList = z.infer<typeof RecipeGenListSchema>
+/** Um item do lote de variações: o flat object {kind,receita,advisory} + o rótulo `variacao` do pólo. */
+export type RecipeGenListItem = RecipeGenList['variacoes'][number]

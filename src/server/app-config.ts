@@ -11,6 +11,11 @@ import {
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
 import {
+  DEFAULT_RECIPE_VARIANT_CONFIG,
+  parseRecipeVariantConfig,
+  type RecipeVariantConfig,
+} from '@/domain/recipe-variant-config'
+import {
   DEFAULT_WEB_SEARCH_CONFIG,
   parseAllowlist,
   type WebSearchConfig,
@@ -43,6 +48,9 @@ export type AppConfig = {
   imageGen: ImageGenConfig
   // #167: teto diário de geração de RECEITA por papel (jsonb Record<Role, number|null>, `null` = ∞).
   recipeGenCapByRole: RecipeGenCapByRole
+  // #423 (ADR-0029 dec.6): config da variação de geração ("gerar 2, o usuário escolhe") — liga/desliga
+  // o opt-in + o eixo de divergência (poloA/poloB/instrucao), editável sem deploy.
+  recipeVariant: RecipeVariantConfig
   // #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios.
   webSearch: WebSearchConfig
   // #237: aviso OPCIONAL de catálogo AI-assistido (SEO #187) — liga/desliga + texto editável.
@@ -58,6 +66,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       defaultModel: DEFAULT_CHAT_MODEL,
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+      recipeVariant: DEFAULT_RECIPE_VARIANT_CONFIG,
       webSearch: DEFAULT_WEB_SEARCH_CONFIG,
       catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
       popularity: DEFAULT_POPULARITY_CONFIG,
@@ -67,6 +76,9 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   // serializado como null, etc.) cai no DEFAULT (fail-safe), nunca envenena o ranking com uma config
   // inválida. Mesma disciplina do webSearch.allowlist / imageGen.model.
   const parsedPopularity = parsePopularityConfig(row.popularityConfig)
+  // #423: re-valida na leitura — jsonb legado/editado à mão com pólo/instrução vazios cai no DEFAULT
+  // (fail-safe), nunca compõe um fragmento de prompt sem norte. Mesma disciplina do popularity/webSearch.
+  const parsedVariant = parseRecipeVariantConfig(row.recipeVariantConfig)
   return {
     defaultModel: row.defaultModel,
     imageGen: {
@@ -75,6 +87,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       dailyCapByRole: row.imageGenCapByRole,
     },
     recipeGenCapByRole: row.recipeGenCapByRole,
+    recipeVariant: parsedVariant.ok ? parsedVariant.value : DEFAULT_RECIPE_VARIANT_CONFIG,
     webSearch: {
       enabled: row.webSearchEnabled,
       // Re-valida na leitura: linha legada/editada à mão com lixo cai em `[]` (fail-closed), nunca
@@ -107,6 +120,11 @@ export async function loadCatalogDisclosureConfig(db: Database): Promise<Catalog
 /** Atalho: só a config de geração de imagem (a geração não precisa do default_model do chat). */
 export async function loadImageGenConfig(db: Database): Promise<ImageGenConfig> {
   return (await loadAppConfig(db)).imageGen
+}
+
+/** Atalho: só a config da variação de geração (#423) — usada pela rota de geração e pela home/create. */
+export async function loadRecipeVariantConfig(db: Database): Promise<RecipeVariantConfig> {
+  return (await loadAppConfig(db)).recipeVariant
 }
 
 /** Atalho: só a config de descoberta na web (#164) — usada pelo endpoint e pelo guard de SSRF do import. */

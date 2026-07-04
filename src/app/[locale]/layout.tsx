@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provider'
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
@@ -14,6 +15,7 @@ import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
 import { getDb } from '@/server/deps'
 import { loadVocabulary } from '@/server/vocabulary/load'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
+import { loadRecipeVariantConfig } from '@/server/app-config'
 
 export const metadata: Metadata = {
   title: 'Refogando',
@@ -63,6 +65,16 @@ export default async function LocaleLayout({
   } catch {
     cozinhaVocab = []
   }
+
+  // #423: a feature "gerar 2, o usuário escolhe" está ligada? Semeado no contexto (o opt-in aparece só
+  // com a config ligada). Mesmo tratamento gracioso da cozinha — um soluço do Neon vira `false` (a
+  // feature some), nunca uma tela quebrada. O servidor revalida `variar2` de qualquer forma.
+  let variantEnabled = false
+  try {
+    variantEnabled = (await loadRecipeVariantConfig(getDb())).enabled
+  } catch {
+    variantEnabled = false
+  }
   return (
     <html lang={locale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
@@ -72,6 +84,7 @@ export default async function LocaleLayout({
         <AppUpdateGuard />
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
+           <RecipeVariantProvider enabled={variantEnabled}>
             {/* #5 (protótipo final): o termo de busca (`q`) é ELEVADO aqui pra que a pílula viva
                 DENTRO do SiteHeader (linha 2, só na home) enquanto o cérebro da Busca segue em
                 SearchExperience (que é IRMÃO do header). `children` passa como PROP por este client
@@ -84,6 +97,7 @@ export default async function LocaleLayout({
               <div className="flex flex-1 flex-col">{children}</div>
               <SiteFooter initialTheme={initialTheme} />
             </HomeSearchProvider>
+           </RecipeVariantProvider>
           </CozinhaVocabProvider>
         </LocaleProvider>
       </body>

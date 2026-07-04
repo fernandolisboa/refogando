@@ -80,6 +80,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async echo(): Promise<string> {
     throw new Error('ExplodingClaudeClient.echo não devia ser chamado')
   }
+  async generateRecipeVariants(): Promise<never> {
+    throw new Error('generateRecipeVariants não devia ser chamado')
+  }
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: o input devia ter sido rejeitado ANTES da geração')
   }
@@ -199,11 +202,12 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(gen.recipeId).toBe(json.recipeId)
     expect(gen.outcome).toBe('success')
     expect(gen.advisoryComment).toBe('Dica: use arroz do dia anterior.')
-    // #420/#422 (ADR-0029): a geração carrega o carimbo de versão do prompt + os eixos resolvidos na
-    // borda. makeBriefing usa cozinha 'brasileira' ⇒ o eixo cozinha-como-voz (#422) é carimbado (nome do
-    // rótulo pt-BR, sem nota curada). O usuário nasce sem nivelPadrao ⇒ o eixo Nível fica ausente.
+    // #420/#422/#423 (ADR-0029): a geração carrega o carimbo de versão do prompt + os eixos resolvidos
+    // na borda. PROMPT_VERSION=2 desde a Wave 2 do refino (#381). makeBriefing usa cozinha 'brasileira'
+    // ⇒ o eixo cozinha-como-voz (#422) é carimbado (nome do rótulo pt-BR, sem nota curada). O usuário
+    // nasce sem nivelPadrao ⇒ o eixo Nível fica ausente; variar2 é opt-in ⇒ Variação fica ausente.
     expect(gen.promptStamp).toEqual({
-      version: 1,
+      version: 2,
       axes: { vozCozinha: { nome: 'Brasileira', notaCurada: null } },
     })
 

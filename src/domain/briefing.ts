@@ -271,6 +271,10 @@ export type PromptAxes = {
   // #422 (ADR-0029 dec.3) — cozinha-como-voz: o nome da cozinha (autenticidade genérica) + uma nota
   // curada OPCIONAL (enriquece quando existe). Resolvido na borda a partir de `vocabulary_term`.
   readonly vozCozinha?: { readonly nome: string; readonly notaCurada: string | null } // #422
+  // #423 (ADR-0029 dec.6) — "gerar 2, o usuário escolhe": instrui a IA a divergir ao longo de um eixo
+  // config-driven (poloA vs poloB) numa única chamada structured-LISTA. Molda só o TEXTO; a lista é
+  // caminho novo (o seam nunca toca o schema de saída).
+  readonly variacaoDivergente?: { poloA: string; poloB: string; instrucao: string } // #423
 }
 
 /** Eixos neutros: sem nenhum eixo ativo ⇒ o prompt é exatamente o base. Fonte única do "vazio". */
@@ -297,8 +301,12 @@ export function resolveNivelChefAxis(
  * depois com save/estrela (qual composição produziu Receitas que as pessoas guardam?). BUMPAR quando
  * os prompts-base OU o registro de fragmentos mudarem de forma material — é o eixo de versionamento
  * do TEXTO do prompt, ORTOGONAL a `SCHEMA_VERSION_RECEITA` (versão da FORMA da saída).
+ *
+ * v2 (Wave 2 do refino de IA, #381): a Wave enriqueceu os prompts-base (#420) e plugou 3 eixos de
+ * fragmento no registro — Nível de habilidade (#421), cozinha-como-voz (#422) e Variação de geração
+ * (#423). Um único bump por Wave (não por eixo): o semver do prompt anda de 1 versão por leva material.
  */
-export const PROMPT_VERSION = 1 as const
+export const PROMPT_VERSION = 2 as const
 
 /** Carimbo persistido: a versão do prompt + os eixos concretos que produziram uma geração. */
 export type PromptStamp = { version: number; axes: PromptAxes }
@@ -427,6 +435,22 @@ const contribVozCozinha: AxisFragmentContributor = (a) =>
   a.vozCozinha ? buildVozCozinhaFragment(a.vozCozinha) : null
 
 /**
+ * #423 (ADR-0029 dec.6) — contribuidor do eixo "gerar 2, o usuário escolhe". Quando `variacaoDivergente`
+ * está ativo, ANEXA ao base uma instrução p/ a IA produzir DUAS variações distintas divergindo ao longo
+ * do eixo config-driven (poloA vs poloB), refinada pela `instrucao`. Molda SÓ o TEXTO; a forma-lista da
+ * saída é caminho novo (buildRecipeGenListSchema), não uma mutação do schema. NAMED/top-level (Regra A).
+ */
+const contribVariacaoDivergente: AxisFragmentContributor = (a) =>
+  a.variacaoDivergente
+    ? 'Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: ' +
+      a.variacaoDivergente.poloA +
+      ' vs ' +
+      a.variacaoDivergente.poloB +
+      '. ' +
+      a.variacaoDivergente.instrucao
+    : null
+
+/**
  * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Cada eixo pluga UM contribuidor
  * NOMEADO aqui (UMA linha própria). A ORDEM do array é a ordem em que os fragmentos são anexados ao
  * base (determinística). Nenhum eixo ativo ⇒ `buildSystemPrompt` devolve exatamente o base.
@@ -434,6 +458,7 @@ const contribVozCozinha: AxisFragmentContributor = (a) =>
 const AXIS_FRAGMENT_CONTRIBUTORS: readonly AxisFragmentContributor[] = [
   contribNivelChef, // #421
   contribVozCozinha, // #422
+  contribVariacaoDivergente, // #423
 ]
 
 /**

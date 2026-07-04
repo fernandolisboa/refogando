@@ -14,6 +14,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async echo(): Promise<string> {
     throw new Error('echo não devia ser chamado')
   }
+  async generateRecipeVariants(): Promise<never> {
+    throw new Error('generateRecipeVariants não devia ser chamado')
+  }
   async generateRecipe(): Promise<never> {
     throw new Error('seam tocado: o portão devia ter barrado ANTES da geração')
   }
