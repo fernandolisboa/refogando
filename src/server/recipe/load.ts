@@ -149,7 +149,15 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
  */
 export type RecipeTranslationContext = {
   originalLocale: string
+  /** Cozinha da Receita (#426) — contexto p/ o tradutor desambiguar termos ("pimentão" vs "pimenta"). */
+  cozinha: string | null
   translations: TranslationRow[]
+  /**
+   * Itens de ingrediente de ORIGEM (#426, ADR-0030) — `ordem` + `nome` (=`raw_text`) p/ traduzir o
+   * nome por-locale. Mesma ordenação de `loadRecipeRows` (`ordem`, `id`), então os `ordem` alinham.
+   * Itens sem nome (raw_text null/vazio) são filtrados (nada a traduzir).
+   */
+  ingredients: { ordem: number; nome: string }[]
 }
 
 export async function loadRecipeTranslationContext(
@@ -157,17 +165,25 @@ export async function loadRecipeTranslationContext(
   id: string,
 ): Promise<RecipeTranslationContext | null> {
   const [row] = await db
-    .select({ originalLocale: recipe.originalLocale })
+    .select({ originalLocale: recipe.originalLocale, cozinha: recipe.cozinha })
     .from(recipe)
     .where(eq(recipe.id, id))
   if (!row) return null
 
-  const translations = await db
-    .select()
-    .from(recipeTranslation)
-    .where(eq(recipeTranslation.recipeId, id))
+  const [translations, ingredientRows] = await Promise.all([
+    db.select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id)),
+    db
+      .select({ ordem: recipeIngredient.ordem, rawText: recipeIngredient.rawText })
+      .from(recipeIngredient)
+      .where(eq(recipeIngredient.recipeId, id))
+      .orderBy(recipeIngredient.ordem, recipeIngredient.id),
+  ])
 
-  return { originalLocale: row.originalLocale, translations }
+  const ingredients = ingredientRows
+    .filter((r): r is { ordem: number; rawText: string } => r.rawText != null && r.rawText.trim() !== '')
+    .map((r) => ({ ordem: r.ordem, nome: r.rawText }))
+
+  return { originalLocale: row.originalLocale, cozinha: row.cozinha, translations, ingredients }
 }
 
 /**

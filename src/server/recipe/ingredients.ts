@@ -42,5 +42,9 @@ export async function replaceIngredients(
         })),
       )
     }
+    // #426 (ADR-0030 dec.7): NÃO invalidamos aqui os nomes traduzidos por-locale. A vista revalida cada
+    // nome traduzido contra o `raw_text` atual (via `nomeOrigem`) — uma edição só-de-medida MANTÉM a
+    // tradução (o nome-fonte bate) e um rename/reorder cai no `raw_text` (nome novo, correto). Zerar
+    // aqui perderia a tradução em TODA edição (inclusive só-de-medida) sem caminho de re-preenchimento.
   })
 }
