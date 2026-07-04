@@ -108,6 +108,14 @@ _Avoid_: Estilo; Gênero culinário; tabela "perfil" que mistura tudo; tratar co
 Conjunto estruturado de parâmetros que o usuário dá à IA para gerar uma receita (ingredientes — com **força** obrigatório/preferido —, restrições, porções, dificuldade, cozinha, observações). É o que foi **pedido** (intenção, autoritativa sobre o obrigatório), distinto dos atributos da Receita **entregue**. A IA pode **aconselhar** ("não combina"), mas quem decide é o usuário — exceto onde colide com segurança (Aviso de restrição). Guardado como proveniência da geração.
 _Avoid_: Query; Filtro; Prompt (cru); Pedido; confundir o pedido com o entregue.
 
+**Nível de habilidade** (do cozinheiro-alvo):
+Eixo de geração que define **para quem** a Receita é escrita — **iniciante / intermediário / avançado** —, modulando a minúcia da explicação, o vocabulário técnico e o tom, **não** o quão difícil o prato é (isso é a **Dificuldade**, atributo do prato). É **default do Perfil** do usuário, sobrescrevível por geração; entre sinais conflitantes o **mais explícito vence** (palavras do usuário na hora > campo do formulário > default do perfil) e a IA **aconselha** quando há conflito real (Aviso), nunca contradiz calada. Pode aparecer como atributo visível da Receita entregue ("escrita para: iniciante").
+_Avoid_: confundir com **Dificuldade** (dificuldade do prato, não do público); "senioridade/persona do **Chef**" (Chef é só vocativo, nunca entidade/papel — isto é atributo da geração); tratar como filtro de Busca.
+
+**Variação de geração** (gerar 2, escolher 1):
+Duas versões alternativas de uma mesma Receita geradas na **mesma** ação para o usuário **escolher** a que prefere. A diferença nasce do **prompt** (um eixo de divergência configurável — ex. "tradicional / com toque criativo"), nunca de sampling (o modelo bloqueia temperatura/seed — ADR-0029). A escolha do usuário é **sinal de qualidade**. Distinta da **Receita derivada** (que vem de uma **edição** e entra na linhagem) e das **variantes de imagem** da Galeria (ADR-0022).
+_Avoid_: confundir com Receita derivada (edição/linhagem) ou com variantes de imagem; achar que precisa de temperatura/seed; tratar as duas versões como Receitas publicáveis distintas (só a escolhida segue).
+
 **Vocabulário culinário**:
 Kernel compartilhado usado tanto pela Busca (como filtros) quanto pela criação estruturada (como constraints) — mesma taxonomia, **semântica oposta**: filtrar o existente vs. gerar o novo. **Cozinha** é **vocabulário controlado data-driven** (vive em dado, gerido sem deploy; restrição segue essa direção na fase 2 — ADR-0025); **dificuldade e porções** seguem **faixas numéricas** validadas no app (ADR-0009). Controlado **≠** aberto: o conjunto é curado (o livre é a Tag).
 _Avoid_: tags (vago); filtros (só vale pra busca); chamar de "enum" (cozinha não é mais enum de código).
