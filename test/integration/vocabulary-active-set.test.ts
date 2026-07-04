@@ -10,14 +10,16 @@ import { vocabularyTerm } from '@/db/schema'
  * (node project). Espelha o setup de `vocabulary-load.test.ts`, mas SEM mexer no cache do
  * `loadVocabulary` — este leitor lê o DB direto (sem cache), então não há Map a limpar.
  *
- * LANDMINE: `truncateAll` (test/setup.ts) apaga as LINHAS num beforeEach global ANTES de cada
- * teste, então cada caso re-semeia via `seedVocabularyCozinhas` (+ inserts manuais com slugs
- * GLOBALMENTE únicos).
+ * LANDMINE: o `test/setup.ts` faz um BASELINE-RESEED do `COZINHA_SEED` (as 15 cozinhas base)
+ * num beforeEach global ANTES de cada teste. Logo os slugs do seed (baiana, coreana, ...) JÁ
+ * existem quando o teste roda — por isso `insertTerm` é UPSERT (onConflictDoUpdate por slug):
+ * setar a nota/rótulo de uma cozinha já semeada não pode colidir com a unique de slug.
  */
 
 const ALL_ACTIVE_SLUGS = COZINHA_SEED.map((t) => t.slug)
 
-// Helper LOCAL (não compartilhado): insere uma linha avulsa com status arbitrário.
+// Helper LOCAL (não compartilhado): garante uma linha com status/rótulo/nota arbitrários.
+// UPSERT por slug — robusto ao baseline-reseed (slug do seed já existe → atualiza; senão insere).
 async function insertTerm(opts: {
   slug: string
   status: 'suggested' | 'active' | 'deprecated' | 'merged' | 'rejected'
@@ -25,16 +27,27 @@ async function insertTerm(opts: {
   labelPtBr?: string | null
   voiceNote?: string | null
 }) {
+  const values = {
+    kind: 'cozinha' as const,
+    slug: opts.slug,
+    status: opts.status,
+    sort: opts.sort ?? 99,
+    labelPtBr: opts.labelPtBr === undefined ? opts.slug : opts.labelPtBr,
+    labelEnUs: opts.slug,
+    voiceNote: opts.voiceNote ?? null,
+  }
   await getDb()
     .insert(vocabularyTerm)
-    .values({
-      kind: 'cozinha',
-      slug: opts.slug,
-      status: opts.status,
-      sort: opts.sort ?? 99,
-      labelPtBr: opts.labelPtBr === undefined ? opts.slug : opts.labelPtBr,
-      labelEnUs: opts.slug,
-      voiceNote: opts.voiceNote ?? null,
+    .values(values)
+    .onConflictDoUpdate({
+      target: vocabularyTerm.slug,
+      set: {
+        status: values.status,
+        sort: values.sort,
+        labelPtBr: values.labelPtBr,
+        labelEnUs: values.labelEnUs,
+        voiceNote: values.voiceNote,
+      },
     })
 }
 
