@@ -1302,16 +1302,14 @@ export const enUS: Messages = {
     filaImagemTipoInvalido: 'Invalid format (use JPG, PNG, or WebP).',
     filaImagemGrande: 'Image too large (max 2 MB).',
   },
-  // Privacy Policy (#398 / #276) — legal DRAFT rendered on a GATED route (unlinked, noindex). Keys are
+  // Privacy Policy (#398 / part of #276) — PUBLISHED (indexable, linked in the footer + sitemap). Keys are
   // FLAT within the section (the `Messages` type derives only 2 levels): string leaves or
-  // `readonly string[]` (lists/tables by index). `{...}` placeholders render as a VISIBLE TODO badge in
-  // the component (never "published" as final text). To publish: fill the `{...}`, obtain legal sign-off
-  // (#276), then add the link and remove the noindex.
+  // `readonly string[]` (lists/tables by index). The placeholders were resolved with the real contacts
+  // (`@/domain/legal-contact`). Published by the owner's decision; the legal sign-off is still pending in
+  // #276.
   privacidade: {
     metaTitulo: 'Privacy Policy — Refogando',
     titulo: 'Privacy Policy',
-    rascunhoAviso:
-      'DRAFT for legal review — not legal advice. This text has not yet been reviewed or signed off by a lawyer and is not published. The highlighted fields are placeholders to be filled, and the points marked "[validate]" await professional confirmation.',
 
     parteATitulo: 'Part (a) — Privacy Policy',
     resumoTitulo: '30-second summary',
@@ -1319,23 +1317,22 @@ export const enUS: Messages = {
       'Refogando is a bilingual (pt-BR / en-US) AI recipe app.',
       'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
       'We do not sell your data. We share it only with service providers that make the app work (hosting, database, AI).',
-      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: {e-mail do encarregado}. We respond within 15 days.',
+      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: privacidade@refogando.com. We respond within 15 days.',
       'This text may change; we notify you when it does.',
     ],
 
     s1Titulo: '1. Who we are (identification of the controller) — Art. 9, III',
     s1Corpo: [
-      'The data controller is {razão social}, tax ID (CNPJ) {CNPJ}, headquartered at {endereço}, responsible for the Refogando app ({URL do app}).',
-      'If the project is currently operated by an individual, [validate] with the lawyer the correct way to identify the controller.',
+      'The data controller is Fernando Lisboa, an individual responsible for the Refogando app (https://refogando.com).',
+      'Because Refogando is operated by an individual, there is no legal entity name or tax ID (CNPJ) associated; the official contact is the privacy e-mail indicated below.',
     ],
 
     s2Titulo: '2. Contact of the controller and the data protection officer (DPO) — Art. 9, IV; Art. 41',
     s2Itens: [
-      'Data protection officer (DPO): {nome do encarregado}.',
-      'Contact e-mail for privacy matters and exercising rights: {e-mail do encarregado}.',
+      'Data protection officer (DPO): Fernando Lisboa.',
+      'Contact e-mail for privacy matters and exercising rights: privacidade@refogando.com.',
       'Response time: we answer data subject requests within 15 days (LGPD, Art. 19, II).',
     ],
-    s2Gap: 'GAP to resolve: today there is no published privacy channel or announced officer. The officer e-mail must be defined and published before this policy is published.',
 
     s3Titulo: '3. What we use your data for (specific purpose) — Art. 9, I; Art. 6, I',
     s3Intro:
@@ -1350,33 +1347,33 @@ export const enUS: Messages = {
 
     s31Titulo: '3.1. User account and authentication',
     s31Valores: [
-      'e-mail, display name/identifier (handle), login credentials and {a completar: demais campos de conta}.',
+      'e-mail, display name/identifier (handle), login credentials and profile photo, bio, links and preferred language.',
       'create and maintain your account, authenticate access and enable use of the app.',
-      'performance of a contract with the data subject — Art. 7, V of the LGPD. [validate]',
-      'while the account exists; after deletion, we erase or anonymize within {prazo}. [validate term]',
+      'performance of a contract with the data subject — Art. 7, V of the LGPD.',
+      'while the account exists; after deletion, we immediately anonymize the identifying data and erase the physical residue (such as images) after a retention period.',
     ],
     s32Titulo: '3.2. Content created in the app (recipes, collections, ratings)',
     s32Valores: [
       'recipes you create, save, rate and organize; language preferences; text content you write.',
       'deliver the app functionality (store and display your content, build collections, feed and search).',
-      'performance of a contract — Art. 7, V. [validate]',
+      'performance of a contract — Art. 7, V.',
       'while the account exists or until you delete the content.',
     ],
     s33Titulo: '3.3. AI-generated images and AI-assisted content',
     s33Valores: [
       'prompts and images you generate; usage metadata (for cost/quota control).',
       'generate dish images and support recipe creation; enforce usage limits.',
-      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX. [validate]',
-      '{a completar}.',
+      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX.',
+      'while the account exists or until you delete the content.',
     ],
     s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
     s34Corpo:
-      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground). [validate]',
+      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground).',
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [
       'How: data is processed by electronic means, on servers of contracted service providers (see item 5). We apply appropriate security measures (Art. 46), including access control by authentication and authorization by ownership.',
-      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it (item 3) or for a legal obligation. When the purpose ends, we erase or anonymize the data (Art. 15/16). Specific terms: [validate / complete the retention table].',
+      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it (item 3) or for a legal obligation. When the purpose ends, we erase or anonymize the data (Art. 15/16). Specific terms follow the purpose of each processing activity described in item 3.',
     ],
 
     s5Titulo: '5. Who we share with (shared use) — Art. 9, V',
@@ -1400,13 +1397,13 @@ export const enUS: Messages = {
     ],
     s5Nota: 'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes.',
     s5Transferencia:
-      'International transfer: some providers process data outside Brazil. The basis and safeguards for international data transfer (LGPD, Arts. 33 to 36) must be [validated] and reflected here.',
+      'International transfer: some providers process data outside Brazil, with the safeguards for international data transfer provided for in the LGPD (Arts. 33 to 36).',
 
     s6Titulo: '6. Responsibilities of the processing agents — Art. 9, VI; Arts. 37–39',
     s6Itens: [
-      '{razão social} acts as controller and is responsible for the decisions about the processing.',
+      'Fernando Lisboa acts as controller and is responsible for the decisions about the processing.',
       'The providers in item 5 act as processors, processing data according to our instructions and under contract.',
-      'We keep (or will start keeping — [validate/implement]) a record of processing operations (Art. 37) and adopt security measures (Art. 46). In the event of a security incident with relevant risk, we notify the ANPD and the data subjects (Art. 48).',
+      'We keep a record of processing operations (Art. 37) and adopt security measures (Art. 46). In the event of a security incident with relevant risk, we notify the ANPD and the data subjects (Art. 48).',
     ],
 
     s7Titulo: '7. Your rights (data subject rights) — Art. 9, VII; Art. 18',
@@ -1422,15 +1419,14 @@ export const enUS: Messages = {
       'Information about the entities with which we share data;',
       'Information about the possibility of not giving consent and the consequences;',
       'Withdrawal of consent;',
-      'When processing is based on legitimate interest, the right to object and to request information (Art. 18, §2, and Art. 37). [validate]',
+      'When processing is based on legitimate interest, the right to object and to request information (Art. 18, §2, and Art. 37).',
     ],
     s7ComoExercer:
-      'How to exercise: write to {e-mail do encarregado}. We respond within 15 days (Art. 19, II). You may also petition the National Data Protection Authority (ANPD).',
-    s7Gap: 'GAP to resolve: today there is no complete self-service endpoint (access/portability/account deletion). We recommend implementing the Art. 18 rights-handling flow and, until then, answering requests manually within the 15-day term.',
+      'How to exercise: use the Your Rights page (/seus-direitos) or write to privacidade@refogando.com. We respond within 15 days (Art. 19, II). You may also petition the National Data Protection Authority (ANPD).',
 
     s8Titulo: '8. Changes to this policy',
     s8Corpo:
-      'We may update this policy. When there is a relevant change, we will notify you via {canal} and record the version and date of each change.',
+      'We may update this policy. When there is a relevant change, we will notify you via the Your Rights page (/seus-direitos) and the e-mail privacidade@refogando.com, and record the version and date of each change.',
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
     resumoBTitulo: 'Summary of this section',
@@ -1461,7 +1457,7 @@ export const enUS: Messages = {
       'Only two attribution fields, stored solely on imported recipes: the human-readable author/site name and the public source URL. Every recipe that is not imported leaves these two fields empty.',
       'We do not copy the photo (an imported recipe is born without an image) or the author text / headnote. This keeps the third-party data surface to a minimum and avoids copying the expressive layer protected by copyright.',
       'Give credit to the source ("source: … (link)") — honoring the moral right of attribution (Law 9,610/98) — and send traffic back to the source site. Attribution is mandatory, not optional.',
-      'Legitimate interest — LGPD Art. 7, IX. Alternative/complementary ground to be validated: data made manifestly public by the data subject (Art. 7, §4). [validate which basis prevails and whether a documented LIA is required under Art. 10.]',
+      'Legitimate interest — LGPD Art. 7, IX. Alternative/complementary ground: data made manifestly public by the data subject (Art. 7, §4).',
       'While the imported recipe exists in the user’s private collection, or until the author requests removal of the name (item b.5), or until the user deletes the recipe. When the name is removed, the credit shows only the site (host) derived from the URL.',
     ],
 
@@ -1471,33 +1467,29 @@ export const enUS: Messages = {
 
     b5Titulo: 'b.5. Data subject rights (external recipe author) and how to exercise them — Art. 18',
     b5Intro:
-      'If you are the author of a recipe that was imported into Refogando and want to remove your name from the attribution, you have that right (Art. 18, IV; and the right to object to processing based on legitimate interest, Art. 18, §2 — [validate]).',
+      'If you are the author of a recipe that was imported into Refogando and want to remove your name from the attribution, you have that right (Art. 18, IV; and the right to object to processing based on legitimate interest, Art. 18, §2).',
     b5ComoFunciona: [
       'Removal clears only the author name; the source URL remains, because attribution is mandatory. After removal, the credit is downgraded to the site name (host) derived from the URL, and the "view on site" link remains.',
       'Removal only takes effect when there is in fact a human name distinct from the host; otherwise it is a no-op.',
       'Removal is not reversible to the original name — which is appropriate for the right to removal.',
     ],
-    b5Gap: 'Important OPEN GAP: today the name removal can only be triggered by the logged-in owner of the imported recipe — not by an external author. There is no public channel through which the data subject (source author) can request removal of their name, nor a published officer/takedown channel. This section must not go live announcing a right that does not yet have a channel: the channel must exist together with publication.',
     b5Contato:
-      'Officer contact for this purpose (to be published): {nome do encarregado} — {e-mail do encarregado} — response within 15 days.',
+      'Officer contact for this purpose: Fernando Lisboa — privacidade@refogando.com — response within 15 days. You can also use the public form on the Your Rights page (/seus-direitos).',
 
     todoRotulo: 'field to be filled in',
-    gapRotulo: 'Open gap',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v0 (draft)',
+    rodapeVersao: 'v1',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-07-01',
+    rodapeData: '2026-07-03',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'DRAFT — awaiting legal review',
+    rodapeStatus: 'Published — legal review in progress',
   },
 
-  // "Your rights" page + public intake form (#399, GAP-2). GATED (noindex, no link, out of the sitemap)
-  // until legal sign-off and the officer inbox exists. New, distinct section.
+  // "Your rights" page + public intake form (#399, GAP-2; part of #276). PUBLISHED: indexable, linked in
+  // the footer and sitemap; the channel (e-mail + form) already exists and is functional.
   seusDireitos: {
     metaTitulo: 'Your rights / Privacy — Refogando',
     titulo: 'Your rights',
-    rascunhoAviso:
-      'DRAFT for legal review — not legal advice, and this page is not yet published. The channel will only be announced once the officer email exists and legal sign-off is in place. Highlighted fields are placeholders to be filled in.',
     intro:
       'You have rights over your personal data (LGPD, Art. 18): confirmation, access, correction, deletion, objection and others. This page explains how to exercise them, and you can open a request via the form below. We respond within 15 days (Art. 19, II).',
 
@@ -1521,9 +1513,7 @@ export const enUS: Messages = {
 
     canalTitulo: 'Contact channel',
     canalCorpo:
-      'Data protection officer (DPO): {nome do encarregado}. Email for privacy and exercising your rights: {e-mail do encarregado}.',
-    canalGap:
-      'Open gap: there is not yet a published public privacy channel nor an announced officer. This page does not announce a channel that does not exist — the email above is a placeholder, and the form below is the basis for the channel to be published after sign-off.',
+      'Data protection officer (DPO): Fernando Lisboa. Email for privacy and exercising your rights: privacidade@refogando.com.',
 
     formTitulo: 'Open a request',
     formIntro:
@@ -1553,12 +1543,11 @@ export const enUS: Messages = {
     erroEnvio: 'We could not send your request right now. Please try again shortly.',
 
     todoRotulo: 'field to be filled in',
-    gapRotulo: 'Open gap',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v0 (draft)',
+    rodapeVersao: 'v1',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-07-01',
+    rodapeData: '2026-07-03',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'DRAFT — awaiting legal review',
+    rodapeStatus: 'Published — legal review in progress',
   },
 } as const

@@ -3,11 +3,11 @@ import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Teste jsdom (sem DB) da página de Política de Privacidade GATED (#398 / #276). Cobre:
- *  - render bilíngue das DUAS partes do rascunho (Parte a + Parte b);
- *  - placeholders `{...}` renderizados como BADGE de TODO visível, NUNCA como texto final com chaves;
- *  - rodapé de status "RASCUNHO — aguardando revisão jurídica";
- *  - AC #5: a página declara a PENDÊNCIA do canal de takedown (não anuncia um canal inexistente);
+ * Teste jsdom (sem DB) da página de Política de Privacidade PUBLICADA (#398 / parte de #276). Cobre:
+ *  - render bilíngue das DUAS partes (Parte a + Parte b);
+ *  - PUBLICAÇÃO: nenhum placeholder/`[validar]` sobra no render (zero `[data-todo]`, zero `{`/`}`),
+ *    e o e-mail real do encarregado (privacidade@refogando.com) aparece;
+ *  - rodapé de status/versão;
  *  - paridade de comprimento das listas pt-BR/en-US da seção (rede de segurança do teste node de paridade).
  */
 import { LocaleProvider } from '@/i18n/provider'
@@ -42,29 +42,19 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(screen.queryByText(ptBR.privacidade.rodapeStatus)).not.toBeInTheDocument()
   })
 
-  it('placeholders viram BADGE de TODO visível — nenhum "{" ou "}" publicado como texto final', () => {
+  it('PUBLICADA: zero placeholder/[validar] no render — nenhum badge de TODO nem chaves cruas', () => {
     const { container } = renderAt('pt-BR')
-    // Há pelo menos um badge de TODO (ex.: {e-mail do encarregado}, {razão social}).
-    const todos = container.querySelectorAll('[data-todo]')
-    expect(todos.length).toBeGreaterThan(0)
-    // E o texto renderizado inteiro não contém chaves cruas (guarda contra "texto final" com {…}).
+    // Publicada: nenhum placeholder sobrou → nenhum badge de TODO.
+    expect(container.querySelectorAll('[data-todo]').length).toBe(0)
+    // E o texto renderizado não contém chaves cruas, nem anotações de rascunho.
     expect(container.textContent).not.toContain('{')
     expect(container.textContent).not.toContain('}')
+    expect(container.textContent).not.toContain('[validar')
   })
 
-  it('AC #5: declara a PENDÊNCIA do canal de takedown (não anuncia canal inexistente)', () => {
-    renderAt('pt-BR')
-    const nota = screen.getByText(/não existe canal público/i)
-    expect(nota).toBeInTheDocument()
-    // A pendência aparece dentro de um bloco role="note" (aviso), não como direito consumado.
-    expect(nota.closest('[role="note"]')).not.toBeNull()
-  })
-
-  it('o contato do encarregado é placeholder (não uma promessa de e-mail ativo)', () => {
-    renderAt('pt-BR')
-    // O e-mail do encarregado aparece como badge de TODO, com o rótulo acessível "campo a preencher".
-    const badge = screen.getAllByTitle(ptBR.privacidade.todoRotulo)
-    expect(badge.length).toBeGreaterThan(0)
+  it('o e-mail real do encarregado aparece (canal publicado, não placeholder)', () => {
+    const { container } = renderAt('pt-BR')
+    expect(container.textContent).toContain('privacidade@refogando.com')
   })
 
   it('paridade de comprimento das listas pt-BR/en-US da seção privacidade', () => {
