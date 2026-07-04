@@ -36,6 +36,7 @@ vi.mock('next/headers', () => ({
 import { isValidElement, type ReactElement } from 'react'
 import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { TakedownSlaSection } from '@/components/admin/takedown-sla-section'
 
 /** Busca recursiva por um TIPO de componente na árvore resolvida (children aninhados). */
 function containsType(node: unknown, target: unknown): boolean {
@@ -256,5 +257,11 @@ describe('Reorg abas IA × Descoberta (#334) — colocação da geração de ima
 
   it('aba "Descoberta" (/admin/descoberta) NÃO renderiza a geração de imagem (AiConfigSection)', async () => {
     expect(containsType(await pageTree(ai, 'reorg-desc@routes.test'), AiConfigSection)).toBe(false)
+  })
+
+  // #412: o painel de SLA de takedown mora na aba "Descoberta" (junto do atendimento ao autor). Um
+  // revert de colocação passaria no gate por papel; este teste PINA a presença da seção lá.
+  it('aba "Descoberta" (/admin/descoberta) RENDERIZA o painel de SLA de takedown (TakedownSlaSection)', async () => {
+    expect(containsType(await pageTree(ai, 'sla-desc@routes.test'), TakedownSlaSection)).toBe(true)
   })
 })

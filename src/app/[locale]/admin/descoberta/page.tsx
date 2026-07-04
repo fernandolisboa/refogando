@@ -11,6 +11,7 @@ import { SectionGate } from '../gate'
 import { WebSearchConfigSection } from '@/components/admin/web-search-config-section'
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 import { OperatorAttributionSection } from '@/components/admin/operator-attribution-section'
+import { TakedownSlaSection } from '@/components/admin/takedown-sla-section'
 
 export const runtime = 'nodejs'
 
@@ -24,6 +25,8 @@ export default async function AdminAiPage() {
         <EmbeddingBackfill />
         {/* #396/GAP-4: atendimento ao autor externo (titular B) — remover atribuição (nome) em lote. */}
         <OperatorAttributionSection />
+        {/* #412/GAP-7: painel de SLA dos tickets de takedown/DSAR ABERTOS (resolvidos filtrados). */}
+        <TakedownSlaSection />
       </div>
     </SectionGate>
   )
