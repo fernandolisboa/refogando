@@ -7,10 +7,19 @@ import {
   dedupeBriefing,
   isBriefingVazio,
   buildBriefingPrompt,
+  buildFreeTextPrompt,
   buildConversationPrompt,
+  buildSystemPrompt,
+  composeSystemPrompt,
+  promptStampFor,
+  PROMPT_VERSION,
+  NEUTRAL_AXES,
   SYSTEM_PROMPT_DISTILLATION,
+  SYSTEM_PROMPT_CONVERSATION_STREAM,
   briefingItemsParaAviso,
   type BriefingParse,
+  type PromptMode,
+  type AxisFragmentContributor,
 } from '@/domain/briefing'
 import type { Briefing, BriefingItem } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -414,6 +423,84 @@ describe('buildConversationPrompt — determinístico (#12)', () => {
     const rotulosNoInicio = linhas.filter((l) => /^(Usuário|Assistente): /.test(l))
     expect(rotulosNoInicio).toHaveLength(1)
     expect(rotulosNoInicio[0].startsWith('Usuário: ')).toBe(true)
+  })
+})
+
+describe('buildSystemPrompt — seam de composição (ADR-0029, #420)', () => {
+  const MODES: PromptMode[] = ['briefing', 'free_text', 'distillation', 'conversation_stream']
+
+  it('sem eixos (NEUTRAL_AXES) ⇒ o base do modo, sem sufixo de fragmento', () => {
+    // A identidade byte-a-byte com os prompts canônicos é o contrato de back-compat: o registro de
+    // Wave 1 é vazio, então nenhum fragmento é anexado.
+    expect(buildSystemPrompt('distillation', NEUTRAL_AXES)).toBe(SYSTEM_PROMPT_DISTILLATION)
+    expect(buildSystemPrompt('conversation_stream', NEUTRAL_AXES)).toBe(SYSTEM_PROMPT_CONVERSATION_STREAM)
+    // free_text COMPARTILHA o base do briefing (fonte única do estilo).
+    expect(buildSystemPrompt('free_text')).toBe(buildSystemPrompt('briefing'))
+  })
+
+  it('axes default (omitido) == NEUTRAL_AXES para todo modo', () => {
+    for (const mode of MODES) {
+      expect(buildSystemPrompt(mode)).toBe(buildSystemPrompt(mode, NEUTRAL_AXES))
+    }
+  })
+
+  it('build*Prompt reusam o SEAM: systemPrompt == buildSystemPrompt(<modo>)', () => {
+    expect(buildBriefingPrompt(briefing()).systemPrompt).toBe(buildSystemPrompt('briefing'))
+    expect(buildFreeTextPrompt('um bolo de fubá simples').systemPrompt).toBe(buildSystemPrompt('free_text'))
+    expect(buildConversationPrompt([{ role: 'user', content: 'quero um bolo' }]).systemPrompt).toBe(
+      buildSystemPrompt('distillation'),
+    )
+  })
+
+  it('o base enriquecido de briefing mantém os sinais canônicos (schema, required/preferred)', () => {
+    const base = buildSystemPrompt('briefing')
+    expect(base).toContain('schema canônico')
+    expect(base).toContain('required')
+    expect(base).toContain('preferred')
+    // Consultivo FORA da Receita + medida estruturada seguem instruídos (ADR-0009/0012).
+    expect(base.toLowerCase()).toContain('advisory')
+  })
+
+  it('a destilação NÃO menciona briefing nem força "required"/"preferred" (mesmo enriquecida)', () => {
+    const base = buildSystemPrompt('distillation')
+    expect(base.toLowerCase()).not.toContain('briefing')
+    expect(base.toLowerCase()).not.toContain('força')
+    expect(base).not.toContain('required')
+    expect(base).not.toContain('preferred')
+  })
+
+  it('composeSystemPrompt: um contribuidor-fake ANEXA o fragmento ao base (na ordem)', () => {
+    // Exercita a composição sem tocar o registro real: o parâmetro `contributors` é injetável.
+    const fake: AxisFragmentContributor = () => 'FRAGMENTO DE EIXO FAKE.'
+    const composed = composeSystemPrompt('BASE.', [fake], NEUTRAL_AXES)
+    expect(composed).toBe('BASE. FRAGMENTO DE EIXO FAKE.')
+  })
+
+  it('composeSystemPrompt: contribuidor null/vazio é ignorado ⇒ identidade com o base', () => {
+    const nulo: AxisFragmentContributor = () => null
+    const vazio: AxisFragmentContributor = () => '   '
+    expect(composeSystemPrompt('BASE.', [nulo, vazio], NEUTRAL_AXES)).toBe('BASE.')
+    // Registro vazio também ⇒ base puro.
+    expect(composeSystemPrompt('BASE.', [], NEUTRAL_AXES)).toBe('BASE.')
+  })
+
+  it('composeSystemPrompt: múltiplos fragmentos entram na ORDEM do array', () => {
+    const a: AxisFragmentContributor = () => 'A.'
+    const b: AxisFragmentContributor = () => 'B.'
+    expect(composeSystemPrompt('BASE.', [a, b], NEUTRAL_AXES)).toBe('BASE. A. B.')
+  })
+})
+
+describe('promptStampFor — carimbo de versão (ADR-0029, #420)', () => {
+  it('carimba a versão corrente + os eixos', () => {
+    expect(promptStampFor(NEUTRAL_AXES)).toEqual({ version: PROMPT_VERSION, axes: NEUTRAL_AXES })
+  })
+  it('axes omitido ⇒ NEUTRAL_AXES', () => {
+    expect(promptStampFor()).toEqual({ version: PROMPT_VERSION, axes: {} })
+  })
+  it('PROMPT_VERSION é um inteiro positivo (correlacionável)', () => {
+    expect(Number.isInteger(PROMPT_VERSION)).toBe(true)
+    expect(PROMPT_VERSION).toBeGreaterThan(0)
   })
 })
 

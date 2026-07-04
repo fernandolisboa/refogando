@@ -12,7 +12,7 @@ import {
 import { SCHEMA_VERSION_RECEITA, type CreationMode, type LineageKind } from '@/domain/recipe'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import type { ClassifyResult } from '@/domain/generation'
-import type { Strength } from '@/domain/briefing'
+import type { Strength, PromptStamp } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { conciliarTempoPreparo } from '@/domain/tempo'
 
@@ -100,6 +100,11 @@ export type PersistGenerationInput = {
   // geração de RAIZ (#8/#11/#12/#88 e a conversa) ⇒ a coluna toma o DB default (chave própria fresca,
   // galeria nova). NUNCA passar `null` explícito (violaria o NOT NULL): ausente ⇒ undefined ⇒ default.
   lineageId?: string
+  // #420 (ADR-0029): carimbo de versão do PROMPT/EIXOS que produziram esta geração (`{ version, axes }`,
+  // montado por `promptStampFor` na borda). Gravado em `generation.prompt_stamp` (jsonb) tanto no caminho
+  // impossible quanto no de sucesso. AUSENTE (linhas legadas / callers que ainda não resolvem eixos) ⇒
+  // undefined ⇒ NULL. Correlaciona depois qual composição produziu Receitas que as pessoas guardam.
+  promptStamp?: PromptStamp
 }
 
 export type PersistGenerationResult = {
@@ -180,7 +185,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -227,6 +232,8 @@ export async function persistGeneration(
           advisoryComment: result.advisory,
           model,
           schemaVersion: SCHEMA_VERSION_RECEITA,
+          // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
+          promptStamp,
         })
         .returning({ id: generation.id })
       return {
@@ -342,6 +349,8 @@ export async function persistGeneration(
         advisoryComment: result.advisory,
         model,
         schemaVersion: SCHEMA_VERSION_RECEITA,
+        // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
+        promptStamp,
       })
       .returning({ id: generation.id })
 
