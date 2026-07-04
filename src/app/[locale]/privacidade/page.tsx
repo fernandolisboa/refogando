@@ -8,7 +8,8 @@ import { MESSAGES } from '@/i18n/messages'
  *
  * Por decisão do dono, a página foi ao ar SEM o sign-off jurídico (que segue PENDENTE em #276):
  *   • indexável (sem `robots: noindex`), listada no `sitemap.ts` e linkada no rodapé;
- *   • os placeholders foram resolvidos com os contatos reais (`@/domain/legal-contact`).
+ *   • os placeholders foram resolvidos com os contatos reais, escritos DIRETO nas strings i18n
+ *     (`messages.privacidade`) — o dono troca o encarregado/e-mail editando ali.
  * O conteúdo vem do rascunho da #276 (`docs/legal/politica-de-privacidade-secao-descoberta-web.md`);
  * a revisão jurídica formal ainda está em andamento e NÃO bloqueou a publicação.
  *

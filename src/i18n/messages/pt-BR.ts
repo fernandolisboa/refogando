@@ -1376,8 +1376,8 @@ export const ptBR = {
   // Política de Privacidade (#398 / parte de #276) — PUBLICADA (indexável, linkada no rodapé + sitemap).
   // Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
   // `readonly string[]` (listas/tabelas por índice). Os placeholders foram resolvidos com os contatos
-  // reais (`@/domain/legal-contact`). Publicada por decisão do dono; o sign-off jurídico segue pendente
-  // em #276.
+  // reais escritos DIRETO nestas strings (esta seção é o único lugar pra editar nome/e-mail do encarregado).
+  // Publicada por decisão do dono; o sign-off jurídico segue pendente em #276.
   privacidade: {
     metaTitulo: 'Política de Privacidade — Refogando',
     titulo: 'Política de Privacidade',

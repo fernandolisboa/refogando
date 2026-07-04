@@ -6,7 +6,8 @@
  * de `messages.privacidade` (i18n bilíngue pt-BR/en-US) — NADA hardcoded aqui. Sem chamadas de dados.
  *
  * Publicada por decisão do dono, SEM o sign-off jurídico (que segue pendente em #276): os placeholders
- * foram resolvidos com os contatos reais (`@/domain/legal-contact`) direto nas strings i18n.
+ * foram resolvidos com os contatos reais escritos DIRETO nas strings i18n (`messages.privacidade`) —
+ * editar ali é como o dono troca o encarregado/e-mail.
  *
  * `withPlaceholders` é mantido como rede de segurança: se algum `{...}` reaparecer numa string, ele o
  * troca por um BADGE visível (`<mark data-todo>`) em vez de publicar chaves cruas. Hoje as strings não

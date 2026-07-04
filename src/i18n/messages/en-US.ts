@@ -1305,8 +1305,8 @@ export const enUS: Messages = {
   // Privacy Policy (#398 / part of #276) — PUBLISHED (indexable, linked in the footer + sitemap). Keys are
   // FLAT within the section (the `Messages` type derives only 2 levels): string leaves or
   // `readonly string[]` (lists/tables by index). The placeholders were resolved with the real contacts
-  // (`@/domain/legal-contact`). Published by the owner's decision; the legal sign-off is still pending in
-  // #276.
+  // written DIRECTLY into these strings (this section is the single place to edit the DPO name/e-mail).
+  // Published by the owner's decision; the legal sign-off is still pending in #276.
   privacidade: {
     metaTitulo: 'Privacy Policy — Refogando',
     titulo: 'Privacy Policy',
