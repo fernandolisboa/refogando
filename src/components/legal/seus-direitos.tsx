@@ -1,13 +1,13 @@
 'use client'
 /**
- * Corpo da página "Seus direitos / Privacidade" (#399, GAP-2) — rascunho GATED com o formulário público
- * de intake embutido. Espelha `privacy-policy.tsx`: client component (acompanha o locale em runtime),
- * TODO o texto vem de `messages.seusDireitos` (i18n bilíngue) — nada hardcoded aqui.
+ * Corpo da página "Seus direitos / Privacidade" (#399, GAP-2; parte de #276) — PUBLICADA, com o
+ * formulário público de intake embutido. Espelha `privacy-policy.tsx`: client component (acompanha o
+ * locale em runtime), TODO o texto vem de `messages.seusDireitos` (i18n bilíngue) — nada hardcoded aqui.
  *
- * GATED de propósito: NÃO linkada em header/footer/nav; a rota é `noindex` + fora do sitemap (ver
- * `page.tsx`). Os placeholders `{...}` (nome/e-mail do encarregado) NUNCA saem como texto "final":
- * `withPlaceholders` os troca por um BADGE de TODO visível (`<mark data-todo>`), e um teste garante que
- * nenhum `{`/`}` sobra no render. O formulário (`TakedownForm`) já é funcional — anunciar é que espera.
+ * Publicada por decisão do dono, SEM o sign-off jurídico (que segue pendente em #276): os contatos
+ * (nome/e-mail do encarregado) foram resolvidos com os valores reais direto nas strings i18n, e o canal
+ * (e-mail + `TakedownForm`) já é funcional. `withPlaceholders` fica como rede de segurança (passthrough
+ * hoje) — um teste garante que nenhum `{`/`}` sobra no render.
  */
 import type { ReactNode } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -56,15 +56,6 @@ const P = ({ children }: { children: ReactNode }) => (
 const Note = ({ children }: { children: ReactNode }) => (
   <p className="mt-2 text-sm leading-relaxed text-muted">{children}</p>
 )
-const Aviso = ({ label, children }: { label?: string; children: ReactNode }) => (
-  <div
-    role="note"
-    className="mt-3 rounded-md border border-aviso-fg/40 bg-aviso-bg px-4 py-3 text-sm leading-relaxed text-aviso-fg"
-  >
-    {label ? <span className="font-semibold">{label}: </span> : null}
-    {children}
-  </div>
-)
 
 export function SeusDireitos() {
   const { messages } = useLocale()
@@ -75,9 +66,6 @@ export function SeusDireitos() {
   return (
     <Container as="main" size="reading" className="py-10">
       <h1 className="font-display text-3xl font-semibold text-brand-ink">{m.titulo}</h1>
-
-      {/* Aviso de RASCUNHO — a página não está publicada e o canal ainda não foi anunciado. */}
-      <Aviso>{ph(m.rascunhoAviso)}</Aviso>
 
       <P>{ph(m.intro)}</P>
 
@@ -97,10 +85,9 @@ export function SeusDireitos() {
       <Note>{ph(m.prazoNota)}</Note>
       <Note>{ph(m.naoExigimosDocumentos)}</Note>
 
-      {/* Canal de contato — placeholder do encarregado + PENDÊNCIA (não anuncia canal inexistente). */}
+      {/* Canal de contato — encarregado + e-mail de privacidade reais (publicados). */}
       <H2>{m.canalTitulo}</H2>
       <P>{ph(m.canalCorpo)}</P>
-      <Aviso label={m.gapRotulo}>{ph(m.canalGap)}</Aviso>
 
       {/* Formulário público de intake (funcional): abre ticket + grava DSAR_RECEIVED. */}
       <H2>{m.formTitulo}</H2>

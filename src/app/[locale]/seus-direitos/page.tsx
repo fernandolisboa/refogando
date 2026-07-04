@@ -4,15 +4,14 @@ import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
 
 /**
- * Página "Seus direitos / Privacidade" + formulário público de intake (#399, GAP-2;
- * `docs/legal/takedown-e-remocao-titular.md` §2). GATED — espelha `[locale]/privacidade`:
- *   • bilíngue (`[locale]`), mas NÃO anunciada: sem link em header/footer/nav (só por URL digitada);
- *   • `robots: noindex/nofollow` + fora do `sitemap.ts` (nenhum crawler a descobre);
- *   • placeholders `{...}` (nome/e-mail do encarregado) viram BADGE de TODO visível.
+ * Página "Seus direitos / Privacidade" + formulário público de intake (#399, GAP-2; parte de #276;
+ * `docs/legal/takedown-e-remocao-titular.md` §2) — PUBLICADA.
  *
- * PARA PUBLICAR (não fazer sem sign-off jurídico da #276): preencher os placeholders, garantir que o
- * e-mail do encarregado EXISTE, adicionar o link no rodapé e remover o `noindex`. O FORMULÁRIO já é
- * funcional (abre ticket + grava `DSAR_RECEIVED`) — construir agora, anunciar depois.
+ * Por decisão do dono, a página foi ao ar SEM o sign-off jurídico (que segue PENDENTE em #276):
+ *   • indexável (sem `robots: noindex`), listada no `sitemap.ts` e linkada no rodapé;
+ *   • os placeholders (nome/e-mail do encarregado) foram resolvidos com os contatos reais, escritos
+ *     DIRETO nas strings i18n (`messages.seusDireitos`/`messages.privacidade`) — o dono troca ali;
+ *     o canal (e-mail + formulário) já EXISTE e é funcional (abre ticket + grava `DSAR_RECEIVED`).
  *
  * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
  */
@@ -25,8 +24,6 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].seusDireitos.metaTitulo,
-    // Gated: rascunho não indexado nem seguido enquanto aguarda sign-off jurídico + canal publicado.
-    robots: { index: false, follow: false },
   }
 }
 

@@ -4,11 +4,10 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Teste jsdom (sem DB) da página GATED "Seus direitos" + formulário público de intake (#399, GAP-2).
- * Cobre:
- *  - render bilíngue (pt-BR/en-US) do fluxo (Art. 18/19) e do rodapé de status RASCUNHO;
- *  - placeholders `{...}` como BADGE de TODO visível, NUNCA texto final com chaves;
- *  - AC #5: a página declara a PENDÊNCIA do canal (não anuncia canal inexistente);
+ * Teste jsdom (sem DB) da página PUBLICADA "Seus direitos" + formulário público de intake
+ * (#399, GAP-2; parte de #276). Cobre:
+ *  - render bilíngue (pt-BR/en-US) do fluxo (Art. 18/19) e do rodapé de status;
+ *  - PUBLICAÇÃO: nenhum placeholder sobra (zero `[data-todo]`, zero `{`/`}`), e-mail real presente;
  *  - o formulário: sucesso (POST → 201 → recibo com protocolo) e validação inline (sem round-trip);
  *  - paridade de comprimento das listas pt-BR/en-US da seção.
  */
@@ -50,18 +49,17 @@ describe('SeusDireitos (#399 — página gated + intake)', () => {
     expect(screen.queryByText(M.rodapeStatus)).not.toBeInTheDocument()
   })
 
-  it('placeholders viram BADGE de TODO — nenhum "{" ou "}" publicado como texto final', () => {
+  it('PUBLICADA: zero placeholder/[validar] no render — nenhum badge de TODO nem chaves cruas', () => {
     const { container } = renderAt('pt-BR')
-    const todos = container.querySelectorAll('[data-todo]')
-    expect(todos.length).toBeGreaterThan(0) // ex.: {e-mail do encarregado}
+    expect(container.querySelectorAll('[data-todo]').length).toBe(0)
     expect(container.textContent).not.toContain('{')
     expect(container.textContent).not.toContain('}')
+    expect(container.textContent).not.toContain('[validar')
   })
 
-  it('AC #5: declara a PENDÊNCIA do canal (não anuncia canal inexistente)', () => {
-    renderAt('pt-BR')
-    const nota = screen.getByText(/não existe canal público/i)
-    expect(nota.closest('[role="note"]')).not.toBeNull()
+  it('o e-mail real do encarregado aparece (canal publicado, não placeholder)', () => {
+    const { container } = renderAt('pt-BR')
+    expect(container.textContent).toContain('privacidade@refogando.com')
   })
 
   it('formulário: envio válido → POST /api/legal/takedown e recibo com protocolo', async () => {

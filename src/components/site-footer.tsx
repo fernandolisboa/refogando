@@ -8,6 +8,7 @@
  * `setLocale`, em i18n/provider). `initialTheme` é threadado do servidor (cookie `theme`,
  * layout.tsx).
  */
+import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -24,6 +25,16 @@ export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | nul
             {messages.app.name}
           </span>
           <span className="text-sm text-muted">{messages.app.tagline}</span>
+          {/* Links legais (parte de #276): Política de Privacidade + Seus Direitos. Rótulos i18n. Um
+              <div> (não <nav>) para não criar um segundo landmark de navegação além do header. */}
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+            <Link href="/privacidade" className="hover:text-fg hover:underline">
+              {messages.privacidade.titulo}
+            </Link>
+            <Link href="/seus-direitos" className="hover:text-fg hover:underline">
+              {messages.seusDireitos.titulo}
+            </Link>
+          </div>
         </div>
         {/* Controles de apresentação da chrome (#162): idioma + tema, lado a lado. */}
         <div className="flex items-center gap-3">

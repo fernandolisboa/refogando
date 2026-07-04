@@ -22,7 +22,7 @@ import {
   absoluteRecipeDetailUrl,
   recipeHreflangAlternates,
 } from '@/domain/recipe-detail-route'
-import { SUPPORTED_LOCALES, type Locale } from '@/i18n/locale'
+import { SUPPORTED_LOCALES, DEFAULT_LOCALE, type Locale } from '@/i18n/locale'
 
 /**
  * Insumo do builder — UMA Receita elegível com seus slugs POR locale (só os locales que TÊM slug
@@ -73,8 +73,32 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
   for (const loc of SUPPORTED_LOCALES) languages[loc] = `${baseUrl}/${loc}`
   languages['x-default'] = `${baseUrl}/`
 
+  return [
+    ...SUPPORTED_LOCALES.map((loc) => ({
+      url: `${baseUrl}/${loc}`,
+      alternates: { languages },
+    })),
+    // Páginas legais estáticas PUBLICADAS (parte de #276): Política de Privacidade e Seus Direitos,
+    // uma entrada por locale, com o mesmo esquema de hreflang. Diferente da home, não há redirecionador
+    // por-página na raiz sem locale — o `x-default` aponta para a versão no DEFAULT_LOCALE (padrão do
+    // detalhe #233).
+    ...buildStaticPathEntries(baseUrl, 'privacidade'),
+    ...buildStaticPathEntries(baseUrl, 'seus-direitos'),
+  ]
+}
+
+/**
+ * Entradas do sitemap para uma rota estática por locale (`<base>/{locale}/{path}`). Emite UMA entrada
+ * por locale suportado, todas compartilhando o mesmo mapa de hreflang (cada locale + `x-default` →
+ * versão no DEFAULT_LOCALE). Sem `lastModified` (páginas estáticas sem data canônica de modificação).
+ */
+function buildStaticPathEntries(baseUrl: string, path: string): MetadataRoute.Sitemap {
+  const languages: Record<string, string> = {}
+  for (const loc of SUPPORTED_LOCALES) languages[loc] = `${baseUrl}/${loc}/${path}`
+  languages['x-default'] = `${baseUrl}/${DEFAULT_LOCALE}/${path}`
+
   return SUPPORTED_LOCALES.map((loc) => ({
-    url: `${baseUrl}/${loc}`,
+    url: `${baseUrl}/${loc}/${path}`,
     alternates: { languages },
   }))
 }

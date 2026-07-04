@@ -1,20 +1,17 @@
 'use client'
 /**
- * Corpo da Política de Privacidade (#398 / #276) — RASCUNHO jurídico renderizado numa rota GATED.
+ * Corpo da Política de Privacidade (#398 / parte de #276) — PUBLICADA (indexável, linkada no rodapé).
  *
  * Client component (como o SiteFooter) para acompanhar o locale na troca em runtime: todo o texto vem
  * de `messages.privacidade` (i18n bilíngue pt-BR/en-US) — NADA hardcoded aqui. Sem chamadas de dados.
  *
- * GATED, de propósito: esta página NÃO é linkada em header/footer/nav e a rota é `noindex` + fora do
- * sitemap (ver `page.tsx`). Ela existe mas não é anunciada. Para PUBLICAR é preciso, em conjunto:
- *   (1) preencher os placeholders `{...}` (razão social, CNPJ, e-mail do encarregado…);
- *   (2) obter o sign-off jurídico da #276 (base legal, transferência internacional, retenção, controlador);
- *   (3) existir de fato o canal de takedown/encarregado antes de anunciá-lo (Parte b.5);
- *   (4) só então adicionar o link no rodapé + remover o `noindex`.
+ * Publicada por decisão do dono, SEM o sign-off jurídico (que segue pendente em #276): os placeholders
+ * foram resolvidos com os contatos reais escritos DIRETO nas strings i18n (`messages.privacidade`) —
+ * editar ali é como o dono troca o encarregado/e-mail.
  *
- * Os placeholders `{...}` NUNCA saem como texto "final": `withPlaceholders` os troca por um BADGE de TODO
- * visível (`<mark data-todo>`), para o leitor ver de imediato que o campo está por preencher. Um teste de
- * UI garante que nenhum `{`/`}` sobra no texto renderizado.
+ * `withPlaceholders` é mantido como rede de segurança: se algum `{...}` reaparecer numa string, ele o
+ * troca por um BADGE visível (`<mark data-todo>`) em vez de publicar chaves cruas. Hoje as strings não
+ * têm placeholders, então ele é um passthrough; um teste de UI garante que nenhum `{`/`}` sobra no render.
  */
 import type { ReactNode } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -67,18 +64,6 @@ const P = ({ children }: { children: ReactNode }) => (
 )
 const Note = ({ children }: { children: ReactNode }) => (
   <p className="mt-2 text-sm leading-relaxed text-muted">{children}</p>
-)
-
-// Bloco de alerta (âmbar do design system): aviso de RASCUNHO e GAPs/PENDÊNCIAS. `children` já vem
-// renderizado pelo chamador (com placeholders resolvidos), então este bloco é um passthrough puro.
-const Aviso = ({ label, children }: { label?: string; children: ReactNode }) => (
-  <div
-    role="note"
-    className="mt-3 rounded-md border border-aviso-fg/40 bg-aviso-bg px-4 py-3 text-sm leading-relaxed text-aviso-fg"
-  >
-    {label ? <span className="font-semibold">{label}: </span> : null}
-    {children}
-  </div>
 )
 
 const List = ({
@@ -134,9 +119,6 @@ export function PrivacyPolicy() {
     <Container as="main" size="reading" className="py-10">
       <h1 className="font-display text-3xl font-semibold text-brand-ink">{m.titulo}</h1>
 
-      {/* Aviso de RASCUNHO — o texto não é parecer nem está publicado. */}
-      <Aviso>{ph(m.rascunhoAviso)}</Aviso>
-
       {/* ───────────────────────── Parte (a) ───────────────────────── */}
       <H2>{m.parteATitulo}</H2>
 
@@ -152,7 +134,6 @@ export function PrivacyPolicy() {
 
       <H3>{m.s2Titulo}</H3>
       <List items={m.s2Itens} todoLabel={todo} />
-      <Aviso label={m.gapRotulo}>{ph(m.s2Gap)}</Aviso>
 
       <H3>{m.s3Titulo}</H3>
       <P>{ph(m.s3Intro)}</P>
@@ -195,7 +176,7 @@ export function PrivacyPolicy() {
         </table>
       </div>
       <Note>{ph(m.s5Nota)}</Note>
-      <Aviso label={m.gapRotulo}>{ph(m.s5Transferencia)}</Aviso>
+      <Note>{ph(m.s5Transferencia)}</Note>
 
       <H3>{m.s6Titulo}</H3>
       <List items={m.s6Itens} todoLabel={todo} />
@@ -204,7 +185,6 @@ export function PrivacyPolicy() {
       <P>{ph(m.s7Intro)}</P>
       <List items={m.s7Direitos} todoLabel={todo} ordered />
       <P>{ph(m.s7ComoExercer)}</P>
-      <Aviso label={m.gapRotulo}>{ph(m.s7Gap)}</Aviso>
 
       <H3>{m.s8Titulo}</H3>
       <P>{ph(m.s8Corpo)}</P>
@@ -234,9 +214,6 @@ export function PrivacyPolicy() {
 
       <H3>{m.b5Titulo}</H3>
       <P>{ph(m.b5Intro)}</P>
-      {/* AC #5: NÃO anunciar um canal de takedown que ainda não existe — a pendência é declarada em alto
-          relevo e o contato é um placeholder (não uma promessa de canal ativo). */}
-      <Aviso label={m.gapRotulo}>{ph(m.b5Gap)}</Aviso>
       <List items={m.b5ComoFunciona} todoLabel={todo} />
       <P>{ph(m.b5Contato)}</P>
 

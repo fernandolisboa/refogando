@@ -1393,16 +1393,14 @@ export const ptBR = {
     filaImagemTipoInvalido: 'Formato inválido (use JPG, PNG ou WebP).',
     filaImagemGrande: 'Imagem muito grande (máx. 2 MB).',
   },
-  // Política de Privacidade (#398 / #276) — RASCUNHO jurídico renderizado numa rota GATED (não-linkada,
-  // noindex). Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
-  // `readonly string[]` (listas/tabelas por índice). Placeholders `{...}` são renderizados como BADGE de
-  // TODO visível pelo componente (nunca "publicados" como texto final). Ao publicar: preencher os `{...}`,
-  // obter o sign-off jurídico (#276), então adicionar o link e remover o noindex.
+  // Política de Privacidade (#398 / parte de #276) — PUBLICADA (indexável, linkada no rodapé + sitemap).
+  // Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
+  // `readonly string[]` (listas/tabelas por índice). Os placeholders foram resolvidos com os contatos
+  // reais escritos DIRETO nestas strings (esta seção é o único lugar pra editar nome/e-mail do encarregado).
+  // Publicada por decisão do dono; o sign-off jurídico segue pendente em #276.
   privacidade: {
     metaTitulo: 'Política de Privacidade — Refogando',
     titulo: 'Política de Privacidade',
-    rascunhoAviso:
-      'RASCUNHO para revisão jurídica — não constitui parecer. Este texto ainda não foi revisado nem assinado por um advogado e não está publicado. Os campos destacados são placeholders a preencher, e os pontos marcados "[validar]" aguardam confirmação profissional.',
 
     parteATitulo: 'Parte (a) — Política de Privacidade',
     resumoTitulo: 'Resumo em 30 segundos',
@@ -1410,23 +1408,22 @@ export const ptBR = {
       'O Refogando é um app de receitas com IA, bilíngue (pt-BR / en-US).',
       'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
       'Não vendemos seus dados. Compartilhamos apenas com prestadores de serviço que fazem o app funcionar (hospedagem, banco, IA).',
-      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: {e-mail do encarregado}. Respondemos em até 15 dias.',
+      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: privacidade@refogando.com. Respondemos em até 15 dias.',
       'Este texto pode mudar; avisamos quando mudar.',
     ],
 
     s1Titulo: '1. Quem somos (identificação do controlador) — Art. 9º, III',
     s1Corpo: [
-      'O controlador dos dados é {razão social}, CNPJ {CNPJ}, com sede em {endereço}, responsável pelo aplicativo Refogando ({URL do app}).',
-      'Se hoje o projeto é operado por pessoa física, [validar] com o advogado a forma correta de identificar o controlador.',
+      'O controlador dos dados é Fernando Lisboa, pessoa física responsável pelo aplicativo Refogando (https://refogando.com).',
+      'Como o Refogando é operado por pessoa física, não há razão social nem CNPJ associados; o contato oficial é o e-mail de privacidade indicado abaixo.',
     ],
 
     s2Titulo: '2. Contato do controlador e do encarregado (DPO) — Art. 9º, IV; Art. 41',
     s2Itens: [
-      'Encarregado pelo tratamento de dados (DPO): {nome do encarregado}.',
-      'E-mail de contato para assuntos de privacidade e exercício de direitos: {e-mail do encarregado}.',
+      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa.',
+      'E-mail de contato para assuntos de privacidade e exercício de direitos: privacidade@refogando.com.',
       'Prazo de resposta: respondemos a pedidos dos titulares em até 15 dias (LGPD, Art. 19, II).',
     ],
-    s2Gap: 'GAP a resolver: hoje não há canal de privacidade publicado nem encarregado anunciado. É necessário definir e publicar o e-mail do encarregado antes de publicar esta política.',
 
     s3Titulo: '3. Para que usamos seus dados (finalidade específica) — Art. 9º, I; Art. 6º, I',
     s3Intro:
@@ -1441,33 +1438,33 @@ export const ptBR = {
 
     s31Titulo: '3.1. Conta de usuário e autenticação',
     s31Valores: [
-      'e-mail, nome/identificador de exibição (handle), credenciais de login e {a completar: demais campos de conta}.',
+      'e-mail, nome/identificador de exibição (handle), credenciais de login e foto de perfil, biografia, links e idioma preferido.',
       'criar e manter sua conta, autenticar o acesso e permitir o uso do app.',
-      'execução de contrato com o titular — Art. 7º, V da LGPD. [validar]',
-      'enquanto a conta existir; após a exclusão, eliminamos ou anonimizamos em {prazo}. [validar prazo]',
+      'execução de contrato com o titular — Art. 7º, V da LGPD.',
+      'enquanto a conta existir; após a exclusão, anonimizamos imediatamente os dados de identificação e eliminamos os resquícios físicos (como imagens) após um prazo de retenção.',
     ],
     s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações)',
     s32Valores: [
       'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve.',
       'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca).',
-      'execução de contrato — Art. 7º, V. [validar]',
+      'execução de contrato — Art. 7º, V.',
       'enquanto a conta existir ou até você apagar o conteúdo.',
     ],
     s33Titulo: '3.3. Imagens geradas por IA e conteúdo assistido por IA',
     s33Valores: [
       'prompts e imagens que você gera; metadados de uso (para controle de custo/cota).',
       'gerar imagens de pratos e apoiar a criação de receitas; controlar limites de uso.',
-      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX. [validar]',
-      '{a completar}.',
+      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX.',
+      'enquanto a conta existir ou até você apagar o conteúdo.',
     ],
     s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
     s34Corpo:
-      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo). [validar]',
+      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo).',
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
     s4Itens: [
       'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (ver item 5). Aplicamos medidas de segurança compatíveis (Art. 46), incluindo controle de acesso por autenticação e autorização por titularidade.',
-      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica (item 3) ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Art. 15/16). Prazos específicos: [validar / completar a tabela de retenção].',
+      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica (item 3) ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Art. 15/16). Os prazos específicos seguem a finalidade de cada tratamento descrita no item 3.',
     ],
 
     s5Titulo: '5. Com quem compartilhamos (uso compartilhado) — Art. 9º, V',
@@ -1491,13 +1488,13 @@ export const ptBR = {
     ],
     s5Nota: 'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing.',
     s5Transferencia:
-      'Transferência internacional: alguns prestadores processam dados fora do Brasil. É preciso [validar] a base e as salvaguardas de transferência internacional (LGPD, Arts. 33 a 36) e refletir isso aqui.',
+      'Transferência internacional: alguns prestadores processam dados fora do Brasil, com as salvaguardas de transferência internacional previstas na LGPD (Arts. 33 a 36).',
 
     s6Titulo: '6. Responsabilidades dos agentes de tratamento — Art. 9º, VI; Arts. 37–39',
     s6Itens: [
-      '{razão social} atua como controlador e é responsável pelas decisões sobre o tratamento.',
+      'Fernando Lisboa atua como controlador e é responsável pelas decisões sobre o tratamento.',
       'Os prestadores do item 5 atuam como operadores, tratando dados conforme nossas instruções e sob contrato.',
-      'Mantemos (ou passaremos a manter — [validar/implementar]) registro das operações de tratamento (Art. 37) e adotamos medidas de segurança (Art. 46). Em caso de incidente de segurança com risco relevante, comunicamos a ANPD e os titulares (Art. 48).',
+      'Mantemos registro das operações de tratamento (Art. 37) e adotamos medidas de segurança (Art. 46). Em caso de incidente de segurança com risco relevante, comunicamos a ANPD e os titulares (Art. 48).',
     ],
 
     s7Titulo: '7. Seus direitos (direitos do titular) — Art. 9º, VII; Art. 18',
@@ -1513,15 +1510,14 @@ export const ptBR = {
       'Informação sobre entidades com as quais compartilhamos dados;',
       'Informação sobre a possibilidade de não fornecer consentimento e as consequências;',
       'Revogação do consentimento;',
-      'Quando o tratamento se basear em legítimo interesse, o direito de opor-se e de solicitar informações (Art. 18, §2º, e Art. 37). [validar]',
+      'Quando o tratamento se basear em legítimo interesse, o direito de opor-se e de solicitar informações (Art. 18, §2º, e Art. 37).',
     ],
     s7ComoExercer:
-      'Como exercer: escreva para {e-mail do encarregado}. Respondemos em até 15 dias (Art. 19, II). Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
-    s7Gap: 'GAP a resolver: hoje não existe endpoint self-service completo (acesso/portabilidade/eliminação de conta). Recomenda-se implementar o fluxo de atendimento aos direitos do Art. 18 e, até lá, atender os pedidos manualmente dentro do prazo de 15 dias.',
+      'Como exercer: use a página Seus Direitos (/seus-direitos) ou escreva para privacidade@refogando.com. Respondemos em até 15 dias (Art. 19, II). Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
 
     s8Titulo: '8. Alterações desta política',
     s8Corpo:
-      'Podemos atualizar esta política. Quando houver mudança relevante, avisaremos por {canal} e registraremos a versão e a data de cada alteração.',
+      'Podemos atualizar esta política. Quando houver mudança relevante, avisaremos pela página Seus Direitos (/seus-direitos) e pelo e-mail privacidade@refogando.com, e registraremos a versão e a data de cada alteração.',
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
     resumoBTitulo: 'Resumo desta seção',
@@ -1552,7 +1548,7 @@ export const ptBR = {
       'Apenas dois campos de atribuição, gravados só em receitas importadas: o nome legível do autor/site e a URL pública de origem. Toda receita que não é importada deixa esses dois campos vazios.',
       'Não copiamos a foto (a receita importada nasce sem imagem) nem o texto autoral / headnote. Isso reduz ao mínimo a superfície de dado de terceiros e evita copiar a camada expressiva protegida por direito autoral.',
       'Dar o crédito à fonte ("fonte: … (link)") — cumprindo o direito moral de atribuição (Lei 9.610/98) — e mandar tráfego de volta ao site de origem. A atribuição é obrigatória, não opcional.',
-      'Legítimo interesse — LGPD Art. 7º, IX. Fundamento alternativo/complementar a validar: dado tornado manifestamente público pelo titular (Art. 7º, §4º). [validar qual base prevalece e se é necessária uma LIA documentada, conforme Art. 10.]',
+      'Legítimo interesse — LGPD Art. 7º, IX. Fundamento alternativo/complementar: dado tornado manifestamente público pelo titular (Art. 7º, §4º).',
       'Enquanto a receita importada existir na coleção privada do usuário, ou até o autor pedir a remoção do nome (item b.5), ou até o usuário apagar a receita. Ao remover o nome, o crédito passa a exibir apenas o site (host) derivado da URL.',
     ],
 
@@ -1562,33 +1558,29 @@ export const ptBR = {
 
     b5Titulo: 'b.5. Direitos do titular (autor da receita externa) e como exercer — Art. 18',
     b5Intro:
-      'Se você é autor de uma receita que foi importada para o Refogando e quer remover o seu nome da atribuição, você tem esse direito (Art. 18, IV; e o direito de oposição ao tratamento fundado em legítimo interesse, Art. 18, §2º — [validar]).',
+      'Se você é autor de uma receita que foi importada para o Refogando e quer remover o seu nome da atribuição, você tem esse direito (Art. 18, IV; e o direito de oposição ao tratamento fundado em legítimo interesse, Art. 18, §2º).',
     b5ComoFunciona: [
       'A remoção zera apenas o nome do autor; a URL de origem permanece, porque a atribuição é obrigatória. Após a remoção, o crédito é rebaixado ao nome do site (host) derivado da URL, e o link "ver no site" continua.',
       'A remoção só tem efeito quando há de fato um nome humano distinto do host; caso contrário é uma operação sem efeito.',
       'A remoção não é reversível para o nome original — o que é adequado ao direito de remoção.',
     ],
-    b5Gap: 'PENDÊNCIA importante: hoje a remoção do nome só pode ser acionada pelo dono logado da receita importada — não por um autor externo. Não existe canal público pelo qual o titular (autor da fonte) possa pedir a remoção do seu nome, nem encarregado/canal de takedown publicado. Esta seção não deve ir ao ar anunciando um direito que ainda não tem canal: o canal precisa existir junto com a publicação.',
     b5Contato:
-      'Contato do encarregado para esta finalidade (a publicar): {nome do encarregado} — {e-mail do encarregado} — resposta em até 15 dias.',
+      'Contato do encarregado para esta finalidade: Fernando Lisboa — privacidade@refogando.com — resposta em até 15 dias. Você também pode usar o formulário público na página Seus Direitos (/seus-direitos).',
 
     todoRotulo: 'campo a preencher',
-    gapRotulo: 'Pendência',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v0 (rascunho)',
+    rodapeVersao: 'v1',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-07-01',
+    rodapeData: '2026-07-03',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'RASCUNHO — aguardando revisão jurídica',
+    rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },
 
-  // Página "Seus direitos" + formulário público de intake (#399, GAP-2). GATED (noindex, sem link,
-  // fora do sitemap) até o sign-off jurídico e a criação da caixa do encarregado. Seção NOVA e distinta.
+  // Página "Seus direitos" + formulário público de intake (#399, GAP-2; parte de #276). PUBLICADA:
+  // indexável, linkada no rodapé e no sitemap; o canal (e-mail + formulário) já existe e é funcional.
   seusDireitos: {
     metaTitulo: 'Seus direitos / Privacidade — Refogando',
     titulo: 'Seus direitos',
-    rascunhoAviso:
-      'RASCUNHO para revisão jurídica — não constitui parecer, e esta página ainda não está publicada. O canal só será anunciado quando o e-mail do encarregado existir e houver sign-off jurídico. Os campos destacados são placeholders a preencher.',
     intro:
       'Você tem direitos sobre os seus dados pessoais (LGPD, Art. 18): confirmação, acesso, correção, eliminação, oposição e outros. Nesta página explicamos como exercê-los e você pode abrir um pedido pelo formulário abaixo. Respondemos em até 15 dias (Art. 19, II).',
 
@@ -1612,9 +1604,7 @@ export const ptBR = {
 
     canalTitulo: 'Canal de contato',
     canalCorpo:
-      'Encarregado pelo tratamento de dados (DPO): {nome do encarregado}. E-mail para privacidade e exercício de direitos: {e-mail do encarregado}.',
-    canalGap:
-      'Pendência: ainda não existe canal público de privacidade publicado nem encarregado anunciado. Esta página não anuncia um canal que não existe — o e-mail acima é um placeholder e o formulário abaixo é a base do canal a ser publicado após o sign-off.',
+      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa. E-mail para privacidade e exercício de direitos: privacidade@refogando.com.',
 
     formTitulo: 'Abrir um pedido',
     formIntro:
@@ -1644,13 +1634,12 @@ export const ptBR = {
     erroEnvio: 'Não foi possível enviar o pedido agora. Tente novamente em instantes.',
 
     todoRotulo: 'campo a preencher',
-    gapRotulo: 'Pendência',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v0 (rascunho)',
+    rodapeVersao: 'v1',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-07-01',
+    rodapeData: '2026-07-03',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'RASCUNHO — aguardando revisão jurídica',
+    rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },
 } as const
 

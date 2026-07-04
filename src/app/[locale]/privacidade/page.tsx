@@ -4,17 +4,14 @@ import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
 
 /**
- * Política de Privacidade (#398 / #276) — RASCUNHO jurídico atrás de FLAG.
+ * Política de Privacidade (#398 / parte de #276) — PUBLICADA.
  *
- * GATED de propósito: a rota EXISTE e é bilíngue (`[locale]`), mas NÃO é anunciada —
- *   • não há link em header/footer/nav (só se alcança digitando a URL);
- *   • `robots: noindex/nofollow` + fora do `sitemap.ts` (o sitemap só lista home + receitas indexáveis);
- * então nenhum crawler a descobre. O conteúdo vem do rascunho revisado por advogado da #276
- * (`docs/legal/politica-de-privacidade-secao-descoberta-web.md`).
- *
- * PARA PUBLICAR (não fazer sem sign-off jurídico da #276): preencher os placeholders `{...}`
- * (razão social, CNPJ, e-mail do encarregado), garantir que o canal de takedown/encarregado da
- * Parte (b.5) EXISTE, adicionar o link no rodapé e remover o `noindex`. Ver `privacy-policy.tsx`.
+ * Por decisão do dono, a página foi ao ar SEM o sign-off jurídico (que segue PENDENTE em #276):
+ *   • indexável (sem `robots: noindex`), listada no `sitemap.ts` e linkada no rodapé;
+ *   • os placeholders foram resolvidos com os contatos reais, escritos DIRETO nas strings i18n
+ *     (`messages.privacidade`) — o dono troca o encarregado/e-mail editando ali.
+ * O conteúdo vem do rascunho da #276 (`docs/legal/politica-de-privacidade-secao-descoberta-web.md`);
+ * a revisão jurídica formal ainda está em andamento e NÃO bloqueou a publicação.
  *
  * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
  */
@@ -27,8 +24,6 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].privacidade.metaTitulo,
-    // Gated: rascunho não indexado nem seguido enquanto aguarda sign-off jurídico.
-    robots: { index: false, follow: false },
   }
 }
 
