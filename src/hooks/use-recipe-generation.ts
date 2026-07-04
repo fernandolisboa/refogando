@@ -192,9 +192,15 @@ export function useRecipeGeneration({
         return
       }
       // #167: teto estourado → 429 limite_geracao. Mensagem AMIGÁVEL, sem travar o formulário.
+      // #423: "gerar 2" sem 2 slots → 429 limite_geracao_variacao (chave DISTINTA, mensagem própria).
+      // Propaga a chave conhecida INTACTA p/ o mapErroMensagem; só o desconhecido cai em erroGeracao.
       if (res.status === 429) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
-        setErrorKey(data.error === 'limite_geracao' ? 'limite_geracao' : 'erroGeracao')
+        setErrorKey(
+          data.error === 'limite_geracao' || data.error === 'limite_geracao_variacao'
+            ? data.error
+            : 'erroGeracao',
+        )
         setStatus('error')
         return
       }
