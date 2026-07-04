@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { GET, PATCH, POST } from '@/app/api/admin/vocabulary/route'
+import { VOICE_NOTE_MAX } from '@/server/vocabulary/admin'
 import { __clearVocabularyCache, loadVocabulary } from '@/server/vocabulary/load'
 import { getDb } from '@/server/deps'
 import { vocabularyTerm, recipe } from '@/db/schema'
@@ -209,6 +210,16 @@ describe('/api/admin/vocabulary — nota de voz (#422)', () => {
     const res = await patch({ slug: 'italiana', voiceNote: 42 }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
+  })
+
+  it('PATCH voiceNote acima do teto → 400 voice_note_muito_longa; no teto passa (#436)', async () => {
+    const headers = await adminHeaders('longvoice@vocab.test')
+    const tooLong = await patch({ slug: 'italiana', voiceNote: 'a'.repeat(VOICE_NOTE_MAX + 1) }, headers)
+    expect(tooLong.status).toBe(400)
+    await expect(tooLong.json()).resolves.toMatchObject({ error: 'voice_note_muito_longa' })
+    // Exatamente no teto passa (trima antes de medir).
+    const atCap = await patch({ slug: 'italiana', voiceNote: 'a'.repeat(VOICE_NOTE_MAX) }, headers)
+    expect(atCap.status).toBe(200)
   })
 
   it('patch atômico de rótulo + nota grava ambos', async () => {

@@ -5,6 +5,7 @@ import {
   editCozinhaLabels,
   listCozinhasForAdmin,
   setCozinhaStatus,
+  VOICE_NOTE_MAX,
 } from '@/server/vocabulary/admin'
 
 /**
@@ -89,6 +90,11 @@ export async function PATCH(req: Request): Promise<Response> {
   }
   if (hasVoiceNote && body.voiceNote !== null && typeof body.voiceNote !== 'string') {
     return Response.json({ error: 'dados_invalidos' }, { status: 400 })
+  }
+  // #436: teto defensivo — a nota de voz vai VERBATIM no system prompt de toda geração daquela
+  // cozinha; sem cap, uma nota enorme infla o custo p/ todos. 400 no excesso (trima antes de medir).
+  if (hasVoiceNote && typeof body.voiceNote === 'string' && body.voiceNote.trim().length > VOICE_NOTE_MAX) {
+    return Response.json({ error: 'voice_note_muito_longa' }, { status: 400 })
   }
   if (hasStatus && body.status !== 'active' && body.status !== 'deprecated') {
     return Response.json({ error: 'status_invalido' }, { status: 400 })

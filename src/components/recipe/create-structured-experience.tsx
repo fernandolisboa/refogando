@@ -40,7 +40,7 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES } from '@/domain/vocabulary'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
@@ -146,7 +146,6 @@ export function CreateStructuredExperience({
   const [outra, setOutra] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
   const [porcoes, setPorcoes] = useState('')
-  const [dificuldade, setDificuldade] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemDraft[]>([novoItem()])
 
@@ -287,7 +286,6 @@ export function CreateStructuredExperience({
         cozinha: outraAtiva ? null : cozinha || null,
         restricoes,
         porcoes: porcoes === '' ? null : Number(porcoes),
-        dificuldade: dificuldade === '' ? null : Number(dificuldade),
         observacoes: observacoes.trim() === '' ? null : observacoes,
         itens: itensComTexto.map((it) => ({
           ingredientId: null,
@@ -306,7 +304,7 @@ export function CreateStructuredExperience({
   }
 
   // Briefing "vazio" = sem item válido E sem cozinha E sem restrição E sem observação.
-  // porções/dificuldade sozinhas NÃO contam (fiel a `isBriefingVazio`: são modificadores).
+  // porções sozinha NÃO conta (fiel a `isBriefingVazio`: é modificador).
   // "Outra" (#319) com texto conta como cozinha preenchida (não é briefing vazio).
   const briefingVazio =
     itensComTexto.length === 0 &&
@@ -321,7 +319,6 @@ export function CreateStructuredExperience({
     setOutra('')
     setRestricoes([])
     setPorcoes('')
-    setDificuldade('')
     setObservacoes('')
     setItens([novoItem()])
     setFreeText('')
@@ -651,7 +648,7 @@ export function CreateStructuredExperience({
             onToggle={toggleRestricao}
           />
 
-          {/* Porções + dificuldade */}
+          {/* Porções */}
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
               {m.porcoes}
@@ -661,16 +658,6 @@ export function CreateStructuredExperience({
                 max={PORCOES.max}
                 value={porcoes}
                 onChange={(e) => setPorcoes(e.target.value)}
-              />
-            </label>
-            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-              {m.dificuldade}
-              <Input
-                type="number"
-                min={DIFICULDADE.min}
-                max={DIFICULDADE.max}
-                value={dificuldade}
-                onChange={(e) => setDificuldade(e.target.value)}
               />
             </label>
           </div>

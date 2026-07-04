@@ -49,8 +49,6 @@ export function mapErroMensagem(m: Messages['criar'], errorKey: string): string 
       return m.erroBriefingVazio
     case 'porcoes_fora_de_faixa':
       return m.erroPorcoes
-    case 'dificuldade_fora_de_faixa':
-      return m.erroDificuldade
     case 'observacoes_muito_longas':
       return m.erroObservacoesLongas
     case 'free_text_vazio':

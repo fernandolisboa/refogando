@@ -50,9 +50,9 @@ describe('comparisonSystemPrompts — old===new byte-a-byte (Wave 1, registro de
 })
 
 describe('FIXED_BRIEFINGS — cobertura e integridade', () => {
-  it('tem entre 8 e 10 fixtures', () => {
-    expect(FIXED_BRIEFINGS.length).toBeGreaterThanOrEqual(8)
-    expect(FIXED_BRIEFINGS.length).toBeLessThanOrEqual(10)
+  it('tem entre 10 e 15 fixtures (10 neutras + as com eixos do #437)', () => {
+    expect(FIXED_BRIEFINGS.length).toBeGreaterThanOrEqual(10)
+    expect(FIXED_BRIEFINGS.length).toBeLessThanOrEqual(15)
   })
 
   it('ids únicos, não-vazios e determinísticos (string)', () => {
@@ -106,10 +106,26 @@ describe('comparatorPrompt — userPrompt idêntico nos dois lados; systemPrompt
       expect(oldSide.userPrompt).toBe(newSide.userPrompt)
       expect(oldSide.systemPrompt).toBe(BASELINE_SYSTEM_PROMPTS[fixture.mode])
       expect(newSide.systemPrompt).toBe(buildSystemPrompt(fixture.mode, fixture.axes))
-      // Wave 1 (registro vazio): os dois lados coincidem — o comparador prova o harness.
-      expect(oldSide.systemPrompt).toBe(newSide.systemPrompt)
+      if (Object.keys(fixture.axes).length === 0) {
+        // Fixture NEUTRA (registro vazio): os dois lados coincidem — o comparador prova o harness.
+        expect(newSide.systemPrompt).toBe(oldSide.systemPrompt)
+      } else {
+        // Fixture COM eixos (#437): o lado novo ADICIONA fragmentos ⇒ DELTA real vs o BASELINE.
+        expect(newSide.systemPrompt).not.toBe(oldSide.systemPrompt)
+        expect(newSide.systemPrompt.length).toBeGreaterThan(oldSide.systemPrompt.length)
+      }
     },
   )
+
+  it('#437: há fixtures COM eixos e elas produzem DELTA (new ≠ old, base+fragmentos)', () => {
+    const comEixos = FIXED_BRIEFINGS.filter((f) => Object.keys(f.axes).length > 0)
+    expect(comEixos.length).toBeGreaterThanOrEqual(2)
+    for (const f of comEixos) {
+      const { old, new: nova } = comparisonSystemPrompts(f.mode as PromptMode, f.axes)
+      expect(nova).not.toBe(old)
+      expect(nova.length).toBeGreaterThan(old.length)
+    }
+  })
 })
 
 describe('recipeView — vista de leitura (medida formatada, nunca de volta ao nome)', () => {

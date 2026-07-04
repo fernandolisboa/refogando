@@ -474,7 +474,6 @@ export const enUS: Messages = {
     erroLimiteGeracao: "You've reached your recipe generation limit for now. Please try again later.",
     erroBriefingVazio: 'Add at least one ingredient, cuisine, restriction, or note.',
     erroPorcoes: 'Servings must be between 1 and 50.',
-    erroDificuldade: 'Difficulty must be between 1 and 5.',
     erroObservacoesLongas: 'The notes are too long.',
     erroIngrediente: 'Fill in the ingredient on the lines you started.',
     erroCampos: 'Check the fields you filled in.',

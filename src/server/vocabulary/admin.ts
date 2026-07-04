@@ -24,6 +24,14 @@ import { slugify } from '@/domain/handle'
 /** Status que a superfície do Admin enxerga/governa (ciclo proativo). */
 const ADMIN_VISIBLE_STATUSES = ['active', 'deprecated'] as const
 
+/**
+ * Teto defensivo da nota de voz curada (#422/#436). A `voiceNote` é injetada VERBATIM no system
+ * prompt de TODA geração daquela cozinha — sem teto, uma nota enorme infla o custo de token para
+ * todos. Só o Admin/Curador edita, então o risco é baixo; ainda assim gateamos na borda de escrita
+ * (400 no excesso), espelhando `COZINHA_OUTRA_MAX`/`OBSERVACOES_MAX`. Generoso p/ uma nota de voz.
+ */
+export const VOICE_NOTE_MAX = 800
+
 /** Linha de cozinha como o Admin a vê (inclui `status`, ao contrário da view de leitura). */
 export type AdminCozinhaRow = {
   slug: string
