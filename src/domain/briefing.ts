@@ -265,8 +265,10 @@ export function isBriefingVazio(b: Briefing): boolean {
  * preserva o back-compat: `NEUTRAL_AXES` (vazio) sempre compõe exatamente o base.
  */
 export type PromptAxes = {
-  // Wave 2 (ADR-0029) adiciona campos OPCIONAIS aqui. Wave 1: intencionalmente vazio.
-  readonly [K in never]: never
+  // Wave 2 (ADR-0029) adiciona campos OPCIONAIS aqui, um por eixo.
+  // #423: "gerar 2, o usuário escolhe" — instrui a IA a divergir ao longo de um eixo config-driven
+  // (poloA vs poloB) numa única chamada structured-LISTA. Molda só o TEXTO; a lista é caminho novo.
+  readonly variacaoDivergente?: { poloA: string; poloB: string; instrucao: string } // #423
 }
 
 /** Eixos neutros: sem nenhum eixo ativo ⇒ o prompt é exatamente o base. Fonte única do "vazio". */
@@ -355,13 +357,28 @@ const BASE_SYSTEM_PROMPTS: Record<PromptMode, string> = {
 export type AxisFragmentContributor = (axes: PromptAxes) => string | null
 
 /**
- * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Wave 1 é VAZIO (nenhum eixo) ⇒
- * `buildSystemPrompt` devolve exatamente o base. Wave 2 pluga UM eixo adicionando UM item aqui
- * (ex.: `(axes) => axes.nivelChef ? fragmentoNivel(axes.nivelChef) : null`). A ORDEM do array é a
- * ordem em que os fragmentos são anexados ao base (determinística).
+ * #423 (ADR-0029 dec.6) — contribuidor do eixo "gerar 2, o usuário escolhe". Quando `variacaoDivergente`
+ * está ativo, ANEXA ao base uma instrução p/ a IA produzir DUAS variações distintas divergindo ao longo
+ * do eixo config-driven (poloA vs poloB), refinada pela `instrucao`. Molda SÓ o TEXTO; a forma-lista da
+ * saída é caminho novo (buildRecipeGenListSchema), não uma mutação do schema. NAMED/top-level (Regra A).
+ */
+const contribVariacaoDivergente: AxisFragmentContributor = (a) =>
+  a.variacaoDivergente
+    ? 'Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: ' +
+      a.variacaoDivergente.poloA +
+      ' vs ' +
+      a.variacaoDivergente.poloB +
+      '. ' +
+      a.variacaoDivergente.instrucao
+    : null
+
+/**
+ * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Vazio ⇒ `buildSystemPrompt` devolve
+ * exatamente o base. Cada eixo pluga UM item aqui (NAMED, top-level). A ORDEM do array é a ordem em que
+ * os fragmentos são anexados ao base (determinística).
  */
 const AXIS_FRAGMENT_CONTRIBUTORS: readonly AxisFragmentContributor[] = [
-  // Wave 2 (ADR-0029): registrar UM contribuidor por eixo aqui.
+  contribVariacaoDivergente, // #423
 ]
 
 /**

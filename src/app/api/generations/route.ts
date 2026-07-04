@@ -7,16 +7,16 @@ import { appConfig, ingredient } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
-import { classify } from '@/domain/generation'
+import { classify, classifyVariants } from '@/domain/generation'
 import {
   parseBriefing,
   buildBriefingPrompt,
   buildFreeTextPrompt,
   briefingItemsParaAviso,
   promptStampFor,
-  NEUTRAL_AXES,
   OBSERVACOES_MAX,
   type Briefing,
+  type PromptAxes,
 } from '@/domain/briefing'
 import {
   decideRestrictionNotices,
@@ -35,7 +35,25 @@ import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
+import {
+  parseRecipeVariantConfig,
+  DEFAULT_RECIPE_VARIANT_CONFIG,
+  type RecipeVariantConfig,
+} from '@/domain/recipe-variant-config'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+
+/**
+ * Helper PURO da borda (#423, Regra C do contrato de eixos ADR-0029): resolve o eixo `variacaoDivergente`
+ * a partir da config de variação. Devolve `{ variacaoDivergente }` (config ligada) ou `{}` — cada
+ * resolveX devolvendo {} colapsa a borda p/ NEUTRAL_AXES byte-a-byte no SPREAD ADITIVO. Assim outra fatia
+ * só ACRESCENTA `...resolveDela(...)` numa sublinha própria, sem reescrever a montagem monolítica.
+ */
+function resolveVariacaoAxis(
+  cfg: RecipeVariantConfig | null,
+): Pick<PromptAxes, 'variacaoDivergente'> | Record<string, never> {
+  if (cfg == null || !cfg.enabled) return {}
+  return { variacaoDivergente: { poloA: cfg.poloA, poloB: cfg.poloB, instrucao: cfg.instrucao } }
+}
 
 /**
  * Geração por IA — rota base do contrato (issue #8, §7a; ADR-0010 route handler).
@@ -102,6 +120,8 @@ export async function POST(req: Request): Promise<Response> {
     // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na AUTORIA structured. Top-level
     // (NÃO dentro do briefing — `briefing.cozinha` fica null, validada contra o conjunto ativo).
     cozinhaOutra?: unknown
+    // #423: opt-in "Gerar 2 versões". `true` + config ligada + modo structured ⇒ caminho de variação.
+    variar2?: unknown
   }
 
   // mode obrigatório + válido.
@@ -140,10 +160,26 @@ export async function POST(req: Request): Promise<Response> {
   // compartilhado) precisa enxergá-lo. Fica null nos demais modos (free_text não tem briefing).
   let suggested: string | null = null
 
-  // Eixos de composição do prompt (#420, ADR-0029) — RESOLVIDOS na borda. Wave 1 = neutro (nenhum
-  // eixo); Wave 2 lê o Nível do chef / voz da cozinha do body aqui. `axes` molda o systemPrompt (via
-  // build*Prompt) e `stamp` carimba a versão que produziu a geração (persist) p/ correlação futura.
-  const axes = NEUTRAL_AXES
+  // Config de app_config (default em código quando a linha singleton está ausente). UM toque de DB serve
+  // ao modelo (#5), ao teto de geração (#167) E à config de variação (#423). Carregada AQUI (ANTES dos
+  // prompts) porque o eixo de variação molda o systemPrompt via buildSystemPrompt.
+  const [cfg] = await getDb().select().from(appConfig)
+  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  // #423: re-valida a config de variação na leitura (fail-safe, espelha loadAppConfig) — linha
+  // editada à mão com pólo/instrução vazios cai no DEFAULT, nunca compõe um fragmento sem norte.
+  const parsedVariant = parseRecipeVariantConfig(cfg?.recipeVariantConfig)
+  const recipeVariantCfg = parsedVariant.ok ? parsedVariant.value : DEFAULT_RECIPE_VARIANT_CONFIG
+
+  // "Gerar 2, o usuário escolhe" (#423, ADR-0029 dec.6): opt-in SÓ no modo structured (free_text fica
+  // fora desta fatia) E com a config ligada. Governa o eixo de divergência (abaixo) e o CAMINHO NOVO de
+  // geração-lista (mais adiante). O `body.variar2` é o pedido do cliente; o servidor é a verdade.
+  const variar2 = mode === 'structured' && body.variar2 === true && recipeVariantCfg.enabled
+
+  // Eixos de composição do prompt (#420/#423, ADR-0029) — RESOLVIDOS na borda por SPREAD ADITIVO
+  // (Regra C do contrato): cada `resolveXAxis` devolve `{ campo }` (eixo ativo) OU `{}` (colapsa p/
+  // NEUTRAL_AXES byte-a-byte). `axes` molda o systemPrompt (via build*Prompt) e `promptStamp` carimba a
+  // versão que produziu a geração (persist) p/ correlação futura.
+  const axes: PromptAxes = { ...resolveVariacaoAxis(variar2 ? recipeVariantCfg : null) }
   const promptStamp = promptStampFor(axes)
 
   if (mode === 'structured') {
@@ -239,23 +275,25 @@ export async function POST(req: Request): Promise<Response> {
     userPrompt = prompt.userPrompt
   }
 
-  // Config de app_config (default em código quando a linha singleton está ausente). UM toque de DB
-  // serve ao modelo (#5) E ao teto de geração de receita (#167) — a linha singleton carrega ambos.
-  const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
-
   // Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de tocar o Claude
-  // (custo). cap ∞ (admin/papel ilimitado) pula a contagem. Estourou ⇒ 429 com countdown, mensagem
-  // AMIGÁVEL mapeada pela UI (limite_geracao). Espelha o teto de imagem (#132/#134).
+  // (custo). `cfg`/`model` já resolvidos acima (a linha singleton carrega ambos). cap ∞ (admin/papel
+  // ilimitado) pula a contagem. Estourou ⇒ 429 com countdown, mensagem AMIGÁVEL na UI. Espelha o teto
+  // de imagem (#132/#134). #423: "gerar 2" custa 2× ⇒ exige 2 SLOTS livres — reusa a MESMA máquina de
+  // 1-slot com um cap REDUZIDO (`cap - 1`): permitido sob cap-1 ⟺ cabem 2 (inWindow < cap-1 ⟺
+  // inWindow+2 <= cap). Estourou no variar2 ⇒ chave DISTINTA (a UI explica que foram pedidas 2).
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
-    const quota = decideRecipeGenQuota({ cap, recentAt, now })
+    const effectiveCap = variar2 ? cap - 1 : cap
+    const quota = decideRecipeGenQuota({ cap: effectiveCap, recentAt, now })
     if (!quota.allowed) {
       return Response.json(
-        { error: 'limite_geracao', retryAfterMs: quota.retryAfterMs },
+        {
+          error: variar2 ? 'limite_geracao_variacao' : 'limite_geracao',
+          retryAfterMs: quota.retryAfterMs,
+        },
         { status: 429 },
       )
     }
@@ -264,6 +302,97 @@ export async function POST(req: Request): Promise<Response> {
   // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
   // só restam free_text → ai_free_text e structured → ai_structured.
   const origin: PersistOrigin = mode === 'free_text' ? 'ai_free_text' : 'ai_structured'
+
+  // O Briefing (o PEDIDO) é persistido como proveniência mesmo quando a entrega é impossible (AC4):
+  // tabelas separadas da Receita, a sessão aponta para AMBOS. Computado ANTES da chamada ao Claude
+  // (puro; só depende do briefing já validado) — COMPARTILHADO pelo caminho single E pelo de variação.
+  // `briefing.cozinha` já é o slug `suggested` (injetado na validação, #319) quando há "Outra".
+  const persistBriefing: PersistBriefing | undefined = briefing
+    ? {
+        cozinha: briefing.cozinha,
+        restricoes: briefing.restricoes,
+        porcoes: briefing.porcoes,
+        dificuldade: briefing.dificuldade,
+        observacoes: briefing.observacoes,
+        itens: briefing.itens.map((it, index) => ({
+          ingredientId: it.ingredientId,
+          rawText: it.rawText,
+          quantidade: it.quantidade,
+          unidade: it.unidade,
+          strength: it.strength,
+          ordem: index,
+        })),
+      }
+    : undefined
+
+  // ── "Gerar 2, o usuário escolhe" (#423, ADR-0029 dec.6) — CAMINHO NOVO paralelo ao single ────────
+  // Só structured, opt-in, config ligada (variar2). UMA chamada structured-LISTA → classifyVariants →
+  // exige 2 variações VÁLIDAS (com Receita) → persiste AMBAS compartilhando um variantGroupId (cada uma
+  // PRIVADA, com o seu pólo) → devolve os 2 recipeIds/slugs. `generateRecipe` (single) fica INTACTO.
+  if (variar2) {
+    const outs = await getClaudeClient().generateRecipeVariants({
+      systemPrompt,
+      userPrompt,
+      model,
+      cozinhaSlugs: [...activeCozinhas],
+      axes,
+    })
+    const variantResults = classifyVariants(outs)
+    // Exige DUAS variações válidas. Menos que isso (parse do lote falhou / refusal / max_tokens / uma
+    // variação impossible ou fora-de-faixa) ⇒ 502 — NÃO degrada pra uma só (ADR-0029 dec.6).
+    if (variantResults.length !== 2) {
+      return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
+    }
+
+    // "Outra" (#319): materializa o termo `suggested` UMA vez — todos os portões passaram.
+    if (suggested != null) await suggestCozinha(getDb(), body.cozinhaOutra as string, ownerId)
+
+    // As 2 gerações compartilham o MESMO variantGroupId (agrupa o lote). Cada uma nasce PRIVADA, com o
+    // seu pólo (variantLabel) e o mesmo promptStamp; variant_chosen nasce NULL (a escolha o marca).
+    const variantGroupId = crypto.randomUUID()
+    const variants: {
+      recipeId: string
+      slug?: string
+      locale?: string
+      label: string
+      generationId: string
+      outcome: 'success' | 'degraded' | 'playful'
+      advisory: string | null
+    }[] = []
+    for (const vr of variantResults) {
+      // "Outra" (#319): a IA emitiu cozinha=null (slug suggested fora do z.enum ativo); o servidor estampa.
+      if (suggested != null) vr.recipe.cozinha = suggested
+      const p = await persistGeneration({
+        result: { outcome: vr.outcome, recipe: vr.recipe, advisory: vr.advisory },
+        mode,
+        origin,
+        ownerId,
+        model,
+        briefing: persistBriefing,
+        promptStamp,
+        variantGroupId,
+        variantLabel: vr.variacao,
+      })
+      if (p?.recipeId) {
+        // #119: embeda cada Receita (best-effort, assistivo). Falha NÃO derruba a criação.
+        await embedTranslation(getDb(), p.recipeId, vr.recipe.originalLocale).catch(() => {})
+        variants.push({
+          recipeId: p.recipeId,
+          ...(p.slug != null ? { slug: p.slug } : {}),
+          ...(p.locale != null ? { locale: p.locale } : {}),
+          label: vr.variacao,
+          generationId: p.generationId,
+          outcome: vr.outcome,
+          advisory: vr.advisory,
+        })
+      }
+    }
+    // Defesa: se alguma persistência não devolveu recipeId (não ocorre em success/degraded/playful), 502.
+    if (variants.length !== 2) {
+      return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
+    }
+    return Response.json({ outcome: 'variants', variants }, { status: 201 })
+  }
 
   const out = await getClaudeClient().generateRecipe({
     systemPrompt,
@@ -288,26 +417,6 @@ export async function POST(req: Request): Promise<Response> {
   // idempotente e segura sob corrida (recomputa o MESMO slug de `suggested`). Deferir até aqui é o
   // que impede termo órfão num 400/429/502 e fecha o abuso de inundar a fila do Curador no 429.
   if (suggested != null) await suggestCozinha(getDb(), body.cozinhaOutra as string, ownerId)
-
-  // O Briefing (o PEDIDO) é persistido como proveniência mesmo quando a entrega é
-  // impossible (AC4): tabelas separadas da Receita, a sessão aponta para AMBOS.
-  const persistBriefing: PersistBriefing | undefined = briefing
-    ? {
-        cozinha: briefing.cozinha,
-        restricoes: briefing.restricoes,
-        porcoes: briefing.porcoes,
-        dificuldade: briefing.dificuldade,
-        observacoes: briefing.observacoes,
-        itens: briefing.itens.map((it, index) => ({
-          ingredientId: it.ingredientId,
-          rawText: it.rawText,
-          quantidade: it.quantidade,
-          unidade: it.unidade,
-          strength: it.strength,
-          ordem: index,
-        })),
-      }
-    : undefined
 
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.

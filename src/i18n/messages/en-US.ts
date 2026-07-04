@@ -488,6 +488,19 @@ export const enUS: Messages = {
     modoFormulario: 'Form',
     modoConversa: 'Chat',
     seletorModo: 'How to create',
+    // #423 (ADR-0029 dec.6): "generate 2, the user chooses". Opt-in in structured mode (only when the
+    // admin turns the feature on) + the screen to choose between the 2 versions.
+    variar2Label: 'Generate 2 versions for me to choose from',
+    variar2Ajuda: 'The AI creates two different versions; you pick your favorite.',
+    variacaoTitulo: 'Choose a version',
+    variacaoIntro:
+      'We generated two versions. Choose the one you prefer — the other stays in your space.',
+    variacaoColuna: 'Version {n}',
+    variacaoEscolher: 'Choose this one',
+    variacaoCorpoIndisponivel:
+      "We couldn't load this version right now, but it's saved in your space.",
+    erroLimiteVariacao:
+      "You don't have room to generate 2 versions right now. Try a single version or come back later.",
   },
   // "New recipe" drawer (#191, ADR-0021) — reorganizes AI creation into a right-side drawer
   // (over the Sheet). The small-caps kicker + step title give the dialog's accessible name; the
@@ -975,6 +988,15 @@ export const enUS: Messages = {
     aiTetoIlimitado: 'unlimited',
     aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
     aiErroConfig: 'Invalid configuration. Review the caps and model.',
+    // #423 (ADR-0029 dec.6): generation variation ("generate 2, the user chooses") — on/off + the
+    // divergence axis (poles + how to diverge), editable without a deploy.
+    aiVariacaoLabel: 'Generation variation (generate 2, user chooses)',
+    aiVariacaoAjuda:
+      'A single call generates two divergent versions; the user chooses. Costs about 2× tokens — keep it opt-in.',
+    aiVariacaoHabilitadaLabel: 'Offer "Generate 2 versions" when creating',
+    aiVariacaoPoloA: 'Pole A',
+    aiVariacaoPoloB: 'Pole B',
+    aiVariacaoInstrucao: 'How to diverge',
     // #164: web discovery (ADR-0019) — on/off + allowlist of domains. The allowlist is the SINGLE
     // source of truth for both web search and the import SSRF guard. One domain per line.
     webTitulo: 'Web discovery',

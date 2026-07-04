@@ -24,7 +24,8 @@ import type { Locale } from '@/i18n/locale'
 import type { RecipeView, AvisoView } from '@/domain/recipe-read'
 import type { Messages } from '@/i18n/messages'
 
-export type Status = 'idle' | 'loading' | 'result' | 'error'
+// #423: 'choice' = as 2 variações chegaram e o usuário ainda vai escolher; converge p/ 'result'.
+export type Status = 'idle' | 'loading' | 'result' | 'error' | 'choice'
 
 export type GenerationResult = {
   outcome: 'success' | 'degraded' | 'playful' | 'impossible'
@@ -74,9 +75,28 @@ export function mapErroMensagem(m: Messages['criar'], errorKey: string): string 
     case 'limite_geracao':
     case 'erroLimiteGeracao':
       return m.erroLimiteGeracao
+    // #423: "gerar 2" pediu 2 slots mas o teto não tem espaço p/ ambos → mensagem específica.
+    case 'limite_geracao_variacao':
+      return m.erroLimiteVariacao
     default:
       return m.erroCampos
   }
+}
+
+/**
+ * #423 — uma das 2 variações do lote "gerar 2, o usuário escolhe", já com o corpo (`view`) buscado. O
+ * `generationId` é o alvo SERVER-AUTHORITATIVE da escolha (POST /api/generations/choice); o resto monta
+ * a coluna (rótulo do pólo) e a convergência p/ o resultado quando o usuário pica uma.
+ */
+export type VariantChoice = {
+  recipeId: string
+  slug?: string
+  locale?: string
+  label: string
+  generationId: string
+  outcome: 'success' | 'degraded' | 'playful'
+  advisory: string | null
+  view: RecipeView | null
 }
 
 export type RecipeGenerationEngine = {
@@ -85,11 +105,15 @@ export type RecipeGenerationEngine = {
   view: RecipeView | null
   errorKey: string | null
   loadFailed: boolean
+  // #423: as 2 variações (com corpo) quando `status === 'choice'`; null fora disso.
+  variants: VariantChoice[] | null
   headingRef: React.RefObject<HTMLHeadingElement | null>
-  /** Posta o `body` em /api/generations e converge para result/error (sem montar o body aqui). */
+  /** Posta o `body` em /api/generations e converge para result/choice/error (sem montar o body aqui). */
   enviar: (body: unknown) => Promise<void>
   /** Re-busca o corpo de uma Receita JÁ criada (botão "tentar carregar de novo"). */
   carregarReceita: (generation: GenerationResult) => Promise<void>
+  /** #423: registra a escolha (server-authoritative, owner-scope) e converge p/ o resultado da escolhida. */
+  escolherVariante: (v: VariantChoice) => Promise<void>
   /** Volta ao estado idle (limpando ou não o erro/resultado). O caller zera o seu próprio Briefing. */
   voltarParaIdle: () => void
   setStatus: (s: Status) => void
@@ -110,8 +134,21 @@ export function useRecipeGeneration({
   // A Receita FOI criada (POST ok, recipeId não-null) mas o GET do corpo falhou. NÃO é o
   // mesmo que 'impossible' (lá não há Receita): aqui dizemos "criada, mas não carregou".
   const [loadFailed, setLoadFailed] = useState(false)
+  // #423: as 2 variações (com corpo) quando o POST devolve `outcome:'variants'`.
+  const [variants, setVariants] = useState<VariantChoice[] | null>(null)
 
   const headingRef = useRef<HTMLHeadingElement | null>(null)
+
+  /** Busca o corpo (RecipeView CRU) de uma Receita por id; null em não-ok/erro. Reuso interno (#423). */
+  async function fetchView(recipeId: string): Promise<RecipeView | null> {
+    try {
+      const r = await fetch(`/api/recipes/${recipeId}?locale=${encodeURIComponent(locale)}`)
+      if (!r.ok) return null
+      return (await r.json()) as RecipeView
+    } catch {
+      return null
+    }
+  }
 
   async function carregarReceita(generation: GenerationResult) {
     if (generation.recipeId == null) {
@@ -168,8 +205,30 @@ export function useRecipeGeneration({
         return
       }
 
-      const data = (await res.json()) as GenerationResult
+      const data = (await res.json()) as
+        | GenerationResult
+        | {
+            outcome: 'variants'
+            variants: Omit<VariantChoice, 'view'>[]
+          }
+
+      // #423: "gerar 2, o usuário escolhe" → busca o corpo das 2 Receitas EM PARALELO e entra em 'choice'.
+      // Se algum GET falhar, o corpo daquela coluna fica null (a região de escolha degrada a coluna, sem
+      // derrubar a outra). NÃO consome result/view — a convergência acontece só ao escolher.
+      if (data.outcome === 'variants') {
+        const withViews = await Promise.all(
+          data.variants.map(async (v) => ({ ...v, view: await fetchView(v.recipeId) })),
+        )
+        setVariants(withViews)
+        setResult(null)
+        setView(null)
+        setLoadFailed(false)
+        setStatus('choice')
+        return
+      }
+
       setResult(data)
+      setVariants(null)
       setLoadFailed(false)
 
       if (data.outcome === 'impossible') {
@@ -187,11 +246,43 @@ export function useRecipeGeneration({
     }
   }
 
+  /**
+   * #423 — registra a escolha de UMA variação e converge para o resultado dela. A escolha é
+   * SERVER-AUTHORITATIVE (owner-scope): postamos o `generationId` em /api/generations/choice e o servidor
+   * prova a posse. Em falha (404/rede), NÃO trava a tela — a variação escolhida JÁ está persistida
+   * (privada); convergimos para o resultado dela mesmo assim (o carimbo do sinal é best-effort). Reusa o
+   * `view` já buscado (sem 2º GET).
+   */
+  async function escolherVariante(v: VariantChoice) {
+    // Best-effort: o sinal comportamental não pode bloquear a convergência da UI.
+    try {
+      await fetch('/api/generations/choice', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ generationId: v.generationId }),
+      })
+    } catch {
+      // ignora — a escolhida já existe; convergimos abaixo de qualquer forma.
+    }
+    setResult({
+      outcome: v.outcome,
+      recipeId: v.recipeId,
+      advisory: v.advisory,
+      ...(v.slug != null ? { slug: v.slug } : {}),
+      ...(v.locale != null ? { locale: v.locale } : {}),
+    })
+    setView(v.view)
+    setLoadFailed(v.view == null)
+    setVariants(null)
+    setStatus('result')
+  }
+
   function voltarParaIdle() {
     setResult(null)
     setView(null)
     setErrorKey(null)
     setLoadFailed(false)
+    setVariants(null)
     setStatus('idle')
   }
 
@@ -212,9 +303,11 @@ export function useRecipeGeneration({
     view,
     errorKey,
     loadFailed,
+    variants,
     headingRef,
     enviar,
     carregarReceita,
+    escolherVariante,
     voltarParaIdle,
     setStatus,
     setErrorKey,

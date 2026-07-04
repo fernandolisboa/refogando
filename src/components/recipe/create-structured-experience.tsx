@@ -45,8 +45,10 @@ import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-forma
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import { useRecipeGeneration, mapErroMensagem } from '@/hooks/use-recipe-generation'
+import { useRecipeVariantEnabled } from './recipe-variant-provider'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { GenerationResultRegion } from './generation-result-region'
+import { VariantChoiceRegion } from './variant-choice-region'
 import { SortToggle } from './sort-toggle'
 
 /** Modo de entrada da tela: por campos (#58) ou texto livre (#88). */
@@ -122,6 +124,7 @@ export function CreateStructuredExperience({
   const { locale, messages } = useLocale()
   const m = messages.criar
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
+  const variantEnabled = useRecipeVariantEnabled() // #423: a feature "gerar 2" está ligada?
   const session = useSession()
 
   // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
@@ -164,13 +167,19 @@ export function CreateStructuredExperience({
     view,
     errorKey,
     loadFailed,
+    variants,
     headingRef,
     enviar,
     carregarReceita,
+    escolherVariante,
     voltarParaIdle: voltarParaIdleEngine,
     setStatus,
     setErrorKey,
   } = useRecipeGeneration({ locale, onLoadingChange })
+
+  // #423: opt-in "Gerar 2 versões" — só oferecido no modo structured E com a feature ligada (o servidor
+  // é a verdade; ignora `variar2` desligado). Local, resetado por "Criar outra receita".
+  const [variar2, setVariar2] = useState(false)
 
   // ── Helpers de estado dos itens ────────────────────────────────────────────
   function patchItem(index: number, patch: Partial<ItemDraft>) {
@@ -290,6 +299,9 @@ export function CreateStructuredExperience({
         })),
       },
       ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
+      // #423: opt-in "Gerar 2 versões". Só sobe quando a feature está ligada E o usuário marcou (o
+      // servidor revalida a config e ignora `variar2` desligado — o cliente nunca gera 2 por conta própria).
+      ...(variantEnabled && variar2 ? { variar2: true } : {}),
     }
   }
 
@@ -317,6 +329,7 @@ export function CreateStructuredExperience({
     setEntradaInteligente('')
     setExtractError(false)
     setItemErrors({})
+    setVariar2(false) // #423: nova receita reseta o opt-in de variação.
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -383,6 +396,10 @@ export function CreateStructuredExperience({
   }))
 
   const isResult = status === 'result'
+  // #423: 'choice' = as 2 variações na tela; como o resultado, o FORMULÁRIO some (o usuário está
+  // escolhendo, não editando o pedido).
+  const isChoice = status === 'choice'
+  const showForm = !isResult && !isChoice
   // Texto livre ACIMA do teto (a folga do maxLength permite 2001–2200): sinaliza o erro de
   // forma proativa no contador + aria-invalid, antes do submit.
   const freeTextOver = freeText.trim().length > FREE_TEXT_MAX
@@ -403,7 +420,7 @@ export function CreateStructuredExperience({
         >
           {m.titulo}
         </Titulo>
-        {!isResult && (
+        {showForm && (
           <p className="max-w-[60ch] text-muted">
             {mode === 'free_text' ? m.descricaoPromptAberto : m.descricao}
           </p>
@@ -416,7 +433,7 @@ export function CreateStructuredExperience({
           modo durante a geração é benigno (não dispara fetch; o submit do ramo certo já está
           travado pelo fieldset). Some no resultado. #191: oculto no drawer (`hideModeToggle`) —
           lá o método já foi escolhido no método-picker. */}
-      {!isResult && !hideModeToggle && (
+      {showForm && !hideModeToggle && (
         <SortToggle<Mode>
           value={mode}
           onChange={trocarModo}
@@ -429,8 +446,8 @@ export function CreateStructuredExperience({
         />
       )}
 
-      {/* Formulário — visível em idle/loading/error; some no resultado. */}
-      {!isResult && (
+      {/* Formulário — visível em idle/loading/error; some no resultado E na escolha (#423). */}
+      {showForm && (
         <form onSubmit={onSubmit} aria-busy={status === 'loading'}>
           {/* `disabled` durante o loading trava TODOS os controles de uma vez (inputs, selects,
               botões de item, submit), honrando o aria-busy do form — evita editar enquanto a
@@ -706,6 +723,23 @@ export function CreateStructuredExperience({
             </div>
           )}
 
+          {/* #423: opt-in "Gerar 2 versões". Só no modo structured (esta fatia) E com a feature ligada
+              (contexto `variantEnabled`, semeado do servidor). O servidor revalida `variar2`. */}
+          {mode === 'structured' && variantEnabled && (
+            <label className="flex items-start gap-2 text-sm font-medium text-fg">
+              <input
+                type="checkbox"
+                checked={variar2}
+                onChange={(e) => setVariar2(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border accent-brand-strong"
+              />
+              <span className="flex flex-col gap-0.5">
+                {m.variar2Label}
+                <span className="font-normal text-muted">{m.variar2Ajuda}</span>
+              </span>
+            </label>
+          )}
+
           {/* Erro de validação/técnico — neutro (NÃO âmbar), espelha auth-form. */}
           {status === 'error' && errorKey != null && (
             <p
@@ -738,6 +772,15 @@ export function CreateStructuredExperience({
           leitores de tela (padrão de search-experience). O conteúdo entra/sai DENTRO dela.
           `GenerationResultRegion` (#193) desenha o desfecho a partir do bag do motor. */}
       <div aria-live="polite" className="flex flex-col gap-6">
+        {/* #423: escolha das 2 variações (converge p/ GenerationResultRegion ao picar uma). */}
+        {isChoice && variants != null && (
+          <VariantChoiceRegion
+            variants={variants}
+            messages={messages}
+            locale={locale}
+            onEscolher={(v) => void escolherVariante(v)}
+          />
+        )}
         {isResult && result != null && (
           <GenerationResultRegion
             result={result}

@@ -37,7 +37,9 @@ import {
   mapErroMensagem,
   type Status,
 } from '@/hooks/use-recipe-generation'
+import { useRecipeVariantEnabled } from './recipe-variant-provider'
 import { GenerationResultRegion } from './generation-result-region'
+import { VariantChoiceRegion } from './variant-choice-region'
 
 /** Rascunho de UM item do Briefing. `strength` nasce 'required'; `ingredientId` é sempre null. */
 type ItemDraft = { rawText: string; quantidade: string; unidade: string }
@@ -96,6 +98,7 @@ export function CreateStructuredWizard({
   const { locale, messages } = useLocale()
   const m = messages.criar
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
+  const variantEnabled = useRecipeVariantEnabled() // #423: a feature "gerar 2" está ligada?
   const w = messages.criarWizard
 
   // Destrutura o bag do motor no topo: o render lê variáveis planas (estado), e a `headingRef`
@@ -107,9 +110,11 @@ export function CreateStructuredWizard({
     view,
     errorKey,
     loadFailed,
+    variants,
     headingRef,
     enviar,
     carregarReceita,
+    escolherVariante,
     voltarParaIdle,
     setStatus,
     setErrorKey,
@@ -131,9 +136,13 @@ export function CreateStructuredWizard({
   const [porcoes, setPorcoes] = useState(PORCOES_DEFAULT)
   const [dificuldade, setDificuldade] = useState(1)
   const [observacoes, setObservacoes] = useState('')
+  // #423: opt-in "Gerar 2 versões" — só oferecido com a feature ligada (o servidor é a verdade).
+  const [variar2, setVariar2] = useState(false)
 
   const isResult = status === 'result'
   const isLoading = status === 'loading'
+  // #423: 'choice' = as 2 variações na tela; o wizard some (o usuário escolhe, não edita o pedido).
+  const isChoice = status === 'choice'
 
   // ── Itens (modo um-a-um) ─────────────────────────────────────────────────────
   const curIdx = Math.min(cur, itens.length - 1)
@@ -205,6 +214,8 @@ export function CreateStructuredWizard({
         itens: briefingItens(),
       },
       ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
+      // #423: opt-in "Gerar 2 versões". Só sobe com a feature ligada E marcado (o servidor revalida).
+      ...(variantEnabled && variar2 ? { variar2: true } : {}),
     }
   }
 
@@ -238,6 +249,7 @@ export function CreateStructuredWizard({
     setPorcoes(PORCOES_DEFAULT)
     setDificuldade(1)
     setObservacoes('')
+    setVariar2(false) // #423: nova receita reseta o opt-in de variação.
     setStep(0)
     voltarParaIdle()
   }
@@ -245,8 +257,8 @@ export function CreateStructuredWizard({
   // ── Stepper (renderizado no header do drawer) ────────────────────────────────
   const STEP_NAMES = [w.passoIngredientes, w.passoCozinha, w.passoDetalhes]
   // Reporta para o shell: o `‹` do header vira step-aware enquanto NÃO há resultado; o stepper
-  // some no resultado/loading. Ajusta DURANTE o render via assinatura (evita set-state-in-effect).
-  const showChrome = !isResult && !isLoading
+  // some no resultado/loading/escolha. Ajusta DURANTE o render via assinatura (evita set-state-in-effect).
+  const showChrome = !isResult && !isLoading && !isChoice
   useEffect(() => {
     onBackHandlerChange?.(showChrome ? voltar : null)
     return () => onBackHandlerChange?.(null)
@@ -298,8 +310,8 @@ export function CreateStructuredWizard({
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      {/* Formulário (passos) — some no resultado. `fieldset disabled` trava tudo no loading. */}
-      {!isResult && (
+      {/* Formulário (passos) — some no resultado E na escolha (#423). `fieldset disabled` trava no loading. */}
+      {!isResult && !isChoice && (
         <fieldset
           disabled={isLoading}
           className="flex min-w-0 flex-col gap-6 border-0 p-0 disabled:opacity-60"
@@ -618,6 +630,22 @@ export function CreateStructuredWizard({
                   className="resize-y"
                 />
               </div>
+              {/* #423: opt-in "Gerar 2 versões" — só com a feature ligada (contexto, semeado do servidor).
+                  O servidor revalida `variar2`. Fica no último passo (perto do "Gerar receita"). */}
+              {variantEnabled && (
+                <label className="flex items-start gap-2 text-sm font-medium text-fg">
+                  <input
+                    type="checkbox"
+                    checked={variar2}
+                    onChange={(e) => setVariar2(e.target.checked)}
+                    className="mt-0.5 size-4 rounded border-border accent-brand-strong"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    {m.variar2Label}
+                    <span className="font-normal text-muted">{m.variar2Ajuda}</span>
+                  </span>
+                </label>
+              )}
             </div>
           )}
 
@@ -633,8 +661,8 @@ export function CreateStructuredWizard({
         </fieldset>
       )}
 
-      {/* Rodapé do wizard — Voltar + (Continuar | Gerar receita). Some no resultado. */}
-      {!isResult && (
+      {/* Rodapé do wizard — Voltar + (Continuar | Gerar receita). Some no resultado E na escolha (#423). */}
+      {!isResult && !isChoice && (
         <div className="flex items-center gap-3 border-t border-border pt-4">
           <Button type="button" variant="ghost" onClick={voltar} disabled={isLoading}>
             {messages.criarDrawer.voltar}
@@ -655,6 +683,23 @@ export function CreateStructuredWizard({
       {/* Região de resultado — `aria-live` PRÉ-existe (anti-vácuo de leitor de tela). O heading do
           TOPO (h2 com headingRef) recebe o foco ao gerar; o nome da Receita é o ÚNICO <h1>. */}
       <div aria-live="polite" className="flex flex-col gap-6">
+        {/* #423: escolha das 2 variações. O `headingRef` (foco-ao-swap) mora no h2 sr-only do TOPO,
+            renderizado quando NÃO há form (choice/result), pra o foco não cair no <body>. */}
+        {isChoice && (
+          <>
+            <h2 ref={headingRef} tabIndex={-1} className="sr-only outline-none">
+              {m.titulo}
+            </h2>
+            {variants != null && (
+              <VariantChoiceRegion
+                variants={variants}
+                messages={messages}
+                locale={locale}
+                onEscolher={(v) => void escolherVariante(v)}
+              />
+            )}
+          </>
+        )}
         {isResult && (
           <>
             <h2

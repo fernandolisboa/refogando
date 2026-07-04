@@ -491,6 +491,9 @@ describe('Concorrência de seq — UNIQUE(creation_session_id, seq) é a rede (2
       async generateRecipe(): Promise<GenerationOutput> {
         return cannedSuccess()
       }
+      async generateRecipeVariants(): Promise<GenerationOutput[]> {
+        throw new Error('generateRecipeVariants não devia ser chamado')
+      }
       async *streamConversation(): AsyncIterable<string> {
         yield 'tok'
         if (++arrived === 2) releaseBoth()

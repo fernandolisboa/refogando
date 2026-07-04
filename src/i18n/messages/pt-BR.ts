@@ -527,6 +527,19 @@ export const ptBR = {
     modoFormulario: 'Formulário',
     modoConversa: 'Conversa',
     seletorModo: 'Como criar',
+    // #423 (ADR-0029 dec.6): "gerar 2, o usuário escolhe". Opt-in no modo estruturado (só quando o admin
+    // liga a feature) + a tela de escolha entre as 2 versões.
+    variar2Label: 'Gerar 2 versões para eu escolher',
+    variar2Ajuda: 'A IA cria duas versões diferentes; você escolhe a preferida.',
+    variacaoTitulo: 'Escolha uma versão',
+    variacaoIntro:
+      'Geramos duas versões. Escolha a que você prefere — a outra fica salva no seu espaço.',
+    variacaoColuna: 'Versão {n}',
+    variacaoEscolher: 'Escolher esta',
+    variacaoCorpoIndisponivel:
+      'Não foi possível carregar esta versão agora, mas ela está salva no seu espaço.',
+    erroLimiteVariacao:
+      'Você não tem espaço para gerar 2 versões agora. Tente uma versão só ou volte mais tarde.',
   },
   // Drawer "Nova receita" (#191, ADR-0021) — reorganiza a criação por IA num drawer da direita
   // (sobre o Sheet). O kicker em versalete + o título do passo dão o nome acessível do diálogo; o
@@ -1045,6 +1058,15 @@ export const ptBR = {
     aiTetoIlimitado: 'ilimitado',
     aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
     aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',
+    // #423 (ADR-0029 dec.6): variação de geração ("gerar 2, o usuário escolhe") — liga/desliga + o eixo
+    // de divergência (pólos + como divergir), editável sem deploy.
+    aiVariacaoLabel: 'Variação de geração (gerar 2, o usuário escolhe)',
+    aiVariacaoAjuda:
+      'Uma única chamada gera duas versões divergentes; o usuário escolhe. Custa cerca de 2× tokens — mantenha como opt-in.',
+    aiVariacaoHabilitadaLabel: 'Oferecer "Gerar 2 versões" na criação',
+    aiVariacaoPoloA: 'Pólo A',
+    aiVariacaoPoloB: 'Pólo B',
+    aiVariacaoInstrucao: 'Como divergir',
     // #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios. A allowlist é fonte
     // ÚNICA tanto da busca na web quanto do guard de SSRF do import. Um domínio por linha.
     webTitulo: 'Descoberta na web',

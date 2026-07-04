@@ -42,6 +42,11 @@ export type GenerationOutput =
       recipe: ReceitaGenT | null
       advisory: string | null
       modelKind: 'success' | 'degraded' | 'playful' | 'impossible'
+      // #423 (ADR-0029 dec.6): rótulo do PÓLO de divergência auto-atribuído pela IA, presente SÓ no
+      // caminho "gerar 2" (`generateRecipeVariants` mapeia `variacoes[].variacao` pra cá). AUSENTE no
+      // caminho single (`generateRecipe`) — OPCIONAL, back-compat: `classify` o ignora; `classifyVariants`
+      // o carrega pro persist (`generation.variant_label`).
+      variacao?: string
     }
   | { kind: 'refusal' }
   | { kind: 'max_tokens' }
@@ -81,4 +86,36 @@ export function classify(out: GenerationOutput): ClassifyResult {
     return { outcome: 'invalid' }
   }
   return { outcome: out.modelKind, recipe, advisory: out.advisory }
+}
+
+/**
+ * Uma variação CLASSIFICADA que produziu Receita (#423, ADR-0029 dec.6) + o rótulo do pólo. Só
+ * `success|degraded|playful` entram numa escolha "gerar 2" (uma variação `impossible`/`invalid` não tem
+ * Receita — não há o que escolher); o `variacao` (rótulo do pólo, auto-atribuído pela IA) viaja pro
+ * persist (`generation.variant_label`, o sinal de qual pólo o usuário guardou).
+ */
+export type VariantClassifyResult = {
+  outcome: 'success' | 'degraded' | 'playful'
+  recipe: ReceitaGenT
+  advisory: string | null
+  variacao: string
+}
+
+/**
+ * Classifica o LOTE de variações reusando `classify` por item e FILTRA as que não produziram Receita
+ * (impossible/invalid). PURA/total. A cardinalidade EXATA-2 NÃO é decidida aqui — é a BORDA (route) que,
+ * pós-filtro, exige 2 variações válidas, senão devolve erro de geração (não degrada — ADR-0029). Um lote
+ * cujo parse falhou chega como `[{kind:'parse_failed'}]` (ou vazio) ⇒ filtra pra `[]` ⇒ a borda 502a.
+ */
+export function classifyVariants(outs: readonly GenerationOutput[]): VariantClassifyResult[] {
+  const out: VariantClassifyResult[] = []
+  for (const raw of outs) {
+    const c = classify(raw)
+    if (c.outcome === 'success' || c.outcome === 'degraded' || c.outcome === 'playful') {
+      // `raw` é forçosamente o branch 'object' aqui (só ele classifica em success/degraded/playful).
+      const variacao = raw.kind === 'object' ? (raw.variacao ?? '') : ''
+      out.push({ outcome: c.outcome, recipe: c.recipe, advisory: c.advisory, variacao })
+    }
+  }
+  return out
 }

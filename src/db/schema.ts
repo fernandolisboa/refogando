@@ -46,6 +46,10 @@ import {
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
+import {
+  DEFAULT_RECIPE_VARIANT_CONFIG,
+  type RecipeVariantConfig,
+} from '@/domain/recipe-variant-config'
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
@@ -761,6 +765,14 @@ export const appConfig = pgTable(
       .$type<RecipeGenCapByRole>()
       .notNull()
       .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
+    // #423 (ADR-0029 dec.6): config da VARIAÇÃO DE GERAÇÃO ("gerar 2, o usuário escolhe"). jsonb
+    // `{ enabled, poloA, poloB, instrucao }` na MESMA linha singleton (espelha os demais eixos). O
+    // eixo de divergência (poloA/poloB/instrucao) é editável pelo admin SEM deploy. Default DESLIGADO
+    // (opt-in — custa 2× tokens). Defaults vêm do domínio (`DEFAULT_RECIPE_VARIANT_CONFIG`).
+    recipeVariantConfig: jsonb('recipe_variant_config')
+      .$type<RecipeVariantConfig>()
+      .notNull()
+      .default(DEFAULT_RECIPE_VARIANT_CONFIG),
     webSearchEnabled: boolean('web_search_enabled')
       .notNull()
       .default(DEFAULT_WEB_SEARCH_CONFIG.enabled),
@@ -894,6 +906,13 @@ export const generation = pgTable(
     // ficam NULL; as novas carimbam via `promptStampFor` (borda). `$type<PromptStamp>` tipa a leitura/escrita
     // do jsonb (o driver devolve `unknown` cru).
     promptStamp: jsonb('prompt_stamp').$type<PromptStamp>(),
+    // #423 (ADR-0029 dec.6) — "gerar 2, o usuário escolhe". As DUAS gerações de um lote compartilham
+    // um `variant_group_id` (agrupa-as); `variant_label` é o pólo auto-atribuído (ex. "tradicional"); e
+    // `variant_chosen` é o SINAL (a rota de escolha marca `true` na escolhida, server-authoritative por
+    // owner). TODAS nullable/sem default: a geração LEGADA (single) as deixa NULL — não quebra nada.
+    variantGroupId: uuid('variant_group_id'),
+    variantLabel: text('variant_label'),
+    variantChosen: boolean('variant_chosen'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -903,6 +922,10 @@ export const generation = pgTable(
     index('generation_recipe_id_idx')
       .on(t.recipeId)
       .where(sql`${t.recipeId} IS NOT NULL`),
+    // #423: agrupa as 2 variações de um lote; parcial (só as linhas de variação, o resto é NULL).
+    index('generation_variant_group_id_idx')
+      .on(t.variantGroupId)
+      .where(sql`${t.variantGroupId} IS NOT NULL`),
   ],
 )
 

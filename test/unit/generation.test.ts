@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   GENERATION_OUTCOMES,
   classify,
+  classifyVariants,
   type GenerationOutput,
 } from '@/domain/generation'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
@@ -225,6 +226,45 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
     expect(
       classify({ kind: 'object', recipe, advisory: 'nota', modelKind: 'degraded' }),
     ).toEqual({ outcome: 'degraded', recipe, advisory: 'nota' })
+  })
+})
+
+describe('classifyVariants — lote "gerar 2, o usuário escolhe" (#423)', () => {
+  function objVar(variacao: string, over: Partial<GenerationOutput & { modelKind: string }> = {}): GenerationOutput {
+    return { kind: 'object', recipe: makeReceita(), advisory: null, modelKind: 'success', variacao, ...over } as GenerationOutput
+  }
+
+  it('2 variações válidas → 2 resultados, cada um com o rótulo do pólo', () => {
+    const out = classifyVariants([objVar('tradicional'), objVar('criativa', { modelKind: 'degraded', advisory: 'troquei X' })])
+    expect(out).toHaveLength(2)
+    expect(out[0]).toMatchObject({ outcome: 'success', variacao: 'tradicional' })
+    expect(out[1]).toMatchObject({ outcome: 'degraded', variacao: 'criativa', advisory: 'troquei X' })
+    expect(out[0].recipe.titulo).toBe('Risoto de funghi')
+  })
+
+  it('1 inválida (porcoes fora de faixa) → FILTRA, sobra 1', () => {
+    const ruim = objVar('ruim', { recipe: makeReceita({ porcoes: 99 }) })
+    const out = classifyVariants([objVar('boa'), ruim])
+    expect(out).toHaveLength(1)
+    expect(out[0].variacao).toBe('boa')
+  })
+
+  it('impossible NÃO conta como variação escolhível (sem Receita) → filtrada', () => {
+    const imp: GenerationOutput = { kind: 'object', recipe: null, advisory: 'nope', modelKind: 'impossible', variacao: 'x' }
+    const out = classifyVariants([objVar('boa'), imp])
+    expect(out).toHaveLength(1)
+    expect(out[0].variacao).toBe('boa')
+  })
+
+  it('lote com parse_failed (batch falhou) → [] (a borda 502a)', () => {
+    expect(classifyVariants([{ kind: 'parse_failed' }])).toEqual([])
+    expect(classifyVariants([])).toEqual([])
+  })
+
+  it('variacao ausente no output vira string vazia (defensivo)', () => {
+    const semLabel: GenerationOutput = { kind: 'object', recipe: makeReceita(), advisory: null, modelKind: 'success' }
+    const out = classifyVariants([semLabel, objVar('b')])
+    expect(out[0].variacao).toBe('')
   })
 })
 

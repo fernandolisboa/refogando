@@ -4,6 +4,7 @@ import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { parseRecipeVariantConfig, type RecipeVariantConfig } from '@/domain/recipe-variant-config'
 import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
 import { parsePopularityConfig, type PopularityConfig } from '@/domain/popularity'
@@ -46,6 +47,7 @@ export async function PUT(req: Request): Promise<Response> {
     defaultModel?: unknown
     imageGen?: unknown
     recipeGenCapByRole?: unknown
+    recipeVariant?: unknown
     webSearch?: unknown
     catalogDisclosure?: unknown
     popularity?: unknown
@@ -59,6 +61,7 @@ export async function PUT(req: Request): Promise<Response> {
     imageGenModel: string
     imageGenCapByRole: ImageGenConfig['dailyCapByRole']
     recipeGenCapByRole: RecipeGenCapByRole
+    recipeVariantConfig: RecipeVariantConfig
     webSearchEnabled: boolean
     webSearchAllowlist: string[]
     catalogDisclosureEnabled: boolean
@@ -88,6 +91,15 @@ export async function PUT(req: Request): Promise<Response> {
     const caps = parseRecipeGenCapByRole(body.recipeGenCapByRole)
     if (caps === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.recipeGenCapByRole = caps
+  }
+
+  // #423: variação de geração ("gerar 2, o usuário escolhe"). enabled boolean + poloA/poloB/instrucao
+  // não-vazios (trimados). Substituição COMPLETA do eixo (a UI sempre envia os 4 campos). Inválido ⇒ 400
+  // config_invalida (mesma chave da UI /admin/ia).
+  if (body.recipeVariant !== undefined) {
+    const parsed = parseRecipeVariantConfig(body.recipeVariant)
+    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.recipeVariantConfig = parsed.value
   }
 
   // #164: descoberta na web (enabled + allowlist de domínios). A allowlist é CANONICALIZADA na

@@ -105,6 +105,12 @@ export type PersistGenerationInput = {
   // impossible quanto no de sucesso. AUSENTE (linhas legadas / callers que ainda não resolvem eixos) ⇒
   // undefined ⇒ NULL. Correlaciona depois qual composição produziu Receitas que as pessoas guardam.
   promptStamp?: PromptStamp
+  // #423 (ADR-0029 dec.6) — "gerar 2, o usuário escolhe". As DUAS gerações de um lote compartilham o
+  // MESMO `variantGroupId` (o caller o gera UMA vez e chama persistGeneration 2×), cada uma com o seu
+  // `variantLabel` (o pólo). Gravados em `generation.variant_group_id`/`variant_label`. AUSENTES na
+  // geração single (legado) ⇒ undefined ⇒ NULL. `variant_chosen` NASCE NULL (a rota de escolha o marca).
+  variantGroupId?: string
+  variantLabel?: string
 }
 
 export type PersistGenerationResult = {
@@ -185,7 +191,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -234,6 +240,9 @@ export async function persistGeneration(
           schemaVersion: SCHEMA_VERSION_RECEITA,
           // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
           promptStamp,
+          // #423: agrupamento/rótulo da variação. AUSENTES no single ⇒ undefined ⇒ NULL.
+          variantGroupId,
+          variantLabel,
         })
         .returning({ id: generation.id })
       return {
@@ -351,6 +360,10 @@ export async function persistGeneration(
         schemaVersion: SCHEMA_VERSION_RECEITA,
         // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
         promptStamp,
+        // #423 (ADR-0029 dec.6): agrupamento/rótulo da variação. AUSENTES no single ⇒ undefined ⇒ NULL.
+        // `variant_chosen` NASCE NULL (a rota de escolha o marca, server-authoritative por owner).
+        variantGroupId,
+        variantLabel,
       })
       .returning({ id: generation.id })
 
