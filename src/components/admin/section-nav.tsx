@@ -39,6 +39,7 @@ export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
         { href: '/admin/descoberta', label: m.navDescoberta },
         { href: '/admin/comparador', label: m.navComparador },
         { href: '/admin/vocabulario', label: m.navVocabulario },
+        { href: '/admin/site', label: m.navSite },
         { href: '/admin/users', label: m.navPapeis },
       ]
     : []

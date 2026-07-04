@@ -8,6 +8,9 @@ import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
+  // #451: aria-label suffix for the footer social links (only the suffix is translated; the network
+  // brand name is not).
+  footer: { abreEmNovaAba: 'opens in a new tab' },
   nav: {
     // #277: the Discovery/home is now labeled "Explore" in the nav (a tab next to "Following").
     // Key stays `home` (links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
@@ -1016,6 +1019,23 @@ export const enUS: Messages = {
     comparadorOutcomePlayful: 'playful',
     comparadorOutcomeImpossible: 'impossible',
     comparadorOutcomeInvalid: 'invalid',
+    // ── #451: "Site" tab (Governance, admin-only) — social links in the footer, editable without deploy. ──
+    navSite: 'Site',
+    redesTitulo: 'Social links (footer)',
+    redesDescricao:
+      'Links shown in the site footer. Add the account and turn it on when it exists. Empty = footer with no links.',
+    redesPlataformaLabel: 'Network',
+    redesUrlLabel: 'URL (https://…)',
+    redesRotuloLabel: 'Label (optional)',
+    redesLigadoLabel: 'Show in footer',
+    redesAdicionar: 'Add network',
+    redesRemover: 'Remove',
+    redesSalvar: 'Save',
+    redesSalvando: 'Saving…',
+    redesSalvo: 'Changes saved.',
+    redesErro: 'Could not save. Check the URLs (http/https only) and avoid repeated platforms.',
+    redesCarregando: 'Loading…',
+    redesVazio: 'No networks added yet.',
     // "Image generation" section (#134) — lives on the "AI" tab (/admin/ia); toggle, model, caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',

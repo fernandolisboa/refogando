@@ -53,6 +53,10 @@ import {
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
+import {
+  DEFAULT_SOCIAL_LINKS_CONFIG,
+  type SocialLinksConfig,
+} from '@/domain/social-links-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
@@ -810,6 +814,14 @@ export const appConfig = pgTable(
       .$type<PopularityConfig>()
       .notNull()
       .default(DEFAULT_POPULARITY_CONFIG),
+    // #451: links de redes sociais do SITE (footer), editáveis pelo admin SEM deploy. jsonb
+    // SocialLink[] na MESMA linha singleton (espelha os demais eixos). Default [] (footer sem links
+    // até o admin cadastrar). O read-path re-valida (parseSocialLinksConfig) — linha legada/lixo cai
+    // em [] (fail-safe: nunca renderiza link inválido).
+    socialLinks: jsonb('social_links')
+      .$type<SocialLinksConfig>()
+      .notNull()
+      .default(DEFAULT_SOCIAL_LINKS_CONFIG),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

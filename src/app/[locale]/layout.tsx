@@ -15,7 +15,8 @@ import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
 import { getDb } from '@/server/deps'
 import { loadVocabulary } from '@/server/vocabulary/load'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
-import { loadRecipeVariantConfig } from '@/server/app-config'
+import { loadAppConfig } from '@/server/app-config'
+import type { SocialLink } from '@/domain/social-links-config'
 
 export const metadata: Metadata = {
   title: 'Refogando',
@@ -69,11 +70,20 @@ export default async function LocaleLayout({
   // #423: a feature "gerar 2, o usuário escolhe" está ligada? Semeado no contexto (o opt-in aparece só
   // com a config ligada). Mesmo tratamento gracioso da cozinha — um soluço do Neon vira `false` (a
   // feature some), nunca uma tela quebrada. O servidor revalida `variar2` de qualquer forma.
+  // #423 + #451: uma ÚNICA leitura de app_config por request (mesma linha singleton) — a feature
+  // "gerar 2" está ligada? e os links sociais do footer. Mesmo tratamento gracioso da cozinha: soluço
+  // do Neon ⇒ variar2 desligado + footer sem links (degrada, nunca tela quebrada). Filtramos os links
+  // habilitados NO SERVIDOR — o footer (client) só recebe o que renderiza (payload menor; link
+  // desligado não vaza no HTML).
   let variantEnabled = false
+  let socialLinks: SocialLink[] = []
   try {
-    variantEnabled = (await loadRecipeVariantConfig(getDb())).enabled
+    const cfg = await loadAppConfig(getDb())
+    variantEnabled = cfg.recipeVariant.enabled
+    socialLinks = cfg.socialLinks.filter((l) => l.enabled)
   } catch {
     variantEnabled = false
+    socialLinks = []
   }
   return (
     <html lang={locale} className={themeClass}>
@@ -95,7 +105,7 @@ export default async function LocaleLayout({
               {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
                   então mantém um único landmark main por documento. */}
               <div className="flex flex-1 flex-col">{children}</div>
-              <SiteFooter initialTheme={initialTheme} />
+              <SiteFooter initialTheme={initialTheme} socialLinks={socialLinks} />
             </HomeSearchProvider>
            </RecipeVariantProvider>
           </CozinhaVocabProvider>

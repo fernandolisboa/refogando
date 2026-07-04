@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ADD COLUMN "social_links" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -29,6 +29,11 @@ import {
   parsePopularityConfig,
   type PopularityConfig,
 } from '@/domain/popularity'
+import {
+  DEFAULT_SOCIAL_LINKS_CONFIG,
+  parseSocialLinksConfig,
+  type SocialLinksConfig,
+} from '@/domain/social-links-config'
 
 /**
  * Leitura do singleton `app_config` (issues #5/#134) — fonte ÚNICA da config de app, usada tanto pelo
@@ -57,6 +62,8 @@ export type AppConfig = {
   catalogDisclosure: CatalogDisclosureConfig
   // #368: constantes da mistura de popularidade (pesos + m + tauDays) — ranking da Busca e do trilho.
   popularity: PopularityConfig
+  // #451: links de redes sociais do site (footer), editáveis pelo admin sem deploy.
+  socialLinks: SocialLinksConfig
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
@@ -70,6 +77,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       webSearch: DEFAULT_WEB_SEARCH_CONFIG,
       catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
       popularity: DEFAULT_POPULARITY_CONFIG,
+      socialLinks: DEFAULT_SOCIAL_LINKS_CONFIG,
     }
   }
   // #368: re-valida na leitura — jsonb legado/editado à mão com lixo (peso negativo, m<=0, Infinity
@@ -79,6 +87,9 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   // #423: re-valida na leitura — jsonb legado/editado à mão com pólo/instrução vazios cai no DEFAULT
   // (fail-safe), nunca compõe um fragmento de prompt sem norte. Mesma disciplina do popularity/webSearch.
   const parsedVariant = parseRecipeVariantConfig(row.recipeVariantConfig)
+  // #451: re-valida na leitura — linha legada/editada à mão com lixo (URL insegura, plataforma
+  // desconhecida, duplicada) cai em [] (fail-safe), nunca vaza um link inválido pro footer.
+  const parsedSocial = parseSocialLinksConfig(row.socialLinks)
   return {
     defaultModel: row.defaultModel,
     imageGen: {
@@ -104,6 +115,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
           : DEFAULT_CATALOG_DISCLOSURE_CONFIG.text,
     },
     popularity: parsedPopularity.ok ? parsedPopularity.value : DEFAULT_POPULARITY_CONFIG,
+    socialLinks: parsedSocial.ok ? parsedSocial.value : DEFAULT_SOCIAL_LINKS_CONFIG,
   }
 }
 
@@ -130,4 +142,9 @@ export async function loadRecipeVariantConfig(db: Database): Promise<RecipeVaria
 /** Atalho: só a config de descoberta na web (#164) — usada pelo endpoint e pelo guard de SSRF do import. */
 export async function loadWebSearchConfig(db: Database): Promise<WebSearchConfig> {
   return (await loadAppConfig(db)).webSearch
+}
+
+/** Atalho: só os links de redes sociais do site (#451) — usado pelo layout p/ threadar ao footer. */
+export async function loadSocialLinksConfig(db: Database): Promise<SocialLinksConfig> {
+  return (await loadAppConfig(db)).socialLinks
 }
