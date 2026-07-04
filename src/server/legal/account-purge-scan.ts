@@ -38,11 +38,14 @@ export type PurgeScanResult = {
 const MS_PER_DAY = 86_400_000
 
 /** Prazo de retenção resolvido: env `ACCOUNT_PURGE_RETENTION_DAYS` (server) ou o default do kernel. */
-function resolveRetentionDays(): number {
+export function resolveRetentionDays(): number {
   const raw = process.env.ACCOUNT_PURGE_RETENTION_DAYS
-  if (raw === undefined) return RETENTION_DAYS
+  if (raw === undefined || raw.trim() === '') return RETENTION_DAYS
   const n = Number(raw)
-  return Number.isFinite(n) && n >= 0 ? n : RETENTION_DAYS
+  // Fail-safe: este é um job DESTRUTIVO — um retention de 0 dia acidental expurgaria TODAS as
+  // contas anonimizadas de uma vez. Só aceitamos um inteiro ESTRITAMENTE POSITIVO; vazio, espaço,
+  // 0, negativo, NaN ou fracionário caem no default conservador (RETENTION_DAYS).
+  return Number.isInteger(n) && n > 0 ? n : RETENTION_DAYS
 }
 
 export async function purgeAnonymizedAccounts(
