@@ -18,13 +18,18 @@ import { Fragment } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { splitLocalePrefix } from '@/i18n/locale-path'
 
 type Item = { href: string; label: string }
 
 export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
   const { messages } = useLocale()
   const m = messages.admin
-  const pathname = usePathname()
+  // `usePathname()` vem PREFIXADO pelo locale (`/pt-BR/admin/ia`), mas os hrefs abaixo são NUS
+  // (`/admin/ia`) — tiramos o prefixo (`splitLocalePrefix → rest`) ANTES de comparar, senão o
+  // `aria-current`/sublinhado ativo nunca dispara. Mesmo fix do site-header (#277). Null-safe fora
+  // do contexto de router (seam jsdom) via `?? '/'`.
+  const rest = splitLocalePrefix(usePathname() ?? '/').rest
   const isAdmin = role === 'admin'
 
   // Governança (admin-only) vem antes da Curadoria, espelhando a ordem dos grupos do Console.
@@ -73,7 +78,7 @@ export function SectionNav({ role }: { role: 'admin' | 'curador' }) {
                 {g.label}
               </span>
               {g.items.map((it) => {
-                const active = pathname === it.href
+                const active = rest === it.href
                 return (
                   <Link
                     key={it.href}

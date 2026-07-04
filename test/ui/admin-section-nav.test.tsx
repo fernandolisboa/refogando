@@ -94,6 +94,17 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     expect(within(nav).getByRole('link', { name: A.navIa })).not.toHaveAttribute('aria-current')
   })
 
+  it('#459: marca a rota ativa mesmo com o pathname PREFIXADO por locale (/pt-BR/...)', () => {
+    // usePathname() vem prefixado (`/pt-BR/admin/users`), mas os hrefs são nus (`/admin/users`).
+    // Sem tirar o prefixo, o aria-current nunca dispara — este caso reproduz o bug.
+    const nav = renderNav('admin', '/pt-BR/admin/users')
+    expect(within(nav).getByRole('link', { name: A.navPapeis })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(within(nav).getByRole('link', { name: A.navIa })).not.toHaveAttribute('aria-current')
+  })
+
   it('#162: a tira de abas é ROLÁVEL no mobile (sem quebra de linha)', () => {
     const nav = renderNav('admin')
     // Tira horizontal com rolagem: overflow-x-auto + whitespace-nowrap; SEM flex-wrap
