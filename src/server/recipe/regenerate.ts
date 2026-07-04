@@ -9,6 +9,7 @@ import {
   briefing as briefingTable,
   briefingItem,
   transcriptMessage,
+  users,
 } from '@/db/schema'
 import {
   shouldSuggestNewImage,
@@ -20,9 +21,12 @@ import {
   buildFreeTextPrompt,
   buildConversationPrompt,
   promptStampFor,
+  resolveNivelChefAxis,
+  isNivelChef,
   NEUTRAL_AXES,
   type Briefing,
   type BriefingItem,
+  type NivelChef,
   type PromptAxes,
 } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -127,7 +131,8 @@ async function recoverPrompt(
       // driver é estreitado aqui sem revalidar (o enum é a rede).
       restricoes: b.restricoes as Restricao[],
       porcoes: b.porcoes,
-      dificuldade: b.dificuldade,
+      // #421 (ADR-0029 dec.4): Dificuldade não é mais entrada do Briefing — a coluna dormente
+      // `briefing.dificuldade` NÃO é reidratada aqui (o Nível de habilidade tomou seu lugar).
       observacoes: b.observacoes,
       itens: itens.map(
         (it): BriefingItem => ({
@@ -196,10 +201,17 @@ export async function regenerateRecipe(
     .limit(1)
   if (!session) return { kind: 'sem_fonte' }
 
-  // Eixos de composição (#420, ADR-0029) — neutro na Wave 1. Moldam o systemPrompt recomposto E
-  // carimbam a versão da geração (correlação futura com save/estrela). Wave 2: recuperar eixos da
-  // proveniência da predecessora, aqui.
-  const axes = NEUTRAL_AXES
+  // Eixos de composição (#420/#421, ADR-0029). Moldam o systemPrompt recomposto E carimbam a versão
+  // da geração (correlação futura com save/estrela). Nível de habilidade (#421 dec.2): a regeneração
+  // usa o DEFAULT do Perfil do viewer/owner (users.nivelPadrao) como baseline — SEM sticky do
+  // prompt_stamp da predecessora (mantém simples). SPREAD ADITIVO (Regra C): {} colapsa p/ NEUTRAL_AXES.
+  const [meRow] = await db
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, viewerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
   const promptStamp = promptStampFor(axes)
 
   const prompt = await recoverPrompt(db, session, axes)

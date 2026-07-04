@@ -3,6 +3,7 @@
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import type { NivelChef } from '@/domain/briefing'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -97,6 +98,13 @@ export const ptBR = {
     sem_oleaginosas: 'sem oleaginosas',
     sem_frutos_do_mar: 'sem frutos do mar',
   } satisfies Record<Restricao, string>,
+  // Nível de habilidade (#421, ADR-0029 dec.2): rótulo compartilhado entre o wizard de geração e o
+  // Perfil (fonte única dos 3 nomes). PARA QUEM a receita é escrita — distinto da Dificuldade do prato.
+  nivelChefLabel: {
+    iniciante: 'Iniciante',
+    intermediario: 'Intermediário',
+    avancado: 'Avançado',
+  } satisfies Record<NivelChef, string>,
   // Tela de Busca (#56): título, campo, estados (inicial/vazio), seções e selos de
   // proveniência por item. Os rótulos de SELO ("Do catálogo"/"Da comunidade") são
   // distintos dos de SEÇÃO ("Catálogo"/"Comunidade") de propósito — desambigua heading
@@ -607,9 +615,12 @@ export const ptBR = {
     porcoesTitulo: 'Porções',
     porcoesMenos: 'Menos porções',
     porcoesMais: 'Mais porções',
-    dificuldadeTitulo: 'Dificuldade',
-    // Rótulo curto por nível de dificuldade (1..5) — chips do wizard.
-    dificuldadeNiveis: ['Muito fácil', 'Fácil', 'Médio', 'Difícil', 'Muito difícil'],
+    // Nível de habilidade (#421, ADR-0029 dec.2): PARA QUEM a receita é escrita (minúcia/tom do texto).
+    // Substitui a antiga Dificuldade-como-entrada; a dificuldade do prato agora é ESTIMADA pela IA.
+    nivelTitulo: 'Nível de habilidade',
+    nivelIntro: 'Para quem a receita é escrita — quanto detalhe e que tom. A dificuldade do prato quem estima é a IA.',
+    // Chip que reverte ao default do Perfil (nenhum override nesta geração).
+    nivelPadrao: 'Usar meu padrão',
     observacoesTitulo: 'Observações',
     observacoesPlaceholder:
       'Algo a mais? Ex.: sem pimenta, rende bem congelado, ponto bem cremoso…',
@@ -801,6 +812,11 @@ export const ptBR = {
     bio: 'Bio',
     bioPlaceholder: 'Conte um pouco sobre você e o que você gosta de cozinhar.',
     bioContador: '{n}/280',
+    // Nível de habilidade padrão (#421, ADR-0029 dec.2): default do eixo de geração, sobrescrevível
+    // em cada geração. A opção vazia limpa o default (sem preferência = eixo neutro).
+    nivelPadrao: 'Nível de habilidade padrão',
+    nivelPadraoDica: 'Usado como padrão ao gerar receitas — você pode mudar em cada geração.',
+    nivelPadraoNenhum: 'Sem preferência',
     // Links sociais (#127). Editor de até 5 linhas (tipo + url) no perfil.
     links: 'Links',
     linksDica: 'Adicione até 5 links (redes sociais, site). Só endereços http(s) são aceitos.',

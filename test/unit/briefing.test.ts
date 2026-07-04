@@ -17,6 +17,10 @@ import {
   SYSTEM_PROMPT_DISTILLATION,
   SYSTEM_PROMPT_CONVERSATION_STREAM,
   briefingItemsParaAviso,
+  NIVEIS_CHEF,
+  isNivelChef,
+  resolveNivelChefAxis,
+  NIVEL_FRAGMENTS,
   type BriefingParse,
   type PromptMode,
   type AxisFragmentContributor,
@@ -71,7 +75,6 @@ function briefing(overrides: Partial<Briefing> = {}): Briefing {
     cozinha: null,
     restricoes: [],
     porcoes: null,
-    dificuldade: null,
     observacoes: null,
     itens: [item()],
     ...overrides,
@@ -96,7 +99,6 @@ describe('parseBriefing — shape ok', () => {
       cozinha: 'italiana',
       restricoes: ['vegano'],
       porcoes: 4,
-      dificuldade: 3,
       observacoes: 'sem cebola',
       itens: [{ rawText: 'tomate', quantidade: '2.000', unidade: 'unidade', strength: 'required' }],
     })
@@ -106,7 +108,6 @@ describe('parseBriefing — shape ok', () => {
         cozinha: 'italiana',
         restricoes: ['vegano'],
         porcoes: 4,
-        dificuldade: 3,
         observacoes: 'sem cebola',
         itens: [
           {
@@ -129,15 +130,23 @@ describe('parseBriefing — shape ok', () => {
       cozinha: 'brasileira',
       restricoes: [],
       porcoes: null,
-      dificuldade: null,
       observacoes: null,
       itens: [],
     })
   })
 
-  it('porcoes/dificuldade null explícitos → aceitos como null', () => {
-    const r = parseBriefing({ cozinha: 'mineira', porcoes: null, dificuldade: null })
+  it('porcoes null explícito → aceito como null', () => {
+    const r = parseBriefing({ cozinha: 'mineira', porcoes: null })
     expect(r.ok).toBe(true)
+  })
+
+  it('dificuldade DEIXOU de ser entrada (#421): chave no body é IGNORADA (não vira erro nem campo)', () => {
+    // A Dificuldade virou saída estimada pela IA (ADR-0029 dec.4). Um cliente legado que ainda envie
+    // `dificuldade` no briefing não deve quebrar — o parser simplesmente a ignora.
+    const r = parseBriefing({ cozinha: 'mineira', dificuldade: 3 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect('dificuldade' in r.briefing).toBe(false)
   })
 
   it('cozinha data-driven (americana) é aceita quando injetada no conjunto (#316/#318)', () => {
@@ -204,12 +213,6 @@ describe('parseBriefing — cada erro', () => {
   it('porcoes não-inteiro → porcoes_fora_de_faixa', () => {
     expect(parseBriefing({ porcoes: 2.5 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
   })
-  it('dificuldade fora de faixa → dificuldade_fora_de_faixa', () => {
-    expect(parseBriefing({ dificuldade: 99 })).toEqual({
-      ok: false,
-      error: 'dificuldade_fora_de_faixa',
-    })
-  })
   it('observacoes não-string → briefing_invalido', () => {
     expect(parseBriefing({ observacoes: 123 })).toEqual({ ok: false, error: 'briefing_invalido' })
   })
@@ -226,14 +229,6 @@ describe('parseBriefing — faixas nos limites', () => {
   it('porcoes 0 e 51 → fora de faixa', () => {
     expect(parseBriefing({ porcoes: 0 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
     expect(parseBriefing({ porcoes: 51 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
-  })
-  it('dificuldade 1 e 5 (limites) → ok', () => {
-    expect(parseBriefing({ dificuldade: 1, cozinha: 'italiana' }).ok).toBe(true)
-    expect(parseBriefing({ dificuldade: 5, cozinha: 'italiana' }).ok).toBe(true)
-  })
-  it('dificuldade 0 e 6 → fora de faixa', () => {
-    expect(parseBriefing({ dificuldade: 0 })).toEqual({ ok: false, error: 'dificuldade_fora_de_faixa' })
-    expect(parseBriefing({ dificuldade: 6 })).toEqual({ ok: false, error: 'dificuldade_fora_de_faixa' })
   })
 })
 
@@ -332,9 +327,6 @@ describe('isBriefingVazio', () => {
   it('só-porcoes → true (modificador não conta)', () => {
     expect(isBriefingVazio(briefing({ itens: [], porcoes: 4 }))).toBe(true)
   })
-  it('só-dificuldade → true (modificador não conta)', () => {
-    expect(isBriefingVazio(briefing({ itens: [], dificuldade: 3 }))).toBe(true)
-  })
 })
 
 describe('buildBriefingPrompt — determinístico', () => {
@@ -350,14 +342,14 @@ describe('buildBriefingPrompt — determinístico', () => {
         cozinha: 'italiana',
         restricoes: ['vegano'],
         porcoes: 4,
-        dificuldade: 2,
         observacoes: 'sem cebola',
         itens: [item({ rawText: 'tomate', quantidade: '2.000', unidade: 'unidade', strength: 'required' })],
       }),
     )
     expect(userPrompt).toContain('Cozinha: italiana')
     expect(userPrompt).toContain('Porções: 4')
-    expect(userPrompt).toContain('Dificuldade: 2')
+    // A Dificuldade DEIXOU de ser entrada (#421/ADR-0029 dec.4): não há mais linha "Dificuldade:".
+    expect(userPrompt).not.toContain('Dificuldade:')
     expect(userPrompt).toContain('Restrições: vegano')
     expect(userPrompt).toContain('tomate')
     expect(userPrompt).toContain('força: required')
@@ -501,6 +493,69 @@ describe('promptStampFor — carimbo de versão (ADR-0029, #420)', () => {
   it('PROMPT_VERSION é um inteiro positivo (correlacionável)', () => {
     expect(Number.isInteger(PROMPT_VERSION)).toBe(true)
     expect(PROMPT_VERSION).toBeGreaterThan(0)
+  })
+})
+
+describe('NivelChef — enum e guard (#421, ADR-0029 dec.2)', () => {
+  it('NIVEIS_CHEF é exatamente [iniciante, intermediario, avancado]', () => {
+    expect([...NIVEIS_CHEF]).toEqual(['iniciante', 'intermediario', 'avancado'])
+  })
+  it('isNivelChef reconhece os válidos e rejeita o resto', () => {
+    expect(isNivelChef('iniciante')).toBe(true)
+    expect(isNivelChef('intermediario')).toBe(true)
+    expect(isNivelChef('avancado')).toBe(true)
+    expect(isNivelChef('avançado')).toBe(false) // a fonte é sem acento
+    expect(isNivelChef('expert')).toBe(false)
+    expect(isNivelChef('')).toBe(false)
+  })
+})
+
+describe('resolveNivelChefAxis — borda pura (#421, Regra C)', () => {
+  it('override vence o default do perfil', () => {
+    expect(resolveNivelChefAxis('avancado', 'iniciante')).toEqual({ nivelChef: 'avancado' })
+  })
+  it('sem override → default do perfil', () => {
+    expect(resolveNivelChefAxis(null, 'iniciante')).toEqual({ nivelChef: 'iniciante' })
+    expect(resolveNivelChefAxis(undefined, 'intermediario')).toEqual({ nivelChef: 'intermediario' })
+  })
+  it('nenhum dos dois → {} (colapsa p/ NEUTRAL_AXES no spread aditivo)', () => {
+    expect(resolveNivelChefAxis(null, null)).toEqual({})
+    expect(resolveNivelChefAxis(undefined, undefined)).toEqual({})
+    expect({ ...resolveNivelChefAxis(null, null) }).toEqual(NEUTRAL_AXES)
+  })
+})
+
+describe('eixo Nível de habilidade — composição do prompt (#421, ADR-0029 dec.2)', () => {
+  it('NEUTRAL (sem nivelChef) ⇒ base byte-a-byte (back-compat)', () => {
+    expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(buildSystemPrompt('briefing'))
+    expect(buildSystemPrompt('briefing', {})).toBe(buildSystemPrompt('briefing'))
+  })
+  it('nivelChef ativo ANEXA o fragmento do nível ao base', () => {
+    const base = buildSystemPrompt('briefing')
+    const iniciante = buildSystemPrompt('briefing', { nivelChef: 'iniciante' })
+    expect(iniciante.startsWith(base)).toBe(true)
+    expect(iniciante).toContain(NIVEL_FRAGMENTS.iniciante)
+    expect(iniciante.length).toBeGreaterThan(base.length)
+  })
+  it('iniciante ≠ avançado no TEXTO composto (variedade vem do PROMPT)', () => {
+    const iniciante = buildSystemPrompt('briefing', { nivelChef: 'iniciante' })
+    const avancado = buildSystemPrompt('briefing', { nivelChef: 'avancado' })
+    expect(iniciante).not.toBe(avancado)
+    expect(iniciante).toContain(NIVEL_FRAGMENTS.iniciante)
+    expect(avancado).toContain(NIVEL_FRAGMENTS.avancado)
+  })
+  it('cada fragmento carrega a precedência IN-BAND (obedecer pedido explícito / registrar no advisory)', () => {
+    for (const nivel of NIVEIS_CHEF) {
+      const frag = NIVEL_FRAGMENTS[nivel].toLowerCase()
+      expect(frag).toContain('advisory')
+      expect(frag).toContain('obedeça')
+    }
+  })
+  it('o eixo vale para TODO modo (o registro é global ao SEAM)', () => {
+    const MODES: PromptMode[] = ['briefing', 'free_text', 'distillation', 'conversation_stream']
+    for (const mode of MODES) {
+      expect(buildSystemPrompt(mode, { nivelChef: 'avancado' })).toContain(NIVEL_FRAGMENTS.avancado)
+    }
   })
 })
 
