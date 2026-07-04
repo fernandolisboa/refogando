@@ -1397,7 +1397,7 @@ export const enUS: Messages = {
     parteATitulo: 'Part (a) — Privacy Policy',
     resumoTitulo: '30-second summary',
     resumoItens: [
-      'Refogando is a bilingual (pt-BR / en-US) AI recipe app.',
+      'Refogando is an AI recipe app.',
       'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
       'We do not sell your data. We share it only with service providers that make the app work (hosting, database, AI).',
       'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: privacidade@refogando.com. We respond within 15 days.',
