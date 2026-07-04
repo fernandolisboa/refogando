@@ -267,6 +267,12 @@ export const recipe = pgTable(
   },
   (t) => [
     check('recipe_playful_private_chk', sql`${t.resultKind} <> 'playful' OR ${t.visibility} = 'private'`),
+    // #450 (ADR-0019): "importada da web NUNCA é pública". Cinto-e-suspensório no BANCO, espelhando o
+    // recipe_playful_private_chk — hoje o invariante só existe em app-level (decideVisibilityTransition
+    // bloqueia web_imported→public), e o eixo `origin<>'web_imported'` falta em alguns gates públicos de
+    // leitura. Um único writer/UPDATE futuro bugado publicaria conteúdo de terceiro (risco legal do
+    // acordo de linkagem). Dados atuais já obedecem (verificado: 0 violações), então o ALTER não falha.
+    check('recipe_web_imported_private_chk', sql`${t.origin} <> 'web_imported' OR ${t.visibility} = 'private'`),
     // Consistência de moderação (#18): removed_at e moderated_by setados JUNTOS ou ambos
     // NULL (rede de banco contra remoção sem proveniência). `moderation_reason` fica FORA
     // do CHECK (texto livre) mas é exigido não-vazio na borda do route (decideModerationReason).

@@ -1,0 +1,1 @@
+ALTER TABLE "recipe" ADD CONSTRAINT "recipe_web_imported_private_chk" CHECK ("recipe"."origin" <> 'web_imported' OR "recipe"."visibility" = 'private');
