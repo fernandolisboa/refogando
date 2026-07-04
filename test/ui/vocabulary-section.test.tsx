@@ -36,8 +36,8 @@ import { VocabularySection } from '@/components/admin/vocabulary-section'
 const A = ptBR.admin
 
 const BASELINE = [
-  { slug: 'italiana', labelPtBr: 'Italiana', labelEnUs: 'Italian', status: 'active', sort: 0 },
-  { slug: 'mexicana', labelPtBr: 'Mexicana', labelEnUs: 'Mexican', status: 'deprecated', sort: 5 },
+  { slug: 'italiana', labelPtBr: 'Italiana', labelEnUs: 'Italian', voiceNote: null, status: 'active', sort: 0 },
+  { slug: 'mexicana', labelPtBr: 'Mexicana', labelEnUs: 'Mexican', voiceNote: 'Milho e pimentas.', status: 'deprecated', sort: 5 },
 ]
 
 function renderSection() {
@@ -99,6 +99,65 @@ describe('VocabularySection (#321)', () => {
     expect(await screen.findByText('coreana')).toBeInTheDocument()
     expect(calls).toHaveLength(1)
     expect(calls[0].body).toMatchObject({ slug: 'coreana', labelPtBr: 'Coreana', labelEnUs: 'Korean' })
+  })
+
+  it('editar uma cozinha mostra a textarea de nota de voz e a inclui no PATCH (#422)', async () => {
+    const calls: Array<{ method: string; body: Record<string, unknown> }> = []
+    mockFetch((url, method, body) => {
+      if (method === 'GET') return { ok: true, status: 200, body: { cozinhas: BASELINE } }
+      if (method === 'PATCH') {
+        calls.push({ method, body: body as Record<string, unknown> })
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            cozinha: {
+              slug: 'italiana',
+              labelPtBr: 'Italiana',
+              labelEnUs: 'Italian',
+              voiceNote: 'Massa fresca e azeite.',
+              status: 'active',
+              sort: 0,
+            },
+          },
+        }
+      }
+      throw new Error(`fetch não mockado: ${method} ${url}`)
+    })
+    renderSection()
+    await screen.findByText('italiana')
+
+    const user = userEvent.setup()
+    await user.click(screen.getAllByRole('button', { name: A.vocabEditar })[0])
+
+    // A textarea de nota de voz aparece no bloco de edição inline.
+    const nota = await screen.findByLabelText(A.vocabNotaVoz)
+    expect(nota).toBeInTheDocument()
+    await user.type(nota, 'Massa fresca e azeite.')
+    await user.click(screen.getByRole('button', { name: A.vocabSalvar }))
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].body).toMatchObject({
+      slug: 'italiana',
+      labelPtBr: 'Italiana',
+      labelEnUs: 'Italian',
+      voiceNote: 'Massa fresca e azeite.',
+    })
+  })
+
+  it('editar uma cozinha com nota existente pré-preenche a textarea (#422)', async () => {
+    mockFetch((url, method) => {
+      if (method === 'GET') return { ok: true, status: 200, body: { cozinhas: BASELINE } }
+      throw new Error(`fetch não mockado: ${method} ${url}`)
+    })
+    renderSection()
+    await screen.findByText('mexicana')
+
+    const user = userEvent.setup()
+    // A 2ª linha (mexicana) tem voiceNote na baseline.
+    await user.click(screen.getAllByRole('button', { name: A.vocabEditar })[1])
+    const nota = await screen.findByLabelText(A.vocabNotaVoz)
+    expect(nota).toHaveValue('Milho e pimentas.')
   })
 
   it('slug em uso → mostra a mensagem mapeada pela CHAVE do corpo (409)', async () => {

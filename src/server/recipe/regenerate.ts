@@ -22,6 +22,7 @@ import {
   buildConversationPrompt,
   promptStampFor,
   resolveNivelChefAxis,
+  resolveVozCozinhaAxis,
   isNivelChef,
   NEUTRAL_AXES,
   type Briefing,
@@ -35,7 +36,7 @@ import { classify } from '@/domain/generation'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
-import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 
 /**
@@ -144,7 +145,12 @@ async function recoverPrompt(
         }),
       ),
     }
-    return buildBriefingPrompt(briefing, axes)
+    // Cozinha-como-voz (#422, ADR-0029 dec.3): a regeneração recompõe o systemPrompt da predecessora,
+    // então a voz da cozinha deve entrar aqui também (senão a nova versão perderia a autenticidade que
+    // a original teve). Resolve por SPREAD ADITIVO sobre os `axes` recebidos; sem cozinha ⇒ {} (neutro).
+    const voz = briefing.cozinha != null ? await loadCozinhaVoice(db, briefing.cozinha) : null
+    const axesComVoz: PromptAxes = { ...axes, ...resolveVozCozinhaAxis(voz, briefing.cozinha) }
+    return buildBriefingPrompt(briefing, axesComVoz)
   }
 
   if (session.mode === 'free_text') {

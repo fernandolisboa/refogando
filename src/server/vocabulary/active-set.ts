@@ -21,3 +21,26 @@ export async function loadActiveCozinhaSlugs(db: Database): Promise<Set<string>>
     .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.status, 'active')))
   return new Set(rows.map((r) => r.slug))
 }
+
+/**
+ * Leitor DB-DIRETO da VOZ de UMA cozinha (#422, ADR-0029 dec.3) — o nome exibível (pt-BR) + a nota
+ * de voz curada OPCIONAL. Alimenta o eixo `vozCozinha` na borda de geração (`resolveVozCozinhaAxis`).
+ *
+ * QUALQUER status casa (diferente de `loadActiveCozinhaSlugs`, restrito a 'active'): a cozinha pode
+ * ser 'suggested' — materializada da porta "Outra" (#319) — e ainda assim merece a instrução de voz
+ * GENÉRICA (nome=slug quando não há rótulo). SEM cache: uma ida ao banco por geração, coerente com o
+ * estilo write-side deste módulo. `nome` cai no `slug` quando o rótulo pt-BR está ausente (fonte única
+ * do fallback). Slug inexistente ⇒ `null` (a borda resolve p/ o genérico com nome=slug do briefing).
+ */
+export async function loadCozinhaVoice(
+  db: Database,
+  slug: string,
+): Promise<{ nome: string; voiceNote: string | null } | null> {
+  const [row] = await db
+    .select({ labelPtBr: vocabularyTerm.labelPtBr, voiceNote: vocabularyTerm.voiceNote })
+    .from(vocabularyTerm)
+    .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, slug)))
+    .limit(1)
+  if (!row) return null
+  return { nome: row.labelPtBr ?? slug, voiceNote: row.voiceNote }
+}

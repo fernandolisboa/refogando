@@ -962,6 +962,10 @@ export const enUS: Messages = {
     vocabSalvar: 'Save',
     vocabSalvando: 'Saving…',
     vocabEditar: 'Edit labels',
+    // #422: curated voice note per cuisine (instructs the AI to cook authentically; no deploy).
+    vocabNotaVoz: 'Voice note (optional)',
+    vocabNotaVozPlaceholder:
+      'How the AI should cook in this tradition: typical techniques, ingredients and seasonings. Leave blank to use only the generic instruction.',
     vocabCancelar: 'Cancel',
     vocabDepreciar: 'Deprecate',
     vocabReativar: 'Reactivate',

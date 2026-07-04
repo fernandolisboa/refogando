@@ -11,6 +11,8 @@ import {
   buildConversationPrompt,
   buildSystemPrompt,
   composeSystemPrompt,
+  buildVozCozinhaFragment,
+  resolveVozCozinhaAxis,
   promptStampFor,
   PROMPT_VERSION,
   NEUTRAL_AXES,
@@ -556,6 +558,102 @@ describe('eixo Nível de habilidade — composição do prompt (#421, ADR-0029 d
     for (const mode of MODES) {
       expect(buildSystemPrompt(mode, { nivelChef: 'avancado' })).toContain(NIVEL_FRAGMENTS.avancado)
     }
+  })
+})
+
+describe('cozinha-como-voz — eixo #422 (ADR-0029 dec.3)', () => {
+  describe('buildVozCozinhaFragment', () => {
+    it('nome só (sem nota) ⇒ só a instrução genérica de autenticidade', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'japonesa', notaCurada: null })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de japonesa: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('nome + nota ⇒ genérico + nota, separados por um espaço', () => {
+      const frag = buildVozCozinhaFragment({
+        nome: 'baiana',
+        notaCurada: 'Use dendê e leite de coco; finalize com coentro.',
+      })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de baiana: técnicas, ingredientes e temperos típicos dessa cozinha.' +
+          ' Use dendê e leite de coco; finalize com coentro.',
+      )
+    })
+
+    it('nota só-espaços ⇒ AUSENTE (colapsa para o genérico puro)', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'italiana', notaCurada: '   \n  ' })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de italiana: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('nota com espaços nas bordas ⇒ trimada antes de anexar', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'tailandesa', notaCurada: '  Equilibre azedo, salgado e picante.  ' })
+      expect(frag.endsWith('cozinha. Equilibre azedo, salgado e picante.')).toBe(true)
+    })
+  })
+
+  describe('resolveVozCozinhaAxis (borda pura, Regra C)', () => {
+    it('sem cozinha ⇒ {} (colapsa para NEUTRAL byte-a-byte via spread)', () => {
+      expect(resolveVozCozinhaAxis(null, null)).toEqual({})
+      // Spread aditivo com {} preserva a identidade neutra.
+      expect({ ...resolveVozCozinhaAxis(null, null) }).toEqual(NEUTRAL_AXES)
+    })
+
+    it('cozinha com voz curada ⇒ nome do rótulo + nota', () => {
+      expect(
+        resolveVozCozinhaAxis({ nome: 'Japonesa', voiceNote: 'Priorize umami e sazonalidade.' }, 'japonesa'),
+      ).toEqual({ vozCozinha: { nome: 'Japonesa', notaCurada: 'Priorize umami e sazonalidade.' } })
+    })
+
+    it("cozinha 'suggested' (voice=null) ⇒ genérico com nome=slug do briefing", () => {
+      expect(resolveVozCozinhaAxis(null, 'nordestina')).toEqual({
+        vozCozinha: { nome: 'nordestina', notaCurada: null },
+      })
+    })
+
+    it('voz sem rótulo (nome cai no slug a montante) ⇒ nome=slug, nota=null', () => {
+      expect(resolveVozCozinhaAxis({ nome: 'coreana', voiceNote: null }, 'coreana')).toEqual({
+        vozCozinha: { nome: 'coreana', notaCurada: null },
+      })
+    })
+  })
+
+  describe('composição via SEAM com o eixo #422', () => {
+    it('composeSystemPrompt com um contribuidor-fake do eixo ANEXA o fragmento de voz', () => {
+      const contribFake = (a: { vozCozinha?: { nome: string; notaCurada: string | null } }) =>
+        a.vozCozinha ? buildVozCozinhaFragment(a.vozCozinha) : null
+      const composed = composeSystemPrompt('BASE.', [contribFake], {
+        vozCozinha: { nome: 'mexicana', notaCurada: null },
+      })
+      expect(composed).toBe(
+        'BASE. Cozinhe na tradição autêntica de mexicana: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('buildSystemPrompt(briefing, {vozCozinha}) = base + fragmento (o base fica intacto)', () => {
+      const base = buildSystemPrompt('briefing', NEUTRAL_AXES)
+      const comVoz = buildSystemPrompt('briefing', { vozCozinha: { nome: 'italiana', notaCurada: null } })
+      expect(comVoz.startsWith(base)).toBe(true)
+      expect(comVoz).toBe(`${base} ${buildVozCozinhaFragment({ nome: 'italiana', notaCurada: null })}`)
+    })
+
+    it('back-compat: buildSystemPrompt(briefing, NEUTRAL) segue o base byte-a-byte', () => {
+      // O registro real agora tem o contribuidor #422, mas ele devolve null sem `vozCozinha` ⇒ base puro.
+      expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(buildSystemPrompt('free_text', NEUTRAL_AXES))
+      expect(buildSystemPrompt('briefing')).toBe(buildSystemPrompt('briefing', NEUTRAL_AXES))
+    })
+
+    it('buildBriefingPrompt com voz: só o systemPrompt muda; o userPrompt (estrutura) é idêntico', () => {
+      const b = briefing()
+      const neutro = buildBriefingPrompt(b, NEUTRAL_AXES)
+      const comVoz = buildBriefingPrompt(b, { vozCozinha: { nome: 'japonesa', notaCurada: null } })
+      // A voz é instrução de VOZ, não de taxonomia: o userPrompt (o PEDIDO serializado) não muda.
+      expect(comVoz.userPrompt).toBe(neutro.userPrompt)
+      expect(comVoz.systemPrompt).not.toBe(neutro.systemPrompt)
+      expect(comVoz.systemPrompt.startsWith(neutro.systemPrompt)).toBe(true)
+    })
   })
 })
 

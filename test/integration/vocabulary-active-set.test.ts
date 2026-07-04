@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { getDb } from '@/server/deps'
 import { seedVocabularyCozinhas } from '../helpers/vocabulary'
 import { COZINHA_SEED } from '@/domain/vocabulary-term'
@@ -22,6 +22,8 @@ async function insertTerm(opts: {
   slug: string
   status: 'suggested' | 'active' | 'deprecated' | 'merged' | 'rejected'
   sort?: number
+  labelPtBr?: string | null
+  voiceNote?: string | null
 }) {
   await getDb()
     .insert(vocabularyTerm)
@@ -30,8 +32,9 @@ async function insertTerm(opts: {
       slug: opts.slug,
       status: opts.status,
       sort: opts.sort ?? 99,
-      labelPtBr: opts.slug,
+      labelPtBr: opts.labelPtBr === undefined ? opts.slug : opts.labelPtBr,
       labelEnUs: opts.slug,
+      voiceNote: opts.voiceNote ?? null,
     })
 }
 
@@ -55,5 +58,38 @@ describe('loadActiveCozinhaSlugs (#316) — conjunto ATIVO DB-direto', () => {
     expect(set.has('depr')).toBe(false)
     expect(set.has('sugg')).toBe(false)
     expect(set.size).toBe(15)
+  })
+})
+
+describe('loadCozinhaVoice (#422) — voz da cozinha DB-direto', () => {
+  it('nome = rótulo pt-BR + a nota de voz curada quando existe', async () => {
+    await insertTerm({
+      slug: 'baiana',
+      status: 'active',
+      labelPtBr: 'Baiana',
+      voiceNote: 'Use dendê e leite de coco.',
+    })
+
+    const voz = await loadCozinhaVoice(getDb(), 'baiana')
+    expect(voz).toEqual({ nome: 'Baiana', voiceNote: 'Use dendê e leite de coco.' })
+  })
+
+  it("QUALQUER status casa — inclusive 'suggested' (vinda de \"Outra\")", async () => {
+    await insertTerm({ slug: 'nordestina', status: 'suggested', labelPtBr: null, voiceNote: null })
+
+    const voz = await loadCozinhaVoice(getDb(), 'nordestina')
+    // Sem rótulo pt-BR ⇒ nome cai no slug (fallback); nota ausente ⇒ null (só o genérico dispara).
+    expect(voz).toEqual({ nome: 'nordestina', voiceNote: null })
+  })
+
+  it('sem rótulo pt-BR ⇒ nome cai no slug (fallback)', async () => {
+    await insertTerm({ slug: 'coreana', status: 'active', labelPtBr: null, voiceNote: 'Fermentados e gochujang.' })
+
+    const voz = await loadCozinhaVoice(getDb(), 'coreana')
+    expect(voz).toEqual({ nome: 'coreana', voiceNote: 'Fermentados e gochujang.' })
+  })
+
+  it('slug inexistente ⇒ null', async () => {
+    expect(await loadCozinhaVoice(getDb(), 'inexistente')).toBeNull()
   })
 })
