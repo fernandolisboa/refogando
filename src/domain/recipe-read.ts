@@ -141,6 +141,14 @@ export type TranslationRow = {
   notas: string | null
   provenance: TranslationProvenance
   stale: boolean
+  /**
+   * Nome de ingrediente por-locale (#426, ADR-0030) — por `ordem`, o `nome` traduzido + o `nomeOrigem`
+   * (o `raw_text` da origem no momento da tradução). O display só usa o `nome` quando `nomeOrigem`
+   * ainda casa com o `raw_text` ATUAL (senão o item foi renomeado/reordenado ⇒ cai no `raw_text`).
+   * `null`/ausente = sem tradução. Insumo de `resolveRecipeView` p/ `ingredients[].rawText` — NUNCA sai
+   * cru na vista. OPCIONAL no tipo (fixtures puras não precisam setá-lo; o `select().from` o traz).
+   */
+  ingredientes?: { ordem: number; nome: string; nomeOrigem: string }[] | null
 }
 
 /**
@@ -450,6 +458,27 @@ function present(value: string | null | undefined): value is string {
 }
 
 /**
+ * Nome de ingrediente por-locale (#426, ADR-0030 dec.5): `Map<ordem, {nome, nomeOrigem}>` a partir da
+ * tradução do requestLocale. O CONSUMIDOR valida `nomeOrigem === raw_text atual` antes de usar o `nome`
+ * traduzido — assim uma edição só-de-medida MANTÉM a tradução (o nome-fonte bate) e um rename/reorder
+ * cai no `raw_text` (nome novo, correto), nunca um nome traduzido ERRADO ao lado da medida. Isso também
+ * neutraliza a corrida read-não-transacional e o `ordem` duplicado (mismatch ⇒ fallback). Espelha
+ * `resolveBody` (usa o valor do requestLocale se presente, SEM gate de confiabilidade). O locale ORIGINAL
+ * nunca carrega `ingredientes` (só o target) ⇒ cai no `raw_text`.
+ */
+export function resolveIngredientNames(input: {
+  requestLocale: string
+  translations: ReadonlyArray<TranslationRow>
+}): Map<number, { nome: string; nomeOrigem: string }> {
+  const requested = findTranslation(input.translations, input.requestLocale)
+  const map = new Map<number, { nome: string; nomeOrigem: string }>()
+  for (const it of requested?.ingredientes ?? []) {
+    map.set(it.ordem, { nome: it.nome, nomeOrigem: it.nomeOrigem })
+  }
+  return map
+}
+
+/**
  * Nome resolvido: original primário. Só `Original (Tradução)` quando a tradução do
  * locale pedido existe, é confiável e DIFERE do original. Caso contrário, original nu.
  */
@@ -645,6 +674,14 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     translations: input.translations,
   })
 
+  // Nome de ingrediente localizado (#426, ADR-0030 dec.5): nome do requestLocale por `ordem`, com
+  // fallback ao `raw_text` original (espelha resolveBody, sem gate de confiabilidade). A MEDIDA
+  // (quantidade/unidade) NÃO muda por locale — só o nome (Direção B).
+  const localizedNames = resolveIngredientNames({
+    requestLocale: input.requestLocale,
+    translations: input.translations,
+  })
+
   // Aviso de restrição (#7): o motor PURO decide os CÓDIGOS; a vista os renderiza no
   // requestLocale. `restricoes` vem como `string[]` do loader — filtra por `isRestricao`
   // (defensivo, sem `as`) antes de passar ao motor, que só conhece valores do enum.
@@ -705,13 +742,19 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // no RecipeRow) — em runtime o select().from(recipe) sempre traz o valor (ou NULL do banco).
     tempoAtivoMin: input.recipe.tempoAtivoMin ?? null,
     tempoTotalMin: input.recipe.tempoTotalMin ?? null,
-    // Projeta SEM `alergenos`: insumo de decisão, não conteúdo da vista (Omit guard).
-    ingredients: input.ingredients.map(({ ordem, quantidade, unidade, rawText }) => ({
-      ordem,
-      quantidade,
-      unidade,
-      rawText,
-    })),
+    // Projeta SEM `alergenos`: insumo de decisão, não conteúdo da vista (Omit guard). O `rawText` da
+    // vista é o NOME resolvido por-locale (#426): usa o nome traduzido SÓ quando ele foi traduzido DESTE
+    // mesmo nome-fonte (`nomeOrigem === raw_text atual`) — se o ingrediente foi renomeado/reordenado
+    // desde a tradução, o nome-fonte não bate e caímos no `raw_text` (nome novo, correto), nunca um
+    // nome traduzido ERRADO ao lado da medida. Zero chave nova — a chave `rawText` segue (guardas intactas).
+    ingredients: input.ingredients.map(({ ordem, quantidade, unidade, rawText }) => {
+      const traduzido = localizedNames.get(ordem)
+      const nomeLocalizado =
+        traduzido != null && traduzido.nomeOrigem === (rawText ?? '') && present(traduzido.nome)
+          ? traduzido.nome
+          : null
+      return { ordem, quantidade, unidade, rawText: nomeLocalizado ?? rawText }
+    }),
     translations: input.translations.map((t) => ({
       locale: t.locale,
       provenance: t.provenance,

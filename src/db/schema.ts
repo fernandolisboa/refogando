@@ -456,6 +456,16 @@ export const recipeTranslation = pgTable(
     slug: text('slug'),
     provenance: translationProvenanceEnum('provenance').notNull(),
     stale: boolean('stale').notNull().default(false),
+    // Nome de ingrediente por-locale (#426, ADR-0030 dec.4): por `ordem` da linha recipe_ingredient,
+    // o `nome` traduzido + o `nomeOrigem` (o raw_text da origem NO MOMENTO da tradução). O display só
+    // usa o `nome` traduzido quando `nomeOrigem` ainda casa com o raw_text ATUAL — se o ingrediente foi
+    // renomeado/reordenado desde então, cai no raw_text (nome novo, correto), nunca um nome ERRADO.
+    // NULL = sem tradução (display cai no raw_text, Direção B). Insumo p/ ingredients[].rawText por-locale
+    // — NUNCA sai cru na vista. A MEDIDA (quantidade/unidade) fica só em recipe_ingredient (fonte única).
+    ingredientes: jsonb('ingredientes').$type<{ ordem: number; nome: string; nomeOrigem: string }[]>(),
+    // Versão do prompt/glossário do tradutor que produziu esta linha (#426, ADR-0030) — habilita
+    // backfill por-versão futuro (espelha EMBEDDING_VERSION em recipe_embedding.model). NULL = legado.
+    promptVersion: integer('prompt_version'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     // Coluna GERADA STORED (issue #6): FTS por linha, cada uma na própria config de

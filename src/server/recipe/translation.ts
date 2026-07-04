@@ -4,6 +4,7 @@ import { getTranslator } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { slugForNewTranslation } from '@/server/recipe/slug'
+import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 
 /**
  * Ciclo de vida da tradução on-demand (issue #23, AC1 + AC4). CABEIA sobre as máquinas
@@ -32,8 +33,8 @@ export async function ensureTranslation(
   recipeId: string,
   targetLocale: string,
 ): Promise<EnsureResult> {
-  // Loader FOCADO (#23 perf): só originalLocale + linhas de tradução; nada de
-  // ingredientes/tags (a view é montada pela rota com loadRecipeRows, fora daqui).
+  // Loader FOCADO (#23 perf): originalLocale + cozinha + linhas de tradução + os itens de
+  // ingrediente de origem (ordem+nome, #426) p/ traduzir o nome por-locale; nada de tags.
   const ctx = await loadRecipeTranslationContext(db, recipeId)
   // Receita inexistente ⇒ colapsa em `exists` (no-op): null-check defensivo, a rota já
   // gateou existência antes de chamar. (Variante `exists` aqui = "nada a gerar".)
@@ -46,7 +47,8 @@ export async function ensureTranslation(
   const source = ctx.translations.find((t) => t.locale === ctx.originalLocale)
   if (!source) return { kind: 'exists' }
 
-  // Traduz. LANÇA ⇒ degrada SEM escrever (AC4: cai pro original, sem erro técnico).
+  // Traduz título/corpo + NOMES de ingrediente (#426). LANÇA (falha OU infidelidade) ⇒ degrada SEM
+  // escrever (AC4: cai pro original, sem erro técnico). A MEDIDA nunca entra no payload (Direção B).
   let translated
   try {
     translated = await getTranslator().translate({
@@ -58,10 +60,29 @@ export async function ensureTranslation(
         passos: source.passos,
         notas: source.notas,
       },
+      ingredientes: ctx.ingredients,
+      contexto: { cozinha: ctx.cozinha },
     })
   } catch {
     return { kind: 'degraded' }
   }
+
+  // Monta o jsonb de nomes por-locale a partir do NOSSO conjunto de `ordem` (não do eco do LLM),
+  // preenchendo com o nome traduzido (a fidelidade já garantiu que todos os `ordem` vieram). Guarda o
+  // `nomeOrigem` (o `raw_text` traduzido) p/ o display revalidar contra o `raw_text` atual — assim uma
+  // edição só-de-medida mantém a tradução e um rename/reorder cai no `raw_text` (nunca nome errado).
+  // NULL quando não há ingrediente nomeado ⇒ o display cai no `raw_text` original.
+  const nomeTraduzidoPorOrdem = new Map(
+    (translated.ingredientes ?? []).map((i) => [i.ordem, i.nome] as const),
+  )
+  const ingredientesJsonb =
+    ctx.ingredients.length > 0
+      ? ctx.ingredients.map((s) => ({
+          ordem: s.ordem,
+          nome: nomeTraduzidoPorOrdem.get(s.ordem) ?? s.nome,
+          nomeOrigem: s.nome,
+        }))
+      : null
 
   // Slug por idioma (#229, ADR-0020 dec.4): congela AGORA, a partir do título da MT INICIAL
   // (`translated.titulo`) — é ESTE insert que materializa o slug en-US; uma revisão posterior da
@@ -81,6 +102,10 @@ export async function ensureTranslation(
       descricao: translated.descricao ?? null,
       passos: translated.passos ?? null,
       notas: translated.notas ?? null,
+      // Nome de ingrediente por-locale (#426) + versão do prompt que produziu a linha (habilita
+      // backfill por-versão futuro). A medida NÃO é escrita aqui (fica em recipe_ingredient).
+      ingredientes: ingredientesJsonb,
+      promptVersion: TRANSLATION_PROMPT_VERSION,
       slug,
       provenance: 'automatica_nao_revisada',
       stale: false,

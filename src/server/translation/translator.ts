@@ -31,9 +31,19 @@ export type TranslateInput = {
   sourceLocale: string
   targetLocale: string
   fields: TranslatableFields
+  /**
+   * Nomes de ingrediente de ORIGEM por `ordem` (#426, Fatia 2) — o `nome` é o `raw_text`. OPCIONAL
+   * (back-compat: os call sites/dublês existentes seguem válidos). A MEDIDA nunca entra (Direção B).
+   */
+  ingredientes?: { ordem: number; nome: string }[]
+  /** Contexto p/ desambiguar termos (#426) — a cozinha do prato. OPCIONAL. */
+  contexto?: { cozinha?: string | null }
 }
 
-export type TranslateOutput = TranslatableFields
+export type TranslateOutput = TranslatableFields & {
+  /** Nomes de ingrediente TRADUZIDOS por `ordem` (#426, Fatia 2). Ausente quando não pedido. */
+  ingredientes?: { ordem: number; nome: string }[]
+}
 
 export interface Translator {
   translate(input: TranslateInput): Promise<TranslateOutput>
@@ -60,6 +70,8 @@ export class RealTranslator implements Translator {
       sourceLocale: input.sourceLocale,
       targetLocale: input.targetLocale,
       fields: input.fields,
+      ingredientes: input.ingredientes,
+      contexto: input.contexto,
     })
 
     const params = {
@@ -92,11 +104,15 @@ export class RealTranslator implements Translator {
       descricao: parsed.descricao,
       passos: parsed.passos,
       notas: parsed.notas,
+      // Só devolve nomes traduzidos quando foram PEDIDOS (Fatia 2) — senão o schema ainda exige o
+      // campo na saída (`[]`), mas o contrato do seam o omite (back-compat com o consumidor dos 4 campos).
+      ...(input.ingredientes ? { ingredientes: parsed.ingredientes } : {}),
     }
 
-    // Fidelidade pós-parse: um parse bem-formado porém LOSSY (passos faltando, descrição sumida)
-    // não é falha p/ o schema — LANÇA aqui ⇒ degrada honesto em vez de persistir MT ruim.
-    assertFaithfulTranslation(input.fields, result)
+    // Fidelidade pós-parse: um parse bem-formado porém LOSSY (passos faltando, ingrediente omitido,
+    // conjunto de `ordem` diferente) não é falha p/ o schema — LANÇA aqui ⇒ degrada honesto (AC4)
+    // em vez de persistir MT ruim.
+    assertFaithfulTranslation(input.fields, result, input.ingredientes, parsed.ingredientes)
 
     return result
   }
@@ -110,7 +126,12 @@ export class FakeTranslator implements Translator {
   constructor(private readonly canned?: TranslateOutput) {}
 
   async translate(input: TranslateInput): Promise<TranslateOutput> {
-    return this.canned ?? input.fields
+    if (this.canned) return this.canned
+    // Identidade: ecoa os 4 campos + os nomes de ingrediente (quando pedidos, #426 Fatia 2). Sem
+    // ingredientes o resultado é `input.fields` byte-a-byte (mantém os testes de 4-campos verdes).
+    return input.ingredientes
+      ? { ...input.fields, ingredientes: input.ingredientes }
+      : input.fields
   }
 }
 
