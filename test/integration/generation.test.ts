@@ -199,8 +199,13 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(gen.recipeId).toBe(json.recipeId)
     expect(gen.outcome).toBe('success')
     expect(gen.advisoryComment).toBe('Dica: use arroz do dia anterior.')
-    // #420 (ADR-0029): a geração carrega o carimbo de versão do prompt/eixos (Wave 1 = eixos neutros).
-    expect(gen.promptStamp).toEqual({ version: 1, axes: {} })
+    // #420/#422 (ADR-0029): a geração carrega o carimbo de versão do prompt + os eixos resolvidos na
+    // borda. makeBriefing usa cozinha 'brasileira' ⇒ o eixo cozinha-como-voz (#422) é carimbado (nome do
+    // rótulo pt-BR, sem nota curada). O usuário nasce sem nivelPadrao ⇒ o eixo Nível fica ausente.
+    expect(gen.promptStamp).toEqual({
+      version: 1,
+      axes: { vozCozinha: { nome: 'Brasileira', notaCurada: null } },
+    })
 
     // O Comentário consultivo NÃO vive na Receita: nenhuma coluna de advisory em recipe.
     expect(rec).not.toHaveProperty('advisoryComment')

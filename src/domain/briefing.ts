@@ -268,6 +268,9 @@ export function isBriefingVazio(b: Briefing): boolean {
 export type PromptAxes = {
   // Wave 2 (ADR-0029) adiciona UM campo OPCIONAL por eixo aqui.
   readonly nivelChef?: NivelChef // #421 — Nível de habilidade (dec.2): para quem a receita é escrita.
+  // #422 (ADR-0029 dec.3) — cozinha-como-voz: o nome da cozinha (autenticidade genérica) + uma nota
+  // curada OPCIONAL (enriquece quando existe). Resolvido na borda a partir de `vocabulary_term`.
+  readonly vozCozinha?: { readonly nome: string; readonly notaCurada: string | null } // #422
 }
 
 /** Eixos neutros: sem nenhum eixo ativo ⇒ o prompt é exatamente o base. Fonte única do "vazio". */
@@ -371,6 +374,7 @@ const BASE_SYSTEM_PROMPTS: Record<PromptMode, string> = {
  */
 export type AxisFragmentContributor = (axes: PromptAxes) => string | null
 
+// ── Eixo #422: cozinha-como-voz (ADR-0029 dec.3) ────────────────────────────────
 /**
  * Fragmentos do eixo Nível de habilidade (#421, ADR-0029 dec.2). Cada fragmento molda a MINÚCIA da
  * explicação, o vocabulário técnico e o TOM do texto para o público-alvo, e carrega IN-BAND a regra de
@@ -391,12 +395,45 @@ export const NIVEL_FRAGMENTS: Record<NivelChef, string> = {
 const contribNivelChef: AxisFragmentContributor = (a) => (a.nivelChef ? NIVEL_FRAGMENTS[a.nivelChef] : null)
 
 /**
+ * PURO: monta o fragmento de voz da cozinha. DUAS camadas: (a) uma instrução GENÉRICA de
+ * autenticidade que usa o `nome` da cozinha — escala a TODA cozinha de graça; (b) a `notaCurada`
+ * OPCIONAL, ANEXADA quando existe e não é só espaço (enriquece o genérico). A nota vazia/só-espaços
+ * COLAPSA para o genérico puro. NÃO inventa cozinha (o z.enum da SAÍDA segue constringindo) — é
+ * instrução de VOZ, não de taxonomia.
+ */
+export function buildVozCozinhaFragment(voz: { nome: string; notaCurada: string | null }): string {
+  const generico = `Cozinhe na tradição autêntica de ${voz.nome}: técnicas, ingredientes e temperos típicos dessa cozinha.`
+  const nota = voz.notaCurada?.trim()
+  return nota ? `${generico} ${nota}` : generico
+}
+
+/**
+ * PURO (borda, Regra C do contrato de merge): resolve o eixo `vozCozinha` a partir da voz carregada
+ * do vocabulário (`{nome,voiceNote}|null`) e da cozinha do briefing. Sem cozinha ⇒ `{}` (colapsa para
+ * NEUTRAL byte-a-byte via spread aditivo). Com cozinha: `nome = voice?.nome ?? cozinha` (fallback ao
+ * slug — uma cozinha 'suggested' vinda de "Outra" dispara o genérico com nome=slug); a nota é a
+ * `voiceNote` curada quando existe. Determinístico; sem DB (o DB é lido pelo `loadCozinhaVoice` a montante).
+ */
+export function resolveVozCozinhaAxis(
+  voice: { nome: string; voiceNote: string | null } | null,
+  cozinha: string | null,
+): Pick<PromptAxes, 'vozCozinha'> {
+  if (cozinha == null) return {}
+  return { vozCozinha: { nome: voice?.nome ?? cozinha, notaCurada: voice?.voiceNote ?? null } }
+}
+
+/** Contributor nomeado do eixo #422 (Regra A): ativo só quando `vozCozinha` está presente nos axes. */
+const contribVozCozinha: AxisFragmentContributor = (a) =>
+  a.vozCozinha ? buildVozCozinhaFragment(a.vozCozinha) : null
+
+/**
  * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Cada eixo pluga UM contribuidor
  * NOMEADO aqui (UMA linha própria). A ORDEM do array é a ordem em que os fragmentos são anexados ao
  * base (determinística). Nenhum eixo ativo ⇒ `buildSystemPrompt` devolve exatamente o base.
  */
 const AXIS_FRAGMENT_CONTRIBUTORS: readonly AxisFragmentContributor[] = [
   contribNivelChef, // #421
+  contribVozCozinha, // #422
 ]
 
 /**

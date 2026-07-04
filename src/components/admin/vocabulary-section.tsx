@@ -17,11 +17,14 @@ import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 type Cozinha = {
   slug: string
   labelPtBr: string | null
   labelEnUs: string | null
+  // #422: nota de voz curada (locale-neutra, opcional). Instrui a IA a cozinhar autenticamente.
+  voiceNote: string | null
   status: 'active' | 'deprecated'
   sort: number
 }
@@ -67,6 +70,8 @@ export function VocabularySection() {
   const [editing, setEditing] = useState<string | null>(null)
   const [editPt, setEditPt] = useState('')
   const [editEn, setEditEn] = useState('')
+  // #422: rascunho da nota de voz (string vazia = sem nota; o servidor a normaliza p/ null).
+  const [editVoice, setEditVoice] = useState('')
   const [savingRow, setSavingRow] = useState<string | null>(null)
 
   const [errorKey, setErrorKey] = useState<ErroChave | null>(null)
@@ -139,6 +144,7 @@ export function VocabularySection() {
     setEditing(c.slug)
     setEditPt(c.labelPtBr ?? '')
     setEditEn(c.labelEnUs ?? '')
+    setEditVoice(c.voiceNote ?? '')
     setErrorKey(null)
     setOkMessage(null)
   }
@@ -171,7 +177,8 @@ export function VocabularySection() {
   }
 
   async function handleSaveLabels(slugToSave: string) {
-    const ok = await patch(slugToSave, { labelPtBr: editPt, labelEnUs: editEn })
+    // #422: envia a nota de voz junto (o servidor normaliza '' → null). Patch atômico rótulos+nota.
+    const ok = await patch(slugToSave, { labelPtBr: editPt, labelEnUs: editEn, voiceNote: editVoice })
     if (ok) setEditing(null)
   }
 
@@ -266,6 +273,16 @@ export function VocabularySection() {
                         <Input value={editEn} onChange={(e) => setEditEn(e.target.value)} />
                       </label>
                     </div>
+                    {/* #422: nota de voz curada (opcional) — instrui a IA a cozinhar autenticamente. */}
+                    <label className="flex flex-col gap-1 text-xs font-medium text-fg">
+                      {m.vocabNotaVoz}
+                      <Textarea
+                        value={editVoice}
+                        onChange={(e) => setEditVoice(e.target.value)}
+                        rows={3}
+                        placeholder={m.vocabNotaVozPlaceholder}
+                      />
+                    </label>
                     <div className="flex gap-2">
                       <Button
                         type="button"

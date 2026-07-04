@@ -1032,6 +1032,10 @@ export const ptBR = {
     vocabSalvar: 'Salvar',
     vocabSalvando: 'Salvando…',
     vocabEditar: 'Editar rótulos',
+    // #422: nota de voz curada por cozinha (instrui a IA a cozinhar autenticamente; sem deploy).
+    vocabNotaVoz: 'Nota de voz (opcional)',
+    vocabNotaVozPlaceholder:
+      'Como a IA deve cozinhar nesta tradição: técnicas, ingredientes e temperos típicos. Deixe em branco para usar só a instrução genérica.',
     vocabCancelar: 'Cancelar',
     vocabDepreciar: 'Depreciar',
     vocabReativar: 'Reativar',

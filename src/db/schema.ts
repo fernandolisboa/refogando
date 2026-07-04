@@ -1218,6 +1218,12 @@ export const vocabularyTerm = pgTable(
     status: vocabularyTermStatusEnum('status').notNull().default('suggested'),
     labelPtBr: text('label_pt_br'),
     labelEnUs: text('label_en_us'),
+    // #422 (ADR-0029 dec.3): "nota de voz" curada, OPCIONAL, por termo de cozinha. Instrui a IA a
+    // cozinhar autenticamente (enriquece a instrução genérica que já usa o nome da cozinha). LOCALE-
+    // NEUTRA de propósito (uma nota por cozinha, não por idioma — descreve a TRADIÇÃO, não um rótulo)
+    // e SEM default (a maioria fica NULL → só o genérico dispara). Editável pelo Admin SEM deploy
+    // (dado em vocabulary_term, coerente com o data-driven do ADR-0025). Só faz sentido em kind='cozinha'.
+    voiceNote: text('voice_note'),
     sort: integer('sort').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
