@@ -8,8 +8,10 @@ import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
-  SYSTEM_PROMPT_CONVERSATION_STREAM,
+  buildSystemPrompt,
   buildConversationPrompt,
+  promptStampFor,
+  NEUTRAL_AXES,
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
@@ -221,6 +223,12 @@ export async function POST(req: Request): Promise<Response> {
   // requestLocale é lido AGORA (Request ainda disponível) — o Aviso é renderizado no locale.
   const requestLocale = parseRequestLocale(req)
 
+  // Eixos de composição do prompt (#420, ADR-0029) — RESOLVIDOS na borda. Wave 1 = neutro (nenhum
+  // eixo); Wave 2 lê o Nível do chef / voz da cozinha aqui. `axes` molda AMBOS os systemPrompts da
+  // conversa (a resposta breve na tela E a destilação), e `promptStamp` carimba a versão na persist.
+  const axes = NEUTRAL_AXES
+  const promptStamp = promptStampFor(axes)
+
   // 5. Abre o stream NDJSON: tokens primeiro, depois UM frame terminal, depois fecha.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -229,7 +237,9 @@ export async function POST(req: Request): Promise<Response> {
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
         let assistantText = ''
         const tokens = getClaudeClient().streamConversation({
-          systemPrompt: SYSTEM_PROMPT_CONVERSATION_STREAM,
+          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + eixos dos
+          // axes). Neutro na Wave 1 ⇒ exatamente o base do modo (== SYSTEM_PROMPT_CONVERSATION_STREAM).
+          systemPrompt: buildSystemPrompt('conversation_stream', axes),
           transcript,
           model,
           signal,
@@ -269,13 +279,15 @@ export async function POST(req: Request): Promise<Response> {
         // #318: constrange a cozinha destilada ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
         // ATIVO do DB DIRETO, carregado aqui (já passamos do gate de abort/quota acima).
         const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(getDb()))]
-        const prompt = buildConversationPrompt(transcript)
+        const prompt = buildConversationPrompt(transcript, axes)
         const out = await getClaudeClient().generateRecipe({
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,
           model,
           signal,
           cozinhaSlugs,
+          // #420 (ADR-0029): eixos que produziram esta destilação (já embutidos no systemPrompt).
+          axes,
         })
         const result = classify(out)
 
@@ -296,6 +308,7 @@ export async function POST(req: Request): Promise<Response> {
             ownerId,
             model,
             existingSessionId: sessionId,
+            promptStamp,
           })
           terminal = { type: 'impossible', advisory: result.advisory }
         } else {
@@ -308,6 +321,7 @@ export async function POST(req: Request): Promise<Response> {
             ownerId,
             model,
             existingSessionId: sessionId,
+            promptStamp,
           })
           // #119: embeda a Receita destilada (best-effort, ASSISTIVO) p/ a Busca semântica. Falha
           // (sem key / 429 / rede) NÃO derruba o turno — a Receita já está persistida; a Busca degrada

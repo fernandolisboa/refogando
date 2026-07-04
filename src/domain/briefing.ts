@@ -245,65 +245,84 @@ export function isBriefingVazio(b: Briefing): boolean {
   return !(temItem || temCozinha || temRestricao || temObservacoes)
 }
 
-// ── Montagem Briefing → { systemPrompt, userPrompt } ───────────────────────────
+// ── Composição de prompt de sistema (ADR-0029 — FUNDAÇÃO do refino de IA, #420) ──
+//
+// `buildSystemPrompt(mode, axes)` é o SEAM PURO de composição: parte de um prompt-base
+// (enriquecido) por modo e ANEXA os fragmentos que um REGISTRO EXTENSÍVEL de contribuidores
+// produz a partir dos `axes`. Wave 1 (esta fatia) NÃO tem nenhum eixo: o registro é VAZIO,
+// então `buildSystemPrompt(mode, NEUTRAL_AXES)` devolve EXATAMENTE o base (back-compat — os
+// call sites e testes existentes seguem byte-a-byte iguais). Wave 2 (Nível do chef, voz da
+// cozinha, etc.) pluga UM eixo adicionando UM item em `AXIS_FRAGMENT_CONTRIBUTORS` (assinatura
+// `(axes: PromptAxes) => string | null`) e UM campo opcional em `PromptAxes` — NADA aqui muda.
+//
+// A saída da geração NÃO muda (mesmo RecipeGenSchema, mesmo consultivo FORA do objeto Receita,
+// mesma taxonomia de `classify`): os eixos moldam o TEXTO do prompt, nunca o schema.
+
+/**
+ * Eixos de composição do prompt (ADR-0029). Wave 1 = NEUTRO/vazio (nenhum campo). Wave 2 adiciona
+ * campos OPCIONAIS aqui (ex.: `nivelChef?: NivelChef`, `vozCozinha?: string`), um por eixo, com um
+ * contribuidor correspondente em `AXIS_FRAGMENT_CONTRIBUTORS`. Manter todos os campos OPCIONAIS
+ * preserva o back-compat: `NEUTRAL_AXES` (vazio) sempre compõe exatamente o base.
+ */
+export type PromptAxes = {
+  // Wave 2 (ADR-0029) adiciona campos OPCIONAIS aqui. Wave 1: intencionalmente vazio.
+  readonly [K in never]: never
+}
+
+/** Eixos neutros: sem nenhum eixo ativo ⇒ o prompt é exatamente o base. Fonte única do "vazio". */
+export const NEUTRAL_AXES: PromptAxes = {}
+
+/**
+ * Versão do prompt/eixos CARIMBADA em cada geração (`generation.prompt_stamp`), para correlacionar
+ * depois com save/estrela (qual composição produziu Receitas que as pessoas guardam?). BUMPAR quando
+ * os prompts-base OU o registro de fragmentos mudarem de forma material — é o eixo de versionamento
+ * do TEXTO do prompt, ORTOGONAL a `SCHEMA_VERSION_RECEITA` (versão da FORMA da saída).
+ */
+export const PROMPT_VERSION = 1 as const
+
+/** Carimbo persistido: a versão do prompt + os eixos concretos que produziram uma geração. */
+export type PromptStamp = { version: number; axes: PromptAxes }
+
+/** PURO: monta o carimbo de versão de uma geração a partir dos eixos resolvidos na borda. */
+export function promptStampFor(axes: PromptAxes = NEUTRAL_AXES): PromptStamp {
+  return { version: PROMPT_VERSION, axes }
+}
+
+/**
+ * Os 4 modos de prompt-base. `briefing`/`free_text` COMPARTILHAM o mesmo base (o texto livre reusa o
+ * base do briefing — fonte única do estilo de geração). `distillation` (destilação estruturada da
+ * conversa) e `conversation_stream` (a resposta breve na tela, call-1 da conversa) têm bases próprios.
+ */
+export type PromptMode = 'briefing' | 'free_text' | 'distillation' | 'conversation_stream'
+
+// ── Prompts-base ENRIQUECIDOS (técnica, tom, honestidade) ───────────────────────
+// Portam o nível de prompting do seed do catálogo: passos executáveis, tom direto, honestidade
+// (impossível vira `impossible`, não uma receita inventada), o consultivo SEMPRE no campo advisory
+// (FORA da Receita — ADR-0009), a medida SEMPRE em quantidade/unidade (nunca no nome — ADR-0012), e
+// a cozinha do vocabulário controlado (a IA não inventa cozinha — o schema já a constrange).
 const SYSTEM_PROMPT_BRIEFING = [
   'Você gera receitas de cozinha no schema canônico.',
-  'Respeite estritamente as restrições alimentares e a cozinha indicadas no briefing.',
+  'Escreva passos claros, ordenados e executáveis, com técnicas e pontos de cozimento concretos (tempo, temperatura, textura) quando fizerem diferença.',
+  'Respeite estritamente as restrições alimentares e a cozinha indicadas no briefing; use apenas a cozinha indicada, nunca invente uma.',
   'Ingredientes com força "required" são obrigatórios; "preferred" são desejáveis.',
+  'A medida de cada ingrediente vai em quantidade e unidade — nunca repita a medida no nome do ingrediente.',
+  'Seja honesto: se o pedido for impossível ou contraditório, classifique-o como tal em vez de inventar uma receita que não o atende.',
+  'Qualquer alerta, ressalva ou observação de segurança vai no campo consultivo (advisory), NUNCA dentro da receita.',
+  'Use linguagem simples e direta, no idioma do pedido.',
 ].join(' ')
 
-function rotuloItem(it: BriefingItem): string {
-  const nome = it.rawText != null && it.rawText.trim() !== '' ? it.rawText.trim() : (it.ingredientId ?? '')
-  const medida = [it.quantidade, it.unidade].filter((x) => x != null && x !== '').join(' ')
-  const partes = [`- ${nome} (força: ${it.strength})`]
-  if (medida !== '') partes.push(`quantidade: ${medida}`)
-  return partes.join('; ')
-}
-
-/**
- * PURO e determinístico (testável byte-a-byte): substitui os placeholders de #8.
- * Serializa o Briefing de forma legível e estável; NÃO injeta nada além do Briefing
- * (sem dados de outra sessão). A QUALIDADE da prosa não é critério de #8/#11 — o teste
- * asserta ESTRUTURA (a cozinha, os itens, a força), não o estilo.
- */
-export function buildBriefingPrompt(b: Briefing): { systemPrompt: string; userPrompt: string } {
-  const linhas: string[] = ['Gere uma receita a partir do seguinte briefing:']
-  if (b.cozinha != null) linhas.push(`Cozinha: ${b.cozinha}`)
-  if (b.porcoes != null) linhas.push(`Porções: ${b.porcoes}`)
-  if (b.dificuldade != null) linhas.push(`Dificuldade: ${b.dificuldade}`)
-  if (b.restricoes.length > 0) linhas.push(`Restrições: ${b.restricoes.join(', ')}`)
-  if (b.itens.length > 0) {
-    linhas.push('Ingredientes:')
-    for (const it of b.itens) linhas.push(rotuloItem(it))
-  }
-  if (b.observacoes != null && b.observacoes.trim() !== '') {
-    linhas.push(`Observações: ${b.observacoes.trim()}`)
-  }
-  return { systemPrompt: SYSTEM_PROMPT_BRIEFING, userPrompt: linhas.join('\n') }
-}
-
-// ── Montagem PROMPT ABERTO (free_text) → { systemPrompt, userPrompt } (#88) ─────
-/**
- * Modo `free_text` (#88): NÃO pré-parseia o texto livre num Briefing (decisão de design
- * tomada — sem 2º LLM). O texto vai praticamente CRU como `userPrompt`, com o MESMO
- * systemPrompt canônico de `buildBriefingPrompt` (`SYSTEM_PROMPT_BRIEFING`, reusado
- * in-module — fonte única do estilo de geração); a estrutura nasce da SAÍDA do
- * RecipeGenSchema e a segurança vem do Aviso pós-geração (#87). PURO/determinístico:
- * o handler já valida (não-vazio/comprimento) e trima ANTES de chamar.
- */
-export function buildFreeTextPrompt(freeText: string): { systemPrompt: string; userPrompt: string } {
-  return { systemPrompt: SYSTEM_PROMPT_BRIEFING, userPrompt: freeText.trim() }
-}
-
-// ── Montagem DESTILAÇÃO (modo conversa) → { systemPrompt, userPrompt } (#12) ─────
-// systemPrompt da destilação: COMPARTILHA a 1ª linha canônica de `SYSTEM_PROMPT_BRIEFING`,
-// mas DROPA as frases de briefing/força — a conversa não tem conceito de Briefing nem de
-// força "required"/"preferred". A destilação reusa o MESMO `RecipeGenSchema` de saída via
-// `generateRecipe`; só a ENTRADA muda. NÃO pode usar `SYSTEM_PROMPT_BRIEFING` (instruiria o
-// modelo sobre força, irrelevante e enganoso aqui).
+// Base da DESTILAÇÃO (modo conversa): COMPARTILHA a 1ª linha canônica, mas NUNCA menciona
+// briefing nem a força "required"/"preferred" (a conversa não tem esses conceitos — instruir
+// sobre eles seria enganoso). O enriquecimento aqui evita cuidadosamente esse vocabulário.
 export const SYSTEM_PROMPT_DISTILLATION = [
   'Você gera receitas de cozinha no schema canônico.',
   'A entrada é uma conversa entre o Usuário e o Assistente; destile a receita pretendida.',
+  'Escreva passos claros, ordenados e executáveis, com técnicas e pontos de cozimento concretos (tempo, temperatura, textura) quando fizerem diferença.',
+  'Use apenas a cozinha que a conversa indicar; não invente uma cozinha.',
+  'A medida de cada ingrediente vai em quantidade e unidade — nunca a repita no nome do ingrediente.',
+  'Seja honesto: se o pedido for impossível ou contraditório, classifique-o como tal em vez de inventar.',
+  'Qualquer alerta ou ressalva vai no campo consultivo (advisory), nunca dentro da receita.',
+  'Use linguagem simples e direta, no idioma da conversa.',
 ].join(' ')
 
 /**
@@ -321,6 +340,113 @@ export const SYSTEM_PROMPT_CONVERSATION_STREAM =
   ' Responda ao Usuário em no máximo 1–2 linhas: diga o que você fez ou o que mudou nesta receita.' +
   ' Não escreva preâmbulo nem saudação, e não liste a receita inteira — a receita completa aparece à parte.'
 
+// Prompt-base por modo. `briefing`/`free_text` reusam o MESMO base (fonte única do estilo).
+const BASE_SYSTEM_PROMPTS: Record<PromptMode, string> = {
+  briefing: SYSTEM_PROMPT_BRIEFING,
+  free_text: SYSTEM_PROMPT_BRIEFING,
+  distillation: SYSTEM_PROMPT_DISTILLATION,
+  conversation_stream: SYSTEM_PROMPT_CONVERSATION_STREAM,
+}
+
+/**
+ * Assinatura EXATA que Wave 2 pluga (ADR-0029): recebe os `axes` e devolve um fragmento de prompt
+ * (`string`) OU `null`/vazio quando o seu eixo não está ativo.
+ */
+export type AxisFragmentContributor = (axes: PromptAxes) => string | null
+
+/**
+ * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Wave 1 é VAZIO (nenhum eixo) ⇒
+ * `buildSystemPrompt` devolve exatamente o base. Wave 2 pluga UM eixo adicionando UM item aqui
+ * (ex.: `(axes) => axes.nivelChef ? fragmentoNivel(axes.nivelChef) : null`). A ORDEM do array é a
+ * ordem em que os fragmentos são anexados ao base (determinística).
+ */
+const AXIS_FRAGMENT_CONTRIBUTORS: readonly AxisFragmentContributor[] = [
+  // Wave 2 (ADR-0029): registrar UM contribuidor por eixo aqui.
+]
+
+/**
+ * Núcleo PURO da composição (ADR-0029): base + fragmentos que os `contributors` produzem a partir dos
+ * `axes`, na ORDEM do array. Fragmentos null/vazio são ignorados. NENHUM fragmento efetivo ⇒ devolve
+ * EXATAMENTE o base (identidade byte-a-byte — back-compat). `contributors` é PARÂMETRO (não o registro
+ * global) para os testes exercitarem a composição com um contribuidor-fake sem tocar o registro real.
+ */
+export function composeSystemPrompt(
+  base: string,
+  contributors: readonly AxisFragmentContributor[],
+  axes: PromptAxes,
+): string {
+  const fragmentos: string[] = []
+  for (const contribuir of contributors) {
+    const frag = contribuir(axes)
+    if (frag != null && frag.trim() !== '') fragmentos.push(frag.trim())
+  }
+  return fragmentos.length === 0 ? base : [base, ...fragmentos].join(' ')
+}
+
+/**
+ * SEAM PURO de composição do prompt de sistema (ADR-0029). Base do modo + fragmentos do registro de
+ * eixos. Sem nenhum eixo ativo (registro vazio OU todos os contribuidores devolvem null/vazio) ⇒
+ * devolve EXATAMENTE o base (identidade byte-a-byte — back-compat). Total e determinístico.
+ */
+export function buildSystemPrompt(mode: PromptMode, axes: PromptAxes = NEUTRAL_AXES): string {
+  return composeSystemPrompt(BASE_SYSTEM_PROMPTS[mode], AXIS_FRAGMENT_CONTRIBUTORS, axes)
+}
+
+// ── Montagem Briefing → { systemPrompt, userPrompt } ───────────────────────────
+function rotuloItem(it: BriefingItem): string {
+  const nome = it.rawText != null && it.rawText.trim() !== '' ? it.rawText.trim() : (it.ingredientId ?? '')
+  const medida = [it.quantidade, it.unidade].filter((x) => x != null && x !== '').join(' ')
+  const partes = [`- ${nome} (força: ${it.strength})`]
+  if (medida !== '') partes.push(`quantidade: ${medida}`)
+  return partes.join('; ')
+}
+
+/**
+ * PURO e determinístico (testável byte-a-byte): substitui os placeholders de #8.
+ * Serializa o Briefing de forma legível e estável; NÃO injeta nada além do Briefing
+ * (sem dados de outra sessão). A QUALIDADE da prosa não é critério de #8/#11 — o teste
+ * asserta ESTRUTURA (a cozinha, os itens, a força), não o estilo.
+ *
+ * `axes` (ADR-0029): eixos de composição resolvidos na borda. AUSENTE ⇒ `NEUTRAL_AXES` (back-compat:
+ * os call sites e testes existentes seguem byte-a-byte iguais). O systemPrompt é montado pelo SEAM
+ * `buildSystemPrompt('briefing', axes)`.
+ */
+export function buildBriefingPrompt(
+  b: Briefing,
+  axes: PromptAxes = NEUTRAL_AXES,
+): { systemPrompt: string; userPrompt: string } {
+  const linhas: string[] = ['Gere uma receita a partir do seguinte briefing:']
+  if (b.cozinha != null) linhas.push(`Cozinha: ${b.cozinha}`)
+  if (b.porcoes != null) linhas.push(`Porções: ${b.porcoes}`)
+  if (b.dificuldade != null) linhas.push(`Dificuldade: ${b.dificuldade}`)
+  if (b.restricoes.length > 0) linhas.push(`Restrições: ${b.restricoes.join(', ')}`)
+  if (b.itens.length > 0) {
+    linhas.push('Ingredientes:')
+    for (const it of b.itens) linhas.push(rotuloItem(it))
+  }
+  if (b.observacoes != null && b.observacoes.trim() !== '') {
+    linhas.push(`Observações: ${b.observacoes.trim()}`)
+  }
+  return { systemPrompt: buildSystemPrompt('briefing', axes), userPrompt: linhas.join('\n') }
+}
+
+// ── Montagem PROMPT ABERTO (free_text) → { systemPrompt, userPrompt } (#88) ─────
+/**
+ * Modo `free_text` (#88): NÃO pré-parseia o texto livre num Briefing (decisão de design
+ * tomada — sem 2º LLM). O texto vai praticamente CRU como `userPrompt`, com o MESMO
+ * systemPrompt-base de `buildBriefingPrompt` (via `buildSystemPrompt('free_text', axes)`, que
+ * reusa o base do briefing — fonte única do estilo de geração); a estrutura nasce da SAÍDA do
+ * RecipeGenSchema e a segurança vem do Aviso pós-geração (#87). PURO/determinístico:
+ * o handler já valida (não-vazio/comprimento) e trima ANTES de chamar.
+ */
+export function buildFreeTextPrompt(
+  freeText: string,
+  axes: PromptAxes = NEUTRAL_AXES,
+): { systemPrompt: string; userPrompt: string } {
+  return { systemPrompt: buildSystemPrompt('free_text', axes), userPrompt: freeText.trim() }
+}
+
+// ── Montagem DESTILAÇÃO (modo conversa) → { systemPrompt, userPrompt } (#12) ─────
 function rotuloFala(role: TranscriptMessage['role']): string {
   return role === 'user' ? 'Usuário' : 'Assistente'
 }
@@ -347,11 +473,12 @@ function colapsaConteudo(content: string): string {
 
 export function buildConversationPrompt(
   transcript: ReadonlyArray<TranscriptMessage>,
+  axes: PromptAxes = NEUTRAL_AXES,
 ): { systemPrompt: string; userPrompt: string } {
   const userPrompt = transcript
     .map((m) => `${rotuloFala(m.role)}: ${colapsaConteudo(m.content)}`)
     .join('\n')
-  return { systemPrompt: SYSTEM_PROMPT_DISTILLATION, userPrompt }
+  return { systemPrompt: buildSystemPrompt('distillation', axes), userPrompt }
 }
 
 // ── Costura para o Aviso (AC5) — montar `items` para o motor #7 ─────────────────

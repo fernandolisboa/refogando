@@ -19,8 +19,11 @@ import {
   buildBriefingPrompt,
   buildFreeTextPrompt,
   buildConversationPrompt,
+  promptStampFor,
+  NEUTRAL_AXES,
   type Briefing,
   type BriefingItem,
+  type PromptAxes,
 } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
@@ -87,6 +90,9 @@ export type RegenerateResult =
 async function recoverPrompt(
   db: Database,
   session: { id: string; mode: string; briefingId: string | null; freeText: string | null },
+  // #420 (ADR-0029): eixos de composição do prompt. Neutro na Wave 1 (a regeneração ainda não recupera
+  // eixos da proveniência — futuro). Threaded p/ o systemPrompt recomposto casar o carimbo da geração.
+  axes: PromptAxes = NEUTRAL_AXES,
 ): Promise<{ systemPrompt: string; userPrompt: string } | null> {
   if (session.mode === 'conversation') {
     // Reconstrói a Transcrição das falas duráveis (#15). Apagada (DELETE /transcript) → vazia →
@@ -98,7 +104,7 @@ async function recoverPrompt(
       .orderBy(asc(transcriptMessage.seq))
     if (rows.length === 0) return null
     const transcript: TranscriptMessage[] = rows.map((m) => ({ role: m.role, content: m.content }))
-    return buildConversationPrompt(transcript)
+    return buildConversationPrompt(transcript, axes)
   }
 
   if (session.mode === 'structured') {
@@ -133,13 +139,13 @@ async function recoverPrompt(
         }),
       ),
     }
-    return buildBriefingPrompt(briefing)
+    return buildBriefingPrompt(briefing, axes)
   }
 
   if (session.mode === 'free_text') {
     // Texto livre CRU gravado como proveniência (#88). Ausente/vazio → irrecuperável (409).
     if (session.freeText == null || session.freeText.trim() === '') return null
-    return buildFreeTextPrompt(session.freeText)
+    return buildFreeTextPrompt(session.freeText, axes)
   }
 
   return null
@@ -190,7 +196,13 @@ export async function regenerateRecipe(
     .limit(1)
   if (!session) return { kind: 'sem_fonte' }
 
-  const prompt = await recoverPrompt(db, session)
+  // Eixos de composição (#420, ADR-0029) — neutro na Wave 1. Moldam o systemPrompt recomposto E
+  // carimbam a versão da geração (correlação futura com save/estrela). Wave 2: recuperar eixos da
+  // proveniência da predecessora, aqui.
+  const axes = NEUTRAL_AXES
+  const promptStamp = promptStampFor(axes)
+
+  const prompt = await recoverPrompt(db, session, axes)
   if (prompt === null) return { kind: 'sem_fonte' }
 
   // ── TETO de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES do Claude ─────────
@@ -209,7 +221,7 @@ export async function regenerateRecipe(
   // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
   // ATIVO do DB DIRETO (sem cache de escrita); a IA só re-emite cozinhas ativas na regeneração.
   const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
-  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs })
+  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs, axes })
   const result = classify(out)
 
   // invalid: erro de sistema puro → NADA persiste (ADR-0006).
@@ -228,6 +240,7 @@ export async function regenerateRecipe(
       ownerId: viewerId,
       model,
       existingSessionId: session.id,
+      promptStamp,
     })
     return { kind: 'impossible', advisory: result.advisory }
   }
@@ -241,6 +254,7 @@ export async function regenerateRecipe(
     ownerId: viewerId,
     model,
     existingSessionId: session.id,
+    promptStamp,
     lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
     imageId: pred.imageId,
     // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face

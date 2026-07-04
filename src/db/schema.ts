@@ -36,6 +36,7 @@ import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
 import { STRENGTHS } from '@/domain/briefing'
+import type { PromptStamp } from '@/domain/briefing'
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_IMAGE_GEN_CAP_BY_ROLE,
@@ -887,6 +888,12 @@ export const generation = pgTable(
     advisoryComment: text('advisory_comment'),
     model: text('model').notNull(),
     schemaVersion: integer('schema_version').notNull(),
+    // Carimbo de versão do PROMPT/EIXOS que produziram esta geração (#420, ADR-0029): `{ version, axes }`.
+    // ORTOGONAL a `schema_version` (que versiona a FORMA da saída) — este versiona o TEXTO do prompt e os
+    // eixos de composição, para correlacionar depois com save/estrela. NULLABLE: linhas legadas (pré-#420)
+    // ficam NULL; as novas carimbam via `promptStampFor` (borda). `$type<PromptStamp>` tipa a leitura/escrita
+    // do jsonb (o driver devolve `unknown` cru).
+    promptStamp: jsonb('prompt_stamp').$type<PromptStamp>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

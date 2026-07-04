@@ -13,6 +13,8 @@ import {
   buildBriefingPrompt,
   buildFreeTextPrompt,
   briefingItemsParaAviso,
+  promptStampFor,
+  NEUTRAL_AXES,
   OBSERVACOES_MAX,
   type Briefing,
 } from '@/domain/briefing'
@@ -138,6 +140,12 @@ export async function POST(req: Request): Promise<Response> {
   // compartilhado) precisa enxergá-lo. Fica null nos demais modos (free_text não tem briefing).
   let suggested: string | null = null
 
+  // Eixos de composição do prompt (#420, ADR-0029) — RESOLVIDOS na borda. Wave 1 = neutro (nenhum
+  // eixo); Wave 2 lê o Nível do chef / voz da cozinha do body aqui. `axes` molda o systemPrompt (via
+  // build*Prompt) e `stamp` carimba a versão que produziu a geração (persist) p/ correlação futura.
+  const axes = NEUTRAL_AXES
+  const promptStamp = promptStampFor(axes)
+
   if (mode === 'structured') {
     // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na autoria. Aqui o slug é só
     // COMPUTADO (puro, sem tocar o DB) e INJETADO no briefing ANTES da validação — a MATERIALIZAÇÃO
@@ -206,8 +214,9 @@ export async function POST(req: Request): Promise<Response> {
       for (const row of rows) alergMap.set(row.id, row.alergenos)
     }
 
-    // d. Monta {systemPrompt, userPrompt} a partir do Briefing (substitui placeholders).
-    const prompt = buildBriefingPrompt(briefing)
+    // d. Monta {systemPrompt, userPrompt} a partir do Briefing (substitui placeholders). Eixos (#420)
+    //    resolvidos na borda moldam o systemPrompt via buildSystemPrompt (neutro na Wave 1).
+    const prompt = buildBriefingPrompt(briefing, axes)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
   } else if (mode === 'free_text') {
@@ -225,7 +234,7 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ error: 'free_text_muito_longo' }, { status: 400 })
     }
     freeText = body.freeText.trim()
-    const prompt = buildFreeTextPrompt(freeText)
+    const prompt = buildFreeTextPrompt(freeText, axes)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
   }
@@ -263,6 +272,8 @@ export async function POST(req: Request): Promise<Response> {
     // #318: constrange a cozinha da SAÍDA structured ao vocabulário VIVO (data-driven). Mesmo
     // conjunto ATIVO hoisted acima — vale p/ structured E free_text (a IA só emite cozinhas vivas).
     cozinhaSlugs: [...activeCozinhas],
+    // #420 (ADR-0029): eixos que produziram esta geração (já embutidos no systemPrompt). Neutro na Wave 1.
+    axes,
   })
   const result = classify(out)
 
@@ -300,7 +311,7 @@ export async function POST(req: Request): Promise<Response> {
 
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.
-    await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText })
+    await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp })
     return Response.json({ outcome: 'impossible', advisory: result.advisory }, { status: 200 })
   }
 
@@ -320,6 +331,7 @@ export async function POST(req: Request): Promise<Response> {
     model,
     briefing: persistBriefing,
     freeText,
+    promptStamp,
   })
 
   // #119: embeda a Receita recém-criada (best-effort, ASSISTIVO) p/ a Busca semântica achá-la pelo

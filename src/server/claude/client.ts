@@ -20,6 +20,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import type { GenerationOutput } from '@/domain/generation'
 import type { TranscriptMessage } from '@/domain/transcript'
+import type { PromptAxes } from '@/domain/briefing'
 import { buildRecipeGenSchema } from '@/domain/recipe-gen-schema'
 import {
   IngredientExtractionSchema,
@@ -45,6 +46,12 @@ export type GenerationInput = {
   // cozinhas ativas. OPCIONAL (back-compat): ausente/vazio ⇒ `z.string()` (sem constraint). A
   // BORDA resolve o conjunto (loadActiveCozinhaSlugs); o FakeClaudeClient o ignora (devolve canned).
   cozinhaSlugs?: readonly string[]
+  // Eixos de composição do prompt (#420, ADR-0029): resolvidos na BORDA e já EMBUTIDOS no
+  // `systemPrompt` (via buildSystemPrompt). Trafegam aqui como PROVENIÊNCIA da geração (o que a
+  // produziu), espelhando `cozinhaSlugs` como campo OPCIONAL/back-compat. O RealClaudeClient NÃO os
+  // relê (o systemPrompt já os codifica); a BORDA carimba a versão separadamente via `promptStampFor`
+  // no persist. OPCIONAL: ausente ⇒ eixos neutros. O FakeClaudeClient os ignora (devolve canned).
+  axes?: PromptAxes
 }
 
 /**
