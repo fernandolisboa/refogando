@@ -284,6 +284,7 @@ export async function generateAndStoreGalleryImage(input: {
   } = input
 
   const base = buildDishImagePrompt({
+    recipeId, // #424: semente do hash de rotação de estilo (mesma receita ⇒ mesma foto)
     titulo: content.titulo,
     cozinha: content.cozinha,
     categoria: content.categoria,
