@@ -7,6 +7,9 @@ import type { NivelChef } from '@/domain/briefing'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
+  // #451: sufixo do aria-label dos links de rede social do rodapé (só o sufixo é traduzido; o nome
+  // de marca da rede, não). NUNCA rotular o app como "bilíngue" em texto ao usuário (regra do dono).
+  footer: { abreEmNovaAba: 'abre em nova aba' },
   nav: {
     // #277: a Descoberta/home virou "Explorar" na nav (aba ao lado de "Seguindo"). O key segue
     // `home` (linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
@@ -1086,6 +1089,23 @@ export const ptBR = {
     comparadorOutcomePlayful: 'lúdico',
     comparadorOutcomeImpossible: 'impossível',
     comparadorOutcomeInvalid: 'inválido',
+    // ── #451: aba "Site" (Governança, admin-only) — links de redes sociais do rodapé, editáveis sem deploy. ──
+    navSite: 'Site',
+    redesTitulo: 'Redes sociais (rodapé)',
+    redesDescricao:
+      'Links que aparecem no rodapé do site. Cadastre a conta e ligue quando ela existir. Vazio = rodapé sem links.',
+    redesPlataformaLabel: 'Rede',
+    redesUrlLabel: 'URL (https://…)',
+    redesRotuloLabel: 'Rótulo (opcional)',
+    redesLigadoLabel: 'Mostrar no rodapé',
+    redesAdicionar: 'Adicionar rede',
+    redesRemover: 'Remover',
+    redesSalvar: 'Salvar',
+    redesSalvando: 'Salvando…',
+    redesSalvo: 'Alterações salvas.',
+    redesErro: 'Não foi possível salvar. Confira as URLs (só http/https) e evite plataformas repetidas.',
+    redesCarregando: 'Carregando…',
+    redesVazio: 'Nenhuma rede cadastrada ainda.',
     // Seção "Geração de imagem" (#134) — vive na aba "IA" (/admin/ia); liga/desliga, modelo e tetos.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',

@@ -8,6 +8,7 @@ import { parseRecipeVariantConfig, type RecipeVariantConfig } from '@/domain/rec
 import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
 import { parsePopularityConfig, type PopularityConfig } from '@/domain/popularity'
+import { parseSocialLinksConfig, type SocialLinksConfig } from '@/domain/social-links-config'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -51,6 +52,7 @@ export async function PUT(req: Request): Promise<Response> {
     webSearch?: unknown
     catalogDisclosure?: unknown
     popularity?: unknown
+    socialLinks?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -67,6 +69,7 @@ export async function PUT(req: Request): Promise<Response> {
     catalogDisclosureEnabled: boolean
     catalogDisclosureText: string
     popularityConfig: PopularityConfig
+    socialLinks: SocialLinksConfig
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -137,6 +140,15 @@ export async function PUT(req: Request): Promise<Response> {
     const parsed = parsePopularityConfig(body.popularity)
     if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.popularityConfig = parsed.value
+  }
+
+  // #451: links de redes sociais do site (footer). Lista de {platform, url, label?, enabled} —
+  // allowlist de plataforma em código, URL http(s) segura (safeHttpUrl), sem duplicata. Substituição
+  // COMPLETA do eixo (a UI sempre envia a lista inteira). Inválido ⇒ 400 config_invalida.
+  if (body.socialLinks !== undefined) {
+    const parsed = parseSocialLinksConfig(body.socialLinks)
+    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.socialLinks = parsed.value
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

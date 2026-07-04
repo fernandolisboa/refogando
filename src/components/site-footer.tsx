@@ -14,8 +14,16 @@ import { Container } from '@/components/container'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { LocaleSwitcher } from '@/i18n/locale-switcher'
 import { type Theme } from '@/lib/theme'
+import { PLATFORM_DISPLAY, type SocialLink } from '@/domain/social-links-config'
 
-export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | null }) {
+export function SiteFooter({
+  initialTheme = null,
+  socialLinks = [],
+}: {
+  initialTheme?: Theme | null
+  // #451: links de redes sociais do site, JÁ filtrados por `enabled` no servidor (layout.tsx).
+  socialLinks?: SocialLink[]
+}) {
   const { messages } = useLocale()
   return (
     <footer className="border-t border-border">
@@ -35,6 +43,29 @@ export function SiteFooter({ initialTheme = null }: { initialTheme?: Theme | nul
               {messages.seusDireitos.titulo}
             </Link>
           </div>
+          {/* #451: links de redes sociais (só renderiza quando há algum ligado). <div>, não <nav> —
+              mesma decisão dos links legais acima (não criar 2º landmark de navegação). Links externos
+              endurecidos (rel=noopener noreferrer, target=_blank); SEM nofollow (são as redes PRÓPRIAS
+              do site). Texto = label ou o nome de marca (não traduzido); só o sufixo do aria-label é i18n. */}
+          {socialLinks.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+              {socialLinks.map((l) => {
+                const nome = l.label ?? PLATFORM_DISPLAY[l.platform]
+                return (
+                  <a
+                    key={l.platform}
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${nome} — ${messages.footer.abreEmNovaAba}`}
+                    className="hover:text-fg hover:underline"
+                  >
+                    {nome}
+                  </a>
+                )
+              })}
+            </div>
+          )}
         </div>
         {/* Controles de apresentação da chrome (#162): idioma + tema, lado a lado. */}
         <div className="flex items-center gap-3">

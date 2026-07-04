@@ -413,3 +413,71 @@ describe('/api/admin/config — popularity (#368, admin-only)', () => {
     expect((await put({ popularity: okPopularity }, headers)).status).toBe(403)
   })
 })
+
+// ── #451: socialLinks [{platform, url, label?, enabled}] (links de rede social do rodapé) ──────────
+describe('/api/admin/config — socialLinks (#451, admin-only)', () => {
+  it('GET traz socialLinks vazio quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { socialLinks: unknown[] }
+    expect(body.socialLinks).toEqual([])
+  })
+
+  it('PUT socialLinks válido persiste (label vazio omitido) e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-put@cfg.test', role: 'admin' })
+    const putRes = await put(
+      {
+        socialLinks: [
+          { platform: 'instagram', url: 'https://instagram.com/refogando', enabled: true },
+          { platform: 'youtube', url: 'https://youtube.com/@r', label: '   ', enabled: false },
+        ],
+      },
+      headers,
+    )
+    expect(putRes.status).toBe(200)
+    const getBody = (await (await get(headers)).json()) as { socialLinks: unknown[] }
+    expect(getBody.socialLinks).toEqual([
+      { platform: 'instagram', url: 'https://instagram.com/refogando', enabled: true },
+      { platform: 'youtube', url: 'https://youtube.com/@r', enabled: false },
+    ])
+  })
+
+  it('PUT socialLinks NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-iso@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect(
+      (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
+        .status,
+    ).toBe(200)
+    const body = (await (await get(headers)).json()) as { defaultModel: string; socialLinks: unknown[] }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.socialLinks).toEqual([{ platform: 'x', url: 'https://x.com/r', enabled: true }])
+  })
+
+  it('PUT socialLinks inválido → 400 config_invalida (URL insegura, plataforma duplicada)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-bad@cfg.test', role: 'admin' })
+    const xss = await put(
+      { socialLinks: [{ platform: 'x', url: 'javascript:alert(1)', enabled: true }] },
+      headers,
+    )
+    expect(xss.status).toBe(400)
+    await expect(xss.json()).resolves.toMatchObject({ error: 'config_invalida' })
+    const dup = await put(
+      {
+        socialLinks: [
+          { platform: 'x', url: 'https://x.com/a', enabled: true },
+          { platform: 'x', url: 'https://x.com/b', enabled: true },
+        ],
+      },
+      headers,
+    )
+    expect(dup.status).toBe(400)
+  })
+
+  it('socialLinks PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-cur@cfg.test', role: 'curador' })
+    expect(
+      (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
+        .status,
+    ).toBe(403)
+  })
+})
