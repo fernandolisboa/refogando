@@ -39,11 +39,12 @@ function renderNav(role: 'admin' | 'curador', path = '/admin/ia') {
 }
 
 describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () => {
-  it('admin vê as 7 seções (Governança: IA, Descoberta, Cozinhas, Papéis + Curadoria)', () => {
+  it('admin vê as 8 seções (Governança: IA, Descoberta, Comparador, Cozinhas, Papéis + Curadoria)', () => {
     const nav = renderNav('admin')
     for (const label of [
       A.navIa,
       A.navDescoberta,
+      A.navComparador,
       A.navVocabulario,
       A.navPapeis,
       A.navModeracao,
@@ -54,10 +55,11 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     }
   })
 
-  it('curador NÃO vê a Governança (IA, Descoberta, Cozinhas, Papéis); vê só a Curadoria', () => {
+  it('curador NÃO vê a Governança (IA, Descoberta, Comparador, Cozinhas, Papéis); vê só a Curadoria', () => {
     const nav = renderNav('curador', '/admin/moderation')
     expect(within(nav).queryByRole('link', { name: A.navIa })).toBeNull()
     expect(within(nav).queryByRole('link', { name: A.navDescoberta })).toBeNull() // #134: admin-only
+    expect(within(nav).queryByRole('link', { name: A.navComparador })).toBeNull() // #425: admin-only
     expect(within(nav).queryByRole('link', { name: A.navVocabulario })).toBeNull() // #321: admin-only
     expect(within(nav).queryByRole('link', { name: A.navPapeis })).toBeNull()
     for (const label of [A.navModeracao, A.navTraducoes, A.navCatalogo]) {
