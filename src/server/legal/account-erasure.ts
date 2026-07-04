@@ -2,6 +2,8 @@ import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { account, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
+import { getImageStore } from '@/server/deps'
+import { deleteOrphanBlob } from '@/server/recipe/image'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 
 /**
@@ -46,10 +48,15 @@ export async function eraseOwnAccount(
   const anon = erasedIdentity(userId)
   const now = new Date()
 
-  return db.transaction(async (tx) => {
+  // Captura a URL do avatar (blob NOSSO) fora da tx para reap pós-commit: o passo 1 NULA `users.image`,
+  // então sem capturá-la aqui a URL se perde e o blob fica órfão eternamente. `deleteOrphanBlob`/
+  // `store.owns` protegem URL estrangeira (avatar do Google OAuth NUNCA é apagado).
+  let oldImageUrl: string | null = null
+
+  const result = await db.transaction(async (tx) => {
     // Guarda a linha contra corrida e confirma o estado atual (existe? já eliminada?).
     const [current] = await tx
-      .select({ id: users.id, email: users.email, deletedAt: users.deletedAt })
+      .select({ id: users.id, email: users.email, image: users.image, deletedAt: users.deletedAt })
       .from(users)
       .where(eq(users.id, userId))
       .for('update')
@@ -61,6 +68,7 @@ export async function eraseOwnAccount(
     // apagar quando o e-mail atual ainda NÃO é a sentinela anonimizada desta conta (2ª chamada nem
     // chega aqui pelo guard de `deletedAt`, mas o check mantém o DELETE um no-op seguro).
     const oldEmail = current.email
+    oldImageUrl = current.image
 
     // 1+2. Anonimiza a PII e bloqueia/carimba. WHERE deletedAt IS NULL: só a 1ª eliminação escreve
     // (idempotência no próprio SQL, além do guard acima).
@@ -103,4 +111,11 @@ export async function eraseOwnAccount(
 
     return { kind: 'erased' as const }
   })
+
+  // Avatar órfão DEPOIS do commit (best-effort; só apaga se for NOSSO — `store.owns`). Só quando de fato
+  // eliminamos nesta chamada (kind 'erased'): já-eliminada/não-encontrada não têm avatar novo a reapear.
+  if (result.kind === 'erased') {
+    await deleteOrphanBlob(getImageStore(), oldImageUrl)
+  }
+  return result
 }
