@@ -513,7 +513,6 @@ export const ptBR = {
     erroBriefingVazio:
       'Adicione ao menos um ingrediente, uma cozinha, uma restrição ou uma observação.',
     erroPorcoes: 'As porções devem ficar entre 1 e 50.',
-    erroDificuldade: 'A dificuldade deve ficar entre 1 e 5.',
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',

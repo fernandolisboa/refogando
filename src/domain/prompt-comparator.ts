@@ -105,9 +105,10 @@ export function comparisonSystemPrompts(
  * `free_text` (texto livre) e `distillation` (destilação da conversa). `conversation_stream` é a
  * resposta-na-tela (call-1), NÃO um caminho de Receita — fica fora do comparador.
  *
- * `axes`: os eixos de composição. Wave 1 é NEUTRO (`NEUTRAL_AXES` / `{}`) — `PromptAxes` está VAZIO
- * nesta branch. Fixtures COM eixos (nivelChef/vozCozinha) entram num follow-up após as fatias de
- * eixo mergearem (não referenciar esses campos aqui: ainda não existem).
+ * `axes`: os eixos de composição. A maioria das fixtures é NEUTRA (`NEUTRAL_AXES` / `{}`) — o
+ * comparador prova o harness (old===new). As fixtures `cmp-11..13` (#437) preenchem eixos reais da
+ * Wave 2 (nivelChef/vozCozinha/variacaoDivergente) para o lado NOVO exercitar os fragmentos e o
+ * comparador mostrar o DELTA real (base vs base+fragmentos).
  */
 export type ComparatorFixture =
   | { id: string; mode: 'briefing'; briefing: Briefing; axes: PromptAxes }
@@ -223,6 +224,52 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     axes: NEUTRAL_AXES,
     freeText:
       'Uma sopa mexicana quentinha estilo pozole, com milho, pimenta e coentro fresco por cima. Para um almoço de domingo em família.',
+  },
+  // ── Fixtures COM eixos (#437, ADR-0029): o lado NOVO exercita os fragmentos da Wave 2 ⇒ DELTA real
+  //    (base vs base+fragmentos) em vez de old===new. Uma por eixo + uma combinando dois.
+  {
+    id: 'cmp-11-italiana-nivel-avancado',
+    mode: 'briefing',
+    axes: { nivelChef: 'avancado' }, // #421 — Nível de habilidade
+    briefing: briefingFixture('italiana', 4, [
+      item('spaghetti', '320', 'g'),
+      item('guanciale', '150', 'g'),
+      item('ovos', '4', 'unidade'),
+      item('queijo pecorino', '80', 'g', 'preferred'),
+    ]),
+  },
+  {
+    id: 'cmp-12-japonesa-voz-curada',
+    mode: 'free_text',
+    axes: {
+      // #422 — cozinha-como-voz (nota curada opcional)
+      vozCozinha: {
+        nome: 'japonesa',
+        notaCurada:
+          'Priorize dashi caseiro, corte preciso e umami em camadas; empratamento minimalista e sazonal.',
+      },
+    },
+    freeText:
+      'Um donburi de salmão com arroz temperado e legumes da estação, equilibrado e leve, para o jantar.',
+  },
+  {
+    id: 'cmp-13-brasileira-nivel-e-variacao',
+    mode: 'briefing',
+    axes: {
+      // #421 + #423 — Nível + Variação de geração (dois fragmentos ⇒ delta maior)
+      nivelChef: 'iniciante',
+      variacaoDivergente: {
+        poloA: 'tradicional',
+        poloB: 'com um toque criativo',
+        instrucao:
+          'Mantenha as duas fiéis ao pedido; divirjam no método e nos ingredientes de destaque, não na identidade do prato.',
+      },
+    },
+    briefing: briefingFixture('brasileira', 4, [
+      item('mandioca', '600', 'g'),
+      item('carne moída', '400', 'g'),
+      item('cebola', '1', 'unidade'),
+    ]),
   },
 ]
 
