@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDishImagePrompt,
+  buildStylePreamble,
+  cuisineVisualConvention,
+  hashString,
   composeImagePrompt,
   composeEditImagePrompt,
   IMAGE_PROMPT_OVERRIDE_MAX,
 } from '@/domain/image-prompt'
 
-/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017). */
+/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017; variedade #424, ADR-0029 dec.5). */
 
 describe('buildDishImagePrompt', () => {
   it('inclui título, ingredientes e estilo (cozinha/categoria)', () => {
     const p = buildDishImagePrompt({
+      recipeId: 'r1',
       titulo: 'Feijoada',
       cozinha: 'brasileira',
       categoria: 'prato_principal',
@@ -22,19 +26,103 @@ describe('buildDishImagePrompt', () => {
   })
 
   it('omite a seção de ingredientes quando vazia (e ignora rótulos em branco)', () => {
-    const p = buildDishImagePrompt({ titulo: 'Água', cozinha: null, categoria: null, ingredientes: ['', '  '] })
+    const p = buildDishImagePrompt({ recipeId: 'r1', titulo: 'Água', cozinha: null, categoria: null, ingredientes: ['', '  '] })
     expect(p).toContain('Água')
     expect(p).not.toContain('Ingredientes principais')
     expect(p).not.toContain('Estilo:')
   })
 
   it('determinístico: mesma entrada ⇒ mesma saída', () => {
-    const input = { titulo: 'Bolo', cozinha: 'francesa', categoria: null, ingredientes: ['farinha'] }
+    const input = { recipeId: 'r1', titulo: 'Bolo', cozinha: 'francesa', categoria: null, ingredientes: ['farinha'] }
     expect(buildDishImagePrompt(input)).toBe(buildDishImagePrompt(input))
   })
 
   it('trima o título', () => {
-    expect(buildDishImagePrompt({ titulo: '  Torta  ', cozinha: null, categoria: null, ingredientes: [] })).toContain('Prato: Torta.')
+    expect(buildDishImagePrompt({ recipeId: 'r1', titulo: '  Torta  ', cozinha: null, categoria: null, ingredientes: [] })).toContain('Prato: Torta.')
+  })
+
+  it('o prato (base) segue sendo o sujeito mesmo com a rotação de estilo (#424, invariante ADR-0022)', () => {
+    const p = buildDishImagePrompt({ recipeId: 'abc', titulo: 'Moqueca', cozinha: 'baiana', categoria: null, ingredientes: ['peixe'] })
+    expect(p).toContain('Prato: Moqueca.')
+    expect(p).toContain('Fotografia de comida realista')
+  })
+})
+
+/**
+ * #424 — variedade AUTOMÁTICA e DETERMINÍSTICA por receita (ADR-0029 dec.5). O preâmbulo vira uma
+ * composição rotacionada por hash do `recipeId`; um MAPA cozinha → convenção visual enriquece por
+ * cozinha. Puro, sem Date.now/Math.random. Mesma receita ⇒ mesma foto; ids distintos ⇒ diversidade.
+ */
+describe('hashString', () => {
+  it('é puro e determinístico: mesma string ⇒ mesmo número', () => {
+    expect(hashString('r1')).toBe(hashString('r1'))
+    expect(hashString('')).toBe(hashString(''))
+  })
+
+  it('strings distintas tendem a números distintos', () => {
+    expect(hashString('r1')).not.toBe(hashString('r2'))
+    expect(hashString('abc')).not.toBe(hashString('cba'))
+  })
+
+  it('devolve um uint32 não-negativo', () => {
+    for (const s of ['', 'r1', 'moqueca', 'x'.repeat(100)]) {
+      const h = hashString(s)
+      expect(Number.isInteger(h)).toBe(true)
+      expect(h).toBeGreaterThanOrEqual(0)
+      expect(h).toBeLessThanOrEqual(0xffffffff)
+    }
+  })
+})
+
+describe('buildStylePreamble (rotação determinística #424)', () => {
+  it('mesma receita ⇒ MESMO preâmbulo (foto estável até regerar)', () => {
+    expect(buildStylePreamble('recipe-42', 'italiana')).toBe(buildStylePreamble('recipe-42', 'italiana'))
+  })
+
+  it('ancora SEMPRE a base fotográfica realista (nenhum eixo a substitui)', () => {
+    expect(buildStylePreamble('anything', null)).toContain('Fotografia de comida realista')
+  })
+
+  it('ids diferentes ⇒ diversidade real de presets (não tudo igual)', () => {
+    const ids = Array.from({ length: 60 }, (_, i) => `recipe-${i}`)
+    const preambulos = new Set(ids.map((id) => buildStylePreamble(id, null)))
+    // Com 4 eixos de ≥5 opções, dezenas de receitas devem render muitos preâmbulos distintos.
+    expect(preambulos.size).toBeGreaterThan(10)
+  })
+
+  it('os eixos rotacionam de forma independente (não em lockstep)', () => {
+    // Dois ids que colidem num eixo não precisam colidir nos outros — a diversidade não desaba.
+    const a = buildStylePreamble('seed-A', null)
+    const b = buildStylePreamble('seed-B', null)
+    expect(a).not.toBe(b)
+  })
+})
+
+describe('cuisineVisualConvention (mapa cozinha → convenção #424)', () => {
+  it('cozinhas distintas ⇒ convenções visuais distintas (baiana ≠ japonesa)', () => {
+    const baiana = cuisineVisualConvention('baiana')
+    const japonesa = cuisineVisualConvention('japonesa')
+    expect(baiana).toBeTruthy()
+    expect(japonesa).toBeTruthy()
+    expect(baiana).not.toBe(japonesa)
+  })
+
+  it('cozinha não-mapeada ou nula ⇒ undefined (fallback silencioso, sem abrir cozinha livre)', () => {
+    expect(cuisineVisualConvention(null)).toBeUndefined()
+    expect(cuisineVisualConvention(undefined)).toBeUndefined()
+    expect(cuisineVisualConvention('marciana')).toBeUndefined()
+  })
+
+  it('a cozinha muda o preâmbulo (convenção entra no texto)', () => {
+    const jp = buildStylePreamble('mesmo-id', 'japonesa')
+    const br = buildStylePreamble('mesmo-id', 'baiana')
+    // Mesmo id ⇒ mesmos eixos de rotação; só a convenção da cozinha difere ⇒ preâmbulos distintos.
+    expect(jp).not.toBe(br)
+    expect(jp).toContain('Apresentação típica da cozinha')
+  })
+
+  it('sem convenção mapeada ⇒ não injeta a linha de cozinha no preâmbulo', () => {
+    expect(buildStylePreamble('id', 'marciana')).not.toContain('Apresentação típica da cozinha')
   })
 })
 
@@ -45,6 +133,7 @@ describe('buildDishImagePrompt', () => {
  */
 describe('composeImagePrompt', () => {
   const base = buildDishImagePrompt({
+    recipeId: 'r1',
     titulo: 'Feijoada',
     cozinha: 'brasileira',
     categoria: 'prato_principal',
@@ -98,6 +187,7 @@ describe('composeImagePrompt', () => {
  */
 describe('composeEditImagePrompt', () => {
   const base = buildDishImagePrompt({
+    recipeId: 'r1',
     titulo: 'Feijoada',
     cozinha: 'brasileira',
     categoria: 'prato_principal',
