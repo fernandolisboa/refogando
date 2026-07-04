@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Refogando',
     short_name: 'Refogando',
-    description: 'App de receitas com IA, bilíngue pt-BR/en-US.',
+    description: 'App de receitas com IA.',
     start_url: '/',
     display: 'standalone',
     background_color: '#FBF7EF',

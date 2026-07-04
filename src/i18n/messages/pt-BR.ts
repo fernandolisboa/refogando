@@ -1468,7 +1468,7 @@ export const ptBR = {
     parteATitulo: 'Parte (a) — Política de Privacidade',
     resumoTitulo: 'Resumo em 30 segundos',
     resumoItens: [
-      'O Refogando é um app de receitas com IA, bilíngue (pt-BR / en-US).',
+      'O Refogando é um app de receitas com IA.',
       'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
       'Não vendemos seus dados. Compartilhamos apenas com prestadores de serviço que fazem o app funcionar (hospedagem, banco, IA).',
       'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: privacidade@refogando.com. Respondemos em até 15 dias.',

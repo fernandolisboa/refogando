@@ -19,7 +19,7 @@ import { loadRecipeVariantConfig } from '@/server/app-config'
 
 export const metadata: Metadata = {
   title: 'Refogando',
-  description: 'App de receitas com IA, bilíngue pt-BR/en-US.',
+  description: 'App de receitas com IA.',
 }
 
 // Locale-no-caminho (ADR-0020): o app inteiro vive sob `[locale]`, então este É o root layout
