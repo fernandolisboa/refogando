@@ -19,6 +19,10 @@ import type { PromptStamp } from '@/domain/briefing'
  *  - sem default e sem override ⇒ eixo NEUTRO (axes vazio).
  * O FakeClaudeClient devolve um success enlatado; o systemPrompt já embute o fragmento (testado no
  * unit de briefing) — aqui provamos que a BORDA resolveu o eixo certo.
+ *
+ * Os briefings usam `cozinha: null` de propósito: ISOLAM o eixo Nível do eixo cozinha-como-voz (#422),
+ * que também carimbaria `axes.vozCozinha` quando há cozinha — então o `toEqual` do axes fica focado no
+ * nivelChef sem acoplar à voz.
  */
 
 let sql: Sql
@@ -53,7 +57,7 @@ describe('POST /api/generations — eixo Nível de habilidade na borda (#421)', 
     const { userId, headers } = await seedSessionHeaders({ email: 'defnivel@nivel.gen.test' })
     await setNivelPadrao(userId, 'iniciante')
 
-    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing({ cozinha: null }) }, headers)
     expect(res.status).toBe(201)
 
     const stamp = await lastStamp(userId)
@@ -67,7 +71,7 @@ describe('POST /api/generations — eixo Nível de habilidade na borda (#421)', 
     await setNivelPadrao(userId, 'iniciante')
 
     const res = await post(
-      { mode: 'structured', briefing: makeBriefing(), nivel: 'avancado' },
+      { mode: 'structured', briefing: makeBriefing({ cozinha: null }), nivel: 'avancado' },
       headers,
     )
     expect(res.status).toBe(201)
@@ -81,7 +85,7 @@ describe('POST /api/generations — eixo Nível de habilidade na borda (#421)', 
     setClaudeClient(new FakeClaudeClient((t) => t, cannedSuccess()))
     const { userId, headers } = await seedSessionHeaders({ email: 'neutro@nivel.gen.test' })
 
-    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    const res = await post({ mode: 'structured', briefing: makeBriefing({ cozinha: null }) }, headers)
     expect(res.status).toBe(201)
 
     const stamp = await lastStamp(userId)
@@ -95,7 +99,7 @@ describe('POST /api/generations — eixo Nível de habilidade na borda (#421)', 
     await setNivelPadrao(userId, 'intermediario')
 
     const res = await post(
-      { mode: 'structured', briefing: makeBriefing(), nivel: 'expert' },
+      { mode: 'structured', briefing: makeBriefing({ cozinha: null }), nivel: 'expert' },
       headers,
     )
     expect(res.status).toBe(201)
