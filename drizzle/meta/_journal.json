@@ -330,6 +330,13 @@
       "when": 1782960488616,
       "tag": "0046_polite_spot",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1783130189142,
+      "tag": "0047_fresh_killer_shrike",
+      "breakpoints": true
     }
   ]
 }

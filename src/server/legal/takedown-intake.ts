@@ -2,6 +2,7 @@ import type { Database } from '@/db/client'
 import { takedownTicket } from '@/db/schema'
 import type { NormalizedTakedown } from '@/domain/takedown'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
+import { getMailer } from '@/server/deps'
 
 /**
  * Abre um ticket a partir do formulário PÚBLICO de intake (issue #399, GAP-2;
@@ -44,6 +45,29 @@ export async function createTakedownTicket(
 
     return row.id
   })
+
+  // Best-effort: avisa o Encarregado da CHEGADA de um novo ticket. FORA da transação (o mailer é rede) e
+  // à prova de falha — e-mail que não sai NÃO pode quebrar a criação do ticket (o intake já está gravado e
+  // auditado; o cron de SLA cobre o alerta crítico de qualquer forma). No-op sem credencial/destinatário.
+  const to = process.env.DSAR_DPO_EMAIL
+  if (to) {
+    try {
+      await getMailer().sendDpoAlert({
+        to,
+        subject: '[Refogando] Novo pedido de remoção recebido',
+        text: [
+          'Um novo pedido de remoção/DSAR foi recebido pelo formulário público.',
+          '',
+          `Protocolo: ${ticketId}`,
+          `Tipo: ${input.requestType}`,
+          '',
+          'Acesse o painel administrativo para ver os detalhes e responder.',
+        ].join('\n'),
+      })
+    } catch {
+      // Falha de e-mail é silenciada — o ticket já existe; o SLA/cron garante o follow-up.
+    }
+  }
 
   return { ticketId }
 }
