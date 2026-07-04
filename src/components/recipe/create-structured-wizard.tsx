@@ -12,7 +12,7 @@
  *     "de uma vez" (textarea: uma linha/vírgula por item; o `rawText` cru entra como item do
  *     Briefing — o servidor/IA estrutura quantidade/unidade, como já faz com itens crus).
  *  2. Cozinha (chips, opcional) + Restrições alimentares (chips, "declarado, não verificado").
- *  3. Detalhes — porções (stepper), dificuldade (chips 1..5), observações (textarea).
+ *  3. Detalhes — porções (stepper), nível de habilidade (chips + "usar meu padrão"), observações.
  *
  * SEAM de heading/foco (F1 cancelado): o `<h1>` é o nome da Receita (via `RecipeDetailView` em
  * `GenerationResultRegion`); enquanto o form está na tela, o heading do TOPO do resultado é um
@@ -28,7 +28,8 @@ import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES } from '@/domain/vocabulary'
+import { NIVEIS_CHEF, type NivelChef } from '@/domain/briefing'
 import { parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { cn } from '@/lib/utils'
@@ -134,7 +135,9 @@ export function CreateStructuredWizard({
   const [outra, setOutra] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
   const [porcoes, setPorcoes] = useState(PORCOES_DEFAULT)
-  const [dificuldade, setDificuldade] = useState(1)
+  // Nível de habilidade (#421, ADR-0029 dec.2): override do eixo NESTA geração. `null` = "usar meu
+  // padrão" (o servidor cai no default do Perfil). Substitui a antiga Dificuldade-como-entrada.
+  const [nivel, setNivel] = useState<NivelChef | null>(null)
   const [observacoes, setObservacoes] = useState('')
   // #423: opt-in "Gerar 2 versões" — só oferecido com a feature ligada (o servidor é a verdade).
   const [variar2, setVariar2] = useState(false)
@@ -209,11 +212,13 @@ export function CreateStructuredWizard({
         cozinha: outraAtiva ? null : cozinha || null,
         restricoes,
         porcoes,
-        dificuldade,
         observacoes: observacoes.trim() === '' ? null : observacoes,
         itens: briefingItens(),
       },
       ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
+      // Nível de habilidade (#421): TOP-LEVEL (irmão de cozinhaOutra), SÓ quando o usuário escolheu um
+      // override — omitido quando `null` ("usar meu padrão"), pra o servidor cair no default do Perfil.
+      ...(nivel != null ? { nivel } : {}),
       // #423: opt-in "Gerar 2 versões". Só sobe com a feature ligada E marcado (o servidor revalida).
       ...(variantEnabled && variar2 ? { variar2: true } : {}),
     }
@@ -247,7 +252,7 @@ export function CreateStructuredWizard({
     setOutra('')
     setRestricoes([])
     setPorcoes(PORCOES_DEFAULT)
-    setDificuldade(1)
+    setNivel(null)
     setObservacoes('')
     setVariar2(false) // #423: nova receita reseta o opt-in de variação.
     setStep(0)
@@ -603,16 +608,21 @@ export function CreateStructuredWizard({
               </div>
               <div className="flex flex-col gap-2.5">
                 <h2 className="font-display text-base font-semibold tracking-tight text-fg">
-                  {w.dificuldadeTitulo}
+                  {w.nivelTitulo}
                 </h2>
+                <p className="text-sm text-muted">{w.nivelIntro}</p>
                 <div className="flex flex-wrap gap-2">
-                  {Array.from({ length: DIFICULDADE.max }, (_, i) => i + 1).map((n) => (
+                  {/* "Usar meu padrão" (null): sem override → o servidor cai no default do Perfil. */}
+                  <Chip active={nivel === null} onClick={() => setNivel(null)}>
+                    {w.nivelPadrao}
+                  </Chip>
+                  {NIVEIS_CHEF.map((n) => (
                     <Chip
                       key={n}
-                      active={dificuldade === n}
-                      onClick={() => setDificuldade(n)}
+                      active={nivel === n}
+                      onClick={() => setNivel((prev) => (prev === n ? null : n))}
                     >
-                      {w.dificuldadeNiveis[n - 1]}
+                      {messages.nivelChefLabel[n]}
                     </Chip>
                   ))}
                 </div>

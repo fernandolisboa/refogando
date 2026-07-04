@@ -3,6 +3,7 @@
  * o compilador exige as MESMAS chaves do pt-BR; o teste de paridade T3 confirma em runtime.
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import type { NivelChef } from '@/domain/briefing'
 import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
@@ -85,6 +86,13 @@ export const enUS: Messages = {
     sem_oleaginosas: 'nut-free',
     sem_frutos_do_mar: 'shellfish-free',
   } satisfies Record<Restricao, string>,
+  // Skill level (#421, ADR-0029 dec.2): shared label between the generation wizard and the Profile.
+  // WHO the recipe is written for — distinct from the dish's Difficulty (now AI-estimated on output).
+  nivelChefLabel: {
+    iniciante: 'Beginner',
+    intermediario: 'Intermediate',
+    avancado: 'Advanced',
+  } satisfies Record<NivelChef, string>,
   // Tela de Busca (#56), mesma substância traduzida (ADR-0001, não byte-idêntica).
   busca: {
     // #5 (Direção C): Search IS the discovery home (ADR-0020). `titulo` is the page IDENTITY — it is the
@@ -579,9 +587,12 @@ export const enUS: Messages = {
     porcoesTitulo: 'Servings',
     porcoesMenos: 'Fewer servings',
     porcoesMais: 'More servings',
-    dificuldadeTitulo: 'Difficulty',
-    // Short label per difficulty level (1..5) — wizard chips.
-    dificuldadeNiveis: ['Very easy', 'Easy', 'Medium', 'Hard', 'Very hard'],
+    // Skill level (#421, ADR-0029 dec.2): WHO the recipe is written for (detail/tone of the text).
+    // Replaces the old Difficulty-as-input; the dish's difficulty is now AI-estimated.
+    nivelTitulo: 'Skill level',
+    nivelIntro: 'Who the recipe is written for — how much detail and what tone. The dish difficulty is estimated by the AI.',
+    // Chip that reverts to the Profile default (no override for this generation).
+    nivelPadrao: 'Use my default',
     observacoesTitulo: 'Notes',
     observacoesPlaceholder:
       'Anything else? e.g., no chili, freezes well, very creamy texture…',
@@ -764,6 +775,11 @@ export const enUS: Messages = {
     bio: 'Bio',
     bioPlaceholder: 'Tell us a bit about yourself and what you like to cook.',
     bioContador: '{n}/280',
+    // Default skill level (#421, ADR-0029 dec.2): default for the generation axis, overridable per
+    // generation. The empty option clears the default (no preference = neutral axis).
+    nivelPadrao: 'Default skill level',
+    nivelPadraoDica: 'Used as the default when generating recipes — you can change it per generation.',
+    nivelPadraoNenhum: 'No preference',
     // Social links (#127). Editor of up to 5 rows (type + url) on the profile.
     links: 'Links',
     linksDica: 'Add up to 5 links (social, website). Only http(s) addresses are accepted.',
@@ -959,6 +975,10 @@ export const enUS: Messages = {
     vocabSalvar: 'Save',
     vocabSalvando: 'Saving…',
     vocabEditar: 'Edit labels',
+    // #422: curated voice note per cuisine (instructs the AI to cook authentically; no deploy).
+    vocabNotaVoz: 'Voice note (optional)',
+    vocabNotaVozPlaceholder:
+      'How the AI should cook in this tradition: typical techniques, ingredients and seasonings. Leave blank to use only the generic instruction.',
     vocabCancelar: 'Cancel',
     vocabDepreciar: 'Deprecate',
     vocabReativar: 'Reactivate',
@@ -976,6 +996,27 @@ export const enUS: Messages = {
     // #268: the /admin/descoberta tab holds the SEARCH infra — web discovery + embeddings; generative AI
     // (recipe model + image generation + caps) moved to the "AI" tab (/admin/ia).
     navDescoberta: 'Discovery',
+    // ── #425 (ADR-0029 dec.7): before/after prompt comparator (Governance, admin-only). ──
+    navComparador: 'Comparator',
+    comparadorTitulo: 'Prompt comparator (before/after)',
+    comparadorDescricao:
+      'Quality gate: runs fixed briefings through the old prompt (frozen) vs. the new one (live) and shows the recipe side by side. Nothing is saved.',
+    comparadorRodar: 'Run comparison',
+    comparadorRodando: 'Running…',
+    comparadorGerarImagem: 'Generate image (slower)',
+    comparadorVelho: 'Old',
+    comparadorNovo: 'New',
+    comparadorSystemPrompt: 'System prompt',
+    comparadorIngredientes: 'Ingredients',
+    comparadorPassos: 'Steps',
+    comparadorSemReceita: 'No recipe delivered.',
+    comparadorErro: 'Failed to run this comparison.',
+    comparadorImagemAlt: 'Generated dish image',
+    comparadorOutcomeSuccess: 'success',
+    comparadorOutcomeDegraded: 'degraded',
+    comparadorOutcomePlayful: 'playful',
+    comparadorOutcomeImpossible: 'impossible',
+    comparadorOutcomeInvalid: 'invalid',
     // "Image generation" section (#134) — lives on the "AI" tab (/admin/ia); toggle, model, caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',

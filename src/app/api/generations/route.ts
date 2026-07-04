@@ -1,11 +1,11 @@
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
-import { appConfig, ingredient } from '@/db/schema'
+import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
-import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
 import { classify, classifyVariants } from '@/domain/generation'
 import {
@@ -14,8 +14,12 @@ import {
   buildFreeTextPrompt,
   briefingItemsParaAviso,
   promptStampFor,
+  resolveNivelChefAxis,
+  resolveVozCozinhaAxis,
+  isNivelChef,
   OBSERVACOES_MAX,
   type Briefing,
+  type NivelChef,
   type PromptAxes,
 } from '@/domain/briefing'
 import {
@@ -120,6 +124,10 @@ export async function POST(req: Request): Promise<Response> {
     // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na AUTORIA structured. Top-level
     // (NÃO dentro do briefing — `briefing.cozinha` fica null, validada contra o conjunto ativo).
     cozinhaOutra?: unknown
+    // Nível de habilidade (#421, ADR-0029 dec.2): override do eixo escolhido na geração structured.
+    // TOP-LEVEL (irmão de `cozinhaOutra`, NÃO dentro do briefing). Ausente/ inválido ⇒ cai no default
+    // do Perfil. Ignorado em free_text (que não tem seletor — só o default do Perfil vale lá).
+    nivel?: unknown
     // #423: opt-in "Gerar 2 versões". `true` + config ligada + modo structured ⇒ caminho de variação.
     variar2?: unknown
   }
@@ -175,12 +183,31 @@ export async function POST(req: Request): Promise<Response> {
   // geração-lista (mais adiante). O `body.variar2` é o pedido do cliente; o servidor é a verdade.
   const variar2 = mode === 'structured' && body.variar2 === true && recipeVariantCfg.enabled
 
-  // Eixos de composição do prompt (#420/#423, ADR-0029) — RESOLVIDOS na borda por SPREAD ADITIVO
-  // (Regra C do contrato): cada `resolveXAxis` devolve `{ campo }` (eixo ativo) OU `{}` (colapsa p/
-  // NEUTRAL_AXES byte-a-byte). `axes` molda o systemPrompt (via build*Prompt) e `promptStamp` carimba a
-  // versão que produziu a geração (persist) p/ correlação futura.
-  const axes: PromptAxes = { ...resolveVariacaoAxis(variar2 ? recipeVariantCfg : null) }
-  const promptStamp = promptStampFor(axes)
+  // Eixos de composição do prompt (#420/#421/#422/#423, ADR-0029) — RESOLVIDOS na borda por SPREAD
+  // ADITIVO (Regra C do contrato de merge): cada helper resolveXAxis devolvendo {} colapsa para
+  // NEUTRAL_AXES byte-a-byte, preservando o back-compat. Nível (#421) e Variação (#423) são resolvidos
+  // AQUI (não dependem da cozinha); a voz da cozinha (#422) precisa de `briefing.cozinha`, só conhecida
+  // APÓS o parseBriefing (SÓ structured) — lá o `axes` ganha o eixo de voz por spread aditivo. Por isso
+  // `axes` é `let` e o `promptStamp` é montado UMA vez adiante (após as bordas), já com o axes completo.
+  //
+  // Nível de habilidade (#421, dec.2): override do body (SÓ structured — free_text não tem seletor)
+  // ?? default do Perfil (users.nivelPadrao). Um único SELECT em `users` pelo ownerId (nivelPadrao é
+  // NULL em contas que nunca escolheram ⇒ eixo neutro). A precedência FINA (texto explícito do
+  // usuário > este eixo) vive IN-BAND no fragmento, não aqui.
+  const nivelOverride: NivelChef | null =
+    mode === 'structured' && typeof body.nivel === 'string' && isNivelChef(body.nivel)
+      ? body.nivel
+      : null
+  const [meRow] = await getDb()
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, ownerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  let axes: PromptAxes = {
+    ...resolveNivelChefAxis(nivelOverride, nivelPadrao),
+    ...resolveVariacaoAxis(variar2 ? recipeVariantCfg : null),
+  }
 
   if (mode === 'structured') {
     // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na autoria. Aqui o slug é só
@@ -250,8 +277,16 @@ export async function POST(req: Request): Promise<Response> {
       for (const row of rows) alergMap.set(row.id, row.alergenos)
     }
 
-    // d. Monta {systemPrompt, userPrompt} a partir do Briefing (substitui placeholders). Eixos (#420)
-    //    resolvidos na borda moldam o systemPrompt via buildSystemPrompt (neutro na Wave 1).
+    // c'. Cozinha-como-voz (#422, ADR-0029 dec.3): quando o briefing tem cozinha, carrega a voz do
+    //     vocabulário (QUALQUER status — pode ser o slug 'Outra' `suggested`, ainda não materializado,
+    //     então `loadCozinhaVoice` devolve null e o genérico dispara com nome=slug) e RESOLVE o eixo
+    //     por SPREAD ADITIVO (Regra C). Sem cozinha ⇒ `resolveVozCozinhaAxis` devolve {} ⇒ axes segue
+    //     NEUTRO byte-a-byte. Isto molda o systemPrompt (passo d) e é carimbado no promptStamp adiante.
+    const voz = briefing.cozinha != null ? await loadCozinhaVoice(getDb(), briefing.cozinha) : null
+    axes = { ...axes, ...resolveVozCozinhaAxis(voz, briefing.cozinha) }
+
+    // d. Monta {systemPrompt, userPrompt} a partir do Briefing (substitui placeholders). Eixos (#420/
+    //    #422) resolvidos na borda moldam o systemPrompt via buildSystemPrompt.
     const prompt = buildBriefingPrompt(briefing, axes)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
@@ -274,6 +309,13 @@ export async function POST(req: Request): Promise<Response> {
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
   }
+
+  // Carimbo de versão do prompt (#420/#421/#422/#423, ADR-0029): a versão corrente + os eixos JÁ
+  // resolvidos na borda (Nível, voz da cozinha, variação quando presentes). Persistido como proveniência
+  // da geração p/ correlação futura com save/estrela. Montado AQUI (após as bordas) porque `axes` só está
+  // completo agora (a voz da cozinha entra no ramo structured). `cfg`/`model` já foram resolvidos no topo
+  // (o eixo de variação #423 precisa deles ANTES dos prompts).
+  const promptStamp = promptStampFor(axes)
 
   // Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de tocar o Claude
   // (custo). `cfg`/`model` já resolvidos acima (a linha singleton carrega ambos). cap ∞ (admin/papel
@@ -312,7 +354,7 @@ export async function POST(req: Request): Promise<Response> {
         cozinha: briefing.cozinha,
         restricoes: briefing.restricoes,
         porcoes: briefing.porcoes,
-        dificuldade: briefing.dificuldade,
+        // #421: Dificuldade não é mais entrada do Briefing (virou saída estimada pela IA).
         observacoes: briefing.observacoes,
         itens: briefing.itens.map((it, index) => ({
           ingredientId: it.ingredientId,
@@ -418,6 +460,7 @@ export async function POST(req: Request): Promise<Response> {
   // que impede termo órfão num 400/429/502 e fecha o abuso de inundar a fila do Curador no 429.
   if (suggested != null) await suggestCozinha(getDb(), body.cozinhaOutra as string, ownerId)
 
+  // `persistBriefing` já foi computado acima (compartilhado pelo caminho single E pelo de variação #423).
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.
     await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp })

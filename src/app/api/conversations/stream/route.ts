@@ -4,14 +4,17 @@ import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
-import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
+import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
   buildSystemPrompt,
   buildConversationPrompt,
   promptStampFor,
-  NEUTRAL_AXES,
+  resolveNivelChefAxis,
+  isNivelChef,
+  type NivelChef,
+  type PromptAxes,
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
@@ -223,10 +226,18 @@ export async function POST(req: Request): Promise<Response> {
   // requestLocale é lido AGORA (Request ainda disponível) — o Aviso é renderizado no locale.
   const requestLocale = parseRequestLocale(req)
 
-  // Eixos de composição do prompt (#420, ADR-0029) — RESOLVIDOS na borda. Wave 1 = neutro (nenhum
-  // eixo); Wave 2 lê o Nível do chef / voz da cozinha aqui. `axes` molda AMBOS os systemPrompts da
-  // conversa (a resposta breve na tela E a destilação), e `promptStamp` carimba a versão na persist.
-  const axes = NEUTRAL_AXES
+  // Eixos de composição do prompt (#420/#421, ADR-0029) — RESOLVIDOS na borda. `axes` molda AMBOS os
+  // systemPrompts da conversa (a resposta breve na tela E a destilação), e `promptStamp` carimba a
+  // versão na persist. Nível de habilidade (#421 dec.2): o modo conversa NÃO tem seletor (é identidade
+  // do modo — uma conversa fluida, não um formulário) ⇒ só o DEFAULT do Perfil do ownerId vale aqui.
+  // SPREAD ADITIVO (Regra C): resolveNivelChefAxis devolvendo {} colapsa p/ NEUTRAL_AXES byte-a-byte.
+  const [meRow] = await getDb()
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, ownerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
   const promptStamp = promptStampFor(axes)
 
   // 5. Abre o stream NDJSON: tokens primeiro, depois UM frame terminal, depois fecha.

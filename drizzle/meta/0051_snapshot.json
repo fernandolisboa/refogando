@@ -1,6 +1,6 @@
 {
-  "id": "b7fddec6-baa6-4ed9-8558-4105379f27af",
-  "prevId": "a7b28392-6523-40ab-872e-bed2edb7a264",
+  "id": "c59fa6c1-8980-42b0-aaac-1f51f60f70ce",
+  "prevId": "b756894c-0e1c-4723-8ae9-f81c61c88153",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -157,6 +157,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{\"usuario\":10,\"curador\":20,\"admin\":null}'::jsonb"
+        },
+        "recipe_variant_config": {
+          "name": "recipe_variant_config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"enabled\":false,\"poloA\":\"tradicional\",\"poloB\":\"com um toque criativo\",\"instrucao\":\"Mantenha as duas fiéis ao pedido; divirjam no método e nos ingredientes de destaque, não na identidade do prato.\"}'::jsonb"
         },
         "web_search_enabled": {
           "name": "web_search_enabled",
@@ -887,6 +894,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "variant_group_id": {
+          "name": "variant_group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "variant_label": {
+          "name": "variant_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "variant_chosen": {
+          "name": "variant_chosen",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -923,6 +948,22 @@
           ],
           "isUnique": false,
           "where": "\"generation\".\"recipe_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "generation_variant_group_id_idx": {
+          "name": "generation_variant_group_id_idx",
+          "columns": [
+            {
+              "expression": "variant_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"generation\".\"variant_group_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3608,6 +3649,12 @@
         },
         "label_en_us": {
           "name": "label_en_us",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voice_note": {
+          "name": "voice_note",
           "type": "text",
           "primaryKey": false,
           "notNull": false

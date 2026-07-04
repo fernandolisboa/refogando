@@ -72,6 +72,8 @@ export async function PATCH(req: Request): Promise<Response> {
     slug?: unknown
     labelPtBr?: unknown
     labelEnUs?: unknown
+    // #422: nota de voz curada — OPCIONAL (string | null). '' vira null no domínio (limpar a nota).
+    voiceNote?: unknown
     status?: unknown
   }
   if (typeof body.slug !== 'string' || body.slug.length === 0) {
@@ -79,8 +81,13 @@ export async function PATCH(req: Request): Promise<Response> {
   }
 
   const hasLabels = body.labelPtBr !== undefined || body.labelEnUs !== undefined
+  // #422: patch SÓ-de-nota é válido (a nota não é obrigatória). voiceNote deve ser string OU null.
+  const hasVoiceNote = body.voiceNote !== undefined
   const hasStatus = body.status !== undefined
-  if (!hasLabels && !hasStatus) {
+  if (!hasLabels && !hasVoiceNote && !hasStatus) {
+    return Response.json({ error: 'dados_invalidos' }, { status: 400 })
+  }
+  if (hasVoiceNote && body.voiceNote !== null && typeof body.voiceNote !== 'string') {
     return Response.json({ error: 'dados_invalidos' }, { status: 400 })
   }
   if (hasStatus && body.status !== 'active' && body.status !== 'deprecated') {
@@ -88,10 +95,11 @@ export async function PATCH(req: Request): Promise<Response> {
   }
 
   try {
-    if (hasLabels) {
+    if (hasLabels || hasVoiceNote) {
       const r = await editCozinhaLabels(getDb(), body.slug, {
         labelPtBr: body.labelPtBr as string | undefined,
         labelEnUs: body.labelEnUs as string | undefined,
+        voiceNote: hasVoiceNote ? (body.voiceNote as string | null) : undefined,
       })
       // Mapeia pela CHAVE: rótulo vazio é validação (400), não inexistência da linha (404).
       if (!r.ok) {

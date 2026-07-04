@@ -1,6 +1,6 @@
 {
-  "id": "b7fddec6-baa6-4ed9-8558-4105379f27af",
-  "prevId": "a7b28392-6523-40ab-872e-bed2edb7a264",
+  "id": "b756894c-0e1c-4723-8ae9-f81c61c88153",
+  "prevId": "b7fddec6-baa6-4ed9-8558-4105379f27af",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3608,6 +3608,12 @@
         },
         "label_en_us": {
           "name": "label_en_us",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voice_note": {
+          "name": "voice_note",
           "type": "text",
           "primaryKey": false,
           "notNull": false

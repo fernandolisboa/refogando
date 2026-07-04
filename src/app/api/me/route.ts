@@ -5,6 +5,7 @@ import { users } from '@/db/schema'
 import { validateHandle } from '@/domain/handle'
 import { validateLinks, type ProfileLink } from '@/domain/links'
 import { isHandleAvailable } from '@/server/handle'
+import { isNivelChef } from '@/domain/briefing'
 
 /**
  * Contrato `/api/me` — perfil do logado (#124, frente Perfil). name + bio + handle (#128) +
@@ -14,7 +15,7 @@ import { isHandleAvailable } from '@/server/handle'
  * Owner-only via `requireSession` (ADR-0011, mesma tese de /api/me/locale): 401 = Visitante
  * (sem sessão) OU conta soft-deletada (deletedAt != null). Toca SÓ `users` — nunca `recipe`.
  *
- * GET devolve { id, name, email, bio, handle, links }. `email` é READ-ONLY (identidade, gerida
+ * GET devolve { id, name, email, bio, handle, links, nivelPadrao }. `email` é READ-ONLY (identidade, gerida
  * pelo Better Auth) — o PATCH nunca o muda, mesmo se vier no corpo. PATCH valida e grava:
  *  - name: trimado; não pode ficar vazio (400 nome_invalido);
  *  - bio: string opcional, cap de BIO_MAX_LEN chars (400 bio_invalida); vazia/só-espaços → null;
@@ -36,6 +37,8 @@ type Profile = {
   bio: string | null
   handle: string
   links: ProfileLink[]
+  // Nível de habilidade PADRÃO (#421, ADR-0029 dec.2): default do eixo de geração. NULL = eixo neutro.
+  nivelPadrao: string | null
 }
 
 function profileJson(p: Profile): Response {
@@ -49,6 +52,7 @@ const profileCols = {
   bio: users.bio,
   handle: users.handle,
   links: users.links,
+  nivelPadrao: users.nivelPadrao,
 } as const
 
 export async function GET(req: Request): Promise<Response> {
@@ -69,6 +73,7 @@ export async function PATCH(req: Request): Promise<Response> {
     bio?: unknown
     handle?: unknown
     links?: unknown
+    nivelPadrao?: unknown
   }
 
   // name: obrigatório, trimado, não-vazio.
@@ -132,6 +137,20 @@ export async function PATCH(req: Request): Promise<Response> {
     links = v.links
   }
 
+  // nivelPadrao (#421, ADR-0029 dec.2): OPCIONAL. Ausente/undefined → inalterado. `null` ou string
+  // vazia → LIMPA (volta ao eixo neutro). String → precisa ser um NivelChef válido (isNivelChef, fonte
+  // única do enum), senão 400 nivel_invalido. `undefined` distingue "não mexer" de "limpar" (null).
+  let nivelPadrao: string | null | undefined
+  if (body.nivelPadrao !== undefined) {
+    if (body.nivelPadrao === null || body.nivelPadrao === '') {
+      nivelPadrao = null
+    } else if (typeof body.nivelPadrao === 'string' && isNivelChef(body.nivelPadrao)) {
+      nivelPadrao = body.nivelPadrao
+    } else {
+      return Response.json({ error: 'nivel_invalido' }, { status: 400 })
+    }
+  }
+
   // email é READ-ONLY: não entra no SET. handle/links só entram se foram fornecidos e validados.
   // Toca SÓ `users`. A UNIQUE `users_handle_uq` é a rede final contra corrida (23505 → 409 abaixo).
   try {
@@ -142,6 +161,7 @@ export async function PATCH(req: Request): Promise<Response> {
         bio,
         ...(handle !== undefined ? { handle } : {}),
         ...(links !== undefined ? { links } : {}),
+        ...(nivelPadrao !== undefined ? { nivelPadrao } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, g.session.user.id))

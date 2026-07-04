@@ -50,7 +50,6 @@ export type PersistBriefing = {
   cozinha: Cozinha | null
   restricoes: Restricao[]
   porcoes: number | null
-  dificuldade: number | null
   observacoes: string | null
   itens: {
     ingredientId: string | null
@@ -142,7 +141,8 @@ async function insertBriefing(
       cozinha: b.cozinha,
       restricoes: b.restricoes,
       porcoes: b.porcoes,
-      dificuldade: b.dificuldade,
+      // #421 (ADR-0029 dec.4): a Dificuldade DEIXOU de ser entrada — a coluna `briefing.dificuldade`
+      // fica DORMENTE (default NULL). Não é dropada (evita migração destrutiva); só não é mais escrita.
       observacoes: b.observacoes,
     })
     .returning({ id: briefing.id })
