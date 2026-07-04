@@ -1,9 +1,9 @@
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
-import { appConfig, ingredient } from '@/db/schema'
+import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
 import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
@@ -14,9 +14,12 @@ import {
   buildFreeTextPrompt,
   briefingItemsParaAviso,
   promptStampFor,
-  NEUTRAL_AXES,
+  resolveNivelChefAxis,
+  isNivelChef,
   OBSERVACOES_MAX,
   type Briefing,
+  type NivelChef,
+  type PromptAxes,
 } from '@/domain/briefing'
 import {
   decideRestrictionNotices,
@@ -102,6 +105,10 @@ export async function POST(req: Request): Promise<Response> {
     // "Outra" (#319, ADR-0025 Decisão 5): cozinha livre escolhida na AUTORIA structured. Top-level
     // (NÃO dentro do briefing — `briefing.cozinha` fica null, validada contra o conjunto ativo).
     cozinhaOutra?: unknown
+    // Nível de habilidade (#421, ADR-0029 dec.2): override do eixo escolhido na geração structured.
+    // TOP-LEVEL (irmão de `cozinhaOutra`, NÃO dentro do briefing). Ausente/ inválido ⇒ cai no default
+    // do Perfil. Ignorado em free_text (que não tem seletor — só o default do Perfil vale lá).
+    nivel?: unknown
   }
 
   // mode obrigatório + válido.
@@ -140,10 +147,26 @@ export async function POST(req: Request): Promise<Response> {
   // compartilhado) precisa enxergá-lo. Fica null nos demais modos (free_text não tem briefing).
   let suggested: string | null = null
 
-  // Eixos de composição do prompt (#420, ADR-0029) — RESOLVIDOS na borda. Wave 1 = neutro (nenhum
-  // eixo); Wave 2 lê o Nível do chef / voz da cozinha do body aqui. `axes` molda o systemPrompt (via
-  // build*Prompt) e `stamp` carimba a versão que produziu a geração (persist) p/ correlação futura.
-  const axes = NEUTRAL_AXES
+  // Eixos de composição do prompt (#420/#421, ADR-0029) — RESOLVIDOS na borda. `axes` molda o
+  // systemPrompt (via build*Prompt) e `stamp` carimba a versão que produziu a geração (persist) p/
+  // correlação futura. Cada eixo entra por SPREAD ADITIVO de um helper puro resolveXAxis (Regra C):
+  // cada helper devolvendo {} colapsa para NEUTRAL_AXES byte-a-byte, preservando o back-compat.
+  //
+  // Nível de habilidade (#421, dec.2): override do body (SÓ structured — free_text não tem seletor)
+  // ?? default do Perfil (users.nivelPadrao). Um único SELECT em `users` pelo ownerId (nivelPadrao é
+  // NULL em contas que nunca escolheram ⇒ eixo neutro). A precedência FINA (texto explícito do
+  // usuário > este eixo) vive IN-BAND no fragmento, não aqui.
+  const nivelOverride: NivelChef | null =
+    mode === 'structured' && typeof body.nivel === 'string' && isNivelChef(body.nivel)
+      ? body.nivel
+      : null
+  const [meRow] = await getDb()
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, ownerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  const axes: PromptAxes = { ...resolveNivelChefAxis(nivelOverride, nivelPadrao) }
   const promptStamp = promptStampFor(axes)
 
   if (mode === 'structured') {
@@ -296,7 +319,6 @@ export async function POST(req: Request): Promise<Response> {
         cozinha: briefing.cozinha,
         restricoes: briefing.restricoes,
         porcoes: briefing.porcoes,
-        dificuldade: briefing.dificuldade,
         observacoes: briefing.observacoes,
         itens: briefing.itens.map((it, index) => ({
           ingredientId: it.ingredientId,

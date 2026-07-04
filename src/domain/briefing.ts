@@ -2,8 +2,10 @@
  * Briefing de geração — domínio PURO (issue #11, §3).
  *
  * O Briefing é a ENTRADA estruturada da criação (o "pedido"): ingredientes com força,
- * restrições, cozinha, porções, dificuldade e observações. #11 muda só a ENTRADA — a
- * saída segue o mesmo `RecipeGenSchema` canônico. Este módulo é PURO/TOTAL/SEM THROW
+ * restrições, cozinha, porções e observações. #11 muda só a ENTRADA — a saída segue o mesmo
+ * `RecipeGenSchema` canônico. (A Dificuldade DEIXOU de ser entrada — #421/ADR-0029 dec.4: o
+ * usuário controla o Nível de habilidade e a IA ESTIMA a dificuldade do prato na saída.) Este
+ * módulo é PURO/TOTAL/SEM THROW
  * e sem DB: espelha o estilo `decide*`/`classify` de `recipe-restrictions.ts`,
  * `recipe-visibility.ts` e `generation.ts`. Reusa o vocabulário culinário
  * (`vocabulary.ts`) e a normalização de texto (`recipe-restrictions.ts`); o único
@@ -18,7 +20,6 @@ import {
   isRestricao,
   isUnidade,
   isPorcoesValidas,
-  isDificuldadeValida,
 } from '@/domain/vocabulary'
 import { normalizeText } from '@/domain/recipe-restrictions'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
@@ -32,6 +33,17 @@ export const STRENGTHS = ['required', 'preferred'] as const
 export type Strength = (typeof STRENGTHS)[number]
 export function isStrength(value: string): value is Strength {
   return (STRENGTHS as readonly string[]).includes(value)
+}
+
+// ── Fonte única do enum `NivelChef` (Nível de habilidade) — eixo #421 (ADR-0029 dec.2) ─────────
+// PARA QUEM a receita é escrita: minúcia da explicação, vocabulário técnico e tom do TEXTO — DISTINTO
+// da Dificuldade (quão difícil é o PRATO, que a IA agora ESTIMA na saída; dec.4). Fica AQUI, ao lado
+// de STRENGTHS, pela mesma razão: é conceito do refino de geração, não do kernel bidirecional
+// Busca↔criação de vocabulary.ts. Default do Perfil (`users.nivelPadrao`), sobrescrevível por geração.
+export const NIVEIS_CHEF = ['iniciante', 'intermediario', 'avancado'] as const
+export type NivelChef = (typeof NIVEIS_CHEF)[number]
+export function isNivelChef(value: string): value is NivelChef {
+  return (NIVEIS_CHEF as readonly string[]).includes(value)
 }
 
 // Teto duro de `observacoes` (decisão reversível, §3.7): recusa só abuso real
@@ -52,7 +64,6 @@ export type Briefing = {
   cozinha: Cozinha | null
   restricoes: Restricao[]
   porcoes: number | null
-  dificuldade: number | null
   observacoes: string | null
   itens: BriefingItem[]
 }
@@ -71,7 +82,6 @@ export type BriefingParse =
         | 'unidade_invalida'
         | 'strength_invalida'
         | 'porcoes_fora_de_faixa'
-        | 'dificuldade_fora_de_faixa'
         | 'observacoes_muito_longas'
         | 'item_sem_identidade'
         | 'briefing_vazio'
@@ -83,7 +93,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /**
  * Total: recebe o `unknown` aninhado e devolve a união discriminada. Ordem do §3.3:
- * shape → cozinha → restricoes → porcoes → dificuldade → observacoes → itens (shape)
+ * shape → cozinha → restricoes → porcoes → observacoes → itens (shape)
  * → campo-mínimo-DE-ITEM (7b, ANTES do dedup) → dedup → campo-mínimo (briefing_vazio).
  * Faixas validadas AQUI, no app (ADR-0009). Cada falha devolve o PRIMEIRO erro.
  */
@@ -121,16 +131,8 @@ export function parseBriefing(raw: unknown, activeCozinhas: ReadonlySet<string>)
     porcoes = raw.porcoes
   }
 
-  // 5. dificuldade: idem isDificuldadeValida.
-  let dificuldade: number | null = null
-  if (raw.dificuldade != null) {
-    if (typeof raw.dificuldade !== 'number' || !isDificuldadeValida(raw.dificuldade)) {
-      return { ok: false, error: 'dificuldade_fora_de_faixa' }
-    }
-    dificuldade = raw.dificuldade
-  }
-
-  // 6. observacoes: ausente/null OU string com length <= OBSERVACOES_MAX.
+  // 5. observacoes: ausente/null OU string com length <= OBSERVACOES_MAX.
+  //    (A Dificuldade DEIXOU de ser entrada — #421/ADR-0029 dec.4; a IA a estima na saída.)
   let observacoes: string | null = null
   if (raw.observacoes != null) {
     if (typeof raw.observacoes !== 'string') return { ok: false, error: 'briefing_invalido' }
@@ -140,7 +142,7 @@ export function parseBriefing(raw: unknown, activeCozinhas: ReadonlySet<string>)
     observacoes = raw.observacoes
   }
 
-  // 7. itens: ausente → []; shape de cada campo.
+  // 6. itens: ausente → []; shape de cada campo.
   const itens: BriefingItem[] = []
   if (raw.itens != null) {
     if (!Array.isArray(raw.itens)) return { ok: false, error: 'briefing_invalido' }
@@ -182,7 +184,7 @@ export function parseBriefing(raw: unknown, activeCozinhas: ReadonlySet<string>)
     }
   }
 
-  // 7b. campo-mínimo-DE-ITEM (ANTES do dedup): cada item precisa de rawText não-vazio
+  // 6b. campo-mínimo-DE-ITEM (ANTES do dedup): cada item precisa de rawText não-vazio
   // após-trim OU ingredientId não-null. Garante que nenhum item all-null chega ao dedup
   // (a chave de dedup nunca é '' por ausência de identidade).
   for (const it of itens) {
@@ -191,17 +193,16 @@ export function parseBriefing(raw: unknown, activeCozinhas: ReadonlySet<string>)
     if (!temRaw && !temFk) return { ok: false, error: 'item_sem_identidade' }
   }
 
-  // 8. dedup (silencioso, sem erro).
+  // 7. dedup (silencioso, sem erro).
   const briefing = dedupeBriefing({
     cozinha,
     restricoes,
     porcoes,
-    dificuldade,
     observacoes,
     itens,
   })
 
-  // 9. campo-mínimo: vazio → briefing_vazio.
+  // 8. campo-mínimo: vazio → briefing_vazio.
   if (isBriefingVazio(briefing)) return { ok: false, error: 'briefing_vazio' }
 
   return { ok: true, briefing }
@@ -233,8 +234,8 @@ export function dedupeBriefing(b: Briefing): Briefing {
 // ── Campo mínimo (Briefing não-vazio, AC6) ─────────────────────────────────────
 /**
  * `true` (→ 400 briefing_vazio) quando NÃO há ≥1 item E NÃO há ≥1 entre {cozinha
- * não-null, restricoes não-vazio, observacoes não-vazio-após-trim}. porcoes/dificuldade
- * sozinhos NÃO contam (modificadores, não substância): um briefing só com "4 porções"
+ * não-null, restricoes não-vazio, observacoes não-vazio-após-trim}. porcoes sozinho
+ * NÃO conta (modificador, não substância): um briefing só com "4 porções"
  * não tem o que gerar (decisão reversível, §3.5).
  */
 export function isBriefingVazio(b: Briefing): boolean {
@@ -265,12 +266,28 @@ export function isBriefingVazio(b: Briefing): boolean {
  * preserva o back-compat: `NEUTRAL_AXES` (vazio) sempre compõe exatamente o base.
  */
 export type PromptAxes = {
-  // Wave 2 (ADR-0029) adiciona campos OPCIONAIS aqui. Wave 1: intencionalmente vazio.
-  readonly [K in never]: never
+  // Wave 2 (ADR-0029) adiciona UM campo OPCIONAL por eixo aqui.
+  readonly nivelChef?: NivelChef // #421 — Nível de habilidade (dec.2): para quem a receita é escrita.
 }
 
 /** Eixos neutros: sem nenhum eixo ativo ⇒ o prompt é exatamente o base. Fonte única do "vazio". */
 export const NEUTRAL_AXES: PromptAxes = {}
+
+/**
+ * Borda #421 (Regra C, ADR-0029): helper PURO que resolve o eixo Nível de habilidade a partir do
+ * `override` (seleção na geração) e do `profileDefault` (`users.nivelPadrao`). Precedência estrutural:
+ * override > profileDefault > nenhum. Devolve `{ nivelChef }` OU `{}` — este ÚLTIMO colapsa para
+ * NEUTRAL_AXES byte-a-byte quando composto por spread aditivo (`{ ...resolveNivelChefAxis(...) }`), o
+ * que preserva o back-compat de cada borda. (A precedência FINA — palavras explícitas do usuário no
+ * texto > este eixo — vive IN-BAND no fragmento, não em lógica; ADR-0029 dec.2.)
+ */
+export function resolveNivelChefAxis(
+  override: NivelChef | null | undefined,
+  profileDefault: NivelChef | null | undefined,
+): { nivelChef?: NivelChef } {
+  const nivelChef = override ?? profileDefault
+  return nivelChef != null ? { nivelChef } : {}
+}
 
 /**
  * Versão do prompt/eixos CARIMBADA em cada geração (`generation.prompt_stamp`), para correlacionar
@@ -355,13 +372,31 @@ const BASE_SYSTEM_PROMPTS: Record<PromptMode, string> = {
 export type AxisFragmentContributor = (axes: PromptAxes) => string | null
 
 /**
- * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Wave 1 é VAZIO (nenhum eixo) ⇒
- * `buildSystemPrompt` devolve exatamente o base. Wave 2 pluga UM eixo adicionando UM item aqui
- * (ex.: `(axes) => axes.nivelChef ? fragmentoNivel(axes.nivelChef) : null`). A ORDEM do array é a
- * ordem em que os fragmentos são anexados ao base (determinística).
+ * Fragmentos do eixo Nível de habilidade (#421, ADR-0029 dec.2). Cada fragmento molda a MINÚCIA da
+ * explicação, o vocabulário técnico e o TOM do texto para o público-alvo, e carrega IN-BAND a regra de
+ * precedência: se o usuário pedir explicitamente outro nível de detalhe, obedeça; em conflito real
+ * registre no consultivo (advisory), nunca contradiga em silêncio (mesmo princípio do Briefing —
+ * ADR-0009: "a IA aconselha, o usuário decide"). NÃO menciona a Dificuldade (que a IA estima na saída).
+ */
+export const NIVEL_FRAGMENTS: Record<NivelChef, string> = {
+  iniciante:
+    'Escreva para quem está começando na cozinha: explique cada técnica e cada termo culinário, detalhe os pontos de cozimento com pistas sensoriais (cor, cheiro, textura), evite jargão e antecipe os erros mais comuns. Se o pedido pedir explicitamente outro nível de detalhe, obedeça ao pedido; havendo conflito real, registre a ressalva no campo consultivo (advisory), nunca o contradiga em silêncio.',
+  intermediario:
+    'Escreva para quem já cozinha com desenvoltura: use o vocabulário técnico corrente sem redefinir o básico, seja objetivo nos passos e detalhe só as etapas realmente delicadas. Se o pedido pedir explicitamente outro nível de detalhe, obedeça ao pedido; havendo conflito real, registre a ressalva no campo consultivo (advisory), nunca o contradiga em silêncio.',
+  avancado:
+    'Escreva para quem tem prática avançada: linguagem técnica precisa e concisa, pressuponha domínio das técnicas de base e concentre-se no que eleva o resultado (controle fino de tempo, temperatura e ponto). Se o pedido pedir explicitamente outro nível de detalhe, obedeça ao pedido; havendo conflito real, registre a ressalva no campo consultivo (advisory), nunca o contradiga em silêncio.',
+}
+
+/** Contribuidor do eixo Nível de habilidade (#421): emite o fragmento do nível ativo, ou null. */
+const contribNivelChef: AxisFragmentContributor = (a) => (a.nivelChef ? NIVEL_FRAGMENTS[a.nivelChef] : null)
+
+/**
+ * REGISTRO EXTENSÍVEL de contribuidores de fragmento (ADR-0029). Cada eixo pluga UM contribuidor
+ * NOMEADO aqui (UMA linha própria). A ORDEM do array é a ordem em que os fragmentos são anexados ao
+ * base (determinística). Nenhum eixo ativo ⇒ `buildSystemPrompt` devolve exatamente o base.
  */
 const AXIS_FRAGMENT_CONTRIBUTORS: readonly AxisFragmentContributor[] = [
-  // Wave 2 (ADR-0029): registrar UM contribuidor por eixo aqui.
+  contribNivelChef, // #421
 ]
 
 /**
@@ -418,7 +453,6 @@ export function buildBriefingPrompt(
   const linhas: string[] = ['Gere uma receita a partir do seguinte briefing:']
   if (b.cozinha != null) linhas.push(`Cozinha: ${b.cozinha}`)
   if (b.porcoes != null) linhas.push(`Porções: ${b.porcoes}`)
-  if (b.dificuldade != null) linhas.push(`Dificuldade: ${b.dificuldade}`)
   if (b.restricoes.length > 0) linhas.push(`Restrições: ${b.restricoes.join(', ')}`)
   if (b.itens.length > 0) {
     linhas.push('Ingredientes:')

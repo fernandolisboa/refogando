@@ -600,6 +600,12 @@ export const users = pgTable(
     role: roleEnum('role').notNull().default('usuario'),
     // Preferência de apresentação (D1, #4.AC5/#5.AC4). text livre BCP-47, NULLABLE.
     locale: text('locale'),
+    // Nível de habilidade PADRÃO do usuário (#421, ADR-0029 dec.2): default do eixo "para quem a
+    // receita é escrita" (iniciante/intermediario/avancado — fonte única `NIVEIS_CHEF` em briefing.ts),
+    // sobrescrevível por geração. `text` livre + SEM default: ADD COLUMN metadata-only (sem rewrite) na
+    // tabela populada; contas existentes nascem NULL = eixo NEUTRO. A validação do valor (isNivelChef)
+    // é a fronteira do app (PATCH /api/me), não do banco — mesma tese de `locale`/`bio`.
+    nivelPadrao: text('nivel_padrao'),
     // Bio curta do perfil (#124, frente Perfil). text livre, NULLABLE; o CAP de tamanho
     // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
     // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).

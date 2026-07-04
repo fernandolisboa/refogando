@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldClassName } from '@/components/button'
 import { LINKS_MAX, LINK_TIPOS, safeHttpUrl, type LinkTipo, type ProfileLink } from '@/domain/links'
+import { NIVEIS_CHEF } from '@/domain/briefing'
 
 type Status = 'loading' | 'idle' | 'saving' | 'saved' | 'error'
 type Profile = {
@@ -34,6 +35,7 @@ type Profile = {
   bio: string | null
   handle: string
   links: ProfileLink[]
+  nivelPadrao: string | null
 }
 /** Erro específico do handle, traduzível inline (≠ erro genérico do form). */
 type HandleError = 'taken' | 'reserved' | 'invalid' | null
@@ -89,6 +91,8 @@ export function ProfileForm() {
   const [handle, setHandle] = useState('')
   const [handleError, setHandleError] = useState<HandleError>(null)
   const [links, setLinks] = useState<LinkRow[]>([])
+  // Nível de habilidade padrão (#421): '' = sem preferência (o servidor guarda NULL = eixo neutro).
+  const [nivelPadrao, setNivelPadrao] = useState<string>('')
   const [status, setStatus] = useState<Status>('loading')
 
   // Carrega o perfil ao montar (só logado). AbortController cancela no unmount.
@@ -109,6 +113,7 @@ export function ProfileForm() {
         setBio(p.bio ?? '')
         setHandle(p.handle)
         setLinks((p.links ?? []).map((l) => ({ tipo: l.tipo, url: l.url })))
+        setNivelPadrao(p.nivelPadrao ?? '')
         setStatus('idle')
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
@@ -133,6 +138,8 @@ export function ProfileForm() {
           bio,
           handle,
           links: links.map((l) => ({ tipo: l.tipo, url: l.url.trim() })),
+          // '' → null (limpa o default = eixo neutro); NivelChef → grava. O servidor valida (isNivelChef).
+          nivelPadrao: nivelPadrao === '' ? null : nivelPadrao,
         }),
       })
       if (!res.ok) {
@@ -154,6 +161,7 @@ export function ProfileForm() {
       setBio(p.bio ?? '')
       setHandle(p.handle)
       setLinks((p.links ?? []).map((l) => ({ tipo: l.tipo, url: l.url })))
+      setNivelPadrao(p.nivelPadrao ?? '')
       setStatus('saved')
     } catch {
       setStatus('error')
@@ -285,6 +293,30 @@ export function ProfileForm() {
           className="resize-y"
         />
         <p className="self-end text-xs text-muted">{m.bioContador.replace('{n}', String(bio.length))}</p>
+      </div>
+
+      {/* Nível de habilidade padrão (#421, ADR-0029 dec.2): default do eixo de geração. */}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="profile-nivel" className="text-sm font-medium text-fg">
+          {m.nivelPadrao}
+        </label>
+        <select
+          id="profile-nivel"
+          value={nivelPadrao}
+          onChange={(e) => {
+            setNivelPadrao(e.target.value)
+            setStatus('idle')
+          }}
+          className={fieldClassName}
+        >
+          <option value="">{m.nivelPadraoNenhum}</option>
+          {NIVEIS_CHEF.map((n) => (
+            <option key={n} value={n}>
+              {messages.nivelChefLabel[n]}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted">{m.nivelPadraoDica}</p>
       </div>
 
       {/* Editor de links (#127): até LINKS_MAX linhas (tipo + url), add/remove inline. */}

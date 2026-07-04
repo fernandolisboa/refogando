@@ -109,7 +109,8 @@ describe('POST /api/generations — Briefing estruturado (#11)', () => {
     const [bf] = await db.select().from(briefing).where(eq(briefing.id, cs.briefingId!))
     expect(bf.cozinha).toBe('brasileira')
     expect(bf.porcoes).toBe(4)
-    expect(bf.dificuldade).toBe(2)
+    // #421 (ADR-0029 dec.4): Dificuldade não é mais entrada — a coluna dormente nasce NULL.
+    expect(bf.dificuldade).toBeNull()
     expect(bf.restricoes).toEqual([])
 
     // briefing_item[]: força/raw_text/ordem; quantidade STRING (numeric), nunca number.
@@ -491,27 +492,6 @@ describe('POST /api/generations — Briefing estruturado (#11)', () => {
     const res = await post({ mode: 'structured', briefing: 'x' }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'briefing_invalido' })
-    expect(await countsBriefing(sql)).toEqual({
-      recipe: 0,
-      session: 0,
-      generation: 0,
-      briefing: 0,
-      briefingItem: 0,
-    })
-  })
-
-  // 12c — dificuldade_fora_de_faixa (paridade com generation.test.ts:339, E4): dificuldade:99
-  // + ExplodingClaudeClient → 400.
-  it('dificuldade_fora_de_faixa: dificuldade:99 → 400; seam intocado', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'dif@briefing.test' })
-    setClaudeClient(new ExplodingClaudeClient())
-
-    const res = await post(
-      { mode: 'structured', briefing: makeBriefing({ dificuldade: 99 }) },
-      headers,
-    )
-    expect(res.status).toBe(400)
-    await expect(res.json()).resolves.toMatchObject({ error: 'dificuldade_fora_de_faixa' })
     expect(await countsBriefing(sql)).toEqual({
       recipe: 0,
       session: 0,

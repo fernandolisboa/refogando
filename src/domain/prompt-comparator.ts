@@ -120,13 +120,9 @@ function item(rawText: string, quantidade: string | null, unidade: Briefing['ite
 }
 
 /** Atalho: Briefing neutro (sem restrições/observações) com cozinha + itens. */
-function briefingFixture(
-  cozinha: string,
-  porcoes: number,
-  dificuldade: number,
-  itens: Briefing['itens'],
-): Briefing {
-  return { cozinha, restricoes: [], porcoes, dificuldade, observacoes: null, itens }
+// #421 removeu Dificuldade como ENTRADA (agora é SAÍDA estimada pela IA) — o Briefing não a carrega.
+function briefingFixture(cozinha: string, porcoes: number, itens: Briefing['itens']): Briefing {
+  return { cozinha, restricoes: [], porcoes, observacoes: null, itens }
 }
 
 /**
@@ -139,7 +135,7 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     id: 'cmp-01-italiana-structured',
     mode: 'briefing',
     axes: NEUTRAL_AXES,
-    briefing: briefingFixture('italiana', 4, 3, [
+    briefing: briefingFixture('italiana', 4, [
       item('arroz arbóreo', '320', 'g'),
       item('cogumelos frescos', '200', 'g'),
       item('queijo parmesão', '80', 'g', 'preferred'),
@@ -150,7 +146,7 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     id: 'cmp-02-japonesa-structured',
     mode: 'briefing',
     axes: NEUTRAL_AXES,
-    briefing: briefingFixture('japonesa', 2, 2, [
+    briefing: briefingFixture('japonesa', 2, [
       item('salmão fresco', '300', 'g'),
       item('arroz para sushi', '2', 'xicara'),
       item('folhas de alga nori', '4', 'unidade', 'preferred'),
@@ -160,7 +156,7 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     id: 'cmp-03-brasileira-structured',
     mode: 'briefing',
     axes: NEUTRAL_AXES,
-    briefing: briefingFixture('brasileira', 6, 3, [
+    briefing: briefingFixture('brasileira', 6, [
       item('feijão preto', '500', 'g'),
       item('carne seca', '300', 'g'),
       item('linguiça calabresa', '200', 'g', 'preferred'),
@@ -171,7 +167,7 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     id: 'cmp-04-mexicana-structured',
     mode: 'briefing',
     axes: NEUTRAL_AXES,
-    briefing: briefingFixture('mexicana', 4, 2, [
+    briefing: briefingFixture('mexicana', 4, [
       item('tortilhas de milho', '8', 'unidade'),
       item('feijão refogado', '400', 'g'),
       item('abacate', '2', 'unidade', 'preferred'),
@@ -181,7 +177,7 @@ export const FIXED_BRIEFINGS: readonly ComparatorFixture[] = [
     id: 'cmp-05-francesa-structured',
     mode: 'briefing',
     axes: NEUTRAL_AXES,
-    briefing: briefingFixture('francesa', 4, 4, [
+    briefing: briefingFixture('francesa', 4, [
       item('coxa de frango', '4', 'unidade'),
       item('vinho tinto seco', '250', 'ml'),
       item('cogumelos paris', '200', 'g', 'preferred'),

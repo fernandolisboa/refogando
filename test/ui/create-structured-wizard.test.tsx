@@ -166,10 +166,13 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     expect(screen.getByRole('heading', { name: W.restricoesTitulo })).toBeInTheDocument()
     expect(screen.getByRole('list', { name: W.passoLabel.replace('{n}', '2') })).toBeInTheDocument()
 
-    // Passo 2 → 3 (Detalhes): porções/dificuldade/observações; CTA vira "Gerar receita".
+    // Passo 2 → 3 (Detalhes): porções/nível de habilidade/observações; CTA vira "Gerar receita".
     await user.click(screen.getByRole('button', { name: W.continuar }))
     expect(screen.getByRole('heading', { name: W.porcoesTitulo })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: W.dificuldadeTitulo })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: W.nivelTitulo })).toBeInTheDocument()
+    // #421: chips do Nível de habilidade (o "usar meu padrão" + os 3 níveis) renderizados.
+    expect(screen.getByRole('button', { name: W.nivelPadrao })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: ptBR.nivelChefLabel.avancado })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: W.observacoesTitulo })).toBeInTheDocument()
     expect(screen.getByRole('list', { name: W.passoLabel.replace('{n}', '3') })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: W.continuar })).toBeNull()
@@ -328,6 +331,56 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
       const body = JSON.parse(String((postCall![1] as RequestInit).body))
       expect(body.briefing.cozinha).toBeNull()
       expect(body.cozinhaOutra).toBe('Comida Georgiana')
+    })
+  })
+
+  it('W7c — Nível de habilidade (#421): escolher um chip manda `nivel` TOP-LEVEL no POST', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } },
+      recipes: { status: 200, body: baseView() },
+    })
+    render(<Harness />)
+    await abrirWizard(user)
+
+    // Passo 1 → 2 → 3.
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+
+    // Default = "usar meu padrão" (nenhum override). Escolhe "Avançado".
+    await user.click(screen.getByRole('button', { name: ptBR.nivelChefLabel.avancado }))
+    await user.click(screen.getByRole('button', { name: W.gerar }))
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/generations'))
+      expect(postCall).toBeDefined()
+      const body = JSON.parse(String((postCall![1] as RequestInit).body))
+      // `nivel` é TOP-LEVEL (irmão de cozinhaOutra), NÃO dentro do briefing.
+      expect(body.nivel).toBe('avancado')
+      expect(body.briefing.nivel).toBeUndefined()
+    })
+  })
+
+  it('W7d — sem escolher nível ("usar meu padrão"): o POST OMITE `nivel` (cai no default do Perfil)', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch({
+      generations: { status: 201, body: { outcome: 'success', recipeId: 'r-1', advisory: null } },
+      recipes: { status: 200, body: baseView() },
+    })
+    render(<Harness />)
+    await abrirWizard(user)
+
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.gerar }))
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('/api/generations'))
+      expect(postCall).toBeDefined()
+      const body = JSON.parse(String((postCall![1] as RequestInit).body))
+      expect('nivel' in body).toBe(false)
     })
   })
 
