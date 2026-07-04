@@ -87,10 +87,15 @@ export type RegenerateResult =
   | { kind: 'limite_geracao'; retryAfterMs: number }
 
 /**
- * Reconstrói o `{systemPrompt, userPrompt}` da predecessora pela `mode` da sua creation_session.
+ * Reconstrói o `{systemPrompt, userPrompt, axes}` da predecessora pela `mode` da sua creation_session.
  * Devolve `null` quando a fonte é IRRECUPERÁVEL (transcrição apagada, briefing/free_text ausente)
  * — o caller mapeia para 409 sem_fonte (NUNCA 500). PURO em relação ao DB exceto pelas leituras
  * dos registros de proveniência.
+ *
+ * Devolve TAMBÉM os `axes` EFETIVOS que moldaram o systemPrompt (o structured resolve a voz da cozinha
+ * por SPREAD ADITIVO — #422). O caller usa ESSES axes p/ (i) carimbar o promptStamp e (ii) passar ao
+ * generateRecipe, de modo que a proveniência gravada NÃO minta sobre a composição que gerou a Receita
+ * (espelha /api/generations/route.ts, que computa o promptStamp APÓS resolver os axes).
  */
 async function recoverPrompt(
   db: Database,
@@ -98,7 +103,7 @@ async function recoverPrompt(
   // #420 (ADR-0029): eixos de composição do prompt. Neutro na Wave 1 (a regeneração ainda não recupera
   // eixos da proveniência — futuro). Threaded p/ o systemPrompt recomposto casar o carimbo da geração.
   axes: PromptAxes = NEUTRAL_AXES,
-): Promise<{ systemPrompt: string; userPrompt: string } | null> {
+): Promise<{ systemPrompt: string; userPrompt: string; axes: PromptAxes } | null> {
   if (session.mode === 'conversation') {
     // Reconstrói a Transcrição das falas duráveis (#15). Apagada (DELETE /transcript) → vazia →
     // irrecuperável (409, não 500): sem falas não há o que destilar.
@@ -109,7 +114,8 @@ async function recoverPrompt(
       .orderBy(asc(transcriptMessage.seq))
     if (rows.length === 0) return null
     const transcript: TranscriptMessage[] = rows.map((m) => ({ role: m.role, content: m.content }))
-    return buildConversationPrompt(transcript, axes)
+    // conversation não resolve voz (sem briefing.cozinha) — os axes EFETIVOS são os recebidos.
+    return { ...buildConversationPrompt(transcript, axes), axes }
   }
 
   if (session.mode === 'structured') {
@@ -150,13 +156,16 @@ async function recoverPrompt(
     // a original teve). Resolve por SPREAD ADITIVO sobre os `axes` recebidos; sem cozinha ⇒ {} (neutro).
     const voz = briefing.cozinha != null ? await loadCozinhaVoice(db, briefing.cozinha) : null
     const axesComVoz: PromptAxes = { ...axes, ...resolveVozCozinhaAxis(voz, briefing.cozinha) }
-    return buildBriefingPrompt(briefing, axesComVoz)
+    // Devolve os axes EFETIVOS (COM a voz) — o caller carimba o promptStamp e alimenta o generateRecipe
+    // com ELES, senão a proveniência gravada contradiria o systemPrompt (bug do carimbo neutro).
+    return { ...buildBriefingPrompt(briefing, axesComVoz), axes: axesComVoz }
   }
 
   if (session.mode === 'free_text') {
     // Texto livre CRU gravado como proveniência (#88). Ausente/vazio → irrecuperável (409).
     if (session.freeText == null || session.freeText.trim() === '') return null
-    return buildFreeTextPrompt(session.freeText, axes)
+    // free_text não resolve voz (sem briefing.cozinha) — os axes EFETIVOS são os recebidos.
+    return { ...buildFreeTextPrompt(session.freeText, axes), axes }
   }
 
   return null
@@ -207,21 +216,26 @@ export async function regenerateRecipe(
     .limit(1)
   if (!session) return { kind: 'sem_fonte' }
 
-  // Eixos de composição (#420/#421, ADR-0029). Moldam o systemPrompt recomposto E carimbam a versão
-  // da geração (correlação futura com save/estrela). Nível de habilidade (#421 dec.2): a regeneração
-  // usa o DEFAULT do Perfil do viewer/owner (users.nivelPadrao) como baseline — SEM sticky do
-  // prompt_stamp da predecessora (mantém simples). SPREAD ADITIVO (Regra C): {} colapsa p/ NEUTRAL_AXES.
+  // Eixos de composição (#420/#421/#422, ADR-0029). Nível de habilidade (#421 dec.2): a regeneração usa
+  // o DEFAULT do Perfil do viewer (users.nivelPadrao) como SEMENTE — SEM sticky do prompt_stamp da
+  // predecessora (mantém simples). O structured RESOLVE a voz da cozinha (#422) DENTRO de recoverPrompt
+  // por SPREAD ADITIVO, então os axes EFETIVOS (nivelChef + voz) voltam de lá. O promptStamp é carimbado
+  // APÓS a recuperação (dos axes EFETIVOS), espelhando /api/generations/route.ts — senão a proveniência
+  // mentiria sobre a composição (carimbo sem voz num prompt COM voz).
   const [meRow] = await db
     .select({ nivelPadrao: users.nivelPadrao })
     .from(users)
     .where(eq(users.id, viewerId))
   const nivelPadrao: NivelChef | null =
     meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
-  const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
-  const promptStamp = promptStampFor(axes)
+  const seedAxes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
 
-  const prompt = await recoverPrompt(db, session, axes)
+  const prompt = await recoverPrompt(db, session, seedAxes)
   if (prompt === null) return { kind: 'sem_fonte' }
+  // Axes EFETIVOS que moldaram o systemPrompt (COM a voz da cozinha no structured). Fonte ÚNICA tanto
+  // do carimbo quanto do que se passa ao Claude.
+  const axes = prompt.axes
+  const promptStamp = promptStampFor(axes)
 
   // ── TETO de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES do Claude ─────────
   // A posse + a fonte já foram provadas (mantém o not_found/sem_fonte primeiro, sem vazar o estado do
