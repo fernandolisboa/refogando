@@ -1317,6 +1317,11 @@ export const takedownTicket = pgTable(
     slaLevel: text('sla_level').notNull().default('none'),
     // Quando a última transição de `sla_level` foi registrada (metadado do alerta). Nulo até o 1º alerta.
     slaAlertedAt: timestamp('sla_alerted_at', { withTimezone: true }),
+    // GAP-7 (#413): quando o Encarregado (DPO) foi ALERTADO POR E-MAIL sobre este ticket em nível
+    // 'red'/'overdue'. SEPARADA de `sla_alerted_at` (aquela marca a transição de nível; esta marca o
+    // envio efetivo do e-mail) — é a chave de IDEMPOTÊNCIA do mailer: só notifica quem tem isto NULO, e
+    // só carimba APÓS o provedor confirmar o envio (falha ⇒ segue nulo ⇒ reenvia amanhã). Nasce nulo.
+    dpoNotifiedAt: timestamp('dpo_notified_at', { withTimezone: true }),
   },
   (t) => [
     // Varredura do SLA: tickets por status em ordem de recebimento (o job de alertas 10/13/15 — GAP-7).

@@ -1,5 +1,6 @@
-import { getDb } from '@/server/deps'
+import { getDb, getMailer } from '@/server/deps'
 import { scanDsarSla } from '@/server/legal/dsar-sla-scan'
+import { notifyDpoRedTickets } from '@/server/legal/dpo-alert'
 
 /**
  * Cron de ALERTAS de SLA dos pedidos do titular / takedown (issue #400, GAP-7; `docs/legal/takedown-e-
@@ -24,7 +25,15 @@ export async function GET(request: Request): Promise<Response> {
     return new Response('Unauthorized', { status: 401 })
   }
 
-  const result = await scanDsarSla(getDb(), new Date())
+  const now = new Date()
+  const result = await scanDsarSla(getDb(), now)
+  // APÓS avançar os níveis: alerta POR E-MAIL o Encarregado dos tickets já em 'red'/'overdue' e ainda não
+  // notificados (idempotente por `dpo_notified_at`; no-op se faltar credencial/destinatário — gate humano).
+  const alert = await notifyDpoRedTickets(getDb(), getMailer(), now)
   // Só CONTAGENS (metadado não-sensível) — nunca dado do titular no corpo/log.
-  return Response.json({ scanned: result.scanned, transitions: result.transitions.length })
+  return Response.json({
+    scanned: result.scanned,
+    transitions: result.transitions.length,
+    dpoNotified: alert.notified,
+  })
 }

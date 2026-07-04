@@ -1,0 +1,1 @@
+ALTER TABLE "takedown_ticket" ADD COLUMN "dpo_notified_at" timestamp with time zone;
