@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatórios do Refogando · Refogando</title>
+<link rel="stylesheet" href="reports.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="index.html">Refogando</a> <span>· Relatórios</span></div>
+  <nav class="topnav"><a href="index.html" class="on">Visão geral</a><a href="seguranca.html" class="">Segurança</a><a href="uiux.html" class="">UI/UX</a><a href="funcionalidades.html" class="">Funcionalidades</a><a href="landing-blog.html" class="">Landing &amp; Blog</a><a href="links-sociais.html" class="">Links sociais</a><a href="monetizacao.html" class="">Monetização</a><a href="acoes-do-dono.html" class="">Ações suas</a><a href="plano-de-execucao.html" class="">Execução</a></nav>
+</header>
+<main>
+<div class="pagehead"><h1>Relatórios do Refogando</h1><p class="subtitle">Segurança · UI/UX · Funcionalidades · Landing/Blog · Links sociais · Monetização — 2026-07-04</p></div>
+
+<p class="lede">Cinco frentes que você pediu, mais uma varredura de segurança — tudo aterrado no código real do repositório. Navegue pelos cartões abaixo. Duas páginas resumem a ação: <a href="acoes-do-dono.html"><strong>o que precisa de você</strong></a> e <a href="plano-de-execucao.html"><strong>o que eu já estou fazendo</strong></a>.</p>
+<div class="statrow big">
+  <div class="statbox"><span class="n">20</span><span class="l">achados de segurança</span></div>
+  <div class="statbox good"><span class="n">39</span><span class="l">itens delegáveis ao agente</span></div>
+  <div class="statbox warn"><span class="n">28</span><span class="l">precisam de você</span></div>
+</div>
+<div class="navgrid"><a class="navcard" href="seguranca.html"><div class="nc-top"><h3>Segurança</h3><span class="nc-tag">20 achados</span></div><p>Varredura em 7 lentes com auto-verificação. Postura forte; achados de endurecimento em custo de IA, SSRF e headers.</p></a><a class="navcard" href="uiux.html"><div class="nc-top"><h3>UI/UX</h3><span class="nc-tag">14 recomendações</span></div><p>Fundação sólida; os furos estão na costura da jornada (login sem returnTo, /me/saved órfã) e em polimento de a11y.</p></a><a class="navcard" href="funcionalidades.html"><div class="nc-top"><h3>Funcionalidades</h3><span class="nc-tag">11 ideias</span></div><p>O app termina quando você acha a receita. Faltam o momento de cozinhar e o ciclo semanal — escalador, modo cozinha, semelhantes, compartilhar.</p></a><a class="navcard" href="landing-blog.html"><div class="nc-top"><h3>Landing &amp; Blog</h3><span class="nc-tag">veredito</span></div><p>Veredito honesto: a home já é a landing; blog agora rende pouco. Invista em analytics e copy de valor.</p></a><a class="navcard" href="links-sociais.html"><div class="nc-top"><h3>Links sociais</h3><span class="nc-tag">pronto p/ codar</span></div><p>Blueprint pronto: novo eixo social_links no app_config, editável sem deploy, renderizado no footer.</p></a><a class="navcard" href="monetizacao.html"><div class="nc-top"><h3>Monetização</h3><span class="nc-tag">plano faseado</span></div><p>Refeito. O buraco nº1: você não mede o custo da geração de texto. Ledger + concierge B2B + gate fiscal.</p></a></div>
+<div class="callout">
+  <h2>TL;DR</h2>
+  <ul>
+    <li><strong>Segurança:</strong> nada catastrófico aberto. O item de maior impacto é uma corrida (TOCTOU) no teto de geração que deixa estourar a cota de IA em paralelo — custo direto de Opus. Depois: SSRF pós-redirect no importer, ausência de headers, parse-ingredients sem teto.</li>
+    <li><strong>Produto:</strong> as maiores vitórias baratas são o <em>escalador de porções</em>, o <em>modo cozinha</em>, <em>receitas semelhantes</em> (embeddings já existem) e o <em>botão compartilhar</em> — todas cabem no domínio atual.</li>
+    <li><strong>Landing/Blog:</strong> não construa nenhum dos dois agora. A home já é a porta; blog é canibalizado por AI Overviews. Meça o funil primeiro.</li>
+    <li><strong>Links sociais:</strong> vêm do banco (<code>app_config</code>), não de env — editáveis por você sem redeploy. Blueprint pronto; eu implemento.</li>
+    <li><strong>Monetização:</strong> você não mede o custo da feature mais cara (geração de texto/Opus). Isso vem primeiro. Cobrança trava no gate fiscal (PF vs CNPJ) — decisão sua.</li>
+  </ul>
+</div>
+
+</main>
+<footer class="foot">Gerado por Claude (Fable 5) em 2026-07-04 · fonte: varredura da árvore em <code>main</code> · uso interno</footer>
+</body>
+</html>
