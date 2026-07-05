@@ -38,6 +38,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+import { QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
@@ -242,12 +243,17 @@ export async function regenerateRecipe(
   // teto p/ Receitas alheias). A regeneração persiste uma `generation` na MESMA sessão, que CONTA pro
   // teto; sem este gate o usuário furaria o cap pelo botão de regenerar. cap ∞ (admin) pula a contagem.
   // Espelha o gate de POST /api/generations e de POST /api/conversations/stream.
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject sem tocar o Claude. A ENFORCEMENT real é o
+  // gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration (via `quotaGate` abaixo).
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(db, viewerId, now)
     const quota = decideRecipeGenQuota({ cap, recentAt, now })
     if (!quota.allowed) return { kind: 'limite_geracao', retryAfterMs: quota.retryAfterMs }
   }
+  // #446: gate ATÔMICO threado em persistGeneration (reconta+decide+insere SOB a advisory lock, na MESMA
+  // tx do INSERT). Estourou na corrida ⇒ QuotaExceededError, capturado abaixo → { kind:'limite_geracao' }.
+  const quotaGate = Number.isFinite(cap) ? { userId: viewerId, cap } : undefined
 
   // ── Claude (single-shot) → classify ──────────────────────────────────────────────
   // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
@@ -265,7 +271,30 @@ export async function regenerateRecipe(
 
   if (result.outcome === 'impossible') {
     // impossible NÃO entrega Receita; persiste como episódio (generation na MESMA sessão).
-    await persistGeneration({
+    try {
+      await persistGeneration({
+        result,
+        mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
+        origin,
+        ownerId: viewerId,
+        model,
+        existingSessionId: session.id,
+        promptStamp,
+        quota: quotaGate,
+      })
+    } catch (err) {
+      // #446: corrida perdida na recontagem atômica ⇒ nada persistiu. 429 limite_geracao (mesmo contrato).
+      if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
+      throw err
+    }
+    return { kind: 'impossible', advisory: result.advisory }
+  }
+
+  // success | degraded | playful → NOVA Receita imutável (lineage regenerated). #131: HERDA o
+  // image_id da predecessora (carry-forward — mesmo blob, sem arquivo novo).
+  let p: Awaited<ReturnType<typeof persistGeneration>>
+  try {
+    p = await persistGeneration({
       result,
       mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
       origin,
@@ -273,26 +302,18 @@ export async function regenerateRecipe(
       model,
       existingSessionId: session.id,
       promptStamp,
+      lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
+      imageId: pred.imageId,
+      // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face
+      // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
+      lineageId: pred.lineageId,
+      quota: quotaGate,
     })
-    return { kind: 'impossible', advisory: result.advisory }
+  } catch (err) {
+    // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NADA persistiu. 429.
+    if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
+    throw err
   }
-
-  // success | degraded | playful → NOVA Receita imutável (lineage regenerated). #131: HERDA o
-  // image_id da predecessora (carry-forward — mesmo blob, sem arquivo novo).
-  const p = await persistGeneration({
-    result,
-    mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
-    origin,
-    ownerId: viewerId,
-    model,
-    existingSessionId: session.id,
-    promptStamp,
-    lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
-    imageId: pred.imageId,
-    // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face
-    // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
-    lineageId: pred.lineageId,
-  })
   // p é não-null para success/degraded/playful (persistGeneration só devolve null em invalid,
   // já tratado acima). recipeId presente nesse caminho.
   const newRecipeId = p?.recipeId

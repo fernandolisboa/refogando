@@ -15,6 +15,7 @@ import type { ClassifyResult } from '@/domain/generation'
 import type { Strength, PromptStamp } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { conciliarTempoPreparo } from '@/domain/tempo'
+import { assertRecipeGenSlotInTx } from '@/server/quota/atomic'
 
 /**
  * Persistência transacional da geração (issue #8, §6).
@@ -42,6 +43,9 @@ import { conciliarTempoPreparo } from '@/domain/tempo'
  */
 
 export type PersistOrigin = 'ai_chat' | 'ai_structured' | 'ai_free_text'
+
+/** Tipo da transação do Drizzle (mesmas APIs de query que `Database`) — reusado no `tx` opcional. */
+type PersistTx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]
 
 // O Briefing (issue #11) é a ENTRADA estruturada gravada como proveniência. Presente
 // SSE `mode === 'structured'`. `itens[].quantidade` é string|null (numeric trafega como
@@ -110,6 +114,17 @@ export type PersistGenerationInput = {
   // geração single (legado) ⇒ undefined ⇒ NULL. `variant_chosen` NASCE NULL (a rota de escolha o marca).
   variantGroupId?: string
   variantLabel?: string
+  // #446 (TOCTOU do teto): gate ATÔMICO de cota de geração de RECEITA. Quando presente, a PRIMEIRA
+  // operação da transação de persistência toma o advisory lock do usuário, RECONTA as `generation` na
+  // janela 24h e DECIDE — estourou ⇒ LANÇA QuotaExceededError e a tx REVERTE (nada persiste), que o
+  // caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞ / callers legados sem teto). O pré-check da rota
+  // continua como otimização barata (early-reject sem tocar o Claude); ESTE é a enforcement real.
+  quota?: { userId: string; cap: number }
+  // #446 (variar2): transação FORNECIDA pelo caller. Presente ⇒ persiste NESTA tx (não abre a própria) —
+  // usado pelo "gerar 2" p/ gravar as DUAS variações sob UM único advisory lock (o caller toma o lock +
+  // reconta os 2 slots ANTES, então cada persist vai com `quota` AUSENTE aqui). Ausente ⇒ abre a própria
+  // tx (todos os demais callers) e roda o gate `quota` internamente.
+  tx?: PersistTx
 }
 
 export type PersistGenerationResult = {
@@ -191,7 +206,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel, quota, tx: providedTx } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -204,8 +219,16 @@ export async function persistGeneration(
   // também NÃO nasce em invalid (ADR-0006).
   if (result.outcome === 'invalid') return null
 
-  if (result.outcome === 'impossible') {
-    return getDb().transaction(async (tx) => {
+  // Corpo transacional (impossible OU sucesso), parametrizado pela `tx`. #446: `tx` ou é a FORNECIDA
+  // pelo caller (variar2 — as 2 variações compartilham UMA tx + UM lock) ou a própria (todos os demais).
+  const runInTx = async (tx: PersistTx): Promise<PersistGenerationResult | null> => {
+    // #446: gate ATÔMICO de cota — PRIMEIRA op da tx (advisory lock + recontagem + decisão). Estourou ⇒
+    // LANÇA QuotaExceededError e a tx reverte (NADA persiste). impossible TAMBÉM conta pro teto (o custo
+    // do Claude já foi gasto). No caminho `providedTx` (variar2) `quota` vem AUSENTE: o caller já gateou
+    // os 2 slots sob o lock ANTES de chamar — não se reconta por variação (senão a 2ª se auto-barraria).
+    if (quota) await assertRecipeGenSlotInTx(tx, quota)
+
+    if (result.outcome === 'impossible') {
       // Briefing ANTES da creation_session (FK briefing_id). O pedido sobrevive à
       // entrega impossible (AC4).
       const briefingId = pedido ? await insertBriefing(tx, pedido) : null
@@ -252,16 +275,14 @@ export async function persistGeneration(
         creationSessionId: sessionId,
         outcome: 'impossible',
       }
-    })
-  }
+    }
 
-  // success | degraded | playful: Receita privada + tradução + ingredientes.
-  const r = result.recipe
-  // Tempo de preparo (#261, ADR-0023 dec.3): reconcilia o par estimado pela IA — ativo > total
-  // (ou ativo sem total) descarta o ativo e mantém o total, NÃO invalida (tempo é baixo-risco).
-  // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
-  const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
-  return getDb().transaction(async (tx) => {
+    // success | degraded | playful: Receita privada + tradução + ingredientes.
+    const r = result.recipe
+    // Tempo de preparo (#261, ADR-0023 dec.3): reconcilia o par estimado pela IA — ativo > total
+    // (ou ativo sem total) descarta o ativo e mantém o total, NÃO invalida (tempo é baixo-risco).
+    // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
+    const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
     const [createdRecipe] = await tx
       .insert(recipe)
       .values({
@@ -377,5 +398,8 @@ export async function persistGeneration(
       slug,
       locale: r.originalLocale,
     }
-  })
+  }
+
+  // #446: dispatch — `providedTx` (variar2, tx compartilhada sob UM lock) OU a própria transação.
+  return providedTx ? runInTx(providedTx) : getDb().transaction(runInTx)
 }
