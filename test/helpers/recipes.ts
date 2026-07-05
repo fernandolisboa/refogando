@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import {
   recipe,
@@ -64,29 +64,49 @@ export async function seedRecipe(input: {
   curationStatus?: CurationStatus
 }): Promise<string> {
   const ownerIsNull = (input.ownerId ?? null) == null
-  const [row] = await getDb()
-    .insert(recipe)
-    .values({
-      ...(input.id !== undefined ? { id: input.id } : {}),
-      origin: input.origin,
-      originalLocale: input.originalLocale,
-      visibility: input.visibility,
-      resultKind: input.resultKind,
-      ownerId: input.ownerId ?? null,
-      curationStatus: input.curationStatus ?? (ownerIsNull ? 'approved' : 'not_required'),
-      cozinha: input.cozinha ?? null,
-      categoria: input.categoria ?? null,
-      restricoes: input.restricoes,
-      porcoes: input.porcoes ?? null,
-      dificuldade: input.dificuldade ?? null,
-      tempoAtivoMin: input.tempoAtivoMin ?? null,
-      tempoTotalMin: input.tempoTotalMin ?? null,
-      parentRecipeId: input.parentRecipeId ?? null,
-      lineageKind: input.lineageKind ?? null,
-      derivedDiff: input.derivedDiff ?? null,
-      schemaVersion: input.schemaVersion,
+  const values = {
+    ...(input.id !== undefined ? { id: input.id } : {}),
+    origin: input.origin,
+    originalLocale: input.originalLocale,
+    visibility: input.visibility,
+    resultKind: input.resultKind,
+    ownerId: input.ownerId ?? null,
+    curationStatus: input.curationStatus ?? (ownerIsNull ? 'approved' : 'not_required'),
+    cozinha: input.cozinha ?? null,
+    categoria: input.categoria ?? null,
+    restricoes: input.restricoes,
+    porcoes: input.porcoes ?? null,
+    dificuldade: input.dificuldade ?? null,
+    tempoAtivoMin: input.tempoAtivoMin ?? null,
+    tempoTotalMin: input.tempoTotalMin ?? null,
+    parentRecipeId: input.parentRecipeId ?? null,
+    lineageKind: input.lineageKind ?? null,
+    derivedDiff: input.derivedDiff ?? null,
+    schemaVersion: input.schemaVersion,
+  }
+
+  // #450 adicionou a CHECK `recipe_web_imported_private_chk` (web_imported ⇒ private) como
+  // defesa-em-profundidade no BANCO. Alguns testes de gate (public-profile, following-feed,
+  // recommended-cooks) PRECISAM materializar o estado ilegal `web_imported` + `public` — o
+  // "cinto-e-suspensório sem CHECK no DB" — para provar que o gate de ORIGEM da APLICAÇÃO
+  // (origin <> 'web_imported' em eligibleForPool, #168) exclui a linha independentemente do banco.
+  // Numa transação atômica: removemos a CHECK, inserimos a linha "avó" e a re-adicionamos como
+  // NOT VALID — writes NOVOS seguem rejeitados (recipe-constraints.test.ts #450 continua verde),
+  // a linha existente é grandfathered, e o `truncateAll` por teste a apaga. Só nesta combinação
+  // ilegal; o caminho comum não paga nenhum custo. Chamadas ilegais devem ser sequenciais
+  // (ALTER TABLE não é seguro sob seeds concorrentes — não há Promise.all deste fixture).
+  if (input.origin === 'web_imported' && input.visibility === 'public') {
+    return await getDb().transaction(async (tx) => {
+      await tx.execute(sql`ALTER TABLE recipe DROP CONSTRAINT IF EXISTS recipe_web_imported_private_chk`)
+      const [row] = await tx.insert(recipe).values(values).returning({ id: recipe.id })
+      await tx.execute(
+        sql`ALTER TABLE recipe ADD CONSTRAINT recipe_web_imported_private_chk CHECK ("origin" <> 'web_imported' OR "visibility" = 'private') NOT VALID`,
+      )
+      return row.id
     })
-    .returning({ id: recipe.id })
+  }
+
+  const [row] = await getDb().insert(recipe).values(values).returning({ id: recipe.id })
   return row.id
 }
 
