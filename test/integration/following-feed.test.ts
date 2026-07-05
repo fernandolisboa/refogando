@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeAll, afterAll } from 'vitest'
+import {
+  dropWebImportedPrivateCheck,
+  restoreWebImportedPrivateCheck,
+} from '../helpers/recipe-check-constraint'
 import { GET as followingFeedGET } from '@/app/api/feed/following/route'
 import { getDb } from '@/server/deps'
 import { loadFollowingFeed } from '@/server/recipe/feed'
@@ -38,6 +42,11 @@ function followingReq(headers?: Headers, query = '') {
     new Request(`http://localhost/api/feed/following${query}`, { headers: headers ?? new Headers() }),
   )
 }
+
+// #450: remove a CHECK web_imported⇒private durante este arquivo pra materializar o estado ilegal
+// (web_imported+public) que prova o gate de ORIGEM da aplicação; restaura (NOT VALID) no fim.
+beforeAll(dropWebImportedPrivateCheck)
+afterAll(restoreWebImportedPrivateCheck)
 
 describe('loadFollowingFeed — filtro por seguidos + gate de pool (#277)', () => {
   it('retorna SÓ as públicas dos seguidos; exclui não-seguidos, privadas, catálogo, removidas, playful', async () => {
