@@ -5,8 +5,14 @@
  */
 import { SectionGate } from '../gate'
 import { StaleTranslations } from '@/components/admin/stale-translations'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Traduções") + noindex — casa o rótulo da aba do Console (curador+).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navTraducoes)
+}
 
 export default async function AdminTranslationsPage() {
   return (

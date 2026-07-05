@@ -9,8 +9,14 @@ import { SectionGate } from '../gate'
 import { ModerationQueue } from '@/components/admin/moderation-queue'
 import { ReviewQueue } from '@/components/admin/review-queue'
 import { CozinhaSuggestionQueue } from '@/components/admin/cozinha-suggestion-queue'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Moderação") + noindex — casa o rótulo da aba do Console (curador+).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navModeracao)
+}
 
 export default async function AdminModerationPage() {
   return (

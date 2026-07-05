@@ -9,8 +9,14 @@
  */
 import { SectionGate } from '../gate'
 import { PromptComparator } from '@/components/admin/prompt-comparator'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Comparador") + noindex — casa o rótulo da aba do Console (admin-only).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navComparador)
+}
 
 export default async function AdminComparadorPage() {
   return (

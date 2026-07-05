@@ -17,6 +17,12 @@
 import { Suspense } from 'react'
 import { Container } from '@/components/container'
 import { CreateShellClient } from '@/components/recipe/create-shell-client'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
+
+// #462: título fino ("Criar receita") + noindex (só-logado — o cliente gateia Visitante).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.criar.titulo)
+}
 
 export default function CreatePage() {
   return (

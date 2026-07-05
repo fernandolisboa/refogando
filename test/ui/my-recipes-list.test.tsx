@@ -201,6 +201,7 @@ describe('MyRecipesList (#61)', () => {
 
     const img = screen.getByRole('img', { name: 'Com foto' })
     expect(img).toHaveAttribute('src', 'https://blob.example/foto.jpg')
+    expect(img).toHaveAttribute('loading', 'lazy') // #462: lista longa — thumb lazy
 
     // Exatamente UMA <img> (a "Sem foto" cai no placeholder, sem <img>).
     expect(container.querySelectorAll('img')).toHaveLength(1)

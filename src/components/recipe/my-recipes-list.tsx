@@ -144,6 +144,7 @@ export function MyRecipesList() {
                         src={item.imageUrl}
                         alt={item.name}
                         referrerPolicy="no-referrer"
+                        loading="lazy" // #462: feed infinito — thumb abaixo da dobra baixa só ao aproximar
                         className="aspect-video w-full rounded-lg border border-border object-cover"
                       />
                       {item.imageAiGenerated && (

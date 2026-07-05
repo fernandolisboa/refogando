@@ -12,8 +12,14 @@ import { SectionGate } from '../gate'
 import { ConfigSection } from '@/components/admin/config-section'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
 import { AiCostSection } from '@/components/admin/ai-cost-section'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("IA") + noindex — casa o rótulo da aba do Console (admin-only).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navIa)
+}
 
 export default async function AdminConfigPage() {
   return (

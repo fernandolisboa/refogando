@@ -17,8 +17,14 @@ import { CatalogCuration } from '@/components/admin/catalog-curation'
 import { CatalogRecipeQueue } from '@/components/admin/catalog-recipe-queue'
 import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 import { RecipeOfWeekConfigSection } from '@/components/admin/recipe-of-week-config-section'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Catálogo") + noindex — casa o rótulo da aba do Console (curador+).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navCatalogo)
+}
 
 export default async function AdminCatalogPage() {
   // Admin-only por axis: o Aviso fala com `/api/admin/config` (admin). Um Curador veria um form que
