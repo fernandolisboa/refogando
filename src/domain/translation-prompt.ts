@@ -25,7 +25,9 @@ export const TRANSLATION_MAX_TOKENS = 4096
 // Versão do prompt/glossário do tradutor (semver de prompt, análogo a PROMPT_VERSION da geração).
 // Carimbada em `recipe_translation.prompt_version` por `ensureTranslation` (Fatia 2) — habilita
 // backfill por-versão futuro (espelha EMBEDDING_VERSION). Suba a cada mudança material do prompt/glossário.
-export const TRANSLATION_PROMPT_VERSION = 1
+// v2 (2026-07-05): força a re-tradução (ADR-0031) do catálogo semeado, cujo título/corpo en-US veio da
+// MT OFFLINE do seed (#238) e não do RealTranslator+glossário (#426) — o gatilho por-versão os regenera.
+export const TRANSLATION_PROMPT_VERSION = 2
 
 /**
  * Nome de ingrediente por `ordem` (Fatia 2). No payload de origem, o `nome` é o `raw_text`; na saída,
