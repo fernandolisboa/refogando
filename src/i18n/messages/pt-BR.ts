@@ -337,6 +337,11 @@ export const ptBR = {
     passos: 'Modo de preparo',
     notas: 'Notas',
     descricao: 'Descrição',
+    // #453: botão compartilhar (Web Share API + fallback copiar-link). Funciona pro Visitante
+    // anônimo também (CONTEXT.md:168, "compartilha por texto") — não é gateado por sessão/pool.
+    compartilhar: 'Compartilhar',
+    linkCopiado: 'Link copiado!',
+    compartilharErro: 'Não foi possível copiar o link. Tente de novo.',
     porcoes: 'Porções',
     // #452: escalador de porções — controles "−/+" client-side sobre a LISTA de ingredientes
     // (aritmética `quantidade × ratio`, CONTEXT.md:192). Rótulos acessíveis dos botões (o número

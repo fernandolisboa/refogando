@@ -212,19 +212,13 @@ export function RecipeDetailView({
       {/* Ingredientes — só quando há ≥ 1 linha não-vazia. #452: com `porcoes` conhecido, o
           escalador (client) assume a lista (mesmo heading/`<ul role="list">`, só troca o
           fator de escala); sem `porcoes` (faceta ausente) não há base pra escalar — mantém a
-          lista estática de sempre. `key={view.id}`: espelha `RecipeEngagementControls`/
-          `RecipeReviewSection` (mesma árvore) — REMONTA por receita, senão o estado local de
-          porções (useState) vaza da receita anterior numa nav detalhe→detalhe in-place (troca de
-          receita sem reload de página, ex. busca→detalhe→voltar→outro detalhe). */}
+          lista estática de sempre. #453: o estado de porções/fator mora no `PortionScaleProvider`
+          ancestral (montado em `DetailChrome` com `key={view.id}`, pra o `RecipeShareButton`
+          irmão ler o MESMO fator) — `RecipePortionScaler` não tem mais `useState` próprio nem
+          precisa de `key` aqui (o remonte-por-receita acontece no Provider ancestral). */}
       {ingredientLines.length > 0 &&
         (view.porcoes != null ? (
-          <RecipePortionScaler
-            key={view.id}
-            ingredients={view.ingredients}
-            originalPorcoes={view.porcoes}
-            m={m}
-            locale={locale}
-          />
+          <RecipePortionScaler ingredients={view.ingredients} m={m} locale={locale} />
         ) : (
           <section className="flex flex-col gap-3">
             <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>

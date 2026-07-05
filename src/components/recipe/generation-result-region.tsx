@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import type { Messages } from '@/i18n/messages'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from './recipe-detail-view'
+import { PortionScaleProvider } from './recipe-portion-scale-context'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
@@ -106,13 +107,17 @@ export function GenerationResultRegion({
         </p>
       )}
 
-      {/* A Receita — REUSO total. O `<h1>{view.name}` aqui é o ÚNICO `<h1>`. */}
-      <RecipeDetailView
-        view={view}
-        m={messages}
-        locale={locale}
-        cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
-      />
+      {/* A Receita — REUSO total. O `<h1>{view.name}` aqui é o ÚNICO `<h1>`. #453:
+          `PortionScaleProvider` com `key={view.id}` — "criar outra" troca `view` pra uma nova
+          Receita; sem a key o fator escalado da Receita anterior vazaria pra esta. */}
+      <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+        <RecipeDetailView
+          view={view}
+          m={messages}
+          locale={locale}
+          cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+        />
+      </PortionScaleProvider>
 
       <div className="flex flex-wrap items-center gap-3">
         {/* A Receita JÁ está persistida (private). "Ver receita" só NAVEGA pro detalhe (#59),
