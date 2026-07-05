@@ -17,6 +17,7 @@
 import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
 import { isSupportedLocale } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
+import type { TextUsage } from '@/domain/text-cost'
 
 // `quantidade` trafega como string para casar com `recipe_ingredient.quantidade`
 // `numeric(10,3)`. Aceita null OU um numérico válido: '-' opcional, até 7 dígitos
@@ -47,6 +48,12 @@ export type GenerationOutput =
       // caminho single (`generateRecipe`) — OPCIONAL, back-compat: `classify` o ignora; `classifyVariants`
       // o carrega pro persist (`generation.variant_label`).
       variacao?: string
+      // #463: telemetria de custo (tokens input/output) do `message.usage` da Anthropic, anexada pelo
+      // seam (RealClaudeClient). PROVENIÊNCIA, ortogonal à classificação — `classify` a IGNORA; a BORDA
+      // a lê de `out.usage` e a passa ao persist, que deriva o `cost_usd` snapshot. OPCIONAL/best-effort:
+      // ausente (FakeClaudeClient, telemetria indisponível) ⇒ undefined ⇒ custo NULL honesto. No lote de
+      // variações o seam a anexa SÓ à 1ª (o `message.usage` é do lote inteiro — anexar às 2 dobraria).
+      usage?: TextUsage
     }
   | { kind: 'refusal' }
   | { kind: 'max_tokens' }
@@ -99,6 +106,10 @@ export type VariantClassifyResult = {
   recipe: ReceitaGenT
   advisory: string | null
   variacao: string
+  // #463: telemetria de custo do LOTE, presente SÓ na variação que a carrega (o seam anexa o
+  // `message.usage` do lote inteiro à 1ª variação retornada). As demais ficam `undefined` ⇒ custo NULL —
+  // assim a soma do custo do lote NÃO é dobrada. A borda a passa ao persist junto de cada variação.
+  usage?: TextUsage
 }
 
 /**
@@ -114,7 +125,9 @@ export function classifyVariants(outs: readonly GenerationOutput[]): VariantClas
     if (c.outcome === 'success' || c.outcome === 'degraded' || c.outcome === 'playful') {
       // `raw` é forçosamente o branch 'object' aqui (só ele classifica em success/degraded/playful).
       const variacao = raw.kind === 'object' ? (raw.variacao ?? '') : ''
-      out.push({ outcome: c.outcome, recipe: c.recipe, advisory: c.advisory, variacao })
+      // #463: carrega a telemetria de custo do LOTE (presente só na variação que a tem — ver acima).
+      const usage = raw.kind === 'object' ? raw.usage : undefined
+      out.push({ outcome: c.outcome, recipe: c.recipe, advisory: c.advisory, variacao, usage })
     }
   }
   return out

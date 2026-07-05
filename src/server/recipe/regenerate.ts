@@ -261,6 +261,8 @@ export async function regenerateRecipe(
   const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
   const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs, axes })
   const result = classify(out)
+  // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd.
+  const usage = out.kind === 'object' ? out.usage : undefined
 
   // invalid: erro de sistema puro → NADA persiste (ADR-0006).
   if (result.outcome === 'invalid') return { kind: 'invalid' }
@@ -281,6 +283,8 @@ export async function regenerateRecipe(
         existingSessionId: session.id,
         promptStamp,
         quota: quotaGate,
+        // #463: cost_usd snapshot (impossible também é episódio de criação com linha em generation).
+        usage,
       })
     } catch (err) {
       // #446: corrida perdida na recontagem atômica ⇒ nada persistiu. 429 limite_geracao (mesmo contrato).
@@ -308,6 +312,8 @@ export async function regenerateRecipe(
       // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
       lineageId: pred.lineageId,
       quota: quotaGate,
+      // #463: telemetria de custo da destilação → cost_usd snapshot no MESMO persist atômico (#446).
+      usage,
     })
   } catch (err) {
     // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NADA persistiu. 429.

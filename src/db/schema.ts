@@ -947,6 +947,15 @@ export const generation = pgTable(
     variantGroupId: uuid('variant_group_id'),
     variantLabel: text('variant_label'),
     variantChosen: boolean('variant_chosen'),
+    // ── Cost-tracking do TEXTO (#463) — NULLABLE/best-effort, espelha image_generation (#224) ────────
+    // A feature mais cara do app (Opus 4.8) passa a ser MEDIDA: os tokens do `message.usage` da Anthropic
+    // (input/output) + o `cost_usd` SNAPSHOT derivado da tabela de preço EM CÓDIGO (`computeTextCost`).
+    // TODAS NULLABLE e best-effort: linhas pré-#463 e gerações sem telemetria do provedor ficam nulas
+    // (não invalidam nada). Gravar o custo (não recomputar) congela o que cada geração custou mesmo
+    // quando os preços do provedor mudam. `cost_usd` é numeric → trafega string|null (precisão exata).
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

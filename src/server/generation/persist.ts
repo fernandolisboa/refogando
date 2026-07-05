@@ -12,6 +12,7 @@ import {
 import { SCHEMA_VERSION_RECEITA, type CreationMode, type LineageKind } from '@/domain/recipe'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import type { ClassifyResult } from '@/domain/generation'
+import { computeTextCost, type TextUsage } from '@/domain/text-cost'
 import type { Strength, PromptStamp } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { conciliarTempoPreparo } from '@/domain/tempo'
@@ -125,6 +126,11 @@ export type PersistGenerationInput = {
   // reconta os 2 slots ANTES, então cada persist vai com `quota` AUSENTE aqui). Ausente ⇒ abre a própria
   // tx (todos os demais callers) e roda o gate `quota` internamente.
   tx?: PersistTx
+  // #463: telemetria de custo (input/output tokens) da chamada que produziu esta geração, lida pela borda
+  // de `out.usage` (o seam RealClaudeClient a anexa). Deriva o `cost_usd` SNAPSHOT via `computeTextCost`
+  // e grava input_tokens/output_tokens/cost_usd na linha `generation`. AUSENTE (FakeClaudeClient / callers
+  // legados / telemetria indisponível) ⇒ undefined ⇒ tudo NULL (best-effort honesto, não finge custo 0).
+  usage?: TextUsage
 }
 
 export type PersistGenerationResult = {
@@ -206,7 +212,17 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel, quota, tx: providedTx } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel, quota, tx: providedTx, usage } = input
+
+  // #463: custo SNAPSHOT da tabela de preço EM CÓDIGO (puro). usage ausente OU modelo fora da tabela ⇒
+  // null (honesto — não finge 0). numeric → string|null no insert (precisão exata, espelha image_generation).
+  const costUsd = computeTextCost(usage, model)
+  // Colunas de custo compartilhadas pelos DOIS caminhos (impossible e sucesso) — nascem NULL sem telemetria.
+  const costCols = {
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    costUsd: costUsd != null ? costUsd.toString() : null,
+  }
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -266,6 +282,8 @@ export async function persistGeneration(
           // #423: agrupamento/rótulo da variação. AUSENTES no single ⇒ undefined ⇒ NULL.
           variantGroupId,
           variantLabel,
+          // #463: tokens + cost_usd snapshot (best-effort; NULL sem telemetria).
+          ...costCols,
         })
         .returning({ id: generation.id })
       return {
@@ -385,6 +403,8 @@ export async function persistGeneration(
         // `variant_chosen` NASCE NULL (a rota de escolha o marca, server-authoritative por owner).
         variantGroupId,
         variantLabel,
+        // #463: tokens + cost_usd snapshot (best-effort; NULL sem telemetria).
+        ...costCols,
       })
       .returning({ id: generation.id })
 

@@ -444,6 +444,8 @@ export async function POST(req: Request): Promise<Response> {
             // #446: MESMA tx das 2 variações (o gate acima já cobriu os 2 slots — SEM quota por-variação,
             // senão a 2ª recontaria a 1ª e se auto-barraria). persistGeneration grava NESTA tx.
             tx,
+            // #463: usage do LOTE (presente só na 1ª variação; a 2ª fica NULL — não dobra o custo na soma).
+            usage: vr.usage,
           })
           if (p?.recipeId) {
             out.push({
@@ -503,6 +505,8 @@ export async function POST(req: Request): Promise<Response> {
     axes,
   })
   const result = classify(out)
+  // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd snapshot.
+  const usage = out.kind === 'object' ? out.usage : undefined
 
   // Erro de sistema puro: NÃO persiste nada (sem creation_session/generation/recipe/briefing).
   if (result.outcome === 'invalid') {
@@ -520,7 +524,7 @@ export async function POST(req: Request): Promise<Response> {
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.
     try {
-      await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp, quota: quotaGate })
+      await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp, quota: quotaGate, usage })
     } catch (err) {
       // #446: corrida perdida na recontagem atômica ⇒ nada persistiu. 429 limite_geracao (mesmo contrato).
       if (err instanceof QuotaExceededError) {
@@ -551,6 +555,8 @@ export async function POST(req: Request): Promise<Response> {
       freeText,
       promptStamp,
       quota: quotaGate,
+      // #463: cost_usd snapshot no MESMO persist atômico (#446).
+      usage,
     })
   } catch (err) {
     // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NADA persistiu. 429.
