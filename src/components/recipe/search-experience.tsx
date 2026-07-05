@@ -19,7 +19,7 @@
  * Estados tratados (impeccable): repouso (feed seeded, sem chamar a Busca — espelha o early-return do
  * handler), carregando, erro+retry, vazio, sugestões.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
@@ -65,6 +65,7 @@ export function SearchExperience({
   home = false,
   initialFeed = [],
   initialNextCursor = null,
+  highlight = null,
 }: {
   /**
    * #236: montada como a HOME-Descoberta? `true` ⇒ o REPOUSO (sem critério) mostra o feed SEEDADO
@@ -79,6 +80,13 @@ export function SearchExperience({
   initialFeed?: SearchResult[]
   /** #236: cursor da 2ª página do feed seeded (null = a 1ª já é o fim). */
   initialNextCursor?: string | null
+  /**
+   * #457: bloco "Receita da semana" — JSX já montado pelo Server Component pai (`page.tsx`), que
+   * fez a leitura DB-direta/anônima do slot editorial. Renderizado SÓ no REPOUSO (mesmo branch do
+   * `<DiscoveryFeed>`, ANTES dele) — nunca aparece no estado REFINADO (busca ativa), espelhando o
+   * feed seeded. `null` (ausente/catálogo vazio) ⇒ nada renderiza, sem regressão pra quem não é home.
+   */
+  highlight?: ReactNode
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.busca
@@ -602,7 +610,11 @@ export function SearchExperience({
           {status === 'idle' &&
             data === null &&
             (home ? (
-              <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+              <>
+                {/* #457: "Receita da semana" — SÓ no repouso, ACIMA do feed. */}
+                {highlight}
+                <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+              </>
             ) : (
               <p className="text-muted">{dicaInicial}</p>
             ))}

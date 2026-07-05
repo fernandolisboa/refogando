@@ -38,6 +38,11 @@ import {
   parseSocialLinksConfig,
   type SocialLinksConfig,
 } from '@/domain/social-links-config'
+import {
+  DEFAULT_RECIPE_OF_WEEK_CONFIG,
+  parseRecipeOfWeekConfig,
+  type RecipeOfWeekConfig,
+} from '@/domain/recipe-of-week-config'
 
 /**
  * Leitura do singleton `app_config` (issues #5/#134) — fonte ÚNICA da config de app, usada tanto pelo
@@ -70,6 +75,8 @@ export type AppConfig = {
   popularity: PopularityConfig
   // #451: links de redes sociais do site (footer), editáveis pelo admin sem deploy.
   socialLinks: SocialLinksConfig
+  // #457: "Receita da semana" — slot editorial da home. `recipeId: null` ⇒ fallback por Popularidade.
+  recipeOfWeek: RecipeOfWeekConfig
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
@@ -85,6 +92,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
       popularity: DEFAULT_POPULARITY_CONFIG,
       socialLinks: DEFAULT_SOCIAL_LINKS_CONFIG,
+      recipeOfWeek: DEFAULT_RECIPE_OF_WEEK_CONFIG,
     }
   }
   // #368: re-valida na leitura — jsonb legado/editado à mão com lixo (peso negativo, m<=0, Infinity
@@ -97,6 +105,9 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   // #451: re-valida na leitura — linha legada/editada à mão com lixo (URL insegura, plataforma
   // desconhecida, duplicada) cai em [] (fail-safe), nunca vaza um link inválido pro footer.
   const parsedSocial = parseSocialLinksConfig(row.socialLinks)
+  // #457: re-valida na leitura — jsonb legado/editado à mão com `recipeId` malformado cai no DEFAULT
+  // (`null` ⇒ fallback de Popularidade), nunca propaga um id de forma inválida pro loader do slot.
+  const parsedRecipeOfWeek = parseRecipeOfWeekConfig(row.recipeOfWeekConfig)
   return {
     defaultModel: row.defaultModel,
     imageGen: {
@@ -124,6 +135,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
     },
     popularity: parsedPopularity.ok ? parsedPopularity.value : DEFAULT_POPULARITY_CONFIG,
     socialLinks: parsedSocial.ok ? parsedSocial.value : DEFAULT_SOCIAL_LINKS_CONFIG,
+    recipeOfWeek: parsedRecipeOfWeek.ok ? parsedRecipeOfWeek.value : DEFAULT_RECIPE_OF_WEEK_CONFIG,
   }
 }
 
@@ -155,4 +167,9 @@ export async function loadWebSearchConfig(db: Database): Promise<WebSearchConfig
 /** Atalho: só os links de redes sociais do site (#451) — usado pelo layout p/ threadar ao footer. */
 export async function loadSocialLinksConfig(db: Database): Promise<SocialLinksConfig> {
   return (await loadAppConfig(db)).socialLinks
+}
+
+/** Atalho: só a config da "Receita da semana" (#457) — usado pelo loader do slot editorial da home. */
+export async function loadRecipeOfWeekConfig(db: Database): Promise<RecipeOfWeekConfig> {
+  return (await loadAppConfig(db)).recipeOfWeek
 }

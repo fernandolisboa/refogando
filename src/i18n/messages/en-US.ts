@@ -202,6 +202,13 @@ export const enUS: Messages = {
     carregarMais: 'Load more',
     fim: "You've reached the end.",
   },
+  // #457: "Recipe of the week" editorial slot — above the resting feed on the home. Chosen by the
+  // Curator or, absent a choice, the most popular of the approved catalog (mechanical fallback).
+  // The item itself reuses `RecipeResultItem` (same card as the feed) + `busca.selo*`/`porAutor`/etc.
+  receitaDaSemana: {
+    titulo: 'Recipe of the week',
+    subtitulo: 'A catalog highlight, chosen by the curators.',
+  },
   // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
   // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
   // The empty state is cause-NEUTRAL (fires for "follows nobody" AND "followees have no public
@@ -1103,6 +1110,26 @@ export const enUS: Messages = {
     catalogoAvisoTextoLabel: 'Disclosure text',
     catalogoAvisoTextoAjuda: 'Phrase shown on catalog recipes when the disclosure is on.',
     catalogoAvisoErroConfig: 'Invalid configuration. The disclosure text cannot be empty.',
+    // #457: "Recipe of the week" — editorial home slot. The Curator searches by title (restricted
+    // to the approved catalog) and picks one; with no pick, the home falls back to the automatic
+    // Popularity highlight.
+    receitaSemanaTitulo: 'Recipe of the week',
+    receitaSemanaDescricao:
+      "Pick a catalog recipe to feature on the home this week. With no pick, the home automatically shows the catalog's most popular recipe.",
+    receitaSemanaAtualLabel: 'Current pick',
+    receitaSemanaAtualVazio: 'None — the home is using the automatic popularity highlight.',
+    receitaSemanaLimpar: 'Clear pick',
+    receitaSemanaLimpando: 'Clearing…',
+    receitaSemanaBuscaLabel: 'Search catalog recipe',
+    receitaSemanaBuscaPlaceholder: 'Recipe title',
+    receitaSemanaBuscaCarregando: 'Searching…',
+    receitaSemanaBuscaVazio: 'No catalog recipe found with that title.',
+    receitaSemanaBuscaContagem: '{n} result(s)',
+    receitaSemanaBuscaResultados: 'Search results',
+    receitaSemanaSelecionada: 'Selected',
+    receitaSemanaTrocar: 'Change',
+    receitaSemanaSalvo: 'Recipe of the week updated.',
+    receitaSemanaErroReceita: 'That recipe is not (or is no longer) part of the approved catalog.',
     // Semantic-search embeddings backfill (#119) — batched, resumable recompute.
     backfillTitulo: 'Semantic-search embeddings',
     backfillDescricao:

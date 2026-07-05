@@ -10,6 +10,11 @@ import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-confi
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
 import { parsePopularityConfig, type PopularityConfig } from '@/domain/popularity'
 import { parseSocialLinksConfig, type SocialLinksConfig } from '@/domain/social-links-config'
+import {
+  parseRecipeOfWeekConfig,
+  type RecipeOfWeekConfig,
+} from '@/domain/recipe-of-week-config'
+import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -28,11 +33,16 @@ import { parseSocialLinksConfig, type SocialLinksConfig } from '@/domain/social-
  *  - `catalogDisclosure { enabled, text }` (#237, SEO #187) — aviso OPCIONAL "em colaboração entre
  *    curadoria e IA" exibido SÓ em receitas `origin=catalog` quando ligado. CORTESIA editorial — NUNCA
  *    suprime os selos obrigatórios de proveniência (`ai_*` / imagem `ai_generated`). Texto editável.
+ *  - `recipeOfWeek { recipeId }` (#457) — a Receita escolhida pelo Curador pro slot editorial
+ *    "Receita da semana" da home (aba Curadoria, `/admin/catalog`). `recipeId: null` ⇒ ninguém
+ *    escolheu, a home cai no fallback automático por Popularidade. `recipeId` não-null é VALIDADO
+ *    contra o catálogo aprovado ATUAL (`isCatalogRecipeApproved`) — escolher uma receita que não é
+ *    catálogo/aprovado ⇒ 400 `receita_invalida` (não persiste um id que a leitura descartaria depois).
  *
  * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
- * `catalogDisclosure` (ao menos um); valida cada campo PRESENTE; faz upsert só dos campos enviados
- * (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400. Erro de DB → `erro_interno` 500
- * sem stack (consistente com /api/admin/roles).
+ * `catalogDisclosure` E/OU `recipeOfWeek` (ao menos um); valida cada campo PRESENTE; faz upsert só
+ * dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400. Erro de DB
+ * → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
 const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
 
@@ -57,6 +67,7 @@ export async function PUT(req: Request): Promise<Response> {
     catalogDisclosure?: unknown
     popularity?: unknown
     socialLinks?: unknown
+    recipeOfWeek?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -75,6 +86,7 @@ export async function PUT(req: Request): Promise<Response> {
     catalogDisclosureText: string
     popularityConfig: PopularityConfig
     socialLinks: SocialLinksConfig
+    recipeOfWeekConfig: RecipeOfWeekConfig
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -162,6 +174,22 @@ export async function PUT(req: Request): Promise<Response> {
     const parsed = parseSocialLinksConfig(body.socialLinks)
     if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.socialLinks = parsed.value
+  }
+
+  // #457: "Receita da semana" — `{ recipeId }`. Forma inválida (nem uuid nem null) ⇒ 400
+  // config_invalida. `recipeId` presente E bem-formado é AINDA validado contra o catálogo aprovado
+  // ATUAL (`isCatalogRecipeApproved`) — escolher algo que não é catálogo/aprovado ⇒ 400
+  // receita_invalida (o Curador recebe um motivo claro, em vez de um id persistido em vão que a
+  // leitura do slot descartaria depois). `recipeId: null` (limpar a escolha) nunca precisa dessa
+  // checagem — sempre válido (volta pro fallback de Popularidade).
+  if (body.recipeOfWeek !== undefined) {
+    const parsed = parseRecipeOfWeekConfig(body.recipeOfWeek)
+    if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    if (parsed.value.recipeId !== null) {
+      const approved = await isCatalogRecipeApproved(getDb(), parsed.value.recipeId)
+      if (!approved) return Response.json({ error: 'receita_invalida' }, { status: 400 })
+    }
+    set.recipeOfWeekConfig = parsed.value
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).
