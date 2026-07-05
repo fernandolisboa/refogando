@@ -26,6 +26,11 @@ import { projectResult, type SearchHitRow, type SearchResult } from '@/domain/re
  *
  * Devolve `null` só quando o catálogo aprovado está VAZIO (nenhuma receita elegível) — a home
  * simplesmente omite o slot nesse caso (não é erro).
+ *
+ * SEM dedupe com o feed (decisão deliberada): a receita destacada aqui PODE reaparecer no
+ * `loadDiscoveryFeed` logo abaixo. Os dois são superfícies independentes (o slot é editorial/fixo,
+ * o feed é cronológico) e o custo de coordenar a exclusão entre duas queries paginadas por cursor
+ * não compensa o benefício de esconder uma repetição — o selo/manchete já distingue os contextos.
  */
 export async function loadRecipeOfTheWeek(
   db: Database,

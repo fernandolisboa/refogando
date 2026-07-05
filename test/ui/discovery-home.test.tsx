@@ -66,7 +66,13 @@ function feedItem(recipeId: string, displayedTitle: string, slug?: string): Sear
   }
 }
 
-function renderHome(over: { initialFeed?: SearchResult[]; initialNextCursor?: string | null } = {}) {
+function renderHome(
+  over: {
+    initialFeed?: SearchResult[]
+    initialNextCursor?: string | null
+    highlight?: ReactNode
+  } = {},
+) {
   return render(
     <LocaleProvider initialLocale="pt-BR">
       <HomeSearchProvider>
@@ -75,6 +81,7 @@ function renderHome(over: { initialFeed?: SearchResult[]; initialNextCursor?: st
           home
           initialFeed={over.initialFeed ?? []}
           initialNextCursor={over.initialNextCursor ?? null}
+          highlight={over.highlight}
         />
       </HomeSearchProvider>
     </LocaleProvider>,
@@ -173,5 +180,28 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     const searchCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/search'))
     expect(searchCalls.length).toBe(0)
     expect(screen.getByText('Feijoada Seeded')).toBeInTheDocument()
+  })
+
+  // #457: "Receita da semana" — o slot editorial (`highlight`) é server-montado e injetado como
+  // prop; deve aparecer SÓ no repouso (acima do feed) e SUMIR assim que a Busca refina a superfície
+  // (senão vazaria pro estado noindex e mudaria o conteúdo indexável ao buscar).
+  it('REPOUSO: o slot highlight aparece acima do feed; some quando a Busca assume a superfície', async () => {
+    stubFetchOk({ minhas: [], catalogo: [feedItem('r9', 'Resultado da Busca')], comunidade: [] })
+    const user = userEvent.setup()
+    renderHome({
+      initialFeed: [feedItem('r1', 'Feijoada Seeded')],
+      initialNextCursor: null,
+      highlight: <div>Receita Da Semana Destaque</div>,
+    })
+
+    // Repouso: o slot editorial está visível junto do feed seeded.
+    expect(screen.getByText('Receita Da Semana Destaque')).toBeInTheDocument()
+    expect(screen.getByText('Feijoada Seeded')).toBeInTheDocument()
+
+    // Ao buscar, a Busca assume a superfície — o slot (e o feed de repouso) somem.
+    await user.type(screen.getByRole('searchbox'), 'bolo')
+    await screen.findByText('Resultado da Busca')
+    expect(screen.queryByText('Receita Da Semana Destaque')).not.toBeInTheDocument()
+    expect(screen.queryByText('Feijoada Seeded')).not.toBeInTheDocument()
   })
 })

@@ -19,13 +19,13 @@
  * primariamente é o Curador (escolha explícita), nunca o dono via popularidade.
  */
 
+import { isUuid } from '@/domain/uuid'
+
 /** Config do slot: o id da Receita escolhida (uuid) ou `null` (nenhuma escolha ⇒ fallback). */
 export type RecipeOfWeekConfig = { recipeId: string | null }
 
 /** Default: SEM escolha — a home cai no fallback de Popularidade até o Curador escolher. */
 export const DEFAULT_RECIPE_OF_WEEK_CONFIG: RecipeOfWeekConfig = { recipeId: null }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type RecipeOfWeekConfigParse = { ok: true; value: RecipeOfWeekConfig } | { ok: false }
 
@@ -40,6 +40,6 @@ export function parseRecipeOfWeekConfig(raw: unknown): RecipeOfWeekConfigParse {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false }
   const obj = raw as { recipeId?: unknown }
   if (obj.recipeId === null) return { ok: true, value: { recipeId: null } }
-  if (typeof obj.recipeId !== 'string' || !UUID_RE.test(obj.recipeId)) return { ok: false }
+  if (typeof obj.recipeId !== 'string' || !isUuid(obj.recipeId)) return { ok: false }
   return { ok: true, value: { recipeId: obj.recipeId } }
 }
