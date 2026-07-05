@@ -63,6 +63,31 @@ function buildAuth() {
       // aqui (não só por default implícito) para travar a invariante.
       cookieCache: { enabled: false },
     },
+    // Rate limit PERSISTENTE (issue #449, SEC). O default do Better Auth é enabled em
+    // produção mas com storage:'memory' — em Vercel serverless cada instância tem memória
+    // própria e o estado zera no cold start, tornando o teto contornável com requisições
+    // paralelas/instâncias frescas. storage:'database' compartilha o contador entre todas
+    // as instâncias via a tabela `rate_limit` (schema.rateLimit). O adapter drizzle já está
+    // montado. customRules endurece os caminhos sensíveis de autenticação: 5 tentativas /
+    // 60s por IP (mais apertado que o default 100/60s), cobrindo login, cadastro e reset de
+    // senha — brute-force de senha inviável mesmo com o scrypt. Wildcards verificados contra
+    // o wildcardMatch do Better Auth (`/sign-in/*` casa /sign-in/email e /sign-in/social).
+    rateLimit: {
+      // Ligado em prod E dev; DESLIGADO em teste — o harness minta muitas sessões em
+      // sequência e um contador compartilhado o derrubaria com falsos 429.
+      enabled: process.env.NODE_ENV !== 'test',
+      window: 60,
+      max: 100,
+      storage: 'database',
+      customRules: {
+        '/sign-in/*': { window: 60, max: 5 },
+        '/sign-up/*': { window: 60, max: 5 },
+        // Exatos: as rotas de reset não têm sub-segmento na submissão (o wildcard
+        // `/reset-password/*` NÃO casaria o POST `/reset-password`).
+        '/forget-password': { window: 60, max: 5 },
+        '/reset-password': { window: 60, max: 5 },
+      },
+    },
     emailAndPassword: { enabled: true }, // D3 — sem requireEmailVerification (sem infra de e-mail)
     socialProviders: hasGoogle
       ? { google: { clientId: googleId!, clientSecret: googleSecret! } }

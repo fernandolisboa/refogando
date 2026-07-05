@@ -6,6 +6,7 @@ import {
   uuid,
   text,
   integer,
+  bigint,
   smallint,
   numeric,
   boolean,
@@ -783,6 +784,29 @@ export const verification = pgTable('verification', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
+
+// ── Rate limit persistente (issue #449, SEC) ────────────────────────────────────
+//
+// Better Auth suporta rate-limit em auth routes, mas por default usa storage:'memory'.
+// Em Vercel serverless cada instância tem memória própria e o estado zera no cold start,
+// então o teto por janela é contornável com requisições paralelas / instâncias frescas.
+// Damos storage compartilhado ('database' em auth.ts) apontando para ESTA tabela, cujo
+// modelName default do Better Auth é `rateLimit` (o adapter drizzle resolve por
+// schema.rateLimit — o nome do export DEVE bater com o modelName). Campos exigidos pela
+// lib: id (PK), key (único), count (int), lastRequest (bigint, epoch ms). Como o adapter
+// roda com generateId:false global, o id é preenchido pelo default uuid do Postgres —
+// coerente com session/account/verification.
+export const rateLimit = pgTable(
+  'rate_limit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    key: text('key').notNull(),
+    count: integer('count').notNull(),
+    // epoch ms; Better Auth lê/escreve como number → mode:'number'.
+    lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+  },
+  (t) => [uniqueIndex('rate_limit_key_uq').on(t.key)],
+)
 
 // ── Config de aplicação (#5.AC2 — modelo default; #134 — geração de imagem) ─────
 //
