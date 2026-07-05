@@ -24,85 +24,25 @@
  *    TLS de https; proporcional aceitar o resíduo numa ferramenta admin-only manual (o importer aceita o
  *    mesmo). O veredito é booleano puro (não vaza topologia além do `fetched`, já contido pelo fechamento).
  */
-import { lookup } from 'node:dns/promises'
 import { parseImportedRecipe } from '@/domain/recipe-import-parse'
 import { jsonLdSignal, type ProbeReport } from '@/domain/web-search-probe'
-import { parseProbeUrl, isBlockedAddress } from '@/server/import/probe-url'
-import { IMPORT_USER_AGENT, MAX_HTML_BYTES, ROBOTS_UA_TOKEN, robotsAllows } from '@/server/import/web-fetch'
+import { parseProbeUrl } from '@/server/import/probe-url'
+import {
+  ROBOTS_UA_TOKEN,
+  robotsAllows,
+  fetchHardenedHtml,
+  hostnameOf,
+  isHostPublic,
+  type AddressLookup,
+} from '@/server/import/web-fetch'
+
+// `AddressLookup` mora em `web-fetch.ts` (compartilhado com o fetch endurecido do importer, #448);
+// re-exportado aqui p/ compat dos chamadores/testes que já o importavam do seam do probe.
+export type { AddressLookup }
 
 export interface RecipeProbe {
   /** Checa a `url` (JSON-LD + robots). Nunca lança — falhas viram `fetched:false`. */
   probe(url: string): Promise<ProbeReport>
-}
-
-/** Resolvedor DNS injetável (default `node:dns/promises.lookup`) — testes injetam endereços fixos. */
-export type AddressLookup = (hostname: string) => Promise<string[]>
-
-const PAGE_TIMEOUT_MS = 5000
-const MAX_REDIRECTS = 3
-
-const defaultLookup: AddressLookup = async (hostname) => {
-  const res = await lookup(hostname, { all: true })
-  return res.map((r) => r.address)
-}
-
-/** Hostname normalizado (lowercase, sem `[]`, sem ponto final) de uma URL, ou `null` se inválida. */
-function hostnameOf(url: string): string | null {
-  try {
-    let h = new URL(url).hostname.toLowerCase()
-    if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1)
-    if (h.endsWith('.')) h = h.slice(0, -1)
-    return h === '' ? null : h
-  } catch {
-    return null
-  }
-}
-
-/**
- * Lê o corpo da resposta com cap por streaming. No ESTOURO do cap, NÃO descarta tudo: trunca em
- * `MAX_HTML_BYTES` e devolve o prefixo — espelha o `RealRecipeImporter.import`, que faz `raw.slice(0,
- * MAX_HTML_BYTES)` e parseia assim mesmo (o JSON-LD vive no `<head>`, antes do corte), pra o veredito do
- * probe casar com o que a importação real faria. Só um ERRO de leitura no meio do stream (≠ estouro de
- * cap) ⇒ `null` (tratado como não-buscável).
- */
-async function readCappedHtml(res: Response): Promise<string | null> {
-  const body = res.body
-  if (!body) {
-    // Sem stream (alguns ambientes/mocks): cai no text() com corte (espelha o importer).
-    const raw = await res.text()
-    return raw.length > MAX_HTML_BYTES ? raw.slice(0, MAX_HTML_BYTES) : raw
-  }
-  const reader = body.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) {
-        const remaining = MAX_HTML_BYTES - total
-        if (value.byteLength >= remaining) {
-          // Estourou o cap: guarda só o prefixo até MAX_HTML_BYTES, cancela o resto e PARA (parseia o que
-          // tem — não retorna null). Casa o `raw.slice(0, MAX_HTML_BYTES)` do importer.
-          chunks.push(value.subarray(0, remaining))
-          total += remaining
-          await reader.cancel().catch(() => {})
-          break
-        }
-        total += value.byteLength
-        chunks.push(value)
-      }
-    }
-  } catch {
-    return null // erro de leitura no meio do stream (≠ estouro de cap) ⇒ não-buscável
-  }
-  const buf = new Uint8Array(total)
-  let off = 0
-  for (const c of chunks) {
-    buf.set(c, off)
-    off += c.byteLength
-  }
-  return new TextDecoder('utf-8', { fatal: false }).decode(buf)
 }
 
 /**
@@ -110,7 +50,7 @@ async function readCappedHtml(res: Response): Promise<string | null> {
  * `FakeRecipeProbe` ou mockam `fetch`/`lookup` para provar a FIAÇÃO. Qualquer erro vira `fetched:false`.
  */
 export class RealRecipeProbe implements RecipeProbe {
-  constructor(private readonly lookupFn: AddressLookup = defaultLookup) {}
+  constructor(private readonly lookupFn?: AddressLookup) {}
 
   async probe(url: string): Promise<ProbeReport> {
     // Re-valida a barreira de SSRF defensivamente (a rota já roda parseProbeUrl, mas o seam não confia
@@ -119,7 +59,7 @@ export class RealRecipeProbe implements RecipeProbe {
     // do GET do robots.txt). Origem inválida/privada ⇒ não-buscável, robots fica no fail-open (true).
     const parsed = parseProbeUrl(url)
     const host = parsed === null ? null : hostnameOf(parsed)
-    const originAllowed = host !== null && (await this.hostAllowed(host))
+    const originAllowed = host !== null && (await isHostPublic(host, this.lookupFn))
     if (parsed === null || !originAllowed) {
       return { fetched: false, jsonLd: 'absent', robotsAllowed: true }
     }
@@ -138,71 +78,11 @@ export class RealRecipeProbe implements RecipeProbe {
       return { fetched: false, jsonLd: 'absent', robotsAllowed: false }
     }
 
-    const page = await this.fetchPage(parsed)
+    // Fetch ENDURECIDO compartilhado (#448): follow LIMITADO re-validado por hop + DNS anti-rebind +
+    // streaming com corte + timeout. Antes vivia AQUI; foi consolidado em `web-fetch.ts` p/ o importer usar.
+    const page = await fetchHardenedHtml(parsed, this.lookupFn)
     if (!page) return { fetched: false, jsonLd: 'absent', robotsAllowed }
     return { fetched: true, jsonLd: jsonLdSignal(parseImportedRecipe(page.html, page.finalUrl)), robotsAllowed }
-  }
-
-  /** Resolve o host e rejeita se QUALQUER endereço for privado (defesa contra DNS-rebind). Erro ⇒ bloqueado. */
-  private async hostAllowed(host: string): Promise<boolean> {
-    try {
-      const addrs = await this.lookupFn(host)
-      if (addrs.length === 0) return false
-      return addrs.every((a) => !isBlockedAddress(a))
-    } catch {
-      return false
-    }
-  }
-
-  /**
-   * Busca a página com follow LIMITADO e re-validado por hop. Cada hop: re-valida a URL (parseProbeUrl) +
-   * resolve DNS (hostAllowed); `redirect:'manual'` para interceptar o `Location` e re-checá-lo. Non-2xx,
-   * excesso de hops, cap estourado ou qualquer erro ⇒ `null`. Nunca lança.
-   */
-  private async fetchPage(startUrl: string): Promise<{ html: string; finalUrl: string } | null> {
-    let currentUrl = parseProbeUrl(startUrl)
-    if (currentUrl === null) return null
-
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      const host = hostnameOf(currentUrl)
-      if (host === null) return null
-      if (!(await this.hostAllowed(host))) return null
-
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS)
-      try {
-        const res = await fetch(currentUrl, {
-          headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
-          redirect: 'manual',
-          signal: controller.signal,
-        })
-        if (res.status >= 300 && res.status < 400) {
-          const loc = res.headers.get('location')
-          if (!loc) return null
-          let resolved: string
-          try {
-            resolved = new URL(loc, currentUrl).toString()
-          } catch {
-            return null
-          }
-          const next = parseProbeUrl(resolved)
-          if (next === null) return null // redirect p/ host privado/esquema inválido ⇒ não-buscável
-          currentUrl = next
-          continue
-        }
-        if (!res.ok) return null
-        const declared = Number(res.headers.get('content-length'))
-        if (Number.isFinite(declared) && declared > MAX_HTML_BYTES) return null
-        const html = await readCappedHtml(res)
-        if (html === null) return null
-        return { html, finalUrl: currentUrl }
-      } catch {
-        return null
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-    return null // excesso de redirects
   }
 }
 

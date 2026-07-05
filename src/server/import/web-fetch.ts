@@ -1,15 +1,18 @@
 /**
  * Helpers de REDE compartilhados pela importação de receita (#165, #272) e pelo probe de saúde (#273).
  *
- * Extração de MENOR risco do `recipe-importer.ts`: as constantes de fetch + o fetch do robots.txt (que é
- * BYTE-IDÊNTICO entre importer e probe — mesmo UA, redirect:'manual', timeout curto, cap, FAIL-OPEN). O
- * fetch da PÁGINA NÃO é extraído: as políticas de redirect divergem (o importer segue `follow`; o probe,
- * que recebe URL admin-arbitrária, faz follow LIMITADO e re-valida cada hop contra a barreira de SSRF).
+ * Aloja: (1) constantes de fetch + o fetch do robots.txt (`robotsAllows`, BYTE-IDÊNTICO entre importer e
+ * probe); (2) o fetch ENDURECIDO da PÁGINA (`fetchHardenedHtml`), a MESMA defesa de SSRF antes usada só
+ * pelo probe — agora compartilhada com o importer (#448). Ambos passam pela MESMA barreira: DNS resolvido
+ * ANTES de conectar (rejeita privado ⇒ anti-rebind), `redirect:'manual'` com follow LIMITADO (≤3 hops)
+ * RE-VALIDADO por hop, streaming com corte em `MAX_HTML_BYTES` e `AbortSignal` de timeout.
  *
  * `robotsAllows` é FAIL-OPEN deliberado (≠ o fail-CLOSED da allowlist): robots indisponível ⇒ permitido.
  * Só uma proibição EXPLÍCITA bloqueia. NÃO é exercitado por teste real (rede) — os testes injetam `fetch`.
  */
+import { lookup } from 'node:dns/promises'
 import { isPathAllowedByRobots } from '@/domain/robots-txt'
+import { parseProbeUrl, isBlockedAddress } from '@/server/import/probe-url'
 
 /** User-Agent explícito: alguns sites bloqueiam clientes sem UA. Identifica o bot honestamente. */
 export const IMPORT_USER_AGENT = 'RefogandoBot/1.0 (+recipe-import)'
@@ -62,4 +65,165 @@ export async function robotsAllows(url: string, uaToken: string = ROBOTS_UA_TOKE
   } finally {
     clearTimeout(timer)
   }
+}
+
+// ── Fetch ENDURECIDO da página (SSRF pós-redirect / DNS-rebind / DoS) — #448, #273 ──────────────────
+
+/** Timeout por hop do fetch da página — abortado via `AbortSignal`. */
+export const PAGE_TIMEOUT_MS = 5000
+
+/** Teto de redirects seguidos: cada `Location` é RE-VALIDADO (parseProbeUrl + DNS) antes do próximo hop. */
+export const MAX_REDIRECTS = 3
+
+/** Resolvedor DNS injetável (default `node:dns/promises.lookup`, `all:true`) — testes injetam endereços fixos. */
+export type AddressLookup = (hostname: string) => Promise<string[]>
+
+/** Página buscada com sucesso: HTML (possivelmente truncado no cap) + a URL FINAL (pós-redirects), p/ o parse. */
+export interface FetchedPage {
+  html: string
+  finalUrl: string
+}
+
+const defaultLookup: AddressLookup = async (hostname) => {
+  const res = await lookup(hostname, { all: true })
+  return res.map((r) => r.address)
+}
+
+/** Hostname normalizado (lowercase, sem `[]`, sem ponto final) de uma URL, ou `null` se inválida. */
+export function hostnameOf(url: string): string | null {
+  try {
+    let h = new URL(url).hostname.toLowerCase()
+    if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1)
+    if (h.endsWith('.')) h = h.slice(0, -1)
+    return h === '' ? null : h
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `true` se o `host` resolve por DNS e NENHUM endereço é privado/loopback/link-local (defesa contra
+ * DNS-rebind). Zero endereços ou erro de resolução ⇒ `false` (bloqueado). Reusado pelo probe na checagem
+ * de ORIGEM antes do robots.txt.
+ */
+export async function isHostPublic(host: string, lookupFn: AddressLookup = defaultLookup): Promise<boolean> {
+  try {
+    const addrs = await lookupFn(host)
+    if (addrs.length === 0) return false
+    return addrs.every((a) => !isBlockedAddress(a))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Lê o corpo da resposta com cap por streaming. No ESTOURO do cap, NÃO descarta tudo: trunca em
+ * `MAX_HTML_BYTES` e devolve o prefixo — o JSON-LD vive no `<head>`, antes do corte, então o parse casa.
+ * Só um ERRO de leitura no meio do stream (≠ estouro de cap) ⇒ `null` (tratado como não-buscável).
+ */
+async function readCappedHtml(res: Response): Promise<string | null> {
+  const body = res.body
+  if (!body) {
+    // Sem stream (alguns ambientes/mocks): cai no text() com corte.
+    const raw = await res.text()
+    return raw.length > MAX_HTML_BYTES ? raw.slice(0, MAX_HTML_BYTES) : raw
+  }
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        const remaining = MAX_HTML_BYTES - total
+        if (value.byteLength >= remaining) {
+          // Estourou o cap: guarda só o prefixo até MAX_HTML_BYTES, cancela o resto e PARA (parseia o que
+          // tem — não retorna null).
+          chunks.push(value.subarray(0, remaining))
+          total += remaining
+          await reader.cancel().catch(() => {})
+          break
+        }
+        total += value.byteLength
+        chunks.push(value)
+      }
+    }
+  } catch {
+    return null // erro de leitura no meio do stream (≠ estouro de cap) ⇒ não-buscável
+  }
+  const buf = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) {
+    buf.set(c, off)
+    off += c.byteLength
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(buf)
+}
+
+/**
+ * Busca a página de `startUrl` com a defesa ENDURECIDA de SSRF (#448) — a MESMA barreira antes exclusiva
+ * do probe (#273), agora compartilhada com o importer. Por hop: (1) re-valida a URL (`parseProbeUrl`:
+ * só http(s), rejeita IP-literal privado/hostname interno, zera userinfo); (2) resolve o DNS e rejeita se
+ * QUALQUER endereço for privado (`isHostPublic` — anti-rebind); (3) `redirect:'manual'` p/ interceptar o
+ * `Location` e re-checá-lo, seguindo no MÁXIMO `MAX_REDIRECTS` hops; (4) `AbortSignal` de timeout; (5)
+ * corpo lido por streaming com corte em `MAX_HTML_BYTES` (Content-Length declarado > cap ⇒ recusa direto).
+ *
+ * Non-2xx, redirect sem/para host inválido-ou-privado, excesso de hops, erro de leitura ou QUALQUER
+ * exceção (timeout/DNS/TLS/rede) ⇒ `null`. NUNCA lança — o chamador mapeia `null` ao seu erro tratado.
+ *
+ * `isHopAllowed` (opcional) é RE-CHECADO em CADA hop — inclusive o alvo de um redirect. O importer passa
+ * a checagem de allowlist (`isUrlAllowed`) por aqui: assim um domínio curado que devolva 302 p/ um host
+ * público FORA da allowlist é recusado (fecha o open-redirect → host arbitrário, #448/#164). O probe NÃO
+ * passa nada (é admin-arbitrário, PRÉ-allowlist — sua barreira é só SSRF/DNS).
+ */
+export async function fetchHardenedHtml(
+  startUrl: string,
+  lookupFn: AddressLookup = defaultLookup,
+  isHopAllowed?: (url: string) => boolean,
+): Promise<FetchedPage | null> {
+  let currentUrl = parseProbeUrl(startUrl)
+  if (currentUrl === null) return null
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (isHopAllowed && !isHopAllowed(currentUrl)) return null // fora da allowlist (origem OU alvo de redirect)
+    const host = hostnameOf(currentUrl)
+    if (host === null) return null
+    if (!(await isHostPublic(host, lookupFn))) return null
+
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS)
+    try {
+      const res = await fetch(currentUrl, {
+        headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+        redirect: 'manual',
+        signal: controller.signal,
+      })
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location')
+        if (!loc) return null
+        let resolved: string
+        try {
+          resolved = new URL(loc, currentUrl).toString()
+        } catch {
+          return null
+        }
+        const next = parseProbeUrl(resolved)
+        if (next === null) return null // redirect p/ host privado/esquema inválido ⇒ não-buscável
+        currentUrl = next
+        continue
+      }
+      if (!res.ok) return null
+      const declared = Number(res.headers.get('content-length'))
+      if (Number.isFinite(declared) && declared > MAX_HTML_BYTES) return null
+      const html = await readCappedHtml(res)
+      if (html === null) return null
+      return { html, finalUrl: currentUrl }
+    } catch {
+      return null
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return null // excesso de redirects
 }
