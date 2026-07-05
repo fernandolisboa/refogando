@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import manifest from '@/app/manifest'
 
@@ -39,6 +41,17 @@ describe('manifest — installability + landmine de marca', () => {
     expect(has('512x512', 'maskable')).toBe(true)
     for (const icon of icons) {
       expect(icon.type).toBe('image/png')
+    }
+  })
+
+  it('os arquivos de ícone referenciados existem de fato em public/ (não só o manifest aponta pra eles)', () => {
+    const icons = m.icons ?? []
+    expect(icons.length).toBeGreaterThan(0)
+    for (const icon of icons) {
+      const src = typeof icon.src === 'string' ? icon.src : ''
+      expect(src).toMatch(/^\/icon-(192|512)\.png$/)
+      const abs = path.join(process.cwd(), 'public', src)
+      expect(existsSync(abs)).toBe(true)
     }
   })
 })
