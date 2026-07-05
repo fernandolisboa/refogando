@@ -27,6 +27,7 @@ import {
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+import { QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * Modo CONVERSA — streaming + destilação (issue #12, ADR-0009/0010).
@@ -89,6 +90,9 @@ type TerminalFrame =
     }
   | { type: 'impossible'; advisory: string | null }
   | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
+  // #446: cota estourada detectada ATOMICAMENTE na destilação (corrida perdida sob a advisory lock,
+  // DEPOIS do stream abrir — headers já enviados, então in-band, não 429 HTTP). Carrega o countdown.
+  | { type: 'error'; error: 'limite_geracao'; retryAfterMs: number }
 
 const encoder = new TextEncoder()
 
@@ -204,6 +208,9 @@ export async function POST(req: Request): Promise<Response> {
   // (admin/papel ilimitado) pula a contagem. Espelha o gate de POST /api/generations.
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). A
+  // ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration na
+  // destilação (via `quotaGate` abaixo) — se a corrida for perdida lá, sai um frame terminal in-band.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
@@ -215,6 +222,9 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
+  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
+  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
+  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap } : undefined
 
   // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
   // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também
@@ -320,6 +330,7 @@ export async function POST(req: Request): Promise<Response> {
             model,
             existingSessionId: sessionId,
             promptStamp,
+            quota: quotaGate,
           })
           terminal = { type: 'impossible', advisory: result.advisory }
         } else {
@@ -333,6 +344,7 @@ export async function POST(req: Request): Promise<Response> {
             model,
             existingSessionId: sessionId,
             promptStamp,
+            quota: quotaGate,
           })
           // #119: embeda a Receita destilada (best-effort, ASSISTIVO) p/ a Busca semântica. Falha
           // (sem key / 429 / rede) NÃO derruba o turno — a Receita já está persistida; a Busca degrada
@@ -370,6 +382,16 @@ export async function POST(req: Request): Promise<Response> {
         // NÃO há auto-retry (fora de escopo — o cliente decide se reenvia o turno).
         if (pgCode(err) === '23505') {
           controller.enqueue(ndjsonLine({ type: 'error', error: 'conflito_concorrente' }))
+          controller.close()
+          return
+        }
+        // #446: cota estourada ATOMICAMENTE na destilação (corrida perdida sob a advisory lock, após o
+        // stream abrir). Frame terminal limpo in-band (headers já enviados — não dá pra 429 HTTP), com
+        // o countdown. NADA persistiu (a tx reverteu). A Session/Transcrição do turno já ficaram gravadas.
+        if (err instanceof QuotaExceededError) {
+          controller.enqueue(
+            ndjsonLine({ type: 'error', error: 'limite_geracao', retryAfterMs: err.retryAfterMs }),
+          )
           controller.close()
           return
         }

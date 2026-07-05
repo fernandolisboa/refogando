@@ -15,6 +15,7 @@ import type { ClassifyResult } from '@/domain/generation'
 import type { Strength, PromptStamp } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { conciliarTempoPreparo } from '@/domain/tempo'
+import { assertRecipeGenSlotInTx } from '@/server/quota/atomic'
 
 /**
  * Persistência transacional da geração (issue #8, §6).
@@ -110,6 +111,12 @@ export type PersistGenerationInput = {
   // geração single (legado) ⇒ undefined ⇒ NULL. `variant_chosen` NASCE NULL (a rota de escolha o marca).
   variantGroupId?: string
   variantLabel?: string
+  // #446 (TOCTOU do teto): gate ATÔMICO de cota de geração de RECEITA. Quando presente, a PRIMEIRA
+  // operação da transação de persistência toma o advisory lock do usuário, RECONTA as `generation` na
+  // janela 24h e DECIDE — estourou ⇒ LANÇA QuotaExceededError e a tx REVERTE (nada persiste), que o
+  // caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞ / callers legados sem teto). O pré-check da rota
+  // continua como otimização barata (early-reject sem tocar o Claude); ESTE é a enforcement real.
+  quota?: { userId: string; cap: number }
 }
 
 export type PersistGenerationResult = {
@@ -191,7 +198,7 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel, quota } = input
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -206,6 +213,10 @@ export async function persistGeneration(
 
   if (result.outcome === 'impossible') {
     return getDb().transaction(async (tx) => {
+      // #446: gate ATÔMICO de cota — PRIMEIRA op da tx (advisory lock + recontagem + decisão). Estourou
+      // ⇒ LANÇA QuotaExceededError e a tx reverte (nenhuma generation nasce). impossible TAMBÉM conta pro
+      // teto (o custo do Claude já foi gasto — mesma semântica de loadRecentRecipeGenAt).
+      if (quota) await assertRecipeGenSlotInTx(tx, quota)
       // Briefing ANTES da creation_session (FK briefing_id). O pedido sobrevive à
       // entrega impossible (AC4).
       const briefingId = pedido ? await insertBriefing(tx, pedido) : null
@@ -262,6 +273,10 @@ export async function persistGeneration(
   // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
   const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
   return getDb().transaction(async (tx) => {
+    // #446: gate ATÔMICO de cota — PRIMEIRA op da tx (advisory lock + recontagem + decisão), ANTES de
+    // criar a Receita. Estourou ⇒ LANÇA QuotaExceededError e a tx inteira reverte (nem Receita, nem
+    // generation nascem). Fecha a corrida TOCTOU: só `cap - contagem` inserts passam sob a lock.
+    if (quota) await assertRecipeGenSlotInTx(tx, quota)
     const [createdRecipe] = await tx
       .insert(recipe)
       .values({

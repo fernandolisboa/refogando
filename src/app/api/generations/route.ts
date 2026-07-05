@@ -45,6 +45,7 @@ import {
   type RecipeVariantConfig,
 } from '@/domain/recipe-variant-config'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+import { QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * Helper PURO da borda (#423, Regra C do contrato de eixos ADR-0029): resolve o eixo `variacaoDivergente`
@@ -325,10 +326,14 @@ export async function POST(req: Request): Promise<Response> {
   // inWindow+2 <= cap). Estourou no variar2 ⇒ chave DISTINTA (a UI explica que foram pedidas 2).
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  // #423: "gerar 2" custa 2 SLOTS ⇒ cap efetivo `cap-1` (permitido sob cap-1 ⟺ cabem 2).
+  const effectiveCap = variar2 ? cap - 1 : cap
+  // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject sem tocar o Claude no caso
+  // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO
+  // da tx de persistGeneration (via `quotaGate` abaixo) — o pré-check sozinho tem corrida TOCTOU.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
-    const effectiveCap = variar2 ? cap - 1 : cap
     const quota = decideRecipeGenQuota({ cap: effectiveCap, recentAt, now })
     if (!quota.allowed) {
       return Response.json(
@@ -340,6 +345,9 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
+  // #446: gate ATÔMICO threado em persistGeneration — reconta+decide+insere SOB a advisory lock do
+  // usuário, na MESMA tx do INSERT. Estourou (corrida) ⇒ persistGeneration LANÇA QuotaExceededError.
+  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap: effectiveCap } : undefined
 
   // origin por modo (#88): conversation já foi rejeitado acima (vive na rota de stream), então
   // só restam free_text → ai_free_text e structured → ai_structured.
@@ -401,33 +409,52 @@ export async function POST(req: Request): Promise<Response> {
       outcome: 'success' | 'degraded' | 'playful'
       advisory: string | null
     }[] = []
-    for (const vr of variantResults) {
-      // "Outra" (#319): a IA emitiu cozinha=null (slug suggested fora do z.enum ativo); o servidor estampa.
-      if (suggested != null) vr.recipe.cozinha = suggested
-      const p = await persistGeneration({
-        result: { outcome: vr.outcome, recipe: vr.recipe, advisory: vr.advisory },
-        mode,
-        origin,
-        ownerId,
-        model,
-        briefing: persistBriefing,
-        promptStamp,
-        variantGroupId,
-        variantLabel: vr.variacao,
-      })
-      if (p?.recipeId) {
-        // #119: embeda cada Receita (best-effort, assistivo). Falha NÃO derruba a criação.
-        await embedTranslation(getDb(), p.recipeId, vr.recipe.originalLocale).catch(() => {})
-        variants.push({
-          recipeId: p.recipeId,
-          ...(p.slug != null ? { slug: p.slug } : {}),
-          ...(p.locale != null ? { locale: p.locale } : {}),
-          label: vr.variacao,
-          generationId: p.generationId,
-          outcome: vr.outcome,
-          advisory: vr.advisory,
+    // #446: gate ATÔMICO das DUAS variações. O par persiste em 2 tx sucessivas; só a PRIMEIRA carrega
+    // o `quotaGate` (com effectiveCap=cap-1 ⇒ exige 2 slots livres SOB a lock). Estourou na corrida ⇒
+    // QuotaExceededError → 429 limite_geracao_variacao, e NENHUMA das duas nasce (a 1ª reverte antes de
+    // inserir; a 2ª nem roda). A 2ª persist vai sem gate (é o par já reservado pela 1ª).
+    let firstVariant = true
+    try {
+      for (const vr of variantResults) {
+        // "Outra" (#319): a IA emitiu cozinha=null (slug suggested fora do z.enum ativo); o servidor estampa.
+        if (suggested != null) vr.recipe.cozinha = suggested
+        const p = await persistGeneration({
+          result: { outcome: vr.outcome, recipe: vr.recipe, advisory: vr.advisory },
+          mode,
+          origin,
+          ownerId,
+          model,
+          briefing: persistBriefing,
+          promptStamp,
+          variantGroupId,
+          variantLabel: vr.variacao,
+          quota: firstVariant ? quotaGate : undefined,
         })
+        firstVariant = false
+        if (p?.recipeId) {
+          // #119: embeda cada Receita (best-effort, assistivo). Falha NÃO derruba a criação.
+          await embedTranslation(getDb(), p.recipeId, vr.recipe.originalLocale).catch(() => {})
+          variants.push({
+            recipeId: p.recipeId,
+            ...(p.slug != null ? { slug: p.slug } : {}),
+            ...(p.locale != null ? { locale: p.locale } : {}),
+            label: vr.variacao,
+            generationId: p.generationId,
+            outcome: vr.outcome,
+            advisory: vr.advisory,
+          })
+        }
       }
+    } catch (err) {
+      // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a 1ª variação reverteu e a 2ª nem
+      // rodou — nenhuma nasceu. 429 limite_geracao_variacao (a UI explica que foram pedidas 2).
+      if (err instanceof QuotaExceededError) {
+        return Response.json(
+          { error: 'limite_geracao_variacao', retryAfterMs: err.retryAfterMs },
+          { status: 429 },
+        )
+      }
+      throw err
     }
     // Defesa: se alguma persistência não devolveu recipeId (não ocorre em success/degraded/playful), 502.
     if (variants.length !== 2) {
@@ -463,7 +490,15 @@ export async function POST(req: Request): Promise<Response> {
   // `persistBriefing` já foi computado acima (compartilhado pelo caminho single E pelo de variação #423).
   if (result.outcome === 'impossible') {
     // Impossible NÃO carrega Aviso (§4.4/E7): sem Receita entregue, não há Aviso.
-    await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp })
+    try {
+      await persistGeneration({ result, mode, origin, ownerId, model, briefing: persistBriefing, freeText, promptStamp, quota: quotaGate })
+    } catch (err) {
+      // #446: corrida perdida na recontagem atômica ⇒ nada persistiu. 429 limite_geracao (mesmo contrato).
+      if (err instanceof QuotaExceededError) {
+        return Response.json({ error: 'limite_geracao', retryAfterMs: err.retryAfterMs }, { status: 429 })
+      }
+      throw err
+    }
     return Response.json({ outcome: 'impossible', advisory: result.advisory }, { status: 200 })
   }
 
@@ -475,16 +510,26 @@ export async function POST(req: Request): Promise<Response> {
   if (suggested != null) result.recipe.cozinha = suggested
 
   // success | degraded | playful → Receita privada + generation.
-  const p = await persistGeneration({
-    result,
-    mode,
-    origin,
-    ownerId,
-    model,
-    briefing: persistBriefing,
-    freeText,
-    promptStamp,
-  })
+  let p: Awaited<ReturnType<typeof persistGeneration>>
+  try {
+    p = await persistGeneration({
+      result,
+      mode,
+      origin,
+      ownerId,
+      model,
+      briefing: persistBriefing,
+      freeText,
+      promptStamp,
+      quota: quotaGate,
+    })
+  } catch (err) {
+    // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NADA persistiu. 429.
+    if (err instanceof QuotaExceededError) {
+      return Response.json({ error: 'limite_geracao', retryAfterMs: err.retryAfterMs }, { status: 429 })
+    }
+    throw err
+  }
 
   // #119: embeda a Receita recém-criada (best-effort, ASSISTIVO) p/ a Busca semântica achá-la pelo
   // SIGNIFICADO. Falha (sem key / 429 / rede) NÃO derruba a criação — a Receita já está persistida; a
