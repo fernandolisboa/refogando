@@ -1,6 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { creationSession, generation, imageGeneration } from '@/db/schema'
+import { creationSession, extractionEvent, generation, imageGeneration } from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS, decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
 
@@ -36,7 +36,7 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
  * lock de geração de RECEITA e a de IMAGEM nunca se bloqueiem mutuamente (chaves de espaços distintos).
  * Valores arbitrários porém ESTÁVEIS (mudá-los invalidaria locks em voo num deploy — mantê-los fixos).
  */
-export const QUOTA_LOCK_CLASS = { recipeGen: 4671, imageGen: 4672 } as const
+export const QUOTA_LOCK_CLASS = { recipeGen: 4671, imageGen: 4672, extraction: 4673 } as const
 
 /**
  * Cota estourada detectada ATOMICAMENTE dentro da tx (após a lock + recontagem). Carrega o countdown
@@ -106,4 +106,35 @@ export async function assertImageGenSlotInTx(
     .where(and(eq(imageGeneration.userId, userId), gte(imageGeneration.createdAt, since)))
   const decision = decideImageQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+}
+
+/**
+ * RESERVA ATÔMICA de um slot de EXTRAÇÃO de ingredientes (#447), fechando a corrida TOCTOU ANTES da
+ * chamada ao Claude. Diferente de receita/imagem (que inserem o registro DEPOIS do modelo, na persist),
+ * a extração NÃO persiste saída — então RESERVAMOS o slot ANTES: numa ÚNICA transação, toma o advisory
+ * lock do usuário, reconta o ledger `extraction_event` na janela 24h, decide (reusa `decideRecipeGenQuota`
+ * — janela deslizante idêntica, fonte ÚNICA do cálculo) e, se couber, INSERE a linha do ledger; estourou
+ * ⇒ LANÇA `QuotaExceededError` (a tx reverte, nada é gravado) e o Claude NÃO é tocado (custo barrado).
+ * Sob concorrência, a lock serializa as requisições do MESMO usuário: só `cap - contagem` reservas passam,
+ * as demais revertem com 429. `cap` não-finito (∞ / admin) ⇒ no-op (sem lock, sem linha). O ledger é
+ * IMUTÁVEL (uma linha por TENTATIVA; o custo já foi gasto — não "devolve slot").
+ */
+export async function reserveExtractionSlot(
+  db: Database,
+  input: { userId: string; cap: number },
+): Promise<void> {
+  const { userId, cap } = input
+  if (!Number.isFinite(cap)) return
+  await db.transaction(async (tx) => {
+    const now = new Date()
+    await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.extraction, userId)
+    const since = new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)
+    const rows = await tx
+      .select({ createdAt: extractionEvent.createdAt })
+      .from(extractionEvent)
+      .where(and(eq(extractionEvent.userId, userId), gte(extractionEvent.createdAt, since)))
+    const decision = decideRecipeGenQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
+    if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+    await tx.insert(extractionEvent).values({ userId })
+  })
 }

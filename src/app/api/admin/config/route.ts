@@ -4,6 +4,7 @@ import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { parseExtractionCapByRole, type ExtractionCapByRole } from '@/domain/extraction-cap-config'
 import { parseRecipeVariantConfig, type RecipeVariantConfig } from '@/domain/recipe-variant-config'
 import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
@@ -20,6 +21,8 @@ import { parseSocialLinksConfig, type SocialLinksConfig } from '@/domain/social-
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
  *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
  *    Record<Role, number|null> (`null` = ∞); a rota /api/generations lê este valor pelo teto.
+ *  - `extractionCapByRole` (#447) — teto diário de EXTRAÇÃO de ingredientes por papel (mesma forma;
+ *    defaults mais folgados). A rota /api/parse-ingredients lê este valor pelo teto (reserva atômica).
  *  - `webSearch { enabled, allowlist }` (#164, ADR-0019) — descoberta na web (aba Descoberta, `/admin/descoberta`).
  *    A allowlist é fonte ÚNICA do endpoint `/api/discovery/web` E do guard de SSRF do import (#165).
  *  - `catalogDisclosure { enabled, text }` (#237, SEO #187) — aviso OPCIONAL "em colaboração entre
@@ -48,6 +51,7 @@ export async function PUT(req: Request): Promise<Response> {
     defaultModel?: unknown
     imageGen?: unknown
     recipeGenCapByRole?: unknown
+    extractionCapByRole?: unknown
     recipeVariant?: unknown
     webSearch?: unknown
     catalogDisclosure?: unknown
@@ -63,6 +67,7 @@ export async function PUT(req: Request): Promise<Response> {
     imageGenModel: string
     imageGenCapByRole: ImageGenConfig['dailyCapByRole']
     recipeGenCapByRole: RecipeGenCapByRole
+    extractionCapByRole: ExtractionCapByRole
     recipeVariantConfig: RecipeVariantConfig
     webSearchEnabled: boolean
     webSearchAllowlist: string[]
@@ -94,6 +99,14 @@ export async function PUT(req: Request): Promise<Response> {
     const caps = parseRecipeGenCapByRole(body.recipeGenCapByRole)
     if (caps === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
     set.recipeGenCapByRole = caps
+  }
+
+  // #447: teto de EXTRAÇÃO de ingredientes por papel (mesma validação — null=∞ ou inteiro ≥0, exatamente
+  // os papéis conhecidos). Inválido ⇒ 400 config_invalida. A rota /api/parse-ingredients lê este valor.
+  if (body.extractionCapByRole !== undefined) {
+    const caps = parseExtractionCapByRole(body.extractionCapByRole)
+    if (caps === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
+    set.extractionCapByRole = caps
   }
 
   // #423: variação de geração ("gerar 2, o usuário escolhe"). enabled boolean + poloA/poloB/instrucao

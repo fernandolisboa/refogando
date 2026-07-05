@@ -6,6 +6,7 @@ import { loadAppConfig } from '@/server/app-config'
 import { seedSessionHeaders } from '../helpers/users'
 import { DEFAULT_IMAGE_MODEL, type ImageGenConfig } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { type ExtractionCapByRole } from '@/domain/extraction-cap-config'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
 
 /**
@@ -200,6 +201,43 @@ describe('/api/admin/config — recipeGenCapByRole (#167, admin-only)', () => {
   it('recipeGenCapByRole PUT é admin-only: Curador → 403', async () => {
     const { headers } = await seedSessionHeaders({ email: 'rg-cur@cfg.test', role: 'curador' })
     expect((await put({ recipeGenCapByRole: okCaps }, headers)).status).toBe(403)
+  })
+})
+
+// ── #447: extractionCapByRole (teto de extração de ingredientes por papel) ────────
+describe('/api/admin/config — extractionCapByRole (#447, admin-only)', () => {
+  const okCaps: ExtractionCapByRole = { usuario: 40, curador: 90, admin: null }
+
+  it('GET traz extractionCapByRole com defaults FOLGADOS em código quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { extractionCapByRole: ExtractionCapByRole }
+    expect(body.extractionCapByRole).toEqual({ usuario: 60, curador: 120, admin: null })
+  })
+
+  it('PUT extractionCapByRole válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-put@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    const putRes = await put({ extractionCapByRole: okCaps }, headers)
+    expect(putRes.status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      extractionCapByRole: ExtractionCapByRole
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6') // outro eixo preservado
+    expect(body.extractionCapByRole).toEqual(okCaps)
+  })
+
+  it('PUT extractionCapByRole inválido → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-bad@cfg.test', role: 'admin' })
+    expect((await put({ extractionCapByRole: { usuario: -1, curador: 12, admin: null } }, headers)).status).toBe(400)
+    const bad = await put({ extractionCapByRole: { usuario: 5, curador: 12, admin: null, root: 9 } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('extractionCapByRole PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-cur@cfg.test', role: 'curador' })
+    expect((await put({ extractionCapByRole: okCaps }, headers)).status).toBe(403)
   })
 })
 
