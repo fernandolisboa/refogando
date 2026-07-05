@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeAll, afterAll } from 'vitest'
+import {
+  dropWebImportedPrivateCheck,
+  restoreWebImportedPrivateCheck,
+} from '../helpers/recipe-check-constraint'
 import { eq } from 'drizzle-orm'
 import { GET } from '@/app/api/u/[handle]/route'
 import { getDb } from '@/server/deps'
@@ -82,6 +86,11 @@ async function seedOwnedRecipe(input: {
   })
   return id
 }
+
+// #450: remove a CHECK web_imported⇒private durante este arquivo pra materializar o estado ilegal
+// (web_imported+public COM imagem) que prova o gate de ORIGEM da aplicação; restaura (NOT VALID) no fim.
+beforeAll(dropWebImportedPrivateCheck)
+afterAll(restoreWebImportedPrivateCheck)
 
 describe('GET /api/u/[handle] — perfil público (#129)', () => {
   it('handle inexistente ⇒ 404 not_found', async () => {
