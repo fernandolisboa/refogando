@@ -84,11 +84,13 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     vi.restoreAllMocks()
   })
 
-  it('anônimo: mostra Entrar com href /sign-in, sem gatilho de conta nem Sair', () => {
+  it('anônimo: mostra Entrar com href /sign-in?returnTo=<pathname>, sem gatilho de conta nem Sair', () => {
     mockSession = fakeSession()
+    mockPathname = '/pt-BR/u/ana'
     renderSlot('pt-BR')
     const link = screen.getByRole('link', { name: ptBR.nav.signIn })
-    expect(link).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (o mecanismo anti open-redirect do sign-in sanitiza no server).
+    expect(link).toHaveAttribute('href', '/sign-in?returnTo=%2Fpt-BR%2Fu%2Fana')
     // Anônimo não tem menu de conta: NENHUM botão (o "Entrar" é um link, não um gatilho de popup).
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(screen.queryByText(ptBR.nav.signOut)).not.toBeInTheDocument()

@@ -36,6 +36,7 @@
  */
 import { useEffect } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -59,6 +60,8 @@ export function CreateConversaExperience({
   const d = messages.criarDrawer
   const cozinhaVocab = useCozinhaVocab() // #317: rótulo de cozinha do leitor (contexto ativo)
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/create'
 
   const {
     transcript,
@@ -106,7 +109,7 @@ export function CreateConversaExperience({
       <div className="flex flex-col gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )

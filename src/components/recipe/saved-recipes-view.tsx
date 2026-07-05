@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Image as ImageIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
@@ -27,6 +28,8 @@ export function SavedRecipesView() {
   const m = messages.colecoes
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/me/saved'
 
   const [collections, setCollections] = useState<Summary[]>([])
   const [selected, setSelected] = useState<Selected>('all')
@@ -165,7 +168,7 @@ export function SavedRecipesView() {
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )

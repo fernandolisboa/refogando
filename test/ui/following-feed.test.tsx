@@ -24,6 +24,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do link "Entrar" do guest.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/following',
+}))
+
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
 let sessionState: SessionState
 vi.mock('@/lib/auth-client', () => ({
@@ -90,7 +95,11 @@ describe('FollowingFeed (#277)', () => {
     renderFollowing(guest())
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual (/following).
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Ffollowing',
+    )
     expect((fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
   })
 

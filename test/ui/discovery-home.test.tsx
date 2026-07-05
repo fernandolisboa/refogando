@@ -28,6 +28,7 @@ const routerReplace = vi.fn()
 const routerPush = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  usePathname: () => '/',
 }))
 
 type SessionState = {

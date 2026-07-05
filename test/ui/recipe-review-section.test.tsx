@@ -19,6 +19,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do convite "Entrar para avaliar".
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/receitas/bolo-de-cenoura',
+}))
+
 const authMock = vi.hoisted(() => ({
   session: { data: null as unknown, isPending: false, error: null as unknown },
 }))
@@ -168,7 +173,11 @@ describe('RecipeReviewSection (#363)', () => {
   it('anônimo ⇒ convite "Entrar para avaliar" (link /sign-in), sem widget', () => {
     setSession('anon')
     renderSection({ initialAverage: 5, initialCount: 1, initialReviews: [makeReview()] })
-    expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual.
+    expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
+    )
     expect(screen.queryByRole('radiogroup')).toBeNull()
   })
 

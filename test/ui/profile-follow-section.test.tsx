@@ -20,6 +20,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do "Entrar para seguir".
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/u/chef-ana',
+}))
+
 let mockSession: unknown = { data: null, error: null, isPending: false, isRefetching: false, refetch: () => {} }
 vi.mock('@/lib/auth-client', () => ({ useSession: () => mockSession }))
 
@@ -158,7 +163,8 @@ describe('ProfileFollowSection — botão na LINHA ABAIXO dos stats', () => {
     const fetchMock = mockFetch(() => ({ ok: true, body: {} }))
     renderSection({ recipes: 5, followers: 10, following: 3 })
     const nudge = screen.getByRole('link', { name: MP.entrarParaSeguir })
-    expect(nudge).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual do perfil.
+    expect(nudge).toHaveAttribute('href', '/sign-in?returnTo=%2Fu%2Fchef-ana')
     // O nudge NÃO está dentro do <p> de stats (linha separada, abaixo).
     const statsP = screen.getByRole('link', { name: countLabel(MP.receitasContagem, 5) }).closest('p')
     expect(statsP).not.toBeNull()

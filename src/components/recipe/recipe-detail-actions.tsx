@@ -25,6 +25,7 @@
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditModal } from './recipe-edit-modal'
@@ -36,6 +37,8 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
   const { messages } = useLocale()
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
 
   // ── DONO: gestão da própria Receita ─────────────────────────────────────────
   if (view.canManage) {
@@ -80,7 +83,7 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
         </p>
         <div>
           <Button asChild>
-            <Link href="/sign-in">{messages.nav.signIn}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
           </Button>
         </div>
       </section>

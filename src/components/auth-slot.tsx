@@ -93,9 +93,10 @@ export function AuthSlot() {
   // variant="secondary" (não primária): no header a única ação destacada é o pill "Criar"
   // (protótipo). "Entrar" é silenciosa.
   if (error || !session) {
+    const returnTo = pathname ?? '/'
     return (
       <Button asChild variant="secondary" size="sm">
-        <Link href="/sign-in">{messages.nav.signIn}</Link>
+        <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
       </Button>
     )
   }

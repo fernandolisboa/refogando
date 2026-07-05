@@ -26,6 +26,7 @@
  */
 import { useEffect, useState, type MouseEvent } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { useFollowToggle } from '@/hooks/use-follow-toggle'
@@ -91,6 +92,8 @@ export function ProfileFollowSection({
   const mp = labels
   const { data: session, isPending, error } = useSession()
   const authed = !isPending && !error && !!session
+  const pathname = usePathname()
+  const returnTo = pathname ?? `/u/${handle}`
 
   const [followerCount, setFollowerCount] = useState(initialFollowerCount)
   const [isSelf, setIsSelf] = useState(false)
@@ -185,7 +188,7 @@ export function ProfileFollowSection({
       {resolvedAnon ? (
         <div>
           <Button asChild variant="secondary" size="sm">
-            <Link href="/sign-in">{mp.entrarParaSeguir}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{mp.entrarParaSeguir}</Link>
           </Button>
         </div>
       ) : authed && stateLoaded && !isSelf ? (

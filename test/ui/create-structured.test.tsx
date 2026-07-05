@@ -162,7 +162,8 @@ describe('CreateStructuredExperience (#58)', () => {
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
     const link = screen.getByRole('link', { name: ptBR.nav.signIn })
-    expect(link).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(link).toHaveAttribute('href', '/sign-in?returnTo=%2Fcreate')
 
     // Sem formulário (botão gerar ausente) e exatamente UM heading nível 1 (criar.titulo).
     expect(screen.queryByRole('button', { name: M.gerar })).toBeNull()

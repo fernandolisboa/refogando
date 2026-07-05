@@ -18,6 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -82,6 +83,8 @@ export function ProfileForm() {
   const { messages } = useLocale()
   const m = messages.perfil
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/me/profile'
   // Visitante só busca depois que a sessão resolveu E está logado (sem disparar um 401 inútil).
   const authed = !session.isPending && !session.error && !!session.data
 
@@ -203,7 +206,7 @@ export function ProfileForm() {
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )
