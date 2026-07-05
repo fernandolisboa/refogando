@@ -19,13 +19,23 @@
  * `generateMetadata`/o feed usam `getBaseUrlFromEnv()` (env-only, sem `headers()`) ⇒ build-safe. Como a
  * home lê `searchParams`, ela é dinâmica e NÃO é pré-renderizada no build — o throw de prod-sem-APP_URL
  * de `getBaseUrlFromEnv` não dispara no build.
+ *
+ * "Receita da semana" (#457, ADR-0026): slot EDITORIAL fixo acima do feed, no MESMO caminho de
+ * REPOUSO/indexável (`loadRecipeOfTheWeek`, DB direto, anônimo — sem cookie/sessão, espelha
+ * `loadDiscoveryFeed`). Escolhida pelo Curador via `app_config` (`/admin/catalog`) ou, na ausência de
+ * escolha (ou escolha que deixou de ser catálogo aprovado), pelo fallback automático de Popularidade.
+ * Montada AQUI (server) e passada como `highlight` (ReactNode) pro `<SearchExperience>` client — que
+ * a renderiza só no repouso, acima do `<DiscoveryFeed>`. `null` (catálogo aprovado vazio) ⇒ omite o
+ * slot sem quebrar a home.
  */
 import type { Metadata } from 'next'
 import { SearchExperience } from '@/components/recipe/search-experience'
+import { RecipeResultItem, type BadgeLabels } from '@/components/recipe/recipe-result-item'
 import { buildHomeMetadata, isRefinedHomeParams, type RawSearchParams } from '@/domain/discovery-home'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { loadDiscoveryFeed } from '@/server/recipe/feed'
+import { loadRecipeOfTheWeek } from '@/server/recipe/recipe-of-week'
 import { getDb } from '@/server/deps'
 import { MESSAGES } from '@/i18n/messages'
 
@@ -67,9 +77,46 @@ export default async function Home({
 }) {
   const { locale: pathLocale } = await params
   const locale = resolvePageLocale({ urlLocale: pathLocale })
+  const db = getDb()
 
   // Feed de REPOUSO: 1ª página ANÔNIMA do pool público (DB direto, SEM cookie ⇒ cacheável/indexável).
-  const { feed, nextCursor } = await loadDiscoveryFeed(getDb(), { requestLocale: locale })
+  // "Receita da semana" (#457): MESMO contrato (DB direto, anônimo) — as duas leituras rodam em
+  // paralelo, nenhuma depende da outra.
+  const [{ feed, nextCursor }, recipeOfWeek] = await Promise.all([
+    loadDiscoveryFeed(db, { requestLocale: locale }),
+    loadRecipeOfTheWeek(db, locale),
+  ])
 
-  return <SearchExperience home initialFeed={feed} initialNextCursor={nextCursor} />
+  const m = MESSAGES[locale].busca
+  const mw = MESSAGES[locale].receitaDaSemana
+  const badgeLabels: BadgeLabels = { catalogo: m.seloCatalogo, comunidade: m.seloComunidade }
+
+  const highlight =
+    recipeOfWeek !== null ? (
+      <div className="flex flex-col gap-1">
+        <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{mw.titulo}</h2>
+        <p className="text-muted">{mw.subtitulo}</p>
+        <ul className="flex flex-col">
+          <RecipeResultItem
+            recipeId={recipeOfWeek.recipeId}
+            locale={locale}
+            slug={recipeOfWeek.slug}
+            displayedTitle={recipeOfWeek.displayedTitle}
+            origin={recipeOfWeek.origin}
+            autoTranslationSignal={recipeOfWeek.autoTranslationSignal}
+            badgeLabels={badgeLabels}
+            autoTranslationLabel={m.traducaoAutomatica}
+            author={recipeOfWeek.author}
+            byLabel={m.porAutor}
+            imageUrl={recipeOfWeek.imageUrl}
+            imageAiGenerated={recipeOfWeek.imageAiGenerated}
+            aiLabel={m.imagemSeloIa}
+          />
+        </ul>
+      </div>
+    ) : null
+
+  return (
+    <SearchExperience home initialFeed={feed} initialNextCursor={nextCursor} highlight={highlight} />
+  )
 }

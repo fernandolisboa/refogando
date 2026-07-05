@@ -3,7 +3,8 @@ import { sql } from 'drizzle-orm'
 import { GET, PUT } from '@/app/api/admin/config/route'
 import { getDb } from '@/server/deps'
 import { loadAppConfig } from '@/server/app-config'
-import { seedSessionHeaders } from '../helpers/users'
+import { seedSessionHeaders, seedUser } from '../helpers/users'
+import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { DEFAULT_IMAGE_MODEL, type ImageGenConfig } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { type ExtractionCapByRole } from '@/domain/extraction-cap-config'
@@ -517,5 +518,99 @@ describe('/api/admin/config — socialLinks (#451, admin-only)', () => {
       (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
         .status,
     ).toBe(403)
+  })
+})
+
+// ── #457: recipeOfWeek { recipeId } (slot editorial "Receita da semana" da home) ──────────
+describe('/api/admin/config — recipeOfWeek (#457, admin-only)', () => {
+  it('GET traz recipeOfWeek com recipeId null quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(body.recipeOfWeek).toEqual({ recipeId: null })
+  })
+
+  it('PUT com uma Receita de catálogo APROVADA persiste e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-put@cfg.test', role: 'admin' })
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Torta de limão', provenance: 'escrita_por_pessoa' })
+
+    const putRes = await put({ recipeOfWeek: { recipeId } }, headers)
+    expect(putRes.status).toBe(200)
+    const putBody = (await putRes.json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(putBody.recipeOfWeek).toEqual({ recipeId })
+
+    const getBody = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(getBody.recipeOfWeek).toEqual({ recipeId })
+  })
+
+  it('PUT recipeId: null (limpar a escolha) sempre é aceito, mesmo sem escolha anterior', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-clear@cfg.test', role: 'admin' })
+    const res = await put({ recipeOfWeek: { recipeId: null } }, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ recipeOfWeek: { recipeId: null } })
+  })
+
+  it('PUT recipeOfWeek NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-iso@cfg.test', role: 'admin' })
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Torta de limão', provenance: 'escrita_por_pessoa' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect((await put({ recipeOfWeek: { recipeId } }, headers)).status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      recipeOfWeek: { recipeId: string | null }
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.recipeOfWeek).toEqual({ recipeId })
+  })
+
+  it('PUT recipeOfWeek malformado (nem uuid nem null) → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-malformado@cfg.test', role: 'admin' })
+    const bad = await put({ recipeOfWeek: { recipeId: 'not-a-uuid' } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('PUT recipeOfWeek com uma Receita que NÃO é catálogo aprovado → 400 receita_invalida (não persiste)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-invalida@cfg.test', role: 'admin' })
+    const ownerId = await seedUser({ email: 'row-owner@cfg.test' })
+    // Comunidade (owned), não catálogo — jamais elegível pro slot.
+    const communityRecipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      ownerId,
+    })
+    await seedTranslation({
+      recipeId: communityRecipeId,
+      locale: 'pt-BR',
+      titulo: 'Receita da comunidade',
+      provenance: 'escrita_por_pessoa',
+    })
+    const res = await put({ recipeOfWeek: { recipeId: communityRecipeId } }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'receita_invalida' })
+
+    // Catálogo mas AINDA rascunho (pending) — também não é elegível.
+    const pendingId = await seedRecipe({
+      origin: 'catalog',
+      originalLocale: 'pt-BR',
+      ownerId: null,
+      curationStatus: 'pending',
+    })
+    await seedTranslation({ recipeId: pendingId, locale: 'pt-BR', titulo: 'Rascunho', provenance: 'escrita_por_pessoa' })
+    const resPending = await put({ recipeOfWeek: { recipeId: pendingId } }, headers)
+    expect(resPending.status).toBe(400)
+    await expect(resPending.json()).resolves.toMatchObject({ error: 'receita_invalida' })
+
+    // Nada foi persistido: o eixo continua no default (null).
+    const body = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(body.recipeOfWeek).toEqual({ recipeId: null })
+  })
+
+  it('recipeOfWeek PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-cur@cfg.test', role: 'curador' })
+    const res = await put({ recipeOfWeek: { recipeId: null } }, headers)
+    expect(res.status).toBe(403)
   })
 })

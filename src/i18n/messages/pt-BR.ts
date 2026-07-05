@@ -220,6 +220,13 @@ export const ptBR = {
     carregarMais: 'Carregar mais',
     fim: 'Você chegou ao fim.',
   },
+  // #457: slot editorial "Receita da semana" — acima do feed de repouso na home. Escolhida pelo
+  // Curador ou, na ausência de escolha, pela mais popular do catálogo aprovado (fallback mecânico).
+  // O item em si reusa `RecipeResultItem` (mesmo card do feed) + `busca.selo*`/`porAutor`/etc.
+  receitaDaSemana: {
+    titulo: 'Receita da semana',
+    subtitulo: 'Um destaque do catálogo, escolhido pela curadoria.',
+  },
   // Feed SEGUINDO (#277, ADR-0024) — superfície SÓ-LOGADA e NÃO-indexável (separada da home anon,
   // Modelo B). Reusa `feed.carregarMais`/`feed.fim` e `system.loading`/`system.error` na paginação.
   // O empty state é cause-NEUTRO (dispara em "não segue ninguém" E "seguidos sem receita pública"):
@@ -1181,6 +1188,25 @@ export const ptBR = {
     catalogoAvisoTextoLabel: 'Texto do aviso',
     catalogoAvisoTextoAjuda: 'Frase exibida nas receitas do catálogo quando o aviso está ligado.',
     catalogoAvisoErroConfig: 'Configuração inválida. O texto do aviso não pode ficar vazio.',
+    // #457: "Receita da semana" — slot editorial da home. O Curador busca por título (restrito ao
+    // catálogo aprovado) e escolhe; sem escolha, a home cai no destaque automático por Popularidade.
+    receitaSemanaTitulo: 'Receita da semana',
+    receitaSemanaDescricao:
+      'Escolha uma receita do catálogo para destacar na home nesta semana. Sem escolha, a home mostra automaticamente a receita mais popular do catálogo.',
+    receitaSemanaAtualLabel: 'Escolha atual',
+    receitaSemanaAtualVazio: 'Nenhuma — a home está usando o destaque automático por popularidade.',
+    receitaSemanaLimpar: 'Remover escolha',
+    receitaSemanaLimpando: 'Removendo…',
+    receitaSemanaBuscaLabel: 'Buscar receita do catálogo',
+    receitaSemanaBuscaPlaceholder: 'Título da receita',
+    receitaSemanaBuscaCarregando: 'Buscando…',
+    receitaSemanaBuscaVazio: 'Nenhuma receita do catálogo encontrada com esse título.',
+    receitaSemanaBuscaContagem: '{n} resultado(s)',
+    receitaSemanaBuscaResultados: 'Resultados da busca',
+    receitaSemanaSelecionada: 'Selecionada',
+    receitaSemanaTrocar: 'Trocar',
+    receitaSemanaSalvo: 'Receita da semana atualizada.',
+    receitaSemanaErroReceita: 'Essa receita não é (ou deixou de ser) do catálogo aprovado.',
     // Backfill dos embeddings da busca semântica (#119) — recompute em lote, retomável.
     backfillTitulo: 'Embeddings da busca semântica',
     backfillDescricao:

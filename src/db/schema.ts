@@ -61,6 +61,10 @@ import {
   DEFAULT_SOCIAL_LINKS_CONFIG,
   type SocialLinksConfig,
 } from '@/domain/social-links-config'
+import {
+  DEFAULT_RECIPE_OF_WEEK_CONFIG,
+  type RecipeOfWeekConfig,
+} from '@/domain/recipe-of-week-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
@@ -861,6 +865,15 @@ export const appConfig = pgTable(
       .$type<SocialLinksConfig>()
       .notNull()
       .default(DEFAULT_SOCIAL_LINKS_CONFIG),
+    // #457: "Receita da semana" — slot editorial da HOME. `{ recipeId }` na MESMA linha singleton
+    // (espelha os demais eixos). `recipeId: null` (default) ⇒ ninguém escolheu ainda, a leitura cai
+    // no FALLBACK automático por Popularidade (a mais popular do catálogo aprovado). O read-path
+    // RE-VALIDA o id contra `origin=catalog AND curation_status=approved` (ADR-0026) — se o Curador
+    // trocar/rejeitar a receita escolhida depois, o slot degrada pro fallback em vez de vazar/quebrar.
+    recipeOfWeekConfig: jsonb('recipe_of_week_config')
+      .$type<RecipeOfWeekConfig>()
+      .notNull()
+      .default(DEFAULT_RECIPE_OF_WEEK_CONFIG),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

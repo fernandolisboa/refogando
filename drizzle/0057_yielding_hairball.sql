@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ADD COLUMN "recipe_of_week_config" jsonb DEFAULT '{"recipeId":null}'::jsonb NOT NULL;
