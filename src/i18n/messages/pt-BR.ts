@@ -1224,6 +1224,14 @@ export const ptBR = {
     backfillResultadoParcial:
       'Recomputados: {recomputados} · faltam: {restantes}. O serviço de embedding parou (sem chave ou limite). Rode de novo mais tarde.',
     backfillErro: 'Não foi possível recomputar. Tente de novo.',
+    // Re-tradução de defasadas (#499, ADR-0031) — lote retomável, mesma UX do backfill de embedding.
+    retranslateTitulo: 'Re-tradução de defasadas',
+    retranslateDescricao:
+      'Re-traduz traduções derivadas cujo original mudou ou cujo tradutor melhorou — só as que ninguém editou à mão desde a última tradução automática. Rode até "faltam: 0".',
+    retranslateBtn: 'Re-traduzir defasadas',
+    retranslateRodando: 'Re-traduzindo…',
+    retranslateResultado: 'Re-traduzidas: {retraduzidas} · puladas: {puladas} · faltam: {restantes}.',
+    retranslateErro: 'Não foi possível re-traduzir. Tente de novo.',
     // Atendimento ao autor externo (titular B, sem conta) — #396/GAP-4. Remove o NOME da fonte em lote
     // por nome/URL, sem exigir que a receita seja do operador. Mantém a URL; irreversível pro nome.
     takedownTitulo: 'Remover atribuição (pedido do autor)',

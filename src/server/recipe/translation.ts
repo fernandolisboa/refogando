@@ -5,7 +5,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
-import { fingerprintSource, fingerprintMt } from '@/domain/translation-fingerprint'
+import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
 
 /**
  * Ciclo de vida da tradução on-demand (issue #23, AC1 + AC4). CABEIA sobre as máquinas
@@ -89,21 +89,19 @@ export async function ensureTranslation(
   // PRODUZIU, no MESMO instante da escrita. O `mtFingerprint` usa EXATAMENTE os valores persistidos
   // abaixo (titulo/descricao/passos/notas + o mapa ordem→nome do jsonb) — senão a comparação futura
   // "intocada" nunca bateria. A medida fica fora (Direção B). Habilita a re-tradução pull da fatia B.
-  const sourceFingerprint = fingerprintSource({
-    titulo: source.titulo,
-    descricao: source.descricao,
-    passos: source.passos,
-    notas: source.notas,
-    ingredientes: ctx.ingredients,
-  })
-  const mtFingerprint = fingerprintMt({
+  // Os dois helpers (`sourceFingerprintOf`/`mtFingerprintOfRow`, translation-fingerprint.ts) são a
+  // MESMA construção que `retranslateOutdated` (#499) usa para recomputar o hash-de-comparação —
+  // fonte única entre escrita e leitura, sem chance de drift.
+  const sourceFingerprint = sourceFingerprintOf(
+    { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
+    ctx.ingredients,
+  )
+  const mtFingerprint = mtFingerprintOfRow({
     titulo: translated.titulo,
     descricao: translated.descricao ?? null,
     passos: translated.passos ?? null,
     notas: translated.notas ?? null,
-    ingredientes: ingredientesJsonb
-      ? ingredientesJsonb.map((i) => ({ ordem: i.ordem, nome: i.nome }))
-      : null,
+    ingredientes: ingredientesJsonb,
   })
 
   // Slug por idioma (#229, ADR-0020 dec.4): congela AGORA, a partir do título da MT INICIAL

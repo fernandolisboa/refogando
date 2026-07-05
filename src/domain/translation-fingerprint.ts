@@ -98,3 +98,50 @@ export function fingerprintMt(input: MtFingerprintInput): string {
     ingredientsField(input.ingredientes),
   ])
 }
+
+/**
+ * Helpers de RECOMPUTAÇÃO (issue #499, fatia B) — fecham o par escrita/comparação exigido pelo
+ * modelo pull (ADR-0031 dec.4): a MESMA construção que grava o fingerprint em `ensureTranslation`
+ * é usada aqui para recomputar o hash-de-comparação no worker `retranslateOutdated`. Extraídos
+ * para eliminar a chance de DRIFT entre os dois call sites (o insert de `ensureTranslation` foi
+ * refatorado para usar estes mesmos helpers — ver `translation.ts`).
+ */
+
+/**
+ * `source_fingerprint` a partir dos campos da tradução de ORIGEM + os itens de ingrediente
+ * ATUAIS (`ordem`+`nome`=raw_text, vindos de `loadRecipeTranslationContext`). Espelha
+ * EXATAMENTE a chamada de `ensureTranslation` (`ctx.ingredients` sempre um array — nunca
+ * convertido para `null` quando vazio; `[]` e `null` produzem hashes DIFERENTES).
+ */
+export function sourceFingerprintOf(
+  fields: { titulo: string; descricao: string | null; passos: string[] | null; notas: string | null },
+  ingredientes: ReadonlyArray<{ ordem: number; nome: string }>,
+): string {
+  return fingerprintSource({ ...fields, ingredientes })
+}
+
+/**
+ * `mt_fingerprint` a partir de uma linha `recipe_translation` (persistida OU recém-montada):
+ * os 4 campos traduzíveis + o jsonb `ingredientes` (por `ordem`+`nome`, ignorando `nomeOrigem`
+ * — escrituração, não conteúdo editável, ADR-0031 dec.3). `null`/lista vazia de ingredientes
+ * ⇒ `null` no fingerprint (espelha `ingredientesJsonb` de `ensureTranslation`, que é `null`
+ * quando a Receita não tem nenhum ingrediente nomeado).
+ */
+export function mtFingerprintOfRow(row: {
+  titulo: string
+  descricao: string | null
+  passos: string[] | null
+  notas: string | null
+  ingredientes: ReadonlyArray<{ ordem: number; nome: string }> | null
+}): string {
+  return fingerprintMt({
+    titulo: row.titulo,
+    descricao: row.descricao,
+    passos: row.passos,
+    notas: row.notas,
+    ingredientes:
+      row.ingredientes && row.ingredientes.length > 0
+        ? row.ingredientes.map((i) => ({ ordem: i.ordem, nome: i.nome }))
+        : null,
+  })
+}
