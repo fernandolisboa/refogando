@@ -108,6 +108,12 @@ export async function seedTranslation(input: {
   // `ensureTranslation`); settável direto aqui p/ testes que exercitam a resolução por-locale
   // (display e o texto embedado da Busca, #497) sem passar pelo write-path de tradução.
   ingredientes?: { ordem: number; nome: string; nomeOrigem: string }[] | null
+  // Fingerprints de conteúdo (#496/#500, ADR-0031) + versão do prompt — opcionais (ausentes ⇒
+  // NULL, o legado pré-#496). Settáveis aqui p/ semear cenários de defasagem/divergência sem
+  // passar pelo write-path de `ensureTranslation` (ex.: linha "intocada" vs. "editada à mão").
+  sourceFingerprint?: string | null
+  mtFingerprint?: string | null
+  promptVersion?: number | null
 }): Promise<string> {
   const [row] = await getDb()
     .insert(recipeTranslation)
@@ -122,6 +128,9 @@ export async function seedTranslation(input: {
       stale: input.stale,
       ...(input.slug !== undefined ? { slug: input.slug } : {}),
       ...(input.ingredientes !== undefined ? { ingredientes: input.ingredientes } : {}),
+      ...(input.sourceFingerprint !== undefined ? { sourceFingerprint: input.sourceFingerprint } : {}),
+      ...(input.mtFingerprint !== undefined ? { mtFingerprint: input.mtFingerprint } : {}),
+      ...(input.promptVersion !== undefined ? { promptVersion: input.promptVersion } : {}),
     })
     .returning({ id: recipeTranslation.id })
   return row.id

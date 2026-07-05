@@ -1479,6 +1479,18 @@ export const ptBR = {
     nomesSalvos: 'Nomes salvos.',
     erroSalvarNomes: 'Não foi possível salvar os nomes. Tente de novo.',
   },
+  // Lista do Curador — defasadas-E-divergentes (#500, ADR-0031 dec.6): a fonte mudou e o
+  // conteúdo já diverge da última MT (editado à mão) ou é legado sem prova de intocabilidade.
+  // Reusa os rótulos de proveniência/editor de nomes de `traducoesStale` (mesma ação de correção).
+  traducoesDivergentes: {
+    titulo: 'Traduções para re-revisão',
+    descricao:
+      'A fonte mudou e o conteúdo já diverge da última tradução automática — corrija à mão.',
+    receita: 'Receita',
+    idioma: 'Idioma',
+    origem: 'Origem',
+    listaVazia: 'Nenhuma tradução para re-revisão.',
+  },
   curadoria: {
     titulo: 'Curadoria de catálogo',
     ingredientesTitulo: 'Ingredientes recorrentes',
