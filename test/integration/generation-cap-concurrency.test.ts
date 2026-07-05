@@ -5,8 +5,10 @@ import { getDb, setClaudeClient } from '@/server/deps'
 import { FakeClaudeClient } from '@/server/claude/client'
 import { appConfig } from '@/db/schema'
 import type { RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { DEFAULT_RECIPE_VARIANT_CONFIG } from '@/domain/recipe-variant-config'
+import type { GenerationOutput } from '@/domain/generation'
 import { seedSessionHeaders } from '../helpers/users'
-import { cannedSuccess, makeBriefing, post } from '../helpers/generation'
+import { cannedSuccess, makeBriefing, makeReceita, post } from '../helpers/generation'
 
 /**
  * Teto de geração é uma corrida TOCTOU (#446) — prova de ATOMICIDADE pela porta mais alta.
@@ -39,6 +41,30 @@ async function setRecipeGenCap(caps: RecipeGenCapByRole): Promise<void> {
 async function countGenerations(): Promise<number> {
   const [r] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM generation`
   return r.n
+}
+
+/** Liga a OFERTA de variação (#423) + fixa o teto, na MESMA linha singleton app_config. */
+async function setCapAndVariants(caps: RecipeGenCapByRole): Promise<void> {
+  const variant = { ...DEFAULT_RECIPE_VARIANT_CONFIG, enabled: true }
+  await getDb()
+    .insert(appConfig)
+    .values({ id: true, recipeGenCapByRole: caps, recipeVariantConfig: variant })
+    .onConflictDoUpdate({
+      target: appConfig.id,
+      set: { recipeGenCapByRole: caps, recipeVariantConfig: variant },
+    })
+}
+
+/** Lote de 2 variações válidas enlatadas (cada uma um pólo) p/ o FakeClaudeClient (5º arg). */
+function cannedVariants(): GenerationOutput[] {
+  const v = (variacao: string): GenerationOutput => ({
+    kind: 'object',
+    modelKind: 'success',
+    recipe: makeReceita(),
+    advisory: null,
+    variacao,
+  })
+  return [v('tradicional'), v('com um toque criativo')]
 }
 
 describe('POST /api/generations — atomicidade do teto sob concorrência (#446)', () => {
@@ -92,5 +118,28 @@ describe('POST /api/generations — atomicidade do teto sob concorrência (#446)
     expect(limited).toBe(3)
     expect(await countGenerations()).toBe(5) // fecha EXATAMENTE no cap
     void userId
+  })
+
+  it('variar2 (2 slots/req): cap=5, 4 pedidos "gerar 2" simultâneos ⇒ 2 pares cabem, 2 estouram', async () => {
+    // #446 (achado dos reviews): as 2 variações agora persistem numa ÚNICA tx sob UM lock (effectiveCap=
+    // cap-1). Sem isso, o slot "reservado" pela 1ª variação vazava entre as 2 tx. Cada par custa 2 slots;
+    // com cap=5 cabem 2 pares (4 generations) e sobra 1 slot (um 3º par seria 6 > 5).
+    const { headers } = await seedSessionHeaders({ email: 'race-variar2@cap.test' })
+    await setCapAndVariants({ usuario: 5, curador: 20, admin: null })
+    setClaudeClient(new FakeClaudeClient(undefined, undefined, undefined, undefined, cannedVariants()))
+
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        post({ mode: 'structured', briefing: makeBriefing(), variar2: true }, headers),
+      ),
+    )
+    const ok = results.filter((r) => r.status === 201).length
+    const limited = results.filter((r) => r.status === 429).length
+    expect(ok).toBe(2) // 2 pares completos
+    expect(limited).toBe(2)
+    expect(await countGenerations()).toBe(4) // 2 pares × 2 = 4 generations, NUNCA 6 (cap segura no par)
+
+    const limitedBody = (await results.find((r) => r.status === 429)!.json()) as { error: string }
+    expect(limitedBody.error).toBe('limite_geracao_variacao')
   })
 })

@@ -45,7 +45,7 @@ import {
   type RecipeVariantConfig,
 } from '@/domain/recipe-variant-config'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError } from '@/server/quota/atomic'
+import { QuotaExceededError, assertRecipeGenSlotInTx } from '@/server/quota/atomic'
 
 /**
  * Helper PURO da borda (#423, Regra C do contrato de eixos ADR-0029): resolve o eixo `variacaoDivergente`
@@ -409,45 +409,60 @@ export async function POST(req: Request): Promise<Response> {
       outcome: 'success' | 'degraded' | 'playful'
       advisory: string | null
     }[] = []
-    // #446: gate ATÔMICO das DUAS variações. O par persiste em 2 tx sucessivas; só a PRIMEIRA carrega
-    // o `quotaGate` (com effectiveCap=cap-1 ⇒ exige 2 slots livres SOB a lock). Estourou na corrida ⇒
-    // QuotaExceededError → 429 limite_geracao_variacao, e NENHUMA das duas nasce (a 1ª reverte antes de
-    // inserir; a 2ª nem roda). A 2ª persist vai sem gate (é o par já reservado pela 1ª).
-    let firstVariant = true
+    // #446: as DUAS variações persistem numa ÚNICA transação sob UM advisory lock. O gate atômico
+    // reconta os 2 slots (effectiveCap=cap-1 ⇒ permitido ⟺ cabem 2) ANTES de qualquer insert; estourou
+    // ⇒ QuotaExceededError, a tx REVERTE e NENHUMA das duas nasce (fecha a corrida — antes eram 2 tx
+    // separadas e o slot "reservado" pela 1ª podia ser roubado entre os commits). Os embeddings (rede)
+    // ficam FORA da tx (depois do commit), pra a lock nunca segurar I/O lento.
+    let persisted: {
+      recipeId: string
+      slug?: string
+      locale?: string
+      generationId: string
+      variacao: string
+      outcome: 'success' | 'degraded' | 'playful'
+      advisory: string | null
+      originalLocale: string
+    }[]
     try {
-      for (const vr of variantResults) {
-        // "Outra" (#319): a IA emitiu cozinha=null (slug suggested fora do z.enum ativo); o servidor estampa.
-        if (suggested != null) vr.recipe.cozinha = suggested
-        const p = await persistGeneration({
-          result: { outcome: vr.outcome, recipe: vr.recipe, advisory: vr.advisory },
-          mode,
-          origin,
-          ownerId,
-          model,
-          briefing: persistBriefing,
-          promptStamp,
-          variantGroupId,
-          variantLabel: vr.variacao,
-          quota: firstVariant ? quotaGate : undefined,
-        })
-        firstVariant = false
-        if (p?.recipeId) {
-          // #119: embeda cada Receita (best-effort, assistivo). Falha NÃO derruba a criação.
-          await embedTranslation(getDb(), p.recipeId, vr.recipe.originalLocale).catch(() => {})
-          variants.push({
-            recipeId: p.recipeId,
-            ...(p.slug != null ? { slug: p.slug } : {}),
-            ...(p.locale != null ? { locale: p.locale } : {}),
-            label: vr.variacao,
-            generationId: p.generationId,
-            outcome: vr.outcome,
-            advisory: vr.advisory,
+      persisted = await getDb().transaction(async (tx) => {
+        if (quotaGate) await assertRecipeGenSlotInTx(tx, quotaGate)
+        const out: typeof persisted = []
+        for (const vr of variantResults) {
+          // "Outra" (#319): a IA emitiu cozinha=null (slug suggested fora do z.enum ativo); o servidor estampa.
+          if (suggested != null) vr.recipe.cozinha = suggested
+          const p = await persistGeneration({
+            result: { outcome: vr.outcome, recipe: vr.recipe, advisory: vr.advisory },
+            mode,
+            origin,
+            ownerId,
+            model,
+            briefing: persistBriefing,
+            promptStamp,
+            variantGroupId,
+            variantLabel: vr.variacao,
+            // #446: MESMA tx das 2 variações (o gate acima já cobriu os 2 slots — SEM quota por-variação,
+            // senão a 2ª recontaria a 1ª e se auto-barraria). persistGeneration grava NESTA tx.
+            tx,
           })
+          if (p?.recipeId) {
+            out.push({
+              recipeId: p.recipeId,
+              ...(p.slug != null ? { slug: p.slug } : {}),
+              ...(p.locale != null ? { locale: p.locale } : {}),
+              generationId: p.generationId,
+              variacao: vr.variacao,
+              outcome: vr.outcome,
+              advisory: vr.advisory,
+              originalLocale: vr.recipe.originalLocale,
+            })
+          }
         }
-      }
+        return out
+      })
     } catch (err) {
-      // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a 1ª variação reverteu e a 2ª nem
-      // rodou — nenhuma nasceu. 429 limite_geracao_variacao (a UI explica que foram pedidas 2).
+      // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NENHUMA variação
+      // nasceu. 429 limite_geracao_variacao (a UI explica que foram pedidas 2).
       if (err instanceof QuotaExceededError) {
         return Response.json(
           { error: 'limite_geracao_variacao', retryAfterMs: err.retryAfterMs },
@@ -455,6 +470,20 @@ export async function POST(req: Request): Promise<Response> {
         )
       }
       throw err
+    }
+
+    // #119: embeda cada Receita FORA da tx (best-effort, assistivo). Falha NÃO derruba a criação.
+    for (const pv of persisted) {
+      await embedTranslation(getDb(), pv.recipeId, pv.originalLocale).catch(() => {})
+      variants.push({
+        recipeId: pv.recipeId,
+        ...(pv.slug != null ? { slug: pv.slug } : {}),
+        ...(pv.locale != null ? { locale: pv.locale } : {}),
+        label: pv.variacao,
+        generationId: pv.generationId,
+        outcome: pv.outcome,
+        advisory: pv.advisory,
+      })
     }
     // Defesa: se alguma persistência não devolveu recipeId (não ocorre em success/degraded/playful), 502.
     if (variants.length !== 2) {
