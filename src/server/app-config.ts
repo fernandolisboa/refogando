@@ -11,6 +11,10 @@ import {
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
 import {
+  DEFAULT_EXTRACTION_CAP_BY_ROLE,
+  type ExtractionCapByRole,
+} from '@/domain/extraction-cap-config'
+import {
   DEFAULT_RECIPE_VARIANT_CONFIG,
   parseRecipeVariantConfig,
   type RecipeVariantConfig,
@@ -53,6 +57,8 @@ export type AppConfig = {
   imageGen: ImageGenConfig
   // #167: teto diário de geração de RECEITA por papel (jsonb Record<Role, number|null>, `null` = ∞).
   recipeGenCapByRole: RecipeGenCapByRole
+  // #447: teto diário de EXTRAÇÃO de ingredientes por papel (mesma forma; defaults mais folgados).
+  extractionCapByRole: ExtractionCapByRole
   // #423 (ADR-0029 dec.6): config da variação de geração ("gerar 2, o usuário escolhe") — liga/desliga
   // o opt-in + o eixo de divergência (poloA/poloB/instrucao), editável sem deploy.
   recipeVariant: RecipeVariantConfig
@@ -73,6 +79,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       defaultModel: DEFAULT_CHAT_MODEL,
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
+      extractionCapByRole: DEFAULT_EXTRACTION_CAP_BY_ROLE,
       recipeVariant: DEFAULT_RECIPE_VARIANT_CONFIG,
       webSearch: DEFAULT_WEB_SEARCH_CONFIG,
       catalogDisclosure: DEFAULT_CATALOG_DISCLOSURE_CONFIG,
@@ -98,6 +105,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       dailyCapByRole: row.imageGenCapByRole,
     },
     recipeGenCapByRole: row.recipeGenCapByRole,
+    extractionCapByRole: row.extractionCapByRole,
     recipeVariant: parsedVariant.ok ? parsedVariant.value : DEFAULT_RECIPE_VARIANT_CONFIG,
     webSearch: {
       enabled: row.webSearchEnabled,
