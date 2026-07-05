@@ -119,19 +119,13 @@ describe('loadFollowingFeed — filtro por seguidos + gate de pool (#277)', () =
     expect(rows).toEqual([])
   })
 
-  it('web_imported de um seguido NÃO aparece no feed (gate origin<>web_imported)', async () => {
+  it('web_imported de um seguido, MESMO forçada a public, NÃO aparece (defense-in-depth origin<>web_imported)', async () => {
     const viewer = await seedUser({ email: 'viewer4@following.test' })
     const a = await seedUser({ email: 'importer@following.test' })
     const db = getDb()
     await follow(db, viewer, a)
     const legit = await seedPublicRecipe(a, 'Legítima de A')
-    // web_imported nasce private e o CHECK do banco (migr 0054, #480) IMPEDE forçá-la a public — então
-    // o cenário "forçada public" da versão anterior virou impossível. Semeamos no estado legal (private);
-    // a asserção de ausência segue válida (o feed não vaza receita importada de um seguido).
-    const imported = await seedPublicRecipe(a, 'Importada da web', {
-      origin: 'web_imported',
-      visibility: 'private',
-    })
+    const imported = await seedPublicRecipe(a, 'Importada da web (forçada public)', { origin: 'web_imported' })
 
     const ids = new Set((await loadFollowingFeed(db, { viewerId: viewer, requestLocale: 'pt-BR', limit: 20, cursor: null })).map((r) => r.recipe_id))
     expect(ids.has(legit)).toBe(true)

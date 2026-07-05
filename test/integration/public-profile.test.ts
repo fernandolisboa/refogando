@@ -306,18 +306,16 @@ describe('GET /api/u/[handle] — perfil público (#129)', () => {
     expect('imageUrl' in r!).toBe(false)
   })
 
-  it('ADR-0019: web_imported COM imagem ⇒ AUSENTE do perfil (gate origin)', async () => {
+  it('ADR-0019: web_imported forçada public COM imagem ⇒ AUSENTE do perfil (gate origin)', async () => {
     const handle = `web-${crypto.randomUUID().slice(0, 8)}`
     const ownerId = await seedUser({ email: `web-${crypto.randomUUID()}@ex.com`, handle })
-    // web_imported nasce private e AGORA o CHECK do banco (migr 0054, #480) IMPEDE forçá-la a public — o
-    // "cinto-e-suspensório" da versão anterior (forçar public sem CHECK) virou impossível de construir.
-    // Semeamos no estado legal (private) COM imagem; o loader a barra pelo `origin <> 'web_imported'`
-    // (alinhado ao eligibleForPool canônico, #168) — e, redundante, pela visibilidade.
+    // Cinto-e-suspensório (sem CHECK no DB): forçamos public numa web_imported COM imagem — o loader
+    // a barra pelo `origin <> 'web_imported'`, alinhado ao eligibleForPool canônico (#168).
     const web = await seedOwnedRecipe({
       ownerId,
       titulo: 'Importada da web',
       origin: 'web_imported',
-      visibility: 'private',
+      visibility: 'public',
     })
     await seedRecipeImage({ recipeId: web, blobUrl: 'https://x/y.webp', provenance: 'user_photo' })
     // controle: uma pública normal do mesmo dono, pra a asserção não ser vácua.

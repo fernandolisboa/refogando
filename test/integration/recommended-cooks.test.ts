@@ -379,9 +379,7 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     await seedRemovedFromPool({ recipeId: modR, curatorId })
 
     const web = await seedUser({ email: 'web@c.test', handle: 'so-web' })
-    // web_imported nasce private e o CHECK do banco (migr 0054, #480) IMPEDE public — semeamos no estado
-    // legal; o cozinheiro segue inelegível (nenhuma receita pública elegível: web_imported é excluída).
-    await seedRecipe({ origin: 'web_imported', originalLocale: 'pt-BR', visibility: 'private', ownerId: web })
+    await seedRecipe({ origin: 'web_imported', originalLocale: 'pt-BR', visibility: 'public', ownerId: web })
 
     await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', visibility: 'public', ownerId: null })
 
