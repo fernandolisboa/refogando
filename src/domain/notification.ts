@@ -1,4 +1,5 @@
 import type { Messages } from '@/i18n/messages'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
 
 /**
  * Kernel de domínio das Notificações (#371, ADR-0028). A Notificação guarda DADO ESTRUTURADO
@@ -41,6 +42,12 @@ export type NotificationRefs = {
   // `loadNotifications` via LEFT JOIN em `recipe_review` (sem coluna nova); reflete edições posteriores
   // da nota (ADR-0028 "dado vivo"). `null` quando não há avaliação/rating (ex.: `new_follower`).
   rating?: number | null
+  // #460: UUID da receita-sujeito, quando há (eventos de receita/avaliação). Alimenta o LINK do item
+  // no painel (`notificationHref` → detalhe canônico). É a coluna `notification.recipe_id` que JÁ existe
+  // (sem schema novo); `null` p/ eventos sem receita (`new_follower`, `account_restricted`, sugestão de
+  // cozinha). NUNCA vira TEXTO. Não é capability: o GET do detalhe reimpõe os gates de leitura, então
+  // expor o UUID a quem já interagiu com a receita (dono, ou avaliador em `review_moderated`) não vaza.
+  recipeId?: string | null
 }
 
 /**
@@ -103,5 +110,47 @@ export function renderNotification(
     default:
       // Tipos ainda não ligados a um render específico → texto genérico seguro (tracer bullet).
       return msgs.generico
+  }
+}
+
+/**
+ * #460: resolve o ALVO clicável de uma notificação a partir do tipo + refs estruturadas — PURO
+ * (sem DB/I/O), no locale de quem lê. Devolve o caminho interno ou `null` (o item vira texto puro,
+ * sem link). Fecha o beco-sem-saída: abrir o painel marca tudo como lido, então "avaliou sua receita"
+ * / "começou a seguir você" precisam LEVAR ao alvo.
+ *
+ * Mapeamento (ADR-0028):
+ *  - `new_follower` → perfil público do ator `/u/<handle>` (sem prefixo de locale — o proxy prefixa,
+ *    igual ao `CookCard`/`AuthSlot`). Ator soft-deletado (handle degradado a null) ⇒ SEM link (o item
+ *    degrada a texto, coerente com a variante anônima do render — não linka `/u/undefined`).
+ *  - eventos de RECEITA (`review_on_recipe`, `review_moderated`, `recipe_moderated`, `image_moderated`)
+ *    → detalhe canônico via `recipeDetailPath(locale, <uuid>)` = `/{locale}/recipes/<uuid>`, que 308a
+ *    pro slug do locale (link legado por UUID, ADR-0020). Destinatário: o DONO da receita
+ *    (`review_on_recipe`/`recipe_moderated`/`image_moderated`) — lê a própria mesmo removida/moderada
+ *    (caminho do dono, cookie); ou o AVALIADOR (`review_moderated`) — a receita é pública (ele a avaliou),
+ *    então o UUID 308a normalmente. Borda leak-safe: se a receita virou não-pública depois, o avaliador
+ *    cai no 404 do caminho do dono (não vaza slug/existência) em vez de num link morto silencioso. Sem
+ *    `recipeId` (dado legado) ⇒ SEM link.
+ *  - `cuisine_suggestion_resolved` / `account_restricted` → SEM alvo natural (informativos): texto puro.
+ */
+export function notificationHref(
+  type: NotificationType,
+  refs: NotificationRefs,
+  locale: string,
+): string | null {
+  switch (type) {
+    case 'new_follower': {
+      const handle = refs.actorHandle?.trim()
+      return handle ? `/u/${handle}` : null
+    }
+    case 'review_on_recipe':
+    case 'review_moderated':
+    case 'recipe_moderated':
+    case 'image_moderated': {
+      const id = refs.recipeId?.trim()
+      return id ? recipeDetailPath(locale, id) : null
+    }
+    default:
+      return null
   }
 }
