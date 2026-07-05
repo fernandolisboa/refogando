@@ -11,6 +11,7 @@
 import { SectionGate } from '../gate'
 import { ConfigSection } from '@/components/admin/config-section'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { AiCostSection } from '@/components/admin/ai-cost-section'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,8 @@ export default async function AdminConfigPage() {
         <ConfigSection />
         {/* #134/#167: geração de imagem — modelo + tetos diários por papel (admin-only). */}
         <AiConfigSection />
+        {/* #465: custo de IA — agrega os ledgers de texto (#463) + imagem (#224), read-only. */}
+        <AiCostSection />
       </div>
     </SectionGate>
   )
