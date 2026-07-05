@@ -38,6 +38,14 @@ export function NotificationBell() {
 
   const m = messages.notifications
   const badge = unreadCount > 99 ? '99+' : String(unreadCount)
+  // #461 (a11y): o rótulo do sino ANUNCIA a contagem de não-lidas (o badge é `aria-hidden` — visual).
+  // 0 → só "Notificações"; 1 → singular; >1 → plural com `{n}` (número real, não o "99+" visual).
+  const bellLabel =
+    unreadCount === 0
+      ? m.ariaLabel
+      : unreadCount === 1
+        ? m.ariaLabelUmaNaoLida
+        : m.ariaLabelNaoLidas.replace('{n}', String(unreadCount))
 
   return (
     <DropdownMenu
@@ -47,12 +55,15 @@ export function NotificationBell() {
       }}
     >
       <DropdownMenuTrigger
-        aria-label={m.ariaLabel}
+        aria-label={bellLabel}
         className="relative inline-flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-brand/10 hover:text-fg"
       >
         <BellIcon aria-hidden="true" className="size-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[0.625rem] leading-4 font-semibold text-white">
+          <span
+            aria-hidden="true"
+            className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[0.625rem] leading-4 font-semibold text-white"
+          >
             {badge}
           </span>
         )}

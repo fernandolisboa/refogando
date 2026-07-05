@@ -11,6 +11,7 @@ import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
+import { MESSAGES } from '@/i18n/messages'
 import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
 import { getDb } from '@/server/deps'
 import { loadVocabulary } from '@/server/vocabulary/load'
@@ -88,6 +89,16 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
+        {/* #461 (a11y): skip-link — PRIMEIRO tab stop do documento, oculto acima da viewport até
+            receber foco (então desliza pra `top-2`), pulando os ~7 tab stops repetidos do header
+            sticky direto pro conteúdo (`#conteudo`, o wrapper do `<main>` da página). Server-render
+            no locale do segmento da URL (`MESSAGES[locale]`) — não depende de provider/cliente. */}
+        <a
+          href="#conteudo"
+          className="absolute left-4 -top-16 z-[100] rounded-md bg-surface px-4 py-2 text-sm font-medium text-fg shadow-md ring-2 ring-brand transition-[top] focus:top-2"
+        >
+          {MESSAGES[locale].nav.pularParaConteudo}
+        </a>
         {/* Atualização graceful (#372, ADR-0028 dec 5-A2): rede de segurança silenciosa, sem DOM
             (retorna null), independente de provider/locale/sessão. Montado incondicionalmente ⇒
             o visitante anônimo também se beneficia do reload quieto pós-deploy. */}
@@ -103,8 +114,15 @@ export default async function LocaleLayout({
             <HomeSearchProvider>
               <SiteHeader />
               {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
-                  então mantém um único landmark main por documento. */}
-              <div className="flex flex-1 flex-col">{children}</div>
+                  então mantém um único landmark main por documento. #461: alvo do skip-link
+                  (`id="conteudo"` + `tabIndex={-1}` p/ receber foco programático sem virar tab stop). */}
+              <div
+                id="conteudo"
+                tabIndex={-1}
+                className="flex flex-1 flex-col rounded-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg"
+              >
+                {children}
+              </div>
               <SiteFooter initialTheme={initialTheme} socialLinks={socialLinks} />
             </HomeSearchProvider>
            </RecipeVariantProvider>

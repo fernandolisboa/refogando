@@ -97,10 +97,42 @@ describe('NotificationBell (#371)', () => {
       nextCursor: null,
     })
     renderBell()
-    const bell = screen.getByRole('button', { name: M.ariaLabel })
+    const bell = screen.getByRole('button', { name: /Notificações/ })
     expect(bell).toBeInTheDocument()
     // badge aparece após o pull de mount
     expect(await screen.findByText('1')).toBeInTheDocument()
+    // #461: com 1 não-lida, o RÓTULO do sino anuncia a contagem (singular); o badge é aria-hidden.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: M.ariaLabelUmaNaoLida })).toBeInTheDocument(),
+    )
+  })
+
+  // #461 (a11y): a contagem de não-lidas entra no aria-label do sino (o badge visual é aria-hidden).
+  it('aria-label do sino reflete a contagem: 0 → base; 1 → singular; >1 → plural com {n}', async () => {
+    // 0 não-lidas: rótulo base, sem contagem.
+    mockSession = authed()
+    mockFetch({ notifications: [], unreadCount: 0, nextCursor: null })
+    const { unmount } = renderBell()
+    expect(screen.getByRole('button', { name: M.ariaLabel })).toBeInTheDocument()
+    unmount()
+
+    // >1: plural com o número REAL interpolado.
+    mockSession = authed()
+    mockFetch({
+      notifications: [
+        { id: 'n1', type: 'new_follower', refs: { actorName: 'Ana' }, actorImage: null, readAt: null, createdAt: '2026-01-01T00:00:00Z' },
+      ],
+      unreadCount: 3,
+      nextCursor: null,
+    })
+    renderBell()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: M.ariaLabelNaoLidas.replace('{n}', '3') }),
+      ).toBeInTheDocument(),
+    )
+    // O badge (visual) é aria-hidden ⇒ não vira nome acessível: o "3" do rótulo vem do template.
+    expect(screen.getByText('3')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('abrir o painel: marca-tudo (POST read), zera o badge e mostra a lista localizada', async () => {
@@ -114,7 +146,7 @@ describe('NotificationBell (#371)', () => {
       nextCursor: null,
     })
     renderBell()
-    const bell = screen.getByRole('button', { name: M.ariaLabel })
+    const bell = screen.getByRole('button', { name: /Notificações/ })
     await screen.findByText('1') // badge presente antes de abrir
 
     await user.click(bell)
@@ -130,7 +162,7 @@ describe('NotificationBell (#371)', () => {
     mockSession = authed()
     mockFetch({ notifications: [], unreadCount: 0, nextCursor: null })
     renderBell()
-    const bell = screen.getByRole('button', { name: M.ariaLabel })
+    const bell = screen.getByRole('button', { name: /Notificações/ })
     await user.click(bell)
     expect(await screen.findByText(M.vazio)).toBeInTheDocument()
   })
@@ -149,7 +181,7 @@ describe('NotificationBell (#371)', () => {
       nextCursor: null,
     })
     renderBell()
-    await user.click(screen.getByRole('button', { name: M.ariaLabel }))
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
     const item = await screen.findByRole('menuitem', { name: /Ana começou a seguir você/ })
     expect(item).toHaveAttribute('href', '/u/ana')
   })
@@ -166,7 +198,7 @@ describe('NotificationBell (#371)', () => {
       nextCursor: null,
     })
     renderBell()
-    await user.click(screen.getByRole('button', { name: M.ariaLabel }))
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
     const item = await screen.findByRole('menuitem', { name: /avaliou sua receita/ })
     expect(item).toHaveAttribute('href', `/pt-BR/recipes/${rid}`)
   })
@@ -182,7 +214,7 @@ describe('NotificationBell (#371)', () => {
       nextCursor: null,
     })
     renderBell()
-    await user.click(screen.getByRole('button', { name: M.ariaLabel }))
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
     expect(await screen.findByText(M.contaRestringida)).toBeInTheDocument()
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()

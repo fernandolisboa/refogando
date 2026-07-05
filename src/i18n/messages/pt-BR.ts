@@ -34,6 +34,9 @@ export const ptBR = {
     fecharMenu: 'Fechar menu',
     menu: 'Menu',
     menuDescricao: 'Navegação do site e conta',
+    // #461 (a11y): skip-link (1º tab stop, oculto até focar) que pula o header repetido e leva ao
+    // conteúdo principal (`#conteudo`, o wrapper do `<main>` de cada página).
+    pularParaConteudo: 'Pular para o conteúdo',
   },
   // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
   // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
@@ -41,6 +44,10 @@ export const ptBR = {
   // FLAT (a seção é folha-de-string): o tipo `Messages` deriva só 2 níveis, então nada de sub-objeto.
   notifications: {
     ariaLabel: 'Notificações',
+    // #461 (a11y): quando há não-lidas, o rótulo do sino ANUNCIA a contagem (o badge é só visual —
+    // `aria-hidden`). `{n}` interpolado na renderização; singular/plural como os demais contadores.
+    ariaLabelUmaNaoLida: 'Notificações (1 não lida)',
+    ariaLabelNaoLidas: 'Notificações ({n} não lidas)',
     tituloPainel: 'Notificações',
     vazio: 'Nenhuma notificação',
     // Evento `new_follower` — {name} = nome do ator (interpolado na renderização).
