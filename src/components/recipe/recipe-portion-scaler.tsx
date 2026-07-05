@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { IngredientView } from '@/domain/recipe-read'
 import type { Messages } from '@/i18n/messages'
 import { formatIngredientLine, scaleIngredient } from '@/domain/ingredient-line'
+import { usePortionScale } from './recipe-portion-scale-context'
 
 const MIN_PORCOES = 1
 const MAX_PORCOES = 99
@@ -24,20 +24,21 @@ const MAX_PORCOES = 99
  * usava antes — troca de lugar, não de forma, então os testes/A11y de heading/lista continuam
  * válidos. Só existe quando `originalPorcoes` é conhecido (a página só monta este componente
  * quando `view.porcoes != null`); sem porções originais não há razão pra escalar.
+ *
+ * #453: o estado de porções/fator mora no `PortionScaleProvider` (contexto ancestral, montado em
+ * `DetailChrome`) — NÃO em `useState` local — pra o `RecipeShareButton` (irmão fora desta árvore)
+ * ler o MESMO fator corrente e compartilhar as quantidades JÁ ESCALADAS, não as originais.
  */
 export function RecipePortionScaler({
   ingredients,
-  originalPorcoes,
   m,
   locale,
 }: {
   ingredients: readonly IngredientView[]
-  originalPorcoes: number
   m: Messages
   locale: string
 }) {
-  const [porcoes, setPorcoes] = useState(originalPorcoes)
-  const factor = porcoes / originalPorcoes
+  const { porcoes, factor, setPorcoes } = usePortionScale()
 
   const lines = [...ingredients]
     .sort((a, b) => a.ordem - b.ordem)

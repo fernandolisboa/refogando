@@ -39,6 +39,8 @@ import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
+import { RecipeShareButton } from '@/components/recipe/recipe-share-button'
+import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import {
   RecipeReviewSection,
   type ReviewViewSerialized,
@@ -356,33 +358,49 @@ async function DetailChrome({
       {jsonLd != null && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       )}
-      {/* Topo: "Voltar" (muted, href estável "/" — a home É a busca) à ESQUERDA e o bookmark de
-          SALVAR à DIREITA, acima da foto. `justify-between` dá ao link a largura do conteúdo (antes
-          ele esticava a coluna toda por ser flex-item). O bookmark (#62/#362) monta quando a Receita
-          está no POOL (`reviews != null` — o MESMO sinal de pool INDEPENDENTE que a seção de
-          Avaliações usa) OU quando o DONO gerencia a própria (`canManage`) — inclusive a PRIVADA, que
-          fica FORA do pool (`reviews == null`) mas PRECISA do Salvar (AC6). No caminho público
-          `viewerSaved` chega ausente (anônimo, resolvido no cliente). `key={view.id}`: REMONTA por
-          receita (numa nav detalhe→detalhe in-place o estado-do-viewer não vaza da anterior). */}
-      <div className="flex items-start justify-between gap-4">
-        <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
-          ← {messages.detalhe.voltar}
-        </Link>
-        {(reviews != null || view.canManage) && (
-          <RecipeEngagementControls
-            key={view.id}
-            recipeId={view.id}
-            initialViewerSaved={view.viewerSaved}
-          />
-        )}
-      </div>
-      <RecipeDetailView
-        view={view}
-        m={messages}
-        locale={locale}
-        cozinhaLabel={cozinhaLabel}
-        catalogDisclosure={catalogDisclosure}
-      />
+      {/* #453: `PortionScaleProvider` ANCESTRAL comum ao botão compartilhar E ao escalador de
+          porções (dentro de `RecipeDetailView`) — os dois precisam do MESMO fator corrente pro
+          texto compartilhado refletir a porção AJUSTADA na tela, não a original (achado de
+          code-review: sem isto, "escalei pra 8 porções, compartilho com o grupo" mandaria as
+          quantidades de 4 porções). `key={view.id}` REMONTA por receita (mesmo motivo do #452:
+          numa nav detalhe→detalhe in-place o fator não deve vazar da receita anterior). Envolve
+          `RecipeDetailView`, que segue Server Component — só o Provider em si é client; a árvore
+          de leitura passada como `children` continua renderizando no servidor (padrão idiomático
+          do Next: Server Component como filho de Client Component). */}
+      <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+        {/* Topo: "Voltar" (muted, href estável "/" — a home É a busca) à ESQUERDA e, à DIREITA, o
+            botão compartilhar (#453) + o bookmark de SALVAR, acima da foto. `justify-between` dá
+            ao link a largura do conteúdo (antes ele esticava a coluna toda por ser flex-item).
+            Compartilhar (#453) monta SEMPRE — funciona pro Visitante anônimo também
+            (CONTEXT.md:168), NUNCA gateado por pool/sessão (ao contrário do bookmark). O bookmark
+            (#62/#362) monta quando a Receita está no POOL (`reviews != null` — o MESMO sinal de
+            pool INDEPENDENTE que a seção de Avaliações usa) OU quando o DONO gerencia a própria
+            (`canManage`) — inclusive a PRIVADA, que fica FORA do pool (`reviews == null`) mas
+            PRECISA do Salvar (AC6). No caminho público `viewerSaved` chega ausente (anônimo,
+            resolvido no cliente). */}
+        <div className="flex items-start justify-between gap-4">
+          <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
+            ← {messages.detalhe.voltar}
+          </Link>
+          <div className="flex items-start gap-1">
+            <RecipeShareButton view={view} />
+            {(reviews != null || view.canManage) && (
+              <RecipeEngagementControls
+                key={view.id}
+                recipeId={view.id}
+                initialViewerSaved={view.viewerSaved}
+              />
+            )}
+          </div>
+        </div>
+        <RecipeDetailView
+          view={view}
+          m={messages}
+          locale={locale}
+          cozinhaLabel={cozinhaLabel}
+          catalogDisclosure={catalogDisclosure}
+        />
+      </PortionScaleProvider>
       {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews
           devolveu o pool). `key={view.id}`: remonta por receita (estado do widget não vaza numa nav
           detalhe→detalhe in-place). */}

@@ -45,6 +45,7 @@ import { useConversationChat } from '@/hooks/use-conversation-chat'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { lastExchange } from './conversa-focused-view'
 import { RecipeDetailView } from './recipe-detail-view'
+import { PortionScaleProvider } from './recipe-portion-scale-context'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 
@@ -299,13 +300,16 @@ export function CreateConversaExperience({
                 </p>
               )}
 
-              {/* A Receita destilada como HERÓI — REUSO total. `<h1>{view.name}` é o ÚNICO `<h1>`. */}
-              <RecipeDetailView
-                view={view}
-                m={messages}
-                locale={locale}
-                cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
-              />
+              {/* A Receita destilada como HERÓI — REUSO total. `<h1>{view.name}` é o ÚNICO `<h1>`.
+                  #453: `PortionScaleProvider` com `key={view.id}` — nova destilação troca `view`. */}
+              <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+                <RecipeDetailView
+                  view={view}
+                  m={messages}
+                  locale={locale}
+                  cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+                />
+              </PortionScaleProvider>
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}

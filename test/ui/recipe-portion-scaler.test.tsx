@@ -6,11 +6,15 @@ import '@testing-library/jest-dom/vitest'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { IngredientView } from '@/domain/recipe-read'
 import { RecipePortionScaler } from '@/components/recipe/recipe-portion-scaler'
+import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 
 /**
  * `RecipePortionScaler` (#452) — escalador de porções client-side. Fixture com 2 ingredientes:
  * um com quantidade estruturada (escala) e um sem (fica como está) — cobre o contrato
  * "itens sem quantidade estruturada ficam como estão" (CONTEXT.md:192).
+ *
+ * #453: o estado de porções/fator mora no `PortionScaleProvider` ancestral (não mais em
+ * `useState` local do componente) — o teste precisa montá-lo, espelhando `DetailChrome`.
  */
 const M = ptBR
 
@@ -23,12 +27,9 @@ function ingredients(): IngredientView[] {
 
 function renderScaler(originalPorcoes = 4) {
   return render(
-    <RecipePortionScaler
-      ingredients={ingredients()}
-      originalPorcoes={originalPorcoes}
-      m={M}
-      locale="pt-BR"
-    />,
+    <PortionScaleProvider originalPorcoes={originalPorcoes}>
+      <RecipePortionScaler ingredients={ingredients()} m={M} locale="pt-BR" />
+    </PortionScaleProvider>,
   )
 }
 

@@ -17,6 +17,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { Messages } from '@/i18n/messages'
 import { RecipeDetailView } from './recipe-detail-view'
+import { PortionScaleProvider } from './recipe-portion-scale-context'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import type { VariantChoice } from '@/hooks/use-recipe-generation'
@@ -68,13 +69,18 @@ export function VariantChoiceRegion({
             </div>
 
             {v.view != null ? (
-              <RecipeDetailView
-                view={v.view}
-                m={messages}
-                locale={locale}
-                nameHeadingLevel="h2"
-                cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, v.view.facets.cozinha)}
-              />
+              // #453: cada coluna ganha o SEU PRÓPRIO `PortionScaleProvider` (não compartilhado
+              // entre as duas variações) — escala independente por coluna, espelhando o
+              // comportamento de antes (cada `RecipePortionScaler` tinha seu `useState` próprio).
+              <PortionScaleProvider originalPorcoes={v.view.porcoes ?? 1}>
+                <RecipeDetailView
+                  view={v.view}
+                  m={messages}
+                  locale={locale}
+                  nameHeadingLevel="h2"
+                  cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, v.view.facets.cozinha)}
+                />
+              </PortionScaleProvider>
             ) : (
               <p className="text-muted">{m.variacaoCorpoIndisponivel}</p>
             )}
