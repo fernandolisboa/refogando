@@ -173,6 +173,6 @@ describe('constantes do tradutor (#426)', () => {
 
   it('teto e versão são estáveis', () => {
     expect(TRANSLATION_MAX_TOKENS).toBe(4096)
-    expect(TRANSLATION_PROMPT_VERSION).toBe(1)
+    expect(TRANSLATION_PROMPT_VERSION).toBe(2)
   })
 })
