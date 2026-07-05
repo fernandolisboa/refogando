@@ -311,6 +311,10 @@ export async function POST(req: Request): Promise<Response> {
           axes,
         })
         const result = classify(out)
+        // #463: telemetria de custo da DESTILAÇÃO (só o branch 'object' a carrega). O custo do STREAM da
+        // conversa em si não tem linha própria (ver nota em client.ts.streamConversation) — esta linha
+        // carimba o custo da destilação, que é o episódio de criação da conversa.
+        const usage = out.kind === 'object' ? out.usage : undefined
 
         let terminal: TerminalFrame
         if (result.outcome === 'invalid') {
@@ -331,6 +335,7 @@ export async function POST(req: Request): Promise<Response> {
             existingSessionId: sessionId,
             promptStamp,
             quota: quotaGate,
+            usage,
           })
           terminal = { type: 'impossible', advisory: result.advisory }
         } else {
@@ -345,6 +350,7 @@ export async function POST(req: Request): Promise<Response> {
             existingSessionId: sessionId,
             promptStamp,
             quota: quotaGate,
+            usage,
           })
           // #119: embeda a Receita destilada (best-effort, ASSISTIVO) p/ a Busca semântica. Falha
           // (sem key / 429 / rede) NÃO derruba o turno — a Receita já está persistida; a Busca degrada
