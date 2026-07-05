@@ -505,6 +505,14 @@ export const recipeTranslation = pgTable(
     // Versão do prompt/glossário do tradutor que produziu esta linha (#426, ADR-0030) — habilita
     // backfill por-versão futuro (espelha EMBEDDING_VERSION em recipe_embedding.model). NULL = legado.
     promptVersion: integer('prompt_version'),
+    // Fingerprints de conteúdo (#496, ADR-0031) — sha256 hex de uma serialização canônica, gravados no
+    // momento da MT. `source_fingerprint` = hash da FONTE (campos + raw_text dos ingredientes) → "defasada"
+    // quando a fonte atual diverge. `mt_fingerprint` = hash do que a MT PRODUZIU (campos + nomes traduzidos)
+    // → "intocada" quando o conteúdo atual ainda bate (trava de segurança da re-tradução; NULL = nunca
+    // intocada, protege legado/trabalho humano). Derivação por comparação (modelo pull) — ver translation-
+    // fingerprint.ts. NULL = legado (preenchido pelo backfill da fatia D).
+    sourceFingerprint: text('source_fingerprint'),
+    mtFingerprint: text('mt_fingerprint'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     // Coluna GERADA STORED (issue #6): FTS por linha, cada uma na própria config de
