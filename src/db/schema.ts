@@ -36,6 +36,7 @@ import { GENERATION_OUTCOMES } from '@/domain/generation'
 import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
+import { PLANS } from '@/domain/plan'
 import { STRENGTHS } from '@/domain/briefing'
 import type { PromptStamp } from '@/domain/briefing'
 import {
@@ -116,6 +117,10 @@ export const generationOutcomeEnum = pgEnum('generation_outcome', GENERATION_OUT
 // Papel de Usuário (issue #5). Fonte única: ROLES de @/domain/user. Sem `visitante`
 // (Visitante = ausência de sessão/conta — ADR-0011).
 export const roleEnum = pgEnum('role', ROLES)
+// Plano comercial de entitlement (issue #466, scaffold de paywall flag-off). Fonte única: PLANS de
+// @/domain/plan (free/pro). Eixo ORTOGONAL ao roleEnum (privilégio): plano é o eixo COMERCIAL por
+// Usuário. Coluna `users.plan` NOT NULL default 'free' — todo mundo nasce free = comportamento atual.
+export const planEnum = pgEnum('plan', PLANS)
 // Força do BriefingItem (issue #11). Fonte única: STRENGTHS de @/domain/briefing —
 // `strength` é conceito do Briefing, não do kernel bidirecional de vocabulary.ts
 // (espelha creationModeEnum importando de recipe.ts). ÚNICO enum novo da #11.
@@ -660,6 +665,12 @@ export const users = pgTable(
     image: text('image'),
     // Papel gerenciado pelo plugin admin; pgEnum dá integridade no banco (C6).
     role: roleEnum('role').notNull().default('usuario'),
+    // Plano comercial de entitlement (#466, scaffold de paywall flag-off). Eixo COMERCIAL por Usuário,
+    // ORTOGONAL ao `role` (privilégio). pgEnum free/pro, NOT NULL default 'free': ADD COLUMN com default
+    // não-volátil = metadata-only (sem rewrite) na tabela populada — contas existentes viram 'free', que
+    // é BYTE-IDÊNTICO ao comportamento atual (a resolução de teto trata free = tetos de hoje). `input:false`
+    // no additionalFields do Better Auth: o plano NUNCA vem do cliente (muda por billing, Fase 2), só é lido.
+    plan: planEnum('plan').notNull().default('free'),
     // Preferência de apresentação (D1, #4.AC5/#5.AC4). text livre BCP-47, NULLABLE.
     locale: text('locale'),
     // Nível de habilidade PADRÃO do usuário (#421, ADR-0029 dec.2): default do eixo "para quem a

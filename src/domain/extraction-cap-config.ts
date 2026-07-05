@@ -14,6 +14,7 @@
  */
 
 import { ROLES, type Role } from '@/domain/user'
+import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 
 /** Teto diário de EXTRAÇÃO por papel. `null` = ilimitado (mapeado a `Infinity`). */
 export type ExtractionCapByRole = Record<Role, number | null>
@@ -33,9 +34,19 @@ export const DEFAULT_EXTRACTION_CAP_BY_ROLE: ExtractionCapByRole = {
  * Teto numérico para um papel A PARTIR da config. `null` (papel ilimitado, p.ex. admin) ⇒ `Infinity`
  * (que `decideRecipeGenQuota` lê como "sempre permite"). `role` null/desconhecido (não deveria ocorrer
  * pós-requireSession) ⇒ FAIL-CLOSED no teto de `usuario`. Espelha `capFromRecipeGenConfig`.
+ *
+ * EIXO `plan` (#466, scaffold flag-off): considera o plano comercial ALÉM do papel. Default
+ * (`plan='free'` OU sem `proCaps`) ⇒ BYTE-IDÊNTICO ao de hoje (tabela `caps`). Só `plan==='pro'` COM
+ * `proCaps` (Fase 2) puxa o teto `pro`. NÃO ativa cobrança nem muda teto efetivo agora.
  */
-export function capFromExtractionConfig(caps: ExtractionCapByRole, role: Role | null): number {
-  const raw = role != null ? caps[role] : caps.usuario
+export function capFromExtractionConfig(
+  caps: ExtractionCapByRole,
+  role: Role | null,
+  plan: Plan = DEFAULT_PLAN,
+  proCaps?: ExtractionCapByRole | null,
+): number {
+  const table = plan === 'pro' && proCaps != null ? proCaps : caps
+  const raw = role != null ? table[role] : table.usuario
   return raw == null ? Infinity : raw
 }
 

@@ -15,6 +15,7 @@
  */
 
 import { ROLES, type Role } from '@/domain/user'
+import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 
 /** Teto diário por papel. `null` = ilimitado (mapeado a `Infinity` em `capFromRecipeGenConfig`). */
 export type RecipeGenCapByRole = Record<Role, number | null>
@@ -35,9 +36,20 @@ export const DEFAULT_RECIPE_GEN_CAP_BY_ROLE: RecipeGenCapByRole = {
  * (que `decideRecipeGenQuota` lê como "sempre permite"). `role` null/desconhecido (não deveria
  * ocorrer pós-requireSession) ⇒ FAIL-CLOSED no teto de `usuario` (nunca libera geração sem papel
  * claro). Espelha `capFromConfig` de image-gen-config.ts.
+ *
+ * EIXO `plan` (#466, scaffold flag-off): a resolução considera o plano comercial ALÉM do papel. Com o
+ * default (`plan='free'` OU sem `proCaps` configurado) o resultado é BYTE-IDÊNTICO ao de antes — cai
+ * na tabela `caps` de hoje. Só quando `plan==='pro'` E há uma tabela `proCaps` (Fase 2 de billing a
+ * configura) o teto vem da tabela `pro`. NÃO ativa cobrança nem muda nenhum teto efetivo agora.
  */
-export function capFromRecipeGenConfig(caps: RecipeGenCapByRole, role: Role | null): number {
-  const raw = role != null ? caps[role] : caps.usuario
+export function capFromRecipeGenConfig(
+  caps: RecipeGenCapByRole,
+  role: Role | null,
+  plan: Plan = DEFAULT_PLAN,
+  proCaps?: RecipeGenCapByRole | null,
+): number {
+  const table = plan === 'pro' && proCaps != null ? proCaps : caps
+  const raw = role != null ? table[role] : table.usuario
   return raw == null ? Infinity : raw
 }
 

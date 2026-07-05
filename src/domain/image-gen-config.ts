@@ -14,6 +14,7 @@
  */
 
 import { ROLES, type Role } from '@/domain/user'
+import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 
 /**
  * Modelo default do gerador (Nano Banana 2, ADR-0017). Definido AQUI (domínio) — fonte única; o seam
@@ -60,9 +61,19 @@ export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
  * (que `decideImageQuota` lê como "sempre permite"). `role` null/desconhecido (não deveria ocorrer
  * pós-requireSession) ⇒ FAIL-CLOSED no teto de `usuario` (nunca libera geração paga sem papel claro).
  * Espelha a semântica de `capForRole` (#132), mas lendo da config.
+ *
+ * EIXO `plan` (#466, scaffold flag-off): considera o plano comercial ALÉM do papel. Default
+ * (`plan='free'` OU sem `proCaps`) ⇒ BYTE-IDÊNTICO ao de hoje (tabela `caps`). Só `plan==='pro'` COM
+ * `proCaps` (Fase 2) puxa o teto `pro`. NÃO ativa cobrança nem muda teto efetivo agora.
  */
-export function capFromConfig(caps: ImageGenCapByRole, role: Role | null): number {
-  const raw = role != null ? caps[role] : caps.usuario
+export function capFromConfig(
+  caps: ImageGenCapByRole,
+  role: Role | null,
+  plan: Plan = DEFAULT_PLAN,
+  proCaps?: ImageGenCapByRole | null,
+): number {
+  const table = plan === 'pro' && proCaps != null ? proCaps : caps
+  const raw = role != null ? table[role] : table.usuario
   return raw == null ? Infinity : raw
 }
 

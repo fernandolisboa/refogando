@@ -207,7 +207,7 @@ export async function POST(req: Request): Promise<Response> {
   // in-band) com `retryAfterMs` (countdown); a UI mapeia limite_geracao p/ mensagem amigável. cap ∞
   // (admin/papel ilimitado) pula a contagem. Espelha o gate de POST /api/generations.
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role, g.session.user.plan)
   // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). A
   // ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration na
   // destilação (via `quotaGate` abaixo) — se a corrida for perdida lá, sai um frame terminal in-band.

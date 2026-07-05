@@ -36,6 +36,32 @@ describe('capFromExtractionConfig — teto por papel a partir da config', () => 
   })
 })
 
+describe('capFromExtractionConfig — eixo plan (#466, scaffold flag-off)', () => {
+  const caps: ExtractionCapByRole = { usuario: 60, curador: 120, admin: null }
+  const proCaps: ExtractionCapByRole = { usuario: 600, curador: 1200, admin: null }
+
+  it('PARIDADE: sem plano (default free) ⇒ BYTE-IDÊNTICO à resolução por papel de hoje', () => {
+    expect(capFromExtractionConfig(caps, 'usuario')).toBe(capFromExtractionConfig(caps, 'usuario', 'free'))
+    expect(capFromExtractionConfig(caps, 'curador', 'free')).toBe(120)
+    expect(capFromExtractionConfig(caps, 'admin', 'free')).toBe(Infinity)
+    expect(capFromExtractionConfig(caps, null, 'free')).toBe(60)
+  })
+
+  it('plan=pro SEM proCaps ⇒ cai no teto free (não muda nada agora)', () => {
+    expect(capFromExtractionConfig(caps, 'usuario', 'pro')).toBe(60)
+  })
+
+  it('plan=pro COM proCaps ⇒ pega o teto pro (Fase 2 configura)', () => {
+    expect(capFromExtractionConfig(caps, 'usuario', 'pro', proCaps)).toBe(600)
+    expect(capFromExtractionConfig(caps, 'curador', 'pro', proCaps)).toBe(1200)
+    expect(capFromExtractionConfig(caps, 'admin', 'pro', proCaps)).toBe(Infinity)
+  })
+
+  it('plan=free IGNORA proCaps mesmo se passado', () => {
+    expect(capFromExtractionConfig(caps, 'usuario', 'free', proCaps)).toBe(60)
+  })
+})
+
 describe('parseExtractionCapByRole — validação do PUT', () => {
   it('objeto válido ⇒ devolve o valor normalizado', () => {
     expect(parseExtractionCapByRole({ usuario: 5, curador: 8, admin: null })).toEqual({

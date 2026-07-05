@@ -63,7 +63,7 @@ export async function POST(req: Request): Promise<Response> {
   // config vem da MESMA linha singleton app_config; default em código quando a linha está ausente.
   const [cfg] = await getDb().select({ extractionCapByRole: appConfig.extractionCapByRole }).from(appConfig)
   const capByRole = cfg?.extractionCapByRole ?? DEFAULT_EXTRACTION_CAP_BY_ROLE
-  const cap = capFromExtractionConfig(capByRole, g.session.user.role)
+  const cap = capFromExtractionConfig(capByRole, g.session.user.role, g.session.user.plan)
   try {
     await reserveExtractionSlot(getDb(), { userId: g.session.user.id, cap })
   } catch (err) {

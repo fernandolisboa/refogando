@@ -8,6 +8,7 @@ import type { GalleryImage, RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import type { ImageProvenance } from '@/domain/recipe'
 import type { Role } from '@/domain/user'
+import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
 import { capFromConfig } from '@/domain/image-gen-config'
 import { buildDishImagePrompt, composeImagePrompt, composeEditImagePrompt } from '@/domain/image-prompt'
@@ -135,11 +136,13 @@ export async function applyRecipeImageGeneration(input: {
   id: string // já validado uuid pelo route
   userId: string // session.user.id
   role: Role | null // papel do dono (define o teto); null ⇒ fail-closed no teto de `usuario`
+  plan?: Plan // #466: plano comercial do dono (eixo além do papel); ausente ⇒ DEFAULT_PLAN (free = hoje)
   promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
   // #285 (image-to-image): id da imagem-base — a variante é editada a partir dela. Ausente ⇒ do zero.
   sourceImageId?: string
 }): Promise<RecipeImageGenResult> {
   const { db, store, generator, id, userId, role, promptOverride, sourceImageId } = input
+  const plan = input.plan ?? DEFAULT_PLAN
   const now = new Date()
   // #227 (ADR-0022 dec.3): geração COM refino (o sufixo de estilo em texto livre do Owner, #223)
   // marca a imagem `review_required` ⇒ fila PROATIVA do Curador. Refino = override não-vazio (trim).
@@ -188,7 +191,7 @@ export async function applyRecipeImageGeneration(input: {
   // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject ANTES do Gemini no caso
   // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem do ledger)
   // DENTRO da tx que insere a recipe_image + o ledger (via `quota` abaixo) — fecha a corrida TOCTOU.
-  const cap = capFromConfig(genConfig.dailyCapByRole, role)
+  const cap = capFromConfig(genConfig.dailyCapByRole, role, plan)
   if (Number.isFinite(cap)) {
     const recentAt = await loadRecentAiGenAt(db, userId, now)
     const quota = decideImageQuota({ cap, recentAt, now })
