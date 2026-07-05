@@ -96,8 +96,19 @@ function stubFetchOk(body: SearchResponse) {
 
 beforeEach(() => {
   sessionState = anon()
-  routerReplace.mockClear()
-  routerPush.mockClear()
+  // Location de REPOUSO entre testes (senão a URL vaza de um teste pro outro).
+  window.history.replaceState(null, '', '/')
+  // O `replace` do router REFLETE a URL — o efeito de #236 lê `window.location` no guard
+  // `target !== current` pra decidir se reescreve. Um `vi.fn()` puro NÃO muda a location, então
+  // o guard nunca "casa": digitar reescreve em loop e LIMPAR não gera replace nenhum, deixando a
+  // asserção de "última chamada" à mercê da ordem de flush dos efeitos (flake). Emular o efeito
+  // real (mudar a location) torna ambos os testes de URL DETERMINÍSTICOS. `mockImplementation`
+  // (não só no `vi.fn` inicial) porque o `restoreAllMocks` do afterEach zeraria a impl.
+  routerReplace.mockReset()
+  routerReplace.mockImplementation((url: string) => {
+    window.history.replaceState(null, '', url)
+  })
+  routerPush.mockReset()
 })
 
 afterEach(() => {
