@@ -32,12 +32,18 @@ export const enUS: Messages = {
     fecharMenu: 'Close menu',
     menu: 'Menu',
     menuDescricao: 'Site navigation and account',
+    // #461 (a11y): skip-link (first tab stop, hidden until focused) that bypasses the repeated header.
+    pularParaConteudo: 'Skip to content',
   },
   // Notifications inbox (#371, ADR-0028): bell in the chrome (logged-in only) + panel. Same FLAT-key
   // shape as pt-BR (the `Messages` type derives only 2 levels — no sub-objects); `renderNotification`
   // picks the key by type and interpolates `{name}` via `String.replace`.
   notifications: {
     ariaLabel: 'Notifications',
+    // #461 (a11y): when there are unread items, the bell label announces the count (the badge is
+    // visual-only, `aria-hidden`). `{n}` interpolated at render; singular/plural like other counters.
+    ariaLabelUmaNaoLida: 'Notifications (1 unread)',
+    ariaLabelNaoLidas: 'Notifications ({n} unread)',
     tituloPainel: 'Notifications',
     vazio: 'No notifications yet',
     novoSeguidor: '{name} started following you',
