@@ -311,6 +311,8 @@ export const enUS: Messages = {
     notas: 'Notes',
     descricao: 'Description',
     porcoes: 'Servings',
+    porcoesDiminuir: 'Decrease servings',
+    porcoesAumentar: 'Increase servings',
     dificuldade: 'Difficulty',
     tempoAtivo: 'Active time',
     tempoTotal: 'Total time',

@@ -87,3 +87,29 @@ function unitLabelFor(unidade: string, qtyNum: number | null, m: Messages): stri
   const plural = qtyNum != null && !(qtyNum > 0 && qtyNum <= 1)
   return plural ? m.unidadeLabelPlural[unidade] : m.unidadeLabel[unidade]
 }
+
+/**
+ * Escalador de porções (#452, CONTEXT.md:192 "`quantidade` × `ratio` permite escalar por porções
+ * sem IA"): multiplica a `quantidade` estruturada por um fator positivo — ARITMÉTICA pura, nunca
+ * geração/reprocessamento de texto. Arredonda a 3 casas (espelha `numeric(10,3)` da coluna) pra não
+ * acumular ruído de ponto-flutuante ("2" × (3/4) não deve virar "1.4999999999999998").
+ *
+ * Item SEM quantidade estruturada (`null`/`''`) fica COMO ESTÁ (devolve o mesmo valor) — não há
+ * medida pra escalar, e o texto (`rawText`) nunca é a fonte da medida (mesmo contrato do Adendo 2).
+ */
+export function scaleQuantidade(quantidade: string | null, factor: number): string | null {
+  if (quantidade == null || quantidade === '') return quantidade
+  const n = Number(quantidade.replace(',', '.'))
+  if (!Number.isFinite(n)) return quantidade // defensivo: não-numérico sai cru, sem tentar escalar.
+  return String(Math.round(n * factor * 1000) / 1000)
+}
+
+/**
+ * Escala UM ingrediente pro fator de porções corrente — só `quantidade` muda; `unidade`/`rawText`
+ * seguem intactos (a unidade não muda de natureza ao escalar; o nome nunca é flexionado por
+ * heurística, ver contrato acima de `formatIngredientLine`).
+ */
+export function scaleIngredient(item: IngredientView, factor: number): IngredientView {
+  if (item.quantidade == null || item.quantidade === '') return item
+  return { ...item, quantidade: scaleQuantidade(item.quantidade, factor) }
+}
