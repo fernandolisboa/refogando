@@ -1158,6 +1158,15 @@ export const enUS: Messages = {
     backfillResultadoParcial:
       'Recomputed: {recomputados} · remaining: {restantes}. The embedding service stopped (no key or rate limit). Run again later.',
     backfillErro: 'Could not recompute. Try again.',
+    // Outdated translations re-translation (#499, ADR-0031) — resumable batch, same UX as the
+    // embedding backfill.
+    retranslateTitulo: 'Re-translate outdated',
+    retranslateDescricao:
+      'Re-translates derived translations whose original changed or whose translator improved — only the ones nobody hand-edited since the last automatic translation. Run until "remaining: 0".',
+    retranslateBtn: 'Re-translate outdated',
+    retranslateRodando: 'Re-translating…',
+    retranslateResultado: 'Re-translated: {retraduzidas} · skipped: {puladas} · remaining: {restantes}.',
+    retranslateErro: 'Could not re-translate. Try again.',
     // External author (data subject B, no account) intake — #396/GAP-4. Removes the source NAME in bulk
     // by name/URL, without requiring the recipe to belong to the operator. Keeps the URL; irreversible.
     takedownTitulo: 'Remove attribution (author request)',
