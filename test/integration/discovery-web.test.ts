@@ -6,7 +6,8 @@ import {
   CANONICAL_WEB_RESULTS,
   type WebSearchResult,
 } from '@/server/web-search/web-search-provider'
-import { appConfig } from '@/db/schema'
+import { appConfig, webSearchUsageDaily } from '@/db/schema'
+import { DAILY_WEB_SEARCH_QUERY_CAP, utcDayKey } from '@/domain/web-search-budget'
 
 /**
  * Descoberta na WEB (#164, ADR-0019) pela porta MAIS ALTA (GET /api/discovery/web) com
@@ -30,11 +31,12 @@ async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<voi
     })
 }
 
-function get(q: string, locale?: string): Promise<Response> {
+function get(q: string, locale?: string, opts?: { ip?: string }): Promise<Response> {
   const url = new URL('http://localhost/api/discovery/web')
   if (q !== '') url.searchParams.set('q', q)
   if (locale) url.searchParams.set('locale', locale)
-  return GET(new Request(url))
+  const headers = opts?.ip ? { 'x-forwarded-for': opts.ip } : undefined
+  return GET(new Request(url, { headers }))
 }
 
 async function results(res: Response): Promise<WebSearchResult[]> {
@@ -112,5 +114,49 @@ describe('GET /api/discovery/web (#164)', () => {
     const links = await results(res)
     // O Fake já filtra pela allowlist; o endpoint re-filtra (defesa dupla). Só o host listado sobra.
     expect(links.map((l) => l.url)).toEqual(['https://cybercook.com.br/r/1'])
+  })
+
+  // ── Teto de GASTO diário (#464) ────────────────────────────────────────────────
+  it('teto diário estourado ⇒ vazio (degrada, não erro) e NÃO toca o provedor', async () => {
+    await seedWebSearch(true, DOMAINS)
+    // Provedor que estouraria se chamado — prova que o teto barra ANTES da chamada paga.
+    setWebSearchProvider(
+      new FakeWebSearchProvider([
+        { title: 'x', url: 'https://tudogostoso.com.br/x', sourceName: 'X' },
+      ]),
+    )
+    // Contador do dia (UTC) já no teto ⇒ qualquer reserva falha.
+    await getDb()
+      .insert(webSearchUsageDaily)
+      .values({ day: utcDayKey(new Date()), queryCount: DAILY_WEB_SEARCH_QUERY_CAP })
+
+    const res = await get('feijoada')
+    expect(res.status).toBe(200)
+    expect(await results(res)).toEqual([])
+  })
+
+  it('teto diário: chamada bem-sucedida ACUMULA o contador (uma consulta por domínio da allowlist)', async () => {
+    await seedWebSearch(true, DOMAINS)
+    setWebSearchProvider(new FakeWebSearchProvider())
+
+    expect((await get('feijoada')).status).toBe(200)
+    const [row] = await getDb()
+      .select({ n: webSearchUsageDaily.queryCount })
+      .from(webSearchUsageDaily)
+    // Duas entradas na allowlist ⇒ o provedor dispara 2 consultas ⇒ o contador sobe 2.
+    expect(row?.n).toBe(DOMAINS.length)
+  })
+
+  // ── Rate-limit por IP (#464) ───────────────────────────────────────────────────
+  it('rate-limit por IP: 2ª chamada rápida do MESMO IP degrada para vazio', async () => {
+    await seedWebSearch(true, DOMAINS)
+    setWebSearchProvider(new FakeWebSearchProvider())
+
+    const ip = '203.0.113.42' // IP único deste teste (o limiter é módulo-escopo, best-effort in-memory)
+    const first = await get('feijoada', undefined, { ip })
+    expect((await results(first)).length).toBeGreaterThan(0)
+    // Segunda dentro da janela (~1s) ⇒ barrada ⇒ vazio, sem tocar provedor/DB.
+    const second = await get('feijoada', undefined, { ip })
+    expect(await results(second)).toEqual([])
   })
 })

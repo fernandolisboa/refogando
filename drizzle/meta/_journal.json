@@ -421,6 +421,13 @@
       "when": 1783283195228,
       "tag": "0059_premium_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1783284647388,
+      "tag": "0060_volatile_wasp",
+      "breakpoints": true
     }
   ]
 }
