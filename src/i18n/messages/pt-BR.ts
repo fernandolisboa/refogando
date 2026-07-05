@@ -1455,6 +1455,17 @@ export const ptBR = {
     marcando: 'Marcando…',
     listaVazia: 'Nenhuma tradução desatualizada.',
     erroGenerico: 'Não foi possível marcar como revisada. Tente de novo.',
+    // #498 (ADR-0031 companheiro iii): edição do nome de ingrediente traduzido.
+    editarNomes: 'Editar nomes de ingrediente',
+    fecharNomes: 'Fechar',
+    carregandoIngredientes: 'Carregando ingredientes…',
+    erroCarregarIngredientes: 'Não foi possível carregar os ingredientes.',
+    semIngredientesNomeados: 'Nenhum ingrediente com nome nesta receita.',
+    nomeIngredienteLabel: 'Nome do ingrediente',
+    salvarNomes: 'Salvar',
+    salvando: 'Salvando…',
+    nomesSalvos: 'Nomes salvos.',
+    erroSalvarNomes: 'Não foi possível salvar os nomes. Tente de novo.',
   },
   curadoria: {
     titulo: 'Curadoria de catálogo',
