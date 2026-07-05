@@ -171,15 +171,22 @@ async function readCappedHtml(res: Response): Promise<string | null> {
  *
  * Non-2xx, redirect sem/para host inválido-ou-privado, excesso de hops, erro de leitura ou QUALQUER
  * exceção (timeout/DNS/TLS/rede) ⇒ `null`. NUNCA lança — o chamador mapeia `null` ao seu erro tratado.
+ *
+ * `isHopAllowed` (opcional) é RE-CHECADO em CADA hop — inclusive o alvo de um redirect. O importer passa
+ * a checagem de allowlist (`isUrlAllowed`) por aqui: assim um domínio curado que devolva 302 p/ um host
+ * público FORA da allowlist é recusado (fecha o open-redirect → host arbitrário, #448/#164). O probe NÃO
+ * passa nada (é admin-arbitrário, PRÉ-allowlist — sua barreira é só SSRF/DNS).
  */
 export async function fetchHardenedHtml(
   startUrl: string,
   lookupFn: AddressLookup = defaultLookup,
+  isHopAllowed?: (url: string) => boolean,
 ): Promise<FetchedPage | null> {
   let currentUrl = parseProbeUrl(startUrl)
   if (currentUrl === null) return null
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (isHopAllowed && !isHopAllowed(currentUrl)) return null // fora da allowlist (origem OU alvo de redirect)
     const host = hostnameOf(currentUrl)
     if (host === null) return null
     if (!(await isHostPublic(host, lookupFn))) return null

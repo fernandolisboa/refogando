@@ -106,6 +106,50 @@ describe('RealRecipeImporter — SSRF pós-redirect / DNS-rebind (#448)', () => 
   })
 })
 
+describe('RealRecipeImporter — allowlist re-checada por hop (#448/#164)', () => {
+  it('redirect de domínio curado p/ host PÚBLICO FORA da allowlist → fetch_failed (open-redirect fechado)', async () => {
+    const EVIL = 'https://atacante.com/pagina' // público, mas NÃO curado
+    const impl = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/robots.txt')) return new Response('', { status: 404 })
+      if (url.startsWith('https://exemplo.com')) return new Response(null, { status: 302, headers: { location: EVIL } })
+      return new Response(PAGE_HTML, { status: 200 })
+    })
+    vi.stubGlobal('fetch', impl)
+    const res = await new RealRecipeImporter(ALLOW_ALL, publicLookup).import(URL_ALVO, ['exemplo.com'])
+    expect(res).toEqual({ ok: false, reason: 'fetch_failed' })
+    expect(impl.mock.calls.map((c) => String(c[0]))).not.toContain(EVIL) // o host fora da curadoria NÃO é buscado
+  })
+
+  it('redirect p/ host DENTRO da allowlist é seguido e importa', async () => {
+    const FINAL = 'https://sub.exemplo.com/receita-final' // subdomínio do domínio curado
+    const impl = vi.fn(async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/robots.txt')) return new Response('', { status: 404 })
+      if (url === URL_ALVO) return new Response(null, { status: 301, headers: { location: FINAL } })
+      return new Response(PAGE_HTML, { status: 200 })
+    })
+    vi.stubGlobal('fetch', impl)
+    const res = await new RealRecipeImporter(ALLOW_ALL, publicLookup).import(URL_ALVO, ['exemplo.com'])
+    expect(res.ok).toBe(true)
+    expect(impl.mock.calls.map((c) => String(c[0]))).toContain(FINAL)
+  })
+
+  it('origem fora da allowlist (defesa-em-profundidade do seam) → fetch_failed sem tocar a rede', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        calls.push(String(input))
+        return new Response(PAGE_HTML, { status: 200 })
+      }),
+    )
+    const res = await new RealRecipeImporter(ALLOW_ALL, publicLookup).import(URL_ALVO, ['outrodominio.com'])
+    expect(res).toEqual({ ok: false, reason: 'fetch_failed' })
+    expect(calls).toEqual([])
+  })
+})
+
 describe('RealRecipeImporter — DoS (corpo/timeout) (#448)', () => {
   it('corpo ACIMA do cap (streaming, sem content-length) → trunca em MAX_HTML_BYTES e importa o prefixo', async () => {
     const head = new TextEncoder().encode(PAGE_HTML)
