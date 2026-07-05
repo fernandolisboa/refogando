@@ -6,21 +6,28 @@
  * é um `DropdownMenu modal={false}` (espelha o AuthSlot — zero primitiva nova): abrir dispara
  * `markAllRead()` (limpa o badge + reconcilia o contador com o server). Cada item compõe avatar do ator
  * + o texto LOCALIZADO via `renderNotification` (dado estruturado → frase no locale do leitor).
+ *
+ * #460: itens com alvo (`notificationHref`) viram `DropdownMenuItem asChild <Link>` — MENUITEM de
+ * verdade (foco/setas/Enter do Radix + fecha-no-select automático, igual ao AuthSlot); NÃO um `<a>` nu
+ * (que o Radix não registra ⇒ inalcançável por teclado). Itens sem alvo (informativos/ator degradado)
+ * ficam texto puro.
  */
+import Link from 'next/link'
 import { BellIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar } from '@/components/profile/avatar'
-import { renderNotification } from '@/domain/notification'
+import { renderNotification, notificationHref } from '@/domain/notification'
 import { useNotifications } from '@/components/use-notifications'
 
 export function NotificationBell() {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
   const { notifications, unreadCount, markAllRead } = useNotifications()
@@ -57,24 +64,33 @@ export function NotificationBell() {
         {notifications.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted">{m.vazio}</p>
         ) : (
-          <ul>
-            {notifications.map((n) => (
-              <li
+          notifications.map((n) => {
+            const href = notificationHref(n.type, n.refs, locale)
+            const inner = (
+              <>
+                <Avatar src={n.actorImage} name={n.refs.actorName ?? ''} alt="" size="sm" />
+                <span className="text-sm text-fg">{renderNotification(m, n.type, n.refs)}</span>
+              </>
+            )
+            const rowClass = 'flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0'
+            // #460: com alvo → MENUITEM navegável (asChild <Link>): o Radix registra p/ setas/Enter e
+            // FECHA a caixa no select (mesmo padrão do AuthSlot). O detalhe já vem `/{locale}/recipes/…`
+            // de `notificationHref`; o perfil é `/u/<handle>` (o proxy prefixa o locale). Sem alvo
+            // (informativo/ator degradado) → linha estática, texto puro (não é ação, não é foco).
+            return href ? (
+              <DropdownMenuItem
                 key={n.id}
-                className="flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0"
+                asChild
+                className={`${rowClass} rounded-none focus:bg-brand/[0.06] data-[highlighted]:bg-brand/[0.06]`}
               >
-                <Avatar
-                  src={n.actorImage}
-                  name={n.refs.actorName ?? ''}
-                  alt=""
-                  size="sm"
-                />
-                <span className="text-sm text-fg">
-                  {renderNotification(m, n.type, n.refs)}
-                </span>
-              </li>
-            ))}
-          </ul>
+                <Link href={href}>{inner}</Link>
+              </DropdownMenuItem>
+            ) : (
+              <div key={n.id} className={rowClass}>
+                {inner}
+              </div>
+            )
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>
