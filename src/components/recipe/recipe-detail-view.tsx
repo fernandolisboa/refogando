@@ -30,6 +30,7 @@ import { ProvenanceBadge } from './provenance-badge'
 import { RestrictionWarning } from './restriction-warning'
 import { StaleNoticeBanner } from './stale-notice-banner'
 import { RecipePortionScaler } from './recipe-portion-scaler'
+import { RecipeCookMode } from './recipe-cook-mode'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -230,10 +231,14 @@ export function RecipeDetailView({
           </section>
         ))}
 
-      {/* Modo de preparo — só quando há passos. */}
+      {/* Modo de preparo — só quando há passos. #455: "Modo cozinha" (visão passo-a-passo em
+          tela cheia + wakeLock + timers efêmeros do texto) ao lado do heading. */}
       {view.body.passos && view.body.passos.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
+            <RecipeCookMode passos={view.body.passos} m={m} />
+          </div>
           <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
             {view.body.passos.map((passo, i) => (
               <li key={i} className="text-pretty pl-1">
