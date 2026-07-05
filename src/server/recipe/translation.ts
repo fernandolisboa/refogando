@@ -5,6 +5,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
+import { fingerprintSource, fingerprintMt } from '@/domain/translation-fingerprint'
 
 /**
  * Ciclo de vida da tradução on-demand (issue #23, AC1 + AC4). CABEIA sobre as máquinas
@@ -84,6 +85,27 @@ export async function ensureTranslation(
         }))
       : null
 
+  // Fingerprints de conteúdo (#496, ADR-0031): carimbam a FONTE de onde esta MT saiu e o que a MT
+  // PRODUZIU, no MESMO instante da escrita. O `mtFingerprint` usa EXATAMENTE os valores persistidos
+  // abaixo (titulo/descricao/passos/notas + o mapa ordem→nome do jsonb) — senão a comparação futura
+  // "intocada" nunca bateria. A medida fica fora (Direção B). Habilita a re-tradução pull da fatia B.
+  const sourceFingerprint = fingerprintSource({
+    titulo: source.titulo,
+    descricao: source.descricao,
+    passos: source.passos,
+    notas: source.notas,
+    ingredientes: ctx.ingredients,
+  })
+  const mtFingerprint = fingerprintMt({
+    titulo: translated.titulo,
+    descricao: translated.descricao ?? null,
+    passos: translated.passos ?? null,
+    notas: translated.notas ?? null,
+    ingredientes: ingredientesJsonb
+      ? ingredientesJsonb.map((i) => ({ ordem: i.ordem, nome: i.nome }))
+      : null,
+  })
+
   // Slug por idioma (#229, ADR-0020 dec.4): congela AGORA, a partir do título da MT INICIAL
   // (`translated.titulo`) — é ESTE insert que materializa o slug en-US; uma revisão posterior da
   // MT não o re-deriva (estabilidade > beleza). Desambiguado contra os slugs já em uso no locale.
@@ -106,6 +128,9 @@ export async function ensureTranslation(
       // backfill por-versão futuro). A medida NÃO é escrita aqui (fica em recipe_ingredient).
       ingredientes: ingredientesJsonb,
       promptVersion: TRANSLATION_PROMPT_VERSION,
+      // Carimbos de frescor (#496, ADR-0031): esta linha nasce INTOCADA e NÃO-defasada.
+      sourceFingerprint,
+      mtFingerprint,
       slug,
       provenance: 'automatica_nao_revisada',
       stale: false,
