@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { RealRecipeImporter } from '@/server/import/recipe-importer'
 import { createDomainRateLimiter, type DomainRateLimiter } from '@/server/import/rate-limit'
+import type { AddressLookup } from '@/server/import/web-fetch'
+
+/** DNS injetado: o importer agora resolve o host ANTES de conectar (#448) — fixa um IP público (não toca a rede). */
+const publicLookup: AddressLookup = async () => ['203.0.113.10']
 
 /**
  * Guard-rails do seam REAL (#272, ADR-0019) — caminho de REDE com `fetch` mockado (espelha
@@ -57,7 +61,7 @@ function mockFetch(robots: RobotsReply) {
   return { impl, calls }
 }
 
-const importer = new RealRecipeImporter(ALLOW_ALL)
+const importer = new RealRecipeImporter(ALLOW_ALL, publicLookup)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -123,7 +127,7 @@ describe('RealRecipeImporter — guard-rail rate-limit (#272)', () => {
 
   it('2ª importação do mesmo domínio dentro da janela → rate_limited e ZERO rede (gateia antes do robots)', async () => {
     const clock = fixedClock()
-    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }))
+    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }), publicLookup)
     const { calls } = mockFetch({ ok: false, status: 404 }) // robots 404 ⇒ permite a 1ª importação
 
     expect((await limited.import(URL_ALVO)).ok).toBe(true)
@@ -137,7 +141,7 @@ describe('RealRecipeImporter — guard-rail rate-limit (#272)', () => {
 
   it('passada a janela (>= 1s), o mesmo domínio importa de novo', async () => {
     const clock = fixedClock()
-    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }))
+    const limited = new RealRecipeImporter(createDomainRateLimiter({ now: clock.now }), publicLookup)
     mockFetch({ ok: false, status: 404 })
 
     expect((await limited.import(URL_ALVO)).ok).toBe(true)
