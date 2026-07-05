@@ -35,7 +35,9 @@ export async function loadAiCostSummary(
 ): Promise<AiCostSummary> {
   const windowDays = opts.windowDays ?? AI_COST_DEFAULT_WINDOW_DAYS
   const topN = opts.topN ?? AI_COST_TOP_USERS
-  const since = sql`now() - make_interval(days => ${windowDays})`
+  // `::int` explícito: `make_interval(days => $1)` com um bind poderia ficar ambíguo p/ o planner
+  // ("could not determine data type of parameter"); o cast fixa o tipo. `windowDays`/`topN` são internos.
+  const since = sql`now() - make_interval(days => ${windowDays}::int)`
 
   // ── 1. Custo/dia por ledger (UNION ALL rotulado; some por dia UTC) ──────────────────────────────
   const dayRows = await db.execute<{ day: string; text_usd: number; image_usd: number }>(sql`
