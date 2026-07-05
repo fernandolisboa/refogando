@@ -18,6 +18,12 @@ import { MyRecipesList } from '@/components/recipe/my-recipes-list'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
 import { resolvePageLocale } from '@/server/http/page-locale'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
+
+// #462: título fino ("Minhas criações") + noindex (só-logado).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.minhasCriacoes.titulo)
+}
 
 export default async function MyRecipesPage() {
   const cookieStore = await cookies()

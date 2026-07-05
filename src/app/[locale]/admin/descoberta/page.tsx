@@ -12,8 +12,14 @@ import { WebSearchConfigSection } from '@/components/admin/web-search-config-sec
 import { EmbeddingBackfill } from '@/components/admin/embedding-backfill'
 import { OperatorAttributionSection } from '@/components/admin/operator-attribution-section'
 import { TakedownSlaSection } from '@/components/admin/takedown-sla-section'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Descoberta") + noindex — casa o rótulo da aba do Console (admin-only).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navDescoberta)
+}
 
 export default async function AdminAiPage() {
   return (

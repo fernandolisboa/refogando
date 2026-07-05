@@ -5,8 +5,14 @@
  */
 import { SectionGate } from '../gate'
 import { RolesSection } from '@/components/admin/roles-section'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("Papéis") + noindex — casa o rótulo da aba do Console (admin-only).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navPapeis)
+}
 
 export default async function AdminUsersPage() {
   return (

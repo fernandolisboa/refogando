@@ -33,12 +33,14 @@ function renderItem(over: { imageUrl?: string; slug?: string; locale?: string } 
 }
 
 describe('RecipeResultItem — thumbnail (#130)', () => {
-  it('com imageUrl: renderiza a thumbnail (alt = título)', () => {
+  it('com imageUrl: renderiza a thumbnail (alt = título) com lazy-loading', () => {
     const url = 'https://abc.public.blob.vercel-storage.com/recipes/x.webp'
     renderItem({ imageUrl: url })
     const img = screen.getByRole('img') as HTMLImageElement
     expect(img.src).toBe(url)
     expect(img).toHaveAttribute('alt', 'Bolo de cenoura')
+    // #462: thumb de feed infinito baixa só ao aproximar da viewport.
+    expect(img).toHaveAttribute('loading', 'lazy')
   })
 
   it('sem imageUrl: estado limpo (nenhuma <img>)', () => {

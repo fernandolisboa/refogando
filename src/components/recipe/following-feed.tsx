@@ -50,6 +50,9 @@ export function FollowingFeed() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadMoreError, setLoadMoreError] = useState(false)
   const [endReached, setEndReached] = useState(false)
+  // #462: contador de RETRY da página 1 — bumpar re-dispara o effect de fetch (mesma superfície de
+  // reset atômico do [locale, authed], sem duplicar a lógica de busca). A Busca já tem esse botão.
+  const [reloadKey, setReloadKey] = useState(0)
 
   // Cursor da próxima página numa ref (lida pelo observer/loadMore SEM stale-closure). `null` ⇒ fim
   // OU página 1 ainda não carregada (o guard do loadMore trata os dois iguais: não pagina).
@@ -111,7 +114,7 @@ export function FollowingFeed() {
       clearTimeout(t)
       controller.abort()
     }
-  }, [locale, authed])
+  }, [locale, authed, reloadKey])
 
   // Próxima página (append). Guard: nada se já carregando OU sem cursor (fim, ou página 1 ainda não
   // semeou). Aborta o in-flight anterior (compartilha o abortRef com a página 1).
@@ -251,6 +254,18 @@ export function FollowingFeed() {
           <p role="alert" className="font-medium text-fg">
             {messages.system.error}
           </p>
+        )}
+        {/* #462: erro da PÁGINA 1 (lista vazia) — sem isto o feed ficava num beco (a Busca já tinha
+            retry). O loadMore mantém o próprio botão "carregar mais" montado, então só a página 1
+            precisa desta afordância. Bumpar `reloadKey` re-dispara o effect de fetch. */}
+        {status === 'error' && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setReloadKey((k) => k + 1)}
+          >
+            {messages.system.retry}
+          </Button>
         )}
         {loadingMore && <p>{messages.system.loading}</p>}
         {endReached && items.length > 0 && <p>{mf.fim}</p>}

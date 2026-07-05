@@ -256,6 +256,7 @@ export function SavedRecipesView() {
                       src={item.imageUrl}
                       alt={item.name}
                       referrerPolicy="no-referrer"
+                      loading="lazy" // #462: lista longa de salvos — thumb baixa só ao aproximar da viewport
                       className="aspect-video w-full rounded-lg border border-border object-cover"
                     />
                   </div>

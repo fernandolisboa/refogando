@@ -129,6 +129,9 @@ export function RecipeResultItem({
             src={imageUrl}
             alt={displayedTitle}
             referrerPolicy="no-referrer"
+            // #462: feed infinito (Descoberta/Busca/Seguindo) — thumb abaixo da dobra só baixa ao chegar
+            // perto da viewport (economia de banda; espelha review-section/moderation-queue).
+            loading="lazy"
             className="aspect-[3/2] w-full rounded-lg border border-border object-cover"
           />
         ) : (
