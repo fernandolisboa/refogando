@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatIngredientLine } from '@/domain/ingredient-line'
+import { formatIngredientLine, scaleQuantidade, scaleIngredient } from '@/domain/ingredient-line'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { IngredientView } from '@/domain/recipe-read'
@@ -191,5 +191,51 @@ describe('formatIngredientLine — prosa natural com plural (ADR-0012 Adendo 2)'
 
   it('FALLBACK: quantidade não-numérica (defensivo) sem nome ⇒ sai crua, nunca NaN', () => {
     expect(formatIngredientLine(ing({ rawText: null, quantidade: 'a gosto', unidade: null }), m, 'pt-BR')).toBe('a gosto')
+  })
+})
+
+/**
+ * `scaleQuantidade`/`scaleIngredient` (#452, CONTEXT.md:192): aritmética PURA `quantidade × ratio`
+ * do escalador de porções — nunca geração/reprocessamento de texto. Testes puros, sem `Messages`.
+ */
+describe('scaleQuantidade — aritmética do escalador de porções (#452)', () => {
+  it('escala pelo fator e arredonda a 3 casas (espelha numeric(10,3))', () => {
+    expect(scaleQuantidade('2', 1.5)).toBe('3')
+    expect(scaleQuantidade('2.500', 2)).toBe('5')
+    expect(scaleQuantidade('1', 1 / 3)).toBe('0.333')
+  })
+
+  it('fator 1 (porções inalteradas) é identidade numérica', () => {
+    expect(scaleQuantidade('2.500', 1)).toBe('2.5')
+  })
+
+  it('aceita vírgula decimal na entrada (defensivo)', () => {
+    expect(scaleQuantidade('2,5', 2)).toBe('5')
+  })
+
+  it('null/vazio ficam como estão (nada a escalar)', () => {
+    expect(scaleQuantidade(null, 2)).toBeNull()
+    expect(scaleQuantidade('', 2)).toBe('')
+  })
+
+  it('não-numérico (defensivo) sai cru, nunca NaN', () => {
+    expect(scaleQuantidade('a gosto', 2)).toBe('a gosto')
+  })
+})
+
+describe('scaleIngredient — escala só `quantidade`; `unidade`/`rawText` intactos (#452)', () => {
+  it('escala a quantidade preservando unidade e nome', () => {
+    const item = ing({ rawText: 'farinha', quantidade: '200', unidade: 'g' })
+    expect(scaleIngredient(item, 2)).toEqual({ ...item, quantidade: '400' })
+  })
+
+  it('item SEM quantidade estruturada fica como está (devolve o MESMO objeto)', () => {
+    const item = ing({ rawText: 'sal', quantidade: null, unidade: 'a_gosto' })
+    expect(scaleIngredient(item, 3)).toBe(item)
+  })
+
+  it('round-trip com formatIngredientLine: "2 dentes de alho" → escala 2× → "4 dentes de alho"', () => {
+    const item = ing({ rawText: 'alho', quantidade: '2', unidade: 'dente' })
+    expect(formatIngredientLine(scaleIngredient(item, 2), m, 'pt-BR')).toBe('4 dentes de alho')
   })
 })

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
@@ -407,6 +408,26 @@ describe('RecipeDetailView (#57)', () => {
       // Selo de imagem obrigatório "✨ gerada por IA" presente.
       expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
     }
+  })
+
+  it('T15 — #452: o escalador de porções REMONTA (key={view.id}) numa nav detalhe→detalhe in-place, sem vazar estado', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <RecipeDetailView view={baseView({ id: 'r-1', porcoes: 4 })} m={M} locale="pt-BR" />,
+    )
+    // Escala a receita 1 de 4→8 porções (dobra).
+    const aumentar = screen.getByRole('button', { name: M.detalhe.porcoesAumentar })
+    for (let i = 0; i < 4; i++) await user.click(aumentar)
+    expect(screen.getByText('8')).toBeInTheDocument()
+
+    // Nav in-place pra OUTRA receita (id diferente, porcoes=6): sem `key={view.id}` o estado do
+    // `useState` sobreviveria (mesma identidade React) e mostraria "8" (ou escalaria pelo fator
+    // errado) em vez do "6" original da nova receita. Escopado ao contador `aria-live` (o `<dd>`
+    // do fato estático "Porções" TAMBÉM mostra "6" — ambíguo pra um `getByText` sem escopo).
+    rerender(<RecipeDetailView view={baseView({ id: 'r-2', porcoes: 6 })} m={M} locale="pt-BR" />)
+    const contador = document.querySelector('[aria-live="polite"]')
+    expect(contador?.textContent?.trim()).toBe('Porções: 6')
+    expect(screen.queryByText('8')).toBeNull()
   })
 
   it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {

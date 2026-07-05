@@ -338,6 +338,11 @@ export const ptBR = {
     notas: 'Notas',
     descricao: 'Descrição',
     porcoes: 'Porções',
+    // #452: escalador de porções — controles "−/+" client-side sobre a LISTA de ingredientes
+    // (aritmética `quantidade × ratio`, CONTEXT.md:192). Rótulos acessíveis dos botões (o número
+    // corrente é lido por `aria-live`, sem texto próprio).
+    porcoesDiminuir: 'Diminuir porções',
+    porcoesAumentar: 'Aumentar porções',
     dificuldade: 'Dificuldade',
     tempoAtivo: 'Tempo ativo',
     tempoTotal: 'Tempo total',
