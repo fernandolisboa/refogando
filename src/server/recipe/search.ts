@@ -820,8 +820,13 @@ export async function searchRecipes(
  * `displayedProvenance` consomem. Reusado pela query principal E pela de sugestoes pra o
  * tail nao derivar entre as duas (uma sugestao sem display tail viria com translations
  * vazias e seria PULADA silenciosamente em buildSearchResponse).
+ *
+ * EXPORTADO (#454): o loader de "Receitas semelhantes" (`@/server/recipe/similar`) reusa esta
+ * MESMA peça — precisa de um CTE `numbered` no shape esperado (recipe_id/origin/original_locale/
+ * owner_id/section) + um CTE `params(req_locale)` no escopo, exatamente como os dois call sites
+ * já existentes abaixo. Não duplicar esta projeção pela terceira vez.
  */
-function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
+export function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
   return sql`
     SELECT
       n.recipe_id AS recipe_id,

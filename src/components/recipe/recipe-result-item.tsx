@@ -61,6 +61,14 @@ export type RecipeResultItemProps = {
   imageAiGenerated?: boolean
   /** Rótulo do selo "gerada por IA", já localizado. Lido só quando `imageAiGenerated`. */
   aiLabel?: string
+  /**
+   * #454: `'grid'` empilha o card (thumbnail EM CIMA, texto embaixo, borda FECHADA) — pro trilho
+   * "Receitas semelhantes" (grade 2/4 colunas), onde a linha larga `'list'` padrão (thumbnail à
+   * direita + `border-t`/`first:border-t-0` pensados pra PILHA vertical) ficaria com uma borda
+   * solta no topo de cada card a partir da 2ª coluna (achado de code-review). Default `'list'`
+   * preserva byte-a-byte todo uso existente (busca/feed/perfil/"minhas").
+   */
+  layout?: 'list' | 'grid'
 }
 
 export function RecipeResultItem({
@@ -79,6 +87,7 @@ export function RecipeResultItem({
   imageUrl,
   imageAiGenerated = false,
   aiLabel,
+  layout = 'list',
 }: RecipeResultItemProps) {
   const section = classifySection(origin)
   // Kicker de proveniência: own ⇒ "Sua receita" (páprica); senão o selo da seção
@@ -97,55 +106,84 @@ export function RecipeResultItem({
   // locale, cai no fallback `/{locale}/recipes/<uuid>` (que 308a pro slug) — NUNCA link nu sem locale.
   const detailHref = recipeDetailPath(locale, slug ?? recipeId)
 
-  return (
-    <li className="flex items-center gap-4 border-t border-border py-4 first:border-t-0">
-      <div className="min-w-0 flex-1">
-        {/* O título é o link primário pro detalhe; foco visível herda do :focus-visible global. */}
-        <Link href={detailHref} className="group block rounded-sm">
-          {kickerLabel.length > 0 && (
-            <div className={cn('mb-1 text-xs font-semibold tracking-wide', kickerColor)}>
-              {kicker}
-            </div>
-          )}
-          <h3 className="font-display text-xl font-semibold leading-tight text-fg transition-colors group-hover:text-brand-ink sm:text-2xl">
-            {displayedTitle}
-          </h3>
-        </Link>
-        {/* Autoria (#129): link IRMÃO ao perfil público /u/<handle>. */}
-        {byline !== null && author !== undefined && (
-          <p className="mt-1 text-sm text-muted">
-            <Link href={`/u/${author.handle}`} className="hover:text-fg hover:underline">
-              {byline}
-            </Link>
-          </p>
-        )}
-      </div>
-      {/* #5 (Direção C): thumbnail PAISAGEM à direita (foto ou placeholder), com o selo de IA sobreposto.
-          Aspecto 3:2 + um pouco mais larga (152px no mock) p/ a linha editorial respirar. */}
-      <div className="relative w-32 flex-none sm:w-36">
-        {imageUrl != null ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={displayedTitle}
-            referrerPolicy="no-referrer"
-            // #462: feed infinito (Descoberta/Busca/Seguindo) — thumb abaixo da dobra só baixa ao chegar
-            // perto da viewport (economia de banda; espelha review-section/moderation-queue).
-            loading="lazy"
-            className="aspect-[3/2] w-full rounded-lg border border-border object-cover"
-          />
-        ) : (
-          <div className="flex aspect-[3/2] w-full items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
-            <ImageIcon className="size-5" strokeWidth={1.5} aria-hidden />
+  const thumbnail = (
+    <div className={cn('relative flex-none', layout === 'grid' ? 'w-full' : 'w-32 sm:w-36')}>
+      {imageUrl != null ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt={displayedTitle}
+          referrerPolicy="no-referrer"
+          // #462: feed infinito (Descoberta/Busca/Seguindo) — thumb abaixo da dobra só baixa ao chegar
+          // perto da viewport (economia de banda; espelha review-section/moderation-queue).
+          loading="lazy"
+          className="aspect-[3/2] w-full rounded-lg border border-border object-cover"
+        />
+      ) : (
+        <div className="flex aspect-[3/2] w-full items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
+          <ImageIcon className="size-5" strokeWidth={1.5} aria-hidden />
+        </div>
+      )}
+      {/* Selo "gerada por IA": pílula BRANCA com sombra leve e tinta escura (protótipo Direção C). */}
+      {imageAiGenerated && aiLabel && (
+        <span className="absolute left-2 top-2 rounded-full bg-bg px-2 py-0.5 text-[0.65rem] font-medium text-fg shadow-sm">
+          {aiLabel}
+        </span>
+      )}
+    </div>
+  )
+
+  const textBlock = (
+    <div className="min-w-0 flex-1">
+      {/* O título é o link primário pro detalhe; foco visível herda do :focus-visible global. */}
+      <Link href={detailHref} className="group block rounded-sm">
+        {kickerLabel.length > 0 && (
+          <div className={cn('mb-1 text-xs font-semibold tracking-wide', kickerColor)}>
+            {kicker}
           </div>
         )}
-        {/* Selo "gerada por IA": pílula BRANCA com sombra leve e tinta escura (protótipo Direção C). */}
-        {imageAiGenerated && aiLabel && (
-          <span className="absolute left-2 top-2 rounded-full bg-bg px-2 py-0.5 text-[0.65rem] font-medium text-fg shadow-sm">
-            {aiLabel}
-          </span>
-        )}
-      </div>
+        <h3
+          className={cn(
+            'font-display font-semibold leading-tight text-fg transition-colors group-hover:text-brand-ink',
+            layout === 'grid' ? 'text-base' : 'text-xl sm:text-2xl',
+          )}
+        >
+          {displayedTitle}
+        </h3>
+      </Link>
+      {/* Autoria (#129): link IRMÃO ao perfil público /u/<handle>. */}
+      {byline !== null && author !== undefined && (
+        <p className="mt-1 text-sm text-muted">
+          <Link href={`/u/${author.handle}`} className="hover:text-fg hover:underline">
+            {byline}
+          </Link>
+        </p>
+      )}
+    </div>
+  )
+
+  // `'grid'` (#454, trilho "Receitas semelhantes"): card FECHADO empilhado (thumbnail em cima,
+  // texto embaixo) — o layout `'list'` (linha larga + `border-t`/`first:border-t-0`, pensado pra
+  // PILHA vertical de feed/busca) deixaria uma borda solta no topo de cada card a partir da 2ª
+  // coluna de um grid (achado de code-review). `'list'` (default) preserva byte-a-byte o markup
+  // de sempre — nenhum dos ~8 outros call sites (busca/feed/perfil/"minhas") muda.
+  if (layout === 'grid') {
+    return (
+      <li className="rounded-lg border border-border p-3">
+        <div className="flex flex-col gap-3">
+          {thumbnail}
+          {textBlock}
+        </div>
+      </li>
+    )
+  }
+
+  return (
+    <li className="flex items-center gap-4 border-t border-border py-4 first:border-t-0">
+      {textBlock}
+      {/* #5 (Direção C): thumbnail PAISAGEM à direita (foto ou placeholder), com o selo de IA sobreposto.
+          Aspecto 3:2 + um pouco mais larga (152px no mock) p/ a linha editorial respirar. */}
+      {thumbnail}
     </li>
   )
 }

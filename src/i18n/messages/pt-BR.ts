@@ -351,6 +351,10 @@ export const ptBR = {
     passos: 'Modo de preparo',
     notas: 'Notas',
     descricao: 'Descrição',
+    // #454: trilho "Receitas semelhantes" (fim do detalhe, server-rendered via recipe_embedding
+    // já existente). AUSENTE quando não há vizinho elegível (sem embedding próprio / nenhum
+    // candidato passa o piso de similaridade) — a página omite a seção inteira nesse caso.
+    receitasSemelhantes: 'Receitas semelhantes',
     // #453: botão compartilhar (Web Share API + fallback copiar-link). Funciona pro Visitante
     // anônimo também (CONTEXT.md:168, "compartilha por texto") — não é gateado por sessão/pool.
     compartilhar: 'Compartilhar',
