@@ -323,6 +323,7 @@ export const enUS: Messages = {
     passos: 'Steps',
     notas: 'Notes',
     descricao: 'Description',
+    receitasSemelhantes: 'Similar recipes',
     compartilhar: 'Share',
     linkCopiado: 'Link copied!',
     compartilharErro: 'Could not copy the link. Please try again.',
