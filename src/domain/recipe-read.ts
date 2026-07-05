@@ -479,6 +479,25 @@ export function resolveIngredientNames(input: {
 }
 
 /**
+ * Resolve o NOME de UM item por-locale a partir do par `{nome, nomeOrigem}` (de
+ * `resolveIngredientNames`) + o `rawText` ATUAL do ingrediente: usa o `nome` traduzido só quando
+ * `nomeOrigem` ainda casa com o `rawText` corrente (senão o item foi renomeado/reordenado desde a
+ * tradução ⇒ cai no `rawText`, nunca um nome traduzido ERRADO). MESMA regra do display
+ * (`resolveRecipeView`) — extraída pra reuso pelo texto embedado da Busca (#497), sem duplicar o
+ * predicado. `traduzido` ausente (sem tradução daquele `ordem`) ⇒ `rawText` direto.
+ */
+export function resolveIngredientName(
+  traduzido: { nome: string; nomeOrigem: string } | undefined,
+  rawText: string | null,
+): string | null {
+  const nomeLocalizado =
+    traduzido != null && traduzido.nomeOrigem === (rawText ?? '') && present(traduzido.nome)
+      ? traduzido.nome
+      : null
+  return nomeLocalizado ?? rawText
+}
+
+/**
  * Nome resolvido: original primário. Só `Original (Tradução)` quando a tradução do
  * locale pedido existe, é confiável e DIFERE do original. Caso contrário, original nu.
  */
@@ -749,11 +768,7 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // nome traduzido ERRADO ao lado da medida. Zero chave nova — a chave `rawText` segue (guardas intactas).
     ingredients: input.ingredients.map(({ ordem, quantidade, unidade, rawText }) => {
       const traduzido = localizedNames.get(ordem)
-      const nomeLocalizado =
-        traduzido != null && traduzido.nomeOrigem === (rawText ?? '') && present(traduzido.nome)
-          ? traduzido.nome
-          : null
-      return { ordem, quantidade, unidade, rawText: nomeLocalizado ?? rawText }
+      return { ordem, quantidade, unidade, rawText: resolveIngredientName(traduzido, rawText) }
     }),
     translations: input.translations.map((t) => ({
       locale: t.locale,

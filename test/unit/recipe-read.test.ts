@@ -3,6 +3,7 @@ import {
   resolveAutoTranslationSignal,
   resolveBody,
   resolveFacets,
+  resolveIngredientName,
   resolveIngredientNames,
   resolveName,
   resolveRecipeView,
@@ -887,5 +888,23 @@ describe('nome de ingrediente por-locale (#426)', () => {
     })
     expect(map.get(0)).toEqual({ nome: 'garlic', nomeOrigem: 'alho' })
     expect(map.get(1)).toEqual({ nome: 'black beans', nomeOrigem: 'feijão-preto' })
+  })
+
+  // resolveIngredientName (#497): extraída do inline de resolveRecipeView p/ reuso pelo texto
+  // embedado da Busca — mesmos casos acima, exercitados diretamente na função pura.
+  it('resolveIngredientName: nomeOrigem bate com o raw_text atual ⇒ nome traduzido', () => {
+    expect(resolveIngredientName({ nome: 'garlic', nomeOrigem: 'alho' }, 'alho')).toBe('garlic')
+  })
+
+  it('resolveIngredientName: nomeOrigem diverge do raw_text atual (rename/reorder) ⇒ raw_text', () => {
+    expect(resolveIngredientName({ nome: 'garlic', nomeOrigem: 'alho' }, 'cebola')).toBe('cebola')
+  })
+
+  it('resolveIngredientName: sem tradução daquele ordem (undefined) ⇒ raw_text', () => {
+    expect(resolveIngredientName(undefined, 'alho')).toBe('alho')
+  })
+
+  it('resolveIngredientName: nome traduzido vazio ⇒ raw_text (present gate)', () => {
+    expect(resolveIngredientName({ nome: '', nomeOrigem: 'alho' }, 'alho')).toBe('alho')
   })
 })

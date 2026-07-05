@@ -103,6 +103,11 @@ export async function seedTranslation(input: {
   // materializado por freezeSlug na borda). Settável aqui p/ semear a URL canônica nos testes
   // de leitura por slug e do redirect (308) do uuid legado.
   slug?: string | null
+  // Nome de ingrediente por-locale (#426, ADR-0030 dec.4) — `ordem`+`nome` traduzido+`nomeOrigem`
+  // (o raw_text no momento da tradução). Opcional (ausente ⇒ NULL, sem jsonb — o caminho comum de
+  // `ensureTranslation`); settável direto aqui p/ testes que exercitam a resolução por-locale
+  // (display e o texto embedado da Busca, #497) sem passar pelo write-path de tradução.
+  ingredientes?: { ordem: number; nome: string; nomeOrigem: string }[] | null
 }): Promise<string> {
   const [row] = await getDb()
     .insert(recipeTranslation)
@@ -116,6 +121,7 @@ export async function seedTranslation(input: {
       notas: input.notas ?? null,
       stale: input.stale,
       ...(input.slug !== undefined ? { slug: input.slug } : {}),
+      ...(input.ingredientes !== undefined ? { ingredientes: input.ingredientes } : {}),
     })
     .returning({ id: recipeTranslation.id })
   return row.id
