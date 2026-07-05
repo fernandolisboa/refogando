@@ -4,7 +4,13 @@ import { loadWebSearchConfig } from '@/server/app-config'
 import { stripControlChars } from '@/domain/search-terms'
 import { MAX_QUERY_LEN } from '@/server/recipe/search'
 import { isUrlAllowed, type WebSearchConfig } from '@/domain/web-search-config'
-import type { WebSearchResult } from '@/server/web-search/web-search-provider'
+import {
+  MAX_SITE_QUERIES,
+  type WebSearchResult,
+} from '@/server/web-search/web-search-provider'
+import { reserveWebSearchQueries } from '@/server/web-search/usage-counter'
+import { clientIpFromHeaders } from '@/server/http/params'
+import { createDomainRateLimiter } from '@/server/import/rate-limit'
 
 /**
  * Descoberta na WEB (#164, ADR-0019) — ponte de DESCOBERTA, NÃO a Busca criando. Dado um termo,
@@ -19,10 +25,22 @@ import type { WebSearchResult } from '@/server/web-search/web-search-provider'
  * Defesa em profundidade: filtra a saída do provedor pela MESMA allowlist (fonte única) — um link cujo
  * host saiu da curadoria NUNCA chega ao cliente, mesmo que o provedor erre.
  *
+ * Teto de GASTO (#464): a rota é ANÔNIMA e cada chamada dispara até `MAX_SITE_QUERIES` consultas Brave
+ * PAGAS. Duas defesas ANTES de tocar o provedor: (1) rate-limit best-effort POR IP (in-memory, ~1/s, o
+ * mesmo motor do /import e /takedown); (2) um teto DIÁRIO GLOBAL de consultas persistido/atômico
+ * (`reserveWebSearchQueries`). Estourar QUALQUER um ⇒ `{ results: [] }` — a MESMA degradação graciosa
+ * que a rota já pratica (desligado / allowlist vazia / erro), nunca um erro.
+ *
  * GET `?q=` (+ `?locale=` opcional). Resposta: `{ results: WebSearchResult[] }`.
  */
 
 export const runtime = 'nodejs' // postgres-js (config) exige Node, não Edge.
+
+// Rate-limit best-effort POR IP (mesmo motor do /import e /takedown): estado in-memory NA INSTÂNCIA
+// serverless — cada instância tem o seu Map e um cold start zera a janela, então NÃO é quota dura, é
+// anti-flood/politeness (~1 consulta/s por IP). O teto DURO de gasto é o contador diário global
+// (persistido). Módulo-escopo p/ persistir entre requests da mesma instância.
+const webSearchThrottle = createDomainRateLimiter({ minIntervalMs: 1000 })
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url)
@@ -35,6 +53,11 @@ export async function GET(request: Request): Promise<Response> {
   // Termo vazio ⇒ nada a descobrir (espelha o early-return neutro da Busca), sem tocar provedor/DB.
   if (q.length === 0) return Response.json({ results: [] })
 
+  // Anti-flood POR IP ANTES de config/DB/provedor (shed barato). IP ausente (local/teste, sem proxy na
+  // frente) ⇒ fail-open: não temos chave por-cliente, não punimos todo mundo num balde global.
+  const ip = clientIpFromHeaders(request)
+  if (ip && !webSearchThrottle.tryAcquire(ip)) return Response.json({ results: [] })
+
   let cfg: WebSearchConfig
   try {
     cfg = await loadWebSearchConfig(getDb())
@@ -45,6 +68,19 @@ export async function GET(request: Request): Promise<Response> {
 
   // Desligado OU allowlist vazia ⇒ vazio (fail-closed). NÃO toca o provedor.
   if (!cfg.enabled || cfg.allowlist.length === 0) return Response.json({ results: [] })
+
+  // Teto de GASTO diário (#464): reserva ATÔMICA de exatamente as consultas que o provedor VAI disparar
+  // — uma por domínio, capado em `MAX_SITE_QUERIES` (mesma conta do fan-out do RealWebSearchProvider).
+  // Estourou o teto do dia ⇒ degrada para vazio (não gasta a chamada paga). Falha de DB na reserva ⇒
+  // fail-closed (não arrisca gastar sem contabilizar): também degrada para vazio.
+  const plannedQueries = Math.min(cfg.allowlist.length, MAX_SITE_QUERIES)
+  let reserved: boolean
+  try {
+    reserved = await reserveWebSearchQueries(getDb(), { count: plannedQueries })
+  } catch {
+    reserved = false
+  }
+  if (!reserved) return Response.json({ results: [] })
 
   let results: WebSearchResult[]
   try {

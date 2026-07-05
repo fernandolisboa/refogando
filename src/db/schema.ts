@@ -911,6 +911,28 @@ export const appConfig = pgTable(
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],
 )
 
+// ── Contador diário de gasto da descoberta na web (#464, SEC/INFRA) ─────────────
+//
+// O endpoint ANÔNIMO `/api/discovery/web` dispara até `MAX_SITE_QUERIES` consultas Brave por chamada
+// (cada uma = uma chamada de API paga). Sem teto, a única defesa era o kill-switch `webSearchEnabled`
+// (interruptor, não teto). Esta tabela é o CONTADOR de GASTO: uma linha POR DIA (UTC, chave `day` =
+// `YYYY-MM-DD` texto), `query_count` acumula as consultas do dia. NÃO vive em `app_config` porque não é
+// config editável pelo admin — é um contador MUTÁVEL e QUENTE (escrito a cada chamada do endpoint), e
+// misturá-lo à linha singleton de config poluiria o read-path de config e criaria contenção de escrita.
+//
+// O incremento é ATÔMICO e sem TOCTOU: `INSERT ... ON CONFLICT (day) DO UPDATE SET query_count =
+// query_count + n WHERE query_count + n <= cap RETURNING query_count`. O lock de linha do UPDATE
+// serializa as chamadas concorrentes do MESMO dia; a cláusula WHERE reserva o slot só se cabe no teto
+// (zero linha retornada ⇒ estourou ⇒ o endpoint degrada para `{ results: [] }`). O teto por-dia é
+// constante EM CÓDIGO (`DAILY_WEB_SEARCH_QUERY_CAP`) — é um disjuntor de custo, não preferência de admin.
+// A virada de dia zera o teto SOZINHA (o dia seguinte é outra linha). Dias antigos ficam como histórico
+// de baixíssimo volume (uma linha/dia) — podáveis por job futuro se algum dia incomodarem.
+export const webSearchUsageDaily = pgTable('web_search_usage_daily', {
+  day: text('day').primaryKey(),
+  queryCount: integer('query_count').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
 // ── Briefing de geração (issue #11, ADR-0006/0009) ─────────────────────────────
 //
 // O Briefing é a ENTRADA estruturada da criação (o "pedido"), persistido como
