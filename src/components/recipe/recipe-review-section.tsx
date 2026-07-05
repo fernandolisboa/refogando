@@ -23,6 +23,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
@@ -98,6 +99,8 @@ export function RecipeReviewSection({
   const { locale, messages } = useLocale()
   const m = messages.avaliacoes
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
 
   const sessionSettled = !session.isPending
   const loggedIn = sessionSettled && !session.error && !!session.data
@@ -545,7 +548,7 @@ export function RecipeReviewSection({
       {showAnonInvite && (
         <div className="border-t border-border pt-3">
           <Button asChild variant="secondary">
-            <Link href="/sign-in">{m.convidaEntrar}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{m.convidaEntrar}</Link>
           </Button>
         </div>
       )}

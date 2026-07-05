@@ -678,7 +678,11 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
 
     // A CTA "precisa entrar" aparece com link para /sign-in.
     expect(screen.getByText(CV.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fcreate',
+    )
     // O chat NÃO está disponível para o Visitante.
     expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()
     // INVARIANTE (#194): a CTA usa <p>, NÃO <h1> — Conversa idle não tem <h1>.

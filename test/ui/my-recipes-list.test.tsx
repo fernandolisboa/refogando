@@ -19,6 +19,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do convite de entrar do guest.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/me/recipes',
+}))
+
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
 let sessionState: SessionState
 vi.mock('@/lib/auth-client', () => ({
@@ -141,7 +146,11 @@ describe('MyRecipesList (#61)', () => {
     const fetchMock = mockRecipes([])
     renderList()
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual (/me/recipes).
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fme%2Frecipes',
+    )
     // Guest NÃO chama o endpoint.
     expect(fetchMock).not.toHaveBeenCalled()
   })

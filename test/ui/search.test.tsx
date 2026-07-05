@@ -21,6 +21,7 @@ vi.mock('next/link', () => ({
 // lança "invariant expected app router to be mounted").
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 
 // #116: a Busca agora lê useSession só para escolher a DICA INICIAL (anônimo vs logado). Sem

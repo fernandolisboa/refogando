@@ -35,6 +35,7 @@
  */
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -126,6 +127,8 @@ export function CreateStructuredExperience({
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const variantEnabled = useRecipeVariantEnabled() // #423: a feature "gerar 2" está ligada?
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/create'
 
   // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
   // estruturado e o `freeText` coexistem; só "Criar outra receita" zera ambos (mantém o modo).
@@ -381,7 +384,7 @@ export function CreateStructuredExperience({
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )

@@ -25,6 +25,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do convite anônimo.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/receitas/bolo-de-cenoura',
+}))
+
 // `useSession` (#230 follow-up): o componente resolve o estado do viewer no cliente quando o
 // caminho público não o entregou. Mockamos o cliente Better Auth com uma sessão controlável por teste.
 const authMock = vi.hoisted(() => ({
@@ -164,7 +169,11 @@ describe('RecipeEngagementControls (#62/#362)', () => {
     renderControls({})
 
     const salvarLink = screen.getByRole('link', { name: M.convidaEntrarSalvar })
-    expect(salvarLink).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual (sanitizado no server pelo safeInternalPath).
+    expect(salvarLink).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
+    )
 
     expect(screen.queryByRole('button', { name: M.salvar })).toBeNull()
     expect(screen.queryByRole('button', { name: M.salvo })).toBeNull()

@@ -29,6 +29,7 @@ import { seedSessionHeaders } from '../helpers/users'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),

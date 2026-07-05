@@ -17,9 +17,11 @@ vi.mock('next/link', () => ({
 }))
 
 // #169: a Busca usa useRouter().push (navega após importar). #236: usa .replace (reflete a busca na
-// URL) — mock p/ o jsdom (sem AppRouter montado).
+// URL) — mock p/ o jsdom (sem AppRouter montado). #458: usePathname alimenta o `?returnTo=` do
+// convite de entrar.
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 
 // A Busca lê useSession para escolher a dica inicial E, no #166, o ramo do CTA "Gerar com IA"
@@ -159,7 +161,11 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     // NÃO há link pro /create para o visitante.
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
     // Há um link de "Entrar" levando ao /sign-in (gerar exige conta) + a cópia do convite.
-    expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (pathname mockado como '/').
+    expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2F',
+    )
     expect(screen.getByText(MI.convidaEntrarTexto)).toBeInTheDocument()
   })
 

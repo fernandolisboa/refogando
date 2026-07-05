@@ -21,6 +21,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Bookmark } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
@@ -42,6 +43,8 @@ export function RecipeEngagementControls({
   const { messages } = useLocale()
   const m = messages.comunidade
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
 
   // O server entregou o estado do viewer? SÓ o caminho do DONO (dinâmico, com cookie) o faz; o
   // caminho PÚBLICO/cacheável (ADR-0020) lê anônimo e DEIXA ausente — daí resolvemos no cliente.
@@ -165,7 +168,11 @@ export function RecipeEngagementControls({
     // Anônimo: o bookmark É o convite — leva ao /sign-in. Sem popover (não há o que organizar).
     return (
       <div className="flex flex-col items-end gap-1">
-        <Link href="/sign-in" aria-label={m.convidaEntrarSalvar} className={ICON_BUTTON}>
+        <Link
+          href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+          aria-label={m.convidaEntrarSalvar}
+          className={ICON_BUTTON}
+        >
           <Bookmark className="size-5" strokeWidth={1.5} aria-hidden />
         </Link>
       </div>

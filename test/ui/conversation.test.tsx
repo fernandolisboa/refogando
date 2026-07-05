@@ -239,7 +239,11 @@ describe('ConversaFocusedView (#60/#104)', () => {
     renderConversation()
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fcreate',
+    )
     // Sem input do chat e exatamente UM heading nível 1 (conversa.titulo).
     expect(screen.queryByLabelText(M.inputLabel)).toBeNull()
     const h1s = screen.getAllByRole('heading', { level: 1 })

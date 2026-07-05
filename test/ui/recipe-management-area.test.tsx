@@ -20,6 +20,8 @@ const refresh = vi.fn()
 const push = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh, push, replace: vi.fn() }),
+  // #458: usePathname alimenta o `?returnTo=` do convite de entrar (RecipeDetailActions não-dono).
+  usePathname: () => '/receitas/bolo-de-cenoura',
 }))
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
