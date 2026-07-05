@@ -54,7 +54,7 @@ export async function POST(
   const [cfg] = await db.select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role, g.session.user.plan)
 
   const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model, cap })
 

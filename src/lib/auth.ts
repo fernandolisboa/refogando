@@ -97,6 +97,9 @@ function buildAuth() {
       additionalFields: {
         // role é do plugin admin — NÃO declarar aqui.
         locale: { type: 'string', required: false, input: false },
+        // Plano comercial (#466, scaffold flag-off). input:false: o plano NUNCA vem do cliente (muda por
+        // billing na Fase 2), só é LIDO na sessão p/ a resolução de teto considerar `plan` além de `role`.
+        plan: { type: 'string', required: false, input: false },
         deletedAt: { type: 'date', required: false, input: false },
         // handle é gerado pelo databaseHooks.user.create.before (não vem do input do signup);
         // input:false impede que o cliente o forneça/sobrescreva na criação da conta (#128).

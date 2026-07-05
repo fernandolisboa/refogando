@@ -1,5 +1,6 @@
 import { getAuth } from '@/lib/auth'
 import { isRole, type Role } from '@/domain/user'
+import { DEFAULT_PLAN, isPlan, type Plan } from '@/domain/plan'
 import { decideRole } from '@/domain/access'
 
 /**
@@ -19,19 +20,29 @@ import { decideRole } from '@/domain/access'
 
 // Session/GuardResult são internos (sem consumidor externo): export removido (QM-4).
 // Os handlers só importam requireSession/requireRole, nunca esses tipos.
-type Session = { user: { id: string; role: Role | null; deletedAt: Date | null } }
+type Session = { user: { id: string; role: Role | null; plan: Plan; deletedAt: Date | null } }
 type GuardOk = { ok: true; session: Session }
 type GuardFail = { ok: false; response: Response }
 type GuardResult = GuardOk | GuardFail
 
-/** Shape mínimo lido de getSession — o adapter pode entregar role como string crua. */
-type RawSessionUser = { id: string; role?: string | null; deletedAt?: Date | string | null }
+/** Shape mínimo lido de getSession — o adapter pode entregar role/plan como string crua. */
+type RawSessionUser = {
+  id: string
+  role?: string | null
+  plan?: string | null
+  deletedAt?: Date | string | null
+}
 
-/** Normaliza o `user` cru de getSession para o nosso `Session` (papel desconhecido → null). */
+/**
+ * Normaliza o `user` cru de getSession para o nosso `Session` (papel desconhecido → null). `plan`
+ * (#466): ausente/desconhecido ⇒ FAIL-SAFE em `DEFAULT_PLAN` (`free`) — nunca concede `pro` por engano
+ * (o plano só sobe por billing, Fase 2). Com cookieCache OFF, o valor é relido VIVO do DB a cada request.
+ */
 function toSession(user: RawSessionUser): Session {
   const role: Role | null = typeof user.role === 'string' && isRole(user.role) ? user.role : null
+  const plan: Plan = typeof user.plan === 'string' && isPlan(user.plan) ? user.plan : DEFAULT_PLAN
   const deletedAt = user.deletedAt == null ? null : new Date(user.deletedAt)
-  return { user: { id: user.id, role, deletedAt } }
+  return { user: { id: user.id, role, plan, deletedAt } }
 }
 
 /** 401 se sem sessão ou conta soft-deletada (D4). */

@@ -47,6 +47,7 @@ export async function POST(
     id,
     userId: g.session.user.id,
     role: g.session.user.role,
+    plan: g.session.user.plan,
     promptOverride,
     sourceImageId,
   })

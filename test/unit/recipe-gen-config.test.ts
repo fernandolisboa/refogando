@@ -36,6 +36,33 @@ describe('capFromRecipeGenConfig — teto por papel a partir da config', () => {
   })
 })
 
+describe('capFromRecipeGenConfig — eixo plan (#466, scaffold flag-off)', () => {
+  const caps: RecipeGenCapByRole = { usuario: 10, curador: 20, admin: null }
+  const proCaps: RecipeGenCapByRole = { usuario: 100, curador: 200, admin: null }
+
+  it('PARIDADE: sem plano (default free) ⇒ BYTE-IDÊNTICO à resolução por papel de hoje', () => {
+    expect(capFromRecipeGenConfig(caps, 'usuario')).toBe(capFromRecipeGenConfig(caps, 'usuario', 'free'))
+    expect(capFromRecipeGenConfig(caps, 'curador', 'free')).toBe(20)
+    expect(capFromRecipeGenConfig(caps, 'admin', 'free')).toBe(Infinity)
+    expect(capFromRecipeGenConfig(caps, null, 'free')).toBe(10) // fail-closed no teto de usuario
+  })
+
+  it('plan=pro SEM proCaps configurado ⇒ cai no teto free (não muda nada agora)', () => {
+    expect(capFromRecipeGenConfig(caps, 'usuario', 'pro')).toBe(10)
+    expect(capFromRecipeGenConfig(caps, 'curador', 'pro')).toBe(20)
+  })
+
+  it('plan=pro COM proCaps ⇒ pega o teto pro (Fase 2 configura)', () => {
+    expect(capFromRecipeGenConfig(caps, 'usuario', 'pro', proCaps)).toBe(100)
+    expect(capFromRecipeGenConfig(caps, 'curador', 'pro', proCaps)).toBe(200)
+    expect(capFromRecipeGenConfig(caps, 'admin', 'pro', proCaps)).toBe(Infinity)
+  })
+
+  it('plan=free IGNORA proCaps mesmo se passado (só pro consome a tabela pro)', () => {
+    expect(capFromRecipeGenConfig(caps, 'usuario', 'free', proCaps)).toBe(10)
+  })
+})
+
 describe('parseRecipeGenCapByRole — validação do PUT', () => {
   it('objeto válido ⇒ devolve o valor normalizado', () => {
     expect(parseRecipeGenCapByRole({ usuario: 5, curador: 8, admin: null })).toEqual({
