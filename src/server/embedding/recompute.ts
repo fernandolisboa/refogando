@@ -1,7 +1,8 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipeTranslation, recipeEmbedding } from '@/db/schema'
+import { recipeTranslation, recipeEmbedding, recipeIngredient } from '@/db/schema'
 import { getEmbedder } from '@/server/deps'
+import { resolveIngredientNames, resolveIngredientName } from '@/domain/recipe-read'
 
 /**
  * Recompute (re-embedding) da camada semântica (issue #14, ADR-0008). Dono do efeito de
@@ -19,8 +20,8 @@ import { EMBEDDING_VERSION } from '@/server/embedding/embedder'
 
 /**
  * Recompute de UMA linha de embedding `(recipe_id, locale)`. Lê a Tradução corrente,
- * embeda o texto (mesma coluna FTS: titulo + descricao), faz upsert do vetor + model e
- * limpa `stale` SÓ após sucesso. Se o embedder LANÇA, propaga ANTES do upsert e NÃO toca
+ * embeda o texto (titulo + descricao + nomes de ingrediente por-locale, #497), faz upsert do vetor +
+ * model e limpa `stale` SÓ após sucesso. Se o embedder LANÇA, propaga ANTES do upsert e NÃO toca
  * `stale` (preserva o sinal pra retry).
  *
  * O vetor (number[]) vai pelo builder do Drizzle: o tipo de coluna `vector` serializa via
@@ -33,13 +34,30 @@ export async function embedTranslation(
   locale: string,
 ): Promise<{ ok: boolean }> {
   const [tr] = await db
-    .select({ titulo: recipeTranslation.titulo, descricao: recipeTranslation.descricao })
+    .select()
     .from(recipeTranslation)
     .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)))
   if (!tr) return { ok: false } // sem Tradução corrente: nada a embedar
 
-  // Espelha a coluna FTS search_vector (titulo + descricao).
-  const text = `${tr.titulo ?? ''} ${tr.descricao ?? ''}`.trim()
+  // Nomes de ingrediente por-locale (#497, ADR-0031 Companheiro ii): MESMA resolução do display
+  // (`resolveRecipeView`, via `resolveIngredientNames`/`resolveIngredientName` — reuso, não
+  // reimplementação) — o nome traduzido do `ingredientes` jsonb só entra quando `nomeOrigem` ainda
+  // bate com o `raw_text` ATUAL do ingrediente; senão cai no `raw_text`. A MEDIDA
+  // (quantidade/unidade) NUNCA entra no texto embedado (Direção B) — só o `rawText` é lido aqui.
+  const localizedNames = resolveIngredientNames({ requestLocale: locale, translations: [tr] })
+  const ingredientRows = await db
+    .select({ ordem: recipeIngredient.ordem, rawText: recipeIngredient.rawText })
+    .from(recipeIngredient)
+    .where(eq(recipeIngredient.recipeId, recipeId))
+    .orderBy(recipeIngredient.ordem, recipeIngredient.id)
+  const ingredientNames = ingredientRows
+    .map((it) => resolveIngredientName(localizedNames.get(it.ordem), it.rawText))
+    .filter((n): n is string => n != null && n.trim() !== '')
+
+  // Espelha a coluna FTS search_vector (titulo + descricao) + acrescenta os nomes de ingrediente
+  // (join por espaço, mesma ordem de `ordem`). Sem nomes ⇒ texto idêntico ao pré-#497 (compat).
+  const base = `${tr.titulo ?? ''} ${tr.descricao ?? ''}`.trim()
+  const text = ingredientNames.length > 0 ? `${base} ${ingredientNames.join(' ')}`.trim() : base
   // DOCUMENTO indexado: `RETRIEVAL_DOCUMENT` (par assimétrico com `RETRIEVAL_QUERY` na Busca).
   const vector = await getEmbedder().embed(text, 'RETRIEVAL_DOCUMENT') // LANÇA → propaga, stale intacto
 
