@@ -1361,6 +1361,17 @@ export const enUS: Messages = {
     marcando: 'Marking…',
     listaVazia: 'No outdated translations.',
     erroGenerico: 'Could not mark as reviewed. Try again.',
+    // #498 (ADR-0031 companion iii): translated ingredient name editing.
+    editarNomes: 'Edit ingredient names',
+    fecharNomes: 'Close',
+    carregandoIngredientes: 'Loading ingredients…',
+    erroCarregarIngredientes: 'Could not load the ingredients.',
+    semIngredientesNomeados: 'No named ingredients in this recipe.',
+    nomeIngredienteLabel: 'Ingredient name',
+    salvarNomes: 'Save',
+    salvando: 'Saving…',
+    nomesSalvos: 'Names saved.',
+    erroSalvarNomes: 'Could not save the names. Try again.',
   },
   curadoria: {
     titulo: 'Catalog curation',

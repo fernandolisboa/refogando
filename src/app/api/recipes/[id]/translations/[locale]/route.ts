@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { requireSession } from '@/server/auth/guard'
+import { requireSession, requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { canonicalLocale } from '@/i18n/locale'
@@ -8,6 +8,7 @@ import { ensureTranslation } from '@/server/recipe/translation'
 import { loadRecipeRows } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
+import { editTranslatedIngredientNames } from '@/server/curate/translation-ingredient-names'
 
 /**
  * Tradução on-demand do 2º locale (issue #23, AC1). POST dedicado (decisão congelada —
@@ -77,4 +78,78 @@ export async function POST(
     resolveRecipeView({ ...rows, requestLocale: locale }),
     { status: 200 },
   )
+}
+
+type PatchIngredientEdit = { ordem?: unknown; nome?: unknown }
+type PatchBody = { edits?: unknown }
+
+function badRequest(): Response {
+  return Response.json({ error: 'dados_invalidos' }, { status: 400 })
+}
+function notFound(): Response {
+  return Response.json({ error: 'not_found' }, { status: 404 })
+}
+
+/**
+ * Curador edita o NOME de ingrediente traduzido na fila (issue #498, ADR-0031 companheiro
+ * (iii)) — grava no `ingredientes jsonb` de `recipe_translation` por `ordem`. Age por PAPEL
+ * (curador), NÃO por ownership — espelha `review/route.ts` (mesma ação de curadoria de
+ * tradução): `requireRole('curador')` + MESMO gate de comunidade/moderação (`isCommunityVisible`
+ * + `moderationRemovedAt IS NULL`), 404 leak-safe para conteúdo privado ou removido do pool.
+ * DELIBERADAMENTE mais amplo que `/api/curate/recipes/[id]` (que só cobre Catálogo): aqui
+ * cobre Catálogo E receita PÚBLICA de usuário comum — mas mais ESTREITO no que edita (só
+ * nomes de ingrediente, nunca titulo/descricao/passos/notas/categorização).
+ *
+ * NÃO re-sluga (não toca `slug`), NÃO re-localiza a medida (não toca `recipe_ingredient`).
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string; locale: string }> },
+): Promise<Response> {
+  const { id, locale: rawLocale } = await params
+  if (!isUuid(id)) return notFound()
+
+  const locale = canonicalLocale(rawLocale)
+  if (locale === null) return notFound()
+
+  const g = await requireRole(request, 'curador')
+  if (!g.ok) return g.response
+
+  const db = getDb()
+
+  // Gate de comunidade (espelha review/route.ts): curador NÃO toca receita privada nem
+  // removida do pool pela moderação (#18) — 404 leak-safe.
+  const [gate] = await db
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+      curationStatus: recipe.curationStatus,
+    })
+    .from(recipe)
+    .where(eq(recipe.id, id))
+  if (!gate) return notFound()
+  const isCommunity =
+    isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) &&
+    gate.moderationRemovedAt == null
+  if (!isCommunity) return notFound()
+
+  const body = (await request.json().catch(() => ({}))) as PatchBody
+  if (!Array.isArray(body.edits)) return badRequest()
+
+  const edits: { ordem: number; nome: string }[] = []
+  for (const raw of body.edits as PatchIngredientEdit[]) {
+    if (typeof raw !== 'object' || raw === null) return badRequest()
+    if (typeof raw.ordem !== 'number' || !Number.isInteger(raw.ordem)) return badRequest()
+    if (typeof raw.nome !== 'string') return badRequest()
+    const nome = raw.nome.trim()
+    if (nome.length === 0) return badRequest()
+    edits.push({ ordem: raw.ordem, nome })
+  }
+
+  const result = await editTranslatedIngredientNames(db, { recipeId: id, locale, edits })
+  if (result.kind === 'translation_not_found') return notFound()
+  if (result.kind === 'invalid_ordem') return badRequest()
+
+  return Response.json({ ok: true }, { status: 200 })
 }
