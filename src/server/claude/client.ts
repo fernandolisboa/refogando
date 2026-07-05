@@ -91,14 +91,15 @@ export interface ClaudeClient {
   extractIngredients(input: GenerationInput): Promise<ExtractionOutput>
 }
 
-// Mapeia o `message.usage` cru da Anthropic → `TextUsage` normalizado (#463). DEFENSIVO: cada campo é
-// opcional (default 0), NUNCA lança — se o SDK muda a forma do usage, degradamos p/ tokens 0 (telemetria
-// presente-mas-vazia), nunca derrubamos a geração. O `cost_usd` snapshot é derivado disto no persist
-// (`computeTextCost`). ESPELHA `mapGeminiUsage` do lado da imagem.
-function mapTextUsage(usage: { input_tokens?: number; output_tokens?: number } | null | undefined): TextUsage {
+// Mapeia o `message.usage` cru da Anthropic → `TextUsage` normalizado (#463). DEFENSIVO e NULL-HONESTO:
+// bloco de usage AUSENTE (o SDK mudou de forma) ⇒ `undefined` ⇒ custo/tokens NULL no ledger — NÃO finge
+// 0 (espelha `mapGeminiUsage` do lado da imagem, que devolve undefined sem telemetria). Presente-mas-com-
+// campo-faltando ⇒ default 0 nesse campo (telemetria presente, só aquele número ausente). NUNCA lança.
+function mapTextUsage(usage: { input_tokens?: number; output_tokens?: number } | null | undefined): TextUsage | undefined {
+  if (!usage) return undefined
   return {
-    inputTokens: usage?.input_tokens ?? 0,
-    outputTokens: usage?.output_tokens ?? 0,
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
   }
 }
 
