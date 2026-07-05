@@ -15,7 +15,7 @@ import { retranslateOutdated } from '@/server/translation/retranslate'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { recipeTranslation } from '@/db/schema'
-import { seedRecipe, seedTranslation } from '../helpers/recipes'
+import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
 
 /**
  * `retranslateOutdated` (issue #499, fatia B do ADR-0031 dec.5) — worker que re-traduz um lote
@@ -236,6 +236,42 @@ describe('retranslateOutdated (#499) — defasada-e-intocada re-traduz', () => {
     const b = await readTranslation(db, idB, 'en-US')
     expect(a.titulo).toBe('Receita A v2')
     expect(b.titulo).toBe('Receita B v2')
+  })
+
+  it('TOCTOU: edição humana concorrente ENTRE o scan e a escrita (muda o jsonb, não o mt_fingerprint) ⇒ NÃO sobrescreve', async () => {
+    // Simula a rota do companheiro (iii): o Curador edita o NOME de ingrediente traduzido (jsonb
+    // `ingredientes`) SEM tocar o `mt_fingerprint` gravado. Sem a re-verificação em retranslateOne, o
+    // worker acharia a linha "intocada" (o fingerprint gravado não mudou) e sobrescreveria a edição.
+    setTranslator(new FakeTranslator())
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Bolo', provenance: 'escrita_por_pessoa' })
+    // 1 ingrediente nomeado, p/ o jsonb da linha derivada carregar nome traduzido.
+    await seedRecipeIngredient({ recipeId, ordem: 0, rawText: 'farinha' })
+    await ensureTranslation(db, recipeId, 'en-US')
+
+    // A linha nasce intocada e com o jsonb {ordem:0, nome:'farinha' (identidade do Fake), nomeOrigem}.
+    const created = await readTranslation(db, recipeId, 'en-US')
+    expect(created.ingredientes).toEqual([{ ordem: 0, nome: 'farinha', nomeOrigem: 'farinha' }])
+
+    // Fonte muda ⇒ a derivada fica DEFASADA. No scan ela ainda é intocada (o mt_fingerprint bate).
+    await editSource(db, recipeId, 'Bolo Renovado')
+
+    // EDIÇÃO CONCORRENTE do Curador: muda o NOME traduzido no jsonb, NÃO o mt_fingerprint gravado.
+    await db
+      .update(recipeTranslation)
+      .set({ ingredientes: [{ ordem: 0, nome: 'wheat flour (curador)', nomeOrigem: 'farinha' }] })
+      .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, 'en-US')))
+
+    const result = await retranslateOutdated(db, 10)
+    // Pulada (não-intocada agora): zero re-tradução, zero degraded, e SAI de remaining (fila Curador).
+    expect(result).toEqual({ retranslated: 0, degraded: 0, remaining: 0 })
+
+    // A edição humana PERMANECE — o worker não a tocou.
+    const after = await readTranslation(db, recipeId, 'en-US')
+    expect(after.ingredientes).toEqual([{ ordem: 0, nome: 'wheat flour (curador)', nomeOrigem: 'farinha' }])
+    expect(after.titulo).toBe('Bolo') // título en-US original, não re-traduzido para 'Bolo Renovado'
   })
 
   it('só considera traduções DERIVADAS: a tradução de ORIGEM nunca é candidata', async () => {

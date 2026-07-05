@@ -122,8 +122,25 @@ async function loadCurrentIngredientsByRecipe(
   return byRecipe
 }
 
-/** Identidade de uma candidata elegível (defasada E intocada). */
-type Eligible = { recipeId: string; locale: string }
+/**
+ * Identidade de uma candidata elegível (defasada E intocada) + o `mt_fingerprint` gravado no
+ * momento do scan. Esse fingerprint é carregado para a RE-VERIFICAÇÃO de intocabilidade dentro de
+ * `retranslateOne` (fecha o TOCTOU entre o scan e a escrita): uma edição humana concorrente muda o
+ * conteúdo da linha mas NÃO o `mt_fingerprint` gravado, então recomputar o hash do conteúdo fresco
+ * e compará-lo com este valor detecta a edição antes de sobrescrevê-la.
+ */
+type Eligible = { recipeId: string; locale: string; mtFingerprint: string }
+
+/**
+ * Resultado do processamento de UMA candidata:
+ *  - `retranslated`: re-traduzida e persistida.
+ *  - `degraded`: o tradutor LANÇOU (transitório, ex. 429) — permanece defasada-e-intocada, volta a
+ *    ser candidata na próxima chamada (conta em `remaining`).
+ *  - `skipped`: deixou de ser elegível entre o scan e agora (edição humana concorrente ⇒ não-intocada,
+ *    ou a linha/fonte sumiu). Saiu para a fila do Curador (ADR-0031 dec.6) — NÃO volta ao worker,
+ *    então é EXCLUÍDA de `remaining`.
+ */
+type OneResult = 'retranslated' | 'degraded' | 'skipped'
 
 /**
  * Filtra as candidatas defasadas-e-intocadas, comparando o hash ATUAL (recomputado com os mesmos
@@ -156,7 +173,7 @@ function selectEligible(
     })
     if (currentMtFp !== row.mtFingerprint) continue
 
-    eligible.push({ recipeId: row.recipeId, locale: row.locale })
+    eligible.push({ recipeId: row.recipeId, locale: row.locale, mtFingerprint: row.mtFingerprint })
   }
 
   return eligible
@@ -165,15 +182,35 @@ function selectEligible(
 /**
  * Re-traduz UMA linha `(recipeId, locale)`: reusa o write-path de `ensureTranslation` (mesma
  * chamada ao Translator, mesma montagem do jsonb de ingredientes por-locale). LANÇA no translator ⇒
- * devolve `false` (degrada esta linha, zero escrita) — o caller conta como `degraded` e segue o lote.
- * NUNCA toca `slug`/`provenance`/`stale`.
+ * `degraded` (zero escrita, lote continua). NUNCA toca `slug`/`provenance`/`stale`.
+ *
+ * TOCTOU: entre o scan (`selectEligible`) e esta escrita, um Curador pode editar a linha derivada —
+ * ex. o nome de ingrediente pela rota do companheiro (iii), que muda o `ingredientes jsonb` mas NÃO
+ * o `mt_fingerprint` gravado. RE-VERIFICAMOS a intocabilidade aqui, com o `ctx` recém-carregado
+ * (zero query extra): recomputamos o hash do conteúdo ATUAL da linha-alvo e comparamos com o
+ * `mt_fingerprint` do scan (`candidate.mtFingerprint`); se divergir, a linha foi editada ⇒ `skipped`
+ * (não-intocada, vai pra fila do Curador) — nunca sobrescrevemos trabalho humano.
  */
-async function retranslateOne(db: Database, candidate: Eligible): Promise<boolean> {
+async function retranslateOne(db: Database, candidate: Eligible): Promise<OneResult> {
   const ctx = await loadRecipeTranslationContext(db, candidate.recipeId)
-  if (!ctx) return false // Receita sumiu entre o scan e o processamento: pula, sem escrita.
+  if (!ctx) return 'skipped' // Receita sumiu entre o scan e o processamento: pula, sem escrita.
 
   const source = ctx.translations.find((t) => t.locale === ctx.originalLocale)
-  if (!source) return false
+  if (!source) return 'skipped'
+
+  // RE-CHECK de intocabilidade (fecha o TOCTOU): a linha-alvo AINDA precisa bater o mt_fingerprint
+  // do scan. Uma edição humana concorrente muda o conteúdo (mas não o fingerprint gravado) ⇒ o hash
+  // recomputado diverge ⇒ pula (deixa pro Curador). Reusa `ctx.translations` (já carregado).
+  const targetRow = ctx.translations.find((t) => t.locale === candidate.locale)
+  if (!targetRow) return 'skipped' // a linha derivada sumiu entre o scan e agora.
+  const currentTargetMtFp = mtFingerprintOfRow({
+    titulo: targetRow.titulo,
+    descricao: targetRow.descricao,
+    passos: targetRow.passos,
+    notas: targetRow.notas,
+    ingredientes: targetRow.ingredientes ?? null,
+  })
+  if (currentTargetMtFp !== candidate.mtFingerprint) return 'skipped' // editada desde o scan.
 
   let translated
   try {
@@ -190,7 +227,7 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<boolea
       contexto: { cozinha: ctx.cozinha },
     })
   } catch {
-    return false // Degradação por linha (ADR-0031 §invariantes): fica defasada, lote continua.
+    return 'degraded' // Degradação por linha (ADR-0031 §invariantes): fica defasada, lote continua.
   }
 
   const nomeTraduzidoPorOrdem = new Map(
@@ -247,15 +284,17 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<boolea
     // embedding indisponível: a re-tradução já persistiu; recompute fica pendente via retry.
   }
 
-  return true
+  return 'retranslated'
 }
 
 /**
  * BACKFILL de re-tradução (#499) — ADMIN-ONLY, capado e RETOMÁVEL. Varre as derivadas
  * defasadas-e-intocadas, processa até `limit`, e devolve o progresso — o admin chama de novo até
- * `remaining === 0`. `degraded` conta as que o tradutor recusou nesta chamada (permanecem
- * defasadas, inclusas em `remaining`); `remaining` inclui tanto as `degraded` desta chamada quanto
- * as elegíveis que não couberam no lote.
+ * `remaining === 0`. `degraded` conta as que o tradutor recusou nesta chamada (transitório:
+ * permanecem defasadas-e-intocadas, seguem em `remaining`); as `skipped` (editadas por humano entre
+ * o scan e a escrita ⇒ deixaram de ser intocadas, foram pra fila do Curador) NÃO voltam ao worker,
+ * então são excluídas de `remaining`. `remaining` = elegíveis do scan − re-traduzidas − puladas
+ * (inclui as `degraded` desta chamada + as elegíveis que não couberam no lote).
  */
 export async function retranslateOutdated(db: Database, limit: number): Promise<RetranslateResult> {
   const rows = await loadCandidates(db)
@@ -267,11 +306,13 @@ export async function retranslateOutdated(db: Database, limit: number): Promise<
 
   let retranslated = 0
   let degraded = 0
+  let skipped = 0
   for (const candidate of batch) {
-    const ok = await retranslateOne(db, candidate)
-    if (ok) retranslated++
-    else degraded++
+    const result = await retranslateOne(db, candidate)
+    if (result === 'retranslated') retranslated++
+    else if (result === 'degraded') degraded++
+    else skipped++
   }
 
-  return { retranslated, degraded, remaining: eligible.length - retranslated }
+  return { retranslated, degraded, remaining: eligible.length - retranslated - skipped }
 }
