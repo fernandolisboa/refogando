@@ -356,6 +356,18 @@ export const ptBR = {
     compartilhar: 'Compartilhar',
     linkCopiado: 'Link copiado!',
     compartilharErro: 'Não foi possível copiar o link. Tente de novo.',
+    // #455: Modo cozinha — visão passo-a-passo em tela cheia. Timers são PARSING EFÊMERO do texto
+    // do passo (ADR-0023: tempo-por-passo é proibido como dado); `{tempo}` interpolado via
+    // `.replace` com o rótulo já formatado (`formatDuracao`, ex. "20 min").
+    modoCozinha: 'Modo cozinha',
+    modoCozinhaFechar: 'Sair do modo cozinha',
+    modoCozinhaPassoDe: 'Passo {atual} de {total}',
+    modoCozinhaAnterior: 'Passo anterior',
+    modoCozinhaProximo: 'Próximo passo',
+    modoCozinhaConcluir: 'Marcar passo como feito',
+    modoCozinhaIniciarTimer: 'Iniciar timer de {tempo}',
+    modoCozinhaPararTimer: 'Parar timer',
+    modoCozinhaTempoEsgotado: 'Tempo esgotado!',
     porcoes: 'Porções',
     // #452: escalador de porções — controles "−/+" client-side sobre a LISTA de ingredientes
     // (aritmética `quantidade × ratio`, CONTEXT.md:192). Rótulos acessíveis dos botões (o número
