@@ -1388,6 +1388,18 @@ export const enUS: Messages = {
     nomesSalvos: 'Names saved.',
     erroSalvarNomes: 'Could not save the names. Try again.',
   },
+  // Curator list — stale-and-diverged (#500, ADR-0031 dec.6): the source changed and the
+  // content already diverged from the last machine translation (hand-edited) or is legacy
+  // with no proof of untouched-ness. Reuses provenance/name-editor labels from `traducoesStale`.
+  traducoesDivergentes: {
+    titulo: 'Translations needing re-review',
+    descricao:
+      'The source changed and the content already diverges from the last machine translation — fix it by hand.',
+    receita: 'Recipe',
+    idioma: 'Language',
+    origem: 'Origin',
+    listaVazia: 'No translations need re-review.',
+  },
   curadoria: {
     titulo: 'Catalog curation',
     ingredientesTitulo: 'Recurring ingredients',
