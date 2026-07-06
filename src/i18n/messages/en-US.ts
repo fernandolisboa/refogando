@@ -915,6 +915,18 @@ export const enUS: Messages = {
     erroCarregar: 'Could not load. Try again.',
     precisaEntrar: 'Sign in to see your saved recipes.',
   },
+  listaDeCompras: {
+    titulo: 'Shopping list',
+    itemMarcarAria: 'Mark {nome} as bought',
+    itemDesmarcarAria: 'Unmark {nome}',
+    removerMarcados: 'Remove checked',
+    limparLista: 'Clear list',
+    confirmarRemoverMarcados: 'Remove the checked items? This cannot be undone.',
+    confirmarLimparLista: 'Clear the whole list? All items will be deleted — this cannot be undone.',
+    vazia: 'Your list is empty.',
+    erro: 'Something went wrong. Try again.',
+    precisaEntrar: 'Sign in to see your shopping list.',
+  },
   avaliacoes: {
     titulo: 'Reviews',
     editar: 'Edit',

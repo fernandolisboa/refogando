@@ -986,6 +986,21 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
+  // Lista de compras (#474, ADR-0032) — check-off PERSISTENTE (fatia D, issue #529, dec.6).
+  // Namespace próprio (a Lista em si vive fora do escopo desta fatia; aqui só o que a UI de
+  // itens/check-off precisa). Nada expira sozinho — as duas ações são sempre EXPLÍCITAS.
+  listaDeCompras: {
+    titulo: 'Lista de compras',
+    itemMarcarAria: 'Marcar {nome} como comprado',
+    itemDesmarcarAria: 'Desmarcar {nome}',
+    removerMarcados: 'Remover marcados',
+    limparLista: 'Limpar lista',
+    confirmarRemoverMarcados: 'Remover os itens marcados? Esta ação não pode ser desfeita.',
+    confirmarLimparLista: 'Limpar a lista inteira? Todos os itens serão apagados — não pode ser desfeito.',
+    vazia: 'Sua lista está vazia.',
+    erro: 'Algo deu errado. Tente de novo.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
   // `Messages` são string).
