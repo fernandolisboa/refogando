@@ -210,15 +210,21 @@ export async function loadShoppingLists(input: {
 export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
 
 /**
- * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
- * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
- * é a fatia B).
+ * Núcleo SEM gate de Lista — adiciona os ingredientes de UMA Receita já sabida pertencer a uma
+ * Lista existente (o caller resolve ownership da Lista ANTES de chamar isto). Compartilhado por
+ * `applyAddRecipeToShoppingList` (fatia A2, uma Receita) e `applyAddRecipesToShoppingList` (fatia
+ * E, issue #530/ADR-0032 dec.7, N Receitas) — o multi-adicionar chama isto UMA VEZ por Receita
+ * selecionada, sequencialmente, então cada Receita ganha seu PRÓPRIO statement de upsert (evita o
+ * "ON CONFLICT DO UPDATE command cannot affect row a second time" que um INSERT multi-Receita
+ * bateria se duas Receitas diferentes citassem o mesmo ingrediente+unidade no MESMO statement) e
+ * ainda assim MESCLA corretamente entre Receitas (o upsert de cada uma lê o estado deixado pela
+ * anterior).
  *
- * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
- *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
- *  2. a Receita é ELEGÍVEL pro viewer — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
- *     ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita
- *     mesmo privada ("montar a lista a partir do meu caderno particular").
+ * GATE de elegibilidade da Receita — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
+ * ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita mesmo
+ * privada ("montar a lista a partir do meu caderno particular"). Devolve `'ineligible'` quando a
+ * Receita não existe ou o viewer não pode adicioná-la — o CALLER decide como isso vira HTTP (404
+ * leak-safe pro caso de uma Receita só, ou "pulada" silenciosamente pro lote).
  *
  * NOME por-locale: resolvido AGORA, no momento do add — MESMA resolução do display (#426,
  * `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. O SNAPSHOT grava
@@ -235,20 +241,14 @@ export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
  * de várias fontes). `nome`/`ingredient_id` do PRIMEIRO insert NUNCA mudam por um merge — nem
  * entram no `set` do upsert (o UPDATE do Postgres preserva a coluna quando ela não é mencionada).
  */
-export async function applyAddRecipeToShoppingList(input: {
+async function addRecipeItemsToList(input: {
   db: Database
   userId: string
   listId: string
   recipeId: string
   locale: string
-}): Promise<ShoppingListAddRecipeResult> {
+}): Promise<'ok' | 'ineligible'> {
   const { db, userId, listId, recipeId, locale } = input
-
-  const [list] = await db
-    .select({ id: shoppingList.id })
-    .from(shoppingList)
-    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
-  if (!list) return { kind: 'not_found' }
 
   const [gate] = await db
     .select({
@@ -261,7 +261,7 @@ export async function applyAddRecipeToShoppingList(input: {
     })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
-  if (!gate || !eligibleToSaveByViewer(gate, userId)) return { kind: 'not_found' }
+  if (!gate || !eligibleToSaveByViewer(gate, userId)) return 'ineligible'
 
   // Nomes de ingrediente por-locale (#426): MESMA resolução do display (`resolveRecipeView`, via
   // `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. Só o locale
@@ -292,7 +292,7 @@ export async function applyAddRecipeToShoppingList(input: {
   }))
 
   const lines = consolidateIngredientsToAdd(items)
-  if (lines.length === 0) return { kind: 'ok' } // Receita sem Itens nomeados: no-op válido, não é erro.
+  if (lines.length === 0) return 'ok' // Receita sem Itens nomeados: no-op válido, não é erro.
 
   await db
     .insert(shoppingListItem)
@@ -330,7 +330,85 @@ export async function applyAddRecipeToShoppingList(input: {
       },
     })
 
+  return 'ok'
+}
+
+/**
+ * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
+ * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
+ * é a fatia B).
+ *
+ * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
+ *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
+ *  2. a Receita é ELEGÍVEL pro viewer (ver `addRecipeItemsToList`).
+ */
+export async function applyAddRecipeToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeId: string
+  locale: string
+}): Promise<ShoppingListAddRecipeResult> {
+  const { db, userId, listId, recipeId, locale } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale })
+  if (result === 'ineligible') return { kind: 'not_found' }
   return { kind: 'ok' }
+}
+
+export type ShoppingListAddRecipesResult =
+  | { kind: 'ok'; addedCount: number; skippedCount: number }
+  | { kind: 'not_found' }
+
+/**
+ * Multi-adicionar (fatia E, issue #530, ADR-0032 dec.7): adiciona os ingredientes de N Receitas
+ * SELECIONADAS a uma Lista NUMA ação, todas na quantidade BASE (SEM seletor de porções por
+ * Receita — dec.7 é explícita: escalar fica no fluxo de UMA Receita, fatia B, pra evitar um
+ * seletor por item numa grade de seleção). Reusa o MESMO núcleo de merge/upsert da A2
+ * (`addRecipeItemsToList`), UMA VEZ por Receita, sequencialmente — então as linhas de TODAS as
+ * Receitas somam por chave+unidade exatamente como re-adicionar a mesma Receita várias vezes
+ * (idempotente).
+ *
+ * A Lista é validada UMA VEZ (não por Receita); Receitas INELEGÍVEIS (não existem, ou o viewer não
+ * pode adicioná-las — mesmo gate de Salvar) são PULADAS silenciosamente (contam em `skippedCount`)
+ * em vez de derrubar o lote inteiro — o caso comum é a UI só oferecer Receitas já elegíveis (ex.
+ * a tela de Salvos), então "pular" só cobre a corrida rara de uma Receita sumir/virar privada
+ * entre o carregar da tela e o clique. `recipeIds` chega DEDUPLICADO e dentro do teto
+ * (`MAX_RECIPES_PER_BATCH_ADD`) — responsabilidade da rota.
+ */
+export async function applyAddRecipesToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeIds: readonly string[]
+  locale: string
+}): Promise<ShoppingListAddRecipesResult> {
+  const { db, userId, listId, recipeIds, locale } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  let addedCount = 0
+  let skippedCount = 0
+  // Sequencial, NUNCA em paralelo: statements concorrentes mirando a MESMA linha (list, matchKey,
+  // unidade) disputariam o upsert — serial garante que cada Receita vê o estado que a anterior
+  // deixou (a mesma disciplina do usuário chamando o endpoint de UMA Receita N vezes seguidas).
+  for (const recipeId of recipeIds) {
+    const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale })
+    if (result === 'ok') addedCount += 1
+    else skippedCount += 1
+  }
+
+  return { kind: 'ok', addedCount, skippedCount }
 }
 
 export type ShoppingListItemView = {
