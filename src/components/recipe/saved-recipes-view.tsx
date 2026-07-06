@@ -16,8 +16,10 @@ import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { ShoppingListAddBar } from './shopping-list-add-bar'
 
 type Summary = { id: string; name: string; createdAt: string; itemCount: number }
 type Selected = 'all' | string // 'all' = "Todos"; senão um collection id
@@ -26,6 +28,7 @@ type Status = 'loading' | 'idle' | 'error'
 export function SavedRecipesView() {
   const { locale, messages } = useLocale()
   const m = messages.colecoes
+  const mLista = messages.listaDeCompras
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
   const pathname = usePathname()
@@ -35,6 +38,14 @@ export function SavedRecipesView() {
   const [selected, setSelected] = useState<Selected>('all')
   const [recipes, setRecipes] = useState<RecipeListItem[]>([])
   const [status, setStatus] = useState<Status>('loading')
+
+  // Multi-seleção pra "adicionar à lista" (fatia E, issue #530, ADR-0032 dec.7). Seleção vive só
+  // na aba corrente — trocar de aba ("Todos"/coleção) limpa (evita confundir receitas de views
+  // diferentes numa mesma ação).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [addFeedback, setAddFeedback] = useState<{ addedCount: number; skippedCount: number } | null>(
+    null,
+  )
 
   // Formulário de nova coleção + erro de criação (nome inválido/duplicado/limite).
   const [newName, setNewName] = useState('')
@@ -103,6 +114,27 @@ export function SavedRecipesView() {
       controller.abort()
     }
   }, [authed, selected, locale])
+
+  // Trocar de aba ("Todos"/coleção) limpa a seleção em curso (fatia E, #530) — a seleção não
+  // sobrevive à troca de view, evita "selecionei aqui, adicionei lá" por engano. Deferido (espelha
+  // `loadCollections` acima): setState não pode rodar síncrono no corpo do effect.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSelectedIds(new Set())
+      setAddFeedback(null)
+    }, 0)
+    return () => clearTimeout(t)
+  }, [selected])
+
+  function toggleSelected(id: string) {
+    setAddFeedback(null)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -240,11 +272,51 @@ export function SavedRecipesView() {
         />
       )}
 
+      {/* Barra de "adicionar à lista" (fatia E, #530, ADR-0032 dec.7) — só aparece com seleção. */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-3">
+          <span className="text-sm font-medium text-fg">
+            {(selectedIds.size === 1 ? mLista.selecionadaSingular : mLista.selecionadasPlural).replace(
+              '{n}',
+              String(selectedIds.size),
+            )}
+          </span>
+          <ShoppingListAddBar
+            recipeIds={Array.from(selectedIds)}
+            onDone={(result) => {
+              setSelectedIds(new Set())
+              setAddFeedback(result)
+            }}
+          />
+          <Button type="button" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            {mLista.cancelarSelecao}
+          </Button>
+        </div>
+      )}
+
+      {/* Retorno da última adição em lote (fora da barra — sobrevive à barra sumir com a seleção). */}
+      {addFeedback != null && (
+        <p aria-live="polite" className="text-sm text-muted">
+          {(addFeedback.addedCount === 1 ? mLista.sucessoSingular : mLista.sucessoPlural).replace(
+            '{n}',
+            String(addFeedback.addedCount),
+          )}
+          {addFeedback.skippedCount > 0 && ` ${mLista.algumasNaoAdicionadas}`}
+        </p>
+      )}
+
       {/* Cards — FORA da live region. */}
       {recipes.length > 0 && (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {recipes.map((item) => (
-            <li key={item.id}>
+            <li key={item.id} className="relative">
+              <Checkbox
+                aria-label={mLista.selecionarReceita.replace('{nome}', item.name)}
+                checked={selectedIds.has(item.id)}
+                onCheckedChange={() => toggleSelected(item.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-3 left-3 z-10 border-border bg-surface"
+              />
               <Link
                 href={recipeDetailPath(locale, item.slug ?? item.id)}
                 className="flex h-full flex-col rounded-xl border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
