@@ -32,10 +32,14 @@ function addRecipe(
   recipeId: unknown,
   headers?: Headers,
   locale?: string,
+  porcoesAlvo?: unknown,
 ): Promise<Response> {
   const q = locale ? `?locale=${locale}` : ''
   return itemsPostRoute(
-    jsonReq(`/api/me/shopping-lists/${listId}/items${q}`, 'POST', headers, { recipeId }),
+    jsonReq(`/api/me/shopping-lists/${listId}/items${q}`, 'POST', headers, {
+      recipeId,
+      ...(porcoesAlvo !== undefined ? { porcoesAlvo } : {}),
+    }),
     { params: Promise.resolve({ listId }) },
   )
 }
@@ -62,8 +66,14 @@ type ItemsBody = { list: { id: string; name: string }; items: ItemView[] }
 
 async function seedCatalogRecipe(
   ingredients: { rawText: string; quantidade?: string | null; unidade?: string | null }[],
+  porcoes?: number | null,
 ): Promise<string> {
-  const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  const recipeId = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    porcoes: porcoes ?? null,
+  })
   await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Receita de teste', provenance: 'escrita_por_pessoa' })
   let ordem = 0
   for (const ing of ingredients) {
@@ -364,5 +374,145 @@ describe('Gate de dono + elegibilidade da Receita', () => {
     expect(body.list).toMatchObject({ id: listId, name: 'Compras' })
     expect(body.items).toHaveLength(1)
     expect(body.items[0]).toMatchObject({ nome: 'Arroz', quantidade: '1.000', unidade: 'kg' })
+  })
+})
+
+// ── Escalar por porções-alvo (fatia B, issue #527, ADR-0032 dec.3) ───────────────
+describe('Escalar por porções-alvo (#527)', () => {
+  it('porcoesAlvo + Receita.porcoes: persiste base × (alvo ÷ porcoes)', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    // Receita pra 4 porções, 200 g de farinha.
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+
+    const res = await addRecipe(listId, recipeId, headers, undefined, 8) // "vou fazer pra 8"
+    expect(res.status).toBe(200)
+    const resBody = (await res.json()) as { ok: boolean; warning?: string }
+    expect(resBody.warning).toBeUndefined()
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(items).toHaveLength(1)
+    // ratio = 8/4 = 2 ⇒ 200 × 2 = 400.
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '400.000', unidade: 'g' })
+  })
+
+  it('porcoesAlvo < porcoes original: escala pra BAIXO (fração)', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+
+    await addRecipe(listId, recipeId, headers, undefined, 2) // ratio 0.5
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '100.000', unidade: 'g' })
+  })
+
+  it('Receita SEM porcoes + porcoesAlvo pedido: entra na BASE (sem escala) + aviso sem_porcoes', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe(
+      [{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }],
+      null, // sem porcoes declarada
+    )
+
+    const res = await addRecipe(listId, recipeId, headers, undefined, 8)
+    expect(res.status).toBe(200)
+    const resBody = (await res.json()) as { ok: boolean; warning?: string }
+    expect(resBody.warning).toBe('sem_porcoes')
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    // Sem escala: entra na base, tal qual a Receita declara.
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '200.000', unidade: 'g' })
+  })
+
+  it('sem porcoesAlvo (fluxo antigo): sem aviso, mesmo Receita sem porcoes', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], null)
+
+    const res = await addRecipe(listId, recipeId, headers)
+    const resBody = (await res.json()) as { ok: boolean; warning?: string }
+    expect(resBody.warning).toBeUndefined()
+  })
+
+  it('porcoesAlvo inválido (negativo/zero/string) é IGNORADO — cai na base sem erro', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+
+    for (const invalido of [-1, 0, 'oito', null, NaN]) {
+      const res = await addRecipe(listId, recipeId, headers, undefined, invalido)
+      expect(res.status).toBe(200)
+    }
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    // 5 adds na base (200 cada) somam 1000 — nenhuma escala aplicada.
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '1000.000' })
+  })
+
+  it('quantidade ESCALADA entra na agregação: duas Receitas, porções-alvo diferentes, mesma unidade somam', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeA = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+    const recipeB = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '100', unidade: 'g' }], 2)
+
+    await addRecipe(listId, recipeA, headers, undefined, 8) // ratio 2 ⇒ 400
+    await addRecipe(listId, recipeB, headers, undefined, 4) // ratio 2 ⇒ 200
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(items).toHaveLength(1)
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '600.000' })
+  })
+
+  it('re-adicionar a MESMA Receita com porções-alvo diferentes: soma os valores JÁ escalados', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+
+    await addRecipe(listId, recipeId, headers, undefined, 4) // ratio 1 ⇒ 200
+    await addRecipe(listId, recipeId, headers, undefined, 8) // ratio 2 ⇒ 400
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(items).toHaveLength(1)
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '600.000' })
+  })
+
+  it('snapshot: editar a Receita depois de escalar não muda a linha JÁ persistida', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Camarão', quantidade: '500', unidade: 'g' }], 4)
+
+    await addRecipe(listId, recipeId, headers, undefined, 8) // 1000
+
+    await getDb()
+      .update(recipeIngredient)
+      .set({ quantidade: '999' })
+      .where(eq(recipeIngredient.recipeId, recipeId))
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(byNome(items, 'Camarão')).toMatchObject({ quantidade: '1000.000' })
+  })
+
+  it('medida (unidade) invariante: escala não muda a unidade, só a quantidade', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Leite', quantidade: '1', unidade: 'l' }], 4)
+
+    await addRecipe(listId, recipeId, headers, undefined, 8)
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(byNome(items, 'Leite')).toMatchObject({ unidade: 'l', quantidade: '2.000' })
+  })
+
+  it('item "a gosto" (sem quantidade) permanece sem número mesmo com porções-alvo pedido', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Sal', quantidade: null, unidade: 'a_gosto' }], 4)
+
+    const res = await addRecipe(listId, recipeId, headers, undefined, 8)
+    expect((await res.json() as { warning?: string }).warning).toBeUndefined()
+
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(byNome(items, 'Sal')).toMatchObject({ quantidade: null, unidade: 'a_gosto' })
   })
 })

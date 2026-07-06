@@ -6,7 +6,12 @@ import {
   MAX_SHOPPING_LISTS_PER_USER,
   validateShoppingListName,
 } from '@/domain/shopping-list'
-import { consolidateIngredientsToAdd, type IngredientToAdd } from '@/domain/shopping-list-item'
+import {
+  consolidateIngredientsToAdd,
+  resolveShoppingListScale,
+  scaleIngredientsToAdd,
+  type IngredientToAdd,
+} from '@/domain/shopping-list-item'
 import { eligibleToSaveByViewer } from '@/domain/recipe-pool'
 import { resolveIngredientNames, resolveIngredientName } from '@/domain/recipe-read'
 import type { Unidade } from '@/domain/vocabulary'
@@ -207,12 +212,23 @@ export async function loadShoppingLists(input: {
 
 // ── Adicionar-de-receita + agregação (fatia A2, issue #526, ADR-0032 dec.2/4) ────
 
-export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
+export type ShoppingListAddRecipeResult =
+  | { kind: 'ok'; warning?: 'sem_porcoes' }
+  | { kind: 'not_found' }
 
 /**
- * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
- * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
- * é a fatia B).
+ * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4) +
+ * a escala por PORÇÕES-ALVO da fatia B (issue #527, dec.3). Quantidade BASE quando `porcoesAlvo`
+ * não é pedido (compat com o caminho antigo da A2); ESCALADA (`base × ratio`) quando pedido E a
+ * Receita declara `porcoes` — `ratio = porcoesAlvo ÷ receita.porcoes`, aritmética pura via
+ * `resolveShoppingListScale`/`scaleIngredientsToAdd` (reusa o escalador do #452,
+ * `ingredient-line.ts` — NUNCA IA, NUNCA reimplementado). Receita SEM `porcoes` ⇒ entra na BASE
+ * (fator 1, não inventa porção) + `warning: 'sem_porcoes'` no retorno — o caller (rota) decide como
+ * exibir o aviso.
+ *
+ * A quantidade JÁ ESCALADA é o que entra na consolidação/upsert (dec.3: "o snapshot guarda a
+ * quantidade escalada") — a escala acontece ANTES de `consolidateIngredientsToAdd`, então soma
+ * (mesma unidade) e upsert operam sobre valores pós-escala, sem mudar a lógica de merge da A2.
  *
  * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
  *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
@@ -241,8 +257,10 @@ export async function applyAddRecipeToShoppingList(input: {
   listId: string
   recipeId: string
   locale: string
+  /** Porções-alvo (fatia B, #527) — `null`/ausente preserva o comportamento BASE da A2. */
+  porcoesAlvo?: number | null
 }): Promise<ShoppingListAddRecipeResult> {
-  const { db, userId, listId, recipeId, locale } = input
+  const { db, userId, listId, recipeId, locale, porcoesAlvo = null } = input
 
   const [list] = await db
     .select({ id: shoppingList.id })
@@ -258,10 +276,13 @@ export async function applyAddRecipeToShoppingList(input: {
       moderationRemovedAt: recipe.moderationRemovedAt,
       origin: recipe.origin,
       curationStatus: recipe.curationStatus,
+      porcoes: recipe.porcoes,
     })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
   if (!gate || !eligibleToSaveByViewer(gate, userId)) return { kind: 'not_found' }
+
+  const scale = resolveShoppingListScale({ porcoesAlvo, receitaPorcoes: gate.porcoes })
 
   // Nomes de ingrediente por-locale (#426): MESMA resolução do display (`resolveRecipeView`, via
   // `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. Só o locale
@@ -284,15 +305,21 @@ export async function applyAddRecipeToShoppingList(input: {
     .where(eq(recipeIngredient.recipeId, recipeId))
     .orderBy(recipeIngredient.ordem, recipeIngredient.id)
 
-  const items: IngredientToAdd[] = ingredientRows.map((r) => ({
-    ingredientId: r.ingredientId,
-    nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
-    quantidade: r.quantidade,
-    unidade: r.unidade,
-  }))
+  const items: IngredientToAdd[] = scaleIngredientsToAdd(
+    ingredientRows.map((r) => ({
+      ingredientId: r.ingredientId,
+      nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
+      quantidade: r.quantidade,
+      unidade: r.unidade,
+    })),
+    scale.factor,
+  )
 
   const lines = consolidateIngredientsToAdd(items)
-  if (lines.length === 0) return { kind: 'ok' } // Receita sem Itens nomeados: no-op válido, não é erro.
+  const warning = scale.warning ?? undefined
+  // Receita sem Itens nomeados: no-op válido, não é erro (mas o aviso de porções ainda vale — o
+  // usuário pediu escala e a Receita não declara `porcoes`, mesmo que não haja o que adicionar).
+  if (lines.length === 0) return { kind: 'ok', ...(warning ? { warning } : {}) }
 
   await db
     .insert(shoppingListItem)
@@ -330,7 +357,7 @@ export async function applyAddRecipeToShoppingList(input: {
       },
     })
 
-  return { kind: 'ok' }
+  return { kind: 'ok', ...(warning ? { warning } : {}) }
 }
 
 export type ShoppingListItemView = {

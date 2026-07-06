@@ -986,6 +986,29 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
+  // Lista de compras (ADR-0032) — ícone no topo do detalhe (espelha `colecoes`), popover ancorado
+  // com as Listas do usuário + criar nova inline. Porções-alvo (#527, dec.3) reusa o MESMO valor
+  // corrente do escalador de porções da página (`usePortionScale`) — sem campo numérico próprio.
+  listaDeCompras: {
+    adicionar: 'Adicionar à lista de compras',
+    adicionarALista: 'Adicionar à lista de compras',
+    // Botão CURTO de cada linha de Lista dentro do painel (distinto do aria-label do ícone acima —
+    // os dois NUNCA aparecem como o mesmo texto acessível ao mesmo tempo, senão o popover aberto
+    // teria dois botões "Adicionar à lista de compras" ambíguos pra leitor de tela/teste).
+    adicionarBotao: 'Adicionar',
+    adicionado: 'Adicionado',
+    novaLista: 'Nova lista',
+    nomeLista: 'Nome da lista',
+    criarEAdicionar: 'Criar e adicionar',
+    semListas: 'Você ainda não tem nenhuma lista de compras.',
+    avisoSemPorcoes: 'Esta receita não tem porções definidas — adicionada na quantidade original.',
+    erroNomeInvalido: 'Escolha um nome (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
+    erroLimite: 'Você atingiu o limite de listas.',
+    erro: 'Algo deu errado. Tente de novo.',
+    erroCarregar: 'Não foi possível carregar. Tente de novo.',
+    convidaEntrarAdicionar: 'Entre na sua conta para adicionar à lista de compras.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
   // `Messages` são string).

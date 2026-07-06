@@ -39,6 +39,7 @@ import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
+import { RecipeShoppingListButton } from '@/components/recipe/recipe-shopping-list-button'
 import { RecipeShareButton } from '@/components/recipe/recipe-share-button'
 import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import {
@@ -416,11 +417,18 @@ async function DetailChrome({
           <div className="flex items-start gap-1">
             <RecipeShareButton view={view} />
             {(reviews != null || view.canManage) && (
-              <RecipeEngagementControls
-                key={view.id}
-                recipeId={view.id}
-                initialViewerSaved={view.viewerSaved}
-              />
+              <>
+                <RecipeShoppingListButton
+                  key={`${view.id}-lista`}
+                  recipeId={view.id}
+                  porcoesReceita={view.porcoes}
+                />
+                <RecipeEngagementControls
+                  key={view.id}
+                  recipeId={view.id}
+                  initialViewerSaved={view.viewerSaved}
+                />
+              </>
             )}
           </div>
         </div>
