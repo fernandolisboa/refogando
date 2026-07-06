@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { shoppingList, shoppingListItem, recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import {
@@ -14,9 +14,10 @@ import { pgCode } from '@/server/recipe/visibility'
 
 /**
  * Núcleo com efeito da Lista de compras — CONTAINER (issue #525, ADR-0032 dec.1) + o TRACER de
- * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4). Espelha o estilo de
- * `@/server/recipe/collections` (mesma disciplina de discriminated unions + `db: Database` por
- * parâmetro): cada Lista é uma pasta PRIVADA nomeada de UM usuário, `UNIQUE(user_id, name)`.
+ * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4) + o CHECK-OFF persistente (issue
+ * #529, ADR-0032 dec.6). Espelha o estilo de `@/server/recipe/collections` (mesma disciplina de
+ * discriminated unions + `db: Database` por parâmetro): cada Lista é uma pasta PRIVADA nomeada de
+ * UM usuário, `UNIQUE(user_id, name)`.
  *
  * PRIVACIDADE (inegociável, ADR-0032 invariantes): NENHUMA leitura é anônima. Toda função escopa
  * por `shopping_list.user_id = userId`; "não é sua" e "não existe" colapsam no MESMO `not_found`
@@ -430,8 +431,8 @@ export type ShoppingListItemsResult =
 /**
  * Vê UMA Lista de compras do próprio usuário com os Itens JÁ CONSOLIDADOS (dec.4: storage = linhas
  * agregadas, sem agregação-na-leitura). Ordena por criação (ordem de adição/merge). `checkedAt` é
- * passthrough — o check-off é a fatia D (dec.6); a coluna já existe no schema do A1 e nasce sempre
- * `null` até aquela fatia escrever nela.
+ * passthrough — escrito por `applyToggleShoppingListItemChecked` (fatia D, dec.6); nasce `null` até
+ * o dono marcar o Item como comprado.
  */
 export async function loadShoppingListItems(input: {
   db: Database
@@ -467,4 +468,99 @@ export async function loadShoppingListItems(input: {
       updatedAt: r.updatedAt.toISOString(),
     })),
   }
+}
+
+// ── Check-off PERSISTENTE (fatia D, issue #529, ADR-0032 dec.6) ──────────────────
+
+export type ShoppingListItemToggleResult =
+  | { kind: 'ok'; checkedAt: string | null }
+  | { kind: 'not_found' }
+
+/**
+ * Marca/desmarca UM Item como comprado — PERSISTENTE (dec.6: "nada expira sozinho", o carimbo só
+ * muda por ação explícita do dono). O cliente manda o estado-ALVO (`checked: boolean`), não um
+ * toggle cego: idempotente sob duplo-clique/retry (marcar 2× não desmarca). Ownership em DUAS
+ * pernas, ambas leak-safe no MESMO `not_found` (nunca revela qual falhou): 1) a Lista é do PRÓPRIO
+ * usuário; 2) o Item pertence a ESSA Lista (o `where` do UPDATE escopa por `listId`, então um
+ * `itemId` de OUTRA lista — inclusive de outro usuário — não casa e devolve not_found, sem
+ * precisar de um SELECT extra).
+ */
+export async function applyToggleShoppingListItemChecked(input: {
+  db: Database
+  userId: string
+  listId: string
+  itemId: string
+  checked: boolean
+}): Promise<ShoppingListItemToggleResult> {
+  const { db, userId, listId, itemId, checked } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const [row] = await db
+    .update(shoppingListItem)
+    .set({ checkedAt: checked ? new Date() : null, updatedAt: new Date() })
+    .where(and(eq(shoppingListItem.id, itemId), eq(shoppingListItem.listId, listId)))
+    .returning({ checkedAt: shoppingListItem.checkedAt })
+  if (!row) return { kind: 'not_found' }
+
+  return { kind: 'ok', checkedAt: row.checkedAt?.toISOString() ?? null }
+}
+
+export type ShoppingListBulkRemoveResult = { kind: 'ok'; removed: number } | { kind: 'not_found' }
+
+/**
+ * "Remover marcados" (dec.6): apaga SÓ os Itens com `checked_at` NÃO-nulo da Lista do próprio
+ * usuário. Ação EXPLÍCITA (nunca automática — nada expira sozinho); os itens desmarcados
+ * permanecem intactos. Ownership por (id, user_id) antes do DELETE ⇒ not_found leak-safe.
+ */
+export async function applyRemoveCheckedShoppingListItems(input: {
+  db: Database
+  userId: string
+  listId: string
+}): Promise<ShoppingListBulkRemoveResult> {
+  const { db, userId, listId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const removed = await db
+    .delete(shoppingListItem)
+    .where(and(eq(shoppingListItem.listId, listId), isNotNull(shoppingListItem.checkedAt)))
+    .returning({ id: shoppingListItem.id })
+
+  return { kind: 'ok', removed: removed.length }
+}
+
+/**
+ * "Limpar lista" (dec.6): apaga TODOS os Itens da Lista do próprio usuário — marcados e
+ * desmarcados. A Lista em si SOBREVIVE (esvazia, não some — apagar a Lista é uma ação diferente,
+ * `applyShoppingListDelete`). Ação EXPLÍCITA, nunca automática. Ownership por (id, user_id) antes
+ * do DELETE ⇒ not_found leak-safe.
+ */
+export async function applyClearShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+}): Promise<ShoppingListBulkRemoveResult> {
+  const { db, userId, listId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const removed = await db
+    .delete(shoppingListItem)
+    .where(eq(shoppingListItem.listId, listId))
+    .returning({ id: shoppingListItem.id })
+
+  return { kind: 'ok', removed: removed.length }
 }

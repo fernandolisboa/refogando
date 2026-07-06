@@ -986,10 +986,13 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
-  // Lista de compras — multi-seleção (fatia E, issue #530, ADR-0032 dec.7): selecionar N Receitas
-  // em `SavedRecipesView` e adicionar todas a uma Lista numa ação, na quantidade BASE (sem
-  // seletor de porções no lote). Namespace PRÓPRIO, separado de `colecoes` (entidades distintas).
+  // Lista de compras (#474, ADR-0032) — namespace PRÓPRIO, separado de `colecoes` (entidades
+  // distintas). Reúne a multi-seleção de N Receitas (fatia E, #530, dec.7: selecionar em
+  // `SavedRecipesView` e adicionar todas a uma Lista numa ação, quantidade BASE) + o check-off
+  // PERSISTENTE (fatia D, #529, dec.6: a UI de itens marca/desmarca comprado; nada expira sozinho,
+  // "remover marcados"/"limpar lista" são sempre EXPLÍCITAS).
   listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
     selecionarReceita: 'Selecionar {nome}',
     selecionadaSingular: '{n} receita selecionada',
     selecionadasPlural: '{n} receitas selecionadas',
@@ -1007,6 +1010,17 @@ export const ptBR = {
     erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
     erroLimiteListas: 'Você atingiu o limite de listas.',
     erroAdicionar: 'Não foi possível adicionar as receitas. Tente de novo.',
+    // Check-off persistente (fatia D, #529).
+    titulo: 'Lista de compras',
+    itemMarcarAria: 'Marcar {nome} como comprado',
+    itemDesmarcarAria: 'Desmarcar {nome}',
+    removerMarcados: 'Remover marcados',
+    limparLista: 'Limpar lista',
+    confirmarRemoverMarcados: 'Remover os itens marcados? Esta ação não pode ser desfeita.',
+    confirmarLimparLista: 'Limpar a lista inteira? Todos os itens serão apagados — não pode ser desfeito.',
+    vazia: 'Sua lista está vazia.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+    // Comum às duas fatias.
     erro: 'Algo deu errado. Tente de novo.',
   },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.

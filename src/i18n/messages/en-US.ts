@@ -916,6 +916,7 @@ export const enUS: Messages = {
     precisaEntrar: 'Sign in to see your saved recipes.',
   },
   listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
     selecionarReceita: 'Select {nome}',
     selecionadaSingular: '{n} recipe selected',
     selecionadasPlural: '{n} recipes selected',
@@ -933,6 +934,17 @@ export const enUS: Messages = {
     erroNomeDuplicado: 'You already have a list with that name.',
     erroLimiteListas: "You've reached the list limit.",
     erroAdicionar: 'Could not add the recipes. Try again.',
+    // Check-off persistente (fatia D, #529).
+    titulo: 'Shopping list',
+    itemMarcarAria: 'Mark {nome} as bought',
+    itemDesmarcarAria: 'Unmark {nome}',
+    removerMarcados: 'Remove checked',
+    limparLista: 'Clear list',
+    confirmarRemoverMarcados: 'Remove the checked items? This cannot be undone.',
+    confirmarLimparLista: 'Clear the whole list? All items will be deleted — this cannot be undone.',
+    vazia: 'Your list is empty.',
+    precisaEntrar: 'Sign in to see your shopping list.',
+    // Comum às duas fatias.
     erro: 'Something went wrong. Try again.',
   },
   avaliacoes: {
