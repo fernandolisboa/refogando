@@ -82,6 +82,18 @@ function isBlockedV6(ip: string): boolean {
   if (bytes.slice(0, 12).every((x) => x === 0)) {
     return isBlockedV4(`${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`)
   }
+  // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052): bytes 0-3 = 00 64 ff 9b, bytes 4-11 = 0, e o v4
+  // embutido nos bytes 12-15. Um resolvedor NAT64 traduz o v4 destino para dentro dessa faixa, então
+  // `64:ff9b::169.254.169.254` alcançaria o metadata — re-checa o v4 embutido (igual a `::ffff:`/`::/96`).
+  if (
+    bytes[0] === 0x00 &&
+    bytes[1] === 0x64 &&
+    bytes[2] === 0xff &&
+    bytes[3] === 0x9b &&
+    bytes.slice(4, 12).every((x) => x === 0)
+  ) {
+    return isBlockedV4(`${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`)
+  }
   if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true // fe80::/10 link-local
   if ((bytes[0] & 0xfe) === 0xfc) return true // fc00::/7 unique-local
   return false

@@ -49,6 +49,8 @@ describe('parseProbeUrl — rejeita IP privado/loopback/link-local e hostnames i
     'http://0.0.0.0/x',
     'http://[::1]/x',
     'http://[::ffff:127.0.0.1]/x', // IPv4-mapped (fura string-match → pega por bytes)
+    'http://[64:ff9b::169.254.169.254]/latest/meta-data', // NAT64 (RFC 6052) do metadata endpoint
+    'http://[64:ff9b::7f00:1]/x', // NAT64 de 127.0.0.1 na forma hex
     'http://[fe80::1]/x',
     'http://[fc00::1]/x',
     'http://localhost/x',
@@ -100,6 +102,8 @@ describe('isBlockedAddress', () => {
     expect(isBlockedAddress('192.168.0.1')).toBe(true)
     expect(isBlockedAddress('::1')).toBe(true)
     expect(isBlockedAddress('::ffff:10.0.0.1')).toBe(true)
+    expect(isBlockedAddress('64:ff9b::169.254.169.254')).toBe(true) // NAT64 do metadata (RFC 6052)
+    expect(isBlockedAddress('64:ff9b::a00:1')).toBe(true) // NAT64 de 10.0.0.1
     expect(isBlockedAddress('fe80::1')).toBe(true)
     expect(isBlockedAddress('fc00::1')).toBe(true)
   })

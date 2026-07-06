@@ -13,12 +13,14 @@
  */
 
 /**
- * Teto DURO de consultas Brave por dia (UTC), GLOBAL (soma de todos os visitantes anônimos). Dimensiona
- * um circuit-breaker de custo, não o uso normal: no pior caso (fan-out cheio de `MAX_SITE_QUERIES=8`)
- * são ~250 chamadas ao endpoint/dia antes de degradar — folga ampla para tráfego legítimo, teto rígido
- * contra abuso/loop. Ajustável por deploy (é uma trava, não uma config de admin).
+ * Teto DURO de consultas Brave por dia (UTC), GLOBAL (soma de todos os visitantes autenticados). Dimensiona
+ * um circuit-breaker de custo, não o uso normal. Hardening pós-merge (#464): baixado de 2000 → 400. A
+ * feature é ASSISTIVA e agora GATEADA por sessão (só logados disparam a descoberta na web), então o volume
+ * legítimo é modesto — no pior caso (fan-out cheio de `MAX_SITE_QUERIES=8`) são ~50 chamadas ao endpoint/dia
+ * antes de degradar, ainda folga para uso real, mas um teto muito mais apertado contra abuso/loop de conta.
+ * Ajustável por deploy (é uma trava, não uma config de admin).
  */
-export const DAILY_WEB_SEARCH_QUERY_CAP = 2000
+export const DAILY_WEB_SEARCH_QUERY_CAP = 400
 
 /**
  * Chave do "dia de calendário" (UTC) do contador — `YYYY-MM-DD`. UTC (não fuso local) para que a

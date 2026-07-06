@@ -25,17 +25,24 @@ const CLIENT_IP_MAX = 64
 
 /**
  * Deriva o IP do cliente dos headers de proxy (atrás do Vercel/CDN, `request.ip` não existe no runtime
- * Node das rotas). Ordem: 1º hop do `x-forwarded-for` (cadeia "cliente, proxy1, …") → `x-real-ip`. Só
- * leitura de header (sem DB, sem auth), usado como CHAVE de rate-limit best-effort — nunca vai ao banco,
- * então capamos só o comprimento (anti-chave-abusiva). `null` quando nenhum header traz IP (local/teste):
- * o caller decide o fail-open. É metadado de rede confiável só na medida em que o proxy da frente é.
+ * Node das rotas). Ordem: `x-real-ip` PRIMEIRO → `x-forwarded-for` (1º hop) como fallback.
+ *
+ * SEGURANÇA (hardening pós #449/#464): o 1º hop do `x-forwarded-for` é CONTROLADO pelo cliente — a edge da
+ * Vercel APPENDA o IP real ao FIM da cadeia, então ler o começo dá um valor forjável (chave de rate-limit
+ * escolhida à vontade ⇒ brute-force ilimitado). Já o `x-real-ip` é setado pela edge com o IP real e o
+ * cliente NÃO consegue sobrescrevê-lo. Preferimos `x-real-ip`; só caímos no `x-forwarded-for` em ambientes
+ * sem essa injeção (proxies fora da Vercel). Só leitura de header (sem DB, sem auth), usado como CHAVE de
+ * rate-limit best-effort — nunca vai ao banco, então capamos só o comprimento (anti-chave-abusiva). `null`
+ * quando nenhum header traz IP (local/teste): o caller decide o fail-open. É metadado de rede confiável só
+ * na medida em que o proxy da frente é.
  */
 export function clientIpFromHeaders(request: Request): string | null {
+  const real = request.headers.get('x-real-ip')?.trim()
+  if (real) return real.slice(0, CLIENT_IP_MAX)
   const xff = request.headers.get('x-forwarded-for')
   if (xff) {
     const first = xff.split(',')[0]?.trim()
     if (first) return first.slice(0, CLIENT_IP_MAX)
   }
-  const real = request.headers.get('x-real-ip')?.trim()
-  return real ? real.slice(0, CLIENT_IP_MAX) : null
+  return null
 }

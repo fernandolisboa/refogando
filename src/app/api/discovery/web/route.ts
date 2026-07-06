@@ -11,6 +11,7 @@ import {
 import { reserveWebSearchQueries } from '@/server/web-search/usage-counter'
 import { clientIpFromHeaders } from '@/server/http/params'
 import { createDomainRateLimiter } from '@/server/import/rate-limit'
+import { requireSession } from '@/server/auth/guard'
 
 /**
  * Descoberta na WEB (#164, ADR-0019) — ponte de DESCOBERTA, NÃO a Busca criando. Dado um termo,
@@ -18,9 +19,13 @@ import { createDomainRateLimiter } from '@/server/import/rate-limit'
  * só encontra; estes links vivem numa seção SEPARADA, fora do ranking interno). O cliente só chama
  * isto QUANDO o acervo local veio raso (gating no `search-experience`), pra não taxar o caminho quente.
  *
- * AUTH OPCIONAL: não exige sessão (Visitante também descobre). Respeita `webSearchEnabled`: desligado
- * ⇒ `{ results: [] }` (200, nunca erro). O provedor concreto/credencial é GATE HUMANO de deploy — sem
- * ele o seam Real devolve `[]` (a feature degrada graciosamente para só o acervo local).
+ * EXIGE SESSÃO (hardening pós-merge #464): a descoberta na web dispara consultas Brave PAGAS, então
+ * reduzimos a superfície de abuso anônimo — só usuários LOGADOS a acionam. O Visitante NÃO recebe 401
+ * (não quebra a UI dele): degradamos para `{ results: [] }`, a MESMA degradação graciosa que a rota já
+ * pratica (desligado / allowlist vazia / erro) — ele só não vê a seção de links externos. Combinado com o
+ * teto diário menor (`DAILY_WEB_SEARCH_QUERY_CAP`), é defesa em profundidade. Respeita `webSearchEnabled`:
+ * desligado ⇒ `{ results: [] }` (200, nunca erro). O provedor concreto/credencial é GATE HUMANO de deploy
+ * — sem ele o seam Real devolve `[]` (a feature degrada graciosamente para só o acervo local).
  *
  * Defesa em profundidade: filtra a saída do provedor pela MESMA allowlist (fonte única) — um link cujo
  * host saiu da curadoria NUNCA chega ao cliente, mesmo que o provedor erre.
@@ -52,6 +57,12 @@ export async function GET(request: Request): Promise<Response> {
 
   // Termo vazio ⇒ nada a descobrir (espelha o early-return neutro da Busca), sem tocar provedor/DB.
   if (q.length === 0) return Response.json({ results: [] })
+
+  // EXIGE SESSÃO (hardening #464): só logados disparam a consulta paga. Anônimo NÃO recebe 401 (não quebra
+  // a UI do visitante) — degrada para vazio, a MESMA degradação graciosa da rota. Reduz a superfície de
+  // abuso anônimo antes mesmo do rate-limit/teto.
+  const g = await requireSession(request)
+  if (!g.ok) return Response.json({ results: [] })
 
   // Anti-flood POR IP ANTES de config/DB/provedor (shed barato). IP ausente (local/teste, sem proxy na
   // frente) ⇒ fail-open: não temos chave por-cliente, não punimos todo mundo num balde global.
