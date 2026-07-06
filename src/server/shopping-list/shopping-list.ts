@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { shoppingList, shoppingListItem, recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import {
@@ -11,6 +11,8 @@ import {
   computeMatchKey,
   validateAdhocItem,
   isValidItemQuantidade,
+  resolveShoppingListScale,
+  scaleIngredientsToAdd,
   type IngredientToAdd,
   type ShoppingListLineDraft,
 } from '@/domain/shopping-list-item'
@@ -21,8 +23,9 @@ import { pgCode } from '@/server/recipe/visibility'
 
 /**
  * Núcleo com efeito da Lista de compras — CONTAINER (issue #525, ADR-0032 dec.1) + o TRACER de
- * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4) + a EDIÇÃO À MÃO (issue #528,
- * ADR-0032 dec.5: item avulso, editar quantidade, remover linha). Espelha o estilo de
+ * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4) + a ESCALA por porções (#527, B) +
+ * o batch multi-receita (E) + o CHECK-OFF persistente (issue #529, ADR-0032 dec.6) + a EDIÇÃO À MÃO
+ * (issue #528, ADR-0032 dec.5: item avulso, editar quantidade, remover linha). Espelha o estilo de
  * `@/server/recipe/collections` (mesma disciplina de discriminated unions + `db: Database` por
  * parâmetro): cada Lista é uma pasta PRIVADA nomeada de UM usuário, `UNIQUE(user_id, name)`.
  *
@@ -215,18 +218,37 @@ export async function loadShoppingLists(input: {
 
 // ── Adicionar-de-receita + agregação (fatia A2, issue #526, ADR-0032 dec.2/4) ────
 
-export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
+export type ShoppingListAddRecipeResult =
+  | { kind: 'ok'; warning?: 'sem_porcoes' }
+  | { kind: 'not_found' }
 
 /**
- * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
- * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
- * é a fatia B).
+ * Núcleo SEM gate de Lista — adiciona os ingredientes de UMA Receita já sabida pertencer a uma
+ * Lista existente (o caller resolve ownership da Lista ANTES de chamar isto). Compartilhado por
+ * `applyAddRecipeToShoppingList` (fatia A2, uma Receita) e `applyAddRecipesToShoppingList` (fatia
+ * E, issue #530/ADR-0032 dec.7, N Receitas) — o multi-adicionar chama isto UMA VEZ por Receita
+ * selecionada, sequencialmente, então cada Receita ganha seu PRÓPRIO statement de upsert (evita o
+ * "ON CONFLICT DO UPDATE command cannot affect row a second time" que um INSERT multi-Receita
+ * bateria se duas Receitas diferentes citassem o mesmo ingrediente+unidade no MESMO statement) e
+ * ainda assim MESCLA corretamente entre Receitas (o upsert de cada uma lê o estado deixado pela
+ * anterior).
  *
- * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
- *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
- *  2. a Receita é ELEGÍVEL pro viewer — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
- *     ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita
- *     mesmo privada ("montar a lista a partir do meu caderno particular").
+ * ESCALA por PORÇÕES-ALVO (fatia B, issue #527, ADR-0032 dec.3): quando `porcoesAlvo` é passado E a
+ * Receita declara `porcoes`, os Itens entram ESCALADOS — `ratio = porcoesAlvo ÷ receita.porcoes`,
+ * `quantidade escalada = quantidade × ratio` (aritmética pura via `resolveShoppingListScale`/
+ * `scaleIngredientsToAdd`, que reusam o escalador do #452 `scaleQuantidade` — NUNCA IA, NUNCA
+ * reimplementado). A escala acontece ANTES de `consolidateIngredientsToAdd`, então a quantidade JÁ
+ * ESCALADA é o que soma/faz upsert (dec.3: "o snapshot guarda a quantidade escalada"). Receita SEM
+ * `porcoes` ⇒ entra na BASE (fator 1, não inventa porção) + `warning: 'sem_porcoes'` no retorno. O
+ * fluxo de UMA Receita (fatia B) passa `porcoesAlvo`; o multi-adicionar (fatia E, dec.7) chama SEM
+ * ele — as N Receitas entram na BASE (dec.7 é explícita: escalar fica só no fluxo de UMA Receita,
+ * pra evitar um seletor de porções por item numa grade de seleção).
+ *
+ * GATE de elegibilidade da Receita — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
+ * ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita mesmo
+ * privada ("montar a lista a partir do meu caderno particular"). Devolve `{ status: 'ineligible' }`
+ * quando a Receita não existe ou o viewer não pode adicioná-la — o CALLER decide como isso vira
+ * HTTP (404 leak-safe pro caso de uma Receita só, ou "pulada" silenciosamente pro lote).
  *
  * NOME por-locale: resolvido AGORA, no momento do add — MESMA resolução do display (#426,
  * `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. O SNAPSHOT grava
@@ -243,20 +265,20 @@ export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
  * de várias fontes). `nome`/`ingredient_id` do PRIMEIRO insert NUNCA mudam por um merge — nem
  * entram no `set` do upsert (o UPDATE do Postgres preserva a coluna quando ela não é mencionada).
  */
-export async function applyAddRecipeToShoppingList(input: {
+type AddRecipeItemsOutcome =
+  | { status: 'ineligible' }
+  | { status: 'ok'; warning: 'sem_porcoes' | null }
+
+async function addRecipeItemsToList(input: {
   db: Database
   userId: string
   listId: string
   recipeId: string
   locale: string
-}): Promise<ShoppingListAddRecipeResult> {
-  const { db, userId, listId, recipeId, locale } = input
-
-  const [list] = await db
-    .select({ id: shoppingList.id })
-    .from(shoppingList)
-    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
-  if (!list) return { kind: 'not_found' }
+  /** Porções-alvo (fatia B, #527) — `null`/ausente ⇒ BASE (sem escala), o design do multi-add. */
+  porcoesAlvo?: number | null
+}): Promise<AddRecipeItemsOutcome> {
+  const { db, userId, listId, recipeId, locale, porcoesAlvo = null } = input
 
   const [gate] = await db
     .select({
@@ -266,10 +288,13 @@ export async function applyAddRecipeToShoppingList(input: {
       moderationRemovedAt: recipe.moderationRemovedAt,
       origin: recipe.origin,
       curationStatus: recipe.curationStatus,
+      porcoes: recipe.porcoes,
     })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
-  if (!gate || !eligibleToSaveByViewer(gate, userId)) return { kind: 'not_found' }
+  if (!gate || !eligibleToSaveByViewer(gate, userId)) return { status: 'ineligible' }
+
+  const scale = resolveShoppingListScale({ porcoesAlvo, receitaPorcoes: gate.porcoes })
 
   // Nomes de ingrediente por-locale (#426): MESMA resolução do display (`resolveRecipeView`, via
   // `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. Só o locale
@@ -292,19 +317,25 @@ export async function applyAddRecipeToShoppingList(input: {
     .where(eq(recipeIngredient.recipeId, recipeId))
     .orderBy(recipeIngredient.ordem, recipeIngredient.id)
 
-  const items: IngredientToAdd[] = ingredientRows.map((r) => ({
-    ingredientId: r.ingredientId,
-    nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
-    quantidade: r.quantidade,
-    unidade: r.unidade,
-  }))
+  // Escala ANTES da consolidação (dec.3): a quantidade JÁ ESCALADA é o que agrega/faz upsert.
+  const items: IngredientToAdd[] = scaleIngredientsToAdd(
+    ingredientRows.map((r) => ({
+      ingredientId: r.ingredientId,
+      nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
+      quantidade: r.quantidade,
+      unidade: r.unidade,
+    })),
+    scale.factor,
+  )
 
   const lines = consolidateIngredientsToAdd(items)
-  if (lines.length === 0) return { kind: 'ok' } // Receita sem Itens nomeados: no-op válido, não é erro.
+  // Receita sem Itens nomeados: no-op válido, não é erro — mas o aviso de porções ainda vale (o
+  // usuário pediu escala e a Receita não declara `porcoes`, mesmo que não haja o que adicionar).
+  if (lines.length === 0) return { status: 'ok', warning: scale.warning }
 
   await upsertShoppingListLines({ db, listId, lines, sourceRecipeId: recipeId })
 
-  return { kind: 'ok' }
+  return { status: 'ok', warning: scale.warning }
 }
 
 /**
@@ -363,6 +394,89 @@ async function upsertShoppingListLines(input: {
     })
 }
 
+/**
+ * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4) +
+ * a escala por PORÇÕES-ALVO da fatia B (issue #527, dec.3). Quantidade BASE quando `porcoesAlvo`
+ * não é passado; ESCALADA (`base × ratio`) quando passado E a Receita declara `porcoes`. Receita
+ * SEM `porcoes` ⇒ BASE + `warning: 'sem_porcoes'` no retorno (o caller/rota decide como exibir).
+ *
+ * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
+ *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
+ *  2. a Receita é ELEGÍVEL pro viewer (ver `addRecipeItemsToList`).
+ */
+export async function applyAddRecipeToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeId: string
+  locale: string
+  /** Porções-alvo (fatia B, #527) — `null`/ausente preserva o comportamento BASE da A2. */
+  porcoesAlvo?: number | null
+}): Promise<ShoppingListAddRecipeResult> {
+  const { db, userId, listId, recipeId, locale, porcoesAlvo = null } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale, porcoesAlvo })
+  if (result.status === 'ineligible') return { kind: 'not_found' }
+  return { kind: 'ok', ...(result.warning ? { warning: result.warning } : {}) }
+}
+
+export type ShoppingListAddRecipesResult =
+  | { kind: 'ok'; addedCount: number; skippedCount: number }
+  | { kind: 'not_found' }
+
+/**
+ * Multi-adicionar (fatia E, issue #530, ADR-0032 dec.7): adiciona os ingredientes de N Receitas
+ * SELECIONADAS a uma Lista NUMA ação, todas na quantidade BASE (SEM seletor de porções por
+ * Receita — dec.7 é explícita: escalar fica no fluxo de UMA Receita, fatia B, pra evitar um
+ * seletor por item numa grade de seleção). Reusa o MESMO núcleo de merge/upsert da A2
+ * (`addRecipeItemsToList`), UMA VEZ por Receita, sequencialmente — então as linhas de TODAS as
+ * Receitas somam por chave+unidade exatamente como re-adicionar a mesma Receita várias vezes
+ * (idempotente).
+ *
+ * A Lista é validada UMA VEZ (não por Receita); Receitas INELEGÍVEIS (não existem, ou o viewer não
+ * pode adicioná-las — mesmo gate de Salvar) são PULADAS silenciosamente (contam em `skippedCount`)
+ * em vez de derrubar o lote inteiro — o caso comum é a UI só oferecer Receitas já elegíveis (ex.
+ * a tela de Salvos), então "pular" só cobre a corrida rara de uma Receita sumir/virar privada
+ * entre o carregar da tela e o clique. `recipeIds` chega DEDUPLICADO e dentro do teto
+ * (`MAX_RECIPES_PER_BATCH_ADD`) — responsabilidade da rota.
+ */
+export async function applyAddRecipesToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeIds: readonly string[]
+  locale: string
+}): Promise<ShoppingListAddRecipesResult> {
+  const { db, userId, listId, recipeIds, locale } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  let addedCount = 0
+  let skippedCount = 0
+  // Sequencial, NUNCA em paralelo: statements concorrentes mirando a MESMA linha (list, matchKey,
+  // unidade) disputariam o upsert — serial garante que cada Receita vê o estado que a anterior
+  // deixou (a mesma disciplina do usuário chamando o endpoint de UMA Receita N vezes seguidas).
+  for (const recipeId of recipeIds) {
+    // Multi-adicionar chama SEM `porcoesAlvo` (dec.7): BASE, sem escala. O `warning` do núcleo é
+    // ignorado aqui — não há seletor de porções por Receita no lote (o aviso não teria onde ir).
+    const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale })
+    if (result.status === 'ok') addedCount += 1
+    else skippedCount += 1
+  }
+
+  return { kind: 'ok', addedCount, skippedCount }
+}
+
 export type ShoppingListItemView = {
   id: string
   nome: string
@@ -382,8 +496,8 @@ export type ShoppingListItemsResult =
 /**
  * Vê UMA Lista de compras do próprio usuário com os Itens JÁ CONSOLIDADOS (dec.4: storage = linhas
  * agregadas, sem agregação-na-leitura). Ordena por criação (ordem de adição/merge). `checkedAt` é
- * passthrough — o check-off é a fatia D (dec.6); a coluna já existe no schema do A1 e nasce sempre
- * `null` até aquela fatia escrever nela.
+ * passthrough — escrito por `applyToggleShoppingListItemChecked` (fatia D, dec.6); nasce `null` até
+ * o dono marcar o Item como comprado.
  */
 export async function loadShoppingListItems(input: {
   db: Database
@@ -547,4 +661,99 @@ export async function applyRemoveShoppingListItem(input: {
   if (!row) return { kind: 'not_found' }
 
   return { kind: 'ok' }
+}
+
+// ── Check-off PERSISTENTE (fatia D, issue #529, ADR-0032 dec.6) ──────────────────
+
+export type ShoppingListItemToggleResult =
+  | { kind: 'ok'; checkedAt: string | null }
+  | { kind: 'not_found' }
+
+/**
+ * Marca/desmarca UM Item como comprado — PERSISTENTE (dec.6: "nada expira sozinho", o carimbo só
+ * muda por ação explícita do dono). O cliente manda o estado-ALVO (`checked: boolean`), não um
+ * toggle cego: idempotente sob duplo-clique/retry (marcar 2× não desmarca). Ownership em DUAS
+ * pernas, ambas leak-safe no MESMO `not_found` (nunca revela qual falhou): 1) a Lista é do PRÓPRIO
+ * usuário; 2) o Item pertence a ESSA Lista (o `where` do UPDATE escopa por `listId`, então um
+ * `itemId` de OUTRA lista — inclusive de outro usuário — não casa e devolve not_found, sem
+ * precisar de um SELECT extra).
+ */
+export async function applyToggleShoppingListItemChecked(input: {
+  db: Database
+  userId: string
+  listId: string
+  itemId: string
+  checked: boolean
+}): Promise<ShoppingListItemToggleResult> {
+  const { db, userId, listId, itemId, checked } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const [row] = await db
+    .update(shoppingListItem)
+    .set({ checkedAt: checked ? new Date() : null, updatedAt: new Date() })
+    .where(and(eq(shoppingListItem.id, itemId), eq(shoppingListItem.listId, listId)))
+    .returning({ checkedAt: shoppingListItem.checkedAt })
+  if (!row) return { kind: 'not_found' }
+
+  return { kind: 'ok', checkedAt: row.checkedAt?.toISOString() ?? null }
+}
+
+export type ShoppingListBulkRemoveResult = { kind: 'ok'; removed: number } | { kind: 'not_found' }
+
+/**
+ * "Remover marcados" (dec.6): apaga SÓ os Itens com `checked_at` NÃO-nulo da Lista do próprio
+ * usuário. Ação EXPLÍCITA (nunca automática — nada expira sozinho); os itens desmarcados
+ * permanecem intactos. Ownership por (id, user_id) antes do DELETE ⇒ not_found leak-safe.
+ */
+export async function applyRemoveCheckedShoppingListItems(input: {
+  db: Database
+  userId: string
+  listId: string
+}): Promise<ShoppingListBulkRemoveResult> {
+  const { db, userId, listId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const removed = await db
+    .delete(shoppingListItem)
+    .where(and(eq(shoppingListItem.listId, listId), isNotNull(shoppingListItem.checkedAt)))
+    .returning({ id: shoppingListItem.id })
+
+  return { kind: 'ok', removed: removed.length }
+}
+
+/**
+ * "Limpar lista" (dec.6): apaga TODOS os Itens da Lista do próprio usuário — marcados e
+ * desmarcados. A Lista em si SOBREVIVE (esvazia, não some — apagar a Lista é uma ação diferente,
+ * `applyShoppingListDelete`). Ação EXPLÍCITA, nunca automática. Ownership por (id, user_id) antes
+ * do DELETE ⇒ not_found leak-safe.
+ */
+export async function applyClearShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+}): Promise<ShoppingListBulkRemoveResult> {
+  const { db, userId, listId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const removed = await db
+    .delete(shoppingListItem)
+    .where(eq(shoppingListItem.listId, listId))
+    .returning({ id: shoppingListItem.id })
+
+  return { kind: 'ok', removed: removed.length }
 }

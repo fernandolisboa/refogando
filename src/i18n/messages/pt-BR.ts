@@ -986,37 +986,76 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
-  // Lista de compras (#528, ADR-0032 dec.5) — edição à mão: item avulso + editar quantidade +
-  // remover linha. Namespace PRÓPRIO (espelha `colecoes` na forma, mas o domínio é outro — itens
-  // de compra, não Receitas salvas). `unidadeLabel`/`unidadeNenhuma` do select reusam o mapa
-  // GLOBAL `messages.unidadeLabel` (topo do arquivo) — não duplicado aqui.
-  listaCompras: {
+  // Lista de compras (#474, ADR-0032) — namespace PRÓPRIO, separado de `colecoes` (entidades
+  // distintas). Reúne: a multi-seleção de N Receitas (fatia E, #530, dec.7: selecionar em
+  // `SavedRecipesView` e adicionar todas a uma Lista numa ação, quantidade BASE), o check-off
+  // PERSISTENTE (fatia D, #529, dec.6: marca/desmarca comprado; nada expira sozinho, "remover
+  // marcados"/"limpar lista" são sempre EXPLÍCITAS), a EDIÇÃO À MÃO (fatia C, #528, dec.5: item
+  // avulso + editar quantidade + remover linha) E o botão de adicionar UMA Receita com porções-alvo
+  // do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
+  listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
+    selecionarReceita: 'Selecionar {nome}',
+    selecionadaSingular: '{n} receita selecionada',
+    selecionadasPlural: '{n} receitas selecionadas',
+    cancelarSelecao: 'Cancelar seleção',
+    escolherLista: 'Escolher lista',
+    novaLista: '+ Nova lista',
+    nomeNovaLista: 'Nome da nova lista',
+    confirmarAdicionar: 'Adicionar à lista',
+    adicionando: 'Adicionando…',
+    sucessoSingular: '{n} receita adicionada à lista.',
+    sucessoPlural: '{n} receitas adicionadas à lista.',
+    algumasNaoAdicionadas: 'Algumas receitas não puderam ser adicionadas.',
+    erroCarregarListas: 'Não foi possível carregar suas listas. Tente de novo.',
+    erroNomeInvalido: 'Escolha um nome para a lista (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
+    erroLimiteListas: 'Você atingiu o limite de listas.',
+    erroAdicionar: 'Não foi possível adicionar as receitas. Tente de novo.',
+    // Check-off persistente (fatia D, #529).
     titulo: 'Lista de compras',
-    subtitulo: 'Adicione itens à mão, edite a quantidade ou remova o que não precisa mais.',
-    vazio: 'Sua lista está vazia. Adicione um item abaixo.',
-    // Formulário de item avulso.
+    itemMarcarAria: 'Marcar {nome} como comprado',
+    itemDesmarcarAria: 'Desmarcar {nome}',
+    removerMarcados: 'Remover marcados',
+    limparLista: 'Limpar lista',
+    confirmarRemoverMarcados: 'Remover os itens marcados? Esta ação não pode ser desfeita.',
+    confirmarLimparLista: 'Limpar a lista inteira? Todos os itens serão apagados — não pode ser desfeito.',
+    vazia: 'Sua lista está vazia.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+    // Adicionar UMA Receita do detalhe, com porções-alvo (fatia B, #527) — o ícone no topo abre um
+    // popover ancorado com as Listas + criar nova inline; a porção-alvo reusa o MESMO valor corrente
+    // do escalador da página (`usePortionScale`), sem campo numérico próprio.
+    adicionar: 'Adicionar à lista de compras',
+    adicionarALista: 'Adicionar à lista de compras',
+    // Botão CURTO de cada linha de Lista dentro do popover (distinto do aria-label do ícone acima —
+    // os dois nunca são o mesmo texto acessível ao mesmo tempo, senão o popover teria dois botões
+    // "Adicionar à lista de compras" ambíguos pra leitor de tela).
+    adicionarBotao: 'Adicionar',
+    adicionado: 'Adicionado',
+    criarEAdicionar: 'Criar e adicionar',
+    semListas: 'Você ainda não tem nenhuma lista de compras.',
+    avisoSemPorcoes: 'Esta receita não tem porções definidas — adicionada na quantidade original.',
+    convidaEntrarAdicionar: 'Entre na sua conta para adicionar à lista de compras.',
+    // Edição à mão (fatia C, #528, dec.5) — item avulso + editar quantidade + remover linha.
+    // `unidade`/`unidadeNenhuma` do select reusam o mapa GLOBAL `messages.unidadeLabel` pros
+    // rótulos; aqui só o LABEL do campo. Reusa `titulo`/`vazia`/`adicionando`/`adicionarBotao`/
+    // `precisaEntrar`/`erro` acima (não duplicados).
     nomeItem: 'Item',
     nomeItemPlaceholder: 'Ex.: guardanapos',
     quantidade: 'Quantidade',
     quantidadePlaceholder: 'Ex.: 2',
     unidade: 'Unidade',
     unidadeNenhuma: 'Sem unidade',
-    adicionar: 'Adicionar',
-    adicionando: 'Adicionando…',
-    // Edição/remoção por linha.
     editarQuantidade: 'Editar quantidade',
     salvar: 'Salvar',
     cancelar: 'Cancelar',
     remover: 'Remover',
     confirmarRemover: 'Remover este item da lista?',
-    semQuantidade: 'sem quantidade',
-    // Erros (mapeados do servidor) + genéricos.
-    erroNomeInvalido: 'Escolha um nome pro item (até 200 caracteres).',
+    erroItemNomeInvalido: 'Escolha um nome pro item (até 200 caracteres).',
     erroQuantidadeInvalida: 'Quantidade inválida — use um número maior que zero.',
     erroUnidadeInvalida: 'Unidade inválida.',
+    // Comum às fatias.
     erro: 'Algo deu errado. Tente de novo.',
-    erroCarregar: 'Não foi possível carregar sua lista. Tente de novo.',
-    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
   },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo

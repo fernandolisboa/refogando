@@ -1,13 +1,14 @@
 import { normalizeText } from '@/domain/recipe-restrictions'
+import { scaleQuantidade } from '@/domain/ingredient-line'
 import { isUnidade, type Unidade } from '@/domain/vocabulary'
 
 /**
  * Kernel PURO da agregação/merge de Itens da Lista de compras — o TRACER (fatia A2, issue #526,
- * ADR-0032 dec.2/4) e a EDIÇÃO À MÃO (fatia C, issue #528, ADR-0032 dec.5) — sem DB, sem I/O.
- * Companheiro de `@/domain/shopping-list` (container, #525): lá vive a regra do NOME/cap da Lista;
- * aqui vive a regra de CONSOLIDAR os Itens de uma Receita em linhas de compra + a validação do item
- * AVULSO digitado à mão. O efeito (ler a Receita, resolver nome por-locale, fazer o upsert) mora no
- * servidor (`@/server/shopping-list/shopping-list`).
+ * ADR-0032 dec.2/4), a ESCALA por porções (fatia B, #527) e a EDIÇÃO À MÃO (fatia C, #528, dec.5:
+ * validação do item avulso) — sem DB, sem I/O. Companheiro de `@/domain/shopping-list`
+ * (container, #525): lá vive a regra do NOME/cap da Lista; aqui vive a regra de CONSOLIDAR os
+ * Itens de uma Receita em linhas de compra + a validação do item AVULSO. O efeito (ler a Receita,
+ * resolver nome por-locale, fazer o upsert) mora no servidor (`@/server/shopping-list/shopping-list`).
  */
 
 /**
@@ -21,6 +22,13 @@ export type IngredientToAdd = {
   quantidade: string | null
   unidade: Unidade | null
 }
+
+/**
+ * Teto de Receitas por lote no multi-adicionar (fatia E, issue #530, ADR-0032 dec.7) — anti-abuso
+ * barato: uma seleção de UI realista (checkboxes numa grade) nunca chega a centenas de Receitas;
+ * blinda contra um payload forjado com milhares de ids (cada um vira um upsert sequencial).
+ */
+export const MAX_RECIPES_PER_BATCH_ADD = 50
 
 /**
  * Linha PRONTA para o upsert em `shopping_list_item` — já consolidada por (chave, unidade) DENTRO
@@ -71,6 +79,47 @@ export function combineQuantidade(a: string | null, b: string | null): string | 
 }
 
 /**
+ * Resolução do fator de escala por PORÇÕES-ALVO (fatia B, issue #527, ADR-0032 dec.3): `ratio =
+ * alvo ÷ receita.porcoes`. Puro cálculo de fator — a MULTIPLICAÇÃO em si é `scaleQuantidade`
+ * (#452, `ingredient-line.ts`), REUSADA aqui, nunca reimplementada (a mesma tese do
+ * `computeMatchKey` reusando `normalizeText`).
+ *
+ *  - sem `porcoesAlvo` pedido (fluxo antigo da A2 / o multi-add da fatia E): fator 1 — no-op, sem
+ *    aviso.
+ *  - `porcoesAlvo` pedido mas a Receita NÃO tem `porcoes` declarada (`null`/`0`, ADR-0032 "não
+ *    inventa porção"): fator 1 (entra na BASE) + aviso `'sem_porcoes'` — o caller decide como
+ *    exibir/propagar o aviso (a rota devolve no corpo da resposta).
+ *  - os dois presentes: fator = alvo ÷ porcoes, aritmética pura, sem aviso.
+ */
+export type ShoppingListScale = { factor: number; warning: 'sem_porcoes' | null }
+
+export function resolveShoppingListScale(input: {
+  porcoesAlvo: number | null
+  receitaPorcoes: number | null
+}): ShoppingListScale {
+  const { porcoesAlvo, receitaPorcoes } = input
+  if (porcoesAlvo == null) return { factor: 1, warning: null }
+  if (receitaPorcoes == null || receitaPorcoes <= 0) return { factor: 1, warning: 'sem_porcoes' }
+  return { factor: porcoesAlvo / receitaPorcoes, warning: null }
+}
+
+/**
+ * Escala a `quantidade` de cada Item pelo `factor` — via `scaleQuantidade` (#452), ANTES da
+ * consolidação (a quantidade JÁ ESCALADA é o que entra na agregação/snapshot, ADR-0032 dec.3).
+ * `unidade`/`nome`/`ingredientId` seguem intactos (a escala nunca muda a NATUREZA da medida, mesma
+ * tese de `scaleIngredient` em `ingredient-line.ts`). Fator 1 (caso comum: sem porções-alvo pedido)
+ * devolve os itens tais quais — evita passar `quantidade` numérica por round-trip de
+ * string→number→string sem necessidade (ruído de ponto-flutuante zero quando não há escala).
+ */
+export function scaleIngredientsToAdd(
+  items: ReadonlyArray<IngredientToAdd>,
+  factor: number,
+): IngredientToAdd[] {
+  if (factor === 1) return items as IngredientToAdd[]
+  return items.map((it) => ({ ...it, quantidade: scaleQuantidade(it.quantidade, factor) }))
+}
+
+/**
  * Consolida os Itens de UMA Receita em linhas de Lista de compras — a regra de MERGE pura do
  * ADR-0032 dec.2/4: agrupa por (chave, unidade) — a MESMA chave com unidades DIFERENTES vira
  * linhas SEPARADAS (nunca converte unidade); soma `quantidade` só DENTRO do mesmo grupo
@@ -93,7 +142,10 @@ export function consolidateIngredientsToAdd(
     if (nome === '') continue
 
     const matchKey = computeMatchKey({ ingredientId: it.ingredientId, nome })
-    const bucketKey = `${matchKey} ${it.unidade ?? ' sem_unidade'}`
+    // Chave de bucket = tupla (matchKey, unidade) serializada — JSON.stringify é inequívoco
+    // (nunca colide, mesmo que o nome normalizado contenha espaços) E mantém o fonte como TEXTO
+    // (sem byte de controle NUL, que faria o git tratar o arquivo como binário).
+    const bucketKey = JSON.stringify([matchKey, it.unidade])
 
     const existing = buckets.get(bucketKey)
     if (existing) {

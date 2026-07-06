@@ -6,6 +6,8 @@ import {
   isValidItemQuantidade,
   validateAdhocItem,
   SHOPPING_LIST_ITEM_NOME_MAX,
+  resolveShoppingListScale,
+  scaleIngredientsToAdd,
   type IngredientToAdd,
 } from '@/domain/shopping-list-item'
 
@@ -195,5 +197,80 @@ describe('validateAdhocItem', () => {
       quantidade: '2.5',
       unidade: 'kg',
     })
+  })
+})
+
+/**
+ * Escala por porções-alvo (fatia B, issue #527, ADR-0032 dec.3) — `ratio = alvo ÷ porcoes`,
+ * aritmética pura via `scaleQuantidade` (#452, `ingredient-line.ts`), reusada aqui.
+ */
+describe('resolveShoppingListScale', () => {
+  it('sem porcoesAlvo pedido: fator 1, sem aviso (compat com o fluxo BASE da A2)', () => {
+    expect(resolveShoppingListScale({ porcoesAlvo: null, receitaPorcoes: 4 })).toEqual({
+      factor: 1,
+      warning: null,
+    })
+    expect(resolveShoppingListScale({ porcoesAlvo: null, receitaPorcoes: null })).toEqual({
+      factor: 1,
+      warning: null,
+    })
+  })
+
+  it('porcoesAlvo pedido mas Receita SEM porcoes: fator 1 (BASE) + aviso sem_porcoes', () => {
+    expect(resolveShoppingListScale({ porcoesAlvo: 8, receitaPorcoes: null })).toEqual({
+      factor: 1,
+      warning: 'sem_porcoes',
+    })
+  })
+
+  it('porcoesAlvo pedido com Receita.porcoes=0 (defensivo): trata como sem porções', () => {
+    expect(resolveShoppingListScale({ porcoesAlvo: 8, receitaPorcoes: 0 })).toEqual({
+      factor: 1,
+      warning: 'sem_porcoes',
+    })
+  })
+
+  it('os dois presentes: fator = alvo ÷ porcoes, sem aviso', () => {
+    expect(resolveShoppingListScale({ porcoesAlvo: 8, receitaPorcoes: 4 })).toEqual({
+      factor: 2,
+      warning: null,
+    })
+    expect(resolveShoppingListScale({ porcoesAlvo: 3, receitaPorcoes: 4 })).toEqual({
+      factor: 0.75,
+      warning: null,
+    })
+  })
+})
+
+describe('scaleIngredientsToAdd', () => {
+  function item(over: Partial<IngredientToAdd> = {}): IngredientToAdd {
+    return { ingredientId: null, nome: 'sal', quantidade: null, unidade: null, ...over }
+  }
+
+  it('fator 1: devolve os itens tais quais (no-op, sem round-trip numérico)', () => {
+    const items = [item({ nome: 'Farinha', quantidade: '200', unidade: 'g' })]
+    expect(scaleIngredientsToAdd(items, 1)).toBe(items)
+  })
+
+  it('fator ≠ 1: multiplica a quantidade de cada item (reusa scaleQuantidade do #452)', () => {
+    const items = [
+      item({ nome: 'Farinha', quantidade: '200', unidade: 'g' }),
+      item({ nome: 'Leite', quantidade: '1', unidade: 'l' }),
+    ]
+    const scaled = scaleIngredientsToAdd(items, 2)
+    expect(scaled).toEqual([
+      item({ nome: 'Farinha', quantidade: '400', unidade: 'g' }),
+      item({ nome: 'Leite', quantidade: '2', unidade: 'l' }),
+    ])
+  })
+
+  it('item sem quantidade (a_gosto/q.b.) fica como está — nada a escalar', () => {
+    const items = [item({ nome: 'Sal', quantidade: null, unidade: 'a_gosto' })]
+    expect(scaleIngredientsToAdd(items, 2)).toEqual(items)
+  })
+
+  it('arredonda a 3 casas (mesma tese de scaleQuantidade — evita ruído de ponto-flutuante)', () => {
+    const items = [item({ nome: 'Farinha', quantidade: '2', unidade: 'g' })]
+    expect(scaleIngredientsToAdd(items, 0.75)[0].quantidade).toBe('1.5')
   })
 })
