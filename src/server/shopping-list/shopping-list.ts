@@ -6,7 +6,12 @@ import {
   MAX_SHOPPING_LISTS_PER_USER,
   validateShoppingListName,
 } from '@/domain/shopping-list'
-import { consolidateIngredientsToAdd, type IngredientToAdd } from '@/domain/shopping-list-item'
+import {
+  consolidateIngredientsToAdd,
+  resolveShoppingListScale,
+  scaleIngredientsToAdd,
+  type IngredientToAdd,
+} from '@/domain/shopping-list-item'
 import { eligibleToSaveByViewer } from '@/domain/recipe-pool'
 import { resolveIngredientNames, resolveIngredientName } from '@/domain/recipe-read'
 import type { Unidade } from '@/domain/vocabulary'
@@ -208,7 +213,9 @@ export async function loadShoppingLists(input: {
 
 // ── Adicionar-de-receita + agregação (fatia A2, issue #526, ADR-0032 dec.2/4) ────
 
-export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
+export type ShoppingListAddRecipeResult =
+  | { kind: 'ok'; warning?: 'sem_porcoes' }
+  | { kind: 'not_found' }
 
 /**
  * Núcleo SEM gate de Lista — adiciona os ingredientes de UMA Receita já sabida pertencer a uma
@@ -221,11 +228,22 @@ export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
  * ainda assim MESCLA corretamente entre Receitas (o upsert de cada uma lê o estado deixado pela
  * anterior).
  *
+ * ESCALA por PORÇÕES-ALVO (fatia B, issue #527, ADR-0032 dec.3): quando `porcoesAlvo` é passado E a
+ * Receita declara `porcoes`, os Itens entram ESCALADOS — `ratio = porcoesAlvo ÷ receita.porcoes`,
+ * `quantidade escalada = quantidade × ratio` (aritmética pura via `resolveShoppingListScale`/
+ * `scaleIngredientsToAdd`, que reusam o escalador do #452 `scaleQuantidade` — NUNCA IA, NUNCA
+ * reimplementado). A escala acontece ANTES de `consolidateIngredientsToAdd`, então a quantidade JÁ
+ * ESCALADA é o que soma/faz upsert (dec.3: "o snapshot guarda a quantidade escalada"). Receita SEM
+ * `porcoes` ⇒ entra na BASE (fator 1, não inventa porção) + `warning: 'sem_porcoes'` no retorno. O
+ * fluxo de UMA Receita (fatia B) passa `porcoesAlvo`; o multi-adicionar (fatia E, dec.7) chama SEM
+ * ele — as N Receitas entram na BASE (dec.7 é explícita: escalar fica só no fluxo de UMA Receita,
+ * pra evitar um seletor de porções por item numa grade de seleção).
+ *
  * GATE de elegibilidade da Receita — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
  * ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita mesmo
- * privada ("montar a lista a partir do meu caderno particular"). Devolve `'ineligible'` quando a
- * Receita não existe ou o viewer não pode adicioná-la — o CALLER decide como isso vira HTTP (404
- * leak-safe pro caso de uma Receita só, ou "pulada" silenciosamente pro lote).
+ * privada ("montar a lista a partir do meu caderno particular"). Devolve `{ status: 'ineligible' }`
+ * quando a Receita não existe ou o viewer não pode adicioná-la — o CALLER decide como isso vira
+ * HTTP (404 leak-safe pro caso de uma Receita só, ou "pulada" silenciosamente pro lote).
  *
  * NOME por-locale: resolvido AGORA, no momento do add — MESMA resolução do display (#426,
  * `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. O SNAPSHOT grava
@@ -242,14 +260,20 @@ export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
  * de várias fontes). `nome`/`ingredient_id` do PRIMEIRO insert NUNCA mudam por um merge — nem
  * entram no `set` do upsert (o UPDATE do Postgres preserva a coluna quando ela não é mencionada).
  */
+type AddRecipeItemsOutcome =
+  | { status: 'ineligible' }
+  | { status: 'ok'; warning: 'sem_porcoes' | null }
+
 async function addRecipeItemsToList(input: {
   db: Database
   userId: string
   listId: string
   recipeId: string
   locale: string
-}): Promise<'ok' | 'ineligible'> {
-  const { db, userId, listId, recipeId, locale } = input
+  /** Porções-alvo (fatia B, #527) — `null`/ausente ⇒ BASE (sem escala), o design do multi-add. */
+  porcoesAlvo?: number | null
+}): Promise<AddRecipeItemsOutcome> {
+  const { db, userId, listId, recipeId, locale, porcoesAlvo = null } = input
 
   const [gate] = await db
     .select({
@@ -259,10 +283,13 @@ async function addRecipeItemsToList(input: {
       moderationRemovedAt: recipe.moderationRemovedAt,
       origin: recipe.origin,
       curationStatus: recipe.curationStatus,
+      porcoes: recipe.porcoes,
     })
     .from(recipe)
     .where(eq(recipe.id, recipeId))
-  if (!gate || !eligibleToSaveByViewer(gate, userId)) return 'ineligible'
+  if (!gate || !eligibleToSaveByViewer(gate, userId)) return { status: 'ineligible' }
+
+  const scale = resolveShoppingListScale({ porcoesAlvo, receitaPorcoes: gate.porcoes })
 
   // Nomes de ingrediente por-locale (#426): MESMA resolução do display (`resolveRecipeView`, via
   // `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. Só o locale
@@ -285,15 +312,21 @@ async function addRecipeItemsToList(input: {
     .where(eq(recipeIngredient.recipeId, recipeId))
     .orderBy(recipeIngredient.ordem, recipeIngredient.id)
 
-  const items: IngredientToAdd[] = ingredientRows.map((r) => ({
-    ingredientId: r.ingredientId,
-    nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
-    quantidade: r.quantidade,
-    unidade: r.unidade,
-  }))
+  // Escala ANTES da consolidação (dec.3): a quantidade JÁ ESCALADA é o que agrega/faz upsert.
+  const items: IngredientToAdd[] = scaleIngredientsToAdd(
+    ingredientRows.map((r) => ({
+      ingredientId: r.ingredientId,
+      nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
+      quantidade: r.quantidade,
+      unidade: r.unidade,
+    })),
+    scale.factor,
+  )
 
   const lines = consolidateIngredientsToAdd(items)
-  if (lines.length === 0) return 'ok' // Receita sem Itens nomeados: no-op válido, não é erro.
+  // Receita sem Itens nomeados: no-op válido, não é erro — mas o aviso de porções ainda vale (o
+  // usuário pediu escala e a Receita não declara `porcoes`, mesmo que não haja o que adicionar).
+  if (lines.length === 0) return { status: 'ok', warning: scale.warning }
 
   await db
     .insert(shoppingListItem)
@@ -331,13 +364,14 @@ async function addRecipeItemsToList(input: {
       },
     })
 
-  return 'ok'
+  return { status: 'ok', warning: scale.warning }
 }
 
 /**
- * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
- * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
- * é a fatia B).
+ * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4) +
+ * a escala por PORÇÕES-ALVO da fatia B (issue #527, dec.3). Quantidade BASE quando `porcoesAlvo`
+ * não é passado; ESCALADA (`base × ratio`) quando passado E a Receita declara `porcoes`. Receita
+ * SEM `porcoes` ⇒ BASE + `warning: 'sem_porcoes'` no retorno (o caller/rota decide como exibir).
  *
  * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
  *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
@@ -349,8 +383,10 @@ export async function applyAddRecipeToShoppingList(input: {
   listId: string
   recipeId: string
   locale: string
+  /** Porções-alvo (fatia B, #527) — `null`/ausente preserva o comportamento BASE da A2. */
+  porcoesAlvo?: number | null
 }): Promise<ShoppingListAddRecipeResult> {
-  const { db, userId, listId, recipeId, locale } = input
+  const { db, userId, listId, recipeId, locale, porcoesAlvo = null } = input
 
   const [list] = await db
     .select({ id: shoppingList.id })
@@ -358,9 +394,9 @@ export async function applyAddRecipeToShoppingList(input: {
     .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
   if (!list) return { kind: 'not_found' }
 
-  const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale })
-  if (result === 'ineligible') return { kind: 'not_found' }
-  return { kind: 'ok' }
+  const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale, porcoesAlvo })
+  if (result.status === 'ineligible') return { kind: 'not_found' }
+  return { kind: 'ok', ...(result.warning ? { warning: result.warning } : {}) }
 }
 
 export type ShoppingListAddRecipesResult =
@@ -404,8 +440,10 @@ export async function applyAddRecipesToShoppingList(input: {
   // unidade) disputariam o upsert — serial garante que cada Receita vê o estado que a anterior
   // deixou (a mesma disciplina do usuário chamando o endpoint de UMA Receita N vezes seguidas).
   for (const recipeId of recipeIds) {
+    // Multi-adicionar chama SEM `porcoesAlvo` (dec.7): BASE, sem escala. O `warning` do núcleo é
+    // ignorado aqui — não há seletor de porções por Receita no lote (o aviso não teria onde ir).
     const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale })
-    if (result === 'ok') addedCount += 1
+    if (result.status === 'ok') addedCount += 1
     else skippedCount += 1
   }
 

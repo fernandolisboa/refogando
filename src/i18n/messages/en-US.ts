@@ -944,7 +944,16 @@ export const enUS: Messages = {
     confirmarLimparLista: 'Clear the whole list? All items will be deleted — this cannot be undone.',
     vazia: 'Your list is empty.',
     precisaEntrar: 'Sign in to see your shopping list.',
-    // Comum às duas fatias.
+    // Adicionar UMA Receita do detalhe, com porções-alvo (fatia B, #527).
+    adicionar: 'Add to shopping list',
+    adicionarALista: 'Add to shopping list',
+    adicionarBotao: 'Add',
+    adicionado: 'Added',
+    criarEAdicionar: 'Create and add',
+    semListas: "You don't have any shopping lists yet.",
+    avisoSemPorcoes: 'This recipe has no servings set — added at its original quantity.',
+    convidaEntrarAdicionar: 'Sign in to add to your shopping list.',
+    // Comum às fatias.
     erro: 'Something went wrong. Try again.',
   },
   avaliacoes: {

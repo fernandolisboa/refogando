@@ -58,8 +58,14 @@ type BatchBody = { ok: true; addedCount: number; skippedCount: number }
 
 async function seedCatalogRecipe(
   ingredients: { rawText: string; quantidade?: string | null; unidade?: string | null }[],
+  porcoes?: number | null,
 ): Promise<string> {
-  const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  const recipeId = await seedRecipe({
+    origin: 'catalog',
+    originalLocale: 'pt-BR',
+    ownerId: null,
+    porcoes: porcoes ?? null,
+  })
   await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Receita de teste', provenance: 'escrita_por_pessoa' })
   let ordem = 0
   for (const ing of ingredients) {
@@ -188,6 +194,18 @@ describe('Multi-adicionar N Receitas à Lista numa ação (#530)', () => {
     const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
     // Base = exatamente o que veio da Receita, sem ratio/escala nenhuma.
     expect(byNome(items, 'Leite')).toMatchObject({ quantidade: '200.000', unidade: 'ml' })
+  })
+
+  it('lote NUNCA escala mesmo quando a Receita DECLARA porcoes (dec.7 — escala é só na fatia B)', async () => {
+    const { userId, headers } = await session()
+    const listId = await seedList(userId)
+    // Receita PRA 4 porções: o fluxo de UMA Receita (fatia B) escalaria por porções-alvo, mas o
+    // lote (fatia E) NÃO tem seletor de porções — passa `porcoesAlvo` ausente ⇒ fator 1 ⇒ base.
+    const recipeId = await seedCatalogRecipe([{ rawText: 'Farinha', quantidade: '200', unidade: 'g' }], 4)
+
+    await addBatch(listId, [recipeId], headers)
+    const { items } = (await (await getItems(listId, headers)).json()) as ItemsBody
+    expect(byNome(items, 'Farinha')).toMatchObject({ quantidade: '200.000', unidade: 'g' })
   })
 
   it('body sem recipeIds (nenhum uuid válido) ⇒ 404 leak-safe', async () => {
