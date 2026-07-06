@@ -1,4 +1,4 @@
-import { fingerprintSource, fingerprintMt } from '@/domain/translation-fingerprint'
+import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
 import type { TranslationProvenance } from '@/domain/recipe'
 
 /**
@@ -64,26 +64,23 @@ export function computeTranslationFingerprintBackfill(
   const update: BackfillFingerprintUpdate = {}
 
   if (row.sourceFingerprint == null) {
-    // Mesma forma de `ensureTranslation`: campos do locale ORIGINAL + `raw_text` dos ingredientes
-    // (array, nunca `null` — mesmo vazio quando a receita não tem ingrediente nomeado).
-    update.sourceFingerprint = fingerprintSource({
-      titulo: source.titulo,
-      descricao: source.descricao,
-      passos: source.passos,
-      notas: source.notas,
-      ingredientes: source.ingredientes,
-    })
+    // Helper compartilhado com `ensureTranslation` (via #499) = fonte ÚNICA de construção do hash:
+    // campos do locale ORIGINAL + `raw_text` dos ingredientes (array, nunca `null`).
+    update.sourceFingerprint = sourceFingerprintOf(
+      { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
+      source.ingredientes,
+    )
   }
 
   if (row.provenance === 'automatica_nao_revisada' && row.mtFingerprint == null) {
-    // Mesma forma de `ensureTranslation`: campos da PRÓPRIA linha + o mapa `ordem→nome` do jsonb
-    // `ingredientes` (o `nomeOrigem` é escrituração, fora do hash — só {ordem, nome} entra).
-    update.mtFingerprint = fingerprintMt({
+    // Mesmo helper compartilhado: campos da PRÓPRIA linha + o mapa `ordem→nome` do jsonb `ingredientes`
+    // (o helper descarta `nomeOrigem` e colapsa lista vazia→null, igual ao write-path).
+    update.mtFingerprint = mtFingerprintOfRow({
       titulo: row.titulo,
       descricao: row.descricao,
       passos: row.passos,
       notas: row.notas,
-      ingredientes: row.ingredientes ? row.ingredientes.map((i) => ({ ordem: i.ordem, nome: i.nome })) : null,
+      ingredientes: row.ingredientes,
     })
   }
 
