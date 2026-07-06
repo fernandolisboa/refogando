@@ -1518,3 +1518,71 @@ export const takedownTicket = pgTable(
     index('takedown_ticket_status_received_idx').on(t.status, t.receivedAt),
   ],
 )
+
+// ── Lista de compras: container (fatia A1, #525, ADR-0032) ─────────────────────
+//
+// `shopping_list` espelha `collection` byte-a-byte (dec.1 do ADR-0032, que aplica ADR-0027): pasta
+// PRIVADA nomeada, `UNIQUE(user_id, name)`, FK user_id ON DELETE cascade. A lista-PADRÃO ("Lista de
+// compras") nasce no 1º uso via `ensureDefaultShoppingList` (idempotente, mesmo truque de
+// onConflictDoNothing no alvo da UNIQUE) — não é uma linha especial no schema.
+//
+// `shopping_list_item` já entra com o schema COMPLETO do ADR-0032 (dec.2/3/4/5/6) nesta única
+// migração da track, ainda que esta fatia (A1) não escreva nela (o merge/agregação é a #A2):
+//  - `nome` é o NOME-SNAPSHOT exibido (medida Direção B: nunca a medida embutida no nome).
+//  - `quantidade`/`unidade` NULLABLE: item avulso pode não ter nem uma coisa nem outra (dec.5,
+//    "a gosto"/"q.b."); `unidade` reusa o MESMO `unidadeEnum` de `recipe_ingredient`.
+//  - `ingredient_id` NULLABLE ON DELETE set null: resolução best-effort (quase sempre nula, como
+//    `recipe_ingredient.ingredient_id` — CONTEXT.md "Item de receita"); apagar o Ingrediente
+//    canônico NÃO apaga a linha da lista (snapshot, dec.3), só solta a referência.
+//  - `source_recipe_id` NULLABLE ON DELETE set null: proveniência best-effort ("da Feijoada"),
+//    nula quando a linha nasce mesclada de várias Receitas ou é item avulso (dec.4).
+//  - `match_key` NOT NULL: a CHAVE DE AGREGAÇÃO (dec.2) que o app calcula e grava —
+//    `ingredient_id::text` quando conhecido, senão `normalize(nome)` — nunca derivada em SQL aqui
+//    (a normalização mora no domínio, reusada de tags/handle, ADR-0032 Consequências).
+//  - `checked_at` NULLABLE: carimbo de check-off (dec.6, fatia D) — persistente, sem expiração.
+//  - UNIQUE `(list_id, match_key, unidade)` com NULLS NOT DISTINCT (Postgres 15+/Neon): habilita o
+//    upsert idempotente do merge (A2) — soma na linha existente por `onConflictDoUpdate` nesse
+//    alvo — E trata `unidade` nula (item ad-hoc sem unidade) como IGUAL a outra linha nula da MESMA
+//    chave, ao invés do default do Postgres (NULL ≠ NULL em UNIQUE comum, que deixaria duplicar
+//    ad-hocs da mesma chave sem unidade).
+export const shoppingList = pgTable(
+  'shopping_list',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('shopping_list_user_name_uq').on(t.userId, t.name),
+    index('shopping_list_user_id_idx').on(t.userId),
+  ],
+)
+
+export const shoppingListItem = pgTable(
+  'shopping_list_item',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listId: uuid('list_id')
+      .notNull()
+      .references(() => shoppingList.id, { onDelete: 'cascade' }),
+    nome: text('nome').notNull(),
+    quantidade: numeric('quantidade', { precision: 10, scale: 3 }),
+    unidade: unidadeEnum('unidade'),
+    ingredientId: uuid('ingredient_id').references(() => ingredient.id, { onDelete: 'set null' }),
+    sourceRecipeId: uuid('source_recipe_id').references(() => recipe.id, { onDelete: 'set null' }),
+    matchKey: text('match_key').notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('shopping_list_item_list_match_unidade_uq')
+      .on(t.listId, t.matchKey, t.unidade)
+      .nullsNotDistinct(),
+    index('shopping_list_item_list_id_idx').on(t.listId),
+  ],
+)
