@@ -1753,4 +1753,18 @@ export const enUS: Messages = {
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — legal review in progress',
   },
+  // Quota-limit upsell card (billing Phase 2, flag-off). See pt-BR.ts for the full note.
+  upsell: {
+    titulo: "You've reached the free plan limit",
+    descricao:
+      "Subscribe to Pro to generate more, or buy extra credits when you need them. Billing isn't available yet — we're getting it ready.",
+    cta: 'See plans',
+  },
+  // Placeholder `/plan` page (billing Phase 2, flag-off): "coming soon", no price or date commitment.
+  plano: {
+    metaTitulo: 'Plans — Refogando',
+    titulo: 'Plans',
+    corpo: "We're preparing a Pro plan with more AI generations, plus one-off credits for anyone who prefers to pay only for what they use. You can't subscribe or buy yet — check back soon.",
+    voltar: 'Back to home',
+  },
 } as const

@@ -403,6 +403,9 @@ describe('CreateDrawer — wizard estruturado (#193)', () => {
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
     // Botão "Gerar receita" segue acionável.
     expect(screen.getByRole('button', { name: W.gerar })).toBeEnabled()
+    // Fase 2 de billing (flag-off): usuário `free` (default de `authed()`) ⇒ upsell junto da mensagem.
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.upsell.cta })).toHaveAttribute('href', '/pt-BR/plano')
   })
 
   it('W9 — ao gerar dentro do wizard: o nome da Receita é o ÚNICO <h1> (seam de heading/foco)', async () => {

@@ -84,6 +84,9 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
     // detalhe #233).
     ...buildStaticPathEntries(baseUrl, 'privacidade'),
     ...buildStaticPathEntries(baseUrl, 'seus-direitos'),
+    // Placeholder de plano (Fase 2 de billing, flag-off, §6 item 5 de fase2-billing-decisao.md):
+    // indexável de propósito, mesmo esquema — "em breve" sem afirmar preço/data.
+    ...buildStaticPathEntries(baseUrl, 'plano'),
   ]
 }
 

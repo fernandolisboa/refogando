@@ -21,8 +21,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { Button } from '@/components/ui/button'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 type ErrorKey = 'semFonte' | 'impossible' | 'invalid' | 'limite' | 'generico' | null
 
@@ -30,6 +34,11 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
   const { locale, messages } = useLocale()
   const m = messages.versao
   const router = useRouter()
+  // Este componente só monta pro DONO (`view.canManage`) — a sessão já está presente aqui.
+  const session = useSession()
+  const isFreePlanViewer =
+    session.data != null &&
+    isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   const [loading, setLoading] = useState(false)
   const [errorKey, setErrorKey] = useState<ErrorKey>(null)
@@ -123,6 +132,9 @@ export function LineageVersionControls({ recipeId }: { recipeId: string }) {
           {erroMensagem}
         </p>
       )}
+
+      {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só pro `free`. */}
+      {errorKey === 'limite' && isFreePlanViewer && <QuotaUpsellCard />}
     </section>
   )
 }

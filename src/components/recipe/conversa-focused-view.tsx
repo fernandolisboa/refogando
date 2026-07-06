@@ -30,6 +30,9 @@ import { PortionScaleProvider } from './recipe-portion-scale-context'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { TranscriptModal } from './transcript-modal'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 /**
  * Último PAR de falas para a vista focada: a última fala do Usuário + a resposta do Assistente
@@ -151,6 +154,10 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
       </div>
     )
   }
+
+  // Fase 2 de billing (flag-off): os guards acima já garantem sessão presente — só o plano
+  // decide se o upsell de limite aparece.
+  const isFreePlanViewer = isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   const exchange = lastExchange(transcript)
 
@@ -284,6 +291,8 @@ export function ConversaFocusedView({ resumeSessionId }: { resumeSessionId?: str
                   ? messages.criar.erroLimiteGeracao
                   : m.erroGeracao}
             </p>
+            {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só `free`. */}
+            {errorKey === 'limite_geracao' && isFreePlanViewer && <QuotaUpsellCard />}
             <div>
               <Button type="button" variant="secondary" onClick={redestilar}>
                 {m.redestilar}
