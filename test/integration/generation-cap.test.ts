@@ -4,8 +4,10 @@ import { makeSql } from '@/db/client'
 import { getDb, setClaudeClient } from '@/server/deps'
 import type { ClaudeClient } from '@/server/claude/client'
 import { FakeClaudeClient } from '@/server/claude/client'
-import { appConfig, creationSession, generation } from '@/db/schema'
+import { eq } from 'drizzle-orm'
+import { appConfig, creationSession, generation, users } from '@/db/schema'
 import type { RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import type { ProCaps } from '@/domain/pro-caps'
 import { seedSessionHeaders } from '../helpers/users'
 import { cannedSuccess, makeBriefing, post } from '../helpers/generation'
 
@@ -140,6 +142,69 @@ describe('POST /api/generations — teto de geração por papel (#167)', () => {
   it('teto da config pode ZERAR um papel: usuario cap=0 ⇒ até a 1ª geração estoura', async () => {
     const { headers } = await seedSessionHeaders({ email: 'cfg-zero@cap.test' })
     await setRecipeGenCap({ usuario: 0, curador: 20, admin: null })
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toMatchObject({ error: 'limite_geracao' })
+  })
+})
+
+/** Fase 2 (#466): grava a tabela `pro` (`proCaps`) no MESMO singleton, sem tocar os outros eixos. */
+async function setProCaps(pro: ProCaps | null): Promise<void> {
+  await getDb()
+    .insert(appConfig)
+    .values({ id: true, proCaps: pro })
+    .onConflictDoUpdate({ target: appConfig.id, set: { proCaps: pro } })
+}
+
+/** Promove o usuário a `plan='pro'` (concessão manual da Fase 2; o guard relê VIVO do DB). */
+async function makePro(userId: string): Promise<void> {
+  await getDb().update(users).set({ plan: 'pro' }).where(eq(users.id, userId))
+}
+
+/** Bundle pro com teto de receita FOLGADO (usuario 5) — as demais dimensões irrelevantes p/ estes testes. */
+function proBundle(recipeGenUsuario: number): ProCaps {
+  return {
+    recipeGen: { usuario: recipeGenUsuario, curador: 20, admin: null },
+    imageGen: { usuario: 3, curador: 5, admin: null },
+    extraction: { usuario: 60, curador: 120, admin: null },
+  }
+}
+
+describe('POST /api/generations — eixo plan (Fase 2 #466): teto pro só p/ pro+proCaps', () => {
+  it('pro + proCaps ⇒ pega o teto PRO (free cap=1, com 1 geração, ainda cabe sob pro=5) — pré-check E gate atômico', async () => {
+    // Free apertaria (cap=1, já com 1 geração ⇒ estouraria); o 201 prova que a resolução E o gate
+    // ATÔMICO (assertRecipeGenSlotInTx recontaria e barraria sob cap=1) usaram o teto pro=5.
+    const { userId, headers } = await seedSessionHeaders({ email: 'pro-hit@cap.test' })
+    await makePro(userId)
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
+    await setProCaps(proBundle(5))
+    await seedGenerationsForUser(userId, 1)
+    setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
+
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    expect(res.status).toBe(201)
+    await expect(res.json()).resolves.toMatchObject({ outcome: 'success' })
+  })
+
+  it('pro SEM proCaps ⇒ cai no teto FREE (cap=1, 1 geração ⇒ 429; a promoção sozinha não afrouxa nada)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'pro-no-table@cap.test' })
+    await makePro(userId)
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null }) // proCaps NULL (nunca setado)
+    await seedGenerationsForUser(userId, 1)
+    setClaudeClient(new ExplodingClaudeClient())
+
+    const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toMatchObject({ error: 'limite_geracao' })
+  })
+
+  it('FREE + proCaps configurado ⇒ ainda pega o teto FREE (o plano gateia; proCaps não vaza p/ free)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'free-with-table@cap.test' })
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
+    await setProCaps(proBundle(5)) // tabela pro existe, mas o usuário é free
+    await seedGenerationsForUser(userId, 1)
     setClaudeClient(new ExplodingClaudeClient())
 
     const res = await post({ mode: 'structured', briefing: makeBriefing() }, headers)

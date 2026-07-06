@@ -8,6 +8,7 @@ import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { DEFAULT_IMAGE_MODEL, type ImageGenConfig } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { type ExtractionCapByRole } from '@/domain/extraction-cap-config'
+import { type ProCaps } from '@/domain/pro-caps'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
 
 /**
@@ -239,6 +240,58 @@ describe('/api/admin/config — extractionCapByRole (#447, admin-only)', () => {
   it('extractionCapByRole PUT é admin-only: Curador → 403', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ex-cur@cfg.test', role: 'curador' })
     expect((await put({ extractionCapByRole: okCaps }, headers)).status).toBe(403)
+  })
+})
+
+// ── Fase 2 (#466): proCaps { recipeGen, imageGen, extraction } (tabela pro dos tetos) ──────────
+describe('/api/admin/config — proCaps (Fase 2 #466, admin-only)', () => {
+  const okProCaps: ProCaps = {
+    recipeGen: { usuario: 100, curador: 200, admin: null },
+    imageGen: { usuario: 30, curador: 50, admin: null },
+    extraction: { usuario: 600, curador: 1200, admin: null },
+  }
+
+  it('GET traz proCaps=null quando a linha está ausente (sem tabela pro ⇒ byte-idêntico ao free)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { proCaps: ProCaps | null }
+    expect(body.proCaps).toBeNull()
+  })
+
+  it('PUT proCaps válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-put@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    const putRes = await put({ proCaps: okProCaps }, headers)
+    expect(putRes.status).toBe(200)
+    const body = (await (await get(headers)).json()) as { defaultModel: string; proCaps: ProCaps | null }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6') // outro eixo preservado
+    expect(body.proCaps).toEqual(okProCaps)
+  })
+
+  it('PUT proCaps=null LIMPA a tabela pro (volta ao free); GET relê null', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-clear@cfg.test', role: 'admin' })
+    expect((await put({ proCaps: okProCaps }, headers)).status).toBe(200)
+    expect(((await (await get(headers)).json()) as { proCaps: ProCaps | null }).proCaps).toEqual(okProCaps)
+    // Agora limpa.
+    const clr = await put({ proCaps: null }, headers)
+    expect(clr.status).toBe(200)
+    expect(((await (await get(headers)).json()) as { proCaps: ProCaps | null }).proCaps).toBeNull()
+  })
+
+  it('PUT proCaps inválido (eixo faltando / valor ruim / chave estranha) → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-bad@cfg.test', role: 'admin' })
+    // Falta o eixo extraction (tudo-ou-nada).
+    const missing = await put({ proCaps: { recipeGen: okProCaps.recipeGen, imageGen: okProCaps.imageGen } }, headers)
+    expect(missing.status).toBe(400)
+    await expect(missing.json()).resolves.toMatchObject({ error: 'config_invalida' })
+    // Valor negativo em um eixo.
+    expect(
+      (await put({ proCaps: { ...okProCaps, recipeGen: { usuario: -1, curador: 2, admin: null } } }, headers)).status,
+    ).toBe(400)
+  })
+
+  it('proCaps PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-cur@cfg.test', role: 'curador' })
+    expect((await put({ proCaps: okProCaps }, headers)).status).toBe(403)
   })
 })
 

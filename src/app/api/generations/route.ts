@@ -39,6 +39,7 @@ import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
+import { parseProCaps } from '@/domain/pro-caps'
 import {
   parseRecipeVariantConfig,
   DEFAULT_RECIPE_VARIANT_CONFIG,
@@ -325,7 +326,16 @@ export async function POST(req: Request): Promise<Response> {
   // 1-slot com um cap REDUZIDO (`cap - 1`): permitido sob cap-1 ⟺ cabem 2 (inWindow < cap-1 ⟺
   // inWindow+2 <= cap). Estourou no variar2 ⇒ chave DISTINTA (a UI explica que foram pedidas 2).
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role, g.session.user.plan)
+  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
+  // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O `cap` resolvido AQUI thread p/ o gate ATÔMICO
+  // (`quotaGate` → assertRecipeGenSlotInTx) — a enforcement real herda o mesmo teto pro.
+  const proCaps = parseProCaps(cfg?.proCaps)
+  const cap = capFromRecipeGenConfig(
+    capByRole,
+    g.session.user.role,
+    g.session.user.plan,
+    proCaps?.recipeGen ?? null,
+  )
   // #423: "gerar 2" custa 2 SLOTS ⇒ cap efetivo `cap-1` (permitido sob cap-1 ⟺ cabem 2).
   const effectiveCap = variar2 ? cap - 1 : cap
   // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject sem tocar o Claude no caso

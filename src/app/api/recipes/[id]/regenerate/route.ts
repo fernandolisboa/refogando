@@ -8,6 +8,7 @@ import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
+import { parseProCaps } from '@/domain/pro-caps'
 
 /**
  * POST /api/recipes/[id]/regenerate — REGENERA a PRÓPRIA Receita (issue #20): cria uma NOVA
@@ -54,7 +55,15 @@ export async function POST(
   const [cfg] = await db.select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role, g.session.user.plan)
+  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle configurado
+  // ⇒ teto pro; `free` OU sem tabela pro ⇒ `null` ⇒ teto de hoje (byte-idêntico).
+  const proCaps = parseProCaps(cfg?.proCaps)
+  const cap = capFromRecipeGenConfig(
+    capByRole,
+    g.session.user.role,
+    g.session.user.plan,
+    proCaps?.recipeGen ?? null,
+  )
 
   const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model, cap })
 
