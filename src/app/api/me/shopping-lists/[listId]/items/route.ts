@@ -2,13 +2,18 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
-import { applyAddRecipeToShoppingList, loadShoppingListItems } from '@/server/shopping-list/shopping-list'
+import {
+  applyAddRecipeToShoppingList,
+  applyClearShoppingList,
+  loadShoppingListItems,
+} from '@/server/shopping-list/shopping-list'
 
 /**
- * Itens de UMA Lista de compras (issue #526, ADR-0032 dec.2/4) — o TRACER + a escala por
- * porções-alvo da fatia B (#527, dec.3). Route FINO, espelha `me/collections/[collectionId]/items`:
- * uuid inválido → 404 (leak-safe); `requireSession` ANTES do DB; ownership da Lista + elegibilidade
- * da Receita resolvidos no core (ambos ⇒ o MESMO `not_found`, nunca revela qual dos dois falhou).
+ * Itens de UMA Lista de compras (issue #526, ADR-0032 dec.2/4) — o TRACER — + a escala por
+ * porções-alvo da fatia B (#527, dec.3) + "limpar lista" (issue #529, dec.6). Route FINO, espelha
+ * `me/collections/[collectionId]/items`: uuid inválido → 404 (leak-safe); `requireSession` ANTES
+ * do DB; ownership da Lista + elegibilidade da Receita resolvidos no core (ambos ⇒ o MESMO
+ * `not_found`, nunca revela qual dos dois falhou).
  *
  * GET → `{ list: {id,name}, items: ShoppingListItemView[] }` (já consolidados) | 404 not_found.
  * POST {recipeId, porcoesAlvo?} → 200 `{ ok: true, warning?: 'sem_porcoes' }` (merge idempotente;
@@ -17,6 +22,9 @@ import { applyAddRecipeToShoppingList, loadShoppingListItems } from '@/server/sh
  * (não-número, ≤ 0, não-finito) é IGNORADO silenciosamente — cai no fluxo BASE, mesma disciplina
  * defensiva de `scaleQuantidade` (#452). `?locale` escolhe o idioma do NOME gravado no snapshot
  * (mesma tese de `me/recipes`).
+ * DELETE → "limpar lista" (dec.6): apaga TODOS os itens (marcados e não); a Lista sobrevive vazia.
+ * Ação EXPLÍCITA — nada expira sozinho. "Remover marcados" (só os `checked_at` não-nulo) é o
+ * segmento IRMÃO `items/checked` (literal casa antes do dinâmico `[itemId]`).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -83,6 +91,26 @@ export async function POST(
         { ok: true, ...(res.warning ? { warning: res.warning } : {}) },
         { status: 200 },
       )
+    case 'not_found':
+      return Response.json({ error: 'not_found' }, { status: 404 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ listId: string }> },
+): Promise<Response> {
+  const { listId } = await params
+  if (!isUuid(listId)) return Response.json({ error: 'not_found' }, { status: 404 })
+
+  const g = await requireSession(request)
+  if (!g.ok) return g.response
+
+  const res = await applyClearShoppingList({ db: getDb(), userId: g.session.user.id, listId })
+
+  switch (res.kind) {
+    case 'ok':
+      return Response.json({ ok: true, removed: res.removed }, { status: 200 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
   }

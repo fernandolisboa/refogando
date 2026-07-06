@@ -187,7 +187,7 @@ function ShoppingListPanel({
       {status === 'loading' && <p className="text-sm text-muted">{messages.system.loading}</p>}
       {status === 'error' && (
         <p role="alert" className="text-sm font-medium text-fg">
-          {m.erroCarregar}
+          {m.erroCarregarListas}
         </p>
       )}
       {lists != null && lists.length > 0 && (
@@ -222,7 +222,7 @@ function ShoppingListPanel({
       {lists != null && lists.length === 0 && <p className="text-sm text-muted">{m.semListas}</p>}
       <form onSubmit={handleCreate} className="flex flex-col gap-2">
         <label htmlFor={`nova-lista-${recipeId}`} className="sr-only">
-          {m.nomeLista}
+          {m.nomeNovaLista}
         </label>
         <Input
           id={`nova-lista-${recipeId}`}
@@ -231,7 +231,7 @@ function ShoppingListPanel({
             setNewName(e.target.value)
             setCreateError(null)
           }}
-          placeholder={m.novaLista}
+          placeholder={m.nomeNovaLista}
           maxLength={60}
         />
         <Button type="submit" variant="secondary" disabled={creating || newName.trim() === ''}>
@@ -258,7 +258,7 @@ function shoppingListErrorMessage(
     case 'nome_duplicado':
       return m.erroNomeDuplicado
     case 'limite_listas':
-      return m.erroLimite
+      return m.erroLimiteListas
     default:
       return m.erro
   }

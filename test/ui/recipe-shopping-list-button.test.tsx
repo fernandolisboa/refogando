@@ -198,7 +198,7 @@ describe('RecipeShoppingListButton (#527)', () => {
     await user.click(screen.getByRole('button', { name: M.adicionar }))
     await screen.findByText(M.semListas)
 
-    await user.type(screen.getByPlaceholderText(M.novaLista), 'Churrasco')
+    await user.type(screen.getByPlaceholderText(M.nomeNovaLista), 'Churrasco')
     await user.click(screen.getByRole('button', { name: M.criarEAdicionar }))
 
     expect(

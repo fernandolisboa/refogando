@@ -986,28 +986,57 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
-  // Lista de compras (ADR-0032) — ícone no topo do detalhe (espelha `colecoes`), popover ancorado
-  // com as Listas do usuário + criar nova inline. Porções-alvo (#527, dec.3) reusa o MESMO valor
-  // corrente do escalador de porções da página (`usePortionScale`) — sem campo numérico próprio.
+  // Lista de compras (#474, ADR-0032) — namespace PRÓPRIO, separado de `colecoes` (entidades
+  // distintas). Reúne: a multi-seleção de N Receitas (fatia E, #530, dec.7: selecionar em
+  // `SavedRecipesView` e adicionar todas a uma Lista numa ação, quantidade BASE), o check-off
+  // PERSISTENTE (fatia D, #529, dec.6: marca/desmarca comprado; nada expira sozinho, "remover
+  // marcados"/"limpar lista" são sempre EXPLÍCITAS) E o botão de adicionar UMA Receita com
+  // porções-alvo do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
   listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
+    selecionarReceita: 'Selecionar {nome}',
+    selecionadaSingular: '{n} receita selecionada',
+    selecionadasPlural: '{n} receitas selecionadas',
+    cancelarSelecao: 'Cancelar seleção',
+    escolherLista: 'Escolher lista',
+    novaLista: '+ Nova lista',
+    nomeNovaLista: 'Nome da nova lista',
+    confirmarAdicionar: 'Adicionar à lista',
+    adicionando: 'Adicionando…',
+    sucessoSingular: '{n} receita adicionada à lista.',
+    sucessoPlural: '{n} receitas adicionadas à lista.',
+    algumasNaoAdicionadas: 'Algumas receitas não puderam ser adicionadas.',
+    erroCarregarListas: 'Não foi possível carregar suas listas. Tente de novo.',
+    erroNomeInvalido: 'Escolha um nome para a lista (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
+    erroLimiteListas: 'Você atingiu o limite de listas.',
+    erroAdicionar: 'Não foi possível adicionar as receitas. Tente de novo.',
+    // Check-off persistente (fatia D, #529).
+    titulo: 'Lista de compras',
+    itemMarcarAria: 'Marcar {nome} como comprado',
+    itemDesmarcarAria: 'Desmarcar {nome}',
+    removerMarcados: 'Remover marcados',
+    limparLista: 'Limpar lista',
+    confirmarRemoverMarcados: 'Remover os itens marcados? Esta ação não pode ser desfeita.',
+    confirmarLimparLista: 'Limpar a lista inteira? Todos os itens serão apagados — não pode ser desfeito.',
+    vazia: 'Sua lista está vazia.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+    // Adicionar UMA Receita do detalhe, com porções-alvo (fatia B, #527) — o ícone no topo abre um
+    // popover ancorado com as Listas + criar nova inline; a porção-alvo reusa o MESMO valor corrente
+    // do escalador da página (`usePortionScale`), sem campo numérico próprio.
     adicionar: 'Adicionar à lista de compras',
     adicionarALista: 'Adicionar à lista de compras',
-    // Botão CURTO de cada linha de Lista dentro do painel (distinto do aria-label do ícone acima —
-    // os dois NUNCA aparecem como o mesmo texto acessível ao mesmo tempo, senão o popover aberto
-    // teria dois botões "Adicionar à lista de compras" ambíguos pra leitor de tela/teste).
+    // Botão CURTO de cada linha de Lista dentro do popover (distinto do aria-label do ícone acima —
+    // os dois nunca são o mesmo texto acessível ao mesmo tempo, senão o popover teria dois botões
+    // "Adicionar à lista de compras" ambíguos pra leitor de tela).
     adicionarBotao: 'Adicionar',
     adicionado: 'Adicionado',
-    novaLista: 'Nova lista',
-    nomeLista: 'Nome da lista',
     criarEAdicionar: 'Criar e adicionar',
     semListas: 'Você ainda não tem nenhuma lista de compras.',
     avisoSemPorcoes: 'Esta receita não tem porções definidas — adicionada na quantidade original.',
-    erroNomeInvalido: 'Escolha um nome (até 60 caracteres).',
-    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
-    erroLimite: 'Você atingiu o limite de listas.',
-    erro: 'Algo deu errado. Tente de novo.',
-    erroCarregar: 'Não foi possível carregar. Tente de novo.',
     convidaEntrarAdicionar: 'Entre na sua conta para adicionar à lista de compras.',
+    // Comum às fatias.
+    erro: 'Algo deu errado. Tente de novo.',
   },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
