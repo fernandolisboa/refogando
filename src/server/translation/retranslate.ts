@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
@@ -7,6 +7,7 @@ import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
+import { isDefasada, isDivergente } from '@/domain/translation-divergent-stale'
 
 /**
  * Re-tradução automática de defasadas (issue #499, fatia B do ADR-0031 dec.5) — espelha
@@ -90,7 +91,16 @@ async function loadCandidates(db: Database): Promise<CandidateRow[]> {
       src,
       and(eq(src.recipeId, recipeTranslation.recipeId), eq(src.locale, recipe.originalLocale)),
     )
-    .where(sql`${recipeTranslation.locale} <> ${recipe.originalLocale}`)
+    .where(
+      and(
+        sql`${recipeTranslation.locale} <> ${recipe.originalLocale}`,
+        // #18: NÃO reprocessa Receita removida do pool pela moderação (mesma cláusula da lista do
+        // Curador e do caminho on-demand) — não reenvia conteúdo moderado ao tradutor externo nem o
+        // regrava. Receita PRIVADA de usuário PERMANECE no escopo de propósito: é conteúdo do próprio
+        // dono (já traduzido on-demand na visualização dele), e mantê-lo fresco é o comportamento certo.
+        isNull(recipe.moderationRemovedAt),
+      ),
+    )
 
   return rows
 }
@@ -154,26 +164,33 @@ function selectEligible(
 
   for (const row of rows) {
     const currentIngredientes = ingredientsByRecipe.get(row.recipeId) ?? []
-    const currentSourceFp = sourceFingerprintOf(
+    const currentSourceFingerprint = sourceFingerprintOf(
       { titulo: row.srcTitulo, descricao: row.srcDescricao, passos: row.srcPassos, notas: row.srcNotas },
       currentIngredientes,
     )
-    const promptOutdated = (row.promptVersion ?? 0) < TRANSLATION_PROMPT_VERSION
-    const defasada = currentSourceFp !== row.sourceFingerprint || promptOutdated
+    // MESMA regra pura da lista do Curador (fonte única, ADR-0031 dec.5/6): o worker é elegível
+    // quando defasada E INTOCADA (i.e. NÃO divergente) — o complemento exato da fila do #500.
+    const defasada = isDefasada({
+      currentSourceFingerprint,
+      storedSourceFingerprint: row.sourceFingerprint,
+      storedPromptVersion: row.promptVersion,
+      translationPromptVersion: TRANSLATION_PROMPT_VERSION,
+    })
     if (!defasada) continue
 
-    // `mt_fingerprint` NULL ⇒ NUNCA intocada (ADR-0031 dec.2) — protege legado/trabalho humano.
-    if (row.mtFingerprint == null) continue
-    const currentMtFp = mtFingerprintOfRow({
+    const currentMtFingerprint = mtFingerprintOfRow({
       titulo: row.titulo,
       descricao: row.descricao,
       passos: row.passos,
       notas: row.notas,
       ingredientes: row.ingredientes,
     })
-    if (currentMtFp !== row.mtFingerprint) continue
+    // `mt_fingerprint` NULL ⇒ divergente ⇒ NUNCA intocada (protege legado/trabalho humano, dec.2).
+    const intocada = !isDivergente({ currentMtFingerprint, storedMtFingerprint: row.mtFingerprint })
+    if (!intocada) continue
 
-    eligible.push({ recipeId: row.recipeId, locale: row.locale, mtFingerprint: row.mtFingerprint })
+    // `mtFingerprint` é não-nulo aqui (senão `isDivergente` seria true) — narrow para o tipo Eligible.
+    eligible.push({ recipeId: row.recipeId, locale: row.locale, mtFingerprint: row.mtFingerprint! })
   }
 
   return eligible
@@ -254,27 +271,63 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
     ingredientes: ingredientesJsonb,
   })
 
-  // UPDATE parcial: NUNCA toca slug/provenance/stale — só o conteúdo traduzido + os carimbos de
-  // frescor. A linha volta a ser intocada e não-defasada (os fingerprints refletem o conteúdo novo).
-  await db
-    .update(recipeTranslation)
-    .set({
-      titulo: translated.titulo,
-      descricao: translated.descricao ?? null,
-      passos: translated.passos ?? null,
-      notas: translated.notas ?? null,
-      ingredientes: ingredientesJsonb,
-      promptVersion: TRANSLATION_PROMPT_VERSION,
-      sourceFingerprint,
-      mtFingerprint,
-      updatedAt: new Date(),
+  // COMMIT SOB LOCK — fecha o TOCTOU de verdade. O re-check acima roda ANTES da chamada ao tradutor,
+  // que leva segundos; um Curador pode editar a linha NESSE meio-tempo (rota #498 muda o `ingredientes
+  // jsonb` mas NÃO o `mt_fingerprint` gravado — então um CAS pelo campo não pegaria). Abrimos uma
+  // transação curta, TRAVAMOS a linha (`SELECT ... FOR UPDATE`), RE-VERIFICAMOS a intocabilidade
+  // contra o conteúdo FRESCO e só então escrevemos — atômico. Se a linha foi editada durante a
+  // tradução, o hash fresco diverge ⇒ NÃO escreve (`skipped`, vai pro Curador). NUNCA toca
+  // slug/provenance/stale — só conteúdo traduzido + carimbos de frescor (volta a intocada e não-defasada).
+  const wrote = await db.transaction(async (tx) => {
+    const [fresh] = await tx
+      .select({
+        titulo: recipeTranslation.titulo,
+        descricao: recipeTranslation.descricao,
+        passos: recipeTranslation.passos,
+        notas: recipeTranslation.notas,
+        ingredientes: recipeTranslation.ingredientes,
+        mtFingerprint: recipeTranslation.mtFingerprint,
+      })
+      .from(recipeTranslation)
+      .where(
+        and(
+          eq(recipeTranslation.recipeId, candidate.recipeId),
+          eq(recipeTranslation.locale, candidate.locale),
+        ),
+      )
+      .for('update')
+    if (!fresh) return false // sumiu entre o scan e o commit
+    const freshMtFp = mtFingerprintOfRow({
+      titulo: fresh.titulo,
+      descricao: fresh.descricao,
+      passos: fresh.passos,
+      notas: fresh.notas,
+      ingredientes: fresh.ingredientes ?? null,
     })
-    .where(
-      and(
-        eq(recipeTranslation.recipeId, candidate.recipeId),
-        eq(recipeTranslation.locale, candidate.locale),
-      ),
-    )
+    // Editada durante a tradução (ou legado sem prova) ⇒ deixou de ser intocada ⇒ não sobrescreve.
+    if (fresh.mtFingerprint == null || freshMtFp !== candidate.mtFingerprint) return false
+    await tx
+      .update(recipeTranslation)
+      .set({
+        titulo: translated.titulo,
+        descricao: translated.descricao ?? null,
+        passos: translated.passos ?? null,
+        notas: translated.notas ?? null,
+        ingredientes: ingredientesJsonb,
+        promptVersion: TRANSLATION_PROMPT_VERSION,
+        sourceFingerprint,
+        mtFingerprint,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(recipeTranslation.recipeId, candidate.recipeId),
+          eq(recipeTranslation.locale, candidate.locale),
+        ),
+      )
+    return true
+  })
+  if (!wrote) return 'skipped' // edição humana concorrente durante a tradução — preservada.
 
   // Re-embed best-effort (a tradução mudou, #14): a linha já existe, então nunca {ok:false}; se o
   // embedder lança, engole (assistivo — espelha `ensureTranslation`/embedTranslation).

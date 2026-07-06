@@ -3,7 +3,7 @@ import type { Database } from '@/db/client'
 import { recipe, recipeTranslation } from '@/db/schema'
 import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
-import { fingerprintSource, fingerprintMt } from '@/domain/translation-fingerprint'
+import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
 import { isDefasadaEDivergente } from '@/domain/translation-divergent-stale'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 
@@ -79,30 +79,26 @@ export async function loadDivergentStaleTranslations(db: Database): Promise<Dive
     const source = ctx.translations.find((t) => t.locale === ctx.originalLocale)
     if (!source) continue // sem fonte, nada a comparar (não deveria ocorrer em dado consistente)
 
-    // Espelha `ensureTranslation`: campos traduzíveis do original + `raw_text` (ordem+nome, filtrado
-    // vazio) dos ingredientes — EXATAMENTE `ctx.ingredients` (o mesmo insumo do write-path).
-    const currentSourceFingerprint = fingerprintSource({
-      titulo: source.titulo,
-      descricao: source.descricao,
-      passos: source.passos,
-      notas: source.notas,
-      ingredientes: ctx.ingredients,
-    })
+    // Helper compartilhado com `ensureTranslation`/worker (fonte ÚNICA da construção, ADR-0031 dec.4):
+    // campos traduzíveis do original + `raw_text` (ordem+nome, filtrado vazio) — EXATAMENTE `ctx.ingredients`.
+    const currentSourceFingerprint = sourceFingerprintOf(
+      { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
+      ctx.ingredients,
+    )
 
     for (const candidate of rows) {
       const currentRow = ctx.translations.find((t) => t.locale === candidate.locale)
       if (!currentRow) continue // corrida: a linha sumiu entre as duas leituras
 
-      // Espelha `ensureTranslation`: campos da linha + mapa `ordem→nome` do jsonb (sem `nomeOrigem`,
-      // que é escrituração — fora do hash). jsonb `null` (sem ingrediente nomeado) ⇒ `null`, nunca `[]`.
-      const currentMtFingerprint = fingerprintMt({
+      // Helper compartilhado (fonte ÚNICA): campos da linha + mapa `ordem→nome` do jsonb (descarta
+      // `nomeOrigem` e colapsa lista vazia→null internamente, igual ao write-path — elimina o risco de
+      // `[]` vs `null` divergir do hash gravado).
+      const currentMtFingerprint = mtFingerprintOfRow({
         titulo: currentRow.titulo,
         descricao: currentRow.descricao,
         passos: currentRow.passos,
         notas: currentRow.notas,
-        ingredientes: currentRow.ingredientes
-          ? currentRow.ingredientes.map((i) => ({ ordem: i.ordem, nome: i.nome }))
-          : null,
+        ingredientes: currentRow.ingredientes ?? null,
       })
 
       const divergentAndStale = isDefasadaEDivergente({
