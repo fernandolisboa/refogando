@@ -14,6 +14,7 @@ import {
   DEFAULT_EXTRACTION_CAP_BY_ROLE,
   type ExtractionCapByRole,
 } from '@/domain/extraction-cap-config'
+import { parseProCaps, type ProCaps } from '@/domain/pro-caps'
 import {
   DEFAULT_RECIPE_VARIANT_CONFIG,
   parseRecipeVariantConfig,
@@ -77,6 +78,9 @@ export type AppConfig = {
   socialLinks: SocialLinksConfig
   // #457: "Receita da semana" — slot editorial da home. `recipeId: null` ⇒ fallback por Popularidade.
   recipeOfWeek: RecipeOfWeekConfig
+  // Fase 2 de billing (#466): tabela `pro` dos tetos de cota (`{ recipeGen, imageGen, extraction }`).
+  // `null` = NENHUMA tabela pro ⇒ a resolução ignora o plano e cai na tabela livre (teto de hoje).
+  proCaps: ProCaps | null
 }
 
 export async function loadAppConfig(db: Database): Promise<AppConfig> {
@@ -93,6 +97,8 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
       popularity: DEFAULT_POPULARITY_CONFIG,
       socialLinks: DEFAULT_SOCIAL_LINKS_CONFIG,
       recipeOfWeek: DEFAULT_RECIPE_OF_WEEK_CONFIG,
+      // Fase 2: sem linha ⇒ sem tabela pro ⇒ resolução byte-idêntica ao free.
+      proCaps: null,
     }
   }
   // #368: re-valida na leitura — jsonb legado/editado à mão com lixo (peso negativo, m<=0, Infinity
@@ -136,6 +142,10 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
     popularity: parsedPopularity.ok ? parsedPopularity.value : DEFAULT_POPULARITY_CONFIG,
     socialLinks: parsedSocial.ok ? parsedSocial.value : DEFAULT_SOCIAL_LINKS_CONFIG,
     recipeOfWeek: parsedRecipeOfWeek.ok ? parsedRecipeOfWeek.value : DEFAULT_RECIPE_OF_WEEK_CONFIG,
+    // Fase 2: re-valida na leitura — jsonb NULL (default) OU legado/editado à mão com um eixo
+    // ausente/inválido cai em `null` (fail-safe: a resolução ignora o plano e usa a tabela livre, teto
+    // de hoje). Nunca eleva um teto a partir de um bundle pro pela metade. Mesma disciplina dos demais.
+    proCaps: parseProCaps(row.proCaps),
   }
 }
 
@@ -172,4 +182,13 @@ export async function loadSocialLinksConfig(db: Database): Promise<SocialLinksCo
 /** Atalho: só a config da "Receita da semana" (#457) — usado pelo loader do slot editorial da home. */
 export async function loadRecipeOfWeekConfig(db: Database): Promise<RecipeOfWeekConfig> {
   return (await loadAppConfig(db)).recipeOfWeek
+}
+
+/**
+ * Atalho: só a tabela `pro` dos tetos de cota (Fase 2, #466) — usado pelos call-sites de cota que
+ * ainda NÃO leem o app_config inteiro (ex.: `image.ts` já lê `loadImageGenConfig`). `null` = sem
+ * tabela pro ⇒ o caller passa `null` a `capFrom*` e o teto fica byte-idêntico ao free.
+ */
+export async function loadProCaps(db: Database): Promise<ProCaps | null> {
+  return (await loadAppConfig(db)).proCaps
 }
