@@ -52,6 +52,7 @@ import {
   DEFAULT_EXTRACTION_CAP_BY_ROLE,
   type ExtractionCapByRole,
 } from '@/domain/extraction-cap-config'
+import { type ProCaps } from '@/domain/pro-caps'
 import {
   DEFAULT_RECIPE_VARIANT_CONFIG,
   type RecipeVariantConfig,
@@ -917,6 +918,14 @@ export const appConfig = pgTable(
       .$type<RecipeOfWeekConfig>()
       .notNull()
       .default(DEFAULT_RECIPE_OF_WEEK_CONFIG),
+    // Fase 2 de billing (eixo `plan`, #466): tabela `pro` dos tetos de cota, UM bundle jsonb NULLABLE
+    // `{ recipeGen, imageGen, extraction }` — "tudo ou nada". NULL (default) = NENHUMA tabela pro ⇒ a
+    // resolução (`capFrom*`) ignora o plano e cai na tabela livre de hoje ⇒ teto efetivo BYTE-IDÊNTICO
+    // ao atual. Só `plan='pro'` COM bundle válido puxa o teto pro. jsonb ÚNICO (não 3 colunas): a
+    // concessão pro é atômica (tudo-ou-nada), então uma coluna nullable modela o "sem tabela pro" mais
+    // limpo que 3 nullables independentes. O read-path RE-VALIDA (`parseProCaps`) — linha legada/lixo
+    // cai em NULL (fail-safe: nunca eleva um teto a partir de um bundle inválido). NÃO ativa cobrança.
+    proCaps: jsonb('pro_caps').$type<ProCaps>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

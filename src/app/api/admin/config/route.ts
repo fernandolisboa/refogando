@@ -5,6 +5,7 @@ import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { parseExtractionCapByRole, type ExtractionCapByRole } from '@/domain/extraction-cap-config'
+import { parseProCaps, type ProCaps } from '@/domain/pro-caps'
 import { parseRecipeVariantConfig, type RecipeVariantConfig } from '@/domain/recipe-variant-config'
 import { parseWebSearchConfig, deniedDomainsIn } from '@/domain/web-search-config'
 import { parseCatalogDisclosureConfig } from '@/domain/catalog-disclosure-config'
@@ -39,10 +40,14 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  *    contra o catálogo aprovado ATUAL (`isCatalogRecipeApproved`) — escolher uma receita que não é
  *    catálogo/aprovado ⇒ 400 `receita_invalida` (não persiste um id que a leitura descartaria depois).
  *
+ *  - `proCaps { recipeGen, imageGen, extraction }` (Fase 2 de billing, #466) — a tabela `pro` dos tetos
+ *    de cota. `null` LIMPA a tabela pro (volta ao byte-idêntico free); objeto ⇒ validado (tudo-ou-nada).
+ *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
+ *
  * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
- * `catalogDisclosure` E/OU `recipeOfWeek` (ao menos um); valida cada campo PRESENTE; faz upsert só
- * dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400. Erro de DB
- * → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
+ * `catalogDisclosure` E/OU `recipeOfWeek` E/OU `proCaps` (ao menos um); valida cada campo PRESENTE;
+ * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
+ * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
 const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
 
@@ -68,6 +73,7 @@ export async function PUT(req: Request): Promise<Response> {
     popularity?: unknown
     socialLinks?: unknown
     recipeOfWeek?: unknown
+    proCaps?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -87,6 +93,7 @@ export async function PUT(req: Request): Promise<Response> {
     popularityConfig: PopularityConfig
     socialLinks: SocialLinksConfig
     recipeOfWeekConfig: RecipeOfWeekConfig
+    proCaps: ProCaps | null
   }> = {}
 
   if (body.defaultModel !== undefined) {
@@ -190,6 +197,20 @@ export async function PUT(req: Request): Promise<Response> {
       if (!approved) return Response.json({ error: 'receita_invalida' }, { status: 400 })
     }
     set.recipeOfWeekConfig = parsed.value
+  }
+
+  // Fase 2 de billing (#466): tabela `pro` dos tetos de cota (`{ recipeGen, imageGen, extraction }`).
+  // `null` explícito LIMPA a tabela pro (volta ao byte-idêntico free). Objeto ⇒ validado por
+  // `parseProCaps` (tudo-ou-nada: os 3 eixos válidos, senão 400 config_invalida — mesma chave da UI).
+  // NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar o teto pro.
+  if (body.proCaps !== undefined) {
+    if (body.proCaps === null) {
+      set.proCaps = null
+    } else {
+      const parsed = parseProCaps(body.proCaps)
+      if (parsed === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
+      set.proCaps = parsed
+    }
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

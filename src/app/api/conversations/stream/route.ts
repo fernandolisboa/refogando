@@ -26,6 +26,7 @@ import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
+import { parseProCaps } from '@/domain/pro-caps'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { QuotaExceededError } from '@/server/quota/atomic'
 
@@ -207,7 +208,15 @@ export async function POST(req: Request): Promise<Response> {
   // in-band) com `retryAfterMs` (countdown); a UI mapeia limite_geracao p/ mensagem amigável. cap ∞
   // (admin/papel ilimitado) pula a contagem. Espelha o gate de POST /api/generations.
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role, g.session.user.plan)
+  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
+  // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje (byte-idêntico). O gate atômico da destilação herda o cap.
+  const proCaps = parseProCaps(cfg?.proCaps)
+  const cap = capFromRecipeGenConfig(
+    capByRole,
+    g.session.user.role,
+    g.session.user.plan,
+    proCaps?.recipeGen ?? null,
+  )
   // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). A
   // ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration na
   // destilação (via `quotaGate` abaixo) — se a corrida for perdida lá, sai um frame terminal in-band.

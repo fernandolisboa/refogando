@@ -8,6 +8,7 @@ import {
   capFromExtractionConfig,
   DEFAULT_EXTRACTION_CAP_BY_ROLE,
 } from '@/domain/extraction-cap-config'
+import { parseProCaps } from '@/domain/pro-caps'
 import { reserveExtractionSlot, QuotaExceededError } from '@/server/quota/atomic'
 
 /**
@@ -61,9 +62,19 @@ export async function POST(req: Request): Promise<Response> {
   // 429 `limite_extracao` com countdown, e o Claude NÃO é tocado (custo barrado). Só APÓS a validação
   // barata de comprimento (input inválido não consome slot). cap ∞ (admin/papel ilimitado) ⇒ no-op. A
   // config vem da MESMA linha singleton app_config; default em código quando a linha está ausente.
-  const [cfg] = await getDb().select({ extractionCapByRole: appConfig.extractionCapByRole }).from(appConfig)
+  const [cfg] = await getDb()
+    .select({ extractionCapByRole: appConfig.extractionCapByRole, proCaps: appConfig.proCaps })
+    .from(appConfig)
   const capByRole = cfg?.extractionCapByRole ?? DEFAULT_EXTRACTION_CAP_BY_ROLE
-  const cap = capFromExtractionConfig(capByRole, g.session.user.role, g.session.user.plan)
+  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
+  // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O `cap` thread p/ reserveExtractionSlot (gate atômico).
+  const proCaps = parseProCaps(cfg?.proCaps)
+  const cap = capFromExtractionConfig(
+    capByRole,
+    g.session.user.role,
+    g.session.user.plan,
+    proCaps?.extraction ?? null,
+  )
   try {
     await reserveExtractionSlot(getDb(), { userId: g.session.user.id, cap })
   } catch (err) {

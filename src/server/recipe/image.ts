@@ -14,7 +14,7 @@ import { capFromConfig } from '@/domain/image-gen-config'
 import { buildDishImagePrompt, composeImagePrompt, composeEditImagePrompt } from '@/domain/image-prompt'
 import { pgCode } from '@/server/recipe/visibility' // #285: lê o SQLSTATE p/ tratar o FK da imagem-base (23503)
 import { loadRecipeRows } from '@/server/recipe/load'
-import { loadImageGenConfig } from '@/server/app-config'
+import { loadAppConfig } from '@/server/app-config'
 import { assertImageGenSlotInTx, QuotaExceededError } from '@/server/quota/atomic'
 
 /**
@@ -183,7 +183,9 @@ export async function applyRecipeImageGeneration(input: {
   if (await isImageGenBlocked(db, userId)) return { kind: 'blocked' }
 
   // 2. Config de geração (#134): geração DESLIGADA ⇒ 403 ANTES de tocar o seam (a UI também esconde).
-  const genConfig = await loadImageGenConfig(db)
+  // Fase 2 (#466): UM toque de DB (loadAppConfig) serve à config de imagem E à tabela pro (`proCaps`).
+  const appCfg = await loadAppConfig(db)
+  const genConfig = appCfg.imageGen
   if (!genConfig.enabled) return { kind: 'disabled' }
 
   // 3. Teto por papel, janela 24h deslizante (ADR-0017) — da CONFIG (#134). Conta os EVENTOS do
@@ -191,7 +193,9 @@ export async function applyRecipeImageGeneration(input: {
   // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject ANTES do Gemini no caso
   // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem do ledger)
   // DENTRO da tx que insere a recipe_image + o ledger (via `quota` abaixo) — fecha a corrida TOCTOU.
-  const cap = capFromConfig(genConfig.dailyCapByRole, role, plan)
+  // Fase 2 (#466): `plan='pro'` + tabela pro configurada ⇒ teto pro de imagem; `free` OU sem tabela ⇒
+  // `null` ⇒ teto de hoje (byte-idêntico). O `cap` resolvido thread p/ o gate ATÔMICO (assertImageGenSlotInTx).
+  const cap = capFromConfig(genConfig.dailyCapByRole, role, plan, appCfg.proCaps?.imageGen ?? null)
   if (Number.isFinite(cap)) {
     const recentAt = await loadRecentAiGenAt(db, userId, now)
     const quota = decideImageQuota({ cap, recentAt, now })
