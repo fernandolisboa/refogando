@@ -1070,6 +1070,36 @@ export const ptBR = {
     navAria: 'Seções do Console',
     navIa: 'IA',
     navPapeis: 'Papéis',
+    // ── Fase 2 de billing (#466): aba "Plano" (Governança, admin-only). Bloco CONTÍGUO. ──
+    navPlano: 'Plano',
+    // Parte 1: editar a tabela `pro` dos tetos (proCaps) das três dimensões por papel.
+    planoProCapsTitulo: 'Tetos do plano Pro',
+    planoProCapsDescricao:
+      'Tetos diários maiores para quem é Pro, por dimensão e por papel. Com a tabela Pro desligada (vazio), todo mundo — inclusive quem é Pro — pega o teto do plano gratuito de hoje.',
+    // Aviso concierge: deixa EXPLÍCITO que nada disto cobra.
+    planoConciergeAviso:
+      'Isto não cobra nada. A cobrança automática ainda não está ligada — conceder Pro é uma liberação manual para os primeiros usuários.',
+    planoProAtivarLabel: 'Ligar a tabela de tetos Pro',
+    planoProAtivarAjuda:
+      'Desligado = nenhuma tabela Pro: todo mundo pega o teto do plano gratuito de hoje (nada muda). Ligado = quem é Pro passa a usar os tetos abaixo.',
+    planoProReceitaLabel: 'Tetos Pro de geração de receita por papel (janela de 24h)',
+    planoProImagemLabel: 'Tetos Pro de geração de imagem por papel (janela de 24h)',
+    planoProExtracaoLabel: 'Tetos Pro de extração de ingredientes por papel (janela de 24h)',
+    planoErroConfig: 'Configuração inválida. Revise os tetos (número inteiro ≥ 0, ou vazio para ilimitado).',
+    // Parte 2: conceder/reverter o plano de um usuário (concierge manual).
+    planoConcederTitulo: 'Conceder plano a um usuário',
+    planoConcederDescricao:
+      'Informe o @handle ou o email e escolha o plano. Conceder Pro é uma liberação manual (concierge): não cobra nada — a cobrança automática ainda não está ligada.',
+    planoIdentificadorLabel: 'Usuário (@handle ou email)',
+    planoIdentificadorPlaceholder: '@handle ou email',
+    planoBotaoPro: 'Conceder Pro',
+    planoBotaoFree: 'Reverter para gratuito',
+    planoAplicando: 'Aplicando…',
+    planoPlanoFree: 'gratuito',
+    planoPlanoPro: 'Pro',
+    planoSucesso: '{user} agora está no plano {plano}.',
+    planoErroNaoEncontrado: 'Usuário não encontrado. Confira o @handle ou o email.',
+    planoErroPlanoInvalido: 'Plano inválido.',
     navModeracao: 'Moderação',
     navTraducoes: 'Traduções',
     navCatalogo: 'Catálogo',

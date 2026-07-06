@@ -988,6 +988,36 @@ export const enUS: Messages = {
     navAria: 'Console sections',
     navIa: 'AI',
     navPapeis: 'Roles',
+    // ── Billing phase 2 (#466): "Plan" tab (Governance, admin-only). CONTIGUOUS block. ──
+    navPlano: 'Plan',
+    // Part 1: edit the `pro` ceilings table (proCaps) across the three dimensions, per role.
+    planoProCapsTitulo: 'Pro plan ceilings',
+    planoProCapsDescricao:
+      'Higher daily ceilings for Pro users, by dimension and role. With the Pro table off (empty), everyone — Pro included — gets today’s free-plan ceiling.',
+    // Concierge notice: makes it EXPLICIT that none of this charges anyone.
+    planoConciergeAviso:
+      'This charges nothing. Automatic billing isn’t live yet — granting Pro is a manual unlock for early users.',
+    planoProAtivarLabel: 'Turn on the Pro ceilings table',
+    planoProAtivarAjuda:
+      'Off = no Pro table: everyone gets today’s free-plan ceiling (nothing changes). On = Pro users switch to the ceilings below.',
+    planoProReceitaLabel: 'Pro recipe-generation ceilings per role (24h window)',
+    planoProImagemLabel: 'Pro image-generation ceilings per role (24h window)',
+    planoProExtracaoLabel: 'Pro ingredient-extraction ceilings per role (24h window)',
+    planoErroConfig: 'Invalid configuration. Check the ceilings (whole number ≥ 0, or empty for unlimited).',
+    // Part 2: grant/revoke a user’s plan (manual concierge).
+    planoConcederTitulo: 'Grant a plan to a user',
+    planoConcederDescricao:
+      'Enter the @handle or email and pick the plan. Granting Pro is a manual unlock (concierge): it charges nothing — automatic billing isn’t live yet.',
+    planoIdentificadorLabel: 'User (@handle or email)',
+    planoIdentificadorPlaceholder: '@handle or email',
+    planoBotaoPro: 'Grant Pro',
+    planoBotaoFree: 'Revert to free',
+    planoAplicando: 'Applying…',
+    planoPlanoFree: 'free',
+    planoPlanoPro: 'Pro',
+    planoSucesso: '{user} is now on the {plano} plan.',
+    planoErroNaoEncontrado: 'User not found. Check the @handle or email.',
+    planoErroPlanoInvalido: 'Invalid plan.',
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
     navCatalogo: 'Catalog',
