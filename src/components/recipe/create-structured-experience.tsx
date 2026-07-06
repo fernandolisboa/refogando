@@ -51,6 +51,9 @@ import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { GenerationResultRegion } from './generation-result-region'
 import { VariantChoiceRegion } from './variant-choice-region'
 import { SortToggle } from './sort-toggle'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 /** Modo de entrada da tela: por campos (#58) ou texto livre (#88). */
 type Mode = 'structured' | 'free_text'
@@ -129,6 +132,11 @@ export function CreateStructuredExperience({
   const session = useSession()
   const pathname = usePathname()
   const returnTo = pathname ?? '/create'
+  // Fase 2 de billing (flag-off): o guard abaixo já garante sessão presente quando este ramo
+  // renderiza — só o plano decide se o upsell de limite aparece.
+  const isFreePlanViewer =
+    session.data != null &&
+    isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
   // estruturado e o `freeText` coexistem; só "Criar outra receita" zera ambos (mantém o modo).
@@ -739,6 +747,11 @@ export function CreateStructuredExperience({
               {mapErroMensagem(m, errorKey)}
             </p>
           )}
+
+          {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só pro `free`. */}
+          {status === 'error' &&
+            (errorKey === 'limite_geracao' || errorKey === 'limite_geracao_variacao') &&
+            isFreePlanViewer && <QuotaUpsellCard />}
 
           <div>
             <Button

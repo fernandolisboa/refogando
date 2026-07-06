@@ -1,13 +1,15 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
+import type { ReactNode } from 'react'
 
 /**
  * Teste jsdom dos controles de versão por linhagem / regenerar (#20 UI / #61). `fetch` mockado no
  * shape REAL de `POST /api/recipes/[id]/regenerate`. `next/navigation` real-mock (router.push).
  * Asserções: 201 → navega pra nova versão; 409 sem_fonte → mensagem graceful; 200 impossible →
- * mensagem; 502 invalid → erro; en-US; sem âmbar.
+ * mensagem; 502 invalid → erro; en-US; sem âmbar. `@/lib/auth-client` mockado (Fase 2 de billing,
+ * flag-off): este componente só monta pro DONO — a sessão sempre presente decide o upsell de limite.
  */
 
 const push = vi.fn()
@@ -15,6 +17,23 @@ const refresh = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh }),
 }))
+vi.mock('next/link', () => ({
+  default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
+    <a href={typeof href === 'string' ? href : '#'} {...rest}>
+      {children}
+    </a>
+  ),
+}))
+
+const authMock = vi.hoisted(() => ({
+  session: { data: { user: { id: 'owner-1', plan: 'free' as string | undefined } }, isPending: false, error: null as unknown },
+}))
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => authMock.session,
+}))
+function setPlan(plan: string | undefined) {
+  authMock.session = { data: { user: { id: 'owner-1', plan } }, isPending: false, error: null }
+}
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -45,6 +64,10 @@ function renderControls(locale: Locale = 'pt-BR') {
     </LocaleProvider>,
   )
 }
+
+beforeEach(() => {
+  setPlan('free')
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -108,5 +131,26 @@ describe('LineageVersionControls (#20/#61)', () => {
     // Mensagem amigável (a mesma do POST /api/generations), não o erro cru de geração.
     expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.criar.erroLimiteGeracao)
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('Fase 2 (flag-off) — 429 limite_geracao + dono `free`: cartão de upsell junto da mensagem', async () => {
+    const user = userEvent.setup()
+    setPlan('free')
+    mockRegen({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } })
+    renderControls()
+    await user.click(screen.getByRole('button', { name: M.regenerar }))
+    await screen.findByRole('alert')
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.upsell.cta })).toHaveAttribute('href', '/pt-BR/plano')
+  })
+
+  it('Fase 2 (flag-off) — 429 limite_geracao + dono `pro`: SEM cartão de upsell', async () => {
+    const user = userEvent.setup()
+    setPlan('pro')
+    mockRegen({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } })
+    renderControls()
+    await user.click(screen.getByRole('button', { name: M.regenerar }))
+    await screen.findByRole('alert')
+    expect(screen.queryByText(ptBR.upsell.titulo)).not.toBeInTheDocument()
   })
 })

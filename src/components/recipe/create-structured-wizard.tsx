@@ -25,6 +25,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,6 +42,9 @@ import {
 import { useRecipeVariantEnabled } from './recipe-variant-provider'
 import { GenerationResultRegion } from './generation-result-region'
 import { VariantChoiceRegion } from './variant-choice-region'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 /** Rascunho de UM item do Briefing. `strength` nasce 'required'; `ingredientId` é sempre null. */
 type ItemDraft = { rawText: string; quantidade: string; unidade: string }
@@ -101,6 +105,12 @@ export function CreateStructuredWizard({
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
   const variantEnabled = useRecipeVariantEnabled() // #423: a feature "gerar 2" está ligada?
   const w = messages.criarWizard
+  // Fase 2 de billing (flag-off): o drawer só abre para quem está logado — só o plano decide se
+  // o upsell de limite aparece.
+  const session = useSession()
+  const isFreePlanViewer =
+    session.data != null &&
+    isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   // Destrutura o bag do motor no topo: o render lê variáveis planas (estado), e a `headingRef`
   // (única ref do bag) fica isolada — assim o lint `react-hooks/refs` não confunde os acessos a
@@ -668,6 +678,11 @@ export function CreateStructuredWizard({
               {mapErroMensagem(m, errorKey)}
             </p>
           )}
+
+          {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só pro `free`. */}
+          {status === 'error' &&
+            (errorKey === 'limite_geracao' || errorKey === 'limite_geracao_variacao') &&
+            isFreePlanViewer && <QuotaUpsellCard />}
         </fieldset>
       )}
 

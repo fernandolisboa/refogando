@@ -1834,6 +1834,26 @@ export const ptBR = {
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },
+  // Cartão de upsell no LIMITE de cota (Fase 2 de billing, flag-off — docs/reports/
+  // fase2-billing-decisao.md §6 item 5). Aparece JUNTO da mensagem de limite já existente
+  // (geração/regenerar/imagem), só para o dono da sessão no plano `free`. CTA ESTÁTICO: aponta
+  // pra `/plano` (placeholder "em breve") — sem checkout/PSP ligado. NUNCA afirma preço/data (a
+  // decisão comercial fica para quando o billing for ligado).
+  upsell: {
+    titulo: 'Você atingiu o limite do plano gratuito',
+    descricao:
+      'Assine o Pro para gerar mais, ou compre créditos avulsos quando precisar. A cobrança ainda não está disponível — estamos preparando.',
+    cta: 'Ver planos',
+  },
+  // Página placeholder `/plano` (Fase 2 de billing, flag-off): "em breve", sem afirmar preço nem
+  // data — a decisão comercial (PSP, preço, modelo) é do dono. Indexável (sem `robots: noindex`),
+  // no mesmo padrão de `privacidade`/`seusDireitos`.
+  plano: {
+    metaTitulo: 'Planos — Refogando',
+    titulo: 'Planos',
+    corpo: 'Estamos preparando um plano Pro com mais gerações por IA, além de créditos avulsos para quem prefere pagar só pelo que usa. Ainda não é possível assinar ou comprar — volte em breve.',
+    voltar: 'Voltar para o início',
+  },
 } as const
 
 /**

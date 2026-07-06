@@ -18,6 +18,18 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }))
 const resizeImage = vi.fn(async (f: File): Promise<Blob> => f)
 vi.mock('@/lib/image-resize', () => ({ resizeImage: (f: File) => resizeImage(f) }))
 
+// Fase 2 de billing (flag-off): o componente só monta pro DONO — a sessão está sempre presente.
+// Default: usuário `free` logado (o cenário mais comum deste componente).
+const authMock = vi.hoisted(() => ({
+  session: { data: { user: { id: 'owner-1', plan: 'free' as string | undefined } }, isPending: false, error: null as unknown },
+}))
+vi.mock('@/lib/auth-client', () => ({
+  useSession: () => authMock.session,
+}))
+function setPlan(plan: string | undefined) {
+  authMock.session = { data: { user: { id: 'owner-1', plan } }, isPending: false, error: null }
+}
+
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { RecipeImageManager } from '@/components/recipe/recipe-image-manager'
@@ -79,6 +91,7 @@ function deferred<T>() {
 beforeEach(() => {
   refresh.mockClear()
   resizeImage.mockClear()
+  setPlan('free')
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -548,6 +561,35 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
 
     expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('Fase 2 (flag-off): cap 429 + usuário free ⇒ cartão de upsell JUNTO do countdown, com CTA estático pra /pt-BR/plano', async () => {
+    const user = userEvent.setup()
+    setPlan('free')
+    mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+
+    expect(await screen.findByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    const cta = screen.getByRole('link', { name: ptBR.upsell.cta })
+    expect(cta).toHaveAttribute('href', '/pt-BR/plano')
+  })
+
+  it('Fase 2 (flag-off): cap 429 + usuário pro ⇒ SEM cartão de upsell (já tem o teto maior)', async () => {
+    const user = userEvent.setup()
+    setPlan('pro')
+    mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+
+    expect(await screen.findByText(M.imagemLimite.replace('{tempo}', '1h'))).toBeInTheDocument()
+    expect(screen.queryByText(ptBR.upsell.titulo)).not.toBeInTheDocument()
   })
 
   it('#222 403 desligada no modal (corrida): mostra o aviso, sem refresh', async () => {
