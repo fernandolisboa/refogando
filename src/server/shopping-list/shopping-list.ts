@@ -1,19 +1,22 @@
 import { and, asc, eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { shoppingList, shoppingListItem } from '@/db/schema'
+import { shoppingList, shoppingListItem, recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import {
   DEFAULT_SHOPPING_LIST_NAME,
   MAX_SHOPPING_LISTS_PER_USER,
   validateShoppingListName,
 } from '@/domain/shopping-list'
+import { consolidateIngredientsToAdd, type IngredientToAdd } from '@/domain/shopping-list-item'
+import { eligibleToSaveByViewer } from '@/domain/recipe-pool'
+import { resolveIngredientNames, resolveIngredientName } from '@/domain/recipe-read'
+import type { Unidade } from '@/domain/vocabulary'
 import { pgCode } from '@/server/recipe/visibility'
 
 /**
- * Núcleo com efeito da Lista de compras — CONTAINER (issue #525, ADR-0032 dec.1). Espelha o
- * estilo de `@/server/recipe/collections` (mesma disciplina de discriminated unions + `db:
- * Database` por parâmetro): cada Lista é uma pasta PRIVADA nomeada de UM usuário, `UNIQUE(user_id,
- * name)`. Esta fatia (A1) só cobre o CRUD do container + a lista-padrão; adicionar-de-receita e a
- * agregação por `shopping_list_item` são a fatia A2.
+ * Núcleo com efeito da Lista de compras — CONTAINER (issue #525, ADR-0032 dec.1) + o TRACER de
+ * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4). Espelha o estilo de
+ * `@/server/recipe/collections` (mesma disciplina de discriminated unions + `db: Database` por
+ * parâmetro): cada Lista é uma pasta PRIVADA nomeada de UM usuário, `UNIQUE(user_id, name)`.
  *
  * PRIVACIDADE (inegociável, ADR-0032 invariantes): NENHUMA leitura é anônima. Toda função escopa
  * por `shopping_list.user_id = userId`; "não é sua" e "não existe" colapsam no MESMO `not_found`
@@ -172,8 +175,8 @@ export async function ensureDefaultShoppingList(input: {
 /**
  * Lista as Listas de compras do usuário com a contagem de itens. LEFT JOIN + COUNT(item.id) (a
  * lista vazia dá 1 linha all-NULL e `count(*)` daria 1 errado; `count(item.id)` conta NULLs como
- * 0 — espelha `loadCollections`). Ordena por nome. `itemCount` é sempre 0 nesta fatia (A1 não
- * escreve em `shopping_list_item`), mas a projeção já entra pronta pra A2.
+ * 0 — espelha `loadCollections`). Ordena por nome. `itemCount` reflete as linhas JÁ CONSOLIDADAS
+ * de `shopping_list_item` (A2) — a mesclagem faz o número de linhas nunca dobrar por re-adicionar.
  */
 export async function loadShoppingLists(input: {
   db: Database
@@ -200,4 +203,190 @@ export async function loadShoppingLists(input: {
     updatedAt: r.updatedAt.toISOString(),
     itemCount: r.itemCount,
   }))
+}
+
+// ── Adicionar-de-receita + agregação (fatia A2, issue #526, ADR-0032 dec.2/4) ────
+
+export type ShoppingListAddRecipeResult = { kind: 'ok' } | { kind: 'not_found' }
+
+/**
+ * Adiciona os ingredientes de UMA Receita a uma Lista — o TRACER da fatia A2 (ADR-0032 dec.2/4): o
+ * valor central, demoável ponta-a-ponta. Quantidade BASE (sem escala por porções-alvo — dec.3/#452
+ * é a fatia B).
+ *
+ * GATE DUPLO, ambos leak-safe no MESMO `not_found` (nunca revela QUAL dos dois falhou):
+ *  1. a Lista é do PRÓPRIO usuário (`shopping_list.user_id = userId`);
+ *  2. a Receita é ELEGÍVEL pro viewer — o MESMO gate de Salvar (`eligibleToSaveByViewer`, #362/
+ *     ADR-0027 D2): pool público (comunidade pública + catálogo aprovado) OU a PRÓPRIA Receita
+ *     mesmo privada ("montar a lista a partir do meu caderno particular").
+ *
+ * NOME por-locale: resolvido AGORA, no momento do add — MESMA resolução do display (#426,
+ * `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. O SNAPSHOT grava
+ * esse nome; editar/apagar a Receita depois NÃO muda a linha (dec.3: sem FK viva pro texto da
+ * Receita, só `source_recipe_id` best-effort de proveniência).
+ *
+ * MERGE (dec.2/4): consolida os Itens da Receita em linhas por (chave, unidade) via
+ * `consolidateIngredientsToAdd` (domínio puro) — nunca duas linhas do MESMO lote miram o MESMO
+ * alvo de conflito no upsert (o Postgres rejeitaria). O upsert soma `quantidade` só quando os DOIS
+ * lados têm valor (NULL preserva o lado presente, nunca apaga o que já se sabia — mesmo predicado
+ * de `combineQuantidade`, agora em SQL pro caso em que a linha JÁ existia no banco);
+ * `source_recipe_id` permanece a MESMA Receita ao RE-ADICIONAR (idempotência sem perder "da
+ * Feijoada"), mas vira `NULL` assim que uma Receita DIFERENTE contribui pra mesma linha (mesclada
+ * de várias fontes). `nome`/`ingredient_id` do PRIMEIRO insert NUNCA mudam por um merge — nem
+ * entram no `set` do upsert (o UPDATE do Postgres preserva a coluna quando ela não é mencionada).
+ */
+export async function applyAddRecipeToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeId: string
+  locale: string
+}): Promise<ShoppingListAddRecipeResult> {
+  const { db, userId, listId, recipeId, locale } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const [gate] = await db
+    .select({
+      ownerId: recipe.ownerId,
+      visibility: recipe.visibility,
+      resultKind: recipe.resultKind,
+      moderationRemovedAt: recipe.moderationRemovedAt,
+      origin: recipe.origin,
+      curationStatus: recipe.curationStatus,
+    })
+    .from(recipe)
+    .where(eq(recipe.id, recipeId))
+  if (!gate || !eligibleToSaveByViewer(gate, userId)) return { kind: 'not_found' }
+
+  // Nomes de ingrediente por-locale (#426): MESMA resolução do display (`resolveRecipeView`, via
+  // `resolveIngredientNames`/`resolveIngredientName`) — reuso, não reimplementação. Só o locale
+  // pedido carrega `ingredientes` (o original nunca carrega — cai no rawText, ver recipe-read.ts).
+  const [tr] = await db
+    .select()
+    .from(recipeTranslation)
+    .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, locale)))
+  const localizedNames = resolveIngredientNames({ requestLocale: locale, translations: tr ? [tr] : [] })
+
+  const ingredientRows = await db
+    .select({
+      ordem: recipeIngredient.ordem,
+      ingredientId: recipeIngredient.ingredientId,
+      quantidade: recipeIngredient.quantidade,
+      unidade: recipeIngredient.unidade,
+      rawText: recipeIngredient.rawText,
+    })
+    .from(recipeIngredient)
+    .where(eq(recipeIngredient.recipeId, recipeId))
+    .orderBy(recipeIngredient.ordem, recipeIngredient.id)
+
+  const items: IngredientToAdd[] = ingredientRows.map((r) => ({
+    ingredientId: r.ingredientId,
+    nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
+    quantidade: r.quantidade,
+    unidade: r.unidade,
+  }))
+
+  const lines = consolidateIngredientsToAdd(items)
+  if (lines.length === 0) return { kind: 'ok' } // Receita sem Itens nomeados: no-op válido, não é erro.
+
+  await db
+    .insert(shoppingListItem)
+    .values(
+      lines.map((l) => ({
+        listId,
+        nome: l.nome,
+        quantidade: l.quantidade,
+        unidade: l.unidade,
+        ingredientId: l.ingredientId,
+        sourceRecipeId: recipeId,
+        matchKey: l.matchKey,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [shoppingListItem.listId, shoppingListItem.matchKey, shoppingListItem.unidade],
+      set: {
+        // NULL é "sem quantidade" (a_gosto/q.b.), não zero: só soma quando os DOIS lados têm
+        // valor; um lado ausente preserva o PRESENTE (nunca apaga o que já se sabia) — mesmo
+        // predicado de `combineQuantidade`, aqui em SQL pro caso em que a linha já existia.
+        quantidade: sql`case
+          when ${shoppingListItem.quantidade} is null or excluded.quantidade is null
+            then coalesce(${shoppingListItem.quantidade}, excluded.quantidade)
+          else ${shoppingListItem.quantidade} + excluded.quantidade
+        end`,
+        // Proveniência (dec.4): permanece a MESMA Receita ao RE-ADICIONAR (idempotência sem
+        // perder "da Feijoada"); vira NULL assim que uma Receita DIFERENTE contribui pra mesma
+        // linha (mesclada de várias fontes — a dica de UMA origem deixa de fazer sentido).
+        sourceRecipeId: sql`case
+          when ${shoppingListItem.sourceRecipeId} = excluded.source_recipe_id
+            then ${shoppingListItem.sourceRecipeId}
+          else null
+        end`,
+        updatedAt: sql`now()`,
+      },
+    })
+
+  return { kind: 'ok' }
+}
+
+export type ShoppingListItemView = {
+  id: string
+  nome: string
+  quantidade: string | null
+  unidade: Unidade | null
+  ingredientId: string | null
+  sourceRecipeId: string | null
+  checkedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type ShoppingListItemsResult =
+  | { kind: 'ok'; list: { id: string; name: string }; items: ShoppingListItemView[] }
+  | { kind: 'not_found' }
+
+/**
+ * Vê UMA Lista de compras do próprio usuário com os Itens JÁ CONSOLIDADOS (dec.4: storage = linhas
+ * agregadas, sem agregação-na-leitura). Ordena por criação (ordem de adição/merge). `checkedAt` é
+ * passthrough — o check-off é a fatia D (dec.6); a coluna já existe no schema do A1 e nasce sempre
+ * `null` até aquela fatia escrever nela.
+ */
+export async function loadShoppingListItems(input: {
+  db: Database
+  userId: string
+  listId: string
+}): Promise<ShoppingListItemsResult> {
+  const { db, userId, listId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id, name: shoppingList.name })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const rows = await db
+    .select()
+    .from(shoppingListItem)
+    .where(eq(shoppingListItem.listId, listId))
+    .orderBy(asc(shoppingListItem.createdAt), asc(shoppingListItem.id))
+
+  return {
+    kind: 'ok',
+    list,
+    items: rows.map((r) => ({
+      id: r.id,
+      nome: r.nome,
+      quantidade: r.quantidade,
+      unidade: r.unidade,
+      ingredientId: r.ingredientId,
+      sourceRecipeId: r.sourceRecipeId,
+      checkedAt: r.checkedAt?.toISOString() ?? null,
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    })),
+  }
 }
