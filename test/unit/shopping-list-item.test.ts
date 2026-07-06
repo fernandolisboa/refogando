@@ -3,6 +3,9 @@ import {
   computeMatchKey,
   combineQuantidade,
   consolidateIngredientsToAdd,
+  isValidItemQuantidade,
+  validateAdhocItem,
+  SHOPPING_LIST_ITEM_NOME_MAX,
   type IngredientToAdd,
 } from '@/domain/shopping-list-item'
 
@@ -116,5 +119,81 @@ describe('consolidateIngredientsToAdd', () => {
 
   it('lista vazia ⇒ nenhuma linha', () => {
     expect(consolidateIngredientsToAdd([])).toEqual([])
+  })
+})
+
+// ── Edição à mão (fatia C, #528, ADR-0032 dec.5) ─────────────────────────────────
+
+describe('isValidItemQuantidade', () => {
+  it('null é sempre válido (sem quantidade — a_gosto/q.b./avulso sem medida)', () => {
+    expect(isValidItemQuantidade(null)).toBe(true)
+  })
+
+  it('numeric(10,3)-string positiva é válida', () => {
+    expect(isValidItemQuantidade('200')).toBe(true)
+    expect(isValidItemQuantidade('2.5')).toBe(true)
+    expect(isValidItemQuantidade('0.001')).toBe(true)
+  })
+
+  it('zero é INVÁLIDO (não existe "comprar 0" — quem quer limpar usa null)', () => {
+    expect(isValidItemQuantidade('0')).toBe(false)
+    expect(isValidItemQuantidade('0.000')).toBe(false)
+  })
+
+  it('negativo é INVÁLIDO (mais estrito que o regex de geração por IA)', () => {
+    expect(isValidItemQuantidade('-1')).toBe(false)
+  })
+
+  it('vírgula/não-numérico/formato fora do numeric(10,3) é inválido', () => {
+    expect(isValidItemQuantidade('2,5')).toBe(false) // decimal já deve chegar canonicalizado (ponto)
+    expect(isValidItemQuantidade('abc')).toBe(false)
+    expect(isValidItemQuantidade('')).toBe(false)
+    expect(isValidItemQuantidade('1.2345')).toBe(false) // mais de 3 casas
+    expect(isValidItemQuantidade('12345678')).toBe(false) // mais de 7 dígitos inteiros
+  })
+})
+
+describe('validateAdhocItem', () => {
+  it('nome obrigatório + quantidade/unidade opcionais (ambas null): ok, nome trimado', () => {
+    const v = validateAdhocItem({ nome: '  Guardanapos  ', quantidade: null, unidade: null })
+    expect(v).toEqual({ ok: true, nome: 'Guardanapos', quantidade: null, unidade: null })
+  })
+
+  it('nome vazio (ou só espaço) ⇒ nome_invalido', () => {
+    expect(validateAdhocItem({ nome: '   ', quantidade: null, unidade: null })).toEqual({
+      ok: false,
+      reason: 'nome_invalido',
+    })
+  })
+
+  it(`nome acima de ${SHOPPING_LIST_ITEM_NOME_MAX} code points ⇒ nome_invalido`, () => {
+    const longo = 'a'.repeat(SHOPPING_LIST_ITEM_NOME_MAX + 1)
+    expect(validateAdhocItem({ nome: longo, quantidade: null, unidade: null })).toEqual({
+      ok: false,
+      reason: 'nome_invalido',
+    })
+  })
+
+  it('unidade fora do enum ⇒ unidade_invalida', () => {
+    expect(validateAdhocItem({ nome: 'Sal', quantidade: null, unidade: 'litro-de-verdade' })).toEqual({
+      ok: false,
+      reason: 'unidade_invalida',
+    })
+  })
+
+  it('quantidade fora do formato numeric(10,3) positivo ⇒ quantidade_invalida', () => {
+    expect(validateAdhocItem({ nome: 'Sal', quantidade: '0', unidade: null })).toEqual({
+      ok: false,
+      reason: 'quantidade_invalida',
+    })
+  })
+
+  it('com quantidade + unidade válidas: ok, devolve os campos', () => {
+    expect(validateAdhocItem({ nome: 'Açúcar', quantidade: '2.5', unidade: 'kg' })).toEqual({
+      ok: true,
+      nome: 'Açúcar',
+      quantidade: '2.5',
+      unidade: 'kg',
+    })
   })
 })

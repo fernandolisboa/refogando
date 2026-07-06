@@ -986,6 +986,38 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
+  // Lista de compras (#528, ADR-0032 dec.5) — edição à mão: item avulso + editar quantidade +
+  // remover linha. Namespace PRÓPRIO (espelha `colecoes` na forma, mas o domínio é outro — itens
+  // de compra, não Receitas salvas). `unidadeLabel`/`unidadeNenhuma` do select reusam o mapa
+  // GLOBAL `messages.unidadeLabel` (topo do arquivo) — não duplicado aqui.
+  listaCompras: {
+    titulo: 'Lista de compras',
+    subtitulo: 'Adicione itens à mão, edite a quantidade ou remova o que não precisa mais.',
+    vazio: 'Sua lista está vazia. Adicione um item abaixo.',
+    // Formulário de item avulso.
+    nomeItem: 'Item',
+    nomeItemPlaceholder: 'Ex.: guardanapos',
+    quantidade: 'Quantidade',
+    quantidadePlaceholder: 'Ex.: 2',
+    unidade: 'Unidade',
+    unidadeNenhuma: 'Sem unidade',
+    adicionar: 'Adicionar',
+    adicionando: 'Adicionando…',
+    // Edição/remoção por linha.
+    editarQuantidade: 'Editar quantidade',
+    salvar: 'Salvar',
+    cancelar: 'Cancelar',
+    remover: 'Remover',
+    confirmarRemover: 'Remover este item da lista?',
+    semQuantidade: 'sem quantidade',
+    // Erros (mapeados do servidor) + genéricos.
+    erroNomeInvalido: 'Escolha um nome pro item (até 200 caracteres).',
+    erroQuantidadeInvalida: 'Quantidade inválida — use um número maior que zero.',
+    erroUnidadeInvalida: 'Unidade inválida.',
+    erro: 'Algo deu errado. Tente de novo.',
+    erroCarregar: 'Não foi possível carregar sua lista. Tente de novo.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
   // `Messages` são string).
