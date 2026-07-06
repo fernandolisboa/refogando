@@ -990,8 +990,9 @@ export const ptBR = {
   // distintas). Reúne: a multi-seleção de N Receitas (fatia E, #530, dec.7: selecionar em
   // `SavedRecipesView` e adicionar todas a uma Lista numa ação, quantidade BASE), o check-off
   // PERSISTENTE (fatia D, #529, dec.6: marca/desmarca comprado; nada expira sozinho, "remover
-  // marcados"/"limpar lista" são sempre EXPLÍCITAS) E o botão de adicionar UMA Receita com
-  // porções-alvo do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
+  // marcados"/"limpar lista" são sempre EXPLÍCITAS), a EDIÇÃO À MÃO (fatia C, #528, dec.5: item
+  // avulso + editar quantidade + remover linha) E o botão de adicionar UMA Receita com porções-alvo
+  // do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
   listaDeCompras: {
     // Multi-seleção (fatia E, #530).
     selecionarReceita: 'Selecionar {nome}',
@@ -1035,6 +1036,24 @@ export const ptBR = {
     semListas: 'Você ainda não tem nenhuma lista de compras.',
     avisoSemPorcoes: 'Esta receita não tem porções definidas — adicionada na quantidade original.',
     convidaEntrarAdicionar: 'Entre na sua conta para adicionar à lista de compras.',
+    // Edição à mão (fatia C, #528, dec.5) — item avulso + editar quantidade + remover linha.
+    // `unidade`/`unidadeNenhuma` do select reusam o mapa GLOBAL `messages.unidadeLabel` pros
+    // rótulos; aqui só o LABEL do campo. Reusa `titulo`/`vazia`/`adicionando`/`adicionarBotao`/
+    // `precisaEntrar`/`erro` acima (não duplicados).
+    nomeItem: 'Item',
+    nomeItemPlaceholder: 'Ex.: guardanapos',
+    quantidade: 'Quantidade',
+    quantidadePlaceholder: 'Ex.: 2',
+    unidade: 'Unidade',
+    unidadeNenhuma: 'Sem unidade',
+    editarQuantidade: 'Editar quantidade',
+    salvar: 'Salvar',
+    cancelar: 'Cancelar',
+    remover: 'Remover',
+    confirmarRemover: 'Remover este item da lista?',
+    erroItemNomeInvalido: 'Escolha um nome pro item (até 200 caracteres).',
+    erroQuantidadeInvalida: 'Quantidade inválida — use um número maior que zero.',
+    erroUnidadeInvalida: 'Unidade inválida.',
     // Comum às fatias.
     erro: 'Algo deu errado. Tente de novo.',
   },

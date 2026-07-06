@@ -8,9 +8,13 @@ import {
 } from '@/domain/shopping-list'
 import {
   consolidateIngredientsToAdd,
+  computeMatchKey,
+  validateAdhocItem,
+  isValidItemQuantidade,
   resolveShoppingListScale,
   scaleIngredientsToAdd,
   type IngredientToAdd,
+  type ShoppingListLineDraft,
 } from '@/domain/shopping-list-item'
 import { eligibleToSaveByViewer } from '@/domain/recipe-pool'
 import { resolveIngredientNames, resolveIngredientName } from '@/domain/recipe-read'
@@ -19,10 +23,11 @@ import { pgCode } from '@/server/recipe/visibility'
 
 /**
  * Núcleo com efeito da Lista de compras — CONTAINER (issue #525, ADR-0032 dec.1) + o TRACER de
- * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4) + o CHECK-OFF persistente (issue
- * #529, ADR-0032 dec.6). Espelha o estilo de `@/server/recipe/collections` (mesma disciplina de
- * discriminated unions + `db: Database` por parâmetro): cada Lista é uma pasta PRIVADA nomeada de
- * UM usuário, `UNIQUE(user_id, name)`.
+ * adicionar-de-receita/agregação (issue #526, ADR-0032 dec.2/4) + a ESCALA por porções (#527, B) +
+ * o batch multi-receita (E) + o CHECK-OFF persistente (issue #529, ADR-0032 dec.6) + a EDIÇÃO À MÃO
+ * (issue #528, ADR-0032 dec.5: item avulso, editar quantidade, remover linha). Espelha o estilo de
+ * `@/server/recipe/collections` (mesma disciplina de discriminated unions + `db: Database` por
+ * parâmetro): cada Lista é uma pasta PRIVADA nomeada de UM usuário, `UNIQUE(user_id, name)`.
  *
  * PRIVACIDADE (inegociável, ADR-0032 invariantes): NENHUMA leitura é anônima. Toda função escopa
  * por `shopping_list.user_id = userId`; "não é sua" e "não existe" colapsam no MESMO `not_found`
@@ -328,6 +333,30 @@ async function addRecipeItemsToList(input: {
   // usuário pediu escala e a Receita não declara `porcoes`, mesmo que não haja o que adicionar).
   if (lines.length === 0) return { status: 'ok', warning: scale.warning }
 
+  await upsertShoppingListLines({ db, listId, lines, sourceRecipeId: recipeId })
+
+  return { status: 'ok', warning: scale.warning }
+}
+
+/**
+ * Upsert PARTILHADO por adicionar-de-receita (A2) E item avulso (fatia C, #528): insere `lines` na
+ * Lista, mesclando na linha existente por `(listId, matchKey, unidade)` — a MESMA regra de soma
+ * (NULL nunca vira zero, só soma quando os DOIS lados têm valor) e de proveniência (dec.4:
+ * `sourceRecipeId` permanece se BATE com o existente, vira NULL assim que uma fonte DIFERENTE
+ * contribui — item avulso sempre entra com `sourceRecipeId: null`, então mesclar um avulso numa
+ * linha que já tinha `source_recipe_id` zera a proveniência, coerente com "mesclada de várias
+ * fontes"). Extraído de `applyAddRecipeToShoppingList` para NUNCA duplicar este SQL (reuso, não
+ * reimplementação — ADR-0032 Consequências).
+ */
+async function upsertShoppingListLines(input: {
+  db: Database
+  listId: string
+  lines: ShoppingListLineDraft[]
+  sourceRecipeId: string | null
+}): Promise<void> {
+  const { db, listId, lines, sourceRecipeId } = input
+  if (lines.length === 0) return
+
   await db
     .insert(shoppingListItem)
     .values(
@@ -337,7 +366,7 @@ async function addRecipeItemsToList(input: {
         quantidade: l.quantidade,
         unidade: l.unidade,
         ingredientId: l.ingredientId,
-        sourceRecipeId: recipeId,
+        sourceRecipeId,
         matchKey: l.matchKey,
       })),
     )
@@ -363,8 +392,6 @@ async function addRecipeItemsToList(input: {
         updatedAt: sql`now()`,
       },
     })
-
-  return { status: 'ok', warning: scale.warning }
 }
 
 /**
@@ -506,6 +533,134 @@ export async function loadShoppingListItems(input: {
       updatedAt: r.updatedAt.toISOString(),
     })),
   }
+}
+
+// ── Edição à mão (fatia C, issue #528, ADR-0032 dec.5) ───────────────────────────
+
+export type ShoppingListAddAdhocResult =
+  | { kind: 'ok' }
+  | { kind: 'invalid_nome' }
+  | { kind: 'invalid_quantidade' }
+  | { kind: 'invalid_unidade' }
+  | { kind: 'not_found' }
+
+/**
+ * Adiciona um item AVULSO (digitado à mão) a uma Lista do próprio usuário (ADR-0032 dec.5): nome
+ * OBRIGATÓRIO, quantidade/unidade OPCIONAIS (mesmo enum de unidade dos itens de Receita). Gate de
+ * dono PRIMEIRO (mesma ordem de `applyAddRecipeToShoppingList`) — lista de outro ⇒ `not_found`
+ * ANTES de validar o corpo, nunca revela se o corpo seria válido para uma lista alheia.
+ *
+ * AGREGA por nome com os demais (mesma chave de `computeMatchKey` da A2 — `ingredientId: null`
+ * sempre, pois um item avulso nunca resolve a um Ingrediente canônico): re-adicionar o mesmo nome
+ * mescla na linha existente, some `sourceRecipeId: null` sempre (o upsert PARTILHADO já zera a
+ * proveniência quando uma fonte diferente contribui — ver `upsertShoppingListLines`).
+ */
+export async function applyAddAdhocItemToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  nome: string
+  quantidade: string | null
+  unidade: string | null
+}): Promise<ShoppingListAddAdhocResult> {
+  const { db, userId, listId, nome, quantidade, unidade } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const v = validateAdhocItem({ nome, quantidade, unidade })
+  if (!v.ok) {
+    if (v.reason === 'nome_invalido') return { kind: 'invalid_nome' }
+    if (v.reason === 'unidade_invalida') return { kind: 'invalid_unidade' }
+    return { kind: 'invalid_quantidade' }
+  }
+
+  const matchKey = computeMatchKey({ ingredientId: null, nome: v.nome })
+  const line: ShoppingListLineDraft = {
+    matchKey,
+    unidade: v.unidade,
+    nome: v.nome,
+    quantidade: v.quantidade,
+    ingredientId: null,
+  }
+
+  await upsertShoppingListLines({ db, listId, lines: [line], sourceRecipeId: null })
+
+  return { kind: 'ok' }
+}
+
+export type ShoppingListEditItemResult =
+  | { kind: 'ok' }
+  | { kind: 'invalid_quantidade' }
+  | { kind: 'not_found' }
+
+/**
+ * Edita a `quantidade` de UMA linha de uma Lista do próprio usuário (ADR-0032 dec.5). `null` limpa
+ * a quantidade (linha vira "sem número", como `a_gosto`/`q.b.`); string presente precisa bater o
+ * formato numeric(10,3) POSITIVO (`isValidItemQuantidade`). GATE DUPLO leak-safe: a Lista é do
+ * PRÓPRIO usuário E o Item pertence a ESSA Lista — ambos colapsam no MESMO `not_found` (nunca
+ * revela se o item existe em OUTRA lista). Nunca mexe em `nome`/`unidade`/`ingredientId`/
+ * `matchKey`/`sourceRecipeId` (só a quantidade muda — trocar nome/unidade re-classificaria a linha
+ * para outra chave de agregação, fora do escopo desta ação).
+ */
+export async function applyEditShoppingListItemQuantidade(input: {
+  db: Database
+  userId: string
+  listId: string
+  itemId: string
+  quantidade: string | null
+}): Promise<ShoppingListEditItemResult> {
+  const { db, userId, listId, itemId, quantidade } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  if (!isValidItemQuantidade(quantidade)) return { kind: 'invalid_quantidade' }
+
+  const [row] = await db
+    .update(shoppingListItem)
+    .set({ quantidade, updatedAt: new Date() })
+    .where(and(eq(shoppingListItem.id, itemId), eq(shoppingListItem.listId, listId)))
+    .returning({ id: shoppingListItem.id })
+  if (!row) return { kind: 'not_found' }
+
+  return { kind: 'ok' }
+}
+
+export type ShoppingListRemoveItemResult = { kind: 'ok' } | { kind: 'not_found' }
+
+/**
+ * Remove UMA linha de uma Lista do próprio usuário (ADR-0032 dec.5). GATE DUPLO leak-safe igual ao
+ * de editar (lista de outro / item de outra lista ⇒ o MESMO `not_found`). Ação direta, sem
+ * confirmação no servidor (a UI confirma antes de chamar, como `CollectionActions`/apagar Lista).
+ */
+export async function applyRemoveShoppingListItem(input: {
+  db: Database
+  userId: string
+  listId: string
+  itemId: string
+}): Promise<ShoppingListRemoveItemResult> {
+  const { db, userId, listId, itemId } = input
+
+  const [list] = await db
+    .select({ id: shoppingList.id })
+    .from(shoppingList)
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
+
+  const [row] = await db
+    .delete(shoppingListItem)
+    .where(and(eq(shoppingListItem.id, itemId), eq(shoppingListItem.listId, listId)))
+    .returning({ id: shoppingListItem.id })
+  if (!row) return { kind: 'not_found' }
+
+  return { kind: 'ok' }
 }
 
 // ── Check-off PERSISTENTE (fatia D, issue #529, ADR-0032 dec.6) ──────────────────
