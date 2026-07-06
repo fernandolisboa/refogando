@@ -104,6 +104,7 @@ const ai = () => as(import('@/app/[locale]/admin/descoberta/page'))
 const comparador = () => as(import('@/app/[locale]/admin/comparador/page'))
 const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
 const users = () => as(import('@/app/[locale]/admin/users/page'))
+const plano = () => as(import('@/app/[locale]/admin/plano/page'))
 const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
 const translations = () => as(import('@/app/[locale]/admin/translations/page'))
 const catalog = () => as(import('@/app/[locale]/admin/catalog/page'))
@@ -163,6 +164,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
     ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('curador em /admin/%s → AccessDenied (gate, não link escondido)', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `cur-${_n}@routes.test`, role: 'curador' })
     headersMock.current = headers
@@ -175,6 +177,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
     ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('admin em /admin/%s → render da seção', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `adm-${_n}@routes.test`, role: 'admin' })
     headersMock.current = headers
@@ -187,6 +190,7 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
     ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('anon em /admin/%s → redirect', async (_n, mod) => {
     headersMock.current = new Headers()
     expect(await run(mod)).toEqual({ kind: 'redirect', to: '/sign-in' })
