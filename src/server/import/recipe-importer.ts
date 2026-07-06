@@ -117,7 +117,7 @@ export class RealRecipeImporter implements RecipeImporter {
     // GUARD-RAIL robots.txt (#272, ADR-0019): respeita o `Disallow` do site ANTES de buscar a receita.
     // FAIL-OPEN deliberado (≠ o fail-CLOSED do SSRF/allowlist da rota): robots indisponível NÃO é
     // proibição — só uma proibição EXPLÍCITA bloqueia. Roda só no caminho REAL (o Fake nunca chega aqui).
-    if (!(await robotsAllows(parsed, ROBOTS_UA_TOKEN))) {
+    if (!(await robotsAllows(parsed, ROBOTS_UA_TOKEN, this.lookupFn))) {
       return { ok: false, reason: 'robots_blocked' }
     }
 
