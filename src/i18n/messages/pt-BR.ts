@@ -986,6 +986,29 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
+  // Lista de compras — multi-seleção (fatia E, issue #530, ADR-0032 dec.7): selecionar N Receitas
+  // em `SavedRecipesView` e adicionar todas a uma Lista numa ação, na quantidade BASE (sem
+  // seletor de porções no lote). Namespace PRÓPRIO, separado de `colecoes` (entidades distintas).
+  listaDeCompras: {
+    selecionarReceita: 'Selecionar {nome}',
+    selecionadaSingular: '{n} receita selecionada',
+    selecionadasPlural: '{n} receitas selecionadas',
+    cancelarSelecao: 'Cancelar seleção',
+    escolherLista: 'Escolher lista',
+    novaLista: '+ Nova lista',
+    nomeNovaLista: 'Nome da nova lista',
+    confirmarAdicionar: 'Adicionar à lista',
+    adicionando: 'Adicionando…',
+    sucessoSingular: '{n} receita adicionada à lista.',
+    sucessoPlural: '{n} receitas adicionadas à lista.',
+    algumasNaoAdicionadas: 'Algumas receitas não puderam ser adicionadas.',
+    erroCarregarListas: 'Não foi possível carregar suas listas. Tente de novo.',
+    erroNomeInvalido: 'Escolha um nome para a lista (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
+    erroLimiteListas: 'Você atingiu o limite de listas.',
+    erroAdicionar: 'Não foi possível adicionar as receitas. Tente de novo.',
+    erro: 'Algo deu errado. Tente de novo.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
   // `Messages` são string).
