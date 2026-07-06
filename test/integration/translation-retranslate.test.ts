@@ -15,7 +15,13 @@ import { retranslateOutdated } from '@/server/translation/retranslate'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { recipeTranslation } from '@/db/schema'
-import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
+import {
+  seedRecipe,
+  seedTranslation,
+  seedRecipeIngredient,
+  seedRemovedFromPool,
+} from '../helpers/recipes'
+import { seedUser } from '../helpers/users'
 
 /**
  * `retranslateOutdated` (issue #499, fatia B do ADR-0031 dec.5) — worker que re-traduz um lote
@@ -283,5 +289,61 @@ describe('retranslateOutdated (#499) — defasada-e-intocada re-traduz', () => {
     // (o original pt-BR nunca é candidato — locale === recipe.original_locale).
     const result = await retranslateOutdated(db, 10)
     expect(result).toEqual({ retranslated: 0, degraded: 0, remaining: 0 })
+  })
+
+  it('TOCTOU sob lock: edição humana DURANTE a chamada ao tradutor ⇒ commit-sob-lock pula, não sobrescreve', async () => {
+    // Janela que o re-check PRÉ-LLM não fecha: a edição concorrente cai DEPOIS do re-check e ANTES do
+    // commit (o LLM leva segundos). Só o SELECT ... FOR UPDATE + re-check dentro da transação a detecta.
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Pão', provenance: 'escrita_por_pessoa' })
+    await seedRecipeIngredient({ recipeId, ordem: 0, rawText: 'fermento' })
+    setTranslator(new FakeTranslator())
+    await ensureTranslation(db, recipeId, 'en-US')
+
+    // Fonte muda ⇒ defasada; no scan E no re-check pré-LLM ainda é intocada.
+    await editSource(db, recipeId, 'Pão Renovado')
+
+    // Tradutor que aplica a edição concorrente do Curador DURANTE o translate() (auto-commit, visível
+    // ao SELECT FOR UPDATE do commit) — muda o jsonb, NÃO o mt_fingerprint gravado.
+    class EditDuringTranslate implements Translator {
+      async translate(input: TranslateInput): Promise<TranslateOutput> {
+        await db
+          .update(recipeTranslation)
+          .set({ ingredientes: [{ ordem: 0, nome: 'yeast (curador)', nomeOrigem: 'fermento' }] })
+          .where(and(eq(recipeTranslation.recipeId, recipeId), eq(recipeTranslation.locale, 'en-US')))
+        return input.ingredientes ? { ...input.fields, ingredientes: input.ingredientes } : input.fields
+      }
+    }
+    setTranslator(new EditDuringTranslate())
+
+    const result = await retranslateOutdated(db, 10)
+    expect(result).toEqual({ retranslated: 0, degraded: 0, remaining: 0 }) // pulada NO COMMIT
+
+    const after = await readTranslation(db, recipeId, 'en-US')
+    // A edição humana feita durante a tradução PERMANECE — o commit-sob-lock não a sobrescreveu.
+    expect(after.ingredientes).toEqual([{ ordem: 0, nome: 'yeast (curador)', nomeOrigem: 'fermento' }])
+    expect(after.titulo).toBe('Pão') // título en-US original, não re-traduzido
+  })
+
+  it('gate de moderação (#18): Receita removida do pool NÃO é re-traduzida (não reenvia conteúdo moderado)', async () => {
+    setTranslator(new FakeTranslator())
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const recipeId = await seedOriginOnly('Receita Moderada')
+    await ensureTranslation(db, recipeId, 'en-US')
+    await editSource(db, recipeId, 'Receita Moderada v2') // defasada-e-intocada
+
+    // Removida do pool pela moderação (visibility intocada, #18): sai do escopo do worker. Via helper
+    // que seta as 3 colunas juntas (respeita recipe_moderation_consistency_chk).
+    const curatorId = await seedUser({ email: `mod-${crypto.randomUUID()}@test.local` })
+    await seedRemovedFromPool({ recipeId, curatorId })
+
+    const result = await retranslateOutdated(db, 10)
+    expect(result).toEqual({ retranslated: 0, degraded: 0, remaining: 0 }) // NÃO selecionada
+
+    const after = await readTranslation(db, recipeId, 'en-US')
+    expect(after.titulo).toBe('Receita Moderada') // original en-US, não re-traduzido
   })
 })
