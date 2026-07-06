@@ -8,14 +8,16 @@ import {
 } from '@/server/web-search/web-search-provider'
 import { appConfig, webSearchUsageDaily } from '@/db/schema'
 import { DAILY_WEB_SEARCH_QUERY_CAP, utcDayKey } from '@/domain/web-search-budget'
+import { seedSessionHeaders } from '../helpers/users'
 
 /**
  * Descoberta na WEB (#164, ADR-0019) pela porta MAIS ALTA (GET /api/discovery/web) com
  * `FakeWebSearchProvider` injetado (NUNCA toca a rede). `setup.ts` aponta o DI pro Postgres descartável
  * e reseta seams/trunca antes de cada teste — app_config nasce vazia (descoberta DESLIGADA por default).
  *
- * Cobre: LIGADA + allowlist → links externos; DESLIGADA → vazio; allowlist VAZIA → vazio (fail-closed);
- * termo vazio → vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade).
+ * Cobre: EXIGE SESSÃO (hardening #464 — anônimo degrada para vazio sem tocar o provedor); LIGADA +
+ * allowlist → links externos; DESLIGADA → vazio; allowlist VAZIA → vazio (fail-closed); termo vazio →
+ * vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade); teto diário; IP.
  */
 
 const DOMAINS = ['tudogostoso.com.br', 'cybercook.com.br']
@@ -31,11 +33,25 @@ async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<voi
     })
 }
 
-function get(q: string, locale?: string, opts?: { ip?: string }): Promise<Response> {
+/** Minta uma sessão real (better-auth testUtils) e devolve os headers com o cookie. */
+async function authed(): Promise<Headers> {
+  const { headers } = await seedSessionHeaders({ email: `web-${crypto.randomUUID()}@teste.dev` })
+  return headers
+}
+
+/**
+ * GET /api/discovery/web. `session` injeta o cookie de sessão (ausente ⇒ chamada ANÔNIMA). `ip` vai no
+ * x-forwarded-for (fallback do derivador de IP quando não há x-real-ip). Merge dos dois num só Headers.
+ */
+function get(
+  q: string,
+  opts?: { locale?: string; ip?: string; session?: Headers },
+): Promise<Response> {
   const url = new URL('http://localhost/api/discovery/web')
   if (q !== '') url.searchParams.set('q', q)
-  if (locale) url.searchParams.set('locale', locale)
-  const headers = opts?.ip ? { 'x-forwarded-for': opts.ip } : undefined
+  if (opts?.locale) url.searchParams.set('locale', opts.locale)
+  const headers = new Headers(opts?.session)
+  if (opts?.ip) headers.set('x-forwarded-for', opts.ip)
   return GET(new Request(url, { headers }))
 }
 
@@ -45,11 +61,11 @@ async function results(res: Response): Promise<WebSearchResult[]> {
 }
 
 describe('GET /api/discovery/web (#164)', () => {
-  it('LIGADA + allowlist: devolve links externos da web (FakeWebSearchProvider)', async () => {
+  it('LOGADO + LIGADA + allowlist: devolve links externos da web (FakeWebSearchProvider)', async () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     const links = await results(res)
     expect(links.length).toBe(CANONICAL_WEB_RESULTS.length)
@@ -61,6 +77,20 @@ describe('GET /api/discovery/web (#164)', () => {
     }
   })
 
+  it('ANÔNIMO (hardening #464): degrada para vazio SEM tocar o provedor, mesmo ligada', async () => {
+    await seedWebSearch(true, DOMAINS)
+    // Provedor que estouraria se chamado — prova que o gate de sessão barra ANTES da consulta paga.
+    setWebSearchProvider(
+      new FakeWebSearchProvider([
+        { title: 'x', url: 'https://tudogostoso.com.br/x', sourceName: 'X' },
+      ]),
+    )
+
+    const res = await get('feijoada') // sem session ⇒ anônimo
+    expect(res.status).toBe(200)
+    expect(await results(res)).toEqual([])
+  })
+
   it('DESLIGADA: devolve vazio (não dispara o provedor)', async () => {
     await seedWebSearch(false, DOMAINS)
     // Provedor que estouraria se chamado — prova que NÃO é tocado quando desligado.
@@ -70,7 +100,7 @@ describe('GET /api/discovery/web (#164)', () => {
       ]),
     )
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -79,7 +109,7 @@ describe('GET /api/discovery/web (#164)', () => {
     await seedWebSearch(true, [])
     setWebSearchProvider(new FakeWebSearchProvider())
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -87,7 +117,7 @@ describe('GET /api/discovery/web (#164)', () => {
   it('sem config (app_config vazia): default DESLIGADO → vazio', async () => {
     // SEM seed: app_config nasce vazia → DEFAULT_WEB_SEARCH_CONFIG (desligado, allowlist []).
     setWebSearchProvider(new FakeWebSearchProvider())
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -95,7 +125,7 @@ describe('GET /api/discovery/web (#164)', () => {
   it('termo vazio: devolve vazio (estado neutro, sem tocar o provedor)', async () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
-    const res = await get('')
+    const res = await get('', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -110,7 +140,7 @@ describe('GET /api/discovery/web (#164)', () => {
       ]),
     )
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     const links = await results(res)
     // O Fake já filtra pela allowlist; o endpoint re-filtra (defesa dupla). Só o host listado sobra.
     expect(links.map((l) => l.url)).toEqual(['https://cybercook.com.br/r/1'])
@@ -130,7 +160,7 @@ describe('GET /api/discovery/web (#164)', () => {
       .insert(webSearchUsageDaily)
       .values({ day: utcDayKey(new Date()), queryCount: DAILY_WEB_SEARCH_QUERY_CAP })
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -139,7 +169,7 @@ describe('GET /api/discovery/web (#164)', () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
 
-    expect((await get('feijoada')).status).toBe(200)
+    expect((await get('feijoada', { session: await authed() })).status).toBe(200)
     const [row] = await getDb()
       .select({ n: webSearchUsageDaily.queryCount })
       .from(webSearchUsageDaily)
@@ -152,11 +182,12 @@ describe('GET /api/discovery/web (#164)', () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
 
+    const session = await authed()
     const ip = '203.0.113.42' // IP único deste teste (o limiter é módulo-escopo, best-effort in-memory)
-    const first = await get('feijoada', undefined, { ip })
+    const first = await get('feijoada', { session, ip })
     expect((await results(first)).length).toBeGreaterThan(0)
     // Segunda dentro da janela (~1s) ⇒ barrada ⇒ vazio, sem tocar provedor/DB.
-    const second = await get('feijoada', undefined, { ip })
+    const second = await get('feijoada', { session, ip })
     expect(await results(second)).toEqual([])
   })
 })

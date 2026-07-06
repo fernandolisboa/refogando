@@ -36,6 +36,12 @@ export async function reserveWebSearchQueries(
 ): Promise<boolean> {
   const count = Math.trunc(input.count)
   if (count <= 0) return true
+  // Hardening pós-merge (#464): o `setWhere` do ON CONFLICT só guarda o caminho de UPDATE (dia já com
+  // linha). Um INSERT fresco (1ª reserva do dia) NÃO passa pelo WHERE — criaria a linha com
+  // `query_count = count` mesmo que `count` estoure o teto do dia inteiro. Nenhuma reserva pode pedir mais
+  // que o teto diário de uma vez, então recusamos ANTES do banco. (Na prática `count <= MAX_SITE_QUERIES`
+  // ≪ teto, mas o guard fecha o flanco se o teto for recalibrado para baixo abaixo do fan-out.)
+  if (count > DAILY_WEB_SEARCH_QUERY_CAP) return false
   const day = utcDayKey(input.now ?? new Date())
 
   const reserved = await db

@@ -54,6 +54,12 @@ function buildAuth() {
         // coerente com recipe.owner_id e com as PKs uuid de session/account/verification.
         generateId: false,
       },
+      // SEGURANÇA (hardening pós #449/#464): o rate-limiter do Better Auth chaveia pelo IP derivado por
+      // `getIp`, cujo default é o 1º hop do `x-forwarded-for` — CONTROLADO pelo cliente na Vercel (a edge
+      // appenda o IP real ao FIM). Isso torna a chave forjável e o teto contornável (brute-force de senha
+      // ilimitado). Forçamos a derivação pelo `x-real-ip`, que a edge da Vercel seta e o cliente NÃO
+      // sobrescreve. Mesma fonte confiável usada por `clientIpFromHeaders` (http/params.ts).
+      ipAddress: { ipAddressHeaders: ['x-real-ip'] },
     },
     session: {
       // cookieCache OFF (SEC-1, E5): o gating relê role/deletedAt VIVOS do DB a cada
@@ -84,8 +90,10 @@ function buildAuth() {
         '/sign-up/*': { window: 60, max: 5 },
         // Exatos: as rotas de reset não têm sub-segmento na submissão (o wildcard
         // `/reset-password/*` NÃO casaria o POST `/reset-password`).
-        '/forget-password': { window: 60, max: 5 },
-        '/reset-password': { window: 60, max: 5 },
+        // Reset de senha é caminho SENSÍVEL: NÃO afrouxar acima do default 3/60 do Better Auth (hardening
+        // pós-merge — antes estava 5/60, mais frouxo que o próprio default). 3 tentativas/60s por IP.
+        '/forget-password': { window: 60, max: 3 },
+        '/reset-password': { window: 60, max: 3 },
       },
     },
     emailAndPassword: { enabled: true }, // D3 — sem requireEmailVerification (sem infra de e-mail)

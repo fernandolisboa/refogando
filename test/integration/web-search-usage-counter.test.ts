@@ -64,6 +64,16 @@ describe('reserveWebSearchQueries (#464)', () => {
     expect(await countFor(DAY)).toBeNull()
   })
 
+  it('FRESH-INSERT: count acima do teto do dia é RECUSADO sem criar linha (não pula o cap)', async () => {
+    // 1ª reserva do dia (sem linha ainda): o INSERT fresco NÃO passa pelo setWhere do ON CONFLICT, então
+    // sem o guard uma reserva > teto criaria a linha estourada. Pedir mais que o teto inteiro ⇒ false, e
+    // NENHUMA linha é criada.
+    expect(
+      await reserveWebSearchQueries(getDb(), { count: DAILY_WEB_SEARCH_QUERY_CAP + 1, now: NOW }),
+    ).toBe(false)
+    expect(await countFor(DAY)).toBeNull()
+  })
+
   it('CONCORRÊNCIA: N reservas paralelas nunca passam do teto (sem overshoot TOCTOU)', async () => {
     // Faltam 5 slots; 20 chamadas de 1 slot correm em paralelo. Só 5 podem reservar; o contador para
     // EXATAMENTE no teto. Se o incremento não fosse atômico, várias leriam a contagem estale e passariam.
