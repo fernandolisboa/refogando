@@ -3,14 +3,24 @@
  *
  * Aloja: (1) constantes de fetch + o fetch do robots.txt (`robotsAllows`, BYTE-IDÊNTICO entre importer e
  * probe); (2) o fetch ENDURECIDO da PÁGINA (`fetchHardenedHtml`), a MESMA defesa de SSRF antes usada só
- * pelo probe — agora compartilhada com o importer (#448). Ambos passam pela MESMA barreira: DNS resolvido
- * ANTES de conectar (rejeita privado ⇒ anti-rebind), `redirect:'manual'` com follow LIMITADO (≤3 hops)
+ * pelo probe — agora compartilhada com o importer (#448).
+ *
+ * ANTI-REBIND POR IP PINADO (fecha o resíduo TOCTOU do #448): resolver o DNS e DEPOIS deixar o `fetch`
+ * re-resolver o hostname por conta própria abriria uma janela de rebind (TTL=0 devolve IP público na
+ * checagem e privado — ex.: 169.254.169.254 — no connect). Aqui o host é resolvido UMA vez, os IPs
+ * validados são PINADOS num `Agent` do undici (`connect.lookup` custom que devolve o IP já validado em vez
+ * de re-resolver), e o `fetch` conecta NAQUELE IP. O `Host` header e o `servername` (SNI TLS) continuam o
+ * hostname ORIGINAL (o undici só troca o alvo do socket, não a URL), então HTTPS/vhosts não quebram.
+ * Defesa dupla: o IP pinado é RE-CHECADO com `isBlockedAddress` no momento do connect. A MESMA pinagem
+ * cobre o fetch da PÁGINA e o do `/robots.txt`. Somado: `redirect:'manual'` com follow LIMITADO (≤3 hops)
  * RE-VALIDADO por hop, streaming com corte em `MAX_HTML_BYTES` e `AbortSignal` de timeout.
  *
  * `robotsAllows` é FAIL-OPEN deliberado (≠ o fail-CLOSED da allowlist): robots indisponível ⇒ permitido.
  * Só uma proibição EXPLÍCITA bloqueia. NÃO é exercitado por teste real (rede) — os testes injetam `fetch`.
  */
 import { lookup } from 'node:dns/promises'
+import { isIP, type LookupFunction } from 'node:net'
+import { Agent, type Dispatcher } from 'undici'
 import { isPathAllowedByRobots } from '@/domain/robots-txt'
 import { parseProbeUrl, isBlockedAddress } from '@/server/import/probe-url'
 
@@ -32,27 +42,40 @@ export const ROBOTS_TIMEOUT_MS = 3000
 /**
  * `true` se o robots.txt da MESMA origem da `url` permite buscarmos esse path (RFC 9309, avaliado pelo
  * domínio puro `isPathAllowedByRobots`). FAIL-OPEN: qualquer falha de obter/avaliar o robots.txt — 4xx/
- * 404, 5xx, timeout, erro de rede, redirect — devolve `true` (permitido). Defesas: `redirect:'manual'`
- * (um 3xx do /robots.txt NÃO leva o fetch a um host arbitrário — fecha o flanco de SSRF), timeout curto e
- * corpo capado. NUNCA lança.
+ * 404, 5xx, timeout, erro de rede, redirect, origem privada/irresolúvel — devolve `true` (permitido).
+ * Defesas: IP PINADO no connect (mesma resolução única do fetch da página — anti-rebind, fecha o flanco
+ * TOCTOU do próprio GET do robots.txt), `redirect:'manual'` (um 3xx do /robots.txt NÃO leva o fetch a um
+ * host arbitrário), timeout curto e corpo capado. NUNCA lança.
  */
-export async function robotsAllows(url: string, uaToken: string = ROBOTS_UA_TOKEN): Promise<boolean> {
+export async function robotsAllows(
+  url: string,
+  uaToken: string = ROBOTS_UA_TOKEN,
+  lookupFn: AddressLookup = defaultLookup,
+): Promise<boolean> {
   let target: URL
   try {
     target = new URL(url)
   } catch {
     return true // URL inválida: não bloqueamos por robots (o fetch da página tratará o erro)
   }
+  // Resolve a origem UMA vez e pina o IP no connect (anti-rebind). Origem privada/irresolúvel ⇒ NÃO
+  // buscamos o robots.txt e caímos no fail-open (`true`); o fetch da página, pinado igual, é quem bloqueia.
+  const host = hostnameOf(url)
+  const addrs = host === null ? null : await resolvePublicAddrs(host, lookupFn)
+  if (addrs === null) return true
+  const dispatcher = pinnedDispatcher(addrs)
   // UM timer cobre fetch + leitura do corpo (signal aborta ambos); a avaliação roda DENTRO do try
   // (o matcher é linear e total, mas o try honra literalmente o fail-open-on-evaluate do docstring).
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), ROBOTS_TIMEOUT_MS)
+  const init: FetchInit = {
+    headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/plain' },
+    redirect: 'manual', // NÃO perseguir 3xx p/ outro host (SSRF) — trata como indisponível
+    signal: controller.signal,
+    dispatcher,
+  }
   try {
-    const res = await fetch(`${target.origin}/robots.txt`, {
-      headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/plain' },
-      redirect: 'manual', // NÃO perseguir 3xx p/ outro host (SSRF) — trata como indisponível
-      signal: controller.signal,
-    })
+    const res = await fetch(`${target.origin}/robots.txt`, init)
     if (!res.ok) return true // 404/4xx (sem regras), 5xx, ou 3xx opaco (manual) ⇒ permitido
     // Dica de tamanho: um robots.txt absurdo é tratado como indisponível (não bufferiza GB na memória).
     const declared = Number(res.headers.get('content-length'))
@@ -64,6 +87,7 @@ export async function robotsAllows(url: string, uaToken: string = ROBOTS_UA_TOKE
     return true // timeout/abort/erro de rede/avaliação ⇒ permitido (FAIL-OPEN)
   } finally {
     clearTimeout(timer)
+    await dispatcher.destroy().catch(() => {})
   }
 }
 
@@ -107,14 +131,62 @@ export function hostnameOf(url: string): string | null {
  * de ORIGEM antes do robots.txt.
  */
 export async function isHostPublic(host: string, lookupFn: AddressLookup = defaultLookup): Promise<boolean> {
+  return (await resolvePublicAddrs(host, lookupFn)) !== null
+}
+
+/**
+ * Resolve o `host` UMA vez e devolve os endereços SE todos forem públicos — ou `null` (zero endereços,
+ * erro de resolução, ou QUALQUER endereço privado/loopback/link-local). É a resolução única cujos IPs
+ * serão PINADOS no connect (elimina a 2ª resolução do `fetch`, a janela de rebind). PURO exceto o DNS.
+ */
+export async function resolvePublicAddrs(
+  host: string,
+  lookupFn: AddressLookup = defaultLookup,
+): Promise<string[] | null> {
   try {
     const addrs = await lookupFn(host)
-    if (addrs.length === 0) return false
-    return addrs.every((a) => !isBlockedAddress(a))
+    if (addrs.length === 0) return null
+    return addrs.every((a) => !isBlockedAddress(a)) ? addrs : null
   } catch {
-    return false
+    return null
   }
 }
+
+/**
+ * `lookup` (assinatura de `dns.lookup`, o que o `Agent.connect` do undici chama) que IGNORA o hostname e
+ * devolve SEMPRE os `addrs` JÁ VALIDADOS — assim a conexão vai ao IP checado, não a uma 2ª resolução
+ * (potencialmente maliciosa). DEFESA DUPLA: re-checa cada IP com `isBlockedAddress` na hora do connect; se
+ * nenhum sobreviver, ERRA (nenhum socket abre). Honra `options.all` (o `net` do Node pode pedir a lista —
+ * ex.: `autoSelectFamily`) devolvendo `[{address,family}]`; senão devolve `(address, family)`.
+ */
+export function pinnedLookup(addrs: string[]): LookupFunction {
+  return (_hostname, options, callback) => {
+    const safe = addrs.filter((a) => !isBlockedAddress(a))
+    if (safe.length === 0) {
+      callback(new Error('endereço pinado bloqueado (rebind)'), '', undefined)
+      return
+    }
+    const entries = safe.map((a) => ({ address: a, family: isIP(a) === 6 ? 6 : 4 }))
+    if (options?.all) {
+      callback(null, entries)
+    } else {
+      callback(null, entries[0].address, entries[0].family)
+    }
+  }
+}
+
+/**
+ * `Agent` do undici que conecta AOS `addrs` pinados (via `connect.lookup`), preservando `Host`/`servername`
+ * = hostname original (o undici não reescreve a URL — só o alvo do socket). Um dispatcher por fetch; o
+ * chamador o DESTRÓI no `finally` após consumir o corpo. Passado ao `fetch` global via `init.dispatcher`
+ * (checagem por duck-typing de `.dispatch`); nos testes o `fetch` mockado o ignora sem efeito.
+ */
+export function pinnedDispatcher(addrs: string[]): Dispatcher {
+  return new Agent({ connect: { lookup: pinnedLookup(addrs) } })
+}
+
+/** `RequestInit` + a extensão `dispatcher` do undici (ausente do lib.dom) — evita cast solto no call-site. */
+type FetchInit = RequestInit & { dispatcher?: Dispatcher }
 
 /**
  * Lê o corpo da resposta com cap por streaming. No ESTOURO do cap, NÃO descarta tudo: trunca em
@@ -164,10 +236,12 @@ async function readCappedHtml(res: Response): Promise<string | null> {
 /**
  * Busca a página de `startUrl` com a defesa ENDURECIDA de SSRF (#448) — a MESMA barreira antes exclusiva
  * do probe (#273), agora compartilhada com o importer. Por hop: (1) re-valida a URL (`parseProbeUrl`:
- * só http(s), rejeita IP-literal privado/hostname interno, zera userinfo); (2) resolve o DNS e rejeita se
- * QUALQUER endereço for privado (`isHostPublic` — anti-rebind); (3) `redirect:'manual'` p/ interceptar o
- * `Location` e re-checá-lo, seguindo no MÁXIMO `MAX_REDIRECTS` hops; (4) `AbortSignal` de timeout; (5)
- * corpo lido por streaming com corte em `MAX_HTML_BYTES` (Content-Length declarado > cap ⇒ recusa direto).
+ * só http(s), rejeita IP-literal privado/hostname interno, zera userinfo); (2) resolve o DNS UMA vez e
+ * rejeita se QUALQUER endereço for privado, depois PINA os IPs validados no connect (`pinnedDispatcher`) —
+ * o `fetch` NÃO re-resolve o hostname, então não há janela de rebind entre a checagem e a conexão; o `Host`
+ * e o `servername` TLS continuam o hostname original; (3) `redirect:'manual'` p/ interceptar o `Location`
+ * e re-checá-lo, seguindo no MÁXIMO `MAX_REDIRECTS` hops; (4) `AbortSignal` de timeout; (5) corpo lido por
+ * streaming com corte em `MAX_HTML_BYTES` (Content-Length declarado > cap ⇒ recusa direto).
  *
  * Non-2xx, redirect sem/para host inválido-ou-privado, excesso de hops, erro de leitura ou QUALQUER
  * exceção (timeout/DNS/TLS/rede) ⇒ `null`. NUNCA lança — o chamador mapeia `null` ao seu erro tratado.
@@ -189,16 +263,22 @@ export async function fetchHardenedHtml(
     if (isHopAllowed && !isHopAllowed(currentUrl)) return null // fora da allowlist (origem OU alvo de redirect)
     const host = hostnameOf(currentUrl)
     if (host === null) return null
-    if (!(await isHostPublic(host, lookupFn))) return null
+    // Resolve UMA vez e PINA os IPs no connect (anti-rebind): o `fetch` conecta ao IP já validado em vez
+    // de re-resolver o hostname. Zero endereços / qualquer privado ⇒ `null` (nenhum socket abre).
+    const addrs = await resolvePublicAddrs(host, lookupFn)
+    if (addrs === null) return null
+    const dispatcher = pinnedDispatcher(addrs)
 
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS)
+    const init: FetchInit = {
+      headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      redirect: 'manual',
+      signal: controller.signal,
+      dispatcher,
+    }
     try {
-      const res = await fetch(currentUrl, {
-        headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
-        redirect: 'manual',
-        signal: controller.signal,
-      })
+      const res = await fetch(currentUrl, init)
       if (res.status >= 300 && res.status < 400) {
         const loc = res.headers.get('location')
         if (!loc) return null
@@ -223,6 +303,7 @@ export async function fetchHardenedHtml(
       return null
     } finally {
       clearTimeout(timer)
+      await dispatcher.destroy().catch(() => {})
     }
   }
   return null // excesso de redirects

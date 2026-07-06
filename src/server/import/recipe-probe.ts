@@ -12,17 +12,15 @@
  * SEGURANÇA (SSRF) — o probe é o PRIMEIRO ponto onde URL admin-arbitrária chega ao `fetch` SEM a barreira
  * de allowlist. Defesas, nesta ordem: (1) `parseProbeUrl` (só http(s), rejeita IP privado/loopback/
  * link-local e hostnames internos — a rota já roda isto antes de chamar o seam); (2) resolução DNS de
- * TODOS os endereços ANTES de conectar, rejeitando qualquer privado (defesa contra DNS-rebind); (3) follow
- * de redirect LIMITADO (≤3 hops) e RE-VALIDADO por hop (parseProbeUrl + DNS); (4) timeout + cap por
- * streaming. NUNCA lança — todo erro vira `fetched:false` (veredito tratado).
+ * TODOS os endereços ANTES de conectar, rejeitando qualquer privado, e PIN do IP validado no connect
+ * (undici `connect.lookup` — o `fetch` não re-resolve; fecha a janela de DNS-rebind entre a checagem e a
+ * conexão, com `Host`/SNI TLS = hostname original); (3) follow de redirect LIMITADO (≤3 hops) e
+ * RE-VALIDADO por hop (parseProbeUrl + DNS + pin); (4) timeout + cap por streaming. NUNCA lança — todo
+ * erro vira `fetched:false` (veredito tratado).
  *
  * DESVIOS CONSCIENTES (registrados aqui, não silenciosos):
  *  - Rate-limiter de politeness (#272) PULADO de propósito: o probe é admin-only e MANUAL (uma URL por
  *    clique), não um crawler — não martela origem.
- *  - PIN-no-IP DEFERIDO (v2): resta um resíduo TOCTOU entre a resolução DNS e a conexão TCP (um host
- *    público que rebinde para privado entre os dois passos). Conectar pelo IP literal quebraria o SNI/cert
- *    TLS de https; proporcional aceitar o resíduo numa ferramenta admin-only manual (o importer aceita o
- *    mesmo). O veredito é booleano puro (não vaza topologia além do `fetched`, já contido pelo fechamento).
  */
 import { parseImportedRecipe } from '@/domain/recipe-import-parse'
 import { jsonLdSignal, type ProbeReport } from '@/domain/web-search-probe'
@@ -70,7 +68,7 @@ export class RealRecipeProbe implements RecipeProbe {
     // sem buscar. Não martelar (nem com o probe admin-manual) um site que nos proibiu.
     let robotsAllowed = true
     try {
-      robotsAllowed = await robotsAllows(parsed, ROBOTS_UA_TOKEN)
+      robotsAllowed = await robotsAllows(parsed, ROBOTS_UA_TOKEN, this.lookupFn)
     } catch {
       robotsAllowed = true // FAIL-OPEN (robotsAllows já não lança, mas cinto-e-suspensório)
     }
