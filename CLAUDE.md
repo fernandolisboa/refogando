@@ -43,3 +43,13 @@ Cada passo roda num **subagente especializado com contexto novo** (spawn fresco 
 Rodar `/handoff` para gerar:
 - um **documento de handoff** auto-suficiente em **`docs/handoffs/`** (commitado — nunca `/tmp`), aterrado no **código/artefatos reais**: escopo, o que ler primeiro, ordem/dependências, princípios inegociáveis, landmines, critério de saída, gotchas de ambiente;
 - um **prompt de kickoff** copiável (bloco no fim da resposta, sem indentação e sem quebra de linha dentro dos parágrafos) apontando pro doc, pro usuário iniciar a próxima sessão sem re-derivar contexto.
+
+## Banco de dados — landmines
+
+- **Produção é o Neon `misty-lake-71917023` (branch `main`, host `ep-gentle-morning-…`).** Nunca rode
+  reset/drop/truncate contra ele. Migrações só via `npm run db:migrate` (build da Vercel) ou `drizzle-kit migrate`.
+- **Nunca exporte `DATABASE_URL`/`TEST_DATABASE_URL` globalmente no shell.** Agentes de outros repos herdam e
+  podem resetar o schema (foi o incidente de 2026-09-09 — ver `docs/incidents/`).
+- **Backup = branches `backup/<data>` do Neon** criados por `.github/workflows/db-backup.yml` (semanal).
+  Plano free guarda só 6h de histórico; não existe PITR além disso. Restore documentado no workflow.
+
