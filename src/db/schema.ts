@@ -520,6 +520,12 @@ export const recipeTranslation = pgTable(
     // fingerprint.ts. NULL = legado (preenchido pelo backfill da fatia D).
     sourceFingerprint: text('source_fingerprint'),
     mtFingerprint: text('mt_fingerprint'),
+    // Circuit-breaker da re-tradução (#520, ADR-0031 emenda): falhas CONSECUTIVAS do tradutor nesta linha
+    // para a MESMA tentativa (`retranslate_fail_key` = fonte atual + versão do prompt). Ao atingir o limiar
+    // (`RETRANSLATE_FAIL_THRESHOLD`) a linha sai do worker e vai pra lista do Curador. Mudar a fonte ou
+    // subir o prompt muda a chave ⇒ a quarentena cai sozinha. Zerado a cada re-tradução bem-sucedida.
+    retranslateFailCount: integer('retranslate_fail_count').notNull().default(0),
+    retranslateFailKey: text('retranslate_fail_key'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     // Coluna GERADA STORED (issue #6): FTS por linha, cada uma na própria config de

@@ -5,11 +5,15 @@ import { makeSql } from '@/db/client'
 import { getDb, setTranslator, setEmbedder } from '@/server/deps'
 import {
   FakeTranslator,
+  UnusableTranslationError,
   type Translator,
   type TranslateInput,
   type TranslateOutput,
 } from '@/server/translation/translator'
 import { FakeEmbedder } from '@/server/embedding/embedder'
+import Anthropic from '@anthropic-ai/sdk'
+import { loadDivergentStaleTranslations } from '@/server/curate/translation-divergent-stale'
+import { RETRANSLATE_FAIL_THRESHOLD } from '@/domain/translation-divergent-stale'
 import { ensureTranslation } from '@/server/recipe/translation'
 import { retranslateOutdated } from '@/server/translation/retranslate'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
@@ -37,9 +41,17 @@ class SelectiveThrowingTranslator implements Translator {
   constructor(private readonly failTitles: Set<string>) {}
   async translate(input: TranslateInput): Promise<TranslateOutput> {
     if (this.failTitles.has(input.fields.titulo)) {
-      throw new Error('tradutor indisponível (dublê seletivo)')
+      // Saída inutilizável DA LINHA (ex. infidelidade) — conta no circuit-breaker (#520).
+      throw new UnusableTranslationError('tradução infiel (dublê seletivo)')
     }
     return input.ingredientes ? { ...input.fields, ingredientes: input.ingredientes } : input.fields
+  }
+}
+
+/** Dublê que lança um erro de INFRAESTRUTURA do SDK (conexão caída) — nunca conta no circuit-breaker. */
+class OutageTranslator implements Translator {
+  async translate(): Promise<TranslateOutput> {
+    throw new Anthropic.APIConnectionError({ message: 'API fora do ar (dublê)' })
   }
 }
 
@@ -345,5 +357,94 @@ describe('retranslateOutdated (#499) — defasada-e-intocada re-traduz', () => {
 
     const after = await readTranslation(db, recipeId, 'en-US')
     expect(after.titulo).toBe('Receita Moderada') // original en-US, não re-traduzido
+  })
+})
+
+describe('retranslateOutdated — circuit-breaker (#520)', () => {
+  async function seedStaleRow(titulo: string) {
+    setTranslator(new FakeTranslator())
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const recipeId = await seedOriginOnly(titulo)
+    await ensureTranslation(db, recipeId, 'en-US')
+    await editSource(db, recipeId, `${titulo} v2`) // defasada-e-intocada
+    return { db, recipeId }
+  }
+
+  it(`falha DA LINHA ${RETRANSLATE_FAIL_THRESHOLD}x ⇒ quarentena: sai do worker (remaining zera) e vai pro Curador`, async () => {
+    const { db, recipeId } = await seedStaleRow('Torta Envenenada')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Torta Envenenada v2'])))
+
+    for (let i = 1; i < RETRANSLATE_FAIL_THRESHOLD; i++) {
+      expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 0, degraded: 1, remaining: 1 })
+    }
+    // A falha que atinge o limiar ainda conta em `degraded`, mas a linha sai de `remaining`.
+    expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 0, degraded: 1, remaining: 0 })
+    // Daí em diante não ocupa mais vaga de lote nem chama o tradutor.
+    expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 0, degraded: 0, remaining: 0 })
+
+    const row = await readTranslation(db, recipeId, 'en-US')
+    expect(row.retranslateFailCount).toBe(RETRANSLATE_FAIL_THRESHOLD)
+    expect(row.titulo).toBe('Torta Envenenada') // zero escrita de conteúdo
+
+    const list = await loadDivergentStaleTranslations(db)
+    expect(list).toContainEqual({
+      recipeId,
+      locale: 'en-US',
+      provenance: 'automatica_nao_revisada',
+      reason: 'falha_traducao',
+    })
+  })
+
+  it('linha em quarentena não rouba vaga de lote de uma candidata saudável', async () => {
+    const { db, recipeId: poisonId } = await seedStaleRow('Pudim Envenenado')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Pudim Envenenado v2'])))
+    for (let i = 0; i < RETRANSLATE_FAIL_THRESHOLD; i++) await retranslateOutdated(db, 10)
+
+    const { recipeId: okId } = await seedStaleRow('Pudim Bom')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Pudim Envenenado v2'])))
+
+    expect(await retranslateOutdated(db, 1)).toEqual({ retranslated: 1, degraded: 0, remaining: 0 })
+    expect((await readTranslation(db, okId, 'en-US')).titulo).toBe('Pudim Bom v2')
+    expect((await readTranslation(db, poisonId, 'en-US')).titulo).toBe('Pudim Envenenado')
+  })
+
+  it('a fonte mudar de novo tira da quarentena: volta ao worker e o sucesso zera a contagem', async () => {
+    const { db, recipeId } = await seedStaleRow('Quiche Teimosa')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Quiche Teimosa v2'])))
+    for (let i = 0; i < RETRANSLATE_FAIL_THRESHOLD; i++) await retranslateOutdated(db, 10)
+    expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 0, degraded: 0, remaining: 0 })
+
+    await editSource(db, recipeId, 'Quiche Teimosa v3') // nova tentativa (chave nova)
+    expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 1, degraded: 0, remaining: 0 })
+
+    const row = await readTranslation(db, recipeId, 'en-US')
+    expect(row.titulo).toBe('Quiche Teimosa v3')
+    expect(row.retranslateFailCount).toBe(0)
+    expect(row.retranslateFailKey).toBeNull()
+    const list = await loadDivergentStaleTranslations(db)
+    expect(list.some((i) => i.recipeId === recipeId)).toBe(false)
+  })
+
+  it('falhas NÃO consecutivas (sucesso no meio) não somam: a contagem recomeça', async () => {
+    const { db, recipeId } = await seedStaleRow('Sopa Instável')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Sopa Instável v2'])))
+    for (let i = 1; i < RETRANSLATE_FAIL_THRESHOLD; i++) await retranslateOutdated(db, 10)
+
+    setTranslator(new FakeTranslator())
+    expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 1, degraded: 0, remaining: 0 })
+    expect((await readTranslation(db, recipeId, 'en-US')).retranslateFailCount).toBe(0)
+  })
+
+  it('queda de INFRAESTRUTURA (erro do SDK) nunca conta: a linha segue degradada, nunca em quarentena', async () => {
+    const { db, recipeId } = await seedStaleRow('Arroz Resiliente')
+    setTranslator(new OutageTranslator())
+
+    for (let i = 0; i < RETRANSLATE_FAIL_THRESHOLD + 1; i++) {
+      expect(await retranslateOutdated(db, 10)).toEqual({ retranslated: 0, degraded: 1, remaining: 1 })
+    }
+    const row = await readTranslation(db, recipeId, 'en-US')
+    expect(row.retranslateFailCount).toBe(0)
+    expect(row.retranslateFailKey).toBeNull()
   })
 })

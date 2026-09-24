@@ -1495,6 +1495,9 @@ export const enUS: Messages = {
     idioma: 'Language',
     origem: 'Origin',
     listaVazia: 'No translations need re-review.',
+    motivo: 'Reason',
+    motivoDivergente: 'Content edited by hand',
+    motivoFalhaTraducao: 'Machine translation failed repeatedly',
   },
   curadoria: {
     titulo: 'Catalog curation',

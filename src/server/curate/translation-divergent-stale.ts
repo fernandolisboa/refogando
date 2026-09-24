@@ -4,7 +4,13 @@ import { recipe, recipeTranslation } from '@/db/schema'
 import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
-import { isDefasadaEDivergente } from '@/domain/translation-divergent-stale'
+import {
+  isDefasada,
+  isDivergente,
+  isRetranslateQuarantined,
+  retranslateFailKey,
+  type DivergentStaleReason,
+} from '@/domain/translation-divergent-stale'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 
 /**
@@ -24,15 +30,19 @@ import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
  *     usa para montar a fonte — para reconstruir `fingerprintSource`/`fingerprintMt` ATUAIS com a
  *     MESMA construção de campos (locale original + `raw_text` dos ingredientes; linha atual + mapa
  *     `ordem→nome` do jsonb, sem `nomeOrigem`) — espelha `ensureTranslation` byte-a-byte.
- *  3. `isDefasadaEDivergente` (domínio puro) decide por comparação; entra na lista só quando AMBAS.
+ *  3. Domínio puro decide por comparação; entra na lista quando DEFASADA e, além disso, OU
+ *     `isDivergente` (motivo `divergente`) OU em QUARENTENA do circuit-breaker da re-tradução (#520 —
+ *     o tradutor falhou `RETRANSLATE_FAIL_THRESHOLD` vezes para esta fonte+versão; motivo
+ *     `falha_traducao`). As duas razões tiram a linha do worker; `divergente` prevalece.
  *
- * Devolve só id+locale+proveniência (nada de conteúdo sensível) — mesmo contrato de
+ * Devolve só id+locale+proveniência+motivo (nada de conteúdo sensível) — mesmo contrato de
  * `translations/stale/route.ts`. Read-only (nenhuma escrita, nenhuma chamada a LLM).
  */
 export type DivergentStaleItem = {
   recipeId: string
   locale: string
   provenance: string
+  reason: DivergentStaleReason
 }
 
 export async function loadDivergentStaleTranslations(db: Database): Promise<DivergentStaleItem[]> {
@@ -45,6 +55,8 @@ export async function loadDivergentStaleTranslations(db: Database): Promise<Dive
       sourceFingerprint: recipeTranslation.sourceFingerprint,
       mtFingerprint: recipeTranslation.mtFingerprint,
       promptVersion: recipeTranslation.promptVersion,
+      retranslateFailCount: recipeTranslation.retranslateFailCount,
+      retranslateFailKey: recipeTranslation.retranslateFailKey,
     })
     .from(recipeTranslation)
     .innerJoin(recipe, eq(recipe.id, recipeTranslation.recipeId))
@@ -101,17 +113,29 @@ export async function loadDivergentStaleTranslations(db: Database): Promise<Dive
         ingredientes: currentRow.ingredientes ?? null,
       })
 
-      const divergentAndStale = isDefasadaEDivergente({
+      const defasada = isDefasada({
         currentSourceFingerprint,
         storedSourceFingerprint: candidate.sourceFingerprint,
         storedPromptVersion: candidate.promptVersion,
         translationPromptVersion: TRANSLATION_PROMPT_VERSION,
+      })
+      if (!defasada) continue
+
+      const reason: DivergentStaleReason | null = isDivergente({
         currentMtFingerprint,
         storedMtFingerprint: candidate.mtFingerprint,
       })
+        ? 'divergente'
+        : isRetranslateQuarantined({
+              failCount: candidate.retranslateFailCount,
+              storedFailKey: candidate.retranslateFailKey,
+              currentFailKey: retranslateFailKey(currentSourceFingerprint, TRANSLATION_PROMPT_VERSION),
+            })
+          ? 'falha_traducao'
+          : null
 
-      if (divergentAndStale) {
-        out.push({ recipeId: candidate.recipeId, locale: candidate.locale, provenance: candidate.provenance })
+      if (reason) {
+        out.push({ recipeId: candidate.recipeId, locale: candidate.locale, provenance: candidate.provenance, reason })
       }
     }
   }

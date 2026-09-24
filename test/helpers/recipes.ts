@@ -114,6 +114,9 @@ export async function seedTranslation(input: {
   sourceFingerprint?: string | null
   mtFingerprint?: string | null
   promptVersion?: number | null
+  // Circuit-breaker da re-tradução (#520) — opcionais (ausentes ⇒ 0/NULL, o default da coluna).
+  retranslateFailCount?: number
+  retranslateFailKey?: string | null
 }): Promise<string> {
   const [row] = await getDb()
     .insert(recipeTranslation)
@@ -131,6 +134,8 @@ export async function seedTranslation(input: {
       ...(input.sourceFingerprint !== undefined ? { sourceFingerprint: input.sourceFingerprint } : {}),
       ...(input.mtFingerprint !== undefined ? { mtFingerprint: input.mtFingerprint } : {}),
       ...(input.promptVersion !== undefined ? { promptVersion: input.promptVersion } : {}),
+      ...(input.retranslateFailCount !== undefined ? { retranslateFailCount: input.retranslateFailCount } : {}),
+      ...(input.retranslateFailKey !== undefined ? { retranslateFailKey: input.retranslateFailKey } : {}),
     })
     .returning({ id: recipeTranslation.id })
   return row.id

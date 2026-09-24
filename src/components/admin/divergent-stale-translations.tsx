@@ -14,6 +14,9 @@
  * Componente SEPARADO de `StaleTranslations` por design (COMPÕE, não conflita): esta lista não
  * tem ação "marcar revisada" (proveniência não é a trava aqui — o fingerprint é, ADR-0031 dec.2)
  * — só o editor de nomes, idêntico em comportamento ao de #498.
+ *
+ * Cada item mostra o MOTIVO (#520): `divergente` (edição humana/legado) ou `falha_traducao` (o
+ * tradutor falhou repetidamente nesta linha e o worker a pôs em quarentena — precisa de mão humana).
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -24,7 +27,13 @@ import {
   type TranslationProvenance,
 } from '@/domain/recipe'
 
-type DivergentItem = { recipeId: string; locale: string; provenance: string }
+type DivergentItem = {
+  recipeId: string
+  locale: string
+  provenance: string
+  /** Por que está na lista: conteúdo editado à mão, ou quarentena do circuit-breaker da re-tradução (#520). */
+  reason: 'divergente' | 'falha_traducao'
+}
 
 /** Ingrediente COM nome (rawText presente/não-vazio) — só estes são editáveis (espelha #498). */
 type NamedIngredient = { ordem: number; rawText: string }
@@ -212,6 +221,10 @@ export function DivergentStaleTranslations() {
                     <dd className="text-muted">{item.locale}</dd>
                     <dt className="font-medium text-fg">{m.origem}</dt>
                     <dd className="text-muted">{labelProvenance(item.provenance)}</dd>
+                    <dt className="font-medium text-fg">{m.motivo}</dt>
+                    <dd className="text-muted">
+                      {item.reason === 'falha_traducao' ? m.motivoFalhaTraducao : m.motivoDivergente}
+                    </dd>
                   </dl>
                   <div className="flex flex-wrap gap-2">
                     <Button

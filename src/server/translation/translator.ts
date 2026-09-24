@@ -55,6 +55,37 @@ export interface Translator {
 export const TRANSLATION_MODEL = process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5'
 
 /**
+ * O modelo RESPONDEU, mas a saída é inutilizável para ESTA Receita: recusa, truncamento
+ * (`max_tokens`), JSON/schema inválido (erro de parse do helper `zodOutputFormat` do SDK), sem saída
+ * estruturada, ou infidelidade (`assertFaithfulTranslation`). É a única classe de falha que conta no
+ * circuit-breaker da re-tradução (#520) — tende a se repetir na mesma fonte. Continua sendo um
+ * `Error`, então `ensureTranslation` degrada igual (try/catch genérico).
+ */
+export class UnusableTranslationError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'UnusableTranslationError'
+  }
+}
+
+/**
+ * `messages.parse` com a fronteira de erro classificada: o SDK roda o `parse` do `zodOutputFormat`
+ * DENTRO da chamada e, em JSON cortado/schema violado, lança um `AnthropicError` PURO (não
+ * `APIError`) — isso é saída ruim da linha, não queda do serviço. `APIError` (HTTP/conexão) segue
+ * propagando como está (infraestrutura).
+ */
+async function parseTranslation<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (err) {
+    if (err instanceof Anthropic.AnthropicError && !(err instanceof Anthropic.APIError)) {
+      throw new UnusableTranslationError(`tradução com saída estruturada inválida: ${err.message}`, { cause: err })
+    }
+    throw err
+  }
+}
+
+/**
  * Implementação real (#426): traduz via Claude com structured output. Espelha a disciplina de
  * `extractIngredients` (messages.parse + zodOutputFormat + 1 reparo), MAS com contrato de erro
  * INVERSO: qualquer não-sucesso OU infidelidade LANÇA (não devolve parse_failed) — `ensureTranslation`
@@ -86,16 +117,16 @@ export class RealTranslator implements Translator {
       thinking: { type: 'disabled' as const },
     }
 
-    let message = await client.messages.parse(params)
-    if (message.stop_reason === 'refusal') throw new Error('tradução recusada pelo modelo (refusal)')
-    if (message.stop_reason === 'max_tokens') throw new Error('tradução truncada (max_tokens)')
+    let message = await parseTranslation(() => client.messages.parse(params))
+    if (message.stop_reason === 'refusal') throw new UnusableTranslationError('tradução recusada pelo modelo (refusal)')
+    if (message.stop_reason === 'max_tokens') throw new UnusableTranslationError('tradução truncada (max_tokens)')
 
     // Reparo mínimo: parser sem saída ⇒ re-chama UMA vez. Ainda null ⇒ lança.
     if (message.parsed_output === null) {
-      message = await client.messages.parse(params)
-      if (message.stop_reason === 'refusal') throw new Error('tradução recusada pelo modelo (refusal)')
-      if (message.stop_reason === 'max_tokens') throw new Error('tradução truncada (max_tokens)')
-      if (message.parsed_output === null) throw new Error('tradução sem saída estruturada')
+      message = await parseTranslation(() => client.messages.parse(params))
+      if (message.stop_reason === 'refusal') throw new UnusableTranslationError('tradução recusada pelo modelo (refusal)')
+      if (message.stop_reason === 'max_tokens') throw new UnusableTranslationError('tradução truncada (max_tokens)')
+      if (message.parsed_output === null) throw new UnusableTranslationError('tradução sem saída estruturada')
     }
 
     const parsed = message.parsed_output
@@ -112,10 +143,26 @@ export class RealTranslator implements Translator {
     // Fidelidade pós-parse: um parse bem-formado porém LOSSY (passos faltando, ingrediente omitido,
     // conjunto de `ordem` diferente) não é falha p/ o schema — LANÇA aqui ⇒ degrada honesto (AC4)
     // em vez de persistir MT ruim.
-    assertFaithfulTranslation(input.fields, result, input.ingredientes, parsed.ingredientes)
+    try {
+      assertFaithfulTranslation(input.fields, result, input.ingredientes, parsed.ingredientes)
+    } catch (err) {
+      throw new UnusableTranslationError(err instanceof Error ? err.message : String(err), { cause: err })
+    }
 
     return result
   }
+}
+
+/**
+ * A falha é DA LINHA (não da infraestrutura)? Alimenta o circuit-breaker da re-tradução (#520):
+ * allowlist — só `UnusableTranslationError` (o modelo respondeu, a saída não serve) conta para a
+ * quarentena. Todo o resto — `APIError` (429/5xx/529, conexão/timeout, 400/401/403/404 de config),
+ * key ausente, erro desconhecido — é tratado como infraestrutura: contá-lo quarentenaria o lote
+ * inteiro numa queda ou num deploy mal configurado. Na dúvida, a linha só degrada (comportamento
+ * anterior ao #520), nunca vai pra quarentena por engano.
+ */
+export function isRowSpecificTranslationFailure(err: unknown): boolean {
+  return err instanceof UnusableTranslationError
 }
 
 /**

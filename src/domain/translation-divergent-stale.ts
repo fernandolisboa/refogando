@@ -62,3 +62,34 @@ export function isDivergente(
 export function isDefasadaEDivergente(input: DivergentStaleInput): boolean {
   return isDefasada(input) && isDivergente(input)
 }
+
+/**
+ * Circuit-breaker da re-tradução (#520, emenda ao ADR-0031 dec.5). Uma linha em que o tradutor
+ * falha de forma PERMANENTE (infidelidade estrutural, recusa, truncamento — sempre na mesma fonte)
+ * ficaria defasada-e-intocada para sempre: ocupa uma vaga de cada lote, `remaining` nunca zera, e
+ * — como a escrita nunca ocorre — nunca vira divergente, então nunca chega ao Curador. A partir de
+ * `RETRANSLATE_FAIL_THRESHOLD` falhas CONSECUTIVAS para a MESMA tentativa, a linha fica em
+ * QUARENTENA: sai do worker e entra na lista do Curador com motivo `falha_traducao`.
+ *
+ * "Mesma tentativa" = mesma chave `retranslateFailKey` (fonte atual + versão do prompt). Se a fonte
+ * muda ou o tradutor sobe de versão, a chave muda e a quarentena cai sozinha — a linha volta ao
+ * worker com contagem nova (sem ferramenta de "des-quarentenar").
+ */
+export const RETRANSLATE_FAIL_THRESHOLD = 3
+
+/** Chave da tentativa de re-tradução: o que o tradutor recebe (fonte) + como traduz (versão). */
+export function retranslateFailKey(currentSourceFingerprint: string, translationPromptVersion: number): string {
+  return `${currentSourceFingerprint}:v${translationPromptVersion}`
+}
+
+/** A linha atingiu o limiar de falhas para a tentativa ATUAL (chave gravada == chave corrente). */
+export function isRetranslateQuarantined(input: {
+  failCount: number
+  storedFailKey: string | null
+  currentFailKey: string
+}): boolean {
+  return input.storedFailKey === input.currentFailKey && input.failCount >= RETRANSLATE_FAIL_THRESHOLD
+}
+
+/** Por que a linha está na lista do Curador. `divergente` prevalece (edição humana é o sinal mais forte). */
+export type DivergentStaleReason = 'divergente' | 'falha_traducao'
