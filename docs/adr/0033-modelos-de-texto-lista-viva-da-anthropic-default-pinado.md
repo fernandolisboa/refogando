@@ -8,7 +8,7 @@ O dono pediu (2026-09-24) para subir o modelo da Geração para o Opus 5.5, tira
 
 ## Decisões
 
-1. **A OFERTA é dinâmica.** As opções do admin vêm da Models API (`GET /v1/models`) via o seam `ModelCatalog` (`server/claude/model-catalog.ts`), com cache de 1h por processo (falha: 5 min). A regra pura (`domain/claude-models.ts`) filtra as famílias **Opus, Sonnet e Fable** e fica com o **mais novo de cada** (`created_at`). Haiku e Mythos ficam de fora. O PUT de `defaultModel` valida contra a mesma lista, aceitando também o valor já salvo e, quando a instância está no fallback, qualquer ID dessas famílias (o cache é por instância; não recusa um modelo novo que outra instância listou). Um modelo novo aparece no select sem deploy.
+1. **A OFERTA é dinâmica.** As opções do admin vêm da Models API (`GET /v1/models`) via o seam `ModelCatalog` (`server/claude/model-catalog.ts`), com cache de 1h por processo (falha: 5 min). A regra pura (`domain/claude-models.ts`) filtra as famílias **Opus, Sonnet e Fable** e fica com o **mais novo de cada** (`created_at`). Haiku e Mythos ficam de fora. O PUT de `defaultModel` valida contra a mesma lista, aceitando também o valor já salvo e, quando a instância está no fallback, qualquer ID dessas famílias no formato atual (`claude-<família>-<versão>`) (o cache é por instância; não recusa um modelo novo que outra instância listou). Um modelo novo aparece no select sem deploy.
 
 2. **O modelo EM USO não troca sozinho.** `app_config.default_model` só muda quando o admin salva. **Rejeitado: seguir o mais novo automaticamente** (ou um alias "latest"): um modelo novo pode trazer breaking change de API (ex.: Opus 5.5 recusa `thinking: disabled` e `tool_choice` forçado) e muda custo e latência. Trocar o modelo de produção é uma decisão, não um efeito colateral de um lançamento.
 
@@ -16,7 +16,7 @@ O dono pediu (2026-09-24) para subir o modelo da Geração para o Opus 5.5, tira
 
 4. **Histórico intocado.** `generation.model` guarda o ID cru que gerou cada Receita; nada o reescreve. A leitura de `app_config` também não reescreve um `default_model` fora da lista (o select mostra "em uso, fora da lista atual"). A migração 0065 só muda o DEFAULT da coluna. A troca da linha em produção para Opus 5.5 vai numa migração SEPARADA, depois que este código estiver no ar: a migração roda no build da Vercel, antes do código novo servir, e o código antigo (teto de 4096 tokens) truncaria as Receitas de um modelo com thinking sempre ligado.
 
-5. **Chamada preparada para os modelos novos.** A Geração passa `output_config.effort = 'medium'` só para as famílias selecionáveis (o default varia por modelo; Haiku dá 400 com `effort`), teto de `max_tokens` maior (12k single, 20k no lote de variações, abaixo do limite em que o SDK exige streaming), porque Opus 5.5 e Fable rodam com thinking sempre ligado, e um prazo total de 50s (chamada + reparo) para virar `parse_failed` antes do `maxDuration = 60` da rota.
+5. **Chamada preparada para os modelos novos.** A Geração passa `output_config.effort = 'medium'` só para as famílias selecionáveis (o default varia por modelo; Haiku dá 400 com `effort`), teto de `max_tokens` maior (12k single, 20k no lote de variações, abaixo do limite em que o SDK exige streaming), porque Opus 5.5 e Fable rodam com thinking sempre ligado, e um prazo de 50s na chamada de Geração (chamada + reparo) para virar `parse_failed` antes do `maxDuration = 60` da rota. Na conversa, o stream vem antes e fica fora desse prazo.
 
 ## Consequências
 

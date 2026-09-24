@@ -24,12 +24,9 @@ beforeAll(() => {
 
 beforeEach(async () => {
   resetDeps()
-  // Nenhum teste fala com a Models API de verdade: sem dublê explícito, a lista cai no fallback pinado.
-  setModelCatalog({
-    listModels: async () => {
-      throw new Error('Models API desligada nos testes')
-    },
-  })
+  // Nenhum teste fala com a Models API de verdade: sem dublê explícito, a lista vazia cai no fallback
+  // pinado (sem o log de erro da API fora).
+  setModelCatalog({ listModels: async () => [] })
   await truncateAll(sql)
   // Baseline de PRODUÇÃO: `vocabulary_term` nunca está vazia — a migração 0033 (#314) semeia as
   // cozinhas no deploy. `truncateAll` apaga essa seed antes de cada teste, então re-semeamos o

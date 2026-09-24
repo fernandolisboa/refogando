@@ -118,8 +118,9 @@ const VARIANTS_MAX_TOKENS = 20_000
 // não pede raciocínio longo, qualquer que seja o modelo escolhido no admin.
 const GENERATION_EFFORT = 'medium' as const
 
-// Prazo TOTAL da Geração (chamada + reparo + retries do SDK), abaixo do `maxDuration = 60` das rotas:
-// estourar vira `parse_failed` controlado em vez de a Vercel matar a função no meio (504 sem resposta).
+// Prazo da chamada de Geração (chamada + reparo; o SDK não tenta de novo depois do abort). Limita ESTA
+// chamada, abaixo do `maxDuration = 60` das rotas: estourar vira `parse_failed` controlado em vez de a
+// Vercel matar a função (504). Na conversa, o stream vem ANTES e não entra nesse prazo.
 const GENERATION_DEADLINE_MS = 50_000
 
 /** Sinal que aborta no abort do cliente HTTP OU no prazo da Geração — o que vier primeiro. */
@@ -129,8 +130,9 @@ function generationSignal(signal?: AbortSignal): AbortSignal {
 }
 
 /**
- * `effort` só para as famílias selecionáveis (Opus/Sonnet/Fable, que aceitam o parâmetro). Uma linha
- * legada/editada à mão com outro modelo (ex.: Haiku, que dá 400 com `effort`) segue no default dele.
+ * `effort` só para as famílias selecionáveis (Opus/Sonnet/Fable). Uma linha legada com outro modelo
+ * (ex.: Haiku, que dá 400 com `effort`) segue no default dele. Por família, não por versão: um Opus/
+ * Sonnet anterior ao 4.5 editado à mão no banco daria 400 — o admin não consegue escolher um.
  */
 function effortFor(model: string): { effort?: typeof GENERATION_EFFORT } {
   return selectableFamilyOf(model) ? { effort: GENERATION_EFFORT } : {}

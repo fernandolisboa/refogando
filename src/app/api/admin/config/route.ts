@@ -59,13 +59,19 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  *  - um da lista selecionável viva;
  *  - com a lista em FALLBACK (API fora nesta instância), qualquer ID de família selecionável: o cache
  *    é por instância, então o GET pode ter vindo de uma instância com a lista viva (modelo novo) e o
- *    PUT cair numa sem — fail-open só dentro das famílias, nunca um ID arbitrário.
+ *    PUT cair numa sem — fail-open só dentro das famílias e no formato de ID atual
+ *    (`claude-<família>-<maior>[-<menor>]`), nunca um ID arbitrário.
  */
+const CURRENT_ID_SHAPE = /^claude-(opus|sonnet|fable)-\d+(-\d+)?$/
+
 async function isAcceptableDefaultModel(model: string): Promise<boolean> {
-  if ((await loadAppConfig(getDb())).defaultModel === model) return true
   const { models, source } = await loadSelectableModels(getModelCatalog())
   if (models.some((opt) => opt.id === model)) return true
-  return source === 'fallback' && selectableFamilyOf(model) !== null
+  if (source === 'fallback' && selectableFamilyOf(model) !== null && CURRENT_ID_SHAPE.test(model)) {
+    return true
+  }
+  // Só lê o banco quando a lista não bastou (caso raro: re-salvar o modelo que saiu da lista).
+  return (await loadAppConfig(getDb())).defaultModel === model
 }
 
 export async function GET(req: Request): Promise<Response> {

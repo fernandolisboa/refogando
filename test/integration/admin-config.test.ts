@@ -760,6 +760,7 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     expect((await put({ defaultModel: 'claude-opus-6' }, headers)).status).toBe(200)
     expect((await put({ defaultModel: 'claude-haiku-4-5-20251001' }, headers)).status).toBe(400)
     expect((await put({ defaultModel: 'gpt-4' }, headers)).status).toBe(400)
+    expect((await put({ defaultModel: 'claude-opus-garbage' }, headers)).status).toBe(400)
   })
 
   it('linha legada com modelo fora da lista segue legível (não é reescrita na leitura)', async () => {
