@@ -61,7 +61,7 @@ describe('loadSelectableModels', () => {
 
   it('lista viva ⇒ source live', async () => {
     const out = await loadSelectableModels({ listModels: async () => [m('claude-opus-5-5', '2026-08-10T00:00:00Z')] })
-    expect(out).toEqual({ models: [{ id: 'claude-opus-5-5', displayName: 'claude-opus-5-5', family: 'opus' }], source: 'live' })
+    expect(out).toEqual({ models: [{ id: 'claude-opus-5-5', displayName: 'claude-opus-5-5', family: 'opus', capabilities: null }], source: 'live' })
   })
 
   it('erro da Models API ⇒ lista pinada + log só com metadados', async () => {

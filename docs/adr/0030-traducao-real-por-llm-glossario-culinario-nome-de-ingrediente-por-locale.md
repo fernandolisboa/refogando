@@ -3,6 +3,8 @@
 Status: aceito
 
 > **Nota (ADR-0033, 2026-09-24):** Fable agora é selecionável para a **Geração**, não para a tradução. A tradução segue em `claude-sonnet-5` com `thinking: disabled`, que Opus 5.5 e Fable recusam (400): subir a tradução para eles exige tirar esse parâmetro.
+>
+> **Nota (ADR-0034, 2026-09-24):** modelo, effort e thinking da tradução agora são configuráveis no admin (`app_config.ai_tasks`). O default segue `claude-sonnet-5` com thinking desligado; escolher um modelo que não desliga o thinking é recusado pela chamada de teste ao salvar.
 
 Fecha o buraco greenfield deixado aberto pelo ADR-0029 (§Escopo/deferidos) e amarra no épico bilíngue #187 (issue #426). Hoje a tradução em **runtime não existe**: `RealTranslator.translate()` LANÇA (`src/server/translation/translator.ts` é um stub), então **todo 2º-locale degrada pro original** (AC4) e **nenhuma linha en-US é criada em produção** — o bilíngue que existe veio do seed JSON offline. Além disso há um bug visível: o **nome do ingrediente aparece em PT numa tela em EN**, porque `formatIngredientLine` renderiza `recipe_ingredient.raw_text` (monolíngue, invariante por locale) enquanto a **medida** (quantidade/unidade) já é localizada. Este ADR constrói o `RealTranslator`, um **glossário culinário** para naturalidade/consistência, e o storage+display do **nome de ingrediente por-locale** — sem re-localizar a medida (Direção B, ADR-0012 Adendo 2). Relaciona/emenda: ADR-0012 (item de receita), ADR-0020 (slug por locale), ADR-0009 (structured output), ADR-0025 (cozinha data-driven), #161 (selo de tradução automática).
 

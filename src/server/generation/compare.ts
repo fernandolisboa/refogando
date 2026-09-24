@@ -14,6 +14,7 @@
  * controlado (a IA não inventa). Nada disso muda aqui — só EXIBIMOS o antes/depois.
  */
 
+import type { ModelSettings } from '@/domain/ai-task-config'
 import { getClaudeClient, getImageGenerator } from '@/server/deps'
 import { classify } from '@/domain/generation'
 import { buildDishImagePrompt, composeImagePrompt } from '@/domain/image-prompt'
@@ -29,6 +30,8 @@ import {
 export type RunComparisonOptions = {
   /** Modelo resolvido na borda (de `app_config.default_model`, com fallback em código). */
   model: string
+  /** Esforço/thinking do admin p/ o modelo (ADR-0034); ausente ⇒ default da Geração. */
+  settings?: ModelSettings
   /** Gera a imagem do prato quando houve Receita (opt-in; default é texto-só). */
   withImage: boolean
 }
@@ -53,6 +56,7 @@ export async function runComparison(
     systemPrompt,
     userPrompt,
     model: options.model,
+    settings: options.settings,
     // Constrange a cozinha da SAÍDA ao vocabulário fixo do comparador (ADR-0025): a IA não inventa cozinha.
     cozinhaSlugs: COMPARATOR_COZINHA_SLUGS,
     // Proveniência (#420): eixos que produziram esta geração — já codificados no systemPrompt. Neutro na Wave 1.

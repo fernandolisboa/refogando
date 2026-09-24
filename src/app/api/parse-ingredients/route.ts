@@ -1,6 +1,6 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
-import { EXTRACTION_MODEL } from '@/server/claude/client'
+import { loadAiTask } from '@/server/app-config'
 import { appConfig } from '@/db/schema'
 import { buildExtractionPrompt } from '@/domain/ingredient-extraction'
 import { isUnidade } from '@/domain/vocabulary'
@@ -23,7 +23,7 @@ import { reserveExtractionSlot, QuotaExceededError } from '@/server/quota/atomic
  * Fluxo: requireSession PRIMEIRO (401 ao Visitante, fail-closed, ANTES de tocar qualquer
  * coisa) → valida `rawInput` (string, comprimento trimado 10..500) → TETO de extração por papel (#447)
  * RESERVADO ATOMICAMENTE ANTES do seam → buildExtractionPrompt → seam mockável `extractIngredients` com
- * `model: EXTRACTION_MODEL` (modelo barato dedicado, NÃO o app_config.default_model) → normaliza
+ * o modelo da tarefa Extração (ADR-0034, NÃO o app_config.default_model da Geração) → normaliza
  * `unidade` via `isUnidade` (gate ÚNICO de unidade; desconhecida → null) → 200 `{ items }`. parse_failed → 502.
  *
  * Teto de EXTRAÇÃO por papel (#447), janela 24h deslizante: sem contador, a rota era um loop ilimitado
@@ -88,11 +88,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { systemPrompt, userPrompt } = buildExtractionPrompt(body.rawInput)
-  const out = await getClaudeClient().extractIngredients({
-    systemPrompt,
-    userPrompt,
-    model: EXTRACTION_MODEL,
-  })
+  // ADR-0034: modelo + esforço/thinking da Extração escolhidos no admin (default: Sonnet 5, sem thinking).
+  const { model, settings } = await loadAiTask(getDb(), 'extraction')
+  const out = await getClaudeClient().extractIngredients({ systemPrompt, userPrompt, model, settings })
 
   if (out.kind === 'parse_failed') {
     return Response.json({ error: 'extracao_falhou' }, { status: 502 })

@@ -2,6 +2,14 @@ import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import {
+  activeSettings,
+  parseStoredAiTasks,
+  resolveAiTasks,
+  type AiTask,
+  type AiTasksConfig,
+  type ModelSettings,
+} from '@/domain/ai-task-config'
+import {
   DEFAULT_IMAGE_GEN_CONFIG,
   DEFAULT_IMAGE_MODEL,
   isImageGenModel,
@@ -57,8 +65,20 @@ import {
  * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed.
  */
 
+/**
+ * Modelo de Tradução/Extração enquanto o admin não escolheu um (ADR-0034): a env var legada (ADR-0030
+ * dec.2 / #112) ou Sonnet 5. Lido no load do módulo, como antes.
+ */
+export const TASK_FALLBACK_MODELS = {
+  translation: process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5',
+  extraction: process.env.EXTRACTION_MODEL ?? 'claude-sonnet-5',
+}
+
 export type AppConfig = {
   defaultModel: string
+  // ADR-0034: modelo + ajustes (esforço, thinking) por tarefa de IA de texto. `generation.model` ===
+  // `defaultModel` (a coluna segue a fonte do modelo da Geração).
+  aiTasks: AiTasksConfig
   imageGen: ImageGenConfig
   // #167: teto diário de geração de RECEITA por papel (jsonb Record<Role, number|null>, `null` = ∞).
   recipeGenCapByRole: RecipeGenCapByRole
@@ -87,6 +107,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   if (!row) {
     return {
       defaultModel: DEFAULT_TEXT_MODEL,
+      aiTasks: resolveAiTasks({}, { generation: DEFAULT_TEXT_MODEL, ...TASK_FALLBACK_MODELS }),
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
       extractionCapByRole: DEFAULT_EXTRACTION_CAP_BY_ROLE,
@@ -115,6 +136,11 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   const parsedRecipeOfWeek = parseRecipeOfWeekConfig(row.recipeOfWeekConfig)
   return {
     defaultModel: row.defaultModel,
+    // Re-valida na leitura: jsonb legado/editado à mão com lixo cai nos defaults por item (fail-safe).
+    aiTasks: resolveAiTasks(parseStoredAiTasks(row.aiTasks), {
+      generation: row.defaultModel,
+      ...TASK_FALLBACK_MODELS,
+    }),
     imageGen: {
       enabled: row.imageGenEnabled,
       model: isImageGenModel(row.imageGenModel) ? row.imageGenModel : DEFAULT_IMAGE_MODEL,
@@ -190,4 +216,13 @@ export async function loadRecipeOfWeekConfig(db: Database): Promise<RecipeOfWeek
  */
 export async function loadProCaps(db: Database): Promise<ProCaps | null> {
   return (await loadAppConfig(db)).proCaps
+}
+
+/** Atalho (ADR-0034): o modelo em uso + o ajuste efetivo de UMA tarefa de IA de texto. */
+export async function loadAiTask(
+  db: Database,
+  task: AiTask,
+): Promise<{ model: string; settings: ModelSettings }> {
+  const state = (await loadAppConfig(db)).aiTasks[task]
+  return { model: state.model, settings: activeSettings(task, state) }
 }

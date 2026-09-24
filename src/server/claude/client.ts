@@ -19,6 +19,12 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import { selectableFamilyOf } from '@/domain/claude-models'
+import {
+  TASK_DEFAULT_SETTINGS,
+  maxTokensFor,
+  tuningParams,
+  type ModelSettings,
+} from '@/domain/ai-task-config'
 import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -54,6 +60,9 @@ export type GenerationInput = {
   // relê (o systemPrompt já os codifica); a BORDA carimba a versão separadamente via `promptStampFor`
   // no persist. OPCIONAL: ausente ⇒ eixos neutros. O FakeClaudeClient os ignora (devolve canned).
   axes?: PromptAxes
+  // Ajustes do modelo p/ ESTA tarefa (ADR-0034): esforço e thinking escolhidos no admin. OPCIONAL
+  // (back-compat): ausente ⇒ esforço medium nas famílias selecionáveis e thinking no default do modelo.
+  settings?: ModelSettings
 }
 
 /**
@@ -88,7 +97,7 @@ export interface ClaudeClient {
   // estruturados (NÃO gera Receita). Mesma disciplina de structured output de
   // generateRecipe (messages.parse + reparo), mas no `IngredientExtractionSchema` e com
   // um teto de tokens próprio. Reusa `GenerationInput` (já carrega systemPrompt/userPrompt/
-  // model/signal) — a rota passa `model: EXTRACTION_MODEL` (modelo BARATO, não o default).
+  // model/signal) — a rota passa o modelo da tarefa Extração (ADR-0034), não o default da Geração.
   extractIngredients(input: GenerationInput): Promise<ExtractionOutput>
 }
 
@@ -130,19 +139,23 @@ function generationSignal(signal?: AbortSignal): AbortSignal {
 }
 
 /**
- * `effort` só para as famílias selecionáveis (Opus/Sonnet/Fable). Uma linha legada com outro modelo
- * (ex.: Haiku, que dá 400 com `effort`) segue no default dele. Por família, não por versão: um Opus/
- * Sonnet anterior ao 4.5 editado à mão no banco daria 400 — o admin não consegue escolher um.
+ * Ajuste efetivo da Geração: o do admin (ADR-0034) ou, sem ele, esforço medium SÓ nas famílias
+ * selecionáveis (Opus/Sonnet/Fable). Uma linha legada com outro modelo (ex.: Haiku, que dá 400 com
+ * `effort`) segue no default dele.
  */
-function effortFor(model: string): { effort?: typeof GENERATION_EFFORT } {
-  return selectableFamilyOf(model) ? { effort: GENERATION_EFFORT } : {}
+function generationSettings(input: GenerationInput): ModelSettings {
+  if (input.settings) return input.settings
+  return { effort: selectableFamilyOf(input.model) ? GENERATION_EFFORT : null, thinking: 'default' }
 }
 
-// Modelo DEDICADO e BARATO da Extração de ingredientes (#112). Env-overridable. NÃO é o
-// `app_config.default_model` compartilhado da Geração (esse é o OPUS de qualidade): a Extração
-// só organiza uma lista — usar o modelo caro derrotaria o objetivo de custo. A rota de
-// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem a lista selecionável do admin.
-export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
+/** `thinking` + `output_config` (formato + esforço) de uma chamada structured com o ajuste dado. */
+function structuredTuning<F>(format: F, settings: ModelSettings) {
+  const { thinking, effort } = tuningParams(settings)
+  return {
+    ...(thinking ? { thinking } : {}),
+    output_config: { format, ...(effort ? { effort } : {}) },
+  }
+}
 
 /**
  * Loga o erro engolido por um método do seam (que devolve `parse_failed` ao chamador). Abort do
@@ -210,10 +223,10 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
-        // SEM prefill, SEM temperature custom, SEM `thinking`: os modelos 4.7+ rejeitam
-        // prefill/temperature (landmine §11). Sem `thinking`, cada modelo roda no seu default
-        // (Opus 5.5/Fable: adaptive, sempre ligado; Opus 4.8: desligado).
+        // Esforço/thinking do admin (ADR-0034). SEM prefill, SEM temperature custom: os modelos 4.7+
+        // os rejeitam (landmine §11). Thinking `default` ⇒ o parâmetro não vai e cada modelo roda no
+        // seu default (Opus 5.5/Fable: adaptive, sempre ligado; Opus 4.8: desligado).
+        ...structuredTuning(zodOutputFormat(schema), generationSettings(input)),
       }
 
       // O `signal` (opcional) propaga o abort do cliente HTTP ao SDK: se a requisição
@@ -273,7 +286,7 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: VARIANTS_MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
+        ...structuredTuning(zodOutputFormat(schema), generationSettings(input)),
         // SEM temperature/top_p/seed: os modelos 4.7+ os rejeitam (400). A variedade vem do PROMPT
         // (o fragmento de eixo `variacaoDivergente` já embutido no systemPrompt).
       }
@@ -324,9 +337,9 @@ export class RealClaudeClient implements ClaudeClient {
 
   async extractIngredients(input: GenerationInput): Promise<ExtractionOutput> {
     // #463: a Extração NÃO gera linha em `generation` (só organiza uma lista de ingredientes, ADR-0009),
-    // então não há onde carimbar `cost_usd` — o ledger de texto cobre as gerações de Receita. O custo da
-    // Extração usa o modelo BARATO (Haiku) e fica fora do ledger de propósito (não distorce o custo da
-    // Geração). O `message.usage` aqui é descartado conscientemente (não por esquecimento).
+    // então não há onde carimbar `cost_usd` — o ledger de texto cobre as gerações de Receita. O custo
+    // da Extração (modelo da sua tarefa, ADR-0034) fica fora do ledger de propósito (não distorce o
+    // custo da Geração). O `message.usage` aqui é descartado conscientemente (não por esquecimento).
     // Espelha generateRecipe (mesma disciplina ADR-0009: messages.parse + zodOutputFormat +
     // reparo de UMA tentativa), mas no IngredientExtractionSchema e com o teto de tokens da
     // Extração. Lazy: lê ANTHROPIC_API_KEY só na chamada — NUNCA em teste (o teste injeta o
@@ -334,14 +347,17 @@ export class RealClaudeClient implements ClaudeClient {
     // nem item parcial). NÃO ramifica por stop_reason em refusal/max_tokens: para a Extração,
     // qualquer não-sucesso é simplesmente parse_failed (a rota mapeia para 502).
     const client = new Anthropic()
+    const extractionSettings = input.settings ?? TASK_DEFAULT_SETTINGS.extraction
 
     try {
       const params = {
         model: input.model,
-        max_tokens: EXTRACTION_MAX_TOKENS,
+        // Ajuste do admin (ADR-0034); sem ele, o default da tarefa (thinking desligado). Com thinking
+        // possivelmente ligado, o teto ganha folga (os tokens de raciocínio contam no max_tokens).
+        max_tokens: maxTokensFor(EXTRACTION_MAX_TOKENS, extractionSettings),
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(IngredientExtractionSchema) },
+        ...structuredTuning(zodOutputFormat(IngredientExtractionSchema), extractionSettings),
       }
 
       let message = await client.messages.parse(params, { signal: input.signal })

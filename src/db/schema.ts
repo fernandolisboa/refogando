@@ -39,6 +39,7 @@ import { ROLES } from '@/domain/user'
 import { PLANS } from '@/domain/plan'
 import { STRENGTHS } from '@/domain/briefing'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import type { StoredAiTasks } from '@/domain/ai-task-config'
 import type { PromptStamp } from '@/domain/briefing'
 import {
   DEFAULT_IMAGE_MODEL,
@@ -934,6 +935,10 @@ export const appConfig = pgTable(
     // limpo que 3 nullables independentes. O read-path RE-VALIDA (`parseProCaps`) — linha legada/lixo
     // cai em NULL (fail-safe: nunca eleva um teto a partir de um bundle inválido). NÃO ativa cobrança.
     proCaps: jsonb('pro_caps').$type<ProCaps>(),
+    // ADR-0034: modelo + ajustes (esforço, thinking) por TAREFA de IA de texto — Geração, Tradução,
+    // Extração —, com os ajustes guardados POR MODELO. `{}` = tudo nos defaults em código. O modelo da
+    // Geração continua em `default_model` (legado #5). O read-path RE-VALIDA (`parseStoredAiTasks`).
+    aiTasks: jsonb('ai_tasks').$type<StoredAiTasks>().notNull().default({}),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

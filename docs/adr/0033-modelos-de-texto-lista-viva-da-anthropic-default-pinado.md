@@ -4,6 +4,8 @@ Status: aceito
 
 Revisa ADR-0009 (modelo da Geração). Não muda o modelo da tradução (ADR-0030) nem o da Extração.
 
+> **Nota (ADR-0034, 2026-09-24):** o effort da Geração, o modelo e os ajustes da tradução e da Extração passaram a ser configuráveis por tarefa e por modelo no admin. A troca da linha para Opus 5.5 prometida na dec.4 foi na migração 0066. As consequências sobre `EXTRACTION_MODEL` e `thinking: disabled` na tradução abaixo foram substituídas pelo ADR-0034.
+
 O dono pediu (2026-09-24) para subir o modelo da Geração para o Opus 5.5, tirar o Haiku das opções, oferecer o Sonnet e o Opus mais recentes e o Fable, e perguntou se as versões precisam ficar fixas no código. Antes: allowlist fixa `['claude-opus-4-8', 'claude-sonnet-4-6']` duplicada na rota `/api/admin/config` e no select do admin; cada lançamento exigia deploy.
 
 ## Decisões

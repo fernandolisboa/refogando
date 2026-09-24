@@ -15,6 +15,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
 // O setup (test/setup.ts) já carregou o client com o SDK real via deps.ts: recarrega com o dublê.
 vi.resetModules()
 const { RealClaudeClient } = await import('@/server/claude/client')
+const { RealTranslator } = await import('@/server/translation/translator')
 
 function input(model: string) {
   return { model, systemPrompt: 's', userPrompt: 'u' }
@@ -60,5 +61,62 @@ describe('RealClaudeClient.generateRecipe — parâmetros', () => {
     expect(signal.aborted).toBe(false)
     ctrl.abort()
     expect(signal.aborted).toBe(true)
+  })
+})
+
+describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', () => {
+  it('Geração: o ajuste salvo manda effort e thinking; o default não manda thinking', async () => {
+    parse.mockResolvedValue({ stop_reason: 'refusal' })
+    await new RealClaudeClient().generateRecipe({
+      ...input('claude-sonnet-5'),
+      settings: { effort: 'high', thinking: 'off' },
+    })
+    let params = parse.mock.lastCall![0]
+    expect(params.output_config.effort).toBe('high')
+    expect(params.thinking).toEqual({ type: 'disabled' })
+
+    await new RealClaudeClient().generateRecipe(input('claude-opus-5-5'))
+    params = parse.mock.lastCall![0]
+    expect(params).not.toHaveProperty('thinking')
+  })
+
+  it('Extração: default da tarefa desliga o thinking e não manda effort; ajuste adaptativo ganha folga de tokens', async () => {
+    parse.mockResolvedValue({ parsed_output: null })
+    await new RealClaudeClient().extractIngredients(input('claude-sonnet-5'))
+    const base = parse.mock.lastCall![0]
+    expect(base.thinking).toEqual({ type: 'disabled' })
+    expect(base.output_config).not.toHaveProperty('effort')
+
+    await new RealClaudeClient().extractIngredients({
+      ...input('claude-opus-5-5'),
+      settings: { effort: 'low', thinking: 'adaptive' },
+    })
+    const tuned = parse.mock.lastCall![0]
+    expect(tuned.model).toBe('claude-opus-5-5')
+    expect(tuned.thinking).toEqual({ type: 'adaptive' })
+    expect(tuned.output_config.effort).toBe('low')
+    expect(tuned.max_tokens).toBeGreaterThan(base.max_tokens)
+  })
+
+  it('Tradução: usa o modelo e o ajuste que o loader devolve a cada chamada', async () => {
+    parse.mockResolvedValue({
+      stop_reason: 'end_turn',
+      parsed_output: { titulo: 'T', descricao: 'D', passos: ['P'], notas: null },
+    })
+    const translator = new RealTranslator(async () => ({
+      model: 'claude-opus-5-5',
+      settings: { effort: 'medium', thinking: 'default' },
+    }))
+    await translator
+      .translate({
+        sourceLocale: 'pt-BR',
+        targetLocale: 'en-US',
+        fields: { titulo: 'T', descricao: 'D', passos: ['P'], notas: null },
+      })
+      .catch(() => undefined)
+    const params = parse.mock.lastCall![0]
+    expect(params.model).toBe('claude-opus-5-5')
+    expect(params.output_config.effort).toBe('medium')
+    expect(params).not.toHaveProperty('thinking')
   })
 })

@@ -10,6 +10,7 @@
  * lógica testável (prompt, schema, fidelidade) vive no domínio (`translation-prompt.ts`).
  */
 
+import { TASK_DEFAULT_SETTINGS, maxTokensFor, tuningParams, type ModelSettings } from '@/domain/ai-task-config'
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import {
@@ -49,11 +50,17 @@ export interface Translator {
   translate(input: TranslateInput): Promise<TranslateOutput>
 }
 
-// Modelo DEDICADO da tradução (#426, ADR-0030 dec.2). Env-overridable — sobe p/ 'claude-opus-4-8'
-// sem deploy. Opus 5.5 e Fable dão 400 com o `thinking: disabled` abaixo: trocar p/ eles exige tirá-lo.
-// Sonnet 5 equilibra qualidade/custo p/ uma tarefa faithful cacheada (uma vez por
-// receita×locale). Lido no load do módulo (como EXTRACTION_MODEL); o caminho real não é testado.
-export const TRANSLATION_MODEL = process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5'
+/**
+ * Modelo + ajuste da tradução, lidos A CADA chamada (ADR-0034: escolhidos no admin, tarefa
+ * `translation`). Default: Sonnet 5 com thinking desligado (ADR-0030 dec.1/2), ou a env var legada
+ * `TRANSLATION_MODEL`. `deps.ts` injeta o leitor de `app_config`.
+ */
+export type TranslationTaskLoader = () => Promise<{ model: string; settings: ModelSettings }>
+
+const DEFAULT_TRANSLATION_TASK: TranslationTaskLoader = async () => ({
+  model: process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5',
+  settings: TASK_DEFAULT_SETTINGS.translation,
+})
 
 /**
  * O modelo RESPONDEU, mas a saída é inutilizável para ESTA Receita: recusa, truncamento
@@ -107,6 +114,8 @@ function assertUsableStop(stopReason: string | null): void {
  * degrada por try/catch sem escrever (AC4).
  */
 export class RealTranslator implements Translator {
+  constructor(private readonly loadTask: TranslationTaskLoader = DEFAULT_TRANSLATION_TASK) {}
+
   async translate(input: TranslateInput): Promise<TranslateOutput> {
     // Lazy: o SDK lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (injeta-se
     // FakeTranslator via setTranslator). Mesma key da Geração; nenhuma env nova.
@@ -120,16 +129,19 @@ export class RealTranslator implements Translator {
       contexto: input.contexto,
     })
 
+    const { model, settings } = await this.loadTask()
+    const { thinking, effort } = tuningParams(settings)
     const params = {
-      model: TRANSLATION_MODEL,
-      max_tokens: TRANSLATION_MAX_TOKENS,
+      model,
+      // Com thinking possivelmente ligado, o teto ganha folga (os tokens de raciocínio contam nele).
+      max_tokens: maxTokensFor(TRANSLATION_MAX_TOKENS, settings),
       system: systemPrompt,
       messages: [{ role: 'user' as const, content: userPrompt }],
-      output_config: { format: zodOutputFormat(TranslationSchema) },
-      // `thinking: disabled` EXPLÍCITO (ADR-0030 dec.1): Sonnet 5 roda adaptive-thinking por
-      // OMISSÃO — sem isso os tokens de raciocínio dividem o teto com o JSON e a saída trunca
-      // (→ throw → degrada). Sem temperature/top_p/seed: Opus/Sonnet os rejeitam (400).
-      thinking: { type: 'disabled' as const },
+      output_config: { format: zodOutputFormat(TranslationSchema), ...(effort ? { effort } : {}) },
+      // Thinking do admin (ADR-0034); o default da tarefa é `disabled` EXPLÍCITO (ADR-0030 dec.1):
+      // Sonnet 5 roda adaptive-thinking por OMISSÃO e os tokens de raciocínio dividiriam o teto com o
+      // JSON. Sem temperature/top_p/seed: Opus/Sonnet os rejeitam (400).
+      ...(thinking ? { thinking } : {}),
     }
 
     let message = await parseTranslation(() => client.messages.parse(params))

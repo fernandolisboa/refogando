@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { GET, PUT } from '@/app/api/admin/config/route'
 import { GET as modelsGet } from '@/app/api/admin/models/route'
-import { getDb, setModelCatalog } from '@/server/deps'
+import { getDb, setModelCatalog, setModelProbe } from '@/server/deps'
 import type { ModelCatalog } from '@/server/claude/model-catalog'
 import type { CatalogModel } from '@/domain/claude-models'
 import { loadAppConfig } from '@/server/app-config'
@@ -766,5 +766,114 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
   it('linha legada com modelo fora da lista segue legível (não é reescrita na leitura)', async () => {
     await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-haiku-4-5-20251001' })
     expect((await loadAppConfig(getDb())).defaultModel).toBe('claude-haiku-4-5-20251001')
+  })
+})
+
+describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)', () => {
+  const OFF = { effort: null, thinking: 'off' }
+  const HIGH = { effort: 'high', thinking: 'adaptive' }
+
+  async function admin() {
+    return (await seedSessionHeaders({ email: 'admin-ia@cfg.test', role: 'admin' })).headers
+  }
+
+  it('GET sem linha: modelos e ajustes default de cada tarefa', async () => {
+    const body = await (await get(await admin())).json()
+    expect(body.aiTasks).toEqual({
+      generation: { model: 'claude-opus-5-5', byModel: {} },
+      translation: { model: 'claude-sonnet-5', byModel: {} },
+      extraction: { model: 'claude-sonnet-5', byModel: {} },
+    })
+  })
+
+  it('Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'cur-ia@cfg.test', role: 'curador' })
+    expect((await put({ aiTasks: { extraction: { model: 'claude-opus-5-5', settings: OFF } } }, headers)).status).toBe(403)
+  })
+
+  it('salva o ajuste POR MODELO; trocar de modelo e voltar recupera o ajuste anterior', async () => {
+    const headers = await admin()
+    expect(
+      (await put({ aiTasks: { translation: { model: 'claude-sonnet-5', settings: { effort: 'low', thinking: 'off' } } } }, headers)).status,
+    ).toBe(200)
+    const res = await put({ aiTasks: { translation: { model: 'claude-opus-5-5', settings: HIGH } } }, headers)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.aiTasks.translation).toEqual({
+      model: 'claude-opus-5-5',
+      byModel: { 'claude-sonnet-5': { effort: 'low', thinking: 'off' }, 'claude-opus-5-5': HIGH },
+    })
+    // Outros eixos e tarefas intactos.
+    expect(body.aiTasks.extraction.model).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-opus-5-5')
+  })
+
+  it('Geração grava o modelo em default_model (a coluna que as rotas leem)', async () => {
+    const res = await put({ aiTasks: { generation: { model: 'claude-fable-5-1', settings: HIGH } } }, await admin())
+    expect(res.status).toBe(200)
+    const cfg = await loadAppConfig(getDb())
+    expect(cfg.defaultModel).toBe('claude-fable-5-1')
+    expect(cfg.aiTasks.generation).toEqual({ model: 'claude-fable-5-1', byModel: { 'claude-fable-5-1': HIGH } })
+  })
+
+  it('chamada de teste recusada ⇒ 400 ajuste_recusado com o motivo; nada é gravado', async () => {
+    const calls: unknown[] = []
+    setModelProbe({
+      probe: async (model, settings) => {
+        calls.push({ model, settings })
+        return { kind: 'rejected', message: 'thinking.type.disabled is not supported on this model' }
+      },
+    })
+    const res = await put({ aiTasks: { extraction: { model: 'claude-opus-5-5', settings: OFF } } }, await admin())
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      error: 'ajuste_recusado',
+      task: 'extraction',
+      message: 'thinking.type.disabled is not supported on this model',
+    })
+    expect(calls).toEqual([{ model: 'claude-opus-5-5', settings: OFF }])
+    expect((await loadAppConfig(getDb())).aiTasks.extraction.model).toBe('claude-sonnet-5')
+  })
+
+  it('ajuste fora das capacidades da Models API ⇒ 400 ajuste_nao_suportado, sem chamada de teste', async () => {
+    setModelCatalog(
+      catalogOf(async () => [
+        {
+          id: 'claude-sonnet-5',
+          displayName: 'Claude Sonnet 5',
+          createdAt: '2026-05-01T00:00:00Z',
+          capabilities: { effort: ['low', 'medium', 'high'], adaptiveThinking: true },
+        },
+      ]),
+    )
+    let probed = false
+    setModelProbe({
+      probe: async () => {
+        probed = true
+        return { kind: 'ok' }
+      },
+    })
+    const res = await put(
+      { aiTasks: { translation: { model: 'claude-sonnet-5', settings: { effort: 'max', thinking: 'off' } } } },
+      await admin(),
+    )
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'ajuste_nao_suportado', task: 'translation' })
+    expect(probed).toBe(false)
+  })
+
+  it('tarefa desconhecida, corpo vazio ou modelo fora da lista ⇒ 400', async () => {
+    const headers = await admin()
+    const cases: Array<[unknown, string]> = [
+      [{ aiTasks: { resumo: { model: 'claude-opus-5-5', settings: OFF } } }, 'config_invalida'],
+      [{ aiTasks: {} }, 'config_invalida'],
+      [{ aiTasks: { extraction: { model: 'claude-opus-5-5', settings: { thinking: 'talvez' } } } }, 'config_invalida'],
+      [{ aiTasks: { extraction: { model: 'claude-haiku-4-5-20251001', settings: OFF } } }, 'modelo_invalido'],
+    ]
+    for (const [body, error] of cases) {
+      const res = await put(body, headers)
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe(error)
+    }
   })
 })

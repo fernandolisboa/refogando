@@ -1,7 +1,14 @@
 import { requireRole } from '@/server/auth/guard'
-import { getDb, getModelCatalog } from '@/server/deps'
+import { getDb, getModelCatalog, getModelProbe } from '@/server/deps'
 import { loadSelectableModels } from '@/server/claude/model-catalog'
-import { selectableFamilyOf } from '@/domain/claude-models'
+import { isAcceptableModel, validateAiTaskUpdate } from '@/server/claude/ai-task-update'
+import {
+  AI_TASKS,
+  parseStoredAiTasks,
+  withTaskSettings,
+  type AiTask,
+  type StoredAiTasks,
+} from '@/domain/ai-task-config'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
@@ -48,32 +55,14 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  *    de cota. `null` LIMPA a tabela pro (volta ao byte-idêntico free); objeto ⇒ validado (tudo-ou-nada).
  *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
  *
- * PUT aceita `defaultModel` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
+ *  - `aiTasks { [tarefa]: { model, settings } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
+ *    IA de texto (Geração, Tradução, Extração), validados por capacidades + chamada de teste.
+ *
+ * PUT aceita `defaultModel` E/OU `aiTasks` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
  * `catalogDisclosure` E/OU `recipeOfWeek` E/OU `proCaps` (ao menos um); valida cada campo PRESENTE;
  * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
  * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
-/**
- * `defaultModel` aceitável no PUT:
- *  - o que já está salvo (salvar sem mudar nada não vira erro quando saiu um modelo mais novo);
- *  - um da lista selecionável viva;
- *  - com a lista em FALLBACK (API fora nesta instância), qualquer ID de família selecionável: o cache
- *    é por instância, então o GET pode ter vindo de uma instância com a lista viva (modelo novo) e o
- *    PUT cair numa sem — fail-open só dentro das famílias e no formato de ID atual
- *    (`claude-<família>-<maior>[-<menor>]`), nunca um ID arbitrário.
- */
-const CURRENT_ID_SHAPE = /^claude-(opus|sonnet|fable)-\d+(-\d+)?$/
-
-async function isAcceptableDefaultModel(model: string): Promise<boolean> {
-  const { models, source } = await loadSelectableModels(getModelCatalog())
-  if (models.some((opt) => opt.id === model)) return true
-  if (source === 'fallback' && selectableFamilyOf(model) !== null && CURRENT_ID_SHAPE.test(model)) {
-    return true
-  }
-  // Só lê o banco quando a lista não bastou (caso raro: re-salvar o modelo que saiu da lista).
-  return (await loadAppConfig(getDb())).defaultModel === model
-}
-
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
   if (!g.ok) return g.response
@@ -97,6 +86,7 @@ export async function PUT(req: Request): Promise<Response> {
     socialLinks?: unknown
     recipeOfWeek?: unknown
     proCaps?: unknown
+    aiTasks?: unknown
   }
 
   // Acumula só os campos a gravar (upsert parcial). `set` para o onConflict; `insertExtra` p/ o
@@ -117,12 +107,14 @@ export async function PUT(req: Request): Promise<Response> {
     socialLinks: SocialLinksConfig
     recipeOfWeekConfig: RecipeOfWeekConfig
     proCaps: ProCaps | null
+    aiTasks: StoredAiTasks
   }> = {}
 
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
     if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
-    if (!(await isAcceptableDefaultModel(m))) {
+    const current = (await loadAppConfig(getDb())).defaultModel
+    if (!isAcceptableModel(m, current, await loadSelectableModels(getModelCatalog()))) {
       return Response.json({ error: 'modelo_invalido' }, { status: 400 })
     }
     set.defaultModel = m
@@ -235,6 +227,36 @@ export async function PUT(req: Request): Promise<Response> {
       if (parsed === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
       set.proCaps = parsed
     }
+  }
+
+  // ADR-0034: modelo + ajuste (esforço, thinking) por tarefa de IA de texto. Corpo
+  // `{ [tarefa]: { model, settings } }`, uma ou mais tarefas. Cada uma passa pelos três portões de
+  // `validateAiTaskUpdate` (modelo oferecível, capacidades, chamada de teste). Grava o ajuste NO modelo
+  // (os dos outros modelos ficam); o modelo da Geração vai p/ `default_model`.
+  if (body.aiTasks !== undefined) {
+    const entries = typeof body.aiTasks === 'object' && body.aiTasks !== null ? Object.entries(body.aiTasks) : []
+    if (entries.length === 0 || entries.some(([task]) => !(AI_TASKS as readonly string[]).includes(task))) {
+      return Response.json({ error: 'config_invalida' }, { status: 400 })
+    }
+    const current = await loadAppConfig(getDb())
+    const [row] = await getDb().select({ aiTasks: appConfig.aiTasks }).from(appConfig)
+    let stored = parseStoredAiTasks(row?.aiTasks)
+    for (const [key, raw] of entries) {
+      const task = key as AiTask
+      const res = await validateAiTaskUpdate(raw, current.aiTasks[task].model, {
+        catalog: getModelCatalog(),
+        probe: getModelProbe(),
+      })
+      if (!res.ok) {
+        return Response.json(
+          { error: res.error, task, ...('message' in res ? { message: res.message } : {}) },
+          { status: 400 },
+        )
+      }
+      stored = withTaskSettings(stored, task, res.model, res.settings)
+      if (task === 'generation') set.defaultModel = res.model
+    }
+    set.aiTasks = stored
   }
 
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).

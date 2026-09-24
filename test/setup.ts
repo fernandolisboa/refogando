@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, inject } from 'vitest'
 import type { Sql } from 'postgres'
 import type { Database } from '@/db/client'
 import { makeDb, makeSql } from '@/db/client'
-import { setDb, resetDeps, setModelCatalog } from '@/server/deps'
+import { setDb, resetDeps, setModelCatalog, setModelProbe } from '@/server/deps'
 import { truncateAll } from './helpers/db'
 import { seedVocabularyCozinhas } from './helpers/vocabulary'
 
@@ -27,6 +27,8 @@ beforeEach(async () => {
   // Nenhum teste fala com a Models API de verdade: sem dublê explícito, a lista vazia cai no fallback
   // pinado (sem o log de erro da API fora).
   setModelCatalog({ listModels: async () => [] })
+  // Nem a chamada de teste de modelo (ADR-0034): sem dublê explícito, a Anthropic "aceita" tudo.
+  setModelProbe({ probe: async () => ({ kind: 'ok' }) })
   await truncateAll(sql)
   // Baseline de PRODUÇÃO: `vocabulary_term` nunca está vazia — a migração 0033 (#314) semeia as
   // cozinhas no deploy. `truncateAll` apaga essa seed antes de cada teste, então re-semeamos o
