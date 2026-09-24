@@ -12,7 +12,7 @@ import { RealBrevoMailer, type Mailer } from '@/server/mail/mailer'
 import { FakeBillingProvider, type BillingProvider } from '@/server/billing/provider'
 
 /**
- * Raiz de composição (DI) da fundação. Sete seams com um dono cada:
+ * Raiz de composição (DI) da fundação. Seams com um dono cada:
  *  - getDb()               → Postgres (Drizzle)
  *  - getClaudeClient()     → seam do Claude
  *  - getModelCatalog()     → seam da Models API da Anthropic (select de modelo do admin)

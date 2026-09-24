@@ -10,5 +10,6 @@ import { loadSelectableModels } from '@/server/claude/model-catalog'
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
   if (!g.ok) return g.response
-  return Response.json({ models: await loadSelectableModels(getModelCatalog()) })
+  const { models } = await loadSelectableModels(getModelCatalog())
+  return Response.json({ models })
 }

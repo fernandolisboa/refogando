@@ -18,8 +18,7 @@ import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { fieldClassName } from '@/components/button'
-
-type ModelOption = { id: string; displayName: string }
+import type { ModelOption } from '@/domain/claude-models'
 
 export function ConfigSection() {
   const { messages } = useLocale()

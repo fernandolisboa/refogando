@@ -743,6 +743,25 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     expect((await put({ defaultModel: 'claude-fable-5-1' }, headers)).status).toBe(200)
   })
 
+  it('salvar o modelo JÁ em uso é aceito mesmo fora da lista (no-op não vira erro)', async () => {
+    await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-opus-4-8' })
+    const { headers } = await seedSessionHeaders({ email: 'admin-same@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-opus-4-8' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(400)
+  })
+
+  it('em fallback, aceita um ID de família selecionável (outra instância pode ter listado) e recusa o resto', async () => {
+    setModelCatalog(
+      catalogOf(async () => {
+        throw new Error('rede')
+      }),
+    )
+    const { headers } = await seedSessionHeaders({ email: 'admin-failopen@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-opus-6' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-haiku-4-5-20251001' }, headers)).status).toBe(400)
+    expect((await put({ defaultModel: 'gpt-4' }, headers)).status).toBe(400)
+  })
+
   it('linha legada com modelo fora da lista segue legível (não é reescrita na leitura)', async () => {
     await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-haiku-4-5-20251001' })
     expect((await loadAppConfig(getDb())).defaultModel).toBe('claude-haiku-4-5-20251001')

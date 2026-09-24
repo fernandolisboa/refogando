@@ -57,9 +57,6 @@ import {
  * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed.
  */
 
-// Fonte única em `domain/claude-models.ts` (o mesmo default das rotas de geração).
-export const DEFAULT_CHAT_MODEL = DEFAULT_TEXT_MODEL
-
 export type AppConfig = {
   defaultModel: string
   imageGen: ImageGenConfig
@@ -89,7 +86,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   const [row] = await db.select().from(appConfig)
   if (!row) {
     return {
-      defaultModel: DEFAULT_CHAT_MODEL,
+      defaultModel: DEFAULT_TEXT_MODEL,
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
       extractionCapByRole: DEFAULT_EXTRACTION_CAP_BY_ROLE,

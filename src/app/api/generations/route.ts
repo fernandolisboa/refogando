@@ -2,7 +2,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
-import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
@@ -174,7 +174,7 @@ export async function POST(req: Request): Promise<Response> {
   // ao modelo (#5), ao teto de geração (#167) E à config de variação (#423). Carregada AQUI (ANTES dos
   // prompts) porque o eixo de variação molda o systemPrompt via buildSystemPrompt.
   const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
   // #423: re-valida a config de variação na leitura (fail-safe, espelha loadAppConfig) — linha
   // editada à mão com pólo/instrução vazios cai no DEFAULT, nunca compõe um fragmento sem norte.
   const parsedVariant = parseRecipeVariantConfig(cfg?.recipeVariantConfig)

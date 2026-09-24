@@ -1,7 +1,7 @@
 import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { appConfig } from '@/db/schema'
-import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { runComparison } from '@/server/generation/compare'
 import { FIXED_BRIEFINGS, type ComparisonResponse } from '@/domain/prompt-comparator'
 
@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
   // Modelo de `app_config` (default em código quando a linha singleton está ausente) — mesma fonte
   // única das rotas de geração. Único toque de DB desta rota (leitura); NADA é escrito.
   const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
 
   // Os dois lados em paralelo (velho vs. novo) — cabe no orçamento de 60s de UMA fixture.
   const [oldSide, newSide] = await Promise.all([

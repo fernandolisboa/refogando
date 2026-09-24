@@ -18,7 +18,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
-import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { selectableFamilyOf } from '@/domain/claude-models'
 import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -118,15 +118,28 @@ const VARIANTS_MAX_TOKENS = 20_000
 // não pede raciocínio longo, qualquer que seja o modelo escolhido no admin.
 const GENERATION_EFFORT = 'medium' as const
 
-// Modelo default em código quando `app_config.default_model` (linha singleton) está
-// ausente. As rotas de geração (/api/generations e /api/conversations/stream) resolvem o
-// modelo de app_config e caem AQUI no default. Fonte única em `domain/claude-models.ts`.
-export const DEFAULT_CLAUDE_MODEL = DEFAULT_TEXT_MODEL
+// Prazo TOTAL da Geração (chamada + reparo + retries do SDK), abaixo do `maxDuration = 60` das rotas:
+// estourar vira `parse_failed` controlado em vez de a Vercel matar a função no meio (504 sem resposta).
+const GENERATION_DEADLINE_MS = 50_000
+
+/** Sinal que aborta no abort do cliente HTTP OU no prazo da Geração — o que vier primeiro. */
+function generationSignal(signal?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS)
+  return signal ? AbortSignal.any([signal, deadline]) : deadline
+}
+
+/**
+ * `effort` só para as famílias selecionáveis (Opus/Sonnet/Fable, que aceitam o parâmetro). Uma linha
+ * legada/editada à mão com outro modelo (ex.: Haiku, que dá 400 com `effort`) segue no default dele.
+ */
+function effortFor(model: string): { effort?: typeof GENERATION_EFFORT } {
+  return selectableFamilyOf(model) ? { effort: GENERATION_EFFORT } : {}
+}
 
 // Modelo DEDICADO e BARATO da Extração de ingredientes (#112). Env-overridable. NÃO é o
 // `app_config.default_model` compartilhado da Geração (esse é o OPUS de qualidade): a Extração
 // só organiza uma lista — usar o modelo caro derrotaria o objetivo de custo. A rota de
-// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem ALLOWED_MODELS.
+// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem a lista selecionável do admin.
 export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
 
 /**
@@ -195,7 +208,7 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema), effort: GENERATION_EFFORT },
+        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
         // SEM prefill, SEM temperature custom, SEM `thinking`: os modelos 4.7+ rejeitam
         // prefill/temperature (landmine §11). Sem `thinking`, cada modelo roda no seu default
         // (Opus 5.5/Fable: adaptive, sempre ligado; Opus 4.8: desligado).
@@ -203,7 +216,9 @@ export class RealClaudeClient implements ClaudeClient {
 
       // O `signal` (opcional) propaga o abort do cliente HTTP ao SDK: se a requisição
       // já foi abortada, a chamada estoura e cai no catch (parse_failed) sem queimar quota.
-      let message = await client.messages.parse(params, { signal: input.signal })
+      // Um prazo só p/ chamada + reparo (`generationSignal`).
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
 
       // Branch por stop_reason (NÃO stop_details — esse é só metadado de categoria).
       if (message.stop_reason === 'refusal') return { kind: 'refusal' }
@@ -215,7 +230,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Repair mínimo: se o parser não produziu saída, re-chama UMA vez com a mesma
       // entrada. Ainda null → parse_failed.
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params, { signal: input.signal })
+        message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
         if (message.parsed_output === null) {
@@ -256,19 +271,20 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: VARIANTS_MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema), effort: GENERATION_EFFORT },
+        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
         // SEM temperature/top_p/seed: os modelos 4.7+ os rejeitam (400). A variedade vem do PROMPT
         // (o fragmento de eixo `variacaoDivergente` já embutido no systemPrompt).
       }
 
-      let message = await client.messages.parse(params, { signal: input.signal })
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
       if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
       // Saída structured TRUNCADA lança dentro de messages.parse (→ catch, parse_failed do lote); este
       // branch só trata o sinal max_tokens SEM truncamento do structured.
       if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
 
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params, { signal: input.signal })
+        message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
         if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
         if (message.parsed_output === null) {

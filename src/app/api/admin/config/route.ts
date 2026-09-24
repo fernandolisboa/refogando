@@ -1,6 +1,7 @@
 import { requireRole } from '@/server/auth/guard'
 import { getDb, getModelCatalog } from '@/server/deps'
 import { loadSelectableModels } from '@/server/claude/model-catalog'
+import { selectableFamilyOf } from '@/domain/claude-models'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
@@ -52,6 +53,21 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
  * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
+/**
+ * `defaultModel` aceitável no PUT:
+ *  - o que já está salvo (salvar sem mudar nada não vira erro quando saiu um modelo mais novo);
+ *  - um da lista selecionável viva;
+ *  - com a lista em FALLBACK (API fora nesta instância), qualquer ID de família selecionável: o cache
+ *    é por instância, então o GET pode ter vindo de uma instância com a lista viva (modelo novo) e o
+ *    PUT cair numa sem — fail-open só dentro das famílias, nunca um ID arbitrário.
+ */
+async function isAcceptableDefaultModel(model: string): Promise<boolean> {
+  if ((await loadAppConfig(getDb())).defaultModel === model) return true
+  const { models, source } = await loadSelectableModels(getModelCatalog())
+  if (models.some((opt) => opt.id === model)) return true
+  return source === 'fallback' && selectableFamilyOf(model) !== null
+}
+
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
   if (!g.ok) return g.response
@@ -100,8 +116,7 @@ export async function PUT(req: Request): Promise<Response> {
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
     if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
-    const selectable = await loadSelectableModels(getModelCatalog())
-    if (!selectable.some((opt) => opt.id === m)) {
+    if (!(await isAcceptableDefaultModel(m))) {
       return Response.json({ error: 'modelo_invalido' }, { status: 400 })
     }
     set.defaultModel = m

@@ -49,8 +49,8 @@ export interface Translator {
   translate(input: TranslateInput): Promise<TranslateOutput>
 }
 
-// Modelo DEDICADO da tradução (#426, ADR-0030 dec.2). Env-overridable — sobe p/ 'claude-opus-5-5'
-// sem deploy. Sonnet 5 equilibra qualidade/custo p/ uma tarefa faithful cacheada (uma vez por
+// Modelo DEDICADO da tradução (#426, ADR-0030 dec.2). Env-overridable — sobe p/ 'claude-opus-4-8'
+// sem deploy (Opus 5.5 e Fable dão 400 com o `thinking: disabled` abaixo; trocar p/ eles exige tirá-lo). Sonnet 5 equilibra qualidade/custo p/ uma tarefa faithful cacheada (uma vez por
 // receita×locale). Lido no load do módulo (como EXTRACTION_MODEL); o caminho real não é testado.
 export const TRANSLATION_MODEL = process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5'
 

@@ -835,7 +835,7 @@ export const rateLimit = pgTable(
 // modelos selecionáveis (domain/claude-models.ts). IDs antigos seguem legíveis.
 //
 // #134 (geração de imagem por IA, admin-configurável): `image_gen_enabled` liga/desliga a geração;
-// `image_gen_model` é o modelo do gerador (text livre + allowlist EM CÓDIGO, espelha default_model);
+// `image_gen_model` é o modelo do gerador (text livre + allowlist EM CÓDIGO);
 // `image_gen_cap_by_role` é o teto diário por papel (jsonb Record<Role, number|null>, `null` =
 // ILIMITADO — JSON não tem Infinity). Defaults vêm do domínio (mesma fonte da #132). Colunas planas
 // na MESMA linha singleton (não tabela própria): a config é um punhado de campos, não uma coleção.
