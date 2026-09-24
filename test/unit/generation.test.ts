@@ -3,9 +3,11 @@ import {
   GENERATION_OUTCOMES,
   classify,
   classifyVariants,
+  classifyWithReason,
   type GenerationOutput,
 } from '@/domain/generation'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
+import { localeFromTag } from '@/i18n/locale'
 import { CREATION_MODES, isCreationMode } from '@/domain/recipe'
 
 // Receita "miolo" válida (faixas in-range) para os branches success|degraded|playful.
@@ -207,25 +209,67 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
     ).toEqual({ outcome: 'success', recipe, advisory: null })
   })
 
-  it('originalLocale "" (vazio) → invalid (NÃO persiste lixo)', () => {
-    const recipe = makeReceita({ originalLocale: '' })
-    expect(
-      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
-    ).toEqual({ outcome: 'invalid' })
-  })
-
-  it('originalLocale "xx" (não-suportado) → invalid', () => {
-    const recipe = makeReceita({ originalLocale: 'xx' })
-    expect(
-      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
-    ).toEqual({ outcome: 'invalid' })
-  })
+  it.each(['', 'xx', 'es'])(
+    'originalLocale %j (não reconhecido) → cai no DEFAULT_LOCALE, NÃO falha a geração',
+    (raw) => {
+      const recipe = makeReceita({ originalLocale: raw })
+      const result = classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' })
+      expect(result.outcome).toBe('success')
+      if (result.outcome === 'success') expect(result.recipe.originalLocale).toBe('pt-BR')
+    },
+  )
 
   it('originalLocale suportado ("en-US") preserva o outcome do modelo', () => {
     const recipe = makeReceita({ originalLocale: 'en-US' })
     expect(
       classify({ kind: 'object', recipe, advisory: 'nota', modelKind: 'degraded' }),
     ).toEqual({ outcome: 'degraded', recipe, advisory: 'nota' })
+  })
+})
+
+describe('classifyWithReason — motivo do invalid (só metadado, sem conteúdo)', () => {
+  it('porcoes fora da faixa → motivo nomeia a regra', () => {
+    const recipe = makeReceita({ porcoes: 0 })
+    expect(
+      classifyWithReason({ kind: 'object', recipe, advisory: null, modelKind: 'success' }).reason,
+    ).toBe('porcoes fora da faixa: 0')
+  })
+
+  it('saída não-object → motivo é o kind do seam', () => {
+    expect(classifyWithReason({ kind: 'max_tokens' }).reason).toBe('max_tokens')
+  })
+
+  it('válida → reason null e result igual ao de classify', () => {
+    const recipe = makeReceita()
+    const out: GenerationOutput = { kind: 'object', recipe, advisory: null, modelKind: 'success' }
+    expect(classifyWithReason(out)).toEqual({ result: classify(out), reason: null })
+  })
+})
+
+describe('localeFromTag — locale da saída do modelo → suportado canônico', () => {
+  it.each([
+    ['pt-BR', 'pt-BR'],
+    ['en-US', 'en-US'],
+    ['EN-us', 'en-US'],
+    ['en', 'en-US'],
+    ['en-GB', 'en-US'],
+    ['en_GB', 'en-US'],
+    ['pt', 'pt-BR'],
+    ['pt-PT', 'pt-BR'],
+    [' en ', 'en-US'],
+  ])('%j → %s', (raw, expected) => {
+    expect(localeFromTag(raw)).toBe(expected)
+  })
+
+  it.each(['', '  ', 'xx', 'es', 'es-ES'])('%j → null', (raw) => {
+    expect(localeFromTag(raw)).toBeNull()
+  })
+
+  it("classify de uma Receita com 'en' persiste 'en-US' (não 502)", () => {
+    const recipe = makeReceita({ originalLocale: 'en' })
+    const result = classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' })
+    expect(result.outcome).toBe('success')
+    if (result.outcome === 'success') expect(result.recipe.originalLocale).toBe('en-US')
   })
 })
 
