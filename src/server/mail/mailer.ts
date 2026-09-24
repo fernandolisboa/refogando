@@ -7,14 +7,18 @@
  * (`notifyDpoRedTickets`) e, best-effort, avisar da chegada de um novo ticket. O provedor é o Brevo
  * (`api.brevo.com/v3/smtp/email`) — detalhe trocável atrás do seam, sem SDK (só `fetch` nativo).
  *
+ * Uso v2 (#469): e-mails de CONTA ao próprio Usuário (link de redefinição de senha) via
+ * `sendAccountEmail`. Remetente próprio `AUTH_MAIL_FROM` (caixa "não-responda", separada da do Encarregado);
+ * sem ela, cai no `DSAR_MAIL_FROM` — já verificado no Brevo — para o fluxo funcionar sem env nova.
+ *
  * GATE HUMANO de deploy (como a `WEB_SEARCH_API_KEY` / a Gemini key): sem `BREVO_API_KEY` OU sem
- * `DSAR_MAIL_FROM` (remetente verificado) OU sem destinatário, o Real se comporta como DESLIGADO (retorna
+ * remetente verificado OU sem destinatário, o Real se comporta como DESLIGADO (retorna
  * `{ sent: false }` SEM tocar a rede, nunca lança). A feature só "acende" quando a credencial existe.
  */
 
 /** Um e-mail transacional a enviar. `html` é opcional (o texto puro basta para os alertas de SLA). */
 export type MailInput = {
-  /** Destinatário (o e-mail do Encarregado, `DSAR_DPO_EMAIL`). */
+  /** Destinatário (o Encarregado, `DSAR_DPO_EMAIL`, nos alertas; o próprio Usuário nos e-mails de conta). */
   to: string
   /** Assunto — curto, sem PII de terceiros. */
   subject: string
@@ -31,6 +35,11 @@ export interface Mailer {
    * segue de pé; o cron reenvia no próximo dia). `{ sent: true }` só quando o provedor aceitou o envio.
    */
   sendDpoAlert(input: MailInput): Promise<{ sent: boolean }>
+  /**
+   * Envia um e-mail de CONTA ao próprio Usuário (#469 — link de redefinição de senha). Mesma garantia:
+   * NUNCA lança; sem credencial / remetente / destinatário ou erro do provedor ⇒ `{ sent: false }`.
+   */
+  sendAccountEmail(input: MailInput): Promise<{ sent: boolean }>
 }
 
 /** Endpoint transacional do Brevo (v3). Provedor é detalhe trocável atrás do seam. */
@@ -45,36 +54,45 @@ const BREVO_TIMEOUT_MS = 8_000
  */
 export class RealBrevoMailer implements Mailer {
   async sendDpoAlert(input: MailInput): Promise<{ sent: boolean }> {
-    // Fail-closed: sem credencial, sem remetente verificado OU sem destinatário ⇒ no-op. NÃO toca a rede.
-    const key = process.env.BREVO_API_KEY
-    const from = process.env.DSAR_MAIL_FROM
-    const to = input.to?.trim()
-    if (!key || !from || !to) return { sent: false }
+    return sendViaBrevo(process.env.DSAR_MAIL_FROM, input)
+  }
 
-    try {
-      const res = await fetch(BREVO_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'api-key': key,
-          'content-type': 'application/json',
-          accept: 'application/json',
-        },
-        body: JSON.stringify({
-          sender: { email: from },
-          to: [{ email: to }],
-          subject: input.subject,
-          textContent: input.text,
-          ...(input.html ? { htmlContent: input.html } : {}),
-        }),
-        signal: AbortSignal.timeout(BREVO_TIMEOUT_MS),
-      })
-      // Não-2xx (401/4xx/5xx) ⇒ degrada sem lançar, sem vazar corpo. O ticket segue não-notificado.
-      if (!res.ok) return { sent: false }
-      return { sent: true }
-    } catch {
-      // Rede, DNS, timeout (AbortSignal), TLS — tudo vira { sent: false }.
-      return { sent: false }
-    }
+  async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
+    // `||` (não `??`): env vazia no painel da Vercel chega como '' e deve cair no fallback.
+    return sendViaBrevo(process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM, input)
+  }
+}
+
+/** POST único ao Brevo. `from` resolvido pelo chamador (cada tipo de e-mail tem seu remetente). */
+async function sendViaBrevo(from: string | undefined, input: MailInput): Promise<{ sent: boolean }> {
+  // Fail-closed: sem credencial, sem remetente verificado OU sem destinatário ⇒ no-op. NÃO toca a rede.
+  const key = process.env.BREVO_API_KEY
+  const to = input.to?.trim()
+  if (!key || !from || !to) return { sent: false }
+
+  try {
+    const res = await fetch(BREVO_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'api-key': key,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        sender: { email: from },
+        to: [{ email: to }],
+        subject: input.subject,
+        textContent: input.text,
+        ...(input.html ? { htmlContent: input.html } : {}),
+      }),
+      signal: AbortSignal.timeout(BREVO_TIMEOUT_MS),
+    })
+    // Não-2xx (401/4xx/5xx) ⇒ degrada sem lançar, sem vazar corpo.
+    if (!res.ok) return { sent: false }
+    return { sent: true }
+  } catch {
+    // Rede, DNS, timeout (AbortSignal), TLS — tudo vira { sent: false }.
+    return { sent: false }
   }
 }
 
@@ -83,11 +101,18 @@ export class RealBrevoMailer implements Mailer {
  * asserts e retorna `{ sent: true }`. Cada teste injeta UMA instância via `setMailer`.
  */
 export class FakeMailer implements Mailer {
-  /** E-mails "enviados" nesta instância, na ordem — inspecionável pelos testes. */
+  /** Alertas ao Encarregado "enviados" nesta instância, na ordem — inspecionável pelos testes. */
   readonly sent: MailInput[] = []
+  /** E-mails de conta (#469) "enviados" nesta instância, na ordem. Lista à parte: não polui `sent`. */
+  readonly accountSent: MailInput[] = []
 
   async sendDpoAlert(input: MailInput): Promise<{ sent: boolean }> {
     this.sent.push(input)
+    return { sent: true }
+  }
+
+  async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
+    this.accountSent.push(input)
     return { sent: true }
   }
 }

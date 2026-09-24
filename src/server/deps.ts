@@ -21,7 +21,7 @@ import { FakeBillingProvider, type BillingProvider } from '@/server/billing/prov
  *  - getRecipeImporter()   → seam de importação de receita da web (issue #165, JSON-LD)
  *  - getRecipeProbe()      → seam do PROBE de saúde admin (issue #273, JSON-LD + robots, sem persistir)
  *  - getWebSearchProvider()→ seam de DESCOBERTA na web (issue #164, links externos ADR-0019)
- *  - getMailer()           → seam de E-MAIL transacional (issue #413, alerta do Encarregado, Brevo)
+ *  - getMailer()           → seam de E-MAIL transacional (issue #413 alerta do Encarregado; #469 reset de senha; Brevo)
  *  - getBillingProvider()  → seam do PSP de pagamento (Fase 2 billing, flag-off; default = Fake, sem PSP real)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês

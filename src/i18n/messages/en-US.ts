@@ -447,6 +447,28 @@ export const enUS: Messages = {
     erroSenhaCurta: 'Password must be at least 8 characters.',
     erroRede: 'Could not connect. Please try again.',
     erroGenerico: 'Could not complete. Please try again.',
+    // Forgot password (#469). The confirmation is NEUTRAL on purpose: it never says whether the email has an account.
+    esqueciSenha: 'Forgot your password?',
+    redefinirTitulo: 'Reset password',
+    redefinirDescricao: "Enter your account's email and we'll send you a link to create a new password.",
+    enviarLink: 'Send link',
+    linkEnviado:
+      'If an account exists for this email, we sent a link to reset the password. Check your inbox and spam folder.',
+    voltarEntrar: 'Back to sign in',
+    novaSenhaTitulo: 'Create a new password',
+    novaSenha: 'New password',
+    salvarSenha: 'Save new password',
+    senhaRedefinida: 'Password changed. Sign in with your new password.',
+    erroLinkInvalido: 'This link has expired or was already used. Request a new one.',
+    pedirNovoLink: 'Request a new link',
+    erroMuitasTentativas: 'Too many attempts. Wait a minute and try again.',
+    // Password reset transactional email (#469). `{nome}` interpolated on the server.
+    emailResetAssunto: 'Reset your Refogando password',
+    emailResetSaudacao: 'Hi {nome},',
+    emailResetCorpo:
+      'We received a request to reset the password for your Refogando account. Use the link below to create a new password. It is valid for 1 hour and can only be used once.',
+    emailResetBotao: 'Create a new password',
+    emailResetIgnorar: "If this wasn't you, ignore this email. Your current password still works.",
   },
   // Tela CRIAR estruturada (#58), mesma substância traduzida (ADR-0001, não byte-idêntica).
   criar: {

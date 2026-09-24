@@ -1,12 +1,13 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin, testUtils } from 'better-auth/plugins'
-import { getDb } from '@/server/deps'
+import { getDb, getMailer } from '@/server/deps'
 import * as schema from '@/db/schema'
 import { ac, roles } from '@/lib/auth-permissions'
 import { DEFAULT_ROLE } from '@/domain/user'
 import { isGoogleConfigured } from '@/server/auth/google'
 import { generateUniqueHandle } from '@/server/handle'
+import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
 
 /**
  * Instância Better Auth (issue #5, ADR-0010/0011). Route handlers, NÃO Server Actions
@@ -92,11 +93,34 @@ function buildAuth() {
         // `/reset-password/*` NÃO casaria o POST `/reset-password`).
         // Reset de senha é caminho SENSÍVEL: NÃO afrouxar acima do default 3/60 do Better Auth (hardening
         // pós-merge — antes estava 5/60, mais frouxo que o próprio default). 3 tentativas/60s por IP.
+        // #469: o pedido de link é `/request-password-reset` no Better Auth 1.6 (`/forget-password` é o nome
+        // antigo, mantido só por garantia caso a lib volte a expô-lo). Cada pedido dispara um e-mail real.
+        '/request-password-reset': { window: 60, max: 3 },
         '/forget-password': { window: 60, max: 3 },
         '/reset-password': { window: 60, max: 3 },
       },
     },
-    emailAndPassword: { enabled: true }, // D3 — sem requireEmailVerification (sem infra de e-mail)
+    emailAndPassword: {
+      enabled: true, // D3 — sem requireEmailVerification
+      // Esqueci minha senha (#469). O Better Auth gera o token (tabela `verification`, uso único) e a rota
+      // GET `/reset-password/:token` que redireciona pra nossa tela com `?token=`. Aqui só mandamos o link.
+      // Conta soft-deletada NÃO recebe e-mail (o gating já a barra; um reset não pode reanimá-la). O
+      // endpoint responde igual exista ou não a conta (sem enumeração pela resposta).
+      sendResetPassword: async ({ user, url }) => {
+        if ((user as { deletedAt?: Date | null }).deletedAt) return
+        await getMailer().sendAccountEmail(
+          buildResetPasswordEmail({
+            to: user.email,
+            name: user.name,
+            locale: (user as { locale?: string | null }).locale,
+            url,
+          }),
+        )
+      },
+      resetPasswordTokenExpiresIn: 60 * 60, // 1h — casa a copy do e-mail
+      // Quem redefine a senha por suspeita de invasão derruba as sessões abertas (inclusive a do invasor).
+      revokeSessionsOnPasswordReset: true,
+    },
     socialProviders: hasGoogle
       ? { google: { clientId: googleId!, clientSecret: googleSecret! } }
       : {},

@@ -68,11 +68,14 @@ export function AuthForm({
   mode,
   googleEnabled,
   returnTo = '/',
+  passwordReset = false,
 }: {
   mode: Mode
   googleEnabled: boolean
   /** Caminho INTERNO pra onde voltar pós-login (#308). Default '/' (Busca/home). */
   returnTo?: string
+  /** Chegou aqui logo após redefinir a senha (#469, `?reset=1`) — mostra a confirmação acima do form. */
+  passwordReset?: boolean
 }) {
   const { messages } = useLocale()
   const router = useRouter()
@@ -144,6 +147,14 @@ export function AuthForm({
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-3xl font-semibold text-fg">{title}</h1>
 
+      {passwordReset && !isSignUp && (
+        <Alert variant="info" role="status">
+          <AlertDescription className="font-medium text-foreground">
+            {messages.auth.senhaRedefinida}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
         {isSignUp && (
           <div className="flex flex-col gap-1.5">
@@ -197,6 +208,14 @@ export function AuthForm({
             <p id="auth-password-hint" className="text-sm text-muted">
               {messages.auth.senhaDica}
             </p>
+          )}
+          {!isSignUp && (
+            <Link
+              href="/forgot-password"
+              className="self-end text-sm font-medium text-brand-ink hover:underline"
+            >
+              {messages.auth.esqueciSenha}
+            </Link>
           )}
         </div>
 
