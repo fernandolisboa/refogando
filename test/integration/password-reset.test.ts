@@ -65,6 +65,24 @@ describe('esqueci minha senha (#469)', () => {
     expect(mailer.sent).toHaveLength(0) // nada no canal do Encarregado
   })
 
+  it('link usa a origem CONFIÁVEL de env, não o Host do request', async () => {
+    await signUp('host@reset.test')
+    await authPost(
+      new Request('http://evil.test/api/auth/request-password-reset', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', host: 'evil.test' },
+        body: JSON.stringify({ email: 'host@reset.test', redirectTo: '/pt-BR/reset-password' }),
+      }),
+    )
+    expect(new URL(lastLink()).origin).toBe('http://localhost:3000')
+  })
+
+  it('no máx. 3 e-mails de reset por conta na janela (anti mail-bombing por destinatário)', async () => {
+    await signUp('bomba@reset.test')
+    for (let i = 0; i < 5; i++) expect((await requestReset('bomba@reset.test')).status).toBe(200)
+    expect(mailer.accountSent).toHaveLength(3)
+  })
+
   it('email inexistente: mesma resposta, nenhum e-mail', async () => {
     await signUp('existe@reset.test')
     const known = await (await requestReset('existe@reset.test')).json()

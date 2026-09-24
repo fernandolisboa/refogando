@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (#469, 2026-09-24):** o **password-reset** saiu do diferido (D3): `sendResetPassword` do Better Auth manda o link pelo mailer Brevo (`sendAccountEmail`, remetente `AUTH_MAIL_FROM` → fallback `DSAR_MAIL_FROM`), token de 1h e uso único, **sessões abertas revogadas** no reset, conta soft-deletada **não** recebe e-mail, no máx. 3 e-mails de reset por conta a cada 15 min. Verificação de e-mail segue diferida.
+
 > **Nota (ADR-0027/0028, 2026-06-30):** o RBAC permanece **3-tier** por decisão consciente — `usuario ⊂ curador ⊂ admin` via `ROLE_RANK`, com `requireRole` hierárquico (o Admin já herda tudo do Curador). A iniciativa de avaliações/notificações exercitou a fronteira Curador/Admin (moderação de avaliação, eventos de restrição) **sem** novo papel — as rotas gateiam `requireRole('curador')` e o Admin herda. Um **`superadmin`** (separação de poderes pra gestão de papéis/config) foi **considerado e deferido**; gatilho pra revisitar = entrar um 2º admin.
 
 A autenticação usa **Better Auth** com adapter Drizzle, route handlers (`toNextJsHandler`) e Node runtime — **sem `nextCookies`, sem Server Actions** (ADR-0010). A identidade do Usuário (ADR-0011) é **domínio** e congela FK; o provider de auth é **stack reversível** (ADR-0010/0011). Este ADR fixa o que não é reversível — o **id uuid estável** de Usuário e a política de **soft-delete** — e registra as dívidas conscientes.

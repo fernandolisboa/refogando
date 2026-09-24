@@ -4,9 +4,11 @@
  * (`requestPasswordReset` → POST /api/auth/request-password-reset). O e-mail é enviado pelo
  * `sendResetPassword` do servidor (`src/lib/auth.ts`).
  *
- * Sem enumeração de contas: qualquer resposta que não seja erro de transporte/limite mostra a MESMA
- * confirmação neutra ("se houver uma conta…"), exista ou não o email. Só o 429 (limite 3/min por IP)
- * e a falha de rede têm mensagem própria — nenhuma das duas revela se a conta existe.
+ * Sem enumeração de contas: o servidor responde IGUAL exista ou não a conta, e aqui sucesso e 400 (email
+ * malformado) mostram a MESMA confirmação neutra ("se houver uma conta…"). Têm mensagem própria só o que não
+ * depende da conta: 429 (limite 3/min por IP), rede, e 403/5xx (pedido recusado — dizer "enviamos" seria falso).
+ * Invariante do servidor: `sendResetPassword` nunca lança (roda depois da resposta e o mailer engole erros),
+ * então nenhum 5xx aqui distingue conta existente.
  *
  * `redirectTo` leva o locale atual: o link do e-mail volta pra `/{locale}/reset-password?token=…`.
  */
@@ -19,7 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-type ErrorKey = 'erroMuitasTentativas' | 'erroRede'
+type ErrorKey = 'erroMuitasTentativas' | 'erroRede' | 'erroGenerico'
 
 export function ForgotPasswordForm() {
   const { locale, messages } = useLocale()
@@ -40,7 +42,8 @@ export function ForgotPasswordForm() {
       })
       if (error?.status === 429) setErrorKey('erroMuitasTentativas')
       else if (error && !error.status) setErrorKey('erroRede')
-      // Qualquer outro desfecho (sucesso, 400 de email malformado…) cai na confirmação neutra.
+      else if (error && (error.status === 403 || error.status >= 500)) setErrorKey('erroGenerico')
+      // Sucesso ou 400 (email malformado) caem na confirmação neutra.
       else setDone(true)
     } catch {
       setErrorKey('erroRede')

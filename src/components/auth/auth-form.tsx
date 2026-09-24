@@ -15,8 +15,8 @@
  * a page (server) rende o ÚNICO `<main>` (via <Container as="main">). Um landmark, um h1.
  *
  * Erro: bloco neutro `role="alert"` (cor `text-fg`, NÃO o token `aviso` — reservado pro
- * Aviso de restrição, ADR-0004). Texto sempre traduzido por CHAVE via `mapErrorToKey`
- * (casa `error.code` do Better Auth), nunca a mensagem crua do servidor.
+ * Aviso de restrição, ADR-0004). Texto sempre traduzido por CHAVE via `mapAuthError`
+ * (`auth-errors.ts`, casa `error.code` do Better Auth), nunca a mensagem crua do servidor.
  */
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
 import { safeInternalPath } from '@/domain/safe-redirect'
+import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,38 +32,9 @@ import { Label } from '@/components/ui/label'
 
 type Mode = 'sign-in' | 'sign-up'
 
-/** Chaves de erro dentro de messages.auth que mapErrorToKey pode devolver. */
-type ErrorKey =
-  | 'erroCredencialInvalida'
-  | 'erroEmailEmUso'
-  | 'erroSenhaCurta'
-  | 'erroRede'
-  | 'erroGenerico'
-
-/** Contexto de erro do cliente Better Auth (better-fetch); `error.code` vem do intersect
- * `Record<string, any>`, então é lido como campo dinâmico (string | undefined). */
-type AuthErrorCtx = { error: { code?: string } & Record<string, unknown> }
-
-/**
- * Traduz o erro do Better Auth para uma chave de messages.auth. Casa por `error.code`
- * (SCREAMING_SNAKE), NÃO por status (PASSWORD_TOO_SHORT é 400, USER_ALREADY_EXISTS_USE_
- * ANOTHER_EMAIL é 422 — o status não discrimina). Sem `code` (fetch rejeitou: rede) →
- * erroRede. Qualquer outro → erroGenerico. NUNCA expõe error.message cru.
- */
-function mapErrorToKey(code: string | undefined): ErrorKey {
-  if (!code) return 'erroRede'
-  switch (code) {
-    case 'INVALID_EMAIL_OR_PASSWORD':
-      return 'erroCredencialInvalida'
-    case 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL':
-    case 'USER_ALREADY_EXISTS':
-      return 'erroEmailEmUso'
-    case 'PASSWORD_TOO_SHORT':
-      return 'erroSenhaCurta'
-    default:
-      return 'erroGenerico'
-  }
-}
+/** Contexto de erro do cliente Better Auth (better-fetch); `status`/`code` vêm do intersect
+ * `Record<string, any>`, então são lidos como campos dinâmicos. */
+type AuthErrorCtx = { error: AuthError & Record<string, unknown> }
 
 export function AuthForm({
   mode,
@@ -92,7 +64,7 @@ export function AuthForm({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [errorKey, setErrorKey] = useState<ErrorKey | null>(null)
+  const [errorKey, setErrorKey] = useState<AuthErrorKey | null>(null)
 
   const title = isSignUp ? messages.auth.criarConta : messages.nav.signIn
   const submitLabel = isSignUp ? messages.auth.criarConta : messages.nav.signIn
@@ -110,7 +82,7 @@ export function AuthForm({
           router.push(dest)
         },
         onError: (ctx: AuthErrorCtx) => {
-          setErrorKey(mapErrorToKey(ctx.error.code))
+          setErrorKey(mapAuthError(ctx.error))
         },
       }
       if (isSignUp) {
@@ -133,7 +105,7 @@ export function AuthForm({
         { provider: 'google', callbackURL: dest },
         {
           onError: (ctx: AuthErrorCtx) => {
-            setErrorKey(mapErrorToKey(ctx.error.code))
+            setErrorKey(mapAuthError(ctx.error))
           },
         },
       )

@@ -13,7 +13,10 @@ import { resolvePageLocale } from '@/server/http/page-locale'
  */
 type LocaleParams = Promise<{ locale: string }>
 
-/** Título fino + NOINDEX — superfície só-logada/personalizada (me/*, create, admin/*), como following. */
+/**
+ * Título fino + NOINDEX — superfície só-logada/personalizada (me/*, create, admin/*), como following, e as
+ * telas ANÔNIMAS de fluxo de conta (#469: forgot-password / reset-password). Mudar o NOINDEX aqui afeta ambas.
+ */
 export async function loggedInPageMetadata(
   params: LocaleParams,
   pick: (m: Messages) => string,

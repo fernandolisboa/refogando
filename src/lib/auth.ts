@@ -1,4 +1,6 @@
 import { betterAuth } from 'better-auth'
+import { and, eq, gt, like, sql } from 'drizzle-orm'
+import { after } from 'next/server'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin, testUtils } from 'better-auth/plugins'
 import { getDb, getMailer } from '@/server/deps'
@@ -8,6 +10,7 @@ import { DEFAULT_ROLE } from '@/domain/user'
 import { isGoogleConfigured } from '@/server/auth/google'
 import { generateUniqueHandle } from '@/server/handle'
 import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
+import { getBaseUrlFromEnv } from '@/server/http/base-url'
 
 /**
  * Instância Better Auth (issue #5, ADR-0010/0011). Route handlers, NÃO Server Actions
@@ -30,6 +33,35 @@ import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
 const authSecret = process.env.BETTER_AUTH_SECRET
 if (!authSecret && process.env.NODE_ENV !== 'test') {
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
+}
+
+/** #469 — teto de e-mails de reset por conta e a janela (ver `sendResetPassword`). */
+const RESET_MAX_PER_WINDOW = 3
+const RESET_WINDOW_MS = 15 * 60 * 1000
+
+/** Quantos pedidos de reset (tokens `reset-password:*`) esta conta fez na janela. */
+async function recentResetRequests(userId: string): Promise<number> {
+  const [{ n }] = await getDb()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.verification)
+    .where(
+      and(
+        eq(schema.verification.value, userId),
+        like(schema.verification.identifier, 'reset-password:%'),
+        gt(schema.verification.createdAt, new Date(Date.now() - RESET_WINDOW_MS)),
+      ),
+    )
+  return n
+}
+
+/**
+ * #469 (SEGURANÇA): sem `BETTER_AUTH_URL`, o Better Auth fixa a base na origem do 1º request da instância —
+ * derivada do `Host`. O link do e-mail NUNCA pode herdar um host forjado (roubo do token), então trocamos a
+ * origem pela base confiável de ENV (`BETTER_AUTH_URL` → `getBaseUrlFromEnv`: APP_URL / domínio de produção).
+ */
+function withTrustedOrigin(url: string): string {
+  const u = new URL(url)
+  return new URL(`${u.pathname}${u.search}`, process.env.BETTER_AUTH_URL || getBaseUrlFromEnv()).toString()
 }
 
 function buildAuth() {
@@ -61,6 +93,32 @@ function buildAuth() {
       // ilimitado). Forçamos a derivação pelo `x-real-ip`, que a edge da Vercel seta e o cliente NÃO
       // sobrescreve. Mesma fonte confiável usada por `clientIpFromHeaders` (http/params.ts).
       ipAddress: { ipAddressHeaders: ['x-real-ip'] },
+      // #469 (anti-enumeração por TEMPO): o e-mail de reset roda DEPOIS da resposta (`after` do Next), senão
+      // conta existente responderia devagar (round-trip do Brevo) e inexistente, na hora. Fora de request
+      // (scripts) `after` lança ⇒ a promise segue sozinha. Em teste, sem handler: o envio é aguardado e o
+      // FakeMailer já tem o e-mail quando a resposta volta.
+      ...(process.env.NODE_ENV === 'test'
+        ? {}
+        : {
+            backgroundTasks: {
+              handler: (task: Promise<unknown>) => {
+                try {
+                  after(task)
+                } catch {
+                  // fora de um request scope do Next: a promise já está rodando.
+                }
+              },
+            },
+          }),
+    },
+    // #469 (LGPD): o Better Auth loga em nível error o email digitado quando não há conta ("Reset Password:
+    // User not found", { email }). Email de terceiro não vai pro log da função; o resto segue o default.
+    logger: {
+      log: (level, message, ...args) => {
+        if (message.startsWith('Reset Password: User not found')) return
+        const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+        out(`[Better Auth] ${message}`, ...args)
+      },
     },
     session: {
       // cookieCache OFF (SEC-1, E5): o gating relê role/deletedAt VIVOS do DB a cada
@@ -108,12 +166,16 @@ function buildAuth() {
       // endpoint responde igual exista ou não a conta (sem enumeração pela resposta).
       sendResetPassword: async ({ user, url }) => {
         if ((user as { deletedAt?: Date | null }).deletedAt) return
+        // Anti mail-bombing por DESTINATÁRIO (o rate limit é por IP): no máx. RESET_MAX_PER_WINDOW e-mails por
+        // conta na janela. Protege a caixa do Usuário e a cota Brevo compartilhada com os alertas do DPO. O
+        // token do pedido atual já foi gravado quando este callback roda, então ele entra na contagem.
+        if ((await recentResetRequests(user.id)) > RESET_MAX_PER_WINDOW) return
         await getMailer().sendAccountEmail(
           buildResetPasswordEmail({
             to: user.email,
             name: user.name,
             locale: (user as { locale?: string | null }).locale,
-            url,
+            url: withTrustedOrigin(url),
           }),
         )
       },

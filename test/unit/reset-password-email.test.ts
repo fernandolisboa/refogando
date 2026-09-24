@@ -29,6 +29,12 @@ describe('buildResetPasswordEmail (#469)', () => {
     expect(mail.subject).toBe('Redefina sua senha do Refogando')
   })
 
+  it('corta nome longo (sem verificação de e-mail, o nome não pode virar texto livre no e-mail)', () => {
+    const mail = buildResetPasswordEmail({ to: 'l@x.test', name: 'x'.repeat(200), locale: null, url: URL })
+    expect(mail.text).toContain(`Olá, ${'x'.repeat(40)}…!`)
+    expect(mail.text).not.toContain('x'.repeat(41))
+  })
+
   it('escapa o nome no HTML (sem injeção de markup) e usa o email sem nome', () => {
     const evil = buildResetPasswordEmail({ to: 'e@x.test', name: '<b>Eve</b>', locale: null, url: URL })
     expect(evil.html).not.toContain('<b>Eve</b>')

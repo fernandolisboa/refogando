@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { Container } from '@/components/container'
 import { ResetPasswordForm } from '@/components/auth/reset-password-form'
 import { loggedInPageMetadata } from '@/server/http/page-metadata'
+import { parseResetToken } from '@/components/auth/auth-errors'
 
 export async function generateMetadata({
   params,
@@ -20,10 +21,9 @@ export async function generateMetadata({
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string | string[]; error?: string }>
+  searchParams: Promise<{ token?: string | string[]; error?: string | string[] }>
 }) {
-  const { token, error } = await searchParams
-  const valid = !error && typeof token === 'string' && token.length > 0 ? token : null
+  const valid = parseResetToken(await searchParams)
   return (
     <Container as="main" className="py-16">
       <div className="mx-auto w-full max-w-sm">

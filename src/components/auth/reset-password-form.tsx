@@ -13,23 +13,14 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { resetPassword } from '@/lib/auth-client'
+import { mapAuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-type ErrorKey = 'erroLinkInvalido' | 'erroSenhaCurta' | 'erroMuitasTentativas' | 'erroRede' | 'erroGenerico'
-
 /** Mínimo do Better Auth (default `minPasswordLength`), o mesmo do cadastro. */
 const MIN_PASSWORD = 8
-
-function mapErrorToKey(error: { status?: number; code?: string }): ErrorKey {
-  if (!error.status) return 'erroRede'
-  if (error.status === 429) return 'erroMuitasTentativas'
-  if (error.code === 'INVALID_TOKEN') return 'erroLinkInvalido'
-  if (error.code === 'PASSWORD_TOO_SHORT') return 'erroSenhaCurta'
-  return 'erroGenerico'
-}
 
 export function ResetPasswordForm({ token }: { token: string | null }) {
   const { messages } = useLocale()
@@ -37,7 +28,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
   const router = useRouter()
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [errorKey, setErrorKey] = useState<ErrorKey | null>(token ? null : 'erroLinkInvalido')
+  const [errorKey, setErrorKey] = useState<AuthErrorKey | null>(token ? null : 'erroLinkInvalido')
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -50,7 +41,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     setErrorKey(null)
     try {
       const { error } = await resetPassword({ newPassword: password, token })
-      if (error) setErrorKey(mapErrorToKey(error))
+      if (error) setErrorKey(mapAuthError(error))
       else router.push('/sign-in?reset=1')
     } catch {
       setErrorKey('erroRede')

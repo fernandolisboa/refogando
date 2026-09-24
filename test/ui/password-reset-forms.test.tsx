@@ -70,6 +70,26 @@ describe('ForgotPasswordForm (#469)', () => {
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
   })
 
+  it('403/5xx (pedido recusado) NÃO diz que enviou: mostra erro genérico', async () => {
+    for (const status of [403, 500]) {
+      requestPasswordReset.mockResolvedValueOnce({ data: null, error: { status } })
+      const { unmount } = wrap(<ForgotPasswordForm />)
+      await userEvent.type(screen.getByLabelText('Email'), 'ana@x.test')
+      await userEvent.click(screen.getByRole('button', { name: 'Enviar link' }))
+      expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível concluir')
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('erro sem status (fetch não completou) mostra erro de conexão', async () => {
+    requestPasswordReset.mockResolvedValue({ data: null, error: {} })
+    wrap(<ForgotPasswordForm />)
+    await userEvent.type(screen.getByLabelText('Email'), 'ana@x.test')
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar link' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível conectar')
+  })
+
   it('falha de rede (rejeição) mostra erro de conexão', async () => {
     requestPasswordReset.mockRejectedValue(new TypeError('offline'))
     wrap(<ForgotPasswordForm />)
@@ -107,6 +127,28 @@ describe('ResetPasswordForm (#469)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' }))
     expect(resetPassword).toHaveBeenCalledWith({ newPassword: 'senha-nova-123', token: 'tok' })
     expect(push).toHaveBeenCalledWith('/sign-in?reset=1')
+  })
+
+  it.each([
+    [{ status: 429 }, 'Muitas tentativas'],
+    [{ status: 500 }, 'Não foi possível concluir'],
+    [{}, 'Não foi possível conectar'],
+  ])('erro %j mantém o formulário e mostra "%s"', async (error, text) => {
+    resetPassword.mockResolvedValue({ data: null, error })
+    wrap(<ResetPasswordForm token="tok" />)
+    await userEvent.type(screen.getByLabelText('Nova senha'), 'senha-nova-123')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(text)
+    expect(screen.getByLabelText('Nova senha')).toBeInTheDocument()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('rejeição (rede) mostra erro de conexão', async () => {
+    resetPassword.mockRejectedValue(new TypeError('offline'))
+    wrap(<ResetPasswordForm token="tok" />)
+    await userEvent.type(screen.getByLabelText('Nova senha'), 'senha-nova-123')
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível conectar')
   })
 
   it('token recusado pelo servidor: troca o formulário pelo pedido de novo link', async () => {
