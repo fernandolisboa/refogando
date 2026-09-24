@@ -4,10 +4,10 @@ import {
   classify,
   classifyVariants,
   classifyWithReason,
-  normalizeGeneratedLocale,
   type GenerationOutput,
 } from '@/domain/generation'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
+import { localeFromTag } from '@/i18n/locale'
 import { CREATION_MODES, isCreationMode } from '@/domain/recipe'
 
 // Receita "miolo" válida (faixas in-range) para os branches success|degraded|playful.
@@ -246,7 +246,7 @@ describe('classifyWithReason — motivo do invalid (só metadado, sem conteúdo)
   })
 })
 
-describe('normalizeGeneratedLocale — locale da saída do modelo → suportado canônico', () => {
+describe('localeFromTag — locale da saída do modelo → suportado canônico', () => {
   it.each([
     ['pt-BR', 'pt-BR'],
     ['en-US', 'en-US'],
@@ -258,11 +258,11 @@ describe('normalizeGeneratedLocale — locale da saída do modelo → suportado 
     ['pt-PT', 'pt-BR'],
     [' en ', 'en-US'],
   ])('%j → %s', (raw, expected) => {
-    expect(normalizeGeneratedLocale(raw)).toBe(expected)
+    expect(localeFromTag(raw)).toBe(expected)
   })
 
   it.each(['', '  ', 'xx', 'es', 'es-ES'])('%j → null', (raw) => {
-    expect(normalizeGeneratedLocale(raw)).toBeNull()
+    expect(localeFromTag(raw)).toBeNull()
   })
 
   it("classify de uma Receita com 'en' persiste 'en-US' (não 502)", () => {

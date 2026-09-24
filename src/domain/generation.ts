@@ -15,7 +15,7 @@
  */
 
 import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, canonicalLocale, type Locale } from '@/i18n/locale'
+import { DEFAULT_LOCALE, localeFromTag } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 import type { TextUsage } from '@/domain/text-cost'
 
@@ -67,9 +67,10 @@ export type ClassifyResult =
 /**
  * Mapeia o cru da fronteira para a taxonomia. refusal/max_tokens/parse_failed →
  * invalid. object+impossible → impossible (carrega advisory, sem recipe).
- * object+{success,degraded,playful} → checa faixa no app: se porcoes E dificuldade
- * válidas → outcome = modelKind (carrega recipe+advisory); senão → invalid (NÃO
- * clampar). Um valor fora-de-faixa na saída do modelo vira erro de sistema.
+ * object+{success,degraded,playful} → checa faixa no app: se porcoes, dificuldade e
+ * quantidades válidas → outcome = modelKind (carrega recipe+advisory); senão → invalid (NÃO
+ * clampar). Um valor fora-de-faixa na saída do modelo vira erro de sistema. O originalLocale
+ * NÃO invalida: é normalizado (idioma-base, fallback DEFAULT_LOCALE).
  */
 export function classify(out: GenerationOutput): ClassifyResult {
   return classifyWithReason(out).result
@@ -102,25 +103,12 @@ export function classifyWithReason(out: GenerationOutput): {
   // Normaliza pelo idioma; idioma não reconhecido (vazio, 'es', lixo) cai no DEFAULT_LOCALE em vez de
   // descartar uma Receita boa — o idioma é metadado da tradução, não motivo pra falhar a geração.
   const rawLocale = recipe.originalLocale
-  const locale = normalizeGeneratedLocale(rawLocale) ?? DEFAULT_LOCALE
+  const locale = localeFromTag(rawLocale) ?? DEFAULT_LOCALE
   // quantidade fora-de-faixa (não-numérica/overflow) NUNCA chega ao DB → invalid.
   const badQtd = recipe.ingredientes.filter((ing) => !isQuantidadeValida(ing.quantidade)).length
   if (badQtd > 0) return invalid(`quantidade inválida em ${badQtd} ingrediente(s)`)
   const normalized = locale === rawLocale ? recipe : { ...recipe, originalLocale: locale }
   return { result: { outcome: out.modelKind, recipe: normalized, advisory: out.advisory }, reason: null }
-}
-
-/**
- * Locale da SAÍDA do modelo → locale suportado canônico. Casa exato (case-insensitive) e, senão, pelo
- * idioma: 'en'/'en-GB' → 'en-US', 'pt'/'pt-PT' → 'pt-BR' (só há um locale por idioma). `null` se o
- * idioma não é suportado.
- */
-export function normalizeGeneratedLocale(v: string): Locale | null {
-  const exact = canonicalLocale(v.trim())
-  if (exact !== null) return exact
-  const lang = v.trim().toLowerCase().split(/[-_]/)[0]
-  if (lang === '') return null
-  return SUPPORTED_LOCALES.find((l) => l.toLowerCase().split('-')[0] === lang) ?? null
 }
 
 /**

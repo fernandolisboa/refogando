@@ -31,6 +31,20 @@ export function isSupportedLocale(v: string): v is Locale {
 }
 
 /**
+ * Tag BCP-47 → locale suportado: casa exato (case-insensitive) e, senão, pelo idioma-base
+ * ('pt' → 'pt-BR', 'en-GB'/'en_GB' → 'en-US' — só há um locale por idioma). `null` se o idioma
+ * não é suportado. Fonte única do casamento por idioma (Accept-Language e saída da geração).
+ */
+export function localeFromTag(tag: string): Locale | null {
+  const t = tag.trim()
+  const canon = canonicalLocale(t)
+  if (canon) return canon
+  const base = t.split(/[-_]/)[0].toLowerCase()
+  if (base === '') return null
+  return SUPPORTED_LOCALES.find((l) => l.split('-')[0].toLowerCase() === base) ?? null
+}
+
+/**
  * Resolve o locale a usar a partir de uma preferência explícita OU do header
  * Accept-Language do navegador. Locale não suportado → DEFAULT_LOCALE (D10, #4.AC3):
  * nunca tela quebrada. `preferred` (ex.: cookie do Visitante ou users.locale do logado)
@@ -45,10 +59,7 @@ export function resolveLocale(input: {
     if (canon) return canon // case-insensitive: 'EN-US'/'pt-br' → forma canônica
   }
   for (const tag of parseAcceptLanguage(input.acceptLanguage)) {
-    const canon = canonicalLocale(tag)
-    if (canon) return canon
-    const base = tag.split('-')[0].toLowerCase()
-    const match = SUPPORTED_LOCALES.find((l) => l.split('-')[0].toLowerCase() === base)
+    const match = localeFromTag(tag)
     if (match) return match // ex.: 'pt' → 'pt-BR', 'EN' → 'en-US'
   }
   return DEFAULT_LOCALE
