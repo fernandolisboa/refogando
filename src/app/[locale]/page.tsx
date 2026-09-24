@@ -89,7 +89,10 @@ export default async function Home({
     loadDiscoveryFeed(db, { requestLocale: locale }),
     loadRecipeOfTheWeek(db, locale),
     // Opcional: falha nesta leitura NÃO derruba a home — só esconde os gatilhos da web.
-    loadWebSearchConfig(db).catch(() => null),
+    loadWebSearchConfig(db).catch((err: unknown) => {
+      console.warn('[home] falha ao ler a config da descoberta na web; gatilhos escondidos', err)
+      return null
+    }),
   ])
   // Descoberta na web LIGADA de fato: flag admin + allowlist não vazia + chave do provedor (sem a chave o
   // provedor devolve `[]`). Desligada ⇒ a Busca esconde os gatilhos "Buscar na web" (beco sem saída).

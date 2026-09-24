@@ -14,12 +14,14 @@ describe('searchTermReadiness', () => {
 
   it(`menos de ${GENERATE_FROM_SEARCH_MIN_LETTERS} letras ⇒ too_short`, () => {
     expect(searchTermReadiness('fr')).toBe('too_short')
-    expect(searchTermReadiness(' ovo ')).toBe('too_short')
     // Números não contam como letras.
-    expect(searchTermReadiness('pão 2')).toBe('too_short')
+    expect(searchTermReadiness('fr 22')).toBe('too_short')
   })
 
   it(`${GENERATE_FROM_SEARCH_MIN_LETTERS}+ letras ⇒ ok (acentos contam como letra)`, () => {
+    // Pratos de três letras são pedidos legítimos.
+    expect(searchTermReadiness(' ovo ')).toBe('ok')
+    expect(searchTermReadiness('chá')).toBe('ok')
     expect(searchTermReadiness('bolo')).toBe('ok')
     expect(searchTermReadiness('açaí')).toBe('ok')
     expect(searchTermReadiness('feijão tropeiro')).toBe('ok')
@@ -35,5 +37,13 @@ describe('createFromSearchHref', () => {
     expect(createFromSearchHref('')).toBe('/create')
     expect(createFromSearchHref('123')).toBe('/create')
     expect(createFromSearchHref('fr')).toBe('/create')
+  })
+
+  it('termo enorme é cortado para o destino caber no returnTo do login (<= 512)', () => {
+    const href = createFromSearchHref('ç'.repeat(400) + ' 拉面'.repeat(100))
+    expect(href.startsWith('/create?q=')).toBe(true)
+    expect(href.length).toBeLessThanOrEqual(512)
+    // Corta por code point: o que sobra ainda decodifica sem lançar (sem sequência partida).
+    expect(() => decodeURIComponent(href.slice('/create?q='.length))).not.toThrow()
   })
 })

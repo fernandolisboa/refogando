@@ -161,7 +161,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     const user = userEvent.setup()
     renderSearch()
 
-    await user.type(screen.getByRole('searchbox'), 'fei')
+    await user.type(screen.getByRole('searchbox'), 'fe')
     await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
     expect(screen.queryByText(M.gerarAtalhoLead)).not.toBeInTheDocument()
   })

@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -99,8 +99,6 @@ export function SearchExperience({
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
-  const pathname = usePathname()
-  const returnTo = pathname ?? '/'
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -692,7 +690,6 @@ export function SearchExperience({
                       conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
                       conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
                       signInLabel={messages.nav.signIn}
-                      returnTo={returnTo}
                     />
                   )}
                   {/* Card "Buscar na web": SÓ com termo (`handleWebManual` early-returns sem `q` ⇒ na
@@ -1028,7 +1025,6 @@ function GerarComIaCta({
   conviteTitulo,
   conviteTexto,
   signInLabel,
-  returnTo,
 }: {
   q: string
   authed: boolean
@@ -1039,7 +1035,6 @@ function GerarComIaCta({
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
-  returnTo: string
 }) {
   // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
   if (!authed && !sessionPending) {
@@ -1058,7 +1053,9 @@ function GerarComIaCta({
         <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
         <div>
           <Button asChild>
-            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{signInLabel}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(createFromSearchHref(q))}`}>
+              {signInLabel}
+            </Link>
           </Button>
         </div>
         {/* `conviteTitulo` ("Entre para fazer isso") dá o contexto extra pro leitor de tela — o

@@ -162,10 +162,11 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     // NÃO há link pro /create para o visitante.
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
     // Há um link de "Entrar" levando ao /sign-in (gerar exige conta) + a cópia do convite.
-    // #458: propaga returnTo (pathname mockado como '/').
+    // #458 → ADR-0019 (2026-09-24): o returnTo é o próprio /create?q=<termo> — o termo e a intenção de
+    // gerar sobrevivem ao login (antes voltava à home sem o termo).
     expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2F',
+      `/sign-in?returnTo=${encodeURIComponent('/create?q=feijao')}`,
     )
     expect(screen.getByText(MI.convidaEntrarTexto)).toBeInTheDocument()
   })

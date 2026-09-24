@@ -7,7 +7,8 @@
  *
  * Conta só letras (qualquer alfabeto) — dígitos/pontuação não fazem um prato ("12", "!!!").
  */
-export const GENERATE_FROM_SEARCH_MIN_LETTERS = 4
+// 3, não 4: pratos de três letras são pedidos legítimos ("pão", "chá", "ovo", "pie", "jam").
+export const GENERATE_FROM_SEARCH_MIN_LETTERS = 3
 
 export type SearchTermReadiness = 'none' | 'too_short' | 'ok'
 
@@ -17,11 +18,18 @@ export function searchTermReadiness(q: string): SearchTermReadiness {
   return letters < GENERATE_FROM_SEARCH_MIN_LETTERS ? 'too_short' : 'ok'
 }
 
+/** Folga para `/create?q=` dentro do teto de 512 do `safeInternalPath` (vale como `returnTo` do login). */
+const MAX_ENCODED_TERM = 480
+
 /**
  * Destino do "Gerar" a partir da busca (cartão do vazio e atalho sob os resultados): `/create?q=<termo>`
  * quando o termo serve de pedido; `/create` cru caso contrário (sem `?q=` espúrio, nem "123" pré-preenchido).
  */
 export function createFromSearchHref(term: string): string {
-  const t = term.trim()
-  return searchTermReadiness(t) === 'ok' ? `/create?q=${encodeURIComponent(t)}` : '/create'
+  let t = term.trim()
+  if (searchTermReadiness(t) !== 'ok') return '/create'
+  // O destino também vira `returnTo` do login, que `safeInternalPath` recusa acima de 512 caracteres.
+  // Corta o termo (por code point, sem partir acento/emoji) até a URL caber, em vez de perder o destino.
+  while (encodeURIComponent(t).length > MAX_ENCODED_TERM) t = Array.from(t).slice(0, -1).join('')
+  return `/create?q=${encodeURIComponent(t)}`
 }

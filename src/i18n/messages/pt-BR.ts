@@ -176,7 +176,7 @@ export const ptBR = {
     gerarComIa: 'Gerar com IA',
     vazioGerarTitulo: 'Gerar receita com IA',
     vazioGerarTexto: 'Criamos uma receita a partir da sua busca.',
-    // Gerar a partir da busca (ADR-0019, atualização 2026-09-24): termo com < 4 letras no vazio mostra
+    // Gerar a partir da busca (ADR-0019, atualização 2026-09-24): termo com < 3 letras no vazio mostra
     // `digiteMaisLetras` no lugar do cartão; com resultados, o atalho `gerarAtalhoLead` + `gerarAtalho`
     // ({termo} interpolado no componente) aparece sob a lista. Tudo link para /create — nunca gera sozinho.
     digiteMaisLetras: 'Digite mais algumas letras para gerar uma receita com IA.',
