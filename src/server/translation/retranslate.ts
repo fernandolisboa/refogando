@@ -2,12 +2,19 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 import { getTranslator } from '@/server/deps'
+import { isRowSpecificTranslationFailure } from '@/server/translation/translator'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
-import { isDefasada, isDivergente } from '@/domain/translation-divergent-stale'
+import {
+  isDefasada,
+  isDivergente,
+  isRetranslateQuarantined,
+  retranslateFailKey,
+} from '@/domain/translation-divergent-stale'
 
 /**
  * Re-tradução automática de defasadas (issue #499, fatia B do ADR-0031 dec.5) — espelha
@@ -28,7 +35,11 @@ import { isDefasada, isDivergente } from '@/domain/translation-divergent-stale'
  *
  * Degradação é POR LINHA (não por lote, ao contrário do embedding-backfill que para no 1º erro):
  * se o tradutor LANÇA numa Receita, a linha é pulada (fica defasada, zero escrita, conta como
- * `degraded`) e o lote CONTINUA até processar `limit` candidatas. Cada escrita bem-sucedida reusa
+ * `degraded`) e o lote CONTINUA até processar `limit` candidatas. Circuit-breaker (#520): falhas DA
+ * LINHA (não de infraestrutura — `isRowSpecificTranslationFailure`) somam em
+ * `retranslate_fail_count`; ao atingir `RETRANSLATE_FAIL_THRESHOLD` para a mesma fonte+versão, a linha
+ * entra em QUARENTENA — sai do scan (não ocupa mais vaga de lote nem conta em `remaining`) e aparece na
+ * lista do Curador com motivo `falha_traducao`. Cada escrita bem-sucedida reusa
  * o write-path de `ensureTranslation` (regenera título/corpo + nomes), mantém
  * `provenance='automatica_nao_revisada'`, PRESERVA o slug congelado (nunca toca `slug`), re-embeda
  * (`embedTranslation`, best-effort) e reescreve os dois fingerprints + `prompt_version` atuais (a
@@ -53,6 +64,10 @@ type CandidateRow = {
   sourceFingerprint: string | null
   mtFingerprint: string | null
   promptVersion: number | null
+  retranslateFailCount: number
+  retranslateFailKey: string | null
+  /** Visível à comunidade (mesmo gate da lista do Curador) — só estas podem entrar em quarentena. */
+  communityVisible: boolean
   srcTitulo: string
   srcDescricao: string | null
   srcPassos: string[] | null
@@ -80,6 +95,9 @@ async function loadCandidates(db: Database): Promise<CandidateRow[]> {
       sourceFingerprint: recipeTranslation.sourceFingerprint,
       mtFingerprint: recipeTranslation.mtFingerprint,
       promptVersion: recipeTranslation.promptVersion,
+      retranslateFailCount: recipeTranslation.retranslateFailCount,
+      retranslateFailKey: recipeTranslation.retranslateFailKey,
+      communityVisible: sql<boolean>`coalesce(${communityVisibleCondition(recipe)}, false)`,
       srcTitulo: src.titulo,
       srcDescricao: src.descricao,
       srcPassos: src.passos,
@@ -139,18 +157,21 @@ async function loadCurrentIngredientsByRecipe(
  * conteúdo da linha mas NÃO o `mt_fingerprint` gravado, então recomputar o hash do conteúdo fresco
  * e compará-lo com este valor detecta a edição antes de sobrescrevê-la.
  */
-type Eligible = { recipeId: string; locale: string; mtFingerprint: string }
+type Eligible = { recipeId: string; locale: string; mtFingerprint: string; communityVisible: boolean }
 
 /**
  * Resultado do processamento de UMA candidata:
  *  - `retranslated`: re-traduzida e persistida.
- *  - `degraded`: o tradutor LANÇOU (transitório, ex. 429) — permanece defasada-e-intocada, volta a
- *    ser candidata na próxima chamada (conta em `remaining`).
+ *  - `degraded`: o tradutor LANÇOU (transitório, ex. 429, ou falha da linha ainda abaixo do limiar) —
+ *    permanece defasada-e-intocada, volta a ser candidata na próxima chamada (conta em `remaining`).
+ *  - `quarantined`: o tradutor LANÇOU e a linha atingiu `RETRANSLATE_FAIL_THRESHOLD` falhas da linha
+ *    (#520) — sai do worker para a lista do Curador. Conta em `degraded` (falhou nesta chamada) mas
+ *    NÃO em `remaining` (não volta ao worker enquanto a fonte/versão não mudar).
  *  - `skipped`: deixou de ser elegível entre o scan e agora (edição humana concorrente ⇒ não-intocada,
  *    ou a linha/fonte sumiu). Saiu para a fila do Curador (ADR-0031 dec.6) — NÃO volta ao worker,
  *    então é EXCLUÍDA de `remaining`.
  */
-type OneResult = 'retranslated' | 'degraded' | 'skipped'
+type OneResult = 'retranslated' | 'degraded' | 'quarantined' | 'skipped'
 
 /**
  * Filtra as candidatas defasadas-e-intocadas, comparando o hash ATUAL (recomputado com os mesmos
@@ -178,6 +199,16 @@ function selectEligible(
     })
     if (!defasada) continue
 
+    // Circuit-breaker (#520): linha que já falhou o limiar para ESTA fonte+versão não volta ao lote.
+    // Só receita da COMUNIDADE: a lista do Curador não mostra privada (não vaza), então quarentenar
+    // uma privada a faria sumir sem ninguém ver — ela segue sendo tentada (comportamento pré-#520).
+    const quarantined = row.communityVisible && isRetranslateQuarantined({
+      failCount: row.retranslateFailCount,
+      storedFailKey: row.retranslateFailKey,
+      currentFailKey: retranslateFailKey(currentSourceFingerprint, TRANSLATION_PROMPT_VERSION),
+    })
+    if (quarantined) continue
+
     const currentMtFingerprint = mtFingerprintOfRow({
       titulo: row.titulo,
       descricao: row.descricao,
@@ -190,7 +221,12 @@ function selectEligible(
     if (!intocada) continue
 
     // `mtFingerprint` é não-nulo aqui (senão `isDivergente` seria true) — narrow para o tipo Eligible.
-    eligible.push({ recipeId: row.recipeId, locale: row.locale, mtFingerprint: row.mtFingerprint! })
+    eligible.push({
+      recipeId: row.recipeId,
+      locale: row.locale,
+      mtFingerprint: row.mtFingerprint!,
+      communityVisible: row.communityVisible,
+    })
   }
 
   return eligible
@@ -229,6 +265,12 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
   })
   if (currentTargetMtFp !== candidate.mtFingerprint) return 'skipped' // editada desde o scan.
 
+  // Fingerprint da fonte EXATA enviada ao tradutor — gravado na escrita e chave do circuit-breaker.
+  const sourceFingerprint = sourceFingerprintOf(
+    { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
+    ctx.ingredients,
+  )
+
   let translated
   try {
     translated = await getTranslator().translate({
@@ -243,8 +285,11 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
       ingredientes: ctx.ingredients,
       contexto: { cozinha: ctx.cozinha },
     })
-  } catch {
-    return 'degraded' // Degradação por linha (ADR-0031 §invariantes): fica defasada, lote continua.
+  } catch (err) {
+    // Degradação por linha (ADR-0031 §invariantes): fica defasada, lote continua. Falha DA LINHA
+    // (não de infraestrutura) soma no circuit-breaker (#520) e pode mandá-la pra quarentena.
+    if (!isRowSpecificTranslationFailure(err)) return 'degraded'
+    return recordRowFailure(db, candidate, retranslateFailKey(sourceFingerprint, TRANSLATION_PROMPT_VERSION))
   }
 
   const nomeTraduzidoPorOrdem = new Map(
@@ -259,10 +304,6 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
         }))
       : null
 
-  const sourceFingerprint = sourceFingerprintOf(
-    { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
-    ctx.ingredients,
-  )
   const mtFingerprint = mtFingerprintOfRow({
     titulo: translated.titulo,
     descricao: translated.descricao ?? null,
@@ -317,6 +358,9 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
         promptVersion: TRANSLATION_PROMPT_VERSION,
         sourceFingerprint,
         mtFingerprint,
+        // Sucesso zera o circuit-breaker (#520): a contagem é de falhas CONSECUTIVAS.
+        retranslateFailCount: 0,
+        retranslateFailKey: null,
         updatedAt: new Date(),
       })
       .where(
@@ -341,13 +385,45 @@ async function retranslateOne(db: Database, candidate: Eligible): Promise<OneRes
 }
 
 /**
+ * Registra UMA falha da linha no circuit-breaker (#520) — atômico no banco: soma 1 se a falha
+ * anterior foi para a MESMA tentativa (`failKey` = fonte+versão), senão recomeça em 1 (a fonte ou o
+ * tradutor mudou desde a última falha). No UPDATE do Postgres o CASE lê os valores ANTIGOS da linha.
+ * Só mexe nas colunas do circuit-breaker (nunca conteúdo/fingerprints/slug). Best-effort: se o
+ * registro falhar, a linha só degrada como antes (nunca derruba o lote).
+ */
+async function recordRowFailure(db: Database, candidate: Eligible, failKey: string): Promise<OneResult> {
+  try {
+    const [row] = await db
+      .update(recipeTranslation)
+      .set({
+        retranslateFailCount: sql`CASE WHEN ${recipeTranslation.retranslateFailKey} = ${failKey} THEN ${recipeTranslation.retranslateFailCount} + 1 ELSE 1 END`,
+        retranslateFailKey: failKey,
+      })
+      .where(
+        and(
+          eq(recipeTranslation.recipeId, candidate.recipeId),
+          eq(recipeTranslation.locale, candidate.locale),
+        ),
+      )
+      .returning({ failCount: recipeTranslation.retranslateFailCount })
+    if (!row || !candidate.communityVisible) return 'degraded' // privada nunca entra em quarentena
+    return isRetranslateQuarantined({ failCount: row.failCount, storedFailKey: failKey, currentFailKey: failKey })
+      ? 'quarantined'
+      : 'degraded'
+  } catch {
+    return 'degraded'
+  }
+}
+
+/**
  * BACKFILL de re-tradução (#499) — ADMIN-ONLY, capado e RETOMÁVEL. Varre as derivadas
  * defasadas-e-intocadas, processa até `limit`, e devolve o progresso — o admin chama de novo até
  * `remaining === 0`. `degraded` conta as que o tradutor recusou nesta chamada (transitório:
  * permanecem defasadas-e-intocadas, seguem em `remaining`); as `skipped` (editadas por humano entre
  * o scan e a escrita ⇒ deixaram de ser intocadas, foram pra fila do Curador) NÃO voltam ao worker,
  * então são excluídas de `remaining`. `remaining` = elegíveis do scan − re-traduzidas − puladas
- * (inclui as `degraded` desta chamada + as elegíveis que não couberam no lote).
+ * (inclui as `degraded` desta chamada + as elegíveis que não couberam no lote). As que entraram em
+ * QUARENTENA nesta chamada (#520) contam em `degraded` mas saem de `remaining`, como as `skipped`.
  */
 export async function retranslateOutdated(db: Database, limit: number): Promise<RetranslateResult> {
   const rows = await loadCandidates(db)
@@ -360,12 +436,16 @@ export async function retranslateOutdated(db: Database, limit: number): Promise<
   let retranslated = 0
   let degraded = 0
   let skipped = 0
+  let quarantined = 0
   for (const candidate of batch) {
     const result = await retranslateOne(db, candidate)
     if (result === 'retranslated') retranslated++
     else if (result === 'degraded') degraded++
-    else skipped++
+    else if (result === 'quarantined') {
+      degraded++
+      quarantined++
+    } else skipped++
   }
 
-  return { retranslated, degraded, remaining: eligible.length - retranslated - skipped }
+  return { retranslated, degraded, remaining: eligible.length - retranslated - skipped - quarantined }
 }

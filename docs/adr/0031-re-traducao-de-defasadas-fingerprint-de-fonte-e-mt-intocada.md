@@ -48,6 +48,17 @@ Fecha o item deferido pelo ADR-0030 (§Escopo/deferidos): reativar a **staleness
 - **Script de backfill idempotente committado** (migração AGRESSIVA, decisão 7), rodado pós-deploy como ação humana (como os backfills de embedding/medida/nome-de-ingrediente): preenche `source_fingerprint` em todas e `mt_fingerprint` nas `automatica_nao_revisada`. Sem chamada LLM (só hash) — barato e rápido.
 - Custo de LLM da re-tradução é **gasto do Admin, sob demanda e capado** — nunca surpresa; gated às linhas realmente defasadas-e-intocadas.
 
+## Emenda (#520) — circuit-breaker para linha permanentemente degradada
+
+Achado do passe de revisão (deferido da #519): se o tradutor falha de forma **permanente** numa linha (infidelidade estrutural, recusa, truncamento — sempre na mesma fonte), a decisão 5 a deixava **defasada-e-intocada pra sempre**: ocupava uma vaga de cada lote, `remaining` nunca zerava, e — como nada é escrito — nunca virava divergente, então **nunca chegava ao Curador**.
+
+- `recipe_translation` ganha `retranslate_fail_count integer NOT NULL DEFAULT 0` + `retranslate_fail_key text` (migração `ADD COLUMN` metadata-only). A chave é `fingerprint da fonte atual + TRANSLATION_PROMPT_VERSION` (`retranslateFailKey`, domínio puro).
+- **Só falha DA LINHA conta** (`isRowSpecificTranslationFailure`, allowlist): `UnusableTranslationError` — o modelo respondeu mas a saída é inutilizável (recusa, `max_tokens`, JSON/schema inválido no parse do SDK — casado pela mensagem "Failed to parse structured output", porque o SDK usa o mesmo `AnthropicError` puro para erros de credencial —, sem saída estruturada, infidelidade). Todo o resto (`APIError`: 429/5xx/529, conexão/timeout, 400/401/403/404 de config; key ausente; erro desconhecido) é infraestrutura e **nunca** conta — senão uma queda da API ou um deploy mal configurado quarentenaria o lote inteiro. Na dúvida, a linha só degrada.
+- Falha da linha soma 1 se a chave gravada é a mesma, senão recomeça em 1 (UPDATE atômico com `CASE`). Sucesso zera contagem e chave (falhas **consecutivas**).
+- Com `RETRANSLATE_FAIL_THRESHOLD = 3` falhas para a chave atual a linha fica em **quarentena**: sai do scan do worker (não ocupa vaga, sai de `remaining`; a chamada que atinge o limiar ainda a conta em `degraded`) e entra na **lista do Curador** (decisão 6) com `reason: 'falha_traducao'` (as divergentes ganham `reason: 'divergente'`, que prevalece). O shape de `{ retranslated, degraded, remaining }` não muda.
+- **A quarentena cai sozinha** quando a fonte muda ou o prompt sobe de versão (a chave muda) — sem ferramenta de "des-quarentenar". **Só receita da comunidade entra em quarentena** (mesmo gate `communityVisibleCondition` da lista do Curador): uma receita PRIVADA não pode aparecer pro Curador (não vaza), então quarentená-la a faria sumir sem ninguém ver — ela segue sendo tentada a cada varredura (comportamento pré-#520; a falha ainda é contada, sem efeito).
+- **Descartado:** estado efêmero no processo (não sobrevive entre chamadas da rota); contar toda exceção (quarentena em massa numa queda); fila própria "falha de tradução" (a lista do Curador já é o lugar da re-revisão humana — um motivo basta).
+
 ## Alternativas rejeitadas
 
 - **Modelo PUSH (acordar o gatilho cross-locale em `decideStale`)** — rejeitado: inverte o teste travado, sobrecarrega `recipe_translation.stale`, e ainda exigiria o fingerprint de MT pra segurança. O pull entrega o mesmo com menos raio de dano.

@@ -37,7 +37,9 @@ const RID = '33333333-3333-3333-3333-333333333333'
 
 function oneDivergent() {
   return {
-    divergentStale: [{ recipeId: RID, locale: 'en-US', provenance: 'automatica_nao_revisada' }],
+    divergentStale: [
+      { recipeId: RID, locale: 'en-US', provenance: 'automatica_nao_revisada', reason: 'divergente' },
+    ],
   }
 }
 
@@ -65,6 +67,25 @@ describe('DivergentStaleTranslations (#500)', () => {
     expect(screen.queryByText('automatica_nao_revisada')).toBeNull()
     // Sem ação "marcar revisada" nesta lista (não é a trava; fingerprint é — ADR-0031 dec.2).
     expect(screen.queryByRole('button', { name: S.marcarRevisada })).toBeNull()
+  })
+
+  it('mostra o MOTIVO localizado: divergente vs. falha de tradução (circuit-breaker #520)', async () => {
+    const RID2 = '44444444-4444-4444-4444-444444444444'
+    mockFetch({
+      'GET /api/curate/translations/divergent-stale': {
+        ok: true,
+        status: 200,
+        body: {
+          divergentStale: [
+            { recipeId: RID, locale: 'en-US', provenance: 'automatica_nao_revisada', reason: 'divergente' },
+            { recipeId: RID2, locale: 'en-US', provenance: 'automatica_nao_revisada', reason: 'falha_traducao' },
+          ],
+        },
+      },
+    })
+    renderDivergent()
+    expect(await screen.findByText(M.motivoFalhaTraducao)).toBeInTheDocument()
+    expect(screen.getByText(M.motivoDivergente)).toBeInTheDocument()
   })
 
   it('vazio-neutro: lista vazia → mensagem, sem alert', async () => {

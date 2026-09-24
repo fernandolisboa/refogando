@@ -1591,6 +1591,9 @@ export const ptBR = {
     idioma: 'Idioma',
     origem: 'Origem',
     listaVazia: 'Nenhuma tradução para re-revisão.',
+    motivo: 'Motivo',
+    motivoDivergente: 'Conteúdo editado à mão',
+    motivoFalhaTraducao: 'A tradução automática falhou repetidamente',
   },
   curadoria: {
     titulo: 'Curadoria de catálogo',

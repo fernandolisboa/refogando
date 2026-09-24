@@ -5,7 +5,9 @@
  * decide quais linhas defasadas NÃO são intocadas — essas nunca são auto-sobrescritas e vão
  * para re-revisão HUMANA.
  *
- * As DUAS metades são independentes e compostas por AND (nunca uma sozinha):
+ * Regra da lista (#520): DEFASADA e, além disso, DIVERGENTE (motivo `divergente`) OU em QUARENTENA
+ * do circuit-breaker da re-tradução (motivo `falha_traducao`, ver o fim deste módulo). Para o motivo
+ * `divergente`, as DUAS metades são independentes e compostas por AND (nunca uma sozinha):
  *  - `isDefasada`: a FONTE mudou desde a última MT (`fingerprintSource` diverge do gravado) OU
  *    o tradutor melhorou (`promptVersion` gravado < `TRANSLATION_PROMPT_VERSION` atual — `null`
  *    conta como "abaixo de qualquer versão", legado nunca versionado).
@@ -55,10 +57,42 @@ export function isDivergente(
 }
 
 /**
- * Entra na lista do Curador quando defasada E divergente (ambas). Uma linha defasada mas
+ * Motivo `divergente` da lista do Curador: defasada E divergente (ambas). Uma linha defasada mas
  * INTOCADA (`isDivergente` falso) é elegível para a re-tradução AUTOMÁTICA (fatia B) — nunca
- * aparece aqui; as duas listas são mutuamente exclusivas por construção (ADR-0031 dec.5/6).
+ * aparece por ESTE motivo; as duas filas são mutuamente exclusivas por construção (ADR-0031
+ * dec.5/6) — a exceção é a quarentena (#520), que tira a intocada do worker e a traz pra cá.
  */
 export function isDefasadaEDivergente(input: DivergentStaleInput): boolean {
   return isDefasada(input) && isDivergente(input)
 }
+
+/**
+ * Circuit-breaker da re-tradução (#520, emenda ao ADR-0031 dec.5). Uma linha em que o tradutor
+ * falha de forma PERMANENTE (infidelidade estrutural, recusa, truncamento — sempre na mesma fonte)
+ * ficaria defasada-e-intocada para sempre: ocupa uma vaga de cada lote, `remaining` nunca zera, e
+ * — como a escrita nunca ocorre — nunca vira divergente, então nunca chega ao Curador. A partir de
+ * `RETRANSLATE_FAIL_THRESHOLD` falhas CONSECUTIVAS para a MESMA tentativa, a linha fica em
+ * QUARENTENA: sai do worker e entra na lista do Curador com motivo `falha_traducao`.
+ *
+ * "Mesma tentativa" = mesma chave `retranslateFailKey` (fonte atual + versão do prompt). Se a fonte
+ * muda ou o tradutor sobe de versão, a chave muda e a quarentena cai sozinha — a linha volta ao
+ * worker com contagem nova (sem ferramenta de "des-quarentenar").
+ */
+export const RETRANSLATE_FAIL_THRESHOLD = 3
+
+/** Chave da tentativa de re-tradução: o que o tradutor recebe (fonte) + como traduz (versão). */
+export function retranslateFailKey(currentSourceFingerprint: string, translationPromptVersion: number): string {
+  return `${currentSourceFingerprint}:v${translationPromptVersion}`
+}
+
+/** A linha atingiu o limiar de falhas para a tentativa ATUAL (chave gravada == chave corrente). */
+export function isRetranslateQuarantined(input: {
+  failCount: number
+  storedFailKey: string | null
+  currentFailKey: string
+}): boolean {
+  return input.storedFailKey === input.currentFailKey && input.failCount >= RETRANSLATE_FAIL_THRESHOLD
+}
+
+/** Por que a linha está na lista do Curador. `divergente` prevalece (edição humana é o sinal mais forte). */
+export type DivergentStaleReason = 'divergente' | 'falha_traducao'

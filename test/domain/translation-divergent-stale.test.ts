@@ -3,6 +3,9 @@ import {
   isDefasada,
   isDivergente,
   isDefasadaEDivergente,
+  isRetranslateQuarantined,
+  retranslateFailKey,
+  RETRANSLATE_FAIL_THRESHOLD,
   type DivergentStaleInput,
 } from '@/domain/translation-divergent-stale'
 
@@ -88,5 +91,41 @@ describe('isDefasadaEDivergente (#500) — composição AND', () => {
 
   it('nem defasada nem divergente (tudo bate) ⇒ NÃO entra', () => {
     expect(isDefasadaEDivergente(base())).toBe(false)
+  })
+})
+
+describe('circuit-breaker da re-tradução (#520)', () => {
+  const key = retranslateFailKey('src-atual', V)
+
+  it('a chave muda quando a fonte OU a versão do prompt muda', () => {
+    expect(retranslateFailKey('src-novo', V)).not.toBe(key)
+    expect(retranslateFailKey('src-atual', V + 1)).not.toBe(key)
+    expect(retranslateFailKey('src-atual', V)).toBe(key)
+  })
+
+  it('abaixo do limiar ⇒ não está em quarentena', () => {
+    expect(
+      isRetranslateQuarantined({ failCount: RETRANSLATE_FAIL_THRESHOLD - 1, storedFailKey: key, currentFailKey: key }),
+    ).toBe(false)
+  })
+
+  it('no limiar, mesma tentativa ⇒ quarentena', () => {
+    expect(
+      isRetranslateQuarantined({ failCount: RETRANSLATE_FAIL_THRESHOLD, storedFailKey: key, currentFailKey: key }),
+    ).toBe(true)
+  })
+
+  it('no limiar, mas a fonte/versão mudou desde as falhas ⇒ quarentena cai sozinha', () => {
+    expect(
+      isRetranslateQuarantined({
+        failCount: RETRANSLATE_FAIL_THRESHOLD,
+        storedFailKey: key,
+        currentFailKey: retranslateFailKey('src-novo', V),
+      }),
+    ).toBe(false)
+  })
+
+  it('sem chave gravada (nunca falhou) ⇒ não está em quarentena', () => {
+    expect(isRetranslateQuarantined({ failCount: 0, storedFailKey: null, currentFailKey: key })).toBe(false)
   })
 })

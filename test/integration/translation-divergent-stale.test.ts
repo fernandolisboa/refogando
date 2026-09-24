@@ -9,6 +9,7 @@ import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/re
 import { seedSessionHeaders } from '../helpers/users'
 import { fingerprintSource, fingerprintMt } from '@/domain/translation-fingerprint'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
+import { RETRANSLATE_FAIL_THRESHOLD, retranslateFailKey } from '@/domain/translation-divergent-stale'
 
 /**
  * Lista do Curador — defasadas-E-divergentes (issue #500, ADR-0031 dec.6). Prova que a
@@ -59,7 +60,7 @@ function callRoute(headers?: Headers): Promise<Response> {
   )
 }
 
-type Item = { recipeId: string; locale: string; provenance: string }
+type Item = { recipeId: string; locale: string; provenance: string; reason: string }
 
 async function body(res: Response): Promise<{ divergentStale: Item[] }> {
   return (await res.json()) as { divergentStale: Item[] }
@@ -95,7 +96,13 @@ async function seedSourceRecipe(input: {
 /** Semeia a linha DERIVADA (en-US) com o conteúdo dos fingerprints "atuais" acima + os fingerprints GRAVADOS de teste. */
 async function seedDerivedRow(
   recipeId: string,
-  stored: { sourceFingerprint: string | null; mtFingerprint: string | null; promptVersion?: number | null },
+  stored: {
+    sourceFingerprint: string | null
+    mtFingerprint: string | null
+    promptVersion?: number | null
+    retranslateFailCount?: number
+    retranslateFailKey?: string | null
+  },
 ): Promise<void> {
   await seedTranslation({
     recipeId,
@@ -106,6 +113,8 @@ async function seedDerivedRow(
     sourceFingerprint: stored.sourceFingerprint,
     mtFingerprint: stored.mtFingerprint,
     promptVersion: stored.promptVersion ?? TRANSLATION_PROMPT_VERSION,
+    retranslateFailCount: stored.retranslateFailCount,
+    retranslateFailKey: stored.retranslateFailKey,
   })
 }
 
@@ -220,6 +229,68 @@ describe('GET /api/curate/translations/divergent-stale (#500, ADR-0031 dec.6)', 
     const { divergentStale } = await body(res)
     const item = divergentStale.find((i) => i.recipeId === id && i.locale === 'en-US')
     expect(item?.provenance).toBe('automatica_nao_revisada')
+    expect(item?.reason).toBe('divergente')
+  })
+
+  describe('circuit-breaker da re-tradução (#520)', () => {
+    const currentKey = retranslateFailKey(CURRENT_SOURCE_FINGERPRINT, TRANSLATION_PROMPT_VERSION)
+
+    it('defasada, INTOCADA, em quarentena (limiar para a fonte atual) ⇒ aparece com motivo falha_traducao', async () => {
+      const { headers } = await seedSessionHeaders({ email: 'curador-520-a@ex.com', role: 'curador' })
+      const id = await seedSourceRecipe({})
+      await seedDerivedRow(id, {
+        sourceFingerprint: 'fingerprint-antigo',
+        mtFingerprint: CURRENT_MT_FINGERPRINT, // intocada
+        retranslateFailCount: RETRANSLATE_FAIL_THRESHOLD,
+        retranslateFailKey: currentKey,
+      })
+
+      const { divergentStale } = await body(await callRoute(headers))
+      const item = divergentStale.find((i) => i.recipeId === id && i.locale === 'en-US')
+      expect(item?.reason).toBe('falha_traducao')
+    })
+
+    it('abaixo do limiar ⇒ ainda é do worker, NÃO aparece', async () => {
+      const { headers } = await seedSessionHeaders({ email: 'curador-520-b@ex.com', role: 'curador' })
+      const id = await seedSourceRecipe({})
+      await seedDerivedRow(id, {
+        sourceFingerprint: 'fingerprint-antigo',
+        mtFingerprint: CURRENT_MT_FINGERPRINT,
+        retranslateFailCount: RETRANSLATE_FAIL_THRESHOLD - 1,
+        retranslateFailKey: currentKey,
+      })
+
+      const { divergentStale } = await body(await callRoute(headers))
+      expect(has(divergentStale, id, 'en-US')).toBe(false)
+    })
+
+    it('falhas de uma fonte ANTERIOR (chave velha) ⇒ quarentena caiu, NÃO aparece', async () => {
+      const { headers } = await seedSessionHeaders({ email: 'curador-520-c@ex.com', role: 'curador' })
+      const id = await seedSourceRecipe({})
+      await seedDerivedRow(id, {
+        sourceFingerprint: 'fingerprint-antigo',
+        mtFingerprint: CURRENT_MT_FINGERPRINT,
+        retranslateFailCount: RETRANSLATE_FAIL_THRESHOLD,
+        retranslateFailKey: retranslateFailKey('fonte-que-ja-mudou', TRANSLATION_PROMPT_VERSION),
+      })
+
+      const { divergentStale } = await body(await callRoute(headers))
+      expect(has(divergentStale, id, 'en-US')).toBe(false)
+    })
+
+    it('em quarentena mas NÃO defasada ⇒ NÃO aparece (nada a re-revisar)', async () => {
+      const { headers } = await seedSessionHeaders({ email: 'curador-520-d@ex.com', role: 'curador' })
+      const id = await seedSourceRecipe({})
+      await seedDerivedRow(id, {
+        sourceFingerprint: CURRENT_SOURCE_FINGERPRINT,
+        mtFingerprint: CURRENT_MT_FINGERPRINT,
+        retranslateFailCount: RETRANSLATE_FAIL_THRESHOLD,
+        retranslateFailKey: currentKey,
+      })
+
+      const { divergentStale } = await body(await callRoute(headers))
+      expect(has(divergentStale, id, 'en-US')).toBe(false)
+    })
   })
 
   it('usuario ⇒ 403', async () => {
