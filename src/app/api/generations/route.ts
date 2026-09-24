@@ -7,7 +7,7 @@ import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
-import { classify, classifyVariants } from '@/domain/generation'
+import { classifyWithReason, classifyVariants } from '@/domain/generation'
 import {
   parseBriefing,
   buildBriefingPrompt,
@@ -514,12 +514,13 @@ export async function POST(req: Request): Promise<Response> {
     // #420 (ADR-0029): eixos que produziram esta geração (já embutidos no systemPrompt). Neutro na Wave 1.
     axes,
   })
-  const result = classify(out)
+  const { result, reason: invalidReason } = classifyWithReason(out)
   // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd snapshot.
   const usage = out.kind === 'object' ? out.usage : undefined
 
   // Erro de sistema puro: NÃO persiste nada (sem creation_session/generation/recipe/briefing).
   if (result.outcome === 'invalid') {
+    console.error('[generations] geração inválida (→ 502):', { mode, reason: invalidReason })
     return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
   }
 

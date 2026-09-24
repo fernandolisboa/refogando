@@ -229,3 +229,17 @@ describe('buildRecipeGenListSchema — "gerar 2, o usuário escolhe" (#423)', ()
     expect(() => buildRecipeGenListSchema([]).parse({ variacoes: [semVariacao, item()] })).toThrow()
   })
 })
+
+describe('originalLocale — enum dos locales suportados (não string livre)', () => {
+  it("rejeita 'en' sem região (guard do parse local; em produção quem normaliza é o classify)", () => {
+    const receita = { ...receitaCompleta(), originalLocale: 'en' }
+    expect(() => RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })).toThrow()
+  })
+
+  it('o JSON Schema enviado à Anthropic cita os locales (o SDK rebaixa o enum a dica na description)', () => {
+    const fmt = zodOutputFormat(buildRecipeGenSchema(['italiana']))
+    const json = JSON.stringify(fmt.schema)
+    expect(json).toContain('pt-BR')
+    expect(json).toContain('en-US')
+  })
+})
