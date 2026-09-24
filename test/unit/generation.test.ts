@@ -210,14 +210,14 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
   })
 
   it('originalLocale "" (vazio) → invalid (NÃO persiste lixo)', () => {
-    const recipe = makeReceita({ originalLocale: '' as ReceitaGenT['originalLocale'] })
+    const recipe = makeReceita({ originalLocale: '' })
     expect(
       classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
     ).toEqual({ outcome: 'invalid' })
   })
 
   it('originalLocale "xx" (não-suportado) → invalid', () => {
-    const recipe = makeReceita({ originalLocale: 'xx' as ReceitaGenT['originalLocale'] })
+    const recipe = makeReceita({ originalLocale: 'xx' })
     expect(
       classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
     ).toEqual({ outcome: 'invalid' })
@@ -233,7 +233,7 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
 
 describe('classifyWithReason — motivo do invalid (só metadado, sem conteúdo)', () => {
   it('originalLocale "xx" (idioma não suportado) → invalid com o motivo', () => {
-    const recipe = makeReceita({ originalLocale: 'xx' as ReceitaGenT['originalLocale'] })
+    const recipe = makeReceita({ originalLocale: 'xx' })
     expect(
       classifyWithReason({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
     ).toEqual({ result: { outcome: 'invalid' }, reason: 'originalLocale não suportado: "xx"' })
@@ -277,7 +277,7 @@ describe('normalizeGeneratedLocale — locale da saída do modelo → suportado 
   })
 
   it("classify de uma Receita com 'en' persiste 'en-US' (não 502)", () => {
-    const recipe = makeReceita({ originalLocale: 'en' as ReceitaGenT['originalLocale'] })
+    const recipe = makeReceita({ originalLocale: 'en' })
     const result = classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' })
     expect(result.outcome).toBe('success')
     if (result.outcome === 'success') expect(result.recipe.originalLocale).toBe('en-US')

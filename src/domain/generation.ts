@@ -98,10 +98,9 @@ export function classifyWithReason(out: GenerationOutput): {
   if (!isDificuldadeValida(recipe.dificuldade)) {
     return invalid(`dificuldade fora da faixa: ${recipe.dificuldade}`)
   }
-  // originalLocale: o `zodOutputFormat` rebaixa o enum do schema a uma DICA na description (não é
-  // constraint), então o modelo ainda pode emitir 'en'/'pt'/'en-GB'. Normaliza pelo idioma para o
-  // locale suportado canônico; lixo (vazio/não-suportado) NUNCA persiste → invalid.
-  const rawLocale: string = recipe.originalLocale
+  // originalLocale: o schema só DÁ A DICA (string livre), então o modelo pode emitir 'en'/'pt'/'en-GB'.
+  // Normaliza pelo idioma para o locale suportado canônico; lixo (vazio/não-suportado) → invalid.
+  const rawLocale = recipe.originalLocale
   const locale = normalizeGeneratedLocale(rawLocale)
   if (locale === null) {
     return invalid(`originalLocale não suportado: ${JSON.stringify(rawLocale.slice(0, 20))}`)

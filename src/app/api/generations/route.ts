@@ -401,6 +401,8 @@ export async function POST(req: Request): Promise<Response> {
     // Exige DUAS variações válidas. Menos que isso (parse do lote falhou / refusal / max_tokens / uma
     // variação impossible ou fora-de-faixa) ⇒ 502 — NÃO degrada pra uma só (ADR-0029 dec.6).
     if (variantResults.length !== 2) {
+      const reasons = outs.map((o) => classifyWithReason(o).reason ?? o.kind)
+      console.error('[generations] lote de variações inválido (→ 502):', { reasons })
       return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
     }
 

@@ -38,7 +38,6 @@
 
 import { z } from 'zod'
 import { CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
-import { SUPPORTED_LOCALES } from '@/i18n/locale'
 
 // 4 valores que o MODELO pode auto-classificar. `invalid` é só do app (ver §4).
 export const RECIPE_GEN_KINDS = ['success', 'degraded', 'playful', 'impossible'] as const
@@ -79,13 +78,13 @@ function buildReceitaGenSchema(cozinhaSlugs: readonly string[]) {
     descricao: z.string().nullable(), // → recipe_translation.descricao
     passos: z.array(z.string()), // → recipe_translation.passos
     notas: z.string().nullable(), // → recipe_translation.notas
-    // → recipe.original_locale. Enum + describe: o `zodOutputFormat` rebaixa o enum a DICA na
-    // description (não é constraint), então é só orientação ao modelo; quem garante é o `classify`,
-    // que normaliza 'en'/'pt'/'en-GB' para o locale suportado em vez de devolver 502.
+    // → recipe.original_locale. String LIVRE + dica (NÃO z.enum): o `zodOutputFormat` manda o enum só
+    // como dica na description, mas o parse LOCAL do SDK valida o enum e lança — um 'en' do modelo
+    // viraria parse_failed (502) antes do `classify`, que é quem normaliza 'en'/'pt'/'en-GB'.
     originalLocale: z
-      .enum(SUPPORTED_LOCALES)
+      .string()
       .describe(
-        "idioma em que a receita foi escrita: 'pt-BR' ou 'en-US'. Pedido em inglês ⇒ escreva em inglês e use 'en-US'; qualquer outro idioma ⇒ escreva em português e use 'pt-BR'.",
+        "idioma em que a receita foi escrita: use exatamente 'pt-BR' ou 'en-US'. Pedido em inglês ⇒ escreva em inglês e use 'en-US'; qualquer outro idioma ⇒ escreva em português e use 'pt-BR'.",
       ),
     cozinha: cozinhaSchema.nullable(), // → recipe.cozinha (data-driven, #318)
     categoria: z.enum(CATEGORIAS).nullable(), // → recipe.categoria
