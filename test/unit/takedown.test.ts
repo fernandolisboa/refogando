@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   normalizeTakedownIntake,
+  normalizeTakedownResolution,
   isTakedownRequestType,
   TAKEDOWN_FIELD_MAX,
   TAKEDOWN_MESSAGE_MAX,
@@ -148,6 +149,45 @@ describe('normalizeTakedownIntake (#399 — validacao do intake publico)', () =>
     if (r.ok) {
       expect(r.value.displayName?.length).toBe(TAKEDOWN_FIELD_MAX)
       expect(r.value.message.length).toBe(TAKEDOWN_MESSAGE_MAX)
+    }
+  })
+})
+
+describe('normalizeTakedownResolution (encerramento pelo operador)', () => {
+  it('aceita "fulfilled" sem motivo e descarta o motivo enviado', () => {
+    expect(normalizeTakedownResolution({ resolution: 'fulfilled', reason: 'x' })).toEqual({
+      ok: true,
+      value: { resolution: 'fulfilled', reason: null },
+    })
+  })
+
+  it('exige motivo na recusa (vazio/espaços/ausente → motivo_obrigatorio)', () => {
+    for (const reason of [undefined, '', '   ', 42]) {
+      expect(normalizeTakedownResolution({ resolution: 'rejected', reason })).toEqual({
+        ok: false,
+        error: 'motivo_obrigatorio',
+      })
+    }
+  })
+
+  it('recusa com motivo: saneia C0 e corta no teto', () => {
+    const r = normalizeTakedownResolution({
+      resolution: 'rejected',
+      reason: `  não é o titular\u0000${'x'.repeat(TAKEDOWN_FIELD_MAX)}`,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.resolution).toBe('rejected')
+    expect(r.value.reason).not.toContain('\u0000')
+    expect(r.value.reason!.length).toBeLessThanOrEqual(TAKEDOWN_FIELD_MAX)
+  })
+
+  it('rejeita desfecho desconhecido (sem fallback)', () => {
+    for (const resolution of [undefined, 'received', 'verified', 'DROP', 1]) {
+      expect(normalizeTakedownResolution({ resolution })).toEqual({
+        ok: false,
+        error: 'desfecho_invalido',
+      })
     }
   })
 })

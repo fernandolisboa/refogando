@@ -12,20 +12,20 @@
 import { canonicalizeDomain } from '@/domain/web-search-config'
 
 /**
- * Listas curadas por locale-origem. Renderizadas as DUAS (a allowlist é global — pt-BR e en-US consomem
+ * Listas curadas por locale-origem. Renderizadas as duas, quando não vazias (a allowlist é global — pt-BR e en-US consomem
  * a mesma), sob rótulos "Brasil"/"Internacional". Todas as entradas já são CANÔNICAS (minúsculas, sem
  * `www.`, hostname válido) — o teste de paridade trava isso. NÃO pode conter domínio da `TOS_DENYLIST`
  * (#394): sugerir um host que a allowlist rejeita seria um chip morto e contradiz o guard de ToS — por
  * isso panelinha/guiadacozinha/foodnetwork saíram desta lista.
+ *
+ * SÓ entra aqui domínio com ToS LIDO e recomendação "manter" (`docs/legal/revisao-tos-allowlist.md` §4.4).
+ * Os 7 em "revisão manual" (§4.5: tudogostoso, cybercook, receiteria, allrecipes, simplyrecipes,
+ * seriouseats, bbcgoodfood) saíram: um clique os poria na allowlist sem a leitura verbatim do contrato.
+ * Voltam para cá só depois dessa leitura. Um grupo vazio não é renderizado.
  */
 export const SUGGESTED_DOMAINS: { 'pt-BR': string[]; 'en-US': string[] } = {
-  'pt-BR': [
-    'tudogostoso.com.br',
-    'cybercook.com.br',
-    'receiteria.com.br',
-    'receitasnestle.com.br',
-  ],
-  'en-US': ['allrecipes.com', 'simplyrecipes.com', 'seriouseats.com', 'bbcgoodfood.com'],
+  'pt-BR': ['receitasnestle.com.br'],
+  'en-US': [],
 }
 
 /** Conjunto dos domínios CANÔNICOS já presentes no texto (linhas-lixo viram null e são descartadas). */

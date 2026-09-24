@@ -13,12 +13,24 @@ import { canonicalizeDomain } from '@/domain/web-search-config'
  */
 
 describe('SUGGESTED_DOMAINS', () => {
-  it('tem os grupos pt-BR e en-US com as entradas curadas', () => {
-    expect(SUGGESTED_DOMAINS['pt-BR']).toContain('tudogostoso.com.br')
-    expect(SUGGESTED_DOMAINS['pt-BR']).toContain('cybercook.com.br')
-    expect(SUGGESTED_DOMAINS['pt-BR']).toContain('receitasnestle.com.br')
-    expect(SUGGESTED_DOMAINS['en-US']).toContain('allrecipes.com')
-    expect(SUGGESTED_DOMAINS['en-US']).toContain('bbcgoodfood.com')
+  it('sugere só os domínios com ToS lido e recomendação "manter" (revisao-tos-allowlist §4.4)', () => {
+    expect(SUGGESTED_DOMAINS['pt-BR']).toEqual(['receitasnestle.com.br'])
+    expect(SUGGESTED_DOMAINS['en-US']).toEqual([])
+  })
+
+  it('NÃO sugere os domínios em revisão manual de ToS (§4.5) — um clique pularia a leitura do contrato', () => {
+    const all = [...SUGGESTED_DOMAINS['pt-BR'], ...SUGGESTED_DOMAINS['en-US']]
+    for (const d of [
+      'tudogostoso.com.br',
+      'cybercook.com.br',
+      'receiteria.com.br',
+      'allrecipes.com',
+      'simplyrecipes.com',
+      'seriouseats.com',
+      'bbcgoodfood.com',
+    ]) {
+      expect(all).not.toContain(d)
+    }
   })
 
   it('todas as entradas já são CANÔNICAS (canonicalizeDomain(d) === d)', () => {

@@ -117,3 +117,73 @@ describe('TakedownSlaSection (#412)', () => {
     expect(await screen.findByText('Depois do Retry')).toBeInTheDocument()
   })
 })
+
+describe('TakedownSlaSection — encerrar ticket', () => {
+  const RESOLVE = 'POST /api/admin/takedown-sla/resolve'
+
+  function bodyOf(impl: ReturnType<typeof mockFetch>, key: string): unknown {
+    const call = impl.mock.calls.find(
+      (c) => `${(c[1]?.method ?? 'GET').toUpperCase()} ${String(c[0])}` === key,
+    )
+    return call ? JSON.parse(String(call[1]?.body)) : undefined
+  }
+
+  it('"Marcar como atendido" envia fulfilled e tira o ticket da lista', async () => {
+    const impl = mockFetch({
+      'GET /api/admin/takedown-sla': {
+        ok: true,
+        status: 200,
+        body: { tickets: [ticket({ displayName: 'Autor A' })] },
+      },
+      [RESOLVE]: { ok: true, status: 200, body: { status: 'fulfilled' } },
+    })
+    const user = userEvent.setup()
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: M.slaMarcarAtendido }))
+    expect(await screen.findByText(M.slaVazio)).toBeInTheDocument()
+    expect(bodyOf(impl, RESOLVE)).toEqual({
+      ticketId: '11111111-1111-1111-1111-111111111111',
+      resolution: 'fulfilled',
+    })
+  })
+
+  it('"Recusar" pede motivo; só confirma com motivo preenchido e envia rejected + motivo', async () => {
+    const impl = mockFetch({
+      'GET /api/admin/takedown-sla': {
+        ok: true,
+        status: 200,
+        body: { tickets: [ticket({ displayName: 'Autor B' })] },
+      },
+      [RESOLVE]: { ok: true, status: 200, body: { status: 'rejected' } },
+    })
+    const user = userEvent.setup()
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: M.slaRecusar }))
+    const confirmar = screen.getByRole('button', { name: M.slaConfirmarRecusa })
+    expect(confirmar).toBeDisabled()
+    await user.type(screen.getByLabelText(M.slaMotivoLabel), 'não é o autor')
+    await user.click(confirmar)
+    expect(await screen.findByText(M.slaVazio)).toBeInTheDocument()
+    expect(bodyOf(impl, RESOLVE)).toEqual({
+      ticketId: '11111111-1111-1111-1111-111111111111',
+      resolution: 'rejected',
+      reason: 'não é o autor',
+    })
+  })
+
+  it('erro ao encerrar mantém o ticket e mostra alerta', async () => {
+    mockFetch({
+      'GET /api/admin/takedown-sla': {
+        ok: true,
+        status: 200,
+        body: { tickets: [ticket({ displayName: 'Autor C' })] },
+      },
+      [RESOLVE]: { ok: false, status: 500, body: { error: 'erro_interno' } },
+    })
+    const user = userEvent.setup()
+    renderSection()
+    await user.click(await screen.findByRole('button', { name: M.slaMarcarAtendido }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.slaEncerrarErro)
+    expect(screen.getByText('Autor C')).toBeInTheDocument()
+  })
+})

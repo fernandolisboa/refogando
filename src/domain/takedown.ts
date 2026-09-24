@@ -108,3 +108,43 @@ export function normalizeTakedownIntake(input: TakedownIntakeInput): TakedownVal
 
   return { ok: true, value: { requestType, sourceUrl, displayName, message, contactEmail } }
 }
+
+/**
+ * ENCERRAMENTO de um ticket pelo operador (fecha o ciclo do painel de SLA — `docs/legal/
+ * takedown-e-remocao-titular.md` §4.2, passo 6). PURO. Dois desfechos, os mesmos de
+ * `RESOLVED_TAKEDOWN_STATUSES` (`src/domain/dsar-sla.ts`): `fulfilled` (atendido) e `rejected` (recusado).
+ * A recusa EXIGE um motivo (vai para `DSAR_REJECTED.reason` — prova do porquê); o atendimento não.
+ */
+export const TAKEDOWN_RESOLUTIONS = ['fulfilled', 'rejected'] as const
+
+export type TakedownResolution = (typeof TAKEDOWN_RESOLUTIONS)[number]
+
+/** Teto do motivo de recusa (mesmo teto dos campos curtos do intake). */
+export const TAKEDOWN_REASON_MAX = TAKEDOWN_FIELD_MAX
+
+export type TakedownResolutionInput = { resolution?: unknown; reason?: unknown }
+
+export type TakedownResolutionError = 'desfecho_invalido' | 'motivo_obrigatorio'
+
+export type TakedownResolutionValidation =
+  | { ok: true; value: { resolution: TakedownResolution; reason: string | null } }
+  | { ok: false; error: TakedownResolutionError }
+
+/**
+ * Normaliza + valida o corpo do encerramento. PURA. `resolution` precisa ser um desfecho conhecido
+ * (sem fallback: encerrar é ato deliberado). `reason` passa pelo mesmo saneador C0 dos campos curtos;
+ * obrigatório só na recusa, descartado no atendimento.
+ */
+export function normalizeTakedownResolution(
+  input: TakedownResolutionInput,
+): TakedownResolutionValidation {
+  const r = input.resolution
+  if (typeof r !== 'string' || !(TAKEDOWN_RESOLUTIONS as readonly string[]).includes(r)) {
+    return { ok: false, error: 'desfecho_invalido' }
+  }
+  const resolution = r as TakedownResolution
+  if (resolution === 'fulfilled') return { ok: true, value: { resolution, reason: null } }
+  const reason = cleanShort(input.reason)
+  if (reason === null) return { ok: false, error: 'motivo_obrigatorio' }
+  return { ok: true, value: { resolution, reason } }
+}
