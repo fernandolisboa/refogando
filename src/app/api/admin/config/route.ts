@@ -1,5 +1,6 @@
 import { requireRole } from '@/server/auth/guard'
-import { getDb } from '@/server/deps'
+import { getDb, getModelCatalog } from '@/server/deps'
+import { loadSelectableModels } from '@/server/claude/model-catalog'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
@@ -22,7 +23,9 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * `app_config` (linha id=true, garantida por CHECK no schema).
  *
  * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
- *  - `defaultModel` (#5) — modelo de chat. allowlist EM CÓDIGO (muda mais rápido que migração).
+ *  - `defaultModel` (#5) — modelo de chat. Validado contra os modelos SELECIONÁVEIS de agora (o mais novo
+ *    de Opus/Sonnet/Fable segundo a Models API da Anthropic, com lista pinada de fallback — ver
+ *    `domain/claude-models.ts` e `GET /api/admin/models`). Haiku não é selecionável.
  *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (aba IA, `/admin/ia`).
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
  *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
@@ -49,8 +52,6 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
  * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
-const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
-
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
   if (!g.ok) return g.response
@@ -98,7 +99,9 @@ export async function PUT(req: Request): Promise<Response> {
 
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
-    if (typeof m !== 'string' || !ALLOWED_MODELS.includes(m as (typeof ALLOWED_MODELS)[number])) {
+    if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
+    const selectable = await loadSelectableModels(getModelCatalog())
+    if (!selectable.some((opt) => opt.id === m)) {
       return Response.json({ error: 'modelo_invalido' }, { status: 400 })
     }
     set.defaultModel = m

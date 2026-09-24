@@ -13,10 +13,10 @@ function usage(parts: Partial<TextUsage>): TextUsage {
 }
 
 describe('computeTextCost — derivação do custo (snapshot)', () => {
-  it('deriva o custo do modelo default (Opus 4.8): $5/1M input + $25/1M output', () => {
-    // 1M input + 1M output = $5 + $25 = $30.
+  it('deriva o custo do modelo default (Opus 5.5): $4/1M input + $20/1M output', () => {
+    // 1M input + 1M output = $4 + $20 = $24.
     const cost = computeTextCost(usage({ inputTokens: 1_000_000, outputTokens: 1_000_000 }), DEFAULT_CLAUDE_MODEL)
-    expect(cost).toBe(30)
+    expect(cost).toBe(24)
   })
 
   it('output pesa mais que input (taxa de saída maior)', () => {
@@ -50,13 +50,13 @@ describe('computeTextCost — derivação do custo (snapshot)', () => {
     expect(computeTextCost(usage({ outputTokens: 1000 }), 'modelo-inexistente-9000')).toBeNull()
   })
 
-  it('cobre o outro modelo da allowlist (Sonnet 4.6)', () => {
+  it('mantém o preço de modelos antigos que já geraram Receitas (Sonnet 4.6)', () => {
     const cost = computeTextCost(usage({ inputTokens: 1_000_000, outputTokens: 1_000_000 }), 'claude-sonnet-4-6')
     expect(cost).toBe(18) // $3 + $15
   })
 
   it('arredonda a 6 casas decimais', () => {
-    // 1 input token no Opus = 5/1e6 = 0.000005 — exatamente 6 casas.
-    expect(computeTextCost(usage({ inputTokens: 1 }), DEFAULT_CLAUDE_MODEL)).toBe(0.000005)
+    // 1 input token no Opus 5.5 = 4/1e6 = 0.000004 — exatamente 6 casas.
+    expect(computeTextCost(usage({ inputTokens: 1 }), DEFAULT_CLAUDE_MODEL)).toBe(0.000004)
   })
 })

@@ -458,7 +458,7 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
       const terminal = frames[frames.length - 1]
       if (terminal.type !== 'recipe') throw new Error('terminal não é recipe')
       const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, terminal.recipeId!))
-      expect(gen.model).toBe('claude-opus-4-8')
+      expect(gen.model).toBe('claude-opus-5-5')
     }
   })
 

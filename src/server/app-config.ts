@@ -1,5 +1,6 @@
 import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import {
   DEFAULT_IMAGE_GEN_CONFIG,
   DEFAULT_IMAGE_MODEL,
@@ -56,7 +57,8 @@ import {
  * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed.
  */
 
-export const DEFAULT_CHAT_MODEL = 'claude-opus-4-8'
+// Fonte única em `domain/claude-models.ts` (o mesmo default das rotas de geração).
+export const DEFAULT_CHAT_MODEL = DEFAULT_TEXT_MODEL
 
 export type AppConfig = {
   defaultModel: string
