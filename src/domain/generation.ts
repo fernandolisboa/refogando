@@ -15,7 +15,7 @@
  */
 
 import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
-import { SUPPORTED_LOCALES, canonicalLocale, type Locale } from '@/i18n/locale'
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, canonicalLocale, type Locale } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 import type { TextUsage } from '@/domain/text-cost'
 
@@ -99,12 +99,10 @@ export function classifyWithReason(out: GenerationOutput): {
     return invalid(`dificuldade fora da faixa: ${recipe.dificuldade}`)
   }
   // originalLocale: o schema só DÁ A DICA (string livre), então o modelo pode emitir 'en'/'pt'/'en-GB'.
-  // Normaliza pelo idioma para o locale suportado canônico; lixo (vazio/não-suportado) → invalid.
+  // Normaliza pelo idioma; idioma não reconhecido (vazio, 'es', lixo) cai no DEFAULT_LOCALE em vez de
+  // descartar uma Receita boa — o idioma é metadado da tradução, não motivo pra falhar a geração.
   const rawLocale = recipe.originalLocale
-  const locale = normalizeGeneratedLocale(rawLocale)
-  if (locale === null) {
-    return invalid(`originalLocale não suportado: ${JSON.stringify(rawLocale.slice(0, 20))}`)
-  }
+  const locale = normalizeGeneratedLocale(rawLocale) ?? DEFAULT_LOCALE
   // quantidade fora-de-faixa (não-numérica/overflow) NUNCA chega ao DB → invalid.
   const badQtd = recipe.ingredientes.filter((ing) => !isQuantidadeValida(ing.quantidade)).length
   if (badQtd > 0) return invalid(`quantidade inválida em ${badQtd} ingrediente(s)`)

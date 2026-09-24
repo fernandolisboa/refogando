@@ -241,5 +241,6 @@ describe('originalLocale — string livre (quem normaliza é o classify)', () =>
   it('o JSON Schema enviado à Anthropic orienta os locales na description', () => {
     const json = JSON.stringify(zodOutputFormat(buildRecipeGenSchema(['italiana'])).schema)
     expect(json).toContain("'pt-BR' ou 'en-US'")
+    expect(json).toContain('não o do texto de origem')
   })
 })

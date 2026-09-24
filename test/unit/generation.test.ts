@@ -209,19 +209,15 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
     ).toEqual({ outcome: 'success', recipe, advisory: null })
   })
 
-  it('originalLocale "" (vazio) → invalid (NÃO persiste lixo)', () => {
-    const recipe = makeReceita({ originalLocale: '' })
-    expect(
-      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
-    ).toEqual({ outcome: 'invalid' })
-  })
-
-  it('originalLocale "xx" (não-suportado) → invalid', () => {
-    const recipe = makeReceita({ originalLocale: 'xx' })
-    expect(
-      classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
-    ).toEqual({ outcome: 'invalid' })
-  })
+  it.each(['', 'xx', 'es'])(
+    'originalLocale %j (não reconhecido) → cai no DEFAULT_LOCALE, NÃO falha a geração',
+    (raw) => {
+      const recipe = makeReceita({ originalLocale: raw })
+      const result = classify({ kind: 'object', recipe, advisory: null, modelKind: 'success' })
+      expect(result.outcome).toBe('success')
+      if (result.outcome === 'success') expect(result.recipe.originalLocale).toBe('pt-BR')
+    },
+  )
 
   it('originalLocale suportado ("en-US") preserva o outcome do modelo', () => {
     const recipe = makeReceita({ originalLocale: 'en-US' })
@@ -232,13 +228,6 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
 })
 
 describe('classifyWithReason — motivo do invalid (só metadado, sem conteúdo)', () => {
-  it('originalLocale "xx" (idioma não suportado) → invalid com o motivo', () => {
-    const recipe = makeReceita({ originalLocale: 'xx' })
-    expect(
-      classifyWithReason({ kind: 'object', recipe, advisory: null, modelKind: 'success' }),
-    ).toEqual({ result: { outcome: 'invalid' }, reason: 'originalLocale não suportado: "xx"' })
-  })
-
   it('porcoes fora da faixa → motivo nomeia a regra', () => {
     const recipe = makeReceita({ porcoes: 0 })
     expect(
