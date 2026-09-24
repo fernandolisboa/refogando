@@ -3,7 +3,7 @@ import { resolveLocale } from '@/i18n/locale'
 import { loadWebSearchConfig } from '@/server/app-config'
 import { stripControlChars } from '@/domain/search-terms'
 import { MAX_QUERY_LEN } from '@/server/recipe/search'
-import { isUrlAllowed, type WebSearchConfig } from '@/domain/web-search-config'
+import { isUrlAllowed, isWebSearchOpen, type WebSearchConfig } from '@/domain/web-search-config'
 import {
   MAX_SITE_QUERIES,
   type WebSearchResult,
@@ -78,7 +78,7 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   // Desligado OU allowlist vazia ⇒ vazio (fail-closed). NÃO toca o provedor.
-  if (!cfg.enabled || cfg.allowlist.length === 0) return Response.json({ results: [] })
+  if (!isWebSearchOpen(cfg)) return Response.json({ results: [] })
 
   // Teto de GASTO diário (#464): reserva ATÔMICA de exatamente as consultas que o provedor VAI disparar
   // — uma por domínio, capado em `MAX_SITE_QUERIES` (mesma conta do fan-out do RealWebSearchProvider).

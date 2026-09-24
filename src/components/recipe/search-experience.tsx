@@ -29,7 +29,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
-import { searchTermGenerability } from '@/domain/generate-from-search'
+import { createFromSearchHref, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
@@ -125,6 +125,9 @@ export function SearchExperience({
   // debounced re-busca. O servidor reordena SÓ a Comunidade (Catálogo é editorial, ADR-0003).
   const [sort, setSort] = useState<Sort>('relevancia')
   const [data, setData] = useState<SearchResponse | null>(null)
+  // Termo que PRODUZIU `data` (não o `q` ao vivo): o "Gerar" do vazio e o atalho sob os resultados leem
+  // este, pra não mostrar o termo novo sobre resultados do termo anterior enquanto o debounce corre.
+  const [dataTerm, setDataTerm] = useState('')
   const [status, setStatus] = useState<Status>('idle')
 
   // #5 (Direção C): a trilha de filtros é PERMANENTE no desktop (`lg:`) e vira um DISCLOSURE no mobile
@@ -270,6 +273,7 @@ export function SearchExperience({
       webAbortRef.current?.abort()
       cooksAbortRef.current?.abort()
       setData(null)
+      setDataTerm('')
       setWebLinks([])
       setCooks([])
       setCooksStatus('idle')
@@ -316,6 +320,7 @@ export function SearchExperience({
       }
       const body: SearchResponse = await res.json()
       setData(body)
+      setDataTerm(q.trim())
       setStatus('done')
 
       // #275: toda nova busca BEM-SUCEDIDA volta o CTA manual a `idle` (reaparece ao mudar q/faceta/sort).
@@ -455,10 +460,10 @@ export function SearchExperience({
 
   const isEmpty = status === 'done' && data !== null && !hasResults
 
-  // Gerar a partir da busca: `ok` ⇒ o termo já serve de pedido (cartão no vazio + atalho sob os
-  // resultados); `too_short` ⇒ dica "digite mais algumas letras" no lugar do cartão; `none` (sem termo,
-  // só facetas) ⇒ cartão genérico do vazio, sem atalho.
-  const generability = searchTermGenerability(q)
+  // Gerar a partir da busca (termo da ÚLTIMA busca concluída): `ok` ⇒ o termo já serve de pedido (cartão
+  // no vazio + atalho sob os resultados); `too_short` ⇒ dica "digite mais algumas letras" no lugar do
+  // cartão; `none` (sem letras: só facetas, "123") ⇒ cartão genérico do vazio (`/create` cru), sem atalho.
+  const readiness = searchTermReadiness(dataTerm)
 
   // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
   // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
@@ -674,11 +679,11 @@ export function SearchExperience({
                 </h2>
                 <p className="max-w-[54ch] text-sm text-muted">{m.semResultado}</p>
                 <div className="mt-1 flex flex-col gap-2.5">
-                  {generability === 'too_short' ? (
+                  {readiness === 'too_short' ? (
                     <p className="text-sm text-muted">{m.digiteMaisLetras}</p>
                   ) : (
                     <GerarComIaCta
-                      q={q}
+                      q={dataTerm}
                       authed={authed}
                       sessionPending={session.isPending}
                       gerarLabel={m.gerarComIa}
@@ -762,17 +767,19 @@ export function SearchExperience({
           </div>
         )}
 
-        {/* Atalho "Gerar com IA" SOB os resultados: a busca achou algo, mas talvez não o que a pessoa
-            queria. Só com termo que já serve de pedido (`ok`) e busca assentada (`done`), pra não piscar
-            a cada tecla. Link para `/create?q=` (logado) ou para entrar (visitante) — nunca gera sozinho. */}
-        {status === 'done' && hasResults && generability === 'ok' && (
+        {/* Atalho "Gerar com IA" SOB os resultados (ADR-0019, atualização 2026-09-24): a busca achou algo,
+            mas talvez não o que a pessoa queria. Só com termo que já serve de pedido (`ok`). Lê o termo da
+            última busca concluída (`dataTerm`), então acompanha os resultados na tela: não pisca nem troca
+            de rótulo a cada tecla, e fica visível durante o refresh (stale-while-revalidate). Link para
+            `/create?q=` (logado) ou para entrar e cair lá (visitante) — nunca gera sozinho. */}
+        {status !== 'error' && hasResults && readiness === 'ok' && (
           <GerarAtalho
-            q={q}
+            term={dataTerm}
             authed={authed}
             sessionPending={session.isPending}
             lead={m.gerarAtalhoLead}
-            label={m.gerarAtalho.replace('{termo}', q.trim())}
-            returnTo={returnTo}
+            // Função como substituto: `$&`/`$'` digitados no termo não viram padrões do `.replace`.
+            label={m.gerarAtalho.replace('{termo}', () => dataTerm)}
           />
         )}
 
@@ -1063,7 +1070,7 @@ function GerarComIaCta({
 
   // Logado (ou sessão ainda resolvendo): CARTÃO com título/descrição + link pro /create com o termo
   // pré-preenchido. Só anexa `?q` quando há termo (sem `?q=` vazio espúrio na URL).
-  const href = q.trim() !== '' ? `/create?q=${encodeURIComponent(q.trim())}` : '/create'
+  const href = createFromSearchHref(q)
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-brand/50 bg-brand/[0.06] px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
@@ -1082,28 +1089,26 @@ function GerarComIaCta({
 
 /**
  * Atalho discreto "Gerar “termo” com IA" sob os resultados. Mesmo destino do `GerarComIaCta` do vazio
- * (logado → `/create?q=`; visitante → entrar, voltando para a busca), mas em uma linha: aqui a busca
- * TROUXE resultados, então gerar é a saída secundária, não a principal.
+ * (`createFromSearchHref`), mas em uma linha: aqui a busca TROUXE resultados, então gerar é a saída
+ * secundária, não a principal. Visitante vai entrar com `returnTo` apontando para o próprio `/create?q=`,
+ * então o termo e a intenção de gerar sobrevivem ao login. Otimista durante o pending, como o cartão.
  */
 function GerarAtalho({
-  q,
+  term,
   authed,
   sessionPending,
   lead,
   label,
-  returnTo,
 }: {
-  q: string
+  term: string
   authed: boolean
   sessionPending: boolean
   lead: string
   label: string
-  returnTo: string
 }) {
+  const createHref = createFromSearchHref(term)
   const href =
-    !authed && !sessionPending
-      ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}`
-      : `/create?q=${encodeURIComponent(q.trim())}`
+    !authed && !sessionPending ? `/sign-in?returnTo=${encodeURIComponent(createHref)}` : createHref
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
       <span>{lead}</span>

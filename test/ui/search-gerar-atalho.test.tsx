@@ -77,6 +77,19 @@ function stubFetchOk(body: SearchResponse) {
 }
 
 const VAZIO: SearchResponse = { minhas: [], catalogo: [], comunidade: [] }
+const item = (id: string, titulo: string) => ({
+  recipeId: id,
+  displayedTitle: titulo,
+  origin: 'catalog' as const,
+  autoTranslationSignal: false,
+  isOwn: false,
+})
+// Acervo SUFICIENTE (>= limiar 3): sem auto-web; o CTA manual #275 "Não achou? Buscar na web" aparece.
+const SUFICIENTE: SearchResponse = {
+  minhas: [],
+  catalogo: [item('r1', 'Feijoada'), item('r2', 'Feijoada light'), item('r3', 'Feijoada vegana')],
+  comunidade: [],
+}
 const COM_RESULTADO: SearchResponse = {
   minhas: [],
   catalogo: [
@@ -108,6 +121,17 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
   })
 
+  it('termo só com dígitos sem resultado ⇒ cartão Gerar leva ao /create cru (sem "123" pré-preenchido)', async () => {
+    sessionState = authed()
+    stubFetchOk(VAZIO)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), '123')
+    const cta = await screen.findByRole('link', { name: M.gerarComIa })
+    expect(cta).toHaveAttribute('href', '/create')
+  })
+
   it('logado, termo que serve de pedido e COM resultados ⇒ atalho leva ao /create?q=', async () => {
     sessionState = authed()
     stubFetchOk(COM_RESULTADO)
@@ -120,7 +144,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     expect(screen.getByText(M.gerarAtalhoLead)).toBeInTheDocument()
   })
 
-  it('visitante COM resultados ⇒ atalho leva a entrar, voltando para a busca', async () => {
+  it('visitante COM resultados ⇒ atalho leva a entrar e, depois, ao próprio /create?q=', async () => {
     sessionState = anon()
     stubFetchOk(COM_RESULTADO)
     const user = userEvent.setup()
@@ -128,7 +152,7 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
 
     await user.type(screen.getByRole('searchbox'), 'feijoada')
     const link = await screen.findByRole('link', { name: atalho('feijoada') })
-    expect(link.getAttribute('href')).toMatch(/^\/sign-in\?returnTo=/)
+    expect(link).toHaveAttribute('href', `/sign-in?returnTo=${encodeURIComponent('/create?q=feijoada')}`)
   })
 
   it('termo curto COM resultados ⇒ sem atalho', async () => {
@@ -142,6 +166,33 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     expect(screen.queryByText(M.gerarAtalhoLead)).not.toBeInTheDocument()
   })
 
+  it('o atalho segue o termo da busca CONCLUÍDA, não o digitado antes do debounce', async () => {
+    sessionState = authed()
+    stubFetchOk(COM_RESULTADO)
+    const user = userEvent.setup()
+    renderSearch()
+
+    const box = screen.getByRole('searchbox')
+    await user.type(box, 'feijoada')
+    await screen.findByRole('link', { name: atalho('feijoada') })
+
+    // Antes da nova busca concluir, o atalho ainda nomeia o termo dos resultados na tela.
+    await user.type(box, ' leve')
+    expect(screen.getByRole('link', { name: atalho('feijoada') })).toBeInTheDocument()
+    // Concluída a nova busca, acompanha o termo novo.
+    await screen.findByRole('link', { name: atalho('feijoada leve') })
+  })
+
+  it('símbolos `$` do termo não viram padrões de substituição no rótulo', async () => {
+    sessionState = authed()
+    stubFetchOk(COM_RESULTADO)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'bolo $& fubá')
+    await screen.findByRole('link', { name: 'Gerar “bolo $& fubá” com IA' })
+  })
+
   it('web desligada ⇒ sem cartão "Buscar na web" no vazio', async () => {
     sessionState = authed()
     stubFetchOk(VAZIO)
@@ -153,34 +204,26 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     expect(screen.queryByText(M.vazioWebTitulo)).not.toBeInTheDocument()
   })
 
-  it('web ligada (padrão) ⇒ o cartão "Buscar na web" segue no vazio', async () => {
+  it('web desligada ⇒ sem CTA "Buscar na web" ao fim de resultados suficientes', async () => {
     sessionState = authed()
-    stubFetchOk(VAZIO)
+    stubFetchOk(SUFICIENTE)
     const user = userEvent.setup()
-    renderSearch()
-
-    await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
-    await screen.findByRole('link', { name: M.gerarComIa })
-    expect(screen.getByText(M.vazioWebTitulo)).toBeInTheDocument()
-  })
-
-  it('acervo raso: web ligada dispara a descoberta automática; desligada não', async () => {
-    const webCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
-      fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/discovery/web')).length
-
-    sessionState = authed()
-    let fetchMock = stubFetchOk(COM_RESULTADO)
-    let user = userEvent.setup()
-    const { unmount } = renderSearch()
-    await user.type(screen.getByRole('searchbox'), 'feijoada')
-    await vi.waitFor(() => expect(webCalls(fetchMock)).toBeGreaterThan(0))
-    unmount()
-
-    fetchMock = stubFetchOk(COM_RESULTADO)
-    user = userEvent.setup()
     renderSearch({ webAvailable: false })
+
     await user.type(screen.getByRole('searchbox'), 'feijoada')
     await screen.findByRole('link', { name: atalho('feijoada') })
-    expect(webCalls(fetchMock)).toBe(0)
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+  })
+
+  it('web desligada ⇒ acervo raso NÃO dispara a descoberta automática', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchOk(COM_RESULTADO)
+    const user = userEvent.setup()
+    renderSearch({ webAvailable: false })
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('link', { name: atalho('feijoada') })
+    const webCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/discovery/web'))
+    expect(webCalls).toHaveLength(0)
   })
 })

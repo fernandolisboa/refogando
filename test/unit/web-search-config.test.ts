@@ -7,6 +7,7 @@ import {
   deniedDomainsIn,
   TOS_DENYLIST,
   DEFAULT_WEB_SEARCH_CONFIG,
+  isWebSearchOpen,
 } from '@/domain/web-search-config'
 
 /**
@@ -175,5 +176,14 @@ describe('isUrlAllowed — guard de SSRF + allowlist', () => {
 describe('defaults', () => {
   it('descoberta na web nasce DESLIGADA e allowlist vazia (fail-closed)', () => {
     expect(DEFAULT_WEB_SEARCH_CONFIG).toEqual({ enabled: false, allowlist: [] })
+  })
+})
+
+describe('isWebSearchOpen', () => {
+  it('só libera com a flag ligada E ao menos um domínio (fail-closed)', () => {
+    expect(isWebSearchOpen(DEFAULT_WEB_SEARCH_CONFIG)).toBe(false)
+    expect(isWebSearchOpen({ enabled: true, allowlist: [] })).toBe(false)
+    expect(isWebSearchOpen({ enabled: false, allowlist: ['tudogostoso.com.br'] })).toBe(false)
+    expect(isWebSearchOpen({ enabled: true, allowlist: ['tudogostoso.com.br'] })).toBe(true)
   })
 })

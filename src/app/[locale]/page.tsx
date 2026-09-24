@@ -37,6 +37,8 @@ import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { loadDiscoveryFeed } from '@/server/recipe/feed'
 import { loadRecipeOfTheWeek } from '@/server/recipe/recipe-of-week'
 import { loadWebSearchConfig } from '@/server/app-config'
+import { isWebSearchOpen } from '@/domain/web-search-config'
+import { hasWebSearchCredential } from '@/server/web-search/web-search-provider'
 import { getDb } from '@/server/deps'
 import { MESSAGES } from '@/i18n/messages'
 
@@ -86,12 +88,12 @@ export default async function Home({
   const [{ feed, nextCursor }, recipeOfWeek, webSearch] = await Promise.all([
     loadDiscoveryFeed(db, { requestLocale: locale }),
     loadRecipeOfTheWeek(db, locale),
-    loadWebSearchConfig(db),
+    // Opcional: falha nesta leitura NÃO derruba a home — só esconde os gatilhos da web.
+    loadWebSearchConfig(db).catch(() => null),
   ])
   // Descoberta na web LIGADA de fato: flag admin + allowlist não vazia + chave do provedor (sem a chave o
   // provedor devolve `[]`). Desligada ⇒ a Busca esconde os gatilhos "Buscar na web" (beco sem saída).
-  const webAvailable =
-    webSearch.enabled && webSearch.allowlist.length > 0 && !!process.env.WEB_SEARCH_API_KEY
+  const webAvailable = webSearch !== null && isWebSearchOpen(webSearch) && hasWebSearchCredential()
 
   const m = MESSAGES[locale].busca
   const mw = MESSAGES[locale].receitaDaSemana

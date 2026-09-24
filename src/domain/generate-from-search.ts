@@ -9,10 +9,19 @@
  */
 export const GENERATE_FROM_SEARCH_MIN_LETTERS = 4
 
-export type SearchTermGenerability = 'none' | 'too_short' | 'ok'
+export type SearchTermReadiness = 'none' | 'too_short' | 'ok'
 
-export function searchTermGenerability(q: string): SearchTermGenerability {
+export function searchTermReadiness(q: string): SearchTermReadiness {
   const letters = q.match(/\p{L}/gu)?.length ?? 0
   if (letters === 0) return 'none'
   return letters < GENERATE_FROM_SEARCH_MIN_LETTERS ? 'too_short' : 'ok'
+}
+
+/**
+ * Destino do "Gerar" a partir da busca (cartão do vazio e atalho sob os resultados): `/create?q=<termo>`
+ * quando o termo serve de pedido; `/create` cru caso contrário (sem `?q=` espúrio, nem "123" pré-preenchido).
+ */
+export function createFromSearchHref(term: string): string {
+  const t = term.trim()
+  return searchTermReadiness(t) === 'ok' ? `/create?q=${encodeURIComponent(t)}` : '/create'
 }
