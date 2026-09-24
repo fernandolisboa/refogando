@@ -126,7 +126,7 @@ Nota comum: o argumento de que "fatos de receita não são protegidos por direit
 
 ### 4.5 Domínios em REVISÃO MANUAL (não decidir sem leitura humana)
 
-> **Atenção (2026-09-24):** sete destes domínios (tudogostoso, cybercook, receiteria, allrecipes, simplyrecipes, seriouseats, bbcgoodfood) aparecem hoje como **sugestões** na tela de admin da allowlist, ao lado de receitasnestle. Nada entra automaticamente (a allowlist nasce vazia), mas um clique do admin os incluiria **sem** a leitura verbatim pedida aqui. Até o parecer, não adicionar nenhum deles.
+> **2026-09-24:** estes sete domínios saíram das sugestões de um clique da tela de admin da allowlist (`src/domain/suggested-domains.ts`); só receitasnestle segue sugerido. O admin ainda pode digitá-los à mão: não fazer isso antes da leitura verbatim do ToS.
 
 Sete domínios **não** têm base suficiente para excluir nem para manter, e exigem leitura jurídica do ToS (e, onde faltou, do robots) antes de qualquer decisão:
 

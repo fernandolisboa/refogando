@@ -79,7 +79,7 @@ O titular B **não tem login**, então o atendimento é **mediado pelo operador*
 3. **Localização e prévia.** `POST /api/admin/attribution/clear` sem `apply` devolve, sem alterar nada, as receitas importadas que casam pelo `source_name` (normalizado) ou pelo `source_url` (exato), de **qualquer** usuário, inclusive privadas.
 4. **Remoção do nome.** A mesma rota com `apply:true` zera `source_name` em todas elas (mantém `source_url`; pula as que já exibem só o host) e grava `DSAR_FULFILLED` com **hash** do que foi removido. Aceita um `caseId` para ligar a remoção ao pedido.
 5. **Escalada além do nome.** `POST /api/admin/attribution/escalate` com `url_unlink` (zera URL e nome) ou `record_deletion` (apaga a receita importada e as imagens próprias), também com prévia por padrão e auditoria com hash. **Quando** escalar continua sendo decisão do operador à luz da orientação jurídica (§4.1).
-6. **Resposta ao titular** dentro do prazo. **Gap:** não há tela nem rota para mudar o status do ticket para atendido/rejeitado, nem para gravar `DSAR_REJECTED`; o ticket fica aberto no painel de SLA até o fechamento ser implementado.
+6. **Resposta ao titular** dentro do prazo, e **encerramento** do ticket no painel de SLA (`/admin/descoberta`): "Marcar como atendido" grava `DSAR_FULFILLED`; "Recusar" exige motivo e grava `DSAR_REJECTED`. O ticket encerrado sai do painel e do cron de alertas.
 
 > Para o **titular A** (usuário logado), a remoção do nome de **suas próprias** receitas importadas já é **self-service**: o botão na tela de detalhe chama `POST /api/recipes/[id]/clear-attribution`. Esse fluxo está pronto; o que falta é o resto do DSAR de conta (§8).
 
@@ -124,7 +124,7 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 | **GAP-5** | Auditoria DSAR | **Fechado.** `dsar_audit_event` com hash (PR #402). Ver ressalvas na §5. |
 | **GAP-6** | Formulário de intake + DSAR do titular A | **Fechado.** Formulário (PR #407); exportação e eliminação (PR #410); expurgo de fotos após 180 dias (cron `account-purge`). |
 | **GAP-7** | Alertas de SLA | **Fechado.** Cron diário, alertas 10/13/15, e-mail ao encarregado, painel admin (PRs #408, #415, #416). **Depende do dono:** `BREVO_API_KEY`, `DSAR_MAIL_FROM`, `DSAR_DPO_EMAIL`, `CRON_SECRET`. |
-| **Novo** | Fechamento do ticket | **Aberto (engenharia).** Não há como marcar um ticket como atendido/rejeitado nem gravar `DSAR_IDENTITY_VERIFIED`/`DSAR_REJECTED`. |
+| **Novo** | Fechamento do ticket | **Fechado.** O painel de SLA tem "Marcar como atendido" e "Recusar" (com motivo): `POST /api/admin/takedown-sla/resolve` muda o status e grava `DSAR_FULFILLED` (hash) ou `DSAR_REJECTED` (motivo). `DSAR_IDENTITY_VERIFIED` continua sem gravação (a verificação é feita fora do app). |
 | **Novo** | Retenção | **Aberto (advogado + #473).** Tickets de takedown, log de auditoria e conteúdo de contas eliminadas sem prazo definido. |
 
 **O que ainda bloqueia ligar a Descoberta na web (#276):** o **sign-off jurídico** dos pontos **[VALIDAR]** — sobretudo §4.1 (quando a atribuição cede) e §7 (base legal) — e a configuração operacional do dono (alias de e-mail e Brevo), sem a qual o canal publicado pode não receber pedidos.

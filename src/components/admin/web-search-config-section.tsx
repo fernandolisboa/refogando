@@ -233,7 +233,7 @@ export function WebSearchConfigSection() {
                 <h3 className="text-sm font-medium text-fg">{m.webSugeridosTitulo}</h3>
                 <p className="max-w-[60ch] text-xs text-muted">{m.webSugeridosDescricao}</p>
               </div>
-              {SUGGESTED_GROUPS.map((grupo) => (
+              {SUGGESTED_GROUPS.filter((grupo) => SUGGESTED_DOMAINS[grupo].length > 0).map((grupo) => (
                 <div key={grupo} className="flex flex-col gap-1">
                   <span className="text-xs font-medium text-muted">
                     {grupo === 'pt-BR'

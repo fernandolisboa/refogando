@@ -137,15 +137,15 @@ describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
     renderSection()
 
     const chip = await screen.findByRole('button', {
-      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'tudogostoso.com.br'),
+      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'receitasnestle.com.br'),
     })
     expect(chip).toBeEnabled()
     await user.click(chip)
 
     const textarea = screen.getByLabelText(A.webAllowlistLabel) as HTMLTextAreaElement
-    expect(textarea.value).toBe('tudogostoso.com.br')
+    expect(textarea.value).toBe('receitasnestle.com.br')
     // após o clique, o chip vira "já na lista" e fica desabilitado (dedup).
-    const present = screen.getByRole('button', { name: /tudogostoso\.com\.br/ })
+    const present = screen.getByRole('button', { name: /receitasnestle\.com\.br/ })
     expect(present).toBeDisabled()
   })
 
@@ -154,19 +154,25 @@ describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
       'GET /api/admin/config': {
         ok: true,
         status: 200,
-        body: configBody(true, ['tudogostoso.com.br']),
+        body: configBody(true, ['receitasnestle.com.br']),
       },
     })
     renderSection()
 
-    const present = await screen.findByRole('button', { name: /tudogostoso\.com\.br/ })
+    const present = await screen.findByRole('button', { name: /receitasnestle\.com\.br/ })
     expect(present).toBeDisabled()
-    // um sugerido AUSENTE segue habilitado.
-    expect(
-      screen.getByRole('button', {
-        name: A.webSugeridoAdicionarAria.replace('{dominio}', 'cybercook.com.br'),
-      }),
-    ).toBeEnabled()
+  })
+
+  it('não oferece domínios sem leitura de ToS e esconde o grupo vazio', async () => {
+    mockFetch({
+      'GET /api/admin/config': { ok: true, status: 200, body: configBody(false, []) },
+    })
+    renderSection()
+
+    await screen.findByRole('button', { name: /receitasnestle\.com\.br/ })
+    expect(screen.queryByRole('button', { name: /tudogostoso\.com\.br/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /allrecipes\.com/ })).toBeNull()
+    expect(screen.queryByText(A.webSugeridosGrupoInternacional)).toBeNull()
   })
 
   it('clicar num sugerido NÃO dispara save (PUT) — sugerir ≠ vetar', async () => {
@@ -177,7 +183,7 @@ describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
     renderSection()
 
     const chip = await screen.findByRole('button', {
-      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'allrecipes.com'),
+      name: A.webSugeridoAdicionarAria.replace('{dominio}', 'receitasnestle.com.br'),
     })
     await user.click(chip)
     expect(calls.some((c) => c.method === 'PUT')).toBe(false)
