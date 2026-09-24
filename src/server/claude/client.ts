@@ -123,6 +123,16 @@ export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8'
 export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
 
 /**
+ * Loga o erro engolido por um método do seam (que devolve `parse_failed` ao chamador). Abort do
+ * cliente não é falha — não loga. Sanitizado: o SDK não inclui a API key no erro; nunca logamos
+ * prompt nem saída do modelo, só o erro (status/tipo/mensagem/request-id vêm nele).
+ */
+function logSeamError(method: string, err: unknown, signal?: AbortSignal): void {
+  if (signal?.aborted) return
+  console.error(`[claude/${method}] falha na chamada (→ parse_failed):`, err)
+}
+
+/**
  * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
  * outputs (`messages.parse` + `zodOutputFormat(RecipeGenSchema)`).
  */
@@ -181,9 +191,11 @@ export class RealClaudeClient implements ClaudeClient {
         // deriva o `cost_usd` snapshot. Só o branch 'object' persiste linha de generation ⇒ só ele carrega.
         usage: mapTextUsage(message.usage),
       }
-    } catch {
-      // Qualquer erro de rede/SDK/validação → parse_failed. Nunca vaza stack; nunca
-      // vira Receita parcial.
+    } catch (err) {
+      // Qualquer erro de rede/SDK/validação → parse_failed. Nunca vaza stack pro cliente;
+      // nunca vira Receita parcial. Loga no servidor: sem isso a causa (crédito, chave,
+      // modelo recusado) fica invisível em produção.
+      logSeamError('generateRecipe', err, input.signal)
       return { kind: 'parse_failed' }
     }
   }
@@ -235,8 +247,9 @@ export class RealClaudeClient implements ClaudeClient {
         variacao: v.variacao,
         usage: i === 0 ? batchUsage : undefined,
       }))
-    } catch {
+    } catch (err) {
       // Truncamento no meio da 2ª receita OU qualquer erro de rede/SDK/validação → parse_failed do lote.
+      logSeamError('generateRecipeVariants', err, input.signal)
       return [{ kind: 'parse_failed' }]
     }
   }
@@ -273,7 +286,8 @@ export class RealClaudeClient implements ClaudeClient {
       }
 
       return { kind: 'ok', items: message.parsed_output.items }
-    } catch {
+    } catch (err) {
+      logSeamError('extractIngredients', err, input.signal)
       return { kind: 'parse_failed' }
     }
   }
