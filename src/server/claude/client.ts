@@ -124,12 +124,45 @@ export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-
 
 /**
  * Loga o erro engolido por um método do seam (que devolve `parse_failed` ao chamador). Abort do
- * cliente não é falha — não loga. Sanitizado: o SDK não inclui a API key no erro; nunca logamos
- * prompt nem saída do modelo, só o erro (status/tipo/mensagem/request-id vêm nele).
+ * cliente não é falha — não loga. Resumo compacto, não o erro cru: o SDK não põe a API key no erro,
+ * mas o objeto cru arrasta headers da resposta e, em erro de parse, o `JSON.parse` do V8 cita um
+ * trecho da saída do modelo (que pode ecoar conteúdo do Usuário). Por isso: aspas removidas da
+ * mensagem e teto de tamanho.
  */
 function logSeamError(method: string, err: unknown, signal?: AbortSignal): void {
   if (signal?.aborted) return
-  console.error(`[claude/${method}] falha na chamada (→ parse_failed):`, err)
+  const e = (err ?? {}) as {
+    name?: string
+    status?: number
+    type?: string | null
+    requestID?: string | null
+    message?: string
+  }
+  const message = String(e.message ?? err)
+    .replace(/"[^"]*"/g, '"…"')
+    .slice(0, 300)
+  console.error(`[claude/${method}] falha na chamada (→ parse_failed):`, {
+    name: e.name,
+    status: e.status,
+    type: e.type,
+    requestID: e.requestID,
+    message,
+  })
+}
+
+/**
+ * Loga um `parse_failed` que NÃO veio de exceção (saída nula após o reparo, cardinalidade errada).
+ * Só metadados da resposta — nunca conteúdo.
+ */
+function logSeamParseFailed(
+  method: string,
+  reason: string,
+  message: { id?: string; stop_reason?: string | null },
+): void {
+  console.error(`[claude/${method}] parse_failed (${reason}):`, {
+    id: message.id,
+    stopReason: message.stop_reason,
+  })
 }
 
 /**
@@ -177,7 +210,10 @@ export class RealClaudeClient implements ClaudeClient {
         message = await client.messages.parse(params, { signal: input.signal })
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
-        if (message.parsed_output === null) return { kind: 'parse_failed' }
+        if (message.parsed_output === null) {
+          logSeamParseFailed('generateRecipe', 'saída nula após reparo', message)
+          return { kind: 'parse_failed' }
+        }
       }
 
       const parsed = message.parsed_output
@@ -227,13 +263,19 @@ export class RealClaudeClient implements ClaudeClient {
         message = await client.messages.parse(params, { signal: input.signal })
         if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
         if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
-        if (message.parsed_output === null) return [{ kind: 'parse_failed' }]
+        if (message.parsed_output === null) {
+          logSeamParseFailed('generateRecipeVariants', 'saída nula após reparo', message)
+          return [{ kind: 'parse_failed' }]
+        }
       }
 
       const variacoes = message.parsed_output.variacoes
       // EXATO-2: o schema-array é PLANO (sem bound — evita `$defs`, ver recipe-gen-schema.ts); a
       // cardinalidade é exigida AQUI. ≠2 ⇒ parse_failed do LOTE (erro de geração; NÃO degrada — ADR-0029).
-      if (variacoes.length !== 2) return [{ kind: 'parse_failed' }]
+      if (variacoes.length !== 2) {
+        logSeamParseFailed('generateRecipeVariants', `cardinalidade ${variacoes.length} ≠ 2`, message)
+        return [{ kind: 'parse_failed' }]
+      }
 
       // #463: o `message.usage` cobre o LOTE INTEIRO (uma chamada structured produz as 2 receitas).
       // Anexamos a telemetria SÓ à 1ª variação — anexar às 2 dobraria o custo na soma do ledger. A 2ª
@@ -282,7 +324,10 @@ export class RealClaudeClient implements ClaudeClient {
       // parse_failed.
       if (message.parsed_output === null) {
         message = await client.messages.parse(params, { signal: input.signal })
-        if (message.parsed_output === null) return { kind: 'parse_failed' }
+        if (message.parsed_output === null) {
+          logSeamParseFailed('extractIngredients', 'saída nula após reparo', message)
+          return { kind: 'parse_failed' }
+        }
       }
 
       return { kind: 'ok', items: message.parsed_output.items }
