@@ -35,12 +35,17 @@ export type TextModelRates = {
  * Tabela de preço EM CÓDIGO (modelo → taxas/1M de tokens), em USD. **SNAPSHOT de 2026-07-05** — os
  * preços do provedor mudam; por isso GRAVAMOS o `cost_usd` derivado na linha (não recomputamos depois).
  *
- * Cobre os modelos que a Geração pode usar hoje (allowlist EM CÓDIGO em /api/admin/config:
- * `claude-opus-4-8`, `claude-sonnet-4-6`) mais alguns duráveis vizinhos, para que uma troca de
- * `default_model` não caia em NULL silenciosamente. Modelo fora da tabela ⇒ custo `null` (honesto).
- * `claude-sonnet-5` traz o preço padrão (o introdutório expira 2026-08-31; snapshot conservador).
+ * Cobre os modelos selecionáveis hoje (o mais novo de Opus/Sonnet/Fable, ver `claude-models.ts`) e os
+ * que já geraram Receitas (os antigos ficam: a tabela só é lida na hora de gerar, mas não custa nada
+ * manter). A lista do admin é DINÂMICA: um modelo novo que ainda não está aqui gera com custo `null`
+ * (honesto) até alguém adicionar a linha. `claude-sonnet-5` traz o preço padrão (o introdutório
+ * expirou em 2026-08-31). Opus 5.5 / Fable: preços de 2026-09-24.
  */
 export const TEXT_PRICE_TABLE: Record<string, TextModelRates> = {
+  'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20 },
+  'claude-opus-5': { inputPer1M: 5, outputPer1M: 25 },
+  'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50 },
+  'claude-fable-5': { inputPer1M: 10, outputPer1M: 50 },
   'claude-opus-4-8': { inputPer1M: 5, outputPer1M: 25 },
   'claude-opus-4-7': { inputPer1M: 5, outputPer1M: 25 },
   'claude-sonnet-5': { inputPer1M: 3, outputPer1M: 15 },

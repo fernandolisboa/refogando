@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ALTER COLUMN "default_model" SET DEFAULT 'claude-opus-5-5';

@@ -18,6 +18,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
+import { selectableFamilyOf } from '@/domain/claude-models'
 import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -103,23 +104,44 @@ function mapTextUsage(usage: { input_tokens?: number; output_tokens?: number } |
   }
 }
 
-// Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
-// bastante para uma Receita completa; estourar → stop_reason 'max_tokens'.
-const MAX_TOKENS = 4096
+// Teto de tokens da geração. É TETO, não custo (cobra-se o que sai). Largo porque o thinking entra na
+// conta: Opus 5.5 e Fable rodam com thinking SEMPRE ligado (não dá p/ desligar), e 4096 truncava a
+// Receita no meio → stop_reason 'max_tokens'. Estourar → 'max_tokens'.
+const MAX_TOKENS = 12_000
 
-// Teto de tokens do lote de 2 variações (#423): 2× o single (são 2 Receitas completas numa resposta).
-// Estreito o bastante p/ não desgovernar o custo; estourar no meio da 2ª → parse_failed do lote.
-const VARIANTS_MAX_TOKENS = MAX_TOKENS * 2
+// Teto de tokens do lote de 2 variações (#423): 2 Receitas completas + thinking numa resposta. Fica
+// ABAIXO de ~21.3k: acima disso o SDK exige streaming numa chamada não-streaming e lança antes de enviar.
+const VARIANTS_MAX_TOKENS = 20_000
 
-// Modelo default em código quando `app_config.default_model` (linha singleton) está
-// ausente. FONTE ÚNICA: ambas as rotas de geração (/api/generations e
-// /api/conversations/stream) resolvem o modelo de app_config e caem AQUI no default.
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8'
+// Esforço da Geração. Explícito porque o default muda por modelo (Opus 5.5 = medium; Opus 4.x, Sonnet
+// e Fable = high) e as rotas têm teto de 60s (maxDuration): medium segura a latência numa tarefa que
+// não pede raciocínio longo, qualquer que seja o modelo escolhido no admin.
+const GENERATION_EFFORT = 'medium' as const
+
+// Prazo da chamada de Geração (chamada + reparo; o SDK não tenta de novo depois do abort). Limita ESTA
+// chamada, abaixo do `maxDuration = 60` das rotas: estourar vira `parse_failed` controlado em vez de a
+// Vercel matar a função (504). Na conversa, o stream vem ANTES e não entra nesse prazo.
+const GENERATION_DEADLINE_MS = 50_000
+
+/** Sinal que aborta no abort do cliente HTTP OU no prazo da Geração — o que vier primeiro. */
+function generationSignal(signal?: AbortSignal): AbortSignal {
+  const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS)
+  return signal ? AbortSignal.any([signal, deadline]) : deadline
+}
+
+/**
+ * `effort` só para as famílias selecionáveis (Opus/Sonnet/Fable). Uma linha legada com outro modelo
+ * (ex.: Haiku, que dá 400 com `effort`) segue no default dele. Por família, não por versão: um Opus/
+ * Sonnet anterior ao 4.5 editado à mão no banco daria 400 — o admin não consegue escolher um.
+ */
+function effortFor(model: string): { effort?: typeof GENERATION_EFFORT } {
+  return selectableFamilyOf(model) ? { effort: GENERATION_EFFORT } : {}
+}
 
 // Modelo DEDICADO e BARATO da Extração de ingredientes (#112). Env-overridable. NÃO é o
 // `app_config.default_model` compartilhado da Geração (esse é o OPUS de qualidade): a Extração
 // só organiza uma lista — usar o modelo caro derrotaria o objetivo de custo. A rota de
-// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem ALLOWED_MODELS.
+// parse-ingredients usa ESTA constante diretamente e NÃO lê app_config nem a lista selecionável do admin.
 export const EXTRACTION_MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
 
 /**
@@ -188,14 +210,17 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema) },
-        // SEM prefill, SEM temperature custom, SEM thinking: claude-opus-4-8 rejeita
-        // prefill/temperature com structured outputs (landmine §11).
+        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
+        // SEM prefill, SEM temperature custom, SEM `thinking`: os modelos 4.7+ rejeitam
+        // prefill/temperature (landmine §11). Sem `thinking`, cada modelo roda no seu default
+        // (Opus 5.5/Fable: adaptive, sempre ligado; Opus 4.8: desligado).
       }
 
       // O `signal` (opcional) propaga o abort do cliente HTTP ao SDK: se a requisição
       // já foi abortada, a chamada estoura e cai no catch (parse_failed) sem queimar quota.
-      let message = await client.messages.parse(params, { signal: input.signal })
+      // Um prazo só p/ chamada + reparo (`generationSignal`).
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
 
       // Branch por stop_reason (NÃO stop_details — esse é só metadado de categoria).
       if (message.stop_reason === 'refusal') return { kind: 'refusal' }
@@ -207,7 +232,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Repair mínimo: se o parser não produziu saída, re-chama UMA vez com a mesma
       // entrada. Ainda null → parse_failed.
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params, { signal: input.signal })
+        message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
         if (message.parsed_output === null) {
@@ -248,19 +273,20 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: VARIANTS_MAX_TOKENS,
         system: input.systemPrompt,
         messages: [{ role: 'user' as const, content: input.userPrompt }],
-        output_config: { format: zodOutputFormat(schema) },
-        // SEM temperature/top_p/seed: claude-opus-4-8 os rejeita (400). A variedade vem do PROMPT
+        output_config: { format: zodOutputFormat(schema), ...effortFor(input.model) },
+        // SEM temperature/top_p/seed: os modelos 4.7+ os rejeitam (400). A variedade vem do PROMPT
         // (o fragmento de eixo `variacaoDivergente` já embutido no systemPrompt).
       }
 
-      let message = await client.messages.parse(params, { signal: input.signal })
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
       if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
       // Saída structured TRUNCADA lança dentro de messages.parse (→ catch, parse_failed do lote); este
       // branch só trata o sinal max_tokens SEM truncamento do structured.
       if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
 
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params, { signal: input.signal })
+        message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
         if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
         if (message.parsed_output === null) {

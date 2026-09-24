@@ -1,5 +1,6 @@
 import { makeDb, makeSql, type Database } from '@/db/client'
 import { RealClaudeClient, type ClaudeClient } from '@/server/claude/client'
+import { RealModelCatalog, type ModelCatalog } from '@/server/claude/model-catalog'
 import { RealEmbedder, type Embedder } from '@/server/embedding/embedder'
 import { RealTranslator, type Translator } from '@/server/translation/translator'
 import { RealImageStore, type ImageStore } from '@/server/images/image-store'
@@ -11,9 +12,10 @@ import { RealBrevoMailer, type Mailer } from '@/server/mail/mailer'
 import { FakeBillingProvider, type BillingProvider } from '@/server/billing/provider'
 
 /**
- * Raiz de composição (DI) da fundação. Sete seams com um dono cada:
+ * Raiz de composição (DI) da fundação. Seams com um dono cada:
  *  - getDb()               → Postgres (Drizzle)
  *  - getClaudeClient()     → seam do Claude
+ *  - getModelCatalog()     → seam da Models API da Anthropic (select de modelo do admin)
  *  - getEmbedder()         → seam de embedding
  *  - getTranslator()       → seam de tradução automática (issue #23)
  *  - getImageStore()       → seam de storage de imagem (issue #126, Vercel Blob)
@@ -33,6 +35,8 @@ let dbOverride: Database | null = null
 let lazyDb: Database | null = null
 let claudeOverride: ClaudeClient | null = null
 let lazyClaude: ClaudeClient | null = null
+let modelCatalogOverride: ModelCatalog | null = null
+let lazyModelCatalog: ModelCatalog | null = null
 let embedderOverride: Embedder | null = null
 let lazyEmbedder: Embedder | null = null
 let translatorOverride: Translator | null = null
@@ -78,6 +82,17 @@ export function getClaudeClient(): ClaudeClient {
 
 export function setClaudeClient(client: ClaudeClient): void {
   claudeOverride = client
+}
+
+export function getModelCatalog(): ModelCatalog {
+  if (modelCatalogOverride) return modelCatalogOverride
+  // Uma instância por processo: o cache de 1h da lista vive nela.
+  if (!lazyModelCatalog) lazyModelCatalog = new RealModelCatalog()
+  return lazyModelCatalog
+}
+
+export function setModelCatalog(catalog: ModelCatalog): void {
+  modelCatalogOverride = catalog
 }
 
 export function getEmbedder(): Embedder {
@@ -183,6 +198,7 @@ export function setBillingProvider(provider: BillingProvider): void {
  */
 export function resetDeps(): void {
   claudeOverride = null
+  modelCatalogOverride = null
   embedderOverride = null
   translatorOverride = null
   imageStoreOverride = null

@@ -7,8 +7,8 @@
  *
  * Forma `imageGen { enabled, model, dailyCapByRole }`:
  *  - `enabled`: liga/desliga a geração (desligada ⇒ a rota bloqueia, a UI esconde a ação).
- *  - `model`: modelo do gerador (allowlist EM CÓDIGO — muda mais rápido que migração, espelha a
- *    allowlist de `default_model`). Repassado ao seam `ImageGenerator`.
+ *  - `model`: modelo do gerador (allowlist EM CÓDIGO — muda mais rápido que migração; estática de
+ *    propósito, ao contrário da lista viva do `default_model`, ADR-0033). Repassado ao seam `ImageGenerator`.
  *  - `dailyCapByRole`: teto diário por papel na janela 24h. `null` = ILIMITADO (admin ∞) — JSON não
  *    tem `Infinity`, então persistimos `null` no jsonb e mapeamos `null → Infinity` em `capFromConfig`.
  */
@@ -23,8 +23,8 @@ import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 export const DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image'
 
 /**
- * Allowlist de modelos de imagem (EM CÓDIGO, não enum de banco — espelha a allowlist de chat de
- * `default_model`). Hoje só o Nano Banana 2; novos modelos entram aqui sem migração.
+ * Allowlist de modelos de imagem (EM CÓDIGO, não enum de banco; o `default_model` de texto usa a lista
+ * viva da Anthropic, ADR-0033). Hoje só o Nano Banana 2; novos modelos entram aqui sem migração.
  */
 export const IMAGE_GEN_MODELS = [DEFAULT_IMAGE_MODEL] as const
 export type ImageGenModel = (typeof IMAGE_GEN_MODELS)[number]

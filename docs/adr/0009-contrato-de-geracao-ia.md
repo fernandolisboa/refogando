@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (ADR-0033, 2026-09-24):** o modelo deixou de ser uma allowlist de duas opções em código. O default passa a `claude-opus-5-5` e o admin escolhe entre o mais novo de Opus, Sonnet e Fable, listados pela Models API da Anthropic.
+
 A geração por IA (Anthropic / Claude) tem um **contrato estrito** entre a saída probabilística do modelo e o dado do app:
 
 - **Um schema canônico de Receita** (derivado do mesmo Zod/Drizzle do banco) emitido via **structured outputs** (`output_config.format`, validado com `messages.parse()`) — nada de parsear prosa. Faixas numéricas (porções, dificuldade) são validadas no app, porque o JSON Schema do recurso **não** suporta `min/max`, recursão nem `minLength`.

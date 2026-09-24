@@ -38,6 +38,7 @@ import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
 import { PLANS } from '@/domain/plan'
 import { STRENGTHS } from '@/domain/briefing'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import type { PromptStamp } from '@/domain/briefing'
 import {
   DEFAULT_IMAGE_MODEL,
@@ -830,10 +831,11 @@ export const rateLimit = pgTable(
 //
 // Singleton: só pode existir a linha id=true (CHECK app_config_singleton_chk torna o
 // singleton garantia de banco, não só convenção de PK). `default_model` é text livre
-// (não enum): o conjunto válido é detalhe de runtime; o handler valida por allowlist.
+// (não enum): o conjunto válido é detalhe de runtime; o handler valida contra a lista viva de
+// modelos selecionáveis (domain/claude-models.ts). IDs antigos seguem legíveis.
 //
 // #134 (geração de imagem por IA, admin-configurável): `image_gen_enabled` liga/desliga a geração;
-// `image_gen_model` é o modelo do gerador (text livre + allowlist EM CÓDIGO, espelha default_model);
+// `image_gen_model` é o modelo do gerador (text livre + allowlist EM CÓDIGO);
 // `image_gen_cap_by_role` é o teto diário por papel (jsonb Record<Role, number|null>, `null` =
 // ILIMITADO — JSON não tem Infinity). Defaults vêm do domínio (mesma fonte da #132). Colunas planas
 // na MESMA linha singleton (não tabela própria): a config é um punhado de campos, não uma coleção.
@@ -859,7 +861,7 @@ export const appConfig = pgTable(
   'app_config',
   {
     id: boolean('id').primaryKey().default(true),
-    defaultModel: text('default_model').notNull().default('claude-opus-4-8'),
+    defaultModel: text('default_model').notNull().default(DEFAULT_TEXT_MODEL),
     imageGenEnabled: boolean('image_gen_enabled').notNull().default(true),
     imageGenModel: text('image_gen_model').notNull().default(DEFAULT_IMAGE_MODEL),
     imageGenCapByRole: jsonb('image_gen_cap_by_role')

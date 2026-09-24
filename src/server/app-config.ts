@@ -1,5 +1,6 @@
 import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import {
   DEFAULT_IMAGE_GEN_CONFIG,
   DEFAULT_IMAGE_MODEL,
@@ -56,8 +57,6 @@ import {
  * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed.
  */
 
-export const DEFAULT_CHAT_MODEL = 'claude-opus-4-8'
-
 export type AppConfig = {
   defaultModel: string
   imageGen: ImageGenConfig
@@ -87,7 +86,7 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
   const [row] = await db.select().from(appConfig)
   if (!row) {
     return {
-      defaultModel: DEFAULT_CHAT_MODEL,
+      defaultModel: DEFAULT_TEXT_MODEL,
       imageGen: DEFAULT_IMAGE_GEN_CONFIG,
       recipeGenCapByRole: DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
       extractionCapByRole: DEFAULT_EXTRACTION_CAP_BY_ROLE,

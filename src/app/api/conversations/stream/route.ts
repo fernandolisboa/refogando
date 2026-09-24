@@ -3,7 +3,7 @@ import { requireSession } from '@/server/auth/guard'
 import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
-import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
@@ -198,7 +198,7 @@ export async function POST(req: Request): Promise<Response> {
   // 4. Modelo de app_config (default em código quando a linha singleton está ausente). UM toque de DB
   // serve ao modelo (#5) E ao teto de geração de receita (#167) — a linha singleton carrega ambos.
   const [cfg] = await getDb().select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
 
   // 4b. Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de ABRIR o stream
   // (e portanto ANTES de QUALQUER chamada paga: streamConversation E a destilação generateRecipe). A

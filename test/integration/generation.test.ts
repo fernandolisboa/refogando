@@ -434,7 +434,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     expect(gen.model).toBe('claude-sonnet-4-6')
   })
 
-  it('model resolvido de app_config: linha ausente ⇒ default claude-opus-4-8', async () => {
+  it('model resolvido de app_config: linha ausente ⇒ default claude-opus-5-5', async () => {
     // Sem inserir app_config (truncado no beforeEach): cai no default em código.
     const { headers } = await seedSessionHeaders({ email: 'defmodel@gen.test' })
     setClaudeClient(new FakeClaudeClient(undefined, cannedSuccess()))
@@ -444,7 +444,7 @@ describe('POST /api/generations — taxonomia de resultado', () => {
     const { recipeId } = (await res.json()) as { recipeId: string }
 
     const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, recipeId))
-    expect(gen.model).toBe('claude-opus-4-8')
+    expect(gen.model).toBe('claude-opus-5-5')
   })
 })
 

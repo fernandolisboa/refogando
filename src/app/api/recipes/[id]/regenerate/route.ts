@@ -1,6 +1,6 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
-import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
+import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { appConfig } from '@/db/schema'
 import { isUuid } from '@/server/http/params'
 import { regenerateRecipe } from '@/server/recipe/regenerate'
@@ -53,7 +53,7 @@ export async function POST(
   // carrega ambos). Default em código quando a linha está ausente. O `cap` é resolvido AQUI (fonte
   // ÚNICA capFromRecipeGenConfig) e threado p/ regenerateRecipe barrar ANTES do Claude (custo).
   const [cfg] = await db.select().from(appConfig)
-  const model = cfg?.defaultModel ?? DEFAULT_CLAUDE_MODEL
+  const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle configurado
   // ⇒ teto pro; `free` OU sem tabela pro ⇒ `null` ⇒ teto de hoje (byte-idêntico).

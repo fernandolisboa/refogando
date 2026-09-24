@@ -1,5 +1,7 @@
 import { requireRole } from '@/server/auth/guard'
-import { getDb } from '@/server/deps'
+import { getDb, getModelCatalog } from '@/server/deps'
+import { loadSelectableModels } from '@/server/claude/model-catalog'
+import { selectableFamilyOf } from '@/domain/claude-models'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
@@ -22,7 +24,9 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * `app_config` (linha id=true, garantida por CHECK no schema).
  *
  * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
- *  - `defaultModel` (#5) — modelo de chat. allowlist EM CÓDIGO (muda mais rápido que migração).
+ *  - `defaultModel` (#5) — modelo de chat. Validado contra os modelos SELECIONÁVEIS de agora (o mais novo
+ *    de Opus/Sonnet/Fable segundo a Models API da Anthropic, com lista pinada de fallback — ver
+ *    `domain/claude-models.ts` e `GET /api/admin/models`). Haiku não é selecionável.
  *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (aba IA, `/admin/ia`).
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
  *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
@@ -49,7 +53,26 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
  * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
-const ALLOWED_MODELS = ['claude-opus-4-8', 'claude-sonnet-4-6'] as const
+/**
+ * `defaultModel` aceitável no PUT:
+ *  - o que já está salvo (salvar sem mudar nada não vira erro quando saiu um modelo mais novo);
+ *  - um da lista selecionável viva;
+ *  - com a lista em FALLBACK (API fora nesta instância), qualquer ID de família selecionável: o cache
+ *    é por instância, então o GET pode ter vindo de uma instância com a lista viva (modelo novo) e o
+ *    PUT cair numa sem — fail-open só dentro das famílias e no formato de ID atual
+ *    (`claude-<família>-<maior>[-<menor>]`), nunca um ID arbitrário.
+ */
+const CURRENT_ID_SHAPE = /^claude-(opus|sonnet|fable)-\d+(-\d+)?$/
+
+async function isAcceptableDefaultModel(model: string): Promise<boolean> {
+  const { models, source } = await loadSelectableModels(getModelCatalog())
+  if (models.some((opt) => opt.id === model)) return true
+  if (source === 'fallback' && selectableFamilyOf(model) !== null && CURRENT_ID_SHAPE.test(model)) {
+    return true
+  }
+  // Só lê o banco quando a lista não bastou (caso raro: re-salvar o modelo que saiu da lista).
+  return (await loadAppConfig(getDb())).defaultModel === model
+}
 
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
@@ -98,7 +121,8 @@ export async function PUT(req: Request): Promise<Response> {
 
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
-    if (typeof m !== 'string' || !ALLOWED_MODELS.includes(m as (typeof ALLOWED_MODELS)[number])) {
+    if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
+    if (!(await isAcceptableDefaultModel(m))) {
       return Response.json({ error: 'modelo_invalido' }, { status: 400 })
     }
     set.defaultModel = m

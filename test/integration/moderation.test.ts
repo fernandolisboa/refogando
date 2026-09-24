@@ -411,7 +411,7 @@ describe('Moderação reativa (#18)', () => {
       new Request('http://localhost/api/admin/config', {
         method: 'PUT',
         headers: curadorH,
-        body: JSON.stringify({ defaultModel: 'claude-opus-4-8' }),
+        body: JSON.stringify({ defaultModel: 'claude-opus-5-5' }),
       }),
     )
     expect(cfgPut.status).toBe(403)
