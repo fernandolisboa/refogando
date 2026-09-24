@@ -5,19 +5,23 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
+import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provider'
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
+import { MESSAGES } from '@/i18n/messages'
 import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
 import { getDb } from '@/server/deps'
 import { loadVocabulary } from '@/server/vocabulary/load'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
+import { loadAppConfig } from '@/server/app-config'
+import type { SocialLink } from '@/domain/social-links-config'
 
 export const metadata: Metadata = {
   title: 'Refogando',
-  description: 'App de receitas com IA, bilíngue pt-BR/en-US.',
+  description: 'App de receitas com IA.',
 }
 
 // Locale-no-caminho (ADR-0020): o app inteiro vive sob `[locale]`, então este É o root layout
@@ -63,15 +67,45 @@ export default async function LocaleLayout({
   } catch {
     cozinhaVocab = []
   }
+
+  // #423: a feature "gerar 2, o usuário escolhe" está ligada? Semeado no contexto (o opt-in aparece só
+  // com a config ligada). Mesmo tratamento gracioso da cozinha — um soluço do Neon vira `false` (a
+  // feature some), nunca uma tela quebrada. O servidor revalida `variar2` de qualquer forma.
+  // #423 + #451: uma ÚNICA leitura de app_config por request (mesma linha singleton) — a feature
+  // "gerar 2" está ligada? e os links sociais do footer. Mesmo tratamento gracioso da cozinha: soluço
+  // do Neon ⇒ variar2 desligado + footer sem links (degrada, nunca tela quebrada). Filtramos os links
+  // habilitados NO SERVIDOR — o footer (client) só recebe o que renderiza (payload menor; link
+  // desligado não vaza no HTML).
+  let variantEnabled = false
+  let socialLinks: SocialLink[] = []
+  try {
+    const cfg = await loadAppConfig(getDb())
+    variantEnabled = cfg.recipeVariant.enabled
+    socialLinks = cfg.socialLinks.filter((l) => l.enabled)
+  } catch {
+    variantEnabled = false
+    socialLinks = []
+  }
   return (
     <html lang={locale} className={themeClass}>
       <body className="flex min-h-svh flex-col">
+        {/* #461 (a11y): skip-link — PRIMEIRO tab stop do documento, oculto acima da viewport até
+            receber foco (então desliza pra `top-2`), pulando os ~7 tab stops repetidos do header
+            sticky direto pro conteúdo (`#conteudo`, o wrapper do `<main>` da página). Server-render
+            no locale do segmento da URL (`MESSAGES[locale]`) — não depende de provider/cliente. */}
+        <a
+          href="#conteudo"
+          className="absolute left-4 -top-16 z-[100] rounded-md bg-surface px-4 py-2 text-sm font-medium text-fg shadow-md ring-2 ring-brand transition-[top] focus:top-2"
+        >
+          {MESSAGES[locale].nav.pularParaConteudo}
+        </a>
         {/* Atualização graceful (#372, ADR-0028 dec 5-A2): rede de segurança silenciosa, sem DOM
             (retorna null), independente de provider/locale/sessão. Montado incondicionalmente ⇒
             o visitante anônimo também se beneficia do reload quieto pós-deploy. */}
         <AppUpdateGuard />
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
+           <RecipeVariantProvider enabled={variantEnabled}>
             {/* #5 (protótipo final): o termo de busca (`q`) é ELEVADO aqui pra que a pílula viva
                 DENTRO do SiteHeader (linha 2, só na home) enquanto o cérebro da Busca segue em
                 SearchExperience (que é IRMÃO do header). `children` passa como PROP por este client
@@ -80,10 +114,18 @@ export default async function LocaleLayout({
             <HomeSearchProvider>
               <SiteHeader />
               {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
-                  então mantém um único landmark main por documento. */}
-              <div className="flex flex-1 flex-col">{children}</div>
-              <SiteFooter initialTheme={initialTheme} />
+                  então mantém um único landmark main por documento. #461: alvo do skip-link
+                  (`id="conteudo"` + `tabIndex={-1}` p/ receber foco programático sem virar tab stop). */}
+              <div
+                id="conteudo"
+                tabIndex={-1}
+                className="flex flex-1 flex-col rounded-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg"
+              >
+                {children}
+              </div>
+              <SiteFooter initialTheme={initialTheme} socialLinks={socialLinks} />
             </HomeSearchProvider>
+           </RecipeVariantProvider>
           </CozinhaVocabProvider>
         </LocaleProvider>
       </body>

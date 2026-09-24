@@ -12,6 +12,12 @@ import { Container } from '@/components/container'
 import { AuthForm } from '@/components/auth/auth-form'
 import { isGoogleConfigured } from '@/server/auth/google'
 import { safeInternalPath } from '@/domain/safe-redirect'
+import { publicPageMetadata } from '@/server/http/page-metadata'
+
+// #462: título fino ("Entrar") — casa o <h1> do AuthForm. Página pública (sem noindex).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return publicPageMetadata(params, (m) => m.nav.signIn)
+}
 
 // `?returnTo=` (#308): pra onde voltar após o login (ex.: o anônimo que clicou "Seguir" na Descoberta de
 // Cozinheiros). Sanitizado pela guarda anti open-redirect ANTES de chegar ao client (defesa na borda).

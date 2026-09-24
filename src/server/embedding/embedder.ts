@@ -33,11 +33,13 @@ export const EMBEDDING_MODEL = 'gemini-embedding-001'
  * VERSÃO da geometria do embedding, gravada em `recipe_embedding.model` (a coluna é o "o que produziu
  * este vetor", não só o nome do modelo da API). Fonte ÚNICA aqui — `recompute.ts` re-exporta (sem
  * ciclo: embedder ← deps ← recompute). BUMPE este valor sempre que a geometria mudar (modelo, dimensão,
- * `taskType`, normalização): o `NEEDS_EMBEDDING` compara `model <> EMBEDDING_VERSION`, então um deploy
- * marca as linhas da geometria antiga como candidatas e o backfill as reembeda — sem `UPDATE` manual,
- * e o contador "restantes" do /admin mostra o pendente. `-retr` = par de recuperação RETRIEVAL_*.
+ * `taskType`, normalização, ou o TEXTO indexado): o `NEEDS_EMBEDDING` compara `model <> EMBEDDING_VERSION`,
+ * então um deploy marca as linhas da geometria antiga como candidatas e o backfill as reembeda — sem
+ * `UPDATE` manual, e o contador "restantes" do /admin mostra o pendente. `-retr` = par de recuperação
+ * RETRIEVAL_*; `-ing` (#497) = o texto embedado passou a incluir os nomes de ingrediente por-locale
+ * (`embedTranslation`), mudando a geometria indexada mesmo com o mesmo modelo/dimensão/taskType.
  */
-export const EMBEDDING_VERSION = `${EMBEDDING_MODEL}-retr`
+export const EMBEDDING_VERSION = `${EMBEDDING_MODEL}-retr-ing`
 
 /** Forma mínima da resposta do `:embedContent` que consumimos (`embedding.values` = float[]). */
 type EmbedContentResponse = { embedding?: { values?: number[] } }

@@ -30,6 +30,7 @@ vi.mock('next/link', () => ({
 // URL) — mock p/ o jsdom (sem AppRouter montado).
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 
 // #116: a Busca lê useSession só para a dica inicial. Sem mock o hook bate em /api/auth (quebra

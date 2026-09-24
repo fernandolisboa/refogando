@@ -14,6 +14,12 @@ import { ProfileForm } from '@/components/profile/profile-form'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
 import { resolvePageLocale } from '@/server/http/page-locale'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
+
+// #462: título fino ("Editar perfil") + noindex (só-logado), locale pelo path (ADR-0020).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.perfil.titulo)
+}
 
 export default async function ProfilePage() {
   const cookieStore = await cookies()

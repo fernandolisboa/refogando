@@ -36,6 +36,7 @@ vi.mock('next/headers', () => ({
 import { isValidElement, type ReactElement } from 'react'
 import { CatalogDisclosureConfigSection } from '@/components/admin/catalog-disclosure-config-section'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { TakedownSlaSection } from '@/components/admin/takedown-sla-section'
 
 /** Busca recursiva por um TIPO de componente na árvore resolvida (children aninhados). */
 function containsType(node: unknown, target: unknown): boolean {
@@ -100,8 +101,10 @@ const layout = () => as(import('@/app/[locale]/admin/layout'))
 const index = () => as(import('@/app/[locale]/admin/page'))
 const config = () => as(import('@/app/[locale]/admin/ia/page'))
 const ai = () => as(import('@/app/[locale]/admin/descoberta/page'))
+const comparador = () => as(import('@/app/[locale]/admin/comparador/page'))
 const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
 const users = () => as(import('@/app/[locale]/admin/users/page'))
+const plano = () => as(import('@/app/[locale]/admin/plano/page'))
 const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
 const translations = () => as(import('@/app/[locale]/admin/translations/page'))
 const catalog = () => as(import('@/app/[locale]/admin/catalog/page'))
@@ -158,8 +161,10 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('curador em /admin/%s → AccessDenied (gate, não link escondido)', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `cur-${_n}@routes.test`, role: 'curador' })
     headersMock.current = headers
@@ -169,8 +174,10 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('admin em /admin/%s → render da seção', async (_n, mod) => {
     const { headers } = await seedSessionHeaders({ email: `adm-${_n}@routes.test`, role: 'admin' })
     headersMock.current = headers
@@ -180,8 +187,10 @@ describe('Seções admin-only (/admin/ia, /admin/descoberta, /admin/users) — c
   it.each([
     ['config', config],
     ['ai', ai],
+    ['comparador', comparador],
     ['vocabulario', vocabulario],
     ['users', users],
+    ['plano', plano],
   ] as const)('anon em /admin/%s → redirect', async (_n, mod) => {
     headersMock.current = new Headers()
     expect(await run(mod)).toEqual({ kind: 'redirect', to: '/sign-in' })
@@ -256,5 +265,11 @@ describe('Reorg abas IA × Descoberta (#334) — colocação da geração de ima
 
   it('aba "Descoberta" (/admin/descoberta) NÃO renderiza a geração de imagem (AiConfigSection)', async () => {
     expect(containsType(await pageTree(ai, 'reorg-desc@routes.test'), AiConfigSection)).toBe(false)
+  })
+
+  // #412: o painel de SLA de takedown mora na aba "Descoberta" (junto do atendimento ao autor). Um
+  // revert de colocação passaria no gate por papel; este teste PINA a presença da seção lá.
+  it('aba "Descoberta" (/admin/descoberta) RENDERIZA o painel de SLA de takedown (TakedownSlaSection)', async () => {
+    expect(containsType(await pageTree(ai, 'sla-desc@routes.test'), TakedownSlaSection)).toBe(true)
   })
 })

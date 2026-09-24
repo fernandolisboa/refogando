@@ -48,6 +48,8 @@ vi.mock('@/components/i18n/cozinha-vocab-provider', () => ({
 }))
 
 import LocaleLayout from '@/app/[locale]/layout'
+import { ptBR } from '@/i18n/messages/pt-BR'
+import { enUS } from '@/i18n/messages/en-US'
 
 type ElementWithProps = { props: Record<string, unknown> }
 /** Acha o 1º nó cujo props casa o predicado, BFS na árvore de elementos React devolvida. */
@@ -111,5 +113,30 @@ describe('LocaleLayout (#228)', () => {
     // initialLocale do LocaleProvider vem do PATH (não do cookie), na forma canônica.
     const provider = findNode(tree, (p) => 'initialLocale' in p)
     expect(provider?.props.initialLocale).toBe('en-US')
+  })
+
+  // #461 (a11y): skip-link localizado antes do header + alvo `#conteudo` focável (tabIndex -1).
+  it('skip-link "pular para o conteúdo" aponta pro alvo #conteudo (focável), no locale do path', async () => {
+    const tree = await LocaleLayout({
+      children: <span>x</span>,
+      params: Promise.resolve({ locale: 'pt-BR' }),
+    })
+    // A âncora do skip-link leva a `#conteudo` e mostra o rótulo localizado.
+    const skip = findNode(tree, (p) => p.href === '#conteudo')
+    expect(skip).not.toBeNull()
+    expect(skip?.props.children).toBe(ptBR.nav.pularParaConteudo)
+    // O alvo existe e é FOCÁVEL programaticamente (id + tabIndex -1, sem virar tab stop).
+    const target = findNode(tree, (p) => p.id === 'conteudo')
+    expect(target).not.toBeNull()
+    expect(target?.props.tabIndex).toBe(-1)
+  })
+
+  it('skip-link usa o rótulo en-US quando o path é en-US', async () => {
+    const tree = await LocaleLayout({
+      children: <span>x</span>,
+      params: Promise.resolve({ locale: 'en-US' }),
+    })
+    const skip = findNode(tree, (p) => p.href === '#conteudo')
+    expect(skip?.props.children).toBe(enUS.nav.pularParaConteudo)
   })
 })

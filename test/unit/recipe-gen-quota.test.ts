@@ -75,3 +75,30 @@ describe('decideRecipeGenQuota — janela 24h deslizante', () => {
     expect(RECIPE_GEN_WINDOW_MS).toBe(24 * 60 * 60 * 1000)
   })
 })
+
+describe('decideRecipeGenQuota — "gerar 2" exige 2 slots via cap REDUZIDO (#423)', () => {
+  // A borda (route) reusa a máquina de 1-slot com `cap - 1` p/ exigir 2 slots livres: permitido sob
+  // cap-1 ⟺ cabem 2 (inWindow < cap-1 ⟺ inWindow+2 <= cap). Estes casos travam essa equivalência.
+  const dois = (cap: number, recentAt: Date[]) => decideRecipeGenQuota({ cap: cap - 1, recentAt, now: NOW })
+
+  it('cap=10, 8 na janela → cabem 2 (permite); 9 na janela → não cabem 2 (bloqueia)', () => {
+    const oito = Array.from({ length: 8 }, (_, i) => hoursAgo(i + 1))
+    expect(dois(10, oito)).toEqual({ allowed: true }) // 8+2 = 10 <= 10
+    const nove = Array.from({ length: 9 }, (_, i) => hoursAgo(i + 1))
+    expect(dois(10, nove).allowed).toBe(false) // 9+2 = 11 > 10
+  })
+
+  it('cap=2, 0 na janela → cabem exatamente 2 (permite)', () => {
+    expect(dois(2, [])).toEqual({ allowed: true })
+  })
+
+  it('cap=2, 1 na janela → NÃO cabem 2 (bloqueia)', () => {
+    expect(dois(2, [hoursAgo(3)]).allowed).toBe(false)
+  })
+
+  it('cap=1 (papel quase zerado) → NUNCA cabem 2 (cap-1=0 ⇒ bloqueia sempre)', () => {
+    const d = dois(1, [])
+    expect(d.allowed).toBe(false)
+    if (!d.allowed) expect(d.retryAfterMs).toBe(RECIPE_GEN_WINDOW_MS)
+  })
+})

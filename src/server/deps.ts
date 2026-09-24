@@ -7,6 +7,8 @@ import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/i
 import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
 import { RealRecipeProbe, type RecipeProbe } from '@/server/import/recipe-probe'
 import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-search/web-search-provider'
+import { RealBrevoMailer, type Mailer } from '@/server/mail/mailer'
+import { FakeBillingProvider, type BillingProvider } from '@/server/billing/provider'
 
 /**
  * Raiz de composição (DI) da fundação. Sete seams com um dono cada:
@@ -19,6 +21,8 @@ import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-sear
  *  - getRecipeImporter()   → seam de importação de receita da web (issue #165, JSON-LD)
  *  - getRecipeProbe()      → seam do PROBE de saúde admin (issue #273, JSON-LD + robots, sem persistir)
  *  - getWebSearchProvider()→ seam de DESCOBERTA na web (issue #164, links externos ADR-0019)
+ *  - getMailer()           → seam de E-MAIL transacional (issue #413, alerta do Encarregado, Brevo)
+ *  - getBillingProvider()  → seam do PSP de pagamento (Fase 2 billing, flag-off; default = Fake, sem PSP real)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
@@ -43,6 +47,10 @@ let recipeProbeOverride: RecipeProbe | null = null
 let lazyRecipeProbe: RecipeProbe | null = null
 let webSearchProviderOverride: WebSearchProvider | null = null
 let lazyWebSearchProvider: WebSearchProvider | null = null
+let mailerOverride: Mailer | null = null
+let lazyMailer: Mailer | null = null
+let billingProviderOverride: BillingProvider | null = null
+let lazyBillingProvider: BillingProvider | null = null
 
 export function getDb(): Database {
   if (dbOverride) return dbOverride
@@ -142,6 +150,33 @@ export function setWebSearchProvider(provider: WebSearchProvider): void {
   webSearchProviderOverride = provider
 }
 
+export function getMailer(): Mailer {
+  if (mailerOverride) return mailerOverride
+  if (!lazyMailer) lazyMailer = new RealBrevoMailer()
+  return lazyMailer
+}
+
+export function setMailer(mailer: Mailer): void {
+  mailerOverride = mailer
+}
+
+/**
+ * Seam do PSP (Fase 2 billing, FLAG-OFF). Enquanto não existe adapter de PSP real, o default é o
+ * `FakeBillingProvider` — determinístico, sem I/O, não ativa cobrança. Quando o gateway concreto for
+ * escolhido (ver `docs/reports/fase2-billing-decisao.md` §6 item 4), troca-se este default por um
+ * `RealXBillingProvider` que só implementa `BillingProvider`. A fonte da verdade do plano continua em
+ * `users.plan`; o provider só EMITE fatos.
+ */
+export function getBillingProvider(): BillingProvider {
+  if (billingProviderOverride) return billingProviderOverride
+  if (!lazyBillingProvider) lazyBillingProvider = new FakeBillingProvider()
+  return lazyBillingProvider
+}
+
+export function setBillingProvider(provider: BillingProvider): void {
+  billingProviderOverride = provider
+}
+
 /**
  * Limpa overrides dos seams entre testes. NÃO mexe no banco (setDb persiste por
  * arquivo de teste) nem derruba o pool.
@@ -155,4 +190,6 @@ export function resetDeps(): void {
   recipeImporterOverride = null
   recipeProbeOverride = null
   webSearchProviderOverride = null
+  mailerOverride = null
+  billingProviderOverride = null
 }

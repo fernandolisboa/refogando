@@ -21,6 +21,7 @@
 import { useState } from 'react'
 import { Dialog } from 'radix-ui'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 
 /** Um link da web (#164) — o resultado externo que pode ser importado. */
@@ -86,6 +87,8 @@ export function ImportRecipeDialog({
   /** Sucesso (201): navega à receita importada (ou a "Minhas criações"). */
   onImported: (recipeId: string) => void
 }) {
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   // Qual mensagem de erro mostrar — derivada da reason do corpo (errorKindFor), não do status cru.
@@ -168,7 +171,7 @@ export function ImportRecipeDialog({
               </Dialog.Description>
               <div className="flex flex-wrap items-center gap-3">
                 <Button asChild>
-                  <Link href="/sign-in">{labels.signInLabel}</Link>
+                  <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{labels.signInLabel}</Link>
                 </Button>
                 {/* Saída "Ver no site" preservada mesmo p/ o visitante (exibir link ≠ importar). */}
                 <a

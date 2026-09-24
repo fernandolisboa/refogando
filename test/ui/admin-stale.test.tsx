@@ -121,3 +121,145 @@ describe('StaleTranslations (#63 AC2)', () => {
     expect(await screen.findByText('en-US')).toBeInTheDocument()
   })
 })
+
+/**
+ * Edição de NOME de ingrediente traduzido (#498, ADR-0031 companheiro iii). O expansor
+ * carrega `GET /api/recipes/[id]?locale=` (leitura pública já community-gated) e grava via
+ * `PATCH /api/recipes/[id]/translations/[locale]` (dirty-diff: só o(s) `ordem` alterado(s)).
+ */
+describe('StaleTranslations — editar nomes de ingrediente (#498)', () => {
+  const recipeUrl = `/api/recipes/${RID}?locale=en-US`
+  const patchUrl = `/api/recipes/${RID}/translations/en-US`
+
+  function ingredientView(ingredients: { ordem: number; rawText: string | null }[]) {
+    return { ingredients }
+  }
+
+  it('expandir carrega ingredientes; edita 1 nome; salva ⇒ PATCH só com o ordem alterado', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: {
+        ok: true,
+        status: 200,
+        body: ingredientView([
+          { ordem: 0, rawText: 'garlic' },
+          { ordem: 1, rawText: 'black beans' },
+        ]),
+      },
+      [`PATCH ${patchUrl}`]: { ok: true, status: 200, body: { ok: true } },
+    })
+    const user = userEvent.setup()
+    renderStale()
+
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    expect(await screen.findByDisplayValue('garlic')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('black beans')).toBeInTheDocument()
+
+    const input = screen.getByDisplayValue('garlic')
+    await user.clear(input)
+    await user.type(input, 'fresh garlic')
+
+    await user.click(screen.getByRole('button', { name: M.salvarNomes }))
+    expect(await screen.findByText(M.nomesSalvos)).toBeInTheDocument()
+
+    const patchCall = fetchMock.mock.calls.find((c) => String(c[0]) === patchUrl)!
+    const init = patchCall[1] as RequestInit
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ edits: [{ ordem: 0, nome: 'fresh garlic' }] })
+  })
+
+  it('sem edição (só abre e salva) ⇒ PATCH NÃO é chamado, mensagem de sucesso mesmo assim', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: {
+        ok: true,
+        status: 200,
+        body: ingredientView([{ ordem: 0, rawText: 'garlic' }]),
+      },
+    })
+    const user = userEvent.setup()
+    renderStale()
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    await screen.findByDisplayValue('garlic')
+    await user.click(screen.getByRole('button', { name: M.salvarNomes }))
+    expect(await screen.findByText(M.nomesSalvos)).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]) === patchUrl)).toBe(false)
+  })
+
+  it('ingrediente SEM nome (rawText null) é filtrado do editor', async () => {
+    mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: {
+        ok: true,
+        status: 200,
+        body: ingredientView([
+          { ordem: 0, rawText: 'garlic' },
+          { ordem: 1, rawText: null },
+        ]),
+      },
+    })
+    const user = userEvent.setup()
+    renderStale()
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    expect(await screen.findByDisplayValue('garlic')).toBeInTheDocument()
+    // Só 1 input (o ordem=1 sem nome não vira campo editável).
+    expect(screen.getAllByRole('textbox')).toHaveLength(1)
+  })
+
+  it('erro de CARGA dos ingredientes ⇒ alert dedicado', async () => {
+    mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: { ok: false, status: 404, body: { error: 'not_found' } },
+    })
+    const user = userEvent.setup()
+    renderStale()
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    expect(await screen.findByText(M.erroCarregarIngredientes)).toBeInTheDocument()
+  })
+
+  it('erro ao SALVAR (PATCH 400) ⇒ alert dedicado, editor permanece aberto', async () => {
+    mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: {
+        ok: true,
+        status: 200,
+        body: ingredientView([{ ordem: 0, rawText: 'garlic' }]),
+      },
+      [`PATCH ${patchUrl}`]: { ok: false, status: 400, body: { error: 'dados_invalidos' } },
+    })
+    const user = userEvent.setup()
+    renderStale()
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    const input = await screen.findByDisplayValue('garlic')
+    await user.clear(input)
+    await user.type(input, 'fresh garlic')
+    await user.click(screen.getByRole('button', { name: M.salvarNomes }))
+    expect(await screen.findByText(M.erroSalvarNomes)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('fresh garlic')).toBeInTheDocument() // input preserva o valor
+  })
+
+  it('fechar (toggle) reseta o editor: reabrir refaz o fetch e descarta edição não salva', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/curate/translations/stale': { ok: true, status: 200, body: oneStale() },
+      [`GET ${recipeUrl}`]: [
+        { ok: true, status: 200, body: ingredientView([{ ordem: 0, rawText: 'garlic' }]) },
+        { ok: true, status: 200, body: ingredientView([{ ordem: 0, rawText: 'garlic' }]) },
+      ],
+    })
+    const user = userEvent.setup()
+    renderStale()
+    await user.click(await screen.findByRole('button', { name: M.editarNomes }))
+    const input = await screen.findByDisplayValue('garlic')
+    await user.clear(input)
+    await user.type(input, 'unsaved edit')
+
+    // Fecha (mesmo botão vira "Fechar").
+    await user.click(screen.getByRole('button', { name: M.fecharNomes }))
+    expect(screen.queryByDisplayValue('unsaved edit')).toBeNull()
+
+    // Reabre: refaz o GET, edição não salva descartada.
+    await user.click(screen.getByRole('button', { name: M.editarNomes }))
+    expect(await screen.findByDisplayValue('garlic')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]) === recipeUrl)).toHaveLength(2)
+  })
+})

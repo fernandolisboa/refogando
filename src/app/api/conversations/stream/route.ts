@@ -4,12 +4,17 @@ import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_CLAUDE_MODEL } from '@/server/claude/client'
-import { appConfig, creationSession, transcriptMessage } from '@/db/schema'
+import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classify } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
-  SYSTEM_PROMPT_CONVERSATION_STREAM,
+  buildSystemPrompt,
   buildConversationPrompt,
+  promptStampFor,
+  resolveNivelChefAxis,
+  isNivelChef,
+  type NivelChef,
+  type PromptAxes,
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
@@ -21,7 +26,9 @@ import {
   capFromRecipeGenConfig,
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
 } from '@/domain/recipe-gen-config'
+import { parseProCaps } from '@/domain/pro-caps'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+import { QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * Modo CONVERSA — streaming + destilação (issue #12, ADR-0009/0010).
@@ -84,6 +91,9 @@ type TerminalFrame =
     }
   | { type: 'impossible'; advisory: string | null }
   | { type: 'error'; error: 'geracao_invalida' | 'conflito_concorrente' }
+  // #446: cota estourada detectada ATOMICAMENTE na destilação (corrida perdida sob a advisory lock,
+  // DEPOIS do stream abrir — headers já enviados, então in-band, não 429 HTTP). Carrega o countdown.
+  | { type: 'error'; error: 'limite_geracao'; retryAfterMs: number }
 
 const encoder = new TextEncoder()
 
@@ -198,7 +208,18 @@ export async function POST(req: Request): Promise<Response> {
   // in-band) com `retryAfterMs` (countdown); a UI mapeia limite_geracao p/ mensagem amigável. cap ∞
   // (admin/papel ilimitado) pula a contagem. Espelha o gate de POST /api/generations.
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
-  const cap = capFromRecipeGenConfig(capByRole, g.session.user.role)
+  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
+  // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje (byte-idêntico). O gate atômico da destilação herda o cap.
+  const proCaps = parseProCaps(cfg?.proCaps)
+  const cap = capFromRecipeGenConfig(
+    capByRole,
+    g.session.user.role,
+    g.session.user.plan,
+    proCaps?.recipeGen ?? null,
+  )
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). A
+  // ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration na
+  // destilação (via `quotaGate` abaixo) — se a corrida for perdida lá, sai um frame terminal in-band.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
@@ -210,6 +231,9 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
+  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
+  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
+  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap } : undefined
 
   // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
   // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também
@@ -221,6 +245,20 @@ export async function POST(req: Request): Promise<Response> {
   // requestLocale é lido AGORA (Request ainda disponível) — o Aviso é renderizado no locale.
   const requestLocale = parseRequestLocale(req)
 
+  // Eixos de composição do prompt (#420/#421, ADR-0029) — RESOLVIDOS na borda. `axes` molda AMBOS os
+  // systemPrompts da conversa (a resposta breve na tela E a destilação), e `promptStamp` carimba a
+  // versão na persist. Nível de habilidade (#421 dec.2): o modo conversa NÃO tem seletor (é identidade
+  // do modo — uma conversa fluida, não um formulário) ⇒ só o DEFAULT do Perfil do ownerId vale aqui.
+  // SPREAD ADITIVO (Regra C): resolveNivelChefAxis devolvendo {} colapsa p/ NEUTRAL_AXES byte-a-byte.
+  const [meRow] = await getDb()
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, ownerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
+  const promptStamp = promptStampFor(axes)
+
   // 5. Abre o stream NDJSON: tokens primeiro, depois UM frame terminal, depois fecha.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -229,7 +267,9 @@ export async function POST(req: Request): Promise<Response> {
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
         let assistantText = ''
         const tokens = getClaudeClient().streamConversation({
-          systemPrompt: SYSTEM_PROMPT_CONVERSATION_STREAM,
+          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + eixos dos
+          // axes). Neutro na Wave 1 ⇒ exatamente o base do modo (== SYSTEM_PROMPT_CONVERSATION_STREAM).
+          systemPrompt: buildSystemPrompt('conversation_stream', axes),
           transcript,
           model,
           signal,
@@ -269,15 +309,21 @@ export async function POST(req: Request): Promise<Response> {
         // #318: constrange a cozinha destilada ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
         // ATIVO do DB DIRETO, carregado aqui (já passamos do gate de abort/quota acima).
         const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(getDb()))]
-        const prompt = buildConversationPrompt(transcript)
+        const prompt = buildConversationPrompt(transcript, axes)
         const out = await getClaudeClient().generateRecipe({
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,
           model,
           signal,
           cozinhaSlugs,
+          // #420 (ADR-0029): eixos que produziram esta destilação (já embutidos no systemPrompt).
+          axes,
         })
         const result = classify(out)
+        // #463: telemetria de custo da DESTILAÇÃO (só o branch 'object' a carrega). O custo do STREAM da
+        // conversa em si não tem linha própria (ver nota em client.ts.streamConversation) — esta linha
+        // carimba o custo da destilação, que é o episódio de criação da conversa.
+        const usage = out.kind === 'object' ? out.usage : undefined
 
         let terminal: TerminalFrame
         if (result.outcome === 'invalid') {
@@ -296,6 +342,9 @@ export async function POST(req: Request): Promise<Response> {
             ownerId,
             model,
             existingSessionId: sessionId,
+            promptStamp,
+            quota: quotaGate,
+            usage,
           })
           terminal = { type: 'impossible', advisory: result.advisory }
         } else {
@@ -308,6 +357,9 @@ export async function POST(req: Request): Promise<Response> {
             ownerId,
             model,
             existingSessionId: sessionId,
+            promptStamp,
+            quota: quotaGate,
+            usage,
           })
           // #119: embeda a Receita destilada (best-effort, ASSISTIVO) p/ a Busca semântica. Falha
           // (sem key / 429 / rede) NÃO derruba o turno — a Receita já está persistida; a Busca degrada
@@ -345,6 +397,16 @@ export async function POST(req: Request): Promise<Response> {
         // NÃO há auto-retry (fora de escopo — o cliente decide se reenvia o turno).
         if (pgCode(err) === '23505') {
           controller.enqueue(ndjsonLine({ type: 'error', error: 'conflito_concorrente' }))
+          controller.close()
+          return
+        }
+        // #446: cota estourada ATOMICAMENTE na destilação (corrida perdida sob a advisory lock, após o
+        // stream abrir). Frame terminal limpo in-band (headers já enviados — não dá pra 429 HTTP), com
+        // o countdown. NADA persistiu (a tx reverteu). A Session/Transcrição do turno já ficaram gravadas.
+        if (err instanceof QuotaExceededError) {
+          controller.enqueue(
+            ndjsonLine({ type: 'error', error: 'limite_geracao', retryAfterMs: err.retryAfterMs }),
+          )
           controller.close()
           return
         }

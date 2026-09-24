@@ -19,9 +19,9 @@
  * Estados tratados (impeccable): repouso (feed seeded, sem chamar a Busca — espelha o early-return do
  * handler), carregando, erro+retry, vazio, sugestões.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -65,6 +65,7 @@ export function SearchExperience({
   home = false,
   initialFeed = [],
   initialNextCursor = null,
+  highlight = null,
 }: {
   /**
    * #236: montada como a HOME-Descoberta? `true` ⇒ o REPOUSO (sem critério) mostra o feed SEEDADO
@@ -79,10 +80,19 @@ export function SearchExperience({
   initialFeed?: SearchResult[]
   /** #236: cursor da 2ª página do feed seeded (null = a 1ª já é o fim). */
   initialNextCursor?: string | null
+  /**
+   * #457: bloco "Receita da semana" — JSX já montado pelo Server Component pai (`page.tsx`), que
+   * fez a leitura DB-direta/anônima do slot editorial. Renderizado SÓ no REPOUSO (mesmo branch do
+   * `<DiscoveryFeed>`, ANTES dele) — nunca aparece no estado REFINADO (busca ativa), espelhando o
+   * feed seeded. `null` (ausente/catálogo vazio) ⇒ nada renderiza, sem regressão pra quem não é home.
+   */
+  highlight?: ReactNode
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -600,7 +610,11 @@ export function SearchExperience({
           {status === 'idle' &&
             data === null &&
             (home ? (
-              <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+              <>
+                {/* #457: "Receita da semana" — SÓ no repouso, ACIMA do feed. */}
+                {highlight}
+                <DiscoveryFeed initialItems={initialFeed} initialNextCursor={initialNextCursor} />
+              </>
             ) : (
               <p className="text-muted">{dicaInicial}</p>
             ))}
@@ -657,6 +671,7 @@ export function SearchExperience({
                     conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
                     conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
                     signInLabel={messages.nav.signIn}
+                    returnTo={returnTo}
                   />
                   {/* Card "Buscar na web": SÓ com termo (`handleWebManual` early-returns sem `q` ⇒ na
                       busca faceta-only o botão seria morto) e SÓ enquanto a web não populou (`webLinks`
@@ -974,6 +989,7 @@ function GerarComIaCta({
   conviteTitulo,
   conviteTexto,
   signInLabel,
+  returnTo,
 }: {
   q: string
   authed: boolean
@@ -984,6 +1000,7 @@ function GerarComIaCta({
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
+  returnTo: string
 }) {
   // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
   if (!authed && !sessionPending) {
@@ -1002,7 +1019,7 @@ function GerarComIaCta({
         <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
         <div>
           <Button asChild>
-            <Link href="/sign-in">{signInLabel}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{signInLabel}</Link>
           </Button>
         </div>
         {/* `conviteTitulo` ("Entre para fazer isso") dá o contexto extra pro leitor de tela — o

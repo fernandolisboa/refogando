@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { GET, PATCH, POST } from '@/app/api/admin/vocabulary/route'
+import { VOICE_NOTE_MAX } from '@/server/vocabulary/admin'
 import { __clearVocabularyCache, loadVocabulary } from '@/server/vocabulary/load'
 import { getDb } from '@/server/deps'
 import { vocabularyTerm, recipe } from '@/db/schema'
@@ -165,6 +166,78 @@ describe('/api/admin/vocabulary — editar rótulos', () => {
     const res = await patch({ slug: 'italiana', status: 'suggested' }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'status_invalido' })
+  })
+})
+
+describe('/api/admin/vocabulary — nota de voz (#422)', () => {
+  /** Lê o voice_note atual de um slug direto no DB. */
+  async function voiceNoteOf(slug: string): Promise<string | null | undefined> {
+    const [row] = await getDb()
+      .select({ voiceNote: vocabularyTerm.voiceNote })
+      .from(vocabularyTerm)
+      .where(and(eq(vocabularyTerm.kind, 'cozinha'), eq(vocabularyTerm.slug, slug)))
+    return row?.voiceNote
+  }
+
+  it('PATCH grava a nota de voz e a devolve no corpo (patch SÓ-de-nota é válido)', async () => {
+    const headers = await adminHeaders('voicenote@vocab.test')
+    const res = await patch({ slug: 'italiana', voiceNote: 'Massa fresca e azeite extravirgem.' }, headers)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cozinha: { slug: string; voiceNote: string | null } }
+    expect(body.cozinha).toMatchObject({ slug: 'italiana', voiceNote: 'Massa fresca e azeite extravirgem.' })
+    expect(await voiceNoteOf('italiana')).toBe('Massa fresca e azeite extravirgem.')
+  })
+
+  it('PATCH voiceNote="" LIMPA a nota (→ null); a nota não é obrigatória', async () => {
+    const headers = await adminHeaders('clearvoice@vocab.test')
+    await patch({ slug: 'italiana', voiceNote: 'algo' }, headers)
+    expect(await voiceNoteOf('italiana')).toBe('algo')
+    const res = await patch({ slug: 'italiana', voiceNote: '   ' }, headers)
+    expect(res.status).toBe(200)
+    expect(await voiceNoteOf('italiana')).toBeNull()
+  })
+
+  it('PATCH voiceNote=null LIMPA a nota (→ null)', async () => {
+    const headers = await adminHeaders('nullvoice@vocab.test')
+    await patch({ slug: 'italiana', voiceNote: 'x' }, headers)
+    const res = await patch({ slug: 'italiana', voiceNote: null }, headers)
+    expect(res.status).toBe(200)
+    expect(await voiceNoteOf('italiana')).toBeNull()
+  })
+
+  it('PATCH voiceNote de tipo inválido (número) → 400 dados_invalidos', async () => {
+    const headers = await adminHeaders('badvoice@vocab.test')
+    const res = await patch({ slug: 'italiana', voiceNote: 42 }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
+  })
+
+  it('PATCH voiceNote acima do teto → 400 voice_note_muito_longa; no teto passa (#436)', async () => {
+    const headers = await adminHeaders('longvoice@vocab.test')
+    const tooLong = await patch({ slug: 'italiana', voiceNote: 'a'.repeat(VOICE_NOTE_MAX + 1) }, headers)
+    expect(tooLong.status).toBe(400)
+    await expect(tooLong.json()).resolves.toMatchObject({ error: 'voice_note_muito_longa' })
+    // Exatamente no teto passa (trima antes de medir).
+    const atCap = await patch({ slug: 'italiana', voiceNote: 'a'.repeat(VOICE_NOTE_MAX) }, headers)
+    expect(atCap.status).toBe(200)
+  })
+
+  it('patch atômico de rótulo + nota grava ambos', async () => {
+    const headers = await adminHeaders('bothfields@vocab.test')
+    const res = await patch(
+      { slug: 'mexicana', labelPtBr: 'Mexicana', voiceNote: 'Milho nixtamalizado e pimentas secas.' },
+      headers,
+    )
+    expect(res.status).toBe(200)
+    expect(await voiceNoteOf('mexicana')).toBe('Milho nixtamalizado e pimentas secas.')
+  })
+
+  it('a nota de voz aparece no GET (listCozinhasForAdmin a inclui)', async () => {
+    const headers = await adminHeaders('getvoice@vocab.test')
+    await patch({ slug: 'italiana', voiceNote: 'Regionalidade importa.' }, headers)
+    const res = await get(headers)
+    const body = (await res.json()) as { cozinhas: Array<{ slug: string; voiceNote: string | null }> }
+    expect(body.cozinhas.find((c) => c.slug === 'italiana')?.voiceNote).toBe('Regionalidade importa.')
   })
 })
 

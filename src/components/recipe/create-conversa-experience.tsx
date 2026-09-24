@@ -36,6 +36,7 @@
  */
 import { useEffect } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -44,8 +45,12 @@ import { useConversationChat } from '@/hooks/use-conversation-chat'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { lastExchange } from './conversa-focused-view'
 import { RecipeDetailView } from './recipe-detail-view'
+import { PortionScaleProvider } from './recipe-portion-scale-context'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 export function CreateConversaExperience({
   resumeSessionId,
@@ -59,6 +64,8 @@ export function CreateConversaExperience({
   const d = messages.criarDrawer
   const cozinhaVocab = useCozinhaVocab() // #317: rótulo de cozinha do leitor (contexto ativo)
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/create'
 
   const {
     transcript,
@@ -106,7 +113,7 @@ export function CreateConversaExperience({
       <div className="flex flex-col gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )
@@ -125,6 +132,10 @@ export function CreateConversaExperience({
       </div>
     )
   }
+
+  // Fase 2 de billing (flag-off): os guards acima já garantem sessão presente — só o plano
+  // decide se o upsell de limite aparece.
+  const isFreePlanViewer = isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   const exchange = lastExchange(transcript)
 
@@ -229,6 +240,8 @@ export function CreateConversaExperience({
                   ? messages.criar.erroLimiteGeracao
                   : m.erroGeracao}
             </p>
+            {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só `free`. */}
+            {errorKey === 'limite_geracao' && isFreePlanViewer && <QuotaUpsellCard />}
             <div>
               <Button type="button" variant="secondary" onClick={redestilar}>
                 {m.redestilar}
@@ -296,13 +309,16 @@ export function CreateConversaExperience({
                 </p>
               )}
 
-              {/* A Receita destilada como HERÓI — REUSO total. `<h1>{view.name}` é o ÚNICO `<h1>`. */}
-              <RecipeDetailView
-                view={view}
-                m={messages}
-                locale={locale}
-                cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
-              />
+              {/* A Receita destilada como HERÓI — REUSO total. `<h1>{view.name}` é o ÚNICO `<h1>`.
+                  #453: `PortionScaleProvider` com `key={view.id}` — nova destilação troca `view`. */}
+              <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+                <RecipeDetailView
+                  view={view}
+                  m={messages}
+                  locale={locale}
+                  cozinhaLabel={resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha)}
+                />
+              </PortionScaleProvider>
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Salvar/publicar REUSA a #59: navega pro detalhe. A Receita JÁ está persistida. */}

@@ -96,7 +96,6 @@ export function makeBriefing(overrides: Partial<Briefing> = {}): Briefing {
     cozinha: 'brasileira',
     restricoes: [],
     porcoes: 4,
-    dificuldade: 2,
     observacoes: null,
     itens: [
       {

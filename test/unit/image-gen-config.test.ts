@@ -38,6 +38,32 @@ describe('capFromConfig — teto por papel a partir da config', () => {
   })
 })
 
+describe('capFromConfig — eixo plan (#466, scaffold flag-off)', () => {
+  const caps: ImageGenCapByRole = { usuario: 3, curador: 5, admin: null }
+  const proCaps: ImageGenCapByRole = { usuario: 30, curador: 50, admin: null }
+
+  it('PARIDADE: sem plano (default free) ⇒ BYTE-IDÊNTICO à resolução por papel de hoje', () => {
+    expect(capFromConfig(caps, 'usuario')).toBe(capFromConfig(caps, 'usuario', 'free'))
+    expect(capFromConfig(caps, 'curador', 'free')).toBe(5)
+    expect(capFromConfig(caps, 'admin', 'free')).toBe(Infinity)
+    expect(capFromConfig(caps, null, 'free')).toBe(3)
+  })
+
+  it('plan=pro SEM proCaps ⇒ cai no teto free (não muda nada agora)', () => {
+    expect(capFromConfig(caps, 'usuario', 'pro')).toBe(3)
+  })
+
+  it('plan=pro COM proCaps ⇒ pega o teto pro (Fase 2 configura)', () => {
+    expect(capFromConfig(caps, 'usuario', 'pro', proCaps)).toBe(30)
+    expect(capFromConfig(caps, 'curador', 'pro', proCaps)).toBe(50)
+    expect(capFromConfig(caps, 'admin', 'pro', proCaps)).toBe(Infinity)
+  })
+
+  it('plan=free IGNORA proCaps mesmo se passado', () => {
+    expect(capFromConfig(caps, 'usuario', 'free', proCaps)).toBe(3)
+  })
+})
+
 describe('isImageGenModel — allowlist', () => {
   it('aceita o default; rejeita desconhecido/não-string', () => {
     expect(isImageGenModel(DEFAULT_IMAGE_MODEL)).toBe(true)

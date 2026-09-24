@@ -239,7 +239,11 @@ describe('ConversaFocusedView (#60/#104)', () => {
     renderConversation()
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fcreate',
+    )
     // Sem input do chat e exatamente UM heading nível 1 (conversa.titulo).
     expect(screen.queryByLabelText(M.inputLabel)).toBeNull()
     const h1s = screen.getAllByRole('heading', { level: 1 })
@@ -460,6 +464,29 @@ describe('ConversaFocusedView (#60/#104)', () => {
 
     expect(await screen.findByText(M.erroConflito)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: M.redestilar })).toBeInTheDocument()
+  })
+
+  it('Fase 2 (flag-off) — 429 limite_geracao + usuário free: upsell ESTÁTICO junto da mensagem', async () => {
+    sessionState = authed() // plan 'free' (default do helper)
+    const user = userEvent.setup()
+    mockFetch({ stream: { status: 429, body: { error: 'limite_geracao' } } })
+    renderConversation()
+
+    await enviar(user, 'algo')
+    expect(await screen.findByText(ptBR.criar.erroLimiteGeracao)).toBeInTheDocument()
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.upsell.cta })).toHaveAttribute('href', '/pt-BR/plano')
+  })
+
+  it('Fase 2 (flag-off) — 429 limite_geracao + usuário pro: SEM cartão de upsell', async () => {
+    sessionState = { ...authed(), data: { user: { id: 'u-1', name: 'Ana', plan: 'pro' }, session: { id: 's-1' } } }
+    const user = userEvent.setup()
+    mockFetch({ stream: { status: 429, body: { error: 'limite_geracao' } } })
+    renderConversation()
+
+    await enviar(user, 'algo')
+    expect(await screen.findByText(ptBR.criar.erroLimiteGeracao)).toBeInTheDocument()
+    expect(screen.queryByText(ptBR.upsell.titulo)).not.toBeInTheDocument()
   })
 
   it('C10 — QUEDA (stream fecha SEM terminal): aviso DISTINTO + CTA retomar', async () => {

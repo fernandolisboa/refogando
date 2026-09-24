@@ -15,12 +15,16 @@
  */
 
 import { parseImportedRecipe, type ImportedRecipe } from '@/domain/recipe-import-parse'
+import { isUrlAllowed } from '@/domain/web-search-config'
 import { createDomainRateLimiter, type DomainRateLimiter } from '@/server/import/rate-limit'
+import { parseProbeUrl } from '@/server/import/probe-url'
 import {
-  IMPORT_USER_AGENT,
-  MAX_HTML_BYTES,
   ROBOTS_UA_TOKEN,
   robotsAllows,
+  fetchHardenedHtml,
+  hostnameOf,
+  isHostPublic,
+  type AddressLookup,
 } from '@/server/import/web-fetch'
 
 /**
@@ -40,24 +44,39 @@ export type ImportResult =
   | { ok: false; reason: ImportFailureReason }
 
 export interface RecipeImporter {
-  /** Importa a receita da `url`: fetch + parse JSON-LD. Falhas são TRATADAS (nunca lança). */
-  import(url: string): Promise<ImportResult>
+  /**
+   * Importa a receita da `url`: fetch + parse JSON-LD. Falhas são TRATADAS (nunca lança). `allowlist`
+   * (opcional) é a curadoria de domínios (#164): quando fornecida, CADA hop de redirect é re-checado
+   * contra ela (um domínio curado que redirecione p/ host fora da allowlist ⇒ recusado — #448). O Fake
+   * ignora ambos os argumentos.
+   */
+  import(url: string, allowlist?: string[]): Promise<ImportResult>
 }
 
-// Constantes de fetch (UA, caps, timeout) + o fetch FAIL-OPEN do robots.txt vivem em `web-fetch.ts`
-// (compartilhados com o probe de saúde #273). Aqui só o ORQUESTRA: rate-limit → robots → página → parse.
+// O fetch da página (ENDURECIDO contra SSRF/rebind/DoS — #448), o fetch FAIL-OPEN do robots.txt e as
+// constantes vivem em `web-fetch.ts` (compartilhados com o probe de saúde #273). Aqui só o ORQUESTRA:
+// rate-limit → robots → página (fetchHardenedHtml) → parse.
 
 /**
- * Impl REAL — fetch da URL + parse PURO do domínio. A ÚNICA I/O é o `fetch`; toda a extração
- * (JSON-LD, locale, ingredientes) é do domínio puro `parseImportedRecipe`. QUALQUER erro de rede/
- * parse/HTTP vira uma falha TRATADA (`fetch_failed`) — NUNCA lança nem vaza stack (espelha o
+ * Impl REAL — fetch da URL + parse PURO do domínio. A ÚNICA I/O é o `fetch` (via `fetchHardenedHtml`);
+ * toda a extração (JSON-LD, locale, ingredientes) é do domínio puro `parseImportedRecipe`. QUALQUER erro
+ * de rede/parse/HTTP vira uma falha TRATADA (`fetch_failed`) — NUNCA lança nem vaza stack (espelha o
  * contrato dos outros seams reais). NÃO é exercitada por teste (Fake); só roda ao vivo.
+ *
+ * SSRF (#448): o `fetch` da página passa pela MESMA barreira endurecida do probe — DNS resolvido antes de
+ * conectar (anti-rebind), redirect MANUAL re-validado por hop (um host allowlistado que devolva 302 p/
+ * `http://169.254.169.254/` NÃO é seguido), streaming com corte e timeout. Antes o importer seguia
+ * `redirect:'follow'` cru, sem re-validar hops nem resolver DNS: o flanco que esta issue fecha.
  */
 export class RealRecipeImporter implements RecipeImporter {
   // Limiter por-instância (persiste enquanto o singleton lazy de `deps.ts` viver). Injetável p/ teste.
-  constructor(private readonly limiter: DomainRateLimiter = createDomainRateLimiter()) {}
+  // `lookupFn` (resolvedor DNS) também injetável — os testes fixam endereços sem tocar a rede real.
+  constructor(
+    private readonly limiter: DomainRateLimiter = createDomainRateLimiter(),
+    private readonly lookupFn?: AddressLookup,
+  ) {}
 
-  async import(url: string): Promise<ImportResult> {
+  async import(url: string, allowlist?: string[]): Promise<ImportResult> {
     // GUARD-RAIL rate-limit (#272): politeness ~1/s por HOST, ANTES de QUALQUER rede — uma tentativa
     // limitada não toca o site (nem robots.txt nem página). A janela cobre a tentativa inteira. A chave
     // é o hostname: subdomínios distintos de um mesmo site allowlistado têm orçamentos separados —
@@ -72,28 +91,43 @@ export class RealRecipeImporter implements RecipeImporter {
       return { ok: false, reason: 'rate_limited' }
     }
 
+    // Predicado de allowlist (#164/#448): quando a rota fornece a curadoria, CADA hop (origem E alvos de
+    // redirect) é re-checado — fecha o open-redirect de um domínio curado p/ host arbitrário. Allowlist
+    // ausente/vazia ⇒ sem re-checagem aqui (a rota já é fail-closed; o Fake e os units não a passam).
+    const isHopAllowed =
+      allowlist && allowlist.length > 0 ? (u: string) => isUrlAllowed(u, allowlist) : undefined
+
+    // BARREIRA SSRF de ORIGEM (#448): valida a URL (`parseProbeUrl`: só http(s), rejeita IP-literal
+    // privado / host interno, zera userinfo), re-checa a allowlist e resolve o DNS da origem ANTES de
+    // QUALQUER rede — nem o `/robots.txt` toca uma origem que resolve p/ IP privado (anti-rebind) nem
+    // fora da curadoria. Espelha a ordem do probe (DNS-origem → robots → página); sem isto, o allowlist
+    // da rota não protegeria um domínio curado que REBINDA para 169.254.169.254 do próprio fetch do
+    // robots.txt. Origem inválida/privada/fora-da-allowlist ⇒ fetch_failed.
+    const parsed = parseProbeUrl(url)
+    const host = parsed === null ? null : hostnameOf(parsed)
+    if (
+      parsed === null ||
+      host === null ||
+      (isHopAllowed && !isHopAllowed(parsed)) ||
+      !(await isHostPublic(host, this.lookupFn))
+    ) {
+      return { ok: false, reason: 'fetch_failed' }
+    }
+
     // GUARD-RAIL robots.txt (#272, ADR-0019): respeita o `Disallow` do site ANTES de buscar a receita.
     // FAIL-OPEN deliberado (≠ o fail-CLOSED do SSRF/allowlist da rota): robots indisponível NÃO é
     // proibição — só uma proibição EXPLÍCITA bloqueia. Roda só no caminho REAL (o Fake nunca chega aqui).
-    if (!(await robotsAllows(url, ROBOTS_UA_TOKEN))) {
+    if (!(await robotsAllows(parsed, ROBOTS_UA_TOKEN, this.lookupFn))) {
       return { ok: false, reason: 'robots_blocked' }
     }
 
-    let html: string
-    try {
-      const res = await fetch(url, {
-        headers: { 'user-agent': IMPORT_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
-        redirect: 'follow',
-      })
-      if (!res.ok) return { ok: false, reason: 'fetch_failed' }
-      // Defesa de tamanho: lê o corpo capado. (Content-Length é dica; o corte real é no texto.)
-      const raw = await res.text()
-      html = raw.length > MAX_HTML_BYTES ? raw.slice(0, MAX_HTML_BYTES) : raw
-    } catch {
-      // URL inválida, DNS, timeout, TLS, etc. — tudo TRATADO como fetch_failed (não importa).
-      return { ok: false, reason: 'fetch_failed' }
-    }
-    return parseImportedRecipe(html, url)
+    // Fetch ENDURECIDO (#448): SSRF pós-redirect / DNS-rebind / DoS fechados. Cada hop re-valida
+    // parseProbeUrl + DNS + allowlist (isHopAllowed). Non-2xx, host que resolve p/ IP privado, redirect
+    // p/ host privado ou fora da allowlist, excesso de hops, corpo oversized, timeout ou qualquer erro
+    // ⇒ `null` ⇒ fetch_failed (TRATADO; nunca 500). Nunca lança. Parseia da URL FINAL (pós-redirects).
+    const page = await fetchHardenedHtml(parsed, this.lookupFn, isHopAllowed)
+    if (!page) return { ok: false, reason: 'fetch_failed' }
+    return parseImportedRecipe(page.html, page.finalUrl)
   }
 }
 

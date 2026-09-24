@@ -90,19 +90,22 @@ describe('buildSitemapEntries — uma entrada por (receita, locale com slug)', (
   })
 })
 
-describe('buildStaticLocaleEntries — homes indexáveis por locale', () => {
-  it('uma entrada por locale suportado, URL absoluta da home', () => {
+describe('buildStaticLocaleEntries — homes + páginas legais indexáveis por locale', () => {
+  const homeUrls = SUPPORTED_LOCALES.map((loc) => `${BASE}/${loc}`)
+  const homeEntries = (entries: ReturnType<typeof buildStaticLocaleEntries>) =>
+    entries.filter((e) => homeUrls.includes(e.url))
+
+  it('uma entrada de home por locale suportado, URL absoluta da home', () => {
     const entries = buildStaticLocaleEntries(BASE)
-    expect(entries).toHaveLength(SUPPORTED_LOCALES.length)
     const urls = entries.map((e) => e.url)
     for (const loc of SUPPORTED_LOCALES) {
       expect(urls).toContain(`${BASE}/${loc}`)
     }
+    expect(homeEntries(entries)).toHaveLength(SUPPORTED_LOCALES.length)
   })
 
   it('cada home lista as outras homes no hreflang + x-default → raiz `/` redirecionadora', () => {
-    const entries = buildStaticLocaleEntries(BASE)
-    for (const e of entries) {
+    for (const e of homeEntries(buildStaticLocaleEntries(BASE))) {
       const langs = e.alternates?.languages ?? {}
       for (const loc of SUPPORTED_LOCALES) {
         expect(langs[loc]).toBe(`${BASE}/${loc}`)
@@ -111,4 +114,25 @@ describe('buildStaticLocaleEntries — homes indexáveis por locale', () => {
       expect(langs['x-default']).toBe(`${BASE}/`)
     }
   })
+
+  // Páginas legais publicadas (parte de #276) + o placeholder de plano (Fase 2 de billing, flag-off).
+  for (const path of ['privacidade', 'seus-direitos', 'plano'] as const) {
+    it(`inclui /${path} por locale, com hreflang + x-default → DEFAULT_LOCALE`, () => {
+      const entries = buildStaticLocaleEntries(BASE)
+      const urls = entries.map((e) => e.url)
+      for (const loc of SUPPORTED_LOCALES) {
+        expect(urls).toContain(`${BASE}/${loc}/${path}`)
+      }
+      const pageEntries = entries.filter((e) => e.url.endsWith(`/${path}`))
+      expect(pageEntries).toHaveLength(SUPPORTED_LOCALES.length)
+      for (const e of pageEntries) {
+        const langs = e.alternates?.languages ?? {}
+        for (const loc of SUPPORTED_LOCALES) {
+          expect(langs[loc]).toBe(`${BASE}/${loc}/${path}`)
+        }
+        // Sem redirecionador por-página na raiz: x-default aponta pra versão no DEFAULT_LOCALE.
+        expect(langs['x-default']).toBe(`${BASE}/${DEFAULT_LOCALE}/${path}`)
+      }
+    })
+  }
 })

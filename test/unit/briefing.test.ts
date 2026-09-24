@@ -7,10 +7,25 @@ import {
   dedupeBriefing,
   isBriefingVazio,
   buildBriefingPrompt,
+  buildFreeTextPrompt,
   buildConversationPrompt,
+  buildSystemPrompt,
+  composeSystemPrompt,
+  buildVozCozinhaFragment,
+  resolveVozCozinhaAxis,
+  promptStampFor,
+  PROMPT_VERSION,
+  NEUTRAL_AXES,
   SYSTEM_PROMPT_DISTILLATION,
+  SYSTEM_PROMPT_CONVERSATION_STREAM,
   briefingItemsParaAviso,
+  NIVEIS_CHEF,
+  isNivelChef,
+  resolveNivelChefAxis,
+  NIVEL_FRAGMENTS,
   type BriefingParse,
+  type PromptMode,
+  type AxisFragmentContributor,
 } from '@/domain/briefing'
 import type { Briefing, BriefingItem } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
@@ -62,7 +77,6 @@ function briefing(overrides: Partial<Briefing> = {}): Briefing {
     cozinha: null,
     restricoes: [],
     porcoes: null,
-    dificuldade: null,
     observacoes: null,
     itens: [item()],
     ...overrides,
@@ -87,7 +101,6 @@ describe('parseBriefing — shape ok', () => {
       cozinha: 'italiana',
       restricoes: ['vegano'],
       porcoes: 4,
-      dificuldade: 3,
       observacoes: 'sem cebola',
       itens: [{ rawText: 'tomate', quantidade: '2.000', unidade: 'unidade', strength: 'required' }],
     })
@@ -97,7 +110,6 @@ describe('parseBriefing — shape ok', () => {
         cozinha: 'italiana',
         restricoes: ['vegano'],
         porcoes: 4,
-        dificuldade: 3,
         observacoes: 'sem cebola',
         itens: [
           {
@@ -120,15 +132,23 @@ describe('parseBriefing — shape ok', () => {
       cozinha: 'brasileira',
       restricoes: [],
       porcoes: null,
-      dificuldade: null,
       observacoes: null,
       itens: [],
     })
   })
 
-  it('porcoes/dificuldade null explícitos → aceitos como null', () => {
-    const r = parseBriefing({ cozinha: 'mineira', porcoes: null, dificuldade: null })
+  it('porcoes null explícito → aceito como null', () => {
+    const r = parseBriefing({ cozinha: 'mineira', porcoes: null })
     expect(r.ok).toBe(true)
+  })
+
+  it('dificuldade DEIXOU de ser entrada (#421): chave no body é IGNORADA (não vira erro nem campo)', () => {
+    // A Dificuldade virou saída estimada pela IA (ADR-0029 dec.4). Um cliente legado que ainda envie
+    // `dificuldade` no briefing não deve quebrar — o parser simplesmente a ignora.
+    const r = parseBriefing({ cozinha: 'mineira', dificuldade: 3 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect('dificuldade' in r.briefing).toBe(false)
   })
 
   it('cozinha data-driven (americana) é aceita quando injetada no conjunto (#316/#318)', () => {
@@ -195,12 +215,6 @@ describe('parseBriefing — cada erro', () => {
   it('porcoes não-inteiro → porcoes_fora_de_faixa', () => {
     expect(parseBriefing({ porcoes: 2.5 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
   })
-  it('dificuldade fora de faixa → dificuldade_fora_de_faixa', () => {
-    expect(parseBriefing({ dificuldade: 99 })).toEqual({
-      ok: false,
-      error: 'dificuldade_fora_de_faixa',
-    })
-  })
   it('observacoes não-string → briefing_invalido', () => {
     expect(parseBriefing({ observacoes: 123 })).toEqual({ ok: false, error: 'briefing_invalido' })
   })
@@ -217,14 +231,6 @@ describe('parseBriefing — faixas nos limites', () => {
   it('porcoes 0 e 51 → fora de faixa', () => {
     expect(parseBriefing({ porcoes: 0 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
     expect(parseBriefing({ porcoes: 51 })).toEqual({ ok: false, error: 'porcoes_fora_de_faixa' })
-  })
-  it('dificuldade 1 e 5 (limites) → ok', () => {
-    expect(parseBriefing({ dificuldade: 1, cozinha: 'italiana' }).ok).toBe(true)
-    expect(parseBriefing({ dificuldade: 5, cozinha: 'italiana' }).ok).toBe(true)
-  })
-  it('dificuldade 0 e 6 → fora de faixa', () => {
-    expect(parseBriefing({ dificuldade: 0 })).toEqual({ ok: false, error: 'dificuldade_fora_de_faixa' })
-    expect(parseBriefing({ dificuldade: 6 })).toEqual({ ok: false, error: 'dificuldade_fora_de_faixa' })
   })
 })
 
@@ -323,9 +329,6 @@ describe('isBriefingVazio', () => {
   it('só-porcoes → true (modificador não conta)', () => {
     expect(isBriefingVazio(briefing({ itens: [], porcoes: 4 }))).toBe(true)
   })
-  it('só-dificuldade → true (modificador não conta)', () => {
-    expect(isBriefingVazio(briefing({ itens: [], dificuldade: 3 }))).toBe(true)
-  })
 })
 
 describe('buildBriefingPrompt — determinístico', () => {
@@ -341,14 +344,14 @@ describe('buildBriefingPrompt — determinístico', () => {
         cozinha: 'italiana',
         restricoes: ['vegano'],
         porcoes: 4,
-        dificuldade: 2,
         observacoes: 'sem cebola',
         itens: [item({ rawText: 'tomate', quantidade: '2.000', unidade: 'unidade', strength: 'required' })],
       }),
     )
     expect(userPrompt).toContain('Cozinha: italiana')
     expect(userPrompt).toContain('Porções: 4')
-    expect(userPrompt).toContain('Dificuldade: 2')
+    // A Dificuldade DEIXOU de ser entrada (#421/ADR-0029 dec.4): não há mais linha "Dificuldade:".
+    expect(userPrompt).not.toContain('Dificuldade:')
     expect(userPrompt).toContain('Restrições: vegano')
     expect(userPrompt).toContain('tomate')
     expect(userPrompt).toContain('força: required')
@@ -414,6 +417,274 @@ describe('buildConversationPrompt — determinístico (#12)', () => {
     const rotulosNoInicio = linhas.filter((l) => /^(Usuário|Assistente): /.test(l))
     expect(rotulosNoInicio).toHaveLength(1)
     expect(rotulosNoInicio[0].startsWith('Usuário: ')).toBe(true)
+  })
+})
+
+describe('buildSystemPrompt — seam de composição (ADR-0029, #420)', () => {
+  const MODES: PromptMode[] = ['briefing', 'free_text', 'distillation', 'conversation_stream']
+
+  it('sem eixos (NEUTRAL_AXES) ⇒ o base do modo, sem sufixo de fragmento', () => {
+    // A identidade byte-a-byte com os prompts canônicos é o contrato de back-compat: o registro de
+    // Wave 1 é vazio, então nenhum fragmento é anexado.
+    expect(buildSystemPrompt('distillation', NEUTRAL_AXES)).toBe(SYSTEM_PROMPT_DISTILLATION)
+    expect(buildSystemPrompt('conversation_stream', NEUTRAL_AXES)).toBe(SYSTEM_PROMPT_CONVERSATION_STREAM)
+    // free_text COMPARTILHA o base do briefing (fonte única do estilo).
+    expect(buildSystemPrompt('free_text')).toBe(buildSystemPrompt('briefing'))
+  })
+
+  it('axes default (omitido) == NEUTRAL_AXES para todo modo', () => {
+    for (const mode of MODES) {
+      expect(buildSystemPrompt(mode)).toBe(buildSystemPrompt(mode, NEUTRAL_AXES))
+    }
+  })
+
+  it('build*Prompt reusam o SEAM: systemPrompt == buildSystemPrompt(<modo>)', () => {
+    expect(buildBriefingPrompt(briefing()).systemPrompt).toBe(buildSystemPrompt('briefing'))
+    expect(buildFreeTextPrompt('um bolo de fubá simples').systemPrompt).toBe(buildSystemPrompt('free_text'))
+    expect(buildConversationPrompt([{ role: 'user', content: 'quero um bolo' }]).systemPrompt).toBe(
+      buildSystemPrompt('distillation'),
+    )
+  })
+
+  it('o base enriquecido de briefing mantém os sinais canônicos (schema, required/preferred)', () => {
+    const base = buildSystemPrompt('briefing')
+    expect(base).toContain('schema canônico')
+    expect(base).toContain('required')
+    expect(base).toContain('preferred')
+    // Consultivo FORA da Receita + medida estruturada seguem instruídos (ADR-0009/0012).
+    expect(base.toLowerCase()).toContain('advisory')
+  })
+
+  it('a destilação NÃO menciona briefing nem força "required"/"preferred" (mesmo enriquecida)', () => {
+    const base = buildSystemPrompt('distillation')
+    expect(base.toLowerCase()).not.toContain('briefing')
+    expect(base.toLowerCase()).not.toContain('força')
+    expect(base).not.toContain('required')
+    expect(base).not.toContain('preferred')
+  })
+
+  it('composeSystemPrompt: um contribuidor-fake ANEXA o fragmento ao base (na ordem)', () => {
+    // Exercita a composição sem tocar o registro real: o parâmetro `contributors` é injetável.
+    const fake: AxisFragmentContributor = () => 'FRAGMENTO DE EIXO FAKE.'
+    const composed = composeSystemPrompt('BASE.', [fake], NEUTRAL_AXES)
+    expect(composed).toBe('BASE. FRAGMENTO DE EIXO FAKE.')
+  })
+
+  it('composeSystemPrompt: contribuidor null/vazio é ignorado ⇒ identidade com o base', () => {
+    const nulo: AxisFragmentContributor = () => null
+    const vazio: AxisFragmentContributor = () => '   '
+    expect(composeSystemPrompt('BASE.', [nulo, vazio], NEUTRAL_AXES)).toBe('BASE.')
+    // Registro vazio também ⇒ base puro.
+    expect(composeSystemPrompt('BASE.', [], NEUTRAL_AXES)).toBe('BASE.')
+  })
+
+  it('composeSystemPrompt: múltiplos fragmentos entram na ORDEM do array', () => {
+    const a: AxisFragmentContributor = () => 'A.'
+    const b: AxisFragmentContributor = () => 'B.'
+    expect(composeSystemPrompt('BASE.', [a, b], NEUTRAL_AXES)).toBe('BASE. A. B.')
+  })
+
+  // #423 (ADR-0029 dec.6) — eixo `variacaoDivergente` ("gerar 2, o usuário escolhe").
+  it('composeSystemPrompt: o eixo variacaoDivergente ANEXA a instrução de divergência (contribuidor-fake)', () => {
+    const contrib: AxisFragmentContributor = (a) =>
+      a.variacaoDivergente
+        ? 'Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: ' +
+          a.variacaoDivergente.poloA +
+          ' vs ' +
+          a.variacaoDivergente.poloB +
+          '. ' +
+          a.variacaoDivergente.instrucao
+        : null
+    const axes = { variacaoDivergente: { poloA: 'tradicional', poloB: 'criativa', instrucao: 'divirja no método.' } }
+    const composed = composeSystemPrompt('BASE.', [contrib], axes)
+    expect(composed).toBe(
+      'BASE. Gere DUAS variações completas e distintas desta receita, divergindo genuinamente ao longo do eixo: tradicional vs criativa. divirja no método.',
+    )
+  })
+
+  it('buildSystemPrompt(briefing, {variacaoDivergente}) anexa a instrução via o REGISTRO real', () => {
+    const axes = { variacaoDivergente: { poloA: 'rápida', poloB: 'caprichada', instrucao: 'varie o empratamento.' } }
+    const withAxis = buildSystemPrompt('briefing', axes)
+    const base = buildSystemPrompt('briefing')
+    // O registro real anexa o fragmento (começa com o base + a instrução de DUAS variações).
+    expect(withAxis.startsWith(base)).toBe(true)
+    expect(withAxis).toContain('Gere DUAS variações')
+    expect(withAxis).toContain('rápida vs caprichada')
+    expect(withAxis).toContain('varie o empratamento.')
+    // Sem o eixo (NEUTRAL) ⇒ base byte-a-byte (back-compat inegociável).
+    expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(base)
+  })
+})
+
+describe('promptStampFor — carimbo de versão (ADR-0029, #420)', () => {
+  it('carimba a versão corrente + os eixos', () => {
+    expect(promptStampFor(NEUTRAL_AXES)).toEqual({ version: PROMPT_VERSION, axes: NEUTRAL_AXES })
+  })
+  it('axes omitido ⇒ NEUTRAL_AXES', () => {
+    expect(promptStampFor()).toEqual({ version: PROMPT_VERSION, axes: {} })
+  })
+  it('PROMPT_VERSION é um inteiro positivo (correlacionável)', () => {
+    expect(Number.isInteger(PROMPT_VERSION)).toBe(true)
+    expect(PROMPT_VERSION).toBeGreaterThan(0)
+  })
+})
+
+describe('NivelChef — enum e guard (#421, ADR-0029 dec.2)', () => {
+  it('NIVEIS_CHEF é exatamente [iniciante, intermediario, avancado]', () => {
+    expect([...NIVEIS_CHEF]).toEqual(['iniciante', 'intermediario', 'avancado'])
+  })
+  it('isNivelChef reconhece os válidos e rejeita o resto', () => {
+    expect(isNivelChef('iniciante')).toBe(true)
+    expect(isNivelChef('intermediario')).toBe(true)
+    expect(isNivelChef('avancado')).toBe(true)
+    expect(isNivelChef('avançado')).toBe(false) // a fonte é sem acento
+    expect(isNivelChef('expert')).toBe(false)
+    expect(isNivelChef('')).toBe(false)
+  })
+})
+
+describe('resolveNivelChefAxis — borda pura (#421, Regra C)', () => {
+  it('override vence o default do perfil', () => {
+    expect(resolveNivelChefAxis('avancado', 'iniciante')).toEqual({ nivelChef: 'avancado' })
+  })
+  it('sem override → default do perfil', () => {
+    expect(resolveNivelChefAxis(null, 'iniciante')).toEqual({ nivelChef: 'iniciante' })
+    expect(resolveNivelChefAxis(undefined, 'intermediario')).toEqual({ nivelChef: 'intermediario' })
+  })
+  it('nenhum dos dois → {} (colapsa p/ NEUTRAL_AXES no spread aditivo)', () => {
+    expect(resolveNivelChefAxis(null, null)).toEqual({})
+    expect(resolveNivelChefAxis(undefined, undefined)).toEqual({})
+    expect({ ...resolveNivelChefAxis(null, null) }).toEqual(NEUTRAL_AXES)
+  })
+})
+
+describe('eixo Nível de habilidade — composição do prompt (#421, ADR-0029 dec.2)', () => {
+  it('NEUTRAL (sem nivelChef) ⇒ base byte-a-byte (back-compat)', () => {
+    expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(buildSystemPrompt('briefing'))
+    expect(buildSystemPrompt('briefing', {})).toBe(buildSystemPrompt('briefing'))
+  })
+  it('nivelChef ativo ANEXA o fragmento do nível ao base', () => {
+    const base = buildSystemPrompt('briefing')
+    const iniciante = buildSystemPrompt('briefing', { nivelChef: 'iniciante' })
+    expect(iniciante.startsWith(base)).toBe(true)
+    expect(iniciante).toContain(NIVEL_FRAGMENTS.iniciante)
+    expect(iniciante.length).toBeGreaterThan(base.length)
+  })
+  it('iniciante ≠ avançado no TEXTO composto (variedade vem do PROMPT)', () => {
+    const iniciante = buildSystemPrompt('briefing', { nivelChef: 'iniciante' })
+    const avancado = buildSystemPrompt('briefing', { nivelChef: 'avancado' })
+    expect(iniciante).not.toBe(avancado)
+    expect(iniciante).toContain(NIVEL_FRAGMENTS.iniciante)
+    expect(avancado).toContain(NIVEL_FRAGMENTS.avancado)
+  })
+  it('cada fragmento carrega a precedência IN-BAND (obedecer pedido explícito / registrar no advisory)', () => {
+    for (const nivel of NIVEIS_CHEF) {
+      const frag = NIVEL_FRAGMENTS[nivel].toLowerCase()
+      expect(frag).toContain('advisory')
+      expect(frag).toContain('obedeça')
+    }
+  })
+  it('o eixo vale para TODO modo (o registro é global ao SEAM)', () => {
+    const MODES: PromptMode[] = ['briefing', 'free_text', 'distillation', 'conversation_stream']
+    for (const mode of MODES) {
+      expect(buildSystemPrompt(mode, { nivelChef: 'avancado' })).toContain(NIVEL_FRAGMENTS.avancado)
+    }
+  })
+})
+
+describe('cozinha-como-voz — eixo #422 (ADR-0029 dec.3)', () => {
+  describe('buildVozCozinhaFragment', () => {
+    it('nome só (sem nota) ⇒ só a instrução genérica de autenticidade', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'japonesa', notaCurada: null })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de japonesa: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('nome + nota ⇒ genérico + nota, separados por um espaço', () => {
+      const frag = buildVozCozinhaFragment({
+        nome: 'baiana',
+        notaCurada: 'Use dendê e leite de coco; finalize com coentro.',
+      })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de baiana: técnicas, ingredientes e temperos típicos dessa cozinha.' +
+          ' Use dendê e leite de coco; finalize com coentro.',
+      )
+    })
+
+    it('nota só-espaços ⇒ AUSENTE (colapsa para o genérico puro)', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'italiana', notaCurada: '   \n  ' })
+      expect(frag).toBe(
+        'Cozinhe na tradição autêntica de italiana: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('nota com espaços nas bordas ⇒ trimada antes de anexar', () => {
+      const frag = buildVozCozinhaFragment({ nome: 'tailandesa', notaCurada: '  Equilibre azedo, salgado e picante.  ' })
+      expect(frag.endsWith('cozinha. Equilibre azedo, salgado e picante.')).toBe(true)
+    })
+  })
+
+  describe('resolveVozCozinhaAxis (borda pura, Regra C)', () => {
+    it('sem cozinha ⇒ {} (colapsa para NEUTRAL byte-a-byte via spread)', () => {
+      expect(resolveVozCozinhaAxis(null, null)).toEqual({})
+      // Spread aditivo com {} preserva a identidade neutra.
+      expect({ ...resolveVozCozinhaAxis(null, null) }).toEqual(NEUTRAL_AXES)
+    })
+
+    it('cozinha com voz curada ⇒ nome do rótulo + nota', () => {
+      expect(
+        resolveVozCozinhaAxis({ nome: 'Japonesa', voiceNote: 'Priorize umami e sazonalidade.' }, 'japonesa'),
+      ).toEqual({ vozCozinha: { nome: 'Japonesa', notaCurada: 'Priorize umami e sazonalidade.' } })
+    })
+
+    it("cozinha 'suggested' (voice=null) ⇒ genérico com nome=slug do briefing", () => {
+      expect(resolveVozCozinhaAxis(null, 'nordestina')).toEqual({
+        vozCozinha: { nome: 'nordestina', notaCurada: null },
+      })
+    })
+
+    it('voz sem rótulo (nome cai no slug a montante) ⇒ nome=slug, nota=null', () => {
+      expect(resolveVozCozinhaAxis({ nome: 'coreana', voiceNote: null }, 'coreana')).toEqual({
+        vozCozinha: { nome: 'coreana', notaCurada: null },
+      })
+    })
+  })
+
+  describe('composição via SEAM com o eixo #422', () => {
+    it('composeSystemPrompt com um contribuidor-fake do eixo ANEXA o fragmento de voz', () => {
+      const contribFake = (a: { vozCozinha?: { nome: string; notaCurada: string | null } }) =>
+        a.vozCozinha ? buildVozCozinhaFragment(a.vozCozinha) : null
+      const composed = composeSystemPrompt('BASE.', [contribFake], {
+        vozCozinha: { nome: 'mexicana', notaCurada: null },
+      })
+      expect(composed).toBe(
+        'BASE. Cozinhe na tradição autêntica de mexicana: técnicas, ingredientes e temperos típicos dessa cozinha.',
+      )
+    })
+
+    it('buildSystemPrompt(briefing, {vozCozinha}) = base + fragmento (o base fica intacto)', () => {
+      const base = buildSystemPrompt('briefing', NEUTRAL_AXES)
+      const comVoz = buildSystemPrompt('briefing', { vozCozinha: { nome: 'italiana', notaCurada: null } })
+      expect(comVoz.startsWith(base)).toBe(true)
+      expect(comVoz).toBe(`${base} ${buildVozCozinhaFragment({ nome: 'italiana', notaCurada: null })}`)
+    })
+
+    it('back-compat: buildSystemPrompt(briefing, NEUTRAL) segue o base byte-a-byte', () => {
+      // O registro real agora tem o contribuidor #422, mas ele devolve null sem `vozCozinha` ⇒ base puro.
+      expect(buildSystemPrompt('briefing', NEUTRAL_AXES)).toBe(buildSystemPrompt('free_text', NEUTRAL_AXES))
+      expect(buildSystemPrompt('briefing')).toBe(buildSystemPrompt('briefing', NEUTRAL_AXES))
+    })
+
+    it('buildBriefingPrompt com voz: só o systemPrompt muda; o userPrompt (estrutura) é idêntico', () => {
+      const b = briefing()
+      const neutro = buildBriefingPrompt(b, NEUTRAL_AXES)
+      const comVoz = buildBriefingPrompt(b, { vozCozinha: { nome: 'japonesa', notaCurada: null } })
+      // A voz é instrução de VOZ, não de taxonomia: o userPrompt (o PEDIDO serializado) não muda.
+      expect(comVoz.userPrompt).toBe(neutro.userPrompt)
+      expect(comVoz.systemPrompt).not.toBe(neutro.systemPrompt)
+      expect(comVoz.systemPrompt.startsWith(neutro.systemPrompt)).toBe(true)
+    })
   })
 })
 

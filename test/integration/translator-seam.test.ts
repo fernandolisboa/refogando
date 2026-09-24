@@ -34,12 +34,9 @@ describe('seam Translator #23 — DI + resetDeps', () => {
     expect(getTranslator()).toBeInstanceOf(RealTranslator)
   })
 
-  it('RealTranslator.translate LANÇA (tradução real é PR à parte)', async () => {
-    // Real/Throwing ignoram o input (lançam antes) ⇒ assinatura concreta sem param
-    // (espelha RealEmbedder.embed()). Exercitados via a interface (translate aceita input).
-    const real: Translator = new RealTranslator()
-    await expect(real.translate(sampleInput)).rejects.toThrow(/não implementado/)
-  })
+  // O RealTranslator é o cliente LLM real (#426, ADR-0030) — não é unit-testado (convenção Real*,
+  // como RealEmbedder: só roda ao vivo com a key no ambiente). A lógica testável (prompt, schema,
+  // fidelidade) vive no domínio (translation-prompt.test.ts). Aqui só provamos o DI (acima).
 
   it('ThrowingTranslator.translate LANÇA (dublê de degradação)', async () => {
     const throwing: Translator = new ThrowingTranslator()

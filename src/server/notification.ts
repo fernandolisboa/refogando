@@ -145,6 +145,9 @@ export async function loadNotifications(
       // notificação (sem coluna nova). Reflete edições posteriores da nota; `null` p/ notificações sem
       // avaliação (ex.: `new_follower`). A avaliação moderada PERSISTE (soft-delete) ⇒ o join sobrevive.
       rating: recipeReview.rating,
+      // #460: UUID da receita-sujeito (coluna existente) — alimenta o LINK do item no painel. Não é
+      // capability: o GET do detalhe reimpõe os gates de leitura, sem risco de IDOR/vazamento.
+      recipeId: notification.recipeId,
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       // SERVER-ONLY (nunca no DTO): alimenta só o cursor opaco da próxima página.
@@ -162,7 +165,13 @@ export async function loadNotifications(
   const notifications: NotificationDTO[] = kept.map((r) => ({
     id: r.id,
     type: r.type,
-    refs: { actorName: r.actorName, actorHandle: r.actorHandle, recipeTitle: null, rating: r.rating },
+    refs: {
+      actorName: r.actorName,
+      actorHandle: r.actorHandle,
+      recipeTitle: null,
+      rating: r.rating,
+      recipeId: r.recipeId,
+    },
     actorImage: r.actorImage,
     readAt: r.readAt ? r.readAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),

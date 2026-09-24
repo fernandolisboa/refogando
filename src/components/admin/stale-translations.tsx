@@ -11,16 +11,30 @@
  * Rótulo de VALOR localizado para `provenance` via lookup `satisfies Record<...>`. A chave de
  * busy é `${recipeId}:${locale}` (a tupla é a identidade, não o recipeId só). Cores: só
  * neutros/brand AA-verificados; sem âmbar/accent.
+ *
+ * Edição de NOME de ingrediente traduzido (#498, ADR-0031 companheiro iii): cada item ganha um
+ * expansor "editar nomes" que carrega a lista de ingredientes via `GET /api/recipes/[id]?locale=`
+ * (leitura PÚBLICA já community-gated — a MESMA receita já passou pelo filtro da fila stale, então
+ * o fetch nunca 404) e grava via `PATCH /api/recipes/[id]/translations/[locale]` (novo, mesmo gate
+ * de comunidade/moderação do POST/review acima, `requireRole('curador')`). SÓ envia `edits` dos
+ * campos REALMENTE alterados (dirty-diff contra o valor carregado) — evita PATCH vazio/no-op. Só
+ * ingredientes COM nome (`rawText` presente/não-vazio) são editáveis — item sem nome não tem o que
+ * editar aqui. Só UM item expandido por vez (mesmo padrão de `busyKey`); expandir outro fecha o
+ * anterior e descarta edições não salvas do anterior (sem confirmação — sinalização leve, CONTEXT.md).
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   TRANSLATION_PROVENANCES,
   type TranslationProvenance,
 } from '@/domain/recipe'
 
 type StaleItem = { recipeId: string; locale: string; provenance: string }
+
+/** Ingrediente COM nome (rawText presente/não-vazio) — só estes são editáveis (#498). */
+type NamedIngredient = { ordem: number; rawText: string }
 
 export function StaleTranslations() {
   const { messages } = useLocale()
@@ -32,6 +46,16 @@ export function StaleTranslations() {
   const [loadError, setLoadError] = useState(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [errorKey, setErrorKey] = useState<string | null>(null)
+
+  // Editor de nomes de ingrediente (#498) — expandido no máximo UM item por vez.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+  const [ingLoading, setIngLoading] = useState(false)
+  const [ingLoadError, setIngLoadError] = useState(false)
+  const [ingredients, setIngredients] = useState<NamedIngredient[]>([])
+  const [names, setNames] = useState<Record<number, string>>({})
+  const [ingSaving, setIngSaving] = useState(false)
+  const [ingSaveError, setIngSaveError] = useState(false)
+  const [ingSaveSuccess, setIngSaveSuccess] = useState(false)
 
   const provenanceLabel = {
     escrita_por_pessoa: m.provEscritaPorPessoa,
@@ -96,6 +120,89 @@ export function StaleTranslations() {
     }
   }
 
+  /** Reseta todo o estado do editor de nomes (usado ao fechar/trocar de item). */
+  function resetIngredientEditor() {
+    setIngLoading(false)
+    setIngLoadError(false)
+    setIngredients([])
+    setNames({})
+    setIngSaving(false)
+    setIngSaveError(false)
+    setIngSaveSuccess(false)
+  }
+
+  async function toggleEditIngredients(item: StaleItem) {
+    const key = itemKey(item)
+    if (expandedKey === key) {
+      setExpandedKey(null)
+      resetIngredientEditor()
+      return
+    }
+    setExpandedKey(key)
+    resetIngredientEditor()
+    setIngLoading(true)
+    try {
+      const res = await fetch(
+        `/api/recipes/${item.recipeId}?locale=${encodeURIComponent(item.locale)}`,
+      )
+      if (!res.ok) {
+        setIngLoadError(true)
+        return
+      }
+      const body = (await res.json()) as {
+        ingredients: { ordem: number; rawText: string | null }[]
+      }
+      const named = body.ingredients.filter(
+        (i): i is NamedIngredient => i.rawText != null && i.rawText.trim() !== '',
+      )
+      setIngredients(named)
+      setNames(Object.fromEntries(named.map((i) => [i.ordem, i.rawText])))
+    } catch {
+      setIngLoadError(true)
+    } finally {
+      setIngLoading(false)
+    }
+  }
+
+  async function saveIngredientNames(item: StaleItem) {
+    if (ingSaving) return
+    // Dirty-diff: só os `ordem` cujo valor mudou (trim) contra o carregado — nunca manda edits
+    // vazios (o servidor rejeitaria nome em branco; aqui simplesmente não inclui no-op).
+    const edits = ingredients
+      .map((i) => ({ ordem: i.ordem, nome: (names[i.ordem] ?? i.rawText).trim() }))
+      .filter((e) => e.nome.length > 0 && e.nome !== ingredients.find((i) => i.ordem === e.ordem)?.rawText)
+    setIngSaveError(false)
+    setIngSaveSuccess(false)
+    if (edits.length === 0) {
+      setIngSaveSuccess(true)
+      return
+    }
+    setIngSaving(true)
+    try {
+      const res = await fetch(`/api/recipes/${item.recipeId}/translations/${item.locale}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ edits }),
+      })
+      if (!res.ok) {
+        setIngSaveError(true)
+        return
+      }
+      // Novo baseline: um 2º salvamento sem mais mudanças vira no-op (dirty-diff contra o salvo).
+      setIngredients((prev) =>
+        prev.map((i) => {
+          const edited = edits.find((e) => e.ordem === i.ordem)
+          return edited ? { ordem: i.ordem, rawText: edited.nome } : i
+        }),
+      )
+      setIngSaveSuccess(true)
+    } catch {
+      setIngSaveError(true)
+    } finally {
+      setIngSaving(false)
+    }
+  }
+
   return (
     <section aria-labelledby="stale-titulo" className="flex flex-col gap-3">
       <h2 id="stale-titulo" className="font-display text-lg font-semibold text-fg">
@@ -126,6 +233,7 @@ export function StaleTranslations() {
           <ul className="flex flex-col gap-3">
             {items.map((item) => {
               const key = itemKey(item)
+              const expanded = expandedKey === key
               return (
                 <li
                   key={key}
@@ -141,7 +249,7 @@ export function StaleTranslations() {
                     <dt className="font-medium text-fg">{m.origem}</dt>
                     <dd className="text-muted">{labelProvenance(item.provenance)}</dd>
                   </dl>
-                  <div>
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="secondary"
@@ -153,6 +261,15 @@ export function StaleTranslations() {
                     >
                       {busyKey === key ? m.marcando : m.marcarRevisada}
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void toggleEditIngredients(item)}
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? m.fecharNomes : m.editarNomes}
+                    </Button>
                   </div>
                   {errorKey === key && (
                     <p
@@ -161,6 +278,65 @@ export function StaleTranslations() {
                     >
                       {m.erroGenerico}
                     </p>
+                  )}
+                  {expanded && (
+                    <div
+                      aria-live="polite"
+                      aria-busy={ingLoading}
+                      className="flex flex-col gap-2 rounded-md border border-border bg-bg p-3"
+                    >
+                      {ingLoading ? (
+                        <p className="text-sm text-muted">{m.carregandoIngredientes}</p>
+                      ) : ingLoadError ? (
+                        <p role="alert" className="text-sm font-medium text-fg">
+                          {m.erroCarregarIngredientes}
+                        </p>
+                      ) : ingredients.length === 0 ? (
+                        <p className="text-sm text-muted">{m.semIngredientesNomeados}</p>
+                      ) : (
+                        <>
+                          <ul className="flex flex-col gap-2">
+                            {ingredients.map((ing) => (
+                              <li key={ing.ordem} className="flex flex-col gap-1">
+                                <label
+                                  htmlFor={`ing-nome-${key}-${ing.ordem}`}
+                                  className="text-xs font-medium text-muted"
+                                >
+                                  {m.nomeIngredienteLabel}
+                                </label>
+                                <Input
+                                  id={`ing-nome-${key}-${ing.ordem}`}
+                                  value={names[ing.ordem] ?? ''}
+                                  onChange={(e) =>
+                                    setNames((prev) => ({ ...prev, [ing.ordem]: e.target.value }))
+                                  }
+                                  disabled={ingSaving}
+                                />
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void saveIngredientNames(item)}
+                              disabled={ingSaving}
+                              aria-busy={ingSaving}
+                            >
+                              {ingSaving ? m.salvando : m.salvarNomes}
+                            </Button>
+                            {ingSaveSuccess && (
+                              <p className="text-sm text-muted">{m.nomesSalvos}</p>
+                            )}
+                          </div>
+                          {ingSaveError && (
+                            <p role="alert" className="text-sm font-medium text-fg">
+                              {m.erroSalvarNomes}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
                 </li>
               )

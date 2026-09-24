@@ -106,6 +106,11 @@ export async function applyCatalogImageGeneration(input: {
     reviewRequired: false, // catálogo: o curador É o revisor; não enfileira na fila proativa
     autoSelect: true, // catálogo seta a face na mesma tx (sem cobrança dupla)
   })
+  // #446: o caminho de CATÁLOGO NÃO passa `quota` (o curador não tem teto de geração), então `quota`
+  // é INALCANÇÁVEL aqui. Guarda fail-closed que também estreita o tipo (exclui 'quota' do `return core`).
+  if (core.kind === 'quota') {
+    throw new Error('catalog image-gen: desfecho de cota inesperado (catálogo não tem teto)')
+  }
   if (core.kind !== 'ok') return core // generator | storage | not_found(TOCTOU)
   return okWithGallery(db, lineageId, core.imageId)
 }

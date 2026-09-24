@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import {
   RECIPE_GEN_KINDS,
   RecipeGenSchema,
   buildRecipeGenSchema,
+  buildRecipeGenListSchema,
 } from '@/domain/recipe-gen-schema'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 
@@ -167,5 +169,63 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
     expect(parsed.receita?.ingredientes[0].quantidade).toBe('2.500')
     expect(parsed.receita?.ingredientes[1].quantidade).toBeNull()
+  })
+})
+
+describe('buildRecipeGenListSchema — "gerar 2, o usuário escolhe" (#423)', () => {
+  function item(over: Record<string, unknown> = {}) {
+    return { kind: 'success', receita: receitaCompleta(), advisory: null, variacao: 'tradicional', ...over }
+  }
+
+  it('CRÍTICO: o zodOutputFormat NÃO emite $defs/$ref (o endpoint os REJEITA com 400)', () => {
+    // O spike do #8 provou que $defs/$ref (da discriminated-union) quebram o structured output. O array
+    // PLANO (sem .min/.max/.length) evita a hoistagem do item p/ $defs. Este teste É o guard de regressão:
+    // se alguém adicionar um bound ao array, o zod hoista o item e este teste falha ANTES do 400 em prod.
+    for (const slugs of [[], ['italiana', 'japonesa']]) {
+      const fmt = zodOutputFormat(buildRecipeGenListSchema(slugs))
+      const json = JSON.stringify(fmt.schema)
+      expect(json).not.toContain('$defs')
+      expect(json).not.toContain('$ref')
+    }
+  })
+
+  it('aceita um lote de 2 variações válidas (flat object + variacao)', () => {
+    const parsed = buildRecipeGenListSchema([]).parse({
+      variacoes: [item({ variacao: 'tradicional' }), item({ variacao: 'criativa' })],
+    })
+    expect(parsed.variacoes).toHaveLength(2)
+    expect(parsed.variacoes[0].variacao).toBe('tradicional')
+    expect(parsed.variacoes[1].variacao).toBe('criativa')
+    expect(parsed.variacoes[0].receita?.titulo).toBe('Risoto de cogumelos')
+  })
+
+  it('cada item carrega kind/receita/advisory/variacao (mesma forma do single + o rótulo do pólo)', () => {
+    const parsed = buildRecipeGenListSchema([]).parse({
+      variacoes: [
+        item({ kind: 'impossible', receita: null, advisory: 'nope' }),
+        item({ kind: 'degraded', advisory: 'troquei X' }),
+      ],
+    })
+    expect(parsed.variacoes[0]).toMatchObject({ kind: 'impossible', receita: null, advisory: 'nope' })
+    expect(parsed.variacoes[1]).toMatchObject({ kind: 'degraded', advisory: 'troquei X' })
+  })
+
+  it('cozinha constrita ao conjunto ATIVO por item (mesma regra #318 do single)', () => {
+    const schema = buildRecipeGenListSchema(['italiana'])
+    // dentro do conjunto → aceito.
+    expect(() =>
+      schema.parse({ variacoes: [item(), item({ receita: { ...receitaCompleta(), cozinha: 'italiana' } })] }),
+    ).not.toThrow()
+    // fora do conjunto → rejeitado.
+    expect(() =>
+      schema.parse({
+        variacoes: [item(), item({ receita: { ...receitaCompleta(), cozinha: 'marciana' } })],
+      }),
+    ).toThrow()
+  })
+
+  it('rejeita item sem `variacao` (rótulo do pólo é obrigatório)', () => {
+    const semVariacao = { kind: 'success', receita: receitaCompleta(), advisory: null }
+    expect(() => buildRecipeGenListSchema([]).parse({ variacoes: [semVariacao, item()] })).toThrow()
   })
 })

@@ -3,6 +3,8 @@ import {
   resolveAutoTranslationSignal,
   resolveBody,
   resolveFacets,
+  resolveIngredientName,
+  resolveIngredientNames,
   resolveName,
   resolveRecipeView,
   type IngredientItem,
@@ -779,5 +781,130 @@ describe('resolveRecipeView — imageGenBlocked (#226, owner-gated)', () => {
     const view = resolveRecipeView(input({ recipe: recipeRow({ ownerId: 'u-1' }), viewerId: 'u-1' }))
     expect(view.canManage).toBe(true)
     expect('imageGenBlocked' in view).toBe(false)
+  })
+})
+
+// ── Nome de ingrediente por-locale (#426, ADR-0030) ──────────────────────────
+
+describe('nome de ingrediente por-locale (#426)', () => {
+  // Ingredientes NOMEADOS com medida (a medida é invariante; só o nome varia por locale).
+  const namedIngredients: IngredientItem[] = [
+    { ordem: 0, quantidade: '3', unidade: 'dente', rawText: 'alho', alergenos: null },
+    { ordem: 1, quantidade: '500', unidade: 'g', rawText: 'feijão-preto', alergenos: null },
+  ]
+  // en-US confiável COM nomes de ingrediente traduzidos por `ordem` — `nomeOrigem` casa com o raw_text.
+  const enComIngredientes: TranslationRow = {
+    ...enReliableDiffering,
+    ingredientes: [
+      { ordem: 0, nome: 'garlic', nomeOrigem: 'alho' },
+      { ordem: 1, nome: 'black beans', nomeOrigem: 'feijão-preto' },
+    ],
+  }
+
+  it('localiza o NOME no requestLocale; a MEDIDA (quantidade/unidade) fica idêntica', () => {
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enComIngredientes], ingredients: namedIngredients, requestLocale: 'en-US' }),
+    )
+    const pt = resolveRecipeView(
+      input({ translations: [ptOriginal, enComIngredientes], ingredients: namedIngredients, requestLocale: 'pt-BR' }),
+    )
+    // Nome VARIA por locale.
+    expect(en.ingredients.map((i) => i.rawText)).toEqual(['garlic', 'black beans'])
+    expect(pt.ingredients.map((i) => i.rawText)).toEqual(['alho', 'feijão-preto'])
+    // Medida IDÊNTICA entre locales (Direção B — só o nome muda).
+    expect(en.ingredients.map((i) => [i.quantidade, i.unidade])).toEqual(
+      pt.ingredients.map((i) => [i.quantidade, i.unidade]),
+    )
+    // Shape do ingrediente permanece exato (guarda anti-vazamento intacta).
+    expect(Object.keys(en.ingredients[0]).sort()).toEqual(['ordem', 'quantidade', 'rawText', 'unidade'])
+  })
+
+  it('sem tradução de nome (jsonb ausente) ⇒ cai no raw_text original (espelha resolveBody)', () => {
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enReliableDiffering], ingredients: namedIngredients, requestLocale: 'en-US' }),
+    )
+    // enReliableDiffering NÃO tem `ingredientes` ⇒ fallback ao raw_text (pt-BR).
+    expect(en.ingredients.map((i) => i.rawText)).toEqual(['alho', 'feijão-preto'])
+  })
+
+  it('cobertura PARCIAL do jsonb ⇒ ordem sem nome cai no raw_text (tolerante)', () => {
+    const enParcial: TranslationRow = {
+      ...enReliableDiffering,
+      ingredientes: [{ ordem: 0, nome: 'garlic', nomeOrigem: 'alho' }],
+    }
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enParcial], ingredients: namedIngredients, requestLocale: 'en-US' }),
+    )
+    expect(en.ingredients.map((i) => i.rawText)).toEqual(['garlic', 'feijão-preto'])
+  })
+
+  it('locale ORIGINAL nunca localiza (a linha do original não carrega jsonb)', () => {
+    const pt = resolveRecipeView(
+      input({ translations: [ptOriginal, enComIngredientes], ingredients: namedIngredients, requestLocale: 'pt-BR' }),
+    )
+    expect(pt.ingredients.map((i) => i.rawText)).toEqual(['alho', 'feijão-preto'])
+  })
+
+  it('rename/reorder desde a tradução (nomeOrigem ≠ raw_text) ⇒ cai no raw_text, nunca nome ERRADO', () => {
+    // O ingrediente da ordem 0 foi renomeado de "alho" para "cebola" (o jsonb ainda diz nomeOrigem:'alho').
+    const renomeados: IngredientItem[] = [
+      { ordem: 0, quantidade: '1', unidade: 'unidade', rawText: 'cebola', alergenos: null },
+      { ordem: 1, quantidade: '500', unidade: 'g', rawText: 'feijão-preto', alergenos: null },
+    ]
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enComIngredientes], ingredients: renomeados, requestLocale: 'en-US' }),
+    )
+    // ordem 0: 'garlic' NÃO aparece ao lado da cebola — cai no raw_text 'cebola'. ordem 1 ainda casa.
+    expect(en.ingredients.map((i) => i.rawText)).toEqual(['cebola', 'black beans'])
+  })
+
+  it('edição só-de-medida (raw_text intocado) MANTÉM a tradução', () => {
+    // Mesma lista de nomes, só a quantidade mudou — nomeOrigem ainda casa ⇒ tradução sobrevive.
+    const medidaEditada: IngredientItem[] = [
+      { ordem: 0, quantidade: '5', unidade: 'dente', rawText: 'alho', alergenos: null },
+      { ordem: 1, quantidade: '1', unidade: 'kg', rawText: 'feijão-preto', alergenos: null },
+    ]
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enComIngredientes], ingredients: medidaEditada, requestLocale: 'en-US' }),
+    )
+    expect(en.ingredients.map((i) => i.rawText)).toEqual(['garlic', 'black beans'])
+  })
+
+  it('nome traduzido vazio ⇒ cai no raw_text (present gate na projeção)', () => {
+    const enVazio: TranslationRow = {
+      ...enReliableDiffering,
+      ingredientes: [{ ordem: 0, nome: '', nomeOrigem: 'alho' }],
+    }
+    const en = resolveRecipeView(
+      input({ translations: [ptOriginal, enVazio], ingredients: namedIngredients, requestLocale: 'en-US' }),
+    )
+    expect(en.ingredients[0].rawText).toBe('alho')
+  })
+
+  it('resolveIngredientNames: Map por ordem devolve {nome, nomeOrigem}', () => {
+    const map = resolveIngredientNames({
+      requestLocale: 'en-US',
+      translations: [ptOriginal, enComIngredientes],
+    })
+    expect(map.get(0)).toEqual({ nome: 'garlic', nomeOrigem: 'alho' })
+    expect(map.get(1)).toEqual({ nome: 'black beans', nomeOrigem: 'feijão-preto' })
+  })
+
+  // resolveIngredientName (#497): extraída do inline de resolveRecipeView p/ reuso pelo texto
+  // embedado da Busca — mesmos casos acima, exercitados diretamente na função pura.
+  it('resolveIngredientName: nomeOrigem bate com o raw_text atual ⇒ nome traduzido', () => {
+    expect(resolveIngredientName({ nome: 'garlic', nomeOrigem: 'alho' }, 'alho')).toBe('garlic')
+  })
+
+  it('resolveIngredientName: nomeOrigem diverge do raw_text atual (rename/reorder) ⇒ raw_text', () => {
+    expect(resolveIngredientName({ nome: 'garlic', nomeOrigem: 'alho' }, 'cebola')).toBe('cebola')
+  })
+
+  it('resolveIngredientName: sem tradução daquele ordem (undefined) ⇒ raw_text', () => {
+    expect(resolveIngredientName(undefined, 'alho')).toBe('alho')
+  })
+
+  it('resolveIngredientName: nome traduzido vazio ⇒ raw_text (present gate)', () => {
+    expect(resolveIngredientName({ nome: '', nomeOrigem: 'alho' }, 'alho')).toBe('alho')
   })
 })

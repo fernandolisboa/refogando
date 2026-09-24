@@ -162,7 +162,8 @@ describe('CreateStructuredExperience (#58)', () => {
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
     const link = screen.getByRole('link', { name: ptBR.nav.signIn })
-    expect(link).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(link).toHaveAttribute('href', '/sign-in?returnTo=%2Fcreate')
 
     // Sem formulário (botão gerar ausente) e exatamente UM heading nível 1 (criar.titulo).
     expect(screen.queryByRole('button', { name: M.gerar })).toBeNull()
@@ -386,6 +387,24 @@ describe('CreateStructuredExperience (#58)', () => {
     expect(alert).not.toHaveTextContent(M.erroGeracao)
     expect(screen.getByRole('button', { name: M.gerar })).toBeInTheDocument()
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+    // Fase 2 de billing (flag-off): usuário `free` (default de `authed()`) ⇒ upsell junto da mensagem.
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.upsell.cta })).toHaveAttribute('href', '/pt-BR/plano')
+  })
+
+  it('Fase 2 (flag-off) — 429 limite_geracao + usuário pro: SEM cartão de upsell', async () => {
+    sessionState = { ...authed(), data: { user: { id: 'u-1', name: 'Ana', plan: 'pro' }, session: { id: 's-1' } } }
+    const user = userEvent.setup()
+    mockFetch({
+      generations: { status: 429, body: { error: 'limite_geracao', retryAfterMs: 3_600_000 } },
+    })
+    renderCreate()
+
+    await fillBriefing(user)
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroLimiteGeracao)
+    expect(screen.queryByText(ptBR.upsell.titulo)).not.toBeInTheDocument()
   })
 
   it('T11 — erro de conexão (rede): catch mostra erroConexao, form preservado', async () => {

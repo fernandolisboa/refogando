@@ -6,18 +6,21 @@ import {
   CANONICAL_WEB_RESULTS,
   type WebSearchResult,
 } from '@/server/web-search/web-search-provider'
-import { appConfig } from '@/db/schema'
+import { appConfig, webSearchUsageDaily } from '@/db/schema'
+import { DAILY_WEB_SEARCH_QUERY_CAP, utcDayKey } from '@/domain/web-search-budget'
+import { seedSessionHeaders } from '../helpers/users'
 
 /**
  * Descoberta na WEB (#164, ADR-0019) pela porta MAIS ALTA (GET /api/discovery/web) com
  * `FakeWebSearchProvider` injetado (NUNCA toca a rede). `setup.ts` aponta o DI pro Postgres descartável
  * e reseta seams/trunca antes de cada teste — app_config nasce vazia (descoberta DESLIGADA por default).
  *
- * Cobre: LIGADA + allowlist → links externos; DESLIGADA → vazio; allowlist VAZIA → vazio (fail-closed);
- * termo vazio → vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade).
+ * Cobre: EXIGE SESSÃO (hardening #464 — anônimo degrada para vazio sem tocar o provedor); LIGADA +
+ * allowlist → links externos; DESLIGADA → vazio; allowlist VAZIA → vazio (fail-closed); termo vazio →
+ * vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade); teto diário; IP.
  */
 
-const DOMAINS = ['tudogostoso.com.br', 'panelinha.com.br']
+const DOMAINS = ['tudogostoso.com.br', 'cybercook.com.br']
 
 /** Liga a descoberta na web e define a allowlist no singleton app_config. */
 async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<void> {
@@ -30,11 +33,26 @@ async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<voi
     })
 }
 
-function get(q: string, locale?: string): Promise<Response> {
+/** Minta uma sessão real (better-auth testUtils) e devolve os headers com o cookie. */
+async function authed(): Promise<Headers> {
+  const { headers } = await seedSessionHeaders({ email: `web-${crypto.randomUUID()}@teste.dev` })
+  return headers
+}
+
+/**
+ * GET /api/discovery/web. `session` injeta o cookie de sessão (ausente ⇒ chamada ANÔNIMA). `ip` vai no
+ * x-forwarded-for (fallback do derivador de IP quando não há x-real-ip). Merge dos dois num só Headers.
+ */
+function get(
+  q: string,
+  opts?: { locale?: string; ip?: string; session?: Headers },
+): Promise<Response> {
   const url = new URL('http://localhost/api/discovery/web')
   if (q !== '') url.searchParams.set('q', q)
-  if (locale) url.searchParams.set('locale', locale)
-  return GET(new Request(url))
+  if (opts?.locale) url.searchParams.set('locale', opts.locale)
+  const headers = new Headers(opts?.session)
+  if (opts?.ip) headers.set('x-forwarded-for', opts.ip)
+  return GET(new Request(url, { headers }))
 }
 
 async function results(res: Response): Promise<WebSearchResult[]> {
@@ -43,11 +61,11 @@ async function results(res: Response): Promise<WebSearchResult[]> {
 }
 
 describe('GET /api/discovery/web (#164)', () => {
-  it('LIGADA + allowlist: devolve links externos da web (FakeWebSearchProvider)', async () => {
+  it('LOGADO + LIGADA + allowlist: devolve links externos da web (FakeWebSearchProvider)', async () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     const links = await results(res)
     expect(links.length).toBe(CANONICAL_WEB_RESULTS.length)
@@ -59,6 +77,20 @@ describe('GET /api/discovery/web (#164)', () => {
     }
   })
 
+  it('ANÔNIMO (hardening #464): degrada para vazio SEM tocar o provedor, mesmo ligada', async () => {
+    await seedWebSearch(true, DOMAINS)
+    // Provedor que estouraria se chamado — prova que o gate de sessão barra ANTES da consulta paga.
+    setWebSearchProvider(
+      new FakeWebSearchProvider([
+        { title: 'x', url: 'https://tudogostoso.com.br/x', sourceName: 'X' },
+      ]),
+    )
+
+    const res = await get('feijoada') // sem session ⇒ anônimo
+    expect(res.status).toBe(200)
+    expect(await results(res)).toEqual([])
+  })
+
   it('DESLIGADA: devolve vazio (não dispara o provedor)', async () => {
     await seedWebSearch(false, DOMAINS)
     // Provedor que estouraria se chamado — prova que NÃO é tocado quando desligado.
@@ -68,7 +100,7 @@ describe('GET /api/discovery/web (#164)', () => {
       ]),
     )
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -77,7 +109,7 @@ describe('GET /api/discovery/web (#164)', () => {
     await seedWebSearch(true, [])
     setWebSearchProvider(new FakeWebSearchProvider())
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -85,7 +117,7 @@ describe('GET /api/discovery/web (#164)', () => {
   it('sem config (app_config vazia): default DESLIGADO → vazio', async () => {
     // SEM seed: app_config nasce vazia → DEFAULT_WEB_SEARCH_CONFIG (desligado, allowlist []).
     setWebSearchProvider(new FakeWebSearchProvider())
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
@@ -93,24 +125,69 @@ describe('GET /api/discovery/web (#164)', () => {
   it('termo vazio: devolve vazio (estado neutro, sem tocar o provedor)', async () => {
     await seedWebSearch(true, DOMAINS)
     setWebSearchProvider(new FakeWebSearchProvider())
-    const res = await get('')
+    const res = await get('', { session: await authed() })
     expect(res.status).toBe(200)
     expect(await results(res)).toEqual([])
   })
 
   it('defesa em profundidade: link cujo host saiu da allowlist é FILTRADO na saída', async () => {
-    // Allowlist só com panelinha; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
-    await seedWebSearch(true, ['panelinha.com.br'])
+    // Allowlist só com cybercook; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
+    await seedWebSearch(true, ['cybercook.com.br'])
     setWebSearchProvider(
       new FakeWebSearchProvider([
-        { title: 'Bom', url: 'https://panelinha.com.br/r/1', sourceName: 'Panelinha' },
+        { title: 'Bom', url: 'https://cybercook.com.br/r/1', sourceName: 'CyberCook' },
         { title: 'Fora', url: 'https://evil.test/r/2', sourceName: 'Evil' },
       ]),
     )
 
-    const res = await get('feijoada')
+    const res = await get('feijoada', { session: await authed() })
     const links = await results(res)
     // O Fake já filtra pela allowlist; o endpoint re-filtra (defesa dupla). Só o host listado sobra.
-    expect(links.map((l) => l.url)).toEqual(['https://panelinha.com.br/r/1'])
+    expect(links.map((l) => l.url)).toEqual(['https://cybercook.com.br/r/1'])
+  })
+
+  // ── Teto de GASTO diário (#464) ────────────────────────────────────────────────
+  it('teto diário estourado ⇒ vazio (degrada, não erro) e NÃO toca o provedor', async () => {
+    await seedWebSearch(true, DOMAINS)
+    // Provedor que estouraria se chamado — prova que o teto barra ANTES da chamada paga.
+    setWebSearchProvider(
+      new FakeWebSearchProvider([
+        { title: 'x', url: 'https://tudogostoso.com.br/x', sourceName: 'X' },
+      ]),
+    )
+    // Contador do dia (UTC) já no teto ⇒ qualquer reserva falha.
+    await getDb()
+      .insert(webSearchUsageDaily)
+      .values({ day: utcDayKey(new Date()), queryCount: DAILY_WEB_SEARCH_QUERY_CAP })
+
+    const res = await get('feijoada', { session: await authed() })
+    expect(res.status).toBe(200)
+    expect(await results(res)).toEqual([])
+  })
+
+  it('teto diário: chamada bem-sucedida ACUMULA o contador (uma consulta por domínio da allowlist)', async () => {
+    await seedWebSearch(true, DOMAINS)
+    setWebSearchProvider(new FakeWebSearchProvider())
+
+    expect((await get('feijoada', { session: await authed() })).status).toBe(200)
+    const [row] = await getDb()
+      .select({ n: webSearchUsageDaily.queryCount })
+      .from(webSearchUsageDaily)
+    // Duas entradas na allowlist ⇒ o provedor dispara 2 consultas ⇒ o contador sobe 2.
+    expect(row?.n).toBe(DOMAINS.length)
+  })
+
+  // ── Rate-limit por IP (#464) ───────────────────────────────────────────────────
+  it('rate-limit por IP: 2ª chamada rápida do MESMO IP degrada para vazio', async () => {
+    await seedWebSearch(true, DOMAINS)
+    setWebSearchProvider(new FakeWebSearchProvider())
+
+    const session = await authed()
+    const ip = '203.0.113.42' // IP único deste teste (o limiter é módulo-escopo, best-effort in-memory)
+    const first = await get('feijoada', { session, ip })
+    expect((await results(first)).length).toBeGreaterThan(0)
+    // Segunda dentro da janela (~1s) ⇒ barrada ⇒ vazio, sem tocar provedor/DB.
+    const second = await get('feijoada', { session, ip })
+    expect(await results(second)).toEqual([])
   })
 })

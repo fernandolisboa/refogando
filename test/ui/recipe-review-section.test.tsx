@@ -19,6 +19,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do convite "Entrar para avaliar".
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/receitas/bolo-de-cenoura',
+}))
+
 const authMock = vi.hoisted(() => ({
   session: { data: null as unknown, isPending: false, error: null as unknown },
 }))
@@ -168,7 +173,11 @@ describe('RecipeReviewSection (#363)', () => {
   it('anônimo ⇒ convite "Entrar para avaliar" (link /sign-in), sem widget', () => {
     setSession('anon')
     renderSection({ initialAverage: 5, initialCount: 1, initialReviews: [makeReview()] })
-    expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual.
+    expect(screen.getByRole('link', { name: M.convidaEntrar })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Freceitas%2Fbolo-de-cenoura',
+    )
     expect(screen.queryByRole('radiogroup')).toBeNull()
   })
 
@@ -216,6 +225,46 @@ describe('RecipeReviewSection (#363)', () => {
       ).toBe(true),
     )
     expect(await screen.findByText('★ 5,0 · 1 avaliação')).toBeInTheDocument()
+  })
+
+  it('#461 estrelas: roving tabindex + setas/Home/End (padrão APG radio group)', async () => {
+    const user = userEvent.setup()
+    setSession('logged-in')
+    mockFetchByUrl({ mine: { viewerReview: null, isOwner: false } })
+    renderSection({})
+
+    const stars = await screen.findAllByRole('radio')
+    expect(stars).toHaveLength(5)
+    // Roving tabindex inicial (rating 0, nada escolhido): só a 1ª estrela é tabbável.
+    expect(stars[0]).toHaveAttribute('tabindex', '0')
+    expect(stars[1]).toHaveAttribute('tabindex', '-1')
+    expect(stars[4]).toHaveAttribute('tabindex', '-1')
+
+    // ArrowRight seleciona a 2ª E move o foco pra ela (APG: seta muda seleção+foco no radiogroup).
+    stars[0].focus()
+    await user.keyboard('{ArrowRight}')
+    expect(stars[1]).toHaveAttribute('aria-checked', 'true')
+    expect(stars[1]).toHaveFocus()
+    expect(stars[1]).toHaveAttribute('tabindex', '0')
+    expect(stars[0]).toHaveAttribute('tabindex', '-1')
+
+    // ArrowLeft volta pra 1ª.
+    await user.keyboard('{ArrowLeft}')
+    expect(stars[0]).toHaveAttribute('aria-checked', 'true')
+    expect(stars[0]).toHaveFocus()
+
+    // Wrap circular: ArrowLeft na 1ª vai pra ÚLTIMA (5ª).
+    await user.keyboard('{ArrowLeft}')
+    expect(stars[4]).toHaveAttribute('aria-checked', 'true')
+    expect(stars[4]).toHaveFocus()
+
+    // Home → 1ª; End → última.
+    await user.keyboard('{Home}')
+    expect(stars[0]).toHaveFocus()
+    expect(stars[0]).toHaveAttribute('aria-checked', 'true')
+    await user.keyboard('{End}')
+    expect(stars[4]).toHaveFocus()
+    expect(stars[4]).toHaveAttribute('aria-checked', 'true')
   })
 
   it('erro no envio ⇒ mensagem neutra única, sem âmbar/accent', async () => {

@@ -15,7 +15,7 @@ import { canonicalizeDomain } from '@/domain/web-search-config'
 describe('SUGGESTED_DOMAINS', () => {
   it('tem os grupos pt-BR e en-US com as entradas curadas', () => {
     expect(SUGGESTED_DOMAINS['pt-BR']).toContain('tudogostoso.com.br')
-    expect(SUGGESTED_DOMAINS['pt-BR']).toContain('panelinha.com.br')
+    expect(SUGGESTED_DOMAINS['pt-BR']).toContain('cybercook.com.br')
     expect(SUGGESTED_DOMAINS['pt-BR']).toContain('receitasnestle.com.br')
     expect(SUGGESTED_DOMAINS['en-US']).toContain('allrecipes.com')
     expect(SUGGESTED_DOMAINS['en-US']).toContain('bbcgoodfood.com')
@@ -24,6 +24,15 @@ describe('SUGGESTED_DOMAINS', () => {
   it('todas as entradas já são CANÔNICAS (canonicalizeDomain(d) === d)', () => {
     for (const d of [...SUGGESTED_DOMAINS['pt-BR'], ...SUGGESTED_DOMAINS['en-US']]) {
       expect(canonicalizeDomain(d)).toBe(d)
+    }
+  })
+
+  it('NÃO sugere nenhum domínio vetado por ToS (#394) — seria um chip morto', () => {
+    // A allowlist rejeita a denylist (canonicalizeDomain → null); sugerir esses hosts contradiria o
+    // guard e renderizaria um chip que nunca adiciona. O teste acima já trava isso indiretamente
+    // (canonicalizeDomain(d) === d falha para um host vetado); aqui deixamos a intenção explícita.
+    for (const d of ['panelinha.com.br', 'guiadacozinha.com.br', 'foodnetwork.com']) {
+      expect([...SUGGESTED_DOMAINS['pt-BR'], ...SUGGESTED_DOMAINS['en-US']]).not.toContain(d)
     }
   })
 })

@@ -23,6 +23,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
@@ -98,6 +99,8 @@ export function RecipeReviewSection({
   const { locale, messages } = useLocale()
   const m = messages.avaliacoes
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/'
 
   const sessionSettled = !session.isPending
   const loggedIn = sessionSettled && !session.error && !!session.data
@@ -128,6 +131,35 @@ export function RecipeReviewSection({
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // #461 (a11y): o grupo de estrelas é um `radiogroup` (padrão APG) — UMA parada de tab (roving
+  // tabindex), setas navegam. `starRefs` guarda os 5 botões p/ mover o FOCO junto da seleção.
+  const starRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // Seta/Home/End: seleciona o alvo E move o foco (APG "radio group"); wrap circular. `n` é 1..MAX.
+  function handleStarKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, n: number) {
+    let target: number
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        target = n >= MAX_STARS ? 1 : n + 1
+        break
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        target = n <= 1 ? MAX_STARS : n - 1
+        break
+      case 'Home':
+        target = 1
+        break
+      case 'End':
+        target = MAX_STARS
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    setRating(target)
+    starRefs.current[target - 1]?.focus()
+  }
 
   // #366: id da PRÓPRIA avaliação do viewer (esconde "Reportar" na própria linha da lista); estado do
   // affordance de reportar por review: qual form está aberto, o rascunho de motivo, quais já foram
@@ -434,14 +466,22 @@ export function RecipeReviewSection({
             <div role="radiogroup" aria-labelledby="nota-label" className="mt-1 flex gap-1">
               {Array.from({ length: MAX_STARS }, (_, i) => {
                 const n = i + 1
+                // Roving tabindex (APG): só UM botão é tabbável — o selecionado, ou a 1ª estrela quando
+                // nada foi escolhido ainda (rating 0). O resto sai da ordem de tab (as setas navegam).
+                const tabbable = rating === n || (rating === 0 && n === 1)
                 return (
                   <button
                     key={n}
+                    ref={(el) => {
+                      starRefs.current[i] = el
+                    }}
                     type="button"
                     role="radio"
                     aria-checked={rating === n}
                     aria-label={starLabel(n)}
+                    tabIndex={tabbable ? 0 : -1}
                     onClick={() => setRating(n)}
+                    onKeyDown={(e) => handleStarKeyDown(e, n)}
                     disabled={busy}
                     className="text-2xl leading-none text-fg transition-opacity hover:opacity-80 disabled:opacity-50"
                   >
@@ -545,7 +585,7 @@ export function RecipeReviewSection({
       {showAnonInvite && (
         <div className="border-t border-border pt-3">
           <Button asChild variant="secondary">
-            <Link href="/sign-in">{m.convidaEntrar}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{m.convidaEntrar}</Link>
           </Button>
         </div>
       )}

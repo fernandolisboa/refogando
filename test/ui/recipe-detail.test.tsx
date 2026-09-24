@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
@@ -16,10 +17,26 @@ vi.mock('next/link', () => ({
 import { ptBR } from '@/i18n/messages/pt-BR'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
+import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { cozinhaVocabFixture } from '../helpers/cozinha-vocab'
 import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
+
+/**
+ * #453: o estado de porções mora no `PortionScaleProvider` (ancestral, montado em `DetailChrome`
+ * na produção) — NÃO mais em `useState` local do `RecipePortionScaler`. Os testes de
+ * `RecipeDetailView` (nó isolado, sem o ancestral real) precisam prover o MESMO Provider pra o
+ * escalador funcionar como em produção. `key={view.id}` no Provider espelha o `DetailChrome`
+ * (remonta por receita — mesmo motivo do #452: não vazar o fator entre navegações in-place).
+ */
+function withScale(view: RecipeView, node: ReactNode) {
+  return (
+    <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+      {node}
+    </PortionScaleProvider>
+  )
+}
 
 /**
  * Teste de COMPONENTE jsdom do detalhe da Receita (#57) — seam de frontend da #54 (sem
@@ -64,7 +81,9 @@ function cozinhaLabelOf(view: RecipeView): string | null {
 }
 
 function renderView(view: RecipeView) {
-  return render(<RecipeDetailView view={view} m={M} locale="pt-BR" cozinhaLabel={cozinhaLabelOf(view)} />)
+  return render(
+    withScale(view, <RecipeDetailView view={view} m={M} locale="pt-BR" cozinhaLabel={cozinhaLabelOf(view)} />),
+  )
 }
 
 afterEach(() => {
@@ -81,7 +100,7 @@ describe('RecipeDetailView (#57)', () => {
     expect(img).toHaveAttribute('alt', 'Texas Chili (chili do Texas)') // alt = nome da Receita
 
     // Sem imageUrl ⇒ estado limpo (nenhuma <img>).
-    rerender(<RecipeDetailView view={baseView()} m={M} locale="pt-BR" />)
+    rerender(withScale(baseView(), <RecipeDetailView view={baseView()} m={M} locale="pt-BR" />))
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
@@ -90,7 +109,12 @@ describe('RecipeDetailView (#57)', () => {
     const { rerender } = renderView(baseView({ imageUrl: url, imageAiGenerated: true }))
     expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
 
-    rerender(<RecipeDetailView view={baseView({ imageUrl: url })} m={M} locale="pt-BR" />)
+    rerender(
+      withScale(
+        baseView({ imageUrl: url }),
+        <RecipeDetailView view={baseView({ imageUrl: url })} m={M} locale="pt-BR" />,
+      ),
+    )
     expect(screen.queryByText(M.busca.imagemSeloIa)).not.toBeInTheDocument()
   })
 
@@ -369,7 +393,10 @@ describe('RecipeDetailView (#57)', () => {
 
   it('T12 — #237: renderiza o aviso de catálogo quando a página passa o texto (catálogo + ligado)', () => {
     render(
-      <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" catalogDisclosure={DISCLOSURE} />,
+      withScale(
+        baseView({ origin: 'catalog' }),
+        <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" catalogDisclosure={DISCLOSURE} />,
+      ),
     )
     // O texto configurável aparece, rotulado como bloco "Sobre este catálogo" (aside, não heading).
     const aviso = screen.getByText(DISCLOSURE)
@@ -380,7 +407,12 @@ describe('RecipeDetailView (#57)', () => {
   })
 
   it('T13 — #237: SEM o prop (desligado) o aviso some — Catálogo renderiza como hoje, com o selo intacto', () => {
-    render(<RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" />)
+    render(
+      withScale(
+        baseView({ origin: 'catalog' }),
+        <RecipeDetailView view={baseView({ origin: 'catalog' })} m={M} locale="pt-BR" />,
+      ),
+    )
     expect(screen.queryByText(DISCLOSURE)).toBeNull()
     expect(screen.queryByRole('complementary', { name: M.detalhe.catalogoAvisoRotulo })).toBeNull()
     // Selo obrigatório de catálogo permanece.
@@ -394,19 +426,39 @@ describe('RecipeDetailView (#57)', () => {
     // SEPARADOS e seguem presentes. Provamos os dois cenários (com e sem o prop).
     for (const disclosure of [undefined, DISCLOSURE]) {
       cleanup()
+      const v = baseView({ origin: 'ai_chat', imageUrl: url, imageAiGenerated: true })
       render(
-        <RecipeDetailView
-          view={baseView({ origin: 'ai_chat', imageUrl: url, imageAiGenerated: true })}
-          m={M}
-          locale="pt-BR"
-          catalogDisclosure={disclosure}
-        />,
+        withScale(
+          v,
+          <RecipeDetailView view={v} m={M} locale="pt-BR" catalogDisclosure={disclosure} />,
+        ),
       )
       // Selo de proveniência obrigatório (ai_* → Comunidade) presente.
       expect(screen.getByText(M.busca.seloComunidade)).toBeInTheDocument()
       // Selo de imagem obrigatório "✨ gerada por IA" presente.
       expect(screen.getByText(M.busca.imagemSeloIa)).toBeInTheDocument()
     }
+  })
+
+  it('T15 — #452/#453: o PortionScaleProvider REMONTA (key={view.id}) numa nav detalhe→detalhe in-place, sem vazar estado', async () => {
+    const user = userEvent.setup()
+    const v1 = baseView({ id: 'r-1', porcoes: 4 })
+    const { rerender } = render(withScale(v1, <RecipeDetailView view={v1} m={M} locale="pt-BR" />))
+    // Escala a receita 1 de 4→8 porções (dobra).
+    const aumentar = screen.getByRole('button', { name: M.detalhe.porcoesAumentar })
+    for (let i = 0; i < 4; i++) await user.click(aumentar)
+    expect(screen.getByText('8')).toBeInTheDocument()
+
+    // Nav in-place pra OUTRA receita (id diferente, porcoes=6): sem `key={view.id}` NO PROVIDER
+    // (produção: `DetailChrome`) o estado sobreviveria (mesma identidade React) e mostraria "8"
+    // (ou escalaria pelo fator errado) em vez do "6" original da nova receita. Escopado ao
+    // contador `aria-live` (o `<dd>` do fato estático "Porções" TAMBÉM mostra "6" — ambíguo pra um
+    // `getByText` sem escopo).
+    const v2 = baseView({ id: 'r-2', porcoes: 6 })
+    rerender(withScale(v2, <RecipeDetailView view={v2} m={M} locale="pt-BR" />))
+    const contador = document.querySelector('[aria-live="polite"]')
+    expect(contador?.textContent?.trim()).toBe('Porções: 6')
+    expect(screen.queryByText('8')).toBeNull()
   })
 
   it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {

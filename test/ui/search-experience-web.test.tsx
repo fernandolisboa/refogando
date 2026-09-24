@@ -25,10 +25,12 @@ vi.mock('next/link', () => ({
 }))
 
 // #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201. #236: usa
-// .replace pra refletir a busca na URL (refino inline).
+// .replace pra refletir a busca na URL (refino inline). #458: usePathname alimenta o `?returnTo=`
+// dos convites de entrar.
 const push = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 
 type SessionState = {
@@ -359,7 +361,11 @@ describe('SearchExperience — modal de importação (#169)', () => {
     // "Entrar"). Por isso escopamos a asserção do sign-in ao DIÁLOGO (o real navegador inerte o fundo via
     // aria-hidden; a colisão é artefato do jsdom). `importarConviteTitulo` é exclusivo do diálogo.
     expect(within(dialog).getByText(M.importarConviteTitulo)).toBeInTheDocument()
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (pathname mockado como '/').
+    expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2F',
+    )
     expect(screen.queryByRole('button', { name: M.importarConfirmar })).not.toBeInTheDocument()
     // Nunca chamou o endpoint de import.
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/import'))).toBe(false)

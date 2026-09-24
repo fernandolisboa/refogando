@@ -273,8 +273,11 @@ export type SearchLoaderResult = {
  * `recipe_save.user_id` é NOT NULL (componente da PK) ⇒ o JOIN é seguro, sem tratamento de NULL.
  *
  * LANDMINE: NENHUM backtick dentro deste template. Comentários ficam AQUI, fora do `sql\`...\``.
+ *
+ * EXPORTADO (#457): reusado por `recipe-of-week.ts` no fallback de Popularidade da "Receita da
+ * semana" (top-1 do catálogo aprovado) — mesmo corpo, sem duplicar a self-exclusão/universo vivo.
  */
-const savesAggBodySql = sql`
+export const savesAggBodySql = sql`
   SELECT rf.recipe_id AS recipe_id, count(*)::int AS saves
   FROM recipe_save rf
   JOIN recipe rr ON rr.id = rf.recipe_id
@@ -292,7 +295,7 @@ const savesAggBodySql = sql`
  *
  * LANDMINE: NENHUM backtick dentro deste template.
  */
-const ratingAggBodySql = sql`
+export const ratingAggBodySql = sql`
   SELECT rv.recipe_id AS recipe_id, sum(rv.rating)::float8 AS rsum, count(*)::int AS v
   FROM recipe_review rv
   JOIN users u ON u.id = rv.user_id
@@ -314,7 +317,7 @@ const ratingAggBodySql = sql`
  *
  * LANDMINE: NENHUM backtick dentro deste template.
  */
-function popularityScoreSql(cfg: PopularityConfig, C: number, createdAt: SQL): SQL {
+export function popularityScoreSql(cfg: PopularityConfig, C: number, createdAt: SQL): SQL {
   return sql`
     ${cfg.wSave}::float8 * ln(1 + COALESCE(sv.saves, 0)::float8)
     + ${cfg.wNota}::float8 * (
@@ -817,8 +820,13 @@ export async function searchRecipes(
  * `displayedProvenance` consomem. Reusado pela query principal E pela de sugestoes pra o
  * tail nao derivar entre as duas (uma sugestao sem display tail viria com translations
  * vazias e seria PULADA silenciosamente em buildSearchResponse).
+ *
+ * EXPORTADO (#454): o loader de "Receitas semelhantes" (`@/server/recipe/similar`) reusa esta
+ * MESMA peça — precisa de um CTE `numbered` no shape esperado (recipe_id/origin/original_locale/
+ * owner_id/section) + um CTE `params(req_locale)` no escopo, exatamente como os dois call sites
+ * já existentes abaixo. Não duplicar esta projeção pela terceira vez.
  */
-function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
+export function displayTailSql(whereClause: SQL, orderBy: SQL): SQL {
   return sql`
     SELECT
       n.recipe_id AS recipe_id,

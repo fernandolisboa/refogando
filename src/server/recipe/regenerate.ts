@@ -9,6 +9,7 @@ import {
   briefing as briefingTable,
   briefingItem,
   transcriptMessage,
+  users,
 } from '@/db/schema'
 import {
   shouldSuggestNewImage,
@@ -19,8 +20,15 @@ import {
   buildBriefingPrompt,
   buildFreeTextPrompt,
   buildConversationPrompt,
+  promptStampFor,
+  resolveNivelChefAxis,
+  resolveVozCozinhaAxis,
+  isNivelChef,
+  NEUTRAL_AXES,
   type Briefing,
   type BriefingItem,
+  type NivelChef,
+  type PromptAxes,
 } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
@@ -28,8 +36,9 @@ import { classify } from '@/domain/generation'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
-import { loadActiveCozinhaSlugs } from '@/server/vocabulary/active-set'
+import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
+import { QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
@@ -79,15 +88,23 @@ export type RegenerateResult =
   | { kind: 'limite_geracao'; retryAfterMs: number }
 
 /**
- * Reconstrói o `{systemPrompt, userPrompt}` da predecessora pela `mode` da sua creation_session.
+ * Reconstrói o `{systemPrompt, userPrompt, axes}` da predecessora pela `mode` da sua creation_session.
  * Devolve `null` quando a fonte é IRRECUPERÁVEL (transcrição apagada, briefing/free_text ausente)
  * — o caller mapeia para 409 sem_fonte (NUNCA 500). PURO em relação ao DB exceto pelas leituras
  * dos registros de proveniência.
+ *
+ * Devolve TAMBÉM os `axes` EFETIVOS que moldaram o systemPrompt (o structured resolve a voz da cozinha
+ * por SPREAD ADITIVO — #422). O caller usa ESSES axes p/ (i) carimbar o promptStamp e (ii) passar ao
+ * generateRecipe, de modo que a proveniência gravada NÃO minta sobre a composição que gerou a Receita
+ * (espelha /api/generations/route.ts, que computa o promptStamp APÓS resolver os axes).
  */
 async function recoverPrompt(
   db: Database,
   session: { id: string; mode: string; briefingId: string | null; freeText: string | null },
-): Promise<{ systemPrompt: string; userPrompt: string } | null> {
+  // #420 (ADR-0029): eixos de composição do prompt. Neutro na Wave 1 (a regeneração ainda não recupera
+  // eixos da proveniência — futuro). Threaded p/ o systemPrompt recomposto casar o carimbo da geração.
+  axes: PromptAxes = NEUTRAL_AXES,
+): Promise<{ systemPrompt: string; userPrompt: string; axes: PromptAxes } | null> {
   if (session.mode === 'conversation') {
     // Reconstrói a Transcrição das falas duráveis (#15). Apagada (DELETE /transcript) → vazia →
     // irrecuperável (409, não 500): sem falas não há o que destilar.
@@ -98,7 +115,8 @@ async function recoverPrompt(
       .orderBy(asc(transcriptMessage.seq))
     if (rows.length === 0) return null
     const transcript: TranscriptMessage[] = rows.map((m) => ({ role: m.role, content: m.content }))
-    return buildConversationPrompt(transcript)
+    // conversation não resolve voz (sem briefing.cozinha) — os axes EFETIVOS são os recebidos.
+    return { ...buildConversationPrompt(transcript, axes), axes }
   }
 
   if (session.mode === 'structured') {
@@ -121,7 +139,8 @@ async function recoverPrompt(
       // driver é estreitado aqui sem revalidar (o enum é a rede).
       restricoes: b.restricoes as Restricao[],
       porcoes: b.porcoes,
-      dificuldade: b.dificuldade,
+      // #421 (ADR-0029 dec.4): Dificuldade não é mais entrada do Briefing — a coluna dormente
+      // `briefing.dificuldade` NÃO é reidratada aqui (o Nível de habilidade tomou seu lugar).
       observacoes: b.observacoes,
       itens: itens.map(
         (it): BriefingItem => ({
@@ -133,13 +152,21 @@ async function recoverPrompt(
         }),
       ),
     }
-    return buildBriefingPrompt(briefing)
+    // Cozinha-como-voz (#422, ADR-0029 dec.3): a regeneração recompõe o systemPrompt da predecessora,
+    // então a voz da cozinha deve entrar aqui também (senão a nova versão perderia a autenticidade que
+    // a original teve). Resolve por SPREAD ADITIVO sobre os `axes` recebidos; sem cozinha ⇒ {} (neutro).
+    const voz = briefing.cozinha != null ? await loadCozinhaVoice(db, briefing.cozinha) : null
+    const axesComVoz: PromptAxes = { ...axes, ...resolveVozCozinhaAxis(voz, briefing.cozinha) }
+    // Devolve os axes EFETIVOS (COM a voz) — o caller carimba o promptStamp e alimenta o generateRecipe
+    // com ELES, senão a proveniência gravada contradiria o systemPrompt (bug do carimbo neutro).
+    return { ...buildBriefingPrompt(briefing, axesComVoz), axes: axesComVoz }
   }
 
   if (session.mode === 'free_text') {
     // Texto livre CRU gravado como proveniência (#88). Ausente/vazio → irrecuperável (409).
     if (session.freeText == null || session.freeText.trim() === '') return null
-    return buildFreeTextPrompt(session.freeText)
+    // free_text não resolve voz (sem briefing.cozinha) — os axes EFETIVOS são os recebidos.
+    return { ...buildFreeTextPrompt(session.freeText, axes), axes }
   }
 
   return null
@@ -190,27 +217,52 @@ export async function regenerateRecipe(
     .limit(1)
   if (!session) return { kind: 'sem_fonte' }
 
-  const prompt = await recoverPrompt(db, session)
+  // Eixos de composição (#420/#421/#422, ADR-0029). Nível de habilidade (#421 dec.2): a regeneração usa
+  // o DEFAULT do Perfil do viewer (users.nivelPadrao) como SEMENTE — SEM sticky do prompt_stamp da
+  // predecessora (mantém simples). O structured RESOLVE a voz da cozinha (#422) DENTRO de recoverPrompt
+  // por SPREAD ADITIVO, então os axes EFETIVOS (nivelChef + voz) voltam de lá. O promptStamp é carimbado
+  // APÓS a recuperação (dos axes EFETIVOS), espelhando /api/generations/route.ts — senão a proveniência
+  // mentiria sobre a composição (carimbo sem voz num prompt COM voz).
+  const [meRow] = await db
+    .select({ nivelPadrao: users.nivelPadrao })
+    .from(users)
+    .where(eq(users.id, viewerId))
+  const nivelPadrao: NivelChef | null =
+    meRow?.nivelPadrao != null && isNivelChef(meRow.nivelPadrao) ? meRow.nivelPadrao : null
+  const seedAxes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
+
+  const prompt = await recoverPrompt(db, session, seedAxes)
   if (prompt === null) return { kind: 'sem_fonte' }
+  // Axes EFETIVOS que moldaram o systemPrompt (COM a voz da cozinha no structured). Fonte ÚNICA tanto
+  // do carimbo quanto do que se passa ao Claude.
+  const axes = prompt.axes
+  const promptStamp = promptStampFor(axes)
 
   // ── TETO de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES do Claude ─────────
   // A posse + a fonte já foram provadas (mantém o not_found/sem_fonte primeiro, sem vazar o estado do
   // teto p/ Receitas alheias). A regeneração persiste uma `generation` na MESMA sessão, que CONTA pro
   // teto; sem este gate o usuário furaria o cap pelo botão de regenerar. cap ∞ (admin) pula a contagem.
   // Espelha o gate de POST /api/generations e de POST /api/conversations/stream.
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject sem tocar o Claude. A ENFORCEMENT real é o
+  // gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration (via `quotaGate` abaixo).
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(db, viewerId, now)
     const quota = decideRecipeGenQuota({ cap, recentAt, now })
     if (!quota.allowed) return { kind: 'limite_geracao', retryAfterMs: quota.retryAfterMs }
   }
+  // #446: gate ATÔMICO threado em persistGeneration (reconta+decide+insere SOB a advisory lock, na MESMA
+  // tx do INSERT). Estourou na corrida ⇒ QuotaExceededError, capturado abaixo → { kind:'limite_geracao' }.
+  const quotaGate = Number.isFinite(cap) ? { userId: viewerId, cap } : undefined
 
   // ── Claude (single-shot) → classify ──────────────────────────────────────────────
   // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
   // ATIVO do DB DIRETO (sem cache de escrita); a IA só re-emite cozinhas ativas na regeneração.
   const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
-  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs })
+  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs, axes })
   const result = classify(out)
+  // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd.
+  const usage = out.kind === 'object' ? out.usage : undefined
 
   // invalid: erro de sistema puro → NADA persiste (ADR-0006).
   if (result.outcome === 'invalid') return { kind: 'invalid' }
@@ -221,32 +273,53 @@ export async function regenerateRecipe(
 
   if (result.outcome === 'impossible') {
     // impossible NÃO entrega Receita; persiste como episódio (generation na MESMA sessão).
-    await persistGeneration({
+    try {
+      await persistGeneration({
+        result,
+        mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
+        origin,
+        ownerId: viewerId,
+        model,
+        existingSessionId: session.id,
+        promptStamp,
+        quota: quotaGate,
+        // #463: cost_usd snapshot (impossible também é episódio de criação com linha em generation).
+        usage,
+      })
+    } catch (err) {
+      // #446: corrida perdida na recontagem atômica ⇒ nada persistiu. 429 limite_geracao (mesmo contrato).
+      if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
+      throw err
+    }
+    return { kind: 'impossible', advisory: result.advisory }
+  }
+
+  // success | degraded | playful → NOVA Receita imutável (lineage regenerated). #131: HERDA o
+  // image_id da predecessora (carry-forward — mesmo blob, sem arquivo novo).
+  let p: Awaited<ReturnType<typeof persistGeneration>>
+  try {
+    p = await persistGeneration({
       result,
       mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
       origin,
       ownerId: viewerId,
       model,
       existingSessionId: session.id,
+      promptStamp,
+      lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
+      imageId: pred.imageId,
+      // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face
+      // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
+      lineageId: pred.lineageId,
+      quota: quotaGate,
+      // #463: telemetria de custo da destilação → cost_usd snapshot no MESMO persist atômico (#446).
+      usage,
     })
-    return { kind: 'impossible', advisory: result.advisory }
+  } catch (err) {
+    // #446: corrida perdida na recontagem ATÔMICA (advisory lock) ⇒ a tx reverteu, NADA persistiu. 429.
+    if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
+    throw err
   }
-
-  // success | degraded | playful → NOVA Receita imutável (lineage regenerated). #131: HERDA o
-  // image_id da predecessora (carry-forward — mesmo blob, sem arquivo novo).
-  const p = await persistGeneration({
-    result,
-    mode: session.mode as Parameters<typeof persistGeneration>[0]['mode'],
-    origin,
-    ownerId: viewerId,
-    model,
-    existingSessionId: session.id,
-    lineage: { parentRecipeId: recipeId, lineageKind: 'regenerated' },
-    imageId: pred.imageId,
-    // #222: HERDA a lineage_id da predecessora ⇒ a nova versão compartilha a MESMA galeria (a face
-    // carregada por carry-forward É membro dela — lineage_id da imagem == lineage_id compartilhada).
-    lineageId: pred.lineageId,
-  })
   // p é não-null para success/degraded/playful (persistGeneration só devolve null em invalid,
   // já tratado acima). recipeId presente nesse caminho.
   const newRecipeId = p?.recipeId

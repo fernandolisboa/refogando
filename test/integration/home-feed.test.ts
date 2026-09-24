@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createElement, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import { eq } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
-import { recipe } from '@/db/schema'
+import { recipe, appConfig } from '@/db/schema'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
 
@@ -29,6 +29,7 @@ import { seedSessionHeaders } from '../helpers/users'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/',
 }))
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
@@ -122,6 +123,45 @@ describe('Home-Descoberta — SSR de repouso indexa o pool público (#236)', () 
     expect(html).not.toContain('Privada Oculta SSR')
     expect(html).not.toContain('Zoeira Catalogo SSR')
     expect(html).not.toContain('Removida Pool SSR')
+  })
+})
+
+describe('Home-Descoberta — "Receita da semana" (#457), SSR de repouso', () => {
+  it('escolha do Curador aparece acima do feed, no MESMO HTML SSR anônimo', async () => {
+    const escolhida = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({
+      recipeId: escolhida,
+      locale: 'pt-BR',
+      titulo: 'Destaque Editorial SSR',
+      provenance: 'escrita_por_pessoa',
+      slug: 'destaque-editorial-ssr',
+    })
+    await getDb()
+      .insert(appConfig)
+      .values({ id: true, recipeOfWeekConfig: { recipeId: escolhida } })
+      .onConflictDoUpdate({ target: appConfig.id, set: { recipeOfWeekConfig: { recipeId: escolhida } } })
+
+    const outraCatalogo = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({
+      recipeId: outraCatalogo,
+      locale: 'pt-BR',
+      titulo: 'Outra Receita Do Feed SSR',
+      provenance: 'escrita_por_pessoa',
+      slug: 'outra-receita-feed-ssr',
+    })
+
+    const html = await renderHome()
+    expect(html).toContain('Destaque Editorial SSR')
+    expect(html).toContain('/pt-BR/recipes/destaque-editorial-ssr')
+    // A escolhida some do slot editorial mas o feed comum SEGUE mostrando as duas (sem dedupe —
+    // decisão deliberada, ver comentário do loader/page.tsx).
+    expect(html).toContain('Outra Receita Do Feed SSR')
+  })
+
+  it('sem escolha do Curador e catálogo aprovado vazio ⇒ home SSR SEM o slot (sem quebrar)', async () => {
+    const html = await renderHome()
+    expect(html).not.toContain('Receita da semana')
+    expect(html).not.toContain('Recipe of the week')
   })
 })
 

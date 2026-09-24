@@ -22,6 +22,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { useSession } from '@/lib/auth-client'
 import { resizeImage } from '@/lib/image-resize'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,6 +35,9 @@ import {
 import type { GalleryImage } from '@/domain/recipe-read'
 // #223: cap do refino vem do domínio (módulo client-safe: puro, sem DB/IO) — evita drift cliente/servidor.
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
 /** Cap (2 MB) — espelha MAX_BYTES da rota; barra cedo um arquivo grande pós-resize. */
@@ -99,6 +103,12 @@ export function RecipeImageManager({
   const { messages } = useLocale()
   const m = messages.detalhe
   const router = useRouter()
+  // Fase 2 de billing (flag-off): este componente só monta pro DONO (`view.canManage`), então a
+  // sessão já está presente aqui — só o plano decide se o upsell aparece no limite.
+  const session = useSession()
+  const isFreePlanViewer =
+    session.data != null &&
+    isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<ImageError>(null)
@@ -540,6 +550,12 @@ export function RecipeImageManager({
                 <p role="alert" className="font-medium text-fg">
                   {m.imagemLimite.replace('{tempo}', countdown)}
                 </p>
+              )}
+              {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto do countdown, só pro `free`. */}
+              {genError === 'limite' && isFreePlanViewer && (
+                <div className="mt-2">
+                  <QuotaUpsellCard />
+                </div>
               )}
               {genError === 'desabilitada' && (
                 <p role="alert" className="font-medium text-fg">

@@ -40,6 +40,27 @@ describe('Receita: invariantes de banco', () => {
     expect((err as PostgresError).code).toBe('23514')
   })
 
+  it('#450: CHECK recipe_web_imported_private_chk ⇒ 23514 (web_imported + public); private SUCEDE', async () => {
+    let err: unknown
+    try {
+      await sql`
+        INSERT INTO recipe (origin, original_locale, visibility)
+        VALUES ('web_imported', 'pt-BR', 'public')
+      `
+    } catch (e) {
+      err = e
+    }
+    expect((err as PostgresError).code).toBe('23514')
+
+    // web_imported + private passa (o invariante permite a cópia privada do usuário).
+    const ok = await sql<{ id: string }[]>`
+      INSERT INTO recipe (origin, original_locale, visibility)
+      VALUES ('web_imported', 'pt-BR', 'private')
+      RETURNING id
+    `
+    expect(ok).toHaveLength(1)
+  })
+
   it('AC#6b: trigger origin imutável ⇒ SQLSTATE P0001; update não-origin SUCEDE', async () => {
     const [row] = await sql<{ id: string }[]>`
       INSERT INTO recipe (origin, original_locale)

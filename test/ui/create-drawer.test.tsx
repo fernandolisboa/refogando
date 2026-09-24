@@ -52,12 +52,19 @@ const CV = ptBR.conversa
 
 function authed(): SessionState {
   return {
-    data: { user: { id: 'u-1', name: 'Ana' }, session: { id: 's-1' } },
+    // Fase 2 de billing (flag-off): `plan` explícito 'free' (o default do produto quando ausente).
+    data: { user: { id: 'u-1', name: 'Ana', plan: 'free' }, session: { id: 's-1' } },
     error: null,
     isPending: false,
     isRefetching: false,
     refetch: vi.fn(),
   }
+}
+
+/** Mesma sessão, mas no plano `pro` — não deve ver o cartão de upsell no limite de cota. */
+function authedPro(): SessionState {
+  const s = authed()
+  return { ...s, data: { user: { id: 'u-1', name: 'Ana', plan: 'pro' }, session: { id: 's-1' } } }
 }
 
 /** Sessão ANÔNIMA (Visitante): sem `data`, sem `error`, resolvida. */
@@ -422,6 +429,26 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     expect(screen.getByRole('button', { name: M.gerar })).toBeEnabled()
     // 429 é checado antes da IA → nunca toca o GET da Receita (não consumiu cap).
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+    // Fase 2 de billing (flag-off): usuário `free` ⇒ cartão de upsell ESTÁTICO junto da mensagem,
+    // com CTA pra `/pt-BR/plano` (sem checkout/PSP).
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: ptBR.upsell.cta })).toHaveAttribute('href', '/pt-BR/plano')
+  })
+
+  it('D7b — cap 429 (limite_geracao) + usuário pro: SEM cartão de upsell', async () => {
+    sessionState = authedPro()
+    const user = userEvent.setup()
+    mockFetch({
+      generations: { status: 429, body: { error: 'limite_geracao', retryAfterMs: 3_600_000 } },
+    })
+    render(<Harness />)
+
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoPromptTitulo) }))
+    await user.type(screen.getByLabelText(M.textareaLabel), 'um refogado de abobrinha sem cebola')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroLimiteGeracao)
+    expect(screen.queryByText(ptBR.upsell.titulo)).not.toBeInTheDocument()
   })
 
   it('D8 — 502/erro de geração: alerta neutro + retry; segundo submit re-tenta', async () => {
@@ -619,6 +646,8 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
     expect(alert).toHaveTextContent(M.erroLimiteGeracao)
     // 429 barra ANTES da IA → nunca toca o GET da Receita (não consumiu cap).
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/recipes/'))).toBe(false)
+    // Fase 2 de billing (flag-off): usuário `free` (default de `authed()`) ⇒ upsell junto da mensagem.
+    expect(screen.getByText(ptBR.upsell.titulo)).toBeInTheDocument()
   })
 
   it('CD5 — QUEDA (stream fecha sem terminal): aviso DISTINTO + Retomar', async () => {
@@ -678,7 +707,11 @@ describe('CreateDrawer — caminho Conversa (#194)', () => {
 
     // A CTA "precisa entrar" aparece com link para /sign-in.
     expect(screen.getByText(CV.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo (usePathname sem AppRouter no jsdom devolve null → default '/create').
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fcreate',
+    )
     // O chat NÃO está disponível para o Visitante.
     expect(screen.queryByLabelText(CV.inputLabel)).toBeNull()
     // INVARIANTE (#194): a CTA usa <p>, NÃO <h1> — Conversa idle não tem <h1>.

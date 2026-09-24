@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LGPD — ações do dono (go-live)</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --card: #ffffff; --ink: #23201b; --muted: #6b6459;
+    --line: #e7e2d8; --accent: #b4531f; --accent-soft: #f6ede4;
+    --done-bg: #eef6ee; --done-line: #cfe6cf; --done-ink: #3f7a47;
+    --code-bg: #f2efe8; --pill: #efe9dd; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1815; --card: #232019; --ink: #ece7dd; --muted: #a49b8b;
+      --line: #35302a; --accent: #e08a4f; --accent-soft: #2c241c;
+      --done-bg: #1c2a1e; --done-line: #2f4a33; --done-ink: #86c390;
+      --code-bg: #2a251f; --pill: #322c23; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 ui-serif, Georgia, "Times New Roman", serif;
+    -webkit-font-smoothing: antialiased; padding: 32px 16px 96px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  header.page { margin-bottom: 8px; }
+  h1 { font-size: 1.9rem; line-height: 1.15; margin: 0 0 6px; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 4px; }
+  .lede a { color: var(--accent); }
+  .meta { color: var(--muted); font-size: .85rem; font-family: ui-sans-serif, system-ui, sans-serif; }
+
+  .progress-card {
+    position: sticky; top: 12px; z-index: 5;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 14px 18px; margin: 20px 0 28px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .progress-num { font-size: 1.4rem; font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .progress-num b { color: var(--accent); }
+  .bar { flex: 1; min-width: 160px; height: 10px; border-radius: 999px; background: var(--pill); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 999px; transition: width .35s ease; }
+  .reset {
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size: .8rem; color: var(--muted);
+    background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .reset:hover { color: var(--accent); border-color: var(--accent); }
+
+  section.group { margin: 0 0 26px; }
+  .group > h2 {
+    font-family: ui-sans-serif, system-ui, sans-serif; font-size: .78rem; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 12px; font-weight: 600;
+  }
+
+  .item {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px 16px 16px; margin: 0 0 12px; box-shadow: var(--shadow);
+    display: grid; grid-template-columns: 26px 1fr; gap: 4px 14px; align-items: start;
+    transition: border-color .2s, background .2s;
+  }
+  .item.done { background: var(--done-bg); border-color: var(--done-line); }
+  .item input[type=checkbox] {
+    grid-row: 1 / span 99; margin-top: 3px; width: 20px; height: 20px; cursor: pointer; accent-color: var(--accent);
+  }
+  .item .title { font-size: 1.06rem; font-weight: 600; margin: 0; }
+  .item.done .title { color: var(--done-ink); }
+  .item.done .title::after { content: " ✓"; color: var(--done-ink); }
+  .item .body { font-size: .95rem; color: var(--ink); }
+  .item.done .body { opacity: .62; }
+  .item .body p { margin: 8px 0 0; }
+  .item .body ul { margin: 8px 0 0; padding-left: 20px; }
+  .item .body li { margin: 3px 0; }
+  .item .tag {
+    display: inline-block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: .68rem;
+    letter-spacing: .04em; text-transform: uppercase; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+    margin-left: 8px; vertical-align: middle;
+  }
+  .tag.opt { background: var(--pill); color: var(--muted); }
+  .label { font-family: ui-sans-serif, system-ui, sans-serif; font-weight: 600; font-size: .82rem; color: var(--muted); }
+  code, kbd {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .86em;
+    background: var(--code-bg); padding: 1px 6px; border-radius: 6px; word-break: break-word;
+  }
+  .how { margin-top: 10px; padding: 10px 12px; background: var(--accent-soft); border-radius: 8px; font-size: .9rem; }
+  .validate { margin-top: 8px; font-size: .88rem; color: var(--muted); }
+  .validate b { color: var(--ink); }
+  .note { font-size: .85rem; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; margin-top: 10px; }
+  footer.page { color: var(--muted); font-size: .82rem; font-family: ui-sans-serif, system-ui, sans-serif; margin-top: 32px; border-top: 1px solid var(--line); padding-top: 16px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page">
+    <h1>LGPD — ações do dono para fechar o go-live</h1>
+    <p class="lede">A engenharia toda já está em produção (páginas legais, expurgo físico, painel de SLA, mailer, crons). Faltam só estas ações <strong>humanas</strong>, todas <em>fail-closed</em> — nada quebra sem elas, mas os recursos ficam desligados até você concluir.</p>
+    <p class="meta">Contexto: handoffs 49–52 · memória <code>lgpd-skills-shelf-e-276-pacote</code> · issue <strong>#276</strong> (sign-off) · gerado 2026-07-05</p>
+  </header>
+
+  <div class="progress-card">
+    <div class="progress-num"><b id="done">0</b> de <span id="total">0</span> feitos</div>
+    <div class="bar"><i id="fill"></i></div>
+    <button class="reset" id="reset">limpar marcações</button>
+  </div>
+
+  <!-- A. E-MAIL -->
+  <section class="group">
+    <h2>A · E-mail do Encarregado</h2>
+
+    <label class="item" data-id="a1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Criar o alias <code>privacidade@refogando.com</code><span class="tag">bloqueia B, C</span></p>
+        <div class="body">
+          <p>É o endereço público do Encarregado de dados. Já está <strong>escrito no app</strong> (hardcoded nas páginas de privacidade/direitos — 6 ocorrências em pt-BR + 6 em en-US), então precisa existir e receber e-mail de verdade.</p>
+          <div class="how">
+            <span class="label">Como fazer</span> — o jeito mais simples é <strong>encaminhamento gratuito</strong>: crie o alias no <a href="https://improvmx.com" target="_blank" rel="noopener">ImprovMX</a> (ou ForwardEmail) apontando <code>privacidade@refogando.com</code> → sua caixa pessoal. Isso exige adicionar os registros <strong>MX</strong> deles no DNS do domínio <code>refogando.com</code> (no painel onde o DNS mora — Vercel Domains ou o registrador).
+          </div>
+          <p class="validate"><b>Validar:</b> mande um e-mail de teste para <code>privacidade@refogando.com</code> e confirme que chega na sua caixa.</p>
+          <p class="note">Se preferir reaproveitar um endereço que já existe (ex.: <code>contato@</code>), é um find/replace das <strong>12 ocorrências</strong> em <code>src/i18n/messages/pt-BR.ts</code> e <code>en-US.ts</code> — me peça que eu faço via PR. O controlador publicado é "Fernando Lisboa" (pessoa física).</p>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <!-- B. MAILER BREVO -->
+  <section class="group">
+    <h2>B · Mailer transacional (Brevo) — alerta de SLA ao Encarregado</h2>
+
+    <label class="item" data-id="b1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Criar conta no Brevo e verificar um remetente</p>
+        <div class="body">
+          <p>O app usa o Brevo para <strong>avisar você por e-mail</strong> quando um pedido de titular (DSAR) ou takedown chega perto de vencer o prazo de 15 dias.</p>
+          <div class="how">
+            <span class="label">Como fazer</span> — crie conta no <a href="https://www.brevo.com" target="_blank" rel="noopener">Brevo</a>, gere uma <strong>API key</strong> (Transactional) e <strong>verifique um remetente</strong> (sender). O remetente pode ser <code>privacidade@refogando.com</code> ou um <code>no-reply@refogando.com</code>.
+          </div>
+        </div>
+      </div>
+    </label>
+
+    <label class="item" data-id="b2">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Setar 3 envs na Vercel (Production)</p>
+        <div class="body">
+          <ul>
+            <li><code>BREVO_API_KEY</code> — a chave transactional do Brevo.</li>
+            <li><code>DSAR_MAIL_FROM</code> — o remetente <strong>verificado</strong> no passo anterior.</li>
+            <li><code>DSAR_DPO_EMAIL</code> — para onde os alertas vão (normalmente <code>privacidade@refogando.com</code>).</li>
+          </ul>
+          <p class="validate"><b>Referência no código:</b> <code>src/server/mail/mailer.ts</code> e <code>src/server/legal/dpo-alert.ts</code>. Sem os três, o mailer se comporta como <strong>desligado</strong> (no-op): os tickets ainda avançam de SLA no banco, mas ninguém é avisado por e-mail.</p>
+          <p class="note">Envs novas só entram em vigor num <strong>novo deploy</strong> → ver item E.</p>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <!-- C. CRON_SECRET -->
+  <section class="group">
+    <h2>C · Crons diários (SLA + expurgo físico)</h2>
+
+    <label class="item" data-id="c1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Confirmar <code>CRON_SECRET</code> na Vercel (Production)<span class="tag">crítico p/ LGPD</span></p>
+        <div class="body">
+          <p>Os <strong>dois crons diários</strong> são <em>fail-closed</em>: sem <code>CRON_SECRET</code> no ambiente de produção, ambos retornam <code>401</code> e <strong>não rodam</strong>.</p>
+          <ul>
+            <li><code>/api/cron/dsar-sla</code> (09:00) — varre os tickets, avança o nível de SLA e alerta o Encarregado dos vencidos.</li>
+            <li><code>/api/cron/account-purge</code> (09:30) — expurgo físico da PII residual (fotos etc.) de contas anonimizadas passadas do prazo.</li>
+          </ul>
+          <div class="how">
+            <span class="label">Como fazer</span> — na Vercel, defina <code>CRON_SECRET</code> como um valor aleatório forte. O Vercel Cron injeta o header <code>Authorization: Bearer &lt;secret&gt;</code> automaticamente a partir dessa env. Já existe no <code>.env.local</code>; o que importa é confirmá-lo no ambiente <strong>Production</strong> da Vercel.
+          </div>
+          <p class="validate"><b>Validar:</b> na aba <em>Cron Jobs</em>/<em>Logs</em> da Vercel, confirme que as duas rotas retornam <code>200</code> (não <code>401</code>) na próxima execução — ou dispare manualmente.</p>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <!-- D. WEB SEARCH -->
+  <section class="group">
+    <h2>D · Descoberta na web (Brave) — não é LGPD, mas estava na lista</h2>
+
+    <label class="item" data-id="d1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Confirmar <code>WEB_SEARCH_API_KEY</code> na Vercel + redeploy<span class="tag opt">opcional</span></p>
+        <div class="body">
+          <p>Liga a busca na web (Brave Search API) da Descoberta federada. Sem ela, o recurso <strong>degrada</strong> (fica desligado), não quebra.</p>
+          <div class="how">
+            <span class="label">Como fazer</span> — confirme <code>WEB_SEARCH_API_KEY</code> no ambiente Production da Vercel e faça <strong>um redeploy</strong>. Referência: <code>src/server/web-search/web-search-provider.ts</code>. Já está no <code>.env.local</code>; confirmar em produção.
+          </div>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <!-- E. REDEPLOY -->
+  <section class="group">
+    <h2>E · Aplicar as mudanças</h2>
+
+    <label class="item" data-id="e1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Redeploy do último deploy de produção</p>
+        <div class="body">
+          <p>Toda env nova/alterada (itens B, C, D) só passa a valer num <strong>novo build/deploy</strong>. Depois de configurar tudo, dispare um <em>Redeploy</em> do último deploy de produção na Vercel (ou faça um push trivial).</p>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <!-- F. SIGN-OFF -->
+  <section class="group">
+    <h2>F · Encerramento</h2>
+
+    <label class="item" data-id="f1">
+      <input type="checkbox" />
+      <div>
+        <p class="title">Fechar a issue #276 (sign-off do go-live LGPD)</p>
+        <div class="body">
+          <p>Quando A–E estiverem verdes e você estiver confortável, feche a <strong>#276</strong> como sign-off.</p>
+          <p class="note"><strong>Não mergear a PR #393</strong> (rascunhos jurídicos em <code>docs/legal/</code>) — ela fica aberta de propósito, é material para o advogado.</p>
+        </div>
+      </div>
+    </label>
+  </section>
+
+  <footer class="page">
+    Suas marcações ficam salvas neste navegador (<code>localStorage</code>) — não são sincronizadas nem commitadas. Este arquivo vive em <code>docs/checklists/lgpd-acoes-do-dono.html</code>.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var KEY = 'refogando.checklist.lgpd-acoes-do-dono.v1';
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('.item input[type=checkbox]'));
+    var state = {};
+    try { state = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { state = {}; }
+
+    var elDone = document.getElementById('done');
+    var elTotal = document.getElementById('total');
+    var elFill = document.getElementById('fill');
+    elTotal.textContent = String(boxes.length);
+
+    function idOf(box) { return box.closest('.item').getAttribute('data-id'); }
+
+    function render() {
+      var done = 0;
+      boxes.forEach(function (box) {
+        var item = box.closest('.item');
+        if (box.checked) { item.classList.add('done'); done++; }
+        else { item.classList.remove('done'); }
+      });
+      elDone.textContent = String(done);
+      elFill.style.width = boxes.length ? Math.round((done / boxes.length) * 100) + '%' : '0%';
+    }
+
+    function save() {
+      var out = {};
+      boxes.forEach(function (box) { out[idOf(box)] = box.checked; });
+      try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) {}
+    }
+
+    boxes.forEach(function (box) {
+      box.checked = !!state[idOf(box)];
+      box.addEventListener('change', function () { render(); save(); });
+    });
+
+    document.getElementById('reset').addEventListener('click', function () {
+      if (!confirm('Limpar todas as marcações deste checklist?')) return;
+      boxes.forEach(function (box) { box.checked = false; });
+      render(); save();
+    });
+
+    render();
+  })();
+</script>
+</body>
+</html>

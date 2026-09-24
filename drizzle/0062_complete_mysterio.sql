@@ -1,0 +1,1 @@
+ALTER TABLE "app_config" ADD COLUMN "pro_caps" jsonb;

@@ -8,12 +8,14 @@ import type { GalleryImage, RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import type { ImageProvenance } from '@/domain/recipe'
 import type { Role } from '@/domain/user'
+import { DEFAULT_PLAN, type Plan } from '@/domain/plan'
 import { decideImageQuota, IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
 import { capFromConfig } from '@/domain/image-gen-config'
 import { buildDishImagePrompt, composeImagePrompt, composeEditImagePrompt } from '@/domain/image-prompt'
 import { pgCode } from '@/server/recipe/visibility' // #285: lê o SQLSTATE p/ tratar o FK da imagem-base (23503)
 import { loadRecipeRows } from '@/server/recipe/load'
-import { loadImageGenConfig } from '@/server/app-config'
+import { loadAppConfig } from '@/server/app-config'
+import { assertImageGenSlotInTx, QuotaExceededError } from '@/server/quota/atomic'
 
 /**
  * Núcleo com efeito da Imagem da receita (#130/#132/#222, ADR-0016/0017/0022) — o ESTÚDIO de imagem
@@ -134,11 +136,13 @@ export async function applyRecipeImageGeneration(input: {
   id: string // já validado uuid pelo route
   userId: string // session.user.id
   role: Role | null // papel do dono (define o teto); null ⇒ fail-closed no teto de `usuario`
+  plan?: Plan // #466: plano comercial do dono (eixo além do papel); ausente ⇒ DEFAULT_PLAN (free = hoje)
   promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
   // #285 (image-to-image): id da imagem-base — a variante é editada a partir dela. Ausente ⇒ do zero.
   sourceImageId?: string
 }): Promise<RecipeImageGenResult> {
   const { db, store, generator, id, userId, role, promptOverride, sourceImageId } = input
+  const plan = input.plan ?? DEFAULT_PLAN
   const now = new Date()
   // #227 (ADR-0022 dec.3): geração COM refino (o sufixo de estilo em texto livre do Owner, #223)
   // marca a imagem `review_required` ⇒ fila PROATIVA do Curador. Refino = override não-vazio (trim).
@@ -179,12 +183,19 @@ export async function applyRecipeImageGeneration(input: {
   if (await isImageGenBlocked(db, userId)) return { kind: 'blocked' }
 
   // 2. Config de geração (#134): geração DESLIGADA ⇒ 403 ANTES de tocar o seam (a UI também esconde).
-  const genConfig = await loadImageGenConfig(db)
+  // Fase 2 (#466): UM toque de DB (loadAppConfig) serve à config de imagem E à tabela pro (`proCaps`).
+  const appCfg = await loadAppConfig(db)
+  const genConfig = appCfg.imageGen
   if (!genConfig.enabled) return { kind: 'disabled' }
 
   // 3. Teto por papel, janela 24h deslizante (ADR-0017) — da CONFIG (#134). Conta os EVENTOS do
   //    ledger imutável na janela. cap ∞ pula a query. Estourou ⇒ 429 com countdown (ANTES do seam).
-  const cap = capFromConfig(genConfig.dailyCapByRole, role)
+  // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject ANTES do Gemini no caso
+  // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem do ledger)
+  // DENTRO da tx que insere a recipe_image + o ledger (via `quota` abaixo) — fecha a corrida TOCTOU.
+  // Fase 2 (#466): `plan='pro'` + tabela pro configurada ⇒ teto pro de imagem; `free` OU sem tabela ⇒
+  // `null` ⇒ teto de hoje (byte-idêntico). O `cap` resolvido thread p/ o gate ATÔMICO (assertImageGenSlotInTx).
+  const cap = capFromConfig(genConfig.dailyCapByRole, role, plan, appCfg.proCaps?.imageGen ?? null)
   if (Number.isFinite(cap)) {
     const recentAt = await loadRecentAiGenAt(db, userId, now)
     const quota = decideImageQuota({ cap, recentAt, now })
@@ -227,6 +238,9 @@ export async function applyRecipeImageGeneration(input: {
     sourceImageId,
     reviewRequired,
     autoSelect: false,
+    // #446: gate ATÔMICO da cota de imagem — recontagem do ledger SOB a advisory lock, na MESMA tx do
+    // INSERT recipe_image+ledger. Estourou na corrida ⇒ core devolve { kind:'quota' } (429 na borda).
+    quota: Number.isFinite(cap) ? { userId, cap } : undefined,
   })
   if (core.kind !== 'ok') return core
   return { kind: 'ok', image: core.image, basePrompt: core.basePrompt }
@@ -238,6 +252,7 @@ export type GenerateGalleryResult =
   | { kind: 'generator' } //  503 — geração por IA indisponível
   | { kind: 'storage' } //    503 — ImageStore indisponível
   | { kind: 'not_found' } //  404 — TOCTOU: a imagem-base sumiu entre o validate e o insert (FK 23503)
+  | { kind: 'quota'; retryAfterMs: number } // 429 — teto estourado ATOMICAMENTE na tx (#446, corrida)
 
 /**
  * Núcleo COMPARTILHADO de geração+persistência de imagem da galeria (#238, ADR-0026 emenda dec.10) —
@@ -266,6 +281,10 @@ export async function generateAndStoreGalleryImage(input: {
   sourceImageId?: string
   reviewRequired: boolean
   autoSelect: boolean // catálogo true (seta a face), owner false (preview)
+  // #446: gate ATÔMICO da cota de imagem. Presente (só o caminho do OWNER, que tem teto) ⇒ a tx toma o
+  // advisory lock do usuário, reconta o ledger na janela 24h e decide ANTES do insert; estourou ⇒ LANÇA
+  // QuotaExceededError → mapeado p/ { kind:'quota' }. Ausente (catálogo/curador, sem teto) ⇒ sem gate.
+  quota?: { userId: string; cap: number }
 }): Promise<GenerateGalleryResult> {
   const {
     db,
@@ -281,9 +300,11 @@ export async function generateAndStoreGalleryImage(input: {
     sourceImageId,
     reviewRequired,
     autoSelect,
+    quota,
   } = input
 
   const base = buildDishImagePrompt({
+    recipeId, // #424: semente do hash de rotação de estilo (mesma receita ⇒ mesma foto)
     titulo: content.titulo,
     cozinha: content.cozinha,
     categoria: content.categoria,
@@ -315,6 +336,10 @@ export async function generateAndStoreGalleryImage(input: {
   let newImageId: string
   try {
     newImageId = await db.transaction(async (tx) => {
+      // #446: gate ATÔMICO de cota — PRIMEIRA op da tx (advisory lock + recontagem do ledger + decisão),
+      // ANTES de inserir a recipe_image + o ledger. Estourou ⇒ LANÇA QuotaExceededError e a tx reverte
+      // (nenhuma linha de ledger nasce); o catch mapeia p/ { kind:'quota' } e limpa o blob órfão.
+      if (quota) await assertImageGenSlotInTx(tx, quota)
       const imageId = await createGalleryImage(tx, {
         blobUrl,
         provenance: 'ai_generated',
@@ -336,6 +361,9 @@ export async function generateAndStoreGalleryImage(input: {
     })
   } catch (err) {
     await deleteOrphanBlob(store, blobUrl)
+    // #446: cota estourada ATOMICAMENTE (corrida perdida sob a advisory lock) ⇒ 429. O blob recém-gerado
+    // já foi limpo acima (a geração foi desperdiçada — inerente à corrida, igual ao recipe-gen).
+    if (err instanceof QuotaExceededError) return { kind: 'quota', retryAfterMs: err.retryAfterMs }
     // #285: TOCTOU — a imagem-base sumiu entre o SELECT e o INSERT ⇒ FK 23503 ⇒ 404 (não 500 cru).
     if (sourceImageId && pgCode(err) === '23503') return { kind: 'not_found' }
     throw err

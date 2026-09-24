@@ -6,6 +6,7 @@ import {
   uuid,
   text,
   integer,
+  bigint,
   smallint,
   numeric,
   boolean,
@@ -35,7 +36,9 @@ import { GENERATION_OUTCOMES } from '@/domain/generation'
 import type { DerivedDiff } from '@/domain/recipe-diff'
 import type { ProfileLink } from '@/domain/links'
 import { ROLES } from '@/domain/user'
+import { PLANS } from '@/domain/plan'
 import { STRENGTHS } from '@/domain/briefing'
+import type { PromptStamp } from '@/domain/briefing'
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_IMAGE_GEN_CAP_BY_ROLE,
@@ -45,14 +48,32 @@ import {
   DEFAULT_RECIPE_GEN_CAP_BY_ROLE,
   type RecipeGenCapByRole,
 } from '@/domain/recipe-gen-config'
+import {
+  DEFAULT_EXTRACTION_CAP_BY_ROLE,
+  type ExtractionCapByRole,
+} from '@/domain/extraction-cap-config'
+import { type ProCaps } from '@/domain/pro-caps'
+import {
+  DEFAULT_RECIPE_VARIANT_CONFIG,
+  type RecipeVariantConfig,
+} from '@/domain/recipe-variant-config'
 import { DEFAULT_WEB_SEARCH_CONFIG } from '@/domain/web-search-config'
 import { DEFAULT_CATALOG_DISCLOSURE_CONFIG } from '@/domain/catalog-disclosure-config'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
+import {
+  DEFAULT_SOCIAL_LINKS_CONFIG,
+  type SocialLinksConfig,
+} from '@/domain/social-links-config'
+import {
+  DEFAULT_RECIPE_OF_WEEK_CONFIG,
+  type RecipeOfWeekConfig,
+} from '@/domain/recipe-of-week-config'
 import { REPORT_STATUSES } from '@/domain/report'
 import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 import { NOTIFICATION_TYPES } from '@/domain/notification'
+import { DSAR_EVENT_TYPES } from '@/domain/dsar'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -97,6 +118,10 @@ export const generationOutcomeEnum = pgEnum('generation_outcome', GENERATION_OUT
 // Papel de Usuário (issue #5). Fonte única: ROLES de @/domain/user. Sem `visitante`
 // (Visitante = ausência de sessão/conta — ADR-0011).
 export const roleEnum = pgEnum('role', ROLES)
+// Plano comercial de entitlement (issue #466, scaffold de paywall flag-off). Fonte única: PLANS de
+// @/domain/plan (free/pro). Eixo ORTOGONAL ao roleEnum (privilégio): plano é o eixo COMERCIAL por
+// Usuário. Coluna `users.plan` NOT NULL default 'free' — todo mundo nasce free = comportamento atual.
+export const planEnum = pgEnum('plan', PLANS)
 // Força do BriefingItem (issue #11). Fonte única: STRENGTHS de @/domain/briefing —
 // `strength` é conceito do Briefing, não do kernel bidirecional de vocabulary.ts
 // (espelha creationModeEnum importando de recipe.ts). ÚNICO enum novo da #11.
@@ -123,6 +148,10 @@ export const transcriptRoleEnum = pgEnum('transcript_role', TRANSCRIPT_ROLES)
 // @/domain/notification. Os 7 tipos do catálogo v1 entram de uma vez (completude do enum), mas só
 // `new_follower` é EMITIDO nesta fatia. DB type 'notification_type'.
 export const notificationTypeEnum = pgEnum('notification_type', NOTIFICATION_TYPES)
+// Tipo do evento de auditoria DSAR (issue #395, GAP-5). Fonte única: DSAR_EVENT_TYPES de @/domain/dsar.
+// Os 4 tipos do ciclo de vida do pedido do titular entram de uma vez (completude do enum); só
+// `DSAR_FULFILLED` é EMITIDO nesta fatia (por clearSourceAttribution). DB type 'dsar_event_type'.
+export const dsarEventTypeEnum = pgEnum('dsar_event_type', DSAR_EVENT_TYPES)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -253,6 +282,12 @@ export const recipe = pgTable(
   },
   (t) => [
     check('recipe_playful_private_chk', sql`${t.resultKind} <> 'playful' OR ${t.visibility} = 'private'`),
+    // #450 (ADR-0019): "importada da web NUNCA é pública". Cinto-e-suspensório no BANCO, espelhando o
+    // recipe_playful_private_chk — hoje o invariante só existe em app-level (decideVisibilityTransition
+    // bloqueia web_imported→public), e o eixo `origin<>'web_imported'` falta em alguns gates públicos de
+    // leitura. Um único writer/UPDATE futuro bugado publicaria conteúdo de terceiro (risco legal do
+    // acordo de linkagem). Dados atuais já obedecem (verificado: 0 violações), então o ALTER não falha.
+    check('recipe_web_imported_private_chk', sql`${t.origin} <> 'web_imported' OR ${t.visibility} = 'private'`),
     // Consistência de moderação (#18): removed_at e moderated_by setados JUNTOS ou ambos
     // NULL (rede de banco contra remoção sem proveniência). `moderation_reason` fica FORA
     // do CHECK (texto livre) mas é exigido não-vazio na borda do route (decideModerationReason).
@@ -422,6 +457,27 @@ export const imageGeneration = pgTable(
   (t) => [index('image_generation_user_created_idx').on(t.userId, t.createdAt)],
 )
 
+/**
+ * Registro (append-only) de EVENTOS de EXTRAÇÃO de ingredientes por IA (#447) — o LEDGER que o teto de
+ * extração (24h deslizante) conta. A extração (`/api/parse-ingredients`, Haiku) NÃO persistia nada, então
+ * não havia como contar o uso e barrar um loop ilimitado de chamadas ao Claude. Cada extração grava UMA
+ * linha aqui (uma por tentativa, reservada ANTES da chamada ao Claude sob o advisory lock — #446); o teto
+ * faz `COUNT WHERE user_id AND created_at > agora-24h`. IMUTÁVEL (sem "devolver slot"): o custo já foi
+ * gasto. Espelha `image_generation` (mesma forma mínima: id + user_id + created_at + índice composto).
+ * ON DELETE cascade: apagar o usuário limpa o ledger dele (rate-limit, não há por que reter — LGPD).
+ */
+export const extractionEvent = pgTable(
+  'extraction_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('extraction_event_user_created_idx').on(t.userId, t.createdAt)],
+)
+
 export const recipeTranslation = pgTable(
   'recipe_translation',
   {
@@ -446,6 +502,24 @@ export const recipeTranslation = pgTable(
     slug: text('slug'),
     provenance: translationProvenanceEnum('provenance').notNull(),
     stale: boolean('stale').notNull().default(false),
+    // Nome de ingrediente por-locale (#426, ADR-0030 dec.4): por `ordem` da linha recipe_ingredient,
+    // o `nome` traduzido + o `nomeOrigem` (o raw_text da origem NO MOMENTO da tradução). O display só
+    // usa o `nome` traduzido quando `nomeOrigem` ainda casa com o raw_text ATUAL — se o ingrediente foi
+    // renomeado/reordenado desde então, cai no raw_text (nome novo, correto), nunca um nome ERRADO.
+    // NULL = sem tradução (display cai no raw_text, Direção B). Insumo p/ ingredients[].rawText por-locale
+    // — NUNCA sai cru na vista. A MEDIDA (quantidade/unidade) fica só em recipe_ingredient (fonte única).
+    ingredientes: jsonb('ingredientes').$type<{ ordem: number; nome: string; nomeOrigem: string }[]>(),
+    // Versão do prompt/glossário do tradutor que produziu esta linha (#426, ADR-0030) — habilita
+    // backfill por-versão futuro (espelha EMBEDDING_VERSION em recipe_embedding.model). NULL = legado.
+    promptVersion: integer('prompt_version'),
+    // Fingerprints de conteúdo (#496, ADR-0031) — sha256 hex de uma serialização canônica, gravados no
+    // momento da MT. `source_fingerprint` = hash da FONTE (campos + raw_text dos ingredientes) → "defasada"
+    // quando a fonte atual diverge. `mt_fingerprint` = hash do que a MT PRODUZIU (campos + nomes traduzidos)
+    // → "intocada" quando o conteúdo atual ainda bate (trava de segurança da re-tradução; NULL = nunca
+    // intocada, protege legado/trabalho humano). Derivação por comparação (modelo pull) — ver translation-
+    // fingerprint.ts. NULL = legado (preenchido pelo backfill da fatia D).
+    sourceFingerprint: text('source_fingerprint'),
+    mtFingerprint: text('mt_fingerprint'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     // Coluna GERADA STORED (issue #6): FTS por linha, cada uma na própria config de
@@ -592,8 +666,20 @@ export const users = pgTable(
     image: text('image'),
     // Papel gerenciado pelo plugin admin; pgEnum dá integridade no banco (C6).
     role: roleEnum('role').notNull().default('usuario'),
+    // Plano comercial de entitlement (#466, scaffold de paywall flag-off). Eixo COMERCIAL por Usuário,
+    // ORTOGONAL ao `role` (privilégio). pgEnum free/pro, NOT NULL default 'free': ADD COLUMN com default
+    // não-volátil = metadata-only (sem rewrite) na tabela populada — contas existentes viram 'free', que
+    // é BYTE-IDÊNTICO ao comportamento atual (a resolução de teto trata free = tetos de hoje). `input:false`
+    // no additionalFields do Better Auth: o plano NUNCA vem do cliente (muda por billing, Fase 2), só é lido.
+    plan: planEnum('plan').notNull().default('free'),
     // Preferência de apresentação (D1, #4.AC5/#5.AC4). text livre BCP-47, NULLABLE.
     locale: text('locale'),
+    // Nível de habilidade PADRÃO do usuário (#421, ADR-0029 dec.2): default do eixo "para quem a
+    // receita é escrita" (iniciante/intermediario/avancado — fonte única `NIVEIS_CHEF` em briefing.ts),
+    // sobrescrevível por geração. `text` livre + SEM default: ADD COLUMN metadata-only (sem rewrite) na
+    // tabela populada; contas existentes nascem NULL = eixo NEUTRO. A validação do valor (isNivelChef)
+    // é a fronteira do app (PATCH /api/me), não do banco — mesma tese de `locale`/`bio`.
+    nivelPadrao: text('nivel_padrao'),
     // Bio curta do perfil (#124, frente Perfil). text livre, NULLABLE; o CAP de tamanho
     // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
     // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).
@@ -606,8 +692,18 @@ export const users = pgTable(
     // tipa a leitura/escrita do jsonb (o driver devolve `unknown` cru). Esses links são
     // renderizados CLICÁVEIS no perfil público (#129): a validação de esquema é a fronteira.
     links: jsonb('links').$type<ProfileLink[]>().notNull().default(sql`'[]'::jsonb`),
-    // Soft delete (D4): só a coluna agora; máscara/endpoint deferidos.
+    // Soft delete (D4): bloqueio lógico da conta. `requireSession` barra deletedAt != null (401
+    // conta_desativada). É o BLOQUEIO da eliminação DSAR (#401, LGPD Art. 18 VI / Art. 16): o
+    // pedido de eliminação seta deletedAt (bloqueia+desloga) JUNTO com a anonimização da PII.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // Eliminação DSAR — carimbo de ANONIMIZAÇÃO (#401, LGPD Art. 18 VI). DISTINTO de deletedAt
+    // (bloqueio): anonymizedAt marca que a PII do titular (email/name/handle/avatar/bio/links/locale)
+    // FOI destruída/estabilizada de forma irreversível. Os dois são setados juntos na eliminação
+    // self-service, mas a coluna separada (a) distingue um bloqueio simples de uma erasure de PII e
+    // (b) ancora o EXPURGO FÍSICO pós-retenção (Art. 16), um job futuro: candidatos = anonymizedAt
+    // mais velho que o prazo de retenção. NULLABLE, sem default: ADD COLUMN metadata-only (sem
+    // rewrite) na tabela populada; contas existentes nascem NULL (não anonimizadas).
+    anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).
     // A APLICAÇÃO de ban segue deferida (ADR-0007); aqui são colunas inertes
     // (default false / null) — nada lê para gating agora.
@@ -701,6 +797,29 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
+// ── Rate limit persistente (issue #449, SEC) ────────────────────────────────────
+//
+// Better Auth suporta rate-limit em auth routes, mas por default usa storage:'memory'.
+// Em Vercel serverless cada instância tem memória própria e o estado zera no cold start,
+// então o teto por janela é contornável com requisições paralelas / instâncias frescas.
+// Damos storage compartilhado ('database' em auth.ts) apontando para ESTA tabela, cujo
+// modelName default do Better Auth é `rateLimit` (o adapter drizzle resolve por
+// schema.rateLimit — o nome do export DEVE bater com o modelName). Campos exigidos pela
+// lib: id (PK), key (único), count (int), lastRequest (bigint, epoch ms). Como o adapter
+// roda com generateId:false global, o id é preenchido pelo default uuid do Postgres —
+// coerente com session/account/verification.
+export const rateLimit = pgTable(
+  'rate_limit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    key: text('key').notNull(),
+    count: integer('count').notNull(),
+    // epoch ms; Better Auth lê/escreve como number → mode:'number'.
+    lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+  },
+  (t) => [uniqueIndex('rate_limit_key_uq').on(t.key)],
+)
+
 // ── Config de aplicação (#5.AC2 — modelo default; #134 — geração de imagem) ─────
 //
 // Singleton: só pode existir a linha id=true (CHECK app_config_singleton_chk torna o
@@ -745,6 +864,22 @@ export const appConfig = pgTable(
       .$type<RecipeGenCapByRole>()
       .notNull()
       .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
+    // #447 (teto de EXTRAÇÃO de ingredientes por papel): `extraction_cap_by_role` espelha a forma de
+    // `recipe_gen_cap_by_role` (jsonb Record<Role, number|null>, `null` = ILIMITADO), mas com defaults
+    // MAIS FOLGADOS (extração é barata via Haiku). Coluna plana na MESMA linha singleton (espelha os
+    // demais eixos). Defaults vêm do domínio (`DEFAULT_EXTRACTION_CAP_BY_ROLE`).
+    extractionCapByRole: jsonb('extraction_cap_by_role')
+      .$type<ExtractionCapByRole>()
+      .notNull()
+      .default(DEFAULT_EXTRACTION_CAP_BY_ROLE),
+    // #423 (ADR-0029 dec.6): config da VARIAÇÃO DE GERAÇÃO ("gerar 2, o usuário escolhe"). jsonb
+    // `{ enabled, poloA, poloB, instrucao }` na MESMA linha singleton (espelha os demais eixos). O
+    // eixo de divergência (poloA/poloB/instrucao) é editável pelo admin SEM deploy. Default DESLIGADO
+    // (opt-in — custa 2× tokens). Defaults vêm do domínio (`DEFAULT_RECIPE_VARIANT_CONFIG`).
+    recipeVariantConfig: jsonb('recipe_variant_config')
+      .$type<RecipeVariantConfig>()
+      .notNull()
+      .default(DEFAULT_RECIPE_VARIANT_CONFIG),
     webSearchEnabled: boolean('web_search_enabled')
       .notNull()
       .default(DEFAULT_WEB_SEARCH_CONFIG.enabled),
@@ -766,10 +901,57 @@ export const appConfig = pgTable(
       .$type<PopularityConfig>()
       .notNull()
       .default(DEFAULT_POPULARITY_CONFIG),
+    // #451: links de redes sociais do SITE (footer), editáveis pelo admin SEM deploy. jsonb
+    // SocialLink[] na MESMA linha singleton (espelha os demais eixos). Default [] (footer sem links
+    // até o admin cadastrar). O read-path re-valida (parseSocialLinksConfig) — linha legada/lixo cai
+    // em [] (fail-safe: nunca renderiza link inválido).
+    socialLinks: jsonb('social_links')
+      .$type<SocialLinksConfig>()
+      .notNull()
+      .default(DEFAULT_SOCIAL_LINKS_CONFIG),
+    // #457: "Receita da semana" — slot editorial da HOME. `{ recipeId }` na MESMA linha singleton
+    // (espelha os demais eixos). `recipeId: null` (default) ⇒ ninguém escolheu ainda, a leitura cai
+    // no FALLBACK automático por Popularidade (a mais popular do catálogo aprovado). O read-path
+    // RE-VALIDA o id contra `origin=catalog AND curation_status=approved` (ADR-0026) — se o Curador
+    // trocar/rejeitar a receita escolhida depois, o slot degrada pro fallback em vez de vazar/quebrar.
+    recipeOfWeekConfig: jsonb('recipe_of_week_config')
+      .$type<RecipeOfWeekConfig>()
+      .notNull()
+      .default(DEFAULT_RECIPE_OF_WEEK_CONFIG),
+    // Fase 2 de billing (eixo `plan`, #466): tabela `pro` dos tetos de cota, UM bundle jsonb NULLABLE
+    // `{ recipeGen, imageGen, extraction }` — "tudo ou nada". NULL (default) = NENHUMA tabela pro ⇒ a
+    // resolução (`capFrom*`) ignora o plano e cai na tabela livre de hoje ⇒ teto efetivo BYTE-IDÊNTICO
+    // ao atual. Só `plan='pro'` COM bundle válido puxa o teto pro. jsonb ÚNICO (não 3 colunas): a
+    // concessão pro é atômica (tudo-ou-nada), então uma coluna nullable modela o "sem tabela pro" mais
+    // limpo que 3 nullables independentes. O read-path RE-VALIDA (`parseProCaps`) — linha legada/lixo
+    // cai em NULL (fail-safe: nunca eleva um teto a partir de um bundle inválido). NÃO ativa cobrança.
+    proCaps: jsonb('pro_caps').$type<ProCaps>(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],
 )
+
+// ── Contador diário de gasto da descoberta na web (#464, SEC/INFRA) ─────────────
+//
+// O endpoint ANÔNIMO `/api/discovery/web` dispara até `MAX_SITE_QUERIES` consultas Brave por chamada
+// (cada uma = uma chamada de API paga). Sem teto, a única defesa era o kill-switch `webSearchEnabled`
+// (interruptor, não teto). Esta tabela é o CONTADOR de GASTO: uma linha POR DIA (UTC, chave `day` =
+// `YYYY-MM-DD` texto), `query_count` acumula as consultas do dia. NÃO vive em `app_config` porque não é
+// config editável pelo admin — é um contador MUTÁVEL e QUENTE (escrito a cada chamada do endpoint), e
+// misturá-lo à linha singleton de config poluiria o read-path de config e criaria contenção de escrita.
+//
+// O incremento é ATÔMICO e sem TOCTOU: `INSERT ... ON CONFLICT (day) DO UPDATE SET query_count =
+// query_count + n WHERE query_count + n <= cap RETURNING query_count`. O lock de linha do UPDATE
+// serializa as chamadas concorrentes do MESMO dia; a cláusula WHERE reserva o slot só se cabe no teto
+// (zero linha retornada ⇒ estourou ⇒ o endpoint degrada para `{ results: [] }`). O teto por-dia é
+// constante EM CÓDIGO (`DAILY_WEB_SEARCH_QUERY_CAP`) — é um disjuntor de custo, não preferência de admin.
+// A virada de dia zera o teto SOZINHA (o dia seguinte é outra linha). Dias antigos ficam como histórico
+// de baixíssimo volume (uma linha/dia) — podáveis por job futuro se algum dia incomodarem.
+export const webSearchUsageDaily = pgTable('web_search_usage_daily', {
+  day: text('day').primaryKey(),
+  queryCount: integer('query_count').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
 
 // ── Briefing de geração (issue #11, ADR-0006/0009) ─────────────────────────────
 //
@@ -872,6 +1054,28 @@ export const generation = pgTable(
     advisoryComment: text('advisory_comment'),
     model: text('model').notNull(),
     schemaVersion: integer('schema_version').notNull(),
+    // Carimbo de versão do PROMPT/EIXOS que produziram esta geração (#420, ADR-0029): `{ version, axes }`.
+    // ORTOGONAL a `schema_version` (que versiona a FORMA da saída) — este versiona o TEXTO do prompt e os
+    // eixos de composição, para correlacionar depois com save/estrela. NULLABLE: linhas legadas (pré-#420)
+    // ficam NULL; as novas carimbam via `promptStampFor` (borda). `$type<PromptStamp>` tipa a leitura/escrita
+    // do jsonb (o driver devolve `unknown` cru).
+    promptStamp: jsonb('prompt_stamp').$type<PromptStamp>(),
+    // #423 (ADR-0029 dec.6) — "gerar 2, o usuário escolhe". As DUAS gerações de um lote compartilham
+    // um `variant_group_id` (agrupa-as); `variant_label` é o pólo auto-atribuído (ex. "tradicional"); e
+    // `variant_chosen` é o SINAL (a rota de escolha marca `true` na escolhida, server-authoritative por
+    // owner). TODAS nullable/sem default: a geração LEGADA (single) as deixa NULL — não quebra nada.
+    variantGroupId: uuid('variant_group_id'),
+    variantLabel: text('variant_label'),
+    variantChosen: boolean('variant_chosen'),
+    // ── Cost-tracking do TEXTO (#463) — NULLABLE/best-effort, espelha image_generation (#224) ────────
+    // A feature mais cara do app (Opus 4.8) passa a ser MEDIDA: os tokens do `message.usage` da Anthropic
+    // (input/output) + o `cost_usd` SNAPSHOT derivado da tabela de preço EM CÓDIGO (`computeTextCost`).
+    // TODAS NULLABLE e best-effort: linhas pré-#463 e gerações sem telemetria do provedor ficam nulas
+    // (não invalidam nada). Gravar o custo (não recomputar) congela o que cada geração custou mesmo
+    // quando os preços do provedor mudam. `cost_usd` é numeric → trafega string|null (precisão exata).
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -881,6 +1085,10 @@ export const generation = pgTable(
     index('generation_recipe_id_idx')
       .on(t.recipeId)
       .where(sql`${t.recipeId} IS NOT NULL`),
+    // #423: agrupa as 2 variações de um lote; parcial (só as linhas de variação, o resto é NULL).
+    index('generation_variant_group_id_idx')
+      .on(t.variantGroupId)
+      .where(sql`${t.variantGroupId} IS NOT NULL`),
   ],
 )
 
@@ -1190,6 +1398,12 @@ export const vocabularyTerm = pgTable(
     status: vocabularyTermStatusEnum('status').notNull().default('suggested'),
     labelPtBr: text('label_pt_br'),
     labelEnUs: text('label_en_us'),
+    // #422 (ADR-0029 dec.3): "nota de voz" curada, OPCIONAL, por termo de cozinha. Instrui a IA a
+    // cozinhar autenticamente (enriquece a instrução genérica que já usa o nome da cozinha). LOCALE-
+    // NEUTRA de propósito (uma nota por cozinha, não por idioma — descreve a TRADIÇÃO, não um rótulo)
+    // e SEM default (a maioria fica NULL → só o genérico dispara). Editável pelo Admin SEM deploy
+    // (dado em vocabulary_term, coerente com o data-driven do ADR-0025). Só faz sentido em kind='cozinha'.
+    voiceNote: text('voice_note'),
     sort: integer('sort').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1203,5 +1417,181 @@ export const vocabularyTerm = pgTable(
     unique('vocabulary_term_slug_uq').on(t.slug),
     // Leitura do #315: termos de uma dimensão por status, já ordenados.
     index('vocabulary_term_kind_status_sort_idx').on(t.kind, t.status, t.sort),
+  ],
+)
+
+/**
+ * Trilha de auditoria DSAR — APPEND-ONLY (issue #395, GAP-5; `docs/legal/takedown-e-remocao-titular.md` §5).
+ *
+ * Prova de conformidade dos pedidos do titular (LGPD Art. 18; Res. CD/ANPD 15/2024 Art. 10). A tabela é
+ * um LOG imutável: a aplicação SÓ faz INSERT/SELECT (`recordDsarEvent`/`countDsarEvents` em
+ * `src/server/legal/dsar-audit.ts`) — NÃO há caminho de UPDATE nem DELETE dos registros. Não há timestamp
+ * `updatedAt` de propósito (uma linha nunca muda). Retenção mínima de 5 anos (sem job de expurgo por ora).
+ *
+ * MINIMIZAÇÃO: o `DSAR_FULFILLED` NUNCA guarda o dado removido (ex.: o `source_name` do autor) em claro —
+ * senão a auditoria vira cópia do que se pediu para apagar. Guarda o `payload_hash` (SHA-256 do payload
+ * canônico `{ recipeIds, removedSourceName, ts }`) — prova o que foi feito sem re-armazenar o nome. O
+ * `details` (jsonb) carrega só metadados NÃO-sensíveis (ex.: `recipeIds` internos, contagem). O CHECK
+ * `dsar_fulfilled_hash_chk` garante no banco que todo `DSAR_FULFILLED` tem hash.
+ *
+ * As colunas por-tipo são NULLABLE (um único evento usa só as suas): `channel`/`requestType` (RECEIVED),
+ * `verificationMethod` (IDENTITY_VERIFIED), `payloadHash` (FULFILLED), `reason` (REJECTED). `caseId`
+ * correlaciona o ciclo de vida de um pedido do operador (GAP-4); `actorId` é quem disparou (dono no
+ * self-service, ou o Encarregado) — FK `set null` (apagar o ator NÃO apaga a prova).
+ */
+export const dsarAuditEvent = pgTable(
+  'dsar_audit_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventType: dsarEventTypeEnum('event_type').notNull(),
+    // Correlaciona os eventos de UM pedido (received → verified → fulfilled/rejected). Nullable: o
+    // self-service do dono (clearSourceAttribution) não abre ticket. Opaco (sem FK — o ticket é externo).
+    caseId: uuid('case_id'),
+    // Quem disparou (dono no self-service; Encarregado no fluxo do operador). set null: prova sobrevive
+    // à exclusão da conta. Nullable p/ pedidos do titular B (autor de terceiro, sem conta).
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    // DSAR_RECEIVED: canal de intake (ex.: 'self_service' | 'web_form' | 'email') + tipo do pedido.
+    channel: text('channel'),
+    requestType: text('request_type'),
+    // DSAR_IDENTITY_VERIFIED: método de verificação (texto livre do operador).
+    verificationMethod: text('verification_method'),
+    // DSAR_FULFILLED: SHA-256 (hex) do payload canônico. NUNCA o nome em claro (ver docstring).
+    payloadHash: text('payload_hash'),
+    // DSAR_REJECTED: motivo da recusa.
+    reason: text('reason'),
+    // Metadados estruturados NÃO-sensíveis (ids internos, contagens). NUNCA dado pessoal do titular.
+    details: jsonb('details').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Correlação por ticket (fluxo do operador) — só quando caseId presente.
+    index('dsar_audit_event_case_idx').on(t.caseId, t.createdAt),
+    // Varredura cronológica por tipo (auditoria/relatório de conformidade).
+    index('dsar_audit_event_type_created_idx').on(t.eventType, t.createdAt),
+    // Rede de banco do invariante central: todo DSAR_FULFILLED carrega um hash (nunca fica sem prova).
+    check(
+      'dsar_fulfilled_hash_chk',
+      sql`${t.eventType} <> 'DSAR_FULFILLED' or ${t.payloadHash} is not null`,
+    ),
+  ],
+)
+
+/**
+ * Tickets do formulário PÚBLICO de intake (issue #399, GAP-2; `docs/legal/takedown-e-remocao-titular.md`
+ * §2). Cada envio do titular (autor externo sem conta — titular B) abre UM ticket com a `received_at` que
+ * MARCA o início do SLA de 15 dias (Art. 19, II). A gravação do ticket emite `DSAR_RECEIVED` na MESMA
+ * transação (`createTakedownTicket` em `src/server/legal/takedown-intake.ts`) — o `dsar_audit_event.case_id`
+ * aponta de volta para o `id` deste ticket.
+ *
+ * MINIMIZAÇÃO (Art. 6º, III): guarda só o necessário para localizar o conteúdo e entender o pedido —
+ * `source_url` e/ou `display_name` (ao menos um; validado no domínio) + `message`. `contact_email` é
+ * OPCIONAL (retorno ao titular; nunca condição). NENHUM documento é exigido. Sem `updated_at`: o `status`
+ * evolui pelo fluxo do operador (fora desta fatia), mas a fatia mínima só INSERE (recebimento).
+ */
+export const takedownTicket = pgTable(
+  'takedown_ticket',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Tipo do pedido (name_removal | full_removal | other). Texto (espelha dsar_audit_event.request_type);
+    // o domínio (`normalizeTakedownIntake`) garante um valor conhecido antes do INSERT.
+    requestType: text('request_type').notNull(),
+    // Identificação do conteúdo: URL de origem E/OU nome exibido. Ao menos um é não-nulo (regra de domínio).
+    sourceUrl: text('source_url'),
+    displayName: text('display_name'),
+    // O pedido em texto livre (obrigatório). Saneado (strip C0) na borda — anti-500.
+    message: text('message').notNull(),
+    // Contato OPCIONAL para resposta (não é condição de atendimento — Art. 6º, III). Nullable.
+    contactEmail: text('contact_email'),
+    // Locale em que o formulário foi enviado (metadado; ajuda a responder no idioma do titular).
+    locale: text('locale'),
+    // Status do ciclo de vida do ticket. Nasce 'received'; a evolução (verified/fulfilled/rejected) é do
+    // fluxo do operador (GAP-4/GAP-7). Base para a varredura de SLA sobre tickets abertos.
+    status: text('status').notNull().default('received'),
+    // Data de RECEBIMENTO = início do SLA de 15 dias. Um ticket nasce recebido (defaultNow).
+    receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+    // GAP-7 (#400): nível de alerta de SLA já REGISTRADO para o ticket (none|yellow|red|overdue). A
+    // varredura diária (`scanDsarSla`) só AVANÇA este valor conforme a idade cruza 10/13/15 dias —
+    // registrar o nível AQUI (em vez de emitir e-mail: não há mailer/canal, human-gated) é o "alerta"
+    // queryável e IDEMPOTENTE (não re-alerta o mesmo nível 2x). Nasce 'none'.
+    slaLevel: text('sla_level').notNull().default('none'),
+    // Quando a última transição de `sla_level` foi registrada (metadado do alerta). Nulo até o 1º alerta.
+    slaAlertedAt: timestamp('sla_alerted_at', { withTimezone: true }),
+    // GAP-7 (#413): quando o Encarregado (DPO) foi ALERTADO POR E-MAIL sobre este ticket em nível
+    // 'red'/'overdue'. SEPARADA de `sla_alerted_at` (aquela marca a transição de nível; esta marca o
+    // envio efetivo do e-mail) — é a chave de IDEMPOTÊNCIA do mailer: só notifica quem tem isto NULO, e
+    // só carimba APÓS o provedor confirmar o envio (falha ⇒ segue nulo ⇒ reenvia amanhã). Nasce nulo.
+    dpoNotifiedAt: timestamp('dpo_notified_at', { withTimezone: true }),
+  },
+  (t) => [
+    // Varredura do SLA: tickets por status em ordem de recebimento (o job de alertas 10/13/15 — GAP-7).
+    index('takedown_ticket_status_received_idx').on(t.status, t.receivedAt),
+  ],
+)
+
+// ── Lista de compras: container (fatia A1, #525, ADR-0032) ─────────────────────
+//
+// `shopping_list` espelha `collection` byte-a-byte (dec.1 do ADR-0032, que aplica ADR-0027): pasta
+// PRIVADA nomeada, `UNIQUE(user_id, name)`, FK user_id ON DELETE cascade. A lista-PADRÃO ("Lista de
+// compras") nasce no 1º uso via `ensureDefaultShoppingList` (idempotente, mesmo truque de
+// onConflictDoNothing no alvo da UNIQUE) — não é uma linha especial no schema.
+//
+// `shopping_list_item` já entra com o schema COMPLETO do ADR-0032 (dec.2/3/4/5/6) nesta única
+// migração da track, ainda que esta fatia (A1) não escreva nela (o merge/agregação é a #A2):
+//  - `nome` é o NOME-SNAPSHOT exibido (medida Direção B: nunca a medida embutida no nome).
+//  - `quantidade`/`unidade` NULLABLE: item avulso pode não ter nem uma coisa nem outra (dec.5,
+//    "a gosto"/"q.b."); `unidade` reusa o MESMO `unidadeEnum` de `recipe_ingredient`.
+//  - `ingredient_id` NULLABLE ON DELETE set null: resolução best-effort (quase sempre nula, como
+//    `recipe_ingredient.ingredient_id` — CONTEXT.md "Item de receita"); apagar o Ingrediente
+//    canônico NÃO apaga a linha da lista (snapshot, dec.3), só solta a referência.
+//  - `source_recipe_id` NULLABLE ON DELETE set null: proveniência best-effort ("da Feijoada"),
+//    nula quando a linha nasce mesclada de várias Receitas ou é item avulso (dec.4).
+//  - `match_key` NOT NULL: a CHAVE DE AGREGAÇÃO (dec.2) que o app calcula e grava —
+//    `ingredient_id::text` quando conhecido, senão `normalize(nome)` — nunca derivada em SQL aqui
+//    (a normalização mora no domínio, reusada de tags/handle, ADR-0032 Consequências).
+//  - `checked_at` NULLABLE: carimbo de check-off (dec.6, fatia D) — persistente, sem expiração.
+//  - UNIQUE `(list_id, match_key, unidade)` com NULLS NOT DISTINCT (Postgres 15+/Neon): habilita o
+//    upsert idempotente do merge (A2) — soma na linha existente por `onConflictDoUpdate` nesse
+//    alvo — E trata `unidade` nula (item ad-hoc sem unidade) como IGUAL a outra linha nula da MESMA
+//    chave, ao invés do default do Postgres (NULL ≠ NULL em UNIQUE comum, que deixaria duplicar
+//    ad-hocs da mesma chave sem unidade).
+export const shoppingList = pgTable(
+  'shopping_list',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('shopping_list_user_name_uq').on(t.userId, t.name),
+    index('shopping_list_user_id_idx').on(t.userId),
+  ],
+)
+
+export const shoppingListItem = pgTable(
+  'shopping_list_item',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listId: uuid('list_id')
+      .notNull()
+      .references(() => shoppingList.id, { onDelete: 'cascade' }),
+    nome: text('nome').notNull(),
+    quantidade: numeric('quantidade', { precision: 10, scale: 3 }),
+    unidade: unidadeEnum('unidade'),
+    ingredientId: uuid('ingredient_id').references(() => ingredient.id, { onDelete: 'set null' }),
+    sourceRecipeId: uuid('source_recipe_id').references(() => recipe.id, { onDelete: 'set null' }),
+    matchKey: text('match_key').notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('shopping_list_item_list_match_unidade_uq')
+      .on(t.listId, t.matchKey, t.unidade)
+      .nullsNotDistinct(),
+    index('shopping_list_item_list_id_idx').on(t.listId),
   ],
 )

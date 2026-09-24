@@ -3,10 +3,14 @@
  * o compilador exige as MESMAS chaves do pt-BR; o teste de paridade T3 confirma em runtime.
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import type { NivelChef } from '@/domain/briefing'
 import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
+  // #451: aria-label suffix for the footer social links (only the suffix is translated; the network
+  // brand name is not).
+  footer: { abreEmNovaAba: 'opens in a new tab' },
   nav: {
     // #277: the Discovery/home is now labeled "Explore" in the nav (a tab next to "Following").
     // Key stays `home` (links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
@@ -28,12 +32,18 @@ export const enUS: Messages = {
     fecharMenu: 'Close menu',
     menu: 'Menu',
     menuDescricao: 'Site navigation and account',
+    // #461 (a11y): skip-link (first tab stop, hidden until focused) that bypasses the repeated header.
+    pularParaConteudo: 'Skip to content',
   },
   // Notifications inbox (#371, ADR-0028): bell in the chrome (logged-in only) + panel. Same FLAT-key
   // shape as pt-BR (the `Messages` type derives only 2 levels — no sub-objects); `renderNotification`
   // picks the key by type and interpolates `{name}` via `String.replace`.
   notifications: {
     ariaLabel: 'Notifications',
+    // #461 (a11y): when there are unread items, the bell label announces the count (the badge is
+    // visual-only, `aria-hidden`). `{n}` interpolated at render; singular/plural like other counters.
+    ariaLabelUmaNaoLida: 'Notifications (1 unread)',
+    ariaLabelNaoLidas: 'Notifications ({n} unread)',
     tituloPainel: 'Notifications',
     vazio: 'No notifications yet',
     novoSeguidor: '{name} started following you',
@@ -85,6 +95,13 @@ export const enUS: Messages = {
     sem_oleaginosas: 'nut-free',
     sem_frutos_do_mar: 'shellfish-free',
   } satisfies Record<Restricao, string>,
+  // Skill level (#421, ADR-0029 dec.2): shared label between the generation wizard and the Profile.
+  // WHO the recipe is written for — distinct from the dish's Difficulty (now AI-estimated on output).
+  nivelChefLabel: {
+    iniciante: 'Beginner',
+    intermediario: 'Intermediate',
+    avancado: 'Advanced',
+  } satisfies Record<NivelChef, string>,
   // Tela de Busca (#56), mesma substância traduzida (ADR-0001, não byte-idêntica).
   busca: {
     // #5 (Direção C): Search IS the discovery home (ADR-0020). `titulo` is the page IDENTITY — it is the
@@ -190,6 +207,13 @@ export const enUS: Messages = {
     vazio: 'No recipes here yet.',
     carregarMais: 'Load more',
     fim: "You've reached the end.",
+  },
+  // #457: "Recipe of the week" editorial slot — above the resting feed on the home. Chosen by the
+  // Curator or, absent a choice, the most popular of the approved catalog (mechanical fallback).
+  // The item itself reuses `RecipeResultItem` (same card as the feed) + `busca.selo*`/`porAutor`/etc.
+  receitaDaSemana: {
+    titulo: 'Recipe of the week',
+    subtitulo: 'A catalog highlight, chosen by the curators.',
   },
   // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
   // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
@@ -299,7 +323,22 @@ export const enUS: Messages = {
     passos: 'Steps',
     notas: 'Notes',
     descricao: 'Description',
+    receitasSemelhantes: 'Similar recipes',
+    compartilhar: 'Share',
+    linkCopiado: 'Link copied!',
+    compartilharErro: 'Could not copy the link. Please try again.',
+    modoCozinha: 'Cook mode',
+    modoCozinhaFechar: 'Exit cook mode',
+    modoCozinhaPassoDe: 'Step {atual} of {total}',
+    modoCozinhaAnterior: 'Previous step',
+    modoCozinhaProximo: 'Next step',
+    modoCozinhaConcluir: 'Mark step as done',
+    modoCozinhaIniciarTimer: 'Start {tempo} timer',
+    modoCozinhaPararTimer: 'Stop timer',
+    modoCozinhaTempoEsgotado: "Time's up!",
     porcoes: 'Servings',
+    porcoesDiminuir: 'Decrease servings',
+    porcoesAumentar: 'Increase servings',
     dificuldade: 'Difficulty',
     tempoAtivo: 'Active time',
     tempoTotal: 'Total time',
@@ -466,7 +505,6 @@ export const enUS: Messages = {
     erroLimiteGeracao: "You've reached your recipe generation limit for now. Please try again later.",
     erroBriefingVazio: 'Add at least one ingredient, cuisine, restriction, or note.',
     erroPorcoes: 'Servings must be between 1 and 50.',
-    erroDificuldade: 'Difficulty must be between 1 and 5.',
     erroObservacoesLongas: 'The notes are too long.',
     erroIngrediente: 'Fill in the ingredient on the lines you started.',
     erroCampos: 'Check the fields you filled in.',
@@ -488,6 +526,19 @@ export const enUS: Messages = {
     modoFormulario: 'Form',
     modoConversa: 'Chat',
     seletorModo: 'How to create',
+    // #423 (ADR-0029 dec.6): "generate 2, the user chooses". Opt-in in structured mode (only when the
+    // admin turns the feature on) + the screen to choose between the 2 versions.
+    variar2Label: 'Generate 2 versions for me to choose from',
+    variar2Ajuda: 'The AI creates two different versions; you pick your favorite.',
+    variacaoTitulo: 'Choose a version',
+    variacaoIntro:
+      'We generated two versions. Choose the one you prefer — the other stays in your space.',
+    variacaoColuna: 'Version {n}',
+    variacaoEscolher: 'Choose this one',
+    variacaoCorpoIndisponivel:
+      "We couldn't load this version right now, but it's saved in your space.",
+    erroLimiteVariacao:
+      "You don't have room to generate 2 versions right now. Try a single version or come back later.",
   },
   // "New recipe" drawer (#191, ADR-0021) — reorganizes AI creation into a right-side drawer
   // (over the Sheet). The small-caps kicker + step title give the dialog's accessible name; the
@@ -566,9 +617,12 @@ export const enUS: Messages = {
     porcoesTitulo: 'Servings',
     porcoesMenos: 'Fewer servings',
     porcoesMais: 'More servings',
-    dificuldadeTitulo: 'Difficulty',
-    // Short label per difficulty level (1..5) — wizard chips.
-    dificuldadeNiveis: ['Very easy', 'Easy', 'Medium', 'Hard', 'Very hard'],
+    // Skill level (#421, ADR-0029 dec.2): WHO the recipe is written for (detail/tone of the text).
+    // Replaces the old Difficulty-as-input; the dish's difficulty is now AI-estimated.
+    nivelTitulo: 'Skill level',
+    nivelIntro: 'Who the recipe is written for — how much detail and what tone. The dish difficulty is estimated by the AI.',
+    // Chip that reverts to the Profile default (no override for this generation).
+    nivelPadrao: 'Use my default',
     observacoesTitulo: 'Notes',
     observacoesPlaceholder:
       'Anything else? e.g., no chili, freezes well, very creamy texture…',
@@ -751,6 +805,11 @@ export const enUS: Messages = {
     bio: 'Bio',
     bioPlaceholder: 'Tell us a bit about yourself and what you like to cook.',
     bioContador: '{n}/280',
+    // Default skill level (#421, ADR-0029 dec.2): default for the generation axis, overridable per
+    // generation. The empty option clears the default (no preference = neutral axis).
+    nivelPadrao: 'Default skill level',
+    nivelPadraoDica: 'Used as the default when generating recipes — you can change it per generation.',
+    nivelPadraoNenhum: 'No preference',
     // Social links (#127). Editor of up to 5 rows (type + url) on the profile.
     links: 'Links',
     linksDica: 'Add up to 5 links (social, website). Only http(s) addresses are accepted.',
@@ -856,6 +915,62 @@ export const enUS: Messages = {
     erroCarregar: 'Could not load. Try again.',
     precisaEntrar: 'Sign in to see your saved recipes.',
   },
+  listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
+    selecionarReceita: 'Select {nome}',
+    selecionadaSingular: '{n} recipe selected',
+    selecionadasPlural: '{n} recipes selected',
+    cancelarSelecao: 'Cancel selection',
+    escolherLista: 'Choose list',
+    novaLista: '+ New list',
+    nomeNovaLista: 'New list name',
+    confirmarAdicionar: 'Add to list',
+    adicionando: 'Adding…',
+    sucessoSingular: '{n} recipe added to the list.',
+    sucessoPlural: '{n} recipes added to the list.',
+    algumasNaoAdicionadas: 'Some recipes could not be added.',
+    erroCarregarListas: 'Could not load your lists. Try again.',
+    erroNomeInvalido: 'Choose a name for the list (up to 60 characters).',
+    erroNomeDuplicado: 'You already have a list with that name.',
+    erroLimiteListas: "You've reached the list limit.",
+    erroAdicionar: 'Could not add the recipes. Try again.',
+    // Check-off persistente (fatia D, #529).
+    titulo: 'Shopping list',
+    itemMarcarAria: 'Mark {nome} as bought',
+    itemDesmarcarAria: 'Unmark {nome}',
+    removerMarcados: 'Remove checked',
+    limparLista: 'Clear list',
+    confirmarRemoverMarcados: 'Remove the checked items? This cannot be undone.',
+    confirmarLimparLista: 'Clear the whole list? All items will be deleted — this cannot be undone.',
+    vazia: 'Your list is empty.',
+    precisaEntrar: 'Sign in to see your shopping list.',
+    // Adicionar UMA Receita do detalhe, com porções-alvo (fatia B, #527).
+    adicionar: 'Add to shopping list',
+    adicionarALista: 'Add to shopping list',
+    adicionarBotao: 'Add',
+    adicionado: 'Added',
+    criarEAdicionar: 'Create and add',
+    semListas: "You don't have any shopping lists yet.",
+    avisoSemPorcoes: 'This recipe has no servings set — added at its original quantity.',
+    convidaEntrarAdicionar: 'Sign in to add to your shopping list.',
+    // Edição à mão (fatia C, #528, dec.5) — item avulso + editar quantidade + remover linha.
+    nomeItem: 'Item',
+    nomeItemPlaceholder: 'E.g.: napkins',
+    quantidade: 'Quantity',
+    quantidadePlaceholder: 'E.g.: 2',
+    unidade: 'Unit',
+    unidadeNenhuma: 'No unit',
+    editarQuantidade: 'Edit quantity',
+    salvar: 'Save',
+    cancelar: 'Cancel',
+    remover: 'Remove',
+    confirmarRemover: 'Remove this item from the list?',
+    erroItemNomeInvalido: 'Choose a name for the item (up to 200 characters).',
+    erroQuantidadeInvalida: 'Invalid quantity — use a number greater than zero.',
+    erroUnidadeInvalida: 'Invalid unit.',
+    // Comum às fatias.
+    erro: 'Something went wrong. Try again.',
+  },
   avaliacoes: {
     titulo: 'Reviews',
     editar: 'Edit',
@@ -929,6 +1044,36 @@ export const enUS: Messages = {
     navAria: 'Console sections',
     navIa: 'AI',
     navPapeis: 'Roles',
+    // ── Billing phase 2 (#466): "Plan" tab (Governance, admin-only). CONTIGUOUS block. ──
+    navPlano: 'Plan',
+    // Part 1: edit the `pro` ceilings table (proCaps) across the three dimensions, per role.
+    planoProCapsTitulo: 'Pro plan ceilings',
+    planoProCapsDescricao:
+      'Higher daily ceilings for Pro users, by dimension and role. With the Pro table off (empty), everyone — Pro included — gets today’s free-plan ceiling.',
+    // Concierge notice: makes it EXPLICIT that none of this charges anyone.
+    planoConciergeAviso:
+      'This charges nothing. Automatic billing isn’t live yet — granting Pro is a manual unlock for early users.',
+    planoProAtivarLabel: 'Turn on the Pro ceilings table',
+    planoProAtivarAjuda:
+      'Off = no Pro table: everyone gets today’s free-plan ceiling (nothing changes). On = Pro users switch to the ceilings below.',
+    planoProReceitaLabel: 'Pro recipe-generation ceilings per role (24h window)',
+    planoProImagemLabel: 'Pro image-generation ceilings per role (24h window)',
+    planoProExtracaoLabel: 'Pro ingredient-extraction ceilings per role (24h window)',
+    planoErroConfig: 'Invalid configuration. Check the ceilings (whole number ≥ 0, or empty for unlimited).',
+    // Part 2: grant/revoke a user’s plan (manual concierge).
+    planoConcederTitulo: 'Grant a plan to a user',
+    planoConcederDescricao:
+      'Enter the @handle or email and pick the plan. Granting Pro is a manual unlock (concierge): it charges nothing — automatic billing isn’t live yet.',
+    planoIdentificadorLabel: 'User (@handle or email)',
+    planoIdentificadorPlaceholder: '@handle or email',
+    planoBotaoPro: 'Grant Pro',
+    planoBotaoFree: 'Revert to free',
+    planoAplicando: 'Applying…',
+    planoPlanoFree: 'free',
+    planoPlanoPro: 'Pro',
+    planoSucesso: '{user} is now on the {plano} plan.',
+    planoErroNaoEncontrado: 'User not found. Check the @handle or email.',
+    planoErroPlanoInvalido: 'Invalid plan.',
     navModeracao: 'Moderation',
     navTraducoes: 'Translations',
     navCatalogo: 'Catalog',
@@ -946,6 +1091,10 @@ export const enUS: Messages = {
     vocabSalvar: 'Save',
     vocabSalvando: 'Saving…',
     vocabEditar: 'Edit labels',
+    // #422: curated voice note per cuisine (instructs the AI to cook authentically; no deploy).
+    vocabNotaVoz: 'Voice note (optional)',
+    vocabNotaVozPlaceholder:
+      'How the AI should cook in this tradition: typical techniques, ingredients and seasonings. Leave blank to use only the generic instruction.',
     vocabCancelar: 'Cancel',
     vocabDepreciar: 'Deprecate',
     vocabReativar: 'Reactivate',
@@ -963,6 +1112,44 @@ export const enUS: Messages = {
     // #268: the /admin/descoberta tab holds the SEARCH infra — web discovery + embeddings; generative AI
     // (recipe model + image generation + caps) moved to the "AI" tab (/admin/ia).
     navDescoberta: 'Discovery',
+    // ── #425 (ADR-0029 dec.7): before/after prompt comparator (Governance, admin-only). ──
+    navComparador: 'Comparator',
+    comparadorTitulo: 'Prompt comparator (before/after)',
+    comparadorDescricao:
+      'Quality gate: runs fixed briefings through the old prompt (frozen) vs. the new one (live) and shows the recipe side by side. Nothing is saved.',
+    comparadorRodar: 'Run comparison',
+    comparadorRodando: 'Running…',
+    comparadorGerarImagem: 'Generate image (slower)',
+    comparadorVelho: 'Old',
+    comparadorNovo: 'New',
+    comparadorSystemPrompt: 'System prompt',
+    comparadorIngredientes: 'Ingredients',
+    comparadorPassos: 'Steps',
+    comparadorSemReceita: 'No recipe delivered.',
+    comparadorErro: 'Failed to run this comparison.',
+    comparadorImagemAlt: 'Generated dish image',
+    comparadorOutcomeSuccess: 'success',
+    comparadorOutcomeDegraded: 'degraded',
+    comparadorOutcomePlayful: 'playful',
+    comparadorOutcomeImpossible: 'impossible',
+    comparadorOutcomeInvalid: 'invalid',
+    // ── #451: "Site" tab (Governance, admin-only) — social links in the footer, editable without deploy. ──
+    navSite: 'Site',
+    redesTitulo: 'Social links (footer)',
+    redesDescricao:
+      'Links shown in the site footer. Add the account and turn it on when it exists. Empty = footer with no links.',
+    redesPlataformaLabel: 'Network',
+    redesUrlLabel: 'URL (https://…)',
+    redesRotuloLabel: 'Label (optional)',
+    redesLigadoLabel: 'Show in footer',
+    redesAdicionar: 'Add network',
+    redesRemover: 'Remove',
+    redesSalvar: 'Save',
+    redesSalvando: 'Saving…',
+    redesSalvo: 'Changes saved.',
+    redesErro: 'Could not save. Check the URLs (http/https only) and avoid repeated platforms.',
+    redesCarregando: 'Loading…',
+    redesVazio: 'No networks added yet.',
     // "Image generation" section (#134) — lives on the "AI" tab (/admin/ia); toggle, model, caps.
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',
@@ -975,6 +1162,15 @@ export const enUS: Messages = {
     aiTetoIlimitado: 'unlimited',
     aiTetoAjuda: 'Leave blank for unlimited. 0 blocks the role.',
     aiErroConfig: 'Invalid configuration. Review the caps and model.',
+    // #423 (ADR-0029 dec.6): generation variation ("generate 2, the user chooses") — on/off + the
+    // divergence axis (poles + how to diverge), editable without a deploy.
+    aiVariacaoLabel: 'Generation variation (generate 2, user chooses)',
+    aiVariacaoAjuda:
+      'A single call generates two divergent versions; the user chooses. Costs about 2× tokens — keep it opt-in.',
+    aiVariacaoHabilitadaLabel: 'Offer "Generate 2 versions" when creating',
+    aiVariacaoPoloA: 'Pole A',
+    aiVariacaoPoloB: 'Pole B',
+    aiVariacaoInstrucao: 'How to diverge',
     // #164: web discovery (ADR-0019) — on/off + allowlist of domains. The allowlist is the SINGLE
     // source of truth for both web search and the import SSRF guard. One domain per line.
     webTitulo: 'Web discovery',
@@ -1019,6 +1215,26 @@ export const enUS: Messages = {
     catalogoAvisoTextoLabel: 'Disclosure text',
     catalogoAvisoTextoAjuda: 'Phrase shown on catalog recipes when the disclosure is on.',
     catalogoAvisoErroConfig: 'Invalid configuration. The disclosure text cannot be empty.',
+    // #457: "Recipe of the week" — editorial home slot. The Curator searches by title (restricted
+    // to the approved catalog) and picks one; with no pick, the home falls back to the automatic
+    // Popularity highlight.
+    receitaSemanaTitulo: 'Recipe of the week',
+    receitaSemanaDescricao:
+      "Pick a catalog recipe to feature on the home this week. With no pick, the home automatically shows the catalog's most popular recipe.",
+    receitaSemanaAtualLabel: 'Current pick',
+    receitaSemanaAtualVazio: 'None — the home is using the automatic popularity highlight.',
+    receitaSemanaLimpar: 'Clear pick',
+    receitaSemanaLimpando: 'Clearing…',
+    receitaSemanaBuscaLabel: 'Search catalog recipe',
+    receitaSemanaBuscaPlaceholder: 'Recipe title',
+    receitaSemanaBuscaCarregando: 'Searching…',
+    receitaSemanaBuscaVazio: 'No catalog recipe found with that title.',
+    receitaSemanaBuscaContagem: '{n} result(s)',
+    receitaSemanaBuscaResultados: 'Search results',
+    receitaSemanaSelecionada: 'Selected',
+    receitaSemanaTrocar: 'Change',
+    receitaSemanaSalvo: 'Recipe of the week updated.',
+    receitaSemanaErroReceita: 'That recipe is not (or is no longer) part of the approved catalog.',
     // Semantic-search embeddings backfill (#119) — batched, resumable recompute.
     backfillTitulo: 'Semantic-search embeddings',
     backfillDescricao:
@@ -1029,6 +1245,102 @@ export const enUS: Messages = {
     backfillResultadoParcial:
       'Recomputed: {recomputados} · remaining: {restantes}. The embedding service stopped (no key or rate limit). Run again later.',
     backfillErro: 'Could not recompute. Try again.',
+    // Outdated translations re-translation (#499, ADR-0031) — resumable batch, same UX as the
+    // embedding backfill.
+    retranslateTitulo: 'Re-translate outdated',
+    retranslateDescricao:
+      'Re-translates derived translations whose original changed or whose translator improved — only the ones nobody hand-edited since the last automatic translation. Run until "remaining: 0".',
+    retranslateBtn: 'Re-translate outdated',
+    retranslateRodando: 'Re-translating…',
+    retranslateResultado: 'Re-translated: {retraduzidas} · skipped: {puladas} · remaining: {restantes}.',
+    retranslateErro: 'Could not re-translate. Try again.',
+    // External author (data subject B, no account) intake — #396/GAP-4. Removes the source NAME in bulk
+    // by name/URL, without requiring the recipe to belong to the operator. Keeps the URL; irreversible.
+    takedownTitulo: 'Remove attribution (author request)',
+    takedownDescricao:
+      "Handles an external site author who asked to have their name removed. Removes the source name from ALL imported recipes (including users' private ones) matching the name or URL. The source URL is kept (attribution then shows only the site). Run the preview before removing.",
+    takedownNomeLabel: 'Displayed source name',
+    takedownNomePlaceholder: 'e.g., Grandma’s Kitchen',
+    takedownUrlLabel: 'Source URL',
+    takedownUrlPlaceholder: 'https://site.com/recipe',
+    takedownCaseIdLabel: 'DSAR ticket ID (optional)',
+    takedownCaseIdPlaceholder: 'ticket uuid, if any',
+    takedownPrevia: 'Preview',
+    takedownPreviaRodando: 'Searching…',
+    takedownRemover: 'Remove name',
+    takedownRemovendo: 'Removing…',
+    takedownPreviaResultado: 'Matched: {casaram} · with a name to remove: {removiveis}.',
+    takedownNomesRemovidos: 'Names that will be removed',
+    takedownRemovido: 'Name removed from {removiveis} recipe(s). URL preserved.',
+    takedownNada: 'No recipe with a human name to remove matched the criteria.',
+    takedownCriterioObrigatorio: 'Provide at least the source name OR URL.',
+    takedownCaseIdInvalido: 'Invalid ticket ID (must be a uuid).',
+    takedownErro: 'Could not complete. Try again.',
+    // Escalation beyond the name (subject B) — #397/GAP-3. Unlink the whole URL or delete the import.
+    // The POLICY of when to use it awaits legal sign-off (#276); the mechanism does not decide alone.
+    escalonarTitulo: 'Escalate beyond the name (unlink URL / delete import)',
+    escalonarAviso:
+      'The POLICY of WHEN to escalate (unlink the URL or delete the recipe) awaits legal sign-off (#276). This mechanism does not decide on its own — use only under guidance. It reuses the name/URL entered above.',
+    escalonarAcaoLabel: 'Action',
+    escalonarAcaoUnlink: 'Unlink URL (clears URL and name)',
+    escalonarAcaoDelete: 'Delete imported recipe (irreversible)',
+    escalonarPrevia: 'Escalation preview',
+    escalonarPreviaRodando: 'Searching…',
+    escalonarPreviaResultado: '{casaram} imported recipe(s) matched the criteria.',
+    escalonarUrlsAfetadas: 'URLs that will be removed',
+    escalonarNomesAfetados: 'Names that will be removed',
+    // Warning read BEFORE confirming the destructive action: selection is OR (union), not AND
+    // (intersection), and the effect is irreversible. Filling name AND url drags in the union.
+    escalonarUniaoAviso:
+      'Warning: selection is by name OR URL (union) — filling both matches ALL recipes with that name PLUS all with that URL, not the intersection. Check the scope above; this action is IRREVERSIBLE.',
+    escalonarConfirmUnlink: 'Confirm: unlink URL',
+    escalonarConfirmDelete: 'Confirm: delete import',
+    escalonarAplicando: 'Applying…',
+    escalonarUnlinkOk: 'URL and name unlinked from {n} recipe(s).',
+    escalonarDeleteOk: '{n} imported recipe(s) deleted.',
+    escalonarNada: 'No imported recipe matched the criteria.',
+    escalonarErro: 'Could not complete the escalation. Try again.',
+    // SLA panel for OPEN takedown/DSAR tickets (#412/GAP-7). Read-only; the route filters resolved
+    // ones (fulfilled/rejected). Ordered by urgency: highest alert level at the top.
+    slaTitulo: 'Takedown request SLA (open)',
+    slaDescricao:
+      'Takedown/DSAR tickets whose 15-day deadline is STILL running (resolved ones drop off). The most urgent — highest alert level — show up first. Monitoring only; handling and escalation live in the sections above.',
+    slaVazio: 'No open takedown requests.',
+    slaTipoLabel: 'Request type',
+    slaFonteLabel: 'Source',
+    slaUrlLabel: 'Source URL',
+    slaMensagemLabel: 'Request',
+    slaRecebidoLabel: 'Received on',
+    slaSemFonte: '(no name or URL)',
+    slaIdadeDias: '{dias} day(s) ago',
+    slaTipoNameRemoval: 'Name removal',
+    slaTipoFullRemoval: 'Full removal',
+    slaTipoOther: 'Other',
+    slaNivelNone: 'On track',
+    slaNivelYellow: 'Deadline approaching',
+    slaNivelRed: 'Escalate to the DPO',
+    slaNivelOverdue: 'Overdue',
+    // AI cost panel (#465) — aggregates the text (#463) and image (#224) ledgers.
+    custoTitulo: 'AI cost',
+    custoDescricao:
+      'How much AI generation cost over the last {dias} days — text (recipes) and image. Only what was actually measured is summed; generations without cost telemetry are left out. Visibility into margin and usage only; nothing here changes the app.',
+    custoJanela: 'Last {dias} days',
+    custoTotalTexto: 'Text',
+    custoTotalImagem: 'Image',
+    custoTotalGeral: 'Total',
+    custoDiaTitulo: 'Cost per day',
+    custoDiaData: 'Day',
+    custoDiaVazio: 'No measured cost in the window.',
+    custoUsuariosTitulo: 'Top spenders by user',
+    custoUsuarioCol: 'User',
+    custoUsuariosVazio: 'No user with measured cost in the window.',
+    custoDesfechoTitulo: 'Text cost by outcome',
+    custoDesfechoDescricao:
+      'Of the text-generation spend that produced a Recipe, how much became a Recipe someone saved or rated. Saved and rated overlap (a Recipe can be both).',
+    custoDesfechoTotal: 'Generated (with Recipe)',
+    custoDesfechoSalvos: 'Saved',
+    custoDesfechoAvaliados: 'Rated',
+    custoContagem: '{n} generation(s)',
     erroPapelInvalido: 'Invalid role.',
     erroNaoAplicado: 'Could not apply the role.',
     erroGenerico: 'Something went wrong. Try again.',
@@ -1160,6 +1472,29 @@ export const enUS: Messages = {
     marcando: 'Marking…',
     listaVazia: 'No outdated translations.',
     erroGenerico: 'Could not mark as reviewed. Try again.',
+    // #498 (ADR-0031 companion iii): translated ingredient name editing.
+    editarNomes: 'Edit ingredient names',
+    fecharNomes: 'Close',
+    carregandoIngredientes: 'Loading ingredients…',
+    erroCarregarIngredientes: 'Could not load the ingredients.',
+    semIngredientesNomeados: 'No named ingredients in this recipe.',
+    nomeIngredienteLabel: 'Ingredient name',
+    salvarNomes: 'Save',
+    salvando: 'Saving…',
+    nomesSalvos: 'Names saved.',
+    erroSalvarNomes: 'Could not save the names. Try again.',
+  },
+  // Curator list — stale-and-diverged (#500, ADR-0031 dec.6): the source changed and the
+  // content already diverged from the last machine translation (hand-edited) or is legacy
+  // with no proof of untouched-ness. Reuses provenance/name-editor labels from `traducoesStale`.
+  traducoesDivergentes: {
+    titulo: 'Translations needing re-review',
+    descricao:
+      'The source changed and the content already diverges from the last machine translation — fix it by hand.',
+    receita: 'Recipe',
+    idioma: 'Language',
+    origem: 'Origin',
+    listaVazia: 'No translations need re-review.',
   },
   curadoria: {
     titulo: 'Catalog curation',
@@ -1255,5 +1590,267 @@ export const enUS: Messages = {
     filaImagemErro: 'Could not update the image. Try again.',
     filaImagemTipoInvalido: 'Invalid format (use JPG, PNG, or WebP).',
     filaImagemGrande: 'Image too large (max 2 MB).',
+  },
+  // Privacy Policy (#398 / part of #276) — PUBLISHED (indexable, linked in the footer + sitemap). Keys are
+  // FLAT within the section (the `Messages` type derives only 2 levels): string leaves or
+  // `readonly string[]` (lists/tables by index). The placeholders were resolved with the real contacts
+  // written DIRECTLY into these strings (this section is the single place to edit the DPO name/e-mail).
+  // Published by the owner's decision; the legal sign-off is still pending in #276.
+  privacidade: {
+    metaTitulo: 'Privacy Policy — Refogando',
+    titulo: 'Privacy Policy',
+
+    parteATitulo: 'Part (a) — Privacy Policy',
+    resumoTitulo: '30-second summary',
+    resumoItens: [
+      'Refogando is an AI recipe app.',
+      'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
+      'We do not sell your data. We share it only with service providers that make the app work (hosting, database, AI).',
+      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: privacidade@refogando.com. We respond within 15 days.',
+      'This text may change; we notify you when it does.',
+    ],
+
+    s1Titulo: '1. Who we are (identification of the controller) — Art. 9, III',
+    s1Corpo: [
+      'The data controller is Fernando Lisboa, an individual responsible for the Refogando app (https://refogando.com).',
+      'Because Refogando is operated by an individual, there is no legal entity name or tax ID (CNPJ) associated; the official contact is the privacy e-mail indicated below.',
+    ],
+
+    s2Titulo: '2. Contact of the controller and the data protection officer (DPO) — Art. 9, IV; Art. 41',
+    s2Itens: [
+      'Data protection officer (DPO): Fernando Lisboa.',
+      'Contact e-mail for privacy matters and exercising rights: privacidade@refogando.com.',
+      'Response time: we answer data subject requests within 15 days (LGPD, Art. 19, II).',
+    ],
+
+    s3Titulo: '3. What we use your data for (specific purpose) — Art. 9, I; Art. 6, I',
+    s3Intro:
+      'We process personal data only for specific, informed purposes. Each activity follows the Data / Purpose / Legal basis / Retention pattern.',
+    s3Nota:
+      'The full inventory of account/usage data is still to be finalized with the team and validated; the table below is the skeleton of the confirmed processing activities. The Web Discovery feature is detailed in Part (b).',
+
+    rotuloDados: 'Data',
+    rotuloFinalidade: 'Purpose',
+    rotuloBaseLegal: 'Legal basis',
+    rotuloRetencao: 'Retention',
+
+    s31Titulo: '3.1. User account and authentication',
+    s31Valores: [
+      'e-mail, display name/identifier (handle), login credentials and profile photo, bio, links and preferred language.',
+      'create and maintain your account, authenticate access and enable use of the app.',
+      'performance of a contract with the data subject — Art. 7, V of the LGPD.',
+      'while the account exists; after deletion, we immediately anonymize the identifying data and erase the physical residue (such as images) after a retention period.',
+    ],
+    s32Titulo: '3.2. Content created in the app (recipes, collections, ratings)',
+    s32Valores: [
+      'recipes you create, save, rate and organize; language preferences; text content you write.',
+      'deliver the app functionality (store and display your content, build collections, feed and search).',
+      'performance of a contract — Art. 7, V.',
+      'while the account exists or until you delete the content.',
+    ],
+    s33Titulo: '3.3. AI-generated images and AI-assisted content',
+    s33Valores: [
+      'prompts and images you generate; usage metadata (for cost/quota control).',
+      'generate dish images and support recipe creation; enforce usage limits.',
+      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX.',
+      'while the account exists or until you delete the content.',
+    ],
+    s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
+    s34Corpo:
+      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground).',
+
+    s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
+    s4Itens: [
+      'How: data is processed by electronic means, on servers of contracted service providers (see item 5). We apply appropriate security measures (Art. 46), including access control by authentication and authorization by ownership.',
+      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it (item 3) or for a legal obligation. When the purpose ends, we erase or anonymize the data (Art. 15/16). Specific terms follow the purpose of each processing activity described in item 3.',
+    ],
+
+    s5Titulo: '5. Who we share with (shared use) — Art. 9, V',
+    s5Intro:
+      'We do not sell personal data. We share it with processors (service providers that process data on our behalf, under contract) strictly to operate the app:',
+    s5Cabecalho: ['Provider', 'For what', 'Category'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5ParaQue: [
+      'App hosting',
+      'Database',
+      'Image generation and search embeddings',
+      'Text generation/assistance',
+      'External link search in "Web Discovery"',
+    ],
+    s5Categorias: [
+      'Infrastructure processor',
+      'Infrastructure processor',
+      'AI processor',
+      'AI processor',
+      'Search processor',
+    ],
+    s5Nota: 'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes.',
+    s5Transferencia:
+      'International transfer: some providers process data outside Brazil, with the safeguards for international data transfer provided for in the LGPD (Arts. 33 to 36).',
+
+    s6Titulo: '6. Responsibilities of the processing agents — Art. 9, VI; Arts. 37–39',
+    s6Itens: [
+      'Fernando Lisboa acts as controller and is responsible for the decisions about the processing.',
+      'The providers in item 5 act as processors, processing data according to our instructions and under contract.',
+      'We keep a record of processing operations (Art. 37) and adopt security measures (Art. 46). In the event of a security incident with relevant risk, we notify the ANPD and the data subjects (Art. 48).',
+    ],
+
+    s7Titulo: '7. Your rights (data subject rights) — Art. 9, VII; Art. 18',
+    s7Intro:
+      'You, the data subject, have the rights granted by Art. 18 of the LGPD, upon request, among them:',
+    s7Direitos: [
+      'Confirmation that processing exists;',
+      'Access to the data;',
+      'Correction of incomplete, inaccurate or outdated data;',
+      'Anonymization, blocking or deletion of unnecessary or excessive data, or data processed in noncompliance;',
+      'Portability to another provider, upon request;',
+      'Deletion of data processed with consent (except for the cases in Art. 16);',
+      'Information about the entities with which we share data;',
+      'Information about the possibility of not giving consent and the consequences;',
+      'Withdrawal of consent;',
+      'When processing is based on legitimate interest, the right to object and to request information (Art. 18, §2, and Art. 37).',
+    ],
+    s7ComoExercer:
+      'How to exercise: use the Your Rights page (/seus-direitos) or write to privacidade@refogando.com. We respond within 15 days (Art. 19, II). You may also petition the National Data Protection Authority (ANPD).',
+
+    s8Titulo: '8. Changes to this policy',
+    s8Corpo:
+      'We may update this policy. When there is a relevant change, we will notify you via the Your Rights page (/seus-direitos) and the e-mail privacidade@refogando.com, and record the version and date of each change.',
+
+    parteBTitulo: 'Part (b) — "Web Discovery"',
+    resumoBTitulo: 'Summary of this section',
+    resumoBItens: [
+      'When you import a recipe from an external site, we keep two things about the origin: the author/site name and the link (URL) — solely to credit the source.',
+      'We do not copy the photo or the author text (an imported recipe is born without an image and without a description).',
+      'An imported recipe is always private — you cannot publish or republish it.',
+      'The personal data here is the name of the third-party recipe author — and you, the author, can request the removal of your name (the credit then shows only the site).',
+    ],
+
+    b1Titulo: 'b.1. What Web Discovery is',
+    b1Corpo: [
+      'Refogando can show, in search, some links to recipes from external sites (marked "from the web"), drawn from a closed list of domains we approve one by one (allowlist; search provider: Brave). If you click and confirm, the app imports that recipe into your private collection.',
+    ],
+    b1Itens: [
+      'Search never creates or republishes third-party content. Linking ≠ importing; importing ≠ republishing.',
+      'The allowlist is the single source of domains (managed by admin; with limits on domains queried and results per search).',
+      'Technical guard-rails already implemented: respect for robots.txt (RFC 9309), an identified User-Agent (RefogandoBot/1.0), a courtesy rate-limit and search/import only on an explicit user action — never automatic background crawling.',
+    ],
+
+    b2Titulo: 'b.2. Who is the data subject here',
+    b2Corpo:
+      'The personal data processed in this feature is the name of the third-party recipe author/publisher — that is, the data subject is the author of the external recipe, not the app user. This distinction matters for exercising rights (item b.5).',
+
+    b3Titulo: 'b.3. What data we collect, for what, on what basis and for how long',
+    b3Rotulos: ['Data', 'What we do NOT collect', 'Purpose', 'Legal basis', 'Retention'],
+    b3Valores: [
+      'Only two attribution fields, stored solely on imported recipes: the human-readable author/site name and the public source URL. Every recipe that is not imported leaves these two fields empty.',
+      'We do not copy the photo (an imported recipe is born without an image) or the author text / headnote. This keeps the third-party data surface to a minimum and avoids copying the expressive layer protected by copyright.',
+      'Give credit to the source ("source: … (link)") — honoring the moral right of attribution (Law 9,610/98) — and send traffic back to the source site. Attribution is mandatory, not optional.',
+      'Legitimate interest — LGPD Art. 7, IX. Alternative/complementary ground: data made manifestly public by the data subject (Art. 7, §4).',
+      'While the imported recipe exists in the user’s private collection, or until the author requests removal of the name (item b.5), or until the user deletes the recipe. When the name is removed, the credit shows only the site (host) derived from the URL.',
+    ],
+
+    b4Titulo: 'b.4. Sharing in this feature',
+    b4Corpo:
+      'To find the external links, we query the Brave search provider (processor), sending the search term restricted to the allowlist domains. The import itself is a copy made at the user’s request, stored privately in their account — it is not republished or shared with third parties.',
+
+    b5Titulo: 'b.5. Data subject rights (external recipe author) and how to exercise them — Art. 18',
+    b5Intro:
+      'If you are the author of a recipe that was imported into Refogando and want to remove your name from the attribution, you have that right (Art. 18, IV; and the right to object to processing based on legitimate interest, Art. 18, §2).',
+    b5ComoFunciona: [
+      'Removal clears only the author name; the source URL remains, because attribution is mandatory. After removal, the credit is downgraded to the site name (host) derived from the URL, and the "view on site" link remains.',
+      'Removal only takes effect when there is in fact a human name distinct from the host; otherwise it is a no-op.',
+      'Removal is not reversible to the original name — which is appropriate for the right to removal.',
+    ],
+    b5Contato:
+      'Officer contact for this purpose: Fernando Lisboa — privacidade@refogando.com — response within 15 days. You can also use the public form on the Your Rights page (/seus-direitos).',
+
+    todoRotulo: 'field to be filled in',
+    rodapeVersaoRotulo: 'Version',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Date',
+    rodapeData: '2026-07-03',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'Published — legal review in progress',
+  },
+
+  // "Your rights" page + public intake form (#399, GAP-2; part of #276). PUBLISHED: indexable, linked in
+  // the footer and sitemap; the channel (e-mail + form) already exists and is functional.
+  seusDireitos: {
+    metaTitulo: 'Your rights / Privacy — Refogando',
+    titulo: 'Your rights',
+    intro:
+      'You have rights over your personal data (LGPD, Art. 18): confirmation, access, correction, deletion, objection and others. This page explains how to exercise them, and you can open a request via the form below. We respond within 15 days (Art. 19, II).',
+
+    titularATitulo: 'You have a Refogando account',
+    titularACorpo:
+      'If you are an app user, many of your rights are handled directly in your account (profile, recipes, collections). For anything not yet self-service, use the form below or the privacy email — always within the 15-day deadline.',
+    titularBTitulo: 'You are the author of a recipe imported from the web',
+    titularBCorpo:
+      'If a recipe of yours was imported from an external site into Refogando, we keep only your name (credit) and the source link — never the photo or the authorial text. You may request removal of your name (the credit then shows only the site) or full removal. You do NOT need an account: use the form below.',
+
+    fluxoTitulo: 'How a request works',
+    fluxoPassos: [
+      'You send the request via the form (or the privacy email), identifying the content (source link and/or displayed name) and what you want.',
+      'We open a case and record the date of receipt — that is when the 15-day deadline starts to run (Art. 19, II).',
+      'We confirm your identity as simply as possible (usually correspondence with the contact already tied to the source). We do not require documents as a condition (Art. 6º, III).',
+      'We carry out the request and reply within the deadline, stating what was done — or, in case of a justified refusal, the reason.',
+    ],
+    prazoNota: 'Response time: up to 15 calendar days from receipt (LGPD, Art. 19, II).',
+    naoExigimosDocumentos:
+      'We collect only the minimum needed to locate the content and handle the request. We do not require documents or additional personal data as a condition (Art. 6º, III — necessity).',
+
+    canalTitulo: 'Contact channel',
+    canalCorpo:
+      'Data protection officer (DPO): Fernando Lisboa. Email for privacy and exercising your rights: privacidade@refogando.com.',
+
+    formTitulo: 'Open a request',
+    formIntro:
+      'Fill in your request below. Provide the source link and/or the displayed name so we can locate the content, and describe what you want.',
+    formTipoRotulo: 'Request type',
+    formTipoNameRemoval: 'Remove my name from the credit (keeping the link)',
+    formTipoFullRemoval: 'Fully remove the imported recipe',
+    formTipoOther: 'Another request about my data',
+    formUrlRotulo: 'Source link (URL)',
+    formUrlPlaceholder: 'https://source-site.com/recipe',
+    formNomeRotulo: 'Name shown in the credit',
+    formNomePlaceholder: 'e.g., Grandma’s Kitchen',
+    formIdentificacaoDica: 'Provide at least one: the source link OR the displayed name.',
+    formPedidoRotulo: 'Your request',
+    formPedidoPlaceholder: 'Describe what you want (e.g., remove my name from the credit of this recipe).',
+    formContatoRotulo: 'Email for our reply (optional)',
+    formContatoPlaceholder: 'you@email.com',
+    formContatoDica: 'Optional. If provided, we use it only to reply to this request.',
+    formEnviar: 'Send request',
+    formEnviando: 'Sending…',
+    formSucessoTitulo: 'Request received',
+    formSucessoCorpo:
+      'We have received your request and recorded the date of receipt. We will reply within 15 days. Please keep the case number below.',
+    formProtocoloRotulo: 'Case number',
+    erroPedido: 'Please describe your request to continue.',
+    erroIdentificacao: 'Provide at least one: the source link or the displayed name.',
+    erroEnvio: 'We could not send your request right now. Please try again shortly.',
+
+    todoRotulo: 'field to be filled in',
+    rodapeVersaoRotulo: 'Version',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Date',
+    rodapeData: '2026-07-03',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'Published — legal review in progress',
+  },
+  // Quota-limit upsell card (billing Phase 2, flag-off). See pt-BR.ts for the full note.
+  upsell: {
+    titulo: "You've reached the free plan limit",
+    descricao:
+      "Subscribe to Pro to generate more, or buy extra credits when you need them. Billing isn't available yet — we're getting it ready.",
+    cta: 'See plans',
+  },
+  // Placeholder `/plan` page (billing Phase 2, flag-off): "coming soon", no price or date commitment.
+  plano: {
+    metaTitulo: 'Plans — Refogando',
+    titulo: 'Plans',
+    corpo: "We're preparing a Pro plan with more AI generations, plus one-off credits for anyone who prefers to pay only for what they use. You can't subscribe or buy yet — check back soon.",
+    voltar: 'Back to home',
   },
 } as const

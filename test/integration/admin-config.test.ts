@@ -3,9 +3,12 @@ import { sql } from 'drizzle-orm'
 import { GET, PUT } from '@/app/api/admin/config/route'
 import { getDb } from '@/server/deps'
 import { loadAppConfig } from '@/server/app-config'
-import { seedSessionHeaders } from '../helpers/users'
+import { seedSessionHeaders, seedUser } from '../helpers/users'
+import { seedRecipe, seedTranslation } from '../helpers/recipes'
 import { DEFAULT_IMAGE_MODEL, type ImageGenConfig } from '@/domain/image-gen-config'
 import { type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
+import { type ExtractionCapByRole } from '@/domain/extraction-cap-config'
+import { type ProCaps } from '@/domain/pro-caps'
 import { DEFAULT_POPULARITY_CONFIG, type PopularityConfig } from '@/domain/popularity'
 
 /**
@@ -203,6 +206,95 @@ describe('/api/admin/config — recipeGenCapByRole (#167, admin-only)', () => {
   })
 })
 
+// ── #447: extractionCapByRole (teto de extração de ingredientes por papel) ────────
+describe('/api/admin/config — extractionCapByRole (#447, admin-only)', () => {
+  const okCaps: ExtractionCapByRole = { usuario: 40, curador: 90, admin: null }
+
+  it('GET traz extractionCapByRole com defaults FOLGADOS em código quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { extractionCapByRole: ExtractionCapByRole }
+    expect(body.extractionCapByRole).toEqual({ usuario: 60, curador: 120, admin: null })
+  })
+
+  it('PUT extractionCapByRole válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-put@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    const putRes = await put({ extractionCapByRole: okCaps }, headers)
+    expect(putRes.status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      extractionCapByRole: ExtractionCapByRole
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6') // outro eixo preservado
+    expect(body.extractionCapByRole).toEqual(okCaps)
+  })
+
+  it('PUT extractionCapByRole inválido → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-bad@cfg.test', role: 'admin' })
+    expect((await put({ extractionCapByRole: { usuario: -1, curador: 12, admin: null } }, headers)).status).toBe(400)
+    const bad = await put({ extractionCapByRole: { usuario: 5, curador: 12, admin: null, root: 9 } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('extractionCapByRole PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ex-cur@cfg.test', role: 'curador' })
+    expect((await put({ extractionCapByRole: okCaps }, headers)).status).toBe(403)
+  })
+})
+
+// ── Fase 2 (#466): proCaps { recipeGen, imageGen, extraction } (tabela pro dos tetos) ──────────
+describe('/api/admin/config — proCaps (Fase 2 #466, admin-only)', () => {
+  const okProCaps: ProCaps = {
+    recipeGen: { usuario: 100, curador: 200, admin: null },
+    imageGen: { usuario: 30, curador: 50, admin: null },
+    extraction: { usuario: 600, curador: 1200, admin: null },
+  }
+
+  it('GET traz proCaps=null quando a linha está ausente (sem tabela pro ⇒ byte-idêntico ao free)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { proCaps: ProCaps | null }
+    expect(body.proCaps).toBeNull()
+  })
+
+  it('PUT proCaps válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-put@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    const putRes = await put({ proCaps: okProCaps }, headers)
+    expect(putRes.status).toBe(200)
+    const body = (await (await get(headers)).json()) as { defaultModel: string; proCaps: ProCaps | null }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6') // outro eixo preservado
+    expect(body.proCaps).toEqual(okProCaps)
+  })
+
+  it('PUT proCaps=null LIMPA a tabela pro (volta ao free); GET relê null', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-clear@cfg.test', role: 'admin' })
+    expect((await put({ proCaps: okProCaps }, headers)).status).toBe(200)
+    expect(((await (await get(headers)).json()) as { proCaps: ProCaps | null }).proCaps).toEqual(okProCaps)
+    // Agora limpa.
+    const clr = await put({ proCaps: null }, headers)
+    expect(clr.status).toBe(200)
+    expect(((await (await get(headers)).json()) as { proCaps: ProCaps | null }).proCaps).toBeNull()
+  })
+
+  it('PUT proCaps inválido (eixo faltando / valor ruim / chave estranha) → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-bad@cfg.test', role: 'admin' })
+    // Falta o eixo extraction (tudo-ou-nada).
+    const missing = await put({ proCaps: { recipeGen: okProCaps.recipeGen, imageGen: okProCaps.imageGen } }, headers)
+    expect(missing.status).toBe(400)
+    await expect(missing.json()).resolves.toMatchObject({ error: 'config_invalida' })
+    // Valor negativo em um eixo.
+    expect(
+      (await put({ proCaps: { ...okProCaps, recipeGen: { usuario: -1, curador: 2, admin: null } } }, headers)).status,
+    ).toBe(400)
+  })
+
+  it('proCaps PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'pc-cur@cfg.test', role: 'curador' })
+    expect((await put({ proCaps: okProCaps }, headers)).status).toBe(403)
+  })
+})
+
 // ── #164: webSearch { enabled, allowlist } (descoberta na web, ADR-0019) ──────────
 describe('/api/admin/config — webSearch (#164, admin-only)', () => {
   it('GET traz webSearch com default DESLIGADO + allowlist vazia quando a linha está ausente', async () => {
@@ -216,21 +308,21 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
   it('PUT webSearch válido persiste (allowlist CANONICALIZADA) e GET relê (round-trip)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ws-put@cfg.test', role: 'admin' })
     const putRes = await put(
-      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'panelinha.com.br'] } },
+      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'cybercook.com.br'] } },
       headers,
     )
     expect(putRes.status).toBe(200)
     const putBody = (await putRes.json()) as { webSearch: { enabled: boolean; allowlist: string[] } }
     expect(putBody.webSearch).toEqual({
       enabled: true,
-      allowlist: ['tudogostoso.com.br', 'panelinha.com.br'], // minúsculo, sem www.
+      allowlist: ['tudogostoso.com.br', 'cybercook.com.br'], // minúsculo, sem www.
     })
 
     const getBody = (await (await get(headers)).json()) as {
       webSearch: { enabled: boolean; allowlist: string[] }
     }
     expect(getBody.webSearch.enabled).toBe(true)
-    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'panelinha.com.br'])
+    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'cybercook.com.br'])
   })
 
   it('PUT webSearch NÃO zera os outros eixos (defaultModel preservado)', async () => {
@@ -252,6 +344,32 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
     const bad = await put({ webSearch: { enabled: 'sim', allowlist: [] } }, headers)
     expect(bad.status).toBe(400)
     await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('PUT webSearch com domínio vetado por ToS (#394) → 400 dominio_vetado (host exato e subdomínio)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-deny@cfg.test', role: 'admin' })
+    // host exato vetado no lote (junto de um domínio limpo) ⇒ rejeita o lote inteiro com motivo claro
+    const exact = await put(
+      { webSearch: { enabled: true, allowlist: ['tudogostoso.com.br', 'panelinha.com.br'] } },
+      headers,
+    )
+    expect(exact.status).toBe(400)
+    await expect(exact.json()).resolves.toMatchObject({
+      error: 'dominio_vetado',
+      domains: ['panelinha.com.br'],
+    })
+    // subdomínio de um host vetado também é barrado
+    const sub = await put(
+      { webSearch: { enabled: true, allowlist: ['m.foodnetwork.com'] } },
+      headers,
+    )
+    expect(sub.status).toBe(400)
+    await expect(sub.json()).resolves.toMatchObject({ error: 'dominio_vetado' })
+    // e a config NÃO foi persistida (o eixo continua no default vazio/desligado)
+    const body = (await (await get(headers)).json()) as {
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(body.webSearch).toEqual({ enabled: false, allowlist: [] })
   })
 
   it('webSearch PUT é admin-only: Curador → 403', async () => {
@@ -385,5 +503,167 @@ describe('/api/admin/config — popularity (#368, admin-only)', () => {
   it('popularity PUT é admin-only: Curador → 403', async () => {
     const { headers } = await seedSessionHeaders({ email: 'pop-cur@cfg.test', role: 'curador' })
     expect((await put({ popularity: okPopularity }, headers)).status).toBe(403)
+  })
+})
+
+// ── #451: socialLinks [{platform, url, label?, enabled}] (links de rede social do rodapé) ──────────
+describe('/api/admin/config — socialLinks (#451, admin-only)', () => {
+  it('GET traz socialLinks vazio quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { socialLinks: unknown[] }
+    expect(body.socialLinks).toEqual([])
+  })
+
+  it('PUT socialLinks válido persiste (label vazio omitido) e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-put@cfg.test', role: 'admin' })
+    const putRes = await put(
+      {
+        socialLinks: [
+          { platform: 'instagram', url: 'https://instagram.com/refogando', enabled: true },
+          { platform: 'youtube', url: 'https://youtube.com/@r', label: '   ', enabled: false },
+        ],
+      },
+      headers,
+    )
+    expect(putRes.status).toBe(200)
+    const getBody = (await (await get(headers)).json()) as { socialLinks: unknown[] }
+    expect(getBody.socialLinks).toEqual([
+      { platform: 'instagram', url: 'https://instagram.com/refogando', enabled: true },
+      { platform: 'youtube', url: 'https://youtube.com/@r', enabled: false },
+    ])
+  })
+
+  it('PUT socialLinks NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-iso@cfg.test', role: 'admin' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect(
+      (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
+        .status,
+    ).toBe(200)
+    const body = (await (await get(headers)).json()) as { defaultModel: string; socialLinks: unknown[] }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.socialLinks).toEqual([{ platform: 'x', url: 'https://x.com/r', enabled: true }])
+  })
+
+  it('PUT socialLinks inválido → 400 config_invalida (URL insegura, plataforma duplicada)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-bad@cfg.test', role: 'admin' })
+    const xss = await put(
+      { socialLinks: [{ platform: 'x', url: 'javascript:alert(1)', enabled: true }] },
+      headers,
+    )
+    expect(xss.status).toBe(400)
+    await expect(xss.json()).resolves.toMatchObject({ error: 'config_invalida' })
+    const dup = await put(
+      {
+        socialLinks: [
+          { platform: 'x', url: 'https://x.com/a', enabled: true },
+          { platform: 'x', url: 'https://x.com/b', enabled: true },
+        ],
+      },
+      headers,
+    )
+    expect(dup.status).toBe(400)
+  })
+
+  it('socialLinks PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'sl-cur@cfg.test', role: 'curador' })
+    expect(
+      (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
+        .status,
+    ).toBe(403)
+  })
+})
+
+// ── #457: recipeOfWeek { recipeId } (slot editorial "Receita da semana" da home) ──────────
+describe('/api/admin/config — recipeOfWeek (#457, admin-only)', () => {
+  it('GET traz recipeOfWeek com recipeId null quando a linha está ausente', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-get@cfg.test', role: 'admin' })
+    const body = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(body.recipeOfWeek).toEqual({ recipeId: null })
+  })
+
+  it('PUT com uma Receita de catálogo APROVADA persiste e GET relê (round-trip)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-put@cfg.test', role: 'admin' })
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Torta de limão', provenance: 'escrita_por_pessoa' })
+
+    const putRes = await put({ recipeOfWeek: { recipeId } }, headers)
+    expect(putRes.status).toBe(200)
+    const putBody = (await putRes.json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(putBody.recipeOfWeek).toEqual({ recipeId })
+
+    const getBody = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(getBody.recipeOfWeek).toEqual({ recipeId })
+  })
+
+  it('PUT recipeId: null (limpar a escolha) sempre é aceito, mesmo sem escolha anterior', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-clear@cfg.test', role: 'admin' })
+    const res = await put({ recipeOfWeek: { recipeId: null } }, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ recipeOfWeek: { recipeId: null } })
+  })
+
+  it('PUT recipeOfWeek NÃO zera os outros eixos (defaultModel preservado)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-iso@cfg.test', role: 'admin' })
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Torta de limão', provenance: 'escrita_por_pessoa' })
+    expect((await put({ defaultModel: 'claude-sonnet-4-6' }, headers)).status).toBe(200)
+    expect((await put({ recipeOfWeek: { recipeId } }, headers)).status).toBe(200)
+    const body = (await (await get(headers)).json()) as {
+      defaultModel: string
+      recipeOfWeek: { recipeId: string | null }
+    }
+    expect(body.defaultModel).toBe('claude-sonnet-4-6')
+    expect(body.recipeOfWeek).toEqual({ recipeId })
+  })
+
+  it('PUT recipeOfWeek malformado (nem uuid nem null) → 400 config_invalida', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-malformado@cfg.test', role: 'admin' })
+    const bad = await put({ recipeOfWeek: { recipeId: 'not-a-uuid' } }, headers)
+    expect(bad.status).toBe(400)
+    await expect(bad.json()).resolves.toMatchObject({ error: 'config_invalida' })
+  })
+
+  it('PUT recipeOfWeek com uma Receita que NÃO é catálogo aprovado → 400 receita_invalida (não persiste)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-invalida@cfg.test', role: 'admin' })
+    const ownerId = await seedUser({ email: 'row-owner@cfg.test' })
+    // Comunidade (owned), não catálogo — jamais elegível pro slot.
+    const communityRecipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      ownerId,
+    })
+    await seedTranslation({
+      recipeId: communityRecipeId,
+      locale: 'pt-BR',
+      titulo: 'Receita da comunidade',
+      provenance: 'escrita_por_pessoa',
+    })
+    const res = await put({ recipeOfWeek: { recipeId: communityRecipeId } }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'receita_invalida' })
+
+    // Catálogo mas AINDA rascunho (pending) — também não é elegível.
+    const pendingId = await seedRecipe({
+      origin: 'catalog',
+      originalLocale: 'pt-BR',
+      ownerId: null,
+      curationStatus: 'pending',
+    })
+    await seedTranslation({ recipeId: pendingId, locale: 'pt-BR', titulo: 'Rascunho', provenance: 'escrita_por_pessoa' })
+    const resPending = await put({ recipeOfWeek: { recipeId: pendingId } }, headers)
+    expect(resPending.status).toBe(400)
+    await expect(resPending.json()).resolves.toMatchObject({ error: 'receita_invalida' })
+
+    // Nada foi persistido: o eixo continua no default (null).
+    const body = (await (await get(headers)).json()) as { recipeOfWeek: { recipeId: string | null } }
+    expect(body.recipeOfWeek).toEqual({ recipeId: null })
+  })
+
+  it('recipeOfWeek PUT é admin-only: Curador → 403', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'row-cur@cfg.test', role: 'curador' })
+    const res = await put({ recipeOfWeek: { recipeId: null } }, headers)
+    expect(res.status).toBe(403)
   })
 })

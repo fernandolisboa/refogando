@@ -83,7 +83,9 @@ export async function POST(req: Request): Promise<Response> {
 
   // Seam mockável: fetch + parse. Falhas são TRATADAS (nunca lança). O `reason` é a chave i18n p/ a UI
   // (#168); o status varia por reason (#272: robots_blocked → 403; rate_limited → 429; demais → 422).
-  const result = await getRecipeImporter().import(url)
+  // Passa a allowlist p/ o seam re-checar CADA hop de redirect (#448): um domínio curado que redirecione
+  // p/ host fora da curadoria é recusado (o guard acima só vê a URL inicial).
+  const result = await getRecipeImporter().import(url, cfg.allowlist)
   if (!result.ok) {
     const status = statusForReason(result.reason)
     // 429: aconselha quando tentar de novo (~1s, a janela do rate-limit). Demais reasons: sem header.

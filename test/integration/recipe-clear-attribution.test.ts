@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/[id]/clear-attribution/route'
 import { getDb } from '@/server/deps'
-import { recipe } from '@/db/schema'
+import { recipe, dsarAuditEvent } from '@/db/schema'
 import type { RecipeView } from '@/domain/recipe-read'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
@@ -37,6 +37,22 @@ async function loadSource(id: string) {
   return row
 }
 
+/** Eventos de auditoria DSAR (#395, GAP-5) gravados por um ator — cada teste usa um usuário fresco. */
+async function loadDsarEventsByActor(actorId: string) {
+  return getDb()
+    .select({
+      eventType: dsarAuditEvent.eventType,
+      channel: dsarAuditEvent.channel,
+      requestType: dsarAuditEvent.requestType,
+      payloadHash: dsarAuditEvent.payloadHash,
+      reason: dsarAuditEvent.reason,
+      verificationMethod: dsarAuditEvent.verificationMethod,
+      details: dsarAuditEvent.details,
+    })
+    .from(dsarAuditEvent)
+    .where(eq(dsarAuditEvent.actorId, actorId))
+}
+
 describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
   it('dono de web_imported com nome humano → 200; zera sourceName (url + origin preservados); view.source sem name', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'clear-ok@ex.com' })
@@ -52,6 +68,28 @@ describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
     expect(row.sourceName).toBeNull()
     expect(row.sourceUrl).toBe(SRC) // URL PRESERVADA
     expect(row.origin).toBe('web_imported') // NUNCA toca origin
+  })
+
+  it('remoção EFETIVA grava exatamente 1 DSAR_FULFILLED com hash — e NUNCA o nome em claro (#395)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'clear-audit@ex.com' })
+    const NAME = 'Cozinha da Vovó'
+    const id = await seedImported({ ownerId: userId, sourceName: NAME, sourceUrl: SRC })
+
+    expect((await clearPost(id, headers)).status).toBe(200)
+
+    const events = await loadDsarEventsByActor(userId)
+    expect(events).toHaveLength(1) // exatamente 1 evento pela remoção efetiva
+    const [ev] = events
+    expect(ev.eventType).toBe('DSAR_FULFILLED')
+    expect(ev.channel).toBe('self_service')
+    expect(ev.requestType).toBe('name_removal')
+    expect(ev.reason).toBeNull()
+    expect(ev.verificationMethod).toBeNull()
+    expect(ev.payloadHash).toMatch(/^[0-9a-f]{64}$/) // SHA-256 hex
+    expect(ev.details).toEqual({ recipeIds: [id] }) // só ids internos (não-sensíveis)
+
+    // MINIMIZAÇÃO: o nome removido não aparece em NENHUM campo do registro (nem no hash literal).
+    expect(JSON.stringify(ev)).not.toContain(NAME)
   })
 
   it('não-dono → 404 leak-safe; sourceName INALTERADO', async () => {
@@ -100,6 +138,9 @@ describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
     const afterSecond = await loadSource(id)
     expect(afterSecond.sourceName).toBeNull()
     expect(afterSecond.updatedAt).toEqual(afterFirst.updatedAt) // no-op NÃO bumpa updatedAt
+
+    // #395: só a 1ª remoção (efetiva) audita; o no-op idempotente NÃO gera evento espúrio.
+    expect(await loadDsarEventsByActor(userId)).toHaveLength(1)
   })
 
   it('importada cujo sourceName JÁ é o host (fallback www) → 200 no-op, sourceName e updatedAt INALTERADOS', async () => {
@@ -111,6 +152,8 @@ describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
     expect(res.status).toBe(200) // dono ⇒ ok, mas nada humano a remover (nome == host)
     const row = await loadSource(id)
     expect(row.sourceName).toBe('www.exemplo.com') // INALTERADO (no-op)
+
+    expect(await loadDsarEventsByActor(userId)).toHaveLength(0) // #395: no-op não audita
   })
 
   it('dono de receita NÃO importada (ai_structured) → 200 no-op; origin intacto', async () => {
@@ -121,5 +164,7 @@ describe('POST /api/recipes/[id]/clear-attribution (#272 LGPD)', () => {
     const res = await clearPost(id, headers)
     expect(res.status).toBe(200) // dono ⇒ ok, mas nada a limpar (não é web_imported)
     expect((await loadSource(id)).origin).toBe('ai_structured')
+
+    expect(await loadDsarEventsByActor(userId)).toHaveLength(0) // #395: não-importada não audita
   })
 })

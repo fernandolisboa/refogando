@@ -18,6 +18,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Image as ImageIcon } from 'lucide-react'
@@ -31,6 +32,8 @@ export function MyRecipesList() {
   const { locale, messages } = useLocale()
   const m = messages.minhasCriacoes
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/me/recipes'
   // Visitante só busca depois que a sessão resolveu E está logado (sem disparar um 401 inútil).
   const authed = !session.isPending && !session.error && !!session.data
 
@@ -107,7 +110,7 @@ export function MyRecipesList() {
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )
@@ -141,6 +144,7 @@ export function MyRecipesList() {
                         src={item.imageUrl}
                         alt={item.name}
                         referrerPolicy="no-referrer"
+                        loading="lazy" // #462: feed infinito — thumb abaixo da dobra baixa só ao aproximar
                         className="aspect-video w-full rounded-lg border border-border object-cover"
                       />
                       {item.imageAiGenerated && (

@@ -6,21 +6,28 @@
  * é um `DropdownMenu modal={false}` (espelha o AuthSlot — zero primitiva nova): abrir dispara
  * `markAllRead()` (limpa o badge + reconcilia o contador com o server). Cada item compõe avatar do ator
  * + o texto LOCALIZADO via `renderNotification` (dado estruturado → frase no locale do leitor).
+ *
+ * #460: itens com alvo (`notificationHref`) viram `DropdownMenuItem asChild <Link>` — MENUITEM de
+ * verdade (foco/setas/Enter do Radix + fecha-no-select automático, igual ao AuthSlot); NÃO um `<a>` nu
+ * (que o Radix não registra ⇒ inalcançável por teclado). Itens sem alvo (informativos/ator degradado)
+ * ficam texto puro.
  */
+import Link from 'next/link'
 import { BellIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar } from '@/components/profile/avatar'
-import { renderNotification } from '@/domain/notification'
+import { renderNotification, notificationHref } from '@/domain/notification'
 import { useNotifications } from '@/components/use-notifications'
 
 export function NotificationBell() {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
   const { notifications, unreadCount, markAllRead } = useNotifications()
@@ -31,6 +38,14 @@ export function NotificationBell() {
 
   const m = messages.notifications
   const badge = unreadCount > 99 ? '99+' : String(unreadCount)
+  // #461 (a11y): o rótulo do sino ANUNCIA a contagem de não-lidas (o badge é `aria-hidden` — visual).
+  // 0 → só "Notificações"; 1 → singular; >1 → plural com `{n}` (número real, não o "99+" visual).
+  const bellLabel =
+    unreadCount === 0
+      ? m.ariaLabel
+      : unreadCount === 1
+        ? m.ariaLabelUmaNaoLida
+        : m.ariaLabelNaoLidas.replace('{n}', String(unreadCount))
 
   return (
     <DropdownMenu
@@ -40,12 +55,15 @@ export function NotificationBell() {
       }}
     >
       <DropdownMenuTrigger
-        aria-label={m.ariaLabel}
+        aria-label={bellLabel}
         className="relative inline-flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-brand/10 hover:text-fg"
       >
         <BellIcon aria-hidden="true" className="size-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[0.625rem] leading-4 font-semibold text-white">
+          <span
+            aria-hidden="true"
+            className="absolute -top-0.5 -right-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-brand-strong px-1 text-[0.625rem] leading-4 font-semibold text-white"
+          >
             {badge}
           </span>
         )}
@@ -57,24 +75,33 @@ export function NotificationBell() {
         {notifications.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted">{m.vazio}</p>
         ) : (
-          <ul>
-            {notifications.map((n) => (
-              <li
+          notifications.map((n) => {
+            const href = notificationHref(n.type, n.refs, locale)
+            const inner = (
+              <>
+                <Avatar src={n.actorImage} name={n.refs.actorName ?? ''} alt="" size="sm" />
+                <span className="text-sm text-fg">{renderNotification(m, n.type, n.refs)}</span>
+              </>
+            )
+            const rowClass = 'flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0'
+            // #460: com alvo → MENUITEM navegável (asChild <Link>): o Radix registra p/ setas/Enter e
+            // FECHA a caixa no select (mesmo padrão do AuthSlot). O detalhe já vem `/{locale}/recipes/…`
+            // de `notificationHref`; o perfil é `/u/<handle>` (o proxy prefixa o locale). Sem alvo
+            // (informativo/ator degradado) → linha estática, texto puro (não é ação, não é foco).
+            return href ? (
+              <DropdownMenuItem
                 key={n.id}
-                className="flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0"
+                asChild
+                className={`${rowClass} rounded-none focus:bg-brand/[0.06] data-[highlighted]:bg-brand/[0.06]`}
               >
-                <Avatar
-                  src={n.actorImage}
-                  name={n.refs.actorName ?? ''}
-                  alt=""
-                  size="sm"
-                />
-                <span className="text-sm text-fg">
-                  {renderNotification(m, n.type, n.refs)}
-                </span>
-              </li>
-            ))}
-          </ul>
+                <Link href={href}>{inner}</Link>
+              </DropdownMenuItem>
+            ) : (
+              <div key={n.id} className={rowClass}>
+                {inner}
+              </div>
+            )
+          })
         )}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -42,6 +42,8 @@ vi.mock('@/lib/auth-client', () => ({
 let searchParams: URLSearchParams
 vi.mock('next/navigation', () => ({
   useSearchParams: () => searchParams,
+  // #458: usePathname alimenta o `?returnTo=` dos convites de entrar.
+  usePathname: () => '/create',
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
@@ -234,7 +236,11 @@ describe('Tela CRIAR unificada (#104)', () => {
     await user.click(screen.getByRole('radio', { name: C.modoConversa }))
 
     expect(screen.getByText(V.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo.
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Fcreate',
+    )
     expect(screen.queryByLabelText(V.inputLabel)).toBeNull()
   })
 

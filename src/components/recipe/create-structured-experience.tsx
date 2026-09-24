@@ -35,19 +35,25 @@
  */
 import { useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { RESTRICOES, UNIDADES, PORCOES, DIFICULDADE } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES } from '@/domain/vocabulary'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
 import { useRecipeGeneration, mapErroMensagem } from '@/hooks/use-recipe-generation'
+import { useRecipeVariantEnabled } from './recipe-variant-provider'
 import { FacetFieldset, type FacetOption } from './facet-fieldset'
 import { GenerationResultRegion } from './generation-result-region'
+import { VariantChoiceRegion } from './variant-choice-region'
 import { SortToggle } from './sort-toggle'
+// Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
+import { isFreePlanUser } from '@/domain/plan'
+import { QuotaUpsellCard } from './quota-upsell-card'
 
 /** Modo de entrada da tela: por campos (#58) ou texto livre (#88). */
 type Mode = 'structured' | 'free_text'
@@ -122,7 +128,15 @@ export function CreateStructuredExperience({
   const { locale, messages } = useLocale()
   const m = messages.criar
   const cozinhaVocab = useCozinhaVocab() // #317: opções de cozinha do leitor data-driven
+  const variantEnabled = useRecipeVariantEnabled() // #423: a feature "gerar 2" está ligada?
   const session = useSession()
+  const pathname = usePathname()
+  const returnTo = pathname ?? '/create'
+  // Fase 2 de billing (flag-off): o guard abaixo já garante sessão presente quando este ramo
+  // renderiza — só o plano decide se o upsell de limite aparece.
+  const isFreePlanViewer =
+    session.data != null &&
+    isFreePlanUser((session.data.user as { plan?: string | null }).plan)
 
   // Modo de entrada (#88). Alternar NÃO limpa o ramo oposto (sem perda de trabalho): o
   // estruturado e o `freeText` coexistem; só "Criar outra receita" zera ambos (mantém o modo).
@@ -143,7 +157,6 @@ export function CreateStructuredExperience({
   const [outra, setOutra] = useState('')
   const [restricoes, setRestricoes] = useState<string[]>([])
   const [porcoes, setPorcoes] = useState('')
-  const [dificuldade, setDificuldade] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemDraft[]>([novoItem()])
 
@@ -164,13 +177,19 @@ export function CreateStructuredExperience({
     view,
     errorKey,
     loadFailed,
+    variants,
     headingRef,
     enviar,
     carregarReceita,
+    escolherVariante,
     voltarParaIdle: voltarParaIdleEngine,
     setStatus,
     setErrorKey,
   } = useRecipeGeneration({ locale, onLoadingChange })
+
+  // #423: opt-in "Gerar 2 versões" — só oferecido no modo structured E com a feature ligada (o servidor
+  // é a verdade; ignora `variar2` desligado). Local, resetado por "Criar outra receita".
+  const [variar2, setVariar2] = useState(false)
 
   // ── Helpers de estado dos itens ────────────────────────────────────────────
   function patchItem(index: number, patch: Partial<ItemDraft>) {
@@ -278,7 +297,6 @@ export function CreateStructuredExperience({
         cozinha: outraAtiva ? null : cozinha || null,
         restricoes,
         porcoes: porcoes === '' ? null : Number(porcoes),
-        dificuldade: dificuldade === '' ? null : Number(dificuldade),
         observacoes: observacoes.trim() === '' ? null : observacoes,
         itens: itensComTexto.map((it) => ({
           ingredientId: null,
@@ -290,11 +308,14 @@ export function CreateStructuredExperience({
         })),
       },
       ...(cozinhaOutra !== '' ? { cozinhaOutra } : {}),
+      // #423: opt-in "Gerar 2 versões". Só sobe quando a feature está ligada E o usuário marcou (o
+      // servidor revalida a config e ignora `variar2` desligado — o cliente nunca gera 2 por conta própria).
+      ...(variantEnabled && variar2 ? { variar2: true } : {}),
     }
   }
 
   // Briefing "vazio" = sem item válido E sem cozinha E sem restrição E sem observação.
-  // porções/dificuldade sozinhas NÃO contam (fiel a `isBriefingVazio`: são modificadores).
+  // porções sozinha NÃO conta (fiel a `isBriefingVazio`: é modificador).
   // "Outra" (#319) com texto conta como cozinha preenchida (não é briefing vazio).
   const briefingVazio =
     itensComTexto.length === 0 &&
@@ -309,7 +330,6 @@ export function CreateStructuredExperience({
     setOutra('')
     setRestricoes([])
     setPorcoes('')
-    setDificuldade('')
     setObservacoes('')
     setItens([novoItem()])
     setFreeText('')
@@ -317,6 +337,7 @@ export function CreateStructuredExperience({
     setEntradaInteligente('')
     setExtractError(false)
     setItemErrors({})
+    setVariar2(false) // #423: nova receita reseta o opt-in de variação.
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -371,7 +392,7 @@ export function CreateStructuredExperience({
         <h1 className="font-display text-3xl font-semibold tracking-tight text-fg">{m.titulo}</h1>
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href="/sign-in">{messages.nav.signIn}</Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
     )
@@ -383,6 +404,10 @@ export function CreateStructuredExperience({
   }))
 
   const isResult = status === 'result'
+  // #423: 'choice' = as 2 variações na tela; como o resultado, o FORMULÁRIO some (o usuário está
+  // escolhendo, não editando o pedido).
+  const isChoice = status === 'choice'
+  const showForm = !isResult && !isChoice
   // Texto livre ACIMA do teto (a folga do maxLength permite 2001–2200): sinaliza o erro de
   // forma proativa no contador + aria-invalid, antes do submit.
   const freeTextOver = freeText.trim().length > FREE_TEXT_MAX
@@ -403,7 +428,7 @@ export function CreateStructuredExperience({
         >
           {m.titulo}
         </Titulo>
-        {!isResult && (
+        {showForm && (
           <p className="max-w-[60ch] text-muted">
             {mode === 'free_text' ? m.descricaoPromptAberto : m.descricao}
           </p>
@@ -416,7 +441,7 @@ export function CreateStructuredExperience({
           modo durante a geração é benigno (não dispara fetch; o submit do ramo certo já está
           travado pelo fieldset). Some no resultado. #191: oculto no drawer (`hideModeToggle`) —
           lá o método já foi escolhido no método-picker. */}
-      {!isResult && !hideModeToggle && (
+      {showForm && !hideModeToggle && (
         <SortToggle<Mode>
           value={mode}
           onChange={trocarModo}
@@ -429,8 +454,8 @@ export function CreateStructuredExperience({
         />
       )}
 
-      {/* Formulário — visível em idle/loading/error; some no resultado. */}
-      {!isResult && (
+      {/* Formulário — visível em idle/loading/error; some no resultado E na escolha (#423). */}
+      {showForm && (
         <form onSubmit={onSubmit} aria-busy={status === 'loading'}>
           {/* `disabled` durante o loading trava TODOS os controles de uma vez (inputs, selects,
               botões de item, submit), honrando o aria-busy do form — evita editar enquanto a
@@ -634,7 +659,7 @@ export function CreateStructuredExperience({
             onToggle={toggleRestricao}
           />
 
-          {/* Porções + dificuldade */}
+          {/* Porções */}
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
             <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
               {m.porcoes}
@@ -644,16 +669,6 @@ export function CreateStructuredExperience({
                 max={PORCOES.max}
                 value={porcoes}
                 onChange={(e) => setPorcoes(e.target.value)}
-              />
-            </label>
-            <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
-              {m.dificuldade}
-              <Input
-                type="number"
-                min={DIFICULDADE.min}
-                max={DIFICULDADE.max}
-                value={dificuldade}
-                onChange={(e) => setDificuldade(e.target.value)}
               />
             </label>
           </div>
@@ -706,6 +721,23 @@ export function CreateStructuredExperience({
             </div>
           )}
 
+          {/* #423: opt-in "Gerar 2 versões". Só no modo structured (esta fatia) E com a feature ligada
+              (contexto `variantEnabled`, semeado do servidor). O servidor revalida `variar2`. */}
+          {mode === 'structured' && variantEnabled && (
+            <label className="flex items-start gap-2 text-sm font-medium text-fg">
+              <input
+                type="checkbox"
+                checked={variar2}
+                onChange={(e) => setVariar2(e.target.checked)}
+                className="mt-0.5 size-4 rounded border-border accent-brand-strong"
+              />
+              <span className="flex flex-col gap-0.5">
+                {m.variar2Label}
+                <span className="font-normal text-muted">{m.variar2Ajuda}</span>
+              </span>
+            </label>
+          )}
+
           {/* Erro de validação/técnico — neutro (NÃO âmbar), espelha auth-form. */}
           {status === 'error' && errorKey != null && (
             <p
@@ -715,6 +747,11 @@ export function CreateStructuredExperience({
               {mapErroMensagem(m, errorKey)}
             </p>
           )}
+
+          {/* Fase 2 de billing (flag-off): upsell ESTÁTICO junto da mensagem de limite, só pro `free`. */}
+          {status === 'error' &&
+            (errorKey === 'limite_geracao' || errorKey === 'limite_geracao_variacao') &&
+            isFreePlanViewer && <QuotaUpsellCard />}
 
           <div>
             <Button
@@ -738,6 +775,15 @@ export function CreateStructuredExperience({
           leitores de tela (padrão de search-experience). O conteúdo entra/sai DENTRO dela.
           `GenerationResultRegion` (#193) desenha o desfecho a partir do bag do motor. */}
       <div aria-live="polite" className="flex flex-col gap-6">
+        {/* #423: escolha das 2 variações (converge p/ GenerationResultRegion ao picar uma). */}
+        {isChoice && variants != null && (
+          <VariantChoiceRegion
+            variants={variants}
+            messages={messages}
+            locale={locale}
+            onEscolher={(v) => void escolherVariante(v)}
+          />
+        )}
         {isResult && result != null && (
           <GenerationResultRegion
             result={result}

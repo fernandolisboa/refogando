@@ -29,6 +29,8 @@ import type { Messages } from '@/i18n/messages'
 import { ProvenanceBadge } from './provenance-badge'
 import { RestrictionWarning } from './restriction-warning'
 import { StaleNoticeBanner } from './stale-notice-banner'
+import { RecipePortionScaler } from './recipe-portion-scaler'
+import { RecipeCookMode } from './recipe-cook-mode'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -58,6 +60,7 @@ export function RecipeDetailView({
   locale,
   cozinhaLabel = null,
   catalogDisclosure,
+  nameHeadingLevel = 'h1',
 }: {
   view: RecipeView
   m: Messages
@@ -87,7 +90,14 @@ export function RecipeDetailView({
    * são renderizados em caminhos SEPARADOS abaixo, independentes deste prop (ligado OU desligado).
    */
   catalogDisclosure?: string
+  /**
+   * #423: nível do heading do NOME da Receita. Default `h1` (invariante 1-h1 dos callers single). A
+   * REGIÃO DE ESCOLHA "gerar 2" mostra DUAS RecipeDetailView lado a lado ⇒ passa `h2` (o `<h1>` do
+   * documento é o título da região), evitando dois `<h1>`. Só troca a TAG; o estilo do nome é o mesmo.
+   */
+  nameHeadingLevel?: 'h1' | 'h2'
 }) {
+  const NameHeading = nameHeadingLevel
   // #169/ADR-0019: a IMPORTADA da web ganha um selo de proveniência PRÓPRIO ("Importada da web"),
   // distinto de Catálogo/Comunidade — não é conteúdo do pool, é cópia privada creditada à fonte. A
   // variante visual reusa `comunidade` (neutra) na primitiva (sem cor nova); só o RÓTULO muda.
@@ -151,9 +161,9 @@ export function RecipeDetailView({
       <header className="flex flex-col gap-3">
         <ProvenanceBadge variant={section} label={badgeLabel} />
         <div className="flex flex-col gap-1.5">
-          <h1 className="font-display text-4xl font-semibold tracking-tight text-fg">
+          <NameHeading className="font-display text-4xl font-semibold tracking-tight text-fg">
             {view.name}
-          </h1>
+          </NameHeading>
           {/* Selo "tradução automática" (#161): toque LEVE (text-xs muted), guiado SÓ pela
               proveniência (`autoTranslationSignal`). Reusa o rótulo i18n já existente
               (busca.traducaoAutomatica) — mesmo conceito do kicker da Busca/Feed, não duplicar. */}
@@ -200,22 +210,35 @@ export function RecipeDetailView({
         </section>
       )}
 
-      {/* Ingredientes — só quando há ≥ 1 linha não-vazia. */}
-      {ingredientLines.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>
-          <ul role="list" className="flex max-w-[68ch] flex-col gap-1.5 text-fg">
-            {ingredientLines.map((line) => (
-              <li key={line.ordem}>{line.text}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* Ingredientes — só quando há ≥ 1 linha não-vazia. #452: com `porcoes` conhecido, o
+          escalador (client) assume a lista (mesmo heading/`<ul role="list">`, só troca o
+          fator de escala); sem `porcoes` (faceta ausente) não há base pra escalar — mantém a
+          lista estática de sempre. #453: o estado de porções/fator mora no `PortionScaleProvider`
+          ancestral (montado em `DetailChrome` com `key={view.id}`, pra o `RecipeShareButton`
+          irmão ler o MESMO fator) — `RecipePortionScaler` não tem mais `useState` próprio nem
+          precisa de `key` aqui (o remonte-por-receita acontece no Provider ancestral). */}
+      {ingredientLines.length > 0 &&
+        (view.porcoes != null ? (
+          <RecipePortionScaler ingredients={view.ingredients} m={m} locale={locale} />
+        ) : (
+          <section className="flex flex-col gap-3">
+            <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>
+            <ul role="list" className="flex max-w-[68ch] flex-col gap-1.5 text-fg">
+              {ingredientLines.map((line) => (
+                <li key={line.ordem}>{line.text}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
 
-      {/* Modo de preparo — só quando há passos. */}
+      {/* Modo de preparo — só quando há passos. #455: "Modo cozinha" (visão passo-a-passo em
+          tela cheia + wakeLock + timers efêmeros do texto) ao lado do heading. */}
       {view.body.passos && view.body.passos.length > 0 && (
         <section className="flex flex-col gap-3">
-          <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
+            <RecipeCookMode passos={view.body.passos} m={m} />
+          </div>
           <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
             {view.body.passos.map((passo, i) => (
               <li key={i} className="text-pretty pl-1">

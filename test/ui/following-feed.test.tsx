@@ -24,6 +24,11 @@ vi.mock('next/link', () => ({
   ),
 }))
 
+// #458: `usePathname` alimenta o `?returnTo=` do link "Entrar" do guest.
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/following',
+}))
+
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
 let sessionState: SessionState
 vi.mock('@/lib/auth-client', () => ({
@@ -90,7 +95,11 @@ describe('FollowingFeed (#277)', () => {
     renderFollowing(guest())
 
     expect(screen.getByText(M.precisaEntrar)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute('href', '/sign-in')
+    // #458: propaga returnTo = pathname atual (/following).
+    expect(screen.getByRole('link', { name: ptBR.nav.signIn })).toHaveAttribute(
+      'href',
+      '/sign-in?returnTo=%2Ffollowing',
+    )
     expect((fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0)
   })
 
@@ -148,6 +157,31 @@ describe('FollowingFeed (#277)', () => {
     mockFetch(() => ({ ok: false }))
     renderFollowing(authed())
     await screen.findByText(ptBR.system.error)
+  })
+
+  it('#462 erro na página 1 → botão "Tentar de novo" refaz a busca e recupera', async () => {
+    // 1ª chamada falha; da 2ª em diante devolve o feed. O retry bumpa o reloadKey → re-dispara o effect.
+    let calls = 0
+    const fetchMock = mockFetch(() => {
+      calls += 1
+      return calls === 1
+        ? { ok: false }
+        : { body: { feed: [feedItem('r1', 'Receita recuperada')], nextCursor: null } }
+    })
+    const user = userEvent.setup()
+    renderFollowing(authed())
+
+    // Estado de erro com a afordância de retry (a Busca já tinha; o feed Seguindo não).
+    await screen.findByText(ptBR.system.error)
+    const retry = screen.getByRole('button', { name: ptBR.system.retry })
+
+    await user.click(retry)
+
+    // Recupera: o item aparece, o erro some.
+    expect(await screen.findByText('Receita recuperada')).toBeInTheDocument()
+    expect(screen.queryByText(ptBR.system.error)).not.toBeInTheDocument()
+    expect(calls).toBeGreaterThanOrEqual(2)
+    expect(fetchMock).toHaveBeenCalled()
   })
 
   it('troca de locale RESETA a lista e refaz a página 1 no novo idioma (anti stale-cursor)', async () => {

@@ -19,8 +19,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
 import type { GenerationOutput } from '@/domain/generation'
+import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
-import { buildRecipeGenSchema } from '@/domain/recipe-gen-schema'
+import type { PromptAxes } from '@/domain/briefing'
+import { buildRecipeGenSchema, buildRecipeGenListSchema } from '@/domain/recipe-gen-schema'
 import {
   IngredientExtractionSchema,
   EXTRACTION_MAX_TOKENS,
@@ -45,6 +47,12 @@ export type GenerationInput = {
   // cozinhas ativas. OPCIONAL (back-compat): ausente/vazio ⇒ `z.string()` (sem constraint). A
   // BORDA resolve o conjunto (loadActiveCozinhaSlugs); o FakeClaudeClient o ignora (devolve canned).
   cozinhaSlugs?: readonly string[]
+  // Eixos de composição do prompt (#420, ADR-0029): resolvidos na BORDA e já EMBUTIDOS no
+  // `systemPrompt` (via buildSystemPrompt). Trafegam aqui como PROVENIÊNCIA da geração (o que a
+  // produziu), espelhando `cozinhaSlugs` como campo OPCIONAL/back-compat. O RealClaudeClient NÃO os
+  // relê (o systemPrompt já os codifica); a BORDA carimba a versão separadamente via `promptStampFor`
+  // no persist. OPCIONAL: ausente ⇒ eixos neutros. O FakeClaudeClient os ignora (devolve canned).
+  axes?: PromptAxes
 }
 
 /**
@@ -65,6 +73,13 @@ export type ConversationStreamInput = {
 export interface ClaudeClient {
   echo(text: string): Promise<string>
   generateRecipe(input: GenerationInput): Promise<GenerationOutput>
+  // "Gerar 2, o usuário escolhe" (#423, ADR-0029 dec.6): UMA chamada structured cujo schema devolve uma
+  // LISTA de 2 variações (buildRecipeGenListSchema). Mapeia cada item de `variacoes` p/ um GenerationOutput
+  // (mesmo branch de stop_reason/parse_failed do single). CAMINHO NOVO paralelo — `generateRecipe` fica
+  // INTACTO. SEM temperature/seed (o Opus 4.8 rejeita — a variedade vem do PROMPT). Truncamento (max_tokens
+  // no meio da 2ª) OU cardinalidade ≠ 2 ⇒ trata como parse_failed do LOTE (`[{kind:'parse_failed'}]`),
+  // erro de geração — NÃO inventa/degrada. `axes` só é PROVENIÊNCIA (o systemPrompt já os codifica).
+  generateRecipeVariants(input: GenerationInput): Promise<GenerationOutput[]>
   // Streaming conversacional: rende deltas de texto. A conclusão do iterável é o sinal
   // terminal (SEM sentinela). #12 só consome o texto; thinking NÃO é rendido.
   streamConversation(input: ConversationStreamInput): AsyncIterable<string>
@@ -76,9 +91,25 @@ export interface ClaudeClient {
   extractIngredients(input: GenerationInput): Promise<ExtractionOutput>
 }
 
+// Mapeia o `message.usage` cru da Anthropic → `TextUsage` normalizado (#463). DEFENSIVO e NULL-HONESTO:
+// bloco de usage AUSENTE (o SDK mudou de forma) ⇒ `undefined` ⇒ custo/tokens NULL no ledger — NÃO finge
+// 0 (espelha `mapGeminiUsage` do lado da imagem, que devolve undefined sem telemetria). Presente-mas-com-
+// campo-faltando ⇒ default 0 nesse campo (telemetria presente, só aquele número ausente). NUNCA lança.
+function mapTextUsage(usage: { input_tokens?: number; output_tokens?: number } | null | undefined): TextUsage | undefined {
+  if (!usage) return undefined
+  return {
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+  }
+}
+
 // Teto de tokens da geração. Constrito o bastante para não estourar custo, largo o
 // bastante para uma Receita completa; estourar → stop_reason 'max_tokens'.
 const MAX_TOKENS = 4096
+
+// Teto de tokens do lote de 2 variações (#423): 2× o single (são 2 Receitas completas numa resposta).
+// Estreito o bastante p/ não desgovernar o custo; estourar no meio da 2ª → parse_failed do lote.
+const VARIANTS_MAX_TOKENS = MAX_TOKENS * 2
 
 // Modelo default em código quando `app_config.default_model` (linha singleton) está
 // ausente. FONTE ÚNICA: ambas as rotas de geração (/api/generations e
@@ -146,6 +177,9 @@ export class RealClaudeClient implements ClaudeClient {
         recipe: parsed.receita,
         advisory: parsed.advisory,
         modelKind: parsed.kind,
+        // #463: telemetria de custo da chamada (input/output tokens). A borda a passa ao persist, que
+        // deriva o `cost_usd` snapshot. Só o branch 'object' persiste linha de generation ⇒ só ele carrega.
+        usage: mapTextUsage(message.usage),
       }
     } catch {
       // Qualquer erro de rede/SDK/validação → parse_failed. Nunca vaza stack; nunca
@@ -154,7 +188,64 @@ export class RealClaudeClient implements ClaudeClient {
     }
   }
 
+  async generateRecipeVariants(input: GenerationInput): Promise<GenerationOutput[]> {
+    // Espelha `generateRecipe` (messages.parse + zodOutputFormat + reparo de UMA tentativa), mas no
+    // schema-LISTA (`buildRecipeGenListSchema`) e com o teto 2×. Caminho paralelo — não toca o single.
+    const client = new Anthropic()
+
+    try {
+      const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [])
+      const params = {
+        model: input.model,
+        max_tokens: VARIANTS_MAX_TOKENS,
+        system: input.systemPrompt,
+        messages: [{ role: 'user' as const, content: input.userPrompt }],
+        output_config: { format: zodOutputFormat(schema) },
+        // SEM temperature/top_p/seed: claude-opus-4-8 os rejeita (400). A variedade vem do PROMPT
+        // (o fragmento de eixo `variacaoDivergente` já embutido no systemPrompt).
+      }
+
+      let message = await client.messages.parse(params, { signal: input.signal })
+      if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
+      // Saída structured TRUNCADA lança dentro de messages.parse (→ catch, parse_failed do lote); este
+      // branch só trata o sinal max_tokens SEM truncamento do structured.
+      if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
+
+      if (message.parsed_output === null) {
+        message = await client.messages.parse(params, { signal: input.signal })
+        if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
+        if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
+        if (message.parsed_output === null) return [{ kind: 'parse_failed' }]
+      }
+
+      const variacoes = message.parsed_output.variacoes
+      // EXATO-2: o schema-array é PLANO (sem bound — evita `$defs`, ver recipe-gen-schema.ts); a
+      // cardinalidade é exigida AQUI. ≠2 ⇒ parse_failed do LOTE (erro de geração; NÃO degrada — ADR-0029).
+      if (variacoes.length !== 2) return [{ kind: 'parse_failed' }]
+
+      // #463: o `message.usage` cobre o LOTE INTEIRO (uma chamada structured produz as 2 receitas).
+      // Anexamos a telemetria SÓ à 1ª variação — anexar às 2 dobraria o custo na soma do ledger. A 2ª
+      // fica sem `usage` ⇒ custo NULL honesto (a linha existe, o custo do lote não é contado 2×).
+      const batchUsage = mapTextUsage(message.usage)
+      return variacoes.map((v, i) => ({
+        kind: 'object' as const,
+        recipe: v.receita,
+        advisory: v.advisory,
+        modelKind: v.kind,
+        variacao: v.variacao,
+        usage: i === 0 ? batchUsage : undefined,
+      }))
+    } catch {
+      // Truncamento no meio da 2ª receita OU qualquer erro de rede/SDK/validação → parse_failed do lote.
+      return [{ kind: 'parse_failed' }]
+    }
+  }
+
   async extractIngredients(input: GenerationInput): Promise<ExtractionOutput> {
+    // #463: a Extração NÃO gera linha em `generation` (só organiza uma lista de ingredientes, ADR-0009),
+    // então não há onde carimbar `cost_usd` — o ledger de texto cobre as gerações de Receita. O custo da
+    // Extração usa o modelo BARATO (Haiku) e fica fora do ledger de propósito (não distorce o custo da
+    // Geração). O `message.usage` aqui é descartado conscientemente (não por esquecimento).
     // Espelha generateRecipe (mesma disciplina ADR-0009: messages.parse + zodOutputFormat +
     // reparo de UMA tentativa), mas no IngredientExtractionSchema e com o teto de tokens da
     // Extração. Lazy: lê ANTHROPIC_API_KEY só na chamada — NUNCA em teste (o teste injeta o
@@ -188,6 +279,11 @@ export class RealClaudeClient implements ClaudeClient {
   }
 
   async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
+    // #463: o STREAM da conversa rende só TEXTO (sem canal de retorno de usage nesta interface). O custo
+    // desse turno de chat NÃO tem linha própria em `generation` — a linha da conversa nasce da DESTILAÇÃO
+    // (2ª chamada, `generateRecipe` verbatim em stream/route.ts), que JÁ carimba o `cost_usd` da destilação.
+    // Medir o texto do stream exigiria uma coluna/tabela nova (fora do escopo do ledger da geração). Gap
+    // conhecido e consciente (não esquecimento).
     // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste.
     const client = new Anthropic()
 
@@ -226,11 +322,15 @@ export class FakeClaudeClient implements ClaudeClient {
   // `cannedExtraction` (#112) é o QUARTO arg OPCIONAL — vem DEPOIS dos três para que TODOS os
   // call sites existentes (`new FakeClaudeClient(reply, canned, cannedTokens)`) compilem sem
   // mudança. `extractIngredients` o devolve, ou estoura se ausente.
+  // `cannedVariants` (#423) é o QUINTO arg OPCIONAL — vem DEPOIS dos quatro para que TODOS os call
+  // sites existentes compilem sem mudança. `generateRecipeVariants` o devolve (ignora axes/cozinhaSlugs,
+  // como os demais), ou estoura se ausente.
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
     private readonly cannedTokens?: string[],
     private readonly cannedExtraction?: ExtractionOutput,
+    private readonly cannedVariants?: GenerationOutput[],
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -242,6 +342,15 @@ export class FakeClaudeClient implements ClaudeClient {
       throw new Error('FakeClaudeClient: nenhum GenerationOutput enlatado (passe-o no construtor).')
     }
     return this.canned
+  }
+
+  async generateRecipeVariants(): Promise<GenerationOutput[]> {
+    if (!this.cannedVariants) {
+      throw new Error(
+        'FakeClaudeClient: nenhum lote de variações enlatado (passe-o como 5º arg do construtor).',
+      )
+    }
+    return this.cannedVariants
   }
 
   async extractIngredients(): Promise<ExtractionOutput> {

@@ -39,13 +39,19 @@ import Link from 'next/link'
 import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
+import { RecipeShoppingListButton } from '@/components/recipe/recipe-shopping-list-button'
+import { RecipeShareButton } from '@/components/recipe/recipe-share-button'
+import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import {
   RecipeReviewSection,
   type ReviewViewSerialized,
 } from '@/components/recipe/recipe-review-section'
 import { RecipeManagementArea } from '@/components/recipe/recipe-management-area'
+import { RecipeSimilarRail } from '@/components/recipe/recipe-similar-rail'
 import type { RecipeView } from '@/domain/recipe-read'
 import { resolveRecipeView } from '@/domain/recipe-read'
+import { projectResult, type SearchResult } from '@/domain/recipe-search-read'
+import { loadSimilarRecipes } from '@/server/recipe/similar'
 import { decideRecipeDetailRoute, recipeDetailPath } from '@/domain/recipe-detail-route'
 import { shouldShowCatalogDisclosure } from '@/domain/catalog-disclosure-config'
 import { localizeCozinhaVocab, resolveCozinhaLabel } from '@/domain/cozinha-label'
@@ -207,6 +213,10 @@ export default async function RecipeDetailPage({
       // ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
       const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
       const reviews = serializeReviews(reviewData)
+      // #454: trilho de semelhantes — vitrine pública não-personalizada, mesma leitura anônima
+      // cacheável (sem cookie, sem IA na hora). Carregado em paralelo seria ideal, mas depende do
+      // `view.origin`/id já resolvidos acima; roda depois, ainda sem tocar headers/cookies.
+      const similar = await loadSimilarForDetail(publicRows.recipe.id, locale)
       return (
         <DetailChrome
           view={view}
@@ -215,6 +225,7 @@ export default async function RecipeDetailPage({
           jsonLd={jsonLd}
           catalogDisclosure={catalogDisclosure}
           reviews={reviews}
+          similar={similar}
         />
       )
     }
@@ -266,6 +277,9 @@ export default async function RecipeDetailPage({
   // (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Sinal
   // INDEPENDENTE de pool (não passa por resolveRecipeView), reusado pelo gate de engajamento.
   const reviews = serializeReviews(await loadRecipeReviews(getDb(), { id: ownerUuid }))
+  // #454: mesmo trilho no caminho do dono — não-personalizado (sem viewerId), a mesma vitrine
+  // pública que qualquer um veria; a leitura extra não muda a natureza dinâmica deste branch.
+  const similar = await loadSimilarForDetail(ownerUuid, locale)
   return (
     <DetailChrome
       view={view}
@@ -273,6 +287,7 @@ export default async function RecipeDetailPage({
       reviewImage={sp.reviewImage === '1'}
       catalogDisclosure={catalogDisclosure}
       reviews={reviews}
+      similar={similar}
     />
   )
 }
@@ -305,6 +320,22 @@ async function resolveCatalogDisclosure(origin: string): Promise<string | undefi
 }
 
 /**
+ * #454: trilho "Receitas semelhantes" — carrega os vizinhos por cosseno (já gateados pelo pool em
+ * `loadSimilarRecipes`) e projeta pro shape de exibição (`projectResult`, o MESMO pipeline da
+ * Busca/feed). SEM `viewerId`: é uma vitrine PÚBLICA não-personalizada, idêntica nos dois caminhos
+ * do detalhe (não expõe "Sua receita" nem prioriza a própria — mesma leitura pra qualquer um).
+ * `projectResult` devolve `null` quando a linha não tem tradução no locale/original (defensivo,
+ * não deveria ocorrer aqui pois o loader só devolve receitas com embedding+display já resolvidos);
+ * o `filter` descarta esses casos de borda sem quebrar a página.
+ */
+async function loadSimilarForDetail(recipeId: string, locale: string): Promise<SearchResult[]> {
+  const hits = await loadSimilarRecipes(getDb(), { recipeId, locale })
+  return hits
+    .map((hit) => projectResult(hit, locale))
+    .filter((r): r is SearchResult => r !== null)
+}
+
+/**
  * Chrome compartilhada do detalhe — a MESMA tela só-leitura para o caminho público e o do dono. Os
  * controles de gestão (status/imagem) já são gateados por `view.canManage` (presente SÓ pro dono,
  * AUSENTE no caminho público): a vista pública nunca os renderiza. `RecipeEngagementControls`
@@ -319,6 +350,7 @@ async function DetailChrome({
   jsonLd,
   catalogDisclosure,
   reviews,
+  similar,
 }: {
   view: RecipeView
   locale: Locale
@@ -334,6 +366,8 @@ async function DetailChrome({
   catalogDisclosure?: string
   /** #363: agregado + lista de Avaliações (serializado). `null`/ausente ⇒ fora do pool ⇒ seção oculta. */
   reviews?: SerializedReviews
+  /** #454: vizinhos por cosseno JÁ gateados pelo pool + projetados. `[]` ⇒ o trilho se omite. */
+  similar: SearchResult[]
 }) {
   const messages = MESSAGES[locale]
   // #317 (ADR-0025): rótulo de cozinha resolvido no boundary pelo leitor data-driven, escopo
@@ -356,33 +390,56 @@ async function DetailChrome({
       {jsonLd != null && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       )}
-      {/* Topo: "Voltar" (muted, href estável "/" — a home É a busca) à ESQUERDA e o bookmark de
-          SALVAR à DIREITA, acima da foto. `justify-between` dá ao link a largura do conteúdo (antes
-          ele esticava a coluna toda por ser flex-item). O bookmark (#62/#362) monta quando a Receita
-          está no POOL (`reviews != null` — o MESMO sinal de pool INDEPENDENTE que a seção de
-          Avaliações usa) OU quando o DONO gerencia a própria (`canManage`) — inclusive a PRIVADA, que
-          fica FORA do pool (`reviews == null`) mas PRECISA do Salvar (AC6). No caminho público
-          `viewerSaved` chega ausente (anônimo, resolvido no cliente). `key={view.id}`: REMONTA por
-          receita (numa nav detalhe→detalhe in-place o estado-do-viewer não vaza da anterior). */}
-      <div className="flex items-start justify-between gap-4">
-        <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
-          ← {messages.detalhe.voltar}
-        </Link>
-        {(reviews != null || view.canManage) && (
-          <RecipeEngagementControls
-            key={view.id}
-            recipeId={view.id}
-            initialViewerSaved={view.viewerSaved}
-          />
-        )}
-      </div>
-      <RecipeDetailView
-        view={view}
-        m={messages}
-        locale={locale}
-        cozinhaLabel={cozinhaLabel}
-        catalogDisclosure={catalogDisclosure}
-      />
+      {/* #453: `PortionScaleProvider` ANCESTRAL comum ao botão compartilhar E ao escalador de
+          porções (dentro de `RecipeDetailView`) — os dois precisam do MESMO fator corrente pro
+          texto compartilhado refletir a porção AJUSTADA na tela, não a original (achado de
+          code-review: sem isto, "escalei pra 8 porções, compartilho com o grupo" mandaria as
+          quantidades de 4 porções). `key={view.id}` REMONTA por receita (mesmo motivo do #452:
+          numa nav detalhe→detalhe in-place o fator não deve vazar da receita anterior). Envolve
+          `RecipeDetailView`, que segue Server Component — só o Provider em si é client; a árvore
+          de leitura passada como `children` continua renderizando no servidor (padrão idiomático
+          do Next: Server Component como filho de Client Component). */}
+      <PortionScaleProvider key={view.id} originalPorcoes={view.porcoes ?? 1}>
+        {/* Topo: "Voltar" (muted, href estável "/" — a home É a busca) à ESQUERDA e, à DIREITA, o
+            botão compartilhar (#453) + o bookmark de SALVAR, acima da foto. `justify-between` dá
+            ao link a largura do conteúdo (antes ele esticava a coluna toda por ser flex-item).
+            Compartilhar (#453) monta SEMPRE — funciona pro Visitante anônimo também
+            (CONTEXT.md:168), NUNCA gateado por pool/sessão (ao contrário do bookmark). O bookmark
+            (#62/#362) monta quando a Receita está no POOL (`reviews != null` — o MESMO sinal de
+            pool INDEPENDENTE que a seção de Avaliações usa) OU quando o DONO gerencia a própria
+            (`canManage`) — inclusive a PRIVADA, que fica FORA do pool (`reviews == null`) mas
+            PRECISA do Salvar (AC6). No caminho público `viewerSaved` chega ausente (anônimo,
+            resolvido no cliente). */}
+        <div className="flex items-start justify-between gap-4">
+          <Link href="/" className="text-sm text-muted transition-colors hover:text-fg">
+            ← {messages.detalhe.voltar}
+          </Link>
+          <div className="flex items-start gap-1">
+            <RecipeShareButton view={view} />
+            {(reviews != null || view.canManage) && (
+              <>
+                <RecipeShoppingListButton
+                  key={`${view.id}-lista`}
+                  recipeId={view.id}
+                  porcoesReceita={view.porcoes}
+                />
+                <RecipeEngagementControls
+                  key={view.id}
+                  recipeId={view.id}
+                  initialViewerSaved={view.viewerSaved}
+                />
+              </>
+            )}
+          </div>
+        </div>
+        <RecipeDetailView
+          view={view}
+          m={messages}
+          locale={locale}
+          cozinhaLabel={cozinhaLabel}
+          catalogDisclosure={catalogDisclosure}
+        />
+      </PortionScaleProvider>
       {/* Avaliações (#363, ADR-0027): gate no sinal INDEPENDENTE `reviews != null` (loadRecipeReviews
           devolveu o pool). `key={view.id}`: remonta por receita (estado do widget não vaza numa nav
           detalhe→detalhe in-place). */}
@@ -409,6 +466,10 @@ async function DetailChrome({
         locale={locale}
         reviewImage={reviewImage}
       />
+      {/* #454: trilho "Receitas semelhantes" ao FIM do detalhe (server-rendered, cacheável — não
+          toca cookie/sessão nem chama IA). Omite-se sozinho (retorna `null`) quando `similar` vem
+          vazio (sem embedding próprio / nenhum vizinho elegível). */}
+      <RecipeSimilarRail results={similar} locale={locale} m={messages} />
     </Container>
   )
 }

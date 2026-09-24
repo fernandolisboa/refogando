@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isNotificationType,
   renderNotification,
+  notificationHref,
   renderStars,
   NOTIFICATION_TYPES,
 } from '@/domain/notification'
@@ -126,5 +127,43 @@ describe('renderNotification (#371) — texto localizado do dado estruturado', (
     expect(isNotificationType('new_follower')).toBe(true)
     expect(isNotificationType('curtida')).toBe(false)
     expect(isNotificationType('')).toBe(false)
+  })
+})
+
+/**
+ * #460: `notificationHref` — alvo clicável PURO por tipo + refs, no locale de quem lê. Fecha o
+ * beco-sem-saída (abrir o painel marca tudo como lido). Testa os dois alvos (perfil / detalhe da
+ * receita), a degradação (ator/receita ausente → sem link) e os tipos sem alvo natural.
+ */
+describe('notificationHref (#460) — alvo clicável por tipo', () => {
+  const RID = '11111111-1111-4111-8111-111111111111'
+
+  it('new_follower → perfil público do ator /u/<handle> (sem prefixo de locale)', () => {
+    expect(notificationHref('new_follower', { actorHandle: 'ana' }, 'pt-BR')).toBe('/u/ana')
+    // O locale não prefixa o perfil (o proxy prefixa) — independe do locale do leitor.
+    expect(notificationHref('new_follower', { actorHandle: 'ana' }, 'en-US')).toBe('/u/ana')
+  })
+
+  it('new_follower com ator degradado (handle null/vazio) → SEM link (texto puro)', () => {
+    expect(notificationHref('new_follower', { actorHandle: null }, 'pt-BR')).toBeNull()
+    expect(notificationHref('new_follower', { actorHandle: '  ' }, 'pt-BR')).toBeNull()
+    expect(notificationHref('new_follower', {}, 'pt-BR')).toBeNull()
+  })
+
+  it('eventos de receita → detalhe canônico /{locale}/recipes/<uuid> (308a pro slug)', () => {
+    for (const t of ['review_on_recipe', 'review_moderated', 'recipe_moderated', 'image_moderated'] as const) {
+      expect(notificationHref(t, { recipeId: RID }, 'pt-BR')).toBe(`/pt-BR/recipes/${RID}`)
+      expect(notificationHref(t, { recipeId: RID }, 'en-US')).toBe(`/en-US/recipes/${RID}`)
+    }
+  })
+
+  it('evento de receita sem recipeId (legado) → SEM link', () => {
+    expect(notificationHref('review_on_recipe', { recipeId: null }, 'pt-BR')).toBeNull()
+    expect(notificationHref('review_on_recipe', {}, 'pt-BR')).toBeNull()
+  })
+
+  it('tipos informativos (sugestão de cozinha / conta restringida) → SEM link', () => {
+    expect(notificationHref('cuisine_suggestion_resolved', { recipeId: RID }, 'pt-BR')).toBeNull()
+    expect(notificationHref('account_restricted', {}, 'pt-BR')).toBeNull()
   })
 })

@@ -24,11 +24,22 @@ import { slugify } from '@/domain/handle'
 /** Status que a superfície do Admin enxerga/governa (ciclo proativo). */
 const ADMIN_VISIBLE_STATUSES = ['active', 'deprecated'] as const
 
+/**
+ * Teto defensivo da nota de voz curada (#422/#436). A `voiceNote` é injetada VERBATIM no system
+ * prompt de TODA geração daquela cozinha — sem teto, uma nota enorme infla o custo de token para
+ * todos. Só o Admin/Curador edita, então o risco é baixo; ainda assim gateamos na borda de escrita
+ * (400 no excesso), espelhando `COZINHA_OUTRA_MAX`/`OBSERVACOES_MAX`. Generoso p/ uma nota de voz.
+ */
+export const VOICE_NOTE_MAX = 800
+
 /** Linha de cozinha como o Admin a vê (inclui `status`, ao contrário da view de leitura). */
 export type AdminCozinhaRow = {
   slug: string
   labelPtBr: string | null
   labelEnUs: string | null
+  // #422 (ADR-0029 dec.3): nota de voz curada, editável AQUI (Admin proativo) sem deploy. LOCALE-
+  // NEUTRA e OPCIONAL (null quando não curada). NÃO entra na fila do Curador — é edição proativa.
+  voiceNote: string | null
   status: 'active' | 'deprecated'
   sort: number
 }
@@ -60,6 +71,7 @@ export async function listCozinhasForAdmin(db: Database): Promise<AdminCozinhaRo
       slug: vocabularyTerm.slug,
       labelPtBr: vocabularyTerm.labelPtBr,
       labelEnUs: vocabularyTerm.labelEnUs,
+      voiceNote: vocabularyTerm.voiceNote,
       status: vocabularyTerm.status,
       sort: vocabularyTerm.sort,
     })
@@ -118,17 +130,24 @@ export async function addCozinha(
 }
 
 /**
- * Edita os RÓTULOS de uma cozinha (nunca o slug — identidade congelada, ADR-0025 Decisão 2).
- * Só atualiza os rótulos PRESENTES (cada um, se presente, trimado não-vazio). WHERE restringe
- * o status atual a {active,deprecated}: uma linha 'suggested'/'merged'/'rejected' não casa →
- * `nao_encontrado` (o Admin NÃO mexe nos rótulos de uma sugestão #319 pendente).
+ * Edita os RÓTULOS e/ou a NOTA DE VOZ (#422) de uma cozinha (nunca o slug — identidade congelada,
+ * ADR-0025 Decisão 2). Só atualiza os campos PRESENTES. Rótulos, se presentes, trimados NÃO-vazios
+ * (rótulo é obrigatório). A `voiceNote` (#422) é OPCIONAL e distinta: aceita `''`/só-espaços → `null`
+ * (limpar a nota é uma edição válida — a nota NÃO é obrigatória; um patch SÓ-de-nota é permitido).
+ * WHERE restringe o status atual a {active,deprecated}: uma linha 'suggested'/'merged'/'rejected'
+ * não casa → `nao_encontrado` (o Admin NÃO mexe numa sugestão #319 pendente por aqui).
  */
 export async function editCozinhaLabels(
   db: Database,
   slug: string,
-  labels: { labelPtBr?: string; labelEnUs?: string },
+  labels: { labelPtBr?: string; labelEnUs?: string; voiceNote?: string | null },
 ): Promise<EditCozinhaResult> {
-  const set: { labelPtBr?: string; labelEnUs?: string; updatedAt: Date } = { updatedAt: new Date() }
+  const set: {
+    labelPtBr?: string
+    labelEnUs?: string
+    voiceNote?: string | null
+    updatedAt: Date
+  } = { updatedAt: new Date() }
   if (labels.labelPtBr !== undefined) {
     const v = typeof labels.labelPtBr === 'string' ? labels.labelPtBr.trim() : ''
     if (v.length === 0) return { ok: false, error: 'rotulos_invalidos' }
@@ -138,6 +157,11 @@ export async function editCozinhaLabels(
     const v = typeof labels.labelEnUs === 'string' ? labels.labelEnUs.trim() : ''
     if (v.length === 0) return { ok: false, error: 'rotulos_invalidos' }
     set.labelEnUs = v
+  }
+  // #422: nota de voz OPCIONAL — trima; vazio/só-espaços vira NULL (limpar). Nunca é "inválida".
+  if (labels.voiceNote !== undefined) {
+    const v = typeof labels.voiceNote === 'string' ? labels.voiceNote.trim() : ''
+    set.voiceNote = v.length === 0 ? null : v
   }
 
   const updated = await db

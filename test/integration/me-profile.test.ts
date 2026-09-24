@@ -83,6 +83,7 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
       bio: null,
       handle: expect.stringMatching(/^[a-z0-9-]+$/),
       links: [], // #127: conta nova nasce sem links
+      nivelPadrao: null, // #421: conta nova nasce sem Nível de habilidade padrão (eixo neutro)
     })
   })
 
@@ -99,6 +100,7 @@ describe('/api/me — round-trip do perfil do logado (#124)', () => {
       bio: 'Cozinheira amadora.',
       handle: expect.stringMatching(/^[a-z0-9-]+$/),
       links: [], // #127: PATCH sem `links` no corpo não os altera — segue o default []
+      nivelPadrao: null, // #421: PATCH sem `nivelPadrao` no corpo não o altera — segue o default null
     })
 
     // Persistiu no banco.

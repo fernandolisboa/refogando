@@ -11,8 +11,15 @@
 import { SectionGate } from '../gate'
 import { ConfigSection } from '@/components/admin/config-section'
 import { AiConfigSection } from '@/components/admin/ai-config-section'
+import { AiCostSection } from '@/components/admin/ai-cost-section'
+import { loggedInPageMetadata } from '@/server/http/page-metadata'
 
 export const runtime = 'nodejs'
+
+// #462: título fino ("IA") + noindex — casa o rótulo da aba do Console (admin-only).
+export function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  return loggedInPageMetadata(params, (m) => m.admin.navIa)
+}
 
 export default async function AdminConfigPage() {
   return (
@@ -21,6 +28,8 @@ export default async function AdminConfigPage() {
         <ConfigSection />
         {/* #134/#167: geração de imagem — modelo + tetos diários por papel (admin-only). */}
         <AiConfigSection />
+        {/* #465: custo de IA — agrega os ledgers de texto (#463) + imagem (#224), read-only. */}
+        <AiCostSection />
       </div>
     </SectionGate>
   )

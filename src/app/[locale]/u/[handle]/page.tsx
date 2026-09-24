@@ -10,6 +10,7 @@
  *
  * `fetch` sem cache: leitura viva (o dono pode ter publicado/despublicado/trocado o handle).
  */
+import type { Metadata } from 'next'
 import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
@@ -20,6 +21,17 @@ import { MESSAGES } from '@/i18n/messages'
 import { getBaseUrl } from '@/server/http/base-url'
 import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale } from '@/server/http/page-locale'
+
+// #462: título fino do perfil público = `@handle` (único, zero-custo — vem do param da URL, sem um
+// 2º fetch do perfil). Página PÚBLICA/indexável — sem noindex.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string; handle: string }>
+}): Promise<Metadata> {
+  const { handle } = await params
+  return { title: `@${handle}` }
+}
 
 export default async function PublicProfilePage({
   params,

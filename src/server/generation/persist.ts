@@ -12,9 +12,11 @@ import {
 import { SCHEMA_VERSION_RECEITA, type CreationMode, type LineageKind } from '@/domain/recipe'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import type { ClassifyResult } from '@/domain/generation'
-import type { Strength } from '@/domain/briefing'
+import { computeTextCost, type TextUsage } from '@/domain/text-cost'
+import type { Strength, PromptStamp } from '@/domain/briefing'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { conciliarTempoPreparo } from '@/domain/tempo'
+import { assertRecipeGenSlotInTx } from '@/server/quota/atomic'
 
 /**
  * Persistência transacional da geração (issue #8, §6).
@@ -43,6 +45,9 @@ import { conciliarTempoPreparo } from '@/domain/tempo'
 
 export type PersistOrigin = 'ai_chat' | 'ai_structured' | 'ai_free_text'
 
+/** Tipo da transação do Drizzle (mesmas APIs de query que `Database`) — reusado no `tx` opcional. */
+type PersistTx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]
+
 // O Briefing (issue #11) é a ENTRADA estruturada gravada como proveniência. Presente
 // SSE `mode === 'structured'`. `itens[].quantidade` é string|null (numeric trafega como
 // string), NUNCA number; `ordem` é o índice (atribuído pelo handler/domínio).
@@ -50,7 +55,6 @@ export type PersistBriefing = {
   cozinha: Cozinha | null
   restricoes: Restricao[]
   porcoes: number | null
-  dificuldade: number | null
   observacoes: string | null
   itens: {
     ingredientId: string | null
@@ -100,6 +104,33 @@ export type PersistGenerationInput = {
   // geração de RAIZ (#8/#11/#12/#88 e a conversa) ⇒ a coluna toma o DB default (chave própria fresca,
   // galeria nova). NUNCA passar `null` explícito (violaria o NOT NULL): ausente ⇒ undefined ⇒ default.
   lineageId?: string
+  // #420 (ADR-0029): carimbo de versão do PROMPT/EIXOS que produziram esta geração (`{ version, axes }`,
+  // montado por `promptStampFor` na borda). Gravado em `generation.prompt_stamp` (jsonb) tanto no caminho
+  // impossible quanto no de sucesso. AUSENTE (linhas legadas / callers que ainda não resolvem eixos) ⇒
+  // undefined ⇒ NULL. Correlaciona depois qual composição produziu Receitas que as pessoas guardam.
+  promptStamp?: PromptStamp
+  // #423 (ADR-0029 dec.6) — "gerar 2, o usuário escolhe". As DUAS gerações de um lote compartilham o
+  // MESMO `variantGroupId` (o caller o gera UMA vez e chama persistGeneration 2×), cada uma com o seu
+  // `variantLabel` (o pólo). Gravados em `generation.variant_group_id`/`variant_label`. AUSENTES na
+  // geração single (legado) ⇒ undefined ⇒ NULL. `variant_chosen` NASCE NULL (a rota de escolha o marca).
+  variantGroupId?: string
+  variantLabel?: string
+  // #446 (TOCTOU do teto): gate ATÔMICO de cota de geração de RECEITA. Quando presente, a PRIMEIRA
+  // operação da transação de persistência toma o advisory lock do usuário, RECONTA as `generation` na
+  // janela 24h e DECIDE — estourou ⇒ LANÇA QuotaExceededError e a tx REVERTE (nada persiste), que o
+  // caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞ / callers legados sem teto). O pré-check da rota
+  // continua como otimização barata (early-reject sem tocar o Claude); ESTE é a enforcement real.
+  quota?: { userId: string; cap: number }
+  // #446 (variar2): transação FORNECIDA pelo caller. Presente ⇒ persiste NESTA tx (não abre a própria) —
+  // usado pelo "gerar 2" p/ gravar as DUAS variações sob UM único advisory lock (o caller toma o lock +
+  // reconta os 2 slots ANTES, então cada persist vai com `quota` AUSENTE aqui). Ausente ⇒ abre a própria
+  // tx (todos os demais callers) e roda o gate `quota` internamente.
+  tx?: PersistTx
+  // #463: telemetria de custo (input/output tokens) da chamada que produziu esta geração, lida pela borda
+  // de `out.usage` (o seam RealClaudeClient a anexa). Deriva o `cost_usd` SNAPSHOT via `computeTextCost`
+  // e grava input_tokens/output_tokens/cost_usd na linha `generation`. AUSENTE (FakeClaudeClient / callers
+  // legados / telemetria indisponível) ⇒ undefined ⇒ tudo NULL (best-effort honesto, não finge custo 0).
+  usage?: TextUsage
 }
 
 export type PersistGenerationResult = {
@@ -131,7 +162,8 @@ async function insertBriefing(
       cozinha: b.cozinha,
       restricoes: b.restricoes,
       porcoes: b.porcoes,
-      dificuldade: b.dificuldade,
+      // #421 (ADR-0029 dec.4): a Dificuldade DEIXOU de ser entrada — a coluna `briefing.dificuldade`
+      // fica DORMENTE (default NULL). Não é dropada (evita migração destrutiva); só não é mais escrita.
       observacoes: b.observacoes,
     })
     .returning({ id: briefing.id })
@@ -180,7 +212,17 @@ async function assertOwnedSession(
 export async function persistGeneration(
   input: PersistGenerationInput,
 ): Promise<PersistGenerationResult | null> {
-  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId } = input
+  const { result, mode, origin, ownerId, model, briefing: pedido, freeText, existingSessionId, lineage, imageId, lineageId, promptStamp, variantGroupId, variantLabel, quota, tx: providedTx, usage } = input
+
+  // #463: custo SNAPSHOT da tabela de preço EM CÓDIGO (puro). usage ausente OU modelo fora da tabela ⇒
+  // null (honesto — não finge 0). numeric → string|null no insert (precisão exata, espelha image_generation).
+  const costUsd = computeTextCost(usage, model)
+  // Colunas de custo compartilhadas pelos DOIS caminhos (impossible e sucesso) — nascem NULL sem telemetria.
+  const costCols = {
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    costUsd: costUsd != null ? costUsd.toString() : null,
+  }
 
   // Invariante da linhagem (defense-in-depth): persistGeneration só materializa linhagem
   // `regenerated` (#20) — uma derivada `edited` (#17) nasce no fluxo próprio de derive.ts, NUNCA
@@ -193,8 +235,16 @@ export async function persistGeneration(
   // também NÃO nasce em invalid (ADR-0006).
   if (result.outcome === 'invalid') return null
 
-  if (result.outcome === 'impossible') {
-    return getDb().transaction(async (tx) => {
+  // Corpo transacional (impossible OU sucesso), parametrizado pela `tx`. #446: `tx` ou é a FORNECIDA
+  // pelo caller (variar2 — as 2 variações compartilham UMA tx + UM lock) ou a própria (todos os demais).
+  const runInTx = async (tx: PersistTx): Promise<PersistGenerationResult | null> => {
+    // #446: gate ATÔMICO de cota — PRIMEIRA op da tx (advisory lock + recontagem + decisão). Estourou ⇒
+    // LANÇA QuotaExceededError e a tx reverte (NADA persiste). impossible TAMBÉM conta pro teto (o custo
+    // do Claude já foi gasto). No caminho `providedTx` (variar2) `quota` vem AUSENTE: o caller já gateou
+    // os 2 slots sob o lock ANTES de chamar — não se reconta por variação (senão a 2ª se auto-barraria).
+    if (quota) await assertRecipeGenSlotInTx(tx, quota)
+
+    if (result.outcome === 'impossible') {
       // Briefing ANTES da creation_session (FK briefing_id). O pedido sobrevive à
       // entrega impossible (AC4).
       const briefingId = pedido ? await insertBriefing(tx, pedido) : null
@@ -227,6 +277,13 @@ export async function persistGeneration(
           advisoryComment: result.advisory,
           model,
           schemaVersion: SCHEMA_VERSION_RECEITA,
+          // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
+          promptStamp,
+          // #423: agrupamento/rótulo da variação. AUSENTES no single ⇒ undefined ⇒ NULL.
+          variantGroupId,
+          variantLabel,
+          // #463: tokens + cost_usd snapshot (best-effort; NULL sem telemetria).
+          ...costCols,
         })
         .returning({ id: generation.id })
       return {
@@ -236,16 +293,14 @@ export async function persistGeneration(
         creationSessionId: sessionId,
         outcome: 'impossible',
       }
-    })
-  }
+    }
 
-  // success | degraded | playful: Receita privada + tradução + ingredientes.
-  const r = result.recipe
-  // Tempo de preparo (#261, ADR-0023 dec.3): reconcilia o par estimado pela IA — ativo > total
-  // (ou ativo sem total) descarta o ativo e mantém o total, NÃO invalida (tempo é baixo-risco).
-  // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
-  const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
-  return getDb().transaction(async (tx) => {
+    // success | degraded | playful: Receita privada + tradução + ingredientes.
+    const r = result.recipe
+    // Tempo de preparo (#261, ADR-0023 dec.3): reconcilia o par estimado pela IA — ativo > total
+    // (ou ativo sem total) descarta o ativo e mantém o total, NÃO invalida (tempo é baixo-risco).
+    // Garante o CHECK recipe_tempo_consistency_chk no INSERT.
+    const tempo = conciliarTempoPreparo(r.tempoAtivoMin, r.tempoTotalMin)
     const [createdRecipe] = await tx
       .insert(recipe)
       .values({
@@ -342,6 +397,14 @@ export async function persistGeneration(
         advisoryComment: result.advisory,
         model,
         schemaVersion: SCHEMA_VERSION_RECEITA,
+        // #420 (ADR-0029): carimbo do prompt/eixos. AUSENTE ⇒ undefined ⇒ NULL (default da coluna).
+        promptStamp,
+        // #423 (ADR-0029 dec.6): agrupamento/rótulo da variação. AUSENTES no single ⇒ undefined ⇒ NULL.
+        // `variant_chosen` NASCE NULL (a rota de escolha o marca, server-authoritative por owner).
+        variantGroupId,
+        variantLabel,
+        // #463: tokens + cost_usd snapshot (best-effort; NULL sem telemetria).
+        ...costCols,
       })
       .returning({ id: generation.id })
 
@@ -355,5 +418,8 @@ export async function persistGeneration(
       slug,
       locale: r.originalLocale,
     }
-  })
+  }
+
+  // #446: dispatch — `providedTx` (variar2, tx compartilhada sob UM lock) OU a própria transação.
+  return providedTx ? runInTx(providedTx) : getDb().transaction(runInTx)
 }

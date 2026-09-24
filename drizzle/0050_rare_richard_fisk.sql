@@ -1,0 +1,1 @@
+ALTER TABLE "vocabulary_term" ADD COLUMN "voice_note" text;

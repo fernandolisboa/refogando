@@ -3,9 +3,13 @@
  * o en-US DEVE ter exatamente as mesmas chaves (teste de paridade T3 garante).
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
+import type { NivelChef } from '@/domain/briefing'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
+  // #451: sufixo do aria-label dos links de rede social do rodapé (só o sufixo é traduzido; o nome
+  // de marca da rede, não). NUNCA rotular o app como "bilíngue" em texto ao usuário (regra do dono).
+  footer: { abreEmNovaAba: 'abre em nova aba' },
   nav: {
     // #277: a Descoberta/home virou "Explorar" na nav (aba ao lado de "Seguindo"). O key segue
     // `home` (linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
@@ -30,6 +34,9 @@ export const ptBR = {
     fecharMenu: 'Fechar menu',
     menu: 'Menu',
     menuDescricao: 'Navegação do site e conta',
+    // #461 (a11y): skip-link (1º tab stop, oculto até focar) que pula o header repetido e leva ao
+    // conteúdo principal (`#conteudo`, o wrapper do `<main>` de cada página).
+    pularParaConteudo: 'Pular para o conteúdo',
   },
   // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
   // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
@@ -37,6 +44,10 @@ export const ptBR = {
   // FLAT (a seção é folha-de-string): o tipo `Messages` deriva só 2 níveis, então nada de sub-objeto.
   notifications: {
     ariaLabel: 'Notificações',
+    // #461 (a11y): quando há não-lidas, o rótulo do sino ANUNCIA a contagem (o badge é só visual —
+    // `aria-hidden`). `{n}` interpolado na renderização; singular/plural como os demais contadores.
+    ariaLabelUmaNaoLida: 'Notificações (1 não lida)',
+    ariaLabelNaoLidas: 'Notificações ({n} não lidas)',
     tituloPainel: 'Notificações',
     vazio: 'Nenhuma notificação',
     // Evento `new_follower` — {name} = nome do ator (interpolado na renderização).
@@ -97,6 +108,13 @@ export const ptBR = {
     sem_oleaginosas: 'sem oleaginosas',
     sem_frutos_do_mar: 'sem frutos do mar',
   } satisfies Record<Restricao, string>,
+  // Nível de habilidade (#421, ADR-0029 dec.2): rótulo compartilhado entre o wizard de geração e o
+  // Perfil (fonte única dos 3 nomes). PARA QUEM a receita é escrita — distinto da Dificuldade do prato.
+  nivelChefLabel: {
+    iniciante: 'Iniciante',
+    intermediario: 'Intermediário',
+    avancado: 'Avançado',
+  } satisfies Record<NivelChef, string>,
   // Tela de Busca (#56): título, campo, estados (inicial/vazio), seções e selos de
   // proveniência por item. Os rótulos de SELO ("Do catálogo"/"Da comunidade") são
   // distintos dos de SEÇÃO ("Catálogo"/"Comunidade") de propósito — desambigua heading
@@ -208,6 +226,13 @@ export const ptBR = {
     vazio: 'Ainda não há receitas por aqui.',
     carregarMais: 'Carregar mais',
     fim: 'Você chegou ao fim.',
+  },
+  // #457: slot editorial "Receita da semana" — acima do feed de repouso na home. Escolhida pelo
+  // Curador ou, na ausência de escolha, pela mais popular do catálogo aprovado (fallback mecânico).
+  // O item em si reusa `RecipeResultItem` (mesmo card do feed) + `busca.selo*`/`porAutor`/etc.
+  receitaDaSemana: {
+    titulo: 'Receita da semana',
+    subtitulo: 'Um destaque do catálogo, escolhido pela curadoria.',
   },
   // Feed SEGUINDO (#277, ADR-0024) — superfície SÓ-LOGADA e NÃO-indexável (separada da home anon,
   // Modelo B). Reusa `feed.carregarMais`/`feed.fim` e `system.loading`/`system.error` na paginação.
@@ -326,7 +351,33 @@ export const ptBR = {
     passos: 'Modo de preparo',
     notas: 'Notas',
     descricao: 'Descrição',
+    // #454: trilho "Receitas semelhantes" (fim do detalhe, server-rendered via recipe_embedding
+    // já existente). AUSENTE quando não há vizinho elegível (sem embedding próprio / nenhum
+    // candidato passa o piso de similaridade) — a página omite a seção inteira nesse caso.
+    receitasSemelhantes: 'Receitas semelhantes',
+    // #453: botão compartilhar (Web Share API + fallback copiar-link). Funciona pro Visitante
+    // anônimo também (CONTEXT.md:168, "compartilha por texto") — não é gateado por sessão/pool.
+    compartilhar: 'Compartilhar',
+    linkCopiado: 'Link copiado!',
+    compartilharErro: 'Não foi possível copiar o link. Tente de novo.',
+    // #455: Modo cozinha — visão passo-a-passo em tela cheia. Timers são PARSING EFÊMERO do texto
+    // do passo (ADR-0023: tempo-por-passo é proibido como dado); `{tempo}` interpolado via
+    // `.replace` com o rótulo já formatado (`formatDuracao`, ex. "20 min").
+    modoCozinha: 'Modo cozinha',
+    modoCozinhaFechar: 'Sair do modo cozinha',
+    modoCozinhaPassoDe: 'Passo {atual} de {total}',
+    modoCozinhaAnterior: 'Passo anterior',
+    modoCozinhaProximo: 'Próximo passo',
+    modoCozinhaConcluir: 'Marcar passo como feito',
+    modoCozinhaIniciarTimer: 'Iniciar timer de {tempo}',
+    modoCozinhaPararTimer: 'Parar timer',
+    modoCozinhaTempoEsgotado: 'Tempo esgotado!',
     porcoes: 'Porções',
+    // #452: escalador de porções — controles "−/+" client-side sobre a LISTA de ingredientes
+    // (aritmética `quantidade × ratio`, CONTEXT.md:192). Rótulos acessíveis dos botões (o número
+    // corrente é lido por `aria-live`, sem texto próprio).
+    porcoesDiminuir: 'Diminuir porções',
+    porcoesAumentar: 'Aumentar porções',
     dificuldade: 'Dificuldade',
     tempoAtivo: 'Tempo ativo',
     tempoTotal: 'Tempo total',
@@ -505,7 +556,6 @@ export const ptBR = {
     erroBriefingVazio:
       'Adicione ao menos um ingrediente, uma cozinha, uma restrição ou uma observação.',
     erroPorcoes: 'As porções devem ficar entre 1 e 50.',
-    erroDificuldade: 'A dificuldade deve ficar entre 1 e 5.',
     erroObservacoesLongas: 'As observações estão muito longas.',
     erroIngrediente: 'Preencha o ingrediente nas linhas que você começou.',
     erroCampos: 'Verifique os campos preenchidos.',
@@ -527,6 +577,19 @@ export const ptBR = {
     modoFormulario: 'Formulário',
     modoConversa: 'Conversa',
     seletorModo: 'Como criar',
+    // #423 (ADR-0029 dec.6): "gerar 2, o usuário escolhe". Opt-in no modo estruturado (só quando o admin
+    // liga a feature) + a tela de escolha entre as 2 versões.
+    variar2Label: 'Gerar 2 versões para eu escolher',
+    variar2Ajuda: 'A IA cria duas versões diferentes; você escolhe a preferida.',
+    variacaoTitulo: 'Escolha uma versão',
+    variacaoIntro:
+      'Geramos duas versões. Escolha a que você prefere — a outra fica salva no seu espaço.',
+    variacaoColuna: 'Versão {n}',
+    variacaoEscolher: 'Escolher esta',
+    variacaoCorpoIndisponivel:
+      'Não foi possível carregar esta versão agora, mas ela está salva no seu espaço.',
+    erroLimiteVariacao:
+      'Você não tem espaço para gerar 2 versões agora. Tente uma versão só ou volte mais tarde.',
   },
   // Drawer "Nova receita" (#191, ADR-0021) — reorganiza a criação por IA num drawer da direita
   // (sobre o Sheet). O kicker em versalete + o título do passo dão o nome acessível do diálogo; o
@@ -607,9 +670,12 @@ export const ptBR = {
     porcoesTitulo: 'Porções',
     porcoesMenos: 'Menos porções',
     porcoesMais: 'Mais porções',
-    dificuldadeTitulo: 'Dificuldade',
-    // Rótulo curto por nível de dificuldade (1..5) — chips do wizard.
-    dificuldadeNiveis: ['Muito fácil', 'Fácil', 'Médio', 'Difícil', 'Muito difícil'],
+    // Nível de habilidade (#421, ADR-0029 dec.2): PARA QUEM a receita é escrita (minúcia/tom do texto).
+    // Substitui a antiga Dificuldade-como-entrada; a dificuldade do prato agora é ESTIMADA pela IA.
+    nivelTitulo: 'Nível de habilidade',
+    nivelIntro: 'Para quem a receita é escrita — quanto detalhe e que tom. A dificuldade do prato quem estima é a IA.',
+    // Chip que reverte ao default do Perfil (nenhum override nesta geração).
+    nivelPadrao: 'Usar meu padrão',
     observacoesTitulo: 'Observações',
     observacoesPlaceholder:
       'Algo a mais? Ex.: sem pimenta, rende bem congelado, ponto bem cremoso…',
@@ -801,6 +867,11 @@ export const ptBR = {
     bio: 'Bio',
     bioPlaceholder: 'Conte um pouco sobre você e o que você gosta de cozinhar.',
     bioContador: '{n}/280',
+    // Nível de habilidade padrão (#421, ADR-0029 dec.2): default do eixo de geração, sobrescrevível
+    // em cada geração. A opção vazia limpa o default (sem preferência = eixo neutro).
+    nivelPadrao: 'Nível de habilidade padrão',
+    nivelPadraoDica: 'Usado como padrão ao gerar receitas — você pode mudar em cada geração.',
+    nivelPadraoNenhum: 'Sem preferência',
     // Links sociais (#127). Editor de até 5 linhas (tipo + url) no perfil.
     links: 'Links',
     linksDica: 'Adicione até 5 links (redes sociais, site). Só endereços http(s) são aceitos.',
@@ -915,6 +986,77 @@ export const ptBR = {
     erroCarregar: 'Não foi possível carregar. Tente de novo.',
     precisaEntrar: 'Entre na sua conta para ver seus salvos.',
   },
+  // Lista de compras (#474, ADR-0032) — namespace PRÓPRIO, separado de `colecoes` (entidades
+  // distintas). Reúne: a multi-seleção de N Receitas (fatia E, #530, dec.7: selecionar em
+  // `SavedRecipesView` e adicionar todas a uma Lista numa ação, quantidade BASE), o check-off
+  // PERSISTENTE (fatia D, #529, dec.6: marca/desmarca comprado; nada expira sozinho, "remover
+  // marcados"/"limpar lista" são sempre EXPLÍCITAS), a EDIÇÃO À MÃO (fatia C, #528, dec.5: item
+  // avulso + editar quantidade + remover linha) E o botão de adicionar UMA Receita com porções-alvo
+  // do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
+  listaDeCompras: {
+    // Multi-seleção (fatia E, #530).
+    selecionarReceita: 'Selecionar {nome}',
+    selecionadaSingular: '{n} receita selecionada',
+    selecionadasPlural: '{n} receitas selecionadas',
+    cancelarSelecao: 'Cancelar seleção',
+    escolherLista: 'Escolher lista',
+    novaLista: '+ Nova lista',
+    nomeNovaLista: 'Nome da nova lista',
+    confirmarAdicionar: 'Adicionar à lista',
+    adicionando: 'Adicionando…',
+    sucessoSingular: '{n} receita adicionada à lista.',
+    sucessoPlural: '{n} receitas adicionadas à lista.',
+    algumasNaoAdicionadas: 'Algumas receitas não puderam ser adicionadas.',
+    erroCarregarListas: 'Não foi possível carregar suas listas. Tente de novo.',
+    erroNomeInvalido: 'Escolha um nome para a lista (até 60 caracteres).',
+    erroNomeDuplicado: 'Você já tem uma lista com esse nome.',
+    erroLimiteListas: 'Você atingiu o limite de listas.',
+    erroAdicionar: 'Não foi possível adicionar as receitas. Tente de novo.',
+    // Check-off persistente (fatia D, #529).
+    titulo: 'Lista de compras',
+    itemMarcarAria: 'Marcar {nome} como comprado',
+    itemDesmarcarAria: 'Desmarcar {nome}',
+    removerMarcados: 'Remover marcados',
+    limparLista: 'Limpar lista',
+    confirmarRemoverMarcados: 'Remover os itens marcados? Esta ação não pode ser desfeita.',
+    confirmarLimparLista: 'Limpar a lista inteira? Todos os itens serão apagados — não pode ser desfeito.',
+    vazia: 'Sua lista está vazia.',
+    precisaEntrar: 'Entre na sua conta para ver sua lista de compras.',
+    // Adicionar UMA Receita do detalhe, com porções-alvo (fatia B, #527) — o ícone no topo abre um
+    // popover ancorado com as Listas + criar nova inline; a porção-alvo reusa o MESMO valor corrente
+    // do escalador da página (`usePortionScale`), sem campo numérico próprio.
+    adicionar: 'Adicionar à lista de compras',
+    adicionarALista: 'Adicionar à lista de compras',
+    // Botão CURTO de cada linha de Lista dentro do popover (distinto do aria-label do ícone acima —
+    // os dois nunca são o mesmo texto acessível ao mesmo tempo, senão o popover teria dois botões
+    // "Adicionar à lista de compras" ambíguos pra leitor de tela).
+    adicionarBotao: 'Adicionar',
+    adicionado: 'Adicionado',
+    criarEAdicionar: 'Criar e adicionar',
+    semListas: 'Você ainda não tem nenhuma lista de compras.',
+    avisoSemPorcoes: 'Esta receita não tem porções definidas — adicionada na quantidade original.',
+    convidaEntrarAdicionar: 'Entre na sua conta para adicionar à lista de compras.',
+    // Edição à mão (fatia C, #528, dec.5) — item avulso + editar quantidade + remover linha.
+    // `unidade`/`unidadeNenhuma` do select reusam o mapa GLOBAL `messages.unidadeLabel` pros
+    // rótulos; aqui só o LABEL do campo. Reusa `titulo`/`vazia`/`adicionando`/`adicionarBotao`/
+    // `precisaEntrar`/`erro` acima (não duplicados).
+    nomeItem: 'Item',
+    nomeItemPlaceholder: 'Ex.: guardanapos',
+    quantidade: 'Quantidade',
+    quantidadePlaceholder: 'Ex.: 2',
+    unidade: 'Unidade',
+    unidadeNenhuma: 'Sem unidade',
+    editarQuantidade: 'Editar quantidade',
+    salvar: 'Salvar',
+    cancelar: 'Cancelar',
+    remover: 'Remover',
+    confirmarRemover: 'Remover este item da lista?',
+    erroItemNomeInvalido: 'Escolha um nome pro item (até 200 caracteres).',
+    erroQuantidadeInvalida: 'Quantidade inválida — use um número maior que zero.',
+    erroUnidadeInvalida: 'Unidade inválida.',
+    // Comum às fatias.
+    erro: 'Algo deu errado. Tente de novo.',
+  },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
   // `Messages` são string).
@@ -999,6 +1141,36 @@ export const ptBR = {
     navAria: 'Seções do Console',
     navIa: 'IA',
     navPapeis: 'Papéis',
+    // ── Fase 2 de billing (#466): aba "Plano" (Governança, admin-only). Bloco CONTÍGUO. ──
+    navPlano: 'Plano',
+    // Parte 1: editar a tabela `pro` dos tetos (proCaps) das três dimensões por papel.
+    planoProCapsTitulo: 'Tetos do plano Pro',
+    planoProCapsDescricao:
+      'Tetos diários maiores para quem é Pro, por dimensão e por papel. Com a tabela Pro desligada (vazio), todo mundo — inclusive quem é Pro — pega o teto do plano gratuito de hoje.',
+    // Aviso concierge: deixa EXPLÍCITO que nada disto cobra.
+    planoConciergeAviso:
+      'Isto não cobra nada. A cobrança automática ainda não está ligada — conceder Pro é uma liberação manual para os primeiros usuários.',
+    planoProAtivarLabel: 'Ligar a tabela de tetos Pro',
+    planoProAtivarAjuda:
+      'Desligado = nenhuma tabela Pro: todo mundo pega o teto do plano gratuito de hoje (nada muda). Ligado = quem é Pro passa a usar os tetos abaixo.',
+    planoProReceitaLabel: 'Tetos Pro de geração de receita por papel (janela de 24h)',
+    planoProImagemLabel: 'Tetos Pro de geração de imagem por papel (janela de 24h)',
+    planoProExtracaoLabel: 'Tetos Pro de extração de ingredientes por papel (janela de 24h)',
+    planoErroConfig: 'Configuração inválida. Revise os tetos (número inteiro ≥ 0, ou vazio para ilimitado).',
+    // Parte 2: conceder/reverter o plano de um usuário (concierge manual).
+    planoConcederTitulo: 'Conceder plano a um usuário',
+    planoConcederDescricao:
+      'Informe o @handle ou o email e escolha o plano. Conceder Pro é uma liberação manual (concierge): não cobra nada — a cobrança automática ainda não está ligada.',
+    planoIdentificadorLabel: 'Usuário (@handle ou email)',
+    planoIdentificadorPlaceholder: '@handle ou email',
+    planoBotaoPro: 'Conceder Pro',
+    planoBotaoFree: 'Reverter para gratuito',
+    planoAplicando: 'Aplicando…',
+    planoPlanoFree: 'gratuito',
+    planoPlanoPro: 'Pro',
+    planoSucesso: '{user} agora está no plano {plano}.',
+    planoErroNaoEncontrado: 'Usuário não encontrado. Confira o @handle ou o email.',
+    planoErroPlanoInvalido: 'Plano inválido.',
     navModeracao: 'Moderação',
     navTraducoes: 'Traduções',
     navCatalogo: 'Catálogo',
@@ -1016,6 +1188,10 @@ export const ptBR = {
     vocabSalvar: 'Salvar',
     vocabSalvando: 'Salvando…',
     vocabEditar: 'Editar rótulos',
+    // #422: nota de voz curada por cozinha (instrui a IA a cozinhar autenticamente; sem deploy).
+    vocabNotaVoz: 'Nota de voz (opcional)',
+    vocabNotaVozPlaceholder:
+      'Como a IA deve cozinhar nesta tradição: técnicas, ingredientes e temperos típicos. Deixe em branco para usar só a instrução genérica.',
     vocabCancelar: 'Cancelar',
     vocabDepreciar: 'Depreciar',
     vocabReativar: 'Reativar',
@@ -1033,6 +1209,44 @@ export const ptBR = {
     // #268: a aba /admin/descoberta abriga a infra de BUSCA — descoberta na web + embeddings; a IA
     // generativa (modelo de receita + geração de imagem + tetos) foi p/ a aba "IA" (/admin/ia).
     navDescoberta: 'Descoberta',
+    // ── #425 (ADR-0029 dec.7): Comparador de prompt antes/depois (Governança, admin-only). ──
+    navComparador: 'Comparador',
+    comparadorTitulo: 'Comparador de prompt (antes/depois)',
+    comparadorDescricao:
+      'Portão de qualidade: roda briefings fixos pelo prompt velho (congelado) vs. o novo (vivo) e mostra a receita lado a lado. Não salva nada.',
+    comparadorRodar: 'Rodar comparação',
+    comparadorRodando: 'Rodando…',
+    comparadorGerarImagem: 'Gerar imagem (mais lento)',
+    comparadorVelho: 'Velho',
+    comparadorNovo: 'Novo',
+    comparadorSystemPrompt: 'Prompt de sistema',
+    comparadorIngredientes: 'Ingredientes',
+    comparadorPassos: 'Passos',
+    comparadorSemReceita: 'Sem receita entregue.',
+    comparadorErro: 'Falha ao rodar esta comparação.',
+    comparadorImagemAlt: 'Imagem gerada do prato',
+    comparadorOutcomeSuccess: 'sucesso',
+    comparadorOutcomeDegraded: 'degradado',
+    comparadorOutcomePlayful: 'lúdico',
+    comparadorOutcomeImpossible: 'impossível',
+    comparadorOutcomeInvalid: 'inválido',
+    // ── #451: aba "Site" (Governança, admin-only) — links de redes sociais do rodapé, editáveis sem deploy. ──
+    navSite: 'Site',
+    redesTitulo: 'Redes sociais (rodapé)',
+    redesDescricao:
+      'Links que aparecem no rodapé do site. Cadastre a conta e ligue quando ela existir. Vazio = rodapé sem links.',
+    redesPlataformaLabel: 'Rede',
+    redesUrlLabel: 'URL (https://…)',
+    redesRotuloLabel: 'Rótulo (opcional)',
+    redesLigadoLabel: 'Mostrar no rodapé',
+    redesAdicionar: 'Adicionar rede',
+    redesRemover: 'Remover',
+    redesSalvar: 'Salvar',
+    redesSalvando: 'Salvando…',
+    redesSalvo: 'Alterações salvas.',
+    redesErro: 'Não foi possível salvar. Confira as URLs (só http/https) e evite plataformas repetidas.',
+    redesCarregando: 'Carregando…',
+    redesVazio: 'Nenhuma rede cadastrada ainda.',
     // Seção "Geração de imagem" (#134) — vive na aba "IA" (/admin/ia); liga/desliga, modelo e tetos.
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
@@ -1045,6 +1259,15 @@ export const ptBR = {
     aiTetoIlimitado: 'ilimitado',
     aiTetoAjuda: 'Deixe em branco para ilimitado. 0 bloqueia o papel.',
     aiErroConfig: 'Configuração inválida. Revise os tetos e o modelo.',
+    // #423 (ADR-0029 dec.6): variação de geração ("gerar 2, o usuário escolhe") — liga/desliga + o eixo
+    // de divergência (pólos + como divergir), editável sem deploy.
+    aiVariacaoLabel: 'Variação de geração (gerar 2, o usuário escolhe)',
+    aiVariacaoAjuda:
+      'Uma única chamada gera duas versões divergentes; o usuário escolhe. Custa cerca de 2× tokens — mantenha como opt-in.',
+    aiVariacaoHabilitadaLabel: 'Oferecer "Gerar 2 versões" na criação',
+    aiVariacaoPoloA: 'Pólo A',
+    aiVariacaoPoloB: 'Pólo B',
+    aiVariacaoInstrucao: 'Como divergir',
     // #164: descoberta na web (ADR-0019) — liga/desliga + allowlist de domínios. A allowlist é fonte
     // ÚNICA tanto da busca na web quanto do guard de SSRF do import. Um domínio por linha.
     webTitulo: 'Descoberta na web',
@@ -1089,6 +1312,25 @@ export const ptBR = {
     catalogoAvisoTextoLabel: 'Texto do aviso',
     catalogoAvisoTextoAjuda: 'Frase exibida nas receitas do catálogo quando o aviso está ligado.',
     catalogoAvisoErroConfig: 'Configuração inválida. O texto do aviso não pode ficar vazio.',
+    // #457: "Receita da semana" — slot editorial da home. O Curador busca por título (restrito ao
+    // catálogo aprovado) e escolhe; sem escolha, a home cai no destaque automático por Popularidade.
+    receitaSemanaTitulo: 'Receita da semana',
+    receitaSemanaDescricao:
+      'Escolha uma receita do catálogo para destacar na home nesta semana. Sem escolha, a home mostra automaticamente a receita mais popular do catálogo.',
+    receitaSemanaAtualLabel: 'Escolha atual',
+    receitaSemanaAtualVazio: 'Nenhuma — a home está usando o destaque automático por popularidade.',
+    receitaSemanaLimpar: 'Remover escolha',
+    receitaSemanaLimpando: 'Removendo…',
+    receitaSemanaBuscaLabel: 'Buscar receita do catálogo',
+    receitaSemanaBuscaPlaceholder: 'Título da receita',
+    receitaSemanaBuscaCarregando: 'Buscando…',
+    receitaSemanaBuscaVazio: 'Nenhuma receita do catálogo encontrada com esse título.',
+    receitaSemanaBuscaContagem: '{n} resultado(s)',
+    receitaSemanaBuscaResultados: 'Resultados da busca',
+    receitaSemanaSelecionada: 'Selecionada',
+    receitaSemanaTrocar: 'Trocar',
+    receitaSemanaSalvo: 'Receita da semana atualizada.',
+    receitaSemanaErroReceita: 'Essa receita não é (ou deixou de ser) do catálogo aprovado.',
     // Backfill dos embeddings da busca semântica (#119) — recompute em lote, retomável.
     backfillTitulo: 'Embeddings da busca semântica',
     backfillDescricao:
@@ -1099,6 +1341,101 @@ export const ptBR = {
     backfillResultadoParcial:
       'Recomputados: {recomputados} · faltam: {restantes}. O serviço de embedding parou (sem chave ou limite). Rode de novo mais tarde.',
     backfillErro: 'Não foi possível recomputar. Tente de novo.',
+    // Re-tradução de defasadas (#499, ADR-0031) — lote retomável, mesma UX do backfill de embedding.
+    retranslateTitulo: 'Re-tradução de defasadas',
+    retranslateDescricao:
+      'Re-traduz traduções derivadas cujo original mudou ou cujo tradutor melhorou — só as que ninguém editou à mão desde a última tradução automática. Rode até "faltam: 0".',
+    retranslateBtn: 'Re-traduzir defasadas',
+    retranslateRodando: 'Re-traduzindo…',
+    retranslateResultado: 'Re-traduzidas: {retraduzidas} · puladas: {puladas} · faltam: {restantes}.',
+    retranslateErro: 'Não foi possível re-traduzir. Tente de novo.',
+    // Atendimento ao autor externo (titular B, sem conta) — #396/GAP-4. Remove o NOME da fonte em lote
+    // por nome/URL, sem exigir que a receita seja do operador. Mantém a URL; irreversível pro nome.
+    takedownTitulo: 'Remover atribuição (pedido do autor)',
+    takedownDescricao:
+      'Atende o autor de um site externo que pediu para tirar o nome dele. Remove o nome da fonte de TODAS as receitas importadas (inclusive privadas de usuários) que casem o nome ou a URL. A URL de origem é mantida (a atribuição passa a mostrar só o site). Rode a prévia antes de remover.',
+    takedownNomeLabel: 'Nome exibido da fonte',
+    takedownNomePlaceholder: 'Ex.: Cozinha da Vovó',
+    takedownUrlLabel: 'URL de origem',
+    takedownUrlPlaceholder: 'https://site.com/receita',
+    takedownCaseIdLabel: 'ID do ticket DSAR (opcional)',
+    takedownCaseIdPlaceholder: 'uuid do ticket, se houver',
+    takedownPrevia: 'Prévia',
+    takedownPreviaRodando: 'Buscando…',
+    takedownRemover: 'Remover nome',
+    takedownRemovendo: 'Removendo…',
+    takedownPreviaResultado: 'Casaram: {casaram} · com nome a remover: {removiveis}.',
+    takedownNomesRemovidos: 'Nomes que serão removidos',
+    takedownRemovido: 'Nome removido de {removiveis} receita(s). URL preservada.',
+    takedownNada: 'Nenhuma receita com nome humano a remover casou o critério.',
+    takedownCriterioObrigatorio: 'Informe ao menos o nome OU a URL da fonte.',
+    takedownCaseIdInvalido: 'ID de ticket inválido (precisa ser um uuid).',
+    takedownErro: 'Não foi possível concluir. Tente de novo.',
+    // Escalada além do nome (titular B) — #397/GAP-3. Desvincular a URL inteira ou apagar a importada.
+    // A POLÍTICA de quando usar aguarda o sign-off jurídico (#276); o mecanismo não decide sozinho.
+    escalonarTitulo: 'Escalar além do nome (desvincular URL / apagar importada)',
+    escalonarAviso:
+      'A POLÍTICA de QUANDO escalar (desvincular a URL ou apagar a receita) aguarda o sign-off jurídico (#276). Este mecanismo não decide sozinho — use só sob orientação. Reaproveita o nome/URL preenchidos acima.',
+    escalonarAcaoLabel: 'Ação',
+    escalonarAcaoUnlink: 'Desvincular URL (zera URL e nome)',
+    escalonarAcaoDelete: 'Apagar receita importada (irreversível)',
+    escalonarPrevia: 'Prévia do escalonamento',
+    escalonarPreviaRodando: 'Buscando…',
+    escalonarPreviaResultado: '{casaram} receita(s) importada(s) casaram o critério.',
+    escalonarUrlsAfetadas: 'URLs que serão removidas',
+    escalonarNomesAfetados: 'Nomes que serão removidos',
+    // Aviso lido ANTES de confirmar a ação destrutiva: a seleção é OR (união), não AND (interseção),
+    // e o efeito é irreversível. Preencher nome E url arrasta a UNIÃO das duas buscas.
+    escalonarUniaoAviso:
+      'Atenção: a seleção é por nome OU URL (união) — preencher os dois casa TODAS as receitas com aquele nome MAIS todas com aquela URL, não a interseção. Confira o escopo acima; a ação é IRREVERSÍVEL.',
+    escalonarConfirmUnlink: 'Confirmar: desvincular URL',
+    escalonarConfirmDelete: 'Confirmar: apagar importada',
+    escalonarAplicando: 'Aplicando…',
+    escalonarUnlinkOk: 'URL e nome desvinculados de {n} receita(s).',
+    escalonarDeleteOk: '{n} receita(s) importada(s) apagada(s).',
+    escalonarNada: 'Nenhuma receita importada casou o critério.',
+    escalonarErro: 'Não foi possível concluir a escalada. Tente de novo.',
+    // Painel de SLA dos tickets de takedown/DSAR ABERTOS (#412/GAP-7). Só leitura; a rota filtra os
+    // resolvidos (fulfilled/rejected). Ordenado por urgência: nível de alerta mais alto no topo.
+    slaTitulo: 'SLA dos pedidos de takedown (abertos)',
+    slaDescricao:
+      'Tickets de takedown/DSAR com o prazo de 15 dias AINDA correndo (os resolvidos saem da lista). Os mais urgentes — nível de alerta mais alto — aparecem no topo. Só acompanhamento; o atendimento e o escalonamento ficam nas seções acima.',
+    slaVazio: 'Nenhum pedido de takedown em aberto.',
+    slaTipoLabel: 'Tipo do pedido',
+    slaFonteLabel: 'Fonte',
+    slaUrlLabel: 'URL de origem',
+    slaMensagemLabel: 'Pedido',
+    slaRecebidoLabel: 'Recebido em',
+    slaSemFonte: '(sem nome nem URL)',
+    slaIdadeDias: 'Há {dias} dia(s)',
+    slaTipoNameRemoval: 'Remoção de nome',
+    slaTipoFullRemoval: 'Remoção total',
+    slaTipoOther: 'Outro',
+    slaNivelNone: 'No prazo',
+    slaNivelYellow: 'Prazo se aproximando',
+    slaNivelRed: 'Escalonar ao Encarregado',
+    slaNivelOverdue: 'Prazo vencido',
+    // Painel de custo de IA (#465) — agrega os ledgers de texto (#463) e imagem (#224).
+    custoTitulo: 'Custo de IA',
+    custoDescricao:
+      'Quanto a geração por IA custou nos últimos {dias} dias — texto (receitas) e imagem. Só o que foi realmente medido entra nas somas; gerações sem telemetria de custo ficam de fora. Só visibilidade de margem e uso; nada aqui muda o app.',
+    custoJanela: 'Últimos {dias} dias',
+    custoTotalTexto: 'Texto',
+    custoTotalImagem: 'Imagem',
+    custoTotalGeral: 'Total',
+    custoDiaTitulo: 'Custo por dia',
+    custoDiaData: 'Dia',
+    custoDiaVazio: 'Sem custo medido na janela.',
+    custoUsuariosTitulo: 'Maiores gastos por usuário',
+    custoUsuarioCol: 'Usuário',
+    custoUsuariosVazio: 'Nenhum usuário com custo medido na janela.',
+    custoDesfechoTitulo: 'Custo do texto por desfecho',
+    custoDesfechoDescricao:
+      'Do gasto com geração de texto que produziu Receita, quanto virou Receita que alguém salvou ou avaliou. Salvos e avaliados se sobrepõem (uma Receita pode ter os dois).',
+    custoDesfechoTotal: 'Gerado (com Receita)',
+    custoDesfechoSalvos: 'Salvos',
+    custoDesfechoAvaliados: 'Avaliados',
+    custoContagem: '{n} geração(ões)',
     erroPapelInvalido: 'Papel inválido.',
     erroNaoAplicado: 'Não foi possível aplicar o papel.',
     erroGenerico: 'Algo deu errado. Tente de novo.',
@@ -1231,6 +1568,29 @@ export const ptBR = {
     marcando: 'Marcando…',
     listaVazia: 'Nenhuma tradução desatualizada.',
     erroGenerico: 'Não foi possível marcar como revisada. Tente de novo.',
+    // #498 (ADR-0031 companheiro iii): edição do nome de ingrediente traduzido.
+    editarNomes: 'Editar nomes de ingrediente',
+    fecharNomes: 'Fechar',
+    carregandoIngredientes: 'Carregando ingredientes…',
+    erroCarregarIngredientes: 'Não foi possível carregar os ingredientes.',
+    semIngredientesNomeados: 'Nenhum ingrediente com nome nesta receita.',
+    nomeIngredienteLabel: 'Nome do ingrediente',
+    salvarNomes: 'Salvar',
+    salvando: 'Salvando…',
+    nomesSalvos: 'Nomes salvos.',
+    erroSalvarNomes: 'Não foi possível salvar os nomes. Tente de novo.',
+  },
+  // Lista do Curador — defasadas-E-divergentes (#500, ADR-0031 dec.6): a fonte mudou e o
+  // conteúdo já diverge da última MT (editado à mão) ou é legado sem prova de intocabilidade.
+  // Reusa os rótulos de proveniência/editor de nomes de `traducoesStale` (mesma ação de correção).
+  traducoesDivergentes: {
+    titulo: 'Traduções para re-revisão',
+    descricao:
+      'A fonte mudou e o conteúdo já diverge da última tradução automática — corrija à mão.',
+    receita: 'Receita',
+    idioma: 'Idioma',
+    origem: 'Origem',
+    listaVazia: 'Nenhuma tradução para re-revisão.',
   },
   curadoria: {
     titulo: 'Curadoria de catálogo',
@@ -1326,6 +1686,274 @@ export const ptBR = {
     filaImagemErro: 'Não foi possível atualizar a imagem. Tente de novo.',
     filaImagemTipoInvalido: 'Formato inválido (use JPG, PNG ou WebP).',
     filaImagemGrande: 'Imagem muito grande (máx. 2 MB).',
+  },
+  // Política de Privacidade (#398 / parte de #276) — PUBLICADA (indexável, linkada no rodapé + sitemap).
+  // Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
+  // `readonly string[]` (listas/tabelas por índice). Os placeholders foram resolvidos com os contatos
+  // reais escritos DIRETO nestas strings (esta seção é o único lugar pra editar nome/e-mail do encarregado).
+  // Publicada por decisão do dono; o sign-off jurídico segue pendente em #276.
+  privacidade: {
+    metaTitulo: 'Política de Privacidade — Refogando',
+    titulo: 'Política de Privacidade',
+
+    parteATitulo: 'Parte (a) — Política de Privacidade',
+    resumoTitulo: 'Resumo em 30 segundos',
+    resumoItens: [
+      'O Refogando é um app de receitas com IA.',
+      'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
+      'Não vendemos seus dados. Compartilhamos apenas com prestadores de serviço que fazem o app funcionar (hospedagem, banco, IA).',
+      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: privacidade@refogando.com. Respondemos em até 15 dias.',
+      'Este texto pode mudar; avisamos quando mudar.',
+    ],
+
+    s1Titulo: '1. Quem somos (identificação do controlador) — Art. 9º, III',
+    s1Corpo: [
+      'O controlador dos dados é Fernando Lisboa, pessoa física responsável pelo aplicativo Refogando (https://refogando.com).',
+      'Como o Refogando é operado por pessoa física, não há razão social nem CNPJ associados; o contato oficial é o e-mail de privacidade indicado abaixo.',
+    ],
+
+    s2Titulo: '2. Contato do controlador e do encarregado (DPO) — Art. 9º, IV; Art. 41',
+    s2Itens: [
+      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa.',
+      'E-mail de contato para assuntos de privacidade e exercício de direitos: privacidade@refogando.com.',
+      'Prazo de resposta: respondemos a pedidos dos titulares em até 15 dias (LGPD, Art. 19, II).',
+    ],
+
+    s3Titulo: '3. Para que usamos seus dados (finalidade específica) — Art. 9º, I; Art. 6º, I',
+    s3Intro:
+      'Tratamos dados pessoais apenas para finalidades específicas e informadas. Cada atividade segue o padrão Dados / Finalidade / Base legal / Retenção.',
+    s3Nota:
+      'O inventário completo de dados de conta/uso ainda será fechado com a equipe e validado; o quadro abaixo é o esqueleto dos tratamentos confirmados. A feature de Descoberta na web está detalhada na Parte (b).',
+
+    rotuloDados: 'Dados',
+    rotuloFinalidade: 'Finalidade',
+    rotuloBaseLegal: 'Base legal',
+    rotuloRetencao: 'Retenção',
+
+    s31Titulo: '3.1. Conta de usuário e autenticação',
+    s31Valores: [
+      'e-mail, nome/identificador de exibição (handle), credenciais de login e foto de perfil, biografia, links e idioma preferido.',
+      'criar e manter sua conta, autenticar o acesso e permitir o uso do app.',
+      'execução de contrato com o titular — Art. 7º, V da LGPD.',
+      'enquanto a conta existir; após a exclusão, anonimizamos imediatamente os dados de identificação e eliminamos os resquícios físicos (como imagens) após um prazo de retenção.',
+    ],
+    s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações)',
+    s32Valores: [
+      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve.',
+      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca).',
+      'execução de contrato — Art. 7º, V.',
+      'enquanto a conta existir ou até você apagar o conteúdo.',
+    ],
+    s33Titulo: '3.3. Imagens geradas por IA e conteúdo assistido por IA',
+    s33Valores: [
+      'prompts e imagens que você gera; metadados de uso (para controle de custo/cota).',
+      'gerar imagens de pratos e apoiar a criação de receitas; controlar limites de uso.',
+      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX.',
+      'enquanto a conta existir ou até você apagar o conteúdo.',
+    ],
+    s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
+    s34Corpo:
+      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo).',
+
+    s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
+    s4Itens: [
+      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (ver item 5). Aplicamos medidas de segurança compatíveis (Art. 46), incluindo controle de acesso por autenticação e autorização por titularidade.',
+      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica (item 3) ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Art. 15/16). Os prazos específicos seguem a finalidade de cada tratamento descrita no item 3.',
+    ],
+
+    s5Titulo: '5. Com quem compartilhamos (uso compartilhado) — Art. 9º, V',
+    s5Intro:
+      'Não vendemos dados pessoais. Compartilhamos com operadores (prestadores de serviço que tratam dados em nosso nome, sob contrato) estritamente para operar o app:',
+    s5Cabecalho: ['Prestador', 'Para quê', 'Categoria'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5ParaQue: [
+      'Hospedagem do aplicativo',
+      'Banco de dados',
+      'Geração de imagens e embeddings de busca',
+      'Geração/assistência de texto',
+      'Busca de links externos na "Descoberta na web"',
+    ],
+    s5Categorias: [
+      'Operador de infraestrutura',
+      'Operador de infraestrutura',
+      'Operador de IA',
+      'Operador de IA',
+      'Operador de busca',
+    ],
+    s5Nota: 'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing.',
+    s5Transferencia:
+      'Transferência internacional: alguns prestadores processam dados fora do Brasil, com as salvaguardas de transferência internacional previstas na LGPD (Arts. 33 a 36).',
+
+    s6Titulo: '6. Responsabilidades dos agentes de tratamento — Art. 9º, VI; Arts. 37–39',
+    s6Itens: [
+      'Fernando Lisboa atua como controlador e é responsável pelas decisões sobre o tratamento.',
+      'Os prestadores do item 5 atuam como operadores, tratando dados conforme nossas instruções e sob contrato.',
+      'Mantemos registro das operações de tratamento (Art. 37) e adotamos medidas de segurança (Art. 46). Em caso de incidente de segurança com risco relevante, comunicamos a ANPD e os titulares (Art. 48).',
+    ],
+
+    s7Titulo: '7. Seus direitos (direitos do titular) — Art. 9º, VII; Art. 18',
+    s7Intro:
+      'Você, titular dos dados, tem os direitos garantidos pelo Art. 18 da LGPD, mediante requisição, entre eles:',
+    s7Direitos: [
+      'Confirmação da existência de tratamento;',
+      'Acesso aos dados;',
+      'Correção de dados incompletos, inexatos ou desatualizados;',
+      'Anonimização, bloqueio ou eliminação de dados desnecessários, excessivos ou tratados em desconformidade;',
+      'Portabilidade a outro fornecedor, mediante requisição;',
+      'Eliminação dos dados tratados com consentimento (ressalvadas as hipóteses do Art. 16);',
+      'Informação sobre entidades com as quais compartilhamos dados;',
+      'Informação sobre a possibilidade de não fornecer consentimento e as consequências;',
+      'Revogação do consentimento;',
+      'Quando o tratamento se basear em legítimo interesse, o direito de opor-se e de solicitar informações (Art. 18, §2º, e Art. 37).',
+    ],
+    s7ComoExercer:
+      'Como exercer: use a página Seus Direitos (/seus-direitos) ou escreva para privacidade@refogando.com. Respondemos em até 15 dias (Art. 19, II). Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
+
+    s8Titulo: '8. Alterações desta política',
+    s8Corpo:
+      'Podemos atualizar esta política. Quando houver mudança relevante, avisaremos pela página Seus Direitos (/seus-direitos) e pelo e-mail privacidade@refogando.com, e registraremos a versão e a data de cada alteração.',
+
+    parteBTitulo: 'Parte (b) — "Descoberta na web"',
+    resumoBTitulo: 'Resumo desta seção',
+    resumoBItens: [
+      'Quando você importa uma receita de um site externo, guardamos duas coisas sobre a origem: o nome do autor/site e o link (URL) — só para creditar a fonte.',
+      'Não copiamos a foto nem o texto autoral (a receita importada nasce sem imagem e sem descrição).',
+      'A receita importada é sempre privada — você não pode publicá-la nem republicá-la.',
+      'O dado pessoal aqui é o nome do autor da receita de terceiro — e você, autor, pode pedir a remoção do seu nome (o crédito passa a exibir só o site).',
+    ],
+
+    b1Titulo: 'b.1. O que é a Descoberta na web',
+    b1Corpo: [
+      'O Refogando pode mostrar, na busca, alguns links de receitas de sites externos (marcados "da web"), a partir de uma lista fechada de domínios que aprovamos um a um (allowlist; provedor de busca: Brave). Se você clica e confirma, o app importa aquela receita para a sua coleção privada.',
+    ],
+    b1Itens: [
+      'A busca nunca cria nem republica conteúdo de terceiros. Linkar ≠ importar; importar ≠ republicar.',
+      'A allowlist é a fonte única de domínios (gerida por admin; com limites de domínios consultados e de resultados por busca).',
+      'Guard-rails técnicos já implementados: respeito ao robots.txt (RFC 9309), User-Agent identificado (RefogandoBot/1.0), rate-limit de cortesia e busca/import só por ação explícita do usuário — nunca crawl automático de fundo.',
+    ],
+
+    b2Titulo: 'b.2. Quem é o titular do dado aqui',
+    b2Corpo:
+      'O dado pessoal tratado nesta feature é o nome do autor/publisher da receita de terceiro — ou seja, o titular é o autor da receita externa, e não o usuário do app. Essa distinção importa para o exercício de direitos (item b.5).',
+
+    b3Titulo: 'b.3. Que dados coletamos, para quê, com que base e por quanto tempo',
+    b3Rotulos: ['Dados', 'O que NÃO coletamos', 'Finalidade', 'Base legal', 'Retenção'],
+    b3Valores: [
+      'Apenas dois campos de atribuição, gravados só em receitas importadas: o nome legível do autor/site e a URL pública de origem. Toda receita que não é importada deixa esses dois campos vazios.',
+      'Não copiamos a foto (a receita importada nasce sem imagem) nem o texto autoral / headnote. Isso reduz ao mínimo a superfície de dado de terceiros e evita copiar a camada expressiva protegida por direito autoral.',
+      'Dar o crédito à fonte ("fonte: … (link)") — cumprindo o direito moral de atribuição (Lei 9.610/98) — e mandar tráfego de volta ao site de origem. A atribuição é obrigatória, não opcional.',
+      'Legítimo interesse — LGPD Art. 7º, IX. Fundamento alternativo/complementar: dado tornado manifestamente público pelo titular (Art. 7º, §4º).',
+      'Enquanto a receita importada existir na coleção privada do usuário, ou até o autor pedir a remoção do nome (item b.5), ou até o usuário apagar a receita. Ao remover o nome, o crédito passa a exibir apenas o site (host) derivado da URL.',
+    ],
+
+    b4Titulo: 'b.4. Compartilhamento nesta feature',
+    b4Corpo:
+      'Para encontrar os links externos, consultamos o provedor de busca Brave (operador), enviando o termo de busca restrito aos domínios da allowlist. A importação é uma cópia feita a pedido do usuário, guardada de forma privada na conta dele — não é republicada nem compartilhada com terceiros.',
+
+    b5Titulo: 'b.5. Direitos do titular (autor da receita externa) e como exercer — Art. 18',
+    b5Intro:
+      'Se você é autor de uma receita que foi importada para o Refogando e quer remover o seu nome da atribuição, você tem esse direito (Art. 18, IV; e o direito de oposição ao tratamento fundado em legítimo interesse, Art. 18, §2º).',
+    b5ComoFunciona: [
+      'A remoção zera apenas o nome do autor; a URL de origem permanece, porque a atribuição é obrigatória. Após a remoção, o crédito é rebaixado ao nome do site (host) derivado da URL, e o link "ver no site" continua.',
+      'A remoção só tem efeito quando há de fato um nome humano distinto do host; caso contrário é uma operação sem efeito.',
+      'A remoção não é reversível para o nome original — o que é adequado ao direito de remoção.',
+    ],
+    b5Contato:
+      'Contato do encarregado para esta finalidade: Fernando Lisboa — privacidade@refogando.com — resposta em até 15 dias. Você também pode usar o formulário público na página Seus Direitos (/seus-direitos).',
+
+    todoRotulo: 'campo a preencher',
+    rodapeVersaoRotulo: 'Versão',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Data',
+    rodapeData: '2026-07-03',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'Publicada — revisão jurídica em andamento',
+  },
+
+  // Página "Seus direitos" + formulário público de intake (#399, GAP-2; parte de #276). PUBLICADA:
+  // indexável, linkada no rodapé e no sitemap; o canal (e-mail + formulário) já existe e é funcional.
+  seusDireitos: {
+    metaTitulo: 'Seus direitos / Privacidade — Refogando',
+    titulo: 'Seus direitos',
+    intro:
+      'Você tem direitos sobre os seus dados pessoais (LGPD, Art. 18): confirmação, acesso, correção, eliminação, oposição e outros. Nesta página explicamos como exercê-los e você pode abrir um pedido pelo formulário abaixo. Respondemos em até 15 dias (Art. 19, II).',
+
+    titularATitulo: 'Você tem conta no Refogando',
+    titularACorpo:
+      'Se você é usuário do app, boa parte dos seus direitos é atendida direto na sua conta (perfil, receitas, coleções). Para o que ainda não é self-service, use o formulário abaixo ou o e-mail de privacidade — sempre dentro do prazo de 15 dias.',
+    titularBTitulo: 'Você é autor de uma receita importada da web',
+    titularBCorpo:
+      'Se uma receita sua foi importada de um site externo para o Refogando, guardamos apenas o seu nome (crédito) e o link de origem — nunca a foto nem o texto autoral. Você pode pedir a remoção do seu nome (o crédito passa a exibir só o site) ou a remoção integral. Você NÃO precisa ter conta: use o formulário abaixo.',
+
+    fluxoTitulo: 'Como funciona o pedido',
+    fluxoPassos: [
+      'Você envia o pedido pelo formulário (ou pelo e-mail de privacidade), identificando o conteúdo (link de origem e/ou nome exibido) e o que deseja.',
+      'Abrimos um protocolo e registramos a data de recebimento — é quando começa a contar o prazo de 15 dias (Art. 19, II).',
+      'Confirmamos a sua identidade do modo mais simples possível (em regra, a correspondência com o contato já ligado à origem). Não exigimos documentos como condição (Art. 6º, III).',
+      'Executamos o pedido e respondemos dentro do prazo, informando o que foi feito — ou, em caso de recusa justificada, o motivo.',
+    ],
+    prazoNota: 'Prazo de resposta: até 15 dias corridos, contados do recebimento (LGPD, Art. 19, II).',
+    naoExigimosDocumentos:
+      'Coletamos apenas o mínimo necessário para localizar o conteúdo e atender o pedido. Não exigimos documentos nem dados pessoais adicionais como condição (Art. 6º, III — necessidade).',
+
+    canalTitulo: 'Canal de contato',
+    canalCorpo:
+      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa. E-mail para privacidade e exercício de direitos: privacidade@refogando.com.',
+
+    formTitulo: 'Abrir um pedido',
+    formIntro:
+      'Preencha o pedido abaixo. Informe o link de origem e/ou o nome exibido para localizarmos o conteúdo, e descreva o que você deseja.',
+    formTipoRotulo: 'Tipo de pedido',
+    formTipoNameRemoval: 'Remover o meu nome do crédito (mantendo o link)',
+    formTipoFullRemoval: 'Remover integralmente a receita importada',
+    formTipoOther: 'Outro pedido sobre meus dados',
+    formUrlRotulo: 'Link de origem (URL)',
+    formUrlPlaceholder: 'https://site-de-origem.com/receita',
+    formNomeRotulo: 'Nome exibido no crédito',
+    formNomePlaceholder: 'Ex.: Cozinha da Vovó',
+    formIdentificacaoDica: 'Informe ao menos um: o link de origem OU o nome exibido.',
+    formPedidoRotulo: 'Seu pedido',
+    formPedidoPlaceholder: 'Descreva o que você deseja (ex.: remover meu nome do crédito desta receita).',
+    formContatoRotulo: 'E-mail para resposta (opcional)',
+    formContatoPlaceholder: 'seu@email.com',
+    formContatoDica: 'Opcional. Se informar, usamos apenas para responder a este pedido.',
+    formEnviar: 'Enviar pedido',
+    formEnviando: 'Enviando…',
+    formSucessoTitulo: 'Pedido recebido',
+    formSucessoCorpo:
+      'Recebemos o seu pedido e registramos a data de recebimento. Responderemos em até 15 dias. Guarde o número de protocolo abaixo.',
+    formProtocoloRotulo: 'Protocolo',
+    erroPedido: 'Descreva o seu pedido para continuar.',
+    erroIdentificacao: 'Informe ao menos um: o link de origem ou o nome exibido.',
+    erroEnvio: 'Não foi possível enviar o pedido agora. Tente novamente em instantes.',
+
+    todoRotulo: 'campo a preencher',
+    rodapeVersaoRotulo: 'Versão',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Data',
+    rodapeData: '2026-07-03',
+    rodapeStatusRotulo: 'Status',
+    rodapeStatus: 'Publicada — revisão jurídica em andamento',
+  },
+  // Cartão de upsell no LIMITE de cota (Fase 2 de billing, flag-off — docs/reports/
+  // fase2-billing-decisao.md §6 item 5). Aparece JUNTO da mensagem de limite já existente
+  // (geração/regenerar/imagem), só para o dono da sessão no plano `free`. CTA ESTÁTICO: aponta
+  // pra `/plano` (placeholder "em breve") — sem checkout/PSP ligado. NUNCA afirma preço/data (a
+  // decisão comercial fica para quando o billing for ligado).
+  upsell: {
+    titulo: 'Você atingiu o limite do plano gratuito',
+    descricao:
+      'Assine o Pro para gerar mais, ou compre créditos avulsos quando precisar. A cobrança ainda não está disponível — estamos preparando.',
+    cta: 'Ver planos',
+  },
+  // Página placeholder `/plano` (Fase 2 de billing, flag-off): "em breve", sem afirmar preço nem
+  // data — a decisão comercial (PSP, preço, modelo) é do dono. Indexável (sem `robots: noindex`),
+  // no mesmo padrão de `privacidade`/`seusDireitos`.
+  plano: {
+    metaTitulo: 'Planos — Refogando',
+    titulo: 'Planos',
+    corpo: 'Estamos preparando um plano Pro com mais gerações por IA, além de créditos avulsos para quem prefere pagar só pelo que usa. Ainda não é possível assinar ou comprar — volte em breve.',
+    voltar: 'Voltar para o início',
   },
 } as const
 
