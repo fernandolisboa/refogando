@@ -26,7 +26,7 @@ Queremos que o advogado **revise e assine** esta postura concreta — não parti
    - **rate-limit** de politeness (~1 requisição/segundo por domínio);
    - **fetch só por ação explícita do usuário** — nunca crawl automático de fundo;
    - **botão de remoção do nome do autor** (rota já existe) + previsto **canal de takedown**.
-6. **LGPD — dado pessoal guardado é mínimo:** **só o nome do autor + a URL pública**. Base legal candidata: **legítimo interesse** e/ou **dado manifestamente tornado público pelo titular** (art. 7º, IX, e art. 11, §4º da LGPD) — **é exatamente isto que precisa do aval do advogado.**
+6. **LGPD — dado pessoal guardado é mínimo:** **só o nome do autor + a URL pública**. Base legal candidata: **legítimo interesse** e/ou **dado manifestamente tornado público pelo titular** (art. 7º, IX, e art. 7º, §4º da LGPD) — **é exatamente isto que precisa do aval do advogado.**
 
 ## 3. A nossa leitura do risco (a confirmar com o advogado)
 
@@ -55,7 +55,7 @@ Queremos que o advogado **revise e assine** esta postura concreta — não parti
 3. Importar para coleção **privada** muda a análise em relação a exibir só o link? Há limite de quantidade/uso que transformaria "uso pessoal" em algo problemático?
 
 **B) LGPD (guardar o nome do autor)**
-4. Qual a **base legal** mais defensável para armazenar **nome do autor + URL**: **legítimo interesse** (art. 7º, IX) ou **dado manifestamente tornado público** (art. 11, §4º)? Precisamos de **LIA** (avaliação de legítimo interesse) documentada?
+4. Qual a **base legal** mais defensável para armazenar **nome do autor + URL**: **legítimo interesse** (art. 7º, IX) ou **dado manifestamente tornado público** (art. 7º, §4º)? Precisamos de **LIA** (avaliação de legítimo interesse) documentada?
 5. O **botão de remoção do nome** + a atribuição "fonte: …" são suficientes para atender direito do titular? Qual prazo/fluxo de resposta a um pedido de remoção devemos adotar?
 6. Precisamos atualizar a **Política de Privacidade** para mencionar essa coleta/uso? Há aviso específico exigido?
 
