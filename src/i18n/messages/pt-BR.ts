@@ -176,6 +176,9 @@ export const ptBR = {
     gerarComIa: 'Gerar com IA',
     vazioGerarTitulo: 'Gerar receita com IA',
     vazioGerarTexto: 'Criamos uma receita a partir da sua busca.',
+    digiteMaisLetras: 'Digite mais algumas letras para receber uma sugestão de receita.',
+    gerarAtalhoLead: 'Não é bem isso?',
+    gerarAtalho: 'Gerar “{termo}” com IA',
     // #5 (protótipo final): 2º cartão do estado VAZIO — "Buscar na web" (gatilho MANUAL). O mock final
     // mostra ESTE cartão no vazio (não a "Da web" automática — o auto-gate #164 só acende no raso-não-
     // vazio). O rótulo do botão reusa `buscar`="Buscar".

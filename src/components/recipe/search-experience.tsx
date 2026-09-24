@@ -29,6 +29,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { searchTermGenerability } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
@@ -66,6 +67,7 @@ export function SearchExperience({
   initialFeed = [],
   initialNextCursor = null,
   highlight = null,
+  webAvailable = true,
 }: {
   /**
    * #236: montada como a HOME-Descoberta? `true` ⇒ o REPOUSO (sem critério) mostra o feed SEEDADO
@@ -87,6 +89,12 @@ export function SearchExperience({
    * feed seeded. `null` (ausente/catálogo vazio) ⇒ nada renderiza, sem regressão pra quem não é home.
    */
   highlight?: ReactNode
+  /**
+   * A Descoberta na web está LIGADA (config admin + allowlist não vazia + chave do provedor)? Resolvido
+   * no servidor pela home. `false` ⇒ a Busca nem chama `/api/discovery/web` e esconde os gatilhos
+   * "Buscar na web" (seriam um beco sem saída). Default `true` preserva o comportamento de antes.
+   */
+  webAvailable?: boolean
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.busca
@@ -327,7 +335,7 @@ export function SearchExperience({
       // localCount 0, perderia a ponte web — regressão vs o `localCount < 3` de antes).
       const hasAny = localCount > 0 || (body.sugestoes?.length ?? 0) > 0
       const term = q.trim()
-      if (term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
         void discoverWeb(term)
       } else {
         webAbortRef.current?.abort()
@@ -338,7 +346,7 @@ export function SearchExperience({
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks])
+  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks, webAvailable])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -446,6 +454,11 @@ export function SearchExperience({
       (data.sugestoes !== undefined && data.sugestoes.length > 0))
 
   const isEmpty = status === 'done' && data !== null && !hasResults
+
+  // Gerar a partir da busca: `ok` ⇒ o termo já serve de pedido (cartão no vazio + atalho sob os
+  // resultados); `too_short` ⇒ dica "digite mais algumas letras" no lugar do cartão; `none` (sem termo,
+  // só facetas) ⇒ cartão genérico do vazio, sem atalho.
+  const generability = searchTermGenerability(q)
 
   // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
   // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
@@ -661,23 +674,27 @@ export function SearchExperience({
                 </h2>
                 <p className="max-w-[54ch] text-sm text-muted">{m.semResultado}</p>
                 <div className="mt-1 flex flex-col gap-2.5">
-                  <GerarComIaCta
-                    q={q}
-                    authed={authed}
-                    sessionPending={session.isPending}
-                    gerarLabel={m.gerarComIa}
-                    cardTitulo={m.vazioGerarTitulo}
-                    cardTexto={m.vazioGerarTexto}
-                    conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
-                    conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
-                    signInLabel={messages.nav.signIn}
-                    returnTo={returnTo}
-                  />
+                  {generability === 'too_short' ? (
+                    <p className="text-sm text-muted">{m.digiteMaisLetras}</p>
+                  ) : (
+                    <GerarComIaCta
+                      q={q}
+                      authed={authed}
+                      sessionPending={session.isPending}
+                      gerarLabel={m.gerarComIa}
+                      cardTitulo={m.vazioGerarTitulo}
+                      cardTexto={m.vazioGerarTexto}
+                      conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
+                      conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
+                      signInLabel={messages.nav.signIn}
+                      returnTo={returnTo}
+                    />
+                  )}
                   {/* Card "Buscar na web": SÓ com termo (`handleWebManual` early-returns sem `q` ⇒ na
                       busca faceta-only o botão seria morto) e SÓ enquanto a web não populou (`webLinks`
                       vazio) — ao popular, a `WebDiscoverySection` abaixo assume e este cartão some (sem
                       ficar redundante acima dos resultados que ele produziu). */}
-                  {q.trim() !== '' && webLinks.length === 0 && (
+                  {webAvailable && q.trim() !== '' && webLinks.length === 0 && (
                     <BuscarNaWebCard
                       state={webManualState}
                       onSearch={handleWebManual}
@@ -745,6 +762,20 @@ export function SearchExperience({
           </div>
         )}
 
+        {/* Atalho "Gerar com IA" SOB os resultados: a busca achou algo, mas talvez não o que a pessoa
+            queria. Só com termo que já serve de pedido (`ok`) e busca assentada (`done`), pra não piscar
+            a cada tecla. Link para `/create?q=` (logado) ou para entrar (visitante) — nunca gera sozinho. */}
+        {status === 'done' && hasResults && generability === 'ok' && (
+          <GerarAtalho
+            q={q}
+            authed={authed}
+            sessionPending={session.isPending}
+            lead={m.gerarAtalhoLead}
+            label={m.gerarAtalho.replace('{termo}', q.trim())}
+            returnTo={returnTo}
+          />
+        )}
+
         {/* #164: seção SEPARADA "Da web" (ADR-0019). Renderiza FORA do bloco de resultados locais (que
             só monta com `hasResults`), porque o caso mais comum é acervo VAZIO + links da web — esses
             links têm de aparecer mesmo sem nenhum resultado local. São LINKS externos (target/rel
@@ -785,7 +816,8 @@ export function SearchExperience({
             e a seção "Da web" ainda não foi preenchida (`webLinks` vazio). Particiona o espaço do auto:
             raso ⇒ auto disparou (sem CTA); suficiente ⇒ CTA disponível — nunca os dois (sem flash). Some
             quando o clique popula `webLinks` (a WebDiscoverySection acima assume). */}
-        {status === 'done' &&
+        {webAvailable &&
+          status === 'done' &&
           q.trim() !== '' &&
           localCount >= SHALLOW_THRESHOLD &&
           webLinks.length === 0 && (
@@ -1045,6 +1077,44 @@ function GerarComIaCta({
         </Link>
       </Button>
     </div>
+  )
+}
+
+/**
+ * Atalho discreto "Gerar “termo” com IA" sob os resultados. Mesmo destino do `GerarComIaCta` do vazio
+ * (logado → `/create?q=`; visitante → entrar, voltando para a busca), mas em uma linha: aqui a busca
+ * TROUXE resultados, então gerar é a saída secundária, não a principal.
+ */
+function GerarAtalho({
+  q,
+  authed,
+  sessionPending,
+  lead,
+  label,
+  returnTo,
+}: {
+  q: string
+  authed: boolean
+  sessionPending: boolean
+  lead: string
+  label: string
+  returnTo: string
+}) {
+  const href =
+    !authed && !sessionPending
+      ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}`
+      : `/create?q=${encodeURIComponent(q.trim())}`
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+      <span>{lead}</span>
+      <Link
+        href={href}
+        className="inline-flex items-center gap-1.5 font-medium text-brand-ink underline-offset-4 hover:underline"
+      >
+        <Sparkles className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        {label}
+      </Link>
+    </p>
   )
 }
 

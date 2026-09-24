@@ -160,6 +160,9 @@ export const enUS: Messages = {
     gerarComIa: 'Generate with AI',
     vazioGerarTitulo: 'Generate a recipe with AI',
     vazioGerarTexto: 'We create a recipe from your search.',
+    digiteMaisLetras: 'Type a few more letters to get a recipe suggestion.',
+    gerarAtalhoLead: 'Not quite it?',
+    gerarAtalho: 'Generate “{termo}” with AI',
     // #5 (final prototype): 2nd card of the EMPTY state — "Search the web" (MANUAL trigger). The final
     // mock shows THIS card on empty (not the automatic "From the web" — auto-gate #164 now only fires
     // on shallow-NON-empty). The button label reuses `buscar`="Search".
