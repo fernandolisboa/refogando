@@ -1,0 +1,71 @@
+# Backup semanal do banco de produção como *branch* do Neon (`backup/<data>`).
+#
+# POR QUÊ: em 2026-09-09 um agente de OUTRO repo (feudo) rodou `DROP SCHEMA public`
+# no banco de produção do refogando. O plano free do Neon guarda só 6h de histórico
+# (point-in-time restore), então 9 dias depois a única cópia que existia eram dois
+# preview branches arquivados criados por acaso pela integração Vercel/Neon.
+# Ver docs/incidents/2026-09-09-banco-apagado-por-agente-do-feudo.md.
+#
+# O QUE FAZ: cria um branch `backup/<YYYY-MM-DD>T<HHMM>Z` a partir do branch
+# default (main), SEM compute (não custa horas de CU; storage é copy-on-write), e
+# apaga os backups mais antigos mantendo os `KEEP` mais recentes. Plano free
+# permite ~10 branches por projeto — com KEEP=3 sobra espaço pros previews de PR.
+#
+# RESTAURAR (manual, pela API do Neon — mesma chamada usada no incidente):
+#   curl -X POST -H "Authorization: Bearer $NEON_API_KEY" -H "Content-Type: application/json" \
+#     https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/branches/<id-do-main>/restore \
+#     -d '{"source_branch_id":"<id-do-backup>","preserve_under_name":"main_old_<motivo>"}'
+#   O host do endpoint de produção NÃO muda; a Vercel reconecta sozinha.
+#
+# Requer no repo (já existem, usados por cleanup-neon-preview-branch.yml):
+#   - secret   NEON_API_KEY
+#   - variable NEON_PROJECT_ID
+name: DB backup (Neon branch snapshot)
+
+on:
+  schedule:
+    - cron: "0 6 * * 0" # domingos 06:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      NEON_API: https://console.neon.tech/api/v2
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      KEEP: "3"
+    steps:
+      - name: Create backup branch from the default branch
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $NEON_API_KEY" -H "Content-Type: application/json")
+          main_id=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches" \
+            | jq -r '.branches[] | select(.default==true) | .id')
+          [ -n "$main_id" ] || { echo "branch default não encontrado"; exit 1; }
+          name="backup/$(date -u +%Y-%m-%dT%H%MZ)"
+          echo "criando $name a partir de $main_id"
+          curl -fsS -X POST "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches" \
+            -d "{\"branch\":{\"name\":\"$name\",\"parent_id\":\"$main_id\"}}" \
+            | jq '{id:.branch.id,name:.branch.name,state:.branch.current_state,parent_lsn:.branch.parent_lsn}'
+
+      - name: Prune old backups (keep the newest $KEEP)
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $NEON_API_KEY")
+          # Nomes são ISO-8601 em UTC → ordem lexicográfica == ordem cronológica.
+          old=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches" \
+            | jq -r --argjson keep "$KEEP" \
+              '[.branches[] | select(.name | startswith("backup/"))] | sort_by(.name) | reverse | .[$keep:] | .[] | "\(.id)\t\(.name)"')
+          [ -z "$old" ] && { echo "nada a apagar"; exit 0; }
+          while IFS=$'\t' read -r id name; do
+            echo "apagando $name ($id)"
+            curl -fsS -X DELETE "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$id" >/dev/null
+          done <<< "$old"
+
+      - name: List remaining branches
+        run: |
+          curl -fsS -H "Authorization: Bearer $NEON_API_KEY" "$NEON_API/projects/$PROJECT_ID/branches" \
+            | jq -r '.branches[] | "\(.name)\t\(.current_state)\t\(.created_at)"'
