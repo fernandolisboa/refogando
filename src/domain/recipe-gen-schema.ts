@@ -78,7 +78,14 @@ function buildReceitaGenSchema(cozinhaSlugs: readonly string[]) {
     descricao: z.string().nullable(), // → recipe_translation.descricao
     passos: z.array(z.string()), // → recipe_translation.passos
     notas: z.string().nullable(), // → recipe_translation.notas
-    originalLocale: z.string(), // → recipe.original_locale (ex. 'pt-BR')
+    // → recipe.original_locale. String LIVRE + dica (NÃO z.enum): o `zodOutputFormat` manda o enum só
+    // como dica na description, mas o parse LOCAL do SDK valida o enum e lança — um 'en' do modelo
+    // viraria parse_failed (502) antes do `classify`, que normaliza 'en'/'pt'/'en-GB' (e cai no default).
+    originalLocale: z
+      .string()
+      .describe(
+        "idioma em que VOCÊ escreveu esta receita (não o do texto de origem): use exatamente 'pt-BR' ou 'en-US'.",
+      ),
     cozinha: cozinhaSchema.nullable(), // → recipe.cozinha (data-driven, #318)
     categoria: z.enum(CATEGORIAS).nullable(), // → recipe.categoria
     restricoes: z.array(z.enum(RESTRICOES)), // → recipe.restricoes (default '{}')

@@ -5,7 +5,7 @@ import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
-import { classify } from '@/domain/generation'
+import { classifyWithReason } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
   buildSystemPrompt,
@@ -319,7 +319,7 @@ export async function POST(req: Request): Promise<Response> {
           // #420 (ADR-0029): eixos que produziram esta destilação (já embutidos no systemPrompt).
           axes,
         })
-        const result = classify(out)
+        const { result, reason: invalidReason } = classifyWithReason(out)
         // #463: telemetria de custo da DESTILAÇÃO (só o branch 'object' a carrega). O custo do STREAM da
         // conversa em si não tem linha própria (ver nota em client.ts.streamConversation) — esta linha
         // carimba o custo da destilação, que é o episódio de criação da conversa.
@@ -327,6 +327,7 @@ export async function POST(req: Request): Promise<Response> {
 
         let terminal: TerminalFrame
         if (result.outcome === 'invalid') {
+          console.error('[conversations/stream] destilação inválida:', { reason: invalidReason })
           // INVALID in-band (headers já enviados — NUNCA 502). NENHUMA generation/Receita é
           // persistida (erro de sistema puro não é episódio de criação — ADR-0006); a Session
           // e a Transcrição do turno JÁ foram gravadas acima (a conversa aconteceu — só a

@@ -15,7 +15,7 @@
  */
 
 import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
-import { isSupportedLocale } from '@/i18n/locale'
+import { DEFAULT_LOCALE, localeFromTag } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 import type { TextUsage } from '@/domain/text-cost'
 
@@ -67,32 +67,48 @@ export type ClassifyResult =
 /**
  * Mapeia o cru da fronteira para a taxonomia. refusal/max_tokens/parse_failed →
  * invalid. object+impossible → impossible (carrega advisory, sem recipe).
- * object+{success,degraded,playful} → checa faixa no app: se porcoes E dificuldade
- * válidas → outcome = modelKind (carrega recipe+advisory); senão → invalid (NÃO
- * clampar). Um valor fora-de-faixa na saída do modelo vira erro de sistema.
+ * object+{success,degraded,playful} → checa faixa no app: se porcoes, dificuldade e
+ * quantidades válidas → outcome = modelKind (carrega recipe+advisory); senão → invalid (NÃO
+ * clampar). Um valor fora-de-faixa na saída do modelo vira erro de sistema. O originalLocale
+ * NÃO invalida: é normalizado (idioma-base, fallback DEFAULT_LOCALE).
  */
 export function classify(out: GenerationOutput): ClassifyResult {
-  if (out.kind !== 'object') return { outcome: 'invalid' }
+  return classifyWithReason(out).result
+}
+
+/**
+ * `classify` + o MOTIVO de um `invalid` (só metadado, nunca conteúdo da Receita). Existe porque o
+ * `invalid` pós-validação não deixava rastro em produção: a Anthropic respondia 200 e a borda devolvia
+ * 502 sem dizer qual regra barrou. `reason` é null fora do `invalid`.
+ */
+export function classifyWithReason(out: GenerationOutput): {
+  result: ClassifyResult
+  reason: string | null
+} {
+  const invalid = (reason: string) => ({ result: { outcome: 'invalid' as const }, reason })
+  if (out.kind !== 'object') return invalid(out.kind)
 
   if (out.modelKind === 'impossible') {
-    return { outcome: 'impossible', advisory: out.advisory }
+    return { result: { outcome: 'impossible', advisory: out.advisory }, reason: null }
   }
 
   // success|degraded|playful: a Receita está presente (recipe não-null por contrato).
   const recipe = out.recipe
-  if (recipe === null) return { outcome: 'invalid' }
-  if (!isPorcoesValidas(recipe.porcoes) || !isDificuldadeValida(recipe.dificuldade)) {
-    return { outcome: 'invalid' }
+  if (recipe === null) return invalid('receita nula')
+  if (!isPorcoesValidas(recipe.porcoes)) return invalid(`porcoes fora da faixa: ${recipe.porcoes}`)
+  if (!isDificuldadeValida(recipe.dificuldade)) {
+    return invalid(`dificuldade fora da faixa: ${recipe.dificuldade}`)
   }
-  // originalLocale lixo (vazio/espaço/não-suportado) NUNCA persiste → invalid.
-  if (!isSupportedLocale(recipe.originalLocale)) {
-    return { outcome: 'invalid' }
-  }
+  // originalLocale: o schema só DÁ A DICA (string livre), então o modelo pode emitir 'en'/'pt'/'en-GB'.
+  // Normaliza pelo idioma; idioma não reconhecido (vazio, 'es', lixo) cai no DEFAULT_LOCALE em vez de
+  // descartar uma Receita boa — o idioma é metadado da tradução, não motivo pra falhar a geração.
+  const rawLocale = recipe.originalLocale
+  const locale = localeFromTag(rawLocale) ?? DEFAULT_LOCALE
   // quantidade fora-de-faixa (não-numérica/overflow) NUNCA chega ao DB → invalid.
-  if (!recipe.ingredientes.every((ing) => isQuantidadeValida(ing.quantidade))) {
-    return { outcome: 'invalid' }
-  }
-  return { outcome: out.modelKind, recipe, advisory: out.advisory }
+  const badQtd = recipe.ingredientes.filter((ing) => !isQuantidadeValida(ing.quantidade)).length
+  if (badQtd > 0) return invalid(`quantidade inválida em ${badQtd} ingrediente(s)`)
+  const normalized = locale === rawLocale ? recipe : { ...recipe, originalLocale: locale }
+  return { result: { outcome: out.modelKind, recipe: normalized, advisory: out.advisory }, reason: null }
 }
 
 /**
