@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import { communityVisibleCondition } from '@/server/recipe/visibility-filter'
 import { getTranslator } from '@/server/deps'
 import { isRowSpecificTranslationFailure } from '@/server/translation/translator'
 import { embedTranslation } from '@/server/embedding/recompute'
@@ -65,6 +66,8 @@ type CandidateRow = {
   promptVersion: number | null
   retranslateFailCount: number
   retranslateFailKey: string | null
+  /** Visível à comunidade (mesmo gate da lista do Curador) — só estas podem entrar em quarentena. */
+  communityVisible: boolean
   srcTitulo: string
   srcDescricao: string | null
   srcPassos: string[] | null
@@ -94,6 +97,7 @@ async function loadCandidates(db: Database): Promise<CandidateRow[]> {
       promptVersion: recipeTranslation.promptVersion,
       retranslateFailCount: recipeTranslation.retranslateFailCount,
       retranslateFailKey: recipeTranslation.retranslateFailKey,
+      communityVisible: sql<boolean>`coalesce(${communityVisibleCondition(recipe)}, false)`,
       srcTitulo: src.titulo,
       srcDescricao: src.descricao,
       srcPassos: src.passos,
@@ -153,7 +157,7 @@ async function loadCurrentIngredientsByRecipe(
  * conteúdo da linha mas NÃO o `mt_fingerprint` gravado, então recomputar o hash do conteúdo fresco
  * e compará-lo com este valor detecta a edição antes de sobrescrevê-la.
  */
-type Eligible = { recipeId: string; locale: string; mtFingerprint: string }
+type Eligible = { recipeId: string; locale: string; mtFingerprint: string; communityVisible: boolean }
 
 /**
  * Resultado do processamento de UMA candidata:
@@ -196,7 +200,9 @@ function selectEligible(
     if (!defasada) continue
 
     // Circuit-breaker (#520): linha que já falhou o limiar para ESTA fonte+versão não volta ao lote.
-    const quarantined = isRetranslateQuarantined({
+    // Só receita da COMUNIDADE: a lista do Curador não mostra privada (não vaza), então quarentenar
+    // uma privada a faria sumir sem ninguém ver — ela segue sendo tentada (comportamento pré-#520).
+    const quarantined = row.communityVisible && isRetranslateQuarantined({
       failCount: row.retranslateFailCount,
       storedFailKey: row.retranslateFailKey,
       currentFailKey: retranslateFailKey(currentSourceFingerprint, TRANSLATION_PROMPT_VERSION),
@@ -215,7 +221,12 @@ function selectEligible(
     if (!intocada) continue
 
     // `mtFingerprint` é não-nulo aqui (senão `isDivergente` seria true) — narrow para o tipo Eligible.
-    eligible.push({ recipeId: row.recipeId, locale: row.locale, mtFingerprint: row.mtFingerprint! })
+    eligible.push({
+      recipeId: row.recipeId,
+      locale: row.locale,
+      mtFingerprint: row.mtFingerprint!,
+      communityVisible: row.communityVisible,
+    })
   }
 
   return eligible
@@ -395,7 +406,7 @@ async function recordRowFailure(db: Database, candidate: Eligible, failKey: stri
         ),
       )
       .returning({ failCount: recipeTranslation.retranslateFailCount })
-    if (!row) return 'degraded'
+    if (!row || !candidate.communityVisible) return 'degraded' // privada nunca entra em quarentena
     return isRetranslateQuarantined({ failCount: row.failCount, storedFailKey: failKey, currentFailKey: failKey })
       ? 'quarantined'
       : 'degraded'

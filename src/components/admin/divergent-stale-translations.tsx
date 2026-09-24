@@ -26,13 +26,14 @@ import {
   TRANSLATION_PROVENANCES,
   type TranslationProvenance,
 } from '@/domain/recipe'
+import type { DivergentStaleReason } from '@/domain/translation-divergent-stale'
 
 type DivergentItem = {
   recipeId: string
   locale: string
   provenance: string
   /** Por que está na lista: conteúdo editado à mão, ou quarentena do circuit-breaker da re-tradução (#520). */
-  reason: 'divergente' | 'falha_traducao'
+  reason: DivergentStaleReason
 }
 
 /** Ingrediente COM nome (rawText presente/não-vazio) — só estes são editáveis (espelha #498). */

@@ -436,6 +436,26 @@ describe('retranslateOutdated — circuit-breaker (#520)', () => {
     expect((await readTranslation(db, recipeId, 'en-US')).retranslateFailCount).toBe(0)
   })
 
+  it('receita PRIVADA nunca entra em quarentena (o Curador não a veria): segue sendo tentada', async () => {
+    setTranslator(new FakeTranslator())
+    setEmbedder(new FakeEmbedder(DIM))
+    const db = getDb()
+    const ownerId = await seedUser({ email: `priv-520-${crypto.randomUUID()}@test.local` })
+    const recipeId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId })
+    await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Bolo Privado', provenance: 'escrita_por_pessoa' })
+    await ensureTranslation(db, recipeId, 'en-US')
+    await editSource(db, recipeId, 'Bolo Privado v2')
+    setTranslator(new SelectiveThrowingTranslator(new Set(['Bolo Privado v2'])))
+
+    for (let i = 0; i < RETRANSLATE_FAIL_THRESHOLD + 1; i++) {
+      const r = await retranslateOutdated(db, 10)
+      expect(r.degraded).toBeGreaterThanOrEqual(1)
+      expect(r.remaining).toBeGreaterThanOrEqual(1) // nunca sai de `remaining`
+    }
+    const list = await loadDivergentStaleTranslations(db)
+    expect(list.some((i) => i.recipeId === recipeId)).toBe(false) // e nunca vaza pro Curador
+  })
+
   it('queda de INFRAESTRUTURA (erro do SDK) nunca conta: a linha segue degradada, nunca em quarentena', async () => {
     const { db, recipeId } = await seedStaleRow('Arroz Resiliente')
     setTranslator(new OutageTranslator())

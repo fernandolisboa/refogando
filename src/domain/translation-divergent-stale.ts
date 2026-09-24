@@ -5,7 +5,9 @@
  * decide quais linhas defasadas NÃO são intocadas — essas nunca são auto-sobrescritas e vão
  * para re-revisão HUMANA.
  *
- * As DUAS metades são independentes e compostas por AND (nunca uma sozinha):
+ * Regra da lista (#520): DEFASADA e, além disso, DIVERGENTE (motivo `divergente`) OU em QUARENTENA
+ * do circuit-breaker da re-tradução (motivo `falha_traducao`, ver o fim deste módulo). Para o motivo
+ * `divergente`, as DUAS metades são independentes e compostas por AND (nunca uma sozinha):
  *  - `isDefasada`: a FONTE mudou desde a última MT (`fingerprintSource` diverge do gravado) OU
  *    o tradutor melhorou (`promptVersion` gravado < `TRANSLATION_PROMPT_VERSION` atual — `null`
  *    conta como "abaixo de qualquer versão", legado nunca versionado).
@@ -55,9 +57,10 @@ export function isDivergente(
 }
 
 /**
- * Entra na lista do Curador quando defasada E divergente (ambas). Uma linha defasada mas
+ * Motivo `divergente` da lista do Curador: defasada E divergente (ambas). Uma linha defasada mas
  * INTOCADA (`isDivergente` falso) é elegível para a re-tradução AUTOMÁTICA (fatia B) — nunca
- * aparece aqui; as duas listas são mutuamente exclusivas por construção (ADR-0031 dec.5/6).
+ * aparece por ESTE motivo; as duas filas são mutuamente exclusivas por construção (ADR-0031
+ * dec.5/6) — a exceção é a quarentena (#520), que tira a intocada do worker e a traz pra cá.
  */
 export function isDefasadaEDivergente(input: DivergentStaleInput): boolean {
   return isDefasada(input) && isDivergente(input)

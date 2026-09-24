@@ -8,10 +8,13 @@ import { loadDivergentStaleTranslations } from '@/server/curate/translation-dive
  * última MT (edição humana) ou é legado sem prova de intocabilidade (`mt_fingerprint IS NULL`) —
  * essas linhas NUNCA são auto-sobrescritas pela re-tradução automática (fatia B, #499); precisam
  * de re-revisão HUMANA pela rota de edição de tradução já existente (`translations/[locale]`).
+ * Também lista as defasadas-e-INTOCADAS em quarentena do circuit-breaker da re-tradução (#520): o
+ * tradutor falhou repetidamente nelas, então saíram do worker e precisam de mão humana. Cada item
+ * traz `reason: 'divergente' | 'falha_traducao'`.
  *
  * MESMO gate de comunidade/moderação do template `translations/stale/route.ts` (não vaza receita
  * privada nem removida do pool) + papel Curador (401/403 via `requireRole`). Devolve só id+locale+
- * proveniência (nada de conteúdo sensível). GET read-only — a comparação de hash roda no app
+ * proveniência+motivo (nada de conteúdo sensível). GET read-only — a comparação de hash roda no app
  * (`loadDivergentStaleTranslations`), nenhuma escrita, nenhuma chamada a LLM.
  */
 

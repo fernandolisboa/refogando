@@ -71,18 +71,32 @@ export class UnusableTranslationError extends Error {
 /**
  * `messages.parse` com a fronteira de erro classificada: o SDK roda o `parse` do `zodOutputFormat`
  * DENTRO da chamada e, em JSON cortado/schema violado, lança um `AnthropicError` PURO (não
- * `APIError`) — isso é saída ruim da linha, não queda do serviço. `APIError` (HTTP/conexão) segue
- * propagando como está (infraestrutura).
+ * `APIError`) com a mensagem "Failed to parse structured output…" (helpers/zod.js, lib/parser.js) —
+ * isso é saída ruim da linha, não queda do serviço. Casa pela MENSAGEM de propósito: o SDK também
+ * lança `AnthropicError` puro para credencial/config (key ausente, token de identidade vazio,
+ * "Streaming is required"), que é infraestrutura e segue propagando como está.
  */
+const STRUCTURED_OUTPUT_PARSE_ERROR_PREFIX = 'Failed to parse structured output'
+
 async function parseTranslation<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call()
   } catch (err) {
-    if (err instanceof Anthropic.AnthropicError && !(err instanceof Anthropic.APIError)) {
+    if (
+      err instanceof Anthropic.AnthropicError &&
+      !(err instanceof Anthropic.APIError) &&
+      err.message.startsWith(STRUCTURED_OUTPUT_PARSE_ERROR_PREFIX)
+    ) {
       throw new UnusableTranslationError(`tradução com saída estruturada inválida: ${err.message}`, { cause: err })
     }
     throw err
   }
+}
+
+/** Recusa ou truncamento ⇒ a saída não serve (falha DA LINHA). */
+function assertUsableStop(stopReason: string | null): void {
+  if (stopReason === 'refusal') throw new UnusableTranslationError('tradução recusada pelo modelo (refusal)')
+  if (stopReason === 'max_tokens') throw new UnusableTranslationError('tradução truncada (max_tokens)')
 }
 
 /**
@@ -118,14 +132,12 @@ export class RealTranslator implements Translator {
     }
 
     let message = await parseTranslation(() => client.messages.parse(params))
-    if (message.stop_reason === 'refusal') throw new UnusableTranslationError('tradução recusada pelo modelo (refusal)')
-    if (message.stop_reason === 'max_tokens') throw new UnusableTranslationError('tradução truncada (max_tokens)')
+    assertUsableStop(message.stop_reason)
 
     // Reparo mínimo: parser sem saída ⇒ re-chama UMA vez. Ainda null ⇒ lança.
     if (message.parsed_output === null) {
       message = await parseTranslation(() => client.messages.parse(params))
-      if (message.stop_reason === 'refusal') throw new UnusableTranslationError('tradução recusada pelo modelo (refusal)')
-      if (message.stop_reason === 'max_tokens') throw new UnusableTranslationError('tradução truncada (max_tokens)')
+      assertUsableStop(message.stop_reason)
       if (message.parsed_output === null) throw new UnusableTranslationError('tradução sem saída estruturada')
     }
 

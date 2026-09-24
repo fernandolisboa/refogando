@@ -3,7 +3,8 @@
  * Compõe DUAS listas (a API de cada uma ainda reforça `requireRole 'curador'`):
  *  - `StaleTranslations` (#63/#23): sinalização leve `stale=true`, some ao marcar revisada.
  *  - `DivergentStaleTranslations` (#500, ADR-0031 dec.6): defasadas-E-divergentes — a fonte
- *    mudou e o conteúdo já diverge da última MT (ou é legado sem `mt_fingerprint`). Query
+ *    mudou e o conteúdo já diverge da última MT (ou é legado sem `mt_fingerprint`), ou o
+ *    tradutor falhou repetidamente na linha (quarentena do circuit-breaker, #520). Query
  *    própria (pull-derived por fingerprint), SEPARADA da fila `stale` acima — não conflita.
  */
 import { SectionGate } from '../gate'
