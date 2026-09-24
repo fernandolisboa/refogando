@@ -489,6 +489,28 @@ export const ptBR = {
     erroSenhaCurta: 'A senha precisa ter pelo menos 8 caracteres.',
     erroRede: 'Não foi possível conectar. Tente de novo.',
     erroGenerico: 'Não foi possível concluir. Tente de novo.',
+    // Esqueci minha senha (#469). A confirmação é NEUTRA de propósito: nunca diz se o email tem conta.
+    esqueciSenha: 'Esqueceu a senha?',
+    redefinirTitulo: 'Redefinir senha',
+    redefinirDescricao: 'Informe o email da sua conta e enviaremos um link para criar uma nova senha.',
+    enviarLink: 'Enviar link',
+    linkEnviado:
+      'Se houver uma conta com este email, enviamos um link para redefinir a senha. Confira a caixa de entrada e o spam.',
+    voltarEntrar: 'Voltar para entrar',
+    novaSenhaTitulo: 'Criar nova senha',
+    novaSenha: 'Nova senha',
+    salvarSenha: 'Salvar nova senha',
+    senhaRedefinida: 'Senha alterada. Entre com a nova senha.',
+    erroLinkInvalido: 'Este link expirou ou já foi usado. Peça um novo.',
+    pedirNovoLink: 'Pedir novo link',
+    erroMuitasTentativas: 'Muitas tentativas. Aguarde um minuto e tente de novo.',
+    // E-mail transacional de redefinição (#469). `{nome}` interpolado no servidor.
+    emailResetAssunto: 'Redefina sua senha do Refogando',
+    emailResetSaudacao: 'Olá, {nome}!',
+    emailResetCorpo:
+      'Recebemos um pedido para redefinir a senha da sua conta no Refogando. Use o link abaixo para criar uma nova senha. Ele vale por 1 hora e só pode ser usado uma vez.',
+    emailResetBotao: 'Criar nova senha',
+    emailResetIgnorar: 'Se não foi você, ignore este email. Sua senha atual continua valendo.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)

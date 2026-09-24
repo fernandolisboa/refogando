@@ -116,6 +116,9 @@ describe('notifyDpoRedTickets (#413)', () => {
         this.sent.push(i)
         return { sent: false }
       },
+      async sendAccountEmail() {
+        return { sent: false }
+      },
     }
     setMailer(failing)
     const id = await openTicket(daysBefore(13), { slaLevel: 'red' })

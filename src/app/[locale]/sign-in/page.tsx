@@ -24,13 +24,18 @@ export function generateMetadata({ params }: { params: Promise<{ locale: string 
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnTo?: string }>
+  searchParams: Promise<{ returnTo?: string; reset?: string }>
 }) {
-  const { returnTo } = await searchParams
+  const { returnTo, reset } = await searchParams
   return (
     <Container as="main" className="py-16">
       <div className="mx-auto w-full max-w-sm">
-        <AuthForm mode="sign-in" googleEnabled={isGoogleConfigured()} returnTo={safeInternalPath(returnTo)} />
+        <AuthForm
+          mode="sign-in"
+          googleEnabled={isGoogleConfigured()}
+          returnTo={safeInternalPath(returnTo)}
+          passwordReset={reset === '1'}
+        />
       </div>
     </Container>
   )

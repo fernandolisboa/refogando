@@ -209,4 +209,31 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     expect(screen.getByLabelText('Name')).toBeInTheDocument()
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
+  it('entrar: link "Esqueceu a senha?" pra /forgot-password; criar conta não tem (#469)', () => {
+    const { unmount } = renderForm('sign-in')
+    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
+    unmount()
+    renderForm('sign-up')
+    expect(screen.queryByRole('link', { name: 'Esqueceu a senha?' })).not.toBeInTheDocument()
+  })
+
+  it('entrar com passwordReset: mostra a confirmação de senha alterada (#469)', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled={false} passwordReset />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Senha alterada')
+  })
+  it('entrar: 429 (rate limit, sem code) mostra "muitas tentativas", não erro de rede (#469)', async () => {
+    signInEmail.mockImplementation(async (_b: unknown, h?: { onError?: (c: { error: { status: number } }) => void }) => {
+      h?.onError?.({ error: { status: 429 } })
+      return { data: null, error: { status: 429 } }
+    })
+    renderForm('sign-in')
+    await userEvent.type(screen.getByLabelText('Email'), 'a@b.c')
+    await userEvent.type(screen.getByLabelText('Senha'), 'qualquer-senha')
+    await userEvent.click(screen.getByRole('button', { name: 'Entrar' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
 })

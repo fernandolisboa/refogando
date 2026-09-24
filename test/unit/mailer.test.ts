@@ -105,10 +105,58 @@ describe('RealBrevoMailer (#413) — envio + degradação', () => {
   })
 })
 
+describe('RealBrevoMailer.sendAccountEmail (#469) — remetente de conta', () => {
+  function captureSender() {
+    const bodies: Array<{ sender: { email: string } }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        return { ok: true, status: 201 } as Response
+      }),
+    )
+    return bodies
+  }
+
+  it('usa AUTH_MAIL_FROM quando definido', async () => {
+    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('AUTH_MAIL_FROM', 'nao-responda@refogando.example')
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const bodies = captureSender()
+    expect(await mailer.sendAccountEmail(input)).toEqual({ sent: true })
+    expect(bodies[0].sender.email).toBe('nao-responda@refogando.example')
+  })
+
+  it('sem AUTH_MAIL_FROM (ou vazio) cai no DSAR_MAIL_FROM', async () => {
+    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const bodies = captureSender()
+    expect(await mailer.sendAccountEmail(input)).toEqual({ sent: true })
+    expect(bodies[0].sender.email).toBe(FROM)
+  })
+
+  it('sem nenhum remetente → { sent:false } e fetch não é chamado', async () => {
+    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', '')
+    const impl = mockFetch({ ok: true })
+    expect(await mailer.sendAccountEmail(input)).toEqual({ sent: false })
+    expect(impl).not.toHaveBeenCalled()
+  })
+})
+
 describe('FakeMailer (#413) — dublê de teste', () => {
   it('guarda os enviados e retorna { sent:true }', async () => {
     const fake = new FakeMailer()
     expect(await fake.sendDpoAlert(input)).toEqual({ sent: true })
     expect(fake.sent).toEqual([input])
+  })
+
+  it('e-mails de conta vão pra lista própria (#469)', async () => {
+    const fake = new FakeMailer()
+    expect(await fake.sendAccountEmail(input)).toEqual({ sent: true })
+    expect(fake.accountSent).toEqual([input])
+    expect(fake.sent).toEqual([])
   })
 })

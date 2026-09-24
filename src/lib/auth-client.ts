@@ -20,4 +20,7 @@ export const authClient = createAuthClient({
   plugins: [adminClient()],
 })
 
-export const { useSession, signIn, signUp, signOut } = authClient
+// Esqueci minha senha (#469): `requestPasswordReset` (POST /request-password-reset) e `resetPassword`
+// (POST /reset-password). O cliente é um PROXY de caminho: desestruturar é o jeito certo — `.bind` ou
+// qualquer outra propriedade vira segmento de URL e dispara um fetch.
+export const { useSession, signIn, signUp, signOut, requestPasswordReset, resetPassword } = authClient
