@@ -110,6 +110,8 @@ Ou seja: temos leitura primária confiável para **menos da metade** dos domíni
 
 ### 4.3 Domínios a EXCLUIR (e por quê)
 
+> **Implementado (PR #403, issue #394):** os três domínios abaixo estão em `TOS_DENYLIST` (`src/domain/web-search-config.ts`), com subdomínios. O admin não consegue incluí-los na allowlist e eles saíram da lista de sugestões.
+
 Só entram aqui domínios com **cláusula verbatim lida** que colide com a conduta do Refogando:
 
 - **panelinha.com.br** — ToS 3.3 proíbe explicitamente "sistema automatizado / robôs / spiders / scripts" (e 6.2 veda toda reprodução). Proibição **de automação**, direta e independente da natureza factual do conteúdo.
@@ -123,6 +125,8 @@ Nota comum: o argumento de que "fatos de receita não são protegidos por direit
 - **receitasnestle.com.br** — robots permite as páginas de receita e o ToS é silencioso quanto a automação/reprodução (só veda uso comercial, que não fazemos). Recomendado **manter na allowlist**, condicionado a preservar não-uso-comercial e não-republicação (já garantidos pela postura do app). Ainda assim, sujeito à confirmação jurídica geral deste rascunho.
 
 ### 4.5 Domínios em REVISÃO MANUAL (não decidir sem leitura humana)
+
+> **Atenção (2026-09-24):** sete destes domínios (tudogostoso, cybercook, receiteria, allrecipes, simplyrecipes, seriouseats, bbcgoodfood) aparecem hoje como **sugestões** na tela de admin da allowlist, ao lado de receitasnestle. Nada entra automaticamente (a allowlist nasce vazia), mas um clique do admin os incluiria **sem** a leitura verbatim pedida aqui. Até o parecer, não adicionar nenhum deles.
 
 Sete domínios **não** têm base suficiente para excluir nem para manter, e exigem leitura jurídica do ToS (e, onde faltou, do robots) antes de qualquer decisão:
 

@@ -1,5 +1,7 @@
 # Canal de atendimento ao titular e fluxo de remoção — Descoberta na web (Refogando, issue #276)
 
+> **Atualização de 2026-09-24.** Os gaps GAP-1 a GAP-7 da §8 foram implementados entre 2026-07-01 e 2026-07-05. A §8 mostra a situação atual; a §4.2 descreve o fluxo com as ferramentas que existem hoje. As perguntas da §9 continuam valendo.
+
 > **Rascunho para revisão jurídica — não constitui parecer.** Este documento foi redigido pela equipe do Refogando como material de trabalho para um(a) advogado(a) de LGPD/PI **revisar, corrigir e assinar** antes do go-live. Onde a lei é incerta ou depende de interpretação, o texto **sinaliza expressamente** o ponto para validação profissional (marcado como **[VALIDAR]**). As referências legais são a nossa pesquisa interna (registrada no ADR-0019) e podem estar erradas. Nada aqui deve ser publicado ou tratado como posição oficial sem o sign-off.
 
 ---
@@ -12,8 +14,8 @@ Do ponto de vista da LGPD, é essencial separar dois titulares, porque **têm ca
 
 | Titular | Que dado pessoal existe | Como pede remoção hoje |
 |---|---|---|
-| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil, receitas, coleções, avaliações | **self-service autenticado** (DSAR clássico, Art. 18) — em grande parte **ainda a implementar** (ver §8) |
-| **B) Autor/publisher da receita de terceiro** | **apenas `source_name` (nome) + `source_url` (URL)** de receitas `origin='web_imported'` (`src/db/schema.ts` ~L216-222) | **não consegue se auto-atender** — não é usuário do app; só existe a rota de remoção do NOME acionável pelo **dono** da receita |
+| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil, receitas, coleções, avaliações | **self-service autenticado**: exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`) |
+| **B) Autor/publisher da receita de terceiro** | **apenas `source_name` (nome) + `source_url` (URL)** de receitas `origin='web_imported'` (`src/db/schema.ts` ~L216-222) | **formulário público** em `/seus-direitos` (sem login) ou e-mail `privacidade@refogando.com`; o operador executa a remoção |
 
 O ponto crítico de #276 é o **titular B**: o dado dele (o nome do autor) é gravado sem que ele seja usuário, então **ele não tem login para se auto-atender**. O canal de takedown existe justamente para ele. A minimização já está implementada de verdade (só nome + URL; foto e headnote nunca copiados), o que reduz muito a superfície — mas não elimina a obrigação de ter um canal público e um fluxo.
 
@@ -28,13 +30,13 @@ A LGPD (Art. 41) prevê **Encarregado (DPO)** indicado, e a **Res. CD/ANPD 18/20
 Portanto:
 
 **(a) Endereço/canal a publicar:**
-- **E-mail dedicado de privacidade/Encarregado:** `encarregado@<dominio-do-refogando>` (placeholder; alternativa aceita: `privacidade@<dominio-do-refogando>`). Este endereço é o **canal universal** de intake, válido tanto para o titular A quanto para o titular B, e é o **canal mínimo a manter em qualquer cenário** (mesmo como ATPP, a Res. 2/2022 exige um canal de comunicação com o titular).
-- Publicar junto: um link "Seus direitos / Privacidade" descrevendo o fluxo e — **se aplicável** (ver **[VALIDAR]** acima) — o **nome do Encarregado**. Hoje **não há** nenhuma dessas páginas no repositório (ver §8, GAP-1/GAP-2).
+- **E-mail dedicado de privacidade/Encarregado:** `privacidade@refogando.com` (é o endereço publicado na Política e em `/seus-direitos`). Este endereço é o **canal universal** de intake, válido tanto para o titular A quanto para o titular B, e é o **canal mínimo a manter em qualquer cenário** (mesmo como ATPP, a Res. 2/2022 exige um canal de comunicação com o titular).
+- Publicar junto: um link "Seus direitos / Privacidade" descrevendo o fluxo e — **se aplicável** (ver **[VALIDAR]** acima) — o **nome do Encarregado**. Publicado: `/privacidade` e `/seus-direitos`, linkadas no rodapé, com o encarregado nomeado (Fernando Lisboa).
 
 **(b) Os 3 canais de intake (conforme a skill DSAR):**
-1. **API self-service (titular autenticado):** para o **titular A**. Endpoints de acesso/correção/eliminação/portabilidade (Art. 18, II–VI) — ver §8, majoritariamente a implementar. Para o **titular B** este canal **não serve** (ele não tem conta).
-2. **Formulário web público (não-logados / casos especiais):** o caminho natural do **titular B** (autor de terceiro) e de qualquer pessoa sem conta. Deve coletar o **mínimo**: identificação do conteúdo (URL de origem e/ou nome exibido) e o pedido. **Não exigir** documentos ou dados adicionais como condição (Art. 6º, III — necessidade). **A implementar.**
-3. **Canal de privacidade/Encarregado por e-mail:** o endereço do item (a). **Sempre necessário** (é o canal mínimo — obrigatório seja como Encarregado formal, seja como canal de comunicação de ATPP; ver **[VALIDAR]** acima). É o único que já pode ir ao ar imediatamente (basta criar a caixa e publicar).
+1. **API self-service (titular autenticado):** para o **titular A**. Endpoints de acesso/correção/eliminação/portabilidade (Art. 18, II–VI) — implementado para exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`); correção pelo próprio perfil. Para o **titular B** este canal **não serve** (ele não tem conta).
+2. **Formulário web público (não-logados / casos especiais):** o caminho natural do **titular B** (autor de terceiro) e de qualquer pessoa sem conta. Deve coletar o **mínimo**: identificação do conteúdo (URL de origem e/ou nome exibido) e o pedido. **Não exigir** documentos ou dados adicionais como condição (Art. 6º, III — necessidade). **No ar** em `/seus-direitos` (`POST /api/legal/takedown`).
+3. **Canal de privacidade/Encarregado por e-mail:** o endereço do item (a). **Sempre necessário** (é o canal mínimo — obrigatório seja como Encarregado formal, seja como canal de comunicação de ATPP; ver **[VALIDAR]** acima). O endereço já está publicado; falta o dono confirmar que o alias recebe e-mail (registros MX).
 
 > **[VALIDAR]** Como o titular B é frequentemente uma pessoa **fora do Brasil** (sites en-US da allowlist), confirmar se o texto do canal deve ser bilíngue e se há requisito extra de resposta para titulares estrangeiros.
 
@@ -70,14 +72,14 @@ O `source_url` **permanece por decisão de produto** (ADR-0019: atribuição é 
 
 ### 4.2 Fluxo operacional do pedido (titular B — autor de terceiro)
 
-Como o titular B **não tem login** e a rota `clear-attribution` só é acionável pelo **dono** da receita (via sessão), o atendimento é hoje **mediado pelo Encarregado**:
+O titular B **não tem login**, então o atendimento é **mediado pelo operador**, com as ferramentas abaixo:
 
-1. **Recebimento** (formulário web ou e-mail do Encarregado). Abrir ticket, registrar data → **inicia o SLA de 15 dias**. Logar `DSAR_RECEIVED` (§5).
-2. **Verificação de identidade mínima** (Art. 6º, III): confirmar que o solicitante é o autor/publisher ou seu representante, **sem onerar** — em regra, correspondência com o e-mail/contato **público já associado à URL de origem** é suficiente. **Não** pedir documentos como condição. Logar `DSAR_IDENTITY_VERIFIED`.
-3. **Localização do conteúdo:** encontrar as receitas com aquele `source_name`/`source_url`. Hoje **não há ferramenta de admin** para isso (GAP-4) — a busca precisa ser feita internamente no banco.
-4. **Execução da remoção do nome:** aplicar o efeito de `clearSourceAttribution` (zera `source_name`, mantém `source_url`). Como a rota exige ownership, para receitas privadas de usuários será necessária uma **capacidade server-side/admin equivalente** (GAP-4) que rode a mesma normalização (`sourceNameIsHost`) por `source_name`/`source_url`.
-5. **Escalonamento se o pedido for além do nome** (remoção integral / oposição à URL): decidir conforme orientação jurídica (§4.1). Opções técnicas: apagar a receita importada, ou desvincular `source_url`. **A implementar** (GAP-3).
-6. **Resposta ao titular** dentro do prazo, informando o que foi feito. Logar `DSAR_FULFILLED` (com hash) ou `DSAR_REJECTED` (com motivo).
+1. **Recebimento.** O formulário `/seus-direitos` (`POST /api/legal/takedown`) cria um registro em `takedown_ticket` com `received_at` (**início do prazo de 15 dias**) e grava `DSAR_RECEIVED` na mesma transação. Pedidos por e-mail chegam em `privacidade@refogando.com`. Se as credenciais do Brevo estiverem configuradas, o encarregado recebe um aviso.
+2. **Verificação de identidade mínima** (Art. 6º, III). O formulário **não exige documento**: pede tipo do pedido, URL de origem e/ou nome exibido, mensagem e, opcionalmente, um e-mail de contato. A verificação é feita pelo operador, fora do app. **Gap:** o evento `DSAR_IDENTITY_VERIFIED` existe no esquema, mas nada o grava hoje.
+3. **Localização e prévia.** `POST /api/admin/attribution/clear` sem `apply` devolve, sem alterar nada, as receitas importadas que casam pelo `source_name` (normalizado) ou pelo `source_url` (exato), de **qualquer** usuário, inclusive privadas.
+4. **Remoção do nome.** A mesma rota com `apply:true` zera `source_name` em todas elas (mantém `source_url`; pula as que já exibem só o host) e grava `DSAR_FULFILLED` com **hash** do que foi removido. Aceita um `caseId` para ligar a remoção ao pedido.
+5. **Escalada além do nome.** `POST /api/admin/attribution/escalate` com `url_unlink` (zera URL e nome) ou `record_deletion` (apaga a receita importada e as imagens próprias), também com prévia por padrão e auditoria com hash. **Quando** escalar continua sendo decisão do operador à luz da orientação jurídica (§4.1).
+6. **Resposta ao titular** dentro do prazo. **Gap:** não há tela nem rota para mudar o status do ticket para atendido/rejeitado, nem para gravar `DSAR_REJECTED`; o ticket fica aberto no painel de SLA até o fechamento ser implementado.
 
 > Para o **titular A** (usuário logado), a remoção do nome de **suas próprias** receitas importadas já é **self-service**: o botão na tela de detalhe chama `POST /api/recipes/[id]/clear-attribution`. Esse fluxo está pronto; o que falta é o resto do DSAR de conta (§8).
 
@@ -94,7 +96,7 @@ Cada pedido deve gerar entradas de auditoria (a skill DSAR e o Art. 10 da Res. C
 
 **Retenção mínima de 5 anos** dessas entradas (prova de conformidade). O log deve ser **append-only** e conter o mínimo necessário — **não** armazenar o nome removido em claro se puder ser substituído por hash (senão a auditoria vira uma cópia do dado que se pediu para remover).
 
-> **GAP-5 (importante):** hoje `clearSourceAttribution` faz o UPDATE **sem gravar nenhuma entrada de auditoria**. Não existe tabela/infra de audit log DSAR no repositório. Isso **precisa ser implementado** antes do go-live para que a remoção do nome seja auditável.
+> **Situação atual (GAP-5 fechado, PR #402):** a tabela `dsar_audit_event` (`src/server/legal/dsar-audit.ts`) recebe só inserções; `DSAR_FULFILLED` exige hash SHA-256 (CHECK no banco) e nunca guarda o nome em claro. Ressalvas: (a) "só inserção" é garantido pelo código, não por trigger ou permissão no banco; (b) não há prazo de expurgo (o registro é mantido indefinidamente) — ver #473; (c) a remoção feita pelo **dono** da receita (`clearSourceAttribution`) continua sem entrada de auditoria, porque é o próprio usuário editando a sua cópia, não um pedido de titular.
 
 ---
 
@@ -111,19 +113,21 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 
 ---
 
-## 8. O que ainda FALTA implementar (gaps entre a postura e o repo)
+## 8. Gaps entre a postura e o repo — situação atual
 
-| # | Gap | Situação hoje | Ação |
-|---|---|---|---|
-| **GAP-1** | **Política de Privacidade publicada** (Art. 9º LGPD — 7 elementos obrigatórios) | **Não existe** nenhuma página em `src/app` nem documento publicado (só o briefing interno) | Redigir e publicar (skill `lgpd-privacy-policy`); é **checkpoint** — não publicar sem revisão |
-| **GAP-2** | **Canal público anunciado** (contato de privacidade/Encarregado + página "Seus direitos") | **Não existe**; nenhum canal de contato de privacidade divulgado | Criar caixa `encarregado@…` (ou `privacidade@…`), publicar o contato e um link no rodapé/menu. **[VALIDAR]**: se o Refogando for **ATPP**, a **Res. 2/2022 dispensa a indicação formal do Encarregado** (basta o canal de comunicação); **publicar um canal claro segue recomendado de todo modo** |
-| **GAP-3** | **Remoção ALÉM do nome** (oposição à URL / eliminação integral) | `clear-attribution` só zera o nome; **não** apaga a URL nem a receita | Definir com o advogado (§4.1) e implementar a escalada (desvincular `source_url` / apagar a importada) |
-| **GAP-4** | **Capacidade de atender o titular B** (que não tem login) | A rota exige **ownership**; operador não consegue limpar receita privada de um usuário | Ferramenta admin/server-side que rode a mesma normalização por `source_name`/`source_url` |
-| **GAP-5** | **Audit logging DSAR** | A remoção do nome **não** é logada; sem tabela de auditoria | Implementar os 4 eventos + retenção ≥ 5 anos (§5) |
-| **GAP-6** | **Formulário web de intake** e **self-service DSAR do titular A** (acesso/correção/eliminação/portabilidade — Art. 18, II–VI) | Só existe o botão de remover-nome; sem `/api/me/export`, `/api/me/erasure` etc. | Implementar conforme a skill DSAR (fora do escopo estrito de #276, mas necessário para o programa LGPD) |
-| **GAP-7** | **Alertas de SLA (10/13/15)** | Não há job de acompanhamento | Cron sobre tickets DSAR abertos |
+| # | Gap (versão de 2026-07-01) | Situação em 2026-09-24 |
+|---|---|---|
+| **GAP-1** | Política de Privacidade | **Fechado.** Publicada em `/privacidade` (PR #405 e #418), com a Parte (b) sobre a Descoberta na web. Sem sign-off jurídico. |
+| **GAP-2** | Canal público + encarregado | **Fechado.** `/seus-direitos` + formulário + `privacidade@refogando.com`; encarregado nomeado (Fernando Lisboa) (PR #407). **Depende do dono:** criar o alias de e-mail (MX) que já está publicado. |
+| **GAP-3** | Remoção além do nome | **Fechado (mecanismo).** `url_unlink` / `record_deletion` (PR #409). Critério de uso pendente do advogado (§4.1). |
+| **GAP-4** | Operador atender o titular B | **Fechado.** Remoção em lote por nome ou URL (PR #406). |
+| **GAP-5** | Auditoria DSAR | **Fechado.** `dsar_audit_event` com hash (PR #402). Ver ressalvas na §5. |
+| **GAP-6** | Formulário de intake + DSAR do titular A | **Fechado.** Formulário (PR #407); exportação e eliminação (PR #410); expurgo de fotos após 180 dias (cron `account-purge`). |
+| **GAP-7** | Alertas de SLA | **Fechado.** Cron diário, alertas 10/13/15, e-mail ao encarregado, painel admin (PRs #408, #415, #416). **Depende do dono:** `BREVO_API_KEY`, `DSAR_MAIL_FROM`, `DSAR_DPO_EMAIL`, `CRON_SECRET`. |
+| **Novo** | Fechamento do ticket | **Aberto (engenharia).** Não há como marcar um ticket como atendido/rejeitado nem gravar `DSAR_IDENTITY_VERIFIED`/`DSAR_REJECTED`. |
+| **Novo** | Retenção | **Aberto (advogado + #473).** Tickets de takedown, log de auditoria e conteúdo de contas eliminadas sem prazo definido. |
 
-**Bloqueadores mínimos para ligar a Descoberta na web (#276) em produção:** GAP-2 (canal anunciado), GAP-5 (auditoria da remoção), GAP-1 (política mencionando a coleta do nome+URL) e o **sign-off jurídico** dos pontos **[VALIDAR]** — sobretudo §4.1 (até onde a atribuição obrigatória prevalece) e §7 (base legal). Os demais gaps podem ser faseados, desde que o canal do Encarregado atenda pedidos manualmente enquanto isso.
+**O que ainda bloqueia ligar a Descoberta na web (#276):** o **sign-off jurídico** dos pontos **[VALIDAR]** — sobretudo §4.1 (quando a atribuição cede) e §7 (base legal) — e a configuração operacional do dono (alias de e-mail e Brevo), sem a qual o canal publicado pode não receber pedidos.
 
 ---
 
