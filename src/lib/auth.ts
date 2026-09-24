@@ -35,6 +35,18 @@ if (!authSecret && process.env.NODE_ENV !== 'test') {
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
 }
 
+/**
+ * Log do Better Auth (#469). Descarta a linha que carrega o email digitado sem conta; o resto sai como antes.
+ * `message` NÃO é sempre string: a lib passa o próprio `Error` em alguns catches (list-sessions, link de
+ * conta OAuth) — tratar como string lançaria TypeError dentro do catch e engoliria o erro original.
+ */
+export function authLog(level: 'debug' | 'info' | 'warn' | 'error', message: unknown, ...args: unknown[]): void {
+  if (typeof message === 'string' && message.startsWith('Reset Password: User not found')) return
+  const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+  if (typeof message === 'string') out(`[Better Auth] ${message}`, ...args)
+  else out('[Better Auth]', message, ...args)
+}
+
 /** #469 — teto de e-mails de reset por conta e a janela (ver `sendResetPassword`). */
 const RESET_MAX_PER_WINDOW = 3
 const RESET_WINDOW_MS = 15 * 60 * 1000
@@ -113,13 +125,7 @@ function buildAuth() {
     },
     // #469 (LGPD): o Better Auth loga em nível error o email digitado quando não há conta ("Reset Password:
     // User not found", { email }). Email de terceiro não vai pro log da função; o resto segue o default.
-    logger: {
-      log: (level, message, ...args) => {
-        if (message.startsWith('Reset Password: User not found')) return
-        const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
-        out(`[Better Auth] ${message}`, ...args)
-      },
-    },
+    logger: { log: authLog },
     session: {
       // cookieCache OFF (SEC-1, E5): o gating relê role/deletedAt VIVOS do DB a cada
       // request (requireSession barra deletedAt != null; requireRole usa role atual).
@@ -169,6 +175,8 @@ function buildAuth() {
         // Anti mail-bombing por DESTINATÁRIO (o rate limit é por IP): no máx. RESET_MAX_PER_WINDOW e-mails por
         // conta na janela. Protege a caixa do Usuário e a cota Brevo compartilhada com os alertas do DPO. O
         // token do pedido atual já foi gravado quando este callback roda, então ele entra na contagem.
+        // Trade-off aceito: terceiros podem esgotar a cota da janela, mas os e-mails que ELES dispararam chegam
+        // à caixa do dono com links válidos por 1h — o dono nunca fica sem um link utilizável.
         if ((await recentResetRequests(user.id)) > RESET_MAX_PER_WINDOW) return
         await getMailer().sendAccountEmail(
           buildResetPasswordEmail({
