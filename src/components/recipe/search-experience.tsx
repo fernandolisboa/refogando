@@ -505,7 +505,9 @@ export function SearchExperience({
   const webSignInHref =
     !authed && !session.isPending
       ? `/sign-in?returnTo=${encodeURIComponent(
-          `${pathname ?? '/'}?${new URLSearchParams({ q: fitEncoded(q.trim()).trim() }).toString()}`,
+          // `encodeURIComponent` (não URLSearchParams): é o encoder que `fitEncoded` orça — o form-encoding
+          // escapa `!'()~` em 3 chars e estouraria os 512 do `safeInternalPath` (login cairia em `/`).
+          `${pathname ?? '/'}?q=${encodeURIComponent(fitEncoded(q.trim()).trim())}`,
         )}`
       : null
 

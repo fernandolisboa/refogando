@@ -722,7 +722,7 @@ describe('SearchExperience — visitante com a web ligada', () => {
     await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
 
     const convite = await screen.findByRole('link', { name: M.webEntrarCta })
-    expect(convite).toHaveAttribute('href', returnTo('feijoada+preta'))
+    expect(convite).toHaveAttribute('href', returnTo('feijoada%20preta'))
     expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
     expect(discoveryCalls(fetchMock).length).toBe(0)
   })
@@ -759,7 +759,18 @@ describe('SearchExperience — visitante com a web ligada', () => {
     const back = new URL(href, 'https://x').searchParams.get('returnTo')!
     expect(back.length).toBeLessThanOrEqual(512)
     expect(back.startsWith('/?q=ç')).toBe(false) // codificado, não cru
-    expect(decodeURIComponent(back.replace(/\+/g, ' ')).startsWith('/?q=ççç')).toBe(true)
+    expect(decodeURIComponent(back).startsWith('/?q=ççç')).toBe(true)
+  })
+
+  it("V6 — termo ENORME com !'()~ (o form-encoding os escaparia em 3 chars): o returnTo ainda cabe", async () => {
+    sessionState = anon()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    renderSearchAt(`/?q=${encodeURIComponent("(a)!'~".repeat(120))}`)
+
+    const link = await screen.findByRole('link', { name: M.webEntrarBotao })
+    const back = new URL(link.getAttribute('href')!, 'https://x').searchParams.get('returnTo')!
+    expect(back.length).toBeLessThanOrEqual(512)
+    expect(back.startsWith('/?q=(a)!')).toBe(true)
   })
 })
 
