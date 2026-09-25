@@ -26,10 +26,22 @@ const MAX_ENCODED_TERM = 480
  * quando o termo serve de pedido; `/create` cru caso contrário (sem `?q=` espúrio, nem "123" pré-preenchido).
  */
 export function createFromSearchHref(term: string): string {
-  let t = term.trim()
-  if (searchTermReadiness(t) !== 'ok') return '/create'
-  // O destino também vira `returnTo` do login, que `safeInternalPath` recusa acima de 512 caracteres.
-  // Corta o termo (por code point, sem partir acento/emoji) até a URL caber, em vez de perder o destino.
-  while (encodeURIComponent(t).length > MAX_ENCODED_TERM) t = Array.from(t).slice(0, -1).join('')
-  return `/create?q=${encodeURIComponent(t)}`
+  const t = fitEncoded(term.trim()).trim()
+  return searchTermReadiness(t) === 'ok' ? `/create?q=${encodeURIComponent(t)}` : '/create'
+}
+
+/**
+ * O destino também vira `returnTo` do login, que `safeInternalPath` recusa acima de 512 caracteres. Corta
+ * o termo (por code point, sem partir acento/emoji) até caber, numa passada só (termo colado pode ser
+ * enorme e isto roda a cada render).
+ */
+function fitEncoded(t: string): string {
+  let size = 0
+  let out = ''
+  for (const ch of t) {
+    size += encodeURIComponent(ch).length
+    if (size > MAX_ENCODED_TERM) break
+    out += ch
+  }
+  return out
 }

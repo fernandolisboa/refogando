@@ -46,4 +46,14 @@ describe('createFromSearchHref', () => {
     // Corta por code point: o que sobra ainda decodifica sem lançar (sem sequência partida).
     expect(() => decodeURIComponent(href.slice('/create?q='.length))).not.toThrow()
   })
+
+  it('se o corte deixa só dígitos, cai no /create cru (mesma regra do "123")', () => {
+    expect(createFromSearchHref('1'.repeat(500) + ' pão')).toBe('/create')
+  })
+
+  it('termo colado gigante não trava (passada única)', () => {
+    const t0 = performance.now()
+    createFromSearchHref('ç'.repeat(50_000))
+    expect(performance.now() - t0).toBeLessThan(200)
+  })
 })
