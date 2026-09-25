@@ -455,12 +455,16 @@ function buildAuth() {
           // `name` sempre presente (email+senha e Google enviam name); fallback 'user' no
           // domínio cobre nomes vazios/só-símbolos.
           //
-          // #470 (F2): com a confirmação ligada, conta NÃO confirmada (todo cadastro de email+senha) nasce com
-          // handle de ESPERA aleatório — o derivado do nome escolhido por quem cadastra seria oráculo de
-          // enumeração (`-2`, `/u/<handle>`). O handle do nome chega quando o email é provado.
-          before: async (user) => {
+          // #470 (F2): com a confirmação ligada, o cadastro de EMAIL+SENHA (`/sign-up/email`, conta nasce não
+          // confirmada) ganha handle de ESPERA aleatório — o derivado do nome escolhido por quem cadastra seria
+          // oráculo de enumeração (`-2`, `/u/<handle>`). O handle do nome chega quando o email é provado. SÓ esse
+          // caminho: conta criada pelo Google (mesmo com `email_verified=false` do provedor), pelo admin etc. tem
+          // sessão/dono e ganha o handle do nome direto. `ctx` é o contexto do endpoint que está criando (null
+          // fora de endpoint).
+          before: async (user, ctx) => {
+            const credentialSignUp = ctx?.path === '/sign-up/email'
             const handle =
-              verifyEmail && !user.emailVerified
+              verifyEmail && credentialSignUp && !user.emailVerified
                 ? pendingHandle()
                 : await generateUniqueHandle((user.name as string | undefined) ?? '')
             return { data: { ...user, handle } }

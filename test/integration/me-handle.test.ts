@@ -131,7 +131,8 @@ describe('/api/me — troca de handle via PATCH (#128)', () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'reserv@handle.test' })
     const antes = await readHandle(userId)
 
-    for (const reserved of ['admin', 'api', 'users', 'profile']) {
+    // #470: o prefixo do handle de espera da conta pendente também (senão o usuário se passaria por uma).
+    for (const reserved of ['admin', 'api', 'users', 'profile', 'pendente-0123456789abcdef', 'pendente-ana']) {
       const res = await patch({ name: 'Ana', handle: reserved }, headers)
       expect(res.status).toBe(400)
       await expect(res.json()).resolves.toMatchObject({ error: 'handle_reserved' })

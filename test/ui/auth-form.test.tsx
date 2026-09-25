@@ -271,7 +271,7 @@ describe('AuthForm — confirmação de email (#470)', () => {
     expect(screen.getByRole('heading', { name: 'Confira seu email' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Enviamos um link de confirmação para ana@ex.com')
     // Mesma tela exista ou não conta com o email: o lembrete de "já tem conta" sempre aparece.
-    expect(screen.getByText(/Se este email já tem conta/)).toBeInTheDocument()
+    expect(screen.getByText(/Se este email já tiver uma conta, você pode entrar ou redefinir a senha/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
     expect(push).not.toHaveBeenCalled()
     expect(refresh).not.toHaveBeenCalled()

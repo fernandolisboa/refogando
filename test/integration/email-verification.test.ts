@@ -484,6 +484,27 @@ describe('F3 — sem vínculo implícito conta↔Google (#470)', () => {
     expect(out.data).toBeNull()
   })
 
+  it('conta criada pelo Google ganha handle do NOME mesmo com email_verified=false do provedor (sem handle de espera)', async () => {
+    const c = { context: await getAuth().$context } as unknown as Parameters<typeof handleOAuthUserInfo>[0]
+    const g = google('g-333', 'nao-verificado@f3.test')
+    const out = await handleOAuthUserInfo(c, { ...g, userInfo: { ...g.userInfo, name: 'Genésia', emailVerified: false } })
+    expect(out.error).toBeNull()
+    expect((await userRow('nao-verificado@f3.test')).handle).toMatch(/^genesia(-\d+)?$/)
+  })
+
+  it('o hook de criação só dá handle de espera ao cadastro de email+senha (caminho do endpoint)', async () => {
+    const before = getAuth().options.databaseHooks!.user!.create!.before!
+    const data = { name: 'Clotilde', email: 'x@f3.test', emailVerified: false } as never
+    const handleFor = async (path: string | null) => {
+      const out = (await before(data, (path ? { path } : null) as never)) as { data: { handle: string } }
+      return out.data.handle
+    }
+    expect(await handleFor('/sign-up/email')).toMatch(/^pendente-[a-z0-9]{16}$/)
+    for (const path of ['/callback/:id', '/sign-in/social', '/admin/create-user', null]) {
+      expect(await handleFor(path)).toBe('clotilde')
+    }
+  })
+
   it('quem entrou pelo Google continua entrando (vínculo achado pelo accountId), com handle do nome', async () => {
     const c = { context: await getAuth().$context } as unknown as Parameters<typeof handleOAuthUserInfo>[0]
     const first = await handleOAuthUserInfo(c, google('g-222', 'gi@f3.test'))

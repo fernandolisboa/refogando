@@ -6,15 +6,14 @@
  * Então a conta nasce com um handle ALEATÓRIO de espera (`pendente-<16 chars>`, impossível de derivar) e só
  * ganha o handle do nome quando o email é provado: link de confirmação (`afterEmailVerification`) ou link de
  * senha (`onPasswordReset` — ver B1 em auth.ts). Enquanto isso, as superfícies públicas a escondem
- * (`publicAccountFilter`), e a que nunca é provada é apagada depois de 48h (`purgeStalePendingAccounts`).
+ * (`publicAccountFilter`). O prefixo `pendente-` é RESERVADO (`@/domain/handle`): ninguém o escolhe no perfil nem o
+ * ganha do nome — só o cadastro de email+senha com a confirmação ligada o atribui.
  */
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
-import type { Database } from '@/db/client'
 import { users } from '@/db/schema'
 import { generateUniqueHandle } from '@/server/handle'
-
-const PENDING_PREFIX = 'pendente-'
+import { PENDING_HANDLE_PREFIX } from '@/domain/handle'
 
 /** SQLSTATE do erro do Postgres (postgres.js embrulhado pelo Drizzle em `cause`) — como `pgCode` do recipe. */
 function pgCode(err: unknown): string | undefined {
@@ -32,7 +31,7 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 /** Handle de espera: `pendente-` + 16 chars aleatórios (cabe nos 30 do handle, formato válido, não reservado). */
 export function pendingHandle(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
-  return PENDING_PREFIX + Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('')
+  return PENDING_HANDLE_PREFIX + Array.from(bytes, (b) => ALPHABET[b % ALPHABET.length]).join('')
 }
 
 export function isPendingHandle(handle: string | null | undefined): boolean {
@@ -70,7 +69,8 @@ export async function assignNameHandle(userId: string): Promise<void> {
  * A chave é o handle de espera, não só `email_verified`: contas criadas não confirmadas com o gate DESLIGADO
  * (handle do nome, com conteúdo, seguidas por alguém) seguem públicas quando o gate liga — só precisam
  * confirmar no próximo login. Conta pendente não tem sessão, então nunca segue ninguém nem publica: esconder
- * no perfil, nas rotas de seguir e na busca basta para ela não aparecer em lugar nenhum.
+ * no perfil, nas rotas de seguir e na busca basta para ela não aparecer em lugar nenhum. Como o prefixo é
+ * reservado, ninguém entra nesse filtro por escolher o handle.
  */
 export function publicAccountFilter(verificationRequired: boolean): SQL {
   return verificationRequired
@@ -83,30 +83,4 @@ export function publicAccountSql(verificationRequired: boolean): SQL {
   return verificationRequired
     ? sql`users.deleted_at IS NULL AND (users.email_verified OR users.handle !~ ${PENDING_PATTERN})`
     : sql`users.deleted_at IS NULL`
-}
-
-/** Conta pendente sem prova do email por mais que isto é apagada (ver `purgeStalePendingAccounts`). */
-export const PENDING_ACCOUNT_TTL_MS = 48 * 60 * 60 * 1000
-
-/**
- * #470 (R1) — EXPURGO das contas pendentes velhas (cron `account-purge`). Fecha o que sobra do pré-sequestro: a
- * conta que um terceiro cadastrou com o email da vítima (e a senha dele) só vira conta de verdade se alguém
- * abrir um link do email; passadas 48h sem isso, ela some e o email fica livre para o dono cadastrar.
- * HARD-delete (exceção consciente ao soft-delete do ADR-0014): conta pendente nunca teve sessão, então não tem
- * conteúdo, seguidores nem avaliações — só a própria linha e a `account` de senha (FK em cascata). Critério
- * estrito: handle de espera, email NÃO confirmado, criada há mais de 48h, nenhuma sessão, nenhuma receita (a FK
- * `restrict` nunca dispararia, mas é a rede). Devolve só a contagem (sem PII). Idempotente.
- */
-export async function purgeStalePendingAccounts(db: Database, now: Date): Promise<number> {
-  const cutoff = new Date(now.getTime() - PENDING_ACCOUNT_TTL_MS)
-  const deleted = await db.execute<{ id: string }>(sql`
-    DELETE FROM users
-    WHERE users.handle ~ ${PENDING_PATTERN}
-      AND NOT users.email_verified
-      AND users.created_at < ${cutoff.toISOString()}
-      AND NOT EXISTS (SELECT 1 FROM session WHERE session.user_id = users.id)
-      AND NOT EXISTS (SELECT 1 FROM recipe WHERE recipe.owner_id = users.id)
-    RETURNING users.id
-  `)
-  return deleted.length
 }

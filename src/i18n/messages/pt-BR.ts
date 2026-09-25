@@ -523,7 +523,7 @@ export const ptBR = {
     confirmeEmailCorpo:
       'Enviamos um link de confirmação para {email}. Abra o link para ativar sua conta e entrar. Confira também o spam.',
     confirmeEmailJaTemConta:
-      'Se este email já tem conta, nenhum link novo é enviado: entre ou redefina a senha.',
+      'Se este email já tiver uma conta, você pode entrar ou redefinir a senha — e confira sua caixa de entrada.',
     reenviarEmail: 'Reenviar email',
     // Neutra de propósito: o servidor responde igual exista ou não conta (e o reenvio público manda o link de
     // "conclua seu cadastro", não o de confirmação — ver #470 B1 em auth.ts).

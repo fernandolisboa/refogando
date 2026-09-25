@@ -478,7 +478,7 @@ export const enUS: Messages = {
     confirmeEmailCorpo:
       'We sent a confirmation link to {email}. Open the link to activate your account and sign in. Check your spam folder too.',
     confirmeEmailJaTemConta:
-      'If this email already has an account, no new link is sent: sign in or reset your password.',
+      'If this email already has an account, you can sign in or reset your password — and check your inbox.',
     reenviarEmail: 'Resend email',
     // Neutral on purpose: the server answers the same whether or not an account exists (and the public resend
     // sends the "finish signing up" link, not the confirmation one — see #470 B1 in auth.ts).

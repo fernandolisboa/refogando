@@ -55,6 +55,19 @@ export const RESERVED_HANDLES: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * #470 — prefixo RESERVADO do handle de ESPERA da conta pendente de confirmação (`pendente-<16>`, ver
+ * `@/server/auth/pending-account`). Só o cadastro de email+senha com a confirmação ligada o atribui: o usuário não
+ * o escolhe (`validateHandle` → reserved) e o nome nunca o gera (`handleBaseFromName`). Senão qualquer um poderia
+ * se parecer com uma conta pendente (e sumir das superfícies públicas, ou pior, ser tratado como uma).
+ */
+export const PENDING_HANDLE_PREFIX = 'pendente-'
+
+/** Reservado: palavra da lista ou começa com o prefixo de espera. */
+export function isReservedHandle(handle: string): boolean {
+  return RESERVED_HANDLES.has(handle) || handle.startsWith(PENDING_HANDLE_PREFIX)
+}
+
+/**
  * Normaliza um handle CRU do path (`/u/<handle>`) pra LOOKUP: trim + minúsculo (como a gravação no
  * #128). Vazio → null (o caller responde 404 sem tocar o DB útil). NÃO valida formato/reservada — é
  * só a forma de consulta (o que não casar nenhuma linha já é 404 leak-safe). Fonte ÚNICA do perfil
@@ -104,7 +117,7 @@ export function validateHandle(handle: string): HandleValidation {
   if (handle.includes('--')) {
     return { ok: false, reason: 'invalid' }
   }
-  if (RESERVED_HANDLES.has(handle)) {
+  if (isReservedHandle(handle)) {
     return { ok: false, reason: 'reserved' }
   }
   return { ok: true }
@@ -122,8 +135,9 @@ export function handleBaseFromName(name: string, reservedSuffix = 6): string {
   const slug = slugify(name)
   const maxBase = HANDLE_MAX_LEN - reservedSuffix
   let base = slug.slice(0, Math.max(maxBase, HANDLE_MIN_LEN)).replace(/-+$/g, '')
-  // Slug vazio/curto (nome só de símbolos ou 1–2 chars) ou reservado → fallback estável.
-  if (base.length < HANDLE_MIN_LEN || RESERVED_HANDLES.has(base)) {
+  // Slug vazio/curto (nome só de símbolos ou 1–2 chars) ou reservado → fallback estável. `pendente` puro também:
+  // a desambiguação o levaria a `pendente-2`, que cai no prefixo reservado (#470).
+  if (base.length < HANDLE_MIN_LEN || isReservedHandle(base) || `${base}-`.startsWith(PENDING_HANDLE_PREFIX)) {
     base = 'user'
   }
   return base
@@ -138,7 +152,7 @@ export function handleBaseFromName(name: string, reservedSuffix = 6): string {
  * Garante o resultado dentro de HANDLE_MAX_LEN: se `base + -N` estourar, encurta o base.
  */
 export function disambiguate(base: string, taken: ReadonlySet<string>): string {
-  const isFree = (h: string): boolean => !taken.has(h) && !RESERVED_HANDLES.has(h)
+  const isFree = (h: string): boolean => !taken.has(h) && !isReservedHandle(h)
 
   if (isFree(base) && base.length <= HANDLE_MAX_LEN) return base
 
