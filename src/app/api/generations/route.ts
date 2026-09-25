@@ -3,6 +3,7 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
@@ -175,6 +176,8 @@ export async function POST(req: Request): Promise<Response> {
   // prompts) porque o eixo de variação molda o systemPrompt via buildSystemPrompt.
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
+  // ADR-0034: esforço/thinking escolhidos no admin p/ este modelo (default da tarefa sem ajuste salvo).
+  const settings = settingsForModel('generation', cfg?.aiTasks, model)
   // #423: re-valida a config de variação na leitura (fail-safe, espelha loadAppConfig) — linha
   // editada à mão com pólo/instrução vazios cai no DEFAULT, nunca compõe um fragmento sem norte.
   const parsedVariant = parseRecipeVariantConfig(cfg?.recipeVariantConfig)
@@ -394,6 +397,7 @@ export async function POST(req: Request): Promise<Response> {
       systemPrompt,
       userPrompt,
       model,
+      settings,
       cozinhaSlugs: [...activeCozinhas],
       axes,
     })
@@ -513,6 +517,7 @@ export async function POST(req: Request): Promise<Response> {
     systemPrompt,
     userPrompt,
     model,
+    settings,
     // #318: constrange a cozinha da SAÍDA structured ao vocabulário VIVO (data-driven). Mesmo
     // conjunto ATIVO hoisted acima — vale p/ structured E free_text (a IA só emite cozinhas vivas).
     cozinhaSlugs: [...activeCozinhas],

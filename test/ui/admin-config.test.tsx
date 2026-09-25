@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 
 /**
- * Config de modelo (#63, AC1). Teste de COMPONENTE jsdom (seam #54): `fetch` mockado no shape REAL
- * das rotas `GET/PUT /api/admin/config` e `GET /api/admin/models`. Cobre: carga do valor + opções,
- * modelo salvo fora da lista atual, salvar com sucesso, erro específico
- * (`modelo_invalido`), erro GENÉRICO (500 `erro_interno`) e erro de CARGA + retry.
+ * Modelos de IA por tarefa (#63, ADR-0034). Teste de COMPONENTE jsdom (seam #54): `fetch` mockado no
+ * shape REAL das rotas `GET/PUT /api/admin/config` e `GET /api/admin/models`. Cobre: três blocos com o
+ * valor em uso, modelo fora da lista, opções que seguem as capacidades do modelo, ajuste por modelo ao
+ * trocar o select, PUT só da tarefa, erros por chave (`ajuste_recusado` com o motivo, 500 genérico) e
+ * erro de CARGA + retry.
  *
  * As asserções da RolesSection vivem em `roles-section.test.tsx` (#269 trocou o "cole o UUID" por
  * busca → selecionar → atribuir; o componente ficou grande demais pra dividir o arquivo).
@@ -42,18 +43,35 @@ afterEach(() => {
 
 const A = ptBR.admin
 
-// Opções como `GET /api/admin/models` devolve (o mais novo de cada família).
+const ALL = { effort: ['low', 'medium', 'high', 'xhigh', 'max'], adaptiveThinking: true }
+// Opções como `GET /api/admin/models` devolve (o mais novo de cada família, com capacidades).
 const MODELS_OK: FetchResult = {
   ok: true,
   status: 200,
   body: {
     models: [
-      { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', family: 'opus' },
-      { id: 'claude-sonnet-5', displayName: 'Claude Sonnet 5', family: 'sonnet' },
-      { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1', family: 'fable' },
+      { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', family: 'opus', capabilities: ALL },
+      {
+        id: 'claude-sonnet-5',
+        displayName: 'Claude Sonnet 5',
+        family: 'sonnet',
+        capabilities: { effort: ['low', 'medium', 'high'], adaptiveThinking: false },
+      },
+      { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1', family: 'fable', capabilities: null },
     ],
   },
 }
+
+type Settings = { effort: string | null; thinking: string }
+function aiTasks(over: Partial<Record<string, { model: string; byModel: Record<string, Settings> }>> = {}) {
+  return {
+    generation: { model: 'claude-opus-5-5', byModel: {} },
+    translation: { model: 'claude-sonnet-5', byModel: {} },
+    extraction: { model: 'claude-sonnet-5', byModel: {} },
+    ...over,
+  }
+}
+const CONFIG_OK = (tasks = aiTasks()): FetchResult => ({ ok: true, status: 200, body: { aiTasks: tasks } })
 
 function renderConfig() {
   return render(
@@ -63,93 +81,149 @@ function renderConfig() {
   )
 }
 
-describe('ConfigSection (#63 AC1)', () => {
-  it('carrega o valor atual no select', async () => {
-    mockFetch({
-      'GET /api/admin/models': MODELS_OK,
-      'GET /api/admin/config': { ok: true, status: 200, body: { defaultModel: 'claude-opus-5-5' } },
-    })
+/** Os três selects (modelo, esforço, thinking) + o botão de um bloco, pelo título da tarefa. */
+async function block(titulo: string) {
+  const group = await screen.findByRole('group', { name: titulo })
+  const [model, effort, thinking] = within(group).getAllByRole('combobox') as HTMLSelectElement[]
+  return { group, model, effort, thinking, save: within(group).getByRole('button', { name: A.salvar }) }
+}
+
+const texts = (select: HTMLSelectElement) => [...select.options].map((o) => o.textContent)
+
+describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
+  it('um bloco por tarefa, com o modelo em uso e o ajuste default de cada tarefa', async () => {
+    mockFetch({ 'GET /api/admin/models': MODELS_OK, 'GET /api/admin/config': CONFIG_OK() })
     renderConfig()
-    const select = (await screen.findByRole('combobox')) as HTMLSelectElement
-    expect(select.value).toBe('claude-opus-5-5')
-    expect([...select.options].map((o) => o.textContent)).toEqual([
-      'Claude Opus 5.5',
-      'Claude Sonnet 5',
-      'Claude Fable 5.1',
-    ])
+    const gen = await block(A.tarefaGeracaoTitulo)
+    expect(gen.model.value).toBe('claude-opus-5-5')
+    expect(texts(gen.model)).toEqual(['Claude Opus 5.5', 'Claude Sonnet 5', 'Claude Fable 5.1'])
+    expect(gen.effort.value).toBe('medium')
+    expect(gen.thinking.value).toBe('default')
+
+    const tr = await block(A.tarefaTraducaoTitulo)
+    expect(tr.model.value).toBe('claude-sonnet-5')
+    expect(tr.effort.value).toBe('')
+    expect(tr.thinking.value).toBe('off')
+    await block(A.tarefaExtracaoTitulo)
   })
 
-  it('modelo salvo fora da lista atual aparece marcado (o select não mente sobre o que está em uso)', async () => {
+  it('modelo em uso fora da lista aparece marcado (o select não mente sobre o que está em uso)', async () => {
     mockFetch({
       'GET /api/admin/models': MODELS_OK,
-      'GET /api/admin/config': { ok: true, status: 200, body: { defaultModel: 'claude-opus-4-8' } },
+      'GET /api/admin/config': CONFIG_OK(aiTasks({ generation: { model: 'claude-opus-4-8', byModel: {} } })),
     })
     renderConfig()
-    const select = (await screen.findByRole('combobox')) as HTMLSelectElement
-    expect(select.value).toBe('claude-opus-4-8')
-    expect(select.options[0].textContent).toBe(`claude-opus-4-8 (${A.modeloForaDaLista})`)
-    expect(select.options).toHaveLength(4)
+    const gen = await block(A.tarefaGeracaoTitulo)
+    expect(gen.model.value).toBe('claude-opus-4-8')
+    expect(gen.model.options[0].textContent).toBe(`claude-opus-4-8 (${A.modeloForaDaLista})`)
+    expect(gen.model.options).toHaveLength(4)
   })
 
-  it('salva o modelo escolhido (PUT com body correto) → status de sucesso', async () => {
+  it('opções de esforço e thinking seguem as capacidades do modelo escolhido', async () => {
+    mockFetch({ 'GET /api/admin/models': MODELS_OK, 'GET /api/admin/config': CONFIG_OK() })
+    renderConfig()
+    const tr = await block(A.tarefaTraducaoTitulo)
+    // Sonnet (no dublê): só low/medium/high, sem thinking adaptativo.
+    expect(texts(tr.effort)).toEqual([A.padraoDoModelo, A.esforcoLow, A.esforcoMedium, A.esforcoHigh])
+    expect(texts(tr.thinking)).toEqual([A.padraoDoModelo, A.thinkingDesligado])
+
+    const user = userEvent.setup()
+    // Fable (sem capacidades conhecidas): oferece tudo; o servidor testa ao salvar.
+    await user.selectOptions(tr.model, 'claude-fable-5-1')
+    expect(tr.effort.options).toHaveLength(6)
+    expect(texts(tr.thinking)).toEqual([A.padraoDoModelo, A.thinkingAdaptativo, A.thinkingDesligado])
+  })
+
+  it('trocar o modelo recupera o ajuste salvo para ele, senão o default da tarefa', async () => {
+    mockFetch({
+      'GET /api/admin/models': MODELS_OK,
+      'GET /api/admin/config': CONFIG_OK(
+        aiTasks({
+          extraction: {
+            model: 'claude-sonnet-5',
+            byModel: { 'claude-opus-5-5': { effort: 'max', thinking: 'adaptive' } },
+          },
+        }),
+      ),
+    })
+    const user = userEvent.setup()
+    renderConfig()
+    const ex = await block(A.tarefaExtracaoTitulo)
+    await user.selectOptions(ex.model, 'claude-opus-5-5')
+    expect(ex.effort.value).toBe('max')
+    expect(ex.thinking.value).toBe('adaptive')
+    await user.selectOptions(ex.model, 'claude-fable-5-1')
+    expect(ex.effort.value).toBe('')
+    expect(ex.thinking.value).toBe('off')
+  })
+
+  it('salvar manda SÓ a tarefa do bloco (modelo + ajuste) → status de sucesso no bloco', async () => {
     const fetchMock = mockFetch({
       'GET /api/admin/models': MODELS_OK,
-      'GET /api/admin/config': { ok: true, status: 200, body: { defaultModel: 'claude-opus-5-5' } },
+      'GET /api/admin/config': CONFIG_OK(),
+      'PUT /api/admin/config': CONFIG_OK(
+        aiTasks({
+          extraction: { model: 'claude-opus-5-5', byModel: { 'claude-opus-5-5': { effort: 'high', thinking: 'off' } } },
+        }),
+      ),
+    })
+    const user = userEvent.setup()
+    renderConfig()
+    const ex = await block(A.tarefaExtracaoTitulo)
+    await user.selectOptions(ex.model, 'claude-opus-5-5')
+    await user.selectOptions(ex.effort, 'high')
+    await user.click(ex.save)
+
+    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? 'GET') === 'PUT')!
+    expect(JSON.parse(String((put[1] as RequestInit).body))).toEqual({
+      aiTasks: { extraction: { model: 'claude-opus-5-5', settings: { effort: 'high', thinking: 'off' } } },
+    })
+    expect(await within(ex.group).findByText(A.salvo)).toBeInTheDocument()
+  })
+
+  it('400 ajuste_recusado → mensagem específica + o motivo que a Anthropic deu', async () => {
+    mockFetch({
+      'GET /api/admin/models': MODELS_OK,
+      'GET /api/admin/config': CONFIG_OK(),
       'PUT /api/admin/config': {
-        ok: true,
-        status: 200,
-        body: { defaultModel: 'claude-sonnet-5' },
+        ok: false,
+        status: 400,
+        body: { error: 'ajuste_recusado', task: 'generation', message: 'thinking.type.disabled is not supported' },
       },
     })
     const user = userEvent.setup()
     renderConfig()
-    const select = (await screen.findByRole('combobox')) as HTMLSelectElement
-    await user.selectOptions(select, 'claude-sonnet-5')
-    await user.click(screen.getByRole('button', { name: A.salvar }))
-
-    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? 'GET') === 'PUT')!
-    expect(String(put[0])).toBe('/api/admin/config')
-    expect(JSON.parse(String((put[1] as RequestInit).body))).toEqual({
-      defaultModel: 'claude-sonnet-5',
-    })
-    expect(await screen.findByText(A.salvo)).toBeInTheDocument()
+    const gen = await block(A.tarefaGeracaoTitulo)
+    await user.selectOptions(gen.thinking, 'off')
+    await user.click(gen.save)
+    const alert = await within(gen.group).findByRole('alert')
+    expect(alert).toHaveTextContent(A.erroAjusteRecusado)
+    expect(alert).toHaveTextContent('thinking.type.disabled is not supported')
   })
 
-  it('modelo inválido (400 modelo_invalido) → mensagem específica', async () => {
-    mockFetch({
-      'GET /api/admin/models': MODELS_OK,
-      'GET /api/admin/config': { ok: true, status: 200, body: { defaultModel: 'claude-opus-5-5' } },
-      'PUT /api/admin/config': { ok: false, status: 400, body: { error: 'modelo_invalido' } },
-    })
-    const user = userEvent.setup()
-    renderConfig()
-    await screen.findByRole('combobox')
-    await user.click(screen.getByRole('button', { name: A.salvar }))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(A.erroModelo)
+  it('400 modelo_invalido / ajuste_nao_suportado → mensagens próprias; 500 → GENÉRICA', async () => {
+    const cases: Array<[FetchResult, string]> = [
+      [{ ok: false, status: 400, body: { error: 'modelo_invalido' } }, A.erroModelo],
+      [{ ok: false, status: 400, body: { error: 'ajuste_nao_suportado' } }, A.erroAjusteNaoSuportado],
+      [{ ok: false, status: 500, body: { error: 'erro_interno' } }, A.erroGenerico],
+    ]
+    for (const [response, message] of cases) {
+      mockFetch({ 'GET /api/admin/models': MODELS_OK, 'GET /api/admin/config': CONFIG_OK(), 'PUT /api/admin/config': response })
+      const user = userEvent.setup()
+      const { unmount } = renderConfig()
+      const tr = await block(A.tarefaTraducaoTitulo)
+      await user.click(tr.save)
+      expect(await within(tr.group).findByRole('alert')).toHaveTextContent(message)
+      unmount()
+    }
   })
 
-  it('500 erro_interno → mensagem GENÉRICA (não-ok != modelo_invalido)', async () => {
-    mockFetch({
-      'GET /api/admin/models': MODELS_OK,
-      'GET /api/admin/config': { ok: true, status: 200, body: { defaultModel: 'claude-opus-5-5' } },
-      'PUT /api/admin/config': { ok: false, status: 500, body: { error: 'erro_interno' } },
-    })
-    const user = userEvent.setup()
-    renderConfig()
-    await screen.findByRole('combobox')
-    await user.click(screen.getByRole('button', { name: A.salvar }))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(A.erroGenerico)
-    expect(alert).not.toHaveTextContent(A.erroModelo)
-  })
-
-  it('erro de CARGA → alert + retry; retry → segundo GET ok exibe o select', async () => {
+  it('erro de CARGA → alert + retry; retry → segundo GET ok exibe os blocos', async () => {
     mockFetch({
       'GET /api/admin/models': MODELS_OK,
       'GET /api/admin/config': [
         { ok: false, status: 500, body: { error: 'erro_interno' } },
-        { ok: true, status: 200, body: { defaultModel: 'claude-sonnet-5' } },
+        CONFIG_OK(aiTasks({ generation: { model: 'claude-sonnet-5', byModel: {} } })),
       ],
     })
     const user = userEvent.setup()
@@ -159,7 +233,7 @@ describe('ConfigSection (#63 AC1)', () => {
     expect(screen.queryByRole('combobox')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: ptBR.system.retry }))
-    const select = (await screen.findByRole('combobox')) as HTMLSelectElement
-    expect(select.value).toBe('claude-sonnet-5')
+    const gen = await block(A.tarefaGeracaoTitulo)
+    expect(gen.model.value).toBe('claude-sonnet-5')
   })
 })

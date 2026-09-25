@@ -4,7 +4,7 @@ import type { Sql } from 'postgres'
 import { makeSql } from '@/db/client'
 import { POST } from '@/app/api/parse-ingredients/route'
 import { getDb, setClaudeClient } from '@/server/deps'
-import { FakeClaudeClient, type ClaudeClient } from '@/server/claude/client'
+import { FakeClaudeClient, type ClaudeClient, type GenerationInput } from '@/server/claude/client'
 import type { ExtractionOutput } from '@/domain/ingredient-extraction'
 import { appConfig, extractionEvent } from '@/db/schema'
 import type { ExtractionCapByRole } from '@/domain/extraction-cap-config'
@@ -150,6 +150,31 @@ describe('POST /api/parse-ingredients — Extração de ingredientes (#112)', ()
     expect(json.items).toEqual([
       { rawText: 'cebola', quantidade: '2', unidade: 'unidade', strength: 'required' },
       { rawText: 'salsinha', quantidade: null, unidade: null, strength: 'preferred' },
+    ])
+  })
+
+  it('usa o modelo + ajuste da tarefa Extração salvos no admin (ADR-0034); sem config, o default', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'model@parse.test' })
+    const seen: GenerationInput[] = []
+    class RecordingClient extends FakeClaudeClient {
+      // Parâmetro opcional: a base (Fake) ignora a entrada e declara `extractIngredients()`.
+      override async extractIngredients(input?: GenerationInput): Promise<ExtractionOutput> {
+        seen.push(input!)
+        return OK_EXTRACTION
+      }
+    }
+    setClaudeClient(new RecordingClient())
+
+    expect((await post({ rawInput: '2 cebolas picadinhas' }, headers)).status).toBe(200)
+    const settings = { effort: 'low', thinking: 'adaptive' } as const
+    await getDb()
+      .insert(appConfig)
+      .values({ id: true, aiTasks: { extraction: { model: 'claude-opus-5-5', byModel: { 'claude-opus-5-5': settings } } } })
+    expect((await post({ rawInput: '2 cebolas picadinhas' }, headers)).status).toBe(200)
+
+    expect(seen.map((i) => [i.model, i.settings])).toEqual([
+      ['claude-sonnet-5', { effort: null, thinking: 'off' }],
+      ['claude-opus-5-5', settings],
     ])
   })
 

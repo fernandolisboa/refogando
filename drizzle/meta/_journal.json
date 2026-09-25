@@ -463,6 +463,13 @@
       "when": 1790262848239,
       "tag": "0065_bump_default_model",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1790278456992,
+      "tag": "0066_ai_tasks",
+      "breakpoints": true
     }
   ]
 }

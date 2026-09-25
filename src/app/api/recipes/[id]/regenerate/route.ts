@@ -1,6 +1,7 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig } from '@/db/schema'
 import { isUuid } from '@/server/http/params'
 import { regenerateRecipe } from '@/server/recipe/regenerate'
@@ -54,6 +55,7 @@ export async function POST(
   // ÚNICA capFromRecipeGenConfig) e threado p/ regenerateRecipe barrar ANTES do Claude (custo).
   const [cfg] = await db.select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
+  const settings = settingsForModel('generation', cfg?.aiTasks, model)
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle configurado
   // ⇒ teto pro; `free` OU sem tabela pro ⇒ `null` ⇒ teto de hoje (byte-idêntico).
@@ -65,7 +67,7 @@ export async function POST(
     proCaps?.recipeGen ?? null,
   )
 
-  const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model, cap })
+  const res = await regenerateRecipe(db, getClaudeClient(), { recipeId: id, viewerId, model, settings, cap })
 
   switch (res.kind) {
     case 'ok':

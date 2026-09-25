@@ -35,9 +35,10 @@ import {
   STRIP_SYSTEM_PROMPT,
 } from './lib/measure-strip'
 
-// Modelo BARATO dedicado (espelha EXTRACTION_MODEL de @/server/claude/client — não o default da geração).
-const MODEL = process.env.EXTRACTION_MODEL ?? 'claude-haiku-4-5-20251001'
-const CHUNK = 10 // concorrência de chamadas ao modelo por lote (Haiku tolera; flush do ledger por lote).
+// Modelo do script: a mesma env var legada da Extração (ADR-0034: o app agora lê o modelo do admin, com
+// esta env ou Sonnet 5 como fallback — `TASK_FALLBACK_MODELS` em server/app-config.ts).
+const MODEL = process.env.EXTRACTION_MODEL ?? 'claude-sonnet-5'
+const CHUNK = 10 // concorrência de chamadas ao modelo por lote (flush do ledger por lote).
 
 const LEDGER_FILE = join(process.cwd(), 'scripts', 'data', 'strip-measure-applied.json')
 const StripSchema = z.object({ nome: z.string() })

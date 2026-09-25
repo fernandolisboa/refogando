@@ -1,4 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm'
+import type { ModelSettings } from '@/domain/ai-task-config'
 import type { Database } from '@/db/client'
 import type { ClaudeClient } from '@/server/claude/client'
 import {
@@ -178,9 +179,9 @@ export async function regenerateRecipe(
   // `cap` (#167): teto numérico do papel do viewer, JÁ resolvido pelo caller (capFromRecipeGenConfig,
   // fonte ÚNICA). `Infinity` (admin/papel ilimitado) ⇒ pula a contagem. A regeneração persiste uma
   // `generation` que CONTA pro teto; sem este gate o usuário burlaria o cap pelo botão de regenerar.
-  input: { recipeId: string; viewerId: string; model: string; cap: number },
+  input: { recipeId: string; viewerId: string; model: string; settings?: ModelSettings; cap: number },
 ): Promise<RegenerateResult> {
-  const { recipeId, viewerId, model, cap } = input
+  const { recipeId, viewerId, model, settings, cap } = input
 
   // ── GATE (1º toque de DB, ANTES do Claude) — owner + origin ──────────────────────
   const [pred] = await db
@@ -259,7 +260,7 @@ export async function regenerateRecipe(
   // #318: constrange a cozinha da SAÍDA ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
   // ATIVO do DB DIRETO (sem cache de escrita); a IA só re-emite cozinhas ativas na regeneração.
   const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(db))]
-  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, cozinhaSlugs, axes })
+  const out = await claude.generateRecipe({ systemPrompt: prompt.systemPrompt, userPrompt: prompt.userPrompt, model, settings, cozinhaSlugs, axes })
   const result = classify(out)
   // #463: telemetria de custo da chamada (só o branch 'object' a carrega) → persist deriva o cost_usd.
   const usage = out.kind === 'object' ? out.usage : undefined

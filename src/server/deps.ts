@@ -1,8 +1,10 @@
 import { makeDb, makeSql, type Database } from '@/db/client'
 import { RealClaudeClient, type ClaudeClient } from '@/server/claude/client'
 import { RealModelCatalog, type ModelCatalog } from '@/server/claude/model-catalog'
+import { RealModelProbe, type ModelProbe } from '@/server/claude/model-probe'
 import { RealEmbedder, type Embedder } from '@/server/embedding/embedder'
 import { RealTranslator, type Translator } from '@/server/translation/translator'
+import { loadAiTask } from '@/server/app-config'
 import { RealImageStore, type ImageStore } from '@/server/images/image-store'
 import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/image-generator'
 import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
@@ -16,6 +18,7 @@ import { FakeBillingProvider, type BillingProvider } from '@/server/billing/prov
  *  - getDb()               → Postgres (Drizzle)
  *  - getClaudeClient()     → seam do Claude
  *  - getModelCatalog()     → seam da Models API da Anthropic (select de modelo do admin)
+ *  - getModelProbe()       → chamada de teste de modelo + ajuste ao salvar no admin (ADR-0034)
  *  - getEmbedder()         → seam de embedding
  *  - getTranslator()       → seam de tradução automática (issue #23)
  *  - getImageStore()       → seam de storage de imagem (issue #126, Vercel Blob)
@@ -37,6 +40,8 @@ let claudeOverride: ClaudeClient | null = null
 let lazyClaude: ClaudeClient | null = null
 let modelCatalogOverride: ModelCatalog | null = null
 let lazyModelCatalog: ModelCatalog | null = null
+let modelProbeOverride: ModelProbe | null = null
+let lazyModelProbe: ModelProbe | null = null
 let embedderOverride: Embedder | null = null
 let lazyEmbedder: Embedder | null = null
 let translatorOverride: Translator | null = null
@@ -95,6 +100,16 @@ export function setModelCatalog(catalog: ModelCatalog): void {
   modelCatalogOverride = catalog
 }
 
+export function getModelProbe(): ModelProbe {
+  if (modelProbeOverride) return modelProbeOverride
+  if (!lazyModelProbe) lazyModelProbe = new RealModelProbe()
+  return lazyModelProbe
+}
+
+export function setModelProbe(probe: ModelProbe): void {
+  modelProbeOverride = probe
+}
+
 export function getEmbedder(): Embedder {
   if (embedderOverride) return embedderOverride
   if (!lazyEmbedder) lazyEmbedder = new RealEmbedder()
@@ -107,7 +122,8 @@ export function setEmbedder(embedder: Embedder): void {
 
 export function getTranslator(): Translator {
   if (translatorOverride) return translatorOverride
-  if (!lazyTranslator) lazyTranslator = new RealTranslator()
+  // ADR-0034: modelo + ajuste da tradução vêm do admin (`app_config.ai_tasks`) a cada chamada.
+  if (!lazyTranslator) lazyTranslator = new RealTranslator(() => loadAiTask(getDb(), 'translation'))
   return lazyTranslator
 }
 
@@ -199,6 +215,7 @@ export function setBillingProvider(provider: BillingProvider): void {
 export function resetDeps(): void {
   claudeOverride = null
   modelCatalogOverride = null
+  modelProbeOverride = null
   embedderOverride = null
   translatorOverride = null
   imageStoreOverride = null

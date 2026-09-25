@@ -3,8 +3,10 @@ import {
   FALLBACK_SELECTABLE_MODELS,
   latestPerFamily,
   type CatalogModel,
+  type ModelCaps,
   type ModelOption,
 } from '@/domain/claude-models'
+import { EFFORT_LEVELS } from '@/domain/ai-task-config'
 
 /**
  * Seam da Models API da Anthropic (`GET /v1/models`) — alimenta o select de modelo do admin. Produção
@@ -24,13 +26,27 @@ export const FAILURE_TTL_MS = 5 * 60 * 1000
 // cai na lista pinada.
 const LIST_DEADLINE_MS = 5_000
 
+/** Recorta o bloco `capabilities` da Models API no que a tela do admin usa. Ausente ⇒ `null`. */
+export function capsOf(raw: Anthropic.ModelCapabilities | null | undefined): ModelCaps | null {
+  if (!raw) return null
+  const effort = raw.effort?.supported
+    ? EFFORT_LEVELS.filter((level) => raw.effort[level]?.supported === true)
+    : []
+  return { effort, adaptiveThinking: raw.thinking?.supported === true && raw.thinking.types?.adaptive?.supported === true }
+}
+
 async function fetchFromAnthropic(): Promise<CatalogModel[]> {
   // Lazy: lê ANTHROPIC_API_KEY só na chamada (sem chave ⇒ o construtor lança ⇒ fallback).
   const client = new Anthropic({ maxRetries: 0 })
   const signal = AbortSignal.timeout(LIST_DEADLINE_MS)
   const models: CatalogModel[] = []
   for await (const m of client.models.list({ limit: 100 }, { signal })) {
-    models.push({ id: m.id, displayName: m.display_name, createdAt: m.created_at })
+    models.push({
+      id: m.id,
+      displayName: m.display_name,
+      createdAt: m.created_at,
+      capabilities: capsOf(m.capabilities),
+    })
   }
   return models
 }

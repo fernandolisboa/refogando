@@ -4,6 +4,7 @@ import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classifyWithReason } from '@/domain/generation'
 import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
@@ -199,6 +200,8 @@ export async function POST(req: Request): Promise<Response> {
   // serve ao modelo (#5) E ao teto de geração de receita (#167) — a linha singleton carrega ambos.
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
+  // ADR-0034: esforço/thinking do admin p/ a DESTILAÇÃO (o turno de chat em stream segue adaptive).
+  const settings = settingsForModel('generation', cfg?.aiTasks, model)
 
   // 4b. Teto de geração de RECEITA por papel (#167), janela 24h deslizante — ANTES de ABRIR o stream
   // (e portanto ANTES de QUALQUER chamada paga: streamConversation E a destilação generateRecipe). A
@@ -273,6 +276,7 @@ export async function POST(req: Request): Promise<Response> {
           transcript,
           model,
           signal,
+          settings,
         })
         for await (const text of tokens) {
           // Disconnect do cliente: para o loop ANTES de enfileirar. Sem cliente p/ receber, o
@@ -314,6 +318,7 @@ export async function POST(req: Request): Promise<Response> {
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,
           model,
+          settings,
           signal,
           cozinhaSlugs,
           // #420 (ADR-0029): eixos que produziram esta destilação (já embutidos no systemPrompt).

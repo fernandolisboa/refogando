@@ -39,6 +39,7 @@ import { ROLES } from '@/domain/user'
 import { PLANS } from '@/domain/plan'
 import { STRENGTHS } from '@/domain/briefing'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import type { StoredAiTasks } from '@/domain/ai-task-config'
 import type { PromptStamp } from '@/domain/briefing'
 import {
   DEFAULT_IMAGE_MODEL,
@@ -460,7 +461,7 @@ export const imageGeneration = pgTable(
 
 /**
  * Registro (append-only) de EVENTOS de EXTRAÇÃO de ingredientes por IA (#447) — o LEDGER que o teto de
- * extração (24h deslizante) conta. A extração (`/api/parse-ingredients`, Haiku) NÃO persistia nada, então
+ * extração (24h deslizante) conta. A extração (`/api/parse-ingredients`, modelo da tarefa no admin — ADR-0034) NÃO persistia nada, então
  * não havia como contar o uso e barrar um loop ilimitado de chamadas ao Claude. Cada extração grava UMA
  * linha aqui (uma por tentativa, reservada ANTES da chamada ao Claude sob o advisory lock — #446); o teto
  * faz `COUNT WHERE user_id AND created_at > agora-24h`. IMUTÁVEL (sem "devolver slot"): o custo já foi
@@ -874,7 +875,7 @@ export const appConfig = pgTable(
       .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
     // #447 (teto de EXTRAÇÃO de ingredientes por papel): `extraction_cap_by_role` espelha a forma de
     // `recipe_gen_cap_by_role` (jsonb Record<Role, number|null>, `null` = ILIMITADO), mas com defaults
-    // MAIS FOLGADOS (extração é barata via Haiku). Coluna plana na MESMA linha singleton (espelha os
+    // MAIS FOLGADOS (extração é curta e só organiza texto). Coluna plana na MESMA linha singleton (espelha os
     // demais eixos). Defaults vêm do domínio (`DEFAULT_EXTRACTION_CAP_BY_ROLE`).
     extractionCapByRole: jsonb('extraction_cap_by_role')
       .$type<ExtractionCapByRole>()
@@ -934,6 +935,10 @@ export const appConfig = pgTable(
     // limpo que 3 nullables independentes. O read-path RE-VALIDA (`parseProCaps`) — linha legada/lixo
     // cai em NULL (fail-safe: nunca eleva um teto a partir de um bundle inválido). NÃO ativa cobrança.
     proCaps: jsonb('pro_caps').$type<ProCaps>(),
+    // ADR-0034: modelo + ajustes (esforço, thinking) por TAREFA de IA de texto — Geração, Tradução,
+    // Extração —, com os ajustes guardados POR MODELO. `{}` = tudo nos defaults em código. O modelo da
+    // Geração continua em `default_model` (legado #5). O read-path RE-VALIDA (`parseStoredAiTasks`).
+    aiTasks: jsonb('ai_tasks').$type<StoredAiTasks>().notNull().default({}),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [check('app_config_singleton_chk', sql`${t.id}`)],

@@ -2,6 +2,7 @@ import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { appConfig } from '@/db/schema'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { settingsForModel } from '@/domain/ai-task-config'
 import { runComparison } from '@/server/generation/compare'
 import { FIXED_BRIEFINGS, type ComparisonResponse } from '@/domain/prompt-comparator'
 
@@ -45,11 +46,12 @@ export async function POST(req: Request): Promise<Response> {
   // única das rotas de geração. Único toque de DB desta rota (leitura); NADA é escrito.
   const [cfg] = await getDb().select().from(appConfig)
   const model = cfg?.defaultModel ?? DEFAULT_TEXT_MODEL
+  const settings = settingsForModel('generation', cfg?.aiTasks, model)
 
   // Os dois lados em paralelo (velho vs. novo) — cabe no orçamento de 60s de UMA fixture.
   const [oldSide, newSide] = await Promise.all([
-    runComparison(fixture, 'old', { model, withImage }),
-    runComparison(fixture, 'new', { model, withImage }),
+    runComparison(fixture, 'old', { model, settings, withImage }),
+    runComparison(fixture, 'new', { model, settings, withImage }),
   ])
 
   const response: ComparisonResponse = { fixtureId: fixture.id, old: oldSide, new: newSide }
