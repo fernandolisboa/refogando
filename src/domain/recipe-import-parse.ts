@@ -193,8 +193,11 @@ function parseQuantityUnit(raw: string): {
   let consumed = 0
   for (let n = Math.min(3, restWords.length); n >= 1; n--) {
     const unit = normalizeUnidade(restLower.slice(0, n).join(' '))
-    // a_gosto/q_b não combinam com um número ("2 a gosto sal"): aí não é a unidade.
-    if (unit && unit !== 'a_gosto' && unit !== 'q_b') {
+    // a_gosto/q_b não combinam com um número ("2 a gosto sal"): aí não é a unidade. "xícara de chá"
+    // só é a medida quando termina a linha ou vem um conector: "1 xícara de chá verde" é chá verde.
+    const next = restLower[n]
+    const chaSemConector = n === 3 && /^ch[aá]$/.test(restLower[2]) && next !== undefined && !LEADING_CONNECTORS.has(next)
+    if (unit && unit !== 'a_gosto' && unit !== 'q_b' && !chaSemConector) {
       unidade = unit
       consumed = n
       break

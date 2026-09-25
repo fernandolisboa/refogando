@@ -34,7 +34,6 @@ describe('parseMedida', () => {
     ['2-3', '2', null, '-3'],
     ['2 a 3', '2', null, 'a 3'],
     ['1-2 xícaras', '1', 'xicara', '-2 xícaras'],
-    ['3 maços', '3', null, 'maços'],
     ['cerca de 2', '2', null, 'cerca de'],
   ])('faixa/qualificador: %j → %j %j, e o que se perdeu (%j) vai para o log', (raw, quantidade, unidade, resto) => {
     expect(parseMedida(raw)).toEqual({ quantidade, unidade, resto })
@@ -47,6 +46,13 @@ describe('parseMedida', () => {
     '1 000',
     '2 x 200g',
     '2 e 1/2',
+    '2 e meia',
+    '2 mil',
+    'um e 1/2',
+    '1.000 g',
+    '3 maços',
+    '2 a gosto',
+    '—2',
     '1e5',
     '-2',
     '–2',

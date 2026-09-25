@@ -59,8 +59,7 @@ const UNIDADE_ALIASES = aliases<Unidade>([
   [['l', 'litro', 'litros', 'liter', 'liters'], 'l'],
   [['colher de sopa', 'colheres de sopa', 'colher sopa', 'colheres sopa', 'tablespoon', 'tablespoons', 'tbsp'], 'colher_de_sopa'],
   [['colher de chá', 'colheres de chá', 'colher chá', 'colheres chá', 'teaspoon', 'teaspoons', 'tsp'], 'colher_de_cha'],
-  // 'xícara (chá)' sim; 'xícara de chá' não: no import, '1 xícara de chá verde' é chá verde.
-  [['xícara', 'xícaras', 'xícara chá', 'xícaras chá', 'cup', 'cups'], 'xicara'],
+  [['xícara', 'xícaras', 'xícara de chá', 'xícaras de chá', 'xícara chá', 'xícaras chá', 'cup', 'cups'], 'xicara'],
   [['unidade', 'unidades', 'unit', 'units'], 'unidade'],
   [['dente', 'dentes', 'clove', 'cloves'], 'dente'],
   [['fatia', 'fatias', 'slice', 'slices'], 'fatia'],
@@ -153,9 +152,12 @@ const NUMERO_INICIAL = new RegExp(
 
 // Cauda de uma faixa depois do 1º número: "-3", "– 3", "a 3", "ou 3", "to 3 cups" (grupo 1: unidade).
 const FAIXA_CAUDA = new RegExp(
-  `^(?:[-–]|a|ou|to|or)\\s*(?:\\d*\\.\\d+|\\d+(?:\\s*/\\s*\\d+)?|${FRAC})(?:\\s*([\\p{L}][\\p{L} .()]*))?$`,
+  `^(?:[-–—−]|a|ou|to|or)\\s*(?:\\d*\\.\\d+|\\d+(?:\\s*/\\s*\\d+)?|${FRAC})(?:\\s*([\\p{L}][\\p{L} .()]*))?$`,
   'iu',
 )
+
+// Qualificadores de aproximação aceitos antes do número (o número em si não muda).
+const QUALIFICADOR = /^(?:~|±|≈|cerca de|aprox\.?|aproximadamente|uns|umas|até|about|approx\.?|approximately|around|up to)$/i
 
 /** Medida normalizada. `resto` é o texto que sobrou sem ser entendido (''= nada se perdeu). */
 export type Medida = { quantidade: string | null; unidade: Unidade | null; resto: string }
@@ -163,11 +165,12 @@ export type Medida = { quantidade: string | null; unidade: Unidade | null; resto
 /**
  * Quantidade livre → medida no formato de `numeric(10,3)` + a unidade, quando vem colada ("2
  * xícaras" → 2 / xicara). Aceita vírgula decimal ("2,5"), fração ("1/2", "1 1/2", "1-1/2", "½",
- * "1½"), ".5", e prefixo textual ("cerca de 2"). "a gosto"/"q.b." viram a unidade não-mensurável.
+ * "1½"), ".5", e um qualificador de aproximação ("cerca de 2"). "a gosto"/"q.b." viram a unidade
+ * não-mensurável. Faixa ("2-3", "2 a 3") vira o primeiro número.
  *
- * Nunca adivinha um número: separador de milhar ambíguo ("1,000", "1.000,5"), notação científica,
- * sinal negativo, zero e estouro de 7 inteiros ⇒ quantidade null. Faixa ("2-3", "2 a 3") vira o
- * primeiro número e devolve o resto em `resto`, para o chamador registrar a perda.
+ * Nunca adivinha um número: separador de milhar ambíguo ("1,000", "1.000 g"), notação científica,
+ * sinal negativo, zero, estouro de 7 inteiros e número com texto que não é unidade ("2 e meia",
+ * "2 mil", "3 maços") ⇒ quantidade null. O que se perdeu vai em `resto`, para o chamador logar.
  */
 export function parseMedida(raw: string): Medida {
   const t = raw.trim()
@@ -178,15 +181,23 @@ export function parseMedida(raw: string): Medida {
   const soUnidade = normalizeUnidade(t)
   if (soUnidade === 'a_gosto' || soUnidade === 'q_b') return { quantidade: null, unidade: soUnidade, resto: '' }
 
-  // Ambiguidade que erraria por ordens de grandeza: milhar com vírgula, os dois separadores juntos,
-  // notação científica.
-  if (/\d,\d{3}(?!\d)/.test(t) || /\d[.,]\d+[.,]\d/.test(t) || /\d[eE][+-]?\d/.test(t)) return semNumero(t)
+  // Ambiguidade que erraria por ordens de grandeza: milhar com vírgula ("1,000") ou com ponto fora
+  // do formato canônico ("1.000 g"), os dois separadores juntos, notação científica.
+  if (
+    /\d,\d{3}(?!\d)/.test(t) ||
+    /(?<![\d.])[1-9]\d{0,2}\.\d{3}(?!\d)/.test(t) ||
+    /\d[.,]\d+[.,]\d/.test(t) ||
+    /\d[eE][+-]?\d/.test(t)
+  ) {
+    return semNumero(t)
+  }
   const s = t.replace(/(\d),(\d)/g, '$1.$2') // vírgula decimal (mesmo comprimento: índices valem em t)
   const inicio = s.search(new RegExp(`\\d|\\.\\d|${FRAC}`))
   if (inicio < 0) return semNumero(t)
-  // Sinal negativo (hífen, travessão, menos) não é quantidade de ingrediente.
-  const prefixo = s.slice(0, inicio)
-  if (/[-–−]\s*$/.test(prefixo)) return semNumero(t)
+  // Antes do número só vale um qualificador conhecido ("cerca de 2"); outro texto ("um e 1/2",
+  // "-2") mudaria o valor. Sinal negativo não é quantidade de ingrediente.
+  const prefixo = s.slice(0, inicio).trim()
+  if (prefixo !== '' && !QUALIFICADOR.test(prefixo)) return semNumero(t)
   const m = NUMERO_INICIAL.exec(s.slice(inicio))
   if (!m) return semNumero(t)
 
@@ -203,16 +214,15 @@ export function parseMedida(raw: string): Medida {
   // O que vem depois do número decide se ele vale:
   //  - nada, ou uma unidade ⇒ vale (e a unidade é aproveitada);
   //  - cauda de faixa ("-3", "a 3 xícaras") ⇒ vale o primeiro número, com a unidade da cauda;
-  //  - palavra sem número ("maços") ⇒ vale o número; a palavra vai para o log;
-  //  - qualquer outro número ("1 000", "2 x 200g", "2 e 1/2") ⇒ o número lido estaria errado: null.
-  // Um qualificador antes do número ("cerca de 2") é aceito, mas vai para o log.
-  const perdido = (resto: string) => [prefixo.trim(), resto].filter((x) => x !== '').join(' … ')
+  //  - qualquer outra coisa ("1 000", "2 x 200g", "2 e meia", "2 mil", "3 maços") ⇒ o número lido
+  //    pode estar errado: null, e o texto vai para o log.
+  // O qualificador aceito antes do número ("cerca de 2") também vai para o log.
   const resto = s.slice(inicio + m[0].length).trim()
-  if (resto === '') return { quantidade, unidade: null, resto: perdido('') }
-  const unidade = normalizeUnidade(resto)
-  if (unidade !== null) return { quantidade, unidade, resto: perdido('') }
-  const faixa = FAIXA_CAUDA.exec(resto)
-  if (faixa) return { quantidade, unidade: faixa[1] ? normalizeUnidade(faixa[1]) : null, resto: perdido(resto) }
-  if (new RegExp(`\\d|${FRAC}`).test(resto)) return semNumero(t)
-  return { quantidade, unidade: null, resto: perdido(resto) }
+  const faixa = resto === '' ? null : FAIXA_CAUDA.exec(resto)
+  const unidade = resto === '' ? null : faixa ? (faixa[1] ? normalizeUnidade(faixa[1]) : null) : normalizeUnidade(resto)
+  if (resto !== '' && faixa === null && unidade === null) return semNumero(t)
+  // a_gosto/q_b não combinam com um número ("2 a gosto"): a medida é ambígua.
+  if (unidade === 'a_gosto' || unidade === 'q_b') return semNumero(t)
+  const perdido = [prefixo, faixa ? resto : ''].filter((x) => x !== '').join(' … ')
+  return { quantidade, unidade, resto: perdido }
 }

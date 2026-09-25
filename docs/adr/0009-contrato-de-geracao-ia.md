@@ -54,7 +54,7 @@ Regra: **um desvio de vocabulário ou de formato de texto do modelo nunca falha 
 
 - `cozinha`, `categoria`, `unidade`: casa caixa, acento, plural, os rótulos de i18n e sinônimos PT/EN sem ambiguidade; o que não casa vira `null`. Cozinha só casa slugs do conjunto ativo (a FK rejeitaria outro), pelo slug ou pelo rótulo da seed.
 - `restricoes`: termo não reconhecido é **descartado**, nunca adivinhado — um sinônimo errado afirmaria uma dieta que a receita não cumpre (ADR-0004).
-- `quantidade`: vírgula decimal, fração (`1/2`, `1 1/2`, `1-1/2`, `½`, `.5`) e unidade colada (`2 xícaras` → 2 + `xicara`, `a gosto` → `a_gosto`) viram o formato de `numeric(10,3)`; faixa (`2-3`) fica com o primeiro número. Separador de milhar ambíguo (`1,000`), notação científica, negativo e zero viram `null`: um erro de 1000× numa Receita é pior que uma quantidade em branco.
+- `quantidade`: vírgula decimal, fração (`1/2`, `1 1/2`, `1-1/2`, `½`, `.5`) e unidade colada (`2 xícaras` → 2 + `xicara`, `a gosto` → `a_gosto`) viram o formato de `numeric(10,3)`; faixa (`2-3`) fica com o primeiro número. Separador de milhar ambíguo (`1,000`, `1.000 g`), notação científica, negativo, zero e número seguido de texto que não é unidade (`2 e meia`, `2 mil`, `3 maços`) viram `null`: um erro de 1000× numa Receita é pior que uma quantidade em branco.
 - `kind` fora dos 4 valores: normalizado (caixa, acento, sinônimo PT como `lúdico`/`zoeira`/`degradado`) ou inferido — com receita vira `degraded` (nunca `success`, que apagaria o sinal de degradado/lúdico e liberaria o pool público), sem receita vira `impossible`.
 - `dificuldade` fora de 1–5 vai para o limite mais próximo no `classify` (nota subjetiva). Isso revoga, para a dificuldade, o "NÃO clampar" citado no ADR-0023.
 
