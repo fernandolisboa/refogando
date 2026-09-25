@@ -146,6 +146,13 @@ export function isPorcoesValidas(value: number): boolean {
   return naFaixa(value, PORCOES)
 }
 
+/**
+ * Formato de `quantidade` (`recipe_ingredient.quantidade`, `numeric(10,3)`, trafega como string): '-'
+ * opcional, até 7 inteiros, '.' + 1-3 fracionários. Fonte única do formato (schema de geração,
+ * `classify`, formulário). Domínios mais estritos (ex.: item de compra, nunca negativo) têm o seu.
+ */
+export const QUANTIDADE_RE = /^-?\d{1,7}(\.\d{1,3})?$/
+
 export function isTempoValido(value: number): boolean {
   return naFaixa(value, TEMPO_MIN)
 }

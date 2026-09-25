@@ -29,7 +29,11 @@ import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { PromptAxes } from '@/domain/briefing'
-import { buildRecipeGenSchema, buildRecipeGenListSchema } from '@/domain/recipe-gen-schema'
+import {
+  buildRecipeGenSchema,
+  buildRecipeGenListSchema,
+  type CampoDescartado,
+} from '@/domain/recipe-gen-schema'
 import {
   IngredientExtractionSchema,
   EXTRACTION_MAX_TOKENS,
@@ -50,8 +54,8 @@ export type GenerationInput = {
   // e a chamada (parse) é cancelada — não se queima quota gerando p/ um cliente que sumiu.
   signal?: AbortSignal
   // Conjunto ATIVO de slugs de cozinha (#318, ADR-0025 Decisão 4): constrange `cozinha` na saída
-  // structured (`buildRecipeGenSchema` → zodOutputFormat) ao vocabulário VIVO — o modelo só emite
-  // cozinhas ativas. OPCIONAL (back-compat): ausente/vazio ⇒ `z.string()` (sem constraint). A
+  // structured (`buildRecipeGenSchema` → zodOutputFormat) ao vocabulário VIVO: vai como dica ao modelo,
+  // e uma cozinha fora dele vira null no parse. OPCIONAL (back-compat): ausente/vazio ⇒ `z.string()` (sem constraint). A
   // BORDA resolve o conjunto (loadActiveCozinhaSlugs); o FakeClaudeClient o ignora (devolve canned).
   cozinhaSlugs?: readonly string[]
   // Eixos de composição do prompt (#420, ADR-0029): resolvidos na BORDA e já EMBUTIDOS no
@@ -205,6 +209,24 @@ function logSeamParseFailed(
 }
 
 /**
+ * Loga os valores da saída que não casaram o vocabulário e caíram no fallback (campo null, restrição
+ * descartada, `kind` inferido, parte da quantidade perdida). A geração segue; o log diz quais aliases
+ * faltam. O valor cru pode ecoar texto do Usuário (via prompt), então só vai quando tem cara de rótulo
+ * ou medida (letras, dígitos, espaço e pontuação de medida, até 32 caracteres); senão, só o tamanho.
+ */
+function logDescartes(method: string, descartes: readonly CampoDescartado[]): void {
+  if (descartes.length === 0) return
+  console.warn(`[claude/${method}] valores fora do vocabulário caíram no fallback:`, {
+    total: descartes.length,
+    descartes: descartes.slice(0, 20).map((d) =>
+      /^[\p{L}\p{N} .,\/½⅓⅔¼¾⅕⅛⅜⅝⅞~-]{1,32}$/u.test(d.valor)
+        ? { campo: d.campo, valor: d.valor }
+        : { campo: d.campo, tamanho: d.valor.length },
+    ),
+  })
+}
+
+/**
  * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
  * outputs (`messages.parse` + `zodOutputFormat(RecipeGenSchema)`).
  */
@@ -217,11 +239,13 @@ export class RealClaudeClient implements ClaudeClient {
     // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (o teste
     // injeta FakeClaudeClient via setClaudeClient).
     const client = new Anthropic()
+    // Valores fora do vocabulário que o parse normalizou para o fallback (log, não falha).
+    const descartes: CampoDescartado[] = []
 
     try {
       // #318: schema constrito ao conjunto ATIVO de cozinhas (data-driven, ADR-0025). Vazio ⇒
       // z.string() (sem constraint). Mesmo schema p/ a chamada inicial E o reparo abaixo.
-      const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [])
+      const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
       const params = {
         model: input.model,
         max_tokens: MAX_TOKENS,
@@ -249,6 +273,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Repair mínimo: se o parser não produziu saída, re-chama UMA vez com a mesma
       // entrada. Ainda null → parse_failed.
       if (message.parsed_output === null) {
+        descartes.length = 0 // só os da tentativa que vale
         message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return { kind: 'refusal' }
         if (message.stop_reason === 'max_tokens') return { kind: 'max_tokens' }
@@ -259,6 +284,7 @@ export class RealClaudeClient implements ClaudeClient {
       }
 
       const parsed = message.parsed_output
+      logDescartes('generateRecipe', descartes)
       // `receita` já é null para impossible (regra de app no schema flat); sem ternário.
       return {
         kind: 'object',
@@ -274,6 +300,7 @@ export class RealClaudeClient implements ClaudeClient {
       // nunca vira Receita parcial. Loga no servidor: sem isso a causa (crédito, chave,
       // modelo recusado) fica invisível em produção.
       logSeamError('generateRecipe', err, input.signal)
+      logDescartes('generateRecipe', descartes)
       return { kind: 'parse_failed' }
     }
   }
@@ -282,9 +309,10 @@ export class RealClaudeClient implements ClaudeClient {
     // Espelha `generateRecipe` (messages.parse + zodOutputFormat + reparo de UMA tentativa), mas no
     // schema-LISTA (`buildRecipeGenListSchema`) e com o teto 2×. Caminho paralelo — não toca o single.
     const client = new Anthropic()
+    const descartes: CampoDescartado[] = []
 
     try {
-      const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [])
+      const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
       const params = {
         model: input.model,
         max_tokens: VARIANTS_MAX_TOKENS,
@@ -303,6 +331,7 @@ export class RealClaudeClient implements ClaudeClient {
       if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
 
       if (message.parsed_output === null) {
+        descartes.length = 0 // só os da tentativa que vale
         message = await client.messages.parse(params, { signal })
         if (message.stop_reason === 'refusal') return [{ kind: 'refusal' }]
         if (message.stop_reason === 'max_tokens') return [{ kind: 'max_tokens' }]
@@ -313,6 +342,7 @@ export class RealClaudeClient implements ClaudeClient {
       }
 
       const variacoes = message.parsed_output.variacoes
+      logDescartes('generateRecipeVariants', descartes)
       // EXATO-2: o schema-array é PLANO (sem bound — evita `$defs`, ver recipe-gen-schema.ts); a
       // cardinalidade é exigida AQUI. ≠2 ⇒ parse_failed do LOTE (erro de geração; NÃO degrada — ADR-0029).
       if (variacoes.length !== 2) {
@@ -335,6 +365,7 @@ export class RealClaudeClient implements ClaudeClient {
     } catch (err) {
       // Truncamento no meio da 2ª receita OU qualquer erro de rede/SDK/validação → parse_failed do lote.
       logSeamError('generateRecipeVariants', err, input.signal)
+      logDescartes('generateRecipeVariants', descartes)
       return [{ kind: 'parse_failed' }]
     }
   }

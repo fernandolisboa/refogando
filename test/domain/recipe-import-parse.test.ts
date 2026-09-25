@@ -130,6 +130,39 @@ describe('parseImportedRecipe (#165)', () => {
     ])
   })
 
+  it('aliases compartilhados com a geração: "gr", "Xícaras", "colheres (sopa)"; "constructor" não é unidade', () => {
+    const r = parseImportedRecipe(
+      htmlWith({
+        '@type': 'Recipe',
+        name: 'Bolo',
+        inLanguage: 'pt-BR',
+        recipeIngredient: [
+          '200 gr de farinha',
+          '2 Xícaras de leite',
+          '1 colheres (sopa) de fermento',
+          '2 constructor ovos',
+          '1 xícara de chá verde',
+          '1 xícara de chá de açúcar',
+          '1 colher de chá fermento',
+          '2 a gosto sal',
+        ],
+      }),
+      SRC,
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.recipe.ingredientes).toEqual([
+      { rawText: 'farinha', quantidade: '200', unidade: 'g' },
+      { rawText: 'leite', quantidade: '2', unidade: 'xicara' },
+      { rawText: 'fermento', quantidade: '1', unidade: 'colher_de_sopa' },
+      { rawText: 'constructor ovos', quantidade: '2', unidade: null },
+      { rawText: 'chá verde', quantidade: '1', unidade: 'xicara' },
+      { rawText: 'açúcar', quantidade: '1', unidade: 'xicara' },
+      { rawText: 'fermento', quantidade: '1', unidade: 'colher_de_cha' },
+      { rawText: 'a gosto sal', quantidade: '2', unidade: null },
+    ])
+  })
+
   it('TIRA a medida do nome: número + unidade + conector ("320 g de arroz arbóreo" → "arroz arbóreo")', () => {
     const r = parseImportedRecipe(
       htmlWith({

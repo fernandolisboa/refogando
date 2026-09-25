@@ -14,6 +14,8 @@
  *    então a única troca é vírgula→ponto).
  */
 
+import { QUANTIDADE_RE } from '@/domain/vocabulary'
+
 /**
  * CONJUNTO RESTRITO de frações com glifo (decisão de gramática): apenas as que leem inequívocas em
  * receita — meios, terços, quartos, oitavos. Fora propositalmente: 1/5, 2/5, 1/6, 5/6 (⅕ ⅖ ⅙ ⅚) — leem
@@ -95,7 +97,7 @@ export function parseQuantityInput(raw: string, locale: string): string | null {
   // Separador de milhar presente ⇒ NÃO colapsa em silêncio: devolve cru, a zod do servidor rejeita.
   if (trimmed.includes(groupSep)) return trimmed
   const dotted = trimmed.replace(decimalSep, '.')
-  if (/^-?\d{1,7}(\.\d{1,3})?$/.test(dotted)) {
+  if (QUANTIDADE_RE.test(dotted)) {
     return String(Number(dotted))
   }
   return trimmed

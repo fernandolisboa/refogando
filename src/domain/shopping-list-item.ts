@@ -176,11 +176,10 @@ export const SHOPPING_LIST_ITEM_NOME_MAX = 200
 /**
  * Formato de `quantidade` como numeric(10,3)-string, JÁ CANONICALIZADO (ponto decimal — o cliente
  * converte vírgula→ponto por locale via `parseQuantityInput` ANTES do POST/PATCH, mesma tese de
- * `recipe-edit-form.tsx`). Espelha a FORMA do regex já usado em `recipe-gen-schema.ts`/
- * `generation.ts` (`/^-?\d{1,7}(\.\d{1,3})?$/`), mas AQUI a quantidade é a de uma COMPRA — nunca
+ * `recipe-edit-form.tsx`). Espelha a FORMA de `QUANTIDADE_RE` (`vocabulary.ts`), mas AQUI a quantidade é a de uma COMPRA — nunca
  * negativa nem zero (não existe "comprar -3kg" ou "comprar 0"; quem quer remover a quantidade usa
- * `null`, quem quer remover a LINHA usa o remove). Essa é uma restrição NOVA e mais estrita que a
- * de geração por IA (que aceita negativo/zero defensivamente) — deliberada para este domínio.
+ * `null`, quem quer remover a LINHA usa o remove). Essa é uma restrição mais estrita que o
+ * formato geral `QUANTIDADE_RE` (que admite negativo/zero) — deliberada para este domínio.
  */
 const QUANTIDADE_ITEM_RE = /^\d{1,7}(\.\d{1,3})?$/
 

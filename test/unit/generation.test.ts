@@ -143,25 +143,27 @@ describe('classify — kernel puro da taxonomia de geração (#8, §4)', () => {
     ).toEqual({ outcome: 'invalid' })
   })
 
-  it('object + "success" com dificuldade fora de faixa (9) → invalid (NÃO clampa)', () => {
+  it('object + "success" com dificuldade acima da faixa (9) → traz para 5, NÃO invalida', () => {
     const out: GenerationOutput = {
       kind: 'object',
       recipe: makeReceita({ dificuldade: 9 }),
       advisory: null,
       modelKind: 'success',
     }
-    expect(classify(out)).toEqual({ outcome: 'invalid' })
+    const r = classify(out)
+    expect(r.outcome).toBe('success')
+    if (r.outcome === 'success') expect(r.recipe.dificuldade).toBe(5)
   })
 
-  it('object + "playful" com dificuldade fora de faixa também → invalid', () => {
-    expect(
-      classify({
-        kind: 'object',
-        recipe: makeReceita({ dificuldade: 0 }),
-        advisory: null,
-        modelKind: 'playful',
-      }),
-    ).toEqual({ outcome: 'invalid' })
+  it('object + "playful" com dificuldade abaixo da faixa (0) → traz para 1, preserva o outcome', () => {
+    const r = classify({
+      kind: 'object',
+      recipe: makeReceita({ dificuldade: 0 }),
+      advisory: null,
+      modelKind: 'playful',
+    })
+    expect(r.outcome).toBe('playful')
+    if (r.outcome === 'playful') expect(r.recipe.dificuldade).toBe(1)
   })
 
   it('object + "success" com recipe null (viola contrato) → invalid', () => {

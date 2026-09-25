@@ -14,18 +14,15 @@
  * que NUNCA exibe lixo parcial. É total e determinística → testável unit sem DB.
  */
 
-import { isPorcoesValidas, isDificuldadeValida } from '@/domain/vocabulary'
+import { DIFICULDADE, QUANTIDADE_RE, isPorcoesValidas } from '@/domain/vocabulary'
 import { DEFAULT_LOCALE, localeFromTag } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 import type { TextUsage } from '@/domain/text-cost'
 
 // `quantidade` trafega como string para casar com `recipe_ingredient.quantidade`
-// `numeric(10,3)`. Aceita null OU um numérico válido: '-' opcional, até 7 dígitos
-// inteiros, '.' + 1-3 fracionários opcionais. Rejeita '', espaço, '2,5' (vírgula),
-// 'a gosto' (isso vive em rawText) e overflow. Guard REAL da fronteira (structured
-// output pode tratar o pattern do schema como advisory).
-const QUANTIDADE_RE = /^-?\d{1,7}(\.\d{1,3})?$/
-
+// `numeric(10,3)`. Aceita null OU um numérico válido (`QUANTIDADE_RE`). O schema de geração já
+// normaliza '2,5'/'1/2'/'a gosto' no parse; este é o guard final antes do DB (overflow, lixo de um
+// dublê/caminho que não passou pelo schema).
 function isQuantidadeValida(q: string | null): boolean {
   return q === null || QUANTIDADE_RE.test(q)
 }
@@ -67,10 +64,11 @@ export type ClassifyResult =
 /**
  * Mapeia o cru da fronteira para a taxonomia. refusal/max_tokens/parse_failed →
  * invalid. object+impossible → impossible (carrega advisory, sem recipe).
- * object+{success,degraded,playful} → checa faixa no app: se porcoes, dificuldade e
- * quantidades válidas → outcome = modelKind (carrega recipe+advisory); senão → invalid (NÃO
- * clampar). Um valor fora-de-faixa na saída do modelo vira erro de sistema. O originalLocale
- * NÃO invalida: é normalizado (idioma-base, fallback DEFAULT_LOCALE).
+ * object+{success,degraded,playful} → checa faixa no app: se porcoes e quantidades válidas →
+ * outcome = modelKind (carrega recipe+advisory); senão → invalid. `porcoes` fora da faixa NÃO é
+ * clampada: as quantidades são para N porções, e trocar N falsearia a Receita. Formato e escala
+ * não derrubam a geração: `dificuldade` fora de 1–5 é trazida para a faixa (é uma nota subjetiva)
+ * e o originalLocale é normalizado (idioma-base, fallback DEFAULT_LOCALE).
  */
 export function classify(out: GenerationOutput): ClassifyResult {
   return classifyWithReason(out).result
@@ -96,9 +94,9 @@ export function classifyWithReason(out: GenerationOutput): {
   const recipe = out.recipe
   if (recipe === null) return invalid('receita nula')
   if (!isPorcoesValidas(recipe.porcoes)) return invalid(`porcoes fora da faixa: ${recipe.porcoes}`)
-  if (!isDificuldadeValida(recipe.dificuldade)) {
-    return invalid(`dificuldade fora da faixa: ${recipe.dificuldade}`)
-  }
+  // dificuldade: fora de 1–5 (0, ou uma nota noutra escala) vai para o limite mais próximo. Não dá pra
+  // reescalar sem saber a escala; perder a Receita por uma nota subjetiva seria pior.
+  const dificuldade = Math.min(DIFICULDADE.max, Math.max(DIFICULDADE.min, recipe.dificuldade))
   // originalLocale: o schema só DÁ A DICA (string livre), então o modelo pode emitir 'en'/'pt'/'en-GB'.
   // Normaliza pelo idioma; idioma não reconhecido (vazio, 'es', lixo) cai no DEFAULT_LOCALE em vez de
   // descartar uma Receita boa — o idioma é metadado da tradução, não motivo pra falhar a geração.
@@ -107,7 +105,10 @@ export function classifyWithReason(out: GenerationOutput): {
   // quantidade fora-de-faixa (não-numérica/overflow) NUNCA chega ao DB → invalid.
   const badQtd = recipe.ingredientes.filter((ing) => !isQuantidadeValida(ing.quantidade)).length
   if (badQtd > 0) return invalid(`quantidade inválida em ${badQtd} ingrediente(s)`)
-  const normalized = locale === rawLocale ? recipe : { ...recipe, originalLocale: locale }
+  const normalized =
+    locale === rawLocale && dificuldade === recipe.dificuldade
+      ? recipe
+      : { ...recipe, originalLocale: locale, dificuldade }
   return { result: { outcome: out.modelKind, recipe: normalized, advisory: out.advisory }, reason: null }
 }
 

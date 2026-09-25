@@ -23,6 +23,7 @@
 
 import { canonicalLocale, type Locale } from '@/i18n/locale'
 import { UNIDADES, type Unidade } from '@/domain/vocabulary'
+import { normalizeUnidade } from '@/domain/vocabulary-normalize'
 
 /** Item de ingrediente importado — 1:1 com `recipe_ingredient`. `rawText` é o NOME (sem a medida,
  * best-effort); qty/unidade são a medida estruturada (fonte única). */
@@ -148,30 +149,6 @@ function parseInstructions(v: unknown): string[] {
   return out
 }
 
-// Unidades reconhecíveis no texto cru de ingrediente → nosso enum `Unidade`. Best-effort, conservador:
-// só aliases comuns PT/EN sem ambiguidade. O que não casar fica como rawText puro (qty/unidade null).
-const UNIT_ALIASES: Record<string, Unidade> = {
-  // métricas (PT/EN compartilham)
-  g: 'g', grama: 'g', gramas: 'g', gram: 'g', grams: 'g',
-  kg: 'kg', quilo: 'kg', quilos: 'kg', kilogram: 'kg', kilograms: 'kg', kilo: 'kg',
-  ml: 'ml', milliliter: 'ml', milliliters: 'ml', mililitro: 'ml', mililitros: 'ml',
-  l: 'l', litro: 'l', litros: 'l', liter: 'l', liters: 'l',
-  // colheres
-  'colher de sopa': 'colher_de_sopa', 'colheres de sopa': 'colher_de_sopa',
-  tablespoon: 'colher_de_sopa', tablespoons: 'colher_de_sopa', tbsp: 'colher_de_sopa',
-  'colher de cha': 'colher_de_cha', 'colheres de cha': 'colher_de_cha',
-  'colher de chá': 'colher_de_cha', 'colheres de chá': 'colher_de_cha',
-  teaspoon: 'colher_de_cha', teaspoons: 'colher_de_cha', tsp: 'colher_de_cha',
-  // volume
-  xicara: 'xicara', xicaras: 'xicara', xícara: 'xicara', xícaras: 'xicara',
-  cup: 'xicara', cups: 'xicara',
-  // contáveis
-  unidade: 'unidade', unidades: 'unidade', unit: 'unidade', units: 'unidade',
-  dente: 'dente', dentes: 'dente', clove: 'dente', cloves: 'dente',
-  fatia: 'fatia', fatias: 'fatia', slice: 'fatia', slices: 'fatia',
-  pitada: 'pitada', pitadas: 'pitada', pinch: 'pitada', pinches: 'pitada',
-}
-
 // Conectores líderes ("de"/"of"...) descartados entre a medida e o nome ("320 g DE arroz" → "arroz").
 // Só o PRIMEIRO token é removido (o resto do nome é preservado verbatim, incl. um "da fazenda" no meio).
 const LEADING_CONNECTORS = new Set(['de', 'do', 'da', 'dos', 'das', 'of'])
@@ -215,8 +192,13 @@ function parseQuantityUnit(raw: string): {
   let unidade: Unidade | null = null
   let consumed = 0
   for (let n = Math.min(3, restWords.length); n >= 1; n--) {
-    const unit = UNIT_ALIASES[restLower.slice(0, n).join(' ')]
-    if (unit) {
+    const unit = normalizeUnidade(restLower.slice(0, n).join(' '))
+    // a_gosto/q_b não combinam com um número ("2 a gosto sal"): aí não é a unidade. "xícara de chá"
+    // só é a medida quando termina a linha ou vem um conector: "1 xícara de chá verde" é chá verde.
+    const next = restLower[n]
+    const chaSemConector =
+      unit === 'xicara' && n === 3 && /^ch[aá]$/.test(restLower[2]) && next !== undefined && !LEADING_CONNECTORS.has(next)
+    if (unit && unit !== 'a_gosto' && unit !== 'q_b' && !chaSemConector) {
       unidade = unit
       consumed = n
       break
