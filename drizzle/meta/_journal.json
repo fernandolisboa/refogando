@@ -470,6 +470,13 @@
       "when": 1790278456992,
       "tag": "0066_ai_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1790353227725,
+      "tag": "0067_verify_existing_users",
+      "breakpoints": true
     }
   ]
 }

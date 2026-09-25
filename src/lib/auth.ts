@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
-import { and, eq, gt, like, sql } from 'drizzle-orm'
+import { createAuthMiddleware } from 'better-auth/api'
+import { and, eq, gt, like, lt, sql } from 'drizzle-orm'
 import { after } from 'next/server'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin, testUtils } from 'better-auth/plugins'
@@ -10,7 +11,11 @@ import { DEFAULT_ROLE } from '@/domain/user'
 import { isGoogleConfigured } from '@/server/auth/google'
 import { generateUniqueHandle } from '@/server/handle'
 import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
+import { buildVerifyEmail } from '@/server/auth/verify-email-email'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
+import { safeInternalPath } from '@/domain/safe-redirect'
+import { resolveLocale, type Locale } from '@/i18n/locale'
+import { readLocaleCookie } from '@/i18n/cookie'
 
 /**
  * Instância Better Auth (issue #5, ADR-0010/0011). Route handlers, NÃO Server Actions
@@ -35,13 +40,17 @@ if (!authSecret && process.env.NODE_ENV !== 'test') {
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
 }
 
+const DROPPED_LOG_PREFIXES = ['Reset Password: User not found', 'Sign-up attempt for existing email']
+
 /**
- * Log do Better Auth (#469). Descarta a linha que carrega o email digitado sem conta; o resto sai como antes.
+ * Log do Better Auth (#469). Descarta as linhas que carregam um email digitado por terceiro: o do reset sem conta
+ * e (#470) o da tentativa de cadastro com email já existente — que, além de PII, registraria exatamente o fato
+ * que a resposta do cadastro esconde. O resto sai como antes.
  * `message` NÃO é sempre string: a lib passa o próprio `Error` em alguns catches (list-sessions, link de
  * conta OAuth) — tratar como string lançaria TypeError dentro do catch e engoliria o erro original.
  */
 export function authLog(level: 'debug' | 'info' | 'warn' | 'error', message: unknown, ...args: unknown[]): void {
-  if (typeof message === 'string' && message.startsWith('Reset Password: User not found')) return
+  if (typeof message === 'string' && DROPPED_LOG_PREFIXES.some((p) => message.startsWith(p))) return
   const out = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
   if (typeof message === 'string') out(`[Better Auth] ${message}`, ...args)
   else out('[Better Auth]', message, ...args)
@@ -75,6 +84,69 @@ function withTrustedOrigin(url: string): string {
   const u = new URL(url)
   return new URL(`${u.pathname}${u.search}`, process.env.BETTER_AUTH_URL || getBaseUrlFromEnv()).toString()
 }
+
+/** #470 — teto de e-mails de confirmação por conta e a janela (ver `sendVerificationEmail`). */
+const VERIFY_MAX_PER_WINDOW = 3
+const VERIFY_WINDOW_MS = 15 * 60 * 1000
+/** Link de confirmação vale 24h (casa a copy do e-mail). É um JWT sem estado: o teto acima conta envios. */
+const VERIFY_EXPIRES_IN_S = 24 * 60 * 60
+
+/**
+ * #470 — anti mail-bombing por DESTINATÁRIO do e-mail de confirmação (o rate limit do Better Auth é por IP e o
+ * reenvio aceita qualquer email). O token de confirmação é um JWT sem linha no banco, então o envio deixa um
+ * MARCADOR em `verification` (`verify-email-sent:<userId>`, só o id — sem PII) que expira com a janela; os
+ * vencidos da conta são apagados aqui mesmo. Devolve `false` quando a conta já recebeu o teto na janela.
+ */
+async function takeVerifyEmailSlot(userId: string): Promise<boolean> {
+  const db = getDb()
+  const identifier = `verify-email-sent:${userId}`
+  const now = new Date()
+  await db
+    .delete(schema.verification)
+    .where(and(eq(schema.verification.identifier, identifier), lt(schema.verification.expiresAt, now)))
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.verification)
+    .where(eq(schema.verification.identifier, identifier))
+  if (n >= VERIFY_MAX_PER_WINDOW) return false
+  await db
+    .insert(schema.verification)
+    .values({ identifier, value: userId, expiresAt: new Date(now.getTime() + VERIFY_WINDOW_MS) })
+  return true
+}
+
+/**
+ * #470 — idioma do e-mail de confirmação: `users.locale` (preferência salva) e, sem ela (conta recém-criada
+ * ainda não tem), o cookie `locale` / Accept-Language do request que disparou o envio.
+ */
+function verifyEmailLocale(user: { locale?: string | null }, request?: Request): Locale {
+  return resolveLocale({
+    preferred: user.locale ?? readLocaleCookie(request?.headers.get('cookie') ?? ''),
+    acceptLanguage: request?.headers.get('accept-language'),
+  })
+}
+
+/**
+ * #470 — o link do Better Auth (`/api/auth/verify-email?token=…&callbackURL=<destino>`) passa a voltar pela
+ * NOSSA tela `/{locale}/verify-email?returnTo=<destino>`: é ela que mostra "link inválido/expirado" (o Better
+ * Auth anexa `&error=…` ao callbackURL) e manda o Usuário, já logado, ao destino. O destino passa pela guarda
+ * anti open-redirect. Origem trocada pela confiável de ENV (`withTrustedOrigin`).
+ */
+function verifyEmailLink(url: string, locale: Locale): string {
+  const u = new URL(url)
+  const dest = safeInternalPath(u.searchParams.get('callbackURL'))
+  u.searchParams.set('callbackURL', `/${locale}/verify-email?returnTo=${encodeURIComponent(dest)}`)
+  return withTrustedOrigin(u.toString())
+}
+
+/**
+ * #470 (anti-enumeração pelo CORPO): com a confirmação ligada o Better Auth já responde 200 `{ token: null, user }`
+ * também para email existente, mas o `user` sintético sai só com os campos do schema (sem o `handle` gerado
+ * pelo hook, `role`/`plan` null em vez dos defaults do banco, id base62 em vez de uuid) — distinguível do real.
+ * A resposta do cadastro é reduzida a estes campos, iguais em forma nos dois casos (o id sintético é uuid, ver
+ * `customSyntheticUser`).
+ */
+const SIGNUP_USER_FIELDS = ['id', 'name', 'email', 'emailVerified', 'image', 'createdAt', 'updatedAt'] as const
 
 function buildAuth() {
   // hasGoogle deriva da MESMA fonte que as pages de autenticação (isGoogleConfigured) —
@@ -162,10 +234,21 @@ function buildAuth() {
         '/request-password-reset': { window: 60, max: 3 },
         '/forget-password': { window: 60, max: 3 },
         '/reset-password': { window: 60, max: 3 },
+        // #470: reenvio do link de confirmação — público, aceita qualquer email e dispara e-mail real.
+        '/send-verification-email': { window: 60, max: 3 },
       },
     },
     emailAndPassword: {
-      enabled: true, // D3 — sem requireEmailVerification
+      enabled: true,
+      // #470 (anti-enumeração no cadastro): sem conta confirmada não se entra. Isso também liga a resposta
+      // GENÉRICA do Better Auth no `/sign-up/email` — email já cadastrado responde 200 igual a um novo (sem
+      // 422 USER_ALREADY_EXISTS), sem criar nada nem mexer na conta existente. O cadastro NÃO loga mais: a
+      // sessão nasce ao abrir o link do e-mail (`autoSignInAfterVerification`). Contas anteriores a esta
+      // mudança foram marcadas confirmadas pela migração 0067.
+      requireEmailVerification: true,
+      // Forma do `user` sintético (email existente) = a do real: id uuid como o do Postgres. Os demais campos
+      // são cortados pelo hook `after` do cadastro (SIGNUP_USER_FIELDS).
+      customSyntheticUser: ({ coreFields }) => ({ ...coreFields, id: crypto.randomUUID() }),
       // Esqueci minha senha (#469). O Better Auth gera o token (tabela `verification`, uso único) e a rota
       // GET `/reset-password/:token` que redireciona pra nossa tela com `?token=`. Aqui só mandamos o link.
       // Conta soft-deletada NÃO recebe e-mail (o gating já a barra; um reset não pode reanimá-la). O
@@ -190,6 +273,35 @@ function buildAuth() {
       resetPasswordTokenExpiresIn: 60 * 60, // 1h — casa a copy do e-mail
       // Quem redefine a senha por suspeita de invasão derruba as sessões abertas (inclusive a do invasor).
       revokeSessionsOnPasswordReset: true,
+    },
+    // #470 — confirmação de e-mail. O Better Auth manda o link no cadastro (`sendOnSignUp` segue o
+    // requireEmailVerification), a cada login com senha certa de conta não confirmada (`sendOnSignIn`, resposta
+    // 403 EMAIL_NOT_VERIFIED) e no reenvio público (`/send-verification-email`, que responde igual exista ou
+    // não a conta). Abrir o link confirma e JÁ LOGA (`autoSignInAfterVerification`).
+    emailVerification: {
+      sendOnSignIn: true,
+      autoSignInAfterVerification: true,
+      expiresIn: VERIFY_EXPIRES_IN_S,
+      sendVerificationEmail: async ({ user, url }, request) => {
+        // Conta soft-deletada não recebe (o gating já a barra); teto por destinatário como no reset.
+        if ((user as { deletedAt?: Date | null }).deletedAt) return
+        if (!(await takeVerifyEmailSlot(user.id))) return
+        const locale = verifyEmailLocale(user as { locale?: string | null }, request)
+        await getMailer().sendAccountEmail(
+          buildVerifyEmail({ to: user.email, name: user.name, locale, url: verifyEmailLink(url, locale) }),
+        )
+      },
+    },
+    hooks: {
+      // #470 — resposta do cadastro com a MESMA forma exista ou não a conta (ver SIGNUP_USER_FIELDS). Erros
+      // (400 de validação etc.) passam intactos: não dependem da conta.
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-up/email') return
+        const out = ctx.context.returned as { user?: Record<string, unknown> } | undefined
+        if (!out || typeof out !== 'object' || !out.user || typeof out.user !== 'object') return
+        const user = Object.fromEntries(SIGNUP_USER_FIELDS.map((k) => [k, out.user![k] ?? null]))
+        return ctx.json({ token: null, user })
+      }),
     },
     socialProviders: hasGoogle
       ? { google: { clientId: googleId!, clientSecret: googleSecret! } }

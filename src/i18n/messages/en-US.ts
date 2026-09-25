@@ -472,6 +472,28 @@ export const enUS: Messages = {
       'We received a request to reset the password for your Refogando account. Use the link below to create a new password. It is valid for 1 hour and can only be used once.',
     emailResetBotao: 'Create a new password',
     emailResetIgnorar: "If this wasn't you, ignore this email. Your current password still works.",
+    // Email confirmation (#470). Sign-up does NOT sign in: the screen asks to open the link. The copy is the
+    // same whether or not the email has an account (no enumeration) — hence the "already have an account" note.
+    confirmeEmailTitulo: 'Check your email',
+    confirmeEmailCorpo:
+      'We sent a confirmation link to {email}. Open the link to activate your account and sign in. Check your spam folder too.',
+    confirmeEmailJaTemConta:
+      'If this email already has an account, no new link is sent: sign in or reset your password.',
+    reenviarEmail: 'Resend email',
+    confirmacaoReenviada:
+      'If this email still needs confirming, we sent a new link. Check your inbox and spam folder.',
+    erroEmailNaoVerificado:
+      'Confirm your email before signing in. We sent a new confirmation link to your inbox.',
+    emailConfirmado: 'Email confirmed. Sign in to continue.',
+    verificarErroTitulo: 'Invalid confirmation link',
+    verificarErroDescricao: 'This link has expired or was already used. Enter your email to get a new one.',
+    // Email confirmation transactional email (#470). `{nome}` interpolated on the server.
+    emailVerificarAssunto: 'Confirm your email for Refogando',
+    emailVerificarSaudacao: 'Hi {nome},',
+    emailVerificarCorpo:
+      "You're almost ready to start cooking with Refogando. Use the link below to confirm your email and sign in to your account. It is valid for 24 hours.",
+    emailVerificarBotao: 'Confirm email',
+    emailVerificarIgnorar: "If you didn't create this account, ignore this email.",
   },
   // Tela CRIAR estruturada (#58), mesma substância traduzida (ADR-0001, não byte-idêntica).
   criar: {

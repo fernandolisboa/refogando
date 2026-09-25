@@ -3,11 +3,12 @@
  * conta e pelas telas de redefinição de senha, para as três não divergirem.
  *
  * Regra: o que DISCRIMINA é `error.code` (SCREAMING_SNAKE), não o status — PASSWORD_TOO_SHORT é 400,
- * USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL é 422. Exceções, ambas sem `code` no corpo: 429 (rate limit do Better
+ * EMAIL_NOT_VERIFIED é 403. Exceções, ambas sem `code` no corpo: 429 (rate limit do Better
  * Auth) e ausência de status E de code (fetch não completou ⇒ rede). NUNCA expõe `error.message` cru.
  */
 export type AuthErrorKey =
   | 'erroCredencialInvalida'
+  | 'erroEmailNaoVerificado'
   | 'erroEmailEmUso'
   | 'erroSenhaCurta'
   | 'erroLinkInvalido'
@@ -24,6 +25,11 @@ export function mapAuthError(error: AuthError): AuthErrorKey {
   switch (error.code) {
     case 'INVALID_EMAIL_OR_PASSWORD':
       return 'erroCredencialInvalida'
+    // #470: login com senha certa de conta não confirmada (403). O servidor já reenviou o link (sendOnSignIn).
+    case 'EMAIL_NOT_VERIFIED':
+      return 'erroEmailNaoVerificado'
+    // Desde #470 o cadastro não devolve mais estes (resposta genérica, sem enumeração); o mapeamento fica
+    // como rede de segurança caso a confirmação de email seja desligada.
     case 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL':
     case 'USER_ALREADY_EXISTS':
       return 'erroEmailEmUso'

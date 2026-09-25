@@ -23,15 +23,18 @@ vi.mock('next/link', () => ({
 const signInEmail = vi.fn()
 const signInSocial = vi.fn()
 const signUpEmail = vi.fn()
+const sendVerificationEmail = vi.fn()
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
   signIn: { email: (...a: unknown[]) => signInEmail(...a), social: (...a: unknown[]) => signInSocial(...a) },
   signUp: { email: (...a: unknown[]) => signUpEmail(...a) },
   signOut: vi.fn(),
+  sendVerificationEmail: (...a: unknown[]) => sendVerificationEmail(...a),
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
 import { AuthForm } from '@/components/auth/auth-form'
+import { VerifyEmailRetry } from '@/components/auth/verify-email-retry'
 import type { Locale } from '@/i18n/locale'
 
 type Mode = 'sign-in' | 'sign-up'
@@ -69,6 +72,8 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     signInEmail.mockReset()
     signInSocial.mockReset()
     signUpEmail.mockReset()
+    sendVerificationEmail.mockReset()
+    sendVerificationEmail.mockResolvedValue({ data: { status: true }, error: null })
   })
 
   it('entrar: labels associados aos inputs (a11y)', () => {
@@ -142,7 +147,7 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     })
   })
 
-  it('criar conta: email em uso mostra erro claro (code real do fluxo)', async () => {
+  it('criar conta: code de email em uso ainda mapeia (rede de segurança; desde #470 o servidor não o devolve)', async () => {
     const user = userEvent.setup()
     failWith(signUpEmail, 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL')
     renderForm('sign-up')
@@ -235,5 +240,104 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     await userEvent.type(screen.getByLabelText('Senha'), 'qualquer-senha')
     await userEvent.click(screen.getByRole('button', { name: 'Entrar' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
+})
+
+describe('AuthForm — confirmação de email (#470)', () => {
+  beforeEach(() => {
+    push.mockClear()
+    refresh.mockClear()
+    signInEmail.mockReset()
+    signUpEmail.mockReset()
+    sendVerificationEmail.mockReset()
+    sendVerificationEmail.mockResolvedValue({ data: { status: true }, error: null })
+  })
+
+  async function signUpAs(email: string) {
+    const user = userEvent.setup()
+    succeed(signUpEmail)
+    renderForm('sign-up')
+    await user.type(screen.getByLabelText('Nome'), 'Ana')
+    await user.type(screen.getByLabelText('Email'), email)
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    return user
+  }
+
+  it('criar conta NÃO loga: mostra "Confira seu email" com o email, sem navegar', async () => {
+    await signUpAs('ana@ex.com')
+    expect(signUpEmail.mock.calls[0][0]).toMatchObject({ callbackURL: '/' })
+    expect(screen.getByRole('heading', { name: 'Confira seu email' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Enviamos um link de confirmação para ana@ex.com')
+    // Mesma tela exista ou não conta com o email: o lembrete de "já tem conta" sempre aparece.
+    expect(screen.getByText(/Se este email já tem conta/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
+    expect(push).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('"Reenviar email" chama sendVerificationEmail e confirma de forma neutra', async () => {
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/' })
+    expect(await screen.findByText(/Se este email ainda precisar de confirmação/)).toBeInTheDocument()
+  })
+
+  it('reenvio com 429 mostra "muitas tentativas"', async () => {
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 429 } })
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
+
+  it('entrar com conta não confirmada: mensagem clara + reenvio pro email digitado', async () => {
+    const user = userEvent.setup()
+    signInEmail.mockImplementation(async (_b: unknown, h?: Handlers) => {
+      h?.onError?.({ error: { code: 'EMAIL_NOT_VERIFIED' } })
+      return { data: null, error: { code: 'EMAIL_NOT_VERIFIED' } }
+    })
+    renderForm('sign-in')
+    await user.type(screen.getByLabelText('Email'), 'bia@ex.com')
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Confirme seu email antes de entrar')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/' })
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('entrar com emailVerified: mostra "Email confirmado"', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled={false} emailVerified />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Email confirmado')
+  })
+
+  it('en-US: tela "Check your email"', async () => {
+    const user = userEvent.setup()
+    succeed(signUpEmail)
+    renderForm('sign-up', false, 'en-US')
+    await user.type(screen.getByLabelText('Name'), 'Bo')
+    await user.type(screen.getByLabelText('Email'), 'bo@ex.com')
+    await user.type(screen.getByLabelText('Password'), 'secret123')
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    expect(screen.getByRole('heading', { name: 'Check your email' })).toBeInTheDocument()
+  })
+
+  it('link inválido: pede o email e reenvia com o destino', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <VerifyEmailRetry returnTo="/u/ana" />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('heading', { name: 'Link de confirmação inválido' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reenviar email' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Email'), 'ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/u/ana' })
   })
 })

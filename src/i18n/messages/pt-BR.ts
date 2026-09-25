@@ -517,6 +517,28 @@ export const ptBR = {
       'Recebemos um pedido para redefinir a senha da sua conta no Refogando. Use o link abaixo para criar uma nova senha. Ele vale por 1 hora e só pode ser usado uma vez.',
     emailResetBotao: 'Criar nova senha',
     emailResetIgnorar: 'Se não foi você, ignore este email. Sua senha atual continua valendo.',
+    // Confirmação de email (#470). O cadastro NÃO entra direto: a tela pede pra abrir o link. A copy é
+    // igual exista ou não conta com o email (sem enumeração) — por isso o lembrete de "já tem conta".
+    confirmeEmailTitulo: 'Confira seu email',
+    confirmeEmailCorpo:
+      'Enviamos um link de confirmação para {email}. Abra o link para ativar sua conta e entrar. Confira também o spam.',
+    confirmeEmailJaTemConta:
+      'Se este email já tem conta, nenhum link novo é enviado: entre ou redefina a senha.',
+    reenviarEmail: 'Reenviar email',
+    confirmacaoReenviada:
+      'Se este email ainda precisar de confirmação, enviamos um novo link. Confira a caixa de entrada e o spam.',
+    erroEmailNaoVerificado:
+      'Confirme seu email antes de entrar. Enviamos um novo link de confirmação para a sua caixa de entrada.',
+    emailConfirmado: 'Email confirmado. Entre para continuar.',
+    verificarErroTitulo: 'Link de confirmação inválido',
+    verificarErroDescricao: 'Este link expirou ou já foi usado. Informe seu email para receber um novo.',
+    // E-mail transacional de confirmação (#470). `{nome}` interpolado no servidor.
+    emailVerificarAssunto: 'Confirme seu email no Refogando',
+    emailVerificarSaudacao: 'Olá, {nome}!',
+    emailVerificarCorpo:
+      'Falta pouco para começar a cozinhar com o Refogando. Use o link abaixo para confirmar seu email e entrar na sua conta. Ele vale por 24 horas.',
+    emailVerificarBotao: 'Confirmar email',
+    emailVerificarIgnorar: 'Se não foi você que criou esta conta, ignore este email.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)

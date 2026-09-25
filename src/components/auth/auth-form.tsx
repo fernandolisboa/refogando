@@ -17,6 +17,11 @@
  * Erro: bloco neutro `role="alert"` (cor `text-fg`, NÃO o token `aviso` — reservado pro
  * Aviso de restrição, ADR-0004). Texto sempre traduzido por CHAVE via `mapAuthError`
  * (`auth-errors.ts`, casa `error.code` do Better Auth), nunca a mensagem crua do servidor.
+ *
+ * Confirmação de email (#470): criar conta NÃO loga — o sucesso troca o formulário pela tela "confira seu
+ * email" (com reenvio), que é a MESMA exista ou não conta com o email (o servidor responde igual). Entrar com
+ * conta não confirmada dá 403 EMAIL_NOT_VERIFIED: mensagem própria + reenvio. O link do e-mail loga e leva ao
+ * `returnTo`.
  */
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
@@ -25,6 +30,7 @@ import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
+import { ResendVerification } from '@/components/auth/resend-verification'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +47,7 @@ export function AuthForm({
   googleEnabled,
   returnTo = '/',
   passwordReset = false,
+  emailVerified = false,
 }: {
   mode: Mode
   googleEnabled: boolean
@@ -48,6 +55,8 @@ export function AuthForm({
   returnTo?: string
   /** Chegou aqui logo após redefinir a senha (#469, `?reset=1`) — mostra a confirmação acima do form. */
   passwordReset?: boolean
+  /** Chegou aqui por um link de confirmação já usado, sem sessão (#470, `?verified=1`) — confirma acima do form. */
+  emailVerified?: boolean
 }) {
   const { messages } = useLocale()
   const router = useRouter()
@@ -65,6 +74,8 @@ export function AuthForm({
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorKey, setErrorKey] = useState<AuthErrorKey | null>(null)
+  // #470: email para o qual o cadastro "enviou" o link — non-null troca o formulário pela tela "confira seu email".
+  const [sentTo, setSentTo] = useState<string | null>(null)
 
   const title = isSignUp ? messages.auth.criarConta : messages.nav.signIn
   const submitLabel = isSignUp ? messages.auth.criarConta : messages.nav.signIn
@@ -74,21 +85,28 @@ export function AuthForm({
     setSubmitting(true)
     setErrorKey(null)
     try {
-      // Navega só no onSuccess (depois do ciclo completo) — evita flash de "Entrar"
-      // pós-login. refresh() revalida a sessão da chrome; push('/') leva pra Busca (home).
-      const handlers = {
-        onSuccess: () => {
-          router.refresh()
-          router.push(dest)
-        },
-        onError: (ctx: AuthErrorCtx) => {
-          setErrorKey(mapAuthError(ctx.error))
-        },
+      const onError = (ctx: AuthErrorCtx) => {
+        setErrorKey(mapAuthError(ctx.error))
       }
       if (isSignUp) {
-        await signUp.email({ name, email, password }, handlers)
+        // #470: sem sessão no cadastro. `callbackURL` = destino pós-confirmação (o link do e-mail).
+        await signUp.email(
+          { name, email, password, callbackURL: dest },
+          { onSuccess: () => setSentTo(email.trim()), onError },
+        )
       } else {
-        await signIn.email({ email, password }, handlers)
+        // Navega só no onSuccess (depois do ciclo completo) — evita flash de "Entrar"
+        // pós-login. refresh() revalida a sessão da chrome; push('/') leva pra Busca (home).
+        await signIn.email(
+          { email, password },
+          {
+            onSuccess: () => {
+              router.refresh()
+              router.push(dest)
+            },
+            onError,
+          },
+        )
       }
     } catch {
       // Rejeição sem ciclo onError (ex.: falha de rede antes do fetch).
@@ -115,9 +133,42 @@ export function AuthForm({
     }
   }
 
+  if (sentTo != null) {
+    const signInHref = dest === '/' ? '/sign-in' : `/sign-in?returnTo=${encodeURIComponent(dest)}`
+    return (
+      <div className="flex flex-col gap-6">
+        <h1 className="font-display text-3xl font-semibold text-fg">{messages.auth.confirmeEmailTitulo}</h1>
+        <Alert variant="info" role="status">
+          <AlertDescription className="font-medium text-foreground">
+            {messages.auth.confirmeEmailCorpo.replace('{email}', sentTo)}
+          </AlertDescription>
+        </Alert>
+        <ResendVerification email={sentTo} callbackURL={dest} />
+        <p className="text-sm text-muted">
+          {messages.auth.confirmeEmailJaTemConta}{' '}
+          <Link href={signInHref} className="font-medium text-brand-ink hover:underline">
+            {messages.nav.signIn}
+          </Link>
+          {' · '}
+          <Link href="/forgot-password" className="font-medium text-brand-ink hover:underline">
+            {messages.auth.esqueciSenha}
+          </Link>
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-3xl font-semibold text-fg">{title}</h1>
+
+      {emailVerified && !isSignUp && (
+        <Alert variant="info" role="status">
+          <AlertDescription className="font-medium text-foreground">
+            {messages.auth.emailConfirmado}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {passwordReset && !isSignUp && (
         <Alert variant="info" role="status">
@@ -198,6 +249,8 @@ export function AuthForm({
             </AlertDescription>
           </Alert>
         )}
+
+        {errorKey === 'erroEmailNaoVerificado' && <ResendVerification email={email} callbackURL={dest} />}
 
         <Button type="submit" disabled={submitting} aria-busy={submitting}>
           {submitting ? messages.auth.enviando : submitLabel}

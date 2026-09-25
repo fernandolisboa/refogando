@@ -11,6 +11,12 @@ describe('authLog (#469)', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
+  it('descarta a tentativa de cadastro com email existente (#470 — PII e o próprio fato da enumeração)', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    authLog('info', 'Sign-up attempt for existing email: x@y.z')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
   it('mensagem que é um Error (catch da lib) é logada, sem lançar', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const err = new Error('db down')
