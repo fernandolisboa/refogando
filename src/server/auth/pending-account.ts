@@ -39,15 +39,21 @@ export function isPendingHandle(handle: string | null | undefined): boolean {
 }
 
 /**
- * Email provado ⇒ troca o handle de espera pelo derivado do nome, com as MESMAS regras de colisão do cadastro
- * (`generateUniqueHandle`). Só mexe se o handle atual ainda é o de espera (o UPDATE é condicionado a ele — nada
- * de sobrescrever um handle já escolhido). Corrida com outro cadastro no mesmo nome (23505) ⇒ tenta de novo;
- * se esgotar, fica o de espera (editável no perfil) — confirmar a conta nunca falha por causa do handle.
+ * CURA do handle de espera: troca-o pelo derivado do nome, com as MESMAS regras de colisão do cadastro
+ * (`generateUniqueHandle`). Só mexe se o handle atual é EXATAMENTE o de espera gerado (`isPendingHandle`: formato
+ * estrito — `pendente-silva` nunca casa) e o UPDATE é condicionado a ele (nada de sobrescrever um handle já
+ * escolhido). `requireVerified`: só cura conta com email confirmado. Idempotente. Corrida com outro cadastro no
+ * mesmo nome (23505) ⇒ tenta de novo; se esgotar, fica o de espera (editável no perfil) — confirmar/entrar nunca
+ * falha por causa do handle.
  */
-export async function assignNameHandle(userId: string): Promise<void> {
+export async function assignNameHandle(userId: string, opts: { requireVerified?: boolean } = {}): Promise<void> {
   const db = getDb()
-  const [row] = await db.select({ name: users.name, handle: users.handle }).from(users).where(eq(users.id, userId))
+  const [row] = await db
+    .select({ name: users.name, handle: users.handle, emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, userId))
   if (!row || !isPendingHandle(row.handle)) return
+  if (opts.requireVerified && !row.emailVerified) return
   for (let attempt = 0; attempt < 3; attempt++) {
     const handle = await generateUniqueHandle(row.name)
     try {

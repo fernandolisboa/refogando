@@ -12,7 +12,7 @@ import { isGoogleConfigured } from '@/server/auth/google'
 import { generateUniqueHandle } from '@/server/handle'
 import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
 import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-email-email'
-import { assignNameHandle, pendingHandle } from '@/server/auth/pending-account'
+import { assignNameHandle, isPendingHandle, pendingHandle } from '@/server/auth/pending-account'
 import type { MailInput } from '@/server/mail/mailer'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { safeInternalPath } from '@/domain/safe-redirect'
@@ -383,10 +383,6 @@ function buildAuth() {
                 buildVerifyEmail({ to: user.email, name: user.name, locale, url: verifyEmailLink(url, locale) }),
               )
             },
-            // #470 (F2): email provado ⇒ o handle de espera vira o derivado do nome.
-            afterEmailVerification: async (user: { id: string }) => {
-              await assignNameHandle(user.id)
-            },
           },
         }
       : {}),
@@ -446,8 +442,31 @@ function buildAuth() {
         handle: { type: 'string', required: false, input: false },
       },
     },
+    // #470 — CURA do handle de espera, registrada SEMPRE (com ou sem o gate): a conta que passa a ser de alguém
+    // perde o `pendente-<16>` e ganha o handle do nome. Cobre o link de confirmação (inclusive aberto depois de o
+    // gate desligar), o admin marcando o email como confirmado e o gate desligado depois do cadastro (a conta
+    // entra direto). O reset de senha cura em `onPasswordReset`. Tudo idempotente e só com o handle de espera
+    // EXATO (`isPendingHandle`).
     databaseHooks: {
+      session: {
+        create: {
+          // Sessão nova de conta com handle de espera: com o gate ligado só cura se confirmada (conta não
+          // confirmada nem entra, mas por garantia); desligado, a conta é normal e cura já.
+          after: async (session) => {
+            await assignNameHandle(session.userId, { requireVerified: verifyEmail })
+          },
+        },
+      },
       user: {
+        update: {
+          // Email confirmado (link, admin…) ⇒ cura. Sem `handle` no retorno, `assignNameHandle` relê a linha.
+          after: async (user) => {
+            const u = user as { id: string; emailVerified?: boolean; handle?: string | null }
+            if (!u.emailVerified) return
+            if (u.handle !== undefined && !isPendingHandle(u.handle)) return
+            await assignNameHandle(u.id)
+          },
+        },
         create: {
           // #128 — todo Usuário nasce com um handle único derivado do `name` (com
           // desambiguação). Roda ANTES do INSERT: injetamos `handle` no `data`. A unicidade

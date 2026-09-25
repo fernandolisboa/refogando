@@ -199,7 +199,7 @@ describe('confirmação de email (#470)', () => {
     const P_A = 'senha-do-atacante-1'
     await post('/sign-up/email', { email: 'alvo@verify.test', password: P_A, name: 'Atacante' })
     const userId = (await userRow('alvo@verify.test')).id
-    mailer.accountSent.splice(0) // o link de confirmação do cadastro do atacante (resíduo do ADR, limitado a 48h)
+    mailer.accountSent.splice(0) // o link de confirmação do cadastro do atacante (resíduo aceito no ADR, sem limite de tempo)
 
     // Vítima cadastra o próprio email: resposta genérica de sempre, e o e-mail que chega é o link de SENHA.
     const res = await signUp('alvo@verify.test', 'Vitima')
@@ -447,6 +447,13 @@ describe('F2 — conta pendente não expõe handle derivável nem aparece em pú
       cooks: Array<{ handle: string }>
     }
     expect(found.cooks.map((c) => c.handle)).toEqual(['genoveva'])
+  })
+
+  it('R2 — `pendente-silva` (handle de NOME com o prefixo, de antes da reserva) nunca é tratado como pendente', async () => {
+    await seedUser({ email: 'silva@f2.test', name: 'Pendente Silva', handle: 'pendente-silva', emailVerified: false })
+    expect((await profileGet(new Request('http://localhost/api/u/pendente-silva'), {
+      params: Promise.resolve({ handle: 'pendente-silva' }),
+    })).status).toBe(200)
   })
 
   it('R2 — conta com handle de espera mas JÁ confirmada (handle do nome não coube) é pública', async () => {

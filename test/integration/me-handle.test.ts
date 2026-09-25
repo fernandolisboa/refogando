@@ -140,6 +140,27 @@ describe('/api/me — troca de handle via PATCH (#128)', () => {
     expect(await readHandle(userId)).toBe(antes)
   })
 
+  it('#470: quem JÁ tem handle com `pendente-` salva o perfil mantendo-o; trocar PARA outro `pendente-` segue barrado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'pendente-silva@handle.test' })
+    // Gerado do nome antes da reserva do prefixo (ex.: "Pendente Silva" em produção).
+    await getDb().update(users).set({ handle: 'pendente-silva' }).where(eq(users.id, userId))
+
+    // O form sempre reenvia o handle atual: salvar nome/bio mantendo-o funciona.
+    const keep = await patch({ name: 'Pendente Silva', bio: 'oi', handle: 'pendente-silva' }, headers)
+    expect(keep.status).toBe(200)
+    expect(await readHandle(userId)).toBe('pendente-silva')
+
+    // Trocar para OUTRO handle com o prefixo reservado: 400.
+    const change = await patch({ name: 'Pendente Silva', handle: 'pendente-x' }, headers)
+    expect(change.status).toBe(400)
+    await expect(change.json()).resolves.toMatchObject({ error: 'handle_reserved' })
+    expect(await readHandle(userId)).toBe('pendente-silva')
+
+    // Sair dele para um handle normal continua valendo.
+    expect((await patch({ name: 'Pendente Silva', handle: 'silva-p' }, headers)).status).toBe(200)
+    expect(await readHandle(userId)).toBe('silva-p')
+  })
+
   it('formato inválido → 400 handle_invalid (não grava)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'formato@handle.test' })
     const antes = await readHandle(userId)

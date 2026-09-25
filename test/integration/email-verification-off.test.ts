@@ -93,6 +93,31 @@ describe('confirmação de email com o e-mail de conta NÃO configurado (#470, f
     expect(opts.emailAndPassword).not.toHaveProperty('customSyntheticUser')
   })
 
+  it('#470: handle de espera é CURADO mesmo com o gate desligado — ao entrar e ao ser confirmado; `pendente-silva` nunca', async () => {
+    const PLACEHOLDER = /^pendente-[a-z0-9]{16}$/
+    // Conta que ficou com o handle de espera (criada com o gate ligado, que depois desligou).
+    await getAuth().api.signUpEmail({ body: { email: 'curada@off.test', password: PASSWORD, name: 'Eulália' } })
+    await getDb().update(users).set({ handle: 'pendente-0123456789abcdef' }).where(eq(users.email, 'curada@off.test'))
+    expect((await post('/sign-in/email', { email: 'curada@off.test', password: PASSWORD })).status).toBe(200)
+    expect((await userRow('curada@off.test')).handle).toBe('eulalia')
+
+    // Confirmada fora do login (admin / link aberto com o gate desligado): o update do usuário cura.
+    const other = await getAuth().api.signUpEmail({ body: { email: 'admin-ok@off.test', password: PASSWORD, name: 'Olímpia' } })
+    await getDb().update(users).set({ handle: 'pendente-abcdefabcdefabcd' }).where(eq(users.id, other.user.id))
+    const ctx = await getAuth().$context
+    await ctx.internalAdapter.updateUser(other.user.id, { emailVerified: true })
+    const healed = (await userRow('admin-ok@off.test')).handle
+    expect(healed).not.toMatch(PLACEHOLDER)
+    expect(healed).toBe('olimpia')
+
+    // Handle de NOME com o prefixo (formato diferente do de espera) nunca é tocado.
+    await getAuth().api.signUpEmail({ body: { email: 'silva@off.test', password: PASSWORD, name: 'Pendente Silva' } })
+    await getDb().update(users).set({ handle: 'pendente-silva' }).where(eq(users.email, 'silva@off.test'))
+    expect((await post('/sign-in/email', { email: 'silva@off.test', password: PASSWORD })).status).toBe(200)
+    await ctx.internalAdapter.updateUser((await userRow('silva@off.test')).id, { emailVerified: true })
+    expect((await userRow('silva@off.test')).handle).toBe('pendente-silva')
+  })
+
   it('o gate é o interruptor: com o e-mail configurado (nova instância), o cadastro deixa de logar', async () => {
     setMailer(new FakeMailer())
     resetAuthForTests()
