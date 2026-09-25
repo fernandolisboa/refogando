@@ -45,3 +45,19 @@ O schema de geração nasceu com `rawText: z.string()` **sem descrição**. Sem 
 Correção do contrato: o campo de texto do ingrediente no schema de geração é **`nome`** (renomeado de `rawText`), com descrição explícita — *"nome do ingrediente SEM quantidade/unidade (ex.: `arroz arbóreo`, nunca `320 g de arroz arbóreo`); a medida vai em `quantidade` + `unidade`"*. O **nome do campo + a descrição** são os principais sinais que o structured output lê. Mapeia para `recipe_ingredient.raw_text` (sem rename de coluna). A Extração (Adendo #112) e a importação web seguem a regra: a medida fica nos campos estruturados, `raw_text` é só o nome (na importação, best-effort — tira a medida da linha do JSON-LD). Defesa em profundidade opcional: se o modelo ainda vazar a medida no `nome`, um strip leve no servidor a remove — best-effort, **nunca rejeição dura** (um nome pode conter número legítimo, ex.: "leite 2%").
 
 **Refinação (2026-06-30, ver ADR-0012 Adendo 2):** "tirar a medida" significa tirar só o **número** e a **unidade do enum** (`g/kg/ml/l/colher_de_sopa/colher_de_cha/xicara/dente/fatia/pitada`). **Palavras de porção/recipiente que NÃO são unidades do enum** — "folha", "talo", "ramo", "maço", "lata", "punhado", "pacote", "vidro", "caixa" — **ficam no nome** ("4 folhas de alga nori" → `nome` = "folhas de alga nori", `quantidade=4`, `unidade='unidade'`), porque o enum não as representa e a exibição as precisa para ler certo. Strip que come a palavra de porção é o bug que reprovou o PR #357.
+
+## Adendo (2026-09-25) — Formato fora do vocabulário não derruba a geração
+
+Os enums e o pattern do schema **não constringem o modelo**: o `zodOutputFormat` do SDK os rebaixa a dica na description do JSON Schema, mas o parse local valida o schema zod e lança. Resultado: um `categoria: 'Prato principal'`, `cozinha: 'Italiana'` ou `quantidade: '1/2'` virava `parse_failed` → 502 e a Receita inteira se perdia (o mesmo problema que o #548 resolveu no `originalLocale`).
+
+Regra: **um desvio de formato do modelo nunca falha a geração.** Na fronteira do parse (`z.preprocess` em `recipe-gen-schema.ts`, normalizadores em `vocabulary-normalize.ts`):
+
+- `cozinha`, `categoria`, `unidade`: casa caixa, acento, plural e sinônimos PT/EN sem ambiguidade; o que não casa vira `null`. Cozinha só casa slugs do conjunto ativo (a FK rejeitaria outro).
+- `restricoes`: termo não reconhecido é **descartado**, nunca adivinhado — um sinônimo errado afirmaria uma dieta que a receita não cumpre (ADR-0004).
+- `quantidade`: vírgula decimal, fração (`1/2`, `1 1/2`, `½`), faixa (`2-3` → 2) e número seguido de texto viram o formato de `numeric(10,3)`; sem número vira `null`, e "a gosto"/"q.b." sem unidade viram `unidade` `a_gosto`/`q_b`.
+- `kind` fora dos 4 valores: inferido pela presença da receita (`success` com receita, `impossible` sem).
+- `dificuldade` fora de 1–5 é trazida para a faixa no `classify` (nota subjetiva; é erro de escala).
+
+Todo valor que cai no fallback é logado (`[claude/generateRecipe] valores fora do vocabulário…`, campo + valor cru curto) para que os aliases que faltam apareçam. O JSON Schema enviado à Anthropic não muda.
+
+Continua **inválido**: `porcoes` fora de 1–50 (as quantidades são para N porções; trocar N falsearia a Receita), receita nula num `kind` que exige receita, e `refusal`/`max_tokens`/JSON quebrado.

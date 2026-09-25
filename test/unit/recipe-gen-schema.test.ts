@@ -6,7 +6,7 @@ import {
   buildRecipeGenSchema,
   buildRecipeGenListSchema,
 } from '@/domain/recipe-gen-schema'
-import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
+import type { CampoDescartado, ReceitaGenT } from '@/domain/recipe-gen-schema'
 
 // Receita "miolo" completa e válida — base reutilizável nos casos abaixo.
 function receitaCompleta(): ReceitaGenT {
@@ -112,16 +112,16 @@ describe('RecipeGenSchema — forma FLAT-OBJECT (§2 fallback)', () => {
 })
 
 describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', () => {
-  it('lista não-vazia: ACEITA slugs do conjunto, REJEITA fora dele', () => {
+  it('lista não-vazia: ACEITA slugs do conjunto; fora dele vira null (a FK rejeitaria), sem lançar', () => {
     const schema = buildRecipeGenSchema(['italiana', 'americana'])
     // dentro do conjunto → aceito (inclusive 'americana', nova/data-driven).
     for (const cozinha of ['italiana', 'americana']) {
       const receita = { ...receitaCompleta(), cozinha }
       expect(schema.parse({ kind: 'success', receita, advisory: null }).receita?.cozinha).toBe(cozinha)
     }
-    // fora do conjunto → rejeitado (z.enum constringe ao vocabulário VIVO).
+    // fora do conjunto → null (o enum constringe ao vocabulário VIVO, mas não derruba a geração).
     const marciana = { ...receitaCompleta(), cozinha: 'marciana' }
-    expect(() => schema.parse({ kind: 'success', receita: marciana, advisory: null })).toThrow()
+    expect(schema.parse({ kind: 'success', receita: marciana, advisory: null }).receita?.cozinha).toBeNull()
   })
 
   it('lista VAZIA: cai em z.string() — NUNCA estoura na construção; aceita qualquer string e null', () => {
@@ -133,10 +133,15 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     }
   })
 
-  it('rejeita kind fora do enum', () => {
-    expect(() =>
-      RecipeGenSchema.parse({ kind: 'invalid', receita: null, advisory: null }),
-    ).toThrow()
+  it('kind fora do enum é inferido (sem receita ⇒ impossible; com receita ⇒ success), sem lançar', () => {
+    expect(RecipeGenSchema.parse({ kind: 'invalid', receita: null, advisory: 'x' }).kind).toBe('impossible')
+    expect(RecipeGenSchema.parse({ kind: 'ok', receita: receitaCompleta(), advisory: null }).kind).toBe(
+      'success',
+    )
+    // caixa/espaço é só normalizado
+    expect(RecipeGenSchema.parse({ kind: ' Degraded ', receita: receitaCompleta(), advisory: null }).kind).toBe(
+      'degraded',
+    )
   })
 
   it('rejeita quantidade numérica (deve ser string|null)', () => {
@@ -150,14 +155,26 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     expect(() => RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })).toThrow()
   })
 
-  it('rejeita quantidade string não-numérica ("a gosto" / "2,5" / "")', () => {
-    for (const q of ['a gosto', '2,5', '']) {
+  it('quantidade fora do formato é normalizada ("2,5" → "2.5"; "" → null), sem lançar', () => {
+    const casos: Array<[string, string | null]> = [
+      ['2,5', '2.5'],
+      ['1/2', '0.5'],
+      ['', null],
+      ['um punhado', null],
+    ]
+    for (const [q, esperado] of casos) {
       const receita = receitaCompleta()
       receita.ingredientes[0] = { nome: 'algo', quantidade: q, unidade: 'xicara' }
-      expect(() =>
-        RecipeGenSchema.parse({ kind: 'success', receita, advisory: null }),
-      ).toThrow()
+      const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
+      expect(parsed.receita?.ingredientes[0]).toMatchObject({ quantidade: esperado, unidade: 'xicara' })
     }
+  })
+
+  it('quantidade "a gosto" sem unidade vira unidade a_gosto (quantidade null)', () => {
+    const receita = receitaCompleta()
+    receita.ingredientes[0] = { nome: 'sal', quantidade: 'a gosto', unidade: null }
+    const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
+    expect(parsed.receita?.ingredientes[0]).toEqual({ nome: 'sal', quantidade: null, unidade: 'a_gosto' })
   })
 
   it('aceita quantidade numérica válida ("2.500") e null', () => {
@@ -216,12 +233,11 @@ describe('buildRecipeGenListSchema — "gerar 2, o usuário escolhe" (#423)', ()
     expect(() =>
       schema.parse({ variacoes: [item(), item({ receita: { ...receitaCompleta(), cozinha: 'italiana' } })] }),
     ).not.toThrow()
-    // fora do conjunto → rejeitado.
-    expect(() =>
-      schema.parse({
-        variacoes: [item(), item({ receita: { ...receitaCompleta(), cozinha: 'marciana' } })],
-      }),
-    ).toThrow()
+    // fora do conjunto → null, sem derrubar o lote.
+    const parsed = schema.parse({
+      variacoes: [item(), item({ receita: { ...receitaCompleta(), cozinha: 'marciana' } })],
+    })
+    expect(parsed.variacoes[1].receita?.cozinha).toBeNull()
   })
 
   it('rejeita item sem `variacao` (rótulo do pólo é obrigatório)', () => {
@@ -242,5 +258,92 @@ describe('originalLocale — string livre (quem normaliza é o classify)', () =>
     const json = JSON.stringify(zodOutputFormat(buildRecipeGenSchema(['italiana'])).schema)
     expect(json).toContain("'pt-BR' ou 'en-US'")
     expect(json).toContain('não o do texto de origem')
+  })
+})
+
+describe('tolerância no parse do SDK — formato fora do enum NUNCA derruba a geração', () => {
+  // Pelo `fmt.parse` do zodOutputFormat: é o caminho que lançava (→ parse_failed → 502) em produção.
+  function parseSdk(receita: Record<string, unknown>, slugs: string[] = ['italiana', 'arabe']) {
+    const descartes: CampoDescartado[] = []
+    const fmt = zodOutputFormat(buildRecipeGenSchema(slugs, (d) => descartes.push(d)))
+    const parsed = fmt.parse(JSON.stringify({ kind: 'success', receita, advisory: null }))
+    return { receita: parsed.receita, descartes }
+  }
+
+  it('normaliza caixa, acento, rótulo e sinônimo PT/EN nos campos de vocabulário', () => {
+    const { receita, descartes } = parseSdk({
+      ...receitaCompleta(),
+      cozinha: 'Italiana',
+      categoria: 'Prato Principal',
+      restricoes: ['Vegetariano', 'gluten-free', 'vegan'],
+      ingredientes: [
+        { nome: 'farinha', quantidade: '1 1/2', unidade: 'Xícaras' },
+        { nome: 'azeite', quantidade: '2', unidade: 'tbsp' },
+        { nome: 'alho', quantidade: '½', unidade: 'dentes' },
+      ],
+    })
+    expect(receita).toMatchObject({
+      cozinha: 'italiana',
+      categoria: 'prato_principal',
+      restricoes: ['vegetariano', 'sem_gluten', 'vegano'],
+      ingredientes: [
+        { nome: 'farinha', quantidade: '1.5', unidade: 'xicara' },
+        { nome: 'azeite', quantidade: '2', unidade: 'colher_de_sopa' },
+        { nome: 'alho', quantidade: '0.5', unidade: 'dente' },
+      ],
+    })
+    expect(descartes).toEqual([])
+  })
+
+  it('cozinha pelo rótulo em inglês da seed ("Arabic" → arabe) quando está no conjunto ativo', () => {
+    expect(parseSdk({ ...receitaCompleta(), cozinha: 'Arabic' }).receita?.cozinha).toBe('arabe')
+    // 'Mexican' é da seed mas não está ATIVA neste conjunto → null
+    expect(parseSdk({ ...receitaCompleta(), cozinha: 'Mexican' }).receita?.cozinha).toBeNull()
+  })
+
+  it('não reconhecido cai no fallback (null / descartado) e é reportado', () => {
+    const { receita, descartes } = parseSdk({
+      ...receitaCompleta(),
+      cozinha: 'Marciana',
+      categoria: 'Petisco de festa',
+      restricoes: ['vegetariano', 'paleo'],
+      ingredientes: [{ nome: 'salsinha', quantidade: 'um maço', unidade: 'maço' }],
+    })
+    expect(receita).toMatchObject({
+      cozinha: null,
+      categoria: null,
+      restricoes: ['vegetariano'],
+      ingredientes: [{ nome: 'salsinha', quantidade: null, unidade: null }],
+    })
+    expect(descartes).toEqual([
+      { campo: 'cozinha', valor: 'Marciana' },
+      { campo: 'categoria', valor: 'Petisco de festa' },
+      { campo: 'restricoes', valor: 'paleo' },
+      { campo: 'quantidade', valor: 'um maço' },
+      { campo: 'unidade', valor: 'maço' },
+    ])
+  })
+
+  it('o lote de variações tem a mesma tolerância', () => {
+    const fmt = zodOutputFormat(buildRecipeGenListSchema(['italiana']))
+    const receita = { ...receitaCompleta(), categoria: 'Sobremesa', cozinha: 'ITALIANA' }
+    const parsed = fmt.parse(
+      JSON.stringify({
+        variacoes: [
+          { kind: 'Success', receita, advisory: null, variacao: 'a' },
+          { kind: 'success', receita: receitaCompleta(), advisory: null, variacao: 'b' },
+        ],
+      }),
+    )
+    expect(parsed.variacoes[0]).toMatchObject({ kind: 'success', receita: { categoria: 'sobremesa', cozinha: 'italiana' } })
+  })
+
+  it('o JSON Schema enviado segue com os enums/pattern como dica e sem $defs/$ref', () => {
+    const json = JSON.stringify(zodOutputFormat(buildRecipeGenSchema(['italiana', 'arabe'])).schema)
+    expect(json).not.toContain('$defs')
+    expect(json).not.toContain('$ref')
+    for (const dica of ['prato_principal', 'colher_de_sopa', 'sem_gluten', 'arabe', 'impossible', 'pattern']) {
+      expect(json).toContain(dica)
+    }
   })
 })

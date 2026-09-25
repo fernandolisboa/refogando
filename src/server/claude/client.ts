@@ -29,7 +29,11 @@ import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { PromptAxes } from '@/domain/briefing'
-import { buildRecipeGenSchema, buildRecipeGenListSchema } from '@/domain/recipe-gen-schema'
+import {
+  buildRecipeGenSchema,
+  buildRecipeGenListSchema,
+  type CampoDescartado,
+} from '@/domain/recipe-gen-schema'
 import {
   IngredientExtractionSchema,
   EXTRACTION_MAX_TOKENS,
@@ -205,6 +209,22 @@ function logSeamParseFailed(
 }
 
 /**
+ * Loga os valores da saída que não casaram o vocabulário e caíram no fallback (campo null, restrição
+ * descartada, `kind` inferido). A geração segue; o log diz quais aliases faltam. O valor cru é curto
+ * por natureza (rótulo de enum, quantidade), mas vai com teto de tamanho e sem aspas/quebras, pelo
+ * mesmo motivo de `logSeamError`: pode ecoar texto do Usuário.
+ */
+function logDescartes(method: string, descartes: readonly CampoDescartado[]): void {
+  if (descartes.length === 0) return
+  console.warn(`[claude/${method}] valores fora do vocabulário caíram no fallback:`, {
+    descartes: descartes.slice(0, 20).map((d) => ({
+      campo: d.campo,
+      valor: d.valor.replace(/["\r\n]/g, ' ').slice(0, 40),
+    })),
+  })
+}
+
+/**
  * Implementação real. `echo` segue puro (sem rede). `generateRecipe` usa structured
  * outputs (`messages.parse` + `zodOutputFormat(RecipeGenSchema)`).
  */
@@ -221,7 +241,9 @@ export class RealClaudeClient implements ClaudeClient {
     try {
       // #318: schema constrito ao conjunto ATIVO de cozinhas (data-driven, ADR-0025). Vazio ⇒
       // z.string() (sem constraint). Mesmo schema p/ a chamada inicial E o reparo abaixo.
-      const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [])
+      // Valores fora do vocabulário que o parse normalizou para o fallback (log, não falha).
+      const descartes: CampoDescartado[] = []
+      const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
       const params = {
         model: input.model,
         max_tokens: MAX_TOKENS,
@@ -259,6 +281,7 @@ export class RealClaudeClient implements ClaudeClient {
       }
 
       const parsed = message.parsed_output
+      logDescartes('generateRecipe', descartes)
       // `receita` já é null para impossible (regra de app no schema flat); sem ternário.
       return {
         kind: 'object',
@@ -284,7 +307,8 @@ export class RealClaudeClient implements ClaudeClient {
     const client = new Anthropic()
 
     try {
-      const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [])
+      const descartes: CampoDescartado[] = []
+      const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
       const params = {
         model: input.model,
         max_tokens: VARIANTS_MAX_TOKENS,
@@ -313,6 +337,7 @@ export class RealClaudeClient implements ClaudeClient {
       }
 
       const variacoes = message.parsed_output.variacoes
+      logDescartes('generateRecipeVariants', descartes)
       // EXATO-2: o schema-array é PLANO (sem bound — evita `$defs`, ver recipe-gen-schema.ts); a
       // cardinalidade é exigida AQUI. ≠2 ⇒ parse_failed do LOTE (erro de geração; NÃO degrada — ADR-0029).
       if (variacoes.length !== 2) {
