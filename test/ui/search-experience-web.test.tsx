@@ -391,6 +391,12 @@ describe('SearchExperience — modal de importação (#169)', () => {
 // SUFICIENTE) — "rolei até o fim e nada serviu". Reusa a MESMA /api/discovery/web (allowlist-restrita,
 // degrade-200). O CTA dispara a web SÓ por AÇÃO do usuário (preserva "Busca nunca cria").
 describe('SearchExperience — CTA manual buscar na web (#275)', () => {
+  // O CTA dispara a web só para LOGADO (a rota devolve vazio p/ anônimo); o visitante vê o convite de
+  // entrar no lugar — coberto em "visitante com a web ligada", abaixo.
+  beforeEach(() => {
+    sessionState = authed()
+  })
+
   it('C1 — acervo SUFICIENTE + termo: CTA aparece, clique chama a web e renderiza os links (CTA some)', async () => {
     const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
     const user = userEvent.setup()
@@ -579,7 +585,7 @@ function withSugestoes(n: number): SearchResponse {
 }
 
 describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)', () => {
-  it('E1 — VAZIO + termo (visitante): cartão "Buscar na web" + convite Gerar; SEM "Da web" automática', async () => {
+  it('E1 — VAZIO + termo (visitante): cartão "Buscar na web" com convite de entrar + convite Gerar; SEM "Da web" automática', async () => {
     sessionState = anon()
     const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
     const user = userEvent.setup()
@@ -587,10 +593,11 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
 
     await user.type(screen.getByRole('searchbox'), 'ramen vegano picante')
 
-    // Painel vazio honesto + o cartão MANUAL "Buscar na web" (botão "Buscar").
+    // Painel vazio honesto + o cartão "Buscar na web" — p/ visitante, o botão vira convite de entrar.
     await screen.findByText(M.semResultado)
     expect(screen.getByText(M.vazioWebTitulo)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: M.buscar })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: M.webEntrarBotao })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
     // A web NÃO auto-disparou no caminho TRULY-empty (o mock mostra o cartão, não "Da web").
     expect(screen.queryByRole('heading', { name: M.secaoDaWeb })).not.toBeInTheDocument()
     expect(discoveryCalls(fetchMock).length).toBe(0)
@@ -676,5 +683,62 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
     await user.type(screen.getByRole('searchbox'), 'inexistente')
     await screen.findByText(M.semResultado)
     expect(discoveryCalls(fetchMock0).length).toBe(0)
+  })
+})
+
+// ── Visitante com a web LIGADA: `/api/discovery/web` devolve vazio p/ anônimo, então os gatilhos
+// "Buscar na web" viram convite de entrar (com `returnTo` para a própria busca) em vez de um clique morto.
+describe('SearchExperience — visitante com a web ligada', () => {
+  const returnTo = (q: string) => `/sign-in?returnTo=${encodeURIComponent(`/?q=${q}`)}`
+
+  it('V1 — VAZIO: o cartão "Buscar na web" leva a entrar e voltar à busca (sem botão "Buscar")', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen')
+    await screen.findByText(M.semResultado)
+
+    expect(screen.getByRole('link', { name: M.webEntrarBotao })).toHaveAttribute('href', returnTo('ramen'))
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('V2 — acervo SUFICIENTE: convite de entrar no lugar do CTA "Não achou? Buscar na web"', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada preta')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    const convite = await screen.findByRole('link', { name: M.webEntrarCta })
+    expect(convite).toHaveAttribute('href', returnTo('feijoada+preta'))
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('V3 — sessão ainda resolvendo: gatilho de antes (otimista, sem piscar o convite p/ quem está logado)', async () => {
+    sessionState = { ...anon(), isPending: true }
+    stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('button', { name: M.webManualCta })
+    expect(screen.queryByRole('link', { name: M.webEntrarCta })).not.toBeInTheDocument()
+  })
+
+  it('V4 — LOGADO: nenhum convite de entrar; os gatilhos de antes', async () => {
+    sessionState = authed()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen')
+    await screen.findByRole('button', { name: M.buscar })
+    expect(screen.queryByRole('link', { name: M.webEntrarBotao })).not.toBeInTheDocument()
   })
 })

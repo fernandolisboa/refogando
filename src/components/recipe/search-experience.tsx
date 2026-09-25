@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -99,6 +99,7 @@ export function SearchExperience({
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
+  const pathname = usePathname()
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -463,6 +464,17 @@ export function SearchExperience({
   // cartão; `none` (sem letras: só facetas, "123") ⇒ cartão genérico do vazio (`/create` cru), sem atalho.
   const readiness = searchTermReadiness(dataTerm)
 
+  // Visitante (sessão resolvida, sem usuário): `/api/discovery/web` devolve vazio p/ anônimo, então os
+  // gatilhos "Buscar na web" seriam um clique sem resposta. No lugar deles, convite de entrar com
+  // `returnTo` para ESTA busca (`?q=`, como a URL refletida). Otimista no pending, como o `GerarComIaCta`
+  // (logado nunca vê o convite piscar). `null` ⇒ logado/pending ⇒ os gatilhos de antes.
+  const webSignInHref =
+    !authed && !session.isPending
+      ? `/sign-in?returnTo=${encodeURIComponent(
+          `${pathname ?? '/'}?${new URLSearchParams({ q: q.trim() }).toString()}`,
+        )}`
+      : null
+
   // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
   // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
   // — "rolei até o fim e nada serviu". No caminho raso (`< limiar`) o auto já disparou, então o CTA não
@@ -705,6 +717,8 @@ export function SearchExperience({
                       botaoLabel={m.buscar}
                       buscandoLabel={m.webManualBuscando}
                       nadaLabel={m.webManualNada}
+                      signInHref={webSignInHref}
+                      signInLabel={m.webEntrarBotao}
                     />
                   )}
                 </div>
@@ -831,6 +845,8 @@ export function SearchExperience({
               ctaLabel={m.webManualCta}
               buscandoLabel={m.webManualBuscando}
               nadaLabel={m.webManualNada}
+              signInHref={webSignInHref}
+              signInLabel={m.webEntrarCta}
             />
           )}
           </div>
@@ -913,6 +929,9 @@ function WebDiscoverySection({
  *  - `done` com a web vazia: um aviso NEUTRO ("nada na web agora") — degradação graciosa sem provedor/
  *    allowlist, NUNCA estado de erro vermelho. (Quando a web popula links, o pai esconde este bloco e a
  *    `WebDiscoverySection` assume — então `done` aqui ⇒ necessariamente voltou vazio.)
+ *
+ * Visitante (`signInHref`): a web exige conta ⇒ no lugar do botão, um link "entre para buscar na web"
+ * que volta a esta busca depois do login.
  */
 function WebManualCta({
   state,
@@ -920,13 +939,26 @@ function WebManualCta({
   ctaLabel,
   buscandoLabel,
   nadaLabel,
+  signInHref,
+  signInLabel,
 }: {
   state: 'idle' | 'loading' | 'done'
   onSearch: () => void
   ctaLabel: string
   buscandoLabel: string
   nadaLabel: string
+  signInHref: string | null
+  signInLabel: string
 }) {
+  if (signInHref !== null) {
+    return (
+      <div>
+        <Button variant="secondary" asChild>
+          <Link href={signInHref}>{signInLabel}</Link>
+        </Button>
+      </div>
+    )
+  }
   if (state === 'done') {
     return <p className="text-sm text-muted">{nadaLabel}</p>
   }
@@ -955,6 +987,9 @@ function WebManualCta({
  * (gate `webLinks.length === 0`) e a `WebDiscoverySection` abaixo assume — então `done` aqui ⇒ voltou
  * vazio. É um `<div>` (não region/section) com título `<p>`: não aninha landmark/heading dentro da live
  * region (a11y, espelha o `GerarComIaCta`). O botão é gateado no PAI por `q.trim() !== ''`.
+ * Visitante (`signInHref`): mesmo cartão, mas o botão vira o link "Entrar para buscar" (a web exige
+ * conta), voltando a esta busca depois do login. Rótulo próprio, não `nav.signIn`: o convite do Gerar ao
+ * lado já tem um "Entrar", e dois links homônimos com destinos diferentes confundem o leitor de tela.
  */
 function BuscarNaWebCard({
   state,
@@ -964,6 +999,8 @@ function BuscarNaWebCard({
   botaoLabel,
   buscandoLabel,
   nadaLabel,
+  signInHref,
+  signInLabel,
 }: {
   state: 'idle' | 'loading' | 'done'
   onSearch: () => void
@@ -972,6 +1009,8 @@ function BuscarNaWebCard({
   botaoLabel: string
   buscandoLabel: string
   nadaLabel: string
+  signInHref: string | null
+  signInLabel: string
 }) {
   const loading = state === 'loading'
   return (
@@ -980,7 +1019,11 @@ function BuscarNaWebCard({
         <p className="font-display text-base font-semibold text-fg">{titulo}</p>
         <p className="mt-1 text-sm text-muted">{texto}</p>
       </div>
-      {state === 'done' ? (
+      {signInHref !== null ? (
+        <Button variant="outline" asChild className="shrink-0">
+          <Link href={signInHref}>{signInLabel}</Link>
+        </Button>
+      ) : state === 'done' ? (
         <p className="shrink-0 text-sm text-muted">{nadaLabel}</p>
       ) : (
         <Button
