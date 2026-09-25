@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
-import { validateHandle } from '@/domain/handle'
+import { PENDING_HANDLE_PREFIX, validateHandle } from '@/domain/handle'
 import { validateLinks, type ProfileLink } from '@/domain/links'
 import { isHandleAvailable } from '@/server/handle'
 import { isNivelChef } from '@/domain/briefing'
@@ -110,7 +110,17 @@ export async function PATCH(req: Request): Promise<Response> {
       return Response.json({ error: 'handle_invalid' }, { status: 400 })
     }
     const candidate = body.handle.trim().toLowerCase()
-    const v = validateHandle(candidate)
+    let v = validateHandle(candidate)
+    // #470: o prefixo `pendente-` é reservado para TROCAR de handle, mas quem já o tem (ex.: `pendente-silva`,
+    // gerado do nome antes da reserva; ou um handle de espera ainda não curado) salva o perfil mantendo-o — o
+    // form sempre reenvia o handle atual. Só nesse caso (igual ao gravado) a reserva do prefixo não se aplica.
+    if (!v.ok && v.reason === 'reserved' && candidate.startsWith(PENDING_HANDLE_PREFIX)) {
+      const [row] = await getDb()
+        .select({ handle: users.handle })
+        .from(users)
+        .where(eq(users.id, g.session.user.id))
+      if (row?.handle === candidate) v = { ok: true }
+    }
     if (!v.ok) {
       // reserved e invalid são ambos 400 (erro de entrada do cliente), só muda a chave.
       const error = v.reason === 'reserved' ? 'handle_reserved' : 'handle_invalid'

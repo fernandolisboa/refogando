@@ -21,6 +21,15 @@ export const authClient = createAuthClient({
 })
 
 // Esqueci minha senha (#469): `requestPasswordReset` (POST /request-password-reset) e `resetPassword`
-// (POST /reset-password). O cliente é um PROXY de caminho: desestruturar é o jeito certo — `.bind` ou
+// (POST /reset-password). Confirmação de email (#470): `sendVerificationEmail` (POST /send-verification-email,
+// o reenvio do link). O cliente é um PROXY de caminho: desestruturar é o jeito certo — `.bind` ou
 // qualquer outra propriedade vira segmento de URL e dispara um fetch.
-export const { useSession, signIn, signUp, signOut, requestPasswordReset, resetPassword } = authClient
+export const {
+  useSession,
+  signIn,
+  signUp,
+  signOut,
+  requestPasswordReset,
+  resetPassword,
+  sendVerificationEmail,
+} = authClient

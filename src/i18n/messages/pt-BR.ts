@@ -522,6 +522,40 @@ export const ptBR = {
       'Recebemos um pedido para redefinir a senha da sua conta no Refogando. Use o link abaixo para criar uma nova senha. Ele vale por 1 hora e só pode ser usado uma vez.',
     emailResetBotao: 'Criar nova senha',
     emailResetIgnorar: 'Se não foi você, ignore este email. Sua senha atual continua valendo.',
+    // Confirmação de email (#470). O cadastro NÃO entra direto: a tela pede pra abrir o link. A copy é
+    // igual exista ou não conta com o email (sem enumeração) — por isso o lembrete de "já tem conta".
+    confirmeEmailTitulo: 'Confira seu email',
+    confirmeEmailCorpo:
+      'Enviamos um link de confirmação para {email}. Abra o link para ativar sua conta e entrar. Confira também o spam.',
+    confirmeEmailJaTemConta:
+      'Se este email já tiver uma conta, você pode entrar ou redefinir a senha — e confira sua caixa de entrada.',
+    reenviarEmail: 'Reenviar email',
+    // Neutra de propósito: o servidor responde igual exista ou não conta (e o reenvio público manda o link de
+    // "conclua seu cadastro", não o de confirmação — ver #470 B1 em auth.ts).
+    confirmacaoReenviada:
+      'Se houver uma conta não confirmada com este email, enviamos um link para concluir o cadastro. Confira a caixa de entrada e o spam.',
+    // Reenvio com sessão aberta (a lib recusa com 400): conta já confirmada, ou email de outra conta.
+    emailJaConfirmado: 'Este email já está confirmado.',
+    erroOutraConta: 'Você está conectado com outra conta. Saia dela para reenviar o link.',
+    // Login recusado (#470 F1): o 401 é o MESMO para senha errada e conta não confirmada — a dica cobre os dois.
+    dicaConfirmarEmail: 'Acabou de criar a conta? Confirme seu email pelo link que enviamos antes de entrar.',
+    emailConfirmado: 'Email confirmado. Entre para continuar.',
+    verificarErroTitulo: 'Link de confirmação inválido',
+    verificarErroDescricao: 'Este link expirou ou já foi usado. Informe seu email para receber um novo.',
+    // E-mail transacional de confirmação (#470). `{nome}` interpolado no servidor.
+    emailVerificarAssunto: 'Confirme seu email no Refogando',
+    emailVerificarSaudacao: 'Olá, {nome}!',
+    emailVerificarCorpo:
+      'Falta pouco para começar a cozinhar com o Refogando. Use o link abaixo para confirmar seu email e entrar na sua conta. Ele vale por 24 horas.',
+    emailVerificarBotao: 'Confirmar email',
+    emailVerificarIgnorar: 'Se não foi você que criou esta conta, ignore este email.',
+    // "Conclua seu cadastro" (#470 B1): reenvio público para conta não confirmada — link de SENHA (1h, uso único).
+    emailConcluirAssunto: 'Conclua seu cadastro no Refogando',
+    emailConcluirSaudacao: 'Olá, {nome}!',
+    emailConcluirCorpo:
+      'Recebemos um pedido para concluir o cadastro da sua conta no Refogando. Para ativá-la, crie sua senha pelo link abaixo — é ela que vale daqui em diante. O link vale por 1 hora e só pode ser usado uma vez.',
+    emailConcluirBotao: 'Criar senha e ativar conta',
+    emailConcluirIgnorar: 'Se não foi você, ignore este email. Nenhuma conta é ativada sem este link.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)

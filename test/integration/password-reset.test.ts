@@ -34,9 +34,17 @@ function post(path: string, body: unknown): Promise<Response> {
   )
 }
 
+/**
+ * Conta de email+senha JÁ CONFIRMADA (#470: o cadastro exige confirmação e manda o e-mail de confirmação — que
+ * sai do FakeMailer aqui, para os asserts contarem só os e-mails de reset).
+ */
 async function signUp(email: string, locale?: string) {
   const res = await getAuth().api.signUpEmail({ body: { email, password: PASSWORD, name: 'Cozinheira' } })
-  if (locale) await getDb().update(users).set({ locale }).where(eq(users.email, email))
+  await getDb()
+    .update(users)
+    .set({ emailVerified: true, ...(locale ? { locale } : {}) })
+    .where(eq(users.email, email))
+  mailer.accountSent.splice(0)
   return res.user.id
 }
 
@@ -102,6 +110,8 @@ describe('esqueci minha senha (#469)', () => {
 
   it('link → nova senha vale, antiga não, token de uso único, sessões derrubadas', async () => {
     const userId = await signUp('bia@reset.test')
+    // Sessão aberta (o cadastro não loga desde #470): entrar com a senha antiga.
+    expect((await post('/sign-in/email', { email: 'bia@reset.test', password: PASSWORD })).status).toBe(200)
     expect(await getDb().select().from(session).where(eq(session.userId, userId))).toHaveLength(1)
     await requestReset('bia@reset.test')
 

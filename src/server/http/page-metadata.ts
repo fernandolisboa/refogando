@@ -15,7 +15,8 @@ type LocaleParams = Promise<{ locale: string }>
 
 /**
  * Título fino + NOINDEX — superfície só-logada/personalizada (me/*, create, admin/*), como following, e as
- * telas ANÔNIMAS de fluxo de conta (#469: forgot-password / reset-password). Mudar o NOINDEX aqui afeta ambas.
+ * telas ANÔNIMAS de fluxo de conta (#469: forgot-password / reset-password; #470: verify-email). Mudar o
+ * NOINDEX aqui afeta todas.
  */
 export async function loggedInPageMetadata(
   params: LocaleParams,

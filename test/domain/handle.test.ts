@@ -118,6 +118,24 @@ describe('validateHandle (formato + reservadas; sem unicidade)', () => {
     expect(validateHandle('profile')).toEqual({ ok: false, reason: 'reserved' })
   })
 
+  it('#470: prefixo `pendente-` (handle de espera) é reservado; `pendente` puro não', () => {
+    expect(validateHandle('pendente-0123456789abcdef')).toEqual({ ok: false, reason: 'reserved' })
+    expect(validateHandle('pendente-ana')).toEqual({ ok: false, reason: 'reserved' })
+    expect(validateHandle('pendente')).toEqual({ ok: true })
+    expect(validateHandle('ana-pendente-2')).toEqual({ ok: true })
+  })
+
+  it('#470: nenhum nome gera handle com o prefixo `pendente-` (nem pela desambiguação)', () => {
+    for (const name of ['Pendente 0123456789abcdef', 'pendente-ana', 'Pendente', 'PENDENTE silva']) {
+      const base = handleBaseFromName(name)
+      expect(base.startsWith('pendente-')).toBe(false)
+      const taken = new Set([base, `${base}-2`])
+      expect(disambiguate(base, taken).startsWith('pendente-')).toBe(false)
+    }
+    expect(handleBaseFromName('Pendente')).toBe('user')
+    expect(handleBaseFromName('Pendentes Reunidos')).toBe('pendentes-reunidos')
+  })
+
   it('todas as reservadas batem com os segmentos de rota top-level', () => {
     // Sanidade: as rotas que existem hoje sob app/ estão barradas.
     for (const seg of ['admin', 'api', 'me', 'recipes', 'sign-in', 'sign-up', 'create', 'conversation']) {

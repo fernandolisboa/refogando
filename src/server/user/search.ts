@@ -6,6 +6,8 @@ import { classifyUserQuery, type UserSearchRow } from '@/domain/user-search-read
 import { eligiblePublicRecipeSqlFragment } from '@/server/recipe/visibility-sql'
 import { encodeSearchCursor, type SearchCursor } from '@/domain/cooks-cursor'
 import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
+import { emailVerificationRequired } from '@/lib/auth'
+import { publicAccountSql } from '@/server/auth/pending-account'
 
 /** Uma página da busca de Cozinheiros (#308): os cooks (já allowlisted) + o cursor da PRÓXIMA página. */
 export type CookSearchPage = { cooks: ProfileFollowUser[]; nextCursor: string | null }
@@ -106,6 +108,8 @@ export async function searchUsers(
  * fica PURO p/ o admin #269): #308 exige filtro de Cozinha + paginação keyset, que pedem CTE + EXISTS —
  * então tem query PRÓPRIA, mas com o MESMO ranking força-de-match (exato>prefixo>substring) e gate de
  * soft-delete. Barra `id` (vazaria o oráculo uuid→perfil), `email` (PII) e termo < `COOK_MIN_TERM_LEN`.
+ * #470: com a confirmação de email ligada, conta PENDENTE (handle de espera, ainda não provada) fica de fora
+ * (buscar pelo nome escolhido no cadastro diria se o email já tinha conta).
  *
  * **Allowlist (#269/Modelo B):** seleciona SÓ `name/handle/image` — `id`/`role`/`email` NEM entram no
  * SQL. O cursor é `(rank, name, handle)` — tiebreak no `handle` PÚBLICO (page 1 incluída, pra page1↔page2
@@ -166,7 +170,7 @@ export async function searchCooks(
         users.image AS image,
         (${rankSql})::int AS rank
       FROM users
-      WHERE users.deleted_at IS NULL AND ${matchSql}
+      WHERE ${publicAccountSql(emailVerificationRequired())} AND ${matchSql}
         ${cozinhaExistsSql}
     )
     SELECT matched.name AS name, matched.handle AS handle, matched.image AS image, matched.rank AS rank

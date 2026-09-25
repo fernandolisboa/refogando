@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { mapAuthError, parseResetToken } from '@/components/auth/auth-errors'
 
-describe('mapAuthError (#55, #469)', () => {
+describe('mapAuthError (#55, #469, #470)', () => {
   it.each([
     [{ code: 'INVALID_EMAIL_OR_PASSWORD', status: 401 }, 'erroCredencialInvalida'],
+    // #470 F1: o servidor já o reescreve no 401; se escapar, a UI o trata igual (sem copy própria).
+    [{ code: 'EMAIL_NOT_VERIFIED', status: 403 }, 'erroCredencialInvalida'],
     [{ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL', status: 422 }, 'erroEmailEmUso'],
     [{ code: 'USER_ALREADY_EXISTS', status: 422 }, 'erroEmailEmUso'],
     [{ code: 'PASSWORD_TOO_SHORT', status: 400 }, 'erroSenhaCurta'],

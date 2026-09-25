@@ -23,20 +23,23 @@ vi.mock('next/link', () => ({
 const signInEmail = vi.fn()
 const signInSocial = vi.fn()
 const signUpEmail = vi.fn()
+const sendVerificationEmail = vi.fn()
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
   signIn: { email: (...a: unknown[]) => signInEmail(...a), social: (...a: unknown[]) => signInSocial(...a) },
   signUp: { email: (...a: unknown[]) => signUpEmail(...a) },
   signOut: vi.fn(),
+  sendVerificationEmail: (...a: unknown[]) => sendVerificationEmail(...a),
 }))
 
 import { LocaleProvider } from '@/i18n/provider'
 import { AuthForm } from '@/components/auth/auth-form'
+import { VerifyEmailRetry } from '@/components/auth/verify-email-retry'
 import type { Locale } from '@/i18n/locale'
 
 type Mode = 'sign-in' | 'sign-up'
 type Handlers = {
-  onSuccess?: () => void
+  onSuccess?: (ctx: { data: unknown }) => void
   onError?: (ctx: { error: { code?: string } }) => void
 }
 
@@ -48,11 +51,11 @@ function renderForm(mode: Mode, googleEnabled = false, locale: Locale = 'pt-BR')
   )
 }
 
-/** Faz o mock invocar onSuccess (sucesso simulado). */
-const succeed = (fn: ReturnType<typeof vi.fn>) =>
+/** Faz o mock invocar onSuccess (sucesso simulado), com o corpo `data` da resposta. */
+const succeed = (fn: ReturnType<typeof vi.fn>, data: unknown = {}) =>
   fn.mockImplementation(async (_body: unknown, handlers?: Handlers) => {
-    handlers?.onSuccess?.()
-    return { data: {}, error: null }
+    handlers?.onSuccess?.({ data })
+    return { data, error: null }
   })
 
 /** Faz o mock invocar onError com um code (erro simulado). */
@@ -69,6 +72,8 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     signInEmail.mockReset()
     signInSocial.mockReset()
     signUpEmail.mockReset()
+    sendVerificationEmail.mockReset()
+    sendVerificationEmail.mockResolvedValue({ data: { status: true }, error: null })
   })
 
   it('entrar: labels associados aos inputs (a11y)', () => {
@@ -142,7 +147,7 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     })
   })
 
-  it('criar conta: email em uso mostra erro claro (code real do fluxo)', async () => {
+  it('criar conta: code de email em uso ainda mapeia (rede de segurança; desde #470 o servidor não o devolve)', async () => {
     const user = userEvent.setup()
     failWith(signUpEmail, 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL')
     renderForm('sign-up')
@@ -235,5 +240,148 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     await userEvent.type(screen.getByLabelText('Senha'), 'qualquer-senha')
     await userEvent.click(screen.getByRole('button', { name: 'Entrar' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
+})
+
+describe('AuthForm — confirmação de email (#470)', () => {
+  beforeEach(() => {
+    push.mockClear()
+    refresh.mockClear()
+    signInEmail.mockReset()
+    signUpEmail.mockReset()
+    sendVerificationEmail.mockReset()
+    sendVerificationEmail.mockResolvedValue({ data: { status: true }, error: null })
+  })
+
+  /** Resposta do cadastro com a confirmação LIGADA no servidor: sem sessão (`token: null`). */
+  async function signUpAs(email: string) {
+    const user = userEvent.setup()
+    succeed(signUpEmail, { token: null, user: { email } })
+    renderForm('sign-up')
+    await user.type(screen.getByLabelText('Nome'), 'Ana')
+    await user.type(screen.getByLabelText('Email'), email)
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+    return user
+  }
+
+  it('criar conta NÃO loga: mostra "Confira seu email" com o email, sem navegar', async () => {
+    await signUpAs('ana@ex.com')
+    expect(signUpEmail.mock.calls[0][0]).toMatchObject({ callbackURL: '/' })
+    expect(screen.getByRole('heading', { name: 'Confira seu email' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Enviamos um link de confirmação para ana@ex.com')
+    // Mesma tela exista ou não conta com o email: o lembrete de "já tem conta" sempre aparece.
+    expect(screen.getByText(/Se este email já tiver uma conta, você pode entrar ou redefinir a senha/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Esqueceu a senha?' })).toHaveAttribute('href', '/forgot-password')
+    expect(push).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('"Reenviar email" chama sendVerificationEmail e confirma de forma neutra', async () => {
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/' })
+    expect(await screen.findByText(/Se houver uma conta não confirmada com este email/)).toBeInTheDocument()
+  })
+
+  it('reenvio com sessão: 400 EMAIL_ALREADY_VERIFIED e EMAIL_MISMATCH têm copy própria (não "enviamos")', async () => {
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 400, code: 'EMAIL_ALREADY_VERIFIED' } })
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByText('Este email já está confirmado.')).toBeInTheDocument()
+    expect(screen.queryByText(/enviamos um link para concluir/)).not.toBeInTheDocument()
+
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 400, code: 'EMAIL_MISMATCH' } })
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByText(/conectado com outra conta/)).toBeInTheDocument()
+  })
+
+  it('reenvio com 429 mostra "muitas tentativas"', async () => {
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 429 } })
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
+
+  async function signInRefused(emailVerification: boolean) {
+    const user = userEvent.setup()
+    signInEmail.mockImplementation(async (_b: unknown, h?: Handlers) => {
+      h?.onError?.({ error: { code: 'INVALID_EMAIL_OR_PASSWORD' } })
+      return { data: null, error: { code: 'INVALID_EMAIL_OR_PASSWORD' } }
+    })
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled={false} returnTo="/u/ana" emailVerification={emailVerification} />
+      </LocaleProvider>,
+    )
+    await user.type(screen.getByLabelText('Email'), 'bia@ex.com')
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+    return user
+  }
+
+  it('login recusado com a confirmação LIGADA: erro de sempre + dica neutra + reenvio pro email digitado (F1)', async () => {
+    const user = await signInRefused(true)
+    // O servidor responde o MESMO 401 para senha errada e conta não confirmada: a UI não distingue.
+    expect(screen.getByRole('alert')).toHaveTextContent('Email ou senha incorretos.')
+    expect(screen.getByText(/Acabou de criar a conta\? Confirme seu email/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/u/ana' })
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('login recusado com a confirmação DESLIGADA: só o erro, sem dica nem reenvio', async () => {
+    await signInRefused(false)
+    expect(screen.getByRole('alert')).toHaveTextContent('Email ou senha incorretos.')
+    expect(screen.queryByText(/Acabou de criar a conta/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reenviar email' })).not.toBeInTheDocument()
+  })
+
+  it('entrar com emailVerified: mostra "Email confirmado"', () => {
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled={false} emailVerified />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Email confirmado')
+  })
+
+  it('confirmação DESLIGADA no servidor (sem e-mail de conta): cadastro com token entra direto, como antes', async () => {
+    const user = userEvent.setup()
+    succeed(signUpEmail, { token: 'sessao-123', user: { email: 'ana@ex.com' } })
+    renderForm('sign-up')
+    await user.type(screen.getByLabelText('Nome'), 'Ana')
+    await user.type(screen.getByLabelText('Email'), 'ana@ex.com')
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(push).toHaveBeenCalledWith('/')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('heading', { name: 'Confira seu email' })).not.toBeInTheDocument()
+  })
+
+  it('en-US: tela "Check your email"', async () => {
+    const user = userEvent.setup()
+    succeed(signUpEmail, { token: null })
+    renderForm('sign-up', false, 'en-US')
+    await user.type(screen.getByLabelText('Name'), 'Bo')
+    await user.type(screen.getByLabelText('Email'), 'bo@ex.com')
+    await user.type(screen.getByLabelText('Password'), 'secret123')
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    expect(screen.getByRole('heading', { name: 'Check your email' })).toBeInTheDocument()
+  })
+
+  it('link inválido: pede o email e reenvia com o destino', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <VerifyEmailRetry returnTo="/u/ana" />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('heading', { name: 'Link de confirmação inválido' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reenviar email' })).toBeDisabled()
+    await user.type(screen.getByLabelText('Email'), 'ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/u/ana' })
   })
 })
