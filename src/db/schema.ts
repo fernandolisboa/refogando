@@ -188,7 +188,8 @@ export const recipe = pgTable(
     visibility: visibilityEnum('visibility').notNull().default('private'),
     resultKind: resultKindEnum('result_kind').notNull().default('success'),
     // FK → users.id, ON DELETE restrict (D5): rede de segurança contra hard-delete
-    // acidental (nunca dispara — não há hard-delete). owner_id continua NULLABLE
+    // acidental (nunca dispara — o único hard-delete, de conta pendente de #470, exige
+    // não ter receita). owner_id continua NULLABLE
     // (NULL = catálogo/sistema — ADR-0011, inegociável).
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'restrict' }),
     originalLocale: text('original_locale').notNull(),

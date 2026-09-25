@@ -16,8 +16,8 @@ import { seedUser } from '../helpers/users'
  * seam. Prova, antes de tudo, que `/sign-up/email` NÃO enumera contas: email já cadastrado responde com o MESMO
  * status, sem cookie, e um corpo de MESMA forma que um email novo (antes: 422 USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL
  * vs 200). Depois, o fluxo: conta nasce não confirmada e sem sessão; o e-mail sai no idioma do request; login antes
- * de confirmar é 403 EMAIL_NOT_VERIFIED (e reenvia); o link confirma, loga e volta pela nossa tela `/verify-email`;
- * reenvio neutro com teto por conta; e a migração 0067 marca as contas antigas como confirmadas.
+ * de confirmar é o 401 de sempre (sem e-mail); o link confirma, loga e volta pela nossa tela `/verify-email`;
+ * reenvio neutro com teto por conta; o pré-sequestro (R1); e a migração 0067 marca as contas antigas como confirmadas.
  * Tudo isto com o e-mail de conta configurado — sem ele, ver email-verification-off.test.ts.
  */
 
@@ -177,7 +177,7 @@ describe('confirmação de email (#470)', () => {
     expect(new URL(lastLink()).searchParams.get('callbackURL')).toBe('/pt-BR/verify-email?returnTo=%2F')
   })
 
-  it('login antes de confirmar: o 401 de credencial inválida, sem sessão, e o link é reenviado', async () => {
+  it('login antes de confirmar: o 401 de credencial inválida, sem sessão e SEM e-mail (R1: sendOnSignIn desligado)', async () => {
     await signUp('cedo@verify.test')
     mailer.accountSent.splice(0)
 
@@ -186,13 +186,56 @@ describe('confirmação de email (#470)', () => {
     expect(await res.json()).toMatchObject({ code: 'INVALID_EMAIL_OR_PASSWORD' })
     expect(res.headers.get('set-cookie')).toBeNull()
     expect(await sessionsOf((await userRow('cedo@verify.test')).id)).toHaveLength(0)
-    expect(mailer.accountSent).toHaveLength(1)
-    expect(mailer.accountSent[0].subject).toBe('Confirme seu email no Refogando')
+    expect(mailer.accountSent).toHaveLength(0)
 
     // Senha errada de conta não confirmada: o mesmo 401, sem e-mail.
     const wrong = await post('/sign-in/email', { email: 'cedo@verify.test', password: 'errada-123456' })
     expect(wrong.status).toBe(401)
+    expect(mailer.accountSent).toHaveLength(0)
+    expect(getAuth().options.emailVerification?.sendOnSignIn).toBe(false)
+  })
+
+  it('R1 — pré-sequestro: a vítima cadastra DEPOIS do atacante e recebe "conclua seu cadastro"; o login do atacante não manda nada', async () => {
+    const P_A = 'senha-do-atacante-1'
+    await post('/sign-up/email', { email: 'alvo@verify.test', password: P_A, name: 'Atacante' })
+    const userId = (await userRow('alvo@verify.test')).id
+    mailer.accountSent.splice(0) // o link de confirmação do cadastro do atacante (resíduo do ADR, limitado a 48h)
+
+    // Vítima cadastra o próprio email: resposta genérica de sempre, e o e-mail que chega é o link de SENHA.
+    const res = await signUp('alvo@verify.test', 'Vitima')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('set-cookie')).toBeNull()
     expect(mailer.accountSent).toHaveLength(1)
+    expect(mailer.accountSent[0].subject).toBe('Conclua seu cadastro no Refogando')
+    const finish = new URL(lastLink())
+    expect(finish.pathname).toMatch(/^\/api\/auth\/reset-password\/[^/]+$/)
+
+    // Atacante entra com a senha dele logo depois: 401 e NENHUM link de confirmação sai para a vítima clicar.
+    const a = await post('/sign-in/email', { email: 'alvo@verify.test', password: P_A })
+    expect(a.status).toBe(401)
+    expect(mailer.accountSent).toHaveLength(1)
+
+    // Vítima conclui: a senha dela vale, a do atacante não, conta confirmada.
+    const hop = await authGet(new Request(finish.toString(), { redirect: 'manual' }))
+    const token = new URL(hop.headers.get('location')!, 'http://localhost').searchParams.get('token')!
+    expect((await post('/reset-password', { token, newPassword: 'senha-da-vitima-2' })).status).toBe(200)
+    expect((await userRow('alvo@verify.test')).emailVerified).toBe(true)
+    expect(await sessionsOf(userId)).toHaveLength(0)
+    expect((await post('/sign-in/email', { email: 'alvo@verify.test', password: P_A })).status).toBe(401)
+    expect((await post('/sign-in/email', { email: 'alvo@verify.test', password: 'senha-da-vitima-2' })).status).toBe(200)
+  })
+
+  it('R1 — cadastro repetido de conta pendente: mesma resposta que um email novo; teto de 3 por conta', async () => {
+    await signUp('repete@verify.test')
+    mailer.accountSent.splice(0)
+    const fresh = await signUp('inedito@verify.test')
+    const dup = await signUp('repete@verify.test')
+    expect(dup.status).toBe(fresh.status)
+    expect(shape(await dup.json())).toEqual(shape(await fresh.json()))
+    mailer.accountSent.splice(0)
+    for (let i = 0; i < 4; i++) await signUp('repete@verify.test')
+    // 1 do `dup` acima + 2 aqui = teto de 3 e-mails de senha na janela.
+    expect(mailer.accountSent.filter((m) => m.to === 'repete@verify.test')).toHaveLength(2)
   })
 
   it('F1 — cadastrar X/P e entrar com X/P não enumera: conta NOVA não confirmada = conta EXISTENTE com senha errada', async () => {
@@ -208,15 +251,6 @@ describe('confirmação de email (#470)', () => {
     expect(a.status).toBe(401)
     expect(await a.json()).toEqual(await b.json())
     expect([...a.headers.entries()].sort()).toEqual([...b.headers.entries()].sort())
-  })
-
-  it('B2 — o link reenviado no LOGIN volta ao destino do header (sem callbackURL no corpo); header inseguro → "/"', async () => {
-    await signUp('volta@verify.test')
-    mailer.accountSent.splice(0)
-    await post('/sign-in/email', { email: 'volta@verify.test', password: PASSWORD }, { 'x-refogando-return-to': '/u/ana' })
-    expect(new URL(lastLink()).searchParams.get('callbackURL')).toBe('/pt-BR/verify-email?returnTo=%2Fu%2Fana')
-    await post('/sign-in/email', { email: 'volta@verify.test', password: PASSWORD }, { 'x-refogando-return-to': '//evil.test' })
-    expect(new URL(lastLink()).searchParams.get('callbackURL')).toBe('/pt-BR/verify-email?returnTo=%2F')
   })
 
   it('o link confirma, LOGA e volta pela nossa tela com o destino; reabrir não loga de novo', async () => {
@@ -301,12 +335,23 @@ describe('confirmação de email (#470)', () => {
     expect((await post('/sign-in/email', { email: 'vitima@verify.test', password: 'senha-da-vitima-2' })).status).toBe(200)
   })
 
-  it('no máx. 3 e-mails de confirmação por conta na janela, mesmo com logins EM PARALELO (F4)', async () => {
+  it('no máx. 3 e-mails de confirmação por conta na janela, mesmo com pedidos EM PARALELO (F4)', async () => {
     await signUp('bomba@verify.test') // 1º
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () => post('/sign-in/email', { email: 'bomba@verify.test', password: PASSWORD })),
+    // Chamada de servidor (sem request): cai no caminho do link de confirmação, com o teto `verify`.
+    await Promise.all(
+      Array.from({ length: 6 }, () => getAuth().api.sendVerificationEmail({ body: { email: 'bomba@verify.test' } })),
     )
-    expect(results.every((r) => r.status === 401)).toBe(true)
+    expect(mailer.accountSent).toHaveLength(3)
+    expect(mailer.accountSent.every((m) => m.subject === 'Confirme seu email no Refogando')).toBe(true)
+  })
+
+  it('no máx. 3 e-mails de SENHA por conta, mesmo com reenvios públicos EM PARALELO (lock também no teto `password`)', async () => {
+    await signUp('bomba3@verify.test')
+    mailer.accountSent.splice(0)
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => post('/send-verification-email', { email: 'bomba3@verify.test' })),
+    )
+    expect(results.every((r) => r.status === 200)).toBe(true)
     expect(mailer.accountSent).toHaveLength(3)
   })
 
@@ -391,6 +436,24 @@ describe('F2 — conta pendente não expõe handle derivável nem aparece em pú
       params: Promise.resolve({ handle: 'zuleica-2' }),
     })).status).toBe(200)
     expect((await search()).cooks.map((c) => c.handle).sort()).toEqual(['zuleica', 'zuleica-2'])
+  })
+
+  it('R2 — conta criada NÃO confirmada com o gate DESLIGADO (handle do nome) segue pública com o gate ligado', async () => {
+    await seedUser({ email: 'era-off@f2.test', name: 'Genoveva', handle: 'genoveva', emailVerified: false })
+    expect((await profileGet(new Request('http://localhost/api/u/genoveva'), {
+      params: Promise.resolve({ handle: 'genoveva' }),
+    })).status).toBe(200)
+    const found = (await (await cooksGet(new Request('http://localhost/api/search/cooks?q=Genoveva'))).json()) as {
+      cooks: Array<{ handle: string }>
+    }
+    expect(found.cooks.map((c) => c.handle)).toEqual(['genoveva'])
+  })
+
+  it('R2 — conta com handle de espera mas JÁ confirmada (handle do nome não coube) é pública', async () => {
+    await seedUser({ email: 'sorte@f2.test', name: 'Sorte', handle: 'pendente-0123456789abcdef', emailVerified: true })
+    expect((await profileGet(new Request('http://localhost/api/u/pendente-0123456789abcdef'), {
+      params: Promise.resolve({ handle: 'pendente-0123456789abcdef' }),
+    })).status).toBe(200)
   })
 
   it('cadastro com o gate ligado não reserva o handle do nome (sem "-2" pro próximo)', async () => {

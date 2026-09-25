@@ -1,6 +1,6 @@
 import { APIError, betterAuth } from 'better-auth'
 import { createAuthMiddleware, isAPIError } from 'better-auth/api'
-import { and, eq, gt, like, lt, sql } from 'drizzle-orm'
+import { and, eq, lt, sql } from 'drizzle-orm'
 import { after } from 'next/server'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin, testUtils } from 'better-auth/plugins'
@@ -15,7 +15,7 @@ import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-
 import { assignNameHandle, pendingHandle } from '@/server/auth/pending-account'
 import type { MailInput } from '@/server/mail/mailer'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
-import { RETURN_TO_HEADER, safeInternalPath } from '@/domain/safe-redirect'
+import { safeInternalPath } from '@/domain/safe-redirect'
 import { resolveLocale, type Locale } from '@/i18n/locale'
 import { readLocaleCookie } from '@/i18n/cookie'
 import { splitLocalePrefix } from '@/i18n/locale-path'
@@ -59,24 +59,12 @@ export function authLog(level: 'debug' | 'info' | 'warn' | 'error', message: unk
   else out('[Better Auth]', message, ...args)
 }
 
-/** #469 — teto de e-mails de reset por conta e a janela (ver `sendResetPassword`). */
-const RESET_MAX_PER_WINDOW = 3
-const RESET_WINDOW_MS = 15 * 60 * 1000
-
-/** Quantos pedidos de reset (tokens `reset-password:*`) esta conta fez na janela. */
-async function recentResetRequests(userId: string): Promise<number> {
-  const [{ n }] = await getDb()
-    .select({ n: sql<number>`count(*)::int` })
-    .from(schema.verification)
-    .where(
-      and(
-        eq(schema.verification.value, userId),
-        like(schema.verification.identifier, 'reset-password:%'),
-        gt(schema.verification.createdAt, new Date(Date.now() - RESET_WINDOW_MS)),
-      ),
-    )
-  return n
-}
+/**
+ * Teto de e-mails de conta por DESTINATÁRIO e a janela: no máx. 3 de cada tipo por conta a cada 15 min — `password`
+ * (reset de #469 e "conclua seu cadastro" de #470, mesmo token) e `verify` (confirmação de #470).
+ */
+const ACCOUNT_EMAIL_MAX_PER_WINDOW = 3
+const ACCOUNT_EMAIL_WINDOW_MS = 15 * 60 * 1000
 
 /**
  * #469 (SEGURANÇA): sem `BETTER_AUTH_URL`, o Better Auth fixa a base na origem do 1º request da instância —
@@ -88,22 +76,20 @@ function withTrustedOrigin(url: string): string {
   return new URL(`${u.pathname}${u.search}`, process.env.BETTER_AUTH_URL || getBaseUrlFromEnv()).toString()
 }
 
-/** #470 — teto de e-mails de confirmação por conta e a janela (ver `sendVerificationEmail`). */
-const VERIFY_MAX_PER_WINDOW = 3
-const VERIFY_WINDOW_MS = 15 * 60 * 1000
-/** Link de confirmação vale 24h (casa a copy do e-mail). É um JWT sem estado: o teto acima conta envios. */
+/** Link de confirmação vale 24h (casa a copy do e-mail). É um JWT sem estado: o teto abaixo conta envios. */
 const VERIFY_EXPIRES_IN_S = 24 * 60 * 60
 
 /**
- * #470 — anti mail-bombing por DESTINATÁRIO do e-mail de confirmação (o rate limit do Better Auth é por IP e o
- * reenvio aceita qualquer email). O token de confirmação é um JWT sem linha no banco, então o envio deixa um
- * MARCADOR em `verification` (`verify-email-sent:<userId>`, só o id — sem PII) que expira com a janela; os
- * vencidos da conta são apagados aqui mesmo. Devolve `false` quando a conta já recebeu o teto na janela.
+ * Anti mail-bombing por DESTINATÁRIO (o rate limit do Better Auth é por IP e os pedidos aceitam qualquer email).
+ * Cada envio deixa um MARCADOR em `verification` (`<kind>-email-sent:<userId>`, só o id — sem PII) que expira com
+ * a janela; os vencidos da conta são apagados aqui mesmo. Devolve `false` quando a conta já recebeu o teto.
+ * Contar-e-inserir sob um advisory lock DE TRANSAÇÃO por conta e tipo: pedidos paralelos se enfileiram e o teto
+ * não estoura (nem sub-envia). `xact` (não de sessão) funciona atrás do pooler em modo transação.
+ * Trade-off aceito: terceiros podem esgotar a cota da janela, mas os e-mails que ELES dispararam chegam à caixa
+ * do dono com links válidos — o dono nunca fica sem um link utilizável.
  */
-async function takeVerifyEmailSlot(userId: string): Promise<boolean> {
-  const identifier = `verify-email-sent:${userId}`
-  // Contar-e-inserir sob um advisory lock DE TRANSAÇÃO por conta: pedidos paralelos para a mesma conta se
-  // enfileiram e o teto não estoura. `xact` (não de sessão) funciona atrás do pooler em modo transação.
+async function takeAccountEmailSlot(kind: 'password' | 'verify', userId: string): Promise<boolean> {
+  const identifier = `${kind}-email-sent:${userId}`
   return getDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${identifier}))`)
     const now = new Date()
@@ -114,10 +100,10 @@ async function takeVerifyEmailSlot(userId: string): Promise<boolean> {
       .select({ n: sql<number>`count(*)::int` })
       .from(schema.verification)
       .where(eq(schema.verification.identifier, identifier))
-    if (n >= VERIFY_MAX_PER_WINDOW) return false
+    if (n >= ACCOUNT_EMAIL_MAX_PER_WINDOW) return false
     await tx
       .insert(schema.verification)
-      .values({ identifier, value: userId, expiresAt: new Date(now.getTime() + VERIFY_WINDOW_MS) })
+      .values({ identifier, value: userId, expiresAt: new Date(now.getTime() + ACCOUNT_EMAIL_WINDOW_MS) })
     return true
   })
 }
@@ -160,12 +146,9 @@ function resetEmailLocale(user: { locale?: string | null }, url: string, request
  * Auth anexa `&error=…` ao callbackURL) e manda o Usuário, já logado, ao destino. O destino passa pela guarda
  * anti open-redirect. Origem trocada pela confiável de ENV (`withTrustedOrigin`).
  */
-function verifyEmailLink(url: string, locale: Locale, request?: Request): string {
+function verifyEmailLink(url: string, locale: Locale): string {
   const u = new URL(url)
-  const fromBody = u.searchParams.get('callbackURL')
-  const dest = safeInternalPath(
-    fromBody && fromBody !== '/' ? fromBody : (request?.headers.get(RETURN_TO_HEADER) ?? fromBody),
-  )
+  const dest = safeInternalPath(u.searchParams.get('callbackURL'))
   u.searchParams.set('callbackURL', `/${locale}/verify-email?returnTo=${encodeURIComponent(dest)}`)
   return withTrustedOrigin(u.toString())
 }
@@ -178,6 +161,16 @@ function verifyEmailLink(url: string, locale: Locale, request?: Request): string
  * `customSyntheticUser`).
  */
 const SIGNUP_USER_FIELDS = ['id', 'name', 'email', 'emailVerified', 'image', 'createdAt', 'updatedAt'] as const
+
+/**
+ * #470 (B1/R1) — o link "conclua seu cadastro" para conta NÃO confirmada: é o token do reset de senha
+ * (`requestPasswordReset` → `sendResetPassword`, que escolhe a copy e aplica o teto `password`). Concluir define a
+ * senha de quem abriu o e-mail, derruba as sessões e confirma a conta (`onPasswordReset`) — a senha de quem
+ * pré-registrou o email morre ali. Usado pelo reenvio público e pelo cadastro repetido de conta pendente.
+ */
+async function sendFinishAccountLink(email: string, locale: Locale): Promise<void> {
+  await getAuth().api.requestPasswordReset({ body: { email, redirectTo: `/${locale}/reset-password` } })
+}
 
 function buildAuth() {
   // hasGoogle deriva da MESMA fonte que as pages de autenticação (isGoogleConfigured) —
@@ -193,6 +186,9 @@ function buildAuth() {
   // enumera contas (422 para email existente); a correção liga sozinha quando a env entra (novo deploy — a
   // instância é memoizada, então o gate é lido uma vez por instância, aqui).
   const verifyEmail = getMailer().canSendAccountEmail()
+  // #470 (R3): TUDO o que é específico da confirmação só entra na config com o gate ligado — desligado, a config é
+  // a de antes de #470 (sem `emailVerification`: o `/send-verification-email` responde 400
+  // VERIFICATION_EMAIL_NOT_ENABLED, sem marcador nem log; sem `onPasswordReset`/`onExistingUserSignUp`).
   // #470 (F1): o erro do login de conta não confirmada, reescrito para o 401 de credencial inválida.
   const INVALID_CREDENTIALS = { message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' }
   return betterAuth({
@@ -286,22 +282,45 @@ function buildAuth() {
       // na conta existente. O cadastro NÃO loga: a sessão nasce ao abrir o link do e-mail
       // (`autoSignInAfterVerification`). Contas anteriores a #470 foram marcadas confirmadas pela migração 0067.
       requireEmailVerification: verifyEmail,
-      // Forma do `user` sintético (email existente) = a do real: id uuid como o do Postgres. Os demais campos
-      // são cortados pelo hook `after` do cadastro (SIGNUP_USER_FIELDS). Inerte com o gate desligado (a lib só
-      // monta o sintético na resposta genérica).
-      customSyntheticUser: ({ coreFields }) => ({ ...coreFields, id: crypto.randomUUID() }),
+      ...(verifyEmail
+        ? {
+            // Forma do `user` sintético (email existente) = a do real: id uuid como o do Postgres. Os demais
+            // campos são cortados pelo hook `after` do cadastro (SIGNUP_USER_FIELDS).
+            customSyntheticUser: ({ coreFields }: { coreFields: Record<string, unknown> }) => ({
+              ...coreFields,
+              id: crypto.randomUUID(),
+            }),
+            // #470 (R1, pré-sequestro): cadastro com email JÁ cadastrado. Conta confirmada: nada sai (como
+            // antes). Conta NÃO confirmada: a vítima que cadastra depois de um atacante recebe na hora o
+            // "conclua seu cadastro" (link de senha) — é o e-mail que ela espera, e concluí-lo tira a conta do
+            // atacante. A lib roda isto em background (`runInBackgroundOrAwait`), então a resposta e o tempo
+            // não mudam; o teto `password` por conta vale (via `sendResetPassword`).
+            onExistingUserSignUp: async (
+              { user }: { user: { email: string; emailVerified: boolean; locale?: string | null } },
+              request?: Request,
+            ) => {
+              if (user.emailVerified) return
+              await sendFinishAccountLink(user.email, verifyEmailLocale(user, request))
+            },
+            // #470 (B1): o link de senha prova a posse da caixa — conta não confirmada passa a confirmada (e ganha
+            // o handle do nome, F2). A senha trocada substitui a de quem a cadastrou, e as sessões caem (abaixo).
+            onPasswordReset: async ({ user }: { user: { id: string; emailVerified: boolean } }) => {
+              if (user.emailVerified) return
+              await getDb().update(schema.users).set({ emailVerified: true }).where(eq(schema.users.id, user.id))
+              await assignNameHandle(user.id)
+            },
+          }
+        : {}),
       // Esqueci minha senha (#469). O Better Auth gera o token (tabela `verification`, uso único) e a rota
       // GET `/reset-password/:token` que redireciona pra nossa tela com `?token=`. Aqui só mandamos o link.
       // Conta soft-deletada NÃO recebe e-mail (o gating já a barra; um reset não pode reanimá-la). O
       // endpoint responde igual exista ou não a conta (sem enumeração pela resposta).
       sendResetPassword: async ({ user, url }, request) => {
         if ((user as { deletedAt?: Date | null }).deletedAt) return
-        // Anti mail-bombing por DESTINATÁRIO (o rate limit é por IP): no máx. RESET_MAX_PER_WINDOW e-mails por
-        // conta na janela. Protege a caixa do Usuário e a cota Brevo compartilhada com os alertas do DPO. O
-        // token do pedido atual já foi gravado quando este callback roda, então ele entra na contagem.
-        // Trade-off aceito: terceiros podem esgotar a cota da janela, mas os e-mails que ELES dispararam chegam
-        // à caixa do dono com links válidos por 1h — o dono nunca fica sem um link utilizável.
-        if ((await recentResetRequests(user.id)) > RESET_MAX_PER_WINDOW) return
+        // Anti mail-bombing por DESTINATÁRIO (o rate limit é por IP): no máx. 3 e-mails de senha por conta na
+        // janela (`takeAccountEmailSlot`). Protege a caixa do Usuário e a cota Brevo compartilhada com os
+        // alertas do DPO.
+        if (!(await takeAccountEmailSlot('password', user.id))) return
         const input = {
           to: user.email,
           name: user.name,
@@ -314,58 +333,63 @@ function buildAuth() {
         if (verifyEmail && !user.emailVerified) await sendAccountEmail('finish', buildFinishAccountEmail(input))
         else await sendAccountEmail('reset', buildResetPasswordEmail(input))
       },
-      // #470 (B1): o link de senha prova a posse da caixa — conta não confirmada passa a confirmada (e ganha o
-      // handle do nome, F2). A senha trocada substitui a de quem a cadastrou, e as sessões caem (abaixo).
-      onPasswordReset: async ({ user }) => {
-        if (user.emailVerified) return
-        await getDb().update(schema.users).set({ emailVerified: true }).where(eq(schema.users.id, user.id))
-        await assignNameHandle(user.id)
-      },
       resetPasswordTokenExpiresIn: 60 * 60, // 1h — casa a copy do e-mail
       // Quem redefine a senha por suspeita de invasão derruba as sessões abertas (inclusive a do invasor).
       revokeSessionsOnPasswordReset: true,
     },
-    // #470 — confirmação de e-mail. O Better Auth manda o link no cadastro (`sendOnSignUp` segue o
-    // requireEmailVerification), a cada login com senha certa de conta não confirmada (`sendOnSignIn`; a resposta
-    // 403 EMAIL_NOT_VERIFIED vira o 401 de sempre, F1) e no reenvio público (`/send-verification-email`, que
-    // responde igual exista ou não a conta). Abrir o link confirma e JÁ LOGA (`autoSignInAfterVerification`).
-    emailVerification: {
-      // Com o gate desligado o login não exige confirmação e não há o que reenviar (o `sendOnSignUp` segue o
-      // requireEmailVerification, então também desliga).
-      sendOnSignIn: verifyEmail,
-      autoSignInAfterVerification: true,
-      expiresIn: VERIFY_EXPIRES_IN_S,
-      sendVerificationEmail: async ({ user, url }, request) => {
-        // Conta soft-deletada não recebe (o gating já a barra).
-        if ((user as { deletedAt?: Date | null }).deletedAt) return
-        const locale = verifyEmailLocale(user as { locale?: string | null }, request)
-        // #470 (B1, pré-sequestro): o reenvio PÚBLICO (sem sessão) aceita qualquer email. Se ele mandasse o link
-        // de confirmação, a vítima que cadastrou depois de um atacante (cadastro genérico, sem e-mail) apertaria
-        // "Reenviar", confirmaria a conta DO ATACANTE e entraria nela — com a senha que o atacante conhece. Então
-        // o reenvio público manda o link de SENHA ("conclua seu cadastro"): concluir troca a senha, derruba
-        // sessões e confirma. O link de confirmação simples fica para o cadastro e o login (quem os disparou
-        // tinha a senha). A resposta do endpoint é a mesma nos três casos (não depende deste callback).
-        if (verifyEmail && request && new URL(request.url, 'http://localhost').pathname.endsWith('/send-verification-email')) {
-          const signedIn = await getAuth().api.getSession({ headers: request.headers })
-          if (!signedIn) {
-            await getAuth().api.requestPasswordReset({
-              body: { email: user.email, redirectTo: `/${locale}/reset-password` },
-            })
-            return
-          }
+    // #470 — confirmação de e-mail (só com o gate ligado, R3). O Better Auth manda o link no cadastro
+    // (`sendOnSignUp` segue o requireEmailVerification) e no reenvio (`/send-verification-email`, que responde
+    // igual exista ou não a conta). Abrir o link confirma e JÁ LOGA (`autoSignInAfterVerification`).
+    ...(verifyEmail
+      ? {
+          emailVerification: {
+            // #470 (R1): login de conta não confirmada NÃO manda e-mail. Com senha certa ele mandaria o link
+            // de confirmação simples — e quem pré-registrou o email da vítima (com a senha dele) o dispararia
+            // logo depois do cadastro dela, que espera exatamente esse e-mail; clicar confirmaria a conta DO
+            // ATACANTE. O login só responde o 401 de sempre (F1); a tela oferece o reenvio, que manda o link
+            // de senha ("conclua seu cadastro").
+            sendOnSignIn: false,
+            autoSignInAfterVerification: true,
+            expiresIn: VERIFY_EXPIRES_IN_S,
+            sendVerificationEmail: async (
+              {
+                user,
+                url,
+              }: {
+                user: { id: string; email: string; name: string; locale?: string | null; deletedAt?: Date | null }
+                url: string
+              },
+              request?: Request,
+            ) => {
+              // Conta soft-deletada não recebe (o gating já a barra).
+              if (user.deletedAt) return
+              const locale = verifyEmailLocale(user, request)
+              // #470 (B1, pré-sequestro): o reenvio PÚBLICO (sem sessão) aceita qualquer email. Se ele mandasse
+              // o link de confirmação, a vítima que cadastrou depois de um atacante apertaria "Reenviar",
+              // confirmaria a conta DO ATACANTE e entraria nela — com a senha que o atacante conhece. Então o
+              // reenvio público manda o link de SENHA ("conclua seu cadastro"). O link de confirmação simples
+              // fica para o cadastro (quem o disparou escolheu a senha). A resposta do endpoint é a mesma nos
+              // três casos (não depende deste callback).
+              if (request && new URL(request.url, 'http://localhost').pathname.endsWith('/send-verification-email')) {
+                const signedIn = await getAuth().api.getSession({ headers: request.headers })
+                if (!signedIn) {
+                  await sendFinishAccountLink(user.email, locale)
+                  return
+                }
+              }
+              if (!(await takeAccountEmailSlot('verify', user.id))) return
+              await sendAccountEmail(
+                'verify',
+                buildVerifyEmail({ to: user.email, name: user.name, locale, url: verifyEmailLink(url, locale) }),
+              )
+            },
+            // #470 (F2): email provado ⇒ o handle de espera vira o derivado do nome.
+            afterEmailVerification: async (user: { id: string }) => {
+              await assignNameHandle(user.id)
+            },
+          },
         }
-        // Teto por destinatário como no reset.
-        if (!(await takeVerifyEmailSlot(user.id))) return
-        await sendAccountEmail(
-          'verify',
-          buildVerifyEmail({ to: user.email, name: user.name, locale, url: verifyEmailLink(url, locale, request) }),
-        )
-      },
-      // #470 (F2): email provado ⇒ o handle de espera vira o derivado do nome.
-      afterEmailVerification: async (user) => {
-        await assignNameHandle(user.id)
-      },
-    },
+      : {}),
     // #470 (F3, pré-sequestro via Google): SEM vínculo implícito conta↔Google por email. A migração 0067 marcou
     // como confirmadas contas cujo email ninguém provou; com o default (vincula quando o email local está
     // confirmado), quem cadastrou o email de outra pessoa ganharia a conta Google dela no 1º "Continuar com o
@@ -381,7 +405,7 @@ function buildAuth() {
       // #470 (F1) — login: com a confirmação ligada, `EMAIL_NOT_VERIFIED` (403, só com a senha CERTA) viraria
       // oráculo — cadastrar X com a senha P (sempre 200) e entrar com X/P dá 403 se X era novo e 401 se X já
       // existia. Reescrito para o MESMO 401 de credencial inválida (status, corpo e headers). O link de
-      // confirmação continua saindo (`sendOnSignIn`, em background); os dois caminhos passam pelo password.verify.
+      // confirmação NÃO sai no login (R1, `sendOnSignIn: false`); os dois caminhos passam pelo password.verify.
       after: createAuthMiddleware(async (ctx) => {
         if (!verifyEmail) return
         if (ctx.path === '/sign-in/email') {

@@ -337,13 +337,6 @@ describe('AuthForm — confirmação de email (#470)', () => {
     expect(screen.queryByRole('button', { name: 'Reenviar email' })).not.toBeInTheDocument()
   })
 
-  it('login manda o destino no header x-refogando-return-to, sem callbackURL no corpo (B2)', async () => {
-    await signInRefused(true)
-    const [body, opts] = signInEmail.mock.calls[0] as [Record<string, unknown>, { headers?: Record<string, string> }]
-    expect(body).not.toHaveProperty('callbackURL')
-    expect(opts.headers).toEqual({ 'x-refogando-return-to': '/u/ana' })
-  })
-
   it('entrar com emailVerified: mostra "Email confirmado"', () => {
     render(
       <LocaleProvider initialLocale="pt-BR">

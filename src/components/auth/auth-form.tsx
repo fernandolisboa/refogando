@@ -21,16 +21,16 @@
  * Confirmação de email (#470): com ela ligada no servidor (só quando o e-mail de conta está configurado), criar
  * conta NÃO loga — o sucesso sem `token` troca o formulário pela tela "confira seu email" (com reenvio), que é a
  * MESMA exista ou não conta com o email (o servidor responde igual). Com `token` (confirmação desligada), entra
- * direto como antes. Entrar com conta não confirmada dá o MESMO 401 de senha errada (sem oráculo): com a
- * confirmação ligada (`emailVerification`), o erro traz a dica neutra "acabou de criar a conta?" + reenvio. O
- * link do e-mail loga e leva ao `returnTo`.
+ * direto como antes. Entrar com conta não confirmada dá o MESMO 401 de senha errada (sem oráculo) e não dispara
+ * e-mail: com a confirmação ligada (`emailVerification`), o erro traz a dica neutra "acabou de criar a conta?" +
+ * reenvio (que manda o link "conclua seu cadastro"). O link de confirmação do cadastro loga e leva ao `returnTo`.
  */
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
-import { RETURN_TO_HEADER, safeInternalPath } from '@/domain/safe-redirect'
+import { safeInternalPath } from '@/domain/safe-redirect'
 import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { ResendVerification } from '@/components/auth/resend-verification'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -114,12 +114,7 @@ export function AuthForm({
           },
         )
       } else {
-        // #470 (B2): o destino vai no header (não em `callbackURL`, que faria redirect de página inteira no
-        // sucesso) para o link de confirmação que o servidor reenvia no login também voltar ao `returnTo`.
-        await signIn.email(
-          { email, password },
-          { headers: { [RETURN_TO_HEADER]: dest }, onSuccess: enter, onError },
-        )
+        await signIn.email({ email, password }, { onSuccess: enter, onError })
       }
     } catch {
       // Rejeição sem ciclo onError (ex.: falha de rede antes do fetch).

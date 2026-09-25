@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { GET } from '@/app/api/cron/account-purge/route'
 import { purgeAnonymizedAccounts } from '@/server/legal/account-purge-scan'
+import { purgeStalePendingAccounts } from '@/server/auth/pending-account'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
-import { dsarAuditEvent, recipeReview, users } from '@/db/schema'
+import { account, dsarAuditEvent, recipeReview, session, users } from '@/db/schema'
 import { seedUser } from '../helpers/users'
 import { seedRecipe, seedReview } from '../helpers/recipes'
 
@@ -121,6 +122,38 @@ describe('purgeAnonymizedAccounts (datas simuladas via now injetado)', () => {
   })
 })
 
+describe('purgeStalePendingAccounts (#470 R1 — contas pendentes de confirmação > 48h)', () => {
+  const hoursBefore = (n: number) => new Date(NOW.getTime() - n * 3_600_000)
+
+  /** Conta com `created_at` no passado (e, por padrão, a `account` de senha, como um cadastro real). */
+  async function seedAged(handle: string, createdAt: Date, emailVerified = false): Promise<string> {
+    const id = await seedUser({ email: `${handle}@pend.test`, handle, emailVerified })
+    await getDb().update(users).set({ createdAt }).where(eq(users.id, id))
+    await getDb().insert(account).values({ userId: id, accountId: id, providerId: 'credential', password: 'x' })
+    return id
+  }
+
+  it('apaga SÓ a pendente não confirmada com > 48h e sem sessão (com a account em cascata); idempotente', async () => {
+    const stale = await seedAged('pendente-aaaaaaaaaaaaaaaa', hoursBefore(49))
+    const fresh = await seedAged('pendente-bbbbbbbbbbbbbbbb', hoursBefore(47))
+    const verified = await seedAged('pendente-cccccccccccccccc', hoursBefore(72), true)
+    const gateOffEra = await seedAged('legado-off', hoursBefore(72)) // não confirmada, handle do nome
+    const withSession = await seedAged('pendente-dddddddddddddddd', hoursBefore(72))
+    await getDb()
+      .insert(session)
+      .values({ userId: withSession, token: `t-${crypto.randomUUID()}`, expiresAt: new Date(NOW.getTime() + 86_400_000) })
+
+    expect(await purgeStalePendingAccounts(getDb(), NOW)).toBe(1)
+
+    const left = (await getDb().select({ id: users.id }).from(users)).map((r) => r.id)
+    expect(left).not.toContain(stale)
+    expect(left).toEqual(expect.arrayContaining([fresh, verified, gateOffEra, withSession]))
+    expect(await getDb().select().from(account).where(eq(account.userId, stale))).toHaveLength(0)
+
+    expect(await purgeStalePendingAccounts(getDb(), NOW)).toBe(0) // 2ª passada: nada
+  })
+})
+
 describe('GET /api/cron/account-purge (auth fail-closed no CRON_SECRET)', () => {
   const original = process.env.CRON_SECRET
 
@@ -156,8 +189,14 @@ describe('GET /api/cron/account-purge (auth fail-closed no CRON_SECRET)', () => 
 
     const res = await call({ authorization: 'Bearer segredo-de-teste' })
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { scanned: number; blobsReaped: number; reviewsCleared: number }
+    const body = (await res.json()) as {
+      scanned: number
+      blobsReaped: number
+      reviewsCleared: number
+      pendingPurged: number
+    }
     expect(body.scanned).toBeGreaterThanOrEqual(1)
+    expect(body.pendingPurged).toBe(0) // contagem da limpeza de contas pendentes (#470) vai junto
     expect(body.reviewsCleared).toBeGreaterThanOrEqual(1)
     expect(store.blobs.has(url)).toBe(false)
     expect(await loadReviewPhoto(reviewId)).toBeNull()

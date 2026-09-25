@@ -1,10 +1,10 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { eq, like } from 'drizzle-orm'
 import { POST as authPost } from '@/app/api/auth/[...all]/route'
 import { getAuth, resetAuthForTests } from '@/lib/auth'
 import { getDb, setMailer } from '@/server/deps'
 import { FakeMailer } from '@/server/mail/mailer'
-import { session, users } from '@/db/schema'
+import { session, users, verification } from '@/db/schema'
 
 /**
  * Gate da confirmação de email (#470) DESLIGADO — produção sem Brevo (`canSendAccountEmail() === false`). Sem
@@ -71,6 +71,26 @@ describe('confirmação de email com o e-mail de conta NÃO configurado (#470, f
     expect(res.status).toBe(200)
     expect(res.headers.get('set-cookie')).toMatch(/better-auth\.session_token=/)
     expect(mailer.accountSent).toHaveLength(0)
+  })
+
+  it('R3 — /send-verification-email como antes de #470: 400 VERIFICATION_EMAIL_NOT_ENABLED, sem marcador nem log', async () => {
+    await getAuth().api.signUpEmail({ body: { email: 'reenvio@off.test', password: PASSWORD, name: 'Reenvio' } })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const res = await post('/send-verification-email', { email: 'reenvio@off.test' })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: 'VERIFICATION_EMAIL_NOT_ENABLED' })
+      expect(mailer.accountSent).toHaveLength(0)
+      expect(await getDb().select().from(verification).where(like(verification.identifier, '%-email-sent:%'))).toHaveLength(0)
+      expect(warn.mock.calls.filter((c) => String(c[0]).startsWith('[auth]'))).toHaveLength(0)
+    } finally {
+      warn.mockRestore()
+    }
+    const opts = getAuth().options
+    expect(opts.emailVerification).toBeUndefined()
+    expect(opts.emailAndPassword).not.toHaveProperty('onExistingUserSignUp')
+    expect(opts.emailAndPassword).not.toHaveProperty('onPasswordReset')
+    expect(opts.emailAndPassword).not.toHaveProperty('customSyntheticUser')
   })
 
   it('o gate é o interruptor: com o e-mail configurado (nova instância), o cadastro deixa de logar', async () => {

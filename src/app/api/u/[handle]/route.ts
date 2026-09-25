@@ -62,7 +62,7 @@ export async function GET(
       links: users.links,
     })
     .from(users)
-    // #470: viva e, com a confirmação de email ligada, confirmada (conta pendente não tem perfil público).
+    // #470: viva e, com a confirmação de email ligada, não PENDENTE (conta pendente não tem perfil público).
     .where(and(eq(users.handle, handle), publicAccountFilter(emailVerificationRequired())))
     .limit(1)
   if (!owner) return notFound()
