@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -29,6 +29,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { createFromSearchHref, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
@@ -66,6 +67,7 @@ export function SearchExperience({
   initialFeed = [],
   initialNextCursor = null,
   highlight = null,
+  webAvailable = true,
 }: {
   /**
    * #236: montada como a HOME-Descoberta? `true` ⇒ o REPOUSO (sem critério) mostra o feed SEEDADO
@@ -87,12 +89,16 @@ export function SearchExperience({
    * feed seeded. `null` (ausente/catálogo vazio) ⇒ nada renderiza, sem regressão pra quem não é home.
    */
   highlight?: ReactNode
+  /**
+   * A Descoberta na web está LIGADA (config admin + allowlist não vazia + chave do provedor)? Resolvido
+   * no servidor pela home. `false` ⇒ a Busca nem chama `/api/discovery/web` e esconde os gatilhos
+   * "Buscar na web" (seriam um beco sem saída). Default `true` preserva o comportamento de antes.
+   */
+  webAvailable?: boolean
 } = {}) {
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
-  const pathname = usePathname()
-  const returnTo = pathname ?? '/'
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -117,6 +123,9 @@ export function SearchExperience({
   // debounced re-busca. O servidor reordena SÓ a Comunidade (Catálogo é editorial, ADR-0003).
   const [sort, setSort] = useState<Sort>('relevancia')
   const [data, setData] = useState<SearchResponse | null>(null)
+  // Termo que PRODUZIU `data` (não o `q` ao vivo): o "Gerar" do vazio e o atalho sob os resultados leem
+  // este, pra não mostrar o termo novo sobre resultados do termo anterior enquanto o debounce corre.
+  const [dataTerm, setDataTerm] = useState('')
   const [status, setStatus] = useState<Status>('idle')
 
   // #5 (Direção C): a trilha de filtros é PERMANENTE no desktop (`lg:`) e vira um DISCLOSURE no mobile
@@ -262,6 +271,7 @@ export function SearchExperience({
       webAbortRef.current?.abort()
       cooksAbortRef.current?.abort()
       setData(null)
+      setDataTerm('')
       setWebLinks([])
       setCooks([])
       setCooksStatus('idle')
@@ -308,6 +318,7 @@ export function SearchExperience({
       }
       const body: SearchResponse = await res.json()
       setData(body)
+      setDataTerm(q.trim())
       setStatus('done')
 
       // #275: toda nova busca BEM-SUCEDIDA volta o CTA manual a `idle` (reaparece ao mudar q/faceta/sort).
@@ -327,7 +338,7 @@ export function SearchExperience({
       // localCount 0, perderia a ponte web — regressão vs o `localCount < 3` de antes).
       const hasAny = localCount > 0 || (body.sugestoes?.length ?? 0) > 0
       const term = q.trim()
-      if (term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
         void discoverWeb(term)
       } else {
         webAbortRef.current?.abort()
@@ -338,7 +349,7 @@ export function SearchExperience({
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks])
+  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks, webAvailable])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -446,6 +457,11 @@ export function SearchExperience({
       (data.sugestoes !== undefined && data.sugestoes.length > 0))
 
   const isEmpty = status === 'done' && data !== null && !hasResults
+
+  // Gerar a partir da busca (termo da ÚLTIMA busca concluída): `ok` ⇒ o termo já serve de pedido (cartão
+  // no vazio + atalho sob os resultados); `too_short` ⇒ dica "digite mais algumas letras" no lugar do
+  // cartão; `none` (sem letras: só facetas, "123") ⇒ cartão genérico do vazio (`/create` cru), sem atalho.
+  const readiness = searchTermReadiness(dataTerm)
 
   // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
   // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
@@ -661,23 +677,26 @@ export function SearchExperience({
                 </h2>
                 <p className="max-w-[54ch] text-sm text-muted">{m.semResultado}</p>
                 <div className="mt-1 flex flex-col gap-2.5">
-                  <GerarComIaCta
-                    q={q}
-                    authed={authed}
-                    sessionPending={session.isPending}
-                    gerarLabel={m.gerarComIa}
-                    cardTitulo={m.vazioGerarTitulo}
-                    cardTexto={m.vazioGerarTexto}
-                    conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
-                    conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
-                    signInLabel={messages.nav.signIn}
-                    returnTo={returnTo}
-                  />
+                  {readiness === 'too_short' ? (
+                    <p className="text-sm text-muted">{m.digiteMaisLetras}</p>
+                  ) : (
+                    <GerarComIaCta
+                      q={dataTerm}
+                      authed={authed}
+                      sessionPending={session.isPending}
+                      gerarLabel={m.gerarComIa}
+                      cardTitulo={m.vazioGerarTitulo}
+                      cardTexto={m.vazioGerarTexto}
+                      conviteTitulo={messages.minhasCriacoes.convidaEntrarTitulo}
+                      conviteTexto={messages.minhasCriacoes.convidaEntrarTexto}
+                      signInLabel={messages.nav.signIn}
+                    />
+                  )}
                   {/* Card "Buscar na web": SÓ com termo (`handleWebManual` early-returns sem `q` ⇒ na
                       busca faceta-only o botão seria morto) e SÓ enquanto a web não populou (`webLinks`
                       vazio) — ao popular, a `WebDiscoverySection` abaixo assume e este cartão some (sem
                       ficar redundante acima dos resultados que ele produziu). */}
-                  {q.trim() !== '' && webLinks.length === 0 && (
+                  {webAvailable && q.trim() !== '' && webLinks.length === 0 && (
                     <BuscarNaWebCard
                       state={webManualState}
                       onSearch={handleWebManual}
@@ -745,6 +764,22 @@ export function SearchExperience({
           </div>
         )}
 
+        {/* Atalho "Gerar com IA" SOB os resultados (ADR-0019, atualização 2026-09-24): a busca achou algo,
+            mas talvez não o que a pessoa queria. Só com termo que já serve de pedido (`ok`). Lê o termo da
+            última busca concluída (`dataTerm`), então acompanha os resultados na tela: não pisca nem troca
+            de rótulo a cada tecla, e fica visível durante o refresh (stale-while-revalidate). Link para
+            `/create?q=` (logado) ou para entrar e cair lá (visitante) — nunca gera sozinho. */}
+        {status !== 'error' && hasResults && readiness === 'ok' && (
+          <GerarAtalho
+            term={dataTerm}
+            authed={authed}
+            sessionPending={session.isPending}
+            lead={m.gerarAtalhoLead}
+            // Função como substituto: `$&`/`$'` digitados no termo não viram padrões do `.replace`.
+            label={m.gerarAtalho.replace('{termo}', () => dataTerm)}
+          />
+        )}
+
         {/* #164: seção SEPARADA "Da web" (ADR-0019). Renderiza FORA do bloco de resultados locais (que
             só monta com `hasResults`), porque o caso mais comum é acervo VAZIO + links da web — esses
             links têm de aparecer mesmo sem nenhum resultado local. São LINKS externos (target/rel
@@ -785,7 +820,8 @@ export function SearchExperience({
             e a seção "Da web" ainda não foi preenchida (`webLinks` vazio). Particiona o espaço do auto:
             raso ⇒ auto disparou (sem CTA); suficiente ⇒ CTA disponível — nunca os dois (sem flash). Some
             quando o clique popula `webLinks` (a WebDiscoverySection acima assume). */}
-        {status === 'done' &&
+        {webAvailable &&
+          status === 'done' &&
           q.trim() !== '' &&
           localCount >= SHALLOW_THRESHOLD &&
           webLinks.length === 0 && (
@@ -989,7 +1025,6 @@ function GerarComIaCta({
   conviteTitulo,
   conviteTexto,
   signInLabel,
-  returnTo,
 }: {
   q: string
   authed: boolean
@@ -1000,7 +1035,6 @@ function GerarComIaCta({
   conviteTitulo: string
   conviteTexto: string
   signInLabel: string
-  returnTo: string
 }) {
   // Visitante (sessão resolvida e SEM usuário): convite de entrar. Otimista durante o pending.
   if (!authed && !sessionPending) {
@@ -1019,7 +1053,9 @@ function GerarComIaCta({
         <p className="max-w-[60ch] text-sm text-muted">{conviteTexto}</p>
         <div>
           <Button asChild>
-            <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{signInLabel}</Link>
+            <Link href={`/sign-in?returnTo=${encodeURIComponent(createFromSearchHref(q))}`}>
+              {signInLabel}
+            </Link>
           </Button>
         </div>
         {/* `conviteTitulo` ("Entre para fazer isso") dá o contexto extra pro leitor de tela — o
@@ -1031,7 +1067,7 @@ function GerarComIaCta({
 
   // Logado (ou sessão ainda resolvendo): CARTÃO com título/descrição + link pro /create com o termo
   // pré-preenchido. Só anexa `?q` quando há termo (sem `?q=` vazio espúrio na URL).
-  const href = q.trim() !== '' ? `/create?q=${encodeURIComponent(q.trim())}` : '/create'
+  const href = createFromSearchHref(q)
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-brand/50 bg-brand/[0.06] px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
@@ -1045,6 +1081,42 @@ function GerarComIaCta({
         </Link>
       </Button>
     </div>
+  )
+}
+
+/**
+ * Atalho discreto "Gerar “termo” com IA" sob os resultados. Mesmo destino do `GerarComIaCta` do vazio
+ * (`createFromSearchHref`), mas em uma linha: aqui a busca TROUXE resultados, então gerar é a saída
+ * secundária, não a principal. Visitante vai entrar com `returnTo` apontando para o próprio `/create?q=`,
+ * então o termo e a intenção de gerar sobrevivem ao login. Otimista durante o pending, como o cartão.
+ */
+function GerarAtalho({
+  term,
+  authed,
+  sessionPending,
+  lead,
+  label,
+}: {
+  term: string
+  authed: boolean
+  sessionPending: boolean
+  lead: string
+  label: string
+}) {
+  const createHref = createFromSearchHref(term)
+  const href =
+    !authed && !sessionPending ? `/sign-in?returnTo=${encodeURIComponent(createHref)}` : createHref
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+      <span>{lead}</span>
+      <Link
+        href={href}
+        className="inline-flex items-center gap-1.5 font-medium text-brand-ink underline-offset-4 hover:underline"
+      >
+        <Sparkles className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+        {label}
+      </Link>
+    </p>
   )
 }
 

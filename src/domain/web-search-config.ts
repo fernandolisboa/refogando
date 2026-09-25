@@ -34,6 +34,15 @@ export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
 }
 
 /**
+ * A config LIBERA a descoberta na web? Ligada E com ao menos um domínio na allowlist (fail-closed). Fonte
+ * única para o endpoint `/api/discovery/web` (não toca o provedor quando `false`) e para a home (esconde
+ * os gatilhos "Buscar na web" quando a descoberta não está ligada de fato).
+ */
+export function isWebSearchOpen(cfg: WebSearchConfig): boolean {
+  return cfg.enabled && cfg.allowlist.length > 0
+}
+
+/**
  * Teto de tamanho da allowlist (defesa contra jsonb gigante / abuso). Cobre qualquer curadoria real
  * de domínios de receita com folga.
  */

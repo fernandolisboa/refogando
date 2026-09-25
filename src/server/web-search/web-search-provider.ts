@@ -69,6 +69,14 @@ type BraveWebResult = { title?: unknown; url?: unknown; profile?: { name?: unkno
 type BraveResponse = { web?: { results?: unknown } }
 
 /**
+ * O deploy tem a credencial do provedor real? Sem ela o `RealWebSearchProvider` devolve `[]` sem tocar a
+ * rede. Exposto para a home esconder os gatilhos "Buscar na web" (lê a MESMA env var do `search`, logo abaixo).
+ */
+export function hasWebSearchCredential(): boolean {
+  return !!process.env.WEB_SEARCH_API_KEY
+}
+
+/**
  * Impl REAL — Brave Web Search API (#271, gate humano de deploy: ADR-0019). A `WEB_SEARCH_API_KEY` é
  * lida PREGUIÇOSAMENTE no uso (como `RealEmbedder`/`RealGeminiImageGenerator`); ausente ⇒ DESLIGADO
  * (`[]`). A consulta é RESTRITA à allowlist (`site:<domínio>`, uma requisição por domínio) e os

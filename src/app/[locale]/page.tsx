@@ -36,6 +36,9 @@ import { resolvePageLocale } from '@/server/http/page-locale'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { loadDiscoveryFeed } from '@/server/recipe/feed'
 import { loadRecipeOfTheWeek } from '@/server/recipe/recipe-of-week'
+import { loadWebSearchConfig } from '@/server/app-config'
+import { isWebSearchOpen } from '@/domain/web-search-config'
+import { hasWebSearchCredential } from '@/server/web-search/web-search-provider'
 import { getDb } from '@/server/deps'
 import { MESSAGES } from '@/i18n/messages'
 
@@ -82,10 +85,18 @@ export default async function Home({
   // Feed de REPOUSO: 1ª página ANÔNIMA do pool público (DB direto, SEM cookie ⇒ cacheável/indexável).
   // "Receita da semana" (#457): MESMO contrato (DB direto, anônimo) — as duas leituras rodam em
   // paralelo, nenhuma depende da outra.
-  const [{ feed, nextCursor }, recipeOfWeek] = await Promise.all([
+  const [{ feed, nextCursor }, recipeOfWeek, webSearch] = await Promise.all([
     loadDiscoveryFeed(db, { requestLocale: locale }),
     loadRecipeOfTheWeek(db, locale),
+    // Opcional: falha nesta leitura NÃO derruba a home — só esconde os gatilhos da web.
+    loadWebSearchConfig(db).catch((err: unknown) => {
+      console.warn('[home] falha ao ler a config da descoberta na web; gatilhos escondidos', err)
+      return null
+    }),
   ])
+  // Descoberta na web LIGADA de fato: flag admin + allowlist não vazia + chave do provedor (sem a chave o
+  // provedor devolve `[]`). Desligada ⇒ a Busca esconde os gatilhos "Buscar na web" (beco sem saída).
+  const webAvailable = webSearch !== null && isWebSearchOpen(webSearch) && hasWebSearchCredential()
 
   const m = MESSAGES[locale].busca
   const mw = MESSAGES[locale].receitaDaSemana
@@ -117,6 +128,12 @@ export default async function Home({
     ) : null
 
   return (
-    <SearchExperience home initialFeed={feed} initialNextCursor={nextCursor} highlight={highlight} />
+    <SearchExperience
+      home
+      initialFeed={feed}
+      initialNextCursor={nextCursor}
+      highlight={highlight}
+      webAvailable={webAvailable}
+    />
   )
 }

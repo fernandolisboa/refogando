@@ -130,7 +130,7 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     expect(cta).toHaveAttribute('href', '/create?q=feijao%20tropeiro')
   })
 
-  it('C2b — REBAIXAMENTO: COM resultados o "Gerar com IA" NÃO aparece (saiu do sempre-visível)', async () => {
+  it('C2b — REBAIXAMENTO: COM resultados o CARTÃO "Gerar com IA" do vazio NÃO aparece (o atalho discreto sim, ver search-gerar-atalho)', async () => {
     sessionState = authed()
     stubFetchOk({
       minhas: [],
@@ -143,7 +143,8 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     renderSearch()
 
     await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
-    // Há resultados (Catálogo) E o "Gerar com IA" NÃO está na tela (só no vazio).
+    // Há resultados (Catálogo) E o CARTÃO "Gerar com IA" NÃO está na tela (só no vazio). O atalho de uma
+    // linha sob os resultados tem outro nome acessível ("Gerar “termo” com IA") — ADR-0019, 2026-09-24.
     await screen.findByRole('heading', { name: M.secaoCatalogo, level: 2 })
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
     expect(screen.queryByText(M.vazioGerarTitulo)).not.toBeInTheDocument()
@@ -161,15 +162,16 @@ describe('SearchExperience — "Gerar com IA" no estado vazio (#5, ADR-0019 emen
     // NÃO há link pro /create para o visitante.
     expect(screen.queryByRole('link', { name: M.gerarComIa })).not.toBeInTheDocument()
     // Há um link de "Entrar" levando ao /sign-in (gerar exige conta) + a cópia do convite.
-    // #458: propaga returnTo (pathname mockado como '/').
+    // #458 → ADR-0019 (2026-09-24): o returnTo é o próprio /create?q=<termo> — o termo e a intenção de
+    // gerar sobrevivem ao login (antes voltava à home sem o termo).
     expect(screen.getByRole('link', { name: NAV.signIn })).toHaveAttribute(
       'href',
-      '/sign-in?returnTo=%2F',
+      `/sign-in?returnTo=${encodeURIComponent('/create?q=feijao')}`,
     )
     expect(screen.getByText(MI.convidaEntrarTexto)).toBeInTheDocument()
   })
 
-  it('C4 — REBAIXAMENTO: visitante COM resultados NÃO vê o convite (saiu do sempre-visível)', async () => {
+  it('C4 — REBAIXAMENTO: visitante COM resultados NÃO vê o CONVITE do vazio (o atalho discreto sim)', async () => {
     sessionState = anon()
     stubFetchOk({
       minhas: [],
