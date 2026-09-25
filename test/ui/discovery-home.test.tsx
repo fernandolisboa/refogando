@@ -164,6 +164,31 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     expect(replaceCalls.at(-1) ?? '').not.toContain('q=bolo')
   })
 
+  it('VOLTA com ?q= (returnTo do "Entrar para buscar", reload): semeia o termo, busca e mantém o ?q= na URL', async () => {
+    const fetchMock = stubFetchOk({ minhas: [], catalogo: [feedItem('r9', 'Resultado')], comunidade: [] })
+    window.history.replaceState(null, '', '/?q=feijoada')
+    renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
+
+    // O termo chega na pílula e a busca roda com ele (sem a pessoa redigitar).
+    expect(await screen.findByRole('searchbox')).toHaveValue('feijoada')
+    await screen.findByText('Resultado')
+    const searched = fetchMock.mock.calls.map((c) => String(c[0]))
+    expect(searched.some((u) => u.includes('q=feijoada'))).toBe(true)
+    // O reflexo da montagem (que ainda via q='') NÃO apagou o ?q= da URL.
+    const replaceCalls = routerReplace.mock.calls.map((c) => String(c[0]))
+    expect(replaceCalls.every((u) => u.includes('q=feijoada'))).toBe(true)
+    expect(window.location.search).toContain('q=feijoada')
+  })
+
+  it('sem ?q= na URL: monta no repouso como antes (nada semeado, nenhuma busca)', async () => {
+    const fetchMock = stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
+    renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
+
+    expect(screen.getByRole('searchbox')).toHaveValue('')
+    expect(screen.getByText('Feijoada Seeded')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('/api/search'))).toBe(false)
+  })
+
   it('× DEVOLVE o foco ao input ao limpar (não dropa pro <body>; WCAG 2.4.3)', async () => {
     stubFetchOk({ minhas: [], catalogo: [], comunidade: [] })
     const user = userEvent.setup()

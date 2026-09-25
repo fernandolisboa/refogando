@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
@@ -29,7 +29,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
-import { createFromSearchHref, searchTermReadiness } from '@/domain/generate-from-search'
+import { createFromSearchHref, fitEncoded, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
@@ -99,6 +99,7 @@ export function SearchExperience({
   const { locale, messages } = useLocale()
   const m = messages.busca
   const router = useRouter()
+  const pathname = usePathname()
 
   // #116: estado de sessão SÓ para a CÓPIA (a dica inicial). O `viewerId` real e o gate vivem
   // no servidor (GET /api/search o resolve do cookie) — a UI nunca passa id nenhum. fail-open
@@ -143,6 +144,10 @@ export function SearchExperience({
   // `done` ⇒ a busca manual concluiu. Quando `done` E `webLinks` segue vazio, mostramos o aviso neutro
   // (degradação graciosa, sem provedor/allowlist). Reseta a `idle` a cada nova busca (ver `doSearch`).
   const [webManualState, setWebManualState] = useState<'idle' | 'loading' | 'done'>('idle')
+  // Termo semeado de `?q=` na montagem (ver o efeito de semeadura): a 1ª busca com ele NÃO auto-dispara
+  // a web; `webAutoHeld` troca o auto pelo CTA manual nesse caso raso. Ambos zeram na busca seguinte.
+  const seededTermRef = useRef<string | null>(null)
+  const [webAutoHeld, setWebAutoHeld] = useState(false)
 
   // #279: cluster de COZINHEIROS (ADR-0024) — busca PARALELA por nome/@handle, FORA do ranking de
   // receitas. Flutua acima das receitas quando casa alguém. Fetch independente de /api/search/cooks.
@@ -338,8 +343,18 @@ export function SearchExperience({
       // localCount 0, perderia a ponte web — regressão vs o `localCount < 3` de antes).
       const hasAny = localCount > 0 || (body.sugestoes?.length ?? 0) > 0
       const term = q.trim()
-      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+      // Termo semeado de `?q=` (link/returnTo, sem gesto da pessoa): a web NÃO auto-dispara — um link
+      // forjado não pode gastar a cota diária da Brave (global) com a sessão de quem clicou. Em vez do
+      // auto, o CTA manual aparece (`webAutoHeld`). Consumido na 1ª busca concluída; depois, tudo como antes.
+      const heldForSeed = seededTermRef.current !== null && seededTermRef.current === term
+      seededTermRef.current = null
+      setWebAutoHeld(false)
+      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny && !heldForSeed) {
         void discoverWeb(term)
+      } else if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+        webAbortRef.current?.abort()
+        setWebLinks([])
+        setWebAutoHeld(true)
       } else {
         webAbortRef.current?.abort()
         setWebLinks([])
@@ -377,8 +392,28 @@ export function SearchExperience({
    * O `pathname` corrente é a base: NÃO recompõe o prefixo de locale (o proxy/path já o garante).
    * Guarda no SSR/jsdom-sem-window: sem `window`, não reflete (nada a sincronizar).
    */
+  // Semeia o termo a partir de `?q=` na MONTAGEM, quando o provider ainda está vazio: é o que faz o
+  // `returnTo` do convite "Entrar para buscar na web" (visitante) devolver a pessoa À BUSCA dela, e
+  // recarregar `/?q=…` manter o termo. Roda ANTES do efeito de reflexo abaixo (ordem de declaração) e
+  // marca `skipReflectRef` pra que esse reflexo, que ainda vê `q=''` neste commit, não apague o `?q=`
+  // da URL antes do termo semeado chegar. Só o termo — facetas da URL seguem descartadas, como antes.
+  const skipReflectRef = useRef(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || q !== '') return
+    const inicial = new URLSearchParams(window.location.search).get('q')?.trim() ?? ''
+    if (inicial === '') return
+    skipReflectRef.current = true
+    seededTermRef.current = inicial
+    setQ(inicial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem: depois o termo vive no provider e a URL o segue
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (skipReflectRef.current) {
+      skipReflectRef.current = false
+      return
+    }
     const params = new URLSearchParams()
     if (q.trim() !== '') params.set('q', q.trim())
     if (cozinha.length > 0) params.set('cozinha', cozinha.join(','))
@@ -462,6 +497,19 @@ export function SearchExperience({
   // no vazio + atalho sob os resultados); `too_short` ⇒ dica "digite mais algumas letras" no lugar do
   // cartão; `none` (sem letras: só facetas, "123") ⇒ cartão genérico do vazio (`/create` cru), sem atalho.
   const readiness = searchTermReadiness(dataTerm)
+
+  // Visitante (sessão resolvida, sem usuário): `/api/discovery/web` devolve vazio p/ anônimo, então os
+  // gatilhos "Buscar na web" seriam um clique sem resposta. No lugar deles, convite de entrar com
+  // `returnTo` para ESTA busca (`?q=`, como a URL refletida). Otimista no pending, como o `GerarComIaCta`
+  // (logado nunca vê o convite piscar). `null` ⇒ logado/pending ⇒ os gatilhos de antes.
+  const webSignInHref =
+    !authed && !session.isPending
+      ? `/sign-in?returnTo=${encodeURIComponent(
+          // `encodeURIComponent` (não URLSearchParams): é o encoder que `fitEncoded` orça — o form-encoding
+          // escapa `!'()~` em 3 chars e estouraria os 512 do `safeInternalPath` (login cairia em `/`).
+          `${pathname ?? '/'}?q=${encodeURIComponent(fitEncoded(q.trim()).trim())}`,
+        )}`
+      : null
 
   // #275: contagem do acervo LOCAL (mesmas 3 seções do gate automático #164, sem `sugestoes`). O CTA
   // manual cobre o caso COMPLEMENTAR do auto-gate (acervo SUFICIENTE: `localCount >= SHALLOW_THRESHOLD`)
@@ -705,6 +753,8 @@ export function SearchExperience({
                       botaoLabel={m.buscar}
                       buscandoLabel={m.webManualBuscando}
                       nadaLabel={m.webManualNada}
+                      signInHref={webSignInHref}
+                      signInLabel={m.webEntrarBotao}
                     />
                   )}
                 </div>
@@ -823,7 +873,7 @@ export function SearchExperience({
         {webAvailable &&
           status === 'done' &&
           q.trim() !== '' &&
-          localCount >= SHALLOW_THRESHOLD &&
+          (localCount >= SHALLOW_THRESHOLD || webAutoHeld) &&
           webLinks.length === 0 && (
             <WebManualCta
               state={webManualState}
@@ -831,6 +881,8 @@ export function SearchExperience({
               ctaLabel={m.webManualCta}
               buscandoLabel={m.webManualBuscando}
               nadaLabel={m.webManualNada}
+              signInHref={webSignInHref}
+              signInLabel={m.webEntrarCta}
             />
           )}
           </div>
@@ -913,6 +965,9 @@ function WebDiscoverySection({
  *  - `done` com a web vazia: um aviso NEUTRO ("nada na web agora") — degradação graciosa sem provedor/
  *    allowlist, NUNCA estado de erro vermelho. (Quando a web popula links, o pai esconde este bloco e a
  *    `WebDiscoverySection` assume — então `done` aqui ⇒ necessariamente voltou vazio.)
+ *
+ * Visitante (`signInHref`): a web exige conta ⇒ no lugar do botão, um link "entre para buscar na web"
+ * que volta a esta busca depois do login.
  */
 function WebManualCta({
   state,
@@ -920,13 +975,26 @@ function WebManualCta({
   ctaLabel,
   buscandoLabel,
   nadaLabel,
+  signInHref,
+  signInLabel,
 }: {
   state: 'idle' | 'loading' | 'done'
   onSearch: () => void
   ctaLabel: string
   buscandoLabel: string
   nadaLabel: string
+  signInHref: string | null
+  signInLabel: string
 }) {
+  if (signInHref !== null) {
+    return (
+      <div>
+        <Button variant="secondary" asChild>
+          <Link href={signInHref}>{signInLabel}</Link>
+        </Button>
+      </div>
+    )
+  }
   if (state === 'done') {
     return <p className="text-sm text-muted">{nadaLabel}</p>
   }
@@ -955,6 +1023,9 @@ function WebManualCta({
  * (gate `webLinks.length === 0`) e a `WebDiscoverySection` abaixo assume — então `done` aqui ⇒ voltou
  * vazio. É um `<div>` (não region/section) com título `<p>`: não aninha landmark/heading dentro da live
  * region (a11y, espelha o `GerarComIaCta`). O botão é gateado no PAI por `q.trim() !== ''`.
+ * Visitante (`signInHref`): mesmo cartão, mas o botão vira o link "Entrar para buscar" (a web exige
+ * conta), voltando a esta busca depois do login. Rótulo próprio, não `nav.signIn`: o convite do Gerar ao
+ * lado já tem um "Entrar", e dois links homônimos com destinos diferentes confundem o leitor de tela.
  */
 function BuscarNaWebCard({
   state,
@@ -964,6 +1035,8 @@ function BuscarNaWebCard({
   botaoLabel,
   buscandoLabel,
   nadaLabel,
+  signInHref,
+  signInLabel,
 }: {
   state: 'idle' | 'loading' | 'done'
   onSearch: () => void
@@ -972,6 +1045,8 @@ function BuscarNaWebCard({
   botaoLabel: string
   buscandoLabel: string
   nadaLabel: string
+  signInHref: string | null
+  signInLabel: string
 }) {
   const loading = state === 'loading'
   return (
@@ -980,7 +1055,11 @@ function BuscarNaWebCard({
         <p className="font-display text-base font-semibold text-fg">{titulo}</p>
         <p className="mt-1 text-sm text-muted">{texto}</p>
       </div>
-      {state === 'done' ? (
+      {signInHref !== null ? (
+        <Button variant="outline" asChild className="shrink-0">
+          <Link href={signInHref}>{signInLabel}</Link>
+        </Button>
+      ) : state === 'done' ? (
         <p className="shrink-0 text-sm text-muted">{nadaLabel}</p>
       ) : (
         <Button

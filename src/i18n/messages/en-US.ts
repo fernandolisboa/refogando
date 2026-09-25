@@ -178,6 +178,11 @@ export const enUS: Messages = {
     webManualCta: "Didn't find it? Search the web",
     webManualBuscando: 'Searching…',
     webManualNada: 'Nothing found on the web right now.',
+    // Visitor: web discovery needs an account (the route returns empty for anonymous), so the "Search
+    // the web" triggers become a sign-in prompt — `webEntrarBotao` on the empty card and `webEntrarCta`
+    // at the end of the results. Both return to the search after login.
+    webEntrarBotao: 'Sign in to search',
+    webEntrarCta: "Didn't find it? Sign in to search the web",
     // Provenance seal for a recipe IMPORTED from the web (#169, ADR-0019) — distinct from Catalog/
     // Community. Shows on the detail of an imported recipe (private, credited to the source).
     seloImportada: 'Imported from the web',

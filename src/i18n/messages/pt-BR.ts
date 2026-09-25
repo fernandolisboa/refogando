@@ -197,6 +197,11 @@ export const ptBR = {
     webManualCta: 'Não achou? Buscar na web',
     webManualBuscando: 'Buscando…',
     webManualNada: 'Nada encontrado na web agora.',
+    // Visitante: a descoberta na web exige conta (a rota devolve vazio p/ anônimo), então os gatilhos
+    // "Buscar na web" viram convite de entrar — `webEntrarBotao` no cartão do vazio e `webEntrarCta` no
+    // fim dos resultados. Ambos voltam à busca depois do login.
+    webEntrarBotao: 'Entrar para buscar',
+    webEntrarCta: 'Não achou? Entre para buscar na web',
     // Selo de proveniência da receita IMPORTADA da web (#169, ADR-0019) — distinto de Catálogo/
     // Comunidade. Aparece no detalhe da importada (que é privada e creditada à fonte).
     seloImportada: 'Importada da web',

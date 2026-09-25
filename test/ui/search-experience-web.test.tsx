@@ -84,6 +84,12 @@ function renderSearch() {
   )
 }
 
+/** Monta com a URL já carregando `?q=` (link compartilhado / `returnTo` do login / reload). */
+function renderSearchAt(url: string) {
+  window.history.replaceState(null, '', url)
+  return renderSearch()
+}
+
 const WEB_LINKS: WebLink[] = [
   { title: 'Feijoada Completa', url: 'https://tudogostoso.com.br/feijoada', sourceName: 'TudoGostoso' },
   { title: 'Feijoada à Brasileira', url: 'https://panelinha.com.br/feijoada', sourceName: 'Panelinha' },
@@ -200,6 +206,7 @@ function stubFetchRoutingWebAbortable(search: SearchResponse) {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  window.history.replaceState(null, '', '/')
 })
 
 describe('SearchExperience — descoberta na web (#164)', () => {
@@ -391,6 +398,12 @@ describe('SearchExperience — modal de importação (#169)', () => {
 // SUFICIENTE) — "rolei até o fim e nada serviu". Reusa a MESMA /api/discovery/web (allowlist-restrita,
 // degrade-200). O CTA dispara a web SÓ por AÇÃO do usuário (preserva "Busca nunca cria").
 describe('SearchExperience — CTA manual buscar na web (#275)', () => {
+  // O CTA dispara a web só para LOGADO (a rota devolve vazio p/ anônimo); o visitante vê o convite de
+  // entrar no lugar — coberto em "visitante com a web ligada", abaixo.
+  beforeEach(() => {
+    sessionState = authed()
+  })
+
   it('C1 — acervo SUFICIENTE + termo: CTA aparece, clique chama a web e renderiza os links (CTA some)', async () => {
     const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
     const user = userEvent.setup()
@@ -579,7 +592,7 @@ function withSugestoes(n: number): SearchResponse {
 }
 
 describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)', () => {
-  it('E1 — VAZIO + termo (visitante): cartão "Buscar na web" + convite Gerar; SEM "Da web" automática', async () => {
+  it('E1 — VAZIO + termo (visitante): cartão "Buscar na web" com convite de entrar + convite Gerar; SEM "Da web" automática', async () => {
     sessionState = anon()
     const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
     const user = userEvent.setup()
@@ -587,10 +600,11 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
 
     await user.type(screen.getByRole('searchbox'), 'ramen vegano picante')
 
-    // Painel vazio honesto + o cartão MANUAL "Buscar na web" (botão "Buscar").
+    // Painel vazio honesto + o cartão "Buscar na web" — p/ visitante, o botão vira convite de entrar.
     await screen.findByText(M.semResultado)
     expect(screen.getByText(M.vazioWebTitulo)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: M.buscar })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: M.webEntrarBotao })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
     // A web NÃO auto-disparou no caminho TRULY-empty (o mock mostra o cartão, não "Da web").
     expect(screen.queryByRole('heading', { name: M.secaoDaWeb })).not.toBeInTheDocument()
     expect(discoveryCalls(fetchMock).length).toBe(0)
@@ -676,5 +690,116 @@ describe('SearchExperience — estado VAZIO: cartões Gerar + Buscar na web (#5)
     await user.type(screen.getByRole('searchbox'), 'inexistente')
     await screen.findByText(M.semResultado)
     expect(discoveryCalls(fetchMock0).length).toBe(0)
+  })
+})
+
+// ── Visitante com a web LIGADA: `/api/discovery/web` devolve vazio p/ anônimo, então os gatilhos
+// "Buscar na web" viram convite de entrar (com `returnTo` para a própria busca) em vez de um clique morto.
+describe('SearchExperience — visitante com a web ligada', () => {
+  const returnTo = (q: string) => `/sign-in?returnTo=${encodeURIComponent(`/?q=${q}`)}`
+
+  it('V1 — VAZIO: o cartão "Buscar na web" leva a entrar e voltar à busca (sem botão "Buscar")', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen')
+    await screen.findByText(M.semResultado)
+
+    expect(screen.getByRole('link', { name: M.webEntrarBotao })).toHaveAttribute('href', returnTo('ramen'))
+    expect(screen.queryByRole('button', { name: M.buscar })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('V2 — acervo SUFICIENTE: convite de entrar no lugar do CTA "Não achou? Buscar na web"', async () => {
+    sessionState = anon()
+    const fetchMock = stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada preta')
+    await screen.findByRole('heading', { name: M.secaoComunidade, level: 2 })
+
+    const convite = await screen.findByRole('link', { name: M.webEntrarCta })
+    expect(convite).toHaveAttribute('href', returnTo('feijoada%20preta'))
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
+
+  it('V3 — sessão ainda resolvendo: gatilho de antes (otimista, sem piscar o convite p/ quem está logado)', async () => {
+    sessionState = { ...anon(), isPending: true }
+    stubFetchRouting(localWith(3), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('button', { name: M.webManualCta })
+    expect(screen.queryByRole('link', { name: M.webEntrarCta })).not.toBeInTheDocument()
+  })
+
+  it('V4 — LOGADO: nenhum convite de entrar; os gatilhos de antes', async () => {
+    sessionState = authed()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearch()
+
+    await user.type(screen.getByRole('searchbox'), 'ramen')
+    await screen.findByRole('button', { name: M.buscar })
+    expect(screen.queryByRole('link', { name: M.webEntrarBotao })).not.toBeInTheDocument()
+  })
+
+  it('V5 — termo ENORME: o returnTo cabe nos 512 do safeInternalPath (senão o login cairia em /)', async () => {
+    sessionState = anon()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    renderSearchAt(`/?q=${'ç'.repeat(400)}`)
+
+    const link = await screen.findByRole('link', { name: M.webEntrarBotao })
+    const href = link.getAttribute('href')!
+    const back = new URL(href, 'https://x').searchParams.get('returnTo')!
+    expect(back.length).toBeLessThanOrEqual(512)
+    expect(back.startsWith('/?q=ç')).toBe(false) // codificado, não cru
+    expect(decodeURIComponent(back).startsWith('/?q=ççç')).toBe(true)
+  })
+
+  it("V6 — termo ENORME com !'()~ (o form-encoding os escaparia em 3 chars): o returnTo ainda cabe", async () => {
+    sessionState = anon()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    renderSearchAt(`/?q=${encodeURIComponent("(a)!'~".repeat(120))}`)
+
+    const link = await screen.findByRole('link', { name: M.webEntrarBotao })
+    const back = new URL(link.getAttribute('href')!, 'https://x').searchParams.get('returnTo')!
+    expect(back.length).toBeLessThanOrEqual(512)
+    expect(back.startsWith('/?q=(a)!')).toBe(true)
+  })
+})
+
+describe('SearchExperience — termo semeado de ?q= não auto-dispara a web', () => {
+  it('S1 — LOGADO + acervo RASO vindo de link: sem /api/discovery/web; o CTA manual aparece no lugar', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
+    renderSearchAt('/?q=feijoada')
+
+    await screen.findByText('Receita 0')
+    const cta = await screen.findByRole('button', { name: M.webManualCta })
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+
+    // O CTA é a ação explícita: clicar busca a web normalmente.
+    await userEvent.setup().click(cta)
+    await screen.findByText('Feijoada Completa')
+    expect(discoveryCalls(fetchMock).length).toBe(1)
+  })
+
+  it('S2 — depois da busca semeada, digitar volta ao auto-disparo de sempre (#164)', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearchAt('/?q=feijoada')
+
+    await screen.findByRole('button', { name: M.webManualCta })
+    await user.type(screen.getByRole('searchbox'), ' preta')
+    await screen.findByText('Feijoada Completa')
+    expect(discoveryCalls(fetchMock).length).toBe(1)
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
   })
 })
