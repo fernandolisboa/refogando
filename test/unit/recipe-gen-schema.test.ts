@@ -133,26 +133,32 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     }
   })
 
-  it('kind fora do enum é inferido (sem receita ⇒ impossible; com receita ⇒ success), sem lançar', () => {
+  it('kind fora do enum é inferido (sem receita ⇒ impossible; com receita ⇒ degraded, nunca success)', () => {
     expect(RecipeGenSchema.parse({ kind: 'invalid', receita: null, advisory: 'x' }).kind).toBe('impossible')
     expect(RecipeGenSchema.parse({ kind: 'ok', receita: receitaCompleta(), advisory: null }).kind).toBe(
-      'success',
+      'degraded',
     )
+    // PT/acento → o kind certo (um 'Lúdico' que virasse success iria pro pool público)
+    for (const [raw, kind] of [
+      ['Lúdico', 'playful'],
+      ['zoeira', 'playful'],
+      ['Degradado', 'degraded'],
+      ['Impossível', 'impossible'],
+      ['Sucesso', 'success'],
+    ]) {
+      expect(RecipeGenSchema.parse({ kind: raw, receita: receitaCompleta(), advisory: null }).kind).toBe(kind)
+    }
     // caixa/espaço é só normalizado
     expect(RecipeGenSchema.parse({ kind: ' Degraded ', receita: receitaCompleta(), advisory: null }).kind).toBe(
       'degraded',
     )
   })
 
-  it('rejeita quantidade numérica (deve ser string|null)', () => {
+  it('quantidade numérica crua vira a string do contrato (string|null)', () => {
     const receita = receitaCompleta()
-    receita.ingredientes[0] = {
-      nome: 'farinha',
-      // número cru viola o contrato string|null
-      quantidade: 2 as unknown as string,
-      unidade: 'xicara',
-    }
-    expect(() => RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })).toThrow()
+    receita.ingredientes[0] = { nome: 'farinha', quantidade: 2 as unknown as string, unidade: 'xicara' }
+    const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
+    expect(parsed.receita?.ingredientes[0].quantidade).toBe('2')
   })
 
   it('quantidade fora do formato é normalizada ("2,5" → "2.5"; "" → null), sem lançar', () => {
@@ -170,11 +176,20 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     }
   })
 
-  it('quantidade "a gosto" sem unidade vira unidade a_gosto (quantidade null)', () => {
-    const receita = receitaCompleta()
-    receita.ingredientes[0] = { nome: 'sal', quantidade: 'a gosto', unidade: null }
-    const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
-    expect(parsed.receita?.ingredientes[0]).toEqual({ nome: 'sal', quantidade: null, unidade: 'a_gosto' })
+  it('a unidade colada na quantidade preenche `unidade` quando ela veio ausente ou irreconhecível', () => {
+    const casos: Array<[string, string | null, string | null, string | null]> = [
+      ['a gosto', null, null, 'a_gosto'],
+      ['q.b.', 'maço', null, 'q_b'],
+      ['2 xícaras', null, '2', 'xicara'],
+      // unidade reconhecida vence a colada na quantidade
+      ['200 g', 'kg', '200', 'kg'],
+    ]
+    for (const [q, u, quantidade, unidade] of casos) {
+      const receita = receitaCompleta()
+      receita.ingredientes[0] = { nome: 'x', quantidade: q, unidade: u as never }
+      const parsed = RecipeGenSchema.parse({ kind: 'success', receita, advisory: null })
+      expect(parsed.receita?.ingredientes[0]).toEqual({ nome: 'x', quantidade, unidade })
+    }
   })
 
   it('aceita quantidade numérica válida ("2.500") e null', () => {
@@ -306,21 +321,29 @@ describe('tolerância no parse do SDK — formato fora do enum NUNCA derruba a g
       ...receitaCompleta(),
       cozinha: 'Marciana',
       categoria: 'Petisco de festa',
-      restricoes: ['vegetariano', 'paleo'],
-      ingredientes: [{ nome: 'salsinha', quantidade: 'um maço', unidade: 'maço' }],
+      restricoes: ['vegetariano', 'paleo', 'constructor'],
+      ingredientes: [
+        { nome: 'salsinha', quantidade: 'um maço', unidade: 'maço' },
+        { nome: 'ovos', quantidade: '2-3', unidade: 'unidade' },
+      ],
     })
     expect(receita).toMatchObject({
       cozinha: null,
       categoria: null,
       restricoes: ['vegetariano'],
-      ingredientes: [{ nome: 'salsinha', quantidade: null, unidade: null }],
+      ingredientes: [
+        { nome: 'salsinha', quantidade: null, unidade: null },
+        { nome: 'ovos', quantidade: '2', unidade: 'unidade' },
+      ],
     })
     expect(descartes).toEqual([
       { campo: 'cozinha', valor: 'Marciana' },
       { campo: 'categoria', valor: 'Petisco de festa' },
       { campo: 'restricoes', valor: 'paleo' },
+      { campo: 'restricoes', valor: 'constructor' },
       { campo: 'quantidade', valor: 'um maço' },
       { campo: 'unidade', valor: 'maço' },
+      { campo: 'quantidade', valor: '2-3' },
     ])
   })
 

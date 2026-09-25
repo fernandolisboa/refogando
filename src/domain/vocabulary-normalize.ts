@@ -1,6 +1,6 @@
 /**
- * Normalização de texto livre → vocabulário controlado (categoria, restrição, unidade, cozinha,
- * quantidade). Camada de DOMÍNIO, PURO: sem DB, sem SDK, total e sem throw.
+ * Normalização de texto livre → vocabulário controlado (categoria, restrição, unidade, cozinha) e
+ * medida (quantidade + unidade). Camada de DOMÍNIO, PURO: sem DB, sem SDK, total e sem throw.
  *
  * Existe porque a saída do modelo NÃO é constrita pelos enums: o `zodOutputFormat` do SDK rebaixa
  * `enum`/`pattern` a DICA na description do JSON Schema, mas o parse LOCAL valida o schema zod e
@@ -9,13 +9,18 @@
  * e devolve `null` quando não reconhece, para o chamador cair no fallback (campo null / item
  * descartado) em vez de falhar. Mesmo princípio do `originalLocale` no #548.
  *
- * Conservador de propósito: só sinônimos sem ambiguidade. Em restrição alimentar (contrato de
- * adequação, ADR-0004), um sinônimo errado afirmaria uma dieta que a receita não cumpre, então
- * na dúvida o termo é descartado, nunca "adivinhado".
+ * Conservador de propósito: só sinônimos sem ambiguidade, e nunca um número adivinhado. Em
+ * restrição alimentar (contrato de adequação, ADR-0004), um sinônimo errado afirmaria uma dieta que
+ * a receita não cumpre; em quantidade, um separador ambíguo ("1,000") pode errar por 1000×. Na
+ * dúvida o valor cai no fallback, nunca é "adivinhado".
+ *
+ * As tabelas são `Map` (não objeto literal): uma chave como 'constructor' leria o protótipo.
  */
 
 import { slugify } from '@/domain/handle'
+import { normalizeText } from '@/domain/recipe-restrictions'
 import {
+  QUANTIDADE_RE,
   isCategoria,
   isRestricao,
   isUnidade,
@@ -26,70 +31,9 @@ import {
 } from '@/domain/vocabulary'
 import { COZINHA_SEED } from '@/domain/vocabulary-term'
 
-// `quantidade` casa com `recipe_ingredient.quantidade` `numeric(10,3)`: null OU numérico válido ('-'
-// opcional, até 7 inteiros, '.' + 1-3 fracionários). Fonte única do schema de geração e do `classify`.
-export const QUANTIDADE_RE = /^-?\d{1,7}(\.\d{1,3})?$/
-
-/** Minúsculas, sem acento, com `_ - . / ( )` e espaços colapsados em UM espaço. */
+/** `normalizeText` (minúsculas, sem acento) com `_ - . / ( )` e espaços colapsados em UM espaço. */
 function fold(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[\s_\-./()]+/g, ' ')
-    .trim()
-}
-
-// Unidades reconhecíveis em texto livre → nosso enum `Unidade`. Só aliases comuns PT/EN sem
-// ambiguidade. Chaves em minúsculas; as acentuadas ficam porque o import (recipe-import-parse)
-// casa sem tirar acento. O que não casar fica sem unidade.
-export const UNIT_ALIASES: Record<string, Unidade> = {
-  // métricas (PT/EN compartilham)
-  g: 'g', gr: 'g', grama: 'g', gramas: 'g', gram: 'g', grams: 'g',
-  kg: 'kg', quilo: 'kg', quilos: 'kg', kilogram: 'kg', kilograms: 'kg', kilo: 'kg',
-  ml: 'ml', milliliter: 'ml', milliliters: 'ml', mililitro: 'ml', mililitros: 'ml',
-  l: 'l', litro: 'l', litros: 'l', liter: 'l', liters: 'l',
-  // colheres
-  'colher de sopa': 'colher_de_sopa', 'colheres de sopa': 'colher_de_sopa',
-  tablespoon: 'colher_de_sopa', tablespoons: 'colher_de_sopa', tbsp: 'colher_de_sopa',
-  'colher de cha': 'colher_de_cha', 'colheres de cha': 'colher_de_cha',
-  'colher de chá': 'colher_de_cha', 'colheres de chá': 'colher_de_cha',
-  teaspoon: 'colher_de_cha', teaspoons: 'colher_de_cha', tsp: 'colher_de_cha',
-  // volume
-  xicara: 'xicara', xicaras: 'xicara', xícara: 'xicara', xícaras: 'xicara',
-  cup: 'xicara', cups: 'xicara',
-  // contáveis
-  unidade: 'unidade', unidades: 'unidade', unit: 'unidade', units: 'unidade',
-  dente: 'dente', dentes: 'dente', clove: 'dente', cloves: 'dente',
-  fatia: 'fatia', fatias: 'fatia', slice: 'fatia', slices: 'fatia',
-  pitada: 'pitada', pitadas: 'pitada', pinch: 'pitada', pinches: 'pitada',
-  // não-mensuráveis
-  'a gosto': 'a_gosto', 'to taste': 'a_gosto',
-  'q b': 'q_b', qb: 'q_b', 'quanto baste': 'q_b',
-}
-
-const CATEGORIA_ALIASES: Record<string, Categoria> = {
-  'prato principal': 'prato_principal', principal: 'prato_principal',
-  'main course': 'prato_principal', 'main dish': 'prato_principal', main: 'prato_principal',
-  appetizer: 'entrada', starter: 'entrada',
-  dessert: 'sobremesa',
-  drink: 'bebida', beverage: 'bebida',
-  sauce: 'molho',
-  side: 'acompanhamento', 'side dish': 'acompanhamento',
-  snack: 'lanche',
-  'cafe da manha': 'cafe_da_manha', breakfast: 'cafe_da_manha',
-}
-
-// Só sinônimos que afirmam EXATAMENTE a mesma restrição (ou uma mais forte que a implica: sem
-// laticínios ⇒ sem lactose). "shellfish free" fica de fora: não implica sem peixe/frutos do mar.
-const RESTRICAO_ALIASES: Record<string, Restricao> = {
-  'gluten free': 'sem_gluten',
-  'lactose free': 'sem_lactose', 'dairy free': 'sem_lactose', 'sem laticinios': 'sem_lactose',
-  vegan: 'vegano',
-  vegetarian: 'vegetariano',
-  'sugar free': 'sem_acucar',
-  'nut free': 'sem_oleaginosas',
-  'seafood free': 'sem_frutos_do_mar',
+  return normalizeText(s).replace(/[\s_\-./()]+/g, ' ').trim()
 }
 
 /** Chave de lookup: `fold` + espaço→`_` (a forma dos slugs dos enums). */
@@ -97,12 +41,64 @@ function enumKey(s: string): string {
   return fold(s).replace(/ /g, '_')
 }
 
+/** Tabela de aliases indexada pela forma `fold`: `[[alias, valor], …]` e `[[[alias, …], valor], …]`. */
+function aliases<T>(entries: ReadonlyArray<readonly [string | readonly string[], T]>): ReadonlyMap<string, T> {
+  const m = new Map<string, T>()
+  for (const [keys, value] of entries) {
+    for (const k of typeof keys === 'string' ? [keys] : keys) m.set(fold(k), value)
+  }
+  return m
+}
+
+// Unidades reconhecíveis em texto livre → nosso enum `Unidade`. Só aliases comuns PT/EN sem
+// ambiguidade. O que não casar fica sem unidade. Também é a tabela do import (recipe-import-parse).
+const UNIDADE_ALIASES = aliases<Unidade>([
+  [['g', 'gr', 'grama', 'gramas', 'gram', 'grams'], 'g'],
+  [['kg', 'quilo', 'quilos', 'kilo', 'kilogram', 'kilograms'], 'kg'],
+  [['ml', 'mililitro', 'mililitros', 'milliliter', 'milliliters'], 'ml'],
+  [['l', 'litro', 'litros', 'liter', 'liters'], 'l'],
+  [['colher de sopa', 'colheres de sopa', 'colher sopa', 'colheres sopa', 'tablespoon', 'tablespoons', 'tbsp'], 'colher_de_sopa'],
+  [['colher de chá', 'colheres de chá', 'colher chá', 'colheres chá', 'teaspoon', 'teaspoons', 'tsp'], 'colher_de_cha'],
+  [['xícara', 'xícaras', 'xícara de chá', 'xícaras de chá', 'xícara chá', 'cup', 'cups'], 'xicara'],
+  [['unidade', 'unidades', 'unit', 'units'], 'unidade'],
+  [['dente', 'dentes', 'clove', 'cloves'], 'dente'],
+  [['fatia', 'fatias', 'slice', 'slices'], 'fatia'],
+  [['pitada', 'pitadas', 'pinch', 'pinches'], 'pitada'],
+  [['a gosto', 'to taste'], 'a_gosto'],
+  [['q.b.', 'qb', 'quanto baste'], 'q_b'],
+])
+
+// Categoria: rótulos de i18n (pt-BR/en-US), plurais e sinônimos EN usuais.
+const CATEGORIA_ALIASES = aliases<Categoria>([
+  [['entradas', 'starter', 'starters', 'appetizer', 'appetizers'], 'entrada'],
+  [['pratos principais', 'principal', 'main', 'main course', 'main dish'], 'prato_principal'],
+  [['sobremesas', 'dessert', 'desserts'], 'sobremesa'],
+  [['bebidas', 'drink', 'drinks', 'beverage', 'beverages'], 'bebida'],
+  [['molhos', 'sauce', 'sauces'], 'molho'],
+  [['acompanhamentos', 'side', 'sides', 'side dish'], 'acompanhamento'],
+  [['lanches', 'snack', 'snacks'], 'lanche'],
+  [['café da manhã', 'breakfast'], 'cafe_da_manha'],
+])
+
+// Restrição: só termos que afirmam a MESMA restrição (os rótulos de i18n de cada locale, inclusive o
+// feminino pt 'vegana' e o en 'shellfish-free' do app) ou uma mais forte que a implica (sem
+// laticínios ⇒ sem lactose).
+const RESTRICAO_ALIASES = aliases<Restricao>([
+  ['gluten-free', 'sem_gluten'],
+  [['lactose-free', 'dairy-free', 'sem laticínios'], 'sem_lactose'],
+  [['vegana', 'vegan'], 'vegano'],
+  [['vegetariana', 'vegetarian'], 'vegetariano'],
+  ['sugar-free', 'sem_acucar'],
+  ['nut-free', 'sem_oleaginosas'],
+  [['shellfish-free', 'seafood-free'], 'sem_frutos_do_mar'],
+])
+
 /** Unidade livre → enum `Unidade`, ou `null` se não reconhecida. */
 export function normalizeUnidade(raw: string): Unidade | null {
   if (isUnidade(raw)) return raw
   const key = enumKey(raw)
   if (isUnidade(key)) return key
-  return UNIT_ALIASES[fold(raw)] ?? null
+  return UNIDADE_ALIASES.get(fold(raw)) ?? null
 }
 
 /** Categoria livre → enum `Categoria`, ou `null` se não reconhecida. */
@@ -110,7 +106,7 @@ export function normalizeCategoria(raw: string): Categoria | null {
   if (isCategoria(raw)) return raw
   const key = enumKey(raw)
   if (isCategoria(key)) return key
-  return CATEGORIA_ALIASES[fold(raw)] ?? null
+  return CATEGORIA_ALIASES.get(fold(raw)) ?? null
 }
 
 /** Restrição livre → enum `Restricao`, ou `null` se não reconhecida (o chamador a descarta). */
@@ -118,11 +114,11 @@ export function normalizeRestricao(raw: string): Restricao | null {
   if (isRestricao(raw)) return raw
   const key = enumKey(raw)
   if (isRestricao(key)) return key
-  return RESTRICAO_ALIASES[fold(raw)] ?? null
+  return RESTRICAO_ALIASES.get(fold(raw)) ?? null
 }
 
-// Rótulos PT/EN da seed → slug (ex.: 'Italian' → 'italiana'). Só as cozinhas da seed têm rótulo
-// aqui; as aprovadas pela curadoria casam pelo slug.
+// Rótulos PT/EN da SEED → slug (ex.: 'Italian' → 'italiana'). Só as cozinhas da seed têm rótulo aqui:
+// rótulos editados/aprovados pela curadoria em `vocabulary_term` (ADR-0025) casam só pelo slug.
 const COZINHA_LABEL_TO_SLUG: ReadonlyMap<string, string> = new Map(
   COZINHA_SEED.flatMap((t) => [
     [slugify(t.labelPtBr), t.slug],
@@ -148,33 +144,56 @@ const FRACOES: Record<string, number> = {
   '⅕': 1 / 5, '⅛': 1 / 8, '⅜': 3 / 8, '⅝': 5 / 8, '⅞': 7 / 8,
 }
 const FRAC = '[½⅓⅔¼¾⅕⅛⅜⅝⅞]'
-// O PRIMEIRO número da string, em uma destas formas: fração "1/2"; inteiro/decimal com fração
-// opcional colada ("1 1/2", "1½"); fração unicode sozinha ("½").
-const PRIMEIRO_NUMERO = new RegExp(
-  `(\\d+)\\s*/\\s*(\\d+)|(\\d+(?:\\.\\d+)?)(?:\\s*(?:(\\d+)\\s*/\\s*(\\d+)|(${FRAC})))?|(${FRAC})`,
+// Um número no INÍCIO da string, numa destas formas (em ordem): misto "1 1/2" / "1-1/2"; fração
+// "1/2"; decimal/inteiro com fração unicode opcional ("2.5", ".5", "1½", "1 ½"); fração unicode "½".
+const NUMERO_INICIAL = new RegExp(
+  `^(?:(\\d+)(?:\\s+|\\s*-\\s*)(\\d+)\\s*/\\s*(\\d+)|(\\d+)\\s*/\\s*(\\d+)|(\\d*\\.\\d+|\\d+)(?:\\s*(${FRAC}))?|(${FRAC}))`,
 )
 
+/** Medida normalizada. `resto` é o texto que sobrou sem ser entendido (''= nada se perdeu). */
+export type Medida = { quantidade: string | null; unidade: Unidade | null; resto: string }
+
 /**
- * Quantidade livre → string no formato de `numeric(10,3)`, ou `null` se não há número utilizável.
- * Aceita vírgula decimal ("2,5"), fração ("1/2", "1 1/2", "½", "1½"), faixa ("2-3", "2 a 3" → o
- * primeiro número) e número seguido de texto ("2 xícaras" → "2"). Sem número ("a gosto") ⇒ null.
- * Arredonda para 3 casas; estouro de 7 dígitos inteiros ou zero ⇒ null.
+ * Quantidade livre → medida no formato de `numeric(10,3)` + a unidade, quando vem colada ("2
+ * xícaras" → 2 / xicara). Aceita vírgula decimal ("2,5"), fração ("1/2", "1 1/2", "1-1/2", "½",
+ * "1½"), ".5", e prefixo textual ("cerca de 2"). "a gosto"/"q.b." viram a unidade não-mensurável.
+ *
+ * Nunca adivinha um número: separador de milhar ambíguo ("1,000", "1.000,5"), notação científica,
+ * sinal negativo, zero e estouro de 7 inteiros ⇒ quantidade null. Faixa ("2-3", "2 a 3") vira o
+ * primeiro número e devolve o resto em `resto`, para o chamador registrar a perda.
  */
-export function normalizeQuantidade(raw: string): string | null {
+export function parseMedida(raw: string): Medida {
   const t = raw.trim()
-  if (QUANTIDADE_RE.test(t)) return t
-  const m = PRIMEIRO_NUMERO.exec(t.replace(/(\d),(\d)/g, '$1.$2'))
-  if (!m) return null
+  const semNumero = (resto: string): Medida => ({ quantidade: null, unidade: null, resto })
+  if (t === '') return semNumero('')
+  if (QUANTIDADE_RE.test(t)) return Number(t) > 0 ? { quantidade: t, unidade: null, resto: '' } : semNumero(t)
+
+  const soUnidade = normalizeUnidade(t)
+  if (soUnidade === 'a_gosto' || soUnidade === 'q_b') return { quantidade: null, unidade: soUnidade, resto: '' }
+
+  // Ambiguidade que erraria por ordens de grandeza: milhar com vírgula, os dois separadores juntos,
+  // notação científica.
+  if (/\d,\d{3}(?!\d)/.test(t) || /\d[.,]\d+[.,]\d/.test(t) || /\d[eE][+-]?\d/.test(t)) return semNumero(t)
+  const s = t.replace(/(\d),(\d)/g, '$1.$2') // vírgula decimal (mesmo comprimento: índices valem em t)
+  const inicio = s.search(new RegExp(`\\d|\\.\\d|${FRAC}`))
+  if (inicio < 0) return semNumero(t)
+  // Sinal negativo não é quantidade de ingrediente.
+  if (/-\s*$/.test(s.slice(0, inicio))) return semNumero(t)
+  const m = NUMERO_INICIAL.exec(s.slice(inicio))
+  if (!m) return semNumero(t)
+
   let value: number
-  if (m[1] !== undefined) value = Number(m[1]) / Number(m[2])
-  else if (m[7] !== undefined) value = FRACOES[m[7]]
-  else {
-    value = Number(m[3])
-    if (m[4] !== undefined) value += Number(m[4]) / Number(m[5])
-    else if (m[6] !== undefined) value += FRACOES[m[6]]
-  }
+  if (m[1] !== undefined) value = Number(m[1]) + Number(m[2]) / Number(m[3])
+  else if (m[4] !== undefined) value = Number(m[4]) / Number(m[5])
+  else if (m[8] !== undefined) value = FRACOES[m[8]]
+  else value = Number(m[6]) + (m[7] !== undefined ? FRACOES[m[7]] : 0)
+
   const rounded = Math.round(value * 1000) / 1000
-  if (!Number.isFinite(rounded) || rounded <= 0) return null
-  const s = String(rounded)
-  return QUANTIDADE_RE.test(s) ? s : null
+  const quantidade = String(rounded)
+  if (!Number.isFinite(rounded) || rounded <= 0 || !QUANTIDADE_RE.test(quantidade)) return semNumero(t)
+
+  const resto = s.slice(inicio + m[0].length).trim()
+  if (resto === '') return { quantidade, unidade: null, resto: '' }
+  const unidade = normalizeUnidade(resto)
+  return unidade !== null ? { quantidade, unidade, resto: '' } : { quantidade, unidade: null, resto }
 }

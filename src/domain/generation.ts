@@ -14,8 +14,7 @@
  * que NUNCA exibe lixo parcial. É total e determinística → testável unit sem DB.
  */
 
-import { DIFICULDADE, isPorcoesValidas } from '@/domain/vocabulary'
-import { QUANTIDADE_RE } from '@/domain/vocabulary-normalize'
+import { DIFICULDADE, QUANTIDADE_RE, isPorcoesValidas } from '@/domain/vocabulary'
 import { DEFAULT_LOCALE, localeFromTag } from '@/i18n/locale'
 import type { ReceitaGenT } from '@/domain/recipe-gen-schema'
 import type { TextUsage } from '@/domain/text-cost'
@@ -95,7 +94,8 @@ export function classifyWithReason(out: GenerationOutput): {
   const recipe = out.recipe
   if (recipe === null) return invalid('receita nula')
   if (!isPorcoesValidas(recipe.porcoes)) return invalid(`porcoes fora da faixa: ${recipe.porcoes}`)
-  // dificuldade: escala 1–5 lida como 0–10 (ou 0) é um erro de escala, não motivo pra perder a Receita.
+  // dificuldade: fora de 1–5 (0, ou uma nota noutra escala) vai para o limite mais próximo. Não dá pra
+  // reescalar sem saber a escala; perder a Receita por uma nota subjetiva seria pior.
   const dificuldade = Math.min(DIFICULDADE.max, Math.max(DIFICULDADE.min, recipe.dificuldade))
   // originalLocale: o schema só DÁ A DICA (string livre), então o modelo pode emitir 'en'/'pt'/'en-GB'.
   // Normaliza pelo idioma; idioma não reconhecido (vazio, 'es', lixo) cai no DEFAULT_LOCALE em vez de

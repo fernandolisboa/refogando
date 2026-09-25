@@ -50,14 +50,14 @@ Correção do contrato: o campo de texto do ingrediente no schema de geração �
 
 Os enums e o pattern do schema **não constringem o modelo**: o `zodOutputFormat` do SDK os rebaixa a dica na description do JSON Schema, mas o parse local valida o schema zod e lança. Resultado: um `categoria: 'Prato principal'`, `cozinha: 'Italiana'` ou `quantidade: '1/2'` virava `parse_failed` → 502 e a Receita inteira se perdia (o mesmo problema que o #548 resolveu no `originalLocale`).
 
-Regra: **um desvio de formato do modelo nunca falha a geração.** Na fronteira do parse (`z.preprocess` em `recipe-gen-schema.ts`, normalizadores em `vocabulary-normalize.ts`):
+Regra: **um desvio de vocabulário ou de formato de texto do modelo nunca falha a geração**, e **nenhum número é adivinhado**. Na fronteira do parse (`z.preprocess` em `recipe-gen-schema.ts`, normalizadores em `vocabulary-normalize.ts`):
 
-- `cozinha`, `categoria`, `unidade`: casa caixa, acento, plural e sinônimos PT/EN sem ambiguidade; o que não casa vira `null`. Cozinha só casa slugs do conjunto ativo (a FK rejeitaria outro).
+- `cozinha`, `categoria`, `unidade`: casa caixa, acento, plural, os rótulos de i18n e sinônimos PT/EN sem ambiguidade; o que não casa vira `null`. Cozinha só casa slugs do conjunto ativo (a FK rejeitaria outro), pelo slug ou pelo rótulo da seed.
 - `restricoes`: termo não reconhecido é **descartado**, nunca adivinhado — um sinônimo errado afirmaria uma dieta que a receita não cumpre (ADR-0004).
-- `quantidade`: vírgula decimal, fração (`1/2`, `1 1/2`, `½`), faixa (`2-3` → 2) e número seguido de texto viram o formato de `numeric(10,3)`; sem número vira `null`, e "a gosto"/"q.b." sem unidade viram `unidade` `a_gosto`/`q_b`.
-- `kind` fora dos 4 valores: inferido pela presença da receita (`success` com receita, `impossible` sem).
-- `dificuldade` fora de 1–5 é trazida para a faixa no `classify` (nota subjetiva; é erro de escala).
+- `quantidade`: vírgula decimal, fração (`1/2`, `1 1/2`, `1-1/2`, `½`, `.5`) e unidade colada (`2 xícaras` → 2 + `xicara`, `a gosto` → `a_gosto`) viram o formato de `numeric(10,3)`; faixa (`2-3`) fica com o primeiro número. Separador de milhar ambíguo (`1,000`), notação científica, negativo e zero viram `null`: um erro de 1000× numa Receita é pior que uma quantidade em branco.
+- `kind` fora dos 4 valores: normalizado (caixa, acento, sinônimo PT como `lúdico`/`zoeira`/`degradado`) ou inferido — com receita vira `degraded` (nunca `success`, que apagaria o sinal de degradado/lúdico e liberaria o pool público), sem receita vira `impossible`.
+- `dificuldade` fora de 1–5 vai para o limite mais próximo no `classify` (nota subjetiva). Isso revoga, para a dificuldade, o "NÃO clampar" citado no ADR-0023.
 
-Todo valor que cai no fallback é logado (`[claude/generateRecipe] valores fora do vocabulário…`, campo + valor cru curto) para que os aliases que faltam apareçam. O JSON Schema enviado à Anthropic não muda.
+Todo valor que o parse leva ao fallback, ou do qual perde uma parte, é logado (`[claude/generateRecipe] valores fora do vocabulário…`: campo e valor cru quando ele tem cara de rótulo/medida, senão só o tamanho), para que os aliases que faltam apareçam. O ajuste da dificuldade e o fallback do locale não são logados. O JSON Schema enviado à Anthropic não muda. Tipos (string vs número) continuam garantidos pelo structured output; um número cru em `quantidade` é aceito como string.
 
 Continua **inválido**: `porcoes` fora de 1–50 (as quantidades são para N porções; trocar N falsearia a Receita), receita nula num `kind` que exige receita, e `refusal`/`max_tokens`/JSON quebrado.

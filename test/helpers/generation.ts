@@ -14,7 +14,8 @@ import type { Unidade } from '@/domain/vocabulary'
  *
  * `quantidade` é STRING|null (numeric(10,3) trafega como '2.500'), nunca number.
  * porcoes/dificuldade default em faixa válida (PORCOES {1,50} / DIFICULDADE {1,5});
- * sobrescreva para forçar fora-de-faixa → `invalid` no app (não clampa).
+ * sobrescreva `porcoes` para forçar fora-de-faixa → `invalid` no app (`dificuldade` fora da
+ * faixa é trazida para 1–5, não invalida).
  */
 
 /** Receita "miolo" válida por default. Sobrescreva campos pontuais via `overrides`. */

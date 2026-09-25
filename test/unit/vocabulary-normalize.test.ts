@@ -2,35 +2,52 @@ import { describe, expect, it } from 'vitest'
 import {
   normalizeCategoria,
   normalizeCozinha,
-  normalizeQuantidade,
   normalizeRestricao,
   normalizeUnidade,
+  parseMedida,
 } from '@/domain/vocabulary-normalize'
 
-describe('normalizeQuantidade', () => {
+describe('parseMedida', () => {
   it.each([
-    ['2', '2'],
-    ['2.500', '2.500'],
-    ['2,5', '2.5'],
-    [' 3 ', '3'],
-    ['1/2', '0.5'],
-    ['1 1/2', '1.5'],
-    ['½', '0.5'],
-    ['1½', '1.5'],
-    ['1 ⅓', '1.333'],
-    ['2-3', '2'],
-    ['2 a 3', '2'],
-    ['200g', '200'],
-    ['2 xícaras', '2'],
-    ['cerca de 2', '2'],
-    ['0.0625', '0.063'],
-  ])('%j → %j', (raw, esperado) => {
-    expect(normalizeQuantidade(raw)).toBe(esperado)
+    ['2', '2', null],
+    ['2.500', '2.500', null],
+    ['2,5', '2.5', null],
+    [' 3 ', '3', null],
+    ['.5', '0.5', null],
+    ['1/2', '0.5', null],
+    ['1 1/2', '1.5', null],
+    ['1-1/2', '1.5', null],
+    ['½', '0.5', null],
+    ['1½', '1.5', null],
+    ['1 ⅓', '1.333', null],
+    ['200g', '200', 'g'],
+    ['2 xícaras', '2', 'xicara'],
+    ['2 xícaras de chá', '2', 'xicara'],
+    ['cerca de 2', '2', null],
+    ['0.0625', '0.063', null],
+    ['a gosto', null, 'a_gosto'],
+    ['q.b.', null, 'q_b'],
+  ])('%j → quantidade %j, unidade %j, nada perdido', (raw, quantidade, unidade) => {
+    expect(parseMedida(raw)).toEqual({ quantidade, unidade, resto: '' })
   })
 
-  it.each(['a gosto', 'q.b.', '', '   ', '0', '1/0', '12345678', '0.0001'])('%j → null', (raw) => {
-    // '0' é aceito como veio (já é numeric válido); os demais não têm número utilizável.
-    expect(normalizeQuantidade(raw)).toBe(raw === '0' ? '0' : null)
+  it.each([
+    ['2-3', '2', '-3'],
+    ['2 a 3', '2', 'a 3'],
+    ['3 maços', '3', 'maços'],
+  ])('faixa/texto: %j → primeiro número %j e o resto %j para o log', (raw, quantidade, resto) => {
+    expect(parseMedida(raw)).toEqual({ quantidade, unidade: null, resto })
+  })
+
+  it.each(['1,000', '2,500', '1.000,5', '1e5', '-2', '-1/2', '0', '12345678', 'um maço', '1/0'])(
+    'nunca adivinha: %j → quantidade null (e o cru vai para o log)',
+    (raw) => {
+      expect(parseMedida(raw)).toEqual({ quantidade: null, unidade: null, resto: raw })
+    },
+  )
+
+  it('vazio → tudo null, nada a registrar', () => {
+    expect(parseMedida('  ')).toEqual({ quantidade: null, unidade: null, resto: '' })
   })
 })
 
@@ -51,7 +68,7 @@ describe('normalizeUnidade', () => {
     expect(normalizeUnidade(raw)).toBe(esperado)
   })
 
-  it.each(['maço', 'lata', 'oz', ''])('%j → null', (raw) => {
+  it.each(['maço', 'lata', 'oz', '', 'constructor', '__proto__', 'toString'])('%j → null', (raw) => {
     expect(normalizeUnidade(raw)).toBeNull()
   })
 })
@@ -67,8 +84,12 @@ describe('normalizeCategoria', () => {
     expect(normalizeCategoria(raw)).toBe(esperado)
   })
 
-  it('não reconhecida → null', () => {
-    expect(normalizeCategoria('Italiana')).toBeNull()
+  it.each(['Sobremesas', 'Pratos principais', 'Starter'])('plural/rótulo %j casa', (raw) => {
+    expect(normalizeCategoria(raw)).not.toBeNull()
+  })
+
+  it.each(['Italiana', 'constructor', 'Constructor'])('não reconhecida %j → null', (raw) => {
+    expect(normalizeCategoria(raw)).toBeNull()
   })
 })
 
@@ -80,12 +101,16 @@ describe('normalizeRestricao', () => {
     ['Vegan', 'vegano'],
     ['dairy free', 'sem_lactose'],
     ['Low carb', 'low_carb'],
+    ['Vegana', 'vegano'],
+    ['Vegetariana', 'vegetariano'],
+    // rótulo en-US do próprio app para sem_frutos_do_mar
+    ['shellfish-free', 'sem_frutos_do_mar'],
   ])('%j → %j', (raw, esperado) => {
     expect(normalizeRestricao(raw)).toBe(esperado)
   })
 
   it('não adivinha: termo que não afirma a mesma restrição → null', () => {
-    for (const raw of ['paleo', 'shellfish free', 'kosher']) expect(normalizeRestricao(raw)).toBeNull()
+    for (const raw of ['paleo', 'kosher', 'constructor']) expect(normalizeRestricao(raw)).toBeNull()
   })
 })
 

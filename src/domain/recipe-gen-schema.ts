@@ -8,8 +8,8 @@
  * ─── COZINHA é DATA-DRIVEN (#318, ADR-0025) ─────────────────────────────────────
  * Cozinha NÃO é mais um enum estático: `buildRecipeGenSchema(cozinhaSlugs)` constrói o
  * schema constrangendo `cozinha` ao CONJUNTO ATIVO injetado (vindo de `vocabulary_term`
- * na borda), em vez de um `z.enum(COZINHAS)` fixo. A chamada constrita da Anthropic passa
- * o conjunto ATIVO (zodOutputFormat) para o modelo só emitir cozinhas vivas. O conjunto
+ * na borda), em vez de um `z.enum(COZINHAS)` fixo. O conjunto ATIVO vai ao modelo como DICA
+ * (zodOutputFormat); fora dele, a cozinha vira null no parse (ADR-0009 Adendo 2026-09-25). O conjunto
  * VAZIO cai em `z.string()` (z.enum exige >=1 elemento — estourava na construção). O export
  * estático `RecipeGenSchema = buildRecipeGenSchema([])` mantém os value-imports existentes
  * compilando, com `cozinha: string|null` (Cozinha=string — correto pós-virada).
@@ -40,24 +40,28 @@
  */
 
 import { z } from 'zod'
-import { CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
+import { CATEGORIAS, QUANTIDADE_RE, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
 import {
-  QUANTIDADE_RE,
   normalizeCategoria,
   normalizeCozinha,
-  normalizeQuantidade,
   normalizeRestricao,
   normalizeUnidade,
+  parseMedida,
 } from '@/domain/vocabulary-normalize'
+import { normalizeText } from '@/domain/recipe-restrictions'
 
 // 4 valores que o MODELO pode auto-classificar. `invalid` é só do app (ver §4).
 export const RECIPE_GEN_KINDS = ['success', 'degraded', 'playful', 'impossible'] as const
 
 /**
  * Um valor da saída do modelo que NÃO casou o vocabulário e caiu no fallback (campo null, item de
- * restrição descartado, `kind` inferido). Só para log: `valor` é o texto cru que o modelo emitiu.
+ * restrição descartado, `kind` inferido, parte da quantidade perdida). Só para log: `valor` é o
+ * texto cru que o modelo emitiu.
  */
-export type CampoDescartado = { campo: string; valor: string }
+export type CampoDescartado = {
+  campo: 'kind' | 'cozinha' | 'categoria' | 'restricoes' | 'quantidade' | 'unidade'
+  valor: string
+}
 type OnDescarte = (d: CampoDescartado) => void
 
 // ─── TOLERÂNCIA NA FRONTEIRA DO PARSE ────────────────────────────────────────────
@@ -71,7 +75,7 @@ type OnDescarte = (d: CampoDescartado) => void
 
 /** Campo string-de-vocabulário nullable: normaliza; não reconhecido ⇒ null (e avisa `onDescarte`). */
 function tolerante<T extends z.ZodType>(
-  campo: string,
+  campo: CampoDescartado['campo'],
   normalize: (raw: string) => unknown,
   schema: T,
   onDescarte?: OnDescarte,
@@ -95,23 +99,27 @@ function buildIngredienteGen(onDescarte?: OnDescarte) {
       .describe(
         "nome do ingrediente SEM o número e SEM a unidade do enum (g, kg, ml, l, colher de sopa/chá, xícara, dente, fatia, pitada) — ex.: 'arroz arbóreo', nunca '320 g de arroz arbóreo'. MANTENHA palavras de porção/recipiente que NÃO são unidades do enum (folha, talo, ramo, maço, lata, punhado): '4 folhas de alga nori' → nome 'folhas de alga nori', quantidade 4, unidade 'unidade'. A medida vai em quantidade + unidade.",
       ), // → recipe_ingredient.raw_text
-    // → recipe_ingredient.quantidade (numeric|null): o pattern vai como dica; o preprocess normaliza.
-    quantidade: tolerante('quantidade', normalizeQuantidade, z.string().regex(QUANTIDADE_RE).nullable(), onDescarte),
+    // → recipe_ingredient.quantidade (numeric|null): o pattern vai como dica; `normalizeMedida` normaliza.
+    quantidade: z.string().regex(QUANTIDADE_RE).nullable(),
     unidade: tolerante('unidade', normalizeUnidade, z.enum(UNIDADES).nullable(), onDescarte), // → recipe_ingredient.unidade
   })
-  return z.preprocess(moverNaoMensuravel, item)
+  return z.preprocess((v) => normalizeMedida(v, onDescarte), item)
 }
 
 /**
- * "a gosto"/"q.b." em `quantidade` (sem número) com a unidade ausente ou irreconhecível vira
- * `unidade` a_gosto/q_b e `quantidade` null: a forma estruturada do mesmo significado, em vez de
- * perder a informação no fallback.
+ * Normaliza a medida do item (`parseMedida`): '2,5'/'1/2' viram numeric; a unidade colada na
+ * quantidade ('2 xícaras', 'a gosto') preenche `unidade` quando ela veio ausente ou irreconhecível.
+ * Avisa `onDescarte` quando parte da quantidade se perde (faixa '2-3' → 2, texto sem número).
  */
-function moverNaoMensuravel(v: unknown): unknown {
-  if (!isRecord(v) || typeof v.quantidade !== 'string') return v
-  if (typeof v.unidade === 'string' && normalizeUnidade(v.unidade) !== null) return v
-  const u = normalizeUnidade(v.quantidade)
-  return u === 'a_gosto' || u === 'q_b' ? { ...v, quantidade: null, unidade: u } : v
+function normalizeMedida(v: unknown, onDescarte?: OnDescarte): unknown {
+  if (!isRecord(v)) return v
+  const raw = typeof v.quantidade === 'number' && Number.isFinite(v.quantidade) ? String(v.quantidade) : v.quantidade
+  if (typeof raw !== 'string') return v
+  const medida = parseMedida(raw)
+  if (medida.resto !== '') onDescarte?.({ campo: 'quantidade', valor: raw })
+  const unidadeOk = typeof v.unidade === 'string' && normalizeUnidade(v.unidade) !== null
+  const unidade = !unidadeOk && medida.unidade !== null ? medida.unidade : v.unidade
+  return { ...v, quantidade: medida.quantidade, unidade }
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -146,7 +154,7 @@ function buildReceitaGenSchema(cozinhaSlugs: readonly string[], onDescarte?: OnD
     cozinha: tolerante('cozinha', (raw) => normalizeCozinha(raw, ativas), cozinhaSchema.nullable(), onDescarte),
     categoria: tolerante('categoria', normalizeCategoria, z.enum(CATEGORIAS).nullable(), onDescarte), // → recipe.categoria
     // → recipe.restricoes (default '{}'). Termo não reconhecido é DESCARTADO, nunca adivinhado (ADR-0004).
-    restricoes: z.preprocess((v) => normalizarRestricoes(v, onDescarte), z.array(z.enum(RESTRICOES))),
+    restricoes: z.preprocess((v) => normalizeRestricoes(v, onDescarte), z.array(z.enum(RESTRICOES))),
     porcoes: z.number().int(), // → recipe.porcoes (faixa validada no app)
     dificuldade: z.number().int(), // → recipe.dificuldade (faixa normalizada no app)
     // Tempo de preparo (#261, ADR-0023): OUTPUT-ONLY, ambos OPCIONAIS na saída (.nullable().optional()
@@ -159,7 +167,7 @@ function buildReceitaGenSchema(cozinhaSlugs: readonly string[], onDescarte?: OnD
 }
 
 /** Normaliza cada restrição; descarta (e avisa) as não reconhecidas; sem repetição. */
-function normalizarRestricoes(v: unknown, onDescarte?: OnDescarte): unknown {
+function normalizeRestricoes(v: unknown, onDescarte?: OnDescarte): unknown {
   if (!Array.isArray(v)) return v
   const out = new Set<string>()
   for (const raw of v) {
@@ -171,25 +179,44 @@ function normalizarRestricoes(v: unknown, onDescarte?: OnDescarte): unknown {
   return [...out]
 }
 
+type RecipeGenKind = (typeof RECIPE_GEN_KINDS)[number]
+
+// `kind` em português/sinônimo (o prompt é pt-BR, então é a deriva provável). Chave: minúsculas sem acento.
+const KIND_ALIASES: ReadonlyMap<string, RecipeGenKind> = new Map([
+  ['sucesso', 'success'],
+  ['degradado', 'degraded'],
+  ['degradada', 'degraded'],
+  ['parcial', 'degraded'],
+  ['partial', 'degraded'],
+  ['ludico', 'playful'],
+  ['ludica', 'playful'],
+  ['zoeira', 'playful'],
+  ['brincadeira', 'playful'],
+  ['joke', 'playful'],
+  ['impossivel', 'impossible'],
+])
+
 /**
- * `kind` fora dos 4 valores (caixa/espaço à parte) é INFERIDO em vez de derrubar o parse: com
- * receita ⇒ 'success'; sem receita ⇒ 'impossible' (o advisory segue como a explicação honesta).
+ * `kind` fora dos 4 valores é normalizado (caixa, acento, sinônimo PT) ou INFERIDO em vez de derrubar
+ * o parse. Inferido: com receita ⇒ 'degraded' (entrega a Receita sem afirmar que atendeu tudo — o
+ * advisory explica; nunca 'success', que apagaria um degradado/lúdico); sem receita ⇒ 'impossible'.
  */
-function inferirKind(onDescarte?: OnDescarte) {
+function inferKind(onDescarte?: OnDescarte) {
   return (v: unknown): unknown => {
     if (!isRecord(v) || typeof v.kind !== 'string') return v
-    const k = v.kind.trim().toLowerCase()
-    if ((RECIPE_GEN_KINDS as readonly string[]).includes(k)) return k === v.kind ? v : { ...v, kind: k }
+    const k = normalizeText(v.kind)
+    const kind = (RECIPE_GEN_KINDS as readonly string[]).includes(k) ? (k as RecipeGenKind) : KIND_ALIASES.get(k)
+    if (kind !== undefined) return kind === v.kind ? v : { ...v, kind }
     onDescarte?.({ campo: 'kind', valor: v.kind })
-    return { ...v, kind: v.receita != null ? 'success' : 'impossible' }
+    return { ...v, kind: v.receita != null ? 'degraded' : 'impossible' }
   }
 }
 
 /**
  * Constrói o schema canônico de geração constrangendo `cozinha` ao CONJUNTO ATIVO injetado
  * (#318, ADR-0025 Decisão 4). `cozinhaSlugs` vem da tabela `vocabulary_term` (resolvido na
- * BORDA); a chamada constrita da Anthropic passa o conjunto ATIVO para o modelo só emitir
- * cozinhas vivas. A virada #318 trocou `recipe.cozinha` enum→text, então `string|null` é o
+ * BORDA); o conjunto ATIVO vai como DICA ao modelo, e uma cozinha fora dele vira null no parse
+ * (ADR-0009 Adendo 2026-09-25). A virada #318 trocou `recipe.cozinha` enum→text, então `string|null` é o
  * tipo CORRETO da coluna.
  */
 export function buildRecipeGenSchema(cozinhaSlugs: readonly string[], onDescarte?: OnDescarte) {
@@ -198,7 +225,7 @@ export function buildRecipeGenSchema(cozinhaSlugs: readonly string[], onDescarte
   // no app (classify). `advisory` é IRMÃO de `receita` (Comentário consultivo FORA da
   // Receita — ADR-0009).
   return z.preprocess(
-    inferirKind(onDescarte),
+    inferKind(onDescarte),
     z.object({
       kind: z.enum(RECIPE_GEN_KINDS),
       receita: buildReceitaGenSchema(cozinhaSlugs, onDescarte).nullable(),
@@ -224,7 +251,7 @@ export function buildRecipeGenSchema(cozinhaSlugs: readonly string[], onDescarte
  */
 export function buildRecipeGenListSchema(cozinhaSlugs: readonly string[], onDescarte?: OnDescarte) {
   const item = z.preprocess(
-    inferirKind(onDescarte),
+    inferKind(onDescarte),
     z.object({
       kind: z.enum(RECIPE_GEN_KINDS),
       receita: buildReceitaGenSchema(cozinhaSlugs, onDescarte).nullable(),

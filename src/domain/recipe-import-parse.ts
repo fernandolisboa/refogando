@@ -23,7 +23,7 @@
 
 import { canonicalLocale, type Locale } from '@/i18n/locale'
 import { UNIDADES, type Unidade } from '@/domain/vocabulary'
-import { UNIT_ALIASES } from '@/domain/vocabulary-normalize'
+import { normalizeUnidade } from '@/domain/vocabulary-normalize'
 
 /** Item de ingrediente importado — 1:1 com `recipe_ingredient`. `rawText` é o NOME (sem a medida,
  * best-effort); qty/unidade são a medida estruturada (fonte única). */
@@ -192,7 +192,7 @@ function parseQuantityUnit(raw: string): {
   let unidade: Unidade | null = null
   let consumed = 0
   for (let n = Math.min(3, restWords.length); n >= 1; n--) {
-    const unit = UNIT_ALIASES[restLower.slice(0, n).join(' ')]
+    const unit = normalizeUnidade(restLower.slice(0, n).join(' '))
     if (unit) {
       unidade = unit
       consumed = n
