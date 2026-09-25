@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildVerifyEmail } from '@/server/auth/verify-email-email'
+import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-email-email'
 
 /**
  * E-mail de confirmação de e-mail (#470) — montagem pura, mesmo corpo dos e-mails de conta (#469). Prova: idioma
@@ -31,5 +31,19 @@ describe('buildVerifyEmail (#470)', () => {
     const mail = buildVerifyEmail({ to: 'e@x.test', name: '<img src=x>', locale: null, url: URL })
     expect(mail.html).not.toContain('<img src=x>')
     expect(mail.html).toContain('&lt;img src=x&gt;')
+  })
+})
+
+describe('buildFinishAccountEmail (#470 B1)', () => {
+  const RESET = 'https://refogando.example/api/auth/reset-password/tok?callbackURL=%2Fpt-BR%2Freset-password'
+  it('"conclua seu cadastro": pede para CRIAR a senha, 1h, nos dois idiomas', () => {
+    const pt = buildFinishAccountEmail({ to: 'a@x.test', name: 'Ana', locale: null, url: RESET })
+    expect(pt.subject).toBe('Conclua seu cadastro no Refogando')
+    expect(pt.text).toContain('crie sua senha')
+    expect(pt.text).toContain('1 hora')
+    expect(pt.text).toContain(RESET)
+    const en = buildFinishAccountEmail({ to: 'a@x.test', name: 'Ana', locale: 'en-US', url: RESET })
+    expect(en.subject).toBe('Finish creating your Refogando account')
+    expect(en.html).toContain('Create password and activate account')
   })
 })

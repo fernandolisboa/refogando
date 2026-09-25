@@ -8,6 +8,20 @@
 import type { MailInput } from '@/server/mail/mailer'
 import { buildAccountLinkEmail, type AccountEmailInput } from '@/server/auth/account-email'
 
+/**
+ * "Conclua seu cadastro" (#470 B1) — o reenvio PÚBLICO para conta não confirmada manda um link de SENHA (token do
+ * reset, 1h, uso único) em vez do de confirmação: quem concluir define a senha que passa a valer.
+ */
+export function buildFinishAccountEmail(input: AccountEmailInput): MailInput {
+  return buildAccountLinkEmail(input, (m) => ({
+    assunto: m.emailConcluirAssunto,
+    saudacao: m.emailConcluirSaudacao,
+    corpo: m.emailConcluirCorpo,
+    botao: m.emailConcluirBotao,
+    ignorar: m.emailConcluirIgnorar,
+  }))
+}
+
 export function buildVerifyEmail(input: AccountEmailInput): MailInput {
   return buildAccountLinkEmail(input, (m) => ({
     assunto: m.emailVerificarAssunto,

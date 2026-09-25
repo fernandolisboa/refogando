@@ -281,7 +281,19 @@ describe('AuthForm — confirmação de email (#470)', () => {
     const user = await signUpAs('ana@ex.com')
     await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
     expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'ana@ex.com', callbackURL: '/' })
-    expect(await screen.findByText(/Se este email ainda precisar de confirmação/)).toBeInTheDocument()
+    expect(await screen.findByText(/Se houver uma conta não confirmada com este email/)).toBeInTheDocument()
+  })
+
+  it('reenvio com sessão: 400 EMAIL_ALREADY_VERIFIED e EMAIL_MISMATCH têm copy própria (não "enviamos")', async () => {
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 400, code: 'EMAIL_ALREADY_VERIFIED' } })
+    const user = await signUpAs('ana@ex.com')
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByText('Este email já está confirmado.')).toBeInTheDocument()
+    expect(screen.queryByText(/enviamos um link para concluir/)).not.toBeInTheDocument()
+
+    sendVerificationEmail.mockResolvedValue({ data: null, error: { status: 400, code: 'EMAIL_MISMATCH' } })
+    await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
+    expect(await screen.findByText(/conectado com outra conta/)).toBeInTheDocument()
   })
 
   it('reenvio com 429 mostra "muitas tentativas"', async () => {
@@ -291,21 +303,45 @@ describe('AuthForm — confirmação de email (#470)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Muitas tentativas')
   })
 
-  it('entrar com conta não confirmada: mensagem clara + reenvio pro email digitado', async () => {
+  async function signInRefused(emailVerification: boolean) {
     const user = userEvent.setup()
     signInEmail.mockImplementation(async (_b: unknown, h?: Handlers) => {
-      h?.onError?.({ error: { code: 'EMAIL_NOT_VERIFIED' } })
-      return { data: null, error: { code: 'EMAIL_NOT_VERIFIED' } }
+      h?.onError?.({ error: { code: 'INVALID_EMAIL_OR_PASSWORD' } })
+      return { data: null, error: { code: 'INVALID_EMAIL_OR_PASSWORD' } }
     })
-    renderForm('sign-in')
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled={false} returnTo="/u/ana" emailVerification={emailVerification} />
+      </LocaleProvider>,
+    )
     await user.type(screen.getByLabelText('Email'), 'bia@ex.com')
     await user.type(screen.getByLabelText('Senha'), 'segredo123')
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
+    return user
+  }
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Confirme seu email antes de entrar')
+  it('login recusado com a confirmação LIGADA: erro de sempre + dica neutra + reenvio pro email digitado (F1)', async () => {
+    const user = await signInRefused(true)
+    // O servidor responde o MESMO 401 para senha errada e conta não confirmada: a UI não distingue.
+    expect(screen.getByRole('alert')).toHaveTextContent('Email ou senha incorretos.')
+    expect(screen.getByText(/Acabou de criar a conta\? Confirme seu email/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reenviar email' }))
-    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/' })
+    expect(sendVerificationEmail).toHaveBeenCalledWith({ email: 'bia@ex.com', callbackURL: '/u/ana' })
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('login recusado com a confirmação DESLIGADA: só o erro, sem dica nem reenvio', async () => {
+    await signInRefused(false)
+    expect(screen.getByRole('alert')).toHaveTextContent('Email ou senha incorretos.')
+    expect(screen.queryByText(/Acabou de criar a conta/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reenviar email' })).not.toBeInTheDocument()
+  })
+
+  it('login manda o destino no header x-refogando-return-to, sem callbackURL no corpo (B2)', async () => {
+    await signInRefused(true)
+    const [body, opts] = signInEmail.mock.calls[0] as [Record<string, unknown>, { headers?: Record<string, string> }]
+    expect(body).not.toHaveProperty('callbackURL')
+    expect(opts.headers).toEqual({ 'x-refogando-return-to': '/u/ana' })
   })
 
   it('entrar com emailVerified: mostra "Email confirmado"', () => {

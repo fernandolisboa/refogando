@@ -525,10 +525,15 @@ export const ptBR = {
     confirmeEmailJaTemConta:
       'Se este email já tem conta, nenhum link novo é enviado: entre ou redefina a senha.',
     reenviarEmail: 'Reenviar email',
+    // Neutra de propósito: o servidor responde igual exista ou não conta (e o reenvio público manda o link de
+    // "conclua seu cadastro", não o de confirmação — ver #470 B1 em auth.ts).
     confirmacaoReenviada:
-      'Se este email ainda precisar de confirmação, enviamos um novo link. Confira a caixa de entrada e o spam.',
-    erroEmailNaoVerificado:
-      'Confirme seu email antes de entrar. Enviamos um novo link de confirmação para a sua caixa de entrada.',
+      'Se houver uma conta não confirmada com este email, enviamos um link para concluir o cadastro. Confira a caixa de entrada e o spam.',
+    // Reenvio com sessão aberta (a lib recusa com 400): conta já confirmada, ou email de outra conta.
+    emailJaConfirmado: 'Este email já está confirmado.',
+    erroOutraConta: 'Você está conectado com outra conta. Saia dela para reenviar o link.',
+    // Login recusado (#470 F1): o 401 é o MESMO para senha errada e conta não confirmada — a dica cobre os dois.
+    dicaConfirmarEmail: 'Acabou de criar a conta? Confirme seu email pelo link que enviamos antes de entrar.',
     emailConfirmado: 'Email confirmado. Entre para continuar.',
     verificarErroTitulo: 'Link de confirmação inválido',
     verificarErroDescricao: 'Este link expirou ou já foi usado. Informe seu email para receber um novo.',
@@ -539,6 +544,13 @@ export const ptBR = {
       'Falta pouco para começar a cozinhar com o Refogando. Use o link abaixo para confirmar seu email e entrar na sua conta. Ele vale por 24 horas.',
     emailVerificarBotao: 'Confirmar email',
     emailVerificarIgnorar: 'Se não foi você que criou esta conta, ignore este email.',
+    // "Conclua seu cadastro" (#470 B1): reenvio público para conta não confirmada — link de SENHA (1h, uso único).
+    emailConcluirAssunto: 'Conclua seu cadastro no Refogando',
+    emailConcluirSaudacao: 'Olá, {nome}!',
+    emailConcluirCorpo:
+      'Recebemos um pedido para concluir o cadastro da sua conta no Refogando. Para ativá-la, crie sua senha pelo link abaixo — é ela que vale daqui em diante. O link vale por 1 hora e só pode ser usado uma vez.',
+    emailConcluirBotao: 'Criar senha e ativar conta',
+    emailConcluirIgnorar: 'Se não foi você, ignore este email. Nenhuma conta é ativada sem este link.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)

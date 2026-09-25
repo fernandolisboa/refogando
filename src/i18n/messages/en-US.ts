@@ -480,10 +480,15 @@ export const enUS: Messages = {
     confirmeEmailJaTemConta:
       'If this email already has an account, no new link is sent: sign in or reset your password.',
     reenviarEmail: 'Resend email',
+    // Neutral on purpose: the server answers the same whether or not an account exists (and the public resend
+    // sends the "finish signing up" link, not the confirmation one — see #470 B1 in auth.ts).
     confirmacaoReenviada:
-      'If this email still needs confirming, we sent a new link. Check your inbox and spam folder.',
-    erroEmailNaoVerificado:
-      'Confirm your email before signing in. We sent a new confirmation link to your inbox.',
+      "If there's an unconfirmed account with this email, we sent a link to finish signing up. Check your inbox and spam folder.",
+    // Resend with an open session (the lib refuses with 400): account already confirmed, or another account's email.
+    emailJaConfirmado: 'This email is already confirmed.',
+    erroOutraConta: "You're signed in with another account. Sign out of it to resend the link.",
+    // Refused sign-in (#470 F1): the 401 is the SAME for a wrong password and an unconfirmed account.
+    dicaConfirmarEmail: 'Just created your account? Confirm your email with the link we sent before signing in.',
     emailConfirmado: 'Email confirmed. Sign in to continue.',
     verificarErroTitulo: 'Invalid confirmation link',
     verificarErroDescricao: 'This link has expired or was already used. Enter your email to get a new one.',
@@ -494,6 +499,13 @@ export const enUS: Messages = {
       "You're almost ready to start cooking with Refogando. Use the link below to confirm your email and sign in to your account. It is valid for 24 hours.",
     emailVerificarBotao: 'Confirm email',
     emailVerificarIgnorar: "If you didn't create this account, ignore this email.",
+    // "Finish signing up" (#470 B1): public resend for an unconfirmed account — a PASSWORD link (1h, single use).
+    emailConcluirAssunto: 'Finish creating your Refogando account',
+    emailConcluirSaudacao: 'Hi {nome},',
+    emailConcluirCorpo:
+      'We received a request to finish creating your Refogando account. To activate it, create your password with the link below — that is your password from now on. The link is valid for 1 hour and can only be used once.',
+    emailConcluirBotao: 'Create password and activate account',
+    emailConcluirIgnorar: "If this wasn't you, ignore this email. No account is activated without this link.",
   },
   // Tela CRIAR estruturada (#58), mesma substância traduzida (ADR-0001, não byte-idêntica).
   criar: {

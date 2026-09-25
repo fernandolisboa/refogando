@@ -1,6 +1,8 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
+import { emailVerificationRequired } from '@/lib/auth'
+import { publicAccountFilter } from '@/server/auth/pending-account'
 import { normalizeHandle } from '@/domain/handle'
 import { listFollowingPage } from '@/server/user/follow'
 
@@ -29,7 +31,8 @@ export async function GET(
   const [owner] = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(eq(users.handle, handle), isNull(users.deletedAt)))
+    // #470: viva e, com a confirmação de email ligada, confirmada (conta pendente não tem perfil público).
+    .where(and(eq(users.handle, handle), publicAccountFilter(emailVerificationRequired())))
     .limit(1)
   if (!owner) return notFound()
 

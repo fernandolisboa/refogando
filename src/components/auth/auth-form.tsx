@@ -21,16 +21,16 @@
  * Confirmação de email (#470): com ela ligada no servidor (só quando o e-mail de conta está configurado), criar
  * conta NÃO loga — o sucesso sem `token` troca o formulário pela tela "confira seu email" (com reenvio), que é a
  * MESMA exista ou não conta com o email (o servidor responde igual). Com `token` (confirmação desligada), entra
- * direto como antes. Entrar com
- * conta não confirmada dá 403 EMAIL_NOT_VERIFIED: mensagem própria + reenvio. O link do e-mail loga e leva ao
- * `returnTo`.
+ * direto como antes. Entrar com conta não confirmada dá o MESMO 401 de senha errada (sem oráculo): com a
+ * confirmação ligada (`emailVerification`), o erro traz a dica neutra "acabou de criar a conta?" + reenvio. O
+ * link do e-mail loga e leva ao `returnTo`.
  */
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { signIn, signUp } from '@/lib/auth-client'
-import { safeInternalPath } from '@/domain/safe-redirect'
+import { RETURN_TO_HEADER, safeInternalPath } from '@/domain/safe-redirect'
 import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { ResendVerification } from '@/components/auth/resend-verification'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -50,6 +50,7 @@ export function AuthForm({
   returnTo = '/',
   passwordReset = false,
   emailVerified = false,
+  emailVerification = false,
 }: {
   mode: Mode
   googleEnabled: boolean
@@ -59,6 +60,8 @@ export function AuthForm({
   passwordReset?: boolean
   /** Chegou aqui por um link de confirmação já usado, sem sessão (#470, `?verified=1`) — confirma acima do form. */
   emailVerified?: boolean
+  /** A confirmação de email está ligada no servidor (#470) — o erro de login ganha a dica + reenvio. */
+  emailVerification?: boolean
 }) {
   const { messages } = useLocale()
   const router = useRouter()
@@ -111,7 +114,12 @@ export function AuthForm({
           },
         )
       } else {
-        await signIn.email({ email, password }, { onSuccess: enter, onError })
+        // #470 (B2): o destino vai no header (não em `callbackURL`, que faria redirect de página inteira no
+        // sucesso) para o link de confirmação que o servidor reenvia no login também voltar ao `returnTo`.
+        await signIn.email(
+          { email, password },
+          { headers: { [RETURN_TO_HEADER]: dest }, onSuccess: enter, onError },
+        )
       }
     } catch {
       // Rejeição sem ciclo onError (ex.: falha de rede antes do fetch).
@@ -255,7 +263,12 @@ export function AuthForm({
           </Alert>
         )}
 
-        {errorKey === 'erroEmailNaoVerificado' && <ResendVerification email={email} callbackURL={dest} />}
+        {errorKey === 'erroCredencialInvalida' && emailVerification && !isSignUp && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted">{messages.auth.dicaConfirmarEmail}</p>
+            <ResendVerification email={email} callbackURL={dest} />
+          </div>
+        )}
 
         <Button type="submit" disabled={submitting} aria-busy={submitting}>
           {submitting ? messages.auth.enviando : submitLabel}

@@ -11,6 +11,7 @@
 import { Container } from '@/components/container'
 import { AuthForm } from '@/components/auth/auth-form'
 import { isGoogleConfigured } from '@/server/auth/google'
+import { emailVerificationRequired } from '@/lib/auth'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { publicPageMetadata } from '@/server/http/page-metadata'
 
@@ -36,6 +37,7 @@ export default async function SignInPage({
           returnTo={safeInternalPath(returnTo)}
           passwordReset={reset === '1'}
           emailVerified={verified === '1'}
+          emailVerification={emailVerificationRequired()}
         />
       </div>
     </Container>
