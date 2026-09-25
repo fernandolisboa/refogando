@@ -20,6 +20,9 @@ import { EFFORT_LEVELS, type EffortLevel } from '@/domain/ai-task-config'
 /** Modelo default em código (sem linha em `app_config`) — fonte ÚNICA do default de chat/geração. */
 export const DEFAULT_TEXT_MODEL = 'claude-opus-5-5'
 
+/** Modelo default das tarefas Tradução e Extração (ADR-0034) enquanto o admin não escolhe outro. */
+export const DEFAULT_TASK_MODEL = 'claude-sonnet-5'
+
 /** Famílias que o admin pode escolher, na ordem em que aparecem no select. */
 export const SELECTABLE_FAMILIES = ['opus', 'sonnet', 'fable'] as const
 export type SelectableFamily = (typeof SELECTABLE_FAMILIES)[number]

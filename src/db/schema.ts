@@ -461,7 +461,7 @@ export const imageGeneration = pgTable(
 
 /**
  * Registro (append-only) de EVENTOS de EXTRAÇÃO de ingredientes por IA (#447) — o LEDGER que o teto de
- * extração (24h deslizante) conta. A extração (`/api/parse-ingredients`, Haiku) NÃO persistia nada, então
+ * extração (24h deslizante) conta. A extração (`/api/parse-ingredients`, modelo da tarefa no admin — ADR-0034) NÃO persistia nada, então
  * não havia como contar o uso e barrar um loop ilimitado de chamadas ao Claude. Cada extração grava UMA
  * linha aqui (uma por tentativa, reservada ANTES da chamada ao Claude sob o advisory lock — #446); o teto
  * faz `COUNT WHERE user_id AND created_at > agora-24h`. IMUTÁVEL (sem "devolver slot"): o custo já foi
@@ -875,7 +875,7 @@ export const appConfig = pgTable(
       .default(DEFAULT_RECIPE_GEN_CAP_BY_ROLE),
     // #447 (teto de EXTRAÇÃO de ingredientes por papel): `extraction_cap_by_role` espelha a forma de
     // `recipe_gen_cap_by_role` (jsonb Record<Role, number|null>, `null` = ILIMITADO), mas com defaults
-    // MAIS FOLGADOS (extração é barata via Haiku). Coluna plana na MESMA linha singleton (espelha os
+    // MAIS FOLGADOS (extração é curta e só organiza texto). Coluna plana na MESMA linha singleton (espelha os
     // demais eixos). Defaults vêm do domínio (`DEFAULT_EXTRACTION_CAP_BY_ROLE`).
     extractionCapByRole: jsonb('extraction_cap_by_role')
       .$type<ExtractionCapByRole>()

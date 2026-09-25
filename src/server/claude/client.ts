@@ -78,6 +78,9 @@ export type ConversationStreamInput = {
   // OPCIONAL: o `req.signal` da rota. Em disconnect, o abort propaga ao SDK e o stream é
   // cancelado — o servidor para de consumir o stream do LLM (e a destilação é pulada).
   signal?: AbortSignal
+  // Ajuste da tarefa Geração no admin (ADR-0034): a conversa com o chef usa o mesmo. Ausente ⇒ o
+  // default da tarefa.
+  settings?: ModelSettings
 }
 
 export interface ClaudeClient {
@@ -122,11 +125,6 @@ const MAX_TOKENS = 12_000
 // ABAIXO de ~21.3k: acima disso o SDK exige streaming numa chamada não-streaming e lança antes de enviar.
 const VARIANTS_MAX_TOKENS = 20_000
 
-// Esforço da Geração. Explícito porque o default muda por modelo (Opus 5.5 = medium; Opus 4.x, Sonnet
-// e Fable = high) e as rotas têm teto de 60s (maxDuration): medium segura a latência numa tarefa que
-// não pede raciocínio longo, qualquer que seja o modelo escolhido no admin.
-const GENERATION_EFFORT = 'medium' as const
-
 // Prazo da chamada de Geração (chamada + reparo; o SDK não tenta de novo depois do abort). Limita ESTA
 // chamada, abaixo do `maxDuration = 60` das rotas: estourar vira `parse_failed` controlado em vez de a
 // Vercel matar a função (504). Na conversa, o stream vem ANTES e não entra nesse prazo.
@@ -139,13 +137,13 @@ function generationSignal(signal?: AbortSignal): AbortSignal {
 }
 
 /**
- * Ajuste efetivo da Geração: o do admin (ADR-0034) ou, sem ele, esforço medium SÓ nas famílias
- * selecionáveis (Opus/Sonnet/Fable). Uma linha legada com outro modelo (ex.: Haiku, que dá 400 com
- * `effort`) segue no default dele.
+ * Ajuste efetivo da Geração (e da conversa): o do admin (ADR-0034) ou o default da tarefa. `effort` só
+ * vai para as famílias selecionáveis (Opus/Sonnet/Fable): uma linha legada com outro modelo (ex.: Haiku,
+ * que dá 400 com `effort`) segue no default dele, mesmo quando a rota passa o ajuste default da tarefa.
  */
-function generationSettings(input: GenerationInput): ModelSettings {
-  if (input.settings) return input.settings
-  return { effort: selectableFamilyOf(input.model) ? GENERATION_EFFORT : null, thinking: 'default' }
+function generationSettings(input: { model: string; settings?: ModelSettings }): ModelSettings {
+  const settings = input.settings ?? TASK_DEFAULT_SETTINGS.generation
+  return selectableFamilyOf(input.model) ? settings : { ...settings, effort: null }
 }
 
 /** `thinking` + `output_config` (formato + esforço) de uma chamada structured com o ajuste dado. */
@@ -155,6 +153,12 @@ function structuredTuning<F>(format: F, settings: ModelSettings) {
     ...(thinking ? { thinking } : {}),
     output_config: { format, ...(effort ? { effort } : {}) },
   }
+}
+
+/** `thinking` + `output_config.effort` de uma chamada de texto livre (stream da conversa). */
+function streamTuning(settings: ModelSettings) {
+  const { thinking, effort } = tuningParams(settings)
+  return { ...(thinking ? { thinking } : {}), ...(effort ? { output_config: { effort } } : {}) }
 }
 
 /**
@@ -360,12 +364,15 @@ export class RealClaudeClient implements ClaudeClient {
         ...structuredTuning(zodOutputFormat(IngredientExtractionSchema), extractionSettings),
       }
 
-      let message = await client.messages.parse(params, { signal: input.signal })
+      // Mesmo prazo da Geração: com o modelo/thinking do admin a chamada pode demorar, e a rota tem
+      // `maxDuration = 60` — melhor `parse_failed` limpo que a função morta no meio.
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
 
       // Reparo mínimo: se o parser não produziu saída, re-chama UMA vez. Ainda null →
       // parse_failed.
       if (message.parsed_output === null) {
-        message = await client.messages.parse(params, { signal: input.signal })
+        message = await client.messages.parse(params, { signal })
         if (message.parsed_output === null) {
           logSeamParseFailed('extractIngredients', 'saída nula após reparo', message)
           return { kind: 'parse_failed' }
@@ -394,8 +401,9 @@ export class RealClaudeClient implements ClaudeClient {
         max_tokens: MAX_TOKENS,
         system: input.systemPrompt,
         messages: input.transcript.map((m) => ({ role: m.role, content: m.content })),
-        // Adaptive thinking; só rendemos TEXTO (thinking_delta é ignorado abaixo).
-        thinking: { type: 'adaptive' },
+        // Thinking/esforço do admin (ADR-0034, tarefa Geração); só rendemos TEXTO (thinking_delta é
+        // ignorado abaixo).
+        ...streamTuning(generationSettings(input)),
       },
       // `signal` (opcional): em disconnect do cliente HTTP, o abort cancela o stream do SDK.
       { signal: input.signal },

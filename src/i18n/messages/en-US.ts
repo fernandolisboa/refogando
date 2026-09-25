@@ -1065,7 +1065,7 @@ export const enUS: Messages = {
     padraoDoModelo: 'Model default',
     thinkingAdaptativo: 'On (adaptive)',
     thinkingDesligado: 'Off',
-    erroConfig: 'Invalid setting.',
+    iaTarefaErroConfig: 'Invalid setting.',
     erroAjusteNaoSuportado: "This model doesn't offer that setting.",
     erroAjusteRecusado: 'Anthropic rejected this setting for this model.',
     papeisTitulo: 'User roles',

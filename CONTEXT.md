@@ -85,7 +85,7 @@ Modo da Sessão de criação de **tiro único**: o usuário descreve o prato em 
 _Avoid_: Prompt (cru, como termo de domínio); confundir o texto livre com o Briefing de geração; tratar como Busca.
 
 **Extração** (de ingredientes) vs **Geração**:
-**Extração** (#112) ORGANIZA os ingredientes que o usuário escreveu em texto natural nas linhas estruturadas do Briefing — um modelo barato apenas estrutura o que o usuário disse, e o usuário finaliza antes de gerar. **Geração** INVENTA a Receita a partir do Briefing/pedido. A Extração nunca inventa nem gera a Receita; é um passo de pré-preenchimento, não a criação.
+**Extração** (#112) ORGANIZA os ingredientes que o usuário escreveu em texto natural nas linhas estruturadas do Briefing — um modelo escolhido no admin (default Sonnet 5, sem thinking) apenas estrutura o que o usuário disse, e o usuário finaliza antes de gerar. **Geração** INVENTA a Receita a partir do Briefing/pedido. A Extração nunca inventa nem gera a Receita; é um passo de pré-preenchimento, não a criação.
 _Avoid_: chamar a Extração de "geração"; tratar a entrada inteligente como se inventasse ingredientes.
 
 **Cozinha** (cuisine):

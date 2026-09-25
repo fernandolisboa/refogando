@@ -6,7 +6,7 @@ import { POST } from '@/app/api/generations/route'
 import { GET as GET_SESSION } from '@/app/api/creation-sessions/[id]/route'
 import { GET as GET_RECIPE } from '@/app/api/recipes/[id]/route'
 import { getDb, setClaudeClient } from '@/server/deps'
-import type { ClaudeClient } from '@/server/claude/client'
+import type { ClaudeClient, GenerationInput } from '@/server/claude/client'
 import { FakeClaudeClient } from '@/server/claude/client'
 import {
   recipe,
@@ -432,6 +432,31 @@ describe('POST /api/generations — taxonomia de resultado', () => {
 
     const [gen] = await getDb().select().from(generation).where(eq(generation.recipeId, recipeId))
     expect(gen.model).toBe('claude-sonnet-4-6')
+  })
+
+  it('ajuste da Geração salvo no admin para o modelo em uso chega ao seam (ADR-0034); sem ajuste, o default', async () => {
+    const seen: Array<GenerationInput | undefined> = []
+    class RecordingClient extends FakeClaudeClient {
+      // Parâmetro opcional: a base (Fake) declara `generateRecipe()` e ignora a entrada.
+      override async generateRecipe(input?: GenerationInput) {
+        seen.push(input)
+        return super.generateRecipe()
+      }
+    }
+    const { headers } = await seedSessionHeaders({ email: 'settings@gen.test' })
+    setClaudeClient(new RecordingClient(undefined, cannedSuccess()))
+    expect((await post({ mode: 'structured', briefing: makeBriefing() }, headers)).status).toBe(201)
+
+    const saved = { effort: 'high', thinking: 'adaptive' } as const
+    await getDb()
+      .insert(appConfig)
+      .values({ id: true, defaultModel: 'claude-fable-5-1', aiTasks: { generation: { byModel: { 'claude-fable-5-1': saved } } } })
+    expect((await post({ mode: 'structured', briefing: makeBriefing() }, headers)).status).toBe(201)
+
+    expect(seen.map((i) => [i?.model, i?.settings])).toEqual([
+      ['claude-opus-5-5', { effort: 'medium', thinking: 'default' }],
+      ['claude-fable-5-1', saved],
+    ])
   })
 
   it('model resolvido de app_config: linha ausente ⇒ default claude-opus-5-5', async () => {

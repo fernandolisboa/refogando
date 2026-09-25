@@ -40,7 +40,11 @@ export class RealModelProbe implements ModelProbe {
     } catch (err) {
       // 400 = combinação recusada; 404 = modelo inexistente. A mensagem da API diz o motivo e vai p/
       // o admin (admin-only), com teto de tamanho.
-      if (err instanceof Anthropic.BadRequestError || err instanceof Anthropic.NotFoundError) {
+      // Exceção: 400 de conta (sem crédito) não diz nada sobre o ajuste — é "não deu p/ testar".
+      if (
+        (err instanceof Anthropic.BadRequestError || err instanceof Anthropic.NotFoundError) &&
+        !/credit balance/i.test(String(err.message))
+      ) {
         return { kind: 'rejected', message: String(err.message).slice(0, 300) }
       }
       const e = (err ?? {}) as { name?: string; status?: number }

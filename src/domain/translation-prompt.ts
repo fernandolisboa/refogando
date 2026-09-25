@@ -17,9 +17,9 @@
 import { z } from 'zod'
 import { formatGlossaryForPrompt } from '@/domain/translation-glossary'
 
-// Teto de tokens da tradução. Uma receita completa traduzida é subconjunto de uma geração (que cabe
-// em 4096 com MAIS campos), e o tradutor roda com `thinking: disabled` (o teto não é dividido com
-// tokens de raciocínio — ADR-0030 dec.1). 4096 é folgado.
+// Teto BASE de tokens da tradução. Uma receita completa traduzida é subconjunto de uma geração (que cabe
+// em 4096 com MAIS campos). Vale com o thinking desligado (default da tarefa, ADR-0030 dec.1); se o admin
+// liga o thinking (ADR-0034), `maxTokensFor` soma a folga dos tokens de raciocínio.
 export const TRANSLATION_MAX_TOKENS = 4096
 
 // Versão do prompt/glossário do tradutor (semver de prompt, análogo a PROMPT_VERSION da geração).

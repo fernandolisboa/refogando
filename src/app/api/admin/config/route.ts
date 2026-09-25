@@ -1,12 +1,13 @@
 import { requireRole } from '@/server/auth/guard'
 import { getDb, getModelCatalog, getModelProbe } from '@/server/deps'
-import { loadSelectableModels } from '@/server/claude/model-catalog'
-import { isAcceptableModel, validateAiTaskUpdate } from '@/server/claude/ai-task-update'
+import { validateAiTaskUpdate } from '@/server/claude/ai-task-update'
 import {
   AI_TASKS,
+  activeSettings,
   parseStoredAiTasks,
   withTaskSettings,
   type AiTask,
+  type ModelSettings,
   type StoredAiTasks,
 } from '@/domain/ai-task-config'
 import { appConfig } from '@/db/schema'
@@ -31,9 +32,9 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  * `app_config` (linha id=true, garantida por CHECK no schema).
  *
  * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
- *  - `defaultModel` (#5) — modelo de chat. Validado contra os modelos SELECIONÁVEIS de agora (o mais novo
- *    de Opus/Sonnet/Fable segundo a Models API da Anthropic, com lista pinada de fallback — ver
- *    `domain/claude-models.ts` e `GET /api/admin/models`). Haiku não é selecionável.
+ *  - `defaultModel` (#5) — modelo da Geração (legado; a UI manda `aiTasks.generation`). Tratado como a
+ *    tarefa Geração com o ajuste já salvo para o modelo: mesmos portões do `aiTasks` abaixo (modelos
+ *    SELECIONÁVEIS segundo a Models API, com lista pinada de fallback; Haiku não é selecionável).
  *  - `imageGen { enabled, model, dailyCapByRole }` (#134) — geração de imagem por IA (aba IA, `/admin/ia`).
  *    A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts` → `image-gen-config.ts`).
  *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
@@ -56,13 +57,18 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
  *
  *  - `aiTasks { [tarefa]: { model, settings } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
- *    IA de texto (Geração, Tradução, Extração), validados por capacidades + chamada de teste.
+ *    IA de texto (Geração, Tradução, Extração), validados por capacidades + chamada de teste. O jsonb é
+ *    regravado sob lock da linha (salvamentos concorrentes não se sobrescrevem).
  *
  * PUT aceita `defaultModel` E/OU `aiTasks` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
  * `catalogDisclosure` E/OU `recipeOfWeek` E/OU `proCaps` (ao menos um); valida cada campo PRESENTE;
  * faz upsert só dos campos enviados (preserva os outros eixos). Corpo vazio/sem campo conhecido ⇒ 400.
  * Erro de DB → `erro_interno` 500 sem stack (consistente com /api/admin/roles).
  */
+// ADR-0034: salvar `aiTasks` faz uma chamada de teste à Anthropic por tarefa (até 20s cada, em paralelo)
+// + a lista de modelos (até 5s). Folga além dos 10s default do Vercel Hobby.
+export const maxDuration = 60
+
 export async function GET(req: Request): Promise<Response> {
   const g = await requireRole(req, 'admin')
   if (!g.ok) return g.response
@@ -110,14 +116,55 @@ export async function PUT(req: Request): Promise<Response> {
     aiTasks: StoredAiTasks
   }> = {}
 
+  // ADR-0034: troca de modelo/ajuste por tarefa de IA. `defaultModel` (legado #5) é a tarefa Geração com o
+  // ajuste já salvo para aquele modelo (ou o default): passa pelos MESMOS portões (modelo oferecível,
+  // capacidades, chamada de teste). `aiTasks.generation` no mesmo corpo vence.
+  const aiUpdates = new Map<AiTask, unknown>()
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
     if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
-    const current = (await loadAppConfig(getDb())).defaultModel
-    if (!isAcceptableModel(m, current, await loadSelectableModels(getModelCatalog()))) {
-      return Response.json({ error: 'modelo_invalido' }, { status: 400 })
+    aiUpdates.set('generation', { model: m, settings: null })
+  }
+  if (body.aiTasks !== undefined) {
+    const entries = typeof body.aiTasks === 'object' && body.aiTasks !== null ? Object.entries(body.aiTasks) : []
+    if (entries.length === 0 || entries.some(([task]) => !(AI_TASKS as readonly string[]).includes(task))) {
+      return Response.json({ error: 'config_invalida' }, { status: 400 })
     }
-    set.defaultModel = m
+    for (const [task, raw] of entries) aiUpdates.set(task as AiTask, raw)
+  }
+  // Validado ANTES da transação de escrita (a chamada de teste leva segundos; não segura lock nela).
+  const aiValidated: Array<{ task: AiTask; model: string; settings: ModelSettings }> = []
+  if (aiUpdates.size > 0) {
+    const cfg = await loadAppConfig(getDb())
+    const tasks = [...aiUpdates.entries()].map(([task, raw]) => {
+      // `defaultModel` legado: completa o ajuste com o salvo para o modelo (ou o default da tarefa).
+      const r = raw as { model?: unknown; settings?: unknown } | null
+      if (task === 'generation' && r && r.settings === null && typeof r.model === 'string') {
+        const state = { ...cfg.aiTasks.generation, model: r.model }
+        return [task, { model: r.model, settings: activeSettings(task, state) }] as const
+      }
+      return [task, raw] as const
+    })
+    // Tarefas validadas em paralelo: cada chamada de teste pode levar segundos.
+    const results = await Promise.all(
+      tasks.map(([task, raw]) =>
+        validateAiTaskUpdate(raw, cfg.aiTasks[task].model, {
+          catalog: getModelCatalog(),
+          probe: getModelProbe(),
+        }),
+      ),
+    )
+    for (const [i, [task]] of tasks.entries()) {
+      const res = results[i]
+      if (!res.ok) {
+        return Response.json(
+          { error: res.error, task, ...('message' in res ? { message: res.message } : {}) },
+          { status: 400 },
+        )
+      }
+      aiValidated.push({ task, model: res.model, settings: res.settings })
+      if (task === 'generation') set.defaultModel = res.model
+    }
   }
 
   if (body.imageGen !== undefined) {
@@ -229,49 +276,30 @@ export async function PUT(req: Request): Promise<Response> {
     }
   }
 
-  // ADR-0034: modelo + ajuste (esforço, thinking) por tarefa de IA de texto. Corpo
-  // `{ [tarefa]: { model, settings } }`, uma ou mais tarefas. Cada uma passa pelos três portões de
-  // `validateAiTaskUpdate` (modelo oferecível, capacidades, chamada de teste). Grava o ajuste NO modelo
-  // (os dos outros modelos ficam); o modelo da Geração vai p/ `default_model`.
-  if (body.aiTasks !== undefined) {
-    const entries = typeof body.aiTasks === 'object' && body.aiTasks !== null ? Object.entries(body.aiTasks) : []
-    if (entries.length === 0 || entries.some(([task]) => !(AI_TASKS as readonly string[]).includes(task))) {
-      return Response.json({ error: 'config_invalida' }, { status: 400 })
-    }
-    const current = await loadAppConfig(getDb())
-    const [row] = await getDb().select({ aiTasks: appConfig.aiTasks }).from(appConfig)
-    let stored = parseStoredAiTasks(row?.aiTasks)
-    for (const [key, raw] of entries) {
-      const task = key as AiTask
-      const res = await validateAiTaskUpdate(raw, current.aiTasks[task].model, {
-        catalog: getModelCatalog(),
-        probe: getModelProbe(),
-      })
-      if (!res.ok) {
-        return Response.json(
-          { error: res.error, task, ...('message' in res ? { message: res.message } : {}) },
-          { status: 400 },
-        )
-      }
-      stored = withTaskSettings(stored, task, res.model, res.settings)
-      if (task === 'generation') set.defaultModel = res.model
-    }
-    set.aiTasks = stored
-  }
-
   // Nada conhecido a atualizar ⇒ 400 (não vira no-op 200 silencioso).
-  if (Object.keys(set).length === 0) {
+  if (Object.keys(set).length === 0 && aiValidated.length === 0) {
     return Response.json({ error: 'dados_invalidos' }, { status: 400 })
   }
 
   try {
-    await getDb()
-      .insert(appConfig)
-      .values({ id: true, ...set })
-      .onConflictDoUpdate({
-        target: appConfig.id,
-        set: { ...set, updatedAt: new Date() },
-      })
+    await getDb().transaction(async (tx) => {
+      if (aiValidated.length > 0) {
+        // Ler-modificar-gravar do jsonb SOB LOCK da linha: dois salvamentos concorrentes (ex.: dois blocos
+        // da aba IA) não se sobrescrevem. Garante a linha antes, p/ o FOR UPDATE ter o que travar.
+        await tx.insert(appConfig).values({ id: true }).onConflictDoNothing()
+        const [row] = await tx.select({ aiTasks: appConfig.aiTasks }).from(appConfig).for('update')
+        let stored = parseStoredAiTasks(row?.aiTasks)
+        for (const u of aiValidated) stored = withTaskSettings(stored, u.task, u.model, u.settings)
+        set.aiTasks = stored
+      }
+      await tx
+        .insert(appConfig)
+        .values({ id: true, ...set })
+        .onConflictDoUpdate({
+          target: appConfig.id,
+          set: { ...set, updatedAt: new Date() },
+        })
+    })
   } catch {
     return Response.json({ error: 'erro_interno' }, { status: 500 })
   }

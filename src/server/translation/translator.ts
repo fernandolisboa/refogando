@@ -12,6 +12,7 @@
 
 import { TASK_DEFAULT_SETTINGS, maxTokensFor, tuningParams, type ModelSettings } from '@/domain/ai-task-config'
 import Anthropic from '@anthropic-ai/sdk'
+import { TASK_FALLBACK_MODELS } from '@/server/app-config'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import {
   TranslationSchema,
@@ -58,7 +59,7 @@ export interface Translator {
 export type TranslationTaskLoader = () => Promise<{ model: string; settings: ModelSettings }>
 
 const DEFAULT_TRANSLATION_TASK: TranslationTaskLoader = async () => ({
-  model: process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5',
+  model: TASK_FALLBACK_MODELS.translation,
   settings: TASK_DEFAULT_SETTINGS.translation,
 })
 

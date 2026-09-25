@@ -25,7 +25,6 @@ import type { ModelOption } from '@/domain/claude-models'
 import {
   AI_TASKS,
   EFFORT_LEVELS,
-  TASK_DEFAULT_SETTINGS,
   activeSettings,
   type AiTask,
   type AiTaskState,
@@ -35,7 +34,7 @@ import {
   type ThinkingMode,
 } from '@/domain/ai-task-config'
 
-type ErrorKey = 'erroModelo' | 'erroConfig' | 'erroAjusteNaoSuportado' | 'erroAjusteRecusado' | 'erroGenerico'
+type ErrorKey = 'erroModelo' | 'iaTarefaErroConfig' | 'erroAjusteNaoSuportado' | 'erroAjusteRecusado' | 'erroGenerico'
 
 const TASK_COPY = {
   generation: { titulo: 'tarefaGeracaoTitulo', descricao: 'tarefaGeracaoDescricao' },
@@ -53,7 +52,7 @@ const EFFORT_LABEL = {
 
 const ERROR_KEYS: Record<string, ErrorKey> = {
   modelo_invalido: 'erroModelo',
-  config_invalida: 'erroConfig',
+  config_invalida: 'iaTarefaErroConfig',
   ajuste_nao_suportado: 'erroAjusteNaoSuportado',
   ajuste_recusado: 'erroAjusteRecusado',
 }
@@ -103,9 +102,10 @@ export function ConfigSection() {
       </h2>
       <p className="text-sm text-muted">{m.configDescricao}</p>
 
-      {/* Região persistente: `aria-live="polite"` + `aria-busy` anunciam o fim do loading e o que
-          chegou (conteúdo ou erro). O wrapper NÃO é desmontado entre estados — só o conteúdo troca. */}
-      <div aria-live="polite" aria-busy={loading} className="flex flex-col gap-6">
+      {/* Região persistente SÓ do carregamento: `aria-live="polite"` + `aria-busy` anunciam o fim do loading
+          e o erro de carga. Os blocos ficam FORA dela: cada um tem as próprias mensagens de salvar
+          (`role=status`/`alert`), e trocar o modelo reescreve as opções — nada disso deve ecoar aqui. */}
+      <div aria-live="polite" aria-busy={loading} className="flex flex-col gap-3">
         {loading ? (
           <p className="text-sm text-muted">{sys.loading}</p>
         ) : loadError || !tasks ? (
@@ -120,8 +120,11 @@ export function ConfigSection() {
               {sys.retry}
             </Button>
           </div>
-        ) : (
-          AI_TASKS.map((task) => (
+        ) : null}
+      </div>
+      {!loading && !loadError && tasks && (
+        <div className="flex flex-col gap-6">
+          {AI_TASKS.map((task) => (
             <TaskBlock
               key={task}
               task={task}
@@ -129,9 +132,9 @@ export function ConfigSection() {
               options={options}
               onSaved={(next) => setTasks(next)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -173,7 +176,7 @@ function TaskBlock({
   function changeModel(next: string) {
     setModel(next)
     // O ajuste é por modelo: recupera o salvo para ele, senão o default da tarefa.
-    setSettings(state.byModel[next] ?? TASK_DEFAULT_SETTINGS[task])
+    setSettings(activeSettings(task, { ...state, model: next }))
     reset()
   }
 
@@ -270,6 +273,8 @@ function TaskBlock({
         <Button
           type="button"
           size="sm"
+          // Três botões "Salvar" na aba: o título do bloco dá o contexto ao leitor de tela.
+          aria-describedby={headingId}
           onClick={handleSave}
           disabled={saving}
           aria-busy={saving}

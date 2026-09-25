@@ -1,7 +1,7 @@
 /**
  * Config do TETO de EXTRAÇÃO de ingredientes por IA — admin-configurável (issue #447). PURO: tipos +
  * defaults + validação + resolução do teto. ESPELHA `@/domain/recipe-gen-config` (teto de geração de
- * RECEITA, #167) 1:1 — a única diferença é o ESCOPO (extração barata via Haiku, NÃO geração via Opus) e,
+ * RECEITA, #167) 1:1 — a única diferença é o ESCOPO (extração curta de ingredientes, NÃO geração de Receita) e,
  * por isso, defaults MAIS FOLGADOS (a extração só ORGANIZA texto; CONTEXT.md: Extração ≠ Geração).
  *
  * Teto diário por papel na janela 24h DESLIZANTE (mesma semântica dos tetos de imagem/receita): a
@@ -21,7 +21,7 @@ export type ExtractionCapByRole = Record<Role, number | null>
 
 /**
  * Defaults FIXOS do teto de EXTRAÇÃO. MAIS FOLGADOS que os de geração de receita (usuario 10, curador
- * 20): a extração é BARATA (Haiku) e só organiza a entrada — atrito baixo, mas ainda LIMITADO (fecha o
+ * 20): a extração é CURTA e só organiza a entrada — atrito baixo, mas ainda LIMITADO (fecha o
  * loop ilimitado da #447). usuario 60/dia, curador 120/dia, admin ilimitado. Reversível — admin ajusta.
  */
 export const DEFAULT_EXTRACTION_CAP_BY_ROLE: ExtractionCapByRole = {

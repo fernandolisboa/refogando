@@ -276,6 +276,7 @@ export async function POST(req: Request): Promise<Response> {
           transcript,
           model,
           signal,
+          settings,
         })
         for await (const text of tokens) {
           // Disconnect do cliente: para o loop ANTES de enfileirar. Sem cliente p/ receber, o

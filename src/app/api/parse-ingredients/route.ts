@@ -1,14 +1,10 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getClaudeClient } from '@/server/deps'
-import { loadAiTask } from '@/server/app-config'
-import { appConfig } from '@/db/schema'
+import { loadAppConfig } from '@/server/app-config'
+import { activeSettings } from '@/domain/ai-task-config'
 import { buildExtractionPrompt } from '@/domain/ingredient-extraction'
 import { isUnidade } from '@/domain/vocabulary'
-import {
-  capFromExtractionConfig,
-  DEFAULT_EXTRACTION_CAP_BY_ROLE,
-} from '@/domain/extraction-cap-config'
-import { parseProCaps } from '@/domain/pro-caps'
+import { capFromExtractionConfig } from '@/domain/extraction-cap-config'
 import { reserveExtractionSlot, QuotaExceededError } from '@/server/quota/atomic'
 
 /**
@@ -27,15 +23,18 @@ import { reserveExtractionSlot, QuotaExceededError } from '@/server/quota/atomic
  * `unidade` via `isUnidade` (gate ÚNICO de unidade; desconhecida → null) → 200 `{ items }`. parse_failed → 502.
  *
  * Teto de EXTRAÇÃO por papel (#447), janela 24h deslizante: sem contador, a rota era um loop ilimitado
- * de chamadas ao Claude (Haiku barato, mas acumulável — pode saturar a conta Anthropic e degradar a
+ * de chamadas ao Claude (barato por chamada, mas acumulável — pode saturar a conta Anthropic e degradar a
  * geração paga de todos). Agora RESERVA um slot ATOMICAMENTE (advisory lock + recontagem do ledger
  * `extraction_event` + INSERT na MESMA tx, #446) ANTES de tocar o seam; estourou ⇒ 429 `limite_extracao`
- * (o Claude NÃO é tocado). Cap MAIS FOLGADO que o de geração (extração é barata) e admin-editável em
+ * (o Claude NÃO é tocado). Cap MAIS FOLGADO que o de geração (extração é curta) e admin-editável em
  * `app_config.extraction_cap_by_role`. Reservar ANTES (não persistir depois) fecha a corrida sem esperar
  * a saída — a extração não tem saída durável p/ co-commitar (Extração ≠ Geração).
  */
 
 export const runtime = 'nodejs' // SDK Anthropic exige Node, não Edge.
+// ADR-0034: o admin pode escolher modelo/thinking mais lentos para a Extração; sem isto, o default de 10s
+// do Vercel Hobby mataria a chamada (com o slot da cota já reservado).
+export const maxDuration = 60
 
 // Faixa de comprimento da entrada inteligente (decisão reversível). MIN recusa o que é curto
 // demais para extrair (vazio, uma palavra solta); MAX é um teto de custo de token/armazenamento
@@ -62,13 +61,17 @@ export async function POST(req: Request): Promise<Response> {
   // 429 `limite_extracao` com countdown, e o Claude NÃO é tocado (custo barrado). Só APÓS a validação
   // barata de comprimento (input inválido não consome slot). cap ∞ (admin/papel ilimitado) ⇒ no-op. A
   // config vem da MESMA linha singleton app_config; default em código quando a linha está ausente.
-  const [cfg] = await getDb()
-    .select({ extractionCapByRole: appConfig.extractionCapByRole, proCaps: appConfig.proCaps })
-    .from(appConfig)
-  const capByRole = cfg?.extractionCapByRole ?? DEFAULT_EXTRACTION_CAP_BY_ROLE
-  // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
-  // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O `cap` thread p/ reserveExtractionSlot (gate atômico).
-  const proCaps = parseProCaps(cfg?.proCaps)
+  // Uma leitura só do singleton (ADR-0034): tetos, tabela pro (#466, já re-validada) e o modelo + ajuste
+  // da Extração. Resolvida ANTES da reserva: um erro aqui não consome o slot do Usuário.
+  const cfg = await loadAppConfig(getDb())
+  const capByRole = cfg.extractionCapByRole
+  // Fase 2 (#466): `plan='pro'` + bundle ⇒ teto pro; `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O
+  // `cap` thread p/ reserveExtractionSlot (gate atômico).
+  const proCaps = cfg.proCaps
+  // ADR-0034: modelo + esforço/thinking da Extração escolhidos no admin (default: Sonnet 5, sem thinking).
+  const extraction = cfg.aiTasks.extraction
+  const model = extraction.model
+  const settings = activeSettings('extraction', extraction)
   const cap = capFromExtractionConfig(
     capByRole,
     g.session.user.role,
@@ -88,8 +91,6 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { systemPrompt, userPrompt } = buildExtractionPrompt(body.rawInput)
-  // ADR-0034: modelo + esforço/thinking da Extração escolhidos no admin (default: Sonnet 5, sem thinking).
-  const { model, settings } = await loadAiTask(getDb(), 'extraction')
   const out = await getClaudeClient().extractIngredients({ systemPrompt, userPrompt, model, settings })
 
   if (out.kind === 'parse_failed') {

@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  * dublado: `effort` só p/ famílias selecionáveis (Haiku dá 400 com ele) e um sinal com prazo sempre
  * presente (a rota tem `maxDuration = 60`).
  */
-const { parse } = vi.hoisted(() => ({ parse: vi.fn() }))
+const { parse, stream } = vi.hoisted(() => ({ parse: vi.fn(), stream: vi.fn() }))
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
-    messages = { parse }
+    messages = { parse, stream }
   },
 }))
 
@@ -23,6 +23,7 @@ function input(model: string) {
 
 afterEach(() => {
   parse.mockReset()
+  stream.mockReset()
 })
 
 describe('RealClaudeClient.generateRecipe — parâmetros', () => {
@@ -38,9 +39,14 @@ describe('RealClaudeClient.generateRecipe — parâmetros', () => {
     }
   })
 
-  it('modelo fora das famílias (Haiku legado) não recebe effort', async () => {
+  it('modelo fora das famílias (Haiku legado) não recebe effort — nem com o ajuste default que as rotas passam', async () => {
     parse.mockResolvedValue({ stop_reason: 'refusal' })
     await new RealClaudeClient().generateRecipe(input('claude-haiku-4-5-20251001'))
+    expect(parse.mock.lastCall![0].output_config).not.toHaveProperty('effort')
+    await new RealClaudeClient().generateRecipe({
+      ...input('claude-haiku-4-5-20251001'),
+      settings: { effort: 'medium', thinking: 'default' },
+    })
     expect(parse.mock.lastCall![0].output_config).not.toHaveProperty('effort')
   })
 
@@ -118,5 +124,33 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     expect(params.model).toBe('claude-opus-5-5')
     expect(params.output_config.effort).toBe('medium')
     expect(params).not.toHaveProperty('thinking')
+    // Thinking pode ligar ⇒ o teto ganha folga sobre o base da tradução.
+    expect(params.max_tokens).toBeGreaterThan(4096)
+  })
+
+  it('Conversa: o stream usa o ajuste da Geração (thinking/effort do admin)', async () => {
+    stream.mockReturnValue((async function* () {})())
+    const turn = { systemPrompt: 's', transcript: [{ role: 'user' as const, content: 'oi' }] }
+    const drain = async (it: AsyncIterable<string>) => {
+      const out: string[] = []
+      for await (const t of it) out.push(t)
+      return out
+    }
+    await drain(
+      new RealClaudeClient().streamConversation({
+        ...turn,
+        model: 'claude-sonnet-5',
+        settings: { effort: 'low', thinking: 'off' },
+      }),
+    )
+    let params = stream.mock.lastCall![0]
+    expect(params.thinking).toEqual({ type: 'disabled' })
+    expect(params.output_config).toEqual({ effort: 'low' })
+
+    stream.mockReturnValue((async function* () {})())
+    await drain(new RealClaudeClient().streamConversation({ ...turn, model: 'claude-haiku-4-5-20251001' }))
+    params = stream.mock.lastCall![0]
+    expect(params).not.toHaveProperty('thinking')
+    expect(params).not.toHaveProperty('output_config')
   })
 })

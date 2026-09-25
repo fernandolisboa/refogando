@@ -29,6 +29,8 @@ import { editTranslatedIngredientNames } from '@/server/curate/translation-ingre
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
+// A tradução sob demanda chama o LLM com o modelo/thinking do admin (ADR-0034): folga além dos 10s default.
+export const maxDuration = 60
 
 export async function POST(
   request: Request,

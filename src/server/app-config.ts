@@ -1,6 +1,6 @@
 import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
-import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { DEFAULT_TASK_MODEL, DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
 import {
   activeSettings,
   parseStoredAiTasks,
@@ -70,8 +70,8 @@ import {
  * dec.2 / #112) ou Sonnet 5. Lido no load do módulo, como antes.
  */
 export const TASK_FALLBACK_MODELS = {
-  translation: process.env.TRANSLATION_MODEL ?? 'claude-sonnet-5',
-  extraction: process.env.EXTRACTION_MODEL ?? 'claude-sonnet-5',
+  translation: process.env.TRANSLATION_MODEL ?? DEFAULT_TASK_MODEL,
+  extraction: process.env.EXTRACTION_MODEL ?? DEFAULT_TASK_MODEL,
 }
 
 export type AppConfig = {

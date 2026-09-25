@@ -1157,7 +1157,7 @@ export const ptBR = {
     padraoDoModelo: 'Padrão do modelo',
     thinkingAdaptativo: 'Ligado (adaptativo)',
     thinkingDesligado: 'Desligado',
-    erroConfig: 'Ajuste inválido.',
+    iaTarefaErroConfig: 'Ajuste inválido.',
     erroAjusteNaoSuportado: 'Este modelo não oferece esse ajuste.',
     erroAjusteRecusado: 'A Anthropic recusou esse ajuste para este modelo.',
     papeisTitulo: 'Papéis de usuário',

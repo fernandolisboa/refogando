@@ -862,6 +862,36 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
     expect(probed).toBe(false)
   })
 
+  it('salvamentos concorrentes de tarefas diferentes não se sobrescrevem (lock da linha)', async () => {
+    // A chamada de teste demora: os dois PUTs leem o estado antigo ao mesmo tempo.
+    setModelProbe({ probe: () => new Promise((r) => setTimeout(() => r({ kind: 'ok' }), 50)) })
+    const headers = await admin()
+    const [a, b] = await Promise.all([
+      put({ aiTasks: { translation: { model: 'claude-opus-5-5', settings: HIGH } } }, headers),
+      put({ aiTasks: { extraction: { model: 'claude-fable-5-1', settings: HIGH } } }, headers),
+    ])
+    expect([a.status, b.status]).toEqual([200, 200])
+    const cfg = await loadAppConfig(getDb())
+    expect(cfg.aiTasks.translation.model).toBe('claude-opus-5-5')
+    expect(cfg.aiTasks.extraction.model).toBe('claude-fable-5-1')
+  })
+
+  it('`defaultModel` legado passa pelos mesmos portões: chamada de teste com o ajuste salvo do modelo', async () => {
+    const headers = await admin()
+    await put({ aiTasks: { generation: { model: 'claude-sonnet-5', settings: OFF } } }, headers)
+    const calls: unknown[] = []
+    setModelProbe({
+      probe: async (model, settings) => {
+        calls.push({ model, settings })
+        return { kind: 'rejected', message: 'nope' }
+      },
+    })
+    const res = await put({ defaultModel: 'claude-sonnet-5' }, headers)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'ajuste_recusado', task: 'generation' })
+    expect(calls).toEqual([{ model: 'claude-sonnet-5', settings: OFF }])
+  })
+
   it('tarefa desconhecida, corpo vazio ou modelo fora da lista ⇒ 400', async () => {
     const headers = await admin()
     const cases: Array<[unknown, string]> = [
