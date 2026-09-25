@@ -19,9 +19,10 @@
  *   não da chrome — nunca travar a chrome num erro de get-session);
  * - anônimo: Link "Entrar" → /sign-in;
  * - autenticado (#267): avatar + nome viram o GATILHO de um menu dropdown (Radix) com os atalhos
- *   da conta — Ver meu perfil público (`/u/<handle>`), Editar perfil (`/me/profile`), Painel
- *   (`/admin`, só curador+) e Sair (signOut + refetch). "Painel" e "Sair" deixaram a nav/cluster
- *   e passaram a morar AQUI; por isso o gating de papel (#125/#51, fail-closed) também vive aqui.
+ *   da conta — Ver meu perfil público (`/u/<handle>`), Salvos (`/me/saved`, #468), Editar perfil
+ *   (`/me/profile`), Painel (`/admin`, só curador+) e Sair (signOut + refetch). "Painel" e "Sair"
+ *   deixaram a nav/cluster e passaram a morar AQUI; por isso o gating de papel (#125/#51,
+ *   fail-closed) também vive aqui.
  */
 import { useEffect, useRef } from 'react'
 import Link from 'next/link'
@@ -148,6 +149,11 @@ export function AuthSlot() {
             <Link href={`/u/${handle}`}>{messages.nav.verPerfilPublico}</Link>
           </DropdownMenuItem>
         )}
+        {/* #468: "Salvos" também no menu da conta — é conteúdo PESSOAL do dono, então mora junto do
+            perfil (além da nav logada do header). */}
+        <DropdownMenuItem asChild>
+          <Link href="/me/saved">{messages.colecoes.titulo}</Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/me/profile">{messages.nav.editarPerfil}</Link>
         </DropdownMenuItem>
