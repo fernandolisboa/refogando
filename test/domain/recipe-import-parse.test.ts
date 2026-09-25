@@ -143,6 +143,7 @@ describe('parseImportedRecipe (#165)', () => {
           '2 constructor ovos',
           '1 xícara de chá verde',
           '1 xícara de chá de açúcar',
+          '1 colher de chá fermento',
           '2 a gosto sal',
         ],
       }),
@@ -157,6 +158,7 @@ describe('parseImportedRecipe (#165)', () => {
       { rawText: 'constructor ovos', quantidade: '2', unidade: null },
       { rawText: 'chá verde', quantidade: '1', unidade: 'xicara' },
       { rawText: 'açúcar', quantidade: '1', unidade: 'xicara' },
+      { rawText: 'fermento', quantidade: '1', unidade: 'colher_de_cha' },
       { rawText: 'a gosto sal', quantidade: '2', unidade: null },
     ])
   })

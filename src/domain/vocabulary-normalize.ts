@@ -196,8 +196,10 @@ export function parseMedida(raw: string): Medida {
   if (inicio < 0) return semNumero(t)
   // Antes do número só vale um qualificador conhecido ("cerca de 2"); outro texto ("um e 1/2",
   // "-2") mudaria o valor. Sinal negativo não é quantidade de ingrediente.
-  const prefixo = s.slice(0, inicio).trim()
+  const prefixo = s.slice(0, inicio).trim().replace(/\s+/g, ' ')
   if (prefixo !== '' && !QUALIFICADOR.test(prefixo)) return semNumero(t)
+  // "aprox.5": o ponto é da abreviação, não decimal.
+  if (s[inicio] === '.' && /\p{L}/u.test(s[inicio - 1] ?? '')) return semNumero(t)
   const m = NUMERO_INICIAL.exec(s.slice(inicio))
   if (!m) return semNumero(t)
 
@@ -220,7 +222,8 @@ export function parseMedida(raw: string): Medida {
   const resto = s.slice(inicio + m[0].length).trim()
   const faixa = resto === '' ? null : FAIXA_CAUDA.exec(resto)
   const unidade = resto === '' ? null : faixa ? (faixa[1] ? normalizeUnidade(faixa[1]) : null) : normalizeUnidade(resto)
-  if (resto !== '' && faixa === null && unidade === null) return semNumero(t)
+  // Texto que não é unidade, também na cauda da faixa ("2-3 mil", "2 ou 3 dúzias"): null.
+  if (resto !== '' && unidade === null && (faixa === null || faixa[1] !== undefined)) return semNumero(t)
   // a_gosto/q_b não combinam com um número ("2 a gosto"): a medida é ambígua.
   if (unidade === 'a_gosto' || unidade === 'q_b') return semNumero(t)
   const perdido = [prefixo, faixa ? resto : ''].filter((x) => x !== '').join(' … ')
