@@ -126,6 +126,7 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     expect(params).not.toHaveProperty('thinking')
     // Thinking pode ligar ⇒ o teto ganha folga sobre o base da tradução.
     expect(params.max_tokens).toBeGreaterThan(4096)
+    expect(parse.mock.lastCall![1].signal).toBeInstanceOf(AbortSignal)
   })
 
   it('Conversa: o stream usa o ajuste da Geração (thinking/effort do admin)', async () => {

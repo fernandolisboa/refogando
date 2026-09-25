@@ -12,6 +12,7 @@ import {
 } from '@/domain/ai-task-config'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
+import { selectableFamilyOf } from '@/domain/claude-models'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { parseExtractionCapByRole, type ExtractionCapByRole } from '@/domain/extraction-cap-config'
@@ -120,10 +121,11 @@ export async function PUT(req: Request): Promise<Response> {
   // ajuste já salvo para aquele modelo (ou o default): passa pelos MESMOS portões (modelo oferecível,
   // capacidades, chamada de teste). `aiTasks.generation` no mesmo corpo vence.
   const aiUpdates = new Map<AiTask, unknown>()
+  let legacyGenerationModel: string | null = null
   if (body.defaultModel !== undefined) {
     const m = body.defaultModel
     if (typeof m !== 'string') return Response.json({ error: 'modelo_invalido' }, { status: 400 })
-    aiUpdates.set('generation', { model: m, settings: null })
+    legacyGenerationModel = m
   }
   if (body.aiTasks !== undefined) {
     const entries = typeof body.aiTasks === 'object' && body.aiTasks !== null ? Object.entries(body.aiTasks) : []
@@ -132,41 +134,6 @@ export async function PUT(req: Request): Promise<Response> {
     }
     for (const [task, raw] of entries) aiUpdates.set(task as AiTask, raw)
   }
-  // Validado ANTES da transação de escrita (a chamada de teste leva segundos; não segura lock nela).
-  const aiValidated: Array<{ task: AiTask; model: string; settings: ModelSettings }> = []
-  if (aiUpdates.size > 0) {
-    const cfg = await loadAppConfig(getDb())
-    const tasks = [...aiUpdates.entries()].map(([task, raw]) => {
-      // `defaultModel` legado: completa o ajuste com o salvo para o modelo (ou o default da tarefa).
-      const r = raw as { model?: unknown; settings?: unknown } | null
-      if (task === 'generation' && r && r.settings === null && typeof r.model === 'string') {
-        const state = { ...cfg.aiTasks.generation, model: r.model }
-        return [task, { model: r.model, settings: activeSettings(task, state) }] as const
-      }
-      return [task, raw] as const
-    })
-    // Tarefas validadas em paralelo: cada chamada de teste pode levar segundos.
-    const results = await Promise.all(
-      tasks.map(([task, raw]) =>
-        validateAiTaskUpdate(raw, cfg.aiTasks[task].model, {
-          catalog: getModelCatalog(),
-          probe: getModelProbe(),
-        }),
-      ),
-    )
-    for (const [i, [task]] of tasks.entries()) {
-      const res = results[i]
-      if (!res.ok) {
-        return Response.json(
-          { error: res.error, task, ...('message' in res ? { message: res.message } : {}) },
-          { status: 400 },
-        )
-      }
-      aiValidated.push({ task, model: res.model, settings: res.settings })
-      if (task === 'generation') set.defaultModel = res.model
-    }
-  }
-
   if (body.imageGen !== undefined) {
     const parsed = parseImageGenConfig(body.imageGen)
     if (!parsed.ok) return Response.json({ error: 'config_invalida' }, { status: 400 })
@@ -273,6 +240,44 @@ export async function PUT(req: Request): Promise<Response> {
       const parsed = parseProCaps(body.proCaps)
       if (parsed === null) return Response.json({ error: 'config_invalida' }, { status: 400 })
       set.proCaps = parsed
+    }
+  }
+
+  // Validado DEPOIS das checagens baratas dos outros eixos (a chamada de teste custa e leva segundos) e
+  // ANTES da transação de escrita (não segura lock durante ela).
+  const aiValidated: Array<{ task: AiTask; model: string; settings: ModelSettings }> = []
+  if (aiUpdates.size > 0 || legacyGenerationModel !== null) {
+    const cfg = await loadAppConfig(getDb())
+    const tasks: Array<readonly [AiTask, unknown]> = [...aiUpdates.entries()]
+    if (legacyGenerationModel !== null && !aiUpdates.has('generation')) {
+      // `defaultModel` legado: o ajuste salvo para o modelo (ou o default da tarefa), sem `effort` fora
+      // de Opus/Sonnet/Fable — o mesmo que a Geração manda em runtime (ex.: re-salvar um Haiku legado).
+      const s = activeSettings('generation', { ...cfg.aiTasks.generation, model: legacyGenerationModel })
+      const settings = selectableFamilyOf(legacyGenerationModel) ? s : { ...s, effort: null }
+      tasks.push(['generation', { model: legacyGenerationModel, settings }])
+    }
+    // Tarefas validadas em paralelo: cada chamada de teste pode levar segundos.
+    const results = await Promise.all(
+      tasks.map(([task, raw]) =>
+        validateAiTaskUpdate(raw, cfg.aiTasks[task].model, {
+          catalog: getModelCatalog(),
+          probe: getModelProbe(),
+        }),
+      ),
+    )
+    for (const [i, [task]] of tasks.entries()) {
+      const res = results[i]
+      if (!res.ok) {
+        // Caminho legado: ID mal formado segue sendo `modelo_invalido`, como antes.
+        const legacy = task === 'generation' && !aiUpdates.has('generation')
+        const error = legacy && res.error === 'config_invalida' ? 'modelo_invalido' : res.error
+        return Response.json(
+          { error, task, ...('message' in res ? { message: res.message } : {}) },
+          { status: 400 },
+        )
+      }
+      aiValidated.push({ task, model: res.model, settings: res.settings })
+      if (task === 'generation') set.defaultModel = res.model
     }
   }
 

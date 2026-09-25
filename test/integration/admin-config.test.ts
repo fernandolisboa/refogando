@@ -892,6 +892,35 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
     expect(calls).toEqual([{ model: 'claude-sonnet-5', settings: OFF }])
   })
 
+  it('`defaultModel` legado num modelo fora das famílias (Haiku em uso) testa SEM effort, como em runtime', async () => {
+    await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-haiku-4-5-20251001' })
+    const calls: unknown[] = []
+    setModelProbe({
+      probe: async (model, settings) => {
+        calls.push({ model, settings })
+        return { kind: 'ok' }
+      },
+    })
+    expect((await put({ defaultModel: 'claude-haiku-4-5-20251001' }, await admin())).status).toBe(200)
+    expect(calls).toEqual([{ model: 'claude-haiku-4-5-20251001', settings: { effort: null, thinking: 'default' } }])
+  })
+
+  it('checagens baratas de outros eixos falham ANTES da chamada de teste; settings null não é o caminho legado', async () => {
+    let probed = false
+    setModelProbe({
+      probe: async () => {
+        probed = true
+        return { kind: 'ok' }
+      },
+    })
+    const headers = await admin()
+    const bad = await put({ aiTasks: { extraction: { model: 'claude-opus-5-5', settings: OFF } }, imageGen: 'x' }, headers)
+    expect(bad.status).toBe(400)
+    expect(probed).toBe(false)
+    const nullSettings = await put({ aiTasks: { generation: { model: 'claude-sonnet-5', settings: null } } }, headers)
+    expect((await nullSettings.json()).error).toBe('config_invalida')
+  })
+
   it('tarefa desconhecida, corpo vazio ou modelo fora da lista ⇒ 400', async () => {
     const headers = await admin()
     const cases: Array<[unknown, string]> = [

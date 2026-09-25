@@ -58,6 +58,8 @@ export interface Translator {
  */
 export type TranslationTaskLoader = () => Promise<{ model: string; settings: ModelSettings }>
 
+const TRANSLATION_DEADLINE_MS = 50_000
+
 const DEFAULT_TRANSLATION_TASK: TranslationTaskLoader = async () => ({
   model: TASK_FALLBACK_MODELS.translation,
   settings: TASK_DEFAULT_SETTINGS.translation,
@@ -145,12 +147,15 @@ export class RealTranslator implements Translator {
       ...(thinking ? { thinking } : {}),
     }
 
-    let message = await parseTranslation(() => client.messages.parse(params))
+    // Prazo da chamada + reparo, abaixo do `maxDuration = 60` da rota: com o modelo/thinking do admin
+    // (ADR-0034) a tradução pode demorar; estourar vira erro limpo (a Receita cai no original) em vez de 504.
+    const signal = AbortSignal.timeout(TRANSLATION_DEADLINE_MS)
+    let message = await parseTranslation(() => client.messages.parse(params, { signal }))
     assertUsableStop(message.stop_reason)
 
     // Reparo mínimo: parser sem saída ⇒ re-chama UMA vez. Ainda null ⇒ lança.
     if (message.parsed_output === null) {
-      message = await parseTranslation(() => client.messages.parse(params))
+      message = await parseTranslation(() => client.messages.parse(params, { signal }))
       assertUsableStop(message.stop_reason)
       if (message.parsed_output === null) throw new UnusableTranslationError('tradução sem saída estruturada')
     }
