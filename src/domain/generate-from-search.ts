@@ -33,9 +33,10 @@ export function createFromSearchHref(term: string): string {
 /**
  * O destino também vira `returnTo` do login, que `safeInternalPath` recusa acima de 512 caracteres. Corta
  * o termo (por code point, sem partir acento/emoji) até caber, numa passada só (termo colado pode ser
- * enorme e isto roda a cada render).
+ * enorme e isto roda a cada render). Exportado: o convite "Entrar para buscar na web" monta o mesmo
+ * tipo de `returnTo` (`/<locale>?q=<termo>`).
  */
-function fitEncoded(t: string): string {
+export function fitEncoded(t: string): string {
   let size = 0
   let out = ''
   for (const ch of t) {

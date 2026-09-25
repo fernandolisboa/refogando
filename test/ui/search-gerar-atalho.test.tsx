@@ -215,6 +215,30 @@ describe('SearchExperience — sugerir gerar a partir da busca', () => {
     expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
   })
 
+  it('web desligada ⇒ visitante também não vê convite de entrar para a web', async () => {
+    sessionState = anon()
+    stubFetchOk(VAZIO)
+    const user = userEvent.setup()
+    renderSearch({ webAvailable: false })
+
+    await user.type(screen.getByRole('searchbox'), 'feijao tropeiro')
+    await screen.findByText(M.semResultado)
+    expect(screen.queryByText(M.vazioWebTitulo)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: M.webEntrarBotao })).not.toBeInTheDocument()
+  })
+
+  it('web desligada ⇒ visitante sem convite de entrar ao fim de resultados suficientes', async () => {
+    sessionState = anon()
+    stubFetchOk(SUFICIENTE)
+    const user = userEvent.setup()
+    renderSearch({ webAvailable: false })
+
+    await user.type(screen.getByRole('searchbox'), 'feijoada')
+    await screen.findByRole('link', { name: atalho('feijoada') })
+    expect(screen.queryByRole('link', { name: M.webEntrarCta })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
+  })
+
   it('web desligada ⇒ acervo raso NÃO dispara a descoberta automática', async () => {
     sessionState = authed()
     const fetchMock = stubFetchOk(COM_RESULTADO)

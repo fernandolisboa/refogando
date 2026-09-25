@@ -110,6 +110,8 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toBeInTheDocument()
     // Visitante NÃO vê "Minhas criações" nem "Painel".
     expect(within(dialog).queryByText(ptBR.minhasCriacoes.titulo)).not.toBeInTheDocument()
+    // #468: Visitante também não vê "Salvos" (não tem saves).
+    expect(within(dialog).queryByText(ptBR.colecoes.titulo)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(ptBR.nav.painel)).not.toBeInTheDocument()
   })
 
@@ -123,6 +125,11 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(
       within(dialog).getByRole('link', { name: ptBR.minhasCriacoes.titulo }),
     ).toBeInTheDocument()
+    // #468: "Salvos" (só-logado) aparece no drawer, levando a /me/saved.
+    expect(within(dialog).getByRole('link', { name: ptBR.colecoes.titulo })).toHaveAttribute(
+      'href',
+      '/me/saved',
+    )
     // #277: a aba "Seguindo" (só-logada) aparece no drawer do logado.
     expect(within(dialog).getByRole('link', { name: ptBR.nav.seguindo })).toBeInTheDocument()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
