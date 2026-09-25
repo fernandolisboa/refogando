@@ -84,6 +84,12 @@ function renderSearch() {
   )
 }
 
+/** Monta com a URL já carregando `?q=` (link compartilhado / `returnTo` do login / reload). */
+function renderSearchAt(url: string) {
+  window.history.replaceState(null, '', url)
+  return renderSearch()
+}
+
 const WEB_LINKS: WebLink[] = [
   { title: 'Feijoada Completa', url: 'https://tudogostoso.com.br/feijoada', sourceName: 'TudoGostoso' },
   { title: 'Feijoada à Brasileira', url: 'https://panelinha.com.br/feijoada', sourceName: 'Panelinha' },
@@ -200,6 +206,7 @@ function stubFetchRoutingWebAbortable(search: SearchResponse) {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  window.history.replaceState(null, '', '/')
 })
 
 describe('SearchExperience — descoberta na web (#164)', () => {
@@ -740,5 +747,48 @@ describe('SearchExperience — visitante com a web ligada', () => {
     await user.type(screen.getByRole('searchbox'), 'ramen')
     await screen.findByRole('button', { name: M.buscar })
     expect(screen.queryByRole('link', { name: M.webEntrarBotao })).not.toBeInTheDocument()
+  })
+
+  it('V5 — termo ENORME: o returnTo cabe nos 512 do safeInternalPath (senão o login cairia em /)', async () => {
+    sessionState = anon()
+    stubFetchRouting(emptyLocal, WEB_LINKS)
+    renderSearchAt(`/?q=${'ç'.repeat(400)}`)
+
+    const link = await screen.findByRole('link', { name: M.webEntrarBotao })
+    const href = link.getAttribute('href')!
+    const back = new URL(href, 'https://x').searchParams.get('returnTo')!
+    expect(back.length).toBeLessThanOrEqual(512)
+    expect(back.startsWith('/?q=ç')).toBe(false) // codificado, não cru
+    expect(decodeURIComponent(back.replace(/\+/g, ' ')).startsWith('/?q=ççç')).toBe(true)
+  })
+})
+
+describe('SearchExperience — termo semeado de ?q= não auto-dispara a web', () => {
+  it('S1 — LOGADO + acervo RASO vindo de link: sem /api/discovery/web; o CTA manual aparece no lugar', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
+    renderSearchAt('/?q=feijoada')
+
+    await screen.findByText('Receita 0')
+    const cta = await screen.findByRole('button', { name: M.webManualCta })
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+
+    // O CTA é a ação explícita: clicar busca a web normalmente.
+    await userEvent.setup().click(cta)
+    await screen.findByText('Feijoada Completa')
+    expect(discoveryCalls(fetchMock).length).toBe(1)
+  })
+
+  it('S2 — depois da busca semeada, digitar volta ao auto-disparo de sempre (#164)', async () => {
+    sessionState = authed()
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
+    const user = userEvent.setup()
+    renderSearchAt('/?q=feijoada')
+
+    await screen.findByRole('button', { name: M.webManualCta })
+    await user.type(screen.getByRole('searchbox'), ' preta')
+    await screen.findByText('Feijoada Completa')
+    expect(discoveryCalls(fetchMock).length).toBe(1)
+    expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
   })
 })

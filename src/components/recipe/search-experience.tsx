@@ -29,7 +29,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
-import { createFromSearchHref, searchTermReadiness } from '@/domain/generate-from-search'
+import { createFromSearchHref, fitEncoded, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
@@ -144,6 +144,10 @@ export function SearchExperience({
   // `done` ⇒ a busca manual concluiu. Quando `done` E `webLinks` segue vazio, mostramos o aviso neutro
   // (degradação graciosa, sem provedor/allowlist). Reseta a `idle` a cada nova busca (ver `doSearch`).
   const [webManualState, setWebManualState] = useState<'idle' | 'loading' | 'done'>('idle')
+  // Termo semeado de `?q=` na montagem (ver o efeito de semeadura): a 1ª busca com ele NÃO auto-dispara
+  // a web; `webAutoHeld` troca o auto pelo CTA manual nesse caso raso. Ambos zeram na busca seguinte.
+  const seededTermRef = useRef<string | null>(null)
+  const [webAutoHeld, setWebAutoHeld] = useState(false)
 
   // #279: cluster de COZINHEIROS (ADR-0024) — busca PARALELA por nome/@handle, FORA do ranking de
   // receitas. Flutua acima das receitas quando casa alguém. Fetch independente de /api/search/cooks.
@@ -339,8 +343,18 @@ export function SearchExperience({
       // localCount 0, perderia a ponte web — regressão vs o `localCount < 3` de antes).
       const hasAny = localCount > 0 || (body.sugestoes?.length ?? 0) > 0
       const term = q.trim()
-      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+      // Termo semeado de `?q=` (link/returnTo, sem gesto da pessoa): a web NÃO auto-dispara — um link
+      // forjado não pode gastar a cota diária da Brave (global) com a sessão de quem clicou. Em vez do
+      // auto, o CTA manual aparece (`webAutoHeld`). Consumido na 1ª busca concluída; depois, tudo como antes.
+      const heldForSeed = seededTermRef.current !== null && seededTermRef.current === term
+      seededTermRef.current = null
+      setWebAutoHeld(false)
+      if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny && !heldForSeed) {
         void discoverWeb(term)
+      } else if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny) {
+        webAbortRef.current?.abort()
+        setWebLinks([])
+        setWebAutoHeld(true)
       } else {
         webAbortRef.current?.abort()
         setWebLinks([])
@@ -389,6 +403,7 @@ export function SearchExperience({
     const inicial = new URLSearchParams(window.location.search).get('q')?.trim() ?? ''
     if (inicial === '') return
     skipReflectRef.current = true
+    seededTermRef.current = inicial
     setQ(inicial)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem: depois o termo vive no provider e a URL o segue
   }, [])
@@ -490,7 +505,7 @@ export function SearchExperience({
   const webSignInHref =
     !authed && !session.isPending
       ? `/sign-in?returnTo=${encodeURIComponent(
-          `${pathname ?? '/'}?${new URLSearchParams({ q: q.trim() }).toString()}`,
+          `${pathname ?? '/'}?${new URLSearchParams({ q: fitEncoded(q.trim()).trim() }).toString()}`,
         )}`
       : null
 
@@ -856,7 +871,7 @@ export function SearchExperience({
         {webAvailable &&
           status === 'done' &&
           q.trim() !== '' &&
-          localCount >= SHALLOW_THRESHOLD &&
+          (localCount >= SHALLOW_THRESHOLD || webAutoHeld) &&
           webLinks.length === 0 && (
             <WebManualCta
               state={webManualState}
