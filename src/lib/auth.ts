@@ -117,6 +117,17 @@ async function sendAccountEmail(kind: 'reset' | 'verify' | 'finish', mail: MailI
   if (!sent) console.warn(`[auth] e-mail de conta não enviado (${kind}): confira BREVO_API_KEY e o remetente no Brevo`)
 }
 
+// #470 — a cura do handle de espera roda em hook `after` de sessão/usuário; o better-auth re-executa o hook
+// que rejeita e propaga o 2º erro pro endpoint (500 no login/confirmação). O handle nunca derruba entrar ou
+// confirmar: falha vira um aviso (sem PII) e a próxima sessão tenta de novo.
+async function healPendingHandle(run: () => Promise<unknown>): Promise<void> {
+  try {
+    await run()
+  } catch (err) {
+    console.warn(`[auth] cura do handle de espera falhou: ${err instanceof Error ? err.name : 'erro'}`)
+  }
+}
+
 /**
  * #470 — idioma do e-mail de confirmação: `users.locale` (preferência salva) e, sem ela (conta recém-criada
  * ainda não tem), o cookie `locale` / Accept-Language do request que disparou o envio.
@@ -453,7 +464,7 @@ function buildAuth() {
           // Sessão nova de conta com handle de espera: com o gate ligado só cura se confirmada (conta não
           // confirmada nem entra, mas por garantia); desligado, a conta é normal e cura já.
           after: async (session) => {
-            await assignNameHandle(session.userId, { requireVerified: verifyEmail })
+            await healPendingHandle(() => assignNameHandle(session.userId, { requireVerified: verifyEmail }))
           },
         },
       },
@@ -461,10 +472,11 @@ function buildAuth() {
         update: {
           // Email confirmado (link, admin…) ⇒ cura. Sem `handle` no retorno, `assignNameHandle` relê a linha.
           after: async (user) => {
-            const u = user as { id: string; emailVerified?: boolean; handle?: string | null }
-            if (!u.emailVerified) return
+            // `user` vem `undefined` quando o UPDATE não casou linha (conta apagada no meio do caminho).
+            const u = user as { id: string; emailVerified?: boolean; handle?: string | null } | undefined
+            if (!u?.emailVerified) return
             if (u.handle !== undefined && !isPendingHandle(u.handle)) return
-            await assignNameHandle(u.id)
+            await healPendingHandle(() => assignNameHandle(u.id))
           },
         },
         create: {
