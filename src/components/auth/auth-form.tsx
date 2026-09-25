@@ -18,8 +18,10 @@
  * Aviso de restrição, ADR-0004). Texto sempre traduzido por CHAVE via `mapAuthError`
  * (`auth-errors.ts`, casa `error.code` do Better Auth), nunca a mensagem crua do servidor.
  *
- * Confirmação de email (#470): criar conta NÃO loga — o sucesso troca o formulário pela tela "confira seu
- * email" (com reenvio), que é a MESMA exista ou não conta com o email (o servidor responde igual). Entrar com
+ * Confirmação de email (#470): com ela ligada no servidor (só quando o e-mail de conta está configurado), criar
+ * conta NÃO loga — o sucesso sem `token` troca o formulário pela tela "confira seu email" (com reenvio), que é a
+ * MESMA exista ou não conta com o email (o servidor responde igual). Com `token` (confirmação desligada), entra
+ * direto como antes. Entrar com
  * conta não confirmada dá 403 EMAIL_NOT_VERIFIED: mensagem própria + reenvio. O link do e-mail loga e leva ao
  * `returnTo`.
  */
@@ -88,25 +90,28 @@ export function AuthForm({
       const onError = (ctx: AuthErrorCtx) => {
         setErrorKey(mapAuthError(ctx.error))
       }
+      // Navega só no onSuccess (depois do ciclo completo) — evita flash de "Entrar"
+      // pós-login. refresh() revalida a sessão da chrome; push('/') leva pra Busca (home).
+      const enter = () => {
+        router.refresh()
+        router.push(dest)
+      }
       if (isSignUp) {
-        // #470: sem sessão no cadastro. `callbackURL` = destino pós-confirmação (o link do e-mail).
+        // #470: com a confirmação de email ligada no servidor (e-mail de conta configurado), o cadastro NÃO
+        // loga (`token: null`) → tela "confira seu email". Desligada, a resposta traz o token da sessão já
+        // criada → entra direto, como antes. `callbackURL` = destino pós-confirmação (o link do e-mail).
         await signUp.email(
           { name, email, password, callbackURL: dest },
-          { onSuccess: () => setSentTo(email.trim()), onError },
-        )
-      } else {
-        // Navega só no onSuccess (depois do ciclo completo) — evita flash de "Entrar"
-        // pós-login. refresh() revalida a sessão da chrome; push('/') leva pra Busca (home).
-        await signIn.email(
-          { email, password },
           {
-            onSuccess: () => {
-              router.refresh()
-              router.push(dest)
+            onSuccess: (ctx: { data?: { token?: string | null } | null }) => {
+              if (ctx.data?.token) enter()
+              else setSentTo(email.trim())
             },
             onError,
           },
         )
+      } else {
+        await signIn.email({ email, password }, { onSuccess: enter, onError })
       }
     } catch {
       // Rejeição sem ciclo onError (ex.: falha de rede antes do fetch).

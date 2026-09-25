@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { GET as authGet, POST as authPost } from '@/app/api/auth/[...all]/route'
-import { getAuth } from '@/lib/auth'
+import { getAuth, resetAuthForTests } from '@/lib/auth'
 import { getDb, setMailer } from '@/server/deps'
 import { FakeMailer } from '@/server/mail/mailer'
 import { session, users } from '@/db/schema'
@@ -15,6 +15,7 @@ import { seedUser } from '../helpers/users'
  * vs 200). Depois, o fluxo: conta nasce não confirmada e sem sessão; o e-mail sai no idioma do request; login antes
  * de confirmar é 403 EMAIL_NOT_VERIFIED (e reenvia); o link confirma, loga e volta pela nossa tela `/verify-email`;
  * reenvio neutro com teto por conta; e a migração 0067 marca as contas antigas como confirmadas.
+ * Tudo isto com o e-mail de conta configurado — sem ele, ver email-verification-off.test.ts.
  */
 
 const PASSWORD = 'senha-segura-123'
@@ -24,8 +25,11 @@ const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 let mailer: FakeMailer
 
 beforeEach(() => {
+  // E-mail de conta CONFIGURADO (default do FakeMailer) ⇒ o gate de `buildAuth` liga a confirmação. A instância
+  // é refeita para ler o gate com ESTE mailer (ver email-verification-off.test.ts para o gate desligado).
   mailer = new FakeMailer()
   setMailer(mailer)
+  resetAuthForTests()
 })
 
 function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {

@@ -146,7 +146,40 @@ describe('RealBrevoMailer.sendAccountEmail (#469) — remetente de conta', () =>
   })
 })
 
+describe('RealBrevoMailer.canSendAccountEmail (#470) — liga a confirmação de email', () => {
+  it.each([
+    ['chave + AUTH_MAIL_FROM', KEY, 'nao-responda@refogando.example', '', true],
+    ['chave + só DSAR_MAIL_FROM (fallback)', KEY, '', FROM, true],
+    ['sem chave', '', 'nao-responda@refogando.example', FROM, false],
+    ['chave sem nenhum remetente (env vazia)', KEY, '', '', false],
+  ])('%s → %s', (_caso, key, authFrom, dsarFrom, expected) => {
+    vi.stubEnv('BREVO_API_KEY', key)
+    vi.stubEnv('AUTH_MAIL_FROM', authFrom)
+    vi.stubEnv('DSAR_MAIL_FROM', dsarFrom)
+    const impl = mockFetch({ ok: true })
+    expect(mailer.canSendAccountEmail()).toBe(expected)
+    expect(impl).not.toHaveBeenCalled()
+  })
+
+  it('lê a env na CHAMADA (preguiçoso), não na construção', () => {
+    vi.stubEnv('BREVO_API_KEY', '')
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const m = new RealBrevoMailer()
+    expect(m.canSendAccountEmail()).toBe(false)
+    vi.stubEnv('BREVO_API_KEY', KEY)
+    expect(m.canSendAccountEmail()).toBe(true)
+  })
+})
+
 describe('FakeMailer (#413) — dublê de teste', () => {
+  it('canSendAccountEmail: true por padrão, configurável (#470)', () => {
+    expect(new FakeMailer().canSendAccountEmail()).toBe(true)
+    const off = new FakeMailer({ accountEmailConfigured: false })
+    expect(off.canSendAccountEmail()).toBe(false)
+    off.accountEmailConfigured = true
+    expect(off.canSendAccountEmail()).toBe(true)
+  })
+
   it('guarda os enviados e retorna { sent:true }', async () => {
     const fake = new FakeMailer()
     expect(await fake.sendDpoAlert(input)).toEqual({ sent: true })

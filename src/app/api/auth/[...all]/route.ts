@@ -15,7 +15,16 @@ import { getAuth } from '@/lib/auth'
  * request. `handlers()` resolve `getAuth()` só na 1ª chamada (deferimento preservado).
  */
 let _handlers: ReturnType<typeof toNextJsHandler> | null = null
-const handlers = () => (_handlers ??= toNextJsHandler(getAuth()))
+let _handlersAuth: ReturnType<typeof getAuth> | null = null
+// Reconstruído só se a instância mudar (`resetAuthForTests`, #470); em produção a instância é uma só.
+function handlers(): ReturnType<typeof toNextJsHandler> {
+  const auth = getAuth()
+  if (!_handlers || _handlersAuth !== auth) {
+    _handlers = toNextJsHandler(auth)
+    _handlersAuth = auth
+  }
+  return _handlers
+}
 
 export async function GET(req: Request): Promise<Response> {
   return handlers().GET(req)

@@ -155,6 +155,13 @@ function buildAuth() {
   const googleId = process.env.GOOGLE_CLIENT_ID
   const googleSecret = process.env.GOOGLE_CLIENT_SECRET
   const hasGoogle = isGoogleConfigured()
+  // #470 — GATE da confirmação de email: só é EXIGIDA quando o e-mail de conta pode de fato sair (Brevo com
+  // chave + remetente, `canSendAccountEmail`). Sem canal de e-mail, exigir a confirmação trancaria TODA conta
+  // nova de email+senha (o link nunca chegaria) — então o cadastro segue como antes de #470: loga direto e
+  // responde 200 com token. Preço consciente: enquanto o Brevo não está configurado, o `/sign-up/email` ainda
+  // enumera contas (422 para email existente); a correção liga sozinha quando a env entra (novo deploy — a
+  // instância é memoizada, então o gate é lido uma vez por instância, aqui).
+  const verifyEmail = getMailer().canSendAccountEmail()
   return betterAuth({
     baseURL: process.env.BETTER_AUTH_URL, // resolvido em runtime; opcional em dev
     secret: authSecret,
@@ -240,14 +247,15 @@ function buildAuth() {
     },
     emailAndPassword: {
       enabled: true,
-      // #470 (anti-enumeração no cadastro): sem conta confirmada não se entra. Isso também liga a resposta
-      // GENÉRICA do Better Auth no `/sign-up/email` — email já cadastrado responde 200 igual a um novo (sem
-      // 422 USER_ALREADY_EXISTS), sem criar nada nem mexer na conta existente. O cadastro NÃO loga mais: a
-      // sessão nasce ao abrir o link do e-mail (`autoSignInAfterVerification`). Contas anteriores a esta
-      // mudança foram marcadas confirmadas pela migração 0067.
-      requireEmailVerification: true,
+      // #470 (anti-enumeração no cadastro), SÓ com e-mail de conta configurado (`verifyEmail`, gate acima): sem
+      // conta confirmada não se entra. Isso também liga a resposta GENÉRICA do Better Auth no `/sign-up/email` —
+      // email já cadastrado responde 200 igual a um novo (sem 422 USER_ALREADY_EXISTS), sem criar nada nem mexer
+      // na conta existente. O cadastro NÃO loga: a sessão nasce ao abrir o link do e-mail
+      // (`autoSignInAfterVerification`). Contas anteriores a #470 foram marcadas confirmadas pela migração 0067.
+      requireEmailVerification: verifyEmail,
       // Forma do `user` sintético (email existente) = a do real: id uuid como o do Postgres. Os demais campos
-      // são cortados pelo hook `after` do cadastro (SIGNUP_USER_FIELDS).
+      // são cortados pelo hook `after` do cadastro (SIGNUP_USER_FIELDS). Inerte com o gate desligado (a lib só
+      // monta o sintético na resposta genérica).
       customSyntheticUser: ({ coreFields }) => ({ ...coreFields, id: crypto.randomUUID() }),
       // Esqueci minha senha (#469). O Better Auth gera o token (tabela `verification`, uso único) e a rota
       // GET `/reset-password/:token` que redireciona pra nossa tela com `?token=`. Aqui só mandamos o link.
@@ -279,7 +287,9 @@ function buildAuth() {
     // 403 EMAIL_NOT_VERIFIED) e no reenvio público (`/send-verification-email`, que responde igual exista ou
     // não a conta). Abrir o link confirma e JÁ LOGA (`autoSignInAfterVerification`).
     emailVerification: {
-      sendOnSignIn: true,
+      // Com o gate desligado o login não exige confirmação e não há o que reenviar (o `sendOnSignUp` segue o
+      // requireEmailVerification, então também desliga).
+      sendOnSignIn: verifyEmail,
       autoSignInAfterVerification: true,
       expiresIn: VERIFY_EXPIRES_IN_S,
       sendVerificationEmail: async ({ user, url }, request) => {
@@ -294,9 +304,11 @@ function buildAuth() {
     },
     hooks: {
       // #470 — resposta do cadastro com a MESMA forma exista ou não a conta (ver SIGNUP_USER_FIELDS). Erros
-      // (400 de validação etc.) passam intactos: não dependem da conta.
+      // (400 de validação etc.) passam intactos: não dependem da conta. Só com o gate ligado: desligado, o
+      // cadastro responde como antes de #470 (token da sessão + user completo) e o 422 já distingue a conta —
+      // cortar o corpo ali não esconderia nada e apagaria o `token` que a UI usa para saber que já entrou.
       after: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== '/sign-up/email') return
+        if (!verifyEmail || ctx.path !== '/sign-up/email') return
         const out = ctx.context.returned as { user?: Record<string, unknown> } | undefined
         if (!out || typeof out !== 'object' || !out.user || typeof out.user !== 'object') return
         const user = Object.fromEntries(SIGNUP_USER_FIELDS.map((k) => [k, out.user![k] ?? null]))
@@ -359,6 +371,14 @@ let _auth: ReturnType<typeof buildAuth> | null = null
 
 export function getAuth(): ReturnType<typeof buildAuth> {
   return (_auth ??= buildAuth())
+}
+
+/**
+ * SÓ TESTE: descarta a instância memoizada para a próxima `getAuth()` reler a config — hoje, o gate da
+ * confirmação de email (#470), que depende do mailer injetado (`setMailer`) no momento da construção.
+ */
+export function resetAuthForTests(): void {
+  _auth = null
 }
 
 export type Auth = ReturnType<typeof getAuth>

@@ -39,7 +39,7 @@ import type { Locale } from '@/i18n/locale'
 
 type Mode = 'sign-in' | 'sign-up'
 type Handlers = {
-  onSuccess?: () => void
+  onSuccess?: (ctx: { data: unknown }) => void
   onError?: (ctx: { error: { code?: string } }) => void
 }
 
@@ -51,11 +51,11 @@ function renderForm(mode: Mode, googleEnabled = false, locale: Locale = 'pt-BR')
   )
 }
 
-/** Faz o mock invocar onSuccess (sucesso simulado). */
-const succeed = (fn: ReturnType<typeof vi.fn>) =>
+/** Faz o mock invocar onSuccess (sucesso simulado), com o corpo `data` da resposta. */
+const succeed = (fn: ReturnType<typeof vi.fn>, data: unknown = {}) =>
   fn.mockImplementation(async (_body: unknown, handlers?: Handlers) => {
-    handlers?.onSuccess?.()
-    return { data: {}, error: null }
+    handlers?.onSuccess?.({ data })
+    return { data, error: null }
   })
 
 /** Faz o mock invocar onError com um code (erro simulado). */
@@ -253,9 +253,10 @@ describe('AuthForm — confirmação de email (#470)', () => {
     sendVerificationEmail.mockResolvedValue({ data: { status: true }, error: null })
   })
 
+  /** Resposta do cadastro com a confirmação LIGADA no servidor: sem sessão (`token: null`). */
   async function signUpAs(email: string) {
     const user = userEvent.setup()
-    succeed(signUpEmail)
+    succeed(signUpEmail, { token: null, user: { email } })
     renderForm('sign-up')
     await user.type(screen.getByLabelText('Nome'), 'Ana')
     await user.type(screen.getByLabelText('Email'), email)
@@ -316,9 +317,23 @@ describe('AuthForm — confirmação de email (#470)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Email confirmado')
   })
 
+  it('confirmação DESLIGADA no servidor (sem e-mail de conta): cadastro com token entra direto, como antes', async () => {
+    const user = userEvent.setup()
+    succeed(signUpEmail, { token: 'sessao-123', user: { email: 'ana@ex.com' } })
+    renderForm('sign-up')
+    await user.type(screen.getByLabelText('Nome'), 'Ana')
+    await user.type(screen.getByLabelText('Email'), 'ana@ex.com')
+    await user.type(screen.getByLabelText('Senha'), 'segredo123')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(push).toHaveBeenCalledWith('/')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('heading', { name: 'Confira seu email' })).not.toBeInTheDocument()
+  })
+
   it('en-US: tela "Check your email"', async () => {
     const user = userEvent.setup()
-    succeed(signUpEmail)
+    succeed(signUpEmail, { token: null })
     renderForm('sign-up', false, 'en-US')
     await user.type(screen.getByLabelText('Name'), 'Bo')
     await user.type(screen.getByLabelText('Email'), 'bo@ex.com')

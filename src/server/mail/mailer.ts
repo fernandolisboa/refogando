@@ -40,6 +40,12 @@ export interface Mailer {
    * NUNCA lança; sem credencial / remetente / destinatário ou erro do provedor ⇒ `{ sent: false }`.
    */
   sendAccountEmail(input: MailInput): Promise<{ sent: boolean }>
+  /**
+   * Os e-mails de CONTA podem de fato sair? (#470) — credencial + remetente presentes. NÃO toca a rede nem
+   * garante entrega; é o que decide se o cadastro EXIGE confirmação de email (`src/lib/auth.ts`): sem canal de
+   * e-mail, exigir a confirmação trancaria toda conta nova.
+   */
+  canSendAccountEmail(): boolean
 }
 
 /** Endpoint transacional do Brevo (v3). Provedor é detalhe trocável atrás do seam. */
@@ -58,9 +64,18 @@ export class RealBrevoMailer implements Mailer {
   }
 
   async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
-    // `||` (não `??`): env vazia no painel da Vercel chega como '' e deve cair no fallback.
-    return sendViaBrevo(process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM, input)
+    return sendViaBrevo(accountMailFrom(), input)
   }
+
+  /** Lido PREGUIÇOSAMENTE (na chamada), como os envios: mesma regra de "desligado" do `sendViaBrevo`. */
+  canSendAccountEmail(): boolean {
+    return Boolean(process.env.BREVO_API_KEY && accountMailFrom())
+  }
+}
+
+/** Remetente dos e-mails de conta. `||` (não `??`): env vazia no painel da Vercel chega como '' e deve cair no fallback. */
+function accountMailFrom(): string | undefined {
+  return process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM || undefined
 }
 
 /** POST único ao Brevo. `from` resolvido pelo chamador (cada tipo de e-mail tem seu remetente). */
@@ -105,6 +120,15 @@ export class FakeMailer implements Mailer {
   readonly sent: MailInput[] = []
   /** E-mails de conta (#469) "enviados" nesta instância, na ordem. Lista à parte: não polui `sent`. */
   readonly accountSent: MailInput[] = []
+  /**
+   * #470 — o que `canSendAccountEmail` responde. Default `true` (e-mail de conta "configurado", confirmação de
+   * email ligada); `new FakeMailer({ accountEmailConfigured: false })` simula produção sem Brevo.
+   */
+  accountEmailConfigured: boolean
+
+  constructor(options: { accountEmailConfigured?: boolean } = {}) {
+    this.accountEmailConfigured = options.accountEmailConfigured ?? true
+  }
 
   async sendDpoAlert(input: MailInput): Promise<{ sent: boolean }> {
     this.sent.push(input)
@@ -114,5 +138,9 @@ export class FakeMailer implements Mailer {
   async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
     this.accountSent.push(input)
     return { sent: true }
+  }
+
+  canSendAccountEmail(): boolean {
+    return this.accountEmailConfigured
   }
 }
