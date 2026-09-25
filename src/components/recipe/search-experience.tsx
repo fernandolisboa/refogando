@@ -378,8 +378,27 @@ export function SearchExperience({
    * O `pathname` corrente é a base: NÃO recompõe o prefixo de locale (o proxy/path já o garante).
    * Guarda no SSR/jsdom-sem-window: sem `window`, não reflete (nada a sincronizar).
    */
+  // Semeia o termo a partir de `?q=` na MONTAGEM, quando o provider ainda está vazio: é o que faz o
+  // `returnTo` do convite "Entrar para buscar na web" (visitante) devolver a pessoa À BUSCA dela, e
+  // recarregar `/?q=…` manter o termo. Roda ANTES do efeito de reflexo abaixo (ordem de declaração) e
+  // marca `skipReflectRef` pra que esse reflexo, que ainda vê `q=''` neste commit, não apague o `?q=`
+  // da URL antes do termo semeado chegar. Só o termo — facetas da URL seguem descartadas, como antes.
+  const skipReflectRef = useRef(false)
+  useEffect(() => {
+    if (typeof window === 'undefined' || q !== '') return
+    const inicial = new URLSearchParams(window.location.search).get('q')?.trim() ?? ''
+    if (inicial === '') return
+    skipReflectRef.current = true
+    setQ(inicial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só na montagem: depois o termo vive no provider e a URL o segue
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (skipReflectRef.current) {
+      skipReflectRef.current = false
+      return
+    }
     const params = new URLSearchParams()
     if (q.trim() !== '') params.set('q', q.trim())
     if (cozinha.length > 0) params.set('cozinha', cozinha.join(','))
