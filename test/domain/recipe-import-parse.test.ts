@@ -136,7 +136,14 @@ describe('parseImportedRecipe (#165)', () => {
         '@type': 'Recipe',
         name: 'Bolo',
         inLanguage: 'pt-BR',
-        recipeIngredient: ['200 gr de farinha', '2 Xícaras de leite', '1 colheres (sopa) de fermento', '2 constructor ovos'],
+        recipeIngredient: [
+          '200 gr de farinha',
+          '2 Xícaras de leite',
+          '1 colheres (sopa) de fermento',
+          '2 constructor ovos',
+          '1 xícara de chá verde',
+          '2 a gosto sal',
+        ],
       }),
       SRC,
     )
@@ -147,6 +154,8 @@ describe('parseImportedRecipe (#165)', () => {
       { rawText: 'leite', quantidade: '2', unidade: 'xicara' },
       { rawText: 'fermento', quantidade: '1', unidade: 'colher_de_sopa' },
       { rawText: 'constructor ovos', quantidade: '2', unidade: null },
+      { rawText: 'chá verde', quantidade: '1', unidade: 'xicara' },
+      { rawText: 'a gosto sal', quantidade: '2', unidade: null },
     ])
   })
 

@@ -109,7 +109,8 @@ function buildIngredienteGen(onDescarte?: OnDescarte) {
 /**
  * Normaliza a medida do item (`parseMedida`): '2,5'/'1/2' viram numeric; a unidade colada na
  * quantidade ('2 xícaras', 'a gosto') preenche `unidade` quando ela veio ausente ou irreconhecível.
- * Avisa `onDescarte` quando parte da quantidade se perde (faixa '2-3' → 2, texto sem número).
+ * Avisa `onDescarte` quando parte da quantidade se perde (faixa '2-3' → 2, texto sem número) ou
+ * quando a unidade colada conflita com a do campo.
  */
 function normalizeMedida(v: unknown, onDescarte?: OnDescarte): unknown {
   if (!isRecord(v)) return v
@@ -117,8 +118,12 @@ function normalizeMedida(v: unknown, onDescarte?: OnDescarte): unknown {
   if (typeof raw !== 'string') return v
   const medida = parseMedida(raw)
   if (medida.resto !== '') onDescarte?.({ campo: 'quantidade', valor: raw })
-  const unidadeOk = typeof v.unidade === 'string' && normalizeUnidade(v.unidade) !== null
-  const unidade = !unidadeOk && medida.unidade !== null ? medida.unidade : v.unidade
+  const unidadeCampo = typeof v.unidade === 'string' ? normalizeUnidade(v.unidade) : null
+  // Duas unidades diferentes (quantidade '2 xícaras', unidade 'g'): vale a do campo, e o conflito vai pro log.
+  if (unidadeCampo !== null && medida.unidade !== null && medida.unidade !== unidadeCampo) {
+    onDescarte?.({ campo: 'unidade', valor: raw })
+  }
+  const unidade = unidadeCampo === null && medida.unidade !== null ? medida.unidade : v.unidade
   return { ...v, quantidade: medida.quantidade, unidade }
 }
 

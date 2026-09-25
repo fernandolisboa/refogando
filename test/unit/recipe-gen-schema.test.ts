@@ -176,6 +176,14 @@ describe('buildRecipeGenSchema — cozinha constrita ao conjunto ATIVO (#318)', 
     }
   })
 
+  it('unidade colada na quantidade que conflita com a do campo: vale a do campo, conflito vai pro log', () => {
+    const descartes: CampoDescartado[] = []
+    const receita = { ...receitaCompleta(), ingredientes: [{ nome: 'farinha', quantidade: '2 xícaras', unidade: 'g' }] }
+    const parsed = buildRecipeGenSchema([], (d) => descartes.push(d)).parse({ kind: 'success', receita, advisory: null })
+    expect(parsed.receita?.ingredientes[0]).toEqual({ nome: 'farinha', quantidade: '2', unidade: 'g' })
+    expect(descartes).toEqual([{ campo: 'unidade', valor: '2 xícaras' }])
+  })
+
   it('a unidade colada na quantidade preenche `unidade` quando ela veio ausente ou irreconhecível', () => {
     const casos: Array<[string, string | null, string | null, string | null]> = [
       ['a gosto', null, null, 'a_gosto'],

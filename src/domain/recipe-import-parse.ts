@@ -193,7 +193,8 @@ function parseQuantityUnit(raw: string): {
   let consumed = 0
   for (let n = Math.min(3, restWords.length); n >= 1; n--) {
     const unit = normalizeUnidade(restLower.slice(0, n).join(' '))
-    if (unit) {
+    // a_gosto/q_b não combinam com um número ("2 a gosto sal"): aí não é a unidade.
+    if (unit && unit !== 'a_gosto' && unit !== 'q_b') {
       unidade = unit
       consumed = n
       break

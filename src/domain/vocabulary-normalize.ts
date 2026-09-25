@@ -59,7 +59,8 @@ const UNIDADE_ALIASES = aliases<Unidade>([
   [['l', 'litro', 'litros', 'liter', 'liters'], 'l'],
   [['colher de sopa', 'colheres de sopa', 'colher sopa', 'colheres sopa', 'tablespoon', 'tablespoons', 'tbsp'], 'colher_de_sopa'],
   [['colher de chá', 'colheres de chá', 'colher chá', 'colheres chá', 'teaspoon', 'teaspoons', 'tsp'], 'colher_de_cha'],
-  [['xícara', 'xícaras', 'xícara de chá', 'xícaras de chá', 'xícara chá', 'cup', 'cups'], 'xicara'],
+  // 'xícara (chá)' sim; 'xícara de chá' não: no import, '1 xícara de chá verde' é chá verde.
+  [['xícara', 'xícaras', 'xícara chá', 'xícaras chá', 'cup', 'cups'], 'xicara'],
   [['unidade', 'unidades', 'unit', 'units'], 'unidade'],
   [['dente', 'dentes', 'clove', 'cloves'], 'dente'],
   [['fatia', 'fatias', 'slice', 'slices'], 'fatia'],
@@ -150,6 +151,12 @@ const NUMERO_INICIAL = new RegExp(
   `^(?:(\\d+)(?:\\s+|\\s*-\\s*)(\\d+)\\s*/\\s*(\\d+)|(\\d+)\\s*/\\s*(\\d+)|(\\d*\\.\\d+|\\d+)(?:\\s*(${FRAC}))?|(${FRAC}))`,
 )
 
+// Cauda de uma faixa depois do 1º número: "-3", "– 3", "a 3", "ou 3", "to 3 cups" (grupo 1: unidade).
+const FAIXA_CAUDA = new RegExp(
+  `^(?:[-–]|a|ou|to|or)\\s*(?:\\d*\\.\\d+|\\d+(?:\\s*/\\s*\\d+)?|${FRAC})(?:\\s*([\\p{L}][\\p{L} .()]*))?$`,
+  'iu',
+)
+
 /** Medida normalizada. `resto` é o texto que sobrou sem ser entendido (''= nada se perdeu). */
 export type Medida = { quantidade: string | null; unidade: Unidade | null; resto: string }
 
@@ -177,8 +184,9 @@ export function parseMedida(raw: string): Medida {
   const s = t.replace(/(\d),(\d)/g, '$1.$2') // vírgula decimal (mesmo comprimento: índices valem em t)
   const inicio = s.search(new RegExp(`\\d|\\.\\d|${FRAC}`))
   if (inicio < 0) return semNumero(t)
-  // Sinal negativo não é quantidade de ingrediente.
-  if (/-\s*$/.test(s.slice(0, inicio))) return semNumero(t)
+  // Sinal negativo (hífen, travessão, menos) não é quantidade de ingrediente.
+  const prefixo = s.slice(0, inicio)
+  if (/[-–−]\s*$/.test(prefixo)) return semNumero(t)
   const m = NUMERO_INICIAL.exec(s.slice(inicio))
   if (!m) return semNumero(t)
 
@@ -192,8 +200,19 @@ export function parseMedida(raw: string): Medida {
   const quantidade = String(rounded)
   if (!Number.isFinite(rounded) || rounded <= 0 || !QUANTIDADE_RE.test(quantidade)) return semNumero(t)
 
+  // O que vem depois do número decide se ele vale:
+  //  - nada, ou uma unidade ⇒ vale (e a unidade é aproveitada);
+  //  - cauda de faixa ("-3", "a 3 xícaras") ⇒ vale o primeiro número, com a unidade da cauda;
+  //  - palavra sem número ("maços") ⇒ vale o número; a palavra vai para o log;
+  //  - qualquer outro número ("1 000", "2 x 200g", "2 e 1/2") ⇒ o número lido estaria errado: null.
+  // Um qualificador antes do número ("cerca de 2") é aceito, mas vai para o log.
+  const perdido = (resto: string) => [prefixo.trim(), resto].filter((x) => x !== '').join(' … ')
   const resto = s.slice(inicio + m[0].length).trim()
-  if (resto === '') return { quantidade, unidade: null, resto: '' }
+  if (resto === '') return { quantidade, unidade: null, resto: perdido('') }
   const unidade = normalizeUnidade(resto)
-  return unidade !== null ? { quantidade, unidade, resto: '' } : { quantidade, unidade: null, resto }
+  if (unidade !== null) return { quantidade, unidade, resto: perdido('') }
+  const faixa = FAIXA_CAUDA.exec(resto)
+  if (faixa) return { quantidade, unidade: faixa[1] ? normalizeUnidade(faixa[1]) : null, resto: perdido(resto) }
+  if (new RegExp(`\\d|${FRAC}`).test(resto)) return semNumero(t)
+  return { quantidade, unidade: null, resto: perdido(resto) }
 }

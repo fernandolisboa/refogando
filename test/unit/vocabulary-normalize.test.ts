@@ -22,8 +22,7 @@ describe('parseMedida', () => {
     ['1 ⅓', '1.333', null],
     ['200g', '200', 'g'],
     ['2 xícaras', '2', 'xicara'],
-    ['2 xícaras de chá', '2', 'xicara'],
-    ['cerca de 2', '2', null],
+    ['2 xícaras (chá)', '2', 'xicara'],
     ['0.0625', '0.063', null],
     ['a gosto', null, 'a_gosto'],
     ['q.b.', null, 'q_b'],
@@ -32,14 +31,31 @@ describe('parseMedida', () => {
   })
 
   it.each([
-    ['2-3', '2', '-3'],
-    ['2 a 3', '2', 'a 3'],
-    ['3 maços', '3', 'maços'],
-  ])('faixa/texto: %j → primeiro número %j e o resto %j para o log', (raw, quantidade, resto) => {
-    expect(parseMedida(raw)).toEqual({ quantidade, unidade: null, resto })
+    ['2-3', '2', null, '-3'],
+    ['2 a 3', '2', null, 'a 3'],
+    ['1-2 xícaras', '1', 'xicara', '-2 xícaras'],
+    ['3 maços', '3', null, 'maços'],
+    ['cerca de 2', '2', null, 'cerca de'],
+  ])('faixa/qualificador: %j → %j %j, e o que se perdeu (%j) vai para o log', (raw, quantidade, unidade, resto) => {
+    expect(parseMedida(raw)).toEqual({ quantidade, unidade, resto })
   })
 
-  it.each(['1,000', '2,500', '1.000,5', '1e5', '-2', '-1/2', '0', '12345678', 'um maço', '1/0'])(
+  it.each([
+    '1,000',
+    '2,500',
+    '1.000,5',
+    '1 000',
+    '2 x 200g',
+    '2 e 1/2',
+    '1e5',
+    '-2',
+    '–2',
+    '-1/2',
+    '0',
+    '12345678',
+    'um maço',
+    '1/0',
+  ])(
     'nunca adivinha: %j → quantidade null (e o cru vai para o log)',
     (raw) => {
       expect(parseMedida(raw)).toEqual({ quantidade: null, unidade: null, resto: raw })
