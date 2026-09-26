@@ -7,7 +7,7 @@ import { FakeMailer } from '@/server/mail/mailer'
 import { session, users, verification } from '@/db/schema'
 
 /**
- * Gate da confirmação de email (#470) DESLIGADO — produção sem Brevo (`canSendAccountEmail() === false`). Sem
+ * Gate da confirmação de email (#470) DESLIGADO — produção sem Resend (`canSendAccountEmail() === false`). Sem
  * canal de e-mail, exigir confirmação trancaria toda conta nova; então o cadastro se comporta EXATAMENTE como antes
  * de #470: loga direto (200 com token + cookie de sessão), nenhum e-mail, e conta não confirmada entra normalmente.
  * O preço consciente é a enumeração pelo 422, que só fecha quando o e-mail de conta é configurado.

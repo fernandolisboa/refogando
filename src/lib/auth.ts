@@ -109,12 +109,12 @@ async function takeAccountEmailSlot(kind: 'password' | 'verify', userId: string)
 }
 
 /**
- * #470 (B3) — o gate só vê se a env EXISTE; chave inválida/remetente não verificado no Brevo fariam os e-mails de
+ * #470 (B3) — o gate só vê se a env EXISTE; chave inválida/domínio do remetente não verificado no Resend fariam os e-mails de
  * conta sumirem calados. Cada envio recusado deixa UMA linha `warn` no log da função, sem PII (sem email/nome).
  */
 async function sendAccountEmail(kind: 'reset' | 'verify' | 'finish', mail: MailInput): Promise<void> {
   const { sent } = await getMailer().sendAccountEmail(mail)
-  if (!sent) console.warn(`[auth] e-mail de conta não enviado (${kind}): confira BREVO_API_KEY e o remetente no Brevo`)
+  if (!sent) console.warn(`[auth] e-mail de conta não enviado (${kind}): confira RESEND_API_KEY e o domínio do remetente no Resend`)
 }
 
 // #470 — a cura do handle de espera roda em hook `after` de sessão/usuário; o better-auth re-executa o hook
@@ -190,10 +190,10 @@ function buildAuth() {
   const googleId = process.env.GOOGLE_CLIENT_ID
   const googleSecret = process.env.GOOGLE_CLIENT_SECRET
   const hasGoogle = isGoogleConfigured()
-  // #470 — GATE da confirmação de email: só é EXIGIDA quando o e-mail de conta pode de fato sair (Brevo com
+  // #470 — GATE da confirmação de email: só é EXIGIDA quando o e-mail de conta pode de fato sair (Resend com
   // chave + remetente, `canSendAccountEmail`). Sem canal de e-mail, exigir a confirmação trancaria TODA conta
   // nova de email+senha (o link nunca chegaria) — então o cadastro segue como antes de #470: loga direto e
-  // responde 200 com token. Preço consciente: enquanto o Brevo não está configurado, o `/sign-up/email` ainda
+  // responde 200 com token. Preço consciente: enquanto o Resend não está configurado, o `/sign-up/email` ainda
   // enumera contas (422 para email existente); a correção liga sozinha quando a env entra (novo deploy — a
   // instância é memoizada, então o gate é lido uma vez por instância, aqui).
   const verifyEmail = getMailer().canSendAccountEmail()
@@ -225,7 +225,7 @@ function buildAuth() {
       // sobrescreve. Mesma fonte confiável usada por `clientIpFromHeaders` (http/params.ts).
       ipAddress: { ipAddressHeaders: ['x-real-ip'] },
       // #469 (anti-enumeração por TEMPO): o e-mail de reset roda DEPOIS da resposta (`after` do Next), senão
-      // conta existente responderia devagar (round-trip do Brevo) e inexistente, na hora. Fora de request
+      // conta existente responderia devagar (round-trip do Resend) e inexistente, na hora. Fora de request
       // (scripts) `after` lança ⇒ a promise segue sozinha. Em teste, sem handler: o envio é aguardado e o
       // FakeMailer já tem o e-mail quando a resposta volta.
       ...(process.env.NODE_ENV === 'test'
@@ -329,7 +329,7 @@ function buildAuth() {
       sendResetPassword: async ({ user, url }, request) => {
         if ((user as { deletedAt?: Date | null }).deletedAt) return
         // Anti mail-bombing por DESTINATÁRIO (o rate limit é por IP): no máx. 3 e-mails de senha por conta na
-        // janela (`takeAccountEmailSlot`). Protege a caixa do Usuário e a cota Brevo compartilhada com os
+        // janela (`takeAccountEmailSlot`). Protege a caixa do Usuário e a cota Resend compartilhada com os
         // alertas do DPO.
         if (!(await takeAccountEmailSlot('password', user.id))) return
         const input = {
