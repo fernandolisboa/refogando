@@ -10,7 +10,7 @@ import { RealGeminiImageGenerator, type ImageGenerator } from '@/server/images/i
 import { RealRecipeImporter, type RecipeImporter } from '@/server/import/recipe-importer'
 import { RealRecipeProbe, type RecipeProbe } from '@/server/import/recipe-probe'
 import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-search/web-search-provider'
-import { RealBrevoMailer, type Mailer } from '@/server/mail/mailer'
+import { RealResendMailer, type Mailer } from '@/server/mail/mailer'
 import { FakeBillingProvider, type BillingProvider } from '@/server/billing/provider'
 
 /**
@@ -26,7 +26,7 @@ import { FakeBillingProvider, type BillingProvider } from '@/server/billing/prov
  *  - getRecipeImporter()   → seam de importação de receita da web (issue #165, JSON-LD)
  *  - getRecipeProbe()      → seam do PROBE de saúde admin (issue #273, JSON-LD + robots, sem persistir)
  *  - getWebSearchProvider()→ seam de DESCOBERTA na web (issue #164, links externos ADR-0019)
- *  - getMailer()           → seam de E-MAIL transacional (issue #413 alerta do Encarregado; #469 reset de senha; Brevo)
+ *  - getMailer()           → seam de E-MAIL transacional (issue #413 alerta do Encarregado; #469 reset de senha; Resend)
  *  - getBillingProvider()  → seam do PSP de pagamento (Fase 2 billing, flag-off; default = Fake, sem PSP real)
  *
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
@@ -183,7 +183,7 @@ export function setWebSearchProvider(provider: WebSearchProvider): void {
 
 export function getMailer(): Mailer {
   if (mailerOverride) return mailerOverride
-  if (!lazyMailer) lazyMailer = new RealBrevoMailer()
+  if (!lazyMailer) lazyMailer = new RealResendMailer()
   return lazyMailer
 }
 

@@ -1865,13 +1865,14 @@ export const ptBR = {
     s5Intro:
       'Não vendemos dados pessoais. Compartilhamos com operadores (prestadores de serviço que tratam dados em nosso nome, sob contrato) estritamente para operar o app:',
     s5Cabecalho: ['Prestador', 'Para quê', 'Categoria'],
-    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search', 'Resend'],
     s5ParaQue: [
       'Hospedagem do aplicativo',
       'Banco de dados',
       'Geração de imagens e embeddings de busca',
       'Geração/assistência de texto',
       'Busca de links externos na "Descoberta na web"',
+      'Envio de e-mails transacionais (confirmação de cadastro, redefinição de senha, alertas de privacidade)',
     ],
     s5Categorias: [
       'Operador de infraestrutura',
@@ -1879,6 +1880,7 @@ export const ptBR = {
       'Operador de IA',
       'Operador de IA',
       'Operador de busca',
+      'Operador de infraestrutura',
     ],
     s5Nota: 'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing.',
     s5Transferencia:

@@ -4,14 +4,14 @@
  * via `getMailer()/setMailer()` em `deps.ts`.
  *
  * Uso v1: ALERTAR o Encarregado (DPO) quando um ticket de takedown/DSAR entra em nível 'red'/'overdue'
- * (`notifyDpoRedTickets`) e, best-effort, avisar da chegada de um novo ticket. O provedor é o Brevo
- * (`api.brevo.com/v3/smtp/email`) — detalhe trocável atrás do seam, sem SDK (só `fetch` nativo).
+ * (`notifyDpoRedTickets`) e, best-effort, avisar da chegada de um novo ticket. O provedor é o Resend
+ * (`POST api.resend.com/emails`) — detalhe trocável atrás do seam, sem SDK (só `fetch` nativo).
  *
  * Uso v2 (#469): e-mails de CONTA ao próprio Usuário (link de redefinição de senha) via
  * `sendAccountEmail`. Remetente próprio `AUTH_MAIL_FROM` (caixa "não-responda", separada da do Encarregado);
- * sem ela, cai no `DSAR_MAIL_FROM` — já verificado no Brevo — para o fluxo funcionar sem env nova.
+ * sem ela, cai no `DSAR_MAIL_FROM` — domínio já verificado no Resend — para o fluxo funcionar sem env nova.
  *
- * GATE HUMANO de deploy (como a `WEB_SEARCH_API_KEY` / a Gemini key): sem `BREVO_API_KEY` OU sem
+ * GATE HUMANO de deploy (como a `WEB_SEARCH_API_KEY` / a Gemini key): sem `RESEND_API_KEY` OU sem
  * remetente verificado OU sem destinatário, o Real se comporta como DESLIGADO (retorna
  * `{ sent: false }` SEM tocar a rede, nunca lança). A feature só "acende" quando a credencial existe.
  */
@@ -48,28 +48,28 @@ export interface Mailer {
   canSendAccountEmail(): boolean
 }
 
-/** Endpoint transacional do Brevo (v3). Provedor é detalhe trocável atrás do seam. */
-const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email'
+/** Endpoint de envio do Resend. Provedor é detalhe trocável atrás do seam. */
+const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 /** Timeout por requisição: o alerta é best-effort — não pode pendurar o cron. */
-const BREVO_TIMEOUT_MS = 8_000
+const RESEND_TIMEOUT_MS = 8_000
 
 /**
- * Impl REAL — Brevo transactional email (#413, gate humano de deploy). `BREVO_API_KEY` e `DSAR_MAIL_FROM`
+ * Impl REAL — Resend (#413, gate humano de deploy). `RESEND_API_KEY` e `DSAR_MAIL_FROM`
  * são lidas PREGUIÇOSAMENTE no uso (como `RealWebSearchProvider`); ausentes ⇒ DESLIGADO (`{ sent: false }`,
  * sem tocar a rede). NUNCA lança: qualquer erro (rede/timeout/HTTP/erro do provedor) vira `{ sent: false }`.
  */
-export class RealBrevoMailer implements Mailer {
+export class RealResendMailer implements Mailer {
   async sendDpoAlert(input: MailInput): Promise<{ sent: boolean }> {
-    return sendViaBrevo(process.env.DSAR_MAIL_FROM, input)
+    return sendViaResend(process.env.DSAR_MAIL_FROM, input)
   }
 
   async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
-    return sendViaBrevo(accountMailFrom(), input)
+    return sendViaResend(accountMailFrom(), input)
   }
 
-  /** Lido PREGUIÇOSAMENTE (na chamada), como os envios: mesma regra de "desligado" do `sendViaBrevo`. */
+  /** Lido PREGUIÇOSAMENTE (na chamada), como os envios: mesma regra de "desligado" do `sendViaResend`. */
   canSendAccountEmail(): boolean {
-    return Boolean(process.env.BREVO_API_KEY && accountMailFrom())
+    return Boolean(process.env.RESEND_API_KEY && accountMailFrom())
   }
 }
 
@@ -78,32 +78,40 @@ function accountMailFrom(): string | undefined {
   return process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM || undefined
 }
 
-/** POST único ao Brevo. `from` resolvido pelo chamador (cada tipo de e-mail tem seu remetente). */
-async function sendViaBrevo(from: string | undefined, input: MailInput): Promise<{ sent: boolean }> {
+/**
+ * POST único ao Resend. `from` resolvido pelo chamador (cada tipo de e-mail tem seu remetente) e repassado COMO
+ * ESTÁ: o Resend aceita o endereço puro (`nao-responda@dominio`) ou `"Nome <nao-responda@dominio>"` — o domínio
+ * precisa estar verificado na conta. Sucesso = 200 com `{ id }`; basta o `res.ok`.
+ */
+async function sendViaResend(from: string | undefined, input: MailInput): Promise<{ sent: boolean }> {
   // Fail-closed: sem credencial, sem remetente verificado OU sem destinatário ⇒ no-op. NÃO toca a rede.
-  const key = process.env.BREVO_API_KEY
+  const key = process.env.RESEND_API_KEY
   const to = input.to?.trim()
   if (!key || !from || !to) return { sent: false }
 
   try {
-    const res = await fetch(BREVO_ENDPOINT, {
+    const res = await fetch(RESEND_ENDPOINT, {
       method: 'POST',
       headers: {
-        'api-key': key,
+        authorization: `Bearer ${key}`,
         'content-type': 'application/json',
         accept: 'application/json',
       },
       body: JSON.stringify({
-        sender: { email: from },
-        to: [{ email: to }],
+        from,
+        to: [to],
         subject: input.subject,
-        textContent: input.text,
-        ...(input.html ? { htmlContent: input.html } : {}),
+        text: input.text,
+        ...(input.html ? { html: input.html } : {}),
       }),
-      signal: AbortSignal.timeout(BREVO_TIMEOUT_MS),
+      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
     })
-    // Não-2xx (401/4xx/5xx) ⇒ degrada sem lançar, sem vazar corpo.
-    if (!res.ok) return { sent: false }
+    // Não-2xx (401/403 domínio não verificado/422/429/5xx) ⇒ degrada sem lançar. Loga SÓ o status — nada do
+    // corpo da resposta nem do destinatário (sem PII).
+    if (!res.ok) {
+      console.warn(`[mail] Resend recusou o envio: HTTP ${res.status}`)
+      return { sent: false }
+    }
     return { sent: true }
   } catch {
     // Rede, DNS, timeout (AbortSignal), TLS — tudo vira { sent: false }.
@@ -122,7 +130,7 @@ export class FakeMailer implements Mailer {
   readonly accountSent: MailInput[] = []
   /**
    * #470 — o que `canSendAccountEmail` responde. Default `true` (e-mail de conta "configurado", confirmação de
-   * email ligada); `new FakeMailer({ accountEmailConfigured: false })` simula produção sem Brevo.
+   * email ligada); `new FakeMailer({ accountEmailConfigured: false })` simula produção sem Resend.
    */
   accountEmailConfigured: boolean
 
