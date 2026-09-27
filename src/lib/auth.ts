@@ -12,7 +12,8 @@ import { isGoogleConfigured } from '@/server/auth/google'
 import { generateUniqueHandle } from '@/server/handle'
 import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
 import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-email-email'
-import { assignNameHandle, isPendingHandle, pendingHandle } from '@/server/auth/pending-account'
+import { assignNameHandle, clearPendingSignup, isPendingHandle, pendingHandle } from '@/server/auth/pending-account'
+import { wasPendingSignupPurged } from '@/server/auth/pending-signup-purge'
 import type { MailInput } from '@/server/mail/mailer'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { safeInternalPath } from '@/domain/safe-redirect'
@@ -117,14 +118,15 @@ async function sendAccountEmail(kind: 'reset' | 'verify' | 'finish', mail: MailI
   if (!sent) console.warn(`[auth] e-mail de conta não enviado (${kind}): confira RESEND_API_KEY e o domínio do remetente no Resend`)
 }
 
-// #470 — a cura do handle de espera roda em hook `after` de sessão/usuário; o better-auth re-executa o hook
-// que rejeita e propaga o 2º erro pro endpoint (500 no login/confirmação). O handle nunca derruba entrar ou
-// confirmar: falha vira um aviso (sem PII) e a próxima sessão tenta de novo.
-async function healPendingHandle(run: () => Promise<unknown>): Promise<void> {
+// #470 — a cura do handle de espera (e a limpeza do marcador de cadastro pendente) roda em hook `after` de
+// sessão/usuário; o better-auth re-executa o hook que rejeita e propaga o 2º erro pro endpoint (500 no
+// login/confirmação). Nenhuma das duas derruba entrar ou confirmar: falha vira um aviso (sem PII) e a próxima
+// sessão tenta de novo.
+async function pendingAccountCleanup(what: string, run: () => Promise<unknown>): Promise<void> {
   try {
     await run()
   } catch (err) {
-    console.warn(`[auth] cura do handle de espera falhou: ${err instanceof Error ? err.name : 'erro'}`)
+    console.warn(`[auth] ${what} falhou: ${err instanceof Error ? err.name : 'erro'}`)
   }
 }
 
@@ -315,9 +317,13 @@ function buildAuth() {
             },
             // #470 (B1): o link de senha prova a posse da caixa — conta não confirmada passa a confirmada (e ganha
             // o handle do nome, F2). A senha trocada substitui a de quem a cadastrou, e as sessões caem (abaixo).
+            // O mesmo UPDATE limpa o marcador de cadastro pendente (a conta tem dono: sai do expurgo).
             onPasswordReset: async ({ user }: { user: { id: string; emailVerified: boolean } }) => {
               if (user.emailVerified) return
-              await getDb().update(schema.users).set({ emailVerified: true }).where(eq(schema.users.id, user.id))
+              await getDb()
+                .update(schema.users)
+                .set({ emailVerified: true, pendingSignupAt: null })
+                .where(eq(schema.users.id, user.id))
               await assignNameHandle(user.id)
             },
           }
@@ -388,6 +394,13 @@ function buildAuth() {
                   return
                 }
               }
+              // Email com cadastro pendente EXPURGADO há pouco (lápide, ver pending-signup-purge.ts): quem pré-registra
+              // o email da vítima não ganha um link de confirmação novo a cada expurgo — o cadastro manda o link de
+              // senha, como o cadastro repetido de conta pendente já faz (`onExistingUserSignUp`).
+              if (await wasPendingSignupPurged(getDb(), user.email, new Date())) {
+                await sendFinishAccountLink(user.email, locale)
+                return
+              }
               if (!(await takeAccountEmailSlot('verify', user.id))) return
               await sendAccountEmail(
                 'verify',
@@ -451,32 +464,48 @@ function buildAuth() {
         // handle é gerado pelo databaseHooks.user.create.before (não vem do input do signup);
         // input:false impede que o cliente o forneça/sobrescreva na criação da conta (#128).
         handle: { type: 'string', required: false, input: false },
+        // Marcador de cadastro pendente (#470 follow-up): gravado/limpo só pelos hooks abaixo, nunca vem do
+        // cliente nem sai na sessão/respostas (é interno ao expurgo).
+        pendingSignupAt: { type: 'date', required: false, input: false, returned: false },
       },
     },
     // #470 — CURA do handle de espera, registrada SEMPRE (com ou sem o gate): a conta que passa a ser de alguém
     // perde o `pendente-<16>` e ganha o handle do nome. Cobre o link de confirmação (inclusive aberto depois de o
     // gate desligar), o admin marcando o email como confirmado e o gate desligado depois do cadastro (a conta
     // entra direto). O reset de senha cura em `onPasswordReset`. Tudo idempotente e só com o handle de espera
-    // EXATO (`isPendingHandle`).
+    // EXATO (`isPendingHandle`). Os mesmos momentos limpam o marcador de cadastro pendente (`pendingSignupAt`,
+    // chave do expurgo de cadastros abandonados — cron account-purge).
     databaseHooks: {
       session: {
         create: {
           // Sessão nova de conta com handle de espera: com o gate ligado só cura se confirmada (conta não
           // confirmada nem entra, mas por garantia); desligado, a conta é normal e cura já.
           after: async (session) => {
-            await healPendingHandle(() => assignNameHandle(session.userId, { requireVerified: verifyEmail }))
+            await pendingAccountCleanup('cura do handle de espera', () =>
+              assignNameHandle(session.userId, { requireVerified: verifyEmail }),
+            )
+            // Alguém entrou na conta: não é mais cadastro abandonado (com o gate ligado, só se confirmada).
+            await pendingAccountCleanup('limpeza do cadastro pendente', () =>
+              clearPendingSignup(session.userId, { requireVerified: verifyEmail }),
+            )
           },
         },
       },
       user: {
         update: {
+          // Email confirmado (link de confirmação, admin…) ⇒ o marcador de cadastro pendente sai no MESMO UPDATE:
+          // conta confirmada nunca fica marcada (o expurgo também exige `email_verified = false`, por garantia).
+          before: async (data) => {
+            if (data.emailVerified !== true) return
+            return { data: { ...data, pendingSignupAt: null } }
+          },
           // Email confirmado (link, admin…) ⇒ cura. Sem `handle` no retorno, `assignNameHandle` relê a linha.
           after: async (user) => {
             // `user` vem `undefined` quando o UPDATE não casou linha (conta apagada no meio do caminho).
             const u = user as { id: string; emailVerified?: boolean; handle?: string | null } | undefined
             if (!u?.emailVerified) return
             if (u.handle !== undefined && !isPendingHandle(u.handle)) return
-            await healPendingHandle(() => assignNameHandle(u.id))
+            await pendingAccountCleanup('cura do handle de espera', () => assignNameHandle(u.id))
           },
         },
         create: {
@@ -492,13 +521,14 @@ function buildAuth() {
           // caminho: conta criada pelo Google (mesmo com `email_verified=false` do provedor), pelo admin etc. tem
           // sessão/dono e ganha o handle do nome direto. `ctx` é o contexto do endpoint que está criando (null
           // fora de endpoint).
+          //
+          // Esse mesmo caminho (e só ele) grava o marcador de cadastro pendente (`pendingSignupAt`), chave do expurgo
+          // de cadastros nunca provados (cron account-purge, ADR-0014).
           before: async (user, ctx) => {
             const credentialSignUp = ctx?.path === '/sign-up/email'
-            const handle =
-              verifyEmail && credentialSignUp && !user.emailVerified
-                ? pendingHandle()
-                : await generateUniqueHandle((user.name as string | undefined) ?? '')
-            return { data: { ...user, handle } }
+            const pending = verifyEmail && credentialSignUp && !user.emailVerified
+            if (pending) return { data: { ...user, handle: pendingHandle(), pendingSignupAt: new Date() } }
+            return { data: { ...user, handle: await generateUniqueHandle((user.name as string | undefined) ?? '') } }
           },
         },
       },

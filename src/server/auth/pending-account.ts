@@ -9,7 +9,7 @@
  * (`publicAccountFilter`). O prefixo `pendente-` é RESERVADO (`@/domain/handle`): ninguém o escolhe no perfil nem o
  * ganha do nome — só o cadastro de email+senha com a confirmação ligada o atribui.
  */
-import { and, eq, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 import { generateUniqueHandle } from '@/server/handle'
@@ -66,6 +66,23 @@ export async function assignNameHandle(userId: string, opts: { requireVerified?:
       if (pgCode(err) !== '23505') throw err
     }
   }
+}
+
+/**
+ * Limpa o marcador de cadastro pendente (`users.pending_signup_at`) — a conta deixou de ser um cadastro
+ * abandonado e sai do expurgo (`purgeStalePendingSignups`). Chamado quando alguém ENTRA na conta (sessão nova).
+ * `requireVerified`: com a confirmação ligada, só limpa conta confirmada (uma sessão de conta não confirmada — ex.
+ * impersonação do admin — não prova o email; o expurgo segue barrado enquanto a sessão existir). A confirmação do
+ * email limpa o marcador no MESMO UPDATE que grava `email_verified` (hook `user.update.before` e `onPasswordReset`
+ * em auth.ts). Idempotente; sem marcador, o UPDATE não casa linha.
+ */
+export async function clearPendingSignup(userId: string, opts: { requireVerified?: boolean } = {}): Promise<void> {
+  const conds = [eq(users.id, userId), isNotNull(users.pendingSignupAt)]
+  if (opts.requireVerified) conds.push(eq(users.emailVerified, true))
+  await getDb()
+    .update(users)
+    .set({ pendingSignupAt: null })
+    .where(and(...conds))
 }
 
 /**
