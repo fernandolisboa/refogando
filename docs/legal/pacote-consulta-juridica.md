@@ -78,7 +78,7 @@ A Descoberta na web **só funciona** quando os três controles abaixo estão lig
 
 **Pontos ainda abertos, declarados por honestidade:**
 - **Retenção pós-eliminação** sem política definida (issue #473; pergunta 7).
-- **Operação por e-mail depende de configuração do dono:** o alias `privacidade@refogando.com` (MX) e as credenciais do Brevo (`BREVO_API_KEY`, `DSAR_MAIL_FROM`, `DSAR_DPO_EMAIL`). Sem elas o site publica um e-mail que talvez não receba, e os alertas não saem.
+- **Operação por e-mail depende de configuração do dono:** o alias `privacidade@refogando.com` (MX) e as credenciais do Resend (`RESEND_API_KEY`, `DSAR_MAIL_FROM`, `DSAR_DPO_EMAIL`). Sem elas o site publica um e-mail que talvez não receba, e os alertas não saem.
 
 ## 7. Fatos técnicos verificáveis (âncoras no código)
 

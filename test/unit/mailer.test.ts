@@ -1,25 +1,25 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { RealBrevoMailer, FakeMailer } from '@/server/mail/mailer'
+import { RealResendMailer, FakeMailer } from '@/server/mail/mailer'
 
 /**
- * Mailer REAL Brevo (#413) — caminho de REDE com `fetch` mockado (credenciais via `vi.stubEnv`). Prova:
- * fail-closed (sem `BREVO_API_KEY` / sem `DSAR_MAIL_FROM` / sem destinatário → `{ sent:false }` SEM tocar a
- * rede), o POST ao endpoint transacional com header `api-key` e corpo `sender/to/subject/textContent`, e que
+ * Mailer REAL Resend (#413) — caminho de REDE com `fetch` mockado (credenciais via `vi.stubEnv`). Prova:
+ * fail-closed (sem `RESEND_API_KEY` / sem `DSAR_MAIL_FROM` / sem destinatário → `{ sent:false }` SEM tocar a
+ * rede), o POST a `api.resend.com/emails` com `Authorization: Bearer` e corpo `from/to/subject/text/html`, e que
  * QUALQUER erro (HTTP não-ok / exceção) vira `{ sent:false }` (NUNCA lança). O `FakeMailer` cobre o fluxo
  * dos consumidores em `dpo-alert.test.ts`.
  */
 
-const KEY = 'brevo-test-key'
+const KEY = 're_test_key'
 const FROM = 'encarregado@refogando.example'
 const TO = 'dpo@refogando.example'
-const mailer = new RealBrevoMailer()
+const mailer = new RealResendMailer()
 
 type Reply = { ok: boolean; status?: number } | { throw: true }
 
 function mockFetch(reply: Reply) {
   const impl = vi.fn(async () => {
     if ('throw' in reply) throw new TypeError('network down')
-    return { ok: reply.ok, status: reply.status ?? (reply.ok ? 201 : 500) } as Response
+    return { ok: reply.ok, status: reply.status ?? (reply.ok ? 200 : 500) } as Response
   })
   vi.stubGlobal('fetch', impl)
   return impl
@@ -32,9 +32,9 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('RealBrevoMailer (#413) — fail-closed (não toca a rede)', () => {
-  it('sem BREVO_API_KEY → { sent:false } e fetch não é chamado', async () => {
-    vi.stubEnv('BREVO_API_KEY', '')
+describe('RealResendMailer (#413) — fail-closed (não toca a rede)', () => {
+  it('sem RESEND_API_KEY → { sent:false } e fetch não é chamado', async () => {
+    vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     const impl = mockFetch({ ok: true })
     expect(await mailer.sendDpoAlert(input)).toEqual({ sent: false })
@@ -42,7 +42,7 @@ describe('RealBrevoMailer (#413) — fail-closed (não toca a rede)', () => {
   })
 
   it('sem DSAR_MAIL_FROM → { sent:false } e fetch não é chamado', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('DSAR_MAIL_FROM', '')
     const impl = mockFetch({ ok: true })
     expect(await mailer.sendDpoAlert(input)).toEqual({ sent: false })
@@ -50,7 +50,7 @@ describe('RealBrevoMailer (#413) — fail-closed (não toca a rede)', () => {
   })
 
   it('sem destinatário → { sent:false } e fetch não é chamado', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     const impl = mockFetch({ ok: true })
     expect(await mailer.sendDpoAlert({ ...input, to: '   ' })).toEqual({ sent: false })
@@ -58,86 +58,119 @@ describe('RealBrevoMailer (#413) — fail-closed (não toca a rede)', () => {
   })
 })
 
-describe('RealBrevoMailer (#413) — envio + degradação', () => {
-  it('com credencial completa: POST com header api-key e corpo Brevo; { sent:true }', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+describe('RealResendMailer (#413) — envio + degradação', () => {
+  it('com credencial completa: POST com Bearer e corpo Resend; { sent:true }', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     const calls: Array<{ url: string; init: RequestInit }> = []
     const impl = vi.fn(async (url: unknown, init?: RequestInit) => {
       calls.push({ url: String(url), init: init as RequestInit })
-      return { ok: true, status: 201 } as Response
+      return { ok: true, status: 200 } as Response
     })
     vi.stubGlobal('fetch', impl)
 
     expect(await mailer.sendDpoAlert({ ...input, html: '<p>oi</p>' })).toEqual({ sent: true })
     expect(calls).toHaveLength(1)
     const { url, init } = calls[0]
-    expect(url).toContain('api.brevo.com')
+    expect(url).toBe('https://api.resend.com/emails')
     expect(init.method).toBe('POST')
     const headers = init.headers as Record<string, string>
-    expect(headers['api-key']).toBe(KEY)
-    const body = JSON.parse(String(init.body)) as {
-      sender: { email: string }
-      to: Array<{ email: string }>
-      subject: string
-      textContent: string
-      htmlContent?: string
-    }
-    expect(body.sender.email).toBe(FROM)
-    expect(body.to).toEqual([{ email: TO }])
-    expect(body.subject).toBe('Alerta')
-    expect(body.textContent).toBe('corpo do alerta')
-    expect(body.htmlContent).toBe('<p>oi</p>')
+    expect(headers.authorization).toBe(`Bearer ${KEY}`)
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(JSON.parse(String(init.body))).toEqual({
+      from: FROM,
+      to: [TO],
+      subject: 'Alerta',
+      text: 'corpo do alerta',
+      html: '<p>oi</p>',
+    })
   })
 
-  it('HTTP não-ok (ex.: 401) → { sent:false } (degrada, não lança)', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+  it('sem html: o campo html não vai no corpo', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
-    mockFetch({ ok: false, status: 401 })
+    const bodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        return { ok: true, status: 200 } as Response
+      }),
+    )
+    expect(await mailer.sendDpoAlert(input)).toEqual({ sent: true })
+    expect(bodies[0]).not.toHaveProperty('html')
+  })
+
+  it('remetente com nome ("Nome <addr>") é repassado como está no from', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('DSAR_MAIL_FROM', `Refogando <${FROM}>`)
+    const bodies: Array<{ from: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        return { ok: true, status: 200 } as Response
+      }),
+    )
+    expect(await mailer.sendDpoAlert(input)).toEqual({ sent: true })
+    expect(bodies[0].from).toBe(`Refogando <${FROM}>`)
+  })
+
+  it('HTTP não-ok (ex.: 403) → { sent:false } (degrada, não lança) e o log leva só o status (sem PII)', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockFetch({ ok: false, status: 403 })
     expect(await mailer.sendDpoAlert(input)).toEqual({ sent: false })
+    expect(warn).toHaveBeenCalledTimes(1)
+    const logged = String(warn.mock.calls[0][0])
+    expect(logged).toContain('403')
+    expect(logged).not.toContain(TO)
+    expect(logged).not.toContain(FROM)
+    warn.mockRestore()
   })
 
   it('exceção de rede → { sent:false } (nunca lança)', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     mockFetch({ throw: true })
     await expect(mailer.sendDpoAlert(input)).resolves.toEqual({ sent: false })
   })
 })
 
-describe('RealBrevoMailer.sendAccountEmail (#469) — remetente de conta', () => {
+describe('RealResendMailer.sendAccountEmail (#469) — remetente de conta', () => {
   function captureSender() {
-    const bodies: Array<{ sender: { email: string } }> = []
+    const bodies: Array<{ from: string }> = []
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: unknown, init?: RequestInit) => {
         bodies.push(JSON.parse(String(init?.body)))
-        return { ok: true, status: 201 } as Response
+        return { ok: true, status: 200 } as Response
       }),
     )
     return bodies
   }
 
   it('usa AUTH_MAIL_FROM quando definido', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('AUTH_MAIL_FROM', 'nao-responda@refogando.example')
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     const bodies = captureSender()
     expect(await mailer.sendAccountEmail(input)).toEqual({ sent: true })
-    expect(bodies[0].sender.email).toBe('nao-responda@refogando.example')
+    expect(bodies[0].from).toBe('nao-responda@refogando.example')
   })
 
   it('sem AUTH_MAIL_FROM (ou vazio) cai no DSAR_MAIL_FROM', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('AUTH_MAIL_FROM', '')
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     const bodies = captureSender()
     expect(await mailer.sendAccountEmail(input)).toEqual({ sent: true })
-    expect(bodies[0].sender.email).toBe(FROM)
+    expect(bodies[0].from).toBe(FROM)
   })
 
   it('sem nenhum remetente → { sent:false } e fetch não é chamado', async () => {
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     vi.stubEnv('AUTH_MAIL_FROM', '')
     vi.stubEnv('DSAR_MAIL_FROM', '')
     const impl = mockFetch({ ok: true })
@@ -146,14 +179,14 @@ describe('RealBrevoMailer.sendAccountEmail (#469) — remetente de conta', () =>
   })
 })
 
-describe('RealBrevoMailer.canSendAccountEmail (#470) — liga a confirmação de email', () => {
+describe('RealResendMailer.canSendAccountEmail (#470) — liga a confirmação de email', () => {
   it.each([
     ['chave + AUTH_MAIL_FROM', KEY, 'nao-responda@refogando.example', '', true],
     ['chave + só DSAR_MAIL_FROM (fallback)', KEY, '', FROM, true],
     ['sem chave', '', 'nao-responda@refogando.example', FROM, false],
     ['chave sem nenhum remetente (env vazia)', KEY, '', '', false],
   ])('%s → %s', (_caso, key, authFrom, dsarFrom, expected) => {
-    vi.stubEnv('BREVO_API_KEY', key)
+    vi.stubEnv('RESEND_API_KEY', key)
     vi.stubEnv('AUTH_MAIL_FROM', authFrom)
     vi.stubEnv('DSAR_MAIL_FROM', dsarFrom)
     const impl = mockFetch({ ok: true })
@@ -162,11 +195,11 @@ describe('RealBrevoMailer.canSendAccountEmail (#470) — liga a confirmação de
   })
 
   it('lê a env na CHAMADA (preguiçoso), não na construção', () => {
-    vi.stubEnv('BREVO_API_KEY', '')
+    vi.stubEnv('RESEND_API_KEY', '')
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
-    const m = new RealBrevoMailer()
+    const m = new RealResendMailer()
     expect(m.canSendAccountEmail()).toBe(false)
-    vi.stubEnv('BREVO_API_KEY', KEY)
+    vi.stubEnv('RESEND_API_KEY', KEY)
     expect(m.canSendAccountEmail()).toBe(true)
   })
 })

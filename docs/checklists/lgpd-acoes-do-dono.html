@@ -127,18 +127,18 @@
     </label>
   </section>
 
-  <!-- B. MAILER BREVO -->
+  <!-- B. MAILER RESEND -->
   <section class="group">
-    <h2>B · Mailer transacional (Brevo) — alerta de SLA ao Encarregado</h2>
+    <h2>B · Mailer transacional (Resend) — alerta de SLA ao Encarregado e e-mails de conta</h2>
 
     <label class="item" data-id="b1">
       <input type="checkbox" />
       <div>
-        <p class="title">Criar conta no Brevo e verificar um remetente</p>
+        <p class="title">Criar conta no Resend e verificar o domínio</p>
         <div class="body">
-          <p>O app usa o Brevo para <strong>avisar você por e-mail</strong> quando um pedido de titular (DSAR) ou takedown chega perto de vencer o prazo de 15 dias.</p>
+          <p>O app usa o Resend para <strong>avisar você por e-mail</strong> quando um pedido de titular (DSAR) ou takedown chega perto de vencer o prazo de 15 dias, e para mandar ao Usuário os e-mails de conta (redefinição de senha e confirmação de email do cadastro).</p>
           <div class="how">
-            <span class="label">Como fazer</span> — crie conta no <a href="https://www.brevo.com" target="_blank" rel="noopener">Brevo</a>, gere uma <strong>API key</strong> (Transactional) e <strong>verifique um remetente</strong> (sender). O remetente pode ser <code>privacidade@refogando.com</code> ou um <code>no-reply@refogando.com</code>.
+            <span class="label">Como fazer</span> — crie conta no <a href="https://resend.com" target="_blank" rel="noopener">Resend</a>, em <strong>Domains</strong> adicione <code>refogando.com</code> e publique no DNS os registros que ele mostrar (SPF/DKIM) até o domínio ficar <strong>Verified</strong>; depois, em <strong>API Keys</strong>, gere uma chave com permissão <em>Sending access</em> (começa com <code>re_</code>). Qualquer endereço do domínio verificado serve de remetente, ex.: <code>privacidade@refogando.com</code> ou <code>nao-responda@refogando.com</code> (aceita também com nome: <code>Refogando &lt;nao-responda@refogando.com&gt;</code>).
           </div>
         </div>
       </div>
@@ -147,14 +147,16 @@
     <label class="item" data-id="b2">
       <input type="checkbox" />
       <div>
-        <p class="title">Setar 3 envs na Vercel (Production)</p>
+        <p class="title">Setar as envs na Vercel (Production)</p>
         <div class="body">
           <ul>
-            <li><code>BREVO_API_KEY</code> — a chave transactional do Brevo.</li>
-            <li><code>DSAR_MAIL_FROM</code> — o remetente <strong>verificado</strong> no passo anterior.</li>
+            <li><code>RESEND_API_KEY</code> — a chave do Resend.</li>
+            <li><code>DSAR_MAIL_FROM</code> — o remetente, num endereço do domínio <strong>verificado</strong> no passo anterior.</li>
             <li><code>DSAR_DPO_EMAIL</code> — para onde os alertas vão (normalmente <code>privacidade@refogando.com</code>).</li>
+            <li><code>AUTH_MAIL_FROM</code> — <em>opcional</em>: remetente dos e-mails de conta (ex.: <code>nao-responda@refogando.com</code>); vazio ⇒ usa o <code>DSAR_MAIL_FROM</code>. Com a chave + um remetente, a confirmação de email do cadastro passa a ser exigida.</li>
           </ul>
-          <p class="validate"><b>Referência no código:</b> <code>src/server/mail/mailer.ts</code> e <code>src/server/legal/dpo-alert.ts</code>. Sem os três, o mailer se comporta como <strong>desligado</strong> (no-op): os tickets ainda avançam de SLA no banco, mas ninguém é avisado por e-mail.</p>
+          <p class="validate"><b>Referência no código:</b> <code>src/server/mail/mailer.ts</code> e <code>src/server/legal/dpo-alert.ts</code>. Sem <code>RESEND_API_KEY</code>, <code>DSAR_MAIL_FROM</code> e <code>DSAR_DPO_EMAIL</code>, o mailer se comporta como <strong>desligado</strong> (no-op): os tickets ainda avançam de SLA no banco, mas ninguém é avisado por e-mail.</p>
+          <p class="note">Plano grátis do Resend: <strong>100 e-mails/dia</strong> (3.000/mês), somando alertas ao Encarregado e e-mails de conta. Acima disso o envio falha até o dia seguinte — suba de plano se o cadastro crescer.</p>
           <p class="note">Envs novas só entram em vigor num <strong>novo deploy</strong> → ver item E.</p>
         </div>
       </div>

@@ -1766,13 +1766,14 @@ export const enUS: Messages = {
     s5Intro:
       'We do not sell personal data. We share it with processors (service providers that process data on our behalf, under contract) strictly to operate the app:',
     s5Cabecalho: ['Provider', 'For what', 'Category'],
-    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search'],
+    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search', 'Resend'],
     s5ParaQue: [
       'App hosting',
       'Database',
       'Image generation and search embeddings',
       'Text generation/assistance',
       'External link search in "Web Discovery"',
+      'Transactional email (sign-up confirmation, password reset, privacy alerts)',
     ],
     s5Categorias: [
       'Infrastructure processor',
@@ -1780,6 +1781,7 @@ export const enUS: Messages = {
       'AI processor',
       'AI processor',
       'Search processor',
+      'Infrastructure processor',
     ],
     s5Nota: 'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes.',
     s5Transferencia:
