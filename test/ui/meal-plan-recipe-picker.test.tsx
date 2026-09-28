@@ -224,7 +224,7 @@ describe('MealPlanRecipePicker — Anotação (ADR-0037)', () => {
     await screen.findByText(M.semReceitas)
 
     await user.selectOptions(screen.getByRole('combobox', { name: M.refeicao }), 'jantar')
-    await user.type(screen.getByRole('textbox', { name: M.anotacaoTitulo }), '  Jantar   fora ')
+    await user.type(screen.getByRole('textbox', { name: M.anotacaoRotulo }), '  Jantar   fora ')
     await user.click(screen.getByRole('button', { name: M.anotar }))
 
     await waitFor(() => expect(onPlanned).toHaveBeenCalled())
@@ -239,7 +239,7 @@ describe('MealPlanRecipePicker — Anotação (ADR-0037)', () => {
     await screen.findByText(M.semReceitas)
 
     await user.click(screen.getByRole('button', { name: M.anotarRapido.replace('{texto}', 'Sobras') }))
-    expect(await screen.findByText(M.erroAnotacao)).toBeInTheDocument()
+    expect(await screen.findByText(M.erroAnotacao.replace('{max}', '80'))).toBeInTheDocument()
     expect(onPlanned).not.toHaveBeenCalled()
     expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({ note: 'Sobras' })
   })

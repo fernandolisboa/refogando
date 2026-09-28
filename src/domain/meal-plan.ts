@@ -149,7 +149,9 @@ export function parsePlanNote(value: unknown): string | 'invalid' {
   if (typeof value !== 'string') return 'invalid'
   const note = value
     .normalize('NFC')
-    .replace(/[\p{Cc}\u202A-\u202E\u2066-\u2069]/gu, ' ')
+    // Controles, marcas/embeddings/isolates bidi e invisíveis de largura zero. O ZWJ (U+200D) fica: é
+    // ele que junta os emoji compostos (👨‍🍳).
+    .replace(/[\p{Cc}\u061C\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
   if (note.length === 0 || [...note].length > MEAL_PLAN_NOTE_MAX) return 'invalid'

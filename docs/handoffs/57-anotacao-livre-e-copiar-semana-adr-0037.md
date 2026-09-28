@@ -39,6 +39,7 @@ Os dois follow-ups do Cardápio que o ADR-0035 e o handoff 56 deixaram abertos.
 - **`recipe_id` agora é nullable**: qualquer leitura nova de `meal_plan_entry` que precise da Receita deve filtrar `isNotNull(recipe_id)` ou fazer `innerJoin`.
 - **Preview da Vercel flaka em PR com migração** (0071 aqui): gatear só no check "checks".
 - **Uma migração em voo por vez.** Se outra entrar na main antes, apagar `0071_*.sql` + snapshot, reverter `_journal.json` e `npx drizzle-kit generate --name meal_plan_note` de novo.
+- **Teto de 12 por dia sem lock** (como no ADR-0035/0036): anotar e copiar contam e inserem sem trava por usuário; requisições paralelas podem passar do teto. Inofensivo (as leituras são limitadas); se importar, um `pg_advisory_xact_lock` por usuário nos caminhos de escrita.
 - **Testes de integração locais**: PG 17 com pgvector, `TEST_DATABASE_URL` inline no comando, nunca exportado.
 
 ## 5. Pendências e follow-ups

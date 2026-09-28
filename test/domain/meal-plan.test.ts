@@ -3,16 +3,20 @@ import {
   MEAL_PLAN_MAX_DATE,
   MEAL_PLAN_MAX_RANGE_DAYS,
   MEAL_PLAN_MIN_DATE,
+  MEAL_PLAN_NOTE_MAX,
   MEAL_SLOTS,
   addDays,
   compareMealPlanEntries,
   isMealSlot,
   isPlanDate,
+  parsePlanNote,
   parsePlanPorcoes,
   parsePlanRange,
+  planPreviousWeekCopy,
   rangeLength,
   weekDays,
   weekStartOf,
+  type CopyableMealPlanEntry,
   type MealSlot,
 } from '@/domain/meal-plan'
 
@@ -225,14 +229,20 @@ describe('compareMealPlanEntries — dia → refeição do dia → criação', (
 })
 
 // ── ADR-0037: Anotação livre + copiar a semana anterior ─────────────────────────
-import { MEAL_PLAN_NOTE_MAX, parsePlanNote, planPreviousWeekCopy, type CopyableMealPlanEntry } from '@/domain/meal-plan'
 
 describe('parsePlanNote (ADR-0037)', () => {
   it('normaliza: pontas, espaços repetidos, quebras de linha e controles viram um espaço', () => {
     expect(parsePlanNote('  Jantar   fora ')).toBe('Jantar fora')
     expect(parsePlanNote('Sobras\nde\tterça')).toBe('Sobras de terça')
     expect(parsePlanNote('a\u0000b')).toBe('a b')
-    expect(parsePlanNote('abc‮def')).toBe('abc def')
+    expect(parsePlanNote('abc\u202Edef')).toBe('abc def')
+    expect(parsePlanNote('\u2067abc\u2069')).toBe('abc')
+    expect(parsePlanNote('\u200Fjantar\u200E')).toBe('jantar')
+    expect(parsePlanNote('a\u061Cb')).toBe('a b')
+  })
+  it('só invisíveis de largura zero ⇒ invalid (não vira uma anotação que não se vê)', () => {
+    expect(parsePlanNote('\u200B')).toBe('invalid')
+    expect(parsePlanNote('\uFEFF \u200B')).toBe('invalid')
   })
   it('preserva emoji compostos (ZWJ) e acentos', () => {
     expect(parsePlanNote('Pizza 👨‍🍳')).toBe('Pizza 👨‍🍳')

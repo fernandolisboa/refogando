@@ -289,6 +289,30 @@ describe('Cardápio — copiar semana anterior (ADR-0037)', () => {
     expect(await res.json()).toEqual({ ok: true, addedCount: 0, skippedCount: 1 })
   })
 
+  it('a PRÓPRIA Receita privada é copiada (o gate de Salvar deixa o dono)', async () => {
+    const me = await session()
+    const [row] = await getDb()
+      .insert(recipe)
+      .values({ origin: 'ai_structured', originalLocale: 'pt-BR', visibility: 'private', ownerId: me.userId })
+      .returning({ id: recipe.id })
+    await seedTranslation({ recipeId: row.id, locale: 'pt-BR', titulo: 'Minha privada', provenance: 'escrita_por_pessoa' })
+    await plan(me.headers, row.id, PREV_MON, 'almoco', 3)
+
+    const res = await copyWeek({ week: MON }, me.headers)
+    expect(await res.json()).toEqual({ ok: true, addedCount: 1, skippedCount: 0 })
+    const week = await readWeek(me.headers, MON, SUN)
+    expect(week).toEqual([expect.objectContaining({ day: MON, slot: 'almoco', porcoes: 3, recipe: expect.objectContaining({ id: row.id }) })])
+  })
+
+  it('uma Anotação ocupa a refeição: a cópia não põe a Receita por cima', async () => {
+    const { headers } = await session()
+    const r = await seedCatalogRecipe('A')
+    await plan(headers, r, PREV_MON, 'jantar')
+    await note(headers, 'Jantar fora', MON, 'jantar')
+    const res = await copyWeek({ week: MON }, headers)
+    expect(await res.json()).toEqual({ ok: true, addedCount: 0, skippedCount: 1 })
+  })
+
   it('nunca copia o plano de outro usuário: semana anterior vazia pra quem pede ⇒ 422', async () => {
     const owner = await session()
     const other = await session()

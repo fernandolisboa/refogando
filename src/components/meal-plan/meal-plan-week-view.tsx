@@ -166,6 +166,7 @@ export function MealPlanWeekView() {
     opts: { quietNotFound?: boolean } = {},
   ): Promise<boolean> {
     setActionError(null)
+    setCopyMessage(null)
     try {
       const res = await fetch(`/api/me/meal-plan/entries/${id}`, {
         method: 'PATCH',
@@ -222,6 +223,9 @@ export function MealPlanWeekView() {
   // dias que passaram não são preenchidos). O servidor decide o que entra; a semana recarrega.
   async function handleCopyPreviousWeek() {
     if (copying) return
+    // A semana do clique: se o usuário trocar de semana com a cópia em voo, o resultado não aparece
+    // debaixo da semana errada.
+    const clickedWeek = weekStart
     setCopying(true)
     setActionError(null)
     setCopyMessage(null)
@@ -236,6 +240,7 @@ export function MealPlanWeekView() {
         addedCount?: number
         skippedCount?: number
       }
+      if (clickedWeek !== weekRef.current) return
       if (!res.ok) {
         setActionError(body.error === 'semana_anterior_vazia' ? m.erroCopiaVazia : m.erroCopiar)
         return
@@ -243,7 +248,7 @@ export function MealPlanWeekView() {
       setCopyMessage(copyResultMessage(body.addedCount ?? 0, body.skippedCount ?? 0, m))
       await loadRef.current()
     } catch {
-      setActionError(m.erroCopiar)
+      if (clickedWeek === weekRef.current) setActionError(m.erroCopiar)
     } finally {
       setCopying(false)
     }
@@ -251,6 +256,7 @@ export function MealPlanWeekView() {
 
   async function handleRemove(entry: MealPlanEntry) {
     setActionError(null)
+    setCopyMessage(null)
     setEntries((prev) => prev.filter((e) => e.id !== entry.id))
     try {
       const res = await fetch(`/api/me/meal-plan/entries/${entry.id}`, { method: 'DELETE' })
@@ -446,6 +452,7 @@ export function MealPlanWeekView() {
         days={days}
         onPlanned={() => {
           setPickerDay(null)
+          setCopyMessage(null)
           void loadRef.current()
         }}
       />

@@ -565,20 +565,23 @@ export async function applyCopyPreviousWeek(input: {
       targetTo: target.to,
     })
 
-    let addedCount = 0
-    for (const e of toInsert) {
-      // Sem alvo: cobre as DUAS UNIQUEs (Receita e Anotação) — duplo clique vira no-op.
-      const inserted = await tx
-        .insert(mealPlanEntry)
-        .values(
-          e.recipeId != null
-            ? { userId, day: e.day, slot: e.slot, recipeId: e.recipeId, porcoes: e.porcoes }
-            : { userId, day: e.day, slot: e.slot, note: e.note },
-        )
-        .onConflictDoNothing()
-        .returning({ id: mealPlanEntry.id })
-      if (inserted.length > 0) addedCount++
-    }
+    // UM INSERT multi-linha (≤ 7 × teto). Sem alvo no ON CONFLICT: cobre as DUAS UNIQUEs (Receita e
+    // Anotação) — duplo clique vira no-op.
+    const inserted =
+      toInsert.length === 0
+        ? []
+        : await tx
+            .insert(mealPlanEntry)
+            .values(
+              toInsert.map((e) =>
+                e.recipeId != null
+                  ? { userId, day: e.day, slot: e.slot, recipeId: e.recipeId, note: null, porcoes: e.porcoes }
+                  : { userId, day: e.day, slot: e.slot, recipeId: null, note: e.note, porcoes: null },
+              ),
+            )
+            .onConflictDoNothing()
+            .returning({ id: mealPlanEntry.id })
+    const addedCount = inserted.length
     return {
       kind: 'ok' as const,
       addedCount,

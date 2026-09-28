@@ -163,6 +163,7 @@ function PickerBody({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState('')
+  const noteError = m.erroAnotacao.replace('{max}', String(MEAL_PLAN_NOTE_MAX))
 
   const filtered = useMemo(() => {
     const q = fold(query)
@@ -183,7 +184,7 @@ function PickerBody({
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         setError(
-          'note' in payload && body.error === 'dados_invalidos' ? m.erroAnotacao : mealPlanErrorMessage(body.error, m),
+          'note' in payload && body.error === 'dados_invalidos' ? noteError : mealPlanErrorMessage(body.error, m),
         )
         return
       }
@@ -202,7 +203,7 @@ function PickerBody({
   function planNote(text: string) {
     const parsed = parsePlanNote(text)
     if (parsed === 'invalid') {
-      setError(m.erroAnotacao)
+      setError(noteError)
       return
     }
     void submit(NOTE_BUSY, { note: parsed })
@@ -242,8 +243,9 @@ function PickerBody({
           planNote(note)
         }}
       >
-        <label htmlFor="cardapio-anotacao" className="text-xs font-semibold tracking-wide text-muted uppercase">
-          {m.anotacaoTitulo}
+        <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">{m.anotacaoTitulo}</h3>
+        <label htmlFor="cardapio-anotacao" className="sr-only">
+          {m.anotacaoRotulo}
         </label>
         <div className="flex gap-2">
           <Input
