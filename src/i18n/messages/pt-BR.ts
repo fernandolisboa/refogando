@@ -40,6 +40,8 @@ export const ptBR = {
     // ADR-0035: "Cardápio" (Plano de refeições da semana) na nav logada. O índice das Listas de compras
     // (menu da conta) reusa `listaDeCompras.indiceTitulo`.
     cardapio: 'Cardápio',
+    // ADR-0038: "Despensa" na nav logada.
+    despensa: 'Despensa',
   },
   // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
   // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
@@ -1064,6 +1066,13 @@ export const ptBR = {
   // avulso + editar quantidade + remover linha) E o botão de adicionar UMA Receita com porções-alvo
   // do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
   listaDeCompras: {
+    // ADR-0038 dec.6: copia os marcados para a Despensa (não apaga nada da Lista).
+    guardarNaDespensa: 'Guardar marcados na despensa',
+    guardadosNaDespensa: '{n} itens foram para a despensa.',
+    guardadoNaDespensaSingular: '1 item foi para a despensa.',
+    guardadosJaNaDespensa: 'Os marcados já estavam na despensa.',
+    erroDespensaCheia: 'Sua despensa está cheia. Tire alguns itens dela antes.',
+    abrirDespensa: 'Abrir despensa',
     // Multi-seleção (fatia E, #530).
     selecionarReceita: 'Selecionar {nome}',
     selecionadaSingular: '{n} receita selecionada',
@@ -2072,6 +2081,47 @@ export const ptBR = {
     titulo: 'Planos',
     corpo: 'Estamos preparando um plano Pro com mais gerações por IA, além de créditos avulsos para quem prefere pagar só pelo que usa. Ainda não é possível assinar ou comprar — volte em breve.',
     voltar: 'Voltar para o início',
+  },
+  // Despensa (ADR-0038): "o que dá pra fazer com o que eu tenho" em `/me/pantry`, e o "Guardar marcados na
+  // despensa" da Lista de compras. `{…}` é interpolado por `String.replace`.
+  despensa: {
+    titulo: 'Despensa',
+    descricao: 'Diga o que você tem em casa e veja o que dá para cozinhar agora ou com poucas compras.',
+    precisaEntrar: 'Entre na sua conta para montar sua despensa.',
+    adicionarRotulo: 'O que você tem em casa',
+    adicionarPlaceholder: 'Ex.: ovo, tomate, queijo',
+    adicionarDica: 'Separe vários itens com vírgula.',
+    adicionar: 'Adicionar',
+    adicionando: 'Adicionando…',
+    sugestoesTitulo: 'Itens comuns',
+    sugestoes: ['ovo', 'arroz', 'feijão', 'cebola', 'alho', 'tomate', 'batata', 'frango', 'queijo', 'leite', 'manteiga', 'farinha de trigo', 'macarrão', 'limão'],
+    sugestaoAdicionar: 'Adicionar {nome} à despensa',
+    vazia: 'Sua despensa está vazia. Adicione o que você tem em casa para ver o que dá para fazer.',
+    itensContagem: '{n} itens na despensa',
+    itemContagem: '1 item na despensa',
+    remover: 'Tirar {nome} da despensa',
+    limpar: 'Limpar despensa',
+    confirmarLimpar: 'Tirar todos os itens da despensa?',
+    basicos: 'Tenho o básico ({lista})',
+    resultadosTitulo: 'O que dá pra fazer',
+    prontasTitulo: 'Dá pra fazer agora',
+    quaseProntasTitulo: 'Falta pouco',
+    semResultados: 'Nenhuma receita combina com a sua despensa ainda. Adicione mais itens ou crie uma receita com o que você tem.',
+    temDeTotal: 'Você tem {n} de {total}',
+    falta: 'Falta: {lista}',
+    porNaLista: 'Pôr o que falta na lista',
+    pondoNaLista: 'Pondo…',
+    postoNaLista: 'Foi para “{lista}”.',
+    abrirLista: 'Abrir lista',
+    criarComDespensa: 'Criar receita com o que tenho',
+    criarComDespensaDica: 'A IA cria uma receita nova a partir da sua despensa.',
+    comoCasa: 'O casamento é pelo nome do ingrediente: “farinha” cobre “farinha de trigo”. Confira a receita antes de cozinhar.',
+    erroCarregar: 'Não foi possível carregar sua despensa. Tente de novo.',
+    erroCarregarResultados: 'Não foi possível buscar as receitas. Tente de novo.',
+    erroAdicionar: 'Escreva nomes de até {max} caracteres, no máximo {lote} de uma vez.',
+    erroCheia: 'Sua despensa chegou ao limite de {max} itens. Tire alguns antes de adicionar.',
+    erro: 'Não foi possível salvar a mudança. Tente de novo.',
+    erroPorNaLista: 'Não foi possível pôr na lista. Tente de novo.',
   },
   // Plano de refeições (ADR-0035): o "Cardápio da semana" em `/me/meal-plan`, o botão de calendário do
   // detalhe e o "gerar lista de compras" do período. `{…}` é interpolado por `String.replace`.

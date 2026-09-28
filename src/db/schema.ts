@@ -1691,3 +1691,28 @@ export const mealPlanSuggestionEvent = pgTable(
   },
   (t) => [index('meal_plan_suggestion_event_user_created_idx').on(t.userId, t.createdAt)],
 )
+
+// ── Despensa (ADR-0038) ──────────────────────────────────────────────────────────
+// "O que eu tenho em casa": UMA lista PRIVADA por Usuário, de NOMES, sem quantidade (dec.1). Toda leitura
+// escopa por `user_id` (404 leak-safe, como a Lista de compras).
+//  - `nome`: o texto como a pessoa digitou, já normalizado pra exibição (`parsePantryName`, 1–60 code points).
+//  - `match_key`: a chave de DEDUP (`pantryMatchKey`: minúsculo, sem acento, pontuação vira espaço) — "Ovo" e
+//    "ovo" são o mesmo item; re-adicionar é idempotente pela UNIQUE. O CASAMENTO com as Receitas NÃO usa esta
+//    coluna: normaliza o `nome` em SQL, com a MESMA expressão do lado da Receita (`loadPantryMatches`).
+//  - UNIQUE (user_id, match_key) já serve a leitura por dono (prefixo) — índice próprio seria redundante.
+export const pantryItem = pgTable(
+  'pantry_item',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    nome: text('nome').notNull(),
+    matchKey: text('match_key').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('pantry_item_user_match_uq').on(t.userId, t.matchKey),
+    check('pantry_item_nome_chk', sql`char_length(${t.nome}) BETWEEN 1 AND 60`),
+  ],
+)

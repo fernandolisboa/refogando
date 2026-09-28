@@ -9,6 +9,7 @@ import {
   generation,
   imageGeneration,
   mealPlanEntry,
+  pantryItem,
   notification,
   recipe,
   recipeIngredient,
@@ -244,6 +245,13 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     .where(eq(mealPlanEntry.userId, userId))
     .orderBy(asc(mealPlanEntry.day), asc(mealPlanEntry.createdAt))
 
+  // ── Despensa (ADR-0038): os nomes que o próprio titular digitou ────────────────────────────
+  const pantry = await db
+    .select({ nome: pantryItem.nome, createdAt: pantryItem.createdAt })
+    .from(pantryItem)
+    .where(eq(pantryItem.userId, userId))
+    .orderBy(asc(pantryItem.createdAt))
+
   // ── Social: SÓ handles públicos de quem o titular segue + contagens. NUNCA PII de terceiros
   //    (sem e-mail/nome de terceiros); a lista de SEGUIDORES é só CONTAGEM (escolha de terceiros).
   const followingRows = await db
@@ -415,6 +423,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     collections,
     shoppingLists,
     mealPlan,
+    pantry,
     social: {
       followingCount: followingRows.length,
       followersCount,

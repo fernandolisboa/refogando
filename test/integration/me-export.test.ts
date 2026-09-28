@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/me/export/route'
 import { getDb } from '@/server/deps'
-import { mealPlanEntry, notification, shoppingList, shoppingListItem, userFollow } from '@/db/schema'
+import { mealPlanEntry, notification, pantryItem, shoppingList, shoppingListItem, userFollow } from '@/db/schema'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import {
   seedRecipe,
@@ -89,6 +89,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       .insert(mealPlanEntry)
       .values({ userId, day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 })
     await getDb().insert(mealPlanEntry).values({ userId, day: '2026-09-30', slot: 'jantar', note: 'Jantar fora' })
+    await getDb().insert(pantryItem).values({ userId, nome: 'Ovo caipira', matchKey: 'ovo caipira' })
 
     const res = await get(headers)
     expect(res.status).toBe(200)
@@ -108,6 +109,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
         items: Array<{ nome: string; quantidade: string | null; unidade: string | null; sourceRecipeId: string | null }>
       }>
       mealPlan: Array<{ day: string; slot: string; recipeId: string | null; note: string | null; porcoes: number | null }>
+      pantry: Array<{ nome: string }>
     }
 
     expect(dump.format).toBe('refogando-account-export/v1')
@@ -139,6 +141,8 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       // Anotação livre (ADR-0037): texto do próprio titular, entra no export.
       expect.objectContaining({ day: '2026-09-30', slot: 'jantar', recipeId: null, note: 'Jantar fora', porcoes: null }),
     ])
+    // Despensa (ADR-0038): os nomes que o titular digitou.
+    expect(dump.pantry).toEqual([expect.objectContaining({ nome: 'Ovo caipira' })])
   })
 
   it('NÃO vaza PII de terceiros: seguindo traz só handle, seguidores só contagem, sem e-mail de outros', async () => {

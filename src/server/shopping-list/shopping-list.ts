@@ -288,8 +288,10 @@ async function readRecipeItemsForList(input: {
   userId: string
   recipeId: string
   locale: string
+  /** Só estes Itens (`recipe_ingredient.id`) — "o que falta" da Despensa (ADR-0038 dec.5). Ausente ⇒ todos. */
+  lineIds?: ReadonlySet<string>
 }): Promise<RecipeItemsRead> {
-  const { db, userId, recipeId, locale } = input
+  const { db, userId, recipeId, locale, lineIds } = input
 
   const [gate] = await db
     .select({
@@ -316,6 +318,7 @@ async function readRecipeItemsForList(input: {
 
   const ingredientRows = await db
     .select({
+      id: recipeIngredient.id,
       ordem: recipeIngredient.ordem,
       ingredientId: recipeIngredient.ingredientId,
       quantidade: recipeIngredient.quantidade,
@@ -329,12 +332,14 @@ async function readRecipeItemsForList(input: {
   return {
     status: 'ok',
     porcoes: gate.porcoes,
-    items: ingredientRows.map((r) => ({
-      ingredientId: r.ingredientId,
-      nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
-      quantidade: r.quantidade,
-      unidade: r.unidade,
-    })),
+    items: ingredientRows
+      .filter((r) => lineIds === undefined || lineIds.has(r.id))
+      .map((r) => ({
+        ingredientId: r.ingredientId,
+        nome: resolveIngredientName(localizedNames.get(r.ordem), r.rawText) ?? '',
+        quantidade: r.quantidade,
+        unidade: r.unidade,
+      })),
   }
 }
 
@@ -460,6 +465,41 @@ export async function applyAddRecipeToShoppingList(input: {
   const result = await addRecipeItemsToList({ db, userId, listId, recipeId, locale, porcoesAlvo })
   if (result.status === 'ineligible') return { kind: 'not_found' }
   return { kind: 'ok', ...(result.warning ? { warning: result.warning } : {}) }
+}
+
+export type ShoppingListAddLinesResult = { kind: 'ok'; addedLines: number } | { kind: 'not_found' }
+
+/**
+ * Adiciona SÓ alguns Itens de UMA Receita a uma Lista (Despensa, ADR-0038 dec.5a: "pôr o que falta na
+ * lista"). Mesmo gate de Salvar, mesma leitura com nome por-locale e o MESMO upsert de merge/agregação/
+ * snapshot do ADR-0032 — só filtra os Itens por `recipe_ingredient.id` antes de consolidar. Quantidade na
+ * BASE (sem escala, como o multi-adicionar da dec.7). `lineIds` vem do servidor (a Despensa recalcula o
+ * que falta), nunca do cliente. Lista de outro ou Receita inelegível ⇒ o mesmo `not_found`. Posse da Lista
+ * checada dentro da transação com `FOR NO KEY UPDATE`, como o caminho do Plano.
+ */
+export async function applyAddRecipeLinesToShoppingList(input: {
+  db: Database
+  userId: string
+  listId: string
+  recipeId: string
+  locale: string
+  lineIds: ReadonlySet<string>
+}): Promise<ShoppingListAddLinesResult> {
+  const { db, userId, listId, recipeId, locale, lineIds } = input
+  return db.transaction(async (tx) => {
+    const [list] = await tx
+      .select({ id: shoppingList.id })
+      .from(shoppingList)
+      .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+      .for('no key update')
+    if (!list) return { kind: 'not_found' as const }
+
+    const read = await readRecipeItemsForList({ db: tx, userId, recipeId, locale, lineIds })
+    if (read.status === 'ineligible') return { kind: 'not_found' as const }
+    const lines = consolidateIngredientsToAdd(read.items)
+    if (lines.length > 0) await upsertShoppingListLines({ db: tx, listId, lines, sourceRecipeId: recipeId })
+    return { kind: 'ok' as const, addedLines: lines.length }
+  })
 }
 
 export type ShoppingListAddRecipesResult =
