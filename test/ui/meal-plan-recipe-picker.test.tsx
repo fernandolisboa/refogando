@@ -215,3 +215,40 @@ describe('MealPlanRecipePicker (ADR-0035 dec.4)', () => {
     expect(await screen.findByText(M.erroCarregarReceitas)).toHaveAttribute('role', 'alert')
   })
 })
+
+describe('MealPlanRecipePicker — Anotação (ADR-0037)', () => {
+  it('anota um texto livre no dia/refeição escolhidos (normalizado) e fecha', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({ saved: [], mine: [], post: { status: 200, body: { ok: true, entryId: 'n1' } } })
+    const onPlanned = renderPicker()
+    await screen.findByText(M.semReceitas)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: M.refeicao }), 'jantar')
+    await user.type(screen.getByRole('textbox', { name: M.anotacaoTitulo }), '  Jantar   fora ')
+    await user.click(screen.getByRole('button', { name: M.anotar }))
+
+    await waitFor(() => expect(onPlanned).toHaveBeenCalled())
+    const post = calls.find((c) => c.method === 'POST')
+    expect(post?.body).toEqual({ note: 'Jantar fora', day: '2026-09-30', slot: 'jantar' })
+  })
+
+  it('atalho ("Sobras") anota com um toque; 400 do servidor vira a mensagem de anotação', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({ saved: [], mine: [], post: { status: 400, body: { error: 'dados_invalidos' } } })
+    const onPlanned = renderPicker()
+    await screen.findByText(M.semReceitas)
+
+    await user.click(screen.getByRole('button', { name: M.anotarRapido.replace('{texto}', 'Sobras') }))
+    expect(await screen.findByText(M.erroAnotacao)).toBeInTheDocument()
+    expect(onPlanned).not.toHaveBeenCalled()
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({ note: 'Sobras' })
+  })
+
+  it('"Anotar" fica desabilitado com o campo vazio', async () => {
+    mockFetch({ saved: [], mine: [] })
+    renderPicker()
+    await screen.findByText(M.semReceitas)
+    expect(screen.getByRole('button', { name: M.anotar })).toBeDisabled()
+  })
+})
+

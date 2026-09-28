@@ -64,6 +64,7 @@ function entry(over: Partial<MealPlanEntry> = {}): MealPlanEntry {
     slot: 'jantar',
     porcoes: null,
     createdAt: '2026-09-27T10:00:00.000Z',
+    note: null,
     recipe: { id: 'r1', name: 'Feijoada', slug: 'feijoada', porcoes: 4 },
     ...over,
   }
@@ -78,6 +79,7 @@ function mockFetch(opts: {
   /** Segura cada PATCH até a promessa resolver (pra observar requisições em voo). */
   patchGate?: () => Promise<void>
   del?: FetchResult
+  copy?: FetchResult
 }) {
   const calls: Call[] = []
   const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -93,6 +95,8 @@ function mockFetch(opts: {
       r = opts.patch ?? { status: 200, body: { ok: true } }
     } else if (url.pathname.startsWith('/api/me/meal-plan/entries/') && method === 'DELETE') {
       r = opts.del ?? { status: 200, body: { ok: true } }
+    } else if (url.pathname === '/api/me/meal-plan/copy-previous-week' && method === 'POST') {
+      r = opts.copy ?? { status: 200, body: { ok: true, addedCount: 0, skippedCount: 0 } }
     }
     return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body } as Response
   })
@@ -404,5 +408,70 @@ describe('MealPlanWeekView (ADR-0035)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(M.escolherReceita)).toBeInTheDocument()
     expect(within(dialog).getByRole('combobox', { name: M.dia })).toHaveValue('2026-10-01')
+  })
+})
+
+describe('MealPlanWeekView — Anotação e copiar semana (ADR-0037)', () => {
+  it('Anotação: mostra o texto, sem seletor de porções; tirar e mover usam o texto como nome', async () => {
+    mockFetch({ entries: [entry({ id: 'n1', note: 'Jantar fora', recipe: null })] })
+    renderView()
+    await waitLoaded(1)
+
+    const card = dayCard(TODAY)
+    expect(within(card).getByText('Jantar fora')).toBeInTheDocument()
+    expect(within(card).queryByText(M.receitaIndisponivel)).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: /Menos porções/ })).not.toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: M.remover.replace('{nome}', 'Jantar fora') })).toBeInTheDocument()
+    expect(within(card).getByRole('combobox', { name: M.moverPara.replace('{nome}', 'Jantar fora') })).toBeInTheDocument()
+  })
+
+  it('semana só com Anotações: "Gerar lista de compras" fica desabilitado (não há ingredientes)', async () => {
+    mockFetch({ entries: [entry({ id: 'n1', note: 'Sobras', recipe: null })] })
+    renderView()
+    await waitLoaded(1)
+    expect(screen.getByRole('button', { name: M.gerarLista })).toBeDisabled()
+  })
+
+  it('"Copiar semana anterior" na semana corrente: manda a semana e hoje, mostra o resultado e recarrega', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      entries: [],
+      copy: { status: 200, body: { ok: true, addedCount: 3, skippedCount: 1 } },
+    })
+    renderView()
+    await screen.findByText(M.vazioSemana)
+    const getsBefore = calls.filter((c) => c.url.pathname === '/api/me/meal-plan').length
+
+    await user.click(screen.getByRole('button', { name: M.copiarSemana }))
+    expect(
+      await screen.findByText(`${M.copiadas.replace('{n}', '3')} ${M.copiaPuladasSingular}`),
+    ).toBeInTheDocument()
+
+    const post = calls.find((c) => c.url.pathname === '/api/me/meal-plan/copy-previous-week')
+    expect(post?.body).toEqual({ week: '2026-09-28', fromDay: TODAY })
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.pathname === '/api/me/meal-plan').length).toBeGreaterThan(getsBefore),
+    )
+  })
+
+  it('"Copiar semana anterior" noutra semana: copia a semana inteira (sem fromDay)', async () => {
+    nav.search = 'semana=2026-10-05'
+    const user = userEvent.setup()
+    const { calls } = mockFetch({ entries: [], copy: { status: 200, body: { ok: true, addedCount: 0, skippedCount: 2 } } })
+    renderView()
+    await screen.findByText(M.vazioSemana)
+    await user.click(screen.getByRole('button', { name: M.copiarSemana }))
+    expect(await screen.findByText(M.copiaNada)).toBeInTheDocument()
+    const post = calls.find((c) => c.url.pathname === '/api/me/meal-plan/copy-previous-week')
+    expect(post?.body).toEqual({ week: '2026-10-05' })
+  })
+
+  it('semana anterior vazia (422): alerta localizado', async () => {
+    const user = userEvent.setup()
+    mockFetch({ entries: [], copy: { status: 422, body: { error: 'semana_anterior_vazia' } } })
+    renderView()
+    await screen.findByText(M.vazioSemana)
+    await user.click(screen.getByRole('button', { name: M.copiarSemana }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroCopiaVazia)
   })
 })

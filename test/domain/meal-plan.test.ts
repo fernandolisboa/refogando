@@ -223,3 +223,88 @@ describe('compareMealPlanEntries — dia → refeição do dia → criação', (
     expect(compareMealPlanEntries(older, { ...older })).toBe(0)
   })
 })
+
+// ── ADR-0037: Anotação livre + copiar a semana anterior ─────────────────────────
+import { MEAL_PLAN_NOTE_MAX, parsePlanNote, planPreviousWeekCopy, type CopyableMealPlanEntry } from '@/domain/meal-plan'
+
+describe('parsePlanNote (ADR-0037)', () => {
+  it('normaliza: pontas, espaços repetidos, quebras de linha e controles viram um espaço', () => {
+    expect(parsePlanNote('  Jantar   fora ')).toBe('Jantar fora')
+    expect(parsePlanNote('Sobras\nde\tterça')).toBe('Sobras de terça')
+    expect(parsePlanNote('a\u0000b')).toBe('a b')
+    expect(parsePlanNote('abc‮def')).toBe('abc def')
+  })
+  it('preserva emoji compostos (ZWJ) e acentos', () => {
+    expect(parsePlanNote('Pizza 👨‍🍳')).toBe('Pizza 👨‍🍳')
+    expect(parsePlanNote('Feijão')).toBe('Feijão')
+  })
+  it('vazio, só espaço, não-string ou acima do teto ⇒ invalid', () => {
+    expect(parsePlanNote('')).toBe('invalid')
+    expect(parsePlanNote('   \n ')).toBe('invalid')
+    expect(parsePlanNote(42)).toBe('invalid')
+    expect(parsePlanNote(null)).toBe('invalid')
+    expect(parsePlanNote('x'.repeat(MEAL_PLAN_NOTE_MAX))).toBe('x'.repeat(MEAL_PLAN_NOTE_MAX))
+    expect(parsePlanNote('x'.repeat(MEAL_PLAN_NOTE_MAX + 1))).toBe('invalid')
+  })
+})
+
+describe('planPreviousWeekCopy (ADR-0037)', () => {
+  const e = (over: Partial<CopyableMealPlanEntry>): CopyableMealPlanEntry => ({
+    day: '2026-09-21',
+    slot: 'almoco',
+    recipeId: 'r1',
+    note: null,
+    porcoes: null,
+    createdAt: '2026-09-20T10:00:00.000Z',
+    ...over,
+  })
+  const week = { targetFrom: '2026-09-28', targetTo: '2026-10-04' }
+
+  it('anda +7 dias, mantém porções e anotações, na ordem do plano', () => {
+    const { toInsert, skippedCount } = planPreviousWeekCopy(
+      [
+        e({ day: '2026-09-23', slot: 'jantar', recipeId: null, note: 'Jantar fora' }),
+        e({ day: '2026-09-21', slot: 'jantar', recipeId: 'r2', porcoes: 4 }),
+        e({ day: '2026-09-21', slot: 'almoco' }),
+      ],
+      [],
+      week,
+    )
+    expect(toInsert.map((x) => [x.day, x.slot, x.recipeId ?? x.note, x.porcoes])).toEqual([
+      ['2026-09-28', 'almoco', 'r1', null],
+      ['2026-09-28', 'jantar', 'r2', 4],
+      ['2026-09-30', 'jantar', 'Jantar fora', null],
+    ])
+    expect(skippedCount).toBe(0)
+  })
+
+  it('só preenche refeições VAZIAS no destino; prato + acompanhamento da origem entram juntos', () => {
+    const { toInsert, skippedCount } = planPreviousWeekCopy(
+      [e({ slot: 'almoco', recipeId: 'r1' }), e({ slot: 'almoco', recipeId: 'r2' }), e({ slot: 'jantar', recipeId: 'r3' })],
+      [{ day: '2026-09-28', slot: 'jantar' }],
+      week,
+    )
+    expect(toInsert.map((x) => x.recipeId)).toEqual(['r1', 'r2'])
+    expect(skippedCount).toBe(1)
+  })
+
+  it('dias antes de targetFrom nem contam como pulados (semana corrente, de hoje em diante)', () => {
+    const { toInsert, skippedCount } = planPreviousWeekCopy(
+      [e({ day: '2026-09-21' }), e({ day: '2026-09-24' })],
+      [],
+      { targetFrom: '2026-09-30', targetTo: '2026-10-04' },
+    )
+    expect(toInsert.map((x) => x.day)).toEqual(['2026-10-01'])
+    expect(skippedCount).toBe(0)
+  })
+
+  it('respeita o teto por dia contando o que já existe', () => {
+    const { toInsert, skippedCount } = planPreviousWeekCopy(
+      [e({ slot: 'almoco', recipeId: 'r1' }), e({ slot: 'jantar', recipeId: 'r2' })],
+      [{ day: '2026-09-28', slot: 'cafe_da_manha' }],
+      { ...week, maxPerDay: 2 },
+    )
+    expect(toInsert.map((x) => x.recipeId)).toEqual(['r1'])
+    expect(skippedCount).toBe(1)
+  })
+})

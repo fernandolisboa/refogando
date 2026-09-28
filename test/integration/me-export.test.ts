@@ -88,6 +88,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     await getDb()
       .insert(mealPlanEntry)
       .values({ userId, day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 })
+    await getDb().insert(mealPlanEntry).values({ userId, day: '2026-09-30', slot: 'jantar', note: 'Jantar fora' })
 
     const res = await get(headers)
     expect(res.status).toBe(200)
@@ -106,7 +107,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
         name: string
         items: Array<{ nome: string; quantidade: string | null; unidade: string | null; sourceRecipeId: string | null }>
       }>
-      mealPlan: Array<{ day: string; slot: string; recipeId: string; porcoes: number | null }>
+      mealPlan: Array<{ day: string; slot: string; recipeId: string | null; note: string | null; porcoes: number | null }>
     }
 
     expect(dump.format).toBe('refogando-account-export/v1')
@@ -134,7 +135,9 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       items: [{ nome: 'Feijão preto', quantidade: '500.000', unidade: 'g', sourceRecipeId: feijoada }],
     })
     expect(dump.mealPlan).toEqual([
-      expect.objectContaining({ day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 }),
+      expect.objectContaining({ day: '2026-09-29', slot: 'almoco', recipeId: feijoada, note: null, porcoes: 4 }),
+      // Anotação livre (ADR-0037): texto do próprio titular, entra no export.
+      expect.objectContaining({ day: '2026-09-30', slot: 'jantar', recipeId: null, note: 'Jantar fora', porcoes: null }),
     ])
   })
 

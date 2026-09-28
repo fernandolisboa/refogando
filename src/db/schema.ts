@@ -1636,6 +1636,11 @@ export const shoppingListItem = pgTable(
 //    escalador #452), o que o "gerar lista" usa como porções-alvo.
 //  - UNIQUE (user_id, day, slot, recipe_id): a mesma Receita duas vezes no MESMO almoço não faz
 //    sentido — re-adicionar vira upsert das porções (idempotente sob duplo clique).
+//  - ANOTAÇÃO (ADR-0037): a entrada é OU uma Receita OU um texto livre curto (`note`, "jantar fora",
+//    "sobras") — exatamente um dos dois (CHECK). Anotação não tem porções (nada a escalar nem a
+//    comprar). UNIQUE (user_id, day, slot, note): a MESMA anotação repetida na mesma refeição é
+//    idempotente; linhas de Receita (note NULL) nunca colidem nela (NULLs são distintos), assim como
+//    anotações (recipe_id NULL) nunca colidem na UNIQUE da Receita.
 export const mealPlanEntry = pgTable(
   'meal_plan_entry',
   {
@@ -1645,15 +1650,20 @@ export const mealPlanEntry = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     day: date('day', { mode: 'string' }).notNull(),
     slot: mealSlotEnum('slot').notNull(),
-    recipeId: uuid('recipe_id')
-      .notNull()
-      .references(() => recipe.id, { onDelete: 'cascade' }),
+    recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'cascade' }),
+    note: text('note'),
     porcoes: smallint('porcoes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     unique('meal_plan_entry_user_day_slot_recipe_uq').on(t.userId, t.day, t.slot, t.recipeId),
+    unique('meal_plan_entry_user_day_slot_note_uq').on(t.userId, t.day, t.slot, t.note),
+    check('meal_plan_entry_kind_chk', sql`(${t.recipeId} IS NULL) <> (${t.note} IS NULL)`),
+    check(
+      'meal_plan_entry_note_chk',
+      sql`${t.note} IS NULL OR (char_length(${t.note}) BETWEEN 1 AND 80 AND ${t.porcoes} IS NULL)`,
+    ),
     // A UNIQUE acima já serve as leituras por (user_id, day) — é o prefixo dela; índice próprio seria redundante.
     index('meal_plan_entry_recipe_id_idx').on(t.recipeId),
     check('meal_plan_entry_porcoes_chk', sql`${t.porcoes} IS NULL OR ${t.porcoes} BETWEEN 1 AND 99`),

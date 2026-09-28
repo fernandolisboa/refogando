@@ -7,6 +7,9 @@
  * depois; re-planejar a mesma Receita na mesma refeição mantém as porções já ajustadas). Planejar
  * direto de QUALQUER Receita pública é o botão de calendário do detalhe (`RecipeMealPlanButton`).
  *
+ * "Sem receita" (ADR-0037): no mesmo dia + refeição, uma Anotação livre ("jantar fora", "sobras") —
+ * digitada ou por um dos atalhos — vai pelo mesmo `POST .../entries` com `note` no lugar de `recipeId`.
+ *
  * O acervo é carregado na PRIMEIRA abertura e reaproveitado nas seguintes (planejar a semana são
  * vários cliques; os dois endpoints devolvem o acervo inteiro). Minhas criações traz também o que não
  * é planejável: filtrado por `passesOwnRecipeBarriers`, o MESMO critério do gate do servidor.
@@ -15,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Sheet,
   SheetContent,
@@ -22,13 +26,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { MEAL_SLOTS, type MealSlot } from '@/domain/meal-plan'
+import { MEAL_PLAN_NOTE_MAX, MEAL_SLOTS, parsePlanNote, type MealSlot } from '@/domain/meal-plan'
 import { passesOwnRecipeBarriers } from '@/domain/recipe-pool'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { formatShortDay, mealPlanErrorMessage, mealSlotLabel, slotForNow } from './meal-plan-format'
 import { MealPlanThumb } from './meal-plan-thumb'
 
 type Candidate = Pick<RecipeListItem, 'id' | 'name' | 'imageUrl' | 'imageAiGenerated'>
+/** Marca de "enviando uma Anotação" em `busyId` (nunca colide com um uuid de Receita). */
+const NOTE_BUSY = 'note'
 type Status = 'unloaded' | 'loading' | 'idle' | 'error'
 
 /** Minúsculas sem acento — "feijão" casa "feijao". */
@@ -156,25 +162,29 @@ function PickerBody({
   const [slot, setSlot] = useState<MealSlot>(() => slotForNow())
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState('')
 
   const filtered = useMemo(() => {
     const q = fold(query)
     return q === '' ? candidates : candidates.filter((c) => fold(c.name).includes(q))
   }, [candidates, query])
 
-  async function plan(recipeId: string) {
+  // `busyId` marca o que está sendo enviado: o id da Receita, ou `NOTE_BUSY` pra uma Anotação.
+  async function submit(busy: string, payload: { recipeId: string } | { note: string }) {
     if (busyId != null) return
-    setBusyId(recipeId)
+    setBusyId(busy)
     setError(null)
     try {
       const res = await fetch('/api/me/meal-plan/entries', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ recipeId, day, slot }),
+        body: JSON.stringify({ ...payload, day, slot }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(mealPlanErrorMessage(body.error, m))
+        setError(
+          'note' in payload && body.error === 'dados_invalidos' ? m.erroAnotacao : mealPlanErrorMessage(body.error, m),
+        )
         return
       }
       onPlanned()
@@ -183,6 +193,19 @@ function PickerBody({
     } finally {
       setBusyId(null)
     }
+  }
+
+  function plan(recipeId: string) {
+    void submit(recipeId, { recipeId })
+  }
+
+  function planNote(text: string) {
+    const parsed = parsePlanNote(text)
+    if (parsed === 'invalid') {
+      setError(m.erroAnotacao)
+      return
+    }
+    void submit(NOTE_BUSY, { note: parsed })
   }
 
   const selectClass = 'h-9 rounded-md border border-border bg-surface px-2 text-sm text-fg shadow-sm'
@@ -211,6 +234,48 @@ function PickerBody({
           </select>
         </label>
       </div>
+
+      <form
+        className="flex flex-col gap-2 rounded-lg border border-border p-3"
+        onSubmit={(e) => {
+          e.preventDefault()
+          planNote(note)
+        }}
+      >
+        <label htmlFor="cardapio-anotacao" className="text-xs font-semibold tracking-wide text-muted uppercase">
+          {m.anotacaoTitulo}
+        </label>
+        <div className="flex gap-2">
+          <Input
+            id="cardapio-anotacao"
+            value={note}
+            maxLength={MEAL_PLAN_NOTE_MAX}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={m.anotacaoPlaceholder}
+            aria-describedby="cardapio-anotacao-dica"
+          />
+          <Button type="submit" variant="outline" disabled={busyId != null || note.trim() === ''}>
+            {busyId === NOTE_BUSY ? m.anotando : m.anotar}
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {m.anotacaoSugestoes.map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={busyId != null}
+              aria-label={m.anotarRapido.replace('{texto}', () => s)}
+              onClick={() => planNote(s)}
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-fg hover:border-brand-ink hover:bg-brand/10 disabled:opacity-60"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <p id="cardapio-anotacao-dica" className="text-xs text-muted">
+          {m.anotacaoDica}
+        </p>
+      </form>
 
       <div className="flex flex-col gap-1">
         <label htmlFor="cardapio-buscar" className="sr-only">
@@ -256,7 +321,7 @@ function PickerBody({
               <button
                 type="button"
                 disabled={busyId != null}
-                onClick={() => void plan(c.id)}
+                onClick={() => plan(c.id)}
                 className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-brand/10 disabled:opacity-60"
               >
                 <MealPlanThumb

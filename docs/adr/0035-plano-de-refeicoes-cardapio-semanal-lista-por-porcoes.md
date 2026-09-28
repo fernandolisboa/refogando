@@ -24,7 +24,7 @@ O dono pediu (2026-09-28) "a próxima feature grande, que mude alguma coisa no a
 - Domínio puro `@/domain/meal-plan` (datas de calendário, semana ISO, validação de intervalo/porções, ordenação); núcleo `@/server/meal-plan/meal-plan`; `applyAddPlannedRecipesToShoppingList` no núcleo da Lista (reuso, não reimplementação).
 - Rotas: `GET /api/me/meal-plan?from&to`, `POST /api/me/meal-plan/entries`, `PATCH|DELETE /api/me/meal-plan/entries/[id]`, `POST /api/me/meal-plan/shopping-list` (`listId` ou `newListName`).
 - UI: página `/me/meal-plan` ("Cardápio da semana", `?semana=` na URL), "Cardápio" na nav logada, botão de calendário no detalhe. E o **índice das Listas** (`/me/shopping-lists`, no menu da conta): antes uma lista só era alcançável pelo link logo depois de criada.
-- Follow-ups naturais: entrada de texto livre (dec.1), copiar a semana anterior, sugestão de cardápio por IA (configurável por modelo no admin, como toda feature de IA). **A sugestão por IA foi feita no ADR-0036 (2026-09-28).**
+- Follow-ups naturais: entrada de texto livre (dec.1), copiar a semana anterior, sugestão de cardápio por IA (configurável por modelo no admin, como toda feature de IA). **A sugestão por IA foi feita no ADR-0036 (2026-09-28).** **O texto livre e o copiar semana anterior foram feitos no ADR-0037 (2026-09-28).**
 
 ## Alternativas rejeitadas
 

@@ -40,7 +40,8 @@ import { GATE_COLS, countEntriesOnDay } from '@/server/meal-plan/meal-plan'
 
 // ── Plano da semana ──────────────────────────────────────────────────────────────
 
-export type PlannedSlot = { day: string; slot: MealSlot; recipeId: string }
+/** `recipeId: null` = Anotação (ADR-0037): ocupa a refeição, mas o texto dela NUNCA é lido aqui (nem vai ao prompt). */
+export type PlannedSlot = { day: string; slot: MealSlot; recipeId: string | null }
 
 /** O que já está planejado em `range` (só dia/refeição/Receita — sem hidratar cards). */
 export async function loadPlannedSlots(input: {
