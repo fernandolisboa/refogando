@@ -34,6 +34,7 @@ import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
 import { cn } from '@/lib/utils'
+import type { TourAnchor } from '@/domain/onboarding-tour'
 
 // O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
 // vivem no footer, então o header não precisa mais nem do seletor de locale nem do tema.
@@ -84,7 +85,7 @@ export function SiteHeader() {
     href: string,
     label: string,
     wrap: (node: React.ReactNode) => React.ReactNode,
-    tour?: string,
+    tour?: TourAnchor,
   ) =>
     wrap(
       <Link

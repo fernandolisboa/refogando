@@ -39,7 +39,7 @@ import {
 import type { Messages } from '@/i18n/messages'
 
 /** Espera a home assentar (busca, sessão, fontes) antes de abrir sozinho. */
-const AUTO_START_DELAY_MS = 600
+export const AUTO_START_DELAY_MS = 600
 /** Folga do destaque em volta do alvo. */
 const SPOTLIGHT_PAD = 6
 
@@ -70,6 +70,19 @@ function findAnchor(anchor: TourAnchor): HTMLElement | null {
   return null
 }
 
+/** A pessoa já está no meio de algo que o tour atropelaria. */
+function isBusy(): boolean {
+  if (new URLSearchParams(window.location.search).has('q')) return true
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return true
+  return document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]') !== null
+}
+
+function sameRect(a: Rect | null, b: Rect | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
+}
+
 function stepCopy(step: TourStep, t: Messages['tour'], authed: boolean): { title: string; body: string } {
   switch (step.id) {
     case 'boasVindas':
@@ -95,27 +108,39 @@ export function GuidedTour() {
   const onHome = splitLocalePrefix(pathname ?? '/').rest === '/'
   const authed = !session.isPending && !session.error && !!session.data
   const userId = authed ? session.data?.user.id ?? null : null
-  const createdAt = authed ? (session.data?.user as { createdAt?: Date | string } | undefined)?.createdAt : undefined
+  const createdAt = authed ? session.data?.user.createdAt : undefined
 
-  const [open, setOpen] = useState(false)
+  // Quem está fazendo o tour, fotografado na abertura: um soluço do get-session no meio (o AuthSlot
+  // re-busca ao focar/navegar) não encolhe a lista de passos nem perde o registro ao fechar.
+  const [run, setRun] = useState<{ authed: boolean; userId: string | null } | null>(null)
+  const open = run !== null
   const [index, setIndex] = useState(0)
   // Uma checagem automática por usuário por carga da página: navegar de volta à home não reabre.
   const autoCheckedFor = useRef<string | null>(null)
 
   const start = useCallback(() => {
     setIndex(0)
-    setOpen(true)
-  }, [])
+    setRun({ authed, userId })
+  }, [authed, userId])
 
   // Pedido explícito (botão da /guia): consome ao chegar na home, ou na hora se já estiver nela.
   useEffect(() => {
     if (!onHome || session.isPending) return
-    const tryStart = () => {
+    // Pedido vindo de outra página (o /guia): lido fora do corpo do efeito, num callback do timer.
+    const pending = window.setTimeout(() => {
       if (consumeTourStartRequest()) start()
+    }, 0)
+    // Pedido feito já na home: abre na hora, mesmo com o storage bloqueado (o pedido gravado é só o
+    // recado para quando ele nasce em outra página).
+    const onRequest = () => {
+      consumeTourStartRequest()
+      start()
     }
-    tryStart()
-    window.addEventListener(TOUR_START_EVENT, tryStart)
-    return () => window.removeEventListener(TOUR_START_EVENT, tryStart)
+    window.addEventListener(TOUR_START_EVENT, onRequest)
+    return () => {
+      window.clearTimeout(pending)
+      window.removeEventListener(TOUR_START_EVENT, onRequest)
+    }
   }, [onHome, session.isPending, start])
 
   // Abertura automática para conta nova. Marca a checagem SÓ quando o timer dispara: se o efeito
@@ -124,6 +149,9 @@ export function GuidedTour() {
     if (!userId || !onHome || open || autoCheckedFor.current === userId) return
     const timer = window.setTimeout(() => {
       autoCheckedFor.current = userId
+      // Não interrompe quem já está fazendo algo: chegou com uma busca na URL (voltou do login para os
+      // resultados), está digitando ou tem outro diálogo aberto. Fica para a próxima visita à home.
+      if (isBusy()) return
       const ok = shouldAutoStartTour({
         authed: true,
         onHome: true,
@@ -136,28 +164,31 @@ export function GuidedTour() {
     return () => window.clearTimeout(timer)
   }, [userId, onHome, open, createdAt, start])
 
-  const close = useCallback(
-    (state: TourState) => {
-      setOpen(false)
-      if (!userId) return
-      // Terminar vale mais que pular: um "pular" depois de já ter terminado não rebaixa o registro.
-      if (state === 'dismissed' && readTourState(userId) === 'done') return
-      writeTourState(userId, state)
-    },
-    [userId],
-  )
+  const close = (state: TourState) => {
+    const who = run?.userId ?? null
+    setRun(null)
+    if (!who) return
+    // Terminar vale mais que pular: um "pular" depois de já ter terminado não rebaixa o registro.
+    if (state === 'dismissed' && readTourState(who) === 'done') return
+    writeTourState(who, state)
+  }
 
-  if (!open) return null
-  const steps = tourStepsFor(authed)
+  // Saiu da home com o tour aberto (voltar do navegador): fecha sem gravar nada, porque a pessoa não
+  // concluiu nem dispensou. Ajuste durante o render (não efeito), o padrão do create-drawer.
+  if (run && !onHome) setRun(null)
+
+  if (!run) return null
+  const steps = tourStepsFor(run.authed)
   const i = Math.min(index, steps.length - 1)
   return (
     <TourCard
       steps={steps}
       index={i}
-      authed={authed}
+      authed={run.authed}
       onNext={() => setIndex(i + 1)}
       onBack={() => setIndex(Math.max(0, i - 1))}
-      onDismiss={() => close('dismissed')}
+      // Fechar pelo X/Esc no último passo conta como concluído: a pessoa viu o tour inteiro.
+      onDismiss={() => close(i === steps.length - 1 ? 'done' : 'dismissed')}
       onFinish={() => close('done')}
     />
   )
@@ -201,9 +232,10 @@ function TourCard({
     const rect = r ? { top: r.top, left: r.left, width: r.width, height: r.height } : null
     const card = cardRef.current?.getBoundingClientRect()
     setAnchor(a)
-    setTarget(rect)
+    setTarget((prev) => (sameRect(prev, rect) ? prev : rect))
     setPos(
-      placeTourCard(
+      (prev) => {
+        const next = placeTourCard(
         rect
           ? {
               top: rect.top - SPOTLIGHT_PAD,
@@ -214,7 +246,9 @@ function TourCard({
           : null,
         { width: card?.width ?? 0, height: card?.height ?? 0 },
         { width: window.innerWidth, height: window.innerHeight },
-      ),
+        )
+        return prev && prev.top === next.top && prev.left === next.left ? prev : next
+      },
     )
   }, [step])
 
@@ -223,15 +257,27 @@ function TourCard({
   useEffect(() => {
     const a = resolveAnchor(step, (x) => findAnchor(x) !== null)
     if (a) findAnchor(a)?.scrollIntoView({ block: 'nearest' })
-    const frame = window.requestAnimationFrame(measure)
-    window.addEventListener('resize', measure)
-    window.addEventListener('scroll', measure, true)
+    // Resize/scroll disparam em rajada: uma medida por frame basta.
+    let frame = window.requestAnimationFrame(measure)
+    const schedule = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(measure)
+    }
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
     return () => {
       window.cancelAnimationFrame(frame)
-      window.removeEventListener('resize', measure)
-      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
     }
   }, [measure, step])
+
+  // A linha "no celular, fica no menu" depende da âncora resolvida e muda a altura do cartão: quando a
+  // âncora muda, mede de novo para o cartão não vazar da tela nem cobrir o destaque.
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(measure)
+    return () => window.cancelAnimationFrame(frame)
+  }, [anchor, measure])
 
   // O botão principal leva o foco a cada passo: Enter avança, Esc sai.
   useEffect(() => {
@@ -251,7 +297,10 @@ function TourCard({
       <Dialog.Portal>
         <Dialog.Overlay
           data-testid="tour-overlay"
-          className={target ? 'fixed inset-0 z-[90]' : 'fixed inset-0 z-[90] bg-black/60'}
+          // Preto e não `bg-fg/40` (o scrim das outras camadas): no tema escuro `fg` é creme e clarearia
+          // a tela, e o tour precisa escurecê-la nos dois temas. z-50 como as camadas Radix; o tour é
+          // portalizado por último, então fica por cima do header (z-40).
+          className={target ? 'fixed inset-0 z-50' : 'fixed inset-0 z-50 bg-black/60'}
         >
           {target && (
             <div
@@ -277,8 +326,10 @@ function TourCard({
           }}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed z-[91] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-5 text-fg shadow-xl outline-none motion-safe:transition-[top,left] motion-safe:duration-200"
-          style={pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden', top: 0, left: 0 }}
+          className="fixed z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-5 text-fg shadow-xl outline-none motion-safe:transition-[top,left] motion-safe:duration-200"
+          // Antes da 1ª medida o cartão fica transparente, não `visibility:hidden`: o navegador não foca
+          // nada dentro de um elemento invisível, e o botão principal precisa do foco já no 1º passo.
+          style={pos ? { top: pos.top, left: pos.left } : { opacity: 0, top: 0, left: 0 }}
         >
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-wide text-muted">

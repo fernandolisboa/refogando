@@ -2091,7 +2091,6 @@ export const enUS: Messages = {
     erroCopiar: 'Couldn’t copy the week. Try again.',
   },
   tour: {
-    rotulo: 'Guided tour',
     passoDe: 'Step {atual} of {total}',
     comecar: 'Start the tour',
     agoraNao: 'Not now',
@@ -2105,7 +2104,7 @@ export const enUS: Messages = {
     boasVindasTitulo: 'Welcome to Refogando',
     boasVindasTexto: 'In under a minute, we’ll show you where everything is. You can leave at any time.',
     buscaTitulo: 'Search for any dish',
-    buscaTexto: 'Type a dish, an ingredient or a style. If you can’t find what you want, you can generate the recipe with AI right from your search.',
+    buscaTexto: 'Type a dish, an ingredient or a style. Can’t find what you want? With an account, you can generate the recipe with AI right from your search.',
     criarTitulo: 'Create your own recipe',
     criarTexto: 'In “Create”, AI builds a recipe your way: with a form, by describing the dish in one go, or by chatting. What you create lives in “My creations”.',
     salvosTitulo: 'Keep what you like',
@@ -2129,12 +2128,12 @@ export const enUS: Messages = {
     buscarTitulo: 'Finding recipes',
     buscarItens: [
       'On the home page (“Explore”), type a dish, an ingredient or a style in the search. Filters narrow it down by cuisine, category and dietary restriction.',
-      'Didn’t find it? With at least 3 letters, use “Generate with AI” to create a recipe from what you searched for.',
+      'Didn’t find it? With an account and at least 3 letters, use “Generate with AI” to create a recipe from what you searched for.',
       'With an account you can also search the web. Recipes from other sites can be imported into your profile: they stay private and credit the source.',
     ],
     criarTitulo: 'Creating a recipe with AI',
     criarItens: [
-      'Tap “Create” at the top of the screen and pick a way: Structured form (ingredients, cuisine, restrictions), Open prompt (describe the dish in one go) or Conversation (refine it until it’s just right, then ask to distill the recipe).',
+      'Tap “Create” at the top of the screen and pick a way: Structured form (ingredients, cuisine, restrictions), Open prompt (describe the dish in one go) or Chat (refine it until it’s just right, then ask to distill the recipe).',
       'Every recipe starts out private. Publish it to the community whenever you want.',
       'On your recipes you can edit, ask AI for a new version and add a photo (your own or generated with AI).',
       'Like someone else’s recipe but want to change something? “Create my version” makes a copy of your own without touching the original.',

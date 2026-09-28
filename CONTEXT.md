@@ -84,7 +84,7 @@ A página pública `/guia` que explica, em texto, como usar cada recurso do app 
 _Avoid_: FAQ, Ajuda, Tutorial (como nome da página); guia só para logados.
 
 **Tour guiado**:
-Sobreposição que escurece a tela e destaca um componente da chrome por passo, na home, com um cartão explicando o que ele faz. Abre sozinho **uma vez** para conta nova (até 14 dias) e sempre que pedido pelo Guia de uso; é **dispensável em qualquer passo** ("Pular tour", X, Esc), e o desfecho (`done`/`dismissed`) fica gravado por Usuário **no dispositivo**. Informativo: não navega nem clica por ninguém. Ver ADR-0039.
+Sobreposição que escurece a tela e destaca um componente da chrome por passo, na home, com um cartão explicando o que ele faz. Abre sozinho **uma vez** para conta nova (até 14 dias) e sempre que pedido pelo Guia de uso; é **dispensável em qualquer passo** (X e Esc em todos; "Agora não" no primeiro, "Pular tour" nos do meio), e o desfecho (`done`/`dismissed`) fica gravado por Usuário **no dispositivo**. Informativo: não navega nem clica por ninguém. Ver ADR-0039.
 _Avoid_: Onboarding (como nome da feature, que sugere um fluxo obrigatório de cadastro); Walkthrough; forçar o tour sem saída.
 
 **Sessão de criação**:

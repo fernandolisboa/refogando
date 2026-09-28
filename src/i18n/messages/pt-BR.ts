@@ -2208,7 +2208,6 @@ export const ptBR = {
   // ADR-0039: tour guiado (tela escurecida, um componente por passo, dispensável a qualquer momento).
   // `{atual}`/`{total}` interpolados no componente.
   tour: {
-    rotulo: 'Tour guiado',
     passoDe: 'Passo {atual} de {total}',
     comecar: 'Começar o tour',
     agoraNao: 'Agora não',
@@ -2222,7 +2221,7 @@ export const ptBR = {
     boasVindasTitulo: 'Bem-vindo ao Refogando',
     boasVindasTexto: 'Em menos de um minuto, a gente mostra onde fica cada coisa. Dá para sair a qualquer momento.',
     buscaTitulo: 'Busque qualquer prato',
-    buscaTexto: 'Digite um prato, um ingrediente ou um estilo. Se não achar o que quer, dá para gerar a receita com IA a partir da própria busca.',
+    buscaTexto: 'Digite um prato, um ingrediente ou um estilo. Não achou o que queria? Com a conta, dá para gerar a receita com IA a partir da própria busca.',
     criarTitulo: 'Crie a sua receita',
     criarTexto: 'Em “Criar”, a IA monta uma receita do seu jeito: por um formulário, descrevendo o prato de uma vez ou conversando. O que você cria fica em “Minhas criações”.',
     salvosTitulo: 'Guarde o que gostou',
@@ -2247,7 +2246,7 @@ export const ptBR = {
     buscarTitulo: 'Encontrar receitas',
     buscarItens: [
       'Na página inicial (“Explorar”), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
-      'Não achou? Com pelo menos 3 letras, use “Gerar com IA” para criar uma receita a partir do que você buscou.',
+      'Não achou? Com a conta e pelo menos 3 letras, use “Gerar com IA” para criar uma receita a partir do que você buscou.',
       'Com a conta, dá também para buscar na web. Receitas de outros sites podem ser importadas para o seu perfil: ficam privadas e com o crédito da fonte.',
     ],
     criarTitulo: 'Criar uma receita com IA',

@@ -35,8 +35,8 @@ vi.mock('@/lib/auth-client', () => ({
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
-import { GuidedTour } from '@/components/onboarding/guided-tour'
-import { requestTourStart } from '@/components/onboarding/tour-signal'
+import { AUTO_START_DELAY_MS, GuidedTour } from '@/components/onboarding/guided-tour'
+import { requestTourStart, TOUR_START_KEY, TOUR_START_TTL_MS } from '@/components/onboarding/tour-signal'
 import { tourStorageKey } from '@/domain/onboarding-tour'
 
 const t = ptBR.tour
@@ -61,6 +61,19 @@ function renderTour() {
 }
 
 const findTour = (title: string) => screen.findByRole('dialog', { name: title }, { timeout: 3000 })
+
+/** Renderiza e passa o atraso da abertura automática com relógio falso: o "não abriu" é determinístico. */
+function renderPastAutoStart() {
+  vi.useFakeTimers()
+  try {
+    renderTour()
+    act(() => {
+      vi.advanceTimersByTime(AUTO_START_DELAY_MS + 1)
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+}
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -146,32 +159,64 @@ describe('GuidedTour — abertura automática', () => {
     expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('dismissed')
   })
 
+  it('o relógio falso abre para conta nova (controle dos casos "não abre" abaixo)', () => {
+    authMock.current = loggedAs(new Date())
+    renderPastAutoStart()
+    expect(screen.getByRole('dialog', { name: t.boasVindasTitulo })).toBeInTheDocument()
+  })
+
   it('já visto neste dispositivo ⇒ não abre', async () => {
     window.localStorage.setItem(tourStorageKey('u1'), 'done')
     authMock.current = loggedAs(new Date())
-    renderTour()
-    await new Promise((r) => setTimeout(r, 900))
+    renderPastAutoStart()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('conta antiga ⇒ não abre', async () => {
     authMock.current = loggedAs(new Date(Date.now() - 30 * DAY))
-    renderTour()
-    await new Promise((r) => setTimeout(r, 900))
+    renderPastAutoStart()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('fora da home ⇒ não abre', async () => {
     nav.pathname = '/pt-BR/me/saved'
     authMock.current = loggedAs(new Date())
-    renderTour()
-    await new Promise((r) => setTimeout(r, 900))
+    renderPastAutoStart()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('chegou com uma busca na URL (?q=) ⇒ não interrompe', () => {
+    window.history.pushState({}, '', '/pt-BR?q=bolo')
+    try {
+      authMock.current = loggedAs(new Date())
+      renderPastAutoStart()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+  })
+
+  it('um soluço da sessão no meio do tour não encolhe os passos nem perde o registro', async () => {
+    authMock.current = loggedAs(new Date(Date.now() - 400 * DAY))
+    const user = userEvent.setup()
+    const { rerender } = renderTour()
+    act(() => requestTourStart())
+    const dialog = await findTour(t.boasVindasTitulo)
+    expect(dialog).toHaveTextContent('Passo 1 de 7')
+    authMock.current = { data: null, error: new Error('rede'), isPending: false, isRefetching: false, refetch: () => {} }
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <GuidedTour />
+      </LocaleProvider>,
+    )
+    expect(screen.getByRole('dialog', { name: t.boasVindasTitulo })).toHaveTextContent('Passo 1 de 7')
+    await user.click(screen.getByRole('button', { name: t.agoraNao }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('dismissed')
+  })
+
   it('Visitante ⇒ nunca abre sozinho', async () => {
-    renderTour()
-    await new Promise((r) => setTimeout(r, 900))
+    renderPastAutoStart()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
@@ -209,7 +254,46 @@ describe('GuidedTour — pedido do /guia', () => {
       </LocaleProvider>,
     )
     await findTour(t.boasVindasTitulo)
-    expect(window.sessionStorage.getItem('refogando:tour:start')).toBeNull()
+    expect(window.sessionStorage.getItem(TOUR_START_KEY)).toBeNull()
+  })
+
+  it('pedido velho (navegação abandonada) é descartado e não abre', async () => {
+    window.sessionStorage.setItem(TOUR_START_KEY, String(Date.now() - TOUR_START_TTL_MS - 1000))
+    renderTour()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(TOUR_START_KEY)).toBeNull()
+  })
+
+  it('fechar pelo X no último passo conta como concluído', async () => {
+    authMock.current = loggedAs(new Date(Date.now() - 400 * DAY))
+    const user = userEvent.setup()
+    renderTour()
+    act(() => requestTourStart())
+    await findTour(t.boasVindasTitulo)
+    await user.click(screen.getByRole('button', { name: t.comecar }))
+    for (const title of [t.buscaTitulo, t.criarTitulo, t.salvosTitulo, t.cardapioTitulo, t.contaTitulo]) {
+      await findTour(title)
+      await user.click(screen.getByRole('button', { name: t.proximo }))
+    }
+    await findTour(t.fimTitulo)
+    await user.click(screen.getByRole('button', { name: t.fechar }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('done')
+  })
+
+  it('sair da home com o tour aberto fecha sem gravar nada', async () => {
+    const { rerender } = renderTour()
+    act(() => requestTourStart())
+    await findTour(t.boasVindasTitulo)
+    nav.pathname = '/pt-BR/me/saved'
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <GuidedTour />
+      </LocaleProvider>,
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(window.localStorage.length).toBe(0)
   })
 
   it('dispensar depois de já ter concluído não rebaixa o registro', async () => {

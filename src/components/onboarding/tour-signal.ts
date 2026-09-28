@@ -7,11 +7,16 @@
  */
 
 export const TOUR_START_EVENT = 'refogando:tour:start'
-const START_KEY = 'refogando:tour:start'
+export const TOUR_START_KEY = 'refogando:tour:start'
+/**
+ * Um pedido vale por 30s: se a navegação até a home for abandonada (voltar, trocar de aba), o pedido
+ * velho não abre o tour de surpresa numa visita posterior à home.
+ */
+export const TOUR_START_TTL_MS = 30_000
 
 export function requestTourStart(): void {
   try {
-    window.sessionStorage.setItem(START_KEY, '1')
+    window.sessionStorage.setItem(TOUR_START_KEY, String(Date.now()))
   } catch {
     // Storage bloqueado: o evento abaixo ainda abre o tour se o pedido nasceu na home.
   }
@@ -19,11 +24,13 @@ export function requestTourStart(): void {
 }
 
 /** Lê e apaga o pedido pendente. `true` = havia um pedido (abre o tour uma vez). */
-export function consumeTourStartRequest(): boolean {
+export function consumeTourStartRequest(now: number = Date.now()): boolean {
   try {
-    if (window.sessionStorage.getItem(START_KEY) !== '1') return false
-    window.sessionStorage.removeItem(START_KEY)
-    return true
+    const raw = window.sessionStorage.getItem(TOUR_START_KEY)
+    if (raw === null) return false
+    window.sessionStorage.removeItem(TOUR_START_KEY)
+    const at = Number(raw)
+    return Number.isFinite(at) && now - at >= 0 && now - at <= TOUR_START_TTL_MS
   } catch {
     return false
   }

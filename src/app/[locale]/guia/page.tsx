@@ -15,8 +15,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { locale: urlLocale } = await params
   const locale = resolvePageLocale({ urlLocale })
+  // Indexável de propósito (ADR-0039): a descrição ajuda quem chega pela busca.
   return {
     title: MESSAGES[locale].guia.metaTitulo,
+    description: MESSAGES[locale].guia.intro,
   }
 }
 

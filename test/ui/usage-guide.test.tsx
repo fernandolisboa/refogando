@@ -27,7 +27,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { UsageGuide } from '@/components/onboarding/usage-guide'
-import { TOUR_START_EVENT } from '@/components/onboarding/tour-signal'
+import { TOUR_START_EVENT, TOUR_START_KEY } from '@/components/onboarding/tour-signal'
 
 const g = ptBR.guia
 
@@ -73,7 +73,7 @@ describe('UsageGuide (/guia)', () => {
       </LocaleProvider>,
     )
     await user.click(screen.getByRole('button', { name: g.tourBotao }))
-    expect(window.sessionStorage.getItem('refogando:tour:start')).toBe('1')
+    expect(Number(window.sessionStorage.getItem(TOUR_START_KEY))).toBeGreaterThan(0)
     expect(onStart).toHaveBeenCalledOnce()
     expect(router.push).toHaveBeenCalledWith('/')
     window.removeEventListener(TOUR_START_EVENT, onStart)

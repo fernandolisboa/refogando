@@ -10,7 +10,7 @@ Documento auto-suficiente: o que a feature é, onde mora no código, o que não 
 
 - **Página "Como usar" (`/guia`)**, pública e indexável (entrou no `sitemap.xml`). Oito seções em texto (encontrar receitas, criar com IA, página da receita, Salvos e coleções, Lista de compras, Cardápio, Comunidade, Conta), índice por âncora e o botão **"Fazer o tour guiado"**. Link no rodapé (todos) e no menu da conta (logado).
 - **Tour guiado**: tela escurecida, um componente da chrome destacado por passo (contorno páprica), cartão com "Passo N de M", título, texto, Voltar/Próximo. 7 passos logado (boas-vindas, busca, Criar, Salvos, Cardápio, conta, fim) e 5 para o Visitante (sem Salvos e Cardápio). No celular os itens da nav caem no botão do menu com a linha "No celular, fica no menu ☰".
-- **Dispensável em qualquer passo**: "Agora não" (1º passo), "Pular tour", X e Esc gravam `dismissed`; "Concluir" grava `done`. Clicar fora não fecha.
+- **Dispensável em qualquer passo**: X e Esc em todos; "Agora não" no 1º e "Pular tour" nos do meio. Fechar antes do último grava `dismissed`; "Concluir", "Ver o guia completo" ou fechar no último gravam `done`. Clicar fora não fecha; sair da home (voltar do navegador) fecha sem gravar.
 - **Abre sozinho uma vez** para conta criada há até 14 dias, na home, sem registro no dispositivo. Conta antiga e Visitante nunca veem o tour sozinhos; qualquer um refaz pelo `/guia`.
 
 ## 2. O que ler primeiro
@@ -26,7 +26,7 @@ Documento auto-suficiente: o que a feature é, onde mora no código, o que não 
 
 ## 3. Princípios inegociáveis (não regredir)
 
-- **O tour sempre tem saída**: X, Esc e "Pular tour" em todo passo depois do primeiro; "Agora não" no primeiro.
+- **O tour sempre tem saída**: X e Esc em todo passo, mais "Agora não" no primeiro e "Pular tour" nos do meio.
 - **Nunca abre sozinho para Visitante nem para conta antiga**, e nunca fora da home. A busca do Visitante não pode ser bloqueada.
 - **Storage ilegível ⇒ não abre sozinho** (sem memória ele voltaria a cada visita).
 - **`done` não é rebaixado** por um "pular" posterior.
@@ -34,8 +34,11 @@ Documento auto-suficiente: o que a feature é, onde mora no código, o que não 
 
 ## 4. Landmines
 
-- **O recorte é `box-shadow`**: o destaque usa `outline`, não `ring` (o ring do Tailwind também é box-shadow e sumiria).
+- **O recorte é `box-shadow`**: o destaque usa `outline`, não `ring` (o ring do Tailwind também é box-shadow e sumiria). O scrim é preto (não `bg-fg/40`): no tema escuro `fg` é creme e clarearia a tela.
+- **Cartão transparente antes da 1ª medida, nunca `visibility:hidden`**: o navegador não foca nada invisível, e o foco no botão principal do 1º passo se perderia.
+- **Pedido do /guia expira em 30s** (`TOUR_START_TTL_MS`); o evento abre na hora quando o pedido nasce já na home, mesmo com o storage bloqueado.
 - **`react-hooks/set-state-in-effect`**: a medida do alvo roda num `requestAnimationFrame` (e em resize/scroll), não direto no corpo do efeito. Não "simplificar" para `measure()` síncrono: o lint barra.
+- **Testes de "não abre"** usam relógio falso (`AUTO_START_DELAY_MS` exportado) em vez de esperar de verdade.
 - **Timer da abertura automática**: a checagem por usuário é marcada DENTRO do timer, não antes. A sessão é re-buscada a cada navegação (AuthSlot), o efeito re-roda e limparia um timer já marcado como "checado", e o tour nunca abriria.
 - **Âncora escondida no celular**: a visibilidade é por `getClientRects()`/tamanho; a nav do desktop existe no DOM com `display:none`. Uma âncora nova precisa ter caixa visível para ser destacada.
 - **No jsdom não há layout**: os testes simulam `getBoundingClientRect`/`getClientRects` nas âncoras (ver `test/ui/guided-tour.test.tsx`).
@@ -57,5 +60,5 @@ PR mergeado com o painel de revisão limpo e o "checks" verde; deploy de produç
 ## Kickoff da próxima sessão (colar como primeira mensagem)
 
 ```
-Leia docs/handoffs/59-guia-de-uso-e-tour-guiado-adr-0039.md e o ADR-0039. O guia "Como usar" (/guia) e o tour guiado estão em produção. Próximo passo sugerido: se a Despensa (#560) já estiver na main, incluí-la no guia e no tour (seção 5); senão, um dos follow-ups do handoff 57. Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
+Leia docs/handoffs/59-guia-de-uso-e-tour-guiado-adr-0039.md e o ADR-0039. O guia "Como usar" (/guia) e o tour guiado entraram na main pelo PR #561. Próximo passo sugerido: se a Despensa (#560) já estiver na main, incluí-la no guia e no tour (seção 5); senão, um dos follow-ups do handoff 57. Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
 ```
