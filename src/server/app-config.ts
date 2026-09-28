@@ -66,12 +66,13 @@ import {
  */
 
 /**
- * Modelo de Tradução/Extração enquanto o admin não escolheu um (ADR-0034): a env var legada (ADR-0030
- * dec.2 / #112) ou Sonnet 5. Lido no load do módulo, como antes.
+ * Modelo de Tradução/Extração/Sugestão de cardápio enquanto o admin não escolheu um (ADR-0034/0036): a
+ * env var (ADR-0030 dec.2 / #112 / `MENU_MODEL`) ou Sonnet 5. Lido no load do módulo, como antes.
  */
 export const TASK_FALLBACK_MODELS = {
   translation: process.env.TRANSLATION_MODEL ?? DEFAULT_TASK_MODEL,
   extraction: process.env.EXTRACTION_MODEL ?? DEFAULT_TASK_MODEL,
+  menu: process.env.MENU_MODEL ?? DEFAULT_TASK_MODEL,
 }
 
 export type AppConfig = {

@@ -15,6 +15,7 @@ import { RECIPE_LIST_COLS, hydrateRecipeListItems } from '@/server/recipe/collec
 import {
   applyAddPlannedRecipesToShoppingList,
   applyShoppingListCreate,
+  type Tx,
 } from '@/server/shopping-list/shopping-list'
 
 /**
@@ -85,7 +86,7 @@ export type MealPlanToShoppingListResult =
 
 // ── Interno ──────────────────────────────────────────────────────────────────────
 
-const GATE_COLS = {
+export const GATE_COLS = {
   ownerId: recipe.ownerId,
   visibility: recipe.visibility,
   resultKind: recipe.resultKind,
@@ -94,7 +95,7 @@ const GATE_COLS = {
   curationStatus: recipe.curationStatus,
 } as const
 
-async function countEntriesOnDay(db: Database, userId: string, day: string, excludeId?: string) {
+export async function countEntriesOnDay(db: Database | Tx, userId: string, day: string, excludeId?: string) {
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(mealPlanEntry)

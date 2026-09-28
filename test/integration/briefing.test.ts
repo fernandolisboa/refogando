@@ -70,6 +70,10 @@ class ExplodingClaudeClient implements ClaudeClient {
   async extractIngredients(): Promise<never> {
     throw new Error('seam tocado: extractIngredients não devia ser chamado')
   }
+
+  async suggestMenu(): Promise<never> {
+    throw new Error('seam tocado: suggestMenu não devia ser chamado')
+  }
 }
 
 /** Shape parcial da resposta 201 do modo estruturado (avisos AUSENTE quando sem contradição). */

@@ -8,7 +8,7 @@ O dono pediu (2026-09-24) que qualquer ajuste específico de modelo, como deslig
 
 ## Decisões
 
-1. **Três tarefas, cada uma com modelo e ajustes próprios**: Geração (receitas, variações, a conversa com o chef e a destilação dela), Tradução e Extração. O modelo da Geração continua em `app_config.default_model` (as rotas e o histórico já leem dali). Os demais, e os ajustes de todas, vão no jsonb `app_config.ai_tasks` (migração 0066). Sem linha ou sem entrada, Tradução e Extração caem em `TRANSLATION_MODEL`/`EXTRACTION_MODEL` (env) ou `claude-sonnet-5`.
+1. **Três tarefas, cada uma com modelo e ajustes próprios**: Geração (receitas, variações, a conversa com o chef e a destilação dela), Tradução e Extração. O modelo da Geração continua em `app_config.default_model` (as rotas e o histórico já leem dali). Os demais, e os ajustes de todas, vão no jsonb `app_config.ai_tasks` (migração 0066). Sem linha ou sem entrada, Tradução e Extração caem em `TRANSLATION_MODEL`/`EXTRACTION_MODEL` (env) ou `claude-sonnet-5`. **Adendo 2026-09-28 (ADR-0036):** uma quarta tarefa, **Sugestão de cardápio** (`menu`), segue o mesmo formato (env `MENU_MODEL` ou `claude-sonnet-5`; default `effort: low`, thinking no default do modelo).
 
 2. **Ajustes são por modelo** (`byModel[model] = { effort, thinking }`). Trocar de modelo e voltar recupera o ajuste anterior; um modelo sem ajuste salvo usa o default da tarefa. `effort: null` e `thinking: 'default'` não mandam o parâmetro (vale o default do modelo). Teto de 50 modelos por tarefa no jsonb.
 

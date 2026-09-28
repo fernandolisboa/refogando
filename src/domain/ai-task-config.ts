@@ -1,10 +1,11 @@
 /**
  * Config de IA POR TAREFA (ADR-0034) — PURO: tipos, defaults, validação e resolução. Sem I/O.
  *
- * Três tarefas de texto usam a Anthropic, cada uma com modelo e ajustes próprios, editáveis no admin:
+ * Quatro tarefas de texto usam a Anthropic, cada uma com modelo e ajustes próprios, editáveis no admin:
  *  - `generation`  — Geração de Receita (o modelo mora na coluna `app_config.default_model`, legado #5);
  *  - `translation` — tradução por LLM (ADR-0030);
- *  - `extraction`  — Extração de ingredientes (#112).
+ *  - `extraction`  — Extração de ingredientes (#112);
+ *  - `menu`        — Sugestão de cardápio (ADR-0036): escolhe Receitas existentes para a semana.
  *
  * Ajustes (`ModelSettings`) são guardados POR MODELO dentro da tarefa: trocar de modelo e voltar
  * recupera o ajuste anterior. `effort: null` e `thinking: 'default'` = não manda o parâmetro (cada
@@ -12,7 +13,7 @@
  * não informa (ex.: se o thinking pode ser DESLIGADO) é verificado por uma chamada de teste ao salvar.
  */
 
-export const AI_TASKS = ['generation', 'translation', 'extraction'] as const
+export const AI_TASKS = ['generation', 'translation', 'extraction', 'menu'] as const
 export type AiTask = (typeof AI_TASKS)[number]
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -44,11 +45,15 @@ export type StoredAiTasks = Partial<Record<AiTask, { model?: string; byModel?: R
  *  - Geração: esforço medium (as rotas têm teto de 60s); thinking no default do modelo.
  *  - Tradução/Extração: thinking DESLIGADO (ADR-0030 dec.1: tarefa fiel, sem raciocínio; com thinking,
  *    os tokens dele dividem o teto com o JSON e a saída trunca); esforço no default do modelo.
+ *  - Sugestão de cardápio (ADR-0036): esforço low (escolher de uma lista fechada é tarefa curta, e a
+ *    chamada tem o prazo de 50s com ~150 Receitas no prompt); thinking no default do modelo (com folga
+ *    no `max_tokens`).
  */
 export const TASK_DEFAULT_SETTINGS: Record<AiTask, ModelSettings> = {
   generation: { effort: 'medium', thinking: 'default' },
   translation: { effort: null, thinking: 'off' },
   extraction: { effort: null, thinking: 'off' },
+  menu: { effort: 'low', thinking: 'default' },
 }
 
 const MAX_MODEL_ID = 100
@@ -99,16 +104,16 @@ export function parseStoredAiTasks(raw: unknown): StoredAiTasks {
 }
 
 /**
- * Resolve as três tarefas. `models` = modelo em uso por tarefa vindo de fora do jsonb (Geração: a
- * coluna `default_model`; Tradução/Extração: env var ou default em código) — o jsonb vence para
- * Tradução/Extração quando tem `model`.
+ * Resolve as tarefas. `models` = modelo em uso por tarefa vindo de fora do jsonb (Geração: a coluna
+ * `default_model`; as demais: env var ou default em código) — o jsonb vence para as demais quando tem
+ * `model`.
  */
 export function resolveAiTasks(stored: StoredAiTasks, models: Record<AiTask, string>): AiTasksConfig {
   const resolve = (task: AiTask): AiTaskState => ({
     model: task === 'generation' ? models.generation : (stored[task]?.model ?? models[task]),
     byModel: stored[task]?.byModel ?? {},
   })
-  return { generation: resolve('generation'), translation: resolve('translation'), extraction: resolve('extraction') }
+  return Object.fromEntries(AI_TASKS.map((task) => [task, resolve(task)])) as AiTasksConfig
 }
 
 /** Ajuste efetivo do modelo em uso da tarefa: o salvo para ele, senão o default da tarefa. */

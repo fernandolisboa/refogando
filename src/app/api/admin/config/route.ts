@@ -58,7 +58,7 @@ import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
  *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
  *
  *  - `aiTasks { [tarefa]: { model, settings } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
- *    IA de texto (Geração, Tradução, Extração), validados por capacidades + chamada de teste. O jsonb é
+ *    IA de texto (Geração, Tradução, Extração, Sugestão de cardápio — ADR-0036), validados por capacidades + chamada de teste. O jsonb é
  *    regravado sob lock da linha (salvamentos concorrentes não se sobrescrevem).
  *
  * PUT aceita `defaultModel` E/OU `aiTasks` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU

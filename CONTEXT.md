@@ -70,6 +70,9 @@ _Avoid_: converter unidades por heurística (só soma unidade idêntica); tratar
 
 **Plano de refeições** (o "Cardápio da semana"):
 Agenda **privada** do Usuário do que vai cozinhar: cada **Refeição planejada** é (dia, refeição do dia — café da manhã, almoço, lanche ou jantar —, Receita, **porções**). O **dia é de calendário, do fuso de quem planeja** (o navegador diz qual é hoje; a semana vai de segunda a domingo). Aponta pra Receita **viva** (não é snapshot): Receita apagada sai do plano; Receita que ficou inelegível aparece como **indisponível**, sem título. Entra no plano o mesmo que se pode **Salvar**. "**Gerar lista de compras**" joga os ingredientes das refeições do período numa **Lista de compras**, **cada uma escalada pelas suas porções**, pelo mesmo merge da Lista (soma só unidade idêntica). Ver ADR-0035.
+
+**Sugestão de cardápio**:
+A IA **preenche** dias × refeições do **Plano de refeições** a pedido do Usuário, **escolhendo Receitas que já existem** — do acervo dele (Salvos + Minhas criações) e, se ele quiser, do pool público. **Não gera Receita** (Sugestão ≠ Geração). As **restrições** pedidas são **filtro duro** sobre o que as Receitas **declaram** (nunca julgamento do modelo; declarado, não verificado). O resultado é uma **prévia**: nada entra no plano até o Usuário **aceitar** (tudo ou só os itens que marcar), e o aceite passa pelos mesmos portões de planejar à mão. Tem **cota diária** por papel. Ver ADR-0036.
 _Avoid_: derivar "hoje" do relógio do servidor; tratar o plano como snapshot (quem é snapshot é a Lista); plano público; gerar a lista ignorando as porções planejadas.
 
 **Sessão de criação**:

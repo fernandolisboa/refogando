@@ -94,6 +94,10 @@ class ExplodingClaudeClient implements ClaudeClient {
   async extractIngredients(): Promise<never> {
     throw new Error('seam tocado: a entrada devia ter sido rejeitada ANTES da extração')
   }
+
+  async suggestMenu(): Promise<never> {
+    throw new Error('seam tocado: suggestMenu não devia ser chamado')
+  }
 }
 
 describe('POST /api/parse-ingredients — Extração de ingredientes (#112)', () => {

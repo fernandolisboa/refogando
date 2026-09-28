@@ -5,7 +5,7 @@
  *
  * Consome `GET /api/me/meal-plan?from&to` (a semana), `POST .../entries` (via `MealPlanRecipePicker`),
  * `PATCH/DELETE .../entries/[id]` (porções, mover, tirar) e `POST .../shopping-list` (via
- * `MealPlanShoppingListPanel`). O servidor é a verdade: toda mutação recarrega a semana depois
+ * `MealPlanShoppingListPanel`) e as rotas de sugestão (via `MealPlanSuggestPanel`, ADR-0036). O servidor é a verdade: toda mutação recarrega a semana depois
  * (otimista só no número de porções, que é o toque mais frequente).
  *
  * "Hoje" e "esta semana" são do FUSO DO NAVEGADOR (`localTodayIso`, ADR-0035 dec.2) — o servidor
@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Minus, Plus, ShoppingCart, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Minus, Plus, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -46,6 +46,7 @@ import {
 import { MealPlanRecipePicker } from './meal-plan-recipe-picker'
 import { MealPlanThumb } from './meal-plan-thumb'
 import { MealPlanShoppingListPanel } from './meal-plan-shopping-list-panel'
+import { MealPlanSuggestPanel } from './meal-plan-suggest-panel'
 import type { MealPlanEntryView } from '@/server/meal-plan/meal-plan'
 
 /** O shape que `GET /api/me/meal-plan` devolve (fonte única: o tipo do servidor). */
@@ -77,6 +78,7 @@ export function MealPlanWeekView() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [pickerDay, setPickerDay] = useState<string | null>(null)
   const [showListPanel, setShowListPanel] = useState(false)
+  const [showSuggestPanel, setShowSuggestPanel] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   // Semana visível MAIS RECENTE: uma resposta que chega depois de o usuário trocar de semana é
   // descartada (senão a semana anterior sobrescreveria a da tela).
@@ -143,6 +145,7 @@ export function MealPlanWeekView() {
   function goToWeek(start: string) {
     setActionError(null)
     setShowListPanel(false)
+    setShowSuggestPanel(false)
     const params = new URLSearchParams(searchParams?.toString() ?? '')
     if (start === currentWeek) params.delete('semana')
     else params.set('semana', start)
@@ -289,17 +292,44 @@ export function MealPlanWeekView() {
           )}
           <Button
             type="button"
+            variant={showSuggestPanel ? 'secondary' : 'outline'}
+            aria-expanded={showSuggestPanel}
+            aria-controls="cardapio-sugerir"
+            onClick={() => {
+              setShowSuggestPanel((v) => !v)
+              setShowListPanel(false)
+            }}
+          >
+            <Sparkles aria-hidden />
+            {m.sugerir}
+          </Button>
+          <Button
+            type="button"
             variant={showListPanel ? 'secondary' : 'default'}
             aria-expanded={showListPanel}
             aria-controls="cardapio-gerar-lista"
             disabled={planned === 0}
-            onClick={() => setShowListPanel((v) => !v)}
+            onClick={() => {
+              setShowListPanel((v) => !v)
+              setShowSuggestPanel(false)
+            }}
           >
             <ShoppingCart aria-hidden />
             {m.gerarLista}
           </Button>
         </div>
       </div>
+
+      {showSuggestPanel && (
+        <div id="cardapio-sugerir">
+          <MealPlanSuggestPanel
+            key={weekStart}
+            days={days}
+            today={today}
+            onApplied={() => void loadRef.current()}
+          />
+        </div>
+      )}
 
       {showListPanel && planned > 0 && (
         <div id="cardapio-gerar-lista">
