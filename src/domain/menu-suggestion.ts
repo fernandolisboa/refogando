@@ -391,10 +391,13 @@ export function resolveMenuSuggestion(
   ctx: {
     keyToId: ReadonlyMap<string, string>
     keyToTarget: ReadonlyMap<string, MenuTarget>
-    planned: ReadonlyArray<{ day: string; slot: MealSlot; recipeId: string }>
+    /** `recipeId: null` = Anotação (ADR-0037): nunca casa uma Receita sugerida. */
+    planned: ReadonlyArray<{ day: string; slot: MealSlot; recipeId: string | null }>
   },
 ): { items: ResolvedMenuItem[]; comentario: string } {
-  const alreadyThere = new Set(ctx.planned.map((p) => `${targetKey(p.day, p.slot)}|${p.recipeId}`))
+  const alreadyThere = new Set(
+    ctx.planned.flatMap((p) => (p.recipeId == null ? [] : [`${targetKey(p.day, p.slot)}|${p.recipeId}`])),
+  )
   const taken = new Set<string>()
   const items: ResolvedMenuItem[] = []
   for (const item of raw.itens) {

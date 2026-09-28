@@ -133,3 +133,74 @@ export function compareMealPlanEntries(
   if (sa !== sb) return sa - sb
   return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0
 }
+
+// ── Anotação livre (ADR-0037) ────────────────────────────────────────────────────
+
+/** Tamanho máximo de uma Anotação ("jantar fora", "sobras de terça") — o CHECK do banco espelha. */
+export const MEAL_PLAN_NOTE_MAX = 80
+
+/**
+ * Anotação livre de uma refeição do dia (ADR-0037): texto curto de UMA linha, no lugar de uma Receita.
+ * Normaliza (NFC, sem caracteres de controle nem de direção bidi, espaços colapsados, sem pontas) e só então mede: vazio
+ * ou acima de `MEAL_PLAN_NOTE_MAX` ⇒ `'invalid'` (400 na rota; o valor é GRAVADO, lixo não passa).
+ * A forma normalizada é a que vai pro banco — a UNIQUE (dia, refeição, anotação) compara ela.
+ */
+export function parsePlanNote(value: unknown): string | 'invalid' {
+  if (typeof value !== 'string') return 'invalid'
+  const note = value
+    .normalize('NFC')
+    // Controles, marcas/embeddings/isolates bidi e invisíveis de largura zero. O ZWJ (U+200D) fica: é
+    // ele que junta os emoji compostos (👨‍🍳).
+    .replace(/[\p{Cc}\u061C\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (note.length === 0 || [...note].length > MEAL_PLAN_NOTE_MAX) return 'invalid'
+  return note
+}
+
+// ── Copiar a semana anterior (ADR-0037) ──────────────────────────────────────────
+
+/** Uma Refeição planejada vista pela cópia: Receita OU Anotação (exatamente um dos dois). */
+export type CopyableMealPlanEntry = {
+  day: string
+  slot: MealSlot
+  recipeId: string | null
+  note: string | null
+  porcoes: number | null
+  createdAt: string
+}
+
+/**
+ * Plano PURO do "Copiar semana anterior" (ADR-0037): cada entrada da semana de origem anda +7 dias e
+ * entra no destino SÓ se (a) o dia deslocado cai em `[targetFrom, targetTo]` (na semana corrente o
+ * cliente começa de hoje), (b) aquela refeição do dia está VAZIA no destino — copiar só preenche
+ * buracos, nunca empilha um segundo almoço sobre o que já foi planejado (o mesmo default do "só
+ * preencher refeições vazias" da Sugestão) — e (c) o dia não passou do teto. Entradas da origem que
+ * caem na mesma refeição vazia entram JUNTAS (prato + acompanhamento). Saída na ordem do plano;
+ * `skippedCount` conta só as que caíam no destino e não entraram.
+ */
+export function planPreviousWeekCopy(
+  source: readonly CopyableMealPlanEntry[],
+  existing: ReadonlyArray<{ day: string; slot: MealSlot }>,
+  opts: { targetFrom: string; targetTo: string; maxPerDay?: number },
+): { toInsert: CopyableMealPlanEntry[]; skippedCount: number } {
+  const maxPerDay = opts.maxPerDay ?? MAX_MEAL_PLAN_ENTRIES_PER_DAY
+  const occupied = new Set(existing.map((e) => `${e.day}|${e.slot}`))
+  const perDay = new Map<string, number>()
+  for (const e of existing) perDay.set(e.day, (perDay.get(e.day) ?? 0) + 1)
+
+  const toInsert: CopyableMealPlanEntry[] = []
+  let inRange = 0
+  for (const e of [...source].sort(compareMealPlanEntries)) {
+    const day = addDays(e.day, 7)
+    // Fora do destino (ex.: dias que já passaram na semana corrente) não é "pulada": nem foi pedida.
+    if (day < opts.targetFrom || day > opts.targetTo) continue
+    inRange++
+    if (occupied.has(`${day}|${e.slot}`)) continue
+    const n = perDay.get(day) ?? 0
+    if (n >= maxPerDay) continue
+    perDay.set(day, n + 1)
+    toInsert.push({ ...e, day })
+  }
+  return { toInsert, skippedCount: inRange - toInsert.length }
+}

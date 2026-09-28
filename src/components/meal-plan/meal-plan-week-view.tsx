@@ -8,6 +8,10 @@
  * `MealPlanShoppingListPanel`) e as rotas de sugestão (via `MealPlanSuggestPanel`, ADR-0036). O servidor é a verdade: toda mutação recarrega a semana depois
  * (otimista só no número de porções, que é o toque mais frequente).
  *
+ * ADR-0037: uma entrada pode ser uma Anotação livre ("jantar fora") — mostrada com o texto, sem
+ * porções — e "Copiar semana anterior" (`POST .../copy-previous-week`) repete a semana de antes nas
+ * refeições vazias (na semana corrente, de hoje em diante).
+ *
  * "Hoje" e "esta semana" são do FUSO DO NAVEGADOR (`localTodayIso`, ADR-0035 dec.2) — o servidor
  * nunca deriva o dia. A semana visível vive na URL (`?semana=YYYY-MM-DD`, segunda-feira) pra
  * recarregar/voltar cair na mesma semana.
@@ -15,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Minus, Plus, ShoppingCart, Sparkles, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CopyPlus, Minus, NotebookPen, Plus, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -79,6 +83,8 @@ export function MealPlanWeekView() {
   const [pickerDay, setPickerDay] = useState<string | null>(null)
   const [showListPanel, setShowListPanel] = useState(false)
   const [showSuggestPanel, setShowSuggestPanel] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [copyMessage, setCopyMessage] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Semana visível MAIS RECENTE: uma resposta que chega depois de o usuário trocar de semana é
   // descartada (senão a semana anterior sobrescreveria a da tela).
@@ -144,6 +150,7 @@ export function MealPlanWeekView() {
 
   function goToWeek(start: string) {
     setActionError(null)
+    setCopyMessage(null)
     setShowListPanel(false)
     setShowSuggestPanel(false)
     const params = new URLSearchParams(searchParams?.toString() ?? '')
@@ -159,6 +166,7 @@ export function MealPlanWeekView() {
     opts: { quietNotFound?: boolean } = {},
   ): Promise<boolean> {
     setActionError(null)
+    setCopyMessage(null)
     try {
       const res = await fetch(`/api/me/meal-plan/entries/${id}`, {
         method: 'PATCH',
@@ -211,8 +219,44 @@ export function MealPlanWeekView() {
     await loadRef.current()
   }
 
+  // Copia a semana anterior pras refeições vazias desta (na semana corrente, de hoje em diante — os
+  // dias que passaram não são preenchidos). O servidor decide o que entra; a semana recarrega.
+  async function handleCopyPreviousWeek() {
+    if (copying) return
+    // A semana do clique: se o usuário trocar de semana com a cópia em voo, o resultado não aparece
+    // debaixo da semana errada.
+    const clickedWeek = weekStart
+    setCopying(true)
+    setActionError(null)
+    setCopyMessage(null)
+    try {
+      const res = await fetch('/api/me/meal-plan/copy-previous-week', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(weekStart === currentWeek ? { week: weekStart, fromDay: today } : { week: weekStart }),
+      })
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string
+        addedCount?: number
+        skippedCount?: number
+      }
+      if (clickedWeek !== weekRef.current) return
+      if (!res.ok) {
+        setActionError(body.error === 'semana_anterior_vazia' ? m.erroCopiaVazia : m.erroCopiar)
+        return
+      }
+      setCopyMessage(copyResultMessage(body.addedCount ?? 0, body.skippedCount ?? 0, m))
+      await loadRef.current()
+    } catch {
+      if (clickedWeek === weekRef.current) setActionError(m.erroCopiar)
+    } finally {
+      setCopying(false)
+    }
+  }
+
   async function handleRemove(entry: MealPlanEntry) {
     setActionError(null)
+    setCopyMessage(null)
     setEntries((prev) => prev.filter((e) => e.id !== entry.id))
     try {
       const res = await fetch(`/api/me/meal-plan/entries/${entry.id}`, { method: 'DELETE' })
@@ -249,6 +293,8 @@ export function MealPlanWeekView() {
   const isCurrentWeek = weekStart === currentWeek
   const rangeLabel = `${formatDayMonth(weekStart, locale)} – ${formatDayMonth(weekEnd, locale)}`
   const planned = entries.length
+  // Anotações não têm ingredientes: sem nenhuma Receita na semana, não há lista a gerar.
+  const plannedRecipes = entries.filter((e) => e.note == null).length
 
   return (
     <div className="flex flex-col gap-6">
@@ -292,6 +338,16 @@ export function MealPlanWeekView() {
           )}
           <Button
             type="button"
+            variant="outline"
+            title={isCurrentWeek ? m.copiarSemanaDicaHoje : m.copiarSemanaDica}
+            disabled={copying || status !== 'idle' || addDays(weekStart, -7) < MEAL_PLAN_MIN_DATE}
+            onClick={() => void handleCopyPreviousWeek()}
+          >
+            <CopyPlus aria-hidden />
+            {copying ? m.copiando : m.copiarSemana}
+          </Button>
+          <Button
+            type="button"
             variant={showSuggestPanel ? 'secondary' : 'outline'}
             aria-expanded={showSuggestPanel}
             aria-controls="cardapio-sugerir"
@@ -308,7 +364,7 @@ export function MealPlanWeekView() {
             variant={showListPanel ? 'secondary' : 'default'}
             aria-expanded={showListPanel}
             aria-controls="cardapio-gerar-lista"
-            disabled={planned === 0}
+            disabled={plannedRecipes === 0}
             onClick={() => {
               setShowListPanel((v) => !v)
               setShowSuggestPanel(false)
@@ -331,10 +387,16 @@ export function MealPlanWeekView() {
         </div>
       )}
 
-      {showListPanel && planned > 0 && (
+      {showListPanel && plannedRecipes > 0 && (
         <div id="cardapio-gerar-lista">
           <MealPlanShoppingListPanel key={weekStart} weekStart={weekStart} weekEnd={weekEnd} today={today} />
         </div>
+      )}
+
+      {copyMessage != null && (
+        <p role="status" className="text-sm text-fg">
+          {copyMessage}
+        </p>
       )}
 
       {actionError != null && (
@@ -390,11 +452,21 @@ export function MealPlanWeekView() {
         days={days}
         onPlanned={() => {
           setPickerDay(null)
+          setCopyMessage(null)
           void loadRef.current()
         }}
       />
     </div>
   )
+}
+
+/** Resultado do "Copiar semana anterior" numa frase: quantas entraram e, se houver, quantas ficaram de fora. */
+export function copyResultMessage(added: number, skipped: number, m: M): string {
+  if (added === 0) return m.copiaNada
+  const addedText = added === 1 ? m.copiadasSingular : m.copiadas.replace('{n}', String(added))
+  if (skipped === 0) return addedText
+  const skippedText = skipped === 1 ? m.copiaPuladasSingular : m.copiaPuladas.replace('{n}', String(skipped))
+  return `${addedText} ${skippedText}`
 }
 
 function DayCard({
@@ -508,7 +580,8 @@ function EntryRow({
 }) {
   const aiLabel = useLocale().messages.busca.imagemSeloIa
   const r = entry.recipe
-  const name = r?.name ?? m.receitaIndisponivel
+  const note = entry.note
+  const name = note ?? r?.name ?? m.receitaIndisponivel
   // Porções exibidas: as da entrada, senão as da Receita. Sem nenhuma das duas não há o que escalar
   // (a Receita não declara porções) — o seletor some, como o escalador do detalhe.
   const porcoes = entry.porcoes ?? r?.porcoes ?? null
@@ -516,14 +589,25 @@ function EntryRow({
 
   return (
     <li className="flex items-start gap-3">
-      <MealPlanThumb
-        imageUrl={r?.imageUrl}
-        aiGenerated={r?.imageAiGenerated}
-        aiLabel={aiLabel}
-        className="size-12"
-      />
+      {note != null ? (
+        <span
+          aria-hidden
+          className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted"
+        >
+          <NotebookPen className="size-5" />
+        </span>
+      ) : (
+        <MealPlanThumb
+          imageUrl={r?.imageUrl}
+          aiGenerated={r?.imageAiGenerated}
+          aiLabel={aiLabel}
+          className="size-12"
+        />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {r != null ? (
+        {note != null ? (
+          <span className="line-clamp-2 text-sm font-medium italic leading-snug text-fg">{note}</span>
+        ) : r != null ? (
           <Link
             href={recipeDetailPath(locale, r.slug ?? r.id)}
             className="line-clamp-2 text-sm font-medium leading-snug text-fg hover:text-brand-ink"

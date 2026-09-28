@@ -9,7 +9,8 @@ import { applyRemoveMealPlanEntry, applyUpdateMealPlanEntry } from '@/server/mea
  *
  * PATCH {day?, slot?, porcoes?} → 200 `{ ok: true }` (campos ausentes ficam; `porcoes: null` volta às
  * porções da Receita) | 400 dados_invalidos (campo presente e malformado, ou corpo sem nenhum campo)
- * | 404 not_found | 409 ja_planejada (a mesma Receita já está no destino) | 422 dia_cheio.
+ * | 404 not_found | 409 ja_planejada (a mesma Receita, ou a mesma Anotação, já está no destino) |
+ * 422 dia_cheio. `porcoes` numa Anotação (ADR-0037) ⇒ 400 dados_invalidos.
  * DELETE → 200 `{ ok: true }` | 404 not_found.
  */
 
@@ -60,6 +61,8 @@ export async function PATCH(request: Request, { params }: Ctx): Promise<Response
       return Response.json({ error: 'ja_planejada' }, { status: 409 })
     case 'day_full':
       return Response.json({ error: 'dia_cheio' }, { status: 422 })
+    case 'invalid':
+      return Response.json({ error: 'dados_invalidos' }, { status: 400 })
   }
 }
 

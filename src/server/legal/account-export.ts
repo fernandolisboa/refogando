@@ -230,12 +230,13 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     })),
   }))
 
-  // ── Plano de refeições (ADR-0035) ─────────────────────────────────────────────
+  // ── Plano de refeições (ADR-0035) — com as Anotações livres (ADR-0037), texto do próprio titular ──
   const mealPlan = await db
     .select({
       day: mealPlanEntry.day,
       slot: mealPlanEntry.slot,
       recipeId: mealPlanEntry.recipeId,
+      note: mealPlanEntry.note,
       porcoes: mealPlanEntry.porcoes,
       createdAt: mealPlanEntry.createdAt,
     })
