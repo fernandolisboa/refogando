@@ -484,6 +484,13 @@
       "when": 1790518782451,
       "tag": "0068_pending_signup_marker",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790570579218,
+      "tag": "0069_meal_plan",
+      "breakpoints": true
     }
   ]
 }

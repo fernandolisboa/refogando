@@ -11,6 +11,7 @@ import {
   numeric,
   boolean,
   timestamp,
+  date,
   jsonb,
   vector,
   index,
@@ -22,6 +23,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { CATEGORIAS, RESTRICOES, UNIDADES } from '@/domain/vocabulary'
+import { MEAL_SLOTS } from '@/domain/meal-plan'
 import {
   ORIGENS,
   VISIBILIDADES,
@@ -154,6 +156,8 @@ export const notificationTypeEnum = pgEnum('notification_type', NOTIFICATION_TYP
 // Os 4 tipos do ciclo de vida do pedido do titular entram de uma vez (completude do enum); só
 // `DSAR_FULFILLED` é EMITIDO nesta fatia (por clearSourceAttribution). DB type 'dsar_event_type'.
 export const dsarEventTypeEnum = pgEnum('dsar_event_type', DSAR_EVENT_TYPES)
+// Refeições do dia do Plano de refeições (ADR-0035 dec.1) — fonte única em `@/domain/meal-plan`.
+export const mealSlotEnum = pgEnum('meal_slot', MEAL_SLOTS)
 
 /**
  * Tabela de smoke-test do harness de fundação (issue #2).
@@ -1618,5 +1622,40 @@ export const shoppingListItem = pgTable(
       .on(t.listId, t.matchKey, t.unidade)
       .nullsNotDistinct(),
     index('shopping_list_item_list_id_idx').on(t.listId),
+  ],
+)
+
+// Plano de refeições (ADR-0035). Uma linha = UMA Refeição planejada: (dono, dia, refeição do dia,
+// Receita, porções-alvo). PRIVADO como a Lista de compras — toda leitura escopa por `user_id`.
+//  - `day` é DIA DE CALENDÁRIO (`date`, sem fuso): "terça" é a terça de quem planeja (dec.2).
+//  - `recipe_id` NOT NULL ON DELETE cascade: o plano aponta pra Receita VIVA (não é snapshot como a
+//    lista, dec.3); se o dono apaga a Receita, a Refeição planejada some junto. Receita que só ficou
+//    inelegível (virou privada, removida por moderação) continua aqui e a leitura a mostra como
+//    "indisponível", sem título.
+//  - `porcoes` NULLABLE: nulo = as porções da própria Receita; senão 1–99 (mesmo intervalo do
+//    escalador #452), o que o "gerar lista" usa como porções-alvo.
+//  - UNIQUE (user_id, day, slot, recipe_id): a mesma Receita duas vezes no MESMO almoço não faz
+//    sentido — re-adicionar vira upsert das porções (idempotente sob duplo clique).
+export const mealPlanEntry = pgTable(
+  'meal_plan_entry',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    slot: mealSlotEnum('slot').notNull(),
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    porcoes: smallint('porcoes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('meal_plan_entry_user_day_slot_recipe_uq').on(t.userId, t.day, t.slot, t.recipeId),
+    // A UNIQUE acima já serve as leituras por (user_id, day) — é o prefixo dela; índice próprio seria redundante.
+    index('meal_plan_entry_recipe_id_idx').on(t.recipeId),
+    check('meal_plan_entry_porcoes_chk', sql`${t.porcoes} IS NULL OR ${t.porcoes} BETWEEN 1 AND 99`),
   ],
 )

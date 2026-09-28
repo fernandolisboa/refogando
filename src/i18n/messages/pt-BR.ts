@@ -37,6 +37,9 @@ export const ptBR = {
     // #461 (a11y): skip-link (1º tab stop, oculto até focar) que pula o header repetido e leva ao
     // conteúdo principal (`#conteudo`, o wrapper do `<main>` de cada página).
     pularParaConteudo: 'Pular para o conteúdo',
+    // ADR-0035: "Cardápio" (Plano de refeições da semana) na nav logada. O índice das Listas de compras
+    // (menu da conta) reusa `listaDeCompras.indiceTitulo`.
+    cardapio: 'Cardápio',
   },
   // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
   // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
@@ -1123,6 +1126,16 @@ export const ptBR = {
     erroUnidadeInvalida: 'Unidade inválida.',
     // Comum às fatias.
     erro: 'Algo deu errado. Tente de novo.',
+    // Índice das Listas (`/me/shopping-lists`, ADR-0035 Consequências — antes não havia como chegar
+    // a uma lista depois de criá-la).
+    indiceTitulo: 'Listas de compras',
+    itemContagem: '1 item',
+    itensContagem: '{n} itens',
+    vazioIndice: 'Você ainda não tem listas de compras. Adicione ingredientes a partir de uma receita ou gere uma lista pelo cardápio.',
+    criarLista: 'Criar lista',
+    apagarLista: 'Apagar {nome}',
+    confirmarApagarLista: 'Apagar a lista “{nome}”? Os itens serão perdidos.',
+    todasAsListas: 'Todas as listas',
   },
   // Avaliação (#363, ADR-0027) — nota 1–5★ + comentário. Namespace SEPARADO de `comunidade`.
   // Plurais compostos via `.replace('{n}'/'{media}', …)` no componente (folhas do tipo
@@ -2056,6 +2069,74 @@ export const ptBR = {
     titulo: 'Planos',
     corpo: 'Estamos preparando um plano Pro com mais gerações por IA, além de créditos avulsos para quem prefere pagar só pelo que usa. Ainda não é possível assinar ou comprar — volte em breve.',
     voltar: 'Voltar para o início',
+  },
+  // Plano de refeições (ADR-0035): o "Cardápio da semana" em `/me/meal-plan`, o botão de calendário do
+  // detalhe e o "gerar lista de compras" do período. `{…}` é interpolado por `String.replace`.
+  cardapio: {
+    fechar: 'Fechar',
+    titulo: 'Cardápio da semana',
+    descricao: 'Planeje as refeições da semana e gere a lista de compras de uma vez.',
+    semanaAnterior: 'Semana anterior',
+    proximaSemana: 'Próxima semana',
+    estaSemana: 'Esta semana',
+    hoje: 'Hoje',
+    slotCafeDaManha: 'Café da manhã',
+    slotAlmoco: 'Almoço',
+    slotLanche: 'Lanche',
+    slotJantar: 'Jantar',
+    adicionar: 'Adicionar',
+    adicionarAoDia: 'Adicionar receita em {dia}',
+    porcoesValor: '{n} porções',
+    porcaoValor: '1 porção',
+    porcoesDiminuir: 'Menos porções de {nome}',
+    porcoesAumentar: 'Mais porções de {nome}',
+    moverPara: 'Mover {nome} para',
+    remover: 'Tirar {nome} do cardápio',
+    receitaIndisponivel: 'Receita indisponível',
+    receitaIndisponivelDica: 'Ela deixou de estar disponível para você.',
+    vazioDia: 'Nada planejado',
+    vazioSemana: 'Sua semana está livre. Adicione receitas dos seus Salvos ou das suas criações, ou use o botão de calendário em qualquer receita.',
+    precisaEntrar: 'Entre na sua conta para planejar suas refeições.',
+    erroCarregar: 'Não foi possível carregar o cardápio. Tente de novo.',
+    erroSalvar: 'Não foi possível salvar a mudança. Tente de novo.',
+    erroDiaCheio: 'Esse dia já está cheio.',
+    erroJaPlanejada: 'Essa receita já está nessa refeição.',
+    resumoSemana: '{n} refeições planejadas',
+    resumoSemanaSingular: '1 refeição planejada',
+    // Seletor de receita (adicionar a partir da página).
+    escolherReceita: 'Adicionar ao cardápio',
+    escolherReceitaDescricao: 'Escolha uma receita dos seus Salvos ou das suas criações.',
+    buscarReceita: 'Buscar receita',
+    semReceitas: 'Você ainda não salvou nem criou receitas. Explore e salve algumas para planejar.',
+    semResultados: 'Nenhuma receita encontrada.',
+    explorar: 'Explorar receitas',
+    dia: 'Dia',
+    refeicao: 'Refeição',
+    planejar: 'Adicionar',
+    planejando: 'Adicionando…',
+    erroCarregarReceitas: 'Não foi possível carregar suas receitas. Tente de novo.',
+    // Botão de calendário no detalhe da Receita.
+    planejarReceita: 'Adicionar ao cardápio',
+    convidaEntrar: 'Entre na sua conta para adicionar ao cardápio.',
+    planejadaEm: 'Adicionada ao cardápio: {dia}, {refeicao}.',
+    verCardapio: 'Ver cardápio',
+    // Gerar lista de compras do período.
+    gerarLista: 'Gerar lista de compras',
+    gerarListaDescricao: 'Os ingredientes das receitas do período entram na lista, nas porções que você planejou. Itens iguais se somam.',
+    periodo: 'Período',
+    semanaInteira: 'Semana inteira',
+    deHojeEmDiante: 'De hoje até domingo',
+    listaDestino: 'Lista',
+    nomeListaPadrao: 'Compras da semana de {data}',
+    gerando: 'Gerando…',
+    listaGerada: '{n} refeições foram para “{lista}”.',
+    listaGeradaSingular: '1 refeição foi para “{lista}”.',
+    abrirLista: 'Abrir lista',
+    avisoSemPorcoes: '{n} receitas sem porções definidas entraram na quantidade original.',
+    avisoSemPorcoesSingular: '1 receita sem porções definidas entrou na quantidade original.',
+    algumasIndisponiveis: 'Receitas indisponíveis ficaram de fora.',
+    erroPlanoVazio: 'Não há refeições com receita disponível nesse período.',
+    erroGerar: 'Não foi possível gerar a lista. Tente de novo.',
   },
 } as const
 

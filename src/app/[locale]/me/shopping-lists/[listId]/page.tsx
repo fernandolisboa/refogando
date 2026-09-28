@@ -10,6 +10,7 @@
  * para o SSR bater com o client — resolvido como em `/me/saved`/`/me/recipes`: precedência
  * cookie → Accept-Language (sem `?locale`).
  */
+import Link from 'next/link'
 import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
 import { ShoppingListItemsView } from '@/components/shopping-list/shopping-list-items-view'
@@ -40,7 +41,11 @@ export default async function ShoppingListPage({
 
   return (
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
-      <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
+      {/* ADR-0035: volta pro índice das listas (antes não havia caminho entre elas). */}
+      <Link href="/me/shopping-lists" className="text-sm text-muted transition-colors hover:text-fg">
+        ← {m.todasAsListas}
+      </Link>
+      <h1 className="-mt-4 font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl">
         {m.titulo}
       </h1>
       <ShoppingListItemsView listId={listId} />

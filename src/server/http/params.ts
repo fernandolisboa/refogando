@@ -46,3 +46,12 @@ export function clientIpFromHeaders(request: Request): string | null {
   }
   return null
 }
+
+/**
+ * Lê o corpo JSON como OBJETO: corpo inválido, `null`, número, string ou array viram `{}` — o
+ * handler valida os campos a seguir e responde 4xx, nunca 500 por um `in`/acesso em primitivo.
+ */
+export async function readJsonObject(request: Request): Promise<Record<string, unknown>> {
+  const raw: unknown = await request.json().catch(() => null)
+  return raw != null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+}

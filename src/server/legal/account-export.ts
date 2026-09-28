@@ -8,12 +8,15 @@ import {
   creationSession,
   generation,
   imageGeneration,
+  mealPlanEntry,
   notification,
   recipe,
   recipeIngredient,
   recipeReview,
   recipeSave,
   recipeTranslation,
+  shoppingList,
+  shoppingListItem,
   transcriptMessage,
   userFollow,
   users,
@@ -31,7 +34,7 @@ import {
  * SEGUE (mais contagens) — jamais e-mail/nome de terceiros; a lista de SEGUIDORES é só CONTAGEM (a
  * escolha de quem segue quem é de terceiros). As notificações trazem tipo/timestamps/refs, SEM a
  * identidade do ator (terceiro). Tudo o mais é conteúdo do próprio titular (receitas que ele criou,
- * suas avaliações, saves, coleções, histórico de geração/conversa — seus prompts em texto livre).
+ * suas avaliações, saves, coleções, listas de compras, plano de refeições, histórico de geração/conversa — seus prompts em texto livre).
  *
  * Portável/legível: JSON plano e versionado (`format`), pronto para o titular ler ou reimportar.
  */
@@ -188,6 +191,57 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     createdAt: c.createdAt,
     recipeIds: (itemsByCollection.get(c.id) ?? []).map((i) => i.recipeId),
   }))
+
+  // ── Listas de compras (ADR-0032) + itens — conteúdo privado do titular ─────────────
+  const shoppingListRows = await db
+    .select({ id: shoppingList.id, name: shoppingList.name, createdAt: shoppingList.createdAt })
+    .from(shoppingList)
+    .where(eq(shoppingList.userId, userId))
+    .orderBy(asc(shoppingList.createdAt))
+  const shoppingListIds = shoppingListRows.map((l) => l.id)
+  const shoppingListItemRows =
+    shoppingListIds.length > 0
+      ? await db
+          .select({
+            listId: shoppingListItem.listId,
+            nome: shoppingListItem.nome,
+            quantidade: shoppingListItem.quantidade,
+            unidade: shoppingListItem.unidade,
+            sourceRecipeId: shoppingListItem.sourceRecipeId,
+            checkedAt: shoppingListItem.checkedAt,
+            createdAt: shoppingListItem.createdAt,
+          })
+          .from(shoppingListItem)
+          .where(inArray(shoppingListItem.listId, shoppingListIds))
+          .orderBy(asc(shoppingListItem.createdAt), asc(shoppingListItem.id))
+      : []
+  const itemsByShoppingList = groupBy(shoppingListItemRows, (r) => r.listId)
+  const shoppingLists = shoppingListRows.map((l) => ({
+    id: l.id,
+    name: l.name,
+    createdAt: l.createdAt,
+    items: (itemsByShoppingList.get(l.id) ?? []).map((i) => ({
+      nome: i.nome,
+      quantidade: i.quantidade,
+      unidade: i.unidade,
+      sourceRecipeId: i.sourceRecipeId,
+      checkedAt: i.checkedAt,
+      createdAt: i.createdAt,
+    })),
+  }))
+
+  // ── Plano de refeições (ADR-0035) ─────────────────────────────────────────────
+  const mealPlan = await db
+    .select({
+      day: mealPlanEntry.day,
+      slot: mealPlanEntry.slot,
+      recipeId: mealPlanEntry.recipeId,
+      porcoes: mealPlanEntry.porcoes,
+      createdAt: mealPlanEntry.createdAt,
+    })
+    .from(mealPlanEntry)
+    .where(eq(mealPlanEntry.userId, userId))
+    .orderBy(asc(mealPlanEntry.day), asc(mealPlanEntry.createdAt))
 
   // ── Social: SÓ handles públicos de quem o titular segue + contagens. NUNCA PII de terceiros
   //    (sem e-mail/nome de terceiros); a lista de SEGUIDORES é só CONTAGEM (escolha de terceiros).
@@ -358,6 +412,8 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     reviews,
     savedRecipes,
     collections,
+    shoppingLists,
+    mealPlan,
     social: {
       followingCount: followingRows.length,
       followersCount,

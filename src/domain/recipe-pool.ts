@@ -42,6 +42,20 @@ export function eligibleForPool(r: {
 }
 
 /**
+ * As barreiras do pool que valem MESMO pra própria Receita (o ramo de ownership de
+ * `eligibleToSaveByViewer`): não-playful, não-removida-por-moderação, não-importada-da-web. Exportada
+ * pra UI filtrar o acervo do dono pelo MESMO critério do servidor (seletor do Cardápio, ADR-0035),
+ * sem reescrever a regra.
+ */
+export function passesOwnRecipeBarriers(r: {
+  resultKind: string
+  moderationRemoved: boolean
+  origin: string
+}): boolean {
+  return r.resultKind !== 'playful' && !r.moderationRemoved && r.origin !== 'web_imported'
+}
+
+/**
  * Salvável PELO viewer (#362/ADR-0027 D2). Além do pool público, o DONO pode salvar a
  * PRÓPRIA receita mesmo PRIVADA ("pra montar o caderno"). O ramo de ownership dispensa a
  * visibilidade pública mas MANTÉM as demais barreiras do pool (não-playful, não-removida-
@@ -65,8 +79,10 @@ export function eligibleToSaveByViewer(
   // PRÓPRIA receita NÃO-pública, mantendo as demais barreiras.
   return (
     r.ownerId === viewerId &&
-    r.resultKind !== 'playful' &&
-    r.moderationRemovedAt == null &&
-    r.origin !== 'web_imported'
+    passesOwnRecipeBarriers({
+      resultKind: r.resultKind,
+      moderationRemoved: r.moderationRemovedAt != null,
+      origin: r.origin,
+    })
   )
 }
