@@ -271,7 +271,6 @@ type AddRecipeItemsOutcome =
   | { status: 'ineligible' }
   | { status: 'ok'; warning: 'sem_porcoes' | null }
 
-/** Transação do drizzle — o upsert roda tanto no `db` quanto dentro de uma (plano → lista, ADR-0035). */
 /** Transação do drizzle — os núcleos que rodam dentro de uma aceitam `Database | Tx`. */
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
 
@@ -534,14 +533,16 @@ export async function applyAddPlannedRecipesToShoppingList(input: {
   // Cada Receita é LIDA uma vez (a mesma pode estar em vários dias); a ESCRITA roda por entrada, em
   // ordem, numa transação — um timeout no meio não deixa a lista meio escrita (que um retry somaria
   // de novo). Custo ≈ 3 leituras por Receita distinta + 1 upsert por entrada. A posse da Lista é
-  // checada DENTRO da transação com `FOR UPDATE`: apagar a lista no meio vira 404 (não um 23503) e
-  // dois "adicionar" concorrentes na MESMA lista serializam (sem deadlock nos upserts de itens).
+  // checada DENTRO da transação com `FOR NO KEY UPDATE`: apagar a lista no meio vira 404 (não um
+  // 23503) e dois "adicionar" em lote na MESMA lista serializam. NO KEY (não `FOR UPDATE`): não
+  // conflita com o `KEY SHARE` que a checagem de FK de um INSERT de item avulso toma na lista — com
+  // `FOR UPDATE`, um item avulso concorrente poderia fechar um deadlock com os upserts daqui.
   return db.transaction(async (tx) => {
     const [list] = await tx
       .select({ id: shoppingList.id })
       .from(shoppingList)
       .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
-      .for('update')
+      .for('no key update')
     if (!list) return { kind: 'not_found' as const }
 
     const reads = new Map<string, RecipeItemsRead>()
