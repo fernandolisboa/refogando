@@ -21,8 +21,8 @@ Quinta rodada do "construa a próxima feature grande". Sem issue `ready-for-agen
 
 1. `docs/adr/0038-despensa-o-que-da-pra-fazer-com-o-que-tenho.md` — as 7 decisões.
 2. `CONTEXT.md` — **Despensa**.
-3. `src/domain/pantry.ts` — `parsePantryName`, `pantryMatchKey` (dedup), `splitPantryInput`, `PANTRY_BASICS`, tetos, `splitPantryMatches`, `pantryCreatePrompt`.
-4. `src/server/pantry/pantry.ts` — CRUD, `queryPantryMatches` (a query do casamento, com o comentário das 7 CTEs), `loadPantryMatches`, `applyPantryMissingToShoppingList`, `applyCheckedItemsToPantry`.
+3. `src/domain/pantry.ts` — `parsePantryName`, `pantryMatchKey` (dedup), `splitPantryInput`, `PANTRY_BASICS`, tetos, `splitPantryMatches`. O texto do atalho de criação e o rótulo dos básicos moram nas mensagens (`despensa.criarPrompt`, `despensa.basicosLista`).
+4. `src/server/pantry/pantry.ts` — CRUD, `queryPantryMatches` (a query do casamento, com o comentário das CTEs), `loadPantryMatches`, `applyPantryMissingToShoppingList`, `applyCheckedItemsToPantry`.
 5. `src/server/shopping-list/shopping-list.ts` — `readRecipeItemsForList` aceita `lineIds`; `applyAddRecipeLinesToShoppingList` (novo, mesmo upsert do ADR-0032).
 6. Rotas: `src/app/api/me/pantry/{route,[itemId]/route,matches/route,missing-to-list/route}.ts` e `src/app/api/me/shopping-lists/[listId]/items/checked/to-pantry/route.ts`.
 7. UI: `src/components/pantry/pantry-view.tsx`; o botão novo em `src/components/shopping-list/shopping-list-items-view.tsx`.
@@ -38,9 +38,11 @@ Quinta rodada do "construa a próxima feature grande". Sem issue `ready-for-agen
 
 ## 4. Landmines
 
-- **Barras invertidas no SQL:** `ESC_TERM`, `SINGULAR_ES` e `SINGULAR_S` são `sql.raw(String.raw\`…\`)` de propósito. Dentro de um template `sql\`…\``, `\1` vira escape do JS e some. Não "simplificar".
+- **Barras invertidas no SQL:** `ESC_TERM`, `SINGULAR_ES`, `SINGULAR_S`, `PLURAL_FIRST_S` e `PLURAL_FIRST_ES` são `sql.raw(String.raw\`…\`)` de propósito. Dentro de um template `sql\`…\``, `\1` vira escape do JS e some. Não "simplificar".
 - **`[[:punct:]]`/`lower()` dependem do locale do banco** (C/UTF-8 no Neon e nos testes): acento sai antes via `immutable_unaccent`, então letras latinas funcionam; scripts não latinos casam só por igualdade exata.
-- **Custo da query:** varre os Itens de todas as Receitas legíveis (Seq Scan), com uma regex compilada por tipo (real/básico). Aceito pelo tamanho do acervo. Se ficar lento: coluna gerada com o `raw_text` normalizado + índice trigram.
+- **Forma da query (desempenho).** A primeira versão casava cada linha com uma regex gigante e levava ~10 s num acervo sintético de 4.000 Receitas × 10 Itens com 200 itens na Despensa. A atual leva ~0,6 s no mesmo banco: o termo real vira `real_forms` (termo, `+s`, `+es`, plural da primeira palavra) com a PRIMEIRA palavra separada; cada linha normalizada é quebrada em palavras (`tokens`) e o casamento é um JOIN de igualdade na primeira palavra, seguido da comparação da fatia do array. Só os básicos usam regex, e ela é ancorada na linha inteira. `it_names`, `lines` e `hits` são `MATERIALIZED` para o planner não reavaliar `norm()` por linha. Não voltar para `~` por termo.
+- **Timeout.** A query roda num `db.transaction` com `SET LOCAL statement_timeout` de 5 s (`PANTRY_QUERY_TIMEOUT_MS`): um acervo que cresça demais falha a tela em vez de segurar conexão. Sem rate limit (leitura autenticada, como as outras de `/api/me`). Se ficar lento: coluna gerada com o `raw_text` normalizado + índice.
+- **Teto de "o que falta" na ponte:** `applyPantryMissingToShoppingList` recalcula com `maxMissing: NO_MISSING_CAP` (100.000, cabe num `int`; `Number.MAX_SAFE_INTEGER` estoura o bind).
 - **Plural irregular** (limão/limões, pão/pães) só casa via canônico. `SINGULAR_ES` exige radical de 3+ letras para "pães" não virar "pa".
 - **Preview da Vercel flaka em PR com migração** (0072 aqui): gatear só no check "checks".
 - **Uma migração em voo por vez.** Se outra entrar na main antes, apagar `0072_*.sql` + snapshot, reverter `_journal.json` e `npx drizzle-kit generate --name pantry` de novo.

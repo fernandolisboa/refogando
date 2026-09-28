@@ -1,4 +1,4 @@
-"use client";
+'use client'
 /**
  * Despensa (`/me/pantry`, ADR-0038): o que a pessoa tem em casa (chips, adicionar vários de uma vez,
  * atalhos de itens comuns) e "o que dá pra fazer" — as Receitas que ela pode salvar com no máximo 3 Itens
@@ -7,212 +7,214 @@
  * Consome `GET/POST/DELETE /api/me/pantry`, `DELETE /api/me/pantry/[itemId]`, `GET /api/me/pantry/matches`
  * e `POST /api/me/pantry/missing-to-list`.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ChefHat, ShoppingCart, Sparkles, X } from "lucide-react";
-import { useLocale } from "@/i18n/provider";
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { ChefHat, ShoppingCart, Sparkles, X } from 'lucide-react'
+import { useLocale } from '@/i18n/provider'
 import {
   MAX_PANTRY_ADD_BATCH,
   MAX_PANTRY_ITEMS,
-  PANTRY_BASICS_LABEL,
   PANTRY_NAME_MAX,
-  pantryCreatePrompt,
   pantryMatchKey,
   splitPantryMatches,
-} from "@/domain/pantry";
-import { createFromSearchHref } from "@/domain/generate-from-search";
-import { recipeDetailPath } from "@/domain/recipe-detail-route";
-import { useSession } from "@/lib/auth-client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { MealPlanThumb } from "@/components/meal-plan/meal-plan-thumb";
+} from '@/domain/pantry'
+import { createFromSearchHref } from '@/domain/generate-from-search'
+import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { useSession } from '@/lib/auth-client'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { MealPlanThumb } from '@/components/meal-plan/meal-plan-thumb'
 
-type PantryItem = { id: string; nome: string };
+type PantryItem = { id: string; nome: string }
 type PantryMatch = {
-  id: string;
-  name: string;
-  slug?: string;
-  imageUrl?: string;
-  imageAiGenerated?: boolean;
-  total: number;
-  covered: number;
-  missing: string[];
-};
-type Status = "loading" | "idle" | "error";
-type ListOutcome =
-  | { recipeId: string; listId: string; listName: string }
-  | { recipeId: string; error: true };
+  id: string
+  name: string
+  slug?: string
+  imageUrl?: string
+  imageAiGenerated?: boolean
+  total: number
+  covered: number
+  missing: string[]
+}
+type Status = 'loading' | 'idle' | 'error'
+type ListOutcome = { recipeId: string; listId: string; listName: string } | { recipeId: string; error: string }
 
 export function PantryView() {
-  const { locale, messages } = useLocale();
-  const m = messages.despensa;
-  const session = useSession();
-  const authed = !session.isPending && !session.error && !!session.data;
-  const pathname = usePathname();
+  const { locale, messages } = useLocale()
+  const m = messages.despensa
+  const session = useSession()
+  const authed = !session.isPending && !session.error && !!session.data
+  const pathname = usePathname()
 
-  const [items, setItems] = useState<PantryItem[]>([]);
-  const [status, setStatus] = useState<Status>("loading");
-  const [matches, setMatches] = useState<PantryMatch[]>([]);
-  const [matchStatus, setMatchStatus] = useState<Status>("loading");
-  const [basics, setBasics] = useState(true);
-  const [input, setInput] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [listPending, setListPending] = useState<string | null>(null);
-  const [listOutcome, setListOutcome] = useState<ListOutcome | null>(null);
-  const matchAbort = useRef<AbortController | null>(null);
+  const [items, setItems] = useState<PantryItem[]>([])
+  const [status, setStatus] = useState<Status>('loading')
+  const [matches, setMatches] = useState<PantryMatch[]>([])
+  const [matchStatus, setMatchStatus] = useState<Status>('loading')
+  const [basics, setBasics] = useState(true)
+  const [input, setInput] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [listPending, setListPending] = useState<string | null>(null)
+  const [listOutcome, setListOutcome] = useState<ListOutcome | null>(null)
+  const matchAbort = useRef<AbortController | null>(null)
 
   const loadMatches = useCallback(async () => {
-    matchAbort.current?.abort();
-    const controller = new AbortController();
-    matchAbort.current = controller;
-    const url = new URL("/api/me/pantry/matches", window.location.origin);
-    url.searchParams.set("basics", basics ? "1" : "0");
-    url.searchParams.set("locale", locale);
+    matchAbort.current?.abort()
+    const controller = new AbortController()
+    matchAbort.current = controller
+    setMatchStatus('loading')
+    const url = new URL('/api/me/pantry/matches', window.location.origin)
+    url.searchParams.set('basics', basics ? '1' : '0')
+    url.searchParams.set('locale', locale)
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal })
       if (!res.ok) {
-        setMatchStatus("error");
-        return;
+        setMatchStatus('error')
+        return
       }
-      const body = (await res.json()) as { matches: PantryMatch[] };
-      setMatches(body.matches);
-      setMatchStatus("idle");
+      const body = (await res.json()) as { matches: PantryMatch[] }
+      setMatches(body.matches)
+      setMatchStatus('idle')
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setMatchStatus("error");
+      if ((e as Error).name !== 'AbortError') setMatchStatus('error')
     }
-  }, [basics, locale]);
+  }, [basics, locale])
 
   const loadItems = useCallback(async () => {
     try {
-      const res = await fetch("/api/me/pantry");
+      const res = await fetch('/api/me/pantry')
       if (!res.ok) {
-        setStatus("error");
-        return;
+        setStatus('error')
+        return
       }
-      const body = (await res.json()) as { items: PantryItem[] };
-      setItems(body.items);
-      setStatus("idle");
+      const body = (await res.json()) as { items: PantryItem[] }
+      setItems(body.items)
+      setStatus('idle')
     } catch {
-      setStatus("error");
+      setStatus('error')
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    if (!authed) return;
+    if (!authed) return
     const t = setTimeout(() => {
-      void loadItems();
-    }, 0);
-    return () => clearTimeout(t);
-  }, [authed, loadItems]);
+      void loadItems()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [authed, loadItems])
 
   // Resultados: recarrega quando a Despensa muda (itens) ou a opção de básicos muda.
   useEffect(() => {
-    if (!authed || status !== "idle") return;
+    if (!authed || status !== 'idle') return
     const t = setTimeout(() => {
-      void loadMatches();
-    }, 0);
-    return () => clearTimeout(t);
-  }, [authed, status, items, loadMatches]);
+      void loadMatches()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [authed, status, items, loadMatches])
 
-  useEffect(() => () => matchAbort.current?.abort(), []);
+  useEffect(() => () => matchAbort.current?.abort(), [])
 
   async function addNames(names: string | string[]) {
-    if (adding) return false;
-    setAdding(true);
-    setError(null);
+    if (adding) return false
+    setAdding(true)
+    setError(null)
     try {
-      const res = await fetch("/api/me/pantry", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+      const res = await fetch('/api/me/pantry', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ names }),
-      });
+      })
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
         setError(
-          body.error === "despensa_cheia"
-            ? m.erroCheia.replace("{max}", String(MAX_PANTRY_ITEMS))
-            : body.error === "dados_invalidos"
+          body.error === 'despensa_cheia'
+            ? m.erroCheia.replace('{max}', String(MAX_PANTRY_ITEMS))
+            : body.error === 'dados_invalidos'
               ? m.erroAdicionar
-                  .replace("{max}", String(PANTRY_NAME_MAX))
-                  .replace("{lote}", String(MAX_PANTRY_ADD_BATCH))
+                  .replace('{max}', String(PANTRY_NAME_MAX))
+                  .replace('{lote}', String(MAX_PANTRY_ADD_BATCH))
               : m.erro,
-        );
-        return false;
+        )
+        return false
       }
-      await loadItems();
-      return true;
+      await loadItems()
+      return true
     } catch {
-      setError(m.erro);
-      return false;
+      setError(m.erro)
+      return false
     } finally {
-      setAdding(false);
+      setAdding(false)
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (input.trim() === "") return;
-    if (await addNames(input)) setInput("");
+    e.preventDefault()
+    if (input.trim() === '') return
+    if (await addNames(input)) setInput('')
   }
 
   async function handleRemove(item: PantryItem) {
-    setError(null);
-    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    setError(null)
+    setItems((prev) => prev.filter((i) => i.id !== item.id))
+    // O botão focado some com o chip: devolve o foco ao campo de adicionar (senão cai no <body>).
+    document.getElementById('despensa-adicionar')?.focus()
     try {
       const res = await fetch(`/api/me/pantry/${item.id}`, {
-        method: "DELETE",
-      });
+        method: 'DELETE',
+      })
       if (!res.ok && res.status !== 404) {
-        setError(m.erro);
-        await loadItems();
+        setError(m.erro)
+        await loadItems()
       }
     } catch {
-      setError(m.erro);
-      await loadItems();
+      setError(m.erro)
+      await loadItems()
     }
   }
 
   async function handleClear() {
-    if (!window.confirm(m.confirmarLimpar)) return;
-    setError(null);
+    if (!window.confirm(m.confirmarLimpar)) return
+    setError(null)
     try {
-      const res = await fetch("/api/me/pantry", { method: "DELETE" });
-      if (!res.ok) setError(m.erro);
+      const res = await fetch('/api/me/pantry', { method: 'DELETE' })
+      if (!res.ok) setError(m.erro)
     } catch {
-      setError(m.erro);
+      setError(m.erro)
     }
-    await loadItems();
+    await loadItems()
   }
 
   async function handleMissingToList(recipeId: string) {
-    if (listPending) return;
-    setListPending(recipeId);
-    setListOutcome(null);
+    if (listPending) return
+    setListPending(recipeId)
+    setListOutcome(null)
     try {
-      const res = await fetch(
-        `/api/me/pantry/missing-to-list?locale=${encodeURIComponent(locale)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ recipeId, basics }),
-        },
-      );
+      const res = await fetch(`/api/me/pantry/missing-to-list?locale=${encodeURIComponent(locale)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ recipeId, basics }),
+      })
       if (!res.ok) {
-        setListOutcome({ recipeId, error: true });
-        return;
+        // 409 = a Despensa mudou e a Receita já não tem nada faltando: aviso neutro + recarrega os resultados.
+        if (res.status === 409) {
+          setListOutcome({ recipeId, error: m.nadaFaltando })
+          void loadMatches()
+          return
+        }
+        setListOutcome({ recipeId, error: m.erroPorNaLista })
+        return
       }
-      const body = (await res.json()) as { listId: string; listName: string };
+      const body = (await res.json()) as { listId: string; listName: string }
       setListOutcome({
         recipeId,
         listId: body.listId,
         listName: body.listName,
-      });
+      })
     } catch {
-      setListOutcome({ recipeId, error: true });
+      setListOutcome({ recipeId, error: m.erroPorNaLista })
     } finally {
-      setListPending(null);
+      setListPending(null)
     }
   }
 
@@ -221,29 +223,27 @@ export function PantryView() {
       <div aria-busy="true" className="text-muted">
         {messages.system.loading}
       </div>
-    );
+    )
   }
   if (!authed) {
-    const returnTo = pathname ?? "/me/pantry";
+    const returnTo = pathname ?? '/me/pantry'
     return (
       <div className="flex flex-col items-start gap-4">
         <p className="text-muted">{m.precisaEntrar}</p>
         <Button asChild>
-          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>
-            {messages.nav.signIn}
-          </Link>
+          <Link href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>{messages.nav.signIn}</Link>
         </Button>
       </div>
-    );
+    )
   }
-  if (status === "loading") {
+  if (status === 'loading') {
     return (
       <div aria-busy="true" className="text-muted">
         {messages.system.loading}
       </div>
-    );
+    )
   }
-  if (status === "error") {
+  if (status === 'error') {
     return (
       <div role="alert" className="flex flex-col items-start gap-3">
         <p className="text-muted">{m.erroCarregar}</p>
@@ -251,29 +251,19 @@ export function PantryView() {
           {messages.system.retry}
         </Button>
       </div>
-    );
+    )
   }
 
-  const presentKeys = new Set(items.map((i) => pantryMatchKey(i.nome)));
-  const suggestions = m.sugestoes.filter(
-    (s) => !presentKeys.has(pantryMatchKey(s)),
-  );
-  const { ready, almost } = splitPantryMatches(matches);
-  const createHref = createFromSearchHref(
-    pantryCreatePrompt(
-      items.map((i) => i.nome),
-      locale,
-    ),
-  );
+  const presentKeys = new Set(items.map((i) => pantryMatchKey(i.nome)))
+  const suggestions = m.sugestoes.filter((s) => !presentKeys.has(pantryMatchKey(s)))
+  const { ready, almost } = splitPantryMatches(matches)
+  const createHref = createFromSearchHref(m.criarPrompt.replace('{lista}', () => items.map((i) => i.nome).join(', ')))
 
   return (
     <div className="flex flex-col gap-10">
       <section className="flex flex-col gap-4">
         <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <label
-            htmlFor="despensa-adicionar"
-            className="text-sm font-medium text-fg"
-          >
+          <label htmlFor="despensa-adicionar" className="text-sm font-medium text-fg">
             {m.adicionarRotulo}
           </label>
           <div className="flex flex-wrap items-start gap-2">
@@ -281,14 +271,14 @@ export function PantryView() {
               id="despensa-adicionar"
               value={input}
               onChange={(e) => {
-                setInput(e.target.value);
-                setError(null);
+                setInput(e.target.value)
+                setError(null)
               }}
               placeholder={m.adicionarPlaceholder}
               aria-describedby="despensa-adicionar-dica"
               className="w-full sm:w-80"
             />
-            <Button type="submit" disabled={adding || input.trim() === ""}>
+            <Button type="submit" disabled={adding || input.trim() === ''}>
               {adding ? m.adicionando : m.adicionar}
             </Button>
           </div>
@@ -299,16 +289,14 @@ export function PantryView() {
 
         {suggestions.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-muted">
-              {m.sugestoesTitulo}
-            </p>
+            <p className="text-xs font-medium text-muted">{m.sugestoesTitulo}</p>
             <ul className="flex flex-wrap gap-2">
               {suggestions.map((s) => (
                 <li key={s}>
                   <button
                     type="button"
                     disabled={adding}
-                    aria-label={m.sugestaoAdicionar.replace("{nome}", () => s)}
+                    aria-label={m.sugestaoAdicionar.replace('{nome}', () => s)}
                     onClick={() => void addNames(s)}
                     className="rounded-full border border-dashed border-border px-3 py-1 text-sm text-muted hover:border-brand hover:text-fg disabled:opacity-50"
                   >
@@ -332,15 +320,9 @@ export function PantryView() {
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted">
-                {items.length === 1
-                  ? m.itemContagem
-                  : m.itensContagem.replace("{n}", String(items.length))}
+                {items.length === 1 ? m.itemContagem : m.itensContagem.replace('{n}', String(items.length))}
               </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void handleClear()}
-              >
+              <Button variant="ghost" size="sm" onClick={() => void handleClear()}>
                 {m.limpar}
               </Button>
             </div>
@@ -353,7 +335,7 @@ export function PantryView() {
                   {i.nome}
                   <button
                     type="button"
-                    aria-label={m.remover.replace("{nome}", () => i.nome)}
+                    aria-label={m.remover.replace('{nome}', () => i.nome)}
                     onClick={() => void handleRemove(i)}
                     className="inline-flex size-6 items-center justify-center rounded-full text-muted hover:bg-brand/10 hover:text-fg"
                   >
@@ -367,15 +349,9 @@ export function PantryView() {
       </section>
 
       {items.length > 0 && (
-        <section
-          aria-labelledby="despensa-resultados"
-          className="flex flex-col gap-5"
-        >
+        <section aria-labelledby="despensa-resultados" className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <h2
-              id="despensa-resultados"
-              className="font-display text-2xl font-semibold tracking-tight text-fg"
-            >
+            <h2 id="despensa-resultados" className="font-display text-2xl font-semibold tracking-tight text-fg">
               {m.resultadosTitulo}
             </h2>
             <label className="inline-flex items-center gap-2 text-sm text-fg">
@@ -385,26 +361,21 @@ export function PantryView() {
                 onChange={(e) => setBasics(e.target.checked)}
                 className="size-4 accent-brand"
               />
-              {m.basicos.replace("{lista}", PANTRY_BASICS_LABEL[locale])}
+              {m.basicos.replace('{lista}', m.basicosLista)}
             </label>
             <p className="text-xs text-muted">{m.comoCasa}</p>
           </div>
 
           <div aria-live="polite" className="text-sm text-muted">
-            {matchStatus === "loading" && <p>{messages.system.loading}</p>}
-            {matchStatus === "error" && (
-              <p role="alert" className="font-medium text-fg">
-                {m.erroCarregarResultados}
-              </p>
-            )}
+            {matchStatus === 'loading' && <p>{messages.system.loading}</p>}
+            {matchStatus === 'error' && <p className="font-medium text-fg">{m.erroCarregarResultados}</p>}
           </div>
 
-          {matchStatus === "idle" && matches.length === 0 && (
-            <p className="text-muted">{m.semResultados}</p>
-          )}
+          {matchStatus === 'idle' && matches.length === 0 && <p className="text-muted">{m.semResultados}</p>}
 
           {ready.length > 0 && (
             <MatchSection
+              kind="ready"
               title={m.prontasTitulo}
               matches={ready}
               listPending={listPending}
@@ -414,6 +385,7 @@ export function PantryView() {
           )}
           {almost.length > 0 && (
             <MatchSection
+              kind="almost"
               title={m.quaseProntasTitulo}
               matches={almost}
               listPending={listPending}
@@ -434,29 +406,31 @@ export function PantryView() {
         </section>
       )}
     </div>
-  );
+  )
 }
 
 function MatchSection({
+  kind,
   title,
   matches,
   listPending,
   listOutcome,
   onMissingToList,
 }: {
-  title: string;
-  matches: PantryMatch[];
-  listPending: string | null;
-  listOutcome: ListOutcome | null;
-  onMissingToList: (recipeId: string) => Promise<void>;
+  kind: 'ready' | 'almost'
+  title: string
+  matches: PantryMatch[]
+  listPending: string | null
+  listOutcome: ListOutcome | null
+  onMissingToList: (recipeId: string) => Promise<void>
 }) {
-  const { locale, messages } = useLocale();
-  const m = messages.despensa;
-  const aiLabel = messages.busca.imagemSeloIa;
+  const { locale, messages } = useLocale()
+  const m = messages.despensa
+  const aiLabel = messages.busca.imagemSeloIa
   return (
     <div className="flex flex-col gap-3">
       <h3 className="flex items-center gap-2 font-medium text-fg">
-        {title === m.prontasTitulo ? (
+        {kind === 'ready' ? (
           <ChefHat className="size-4 text-brand-ink" aria-hidden />
         ) : (
           <ShoppingCart className="size-4 text-brand-ink" aria-hidden />
@@ -465,12 +439,9 @@ function MatchSection({
       </h3>
       <ul className="grid gap-3 sm:grid-cols-2">
         {matches.map((r) => {
-          const outcome = listOutcome?.recipeId === r.id ? listOutcome : null;
+          const outcome = listOutcome?.recipeId === r.id ? listOutcome : null
           return (
-            <li
-              key={r.id}
-              className="flex gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm"
-            >
+            <li key={r.id} className="flex gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm">
               <MealPlanThumb
                 imageUrl={r.imageUrl}
                 aiGenerated={r.imageAiGenerated}
@@ -485,30 +456,24 @@ function MatchSection({
                   {r.name}
                 </Link>
                 <p className="text-xs text-muted">
-                  {m.temDeTotal
-                    .replace("{n}", String(r.covered))
-                    .replace("{total}", String(r.total))}
+                  {m.temDeTotal.replace('{n}', String(r.covered)).replace('{total}', String(r.total))}
                 </p>
                 {r.missing.length > 0 && (
                   <>
-                    <p className="text-sm text-fg">
-                      {m.falta.replace("{lista}", () => r.missing.join(", "))}
-                    </p>
+                    <p className="text-sm text-fg">{m.falta.replace('{lista}', () => r.missing.join(', '))}</p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={listPending != null}
+                        aria-label={`${listPending === r.id ? m.pondoNaLista : m.porNaLista}: ${r.name}`}
                         onClick={() => void onMissingToList(r.id)}
                       >
                         {listPending === r.id ? m.pondoNaLista : m.porNaLista}
                       </Button>
-                      {outcome != null && "listId" in outcome && (
+                      {outcome != null && 'listId' in outcome && (
                         <span role="status" className="text-xs text-muted">
-                          {m.postoNaLista.replace(
-                            "{lista}",
-                            () => outcome.listName,
-                          )}{" "}
+                          {m.postoNaLista.replace('{lista}', () => outcome.listName)}{' '}
                           <Link
                             href={`/me/shopping-lists/${outcome.listId}`}
                             className="font-medium text-brand-ink underline-offset-4 hover:underline"
@@ -517,12 +482,9 @@ function MatchSection({
                           </Link>
                         </span>
                       )}
-                      {outcome != null && "error" in outcome && (
-                        <span
-                          role="alert"
-                          className="text-xs font-medium text-fg"
-                        >
-                          {m.erroPorNaLista}
+                      {outcome != null && 'error' in outcome && (
+                        <span role="alert" className="text-xs font-medium text-fg">
+                          {outcome.error}
                         </span>
                       )}
                     </div>
@@ -530,9 +492,9 @@ function MatchSection({
                 )}
               </div>
             </li>
-          );
+          )
         })}
       </ul>
     </div>
-  );
+  )
 }

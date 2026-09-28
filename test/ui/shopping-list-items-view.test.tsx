@@ -480,3 +480,49 @@ describe('ShoppingListItemsView (#528 — edição à mão)', () => {
     expect(screen.getByRole('button', { name: `${M.remover}: Arroz` })).toBeInTheDocument()
   })
 })
+
+describe('ShoppingListItemsView (ADR-0038 — guardar marcados na despensa)', () => {
+  function mockToPantry(res: { status: number; body: unknown }) {
+    const calls: string[] = []
+    const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      calls.push(`${method} ${url}`)
+      if (method === 'GET' && url.includes('/items')) {
+        const result = itemsResponse([
+          { id: 'i1', nome: 'Arroz', quantidade: null, unidade: null, checkedAt: '2026-09-28T00:00:00.000Z' },
+        ])
+        return { ok: true, status: 200, json: async () => result } as Response
+      }
+      if (method === 'POST' && url.endsWith('/items/checked/to-pantry')) {
+        return { ok: res.status < 300, status: res.status, json: async () => res.body } as Response
+      }
+      throw new Error(`fetch não mockado: ${method} ${url}`)
+    })
+    vi.stubGlobal('fetch', impl)
+    return calls
+  }
+
+  it('chama o POST .../items/checked/to-pantry e mostra o aviso com o link da Despensa', async () => {
+    const calls = mockToPantry({ status: 200, body: { ok: true, added: 2, existing: 0 } })
+    sessionState = authed()
+    renderView()
+    const button = await screen.findByRole('button', { name: M.guardarNaDespensa })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    expect(await screen.findByRole('status')).toHaveTextContent(M.guardadosNaDespensa.replace('{n}', '2'))
+    expect(screen.getByRole('link', { name: M.abrirDespensa })).toHaveAttribute('href', '/me/pantry')
+    expect(calls).toContain('POST /api/me/shopping-lists/list-1/items/checked/to-pantry')
+  })
+
+  it('Despensa cheia (422) mostra o erro localizado, sem link', async () => {
+    mockToPantry({ status: 422, body: { error: 'despensa_cheia' } })
+    sessionState = authed()
+    renderView()
+    const button = await screen.findByRole('button', { name: M.guardarNaDespensa })
+    await waitFor(() => expect(button).toBeEnabled())
+    fireEvent.click(button)
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroDespensaCheia)
+    expect(screen.queryByRole('link', { name: M.abrirDespensa })).not.toBeInTheDocument()
+  })
+})

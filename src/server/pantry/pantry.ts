@@ -1,21 +1,7 @@
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-  type SQL,
-} from "drizzle-orm";
-import type { Database } from "@/db/client";
-import {
-  pantryItem,
-  recipe,
-  recipeImage,
-  shoppingList,
-  shoppingListItem,
-} from "@/db/schema";
+import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
+import type { Database } from '@/db/client'
+import { pantryItem, recipe, recipeImage, shoppingList, shoppingListItem } from '@/db/schema'
+import { normalizeOneLineText } from '@/domain/meal-plan'
 import {
   MAX_PANTRY_ITEMS,
   PANTRY_BASICS,
@@ -24,20 +10,11 @@ import {
   PANTRY_NAME_MAX,
   pantryMatchKey,
   parsePantryName,
-} from "@/domain/pantry";
-import type { RecipeListItem } from "@/domain/recipe-list-read";
-import {
-  RECIPE_LIST_COLS,
-  hydrateRecipeListItems,
-} from "@/server/recipe/collections";
-import {
-  poolBarriersSqlFragment,
-  viewerReadableSqlFragment,
-} from "@/server/recipe/visibility-sql";
-import {
-  applyAddRecipeLinesToShoppingList,
-  ensureDefaultShoppingList,
-} from "@/server/shopping-list/shopping-list";
+} from '@/domain/pantry'
+import type { RecipeListItem } from '@/domain/recipe-list-read'
+import { RECIPE_LIST_COLS, hydrateRecipeListItems } from '@/server/recipe/collections'
+import { poolBarriersSqlFragment, viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
+import { applyAddRecipeLinesToShoppingList, ensureDefaultShoppingList } from '@/server/shopping-list/shopping-list'
 
 /**
  * Núcleo com efeito da Despensa (ADR-0038). Mesma disciplina da Lista de compras e do Cardápio: `db` por
@@ -50,42 +27,34 @@ import {
 
 // ── Tipos ────────────────────────────────────────────────────────────────────────
 
-export type PantryItemView = { id: string; nome: string; createdAt: string };
+export type PantryItemView = { id: string; nome: string; createdAt: string }
 
-export type PantryAddResult =
-  | { kind: "ok"; added: PantryItemView[]; existing: number }
-  | { kind: "limit_reached" };
+export type PantryAddResult = { kind: 'ok'; added: PantryItemView[]; existing: number } | { kind: 'limit_reached' }
 
-export type PantryRemoveResult = { kind: "ok" } | { kind: "not_found" };
+export type PantryRemoveResult = { kind: 'ok' } | { kind: 'not_found' }
 
 /** Uma Receita casada com a Despensa: o card de lista + a contagem + os nomes do que falta. */
-export type PantryMatch = Pick<
-  RecipeListItem,
-  "id" | "name" | "slug" | "imageUrl" | "imageAiGenerated"
-> & {
-  total: number;
-  covered: number;
-  missing: string[];
-};
+export type PantryMatch = Pick<RecipeListItem, 'id' | 'name' | 'slug' | 'imageUrl' | 'imageAiGenerated'> & {
+  total: number
+  covered: number
+  missing: string[]
+}
 
 export type PantryMissingToListResult =
-  | { kind: "ok"; listId: string; listName: string; addedLines: number }
-  | { kind: "not_found" }
-  | { kind: "nothing_missing" };
+  | { kind: 'ok'; listId: string; listName: string; addedLines: number }
+  | { kind: 'not_found' }
+  | { kind: 'nothing_missing' }
 
 export type PantryFromCheckedResult =
-  | { kind: "ok"; added: number; existing: number }
-  | { kind: "not_found" }
-  | { kind: "nothing_checked" }
-  | { kind: "limit_reached" };
+  | { kind: 'ok'; added: number; existing: number }
+  | { kind: 'not_found' }
+  | { kind: 'nothing_checked' }
+  | { kind: 'limit_reached' }
 
 // ── Ler / escrever a Despensa ────────────────────────────────────────────────────
 
 /** Os itens da Despensa do Usuário, em ordem alfabética da chave (o que a tela lista em chips). */
-export async function loadPantry(input: {
-  db: Database;
-  userId: string;
-}): Promise<PantryItemView[]> {
+export async function loadPantry(input: { db: Database; userId: string }): Promise<PantryItemView[]> {
   const rows = await input.db
     .select({
       id: pantryItem.id,
@@ -95,12 +64,12 @@ export async function loadPantry(input: {
     .from(pantryItem)
     .where(eq(pantryItem.userId, input.userId))
     .orderBy(asc(pantryItem.matchKey))
-    .limit(MAX_PANTRY_ITEMS);
+    .limit(MAX_PANTRY_ITEMS)
   return rows.map((r) => ({
     id: r.id,
     nome: r.nome,
     createdAt: r.createdAt.toISOString(),
-  }));
+  }))
 }
 
 /**
@@ -110,32 +79,28 @@ export async function loadPantry(input: {
  * com um advisory lock por Usuário: dois "adicionar" paralelos não furam o teto.
  */
 export async function applyAddPantryItems(input: {
-  db: Database;
-  userId: string;
-  names: readonly string[];
+  db: Database
+  userId: string
+  names: readonly string[]
 }): Promise<PantryAddResult> {
-  const { db, userId, names } = input;
-  const byKey = new Map<string, string>();
+  const { db, userId, names } = input
+  const byKey = new Map<string, string>()
   for (const n of names) {
-    const key = pantryMatchKey(n);
-    if (key.length > 0 && !byKey.has(key)) byKey.set(key, n);
+    const key = pantryMatchKey(n)
+    if (key.length > 0 && !byKey.has(key)) byKey.set(key, n)
   }
-  if (byKey.size === 0) return { kind: "ok", added: [], existing: 0 };
+  if (byKey.size === 0) return { kind: 'ok', added: [], existing: 0 }
 
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${"pantry:" + userId}, 0))`,
-    );
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${'pantry:' + userId}, 0))`)
     const present = await tx
       .select({ matchKey: pantryItem.matchKey })
       .from(pantryItem)
-      .where(eq(pantryItem.userId, userId));
-    const presentKeys = new Set(present.map((p) => p.matchKey));
-    const fresh = [...byKey].filter(([key]) => !presentKeys.has(key));
-    if (presentKeys.size + fresh.length > MAX_PANTRY_ITEMS)
-      return { kind: "limit_reached" as const };
-    if (fresh.length === 0)
-      return { kind: "ok" as const, added: [], existing: byKey.size };
+      .where(eq(pantryItem.userId, userId))
+    const presentKeys = new Set(present.map((p) => p.matchKey))
+    const fresh = [...byKey].filter(([key]) => !presentKeys.has(key))
+    if (presentKeys.size + fresh.length > MAX_PANTRY_ITEMS) return { kind: 'limit_reached' as const }
+    if (fresh.length === 0) return { kind: 'ok' as const, added: [], existing: byKey.size }
 
     const inserted = await tx
       .insert(pantryItem)
@@ -145,44 +110,39 @@ export async function applyAddPantryItems(input: {
         id: pantryItem.id,
         nome: pantryItem.nome,
         createdAt: pantryItem.createdAt,
-      });
+      })
     return {
-      kind: "ok" as const,
+      kind: 'ok' as const,
       added: inserted.map((r) => ({
         id: r.id,
         nome: r.nome,
         createdAt: r.createdAt.toISOString(),
       })),
       existing: byKey.size - inserted.length,
-    };
-  });
+    }
+  })
 }
 
 /** Tira UM item da Despensa do próprio Usuário. Vazio ⇒ `not_found` (não é seu / não existe). */
 export async function applyRemovePantryItem(input: {
-  db: Database;
-  userId: string;
-  itemId: string;
+  db: Database
+  userId: string
+  itemId: string
 }): Promise<PantryRemoveResult> {
   const [row] = await input.db
     .delete(pantryItem)
-    .where(
-      and(eq(pantryItem.id, input.itemId), eq(pantryItem.userId, input.userId)),
-    )
-    .returning({ id: pantryItem.id });
-  return row ? { kind: "ok" } : { kind: "not_found" };
+    .where(and(eq(pantryItem.id, input.itemId), eq(pantryItem.userId, input.userId)))
+    .returning({ id: pantryItem.id })
+  return row ? { kind: 'ok' } : { kind: 'not_found' }
 }
 
 /** Esvazia a Despensa do Usuário (ação explícita "Limpar despensa"). */
-export async function applyClearPantry(input: {
-  db: Database;
-  userId: string;
-}): Promise<{ removed: number }> {
+export async function applyClearPantry(input: { db: Database; userId: string }): Promise<{ removed: number }> {
   const rows = await input.db
     .delete(pantryItem)
     .where(eq(pantryItem.userId, input.userId))
-    .returning({ id: pantryItem.id });
-  return { removed: rows.length };
+    .returning({ id: pantryItem.id })
+  return { removed: rows.length }
 }
 
 // ── Casamento com as Receitas (dec.2–4) ──────────────────────────────────────────
@@ -193,31 +153,33 @@ export async function applyClearPantry(input: {
  * e aliases do canônico e ao texto do Item — então "Pimenta-do-Reino" e "pimenta do reino" casam.
  */
 function norm(expr: SQL): SQL {
-  return sql`btrim(regexp_replace(lower(immutable_unaccent(${expr})), '[[:space:][:punct:]]+', ' ', 'g'))`;
+  return sql`btrim(regexp_replace(lower(immutable_unaccent(${expr})), '[[:space:][:punct:]]+', ' ', 'g'))`
 }
 
 // Fragmentos constantes com barra invertida: via `String.raw` + `sql.raw` (num template do `sql` a barra
 // seria um escape do JS). `standard_conforming_strings` está ligado no Postgres, então a barra chega literal.
 /** Escapa metacaracteres de regex de um termo (defensivo: a normalização já só deixa letra/dígito/espaço). */
-const ESC_TERM = sql.raw(
-  String.raw`regexp_replace(term, '([.*+?^$(){}|\[\]\\])', '\\\1', 'g')`,
-);
+const ESC_TERM = sql.raw(String.raw`regexp_replace(term, '([.*+?^$(){}|\[\]\\])', '\\\1', 'g')`)
 /** Singular da 1ª palavra do termo, plural em "-es" ("flores" → "flor"); radical de 3+ letras ("pães" fica). */
-const SINGULAR_ES = sql.raw(
-  String.raw`regexp_replace(term, '^([^ ]{3,})es( |$)', '\1\2')`,
-);
+const SINGULAR_ES = sql.raw(String.raw`regexp_replace(term, '^([^ ]{3,})es( |$)', '\1\2')`)
 /** Singular da 1ª palavra do termo, plural em "-s" ("ovos" → "ovo", "tomates cereja" → "tomate cereja"). */
-const SINGULAR_S = sql.raw(
-  String.raw`regexp_replace(term, '^([^ ]{3,})s( |$)', '\1\2')`,
-);
+const SINGULAR_S = sql.raw(String.raw`regexp_replace(term, '^([^ ]{3,})s( |$)', '\1\2')`)
+
+/** Teto de tempo da consulta do casamento (medido: < 1 s com 4 mil Receitas e a Despensa cheia). */
+const PANTRY_QUERY_TIMEOUT_MS = 5000
+/** "Sem teto de faltando" (cabe no `integer` do bind; nenhuma Receita tem tantos Itens). */
+const NO_MISSING_CAP = 100_000
+/** Plural regular da 1ª palavra de um termo de várias ("tomate cereja" → "tomates cereja"); termo de uma palavra fica igual. */
+const PLURAL_FIRST_S = sql.raw(String.raw`regexp_replace(t.term, '^([^ ]+) ', '\1s ')`)
+const PLURAL_FIRST_ES = sql.raw(String.raw`regexp_replace(t.term, '^([^ ]+) ', '\1es ')`)
 
 type MatchRow = {
-  recipe_id: string;
-  total: number;
-  covered: number;
-  missing_ids: string[] | null;
-  missing_names: string[] | null;
-};
+  recipe_id: string
+  total: number
+  covered: number
+  missing_ids: string[] | null
+  missing_names: string[] | null
+}
 
 /**
  * O casamento em si (dec.2–4), numa query só. Etapas (CTEs):
@@ -244,23 +206,25 @@ type MatchRow = {
  * `onlyRecipeId` restringe a UMA Receita (o "pôr o que falta na lista" recalcula no servidor, dec.5a).
  */
 async function queryPantryMatches(input: {
-  db: Database;
-  userId: string;
-  names: readonly string[];
-  basics: boolean;
-  locale: string;
-  maxMissing: number;
-  limit: number;
-  onlyRecipeId?: string;
+  db: Database
+  userId: string
+  names: readonly string[]
+  basics: boolean
+  locale: string
+  maxMissing: number
+  limit: number
+  onlyRecipeId?: string
 }): Promise<MatchRow[]> {
-  const { db, userId, names, basics, locale, maxMissing, limit, onlyRecipeId } =
-    input;
-  if (names.length === 0) return [];
-  const basicNames = basics ? [...PANTRY_BASICS] : [];
-  const recipeFilter =
-    onlyRecipeId !== undefined ? sql`AND r.id = ${onlyRecipeId}` : sql``;
+  const { db, userId, names, basics, locale, maxMissing, limit, onlyRecipeId } = input
+  if (names.length === 0) return []
+  const basicNames = basics ? [...PANTRY_BASICS] : []
+  const recipeFilter = onlyRecipeId !== undefined ? sql`AND r.id = ${onlyRecipeId}` : sql``
 
-  const rows = await db.execute<MatchRow>(sql`
+  // Teto de tempo da consulta: um acervo que cresça além do previsto vira erro (500) em vez de segurar uma
+  // conexão do pool. `SET LOCAL` só vale dentro da transação.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(`'${PANTRY_QUERY_TIMEOUT_MS}ms'`)}`)
+    const rows = await tx.execute<MatchRow>(sql`
     WITH src AS (
       SELECT n.name AS name, false AS basic FROM unnest(${sql.param(names)}::text[]) AS n(name)
       UNION ALL
@@ -269,24 +233,23 @@ async function queryPantryMatches(input: {
     src_norm AS (
       SELECT DISTINCT ${norm(sql`s.name`)} AS term, s.basic AS basic FROM src s
     ),
+    it_names AS MATERIALIZED (
+      -- Nomes e aliases de TODOS os Ingredientes canônicos, normalizados UMA vez: o join abaixo vira igualdade
+      -- simples (hash join), sem recalcular a normalização por par (termo × tradução × alias).
+      SELECT it.ingredient_id, ${norm(sql`it.nome`)} AS n FROM ingredient_translation it
+      UNION ALL
+      SELECT it.ingredient_id, ${norm(sql`a.alias`)}
+      FROM ingredient_translation it CROSS JOIN LATERAL unnest(it.aliases) AS a(alias)
+    ),
     canon AS (
-      SELECT DISTINCT it.ingredient_id AS ingredient_id, s.basic AS basic
-      FROM src_norm s
-      JOIN ingredient_translation it
-        ON ${norm(sql`it.nome`)} = s.term
-        OR EXISTS (SELECT 1 FROM unnest(it.aliases) AS a(alias) WHERE ${norm(sql`a.alias`)} = s.term)
+      SELECT DISTINCT n.ingredient_id, s.basic
+      FROM src_norm s JOIN it_names n ON n.n = s.term
       WHERE s.term <> ''
     ),
     expanded AS (
       SELECT term, basic FROM src_norm
       UNION
-      SELECT ${norm(sql`it.nome`)}, c.basic
-      FROM canon c JOIN ingredient_translation it ON it.ingredient_id = c.ingredient_id
-      UNION
-      SELECT ${norm(sql`a.alias`)}, c.basic
-      FROM canon c
-      JOIN ingredient_translation it ON it.ingredient_id = c.ingredient_id
-      CROSS JOIN LATERAL unnest(it.aliases) AS a(alias)
+      SELECT n.n, c.basic FROM canon c JOIN it_names n ON n.ingredient_id = c.ingredient_id
     ),
     terms AS (
       SELECT term, basic FROM expanded
@@ -295,13 +258,27 @@ async function queryPantryMatches(input: {
       UNION
       SELECT ${SINGULAR_S}, basic FROM expanded
     ),
-    patterns AS (
+    real_forms AS (
+      -- As formas que casam o texto do Item: o termo, o plural regular da ÚLTIMA palavra ("ovo" → "ovos",
+      -- "farinha" → "farinhas") e o da PRIMEIRA ("tomate cereja" → "tomates cereja"), com a 1ª palavra e o
+      -- número de palavras já separados (o join abaixo casa pela 1ª palavra e só então confere o resto).
+      SELECT DISTINCT f.form AS form, split_part(f.form, ' ', 1) AS first_word,
+        array_length(string_to_array(f.form, ' '), 1) AS n_words
+      FROM terms t
+      CROSS JOIN LATERAL (
+        VALUES (t.term), (t.term || 's'), (t.term || 'es'), (${PLURAL_FIRST_S}), (${PLURAL_FIRST_ES})
+      ) AS f(form)
+      WHERE NOT t.basic AND t.term <> ''
+    ),
+    basic_pattern AS (
+      -- Básico: só a LINHA INTEIRA feita de básicos, separados por espaço (a vírgula já virou espaço), "e",
+      -- "and", "ou" ou "or", com "a gosto"/"to taste"/"q.b." no fim. Regex pequena (uma dúzia de termos),
+      -- ancorada no começo: falha rápido. Os termos já são só letras/dígitos/espaço; escapados mesmo assim.
       SELECT
-        '(^| )(' || string_agg(${ESC_TERM}, '|') FILTER (WHERE NOT basic) || ')(e?s)?( |$)' AS real_re,
-        '^(' || string_agg(${ESC_TERM}, '|') FILTER (WHERE basic) || ')(e?s)?(( e | and | ou | or )('
-          || string_agg(${ESC_TERM}, '|') FILTER (WHERE basic) || ')(e?s)?)*( a gosto| to taste| q b)?$' AS basic_re
+        '^(' || string_agg(${ESC_TERM}, '|') || ')(e?s)?(( e | and | ou | or | )('
+          || string_agg(${ESC_TERM}, '|') || ')(e?s)?)*( a gosto| to taste| q b)?$' AS re
       FROM terms
-      WHERE term <> ''
+      WHERE basic AND term <> ''
     ),
     canon_ids AS (
       SELECT
@@ -332,27 +309,42 @@ async function queryPantryMatches(input: {
         LIMIT 1
       ) tr ON true
       WHERE btrim(COALESCE(ri.raw_text, '')) <> ''
-        AND ${viewerReadableSqlFragment("r", userId)}
-        AND ${poolBarriersSqlFragment("r")}
+        AND ${viewerReadableSqlFragment('r', userId)}
+        AND ${poolBarriersSqlFragment('r')}
         ${recipeFilter}
     ),
-    hits AS (
+    tokens AS (
+      -- Cada palavra do texto normalizado de cada Item (origem e tradução), com a posição. "Palavra(s)
+      -- inteira(s)" vira: a 1ª palavra da forma é IGUAL a uma palavra do Item (hash join) e as seguintes batem
+      -- em sequência — em vez de uma regex com centenas de alternativas avaliada em cada linha.
+      SELECT l.line_id, w.arr, t.word, t.pos
+      FROM lines l
+      CROSS JOIN LATERAL (VALUES (string_to_array(l.raw_n, ' ')), (string_to_array(l.tr_n, ' '))) AS w(arr)
+      CROSS JOIN LATERAL unnest(w.arr) WITH ORDINALITY AS t(word, pos)
+    ),
+    real_line_hits AS (
+      SELECT DISTINCT tk.line_id
+      FROM tokens tk
+      JOIN real_forms f ON f.first_word = tk.word
+      WHERE f.n_words = 1
+        OR array_to_string(tk.arr[tk.pos:tk.pos + f.n_words - 1], ' ') = f.form
+    ),
+    hits AS MATERIALIZED (
       SELECT
         l.line_id,
         l.recipe_id,
         l.ordem,
         l.display_name,
-        (
-          l.ingredient_id = ANY (ci.real_ids)
-          OR COALESCE(l.raw_n ~ p.real_re, false)
-          OR COALESCE(l.tr_n ~ p.real_re, false)
-        ) IS TRUE AS real_hit,
+        (l.ingredient_id = ANY (ci.real_ids) OR rh.line_id IS NOT NULL) IS TRUE AS real_hit,
         (
           l.ingredient_id = ANY (ci.basic_ids)
-          OR COALESCE(l.raw_n ~ p.basic_re, false)
-          OR COALESCE(l.tr_n ~ p.basic_re, false)
+          OR COALESCE(l.raw_n ~ bp.re, false)
+          OR COALESCE(l.tr_n ~ bp.re, false)
         ) IS TRUE AS basic_hit
-      FROM lines l CROSS JOIN patterns p CROSS JOIN canon_ids ci
+      FROM lines l
+      CROSS JOIN canon_ids ci
+      CROSS JOIN basic_pattern bp
+      LEFT JOIN real_line_hits rh ON rh.line_id = l.line_id
     ),
     per_recipe AS (
       SELECT
@@ -372,21 +364,19 @@ async function queryPantryMatches(input: {
       AND pr.total - pr.covered <= ${maxMissing}
     ORDER BY pr.total - pr.covered ASC, pr.real_covered DESC, r.created_at DESC, pr.recipe_id
     LIMIT ${limit}
-  `);
-  return [...rows];
+  `)
+    return [...rows]
+  })
 }
 
 /** Os nomes da Despensa do Usuário (o que alimenta o casamento). */
-async function loadPantryNames(
-  db: Database,
-  userId: string,
-): Promise<string[]> {
+async function loadPantryNames(db: Database, userId: string): Promise<string[]> {
   const rows = await db
     .select({ nome: pantryItem.nome })
     .from(pantryItem)
     .where(eq(pantryItem.userId, userId))
-    .limit(MAX_PANTRY_ITEMS);
-  return rows.map((r) => r.nome);
+    .limit(MAX_PANTRY_ITEMS)
+  return rows.map((r) => r.nome)
 }
 
 /**
@@ -395,14 +385,14 @@ async function loadPantryNames(
  * título por locale, slug, thumbnail sem imagem moderada). Despensa vazia ⇒ lista vazia.
  */
 export async function loadPantryMatches(input: {
-  db: Database;
-  userId: string;
-  basics: boolean;
-  requestLocale: string;
-  fallbackName: string;
+  db: Database
+  userId: string
+  basics: boolean
+  requestLocale: string
+  fallbackName: string
 }): Promise<PantryMatch[]> {
-  const { db, userId, basics, requestLocale, fallbackName } = input;
-  const names = await loadPantryNames(db, userId);
+  const { db, userId, basics, requestLocale, fallbackName } = input
+  const names = await loadPantryNames(db, userId)
   const matches = await queryPantryMatches({
     db,
     userId,
@@ -411,34 +401,26 @@ export async function loadPantryMatches(input: {
     locale: requestLocale,
     maxMissing: PANTRY_MAX_MISSING,
     limit: PANTRY_MATCH_LIMIT,
-  });
-  if (matches.length === 0) return [];
+  })
+  if (matches.length === 0) return []
 
   const baseRows = await db
     .select({ ...RECIPE_LIST_COLS })
     .from(recipe)
-    .leftJoin(
-      recipeImage,
-      and(eq(recipeImage.id, recipe.imageId), isNull(recipeImage.moderatedAt)),
-    )
+    .leftJoin(recipeImage, and(eq(recipeImage.id, recipe.imageId), isNull(recipeImage.moderatedAt)))
     .where(
       inArray(
         recipe.id,
         matches.map((m) => m.recipe_id),
       ),
-    );
-  const cards = await hydrateRecipeListItems(
-    db,
-    baseRows,
-    requestLocale,
-    fallbackName,
-  );
-  const cardById = new Map(cards.map((c) => [c.id, c]));
+    )
+  const cards = await hydrateRecipeListItems(db, baseRows, requestLocale, fallbackName)
+  const cardById = new Map(cards.map((c) => [c.id, c]))
 
-  const out: PantryMatch[] = [];
+  const out: PantryMatch[] = []
   for (const m of matches) {
-    const card = cardById.get(m.recipe_id);
-    if (!card) continue;
+    const card = cardById.get(m.recipe_id)
+    if (!card) continue
     out.push({
       id: card.id,
       name: card.name,
@@ -448,9 +430,9 @@ export async function loadPantryMatches(input: {
       total: m.total,
       covered: m.covered,
       missing: m.missing_names ?? [],
-    });
+    })
   }
-  return out;
+  return out
 }
 
 // ── Pontes (dec.5a e dec.6) ──────────────────────────────────────────────────────
@@ -463,41 +445,39 @@ export async function loadPantryMatches(input: {
  * tirar um item da Despensa, e o que falta agora ainda é o que ela quer comprar.
  */
 export async function applyPantryMissingToShoppingList(input: {
-  db: Database;
-  userId: string;
-  recipeId: string;
-  basics: boolean;
-  locale: string;
-  listId?: string;
+  db: Database
+  userId: string
+  recipeId: string
+  basics: boolean
+  locale: string
+  listId?: string
 }): Promise<PantryMissingToListResult> {
-  const { db, userId, recipeId, basics, locale } = input;
-  const names = await loadPantryNames(db, userId);
+  const { db, userId, recipeId, basics, locale } = input
+  const names = await loadPantryNames(db, userId)
   const [match] = await queryPantryMatches({
     db,
     userId,
     names,
     basics,
     locale,
-    maxMissing: 1_000_000,
+    maxMissing: NO_MISSING_CAP, // sem teto aqui: o que falta agora é o que se quer comprar
     limit: 1,
     onlyRecipeId: recipeId,
-  });
-  if (!match) return { kind: "not_found" };
-  const missing = match.missing_ids ?? [];
-  if (missing.length === 0) return { kind: "nothing_missing" };
+  })
+  if (!match) return { kind: 'not_found' }
+  const missing = match.missing_ids ?? []
+  if (missing.length === 0) return { kind: 'nothing_missing' }
 
-  let list: { id: string; name: string };
+  let list: { id: string; name: string }
   if (input.listId !== undefined) {
     const [own] = await db
       .select({ id: shoppingList.id, name: shoppingList.name })
       .from(shoppingList)
-      .where(
-        and(eq(shoppingList.id, input.listId), eq(shoppingList.userId, userId)),
-      );
-    if (!own) return { kind: "not_found" };
-    list = own;
+      .where(and(eq(shoppingList.id, input.listId), eq(shoppingList.userId, userId)))
+    if (!own) return { kind: 'not_found' }
+    list = own
   } else {
-    list = await ensureDefaultShoppingList({ db, userId });
+    list = await ensureDefaultShoppingList({ db, userId })
   }
 
   const res = await applyAddRecipeLinesToShoppingList({
@@ -507,14 +487,14 @@ export async function applyPantryMissingToShoppingList(input: {
     recipeId,
     locale,
     lineIds: new Set(missing),
-  });
-  if (res.kind === "not_found") return res;
+  })
+  if (res.kind === 'not_found') return res
   return {
-    kind: "ok",
+    kind: 'ok',
     listId: list.id,
     listName: list.name,
     addedLines: res.addedLines,
-  };
+  }
 }
 
 /**
@@ -523,40 +503,34 @@ export async function applyPantryMissingToShoppingList(input: {
  * no teto da Despensa; idempotente pela chave; o teto da Despensa vale (tudo ou nada, como o adicionar).
  */
 export async function applyCheckedItemsToPantry(input: {
-  db: Database;
-  userId: string;
-  listId: string;
+  db: Database
+  userId: string
+  listId: string
 }): Promise<PantryFromCheckedResult> {
-  const { db, userId, listId } = input;
+  const { db, userId, listId } = input
   const [list] = await db
     .select({ id: shoppingList.id })
     .from(shoppingList)
-    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)));
-  if (!list) return { kind: "not_found" };
+    .where(and(eq(shoppingList.id, listId), eq(shoppingList.userId, userId)))
+  if (!list) return { kind: 'not_found' }
 
   const checked = await db
     .select({ nome: shoppingListItem.nome })
     .from(shoppingListItem)
-    .where(
-      and(
-        eq(shoppingListItem.listId, listId),
-        isNotNull(shoppingListItem.checkedAt),
-      ),
-    );
-  const names = checked
-    .map((c) => toPantryName(c.nome))
-    .filter((n): n is string => n !== null);
-  if (names.length === 0) return { kind: "nothing_checked" };
+    .where(and(eq(shoppingListItem.listId, listId), isNotNull(shoppingListItem.checkedAt)))
+  const names = checked.map((c) => toPantryName(c.nome)).filter((n): n is string => n !== null)
+  if (names.length === 0) return { kind: 'nothing_checked' }
 
-  const res = await applyAddPantryItems({ db, userId, names });
-  if (res.kind === "limit_reached") return res;
-  return { kind: "ok", added: res.added.length, existing: res.existing };
+  const res = await applyAddPantryItems({ db, userId, names })
+  if (res.kind === 'limit_reached') return res
+  return { kind: 'ok', added: res.added.length, existing: res.existing }
 }
 
-/** Nome de item da Lista → nome de item da Despensa (a Lista aceita até 200; corta no teto por code point). */
+/**
+ * Nome de item da Lista → nome de item da Despensa (a Lista aceita até 200). Normaliza ANTES de cortar no teto
+ * por code point: cortar primeiro contaria espaços repetidos e controles que a normalização some.
+ */
 function toPantryName(nome: string): string | null {
-  const parsed = parsePantryName(
-    [...nome.trim()].slice(0, PANTRY_NAME_MAX).join(""),
-  );
-  return parsed === "invalid" ? null : parsed;
+  const parsed = parsePantryName([...normalizeOneLineText(nome)].slice(0, PANTRY_NAME_MAX).join('').trim())
+  return parsed === 'invalid' ? null : parsed
 }

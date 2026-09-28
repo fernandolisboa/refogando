@@ -124,6 +124,7 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
 
   async function handleRemoveChecked() {
     if (bulkPending) return
+    setPantryNotice(null)
     if (!window.confirm(m.confirmarRemoverMarcados)) return
     setBulkPending(true)
     try {
@@ -143,7 +144,13 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
       const res = await fetch(`/api/me/shopping-lists/${listId}/items/checked/to-pantry`, { method: 'POST' })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
-        setPantryNotice({ text: body.error === 'despensa_cheia' ? m.erroDespensaCheia : m.erro, error: true })
+        const text =
+          body.error === 'despensa_cheia'
+            ? m.erroDespensaCheia
+            : body.error === 'nada_marcado'
+              ? m.nadaMarcadoParaDespensa
+              : m.erro
+        setPantryNotice({ text, error: true })
         return
       }
       const body = (await res.json()) as { added: number }
@@ -165,6 +172,7 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
 
   async function handleClearList() {
     if (bulkPending) return
+    setPantryNotice(null)
     if (!window.confirm(m.confirmarLimparLista)) return
     setBulkPending(true)
     try {
