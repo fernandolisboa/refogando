@@ -40,6 +40,7 @@ import { Container } from '@/components/container'
 import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { RecipeEngagementControls } from '@/components/recipe/recipe-engagement-controls'
 import { RecipeShoppingListButton } from '@/components/recipe/recipe-shopping-list-button'
+import { RecipeMealPlanButton } from '@/components/recipe/recipe-meal-plan-button'
 import { RecipeShareButton } from '@/components/recipe/recipe-share-button'
 import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import {
@@ -418,6 +419,12 @@ async function DetailChrome({
             <RecipeShareButton view={view} />
             {(reviews != null || view.canManage) && (
               <>
+                {/* ADR-0035: planejar no Cardápio — mesmo gate do carrinho (pool OU dono). */}
+                <RecipeMealPlanButton
+                  key={`${view.id}-cardapio`}
+                  recipeId={view.id}
+                  porcoesReceita={view.porcoes}
+                />
                 <RecipeShoppingListButton
                   key={`${view.id}-lista`}
                   recipeId={view.id}

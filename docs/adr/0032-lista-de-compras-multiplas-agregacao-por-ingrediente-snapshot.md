@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (ADR-0035, 2026-09-28):** o Plano de refeições gera listas escalando CADA refeição planejada pelas suas porções — exceção consciente à dec.7 (lá a base evitava um seletor de porções por item; no plano as porções já foram escolhidas). O multi-adicionar da dec.7 segue na base e agora roda numa transação (lê cada Receita uma vez). Ver ADR-0035 dec.5.
+
 Feature de retenção nº1 da categoria (issue #474): "adicionar à lista" a partir de 1..N Receitas, com agregação de ingredientes. Fecha um fork de schema irreversível (duas tabelas novas) grelhado com o dono. Degrau para o planejador semanal (futuro). Termos no `CONTEXT.md` (**Lista de compras**). Relaciona: ADR-0012/0009 (medida Direção B — quantidade/unidade fonte única), ADR-0027 (Salvar/Coleção — privado, múltiplas nomeadas), ADR-0001 (Ingrediente canônico), #452 (escalador de porções `quantidade × ratio`).
 
 ## Decisões

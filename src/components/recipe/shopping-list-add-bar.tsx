@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useLocale } from '@/i18n/provider'
-import type { Messages } from '@/i18n/messages'
+import { shoppingListCreateErrorMessage } from '@/components/shopping-list/shopping-list-errors'
 
 type ListOption = { id: string; name: string }
 type Status = 'loading' | 'idle' | 'error'
@@ -81,7 +81,7 @@ export function ShoppingListAddBar({
         })
         if (!created.ok) {
           const errBody = (await created.json().catch(() => ({}))) as { error?: string }
-          setSubmitError(errorMessage(errBody.error, m))
+          setSubmitError(shoppingListCreateErrorMessage(errBody.error, m))
           return
         }
         const createdBody = (await created.json()) as { list: { id: string } }
@@ -172,18 +172,4 @@ export function ShoppingListAddBar({
       )}
     </form>
   )
-}
-
-/** Mapeia o código de erro do servidor (criar lista inline) pra mensagem localizada. */
-function errorMessage(code: string | undefined, m: Messages['listaDeCompras']): string {
-  switch (code) {
-    case 'nome_invalido':
-      return m.erroNomeInvalido
-    case 'nome_duplicado':
-      return m.erroNomeDuplicado
-    case 'limite_listas':
-      return m.erroLimiteListas
-    default:
-      return m.erro
-  }
 }

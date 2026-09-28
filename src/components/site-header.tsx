@@ -137,6 +137,8 @@ export function SiteHeader() {
           {/* #468: "Salvos" (`/me/saved`, coleções #364) ao lado de "Minhas criações" — antes a
               página existia mas nenhuma chrome linkava pra ela. Só-logada, como as vizinhas. */}
           {authed && navLink('/me/saved', messages.colecoes.titulo, identity)}
+          {/* ADR-0035: "Cardápio" (Plano de refeições da semana), ao lado de "Salvos" — só-logada. */}
+          {authed && navLink('/me/meal-plan', messages.nav.cardapio, identity)}
         </nav>
         {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
             espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). `ml-auto` empurra
@@ -176,6 +178,7 @@ export function SiteHeader() {
               {authed && navLink('/following', messages.nav.seguindo, inSheet)}
               {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
               {authed && navLink('/me/saved', messages.colecoes.titulo, inSheet)}
+              {authed && navLink('/me/meal-plan', messages.nav.cardapio, inSheet)}
               {/* "Painel" saiu da nav (#267): vive no menu da conta do AuthSlot abaixo. */}
               {ctaLink(inSheet)}
             </nav>

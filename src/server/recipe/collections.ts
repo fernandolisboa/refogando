@@ -375,7 +375,7 @@ export async function loadCollectionItems(input: {
 // ── Interno: projeção compartilhada da lista de Receitas (espelha list-mine.ts) ────
 
 /** Colunas da espinha da Receita + thumbnail, idênticas às de `listMyRecipes` (#61). */
-const RECIPE_LIST_COLS = {
+export const RECIPE_LIST_COLS = {
   id: recipe.id,
   origin: recipe.origin,
   visibility: recipe.visibility,
@@ -388,7 +388,7 @@ const RECIPE_LIST_COLS = {
   imageProvenance: recipeImage.provenance,
 } as const
 
-type RecipeListBaseRow = {
+export type RecipeListBaseRow = {
   id: string
   origin: Origin
   visibility: Visibility
@@ -404,10 +404,10 @@ type RecipeListBaseRow = {
 /**
  * Segunda query (traduções) + montagem PURA — espelha a projeção de card de `list-mine.ts`
  * (invariante congelada; não deduplicado) pra `loadSavedRecipes`/`loadCollectionItems` não
- * forkarem a projeção. Preserva a ORDEM de `rows`
+ * forkarem a projeção (o Plano de refeições, ADR-0035, também reusa). Preserva a ORDEM de `rows`
  * (o caller já ordenou); colhe o slug do `requestLocale` (#231) e delega a `resolveRecipeListItem`.
  */
-async function hydrateRecipeListItems(
+export async function hydrateRecipeListItems(
   db: Database,
   rows: RecipeListBaseRow[],
   requestLocale: string,

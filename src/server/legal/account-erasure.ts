@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { account, session, users, verification } from '@/db/schema'
+import { account, mealPlanEntry, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { getImageStore } from '@/server/deps'
 import { deleteOrphanBlob } from '@/server/recipe/image'
@@ -25,6 +25,8 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
  *     apagada), é higiene de PII no fluxo cujo propósito é justamente removê-la.
  *  4. AUDITA: grava um evento `DSAR_RECEIVED` (canal `self_service`) na MESMA transação (atomicidade:
  *     ou elimina-E-audita, ou nada — espelha `clearSourceAttribution`/`createTakedownTicket`).
+ *
+ * O Plano de refeições (ADR-0035) é APAGADO na mesma transação: é privado e nenhum terceiro depende dele.
  *
  * O CONTEÚDO do usuário (receitas, avaliações, saves) é MANTIDO (owner_id segue apontando para a linha
  * anonimizada): apagá-lo em cascata destruiria dados dos quais TERCEIROS dependem (ex.: avaliações
@@ -98,6 +100,10 @@ export async function eraseOwnAccount(
     if (oldEmail !== anon.email) {
       await tx.delete(verification).where(eq(verification.identifier, oldEmail))
     }
+
+    // O Plano de refeições é PRIVADO e ninguém mais depende dele (≠ receitas/avaliações): apaga
+    // (ADR-0035 dec.6, minimização).
+    await tx.delete(mealPlanEntry).where(eq(mealPlanEntry.userId, userId))
 
     // 4. Trilha de auditoria (append-only, minimizada): só metadados NÃO-sensíveis (contagem de
     //    sessões revogadas + o fato de anonimizar). NUNCA a PII removida em claro.

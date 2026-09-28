@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/me/export/route'
 import { getDb } from '@/server/deps'
-import { notification, userFollow } from '@/db/schema'
+import { mealPlanEntry, notification, shoppingList, shoppingListItem, userFollow } from '@/db/schema'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import {
   seedRecipe,
@@ -72,6 +72,23 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     await seedCollectionItem({ collectionId: col, recipeId: feijoada })
     await seedReview({ userId, recipeId: feijoada, rating: 5, comment: 'Excelente!' })
 
+    // Lista de compras com um item (ADR-0032) + uma Refeição planejada (ADR-0035).
+    const [list] = await getDb()
+      .insert(shoppingList)
+      .values({ userId, name: 'Feira de sábado' })
+      .returning({ id: shoppingList.id })
+    await getDb().insert(shoppingListItem).values({
+      listId: list.id,
+      nome: 'Feijão preto',
+      matchKey: 'n:feijao preto',
+      quantidade: '500',
+      unidade: 'g',
+      sourceRecipeId: feijoada,
+    })
+    await getDb()
+      .insert(mealPlanEntry)
+      .values({ userId, day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 })
+
     const res = await get(headers)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('application/json')
@@ -85,6 +102,11 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       savedRecipes: Array<{ recipeId: string }>
       collections: Array<{ name: string; recipeIds: string[] }>
       reviews: Array<{ recipeId: string; rating: number; comment: string | null }>
+      shoppingLists: Array<{
+        name: string
+        items: Array<{ nome: string; quantidade: string | null; unidade: string | null; sourceRecipeId: string | null }>
+      }>
+      mealPlan: Array<{ day: string; slot: string; recipeId: string; porcoes: number | null }>
     }
 
     expect(dump.format).toBe('refogando-account-export/v1')
@@ -104,6 +126,16 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       rating: 5,
       comment: 'Excelente!',
     })
+
+    // Lista de compras + itens e o plano de refeições do titular.
+    expect(dump.shoppingLists).toHaveLength(1)
+    expect(dump.shoppingLists[0]).toMatchObject({
+      name: 'Feira de sábado',
+      items: [{ nome: 'Feijão preto', quantidade: '500.000', unidade: 'g', sourceRecipeId: feijoada }],
+    })
+    expect(dump.mealPlan).toEqual([
+      expect.objectContaining({ day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 }),
+    ])
   })
 
   it('NÃO vaza PII de terceiros: seguindo traz só handle, seguidores só contagem, sem e-mail de outros', async () => {

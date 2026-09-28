@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { usePortionScale } from './recipe-portion-scale-context'
+import { shoppingListCreateErrorMessage } from '@/components/shopping-list/shopping-list-errors'
 
 const ICON_BUTTON =
   'inline-flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-brand/10 hover:text-brand-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40'
@@ -163,7 +164,7 @@ function ShoppingListPanel({
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
-        setCreateError(shoppingListErrorMessage(body.error, m))
+        setCreateError(shoppingListCreateErrorMessage(body.error, m))
         return
       }
       const body = (await res.json()) as { list: { id: string; name: string } }
@@ -245,21 +246,4 @@ function ShoppingListPanel({
       )}
     </div>
   )
-}
-
-/** Código de erro do servidor → mensagem localizada da Lista de compras; default = genérico. */
-function shoppingListErrorMessage(
-  code: string | undefined,
-  m: ReturnType<typeof useLocale>['messages']['listaDeCompras'],
-): string {
-  switch (code) {
-    case 'nome_invalido':
-      return m.erroNomeInvalido
-    case 'nome_duplicado':
-      return m.erroNomeDuplicado
-    case 'limite_listas':
-      return m.erroLimiteListas
-    default:
-      return m.erro
-  }
 }

@@ -121,6 +121,17 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     expect(screen.queryByRole('menuitem', { name: ptBR.nav.painel })).not.toBeInTheDocument()
   })
 
+  it('o menu tem "Listas de compras" → /me/shopping-lists (ADR-0035)', async () => {
+    const user = userEvent.setup()
+    mockSession = authed()
+    renderSlot('pt-BR')
+    await openMenu(user, 'Ana')
+    expect(screen.getByRole('menuitem', { name: ptBR.listaDeCompras.indiceTitulo })).toHaveAttribute(
+      'href',
+      '/me/shopping-lists',
+    )
+  })
+
   it('handle ausente: o item "Ver meu perfil público" não aparece (degradação graciosa)', async () => {
     const user = userEvent.setup()
     mockSession = authed({ handle: undefined })

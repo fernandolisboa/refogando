@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/me/erasure/route'
 import { GET as GET_ME } from '@/app/api/me/route'
 import { getDb } from '@/server/deps'
-import { account, dsarAuditEvent, recipe, recipeReview, session, users, verification } from '@/db/schema'
+import { account, dsarAuditEvent, mealPlanEntry, recipe, recipeReview, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
@@ -219,6 +219,23 @@ describe('/api/me/erasure — eliminação conservadora do titular (#401)', () =
     const second = await eraseOwnAccount(getDb(), { userId })
     expect(second.kind).toBe('already_erased')
     expect(await countVerificationsFor(email)).toBe(0)
+  })
+
+  it('apaga o Plano de refeições do titular (privado, ninguém depende) e não toca o de outra conta', async () => {
+    const a = await seedUser({ email: 'plano-a@erasure.test' })
+    const b = await seedUser({ email: 'plano-b@erasure.test' })
+    const r = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await getDb()
+      .insert(mealPlanEntry)
+      .values([
+        { userId: a, day: '2026-09-28', slot: 'almoco', recipeId: r },
+        { userId: b, day: '2026-09-28', slot: 'almoco', recipeId: r },
+      ])
+
+    expect((await eraseOwnAccount(getDb(), { userId: a })).kind).toBe('erased')
+
+    expect(await getDb().select().from(mealPlanEntry).where(eq(mealPlanEntry.userId, a))).toEqual([])
+    expect(await getDb().select().from(mealPlanEntry).where(eq(mealPlanEntry.userId, b))).toHaveLength(1)
   })
 
   it('não toca outra conta (sem IDOR): eliminar A preserva a PII de B', async () => {

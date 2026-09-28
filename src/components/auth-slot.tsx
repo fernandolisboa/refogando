@@ -151,6 +151,10 @@ export function AuthSlot() {
         <DropdownMenuItem asChild>
           <Link href="/me/profile">{messages.nav.editarPerfil}</Link>
         </DropdownMenuItem>
+        {/* ADR-0035: índice das Listas de compras — antes nenhuma chrome levava a elas. */}
+        <DropdownMenuItem asChild>
+          <Link href="/me/shopping-lists">{messages.listaDeCompras.indiceTitulo}</Link>
+        </DropdownMenuItem>
         {/* "Painel" (#125) só a curador+ — afordância; o /admin revalida o papel server-side. */}
         {showPainel && (
           <DropdownMenuItem asChild>
