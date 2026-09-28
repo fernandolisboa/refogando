@@ -329,16 +329,18 @@ describe('Sugestão de cardápio — a prévia', () => {
     expect(((await res.json()) as PreviewBody).items).toEqual([])
   })
 
-  it('falha ou recusa do modelo ⇒ 502 sugestao_falhou (o slot fica gasto)', async () => {
+  it('falha ou recusa do modelo ⇒ 502 sugestao_falhou (o slot fica gasto, com o custo da chamada)', async () => {
     const me = await session()
     await seedCatalog('Lasanha')
-    useClient(() => ({ kind: 'parse_failed' }))
+    useClient(() => ({ kind: 'parse_failed', usage: { inputTokens: 2000, outputTokens: 0 } }))
     const res = await suggest(BASE, me.headers)
     expect(res.status).toBe(502)
     expect(await res.json()).toEqual({ error: 'sugestao_falhou' })
     useClient(() => ({ kind: 'refusal' }))
     expect((await suggest(BASE, me.headers)).status).toBe(502)
-    expect(await ledger(me.userId)).toHaveLength(2)
+    const rows = await ledger(me.userId)
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => r.inputTokens).sort()).toEqual([2000, null])
   })
 })
 
@@ -389,6 +391,13 @@ describe('Sugestão de cardápio — cota diária', () => {
 
 // ── Aceite ──────────────────────────────────────────────────────────────────────
 describe('Sugestão de cardápio — aceitar', () => {
+  it('UUID em maiúsculas é normalizado (não vira "pulada")', async () => {
+    const me = await session()
+    const lasanha = await seedCatalog('Lasanha')
+    const res = await apply({ entries: [{ recipeId: lasanha.toUpperCase(), day: MON, slot: 'jantar' }] }, me.headers)
+    expect(await res.json()).toEqual({ addedCount: 1, skippedCount: 0 })
+  })
+
   it('grava as entradas; pula inelegível (privada de outro) sem vazar nada', async () => {
     const me = await session()
     const other = await session()

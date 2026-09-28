@@ -432,10 +432,22 @@ export class RealClaudeClient implements ClaudeClient {
 
   async suggestMenu(input: GenerationInput): Promise<MenuSuggestionOutput> {
     // Espelha a Extração (messages.parse + zodOutputFormat + reparo de UMA tentativa, prazo de 50s), mas
-    // distingue `refusal` (a rota mostra o mesmo erro; o log diz a causa). O `usage` volta pra rota, que
-    // grava tokens e custo na linha do ledger da cota (ADR-0036).
+    // distingue `refusal` (a rota mostra o mesmo erro; o log diz a causa). O `usage` volta pra rota em
+    // todo desfecho, que grava tokens e custo na linha do ledger da cota (ADR-0036).
     const client = new Anthropic()
     const settings = withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.menu)
+
+    // Uso SOMADO das chamadas feitas (a principal + o reparo): toda chamada custa, mesmo a que termina em
+    // recusa ou parse_failed — o ledger da cota registra o custo de todos os desfechos.
+    let usage: TextUsage | undefined
+    const addUsage = (u: { input_tokens?: number; output_tokens?: number } | null | undefined) => {
+      const mapped = mapTextUsage(u)
+      if (!mapped) return
+      usage = {
+        inputTokens: (usage?.inputTokens ?? 0) + mapped.inputTokens,
+        outputTokens: (usage?.outputTokens ?? 0) + mapped.outputTokens,
+      }
+    }
 
     try {
       const params = {
@@ -449,21 +461,29 @@ export class RealClaudeClient implements ClaudeClient {
 
       const signal = generationSignal(input.signal)
       let message = await client.messages.parse(params, { signal })
-      if (message.stop_reason === 'refusal') return { kind: 'refusal' }
+      addUsage(message.usage)
+      if (message.stop_reason === 'refusal') {
+        logSeamParseFailed('suggestMenu', 'recusa', message)
+        return { kind: 'refusal', usage }
+      }
 
       if (message.parsed_output === null) {
         message = await client.messages.parse(params, { signal })
-        if (message.stop_reason === 'refusal') return { kind: 'refusal' }
+        addUsage(message.usage)
+        if (message.stop_reason === 'refusal') {
+          logSeamParseFailed('suggestMenu', 'recusa', message)
+          return { kind: 'refusal', usage }
+        }
         if (message.parsed_output === null) {
           logSeamParseFailed('suggestMenu', 'saída nula após reparo', message)
-          return { kind: 'parse_failed' }
+          return { kind: 'parse_failed', usage }
         }
       }
 
-      return { kind: 'ok', suggestion: message.parsed_output, usage: mapTextUsage(message.usage) }
+      return { kind: 'ok', suggestion: message.parsed_output, usage }
     } catch (err) {
       logSeamError('suggestMenu', err, input.signal)
-      return { kind: 'parse_failed' }
+      return { kind: 'parse_failed', usage }
     }
   }
 

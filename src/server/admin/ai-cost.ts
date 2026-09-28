@@ -13,7 +13,8 @@ import {
  * Agregador do painel de CUSTO de IA no /admin (#465) — soma os ledgers de custo já existentes:
  * `generation` (texto, #463), `meal_plan_suggestion_event` (texto da Sugestão de cardápio, ADR-0036 —
  * entra no TEXTO de `perDay`/`topUsers`; fica fora de `byOutcome`, que é sobre Receitas geradas) e
- * `image_generation` (imagem, #224). NÃO cria tabela nova; só LÊ os `cost_usd` SNAPSHOT já persistidos. ADMIN-only (a rota reforça `requireRole 'admin'`).
+ * `image_generation` (imagem, #224). NÃO cria tabela nova; só LÊ os `cost_usd` SNAPSHOT já persistidos.
+ * ADMIN-only (a rota reforça `requireRole 'admin'`).
  *
  * Três vistas, TODAS na mesma janela de `windowDays` (default 30):
  *  1. `perDay` — custo/dia por ledger (série temporal de margem).

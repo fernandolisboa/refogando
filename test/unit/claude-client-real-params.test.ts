@@ -125,8 +125,12 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     parse.mockResolvedValue({ stop_reason: 'refusal', parsed_output: null })
     expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({ kind: 'refusal' })
     parse.mockReset()
-    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: null })
-    expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({ kind: 'parse_failed' })
+    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: null, usage: { input_tokens: 100, output_tokens: 7 } })
+    // As DUAS chamadas (principal + reparo) custaram: o uso volta somado mesmo no parse_failed.
+    expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({
+      kind: 'parse_failed',
+      usage: { inputTokens: 200, outputTokens: 14 },
+    })
     expect(parse).toHaveBeenCalledTimes(2)
     parse.mockReset()
     parse.mockRejectedValue(new Error('boom'))

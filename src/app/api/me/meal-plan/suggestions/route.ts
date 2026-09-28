@@ -32,14 +32,21 @@ import { QuotaExceededError, peekMenuSuggestionQuota, reserveMenuSuggestionSlot 
  * Ordem: tudo que é barato e pode dar 4xx vem ANTES da reserva da cota (um pedido inválido ou sem
  * candidatas não queima slot); a pré-checagem de cota vem antes das candidatas (quem está no teto não
  * dispara a leitura do pool). A reserva é atômica (lock + recontagem + INSERT) e vem logo antes da IA.
- * O `request.signal` vai pro seam: fechar o painel cancela a chamada.
+ * O `request.signal` vai pro seam (fechar o painel cancela a chamada), junto de um prazo contado desde a
+ * entrada da rota.
  */
 
 export const runtime = 'nodejs' // SDK Anthropic exige Node, não Edge.
 // A chamada tem prazo de 50s (seam); o default de 10s do Vercel Hobby a mataria com o slot já gasto.
 export const maxDuration = 60
 
+// Prazo da requisição INTEIRA pra a IA: o seam limita a chamada a 50s a partir de quando ela começa, mas
+// as leituras antes dela (plano, cota, candidatas, config, reserva) também contam nos 60s da Vercel.
+// Contado desde a entrada da rota, sobra folga pra gravar o custo e montar a prévia depois.
+const REQUEST_AI_DEADLINE_MS = 50_000
+
 export async function POST(request: Request): Promise<Response> {
+  const aiDeadline = AbortSignal.timeout(REQUEST_AI_DEADLINE_MS)
   const g = await requireSession(request)
   if (!g.ok) return g.response
   const userId = g.session.user.id
@@ -99,17 +106,18 @@ export async function POST(request: Request): Promise<Response> {
     userPrompt,
     model,
     settings,
-    signal: request.signal,
+    signal: AbortSignal.any([request.signal, aiDeadline]),
   })
-  if (out.kind !== 'ok') return Response.json({ error: 'sugestao_falhou' }, { status: 502 })
+  // Toda chamada custa (recusa e falha também): grava antes de decidir a resposta.
   await recordMenuSuggestionUsage({ db, eventId, model, usage: out.usage })
+  if (out.kind !== 'ok') return Response.json({ error: 'sugestao_falhou' }, { status: 502 })
 
   const resolved = resolveMenuSuggestion(out.suggestion, { keyToId, keyToTarget, planned })
   const cards = await loadMenuPreviewCards({
     db,
     userId,
     recipeIds: resolved.items.map((i) => i.recipeId),
-    requestLocale,
+    requestLocale: loc,
     fallbackName: MESSAGES[loc].minhasCriacoes.semTitulo,
   })
   const items = resolved.items.flatMap((i) => {

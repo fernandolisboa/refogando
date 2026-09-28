@@ -13,6 +13,7 @@
 
 import { z } from 'zod'
 import {
+  MAX_MEAL_PLAN_ENTRIES_PER_DAY,
   MEAL_SLOTS,
   isMealSlot,
   isPlanDate,
@@ -194,15 +195,19 @@ function targetKey(day: string, slot: string): string {
 
 /**
  * Os pares dia × refeição que a IA deve preencher, em ordem (dia → refeição). Com `onlyEmpty`, os
- * pares que já têm qualquer Refeição planejada saem.
+ * pares que já têm qualquer Refeição planejada saem. Dia já no teto (ADR-0035 dec.1) sai sempre: o
+ * aceite pularia tudo o que fosse sugerido pra ele.
  */
 export function menuTargets(
   req: Pick<MenuSuggestionRequest, 'days' | 'slots' | 'onlyEmpty'>,
   planned: ReadonlyArray<{ day: string; slot: MealSlot }>,
 ): MenuTarget[] {
   const filled = new Set(planned.map((p) => targetKey(p.day, p.slot)))
+  const perDay = new Map<string, number>()
+  for (const p of planned) perDay.set(p.day, (perDay.get(p.day) ?? 0) + 1)
   const out: MenuTarget[] = []
   for (const day of req.days) {
+    if ((perDay.get(day) ?? 0) >= MAX_MEAL_PLAN_ENTRIES_PER_DAY) continue
     for (const slot of req.slots) {
       if (req.onlyEmpty && filled.has(targetKey(day, slot))) continue
       out.push({ day, slot })
@@ -360,11 +365,14 @@ export const MenuSuggestionSchema = z.object({
 
 export type MenuSuggestionRaw = z.infer<typeof MenuSuggestionSchema>
 
-/** Resultado da fronteira (seam do Claude). A rota mapeia tudo que não é `ok` pra 502. */
+/**
+ * Resultado da fronteira (seam do Claude). A rota mapeia tudo que não é `ok` pra 502. `usage` é a soma
+ * das chamadas feitas (principal + reparo) e vem em TODO desfecho: recusa e parse_failed também custam.
+ */
 export type MenuSuggestionOutput =
   | { kind: 'ok'; suggestion: MenuSuggestionRaw; usage?: TextUsage }
-  | { kind: 'refusal' }
-  | { kind: 'parse_failed' }
+  | { kind: 'refusal'; usage?: TextUsage }
+  | { kind: 'parse_failed'; usage?: TextUsage }
 
 export type ResolvedMenuItem = { day: string; slot: MealSlot; recipeId: string; motivo: string }
 
@@ -428,13 +436,15 @@ export function parseMenuApplyRequest(body: Record<string, unknown>): MenuApplyE
     if (typeof item !== 'object' || item === null || Array.isArray(item)) return null
     const { recipeId, day, slot, porcoes: rawPorcoes } = item as Record<string, unknown>
     if (typeof recipeId !== 'string' || !UUID_RE.test(recipeId)) return null
+    // O banco devolve UUID minúsculo: normaliza pra o gate casar o id (maiúsculo seria pulado).
+    const id = recipeId.toLowerCase()
     if (!isPlanDate(day) || !isMealSlot(slot)) return null
     const porcoes = parsePlanPorcoes(rawPorcoes)
     if (porcoes === 'invalid') return null
-    const key = `${targetKey(day, slot)}|${recipeId.toLowerCase()}`
+    const key = `${targetKey(day, slot)}|${id}`
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ recipeId, day, slot, porcoes })
+    out.push({ recipeId: id, day, slot, porcoes })
   }
   const week = weekStartOf(out[0].day)
   if (!out.every((e) => weekStartOf(e.day) === week)) return null

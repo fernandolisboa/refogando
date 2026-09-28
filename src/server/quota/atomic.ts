@@ -139,6 +139,20 @@ export async function reserveExtractionSlot(
   })
 }
 
+/** Sugestões de cardápio do usuário na janela 24h (fonte da cota; `db` ou a tx da reserva). */
+async function recentMenuSuggestionTimes(db: Database | Tx, userId: string, now: Date): Promise<Date[]> {
+  const rows = await db
+    .select({ createdAt: mealPlanSuggestionEvent.createdAt })
+    .from(mealPlanSuggestionEvent)
+    .where(
+      and(
+        eq(mealPlanSuggestionEvent.userId, userId),
+        gte(mealPlanSuggestionEvent.createdAt, new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)),
+      ),
+    )
+  return rows.map((r) => r.createdAt)
+}
+
 /**
  * Pré-checagem BARATA (sem lock, sem escrita) da cota da Sugestão de cardápio (ADR-0036): o Usuário já
  * no teto recebe o 429 ANTES de a rota carregar ~150 candidatas. Não é o gate — a corrida é fechada
@@ -151,16 +165,8 @@ export async function peekMenuSuggestionQuota(
   const { userId, cap } = input
   if (!Number.isFinite(cap)) return { allowed: true }
   const now = new Date()
-  const rows = await db
-    .select({ createdAt: mealPlanSuggestionEvent.createdAt })
-    .from(mealPlanSuggestionEvent)
-    .where(
-      and(
-        eq(mealPlanSuggestionEvent.userId, userId),
-        gte(mealPlanSuggestionEvent.createdAt, new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)),
-      ),
-    )
-  return decideRecipeGenQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
+  const recentAt = await recentMenuSuggestionTimes(db, userId, now)
+  return decideRecipeGenQuota({ cap, recentAt, now })
 }
 
 /**
@@ -179,12 +185,8 @@ export async function reserveMenuSuggestionSlot(
     if (Number.isFinite(cap)) {
       const now = new Date()
       await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.menuSuggestion, userId)
-      const since = new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)
-      const rows = await tx
-        .select({ createdAt: mealPlanSuggestionEvent.createdAt })
-        .from(mealPlanSuggestionEvent)
-        .where(and(eq(mealPlanSuggestionEvent.userId, userId), gte(mealPlanSuggestionEvent.createdAt, since)))
-      const decision = decideRecipeGenQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
+      const recentAt = await recentMenuSuggestionTimes(tx, userId, now)
+      const decision = decideRecipeGenQuota({ cap, recentAt, now })
       if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
     }
     const [row] = await tx

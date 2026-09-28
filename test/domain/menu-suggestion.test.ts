@@ -92,6 +92,13 @@ describe('menuTargets', () => {
       { day: MON, slot: 'jantar' },
     ])
   })
+
+  it('dia já no teto de 12 sai mesmo com onlyEmpty desligado', () => {
+    const full = Array.from({ length: 12 }, () => ({ day: MON, slot: 'cafe_da_manha' as const }))
+    expect(menuTargets({ days: [MON, TUE], slots: ['almoco'], onlyEmpty: false }, full)).toEqual([
+      { day: TUE, slot: 'almoco' },
+    ])
+  })
 })
 
 describe('categoriasForSlots', () => {

@@ -50,6 +50,7 @@ O Cardápio (ADR-0035) ganhou quem preencha a semana: **"Sugerir com IA"**.
 ## 5. Pendências e follow-ups
 
 - **Teto no admin:** o teto por papel está em código; vira coluna de `app_config` se precisar mexer sem deploy.
+- **Teto de 12 por dia sem lock:** o aceite (como o "Adicionar" manual do ADR-0035) conta e insere sem lock por usuário; dois aceites simultâneos podem deixar 13 num dia. Inofensivo (o teto é anti-abuso); se importar, um `pg_advisory_xact_lock` por usuário nos dois caminhos.
 - **Produto:** "gerar uma Receita nova para este buraco" (chamando a Geração), trocar um item só da prévia, respeitar preferências salvas do usuário (não existe perfil de restrições persistido hoje).
 - **Follow-ups do ADR-0035 que seguem abertos:** entrada de texto livre ("jantar fora"), copiar a semana passada.
 - **Jurídico (dono, #276):** a política de privacidade não cita que a nota da sugestão vai ao provedor de IA (como o texto da Extração e o briefing da Geração já vão).

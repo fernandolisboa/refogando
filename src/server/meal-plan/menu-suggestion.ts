@@ -20,7 +20,11 @@ import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { computeTextCost, type TextUsage } from '@/domain/text-cost'
 import type { Categoria, Restricao } from '@/domain/vocabulary'
 import { RECIPE_LIST_COLS, hydrateRecipeListItems } from '@/server/recipe/collections'
-import { communityVisibleSqlFragment, viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
+import {
+  communityVisibleSqlFragment,
+  poolBarriersSqlFragment,
+  viewerReadableSqlFragment,
+} from '@/server/recipe/visibility-sql'
 import { GATE_COLS, countEntriesOnDay } from '@/server/meal-plan/meal-plan'
 
 /**
@@ -70,10 +74,8 @@ type CandidateRow = {
   dificuldade: number | null
 }
 
-/** Barreiras do pool que valem pra QUALQUER candidata (espelham `eligibleForPool`/`passesOwnRecipeBarriers`). */
-const BARRIERS = sql.raw(
-  `r.result_kind <> 'playful' AND r.moderation_removed_at IS NULL AND r.origin <> 'web_imported'`,
-)
+/** Barreiras do pool que valem pra QUALQUER candidata (espelham `passesOwnRecipeBarriers`). */
+const BARRIERS = poolBarriersSqlFragment('r')
 
 /**
  * Filtros do pedido: a Receita declara TODAS as restrições pedidas (o modelo nunca decide isso), e a
@@ -111,7 +113,7 @@ function titleJoins(locale: string): SQL {
  * As candidatas da sugestão, na ordem em que vão pro prompt (acervo primeiro).
  *  - ACERVO: Salvas pelo Usuário ∪ criadas por ele (mesmo privadas), com o gate de Salvar; mais
  *    recentes primeiro (salva há pouco / editada há pouco), até `MENU_CANDIDATES_OWN_MAX`.
- *  - POOL (só com `source = 'all'`): comunidade + catálogo aprovado, fora do acervo, completando até
+ *  - POOL (só com `source = 'all'`): comunidade + catálogo aprovado, fora do acervo (nem salva nem dele), completando até
  *    `MENU_CANDIDATES_TOTAL_MAX`. Amostra ALEATÓRIA (cada pedido vê outra fatia do pool) com COTA por
  *    categoria: sem ela, uma amostra de pratos principais deixaria o café da manhã sem opção. O
  *    `random()` ordena o pool elegível inteiro — aceito no tamanho de hoje (ADR-0036 dec.3).
@@ -135,7 +137,11 @@ export async function loadMenuCandidates(input: {
     FROM recipe r
     LEFT JOIN recipe_save s ON s.recipe_id = r.id AND s.user_id = ${userId}
     ${titleJoins(locale)}
-    WHERE (s.user_id IS NOT NULL OR r.owner_id = ${userId})
+    WHERE r.id IN (
+        SELECT recipe_id FROM recipe_save WHERE user_id = ${userId}
+        UNION
+        SELECT id FROM recipe WHERE owner_id = ${userId}
+      )
       AND ${viewerReadableSqlFragment('r', userId)}
       AND ${BARRIERS}
       ${filters}
@@ -149,13 +155,6 @@ export async function loadMenuCandidates(input: {
   if (source === 'all' && poolSlots > 0) {
     const partitions = categorias.length + (semCategoria ? 1 : 0)
     const perCategory = Math.max(1, Math.ceil(poolSlots / Math.max(1, partitions)))
-    const exclude =
-      ownRows.length > 0
-        ? sql`AND r.id <> ALL(ARRAY[${sql.join(
-            ownRows.map((r) => sql`${r.id}`),
-            sql`, `,
-          )}]::uuid[])`
-        : sql``
     const pool = await db.execute<CandidateRow>(sql`
       SELECT id, titulo, cozinha, categoria, restricoes, tempo_total_min, dificuldade FROM (
         SELECT ${CANDIDATE_COLS}, row_number() OVER (PARTITION BY r.categoria ORDER BY random()) AS rn
@@ -164,7 +163,9 @@ export async function loadMenuCandidates(input: {
         WHERE ${communityVisibleSqlFragment('r')}
           AND ${BARRIERS}
           ${filters}
-          ${exclude}
+          -- Fora do acervo INTEIRO (não só das ≤ 100 que entraram): nada do Usuário vem marcado "comunidade".
+          AND r.owner_id IS DISTINCT FROM ${userId}
+          AND NOT EXISTS (SELECT 1 FROM recipe_save rs WHERE rs.recipe_id = r.id AND rs.user_id = ${userId})
           AND coalesce(t_req.titulo, t_orig.titulo) IS NOT NULL
       ) sample
       WHERE rn <= ${perCategory}
@@ -275,10 +276,15 @@ export async function applyMenuSuggestionEntries(input: {
   const eligible = new Set(gates.filter((g) => eligibleToSaveByViewer(g.gate, userId)).map((g) => g.id))
 
   return db.transaction(async (tx) => {
+    // Contagem por dia UMA vez (≤ 7 dias), incrementada a cada INSERT — não uma contagem por entrada.
+    const days = [...new Set(entries.map((e) => e.day))]
+    const perDay = new Map<string, number>()
+    for (const day of days) perDay.set(day, await countEntriesOnDay(tx, userId, day))
     let addedCount = 0
     for (const e of entries) {
       if (!eligible.has(e.recipeId)) continue
-      if ((await countEntriesOnDay(tx, userId, e.day)) >= MAX_MEAL_PLAN_ENTRIES_PER_DAY) continue
+      const onDay = perDay.get(e.day) ?? 0
+      if (onDay >= MAX_MEAL_PLAN_ENTRIES_PER_DAY) continue
       const inserted = await tx
         .insert(mealPlanEntry)
         .values({ userId, day: e.day, slot: e.slot, recipeId: e.recipeId, porcoes: e.porcoes })
@@ -286,7 +292,10 @@ export async function applyMenuSuggestionEntries(input: {
           target: [mealPlanEntry.userId, mealPlanEntry.day, mealPlanEntry.slot, mealPlanEntry.recipeId],
         })
         .returning({ id: mealPlanEntry.id })
-      if (inserted.length > 0) addedCount++
+      if (inserted.length > 0) {
+        addedCount++
+        perDay.set(e.day, onDay + 1)
+      }
     }
     return { addedCount, skippedCount: entries.length - addedCount }
   })

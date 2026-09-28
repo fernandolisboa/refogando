@@ -79,7 +79,7 @@ function formatWait(ms: number, m: M): string {
 function suggestErrorMessage(code: string | undefined, retryAfterMs: number | undefined, m: M): string {
   switch (code) {
     case 'dados_invalidos':
-      return m.erroSugestaoDados
+      return m.erroSugestaoPedido
     case 'nada_a_preencher':
       return m.erroSugestaoNadaAPreencher
     case 'sem_candidatas':
@@ -124,8 +124,17 @@ export function MealPlanSuggestPanel({
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState<{ addedCount: number; skippedCount: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const previewRef = useRef<HTMLDivElement | null>(null)
+  const resultRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => () => abortRef.current?.abort(), [])
+  // A prévia (e o resultado do aceite) aparece longe do botão: o foco vai até ela.
+  useEffect(() => {
+    if (phase === 'preview') previewRef.current?.focus()
+  }, [phase, preview])
+  useEffect(() => {
+    if (applied != null) resultRef.current?.focus()
+  }, [applied])
 
   function toggle<T>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
@@ -211,7 +220,6 @@ export function MealPlanSuggestPanel({
   return (
     <section
       aria-labelledby="cardapio-sugerir-titulo"
-      aria-busy={phase === 'loading'}
       className="flex flex-col gap-4 rounded-xl border border-border bg-surface p-4"
     >
       <div className="flex flex-col gap-1">
@@ -223,7 +231,7 @@ export function MealPlanSuggestPanel({
       </div>
 
       {phase !== 'preview' && (
-        <form onSubmit={handleSuggest} className="flex flex-col gap-4">
+        <form onSubmit={handleSuggest} aria-busy={phase === 'loading'} className="flex flex-col gap-4">
           <fieldset className="flex flex-col gap-2" disabled={phase === 'loading'}>
             <legend className="mb-1 text-xs font-medium text-muted">{m.sugerirDias}</legend>
             <div className="flex flex-wrap gap-2">
@@ -329,17 +337,13 @@ export function MealPlanSuggestPanel({
               <Sparkles aria-hidden />
               {m.sugerirEnviar}
             </Button>
-            {phase === 'loading' && (
-              <p role="status" aria-live="polite" className="text-sm text-muted">
-                {m.sugerindo}
-              </p>
-            )}
+            {phase === 'loading' && <p className="text-sm text-muted">{m.sugerindo}</p>}
           </div>
         </form>
       )}
 
       {phase === 'preview' && preview != null && (
-        <div className="flex flex-col gap-4">
+        <div ref={previewRef} tabIndex={-1} className="flex flex-col gap-4 outline-none">
           {preview.comentario !== '' && <p className="text-sm text-fg">{preview.comentario}</p>}
           {preview.items.length === 0 ? (
             <p className="text-sm text-muted">{m.sugestaoVazia}</p>
@@ -407,15 +411,23 @@ export function MealPlanSuggestPanel({
         </p>
       )}
 
+      <div role="status" aria-live="polite" className="sr-only">
+        {phase === 'loading' ? m.sugerindo : ''}
+      </div>
+
       {applied != null && (
-        <div role="status" aria-live="polite" className="flex flex-col gap-1 text-sm text-fg">
+        <div ref={resultRef} tabIndex={-1} className="flex flex-col gap-1 text-sm text-fg outline-none">
           <p>
             {applied.addedCount === 1
               ? m.sugestaoAdicionadaSingular
               : m.sugestaoAdicionada.replace('{n}', String(applied.addedCount))}
           </p>
           {applied.skippedCount > 0 && (
-            <p className="text-muted">{m.sugestaoPuladas.replace('{n}', String(applied.skippedCount))}</p>
+            <p className="text-muted">
+              {applied.skippedCount === 1
+                ? m.sugestaoPuladasSingular
+                : m.sugestaoPuladas.replace('{n}', String(applied.skippedCount))}
+            </p>
           )}
         </div>
       )}
@@ -439,11 +451,9 @@ function PreviewRow({
   const aiLabel = useLocale().messages.busca.imagemSeloIa
   const weekday = capitalizeFirst(formatWeekday(item.day, locale))
   const slot = mealSlotLabel(item.slot, m)
-  const id = `sugestao-${item.day}-${item.slot}`
   return (
     <li className="flex items-start gap-3">
       <input
-        id={id}
         type="checkbox"
         className="mt-1 size-4 shrink-0 accent-brand-strong"
         checked={checked}
@@ -466,9 +476,11 @@ function PreviewRow({
         <Link
           href={recipeDetailPath(locale, item.recipe.slug ?? item.recipe.id)}
           target="_blank"
+          rel="noopener"
           className="line-clamp-2 text-sm font-medium leading-snug text-fg hover:text-brand-ink"
         >
           {item.recipe.name}
+          <span className="sr-only"> {m.abreNovaAba}</span>
         </Link>
         {item.motivo !== '' && <p className="text-xs text-muted">{item.motivo}</p>}
       </div>
