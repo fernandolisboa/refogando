@@ -2124,7 +2124,7 @@ export const ptBR = {
     erroAdicionar: 'Escreva nomes de até {max} caracteres, no máximo {lote} de uma vez.',
     erroCheia: 'Sua despensa chegou ao limite de {max} itens. Tire alguns antes de adicionar.',
     erro: 'Não foi possível salvar a mudança. Tente de novo.',
-    nadaFaltando: 'Com a Despensa de agora, não falta nada nesta receita.',
+    nadaFaltando: 'Com a despensa de agora, não falta nada nesta receita.',
     erroPorNaLista: 'Não foi possível pôr na lista. Tente de novo.',
   },
   // Plano de refeições (ADR-0035): o "Cardápio da semana" em `/me/meal-plan`, o botão de calendário do

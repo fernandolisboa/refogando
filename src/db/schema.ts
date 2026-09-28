@@ -1698,7 +1698,7 @@ export const mealPlanSuggestionEvent = pgTable(
 //  - `nome`: o texto como a pessoa digitou, já normalizado pra exibição (`parsePantryName`, 1–60 code points).
 //  - `match_key`: a chave de DEDUP (`pantryMatchKey`: minúsculo, sem acento, pontuação vira espaço) — "Ovo" e
 //    "ovo" são o mesmo item; re-adicionar é idempotente pela UNIQUE. O CASAMENTO com as Receitas NÃO usa esta
-//    coluna: normaliza o `nome` em SQL, com a MESMA expressão do lado da Receita (`loadPantryMatches`).
+//    coluna: normaliza o `nome` em SQL, com a MESMA expressão do lado da Receita (`norm()` em `queryPantryMatches`).
 //  - UNIQUE (user_id, match_key) já serve a leitura por dono (prefixo) — índice próprio seria redundante.
 export const pantryItem = pgTable(
   'pantry_item',

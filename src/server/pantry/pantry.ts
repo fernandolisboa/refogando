@@ -189,17 +189,21 @@ type MatchRow = {
  *  3. `terms`: o termo + os nomes/aliases (todos os locales) do canônico que ele resolveu; e, para plural na
  *     PRIMEIRA palavra do termo ("ovos", "tomates cereja"), o singular ("ovo", "tomate cereja") — só com
  *     radical de 3+ letras, pra "pães" não virar "pa".
- *  4. `patterns`: UMA regex por tipo. Item real: `(^| )(t1|t2|…)(e?s)?( |$)` — palavra(s) inteira(s) em
- *     qualquer ponto do texto, aceitando o plural regular do Item ("ovo" cobre "ovos"; "farinha" cobre
- *     "farinha de trigo"). Básico: só a LINHA INTEIRA feita de básicos ("sal", "sal e pimenta do reino",
- *     "sal a gosto") — senão "água" cobriria "água de coco" e "óleo" cobriria "óleo de gergelim". Os termos
- *     já estão normalizados (letras, dígitos, espaço), e mesmo assim os metacaracteres são escapados.
+ *  4. `real_forms` (termos REAIS): cada termo vira as formas aceitas no Item — o próprio termo, `+s`, `+es` e o
+ *     plural da primeira palavra ("tomate cereja" → "tomates cereja") — já quebradas em palavras, com a
+ *     PRIMEIRA separada (`first_word`) para o JOIN de igualdade. `basic_pattern` (só básicos): UMA regex
+ *     ancorada na LINHA INTEIRA feita de básicos ("sal", "sal e pimenta do reino", "sal a gosto") — senão
+ *     "água" cobriria "água de coco". Os termos já estão normalizados, e mesmo assim são escapados.
  *  5. `lines`: os Itens com nome das Receitas que o viewer pode SALVAR (o gate de `eligibleToSaveByViewer`
  *     em SQL: leitura do viewer + barreiras do pool — o mesmo da Sugestão de cardápio), com o texto
  *     normalizado UMA vez: `raw_text` (locale de origem) e o nome traduzido do locale do viewer, só quando
  *     ainda casa com o `raw_text` (ADR-0030). Item sem `raw_text` fica de fora: sem nome, não há o que
  *     mostrar como faltando nem o que pôr na lista.
- *  6. `hits`: cada Item é coberto por um item real e/ou por um básico — canônico igual OU regex.
+ *  6. `tokens` + `real_line_hits` + `hits`: cada linha vira palavras; um termo real cobre a linha quando a
+ *     primeira palavra dele é IGUAL a uma palavra da linha e a fatia seguinte do array bate com o resto
+ *     (palavra(s) inteira(s) em qualquer ponto: "farinha" cobre "farinha de trigo", "sal" não cobre
+ *     "salsinha"). Também cobre por canônico igual; básico cobre pela `basic_pattern`. Sem regex por termo
+ *     real: foi o que levava ~10 s num acervo de 4.000 Receitas.
  *  7. `per_recipe`: total, cobertos, cobertos por item REAL, e os ids/nomes do que falta.
  * Filtro final: ao menos um Item coberto por item real (dec.3) e no máximo `maxMissing` faltando.
  *

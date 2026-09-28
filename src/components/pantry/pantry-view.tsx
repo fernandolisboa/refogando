@@ -166,7 +166,11 @@ export function PantryView() {
       if (!res.ok && res.status !== 404) {
         setError(m.erro)
         await loadItems()
+        return
       }
+      // A remoção otimista já disparou os resultados ANTES do DELETE confirmar; recarrega agora que o item
+      // saiu do banco (senão uma Receita coberta só por ele ficaria listada).
+      void loadMatches()
     } catch {
       setError(m.erro)
       await loadItems()
@@ -369,9 +373,8 @@ export function PantryView() {
           <div aria-live="polite" className="text-sm text-muted">
             {matchStatus === 'loading' && <p>{messages.system.loading}</p>}
             {matchStatus === 'error' && <p className="font-medium text-fg">{m.erroCarregarResultados}</p>}
+            {matchStatus === 'idle' && matches.length === 0 && <p>{m.semResultados}</p>}
           </div>
-
-          {matchStatus === 'idle' && matches.length === 0 && <p className="text-muted">{m.semResultados}</p>}
 
           {ready.length > 0 && (
             <MatchSection

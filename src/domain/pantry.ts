@@ -58,15 +58,17 @@ export function pantryMatchKey(nome: string): string {
 export function splitPantryInput(value: unknown): string[] | 'invalid' | 'too_many' {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : null
   if (raw == null) return 'invalid'
+  if (raw.length > MAX_PANTRY_ADD_BATCH) return 'too_many'
   const pieces: string[] = []
   for (const chunk of raw) {
     if (typeof chunk !== 'string') return 'invalid'
     for (const p of chunk.split(/[,;\n\r]+/)) {
       if (p.trim().length === 0) continue
       pieces.push(p)
+      // Sai cedo: um corpo enorme não chega a ser todo coletado antes do teto.
+      if (pieces.length > MAX_PANTRY_ADD_BATCH) return 'too_many'
     }
   }
-  if (pieces.length > MAX_PANTRY_ADD_BATCH) return 'too_many'
   const out: string[] = []
   const seen = new Set<string>()
   for (const p of pieces) {

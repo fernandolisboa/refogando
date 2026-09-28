@@ -246,5 +246,13 @@ describe('PantryView', () => {
     )
     await waitFor(() => expect(calls.some((c) => c.url === '/api/me/pantry/a' && c.method === 'DELETE')).toBe(true))
     expect(await screen.findByText(M.vazia)).toBeInTheDocument()
+    // Além do recarregamento otimista (disparado junto com o DELETE), os resultados recarregam de novo
+    // depois que o DELETE confirma — senão ficariam contando o item removido.
+    const del = calls.findIndex((c) => c.method === 'DELETE')
+    await waitFor(() =>
+      expect(
+        calls.slice(del + 1).filter((c) => c.url.includes('/api/me/pantry/matches')).length,
+      ).toBeGreaterThanOrEqual(2),
+    )
   })
 })

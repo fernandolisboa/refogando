@@ -237,6 +237,13 @@ describe('Despensa — o que dá pra fazer', () => {
     expect(noBasics).toMatchObject({ covered: 1 })
   })
 
+  it('só básico nunca basta: Receita sem item real coberto fica de fora', async () => {
+    const { headers } = await session()
+    const r = await catalogRecipe('Abobrinha cozida da despensa', ['sal', 'água', 'abobrinha'])
+    await addNames(headers, 'ovo')
+    expect((await matches(headers)).some((m) => m.id === r)).toBe(false)
+  })
+
   it('com mais de 3 faltando a Receita não aparece', async () => {
     const { headers } = await session()
     const r = await catalogRecipe('Feijoada da despensa', ['feijão preto', 'linguiça', 'bacon', 'costelinha', 'paio'])
