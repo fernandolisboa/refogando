@@ -199,7 +199,7 @@ describe('confirmação de email (#470)', () => {
     const P_A = 'senha-do-atacante-1'
     await post('/sign-up/email', { email: 'alvo@verify.test', password: P_A, name: 'Atacante' })
     const userId = (await userRow('alvo@verify.test')).id
-    mailer.accountSent.splice(0) // o link de confirmação do cadastro do atacante (resíduo aceito no ADR, sem limite de tempo)
+    mailer.accountSent.splice(0) // o link de confirmação do cadastro do atacante (resíduo aceito no ADR: vale 24h e a conta pendente é expurgada em 48h)
 
     // Vítima cadastra o próprio email: resposta genérica de sempre, e o e-mail que chega é o link de SENHA.
     const res = await signUp('alvo@verify.test', 'Vitima')

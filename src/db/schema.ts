@@ -733,6 +733,14 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     imageGenBlockedReason: text('image_gen_blocked_reason'),
+    // Marcador EXPLÍCITO de cadastro pendente (#470 follow-up, ADR-0014): gravado SÓ pelo cadastro de
+    // email+senha com a confirmação de email ligada (a conta nasce não confirmada, com handle de espera) e
+    // limpo quando alguém prova o email (link de confirmação, "conclua seu cadastro", admin) ou entra na
+    // conta. É a ÚNICA chave do expurgo de cadastros abandonados (`purgeStalePendingSignups`, cron
+    // account-purge) — nunca o handle `pendente-`, o `email_verified` ou "sem sessão agora", que não provam
+    // que a conta nunca foi usada. NULLABLE, sem default: ADD COLUMN metadata-only; contas existentes nascem
+    // NULL (nunca candidatas).
+    pendingSignupAt: timestamp('pending_signup_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -751,6 +759,10 @@ export const users = pgTable(
     // via `.op()` em coluna crua (≠ HNSW/0012 hand-written) ⇒ db:generate offline; NUNCA db:migrate local.
     index('users_name_trgm_gin').using('gin', t.name.op('gin_trgm_ops')),
     index('users_handle_trgm_gin').using('gin', t.handle.op('gin_trgm_ops')),
+    // Varredura do expurgo de cadastros pendentes: parcial, só as (poucas) contas com o marcador.
+    index('users_pending_signup_idx')
+      .on(t.pendingSignupAt)
+      .where(sql`${t.pendingSignupAt} IS NOT NULL`),
     // Consistência da restrição de imagem (#226) — espelha `recipe_moderation_consistency_chk`:
     // `at` e `by` setados JUNTOS ou ambos NULL (o `reason` fica fora do CHECK — texto livre validado
     // não-vazio na borda do route ao bloquear). Garante que um bloqueio sempre carrega proveniência.
