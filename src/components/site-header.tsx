@@ -78,10 +78,18 @@ export function SiteHeader() {
 
   // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
   // fecha o painel ao navegar; no desktop o wrap é a identidade (link inline puro).
-  const navLink = (href: string, label: string, wrap: (node: React.ReactNode) => React.ReactNode) =>
+  // `tour` (ADR-0039): âncora do tour guiado, só nas instâncias do desktop (no celular o tour destaca o
+  // botão do menu, porque o drawer está fechado).
+  const navLink = (
+    href: string,
+    label: string,
+    wrap: (node: React.ReactNode) => React.ReactNode,
+    tour?: string,
+  ) =>
     wrap(
       <Link
         href={href}
+        data-tour={tour}
         aria-current={isActive(href) ? 'page' : undefined}
         className={cn('transition-colors hover:text-fg', isActive(href) && 'text-fg')}
       >
@@ -95,6 +103,7 @@ export function SiteHeader() {
   const ctaButton = (
     <button
       type="button"
+      data-tour="criar"
       onClick={() => setCreateOpen(true)}
       className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
     >
@@ -136,9 +145,9 @@ export function SiteHeader() {
           {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
           {/* #468: "Salvos" (`/me/saved`, coleções #364) ao lado de "Minhas criações" — antes a
               página existia mas nenhuma chrome linkava pra ela. Só-logada, como as vizinhas. */}
-          {authed && navLink('/me/saved', messages.colecoes.titulo, identity)}
+          {authed && navLink('/me/saved', messages.colecoes.titulo, identity, 'nav-salvos')}
           {/* ADR-0035: "Cardápio" (Plano de refeições da semana), ao lado de "Salvos" — só-logada. */}
-          {authed && navLink('/me/meal-plan', messages.nav.cardapio, identity)}
+          {authed && navLink('/me/meal-plan', messages.nav.cardapio, identity, 'nav-cardapio')}
         </nav>
         {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
             espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). `ml-auto` empurra
@@ -153,13 +162,17 @@ export function SiteHeader() {
           {ctaButton}
           {/* Sininho de notificações (#371, só-logado; retorna null p/ anon ⇒ chrome anon intacta). */}
           <NotificationBell />
-          <AuthSlot />
+          {/* Âncora "conta" do tour guiado (ADR-0039): o menu da conta, onde mora o "Como usar". */}
+          <div data-tour="conta" className="flex items-center">
+            <AuthSlot />
+          </div>
         </div>
 
         {/* Gatilho hambúrguer: só abaixo de `sm:`. O Sheet (Radix Dialog) cuida da a11y. */}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger
             aria-label={messages.nav.abrirMenu}
+            data-tour="menu-mobile"
             className="ml-auto inline-flex size-9 items-center justify-center rounded-md text-fg transition-colors hover:bg-brand/10 sm:hidden"
           >
             <MenuIcon className="size-5" />
@@ -204,7 +217,10 @@ export function SiteHeader() {
             do layout APROVADO abaixo de xl (um único slot no DOM + `order` CSS não satisfaz as duas linhas
             sem duplicar a instância). Otimizamos o caso comum/aprovado (<xl, sem descasamento). */}
         {isHome && (
-          <div className="order-last mx-auto w-full max-w-reading pb-1 xl:order-2 xl:w-auto xl:max-w-[35rem] xl:flex-1 xl:pb-0 2xl:max-w-[38.75rem]">
+          <div
+            data-tour="busca"
+            className="order-last mx-auto w-full max-w-reading pb-1 xl:order-2 xl:w-auto xl:max-w-[35rem] xl:flex-1 xl:pb-0 2xl:max-w-[38.75rem]"
+          >
             <HomeSearchBar />
           </div>
         )}
