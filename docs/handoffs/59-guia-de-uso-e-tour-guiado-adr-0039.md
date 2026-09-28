@@ -28,6 +28,7 @@ Documento auto-suficiente: o que a feature é, onde mora no código, o que não 
 
 - **O tour sempre tem saída**: X e Esc em todo passo, mais "Agora não" no primeiro e "Pular tour" nos do meio.
 - **Nunca abre sozinho para Visitante nem para conta antiga**, e nunca fora da home. A busca do Visitante não pode ser bloqueada.
+- **Não interrompe quem está ocupado** (`isBusy`: `?q=` na URL, campo de texto focado, diálogo/menu aberto): espera e tenta de novo a cada 2s.
 - **Storage ilegível ⇒ não abre sozinho** (sem memória ele voltaria a cada visita).
 - **`done` não é rebaixado** por um "pular" posterior.
 - **Paridade do guia**: cada `*Itens` tem a mesma quantidade de itens em pt-BR e en-US (o teste recursivo de mensagens exige).
@@ -39,6 +40,7 @@ Documento auto-suficiente: o que a feature é, onde mora no código, o que não 
 - **Pedido do /guia expira em 30s** (`TOUR_START_TTL_MS`); o evento abre na hora quando o pedido nasce já na home, mesmo com o storage bloqueado.
 - **`react-hooks/set-state-in-effect`**: a medida do alvo roda num `requestAnimationFrame` (e em resize/scroll), não direto no corpo do efeito. Não "simplificar" para `measure()` síncrono: o lint barra.
 - **Testes de "não abre"** usam relógio falso (`AUTO_START_DELAY_MS` exportado) em vez de esperar de verdade.
+- **Cartão anima entre posições só depois de posicionado uma vez** (`placed`): senão desliza do canto (0,0) ao abrir.
 - **Timer da abertura automática**: a checagem por usuário é marcada DENTRO do timer, não antes. A sessão é re-buscada a cada navegação (AuthSlot), o efeito re-roda e limparia um timer já marcado como "checado", e o tour nunca abriria.
 - **Âncora escondida no celular**: a visibilidade é por `getClientRects()`/tamanho; a nav do desktop existe no DOM com `display:none`. Uma âncora nova precisa ter caixa visível para ser destacada.
 - **No jsdom não há layout**: os testes simulam `getBoundingClientRect`/`getClientRects` nas âncoras (ver `test/ui/guided-tour.test.tsx`).

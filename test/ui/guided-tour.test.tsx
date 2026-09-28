@@ -185,13 +185,23 @@ describe('GuidedTour — abertura automática', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('chegou com uma busca na URL (?q=) ⇒ não interrompe', () => {
+  it('chegou com uma busca na URL (?q=) ⇒ espera; limpou a busca ⇒ abre', () => {
     window.history.pushState({}, '', '/pt-BR?q=bolo')
+    vi.useFakeTimers()
     try {
       authMock.current = loggedAs(new Date())
-      renderPastAutoStart()
+      renderTour()
+      act(() => {
+        vi.advanceTimersByTime(AUTO_START_DELAY_MS + 1)
+      })
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      window.history.pushState({}, '', '/pt-BR')
+      act(() => {
+        vi.advanceTimersByTime(2001)
+      })
+      expect(screen.getByRole('dialog', { name: t.boasVindasTitulo })).toBeInTheDocument()
     } finally {
+      vi.useRealTimers()
       window.history.pushState({}, '', '/')
     }
   })

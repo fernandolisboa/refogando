@@ -23,6 +23,7 @@ import { useLocale } from '@/i18n/provider'
 import { splitLocalePrefix } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { consumeTourStartRequest, TOUR_START_EVENT } from '@/components/onboarding/tour-signal'
 import {
   parseTourState,
@@ -40,6 +41,8 @@ import type { Messages } from '@/i18n/messages'
 
 /** Espera a home assentar (busca, sessão, fontes) antes de abrir sozinho. */
 export const AUTO_START_DELAY_MS = 600
+/** Com a pessoa ocupada, de quanto em quanto tempo a abertura automática tenta de novo. */
+const BUSY_RETRY_MS = 2000
 /** Folga do destaque em volta do alvo. */
 const SPOTLIGHT_PAD = 6
 
@@ -147,11 +150,16 @@ export function GuidedTour() {
   // re-rodar antes (a sessão é re-buscada ao navegar), o timer é só re-agendado, nunca perdido.
   useEffect(() => {
     if (!userId || !onHome || open || autoCheckedFor.current === userId) return
-    const timer = window.setTimeout(() => {
-      autoCheckedFor.current = userId
+    let timer = 0
+    const check = () => {
       // Não interrompe quem já está fazendo algo: chegou com uma busca na URL (voltou do login para os
-      // resultados), está digitando ou tem outro diálogo aberto. Fica para a próxima visita à home.
-      if (isBusy()) return
+      // resultados), está digitando ou tem outro diálogo aberto. Espera e tenta de novo; abre quando a
+      // pessoa limpar a busca ou fechar o que estava aberto, ainda na home.
+      if (isBusy()) {
+        timer = window.setTimeout(check, BUSY_RETRY_MS)
+        return
+      }
+      autoCheckedFor.current = userId
       const ok = shouldAutoStartTour({
         authed: true,
         onHome: true,
@@ -160,7 +168,8 @@ export function GuidedTour() {
         stored: readTourState(userId),
       })
       if (ok) start()
-    }, AUTO_START_DELAY_MS)
+    }
+    timer = window.setTimeout(check, AUTO_START_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [userId, onHome, open, createdAt, start])
 
@@ -222,6 +231,10 @@ function TourCard({
   const [anchor, setAnchor] = useState<TourAnchor | null>(null)
   const [target, setTarget] = useState<Rect | null>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // O cartão só anima entre posições depois de posicionado uma vez: sem isso ele deslizaria do canto
+  // superior esquerdo (0,0) até o lugar ao abrir.
+  const [placed, setPlaced] = useState(false)
+  const posRef = useRef<{ top: number; left: number } | null>(null)
 
   // Mede o alvo e posiciona o cartão. Roda a cada passo e a cada resize/scroll (o header é sticky,
   // mas o teclado virtual e a rotação mudam a viewport).
@@ -231,26 +244,28 @@ function TourCard({
     const r = el?.getBoundingClientRect()
     const rect = r ? { top: r.top, left: r.left, width: r.width, height: r.height } : null
     const card = cardRef.current?.getBoundingClientRect()
+    const next = placeTourCard(
+      rect
+        ? {
+            top: rect.top - SPOTLIGHT_PAD,
+            left: rect.left - SPOTLIGHT_PAD,
+            width: rect.width + SPOTLIGHT_PAD * 2,
+            height: rect.height + SPOTLIGHT_PAD * 2,
+          }
+        : null,
+      { width: card?.width ?? 0, height: card?.height ?? 0 },
+      { width: window.innerWidth, height: window.innerHeight },
+    )
+    // Já estava posicionado (render anterior commitado com `pos`): daqui em diante as mudanças animam.
+    if (posRef.current) setPlaced(true)
     setAnchor(a)
     setTarget((prev) => (sameRect(prev, rect) ? prev : rect))
-    setPos(
-      (prev) => {
-        const next = placeTourCard(
-        rect
-          ? {
-              top: rect.top - SPOTLIGHT_PAD,
-              left: rect.left - SPOTLIGHT_PAD,
-              width: rect.width + SPOTLIGHT_PAD * 2,
-              height: rect.height + SPOTLIGHT_PAD * 2,
-            }
-          : null,
-        { width: card?.width ?? 0, height: card?.height ?? 0 },
-        { width: window.innerWidth, height: window.innerHeight },
-        )
-        return prev && prev.top === next.top && prev.left === next.left ? prev : next
-      },
-    )
+    setPos((prev) => (prev && prev.top === next.top && prev.left === next.left ? prev : next))
   }, [step])
+
+  useEffect(() => {
+    posRef.current = pos
+  }, [pos])
 
   // A 1ª medida vai num frame: o cartão já está no DOM (invisível) com o texto do passo, então o
   // tamanho dele é o real na hora de posicionar.
@@ -326,7 +341,10 @@ function TourCard({
           }}
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-5 text-fg shadow-xl outline-none motion-safe:transition-[top,left] motion-safe:duration-200"
+          className={cn(
+            'fixed z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-surface p-5 text-fg shadow-xl outline-none',
+            placed && 'motion-safe:transition-[top,left] motion-safe:duration-200',
+          )}
           // Antes da 1ª medida o cartão fica transparente, não `visibility:hidden`: o navegador não foca
           // nada dentro de um elemento invisível, e o botão principal precisa do foco já no 1º passo.
           style={pos ? { top: pos.top, left: pos.left } : { opacity: 0, top: 0, left: 0 }}
