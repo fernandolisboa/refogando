@@ -68,6 +68,10 @@ class ExplodingClaudeClient implements ClaudeClient {
   async extractIngredients(): Promise<never> {
     throw new Error('seam tocado: o anônimo devia ter sido cortado (401) ANTES da extração')
   }
+
+  async suggestMenu(): Promise<never> {
+    throw new Error('seam tocado: suggestMenu não devia ser chamado')
+  }
 }
 
 /** Contagens cruas das tabelas tocáveis por escrita/geração (porta alta, sem ORM). */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { GET } from '@/app/api/admin/ai-cost/route'
 import { getDb } from '@/server/deps'
-import { creationSession, generation, imageGeneration, recipeReview } from '@/db/schema'
+import { creationSession, generation, imageGeneration, mealPlanSuggestionEvent, recipeReview } from '@/db/schema'
 import { SCHEMA_VERSION_RECEITA } from '@/domain/recipe'
 import type { AiCostSummary } from '@/domain/ai-cost-read'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
@@ -66,6 +66,25 @@ describe('GET /api/admin/ai-cost — gate de papel', () => {
   it('admin → 200', async () => {
     const { headers } = await seedSessionHeaders({ email: 'adm@cost.test', role: 'admin' })
     expect((await call(headers)).status).toBe(200)
+  })
+})
+
+describe('GET /api/admin/ai-cost — Sugestão de cardápio (ADR-0036)', () => {
+  it('o custo das sugestões entra no TEXTO por dia e por usuário, fora do desfecho de Receitas', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'adm-menu@cost.test', role: 'admin' })
+    const planner = await seedUser({ email: 'planner@cost.test', handle: 'planner' })
+    await getDb()
+      .insert(mealPlanSuggestionEvent)
+      .values([
+        { userId: planner, model: 'claude-sonnet-5', inputTokens: 5000, outputTokens: 800, costUsd: '0.027000' },
+        { userId: planner }, // reservada sem telemetria: não soma
+      ])
+    const before = (await (await call(headers)).json()) as AiCostSummary
+    const row = before.topUsers.find((u) => u.userId === planner)
+    expect(row!.textUsd).toBeCloseTo(0.027, 6)
+    expect(row!.imageUsd).toBe(0)
+    expect(before.totals.textUsd).toBeGreaterThanOrEqual(0.027 - 1e-9)
+    expect(before.byOutcome.totalUsd).toBeLessThan(0.027)
   })
 })
 

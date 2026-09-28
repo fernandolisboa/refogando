@@ -63,7 +63,12 @@ describe('parseStoredAiTasks', () => {
 })
 
 describe('resolveAiTasks + activeSettings', () => {
-  const fallbacks = { generation: 'claude-opus-5-5', translation: 'claude-sonnet-5', extraction: 'claude-sonnet-5' }
+  const fallbacks = {
+    generation: 'claude-opus-5-5',
+    translation: 'claude-sonnet-5',
+    extraction: 'claude-sonnet-5',
+    menu: 'claude-sonnet-5',
+  }
 
   it('Geração sempre usa o modelo de fora (coluna); Tradução/Extração usam o jsonb quando tem', () => {
     const cfg = resolveAiTasks(
@@ -73,6 +78,16 @@ describe('resolveAiTasks + activeSettings', () => {
     expect(cfg.generation.model).toBe('claude-opus-5-5')
     expect(cfg.translation.model).toBe('claude-sonnet-5')
     expect(cfg.extraction.model).toBe('claude-opus-5-5')
+    expect(cfg.menu.model).toBe('claude-sonnet-5')
+  })
+
+  it('Sugestão de cardápio (ADR-0036) resolve como as demais: jsonb vence o fallback; default no modelo', () => {
+    const cfg = resolveAiTasks({ menu: { model: 'claude-opus-5-5' } }, fallbacks)
+    expect(cfg.menu.model).toBe('claude-opus-5-5')
+    expect(activeSettings('menu', cfg.menu)).toEqual({ effort: 'low', thinking: 'default' })
+    expect(parseStoredAiTasks({ menu: { model: 'claude-sonnet-5', byModel: { 'claude-sonnet-5': OFF } } })).toEqual({
+      menu: { model: 'claude-sonnet-5', byModel: { 'claude-sonnet-5': OFF } },
+    })
   })
 
   it('sem ajuste salvo para o modelo em uso ⇒ default da tarefa', () => {

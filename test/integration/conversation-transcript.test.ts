@@ -502,6 +502,10 @@ describe('Concorrência de seq — UNIQUE(creation_session_id, seq) é a rede (2
       async extractIngredients(): Promise<{ kind: 'parse_failed' }> {
         return { kind: 'parse_failed' }
       }
+
+      async suggestMenu(): Promise<never> {
+        throw new Error('seam tocado: suggestMenu não devia ser chamado')
+      }
     }
     setClaudeClient(new BarrierClient())
 

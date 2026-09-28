@@ -135,3 +135,18 @@ export function eligiblePublicRecipeSqlFragment(alias: string): SQL {
       ` AND ${alias}.origin <> 'web_imported')`,
   )
 }
+
+/**
+ * Fragmento SQL CRU das barreiras do pool que valem MESMO pra própria Receita (espelha
+ * `passesOwnRecipeBarriers` em `@/domain/recipe-pool`): não-lúdica, não removida por moderação, não
+ * importada da web. Combinado com `communityVisibleSqlFragment` dá o `eligibleForPool`; com
+ * `viewerReadableSqlFragment`, o `eligibleToSaveByViewer`. Mesma validação de alias dos irmãos.
+ */
+export function poolBarriersSqlFragment(alias: string): SQL {
+  if (!/^[a-z][a-z0-9_]*$/i.test(alias)) {
+    throw new Error(`poolBarriersSqlFragment: alias inválido ${JSON.stringify(alias)}`)
+  }
+  return sql.raw(
+    `(${alias}.result_kind <> 'playful' AND ${alias}.moderation_removed_at IS NULL AND ${alias}.origin <> 'web_imported')`,
+  )
+}

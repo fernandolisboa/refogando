@@ -104,6 +104,41 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     expect(tuned.max_tokens).toBeGreaterThan(base.max_tokens)
   })
 
+  it('Sugestão de cardápio (ADR-0036): default esforço low + thinking do modelo com folga; Haiku perde o effort', async () => {
+    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: { itens: [], comentario: 'ok' }, usage: { input_tokens: 10, output_tokens: 2 } })
+    const out = await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))
+    expect(out).toEqual({ kind: 'ok', suggestion: { itens: [], comentario: 'ok' }, usage: { inputTokens: 10, outputTokens: 2 } })
+    const params = parse.mock.lastCall![0]
+    expect(params.output_config.effort).toBe('low')
+    expect(params).not.toHaveProperty('thinking')
+    expect(params.max_tokens).toBe(12_000)
+    expect(parse.mock.lastCall![1].signal).toBeInstanceOf(AbortSignal)
+
+    await new RealClaudeClient().suggestMenu({ ...input('claude-haiku-4-5'), settings: { effort: 'high', thinking: 'off' } })
+    const haiku = parse.mock.lastCall![0]
+    expect(haiku.output_config).not.toHaveProperty('effort')
+    expect(haiku.thinking).toEqual({ type: 'disabled' })
+    expect(haiku.max_tokens).toBe(4_000)
+  })
+
+  it('Sugestão de cardápio: recusa ⇒ refusal; saída nula após o reparo ⇒ parse_failed; exceção ⇒ parse_failed', async () => {
+    parse.mockResolvedValue({ stop_reason: 'refusal', parsed_output: null })
+    expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({ kind: 'refusal' })
+    parse.mockReset()
+    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: null, usage: { input_tokens: 100, output_tokens: 7 } })
+    // As DUAS chamadas (principal + reparo) custaram: o uso volta somado mesmo no parse_failed.
+    expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({
+      kind: 'parse_failed',
+      usage: { inputTokens: 200, outputTokens: 14 },
+    })
+    expect(parse).toHaveBeenCalledTimes(2)
+    parse.mockReset()
+    parse.mockRejectedValue(new Error('boom'))
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(await new RealClaudeClient().suggestMenu(input('claude-sonnet-5'))).toEqual({ kind: 'parse_failed' })
+    spy.mockRestore()
+  })
+
   it('Tradução: usa o modelo e o ajuste que o loader devolve a cada chamada', async () => {
     parse.mockResolvedValue({
       stop_reason: 'end_turn',

@@ -10,9 +10,11 @@ import {
 } from '@/domain/ai-cost-read'
 
 /**
- * Agregador do painel de CUSTO de IA no /admin (#465) — soma os DOIS ledgers de custo já existentes:
- * `generation` (texto, #463) e `image_generation` (imagem, #224). NÃO cria tabela nova; só LÊ os
- * `cost_usd` SNAPSHOT já persistidos. ADMIN-only (a rota reforça `requireRole 'admin'`).
+ * Agregador do painel de CUSTO de IA no /admin (#465) — soma os ledgers de custo já existentes:
+ * `generation` (texto, #463), `meal_plan_suggestion_event` (texto da Sugestão de cardápio, ADR-0036 —
+ * entra no TEXTO de `perDay`/`topUsers`; fica fora de `byOutcome`, que é sobre Receitas geradas) e
+ * `image_generation` (imagem, #224). NÃO cria tabela nova; só LÊ os `cost_usd` SNAPSHOT já persistidos.
+ * ADMIN-only (a rota reforça `requireRole 'admin'`).
  *
  * Três vistas, TODAS na mesma janela de `windowDays` (default 30):
  *  1. `perDay` — custo/dia por ledger (série temporal de margem).
@@ -49,6 +51,11 @@ export async function loadAiCostSummary(
         WHERE cost_usd IS NOT NULL AND created_at >= ${since}
       UNION ALL
       SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+             cost_usd AS text_usd, 0::numeric AS image_usd
+        FROM meal_plan_suggestion_event
+        WHERE cost_usd IS NOT NULL AND created_at >= ${since}
+      UNION ALL
+      SELECT to_char(date_trunc('day', created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
              0::numeric AS text_usd, cost_usd AS image_usd
         FROM image_generation
         WHERE cost_usd IS NOT NULL AND created_at >= ${since}
@@ -80,6 +87,10 @@ export async function loadAiCostSummary(
         FROM generation g
         JOIN creation_session cs ON cs.id = g.creation_session_id
         WHERE g.cost_usd IS NOT NULL AND g.created_at >= ${since}
+      UNION ALL
+      SELECT ms.user_id AS uid, ms.cost_usd AS text_usd, 0::numeric AS image_usd
+        FROM meal_plan_suggestion_event ms
+        WHERE ms.cost_usd IS NOT NULL AND ms.created_at >= ${since}
       UNION ALL
       SELECT ig.user_id AS uid, 0::numeric AS text_usd, ig.cost_usd AS image_usd
         FROM image_generation ig

@@ -70,6 +70,10 @@ class ExplodingClaudeClient implements ClaudeClient {
   async extractIngredients(): Promise<never> {
     throw new Error('extractIngredients não devia ser chamado')
   }
+
+  async suggestMenu(): Promise<never> {
+    throw new Error('seam tocado: suggestMenu não devia ser chamado')
+  }
 }
 
 function regenerate(id: string, headers?: Headers): Promise<Response> {

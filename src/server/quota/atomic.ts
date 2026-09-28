@@ -1,6 +1,6 @@
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { creationSession, extractionEvent, generation, imageGeneration } from '@/db/schema'
+import { creationSession, extractionEvent, generation, imageGeneration, mealPlanSuggestionEvent } from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS, decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
 
@@ -36,7 +36,7 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
  * lock de geração de RECEITA e a de IMAGEM nunca se bloqueiem mutuamente (chaves de espaços distintos).
  * Valores arbitrários porém ESTÁVEIS (mudá-los invalidaria locks em voo num deploy — mantê-los fixos).
  */
-export const QUOTA_LOCK_CLASS = { recipeGen: 4671, imageGen: 4672, extraction: 4673 } as const
+export const QUOTA_LOCK_CLASS = { recipeGen: 4671, imageGen: 4672, extraction: 4673, menuSuggestion: 4674 } as const
 
 /**
  * Cota estourada detectada ATOMICAMENTE dentro da tx (após a lock + recontagem). Carrega o countdown
@@ -136,5 +136,63 @@ export async function reserveExtractionSlot(
     const decision = decideRecipeGenQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
     if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
     await tx.insert(extractionEvent).values({ userId })
+  })
+}
+
+/** Sugestões de cardápio do usuário na janela 24h (fonte da cota; `db` ou a tx da reserva). */
+async function recentMenuSuggestionTimes(db: Database | Tx, userId: string, now: Date): Promise<Date[]> {
+  const rows = await db
+    .select({ createdAt: mealPlanSuggestionEvent.createdAt })
+    .from(mealPlanSuggestionEvent)
+    .where(
+      and(
+        eq(mealPlanSuggestionEvent.userId, userId),
+        gte(mealPlanSuggestionEvent.createdAt, new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)),
+      ),
+    )
+  return rows.map((r) => r.createdAt)
+}
+
+/**
+ * Pré-checagem BARATA (sem lock, sem escrita) da cota da Sugestão de cardápio (ADR-0036): o Usuário já
+ * no teto recebe o 429 ANTES de a rota carregar ~150 candidatas. Não é o gate — a corrida é fechada
+ * por `reserveMenuSuggestionSlot`, que reconta sob a lock.
+ */
+export async function peekMenuSuggestionQuota(
+  db: Database,
+  input: { userId: string; cap: number },
+): Promise<{ allowed: true } | { allowed: false; retryAfterMs: number }> {
+  const { userId, cap } = input
+  if (!Number.isFinite(cap)) return { allowed: true }
+  const now = new Date()
+  const recentAt = await recentMenuSuggestionTimes(db, userId, now)
+  return decideRecipeGenQuota({ cap, recentAt, now })
+}
+
+/**
+ * RESERVA ATÔMICA de um slot da Sugestão de cardápio (ADR-0036), ANTES da chamada ao Claude — o mesmo
+ * idioma da Extração (lock do usuário + recontagem do ledger + INSERT numa tx; estourou ⇒
+ * `QuotaExceededError`). Diferença: devolve o id da linha, que a rota completa com modelo/tokens/custo
+ * depois da chamada; e com cota ∞ (admin) a linha é gravada MESMO ASSIM (sem lock nem recontagem), pra o
+ * custo da tarefa ser medido pra todo mundo. Falha da IA não devolve o slot (o custo já foi gasto).
+ */
+export async function reserveMenuSuggestionSlot(
+  db: Database,
+  input: { userId: string; cap: number },
+): Promise<string> {
+  const { userId, cap } = input
+  return db.transaction(async (tx) => {
+    if (Number.isFinite(cap)) {
+      const now = new Date()
+      await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.menuSuggestion, userId)
+      const recentAt = await recentMenuSuggestionTimes(tx, userId, now)
+      const decision = decideRecipeGenQuota({ cap, recentAt, now })
+      if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+    }
+    const [row] = await tx
+      .insert(mealPlanSuggestionEvent)
+      .values({ userId })
+      .returning({ id: mealPlanSuggestionEvent.id })
+    return row.id
   })
 }

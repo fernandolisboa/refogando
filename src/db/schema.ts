@@ -1659,3 +1659,25 @@ export const mealPlanEntry = pgTable(
     check('meal_plan_entry_porcoes_chk', sql`${t.porcoes} IS NULL OR ${t.porcoes} BETWEEN 1 AND 99`),
   ],
 )
+
+// ── Sugestão de cardápio pela IA (ADR-0036) ───────────────────────────────────────
+// Ledger da cota diária da Sugestão de cardápio: UMA linha por TENTATIVA (reservada atomicamente ANTES da
+// chamada, como `extraction_event`; falha da IA não devolve o slot). Depois da chamada a mesma linha ganha
+// o modelo, os tokens e o `cost_usd` SNAPSHOT (`computeTextCost`), pra o custo da tarefa ser medido. NÃO
+// guarda conteúdo do Usuário (nem a nota, nem a prévia): a sugestão não é persistida, só vira Refeição
+// planejada quando o Usuário aceita. `user_id` cascade (está nas CONTENT_GUARDS do expurgo de cadastro).
+export const mealPlanSuggestionEvent = pgTable(
+  'meal_plan_suggestion_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    model: text('model'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
+  },
+  (t) => [index('meal_plan_suggestion_event_user_created_idx').on(t.userId, t.createdAt)],
+)

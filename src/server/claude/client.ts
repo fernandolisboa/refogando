@@ -39,6 +39,11 @@ import {
   EXTRACTION_MAX_TOKENS,
   type ExtractionOutput,
 } from '@/domain/ingredient-extraction'
+import {
+  MENU_SUGGESTION_MAX_TOKENS,
+  MenuSuggestionSchema,
+  type MenuSuggestionOutput,
+} from '@/domain/menu-suggestion'
 
 /**
  * Forma da entrada da geração (em #8, mínima: o prompt já montado vive a montante).
@@ -106,6 +111,10 @@ export interface ClaudeClient {
   // um teto de tokens próprio. Reusa `GenerationInput` (já carrega systemPrompt/userPrompt/
   // model/signal) — a rota passa o modelo da tarefa Extração (ADR-0034), não o default da Geração.
   extractIngredients(input: GenerationInput): Promise<ExtractionOutput>
+  // Sugestão de cardápio (ADR-0036): ESCOLHE Receitas de uma lista fechada para os dias × refeições
+  // pedidos (NÃO gera Receita). Mesma disciplina structured (messages.parse + reparo) no
+  // `MenuSuggestionSchema`, com o modelo/ajuste da tarefa `menu`. Reusa `GenerationInput`.
+  suggestMenu(input: GenerationInput): Promise<MenuSuggestionOutput>
 }
 
 // Mapeia o `message.usage` cru da Anthropic → `TextUsage` normalizado (#463). DEFENSIVO e NULL-HONESTO:
@@ -146,8 +155,12 @@ function generationSignal(signal?: AbortSignal): AbortSignal {
  * que dá 400 com `effort`) segue no default dele, mesmo quando a rota passa o ajuste default da tarefa.
  */
 function generationSettings(input: { model: string; settings?: ModelSettings }): ModelSettings {
-  const settings = input.settings ?? TASK_DEFAULT_SETTINGS.generation
-  return selectableFamilyOf(input.model) ? settings : { ...settings, effort: null }
+  return withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.generation)
+}
+
+/** `effort` só vai para as famílias selecionáveis (Opus/Sonnet/Fable); nos outros modelos, o default deles. */
+function withoutUnsupportedEffort(model: string, settings: ModelSettings): ModelSettings {
+  return selectableFamilyOf(model) ? settings : { ...settings, effort: null }
 }
 
 /** `thinking` + `output_config` (formato + esforço) de uma chamada structured com o ajuste dado. */
@@ -417,6 +430,63 @@ export class RealClaudeClient implements ClaudeClient {
     }
   }
 
+  async suggestMenu(input: GenerationInput): Promise<MenuSuggestionOutput> {
+    // Espelha a Extração (messages.parse + zodOutputFormat + reparo de UMA tentativa, prazo de 50s), mas
+    // distingue `refusal` (a rota mostra o mesmo erro; o log diz a causa). O `usage` volta pra rota em
+    // todo desfecho, que grava tokens e custo na linha do ledger da cota (ADR-0036).
+    const client = new Anthropic()
+    const settings = withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.menu)
+
+    // Uso SOMADO das chamadas feitas (a principal + o reparo): toda chamada custa, mesmo a que termina em
+    // recusa ou parse_failed — o ledger da cota registra o custo de todos os desfechos.
+    let usage: TextUsage | undefined
+    const addUsage = (u: { input_tokens?: number; output_tokens?: number } | null | undefined) => {
+      const mapped = mapTextUsage(u)
+      if (!mapped) return
+      usage = {
+        inputTokens: (usage?.inputTokens ?? 0) + mapped.inputTokens,
+        outputTokens: (usage?.outputTokens ?? 0) + mapped.outputTokens,
+      }
+    }
+
+    try {
+      const params = {
+        model: input.model,
+        // Com thinking possivelmente ligado, o teto ganha folga (os tokens de raciocínio contam aqui).
+        max_tokens: maxTokensFor(MENU_SUGGESTION_MAX_TOKENS, settings),
+        system: input.systemPrompt,
+        messages: [{ role: 'user' as const, content: input.userPrompt }],
+        ...structuredTuning(zodOutputFormat(MenuSuggestionSchema), settings),
+      }
+
+      const signal = generationSignal(input.signal)
+      let message = await client.messages.parse(params, { signal })
+      addUsage(message.usage)
+      if (message.stop_reason === 'refusal') {
+        logSeamParseFailed('suggestMenu', 'recusa', message)
+        return { kind: 'refusal', usage }
+      }
+
+      if (message.parsed_output === null) {
+        message = await client.messages.parse(params, { signal })
+        addUsage(message.usage)
+        if (message.stop_reason === 'refusal') {
+          logSeamParseFailed('suggestMenu', 'recusa', message)
+          return { kind: 'refusal', usage }
+        }
+        if (message.parsed_output === null) {
+          logSeamParseFailed('suggestMenu', 'saída nula após reparo', message)
+          return { kind: 'parse_failed', usage }
+        }
+      }
+
+      return { kind: 'ok', suggestion: message.parsed_output, usage }
+    } catch (err) {
+      logSeamError('suggestMenu', err, input.signal)
+      return { kind: 'parse_failed', usage }
+    }
+  }
+
   async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
     // #463: o STREAM da conversa rende só TEXTO (sem canal de retorno de usage nesta interface). O custo
     // desse turno de chat NÃO tem linha própria em `generation` — a linha da conversa nasce da DESTILAÇÃO
@@ -465,12 +535,14 @@ export class FakeClaudeClient implements ClaudeClient {
   // `cannedVariants` (#423) é o QUINTO arg OPCIONAL — vem DEPOIS dos quatro para que TODOS os call
   // sites existentes compilem sem mudança. `generateRecipeVariants` o devolve (ignora axes/cozinhaSlugs,
   // como os demais), ou estoura se ausente.
+  // `cannedMenu` (ADR-0036) é o SEXTO arg OPCIONAL, pela mesma razão. `suggestMenu` o devolve, ou estoura.
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
     private readonly cannedTokens?: string[],
     private readonly cannedExtraction?: ExtractionOutput,
     private readonly cannedVariants?: GenerationOutput[],
+    private readonly cannedMenu?: MenuSuggestionOutput,
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -500,6 +572,13 @@ export class FakeClaudeClient implements ClaudeClient {
       )
     }
     return this.cannedExtraction
+  }
+
+  async suggestMenu(): Promise<MenuSuggestionOutput> {
+    if (!this.cannedMenu) {
+      throw new Error('FakeClaudeClient: nenhuma sugestão de cardápio enlatada (passe-a como 6º arg do construtor).')
+    }
+    return this.cannedMenu
   }
 
   async *streamConversation(input?: ConversationStreamInput): AsyncIterable<string> {

@@ -66,6 +66,10 @@ class ExplodingClaudeClient implements ClaudeClient {
   async extractIngredients(): Promise<never> {
     throw new Error('seam tocado: extractIngredients não devia ser chamado')
   }
+
+  async suggestMenu(): Promise<never> {
+    throw new Error('seam tocado: suggestMenu não devia ser chamado')
+  }
 }
 
 /** Contagens cruas das tabelas tocáveis (porta alta, sem ORM). `transcript` (#15) cobre as
@@ -516,6 +520,10 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
       }
       async extractIngredients(): Promise<{ kind: 'parse_failed' }> {
         return { kind: 'parse_failed' }
+      }
+
+      async suggestMenu(): Promise<never> {
+        throw new Error('seam tocado: suggestMenu não devia ser chamado')
       }
     }
     setClaudeClient(new AbortProbeClient())
