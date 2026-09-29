@@ -1,6 +1,6 @@
-# Handoff 58 — Despensa: "o que dá pra fazer com o que eu tenho" (ADR-0038)
+# Handoff 60 — Despensa: "o que dá pra fazer com o que eu tenho" (ADR-0038)
 
-**Sessão:** 2026-09-28. **Branch:** `claude/next-feature-round-five-kr6dzu` (um PR). **Migração:** `0072_pantry` (tabela `pantry_item`; entra no deploy da main via `npm run db:migrate`).
+**Sessão:** 2026-09-28/29 (mergeado depois do guia de uso, handoff 59). **Branch:** `claude/next-feature-round-five-kr6dzu` (um PR). **Migração:** `0072_pantry` (tabela `pantry_item`; entra no deploy da main via `npm run db:migrate`).
 
 Documento auto-suficiente: o que a feature é, onde mora no código, o que não pode regredir e o que ficou de follow-up.
 
@@ -15,6 +15,7 @@ Quinta rodada do "construa a próxima feature grande". Sem issue `ready-for-agen
 - **"Pôr o que falta na lista"** em cada Receita: o servidor recalcula o que falta e põe só isso, na quantidade base, na lista-padrão (link "Abrir lista").
 - **"Criar receita com o que tenho"**: link para `/create?q=uma receita com …` (o mesmo atalho da Busca; nunca gera sozinho).
 - **Na Lista de compras, "Guardar marcados na despensa"**: copia os nomes dos itens comprados para a Despensa, sem apagar nada da Lista.
+- **Guia "Como usar" e tour (ADR-0039):** seção **Despensa** em `messages.guia` e passo `despensa` no tour, com âncora `nav-despensa` no link da nav.
 - Export LGPD ganha `pantry`; eliminação de conta apaga a Despensa; `pantry_item` entrou nas guardas do expurgo de cadastro pendente.
 
 ## 2. O que ler primeiro
@@ -65,5 +66,5 @@ PR mergeado com o painel de revisão limpo e o "checks" verde; migração 0072 a
 ## Kickoff da próxima sessão (colar como primeira mensagem)
 
 ```
-Leia docs/handoffs/58-despensa-adr-0038.md e o ADR-0038. A Despensa ("o que dá pra fazer com o que eu tenho", /me/pantry) está em produção. Próximo passo sugerido: um dos follow-ups da seção 5 (Despensa → Cardápio, descontar da Despensa ao cozinhar, ou os pendentes do Cardápio). Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
+Leia docs/handoffs/60-despensa-adr-0038.md e o ADR-0038. A Despensa ("o que dá pra fazer com o que eu tenho", /me/pantry) está em produção. Próximo passo sugerido: um dos follow-ups da seção 5 (Despensa → Cardápio, descontar da Despensa ao cozinhar, ou os pendentes do Cardápio). Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
 ```

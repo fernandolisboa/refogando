@@ -42,6 +42,10 @@ export function SiteFooter({
             <Link href="/seus-direitos" className="hover:text-fg hover:underline">
               {messages.seusDireitos.titulo}
             </Link>
+            {/* ADR-0039: guia de uso, público (o Visitante também chega nele pelo rodapé). */}
+            <Link href="/guia" className="hover:text-fg hover:underline">
+              {messages.nav.comoUsar}
+            </Link>
           </div>
           {/* #451: links de redes sociais (só renderiza quando há algum ligado). <div>, não <nav> —
               mesma decisão dos links legais acima (não criar 2º landmark de navegação). Links externos

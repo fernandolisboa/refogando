@@ -83,6 +83,14 @@ _Avoid_: chamar de Geração (a IA só escolhe Receitas que existem); deixar o m
 Lista **privada**, uma por Usuário, de **nomes** de ingredientes que ele tem em casa — **sem quantidade** (ninguém mantém estoque com número, e casar com a Receita exigiria converter unidade). A Despensa **cobre** um Item de receita pelo **nome**: palavra(s) inteira(s) do item dentro do nome do Item ("farinha" cobre "farinha de trigo"; "sal" não cobre "salsinha"), com plural regular, mais os nomes e aliases do **Ingrediente canônico** que o item resolve (cross-locale: "ovo" cobre "eggs"). **Nunca por IA.** "Tenho o básico" (sal, água, óleo, azeite, pimenta-do-reino) cobre só a linha feita inteira de básicos e nunca basta sozinho para mostrar uma Receita. O resultado são as Receitas que o Usuário pode **Salvar** com no máximo 3 Itens faltando: **"Dá pra fazer agora"** e **"Falta pouco"**. Pontes: "pôr o que falta na Lista de compras" (o servidor recalcula o que falta) e "criar receita com o que tenho" (`/create?q=`, nunca gera sozinho). A Lista alimenta a Despensa: "guardar marcados na despensa". Ver ADR-0038.
 _Avoid_: estoque/inventário com quantidade; "geladeira" como termo de domínio.
 
+**Guia de uso** ("Como usar"):
+A página pública `/guia` que explica, em texto, como usar cada recurso do app (buscar, criar com IA, a página da Receita, Salvos, Lista de compras, Cardápio, Comunidade, Conta) e de onde se refaz o **Tour guiado**. Linkada no rodapé e no menu da conta. Cada feature nova visível ao Usuário atualiza o guia. Ver ADR-0039.
+_Avoid_: FAQ, Ajuda, Tutorial (como nome da página); guia só para logados.
+
+**Tour guiado**:
+Sobreposição que escurece a tela e destaca um componente da chrome por passo, na home, com um cartão explicando o que ele faz. Abre sozinho **uma vez** para conta nova (até 14 dias) e sempre que pedido pelo Guia de uso; é **dispensável em qualquer passo** (X e Esc em todos; "Agora não" no primeiro, "Pular tour" nos do meio), e o desfecho (`done`/`dismissed`) fica gravado por Usuário **no dispositivo**. Informativo: não navega nem clica por ninguém. Ver ADR-0039.
+_Avoid_: Onboarding (como nome da feature, que sugere um fluxo obrigatório de cadastro); Walkthrough; forçar o tour sem saída.
+
 **Sessão de criação**:
 Agregado de um episódio de criação com a IA, com `mode` (`conversation | structured | free_text`), que produz a Receita gerada. Um conceito, três modos — não três conceitos soltos. Aponta para a receita resultante por referência fraca: a sessão aponta pra receita, **nunca o contrário**.
 _Avoid_: Conversa (quando significar o agregado); Geração (quando significar a sessão); Wizard; Request; tratar os três caminhos do drawer de criação (estruturado, prompt aberto, conversa) como sessões ou conceitos distintos — são **modos** de UMA Sessão de criação.

@@ -155,6 +155,10 @@ export function AuthSlot() {
         <DropdownMenuItem asChild>
           <Link href="/me/shopping-lists">{messages.listaDeCompras.indiceTitulo}</Link>
         </DropdownMenuItem>
+        {/* ADR-0039: "Como usar" (/guia) — o guia de uso e o botão de refazer o tour guiado. */}
+        <DropdownMenuItem asChild>
+          <Link href="/guia">{messages.nav.comoUsar}</Link>
+        </DropdownMenuItem>
         {/* "Painel" (#125) só a curador+ — afordância; o /admin revalida o papel server-side. */}
         {showPainel && (
           <DropdownMenuItem asChild>
