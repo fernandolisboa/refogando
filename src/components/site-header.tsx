@@ -149,6 +149,8 @@ export function SiteHeader() {
           {authed && navLink('/me/saved', messages.colecoes.titulo, identity, 'nav-salvos')}
           {/* ADR-0035: "Cardápio" (Plano de refeições da semana), ao lado de "Salvos" — só-logada. */}
           {authed && navLink('/me/meal-plan', messages.nav.cardapio, identity, 'nav-cardapio')}
+          {/* ADR-0038: "Despensa" (o que dá pra fazer com o que tenho), ao lado do Cardápio — só-logada. */}
+          {authed && navLink('/me/pantry', messages.nav.despensa, identity, 'nav-despensa')}
         </nav>
         {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
             espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). `ml-auto` empurra
@@ -193,6 +195,7 @@ export function SiteHeader() {
               {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
               {authed && navLink('/me/saved', messages.colecoes.titulo, inSheet)}
               {authed && navLink('/me/meal-plan', messages.nav.cardapio, inSheet)}
+              {authed && navLink('/me/pantry', messages.nav.despensa, inSheet)}
               {/* "Painel" saiu da nav (#267): vive no menu da conta do AuthSlot abaixo. */}
               {ctaLink(inSheet)}
             </nav>

@@ -91,7 +91,7 @@ describe('GuidedTour — abertura automática', () => {
     const user = userEvent.setup()
     renderTour()
     const dialog = await findTour(t.boasVindasTitulo)
-    expect(dialog).toHaveTextContent('Passo 1 de 7')
+    expect(dialog).toHaveTextContent('Passo 1 de 8')
     await user.click(screen.getByRole('button', { name: t.agoraNao }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('dismissed')
@@ -103,7 +103,7 @@ describe('GuidedTour — abertura automática', () => {
     renderTour()
     await findTour(t.boasVindasTitulo)
     await user.click(screen.getByRole('button', { name: t.comecar }))
-    for (const title of [t.buscaTitulo, t.criarTitulo, t.salvosTitulo, t.cardapioTitulo, t.contaTitulo]) {
+    for (const title of [t.buscaTitulo, t.criarTitulo, t.salvosTitulo, t.cardapioTitulo, t.despensaTitulo, t.contaTitulo]) {
       await findTour(title)
       await user.click(screen.getByRole('button', { name: t.proximo }))
     }
@@ -212,14 +212,14 @@ describe('GuidedTour — abertura automática', () => {
     const { rerender } = renderTour()
     act(() => requestTourStart())
     const dialog = await findTour(t.boasVindasTitulo)
-    expect(dialog).toHaveTextContent('Passo 1 de 7')
+    expect(dialog).toHaveTextContent('Passo 1 de 8')
     authMock.current = { data: null, error: new Error('rede'), isPending: false, isRefetching: false, refetch: () => {} }
     rerender(
       <LocaleProvider initialLocale="pt-BR">
         <GuidedTour />
       </LocaleProvider>,
     )
-    expect(screen.getByRole('dialog', { name: t.boasVindasTitulo })).toHaveTextContent('Passo 1 de 7')
+    expect(screen.getByRole('dialog', { name: t.boasVindasTitulo })).toHaveTextContent('Passo 1 de 8')
     await user.click(screen.getByRole('button', { name: t.agoraNao }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('dismissed')
@@ -282,7 +282,7 @@ describe('GuidedTour — pedido do /guia', () => {
     act(() => requestTourStart())
     await findTour(t.boasVindasTitulo)
     await user.click(screen.getByRole('button', { name: t.comecar }))
-    for (const title of [t.buscaTitulo, t.criarTitulo, t.salvosTitulo, t.cardapioTitulo, t.contaTitulo]) {
+    for (const title of [t.buscaTitulo, t.criarTitulo, t.salvosTitulo, t.cardapioTitulo, t.despensaTitulo, t.contaTitulo]) {
       await findTour(title)
       await user.click(screen.getByRole('button', { name: t.proximo }))
     }

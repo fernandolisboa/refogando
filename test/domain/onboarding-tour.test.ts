@@ -17,7 +17,7 @@ describe('tourStepsFor', () => {
     const ids = tourStepsFor(true).map((s) => s.id)
     expect(ids[0]).toBe('boasVindas')
     expect(ids.at(-1)).toBe('fim')
-    expect(ids).toEqual(['boasVindas', 'busca', 'criar', 'salvos', 'cardapio', 'conta', 'fim'])
+    expect(ids).toEqual(['boasVindas', 'busca', 'criar', 'salvos', 'cardapio', 'despensa', 'conta', 'fim'])
   })
 
   it('Visitante: sem os passos de links só-logados', () => {

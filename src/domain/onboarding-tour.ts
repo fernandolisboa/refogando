@@ -15,6 +15,7 @@ export type TourAnchor =
   | 'criar'
   | 'nav-salvos'
   | 'nav-cardapio'
+  | 'nav-despensa'
   | 'conta'
   | 'menu-mobile'
 
@@ -24,6 +25,7 @@ export type TourStepId =
   | 'criar'
   | 'salvos'
   | 'cardapio'
+  | 'despensa'
   | 'conta'
   | 'fim'
 
@@ -41,6 +43,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'criar', anchors: ['criar', 'menu-mobile'], authOnly: false },
   { id: 'salvos', anchors: ['nav-salvos', 'menu-mobile'], authOnly: true },
   { id: 'cardapio', anchors: ['nav-cardapio', 'menu-mobile'], authOnly: true },
+  { id: 'despensa', anchors: ['nav-despensa', 'menu-mobile'], authOnly: true },
   { id: 'conta', anchors: ['conta', 'menu-mobile'], authOnly: false },
   { id: 'fim', anchors: [], authOnly: false },
 ]

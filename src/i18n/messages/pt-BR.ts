@@ -40,6 +40,8 @@ export const ptBR = {
     // ADR-0035: "Cardápio" (Plano de refeições da semana) na nav logada. O índice das Listas de compras
     // (menu da conta) reusa `listaDeCompras.indiceTitulo`.
     cardapio: 'Cardápio',
+    // ADR-0038: "Despensa" na nav logada.
+    despensa: 'Despensa',
     // ADR-0039: página "Como usar" (/guia), no menu da conta e no rodapé.
     comoUsar: 'Como usar',
   },
@@ -1066,6 +1068,14 @@ export const ptBR = {
   // avulso + editar quantidade + remover linha) E o botão de adicionar UMA Receita com porções-alvo
   // do detalhe (fatia B, #527, dec.3 — `RecipeShoppingListButton`).
   listaDeCompras: {
+    // ADR-0038 dec.6: copia os marcados para a Despensa (não apaga nada da Lista).
+    guardarNaDespensa: 'Guardar marcados na despensa',
+    guardadosNaDespensa: '{n} itens foram para a despensa.',
+    guardadoNaDespensaSingular: '1 item foi para a despensa.',
+    guardadosJaNaDespensa: 'Os marcados já estavam na despensa.',
+    nadaMarcadoParaDespensa: 'Nenhum item marcado para guardar na despensa.',
+    erroDespensaCheia: 'Sua despensa está cheia. Tire alguns itens dela antes.',
+    abrirDespensa: 'Abrir despensa',
     // Multi-seleção (fatia E, #530).
     selecionarReceita: 'Selecionar {nome}',
     selecionadaSingular: '{n} receita selecionada',
@@ -2075,6 +2085,50 @@ export const ptBR = {
     corpo: 'Estamos preparando um plano Pro com mais gerações por IA, além de créditos avulsos para quem prefere pagar só pelo que usa. Ainda não é possível assinar ou comprar — volte em breve.',
     voltar: 'Voltar para o início',
   },
+  // Despensa (ADR-0038): "o que dá pra fazer com o que eu tenho" em `/me/pantry`, e o "Guardar marcados na
+  // despensa" da Lista de compras. `{…}` é interpolado por `String.replace`.
+  despensa: {
+    titulo: 'Despensa',
+    descricao: 'Diga o que você tem em casa e veja o que dá pra cozinhar agora ou com poucas compras.',
+    precisaEntrar: 'Entre na sua conta para montar sua despensa.',
+    adicionarRotulo: 'O que você tem em casa',
+    adicionarPlaceholder: 'Ex.: ovo, tomate, queijo',
+    adicionarDica: 'Separe vários itens com vírgula.',
+    adicionar: 'Adicionar',
+    adicionando: 'Adicionando…',
+    sugestoesTitulo: 'Itens comuns',
+    sugestoes: ['ovo', 'arroz', 'feijão', 'cebola', 'alho', 'tomate', 'batata', 'frango', 'queijo', 'leite', 'manteiga', 'farinha de trigo', 'macarrão', 'limão'],
+    sugestaoAdicionar: 'Adicionar {nome} à despensa',
+    vazia: 'Sua despensa está vazia. Adicione o que você tem em casa para ver o que dá pra fazer.',
+    itensContagem: '{n} itens na despensa',
+    itemContagem: '1 item na despensa',
+    remover: 'Tirar {nome} da despensa',
+    limpar: 'Limpar despensa',
+    confirmarLimpar: 'Tirar todos os itens da despensa?',
+    basicos: 'Tenho o básico ({lista})',
+    basicosLista: 'sal, água, óleo, azeite e pimenta-do-reino',
+    resultadosTitulo: 'O que dá pra fazer',
+    prontasTitulo: 'Dá pra fazer agora',
+    quaseProntasTitulo: 'Falta pouco',
+    semResultados: 'Nenhuma receita combina com a sua despensa ainda. Adicione mais itens ou crie uma receita com o que você tem.',
+    temDeTotal: 'Você tem {n} de {total}',
+    falta: 'Falta: {lista}',
+    porNaLista: 'Pôr o que falta na lista',
+    pondoNaLista: 'Adicionando…',
+    postoNaLista: 'Foi para “{lista}”.',
+    abrirLista: 'Abrir lista',
+    criarComDespensa: 'Criar receita com o que tenho',
+    criarPrompt: 'uma receita com {lista}',
+    criarComDespensaDica: 'A IA cria uma receita nova a partir da sua despensa.',
+    comoCasa: 'A busca é pelo nome do ingrediente: “farinha” vale para “farinha de trigo”. Confira a receita antes de cozinhar.',
+    erroCarregar: 'Não foi possível carregar sua despensa. Tente de novo.',
+    erroCarregarResultados: 'Não foi possível buscar as receitas. Tente de novo.',
+    erroAdicionar: 'Escreva nomes de até {max} caracteres, no máximo {lote} de uma vez.',
+    erroCheia: 'Sua despensa chegou ao limite de {max} itens. Tire alguns antes de adicionar.',
+    erro: 'Não foi possível salvar a mudança. Tente de novo.',
+    nadaFaltando: 'Com a despensa de agora, não falta nada nesta receita.',
+    erroPorNaLista: 'Não foi possível pôr na lista. Tente de novo.',
+  },
   // Plano de refeições (ADR-0035): o "Cardápio da semana" em `/me/meal-plan`, o botão de calendário do
   // detalhe e o "gerar lista de compras" do período. `{…}` é interpolado por `String.replace`.
   cardapio: {
@@ -2228,6 +2282,8 @@ export const ptBR = {
     salvosTexto: 'Toque em “Salvar” numa receita e ela vem para cá. Organize em coleções e mande várias de uma vez para a lista de compras.',
     cardapioTitulo: 'Planeje a semana',
     cardapioTexto: 'Monte o cardápio da semana, peça uma sugestão à IA, copie a semana anterior e gere a lista de compras com as porções certas.',
+    despensaTitulo: 'O que dá pra fazer',
+    despensaTexto: 'Na “Despensa”, diga o que tem em casa e veja as receitas que dá pra fazer agora ou que falta pouco. O que faltar vai direto para a lista de compras.',
     contaTitulo: 'Sua conta',
     contaTexto: 'Aqui ficam o seu perfil, as listas de compras e este guia (“Como usar”), para rever o tour quando quiser.',
     contaTextoVisitante: 'Entre ou crie uma conta para salvar receitas, criar com IA e planejar a semana.',
@@ -2283,6 +2339,14 @@ export const ptBR = {
       '“Sugerir com IA” propõe um cardápio a partir dos seus Salvos, das suas criações e, se você quiser, da comunidade. Nada entra até você aceitar.',
       '“Copiar semana anterior” repete a semana passada nas refeições que ainda estão vazias.',
       '“Gerar lista de compras” junta os ingredientes da semana numa lista, nas porções planejadas.',
+    ],
+    despensaTitulo: 'Despensa',
+    despensaItens: [
+      'Em “Despensa”, diga o que você tem em casa: vários nomes de uma vez, separados por vírgula. Sem quantidade.',
+      'O app mostra as receitas que dá pra fazer agora e as que falta pouco (até 3 ingredientes), com o que falta.',
+      '“Tenho o básico” conta sal, água, óleo, azeite e pimenta-do-reino como já em casa. Dá para desligar.',
+      '“Pôr o que falta na lista” leva só os ingredientes que faltam para a sua lista de compras.',
+      'Na lista de compras, “Guardar marcados na despensa” passa o que você comprou para a Despensa.',
     ],
     comunidadeTitulo: 'Comunidade',
     comunidadeItens: [

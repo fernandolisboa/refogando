@@ -23,6 +23,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: (g: Guia) => string; items: (
   { id: 'salvos', title: (g) => g.salvosTitulo, items: (g) => g.salvosItens },
   { id: 'lista-de-compras', title: (g) => g.listaTitulo, items: (g) => g.listaItens },
   { id: 'cardapio', title: (g) => g.cardapioTitulo, items: (g) => g.cardapioItens },
+  { id: 'despensa', title: (g) => g.despensaTitulo, items: (g) => g.despensaItens },
   { id: 'comunidade', title: (g) => g.comunidadeTitulo, items: (g) => g.comunidadeItens },
   { id: 'conta', title: (g) => g.contaTitulo, items: (g) => g.contaItens },
 ]

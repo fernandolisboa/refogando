@@ -66,6 +66,7 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
   const [status, setStatus] = useState<Status>('loading')
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [bulkPending, setBulkPending] = useState(false)
+  const [pantryNotice, setPantryNotice] = useState<{ text: string; error: boolean } | null>(null)
 
   // Edição de quantidade por linha (só UMA aberta por vez): id + valor + erro.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -123,6 +124,7 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
 
   async function handleRemoveChecked() {
     if (bulkPending) return
+    setPantryNotice(null)
     if (!window.confirm(m.confirmarRemoverMarcados)) return
     setBulkPending(true)
     try {
@@ -133,8 +135,44 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
     }
   }
 
+  // ADR-0038 dec.6: copia os NOMES dos marcados para a Despensa; a Lista fica como está.
+  async function handleCheckedToPantry() {
+    if (bulkPending) return
+    setBulkPending(true)
+    setPantryNotice(null)
+    try {
+      const res = await fetch(`/api/me/shopping-lists/${listId}/items/checked/to-pantry`, { method: 'POST' })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        const text =
+          body.error === 'despensa_cheia'
+            ? m.erroDespensaCheia
+            : body.error === 'nada_marcado'
+              ? m.nadaMarcadoParaDespensa
+              : m.erro
+        setPantryNotice({ text, error: true })
+        return
+      }
+      const body = (await res.json()) as { added: number }
+      setPantryNotice({
+        text:
+          body.added === 0
+            ? m.guardadosJaNaDespensa
+            : body.added === 1
+              ? m.guardadoNaDespensaSingular
+              : m.guardadosNaDespensa.replace('{n}', String(body.added)),
+        error: false,
+      })
+    } catch {
+      setPantryNotice({ text: m.erro, error: true })
+    } finally {
+      setBulkPending(false)
+    }
+  }
+
   async function handleClearList() {
     if (bulkPending) return
+    setPantryNotice(null)
     if (!window.confirm(m.confirmarLimparLista)) return
     setBulkPending(true)
     try {
@@ -249,6 +287,13 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
           {m.removerMarcados}
         </Button>
         <Button
+          variant="secondary"
+          onClick={() => void handleCheckedToPantry()}
+          disabled={!hasChecked || bulkPending}
+        >
+          {m.guardarNaDespensa}
+        </Button>
+        <Button
           variant="destructive"
           onClick={() => void handleClearList()}
           disabled={items.length === 0 || bulkPending}
@@ -256,6 +301,17 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
           {m.limparLista}
         </Button>
       </div>
+
+      {pantryNotice != null && (
+        <p role={pantryNotice.error ? 'alert' : 'status'} className="text-sm text-muted">
+          {pantryNotice.text}{' '}
+          {!pantryNotice.error && (
+            <Link href="/me/pantry" className="font-medium text-brand-ink underline-offset-4 hover:underline">
+              {m.abrirDespensa}
+            </Link>
+          )}
+        </p>
+      )}
 
       {items.length === 0 ? (
         <p className="text-muted">{m.vazia}</p>

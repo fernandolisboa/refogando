@@ -51,6 +51,7 @@ describe('UsageGuide (/guia)', () => {
       g.salvosTitulo,
       g.listaTitulo,
       g.cardapioTitulo,
+      g.despensaTitulo,
       g.comunidadeTitulo,
       g.contaTitulo,
     ]
@@ -61,6 +62,7 @@ describe('UsageGuide (/guia)', () => {
       expect(within(indice).getByRole('link', { name: title })).toHaveAttribute('href', `#${section.id}`)
     }
     for (const item of g.cardapioItens) expect(screen.getByText(item)).toBeInTheDocument()
+    for (const item of g.despensaItens) expect(screen.getByText(item)).toBeInTheDocument()
   })
 
   it('"Fazer o tour guiado" deixa o pedido e vai para a home', async () => {
