@@ -10,6 +10,7 @@ import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
+import { GuidedTour } from '@/components/onboarding/guided-tour'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
@@ -124,6 +125,8 @@ export default async function LocaleLayout({
                 {children}
               </div>
               <SiteFooter initialTheme={initialTheme} socialLinks={socialLinks} />
+              {/* Tour guiado (ADR-0039): sem DOM até abrir; abre só na home (conta nova ou pedido do /guia). */}
+              <GuidedTour />
             </HomeSearchProvider>
            </RecipeVariantProvider>
           </CozinhaVocabProvider>

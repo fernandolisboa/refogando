@@ -79,6 +79,14 @@ _Avoid_: derivar "hoje" do relógio do servidor; tratar o plano como snapshot (q
 A IA **preenche** dias × refeições do **Plano de refeições** a pedido do Usuário, **escolhendo Receitas que já existem** — do acervo dele (Salvos + Minhas criações) e, se ele quiser, do pool público. **Não gera Receita** (Sugestão ≠ Geração). As **restrições** pedidas são **filtro duro** sobre o que as Receitas **declaram** (nunca julgamento do modelo; declarado, não verificado). O resultado é uma **prévia**: nada entra no plano até o Usuário **aceitar** (tudo ou só os itens que marcar), e o aceite passa pelos mesmos portões de planejar à mão. Tem **cota diária** por papel. Ver ADR-0036.
 _Avoid_: chamar de Geração (a IA só escolhe Receitas que existem); deixar o modelo decidir restrição; gravar no plano sem o aceite do Usuário.
 
+**Guia de uso** ("Como usar"):
+A página pública `/guia` que explica, em texto, como usar cada recurso do app (buscar, criar com IA, a página da Receita, Salvos, Lista de compras, Cardápio, Comunidade, Conta) e de onde se refaz o **Tour guiado**. Linkada no rodapé e no menu da conta. Cada feature nova visível ao Usuário atualiza o guia. Ver ADR-0039.
+_Avoid_: FAQ, Ajuda, Tutorial (como nome da página); guia só para logados.
+
+**Tour guiado**:
+Sobreposição que escurece a tela e destaca um componente da chrome por passo, na home, com um cartão explicando o que ele faz. Abre sozinho **uma vez** para conta nova (até 14 dias) e sempre que pedido pelo Guia de uso; é **dispensável em qualquer passo** (X e Esc em todos; "Agora não" no primeiro, "Pular tour" nos do meio), e o desfecho (`done`/`dismissed`) fica gravado por Usuário **no dispositivo**. Informativo: não navega nem clica por ninguém. Ver ADR-0039.
+_Avoid_: Onboarding (como nome da feature, que sugere um fluxo obrigatório de cadastro); Walkthrough; forçar o tour sem saída.
+
 **Sessão de criação**:
 Agregado de um episódio de criação com a IA, com `mode` (`conversation | structured | free_text`), que produz a Receita gerada. Um conceito, três modos — não três conceitos soltos. Aponta para a receita resultante por referência fraca: a sessão aponta pra receita, **nunca o contrário**.
 _Avoid_: Conversa (quando significar o agregado); Geração (quando significar a sessão); Wizard; Request; tratar os três caminhos do drawer de criação (estruturado, prompt aberto, conversa) como sessões ou conceitos distintos — são **modos** de UMA Sessão de criação.

@@ -40,6 +40,8 @@ export const ptBR = {
     // ADR-0035: "Cardápio" (Plano de refeições da semana) na nav logada. O índice das Listas de compras
     // (menu da conta) reusa `listaDeCompras.indiceTitulo`.
     cardapio: 'Cardápio',
+    // ADR-0039: página "Como usar" (/guia), no menu da conta e no rodapé.
+    comoUsar: 'Como usar',
   },
   // Caixa de notificações (#371, ADR-0028): sininho na chrome (só-logado) + painel. O texto de cada
   // evento é um TEMPLATE localizado (dado estruturado na linha, frase montada na renderização) —
@@ -2202,6 +2204,97 @@ export const ptBR = {
     copiaNada: 'Nada foi copiado: essas refeições já estavam planejadas ou as receitas ficaram indisponíveis.',
     erroCopiaVazia: 'A semana anterior não tem nada para esses dias.',
     erroCopiar: 'Não foi possível copiar a semana. Tente de novo.',
+  },
+  // ADR-0039: tour guiado (tela escurecida, um componente por passo, dispensável a qualquer momento).
+  // `{atual}`/`{total}` interpolados no componente.
+  tour: {
+    passoDe: 'Passo {atual} de {total}',
+    comecar: 'Começar o tour',
+    agoraNao: 'Agora não',
+    voltar: 'Voltar',
+    proximo: 'Próximo',
+    concluir: 'Concluir',
+    pular: 'Pular tour',
+    fechar: 'Fechar o tour',
+    noMenu: 'No celular, fica no menu ☰.',
+    verGuia: 'Ver o guia completo',
+    boasVindasTitulo: 'Bem-vindo ao Refogando',
+    boasVindasTexto: 'Em menos de um minuto, a gente mostra onde fica cada coisa. Dá para sair a qualquer momento.',
+    buscaTitulo: 'Busque qualquer prato',
+    buscaTexto: 'Digite um prato, um ingrediente ou um estilo. Não achou o que queria? Com a conta, dá para gerar a receita com IA a partir da própria busca.',
+    criarTitulo: 'Crie a sua receita',
+    criarTexto: 'Em “Criar”, a IA monta uma receita do seu jeito: por um formulário, descrevendo o prato de uma vez ou conversando. O que você cria fica em “Minhas criações”.',
+    salvosTitulo: 'Guarde o que gostou',
+    salvosTexto: 'Toque em “Salvar” numa receita e ela vem para cá. Organize em coleções e mande várias de uma vez para a lista de compras.',
+    cardapioTitulo: 'Planeje a semana',
+    cardapioTexto: 'Monte o cardápio da semana, peça uma sugestão à IA, copie a semana anterior e gere a lista de compras com as porções certas.',
+    contaTitulo: 'Sua conta',
+    contaTexto: 'Aqui ficam o seu perfil, as listas de compras e este guia (“Como usar”), para rever o tour quando quiser.',
+    contaTextoVisitante: 'Entre ou crie uma conta para salvar receitas, criar com IA e planejar a semana.',
+    fimTitulo: 'Pronto!',
+    fimTexto: 'Esse é o básico. O guia completo explica cada recurso com calma, e dá para refazer o tour por lá.',
+  },
+  // ADR-0039: página "Como usar" (/guia). Cada seção tem título + itens (lista). Pública e indexável.
+  guia: {
+    metaTitulo: 'Como usar o Refogando',
+    titulo: 'Como usar o Refogando',
+    intro: 'Um passeio rápido por tudo o que dá para fazer no app: achar receitas, criar com IA, organizar o que você gostou e planejar a semana.',
+    tourTitulo: 'Prefere ver na tela?',
+    tourTexto: 'O tour guiado destaca cada parte do app, um passo de cada vez. Dá para pular quando quiser.',
+    tourBotao: 'Fazer o tour guiado',
+    indice: 'Nesta página',
+    buscarTitulo: 'Encontrar receitas',
+    buscarItens: [
+      'Na página inicial (“Explorar”), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
+      'Não achou? Com a conta e pelo menos 3 letras, use “Gerar com IA” para criar uma receita a partir do que você buscou.',
+      'Com a conta, dá também para buscar na web. Receitas de outros sites podem ser importadas para o seu perfil: ficam privadas e com o crédito da fonte.',
+    ],
+    criarTitulo: 'Criar uma receita com IA',
+    criarItens: [
+      'Toque em “Criar” no topo da tela e escolha o jeito: Formulário estruturado (ingredientes, cozinha, restrições), Prompt aberto (descreva o prato de uma vez) ou Conversa (vá ajustando até ficar do seu jeito e peça para destilar a receita).',
+      'Toda receita nasce privada. Quando quiser, publique para a comunidade.',
+      'Nas suas receitas você pode editar, pedir uma nova versão à IA e adicionar uma foto (enviada por você ou gerada com IA).',
+      'Gostou da receita de outra pessoa mas quer mudar algo? “Criar minha versão” faz uma cópia sua, sem mexer na original.',
+      'Tudo o que você cria fica em “Minhas criações”.',
+    ],
+    receitaTitulo: 'Na página da receita',
+    receitaItens: [
+      'Ajuste as porções e as quantidades dos ingredientes acompanham.',
+      'O Modo cozinha mostra um passo por vez, com timers para os passos que têm tempo.',
+      'Compartilhe o link, avalie com estrelas e um comentário, e veja receitas semelhantes.',
+      'Os botões de salvar, de lista de compras e de cardápio também ficam aqui.',
+    ],
+    salvosTitulo: 'Salvos e coleções',
+    salvosItens: [
+      'Toque em “Salvar” em qualquer receita. Todas aparecem em “Salvos”.',
+      'Crie coleções (por exemplo “Almoço de domingo”) para organizar. Tirar uma receita de uma coleção não tira dos Salvos.',
+      'Em “Salvos”, selecione várias receitas para mandá-las de uma vez para uma lista de compras.',
+    ],
+    listaTitulo: 'Lista de compras',
+    listaItens: [
+      'Na receita, “Adicionar à lista de compras” leva os ingredientes nas porções que você escolher. Itens iguais se somam.',
+      'Marque o que já comprou, edite quantidades e inclua itens avulsos. Nada some sozinho: limpar a lista é sempre uma ação sua.',
+      'Suas listas ficam no menu da sua conta, em “Listas de compras”.',
+    ],
+    cardapioTitulo: 'Cardápio da semana',
+    cardapioItens: [
+      'Em “Cardápio”, adicione receitas a cada dia e refeição, com o número de porções. Dá para mover e tirar depois.',
+      'Refeição sem receita? Anote um texto livre, como “comer fora” ou “sobras”.',
+      '“Sugerir com IA” propõe um cardápio a partir dos seus Salvos, das suas criações e, se você quiser, da comunidade. Nada entra até você aceitar.',
+      '“Copiar semana anterior” repete a semana passada nas refeições que ainda estão vazias.',
+      '“Gerar lista de compras” junta os ingredientes da semana numa lista, nas porções planejadas.',
+    ],
+    comunidadeTitulo: 'Comunidade',
+    comunidadeItens: [
+      'Siga cozinheiros que você curte; as receitas deles aparecem na aba “Seguindo”.',
+      'Cada pessoa tem um perfil público com as receitas que publicou.',
+      'O sino no topo avisa quando alguém segue você ou avalia uma receita sua.',
+    ],
+    contaTitulo: 'Conta e preferências',
+    contaItens: [
+      'No menu da sua conta (seu nome, no topo): perfil público, editar perfil, listas de compras e este guia.',
+      'No rodapé, troque o idioma (português ou inglês) e o tema claro ou escuro.',
+    ],
   },
 } as const
 

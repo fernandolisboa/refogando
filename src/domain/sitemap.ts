@@ -87,6 +87,8 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
     // Placeholder de plano (Fase 2 de billing, flag-off, §6 item 5 de fase2-billing-decisao.md):
     // indexável de propósito, mesmo esquema — "em breve" sem afirmar preço/data.
     ...buildStaticPathEntries(baseUrl, 'plano'),
+    // "Como usar" (ADR-0039): guia de uso público, mesmo esquema.
+    ...buildStaticPathEntries(baseUrl, 'guia'),
   ]
 }
 
