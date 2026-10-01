@@ -16,13 +16,16 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Pencil, Trash2 } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { fieldClassName } from '@/components/button'
+import { cn } from '@/lib/utils'
 import { UNIDADES } from '@/domain/vocabulary'
 import { formatIngredientLine } from '@/domain/ingredient-line'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
@@ -38,6 +41,11 @@ type ItemView = {
 type ItemsResponse = { list: { id: string; name: string }; items: ItemView[] }
 type Status = 'loading' | 'idle' | 'error'
 type M = Messages['listaDeCompras']
+
+// Abaixo de `sm` os botões da barra de ações podem quebrar o rótulo em duas linhas (célula estreita).
+const BULK_BUTTON = 'max-sm:h-auto max-sm:min-h-9 max-sm:whitespace-normal max-sm:px-2'
+// Abaixo de `sm` a ação da linha é só ícone, num quadrado de 36px (alvo de toque).
+const ROW_ACTION = 'max-sm:size-9 max-sm:px-0'
 
 /** Mapeia o código de erro do servidor pra mensagem localizada; default = genérico. */
 function itemErrorMessage(code: string | undefined, m: M): string {
@@ -278,25 +286,31 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
       {listName != null && (
         <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{listName}</h2>
       )}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          onClick={() => void handleRemoveChecked()}
-          disabled={!hasChecked || bulkPending}
-        >
-          {m.removerMarcados}
-        </Button>
+      {/* Tela estreita: grade de 2 colunas ("Guardar…", o rótulo mais longo, ocupa a linha toda)
+          em vez de três botões quebrando torto; rótulo pode quebrar em vez de vazar. ≥ sm: linha.
+          "Guardar…" vem PRIMEIRO no DOM (não via `order-*`): ordem visual = ordem do Tab. */}
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         <Button
           variant="secondary"
           onClick={() => void handleCheckedToPantry()}
           disabled={!hasChecked || bulkPending}
+          className={`col-span-2 ${BULK_BUTTON}`}
         >
           {m.guardarNaDespensa}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => void handleRemoveChecked()}
+          disabled={!hasChecked || bulkPending}
+          className={BULK_BUTTON}
+        >
+          {m.removerMarcados}
         </Button>
         <Button
           variant="destructive"
           onClick={() => void handleClearList()}
           disabled={items.length === 0 || bulkPending}
+          className={BULK_BUTTON}
         >
           {m.limparLista}
         </Button>
@@ -328,26 +342,39 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
             return (
               <li
                 key={item.id}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3 py-2 sm:px-4 sm:py-3"
               >
-                <div className="flex flex-wrap items-center gap-3">
+                {/* Ações NUNCA quebram para baixo da linha (era o que dobrava a altura de cada item
+                    no celular e vazava "Remover" da borda): o texto encolhe e quebra (`min-w-0`), e
+                    abaixo de `sm` as ações viram ícones de 36px com o mesmo aria-label. */}
+                <div className="flex items-center gap-2 sm:gap-3">
                   <Checkbox
+                    id={`item-${item.id}`}
                     checked={checked}
                     disabled={pendingIds.has(item.id)}
                     aria-label={(checked ? m.itemDesmarcarAria : m.itemMarcarAria).replace('{nome}', item.nome)}
                     onCheckedChange={(next) => void handleToggle(item.id, next === true)}
                   />
-                  <span className={`flex-1 ${checked ? 'text-muted line-through' : 'text-fg'}`}>{linha}</span>
+                  {/* O texto é o alvo de toque do checkbox: no celular a caixa de 16px sozinha é
+                      pequena demais pra marcar no mercado com uma mão. */}
+                  <Label
+                    htmlFor={`item-${item.id}`}
+                    className={`block min-w-0 flex-1 cursor-pointer break-words py-1 pl-1 text-base font-normal leading-normal sm:pl-0 ${checked ? 'text-muted line-through' : 'text-fg'}`}
+                  >
+                    {linha}
+                  </Label>
                   {!editing && (
-                    <div className="flex items-center gap-1">
+                    <div className="-mr-1.5 flex shrink-0 items-center sm:mr-0 sm:gap-1">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => startEdit(item)}
                         aria-label={`${m.editarQuantidade}: ${item.nome}`}
+                        className={ROW_ACTION}
                       >
-                        {m.editarQuantidade}
+                        <Pencil aria-hidden className="sm:hidden" />
+                        <span className="hidden sm:inline">{m.editarQuantidade}</span>
                       </Button>
                       <Button
                         type="button"
@@ -356,8 +383,10 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
                         onClick={() => void handleRemoveItem(item.id)}
                         disabled={pendingIds.has(item.id)}
                         aria-label={`${m.remover}: ${item.nome}`}
+                        className={ROW_ACTION}
                       >
-                        {m.remover}
+                        <Trash2 aria-hidden className="sm:hidden" />
+                        <span className="hidden sm:inline">{m.remover}</span>
                       </Button>
                     </div>
                   )}
@@ -369,7 +398,7 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
                       e.preventDefault()
                       void handleSaveEdit(item.id)
                     }}
-                    className="flex flex-wrap items-center gap-2 pl-8"
+                    className="flex flex-wrap items-center gap-2 pl-7"
                   >
                     <label htmlFor={`qtd-${item.id}`} className="sr-only">
                       {m.quantidade}
@@ -475,9 +504,10 @@ function AdhocItemForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:flex-wrap sm:items-end"
+      className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-surface p-3 sm:flex sm:flex-row sm:flex-wrap sm:items-end"
     >
-      <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-fg">
+      {/* Tela estreita: nome na linha toda, quantidade e unidade lado a lado, botão na largura toda. */}
+      <label className="col-span-2 flex min-w-0 flex-col gap-1.5 text-sm font-medium text-fg sm:flex-1">
         {m.nomeItem}
         <Input
           type="text"
@@ -490,7 +520,7 @@ function AdhocItemForm({
           maxLength={200}
         />
       </label>
-      <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-28">
+      <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-fg sm:w-28">
         {m.quantidade}
         <Input
           type="text"
@@ -503,12 +533,13 @@ function AdhocItemForm({
           placeholder={m.quantidadePlaceholder}
         />
       </label>
-      <label className="flex w-full flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
+      <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
         {m.unidade}
+        {/* Mesma altura do `<Input>` ao lado (no celular os dois dividem a linha). */}
         <select
           value={unidade}
           onChange={(e) => setUnidade(e.target.value)}
-          className={fieldClassName}
+          className={cn(fieldClassName, 'h-9 py-1 text-sm')}
         >
           <option value="">{m.unidadeNenhuma}</option>
           {UNIDADES.map((u) => (
@@ -518,11 +549,11 @@ function AdhocItemForm({
           ))}
         </select>
       </label>
-      <Button type="submit" variant="secondary" disabled={adding || nome.trim() === ''}>
+      <Button type="submit" variant="secondary" disabled={adding || nome.trim() === ''} className="col-span-2">
         {adding ? m.adicionando : m.adicionarBotao}
       </Button>
       {error != null && (
-        <p role="alert" className="w-full text-sm font-medium text-fg">
+        <p role="alert" className="col-span-2 w-full text-sm font-medium text-fg">
           {error}
         </p>
       )}
