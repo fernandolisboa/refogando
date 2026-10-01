@@ -23,6 +23,7 @@ import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import type { GenerationResult } from '@/hooks/use-recipe-generation'
+import { GeneratedRecipePlanAction } from '@/components/meal-plan/generated-recipe-plan-action'
 
 export function GenerationResultRegion({
   result,
@@ -130,6 +131,11 @@ export function GenerationResultRegion({
               {m.verReceita}
             </Link>
           </Button>
+        )}
+        {/* ADR-0040: pôr a Receita nova no Cardápio sem sair daqui. Playful fica de fora: não passa
+            no gate de Salvar (`passesOwnRecipeBarriers`), o servidor recusaria. */}
+        {result.recipeId && result.outcome !== 'playful' && (
+          <GeneratedRecipePlanAction recipeId={result.recipeId} />
         )}
         <Button type="button" variant="secondary" onClick={onCriarOutra}>
           {m.criarOutra}
