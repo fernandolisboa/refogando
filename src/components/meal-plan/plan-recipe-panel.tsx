@@ -188,7 +188,7 @@ export function PlanRecipePanel({ recipeId, porcoes }: { recipeId: string; porco
         </p>
       )}
       {/* Região viva SEMPRE no DOM: leitores de tela ignoram uma região inserida junto do texto. */}
-      <p role="status" aria-live="polite" className="text-sm text-fg empty:hidden">
+      <p role="status" aria-live="polite" className="text-sm text-fg empty:sr-only">
         {done != null && <PlannedNotice day={done.day} slot={done.slot} />}
       </p>
     </form>
