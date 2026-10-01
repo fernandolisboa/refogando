@@ -16,6 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { Sparkles } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -26,7 +27,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Sparkles } from 'lucide-react'
 import {
   MEAL_PLAN_NOTE_MAX,
   MEAL_SLOTS,
@@ -286,23 +286,6 @@ function PickerBody({
         </p>
       </form>
 
-      {/* ADR-0040: nada no acervo serve? Gera uma Receita para ESTA refeição. Só semeia o pedido (a
-          pessoa revisa e aciona "Gerar"); o resultado oferece pôr a Receita aqui com um toque. */}
-      <div className="flex flex-col items-start gap-1.5 rounded-lg border border-dashed border-border p-3">
-        <Button asChild variant="secondary" size="sm">
-          <Link
-            href={createForMealSlotHref(
-              m.criarNovaPrompt.replace('{refeicao}', () => mealSlotLabel(slot, m).toLowerCase()),
-              { day, slot },
-            )}
-          >
-            <Sparkles aria-hidden />
-            {m.criarNova}
-          </Link>
-        </Button>
-        <p className="text-xs text-muted">{m.criarNovaDica}</p>
-      </div>
-
       <div className="flex flex-col gap-1">
         <label htmlFor="cardapio-buscar" className="sr-only">
           {m.buscarReceita}
@@ -365,6 +348,26 @@ function PickerBody({
           ))}
         </ul>
       )}
+
+      {/* ADR-0040: nada no acervo serve? Gera uma Receita para ESTA refeição. Só semeia o pedido (a
+          pessoa revisa e aciona "Gerar"); o resultado oferece pôr a Receita aqui com um toque. */}
+      <div className="flex flex-col items-start gap-1.5 rounded-lg border border-dashed border-border p-3">
+        <Button asChild variant="secondary" size="sm">
+          <Link
+            href={createForMealSlotHref(
+              m.criarNovaPrompt.replace('{refeicao}', () => mealSlotLabel(slot, m).toLowerCase()),
+              { day, slot },
+            )}
+            aria-describedby="cardapio-criar-nova-dica"
+          >
+            <Sparkles aria-hidden />
+            {m.criarNova}
+          </Link>
+        </Button>
+        <p id="cardapio-criar-nova-dica" className="text-xs text-muted">
+          {m.criarNovaDica}
+        </p>
+      </div>
     </div>
   )
 }

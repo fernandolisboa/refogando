@@ -4,6 +4,8 @@
  * rota vira um SHELL FINO que ABRE o drawer "Nova receita", semeado pelos deep-links que já
  * existiam — `?q` (ponte "gerar com IA" da Busca, #166 → Prompt aberto preenchido), `?resume`
  * e `?mode=conversa` (retomada de Conversa). A URL e seus três deep-links SOBREVIVEM.
+ * ADR-0040 somou `?planDay&planSlot` (o alvo do Cardápio), que não muda o drawer: só o resultado
+ * da geração lê, via `MealPlanTargetProvider`.
  *
  * `useSearchParams` é o motivo do `<Suspense>` no Server Component pai (exigência do Next para
  * leitura de search params no build de produção). Fechar o drawer aqui não navega para lugar

@@ -2114,7 +2114,6 @@ export const ptBR = {
     temDeTotal: 'Você tem {n} de {total}',
     falta: 'Falta: {lista}',
     porNaLista: 'Pôr o que falta na lista',
-    porNoCardapio: 'Pôr no cardápio',
     pondoNaLista: 'Adicionando…',
     postoNaLista: 'Foi para “{lista}”.',
     abrirLista: 'Abrir lista',
@@ -2179,6 +2178,7 @@ export const ptBR = {
     criarNova: 'Criar receita nova com IA',
     criarNovaDica: 'Você revisa o pedido antes de gerar e, no fim, põe a receita nesta refeição com um toque.',
     criarNovaPrompt: 'uma receita para o {refeicao}',
+    porNoCardapio: 'Pôr no cardápio',
     porNoCardapioAlvo: 'Pôr no cardápio: {dia}, {refeicao}',
     // Botão de calendário no detalhe da Receita.
     planejarReceita: 'Adicionar ao cardápio',
@@ -2342,7 +2342,7 @@ export const ptBR = {
     cardapioItens: [
       'Em “Cardápio”, adicione receitas a cada dia e refeição, com o número de porções. Dá para mover e tirar depois.',
       'Refeição sem receita? Anote um texto livre, como “comer fora” ou “sobras”.',
-      'Nada no acervo serve? Em “Adicionar”, “Criar receita nova com IA” gera uma receita para aquela refeição e a põe no cardápio com um toque.',
+      'Nada no acervo serve? Em “Adicionar”, “Criar receita nova com IA” abre a criação com o pedido pronto; depois de gerar, um toque põe a receita naquela refeição.',
       '“Sugerir com IA” propõe um cardápio a partir dos seus Salvos, das suas criações e, se você quiser, da comunidade. Nada entra até você aceitar.',
       '“Copiar semana anterior” repete a semana passada nas refeições que ainda estão vazias.',
       '“Gerar lista de compras” junta os ingredientes da semana numa lista, nas porções planejadas.',

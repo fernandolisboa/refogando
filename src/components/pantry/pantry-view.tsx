@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CalendarPlus, ChefHat, ShoppingCart, Sparkles, X } from 'lucide-react'
+import { ChefHat, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import {
   MAX_PANTRY_ADD_BATCH,
@@ -26,8 +26,7 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MealPlanThumb } from '@/components/meal-plan/meal-plan-thumb'
-import { PlanRecipePanel } from '@/components/meal-plan/plan-recipe-panel'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { PlanRecipePopoverButton } from '@/components/meal-plan/plan-recipe-panel'
 
 type PantryItem = { id: string; nome: string }
 type PantryMatch = {
@@ -470,7 +469,11 @@ function MatchSection({
                 {/* ADR-0040: toda Receita do resultado pode ir pro Cardápio (o gate é o mesmo de Salvar,
                     ADR-0038 dec.4); "pôr o que falta" só quando falta algo. */}
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <PantryPlanButton recipeId={r.id} recipeName={r.name} label={m.porNoCardapio} />
+                  <PlanRecipePopoverButton
+                    recipeId={r.id}
+                    size="sm"
+                    ariaLabel={`${messages.cardapio.porNoCardapio}: ${r.name}`}
+                  />
                   {r.missing.length > 0 && (
                     <>
                       <Button
@@ -507,29 +510,5 @@ function MatchSection({
         })}
       </ul>
     </div>
-  )
-}
-
-/** "Pôr no cardápio" de um card do resultado: o mesmo painel do detalhe, nas porções da Receita. */
-function PantryPlanButton({ recipeId, recipeName, label }: { recipeId: string; recipeName: string; label: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-expanded={open}
-          aria-label={`${label}: ${recipeName}`}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <CalendarPlus aria-hidden />
-          {label}
-        </Button>
-      </PopoverAnchor>
-      <PopoverContent>
-        <PlanRecipePanel recipeId={recipeId} porcoes={null} />
-      </PopoverContent>
-    </Popover>
   )
 }

@@ -266,7 +266,7 @@ describe('PantryView', () => {
     const card = (await screen.findByRole('link', { name: 'Omelete' })).closest('li')!
     // Nada falta: não há "pôr o que falta", mas há "pôr no cardápio".
     expect(within(card).queryByRole('button', { name: `${M.porNaLista}: Omelete` })).not.toBeInTheDocument()
-    await user.click(within(card).getByRole('button', { name: `${M.porNoCardapio}: Omelete` }))
+    await user.click(within(card).getByRole('button', { name: `${ptBR.cardapio.porNoCardapio}: Omelete` }))
     const panel = (await screen.findByText(ptBR.cardapio.planejarReceita)).closest('form')!
     await user.click(within(panel).getByRole('button', { name: ptBR.cardapio.planejar }))
     await waitFor(() => expect(calls.some((c) => c.url === '/api/me/meal-plan/entries')).toBe(true))
