@@ -255,4 +255,24 @@ describe('PantryView', () => {
       ).toBeGreaterThanOrEqual(2),
     )
   })
+
+  it('"Pôr no cardápio" (ADR-0040) aparece também em "Dá pra fazer agora" e planeja nas porções da Receita', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      items: [{ id: 'a', nome: 'ovo' }],
+      matches: [{ id: 'r1', name: 'Omelete', slug: 'omelete', total: 2, covered: 2, missing: [] }],
+    })
+    renderView()
+    const card = (await screen.findByRole('link', { name: 'Omelete' })).closest('li')!
+    // Nada falta: não há "pôr o que falta", mas há "pôr no cardápio".
+    expect(within(card).queryByRole('button', { name: `${M.porNaLista}: Omelete` })).not.toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: `${ptBR.cardapio.porNoCardapio}: Omelete` }))
+    const panel = (await screen.findByText(ptBR.cardapio.planejarReceita)).closest('form')!
+    await user.click(within(panel).getByRole('button', { name: ptBR.cardapio.planejar }))
+    await waitFor(() => expect(calls.some((c) => c.url === '/api/me/meal-plan/entries')).toBe(true))
+    const body = calls.find((c) => c.url === '/api/me/meal-plan/entries')?.body as Record<string, unknown>
+    expect(body.recipeId).toBe('r1')
+    expect(body).not.toHaveProperty('porcoes')
+    expect(typeof body.day).toBe('string')
+  })
 })
