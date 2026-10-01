@@ -23,7 +23,9 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { fieldClassName } from '@/components/button'
+import { cn } from '@/lib/utils'
 import { UNIDADES } from '@/domain/vocabulary'
 import { formatIngredientLine } from '@/domain/ingredient-line'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
@@ -285,8 +287,17 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
         <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{listName}</h2>
       )}
       {/* Tela estreita: grade de 2 colunas ("Guardar…", o rótulo mais longo, ocupa a linha toda)
-          em vez de três botões quebrando torto; rótulo pode quebrar em vez de vazar. ≥ sm: linha. */}
+          em vez de três botões quebrando torto; rótulo pode quebrar em vez de vazar. ≥ sm: linha.
+          "Guardar…" vem PRIMEIRO no DOM (não via `order-*`): ordem visual = ordem do Tab. */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <Button
+          variant="secondary"
+          onClick={() => void handleCheckedToPantry()}
+          disabled={!hasChecked || bulkPending}
+          className={`col-span-2 ${BULK_BUTTON}`}
+        >
+          {m.guardarNaDespensa}
+        </Button>
         <Button
           variant="secondary"
           onClick={() => void handleRemoveChecked()}
@@ -294,14 +305,6 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
           className={BULK_BUTTON}
         >
           {m.removerMarcados}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => void handleCheckedToPantry()}
-          disabled={!hasChecked || bulkPending}
-          className={`order-first col-span-2 sm:order-none ${BULK_BUTTON}`}
-        >
-          {m.guardarNaDespensa}
         </Button>
         <Button
           variant="destructive"
@@ -354,12 +357,12 @@ export function ShoppingListItemsView({ listId }: { listId: string }) {
                   />
                   {/* O texto é o alvo de toque do checkbox: no celular a caixa de 16px sozinha é
                       pequena demais pra marcar no mercado com uma mão. */}
-                  <label
+                  <Label
                     htmlFor={`item-${item.id}`}
-                    className={`min-w-0 flex-1 cursor-pointer break-words py-1 pl-1 sm:pl-0 ${checked ? 'text-muted line-through' : 'text-fg'}`}
+                    className={`block min-w-0 flex-1 cursor-pointer break-words py-1 pl-1 text-base font-normal leading-normal sm:pl-0 ${checked ? 'text-muted line-through' : 'text-fg'}`}
                   >
                     {linha}
-                  </label>
+                  </Label>
                   {!editing && (
                     <div className="-mr-1.5 flex shrink-0 items-center sm:mr-0 sm:gap-1">
                       <Button
@@ -532,10 +535,11 @@ function AdhocItemForm({
       </label>
       <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-fg sm:w-40">
         {m.unidade}
+        {/* Mesma altura do `<Input>` ao lado (no celular os dois dividem a linha). */}
         <select
           value={unidade}
           onChange={(e) => setUnidade(e.target.value)}
-          className={fieldClassName}
+          className={cn(fieldClassName, 'h-9 py-1 text-sm')}
         >
           <option value="">{m.unidadeNenhuma}</option>
           {UNIDADES.map((u) => (
