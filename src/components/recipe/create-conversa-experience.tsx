@@ -51,6 +51,7 @@ import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
 import { isFreePlanUser } from '@/domain/plan'
 import { QuotaUpsellCard } from './quota-upsell-card'
+import { GeneratedRecipePlanAction } from '@/components/meal-plan/generated-recipe-plan-action'
 
 export function CreateConversaExperience({
   resumeSessionId,
@@ -328,6 +329,10 @@ export function CreateConversaExperience({
                         UUID `/{locale}/recipes/<uuid>` (que 308a pro slug). Nunca link nu sem locale. */}
                     <Link href={recipeDetailPath(locale, result.recipeId)}>{m.verReceita}</Link>
                   </Button>
+                )}
+                {/* ADR-0040: pôr a Receita destilada no Cardápio (brincadeira não passa no gate). */}
+                {result.recipeId && result.outcome !== 'playful' && (
+                  <GeneratedRecipePlanAction recipeId={result.recipeId} />
                 )}
               </div>
             </>

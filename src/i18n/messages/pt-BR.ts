@@ -2174,6 +2174,12 @@ export const ptBR = {
     planejar: 'Adicionar',
     planejando: 'Adicionando…',
     erroCarregarReceitas: 'Não foi possível carregar suas receitas. Tente de novo.',
+    // "Criar receita nova" no seletor e o atalho no resultado da criação (ADR-0040).
+    criarNova: 'Criar receita nova com IA',
+    criarNovaDica: 'Você revisa o pedido antes de gerar e, no fim, põe a receita nesta refeição com um toque.',
+    criarNovaPrompt: 'uma receita para o {refeicao}',
+    porNoCardapio: 'Pôr no cardápio',
+    porNoCardapioAlvo: 'Pôr no cardápio: {dia}, {refeicao}',
     // Botão de calendário no detalhe da Receita.
     planejarReceita: 'Adicionar ao cardápio',
     convidaEntrar: 'Entre na sua conta para adicionar ao cardápio.',
@@ -2336,6 +2342,7 @@ export const ptBR = {
     cardapioItens: [
       'Em “Cardápio”, adicione receitas a cada dia e refeição, com o número de porções. Dá para mover e tirar depois.',
       'Refeição sem receita? Anote um texto livre, como “comer fora” ou “sobras”.',
+      'Nada no acervo serve? Em “Adicionar”, “Criar receita nova com IA” abre a criação com o pedido pronto; depois de gerar, um toque põe a receita naquela refeição.',
       '“Sugerir com IA” propõe um cardápio a partir dos seus Salvos, das suas criações e, se você quiser, da comunidade. Nada entra até você aceitar.',
       '“Copiar semana anterior” repete a semana passada nas refeições que ainda estão vazias.',
       '“Gerar lista de compras” junta os ingredientes da semana numa lista, nas porções planejadas.',
@@ -2346,6 +2353,7 @@ export const ptBR = {
       'O app mostra as receitas que dá pra fazer agora e as que falta pouco (até 3 ingredientes), com o que falta.',
       '“Tenho o básico” conta sal, água, óleo, azeite e pimenta-do-reino como já em casa. Dá para desligar.',
       '“Pôr o que falta na lista” leva só os ingredientes que faltam para a sua lista de compras.',
+      '“Pôr no cardápio” planeja a receita direto da Despensa, no dia e na refeição que você escolher.',
       'Na lista de compras, “Guardar marcados na despensa” passa o que você comprou para a Despensa.',
     ],
     comunidadeTitulo: 'Comunidade',

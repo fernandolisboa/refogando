@@ -10,6 +10,8 @@ import {
   isMealSlot,
   isPlanDate,
   parsePlanNote,
+  parseMealPlanTarget,
+  createForMealSlotHref,
   parsePlanPorcoes,
   parsePlanRange,
   planPreviousWeekCopy,
@@ -316,5 +318,36 @@ describe('planPreviousWeekCopy (ADR-0037)', () => {
     )
     expect(toInsert.map((x) => x.recipeId)).toEqual(['r1'])
     expect(skippedCount).toBe(1)
+  })
+})
+
+describe('parseMealPlanTarget / createForMealSlotHref (ADR-0040)', () => {
+  it('aceita dia de plano real + refeição conhecida', () => {
+    expect(parseMealPlanTarget('2026-10-06', 'jantar')).toEqual({ day: '2026-10-06', slot: 'jantar' })
+  })
+
+  it('rejeita lixo de URL sem lançar', () => {
+    expect(parseMealPlanTarget('2026-02-30', 'jantar')).toBeNull()
+    expect(parseMealPlanTarget('2026-10-06', 'ceia')).toBeNull()
+    expect(parseMealPlanTarget(null, null)).toBeNull()
+    expect(parseMealPlanTarget('1900-01-01', 'almoco')).toBeNull()
+  })
+
+  it('semeia o pedido e leva o alvo junto', () => {
+    expect(createForMealSlotHref('uma receita para o jantar', { day: '2026-10-06', slot: 'jantar' })).toBe(
+      '/create?q=uma%20receita%20para%20o%20jantar&planDay=2026-10-06&planSlot=jantar',
+    )
+  })
+
+  it('pedido curto demais cai na /create pura, ainda com o alvo', () => {
+    expect(createForMealSlotHref('  ', { day: '2026-10-06', slot: 'almoco' })).toBe(
+      '/create?planDay=2026-10-06&planSlot=almoco',
+    )
+  })
+
+  it('o href volta para o mesmo alvo', () => {
+    const href = createForMealSlotHref('lanche rápido', { day: '2026-10-07', slot: 'lanche' })
+    const params = new URL(href, 'https://x').searchParams
+    expect(parseMealPlanTarget(params.get('planDay'), params.get('planSlot'))).toEqual({ day: '2026-10-07', slot: 'lanche' })
   })
 })

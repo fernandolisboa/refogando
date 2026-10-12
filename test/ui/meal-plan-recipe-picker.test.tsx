@@ -250,5 +250,17 @@ describe('MealPlanRecipePicker — Anotação (ADR-0037)', () => {
     await screen.findByText(M.semReceitas)
     expect(screen.getByRole('button', { name: M.anotar })).toBeDisabled()
   })
-})
 
+  it('"Criar receita nova com IA" (ADR-0040) leva o pedido e o dia + refeição escolhidos para a criação', async () => {
+    const user = userEvent.setup()
+    mockFetch({ saved: [], mine: [] })
+    renderPicker()
+    await screen.findByText(M.semReceitas)
+    await user.selectOptions(screen.getByRole('combobox', { name: M.dia }), '2026-10-02')
+    await user.selectOptions(screen.getByRole('combobox', { name: M.refeicao }), 'jantar')
+    expect(screen.getByRole('link', { name: M.criarNova })).toHaveAttribute(
+      'href',
+      `/create?q=${encodeURIComponent('uma receita para o jantar')}&planDay=2026-10-02&planSlot=jantar`,
+    )
+  })
+})

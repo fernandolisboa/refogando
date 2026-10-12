@@ -3,7 +3,8 @@
  * Despensa (`/me/pantry`, ADR-0038): o que a pessoa tem em casa (chips, adicionar vários de uma vez,
  * atalhos de itens comuns) e "o que dá pra fazer" — as Receitas que ela pode salvar com no máximo 3 Itens
  * faltando, em duas seções ("Dá pra fazer agora" / "Falta pouco"). Pontes: "Pôr o que falta na lista" (o
- * servidor recalcula o que falta) e "Criar receita com o que tenho" (`/create?q=`, nunca gera sozinho).
+ * servidor recalcula o que falta), "Pôr no cardápio" (ADR-0040, o painel do detalhe) e "Criar receita com o
+ * que tenho" (`/create?q=`, nunca gera sozinho).
  * Consome `GET/POST/DELETE /api/me/pantry`, `DELETE /api/me/pantry/[itemId]`, `GET /api/me/pantry/matches`
  * e `POST /api/me/pantry/missing-to-list`.
  */
@@ -25,6 +26,7 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MealPlanThumb } from '@/components/meal-plan/meal-plan-thumb'
+import { PlanRecipePopoverButton } from '@/components/meal-plan/plan-recipe-panel'
 
 type PantryItem = { id: string; nome: string }
 type PantryMatch = {
@@ -444,7 +446,7 @@ function MatchSection({
         {matches.map((r) => {
           const outcome = listOutcome?.recipeId === r.id ? listOutcome : null
           return (
-            <li key={r.id} className="flex gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm">
+            <li key={r.id} className="flex min-w-0 gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm">
               <MealPlanThumb
                 imageUrl={r.imageUrl}
                 aiGenerated={r.imageAiGenerated}
@@ -462,9 +464,18 @@ function MatchSection({
                   {m.temDeTotal.replace('{n}', String(r.covered)).replace('{total}', String(r.total))}
                 </p>
                 {r.missing.length > 0 && (
-                  <>
-                    <p className="text-sm text-fg">{m.falta.replace('{lista}', () => r.missing.join(', '))}</p>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <p className="text-sm text-fg">{m.falta.replace('{lista}', () => r.missing.join(', '))}</p>
+                )}
+                {/* ADR-0040: toda Receita do resultado pode ir pro Cardápio (o gate é o mesmo de Salvar,
+                    ADR-0038 dec.4); "pôr o que falta" só quando falta algo. */}
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <PlanRecipePopoverButton
+                    recipeId={r.id}
+                    size="sm"
+                    ariaLabel={`${messages.cardapio.porNoCardapio}: ${r.name}`}
+                  />
+                  {r.missing.length > 0 && (
+                    <>
                       <Button
                         variant="secondary"
                         size="sm"
@@ -490,9 +501,9 @@ function MatchSection({
                           {outcome.error}
                         </span>
                       )}
-                    </div>
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
             </li>
           )

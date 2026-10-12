@@ -8,6 +8,7 @@
  * dia do próprio relógio (ADR-0035 dec.2). A aritmética aqui roda em UTC sobre meia-noite, que não
  * tem horário de verão — somar 1 dia é sempre +24h.
  */
+import { createFromSearchHref } from './generate-from-search'
 
 /** Refeições do dia, na ORDEM de exibição (ADR-0035 dec.1). Valores do enum `meal_slot`. */
 export const MEAL_SLOTS = ['cafe_da_manha', 'almoco', 'lanche', 'jantar'] as const
@@ -211,4 +212,26 @@ export function planPreviousWeekCopy(
     toInsert.push({ ...e, day })
   }
   return { toInsert, skippedCount: inRange - toInsert.length }
+}
+
+/**
+ * Alvo de uma Refeição planejada vindo de FORA do Cardápio (ADR-0040): o "Criar receita nova" do
+ * seletor leva o dia e a refeição na URL da criação (`/create?q=…&planDay=…&planSlot=…`), e o
+ * resultado da geração oferece pôr a Receita nova ali com um toque. Nunca planeja sozinho.
+ */
+export type MealPlanTarget = { day: string; slot: MealSlot }
+
+/** Lê o alvo da URL. Total: qualquer lixo (dia inexistente, refeição desconhecida) ⇒ `null`. */
+export function parseMealPlanTarget(day: unknown, slot: unknown): MealPlanTarget | null {
+  if (!isPlanDate(day) || !isMealSlot(slot)) return null
+  return { day, slot }
+}
+
+/**
+ * Link do "Criar receita nova" para uma refeição: o pedido semeia o Prompt aberto (mesmo atalho da
+ * Busca, `createFromSearchHref`) e o alvo vai junto. Datas e refeições são ASCII, sem escape.
+ */
+export function createForMealSlotHref(prompt: string, target: MealPlanTarget): string {
+  const base = createFromSearchHref(prompt)
+  return `${base}${base.includes('?') ? '&' : '?'}planDay=${target.day}&planSlot=${target.slot}`
 }
