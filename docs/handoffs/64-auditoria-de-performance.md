@@ -39,7 +39,7 @@ Documento auto-suficiente: o que a auditoria achou, o que entrou neste PR (sem m
 ## 4. Landmines
 
 - **Testes de UI e a URL:** a Busca agora muda a `location` de verdade no jsdom. `test/ui/setup.ts` zera a URL em todo `beforeEach`; os testes que conferem o reflexo espionam `window.history.replaceState` (`discovery-home`, `restricoes-perfil`).
-- **Migração 0075 e o preview da Vercel:** PR com migração flaka no preview (o build roda antes do branch do Neon existir). `CREATE INDEX` sem `CONCURRENTLY` (o migrator roda em transação): bloqueia escrita nas 10 tabelas até o commit; com o volume atual é instantâneo. A migração abre com `SET LOCAL lock_timeout = '5s'` (se um lock não vier em 5 s o build falha e é só refazer, em vez de enfileirar escritas) e cria os índices de `recipe` primeiro, na mesma ordem em que um DELETE de Receita trava as tabelas das cascatas.
+- **Migração 0075 e o preview da Vercel:** PR com migração flaka no preview (o build roda antes do branch do Neon existir). `CREATE INDEX` sem `CONCURRENTLY` (o migrator roda em transação): bloqueia escrita nas 9 tabelas até o commit; com o volume atual é instantâneo. A migração abre com `SET LOCAL lock_timeout = '5s'` (se um lock não vier em 5 s o build falha e é só refazer, em vez de enfileirar escritas; vale também para outra migração que suba no mesmo deploy, já que todas rodam numa transação só) e cria os índices de `recipe` primeiro, na mesma ordem em que um DELETE de Receita trava as tabelas das cascatas.
 - **Ambiente local:** Postgres 17 + pgvector do PGDG na porta 5433; `TEST_DATABASE_URL` passado inline por comando, nunca exportado.
 
 ## 5. Propostas que ficaram fora (precisam de decisão)
