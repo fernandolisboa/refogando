@@ -285,6 +285,14 @@ function buildAuth() {
         '/reset-password': { window: 60, max: 3 },
         // #470: reenvio do link de confirmação — público, aceita qualquer email e dispara e-mail real.
         '/send-verification-email': { window: 60, max: 3 },
+        // `/get-session` FORA do limitador (`false` = sem regra; a lib pula os hooks de rate limit). A rota
+        // só LÊ (exceto o refresh de expiração, 1×/dia por sessão via `updateAge`, e apagar sessão já
+        // expirada — escritas limitadas por sessão válida): o token de sessão (32 chars aleatórios, ~2^190) vem num cookie assinado por HMAC — força
+        // bruta por aqui não é ameaça. O limitador custava 3 queries (1 escrita) por chamada, mais que a
+        // própria rota (0 sem cookie, 2 com); e com IP compartilhado (CGNAT) um 429 fazia o AuthSlot
+        // mostrar "Entrar" a quem estava logado (`error || !session`). As rotas de credencial acima seguem
+        // limitadas (#449). Proteção contra flood é na borda (Vercel Firewall), não no Postgres.
+        '/get-session': false,
       },
     },
     emailAndPassword: {

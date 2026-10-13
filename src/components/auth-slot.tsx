@@ -29,6 +29,7 @@ import { usePathname } from 'next/navigation'
 import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession, signOut } from '@/lib/auth-client'
+import { useOnTabReturn } from '@/components/use-tab-return'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -52,24 +53,12 @@ export function AuthSlot() {
   // Atualização graceful (B), ADR-0028 dec 5: o servidor lê o papel VIVO do DB a cada request
   // (`cookieCache:false`), então promover alguém reflete no próximo request — só falta o cliente
   // refazer o get-session. O `useSession` do AuthSlot cacheia e não refaz sozinho quando um admin
-  // muda o papel de OUTRA pessoa. Efeito A: refetch no foco da aba / ao ficar visível.
-  useEffect(() => {
-    if (isPending) return // sem listeners enquanto pendente; re-roda quando isPending vira false
-    const onFocus = () => refetch()
-    // LANDMINE: `visibilitychange` também dispara ao ESCONDER — só agir em 'visible'.
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refetch()
-    }
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
-    // Voltar pra aba dispara `focus` E `visibilitychange` → dois get-session idempotentes;
-    // intencional e inofensivo (não "consertar"). Anônimo também instala — get-session anônimo
-    // inofensivo; o benefício do visitante ao update vem do AppUpdateGuard, não deste refetch.
-  }, [refetch, isPending])
+  // muda o papel de OUTRA pessoa. Efeito A: refetch na volta à aba — `focus` e `visibilitychange`
+  // coalescidos em UM get-session (useOnTabReturn). O AuthSlot é DONO desse refetch: o do próprio
+  // Better Auth está desligado (`refetchOnWindowFocus:false` em auth-client.ts). Sem listeners
+  // enquanto pendente. Anônimo também instala — get-session anônimo inofensivo; o benefício do
+  // visitante ao update vem do AppUpdateGuard, não deste refetch.
+  useOnTabReturn(() => void refetch(), !isPending)
 
   // Efeito B: refetch ao NAVEGAR (soft nav). O AuthSlot mora no SiteHeader persistente, então o
   // `useSession` nunca refaz sozinho numa navegação client-side; isto fecha a metade "ao navegar"

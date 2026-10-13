@@ -55,4 +55,4 @@ Base: `main` em 6b06b5c. Medidas de bundle tiradas de um `next build` de produç
 | G | Gaveta "Criar" (~340 KB de fonte) entra no header de toda página. | `next/dynamic` introduz o primeiro lazy chunk; o `AppUpdateGuard` pede revisão quando isso acontecer. |
 | H | Listas sem LIMIT (`/api/me/recipes`, perfil, salvos) e trazendo `passos`/`descricao` que só viram título. | As colunas pesadas saíram no PR seguinte (handoff 65). Paginar muda o que a tela mostra: adiado. |
 | I | Imagens do feed em tamanho cheio (PNG do Gemini) para thumbs de 144 px. | Reencodar (WebP) ou `next/image` muda o pipeline de imagem. |
-| J | Foco + `visibilitychange` disparam 2 `get-session` e 2 `/api/notifications` ao voltar para a aba. | O ADR-0028 diz que é intencional. |
+| J | Foco + `visibilitychange` disparam 2 `get-session` e 2 `/api/notifications` ao voltar para a aba (mais 2 `get-session` do próprio client do better-auth). | **Resolvido** junto com o item 1: um refetch de cada por volta à aba. O ADR-0028 não pedia a chamada dupla (o "intencional" estava no código). |
