@@ -23,21 +23,10 @@ import { canonicalLocale } from '@/i18n/locale'
 import { editOwnRecipe, deleteOwnRecipe, type OwnRecipePatch } from '@/server/recipe/owner-edit'
 
 /**
- * Leitura localizada da Receita (issue #3). Route FINO: delega TUDO a `loadRecipeDetailView`
- * (loader de servidor compartilhado com a página `/{locale}/recipes/[id]` — o caminho do dono a
- * chama direto, sem self-fetch). `?locale` escolhe o idioma pedido (padrão DEFAULT_LOCALE).
- * SOMENTE leitura — sem write/edit aqui.
- *
- * Gating de leitura (ADR-0011, aplicado no loader): catálogo/sistema (owner_id NULL) e Receitas
- * `public` são legíveis por qualquer um (sem auth — preserva os testes da #3). Receita com
- * dono + `private` (cobre toda geração da #8 e as playful) só é legível pelo próprio
- * dono; sem sessão OU dono diferente → 404 not_found (NÃO 401/403 — não vaza
- * existência).
- *
- * #18 (moderação): uma Receita removida do pool pelo Curador (moderation_removed_at) sai
- * da leitura pública (anônimo/não-dono → 404), SEM tocar `visibility` — o Owner CONTINUA
- * dono da linha privada (lê/gerencia a própria). Remover-do-pool ≠
- * despublicar; as duas dimensões são ortogonais (ver recipe-pool.ts).
+ * GET: leitura localizada da Receita (issue #3). Route FINO: delega TUDO a `loadRecipeDetailView`
+ * (loader compartilhado com o caminho do dono de `/{locale}/recipes/[id]`, que o chama direto, sem
+ * self-fetch). `?locale` escolhe o idioma pedido (padrão DEFAULT_LOCALE). Contrato: o gating
+ * (ADR-0011, #18) mora no loader; `null` vira 404 not_found leak-safe (NUNCA 401/403).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.

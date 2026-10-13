@@ -64,7 +64,7 @@ export async function loadPublicProfile(
   // NUNCA lê a sessão (o "eu sigo?" é client-side, pra o perfil seguir anon-cacheável / Modelo B).
   // As seams gateiam soft-deleted; o `owner.id` é só interno (nunca emitido no DTO). DEGRADA: um erro
   // transitório no bloco social (assistivo) NÃO derruba o payload SEO-crítico (identidade + receitas)
-  // — cai p/ social vazio (a view já omite listas vazias). `owner.id` nunca é emitido no DTO.
+  // — cai p/ social vazio (a view já omite listas vazias).
   const socialQuery = Promise.all([
     countFollowers(db, owner.id),
     countFollowing(db, owner.id),

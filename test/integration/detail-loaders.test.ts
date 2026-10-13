@@ -129,4 +129,20 @@ describe('loadRecipeDetailView', () => {
     expect(view).not.toHaveProperty('canManage')
     expectJsonPure(view)
   })
+
+  it('pública COM cookie ⇒ resolve o viewer: dono ganha gestão; outro logado só viewerSaved', async () => {
+    const owner = await seedSessionHeaders({ email: 'dono-pub@ex.com' })
+    const other = await seedSessionHeaders({ email: 'leitor@ex.com' })
+    const id = await seedOwnedRecipe(owner.userId, 'public', 'Pública do dono')
+
+    const asOwner = await loadRecipeDetailView(getDb(), { id, requestLocale: 'pt-BR', headers: owner.headers })
+    expect(asOwner?.canManage).toBe(true)
+    expect(asOwner?.viewerSaved).toBe(false)
+    expectJsonPure(asOwner)
+
+    const asOther = await loadRecipeDetailView(getDb(), { id, requestLocale: 'pt-BR', headers: other.headers })
+    expect(asOther?.viewerSaved).toBe(false)
+    expect(asOther).not.toHaveProperty('canManage')
+    expectJsonPure(asOther)
+  })
 })

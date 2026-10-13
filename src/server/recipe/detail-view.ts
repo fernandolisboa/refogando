@@ -27,6 +27,10 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  *
  * `null` = malformado/ausente/sem-acesso (indistinguíveis de propósito). A view é JSON-pura (sem
  * `Date`/`undefined`): o que a página recebe direto é o mesmo que o JSON da rota entregava.
+ *
+ * Recebe os `headers` crus (e não um `viewerId` já resolvido, como os outros loaders de `server/`)
+ * porque decidir SE e QUANDO ler a sessão faz parte do gate: o ramo privado só lê depois do gate,
+ * e o público só lê quando há cookie (o anônimo quente nunca paga a sessão).
  */
 export async function loadRecipeDetailView(
   db: Database,
@@ -35,8 +39,8 @@ export async function loadRecipeDetailView(
   const { id, requestLocale, headers } = input
   if (!isUuid(id)) return null
 
-  // Gating barato ANTES de carregar a view: lê só owner_id + visibility. Receita
-  // ausente cai no mesmo not_found (malformado/ausente/sem-acesso indistinguíveis).
+  // Gating barato ANTES de carregar a view: só as 4 colunas do gate. Receita ausente cai no
+  // mesmo null (malformado/ausente/sem-acesso indistinguíveis).
   const [gate] = await db
     .select({
       ownerId: recipe.ownerId,
@@ -51,7 +55,7 @@ export async function loadRecipeDetailView(
   if (!gate) return null
 
   // Pública/catálogo (owner_id NULL = sistema, ADR-0011) → legível por qualquer um.
-  // Caso contrário (com dono + private) exige ser o próprio dono; senão 404 (não vaza
+  // Caso contrário (com dono + private) exige ser o próprio dono; senão null ⇒ 404 (não vaza
   // existência — mesma forma da rota de retomada em creation-sessions/[id]).
   //
   // #18: uma Receita removida do pool NÃO é leitura pública (isPublicRead=false) — anônimo/
@@ -95,7 +99,7 @@ export async function loadRecipeDetailView(
 
   // Estado social (#16/#362): `viewerSaved` SÓ quando há viewerId. #134: a config de geração-por-IA
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
-  // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
+  // NÃO paga essa query — preserva o caminho quente). As quatro leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
   const [social, imageGenEnabled, imageGenBlocked, gallery] = await Promise.all([
     loadSocialState(db, { id, viewerId }),
