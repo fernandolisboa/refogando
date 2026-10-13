@@ -13,7 +13,8 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
  *
  * Eliminação CONSERVADORA (bloqueio lógico + anonimização — NÃO um hard-delete afobado):
  *  1. ANONIMIZA a PII do usuário: email/name/handle → forma anonimizada ESTÁVEL (derivada do `id`
- *     opaco, `erasedIdentity`); avatar/bio/locale zerados; links → `[]`. Irreversível (é o ponto do
+ *     opaco, `erasedIdentity`); avatar/bio/locale zerados; links → `[]`; as Restrições salvas (ADR-0041,
+ *     dado sensível) → `[]`; o Nível de habilidade padrão (#421) → null. Irreversível (é o ponto do
  *     direito de eliminação).
  *  2. BLOQUEIA a conta: `deletedAt` (o gate de `requireSession` passa a barrar com 401) + carimba
  *     `anonymizedAt` (marca a erasure e ancora o expurgo físico pós-retenção — job FUTURO).
@@ -85,6 +86,11 @@ export async function eraseOwnAccount(
         bio: null,
         links: [],
         locale: null,
+        // A linha `users` SOBREVIVE à eliminação (anonimizada), então o que não é identidade estável é
+        // ZERADO aqui. Restrições salvas (ADR-0041, dado sensível — LGPD Art. 11):
+        restricoes: [],
+        // Nível de habilidade padrão (#421):
+        nivelPadrao: null,
         deletedAt: now,
         anonymizedAt: now,
         updatedAt: now,

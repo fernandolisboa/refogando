@@ -14,11 +14,19 @@ import {
   isFacetsEmpty,
   type EffectiveFacets,
 } from '@/domain/facet-params'
+import type { Restricao } from '@/domain/vocabulary'
 import {
   resolveCulinaryProfile,
   type FacetasResolvidas,
 } from '@/domain/culinary-profile'
 import { loadVocabulary } from '@/server/vocabulary/load'
+import { eq } from 'drizzle-orm'
+import { users } from '@/db/schema'
+import {
+  PARAM_RESTRICAO_PERFIL,
+  normalizarRestricoes,
+  somarRestricoes,
+} from '@/domain/restricoes-perfil'
 
 /**
  * Busca precisa (issue #6): FTS Postgres + unaccent, seccionada por origem.
@@ -200,12 +208,34 @@ export async function GET(request: Request): Promise<Response> {
   const g = await requireSession(request)
   const viewerId = g.ok ? g.session.user.id : undefined
 
+  // ADR-0041 dec.3: `?restricaoPerfil=1` (SEM valores — a lista nunca anda em URL) pede as Restrições SALVAS
+  // do logado como filtro default. Lidas aqui, da sessão; Visitante ⇒ ignorado. Só valem quando a pessoa NÃO
+  // escolheu restrição à mão (a escolha dela manda). Ficam FORA das facetas explícitas: não suprimem a lente
+  // de Perfil culinário nem entram no eco da `consulta` (decididos acima, sem elas), e não tiram a busca do
+  // repouso (o early-return neutro já passou). Somam-se às da busca (o filtro é "declara todas").
+  let restricoesPerfil: Restricao[] = []
+  if (
+    viewerId !== undefined &&
+    url.searchParams.get(PARAM_RESTRICAO_PERFIL) === '1' &&
+    explicitFacets.restricoes.length === 0
+  ) {
+    const [row] = await db
+      .select({ restricoes: users.restricoes })
+      .from(users)
+      .where(eq(users.id, viewerId))
+    restricoesPerfil = normalizarRestricoes(row?.restricoes)
+  }
+  const facetsAplicadas: EffectiveFacets =
+    restricoesPerfil.length > 0
+      ? { ...facets, restricoes: somarRestricoes(facets.restricoes, restricoesPerfil) }
+      : facets
+
   const { hits, sugestoes } = await searchRecipes(db, {
     q,
     terms,
     mode: effectiveMode,
     requestLocale,
-    facets,
+    facets: facetsAplicadas,
     queryVector,
     sort,
     viewerId,
@@ -213,5 +243,17 @@ export async function GET(request: Request): Promise<Response> {
   // #116/own-label: `viewerId` deriva `isOwn` (owner == viewer) p/ separar a seção "Minhas".
   // Só o booleano `isOwn` é exposto no DTO — o `owner_id` cru NUNCA vaza pro cliente.
   const body = buildSearchResponse(hits, requestLocale, viewerId, consulta, sugestoes)
+  if (restricoesPerfil.length > 0) {
+    // Eco das salvas APLICADAS (só ao próprio titular, nesta resposta): a UI mostra o aviso "Mostrando só
+    // receitas que declaram…" e marca a trilha sem precisar buscar a lista em separado.
+    body.restricoesPerfil = restricoesPerfil
+  }
+  // LOGADO ⇒ a resposta é por-viewer (as próprias Receitas, privadas inclusive, `isOwn`, e o eco das
+  // Restrições salvas), e a chave de cache de um intermediário é a URL: nunca cacheada (como `/api/cooks`).
+  // Visitante: sem header, como sempre (resposta igual para todos). O caminho neutro (early-return acima)
+  // não resolve a sessão de propósito — não toca o DB — e devolve o mesmo corpo vazio para todos.
+  if (viewerId !== undefined) {
+    return Response.json(body, { headers: { 'cache-control': 'private, no-store' } })
+  }
   return Response.json(body)
 }

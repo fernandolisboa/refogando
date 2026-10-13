@@ -41,7 +41,10 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { RESTRICOES, UNIDADES, PORCOES } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES, type Restricao } from '@/domain/vocabulary'
+import { useSelecaoRestricoes } from '@/components/profile/restricoes-perfil-provider'
+import { RestricoesPerfilHint } from '@/components/profile/restricoes-perfil-hint'
+import { RestricoesPedidoChips } from '@/components/profile/restricoes-pedido-chips'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
@@ -155,7 +158,11 @@ export function CreateStructuredExperience({
   // do slug `cozinha`); o servidor materializa o termo `suggested` e o estampa na Receita.
   const [outraAtiva, setOutraAtiva] = useState(false)
   const [outra, setOutra] = useState('')
-  const [restricoes, setRestricoes] = useState<string[]>([])
+  // Restrições (ADR-0041): default = as SALVAS no perfil enquanto a pessoa não mexe. No estruturado, todas as
+  // opções com as do perfil pré-marcadas; no Prompt aberto, só as do perfil ("considerar suas restrições"),
+  // removíveis por pedido. Um único estado serve aos dois ramos (alternar de modo preserva o trabalho).
+  const selRestricoes = useSelecaoRestricoes()
+  const restricoes = selRestricoes.restricoes
   const [porcoes, setPorcoes] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemDraft[]>([novoItem()])
@@ -261,9 +268,7 @@ export function CreateStructuredExperience({
   }
 
   function toggleRestricao(value: string) {
-    setRestricoes((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
-    )
+    selRestricoes.alternar(value as Restricao)
   }
 
   // Troca de modo: preserva o trabalho dos dois ramos (campos + freeText), mas DESCARTA o
@@ -317,18 +322,20 @@ export function CreateStructuredExperience({
   // Briefing "vazio" = sem item válido E sem cozinha E sem restrição E sem observação.
   // porções sozinha NÃO conta (fiel a `isBriefingVazio`: é modificador).
   // "Outra" (#319) com texto conta como cozinha preenchida (não é briefing vazio).
+  // ADR-0041: só restrição ESCOLHIDA pela pessoa conta — o default do perfil intocado não basta (senão um
+  // "Gerar" sem nada gastaria uma geração só com ele).
   const briefingVazio =
     itensComTexto.length === 0 &&
     cozinha === '' &&
     !(outraAtiva && outra.trim() !== '') &&
-    restricoes.length === 0 &&
+    !selRestricoes.escolhaExplicita &&
     observacoes.trim() === ''
 
   function resetCampos() {
     setCozinha('')
     setOutraAtiva(false)
     setOutra('')
-    setRestricoes([])
+    selRestricoes.resetar() // ADR-0041: nova receita volta ao default do perfil.
     setPorcoes('')
     setObservacoes('')
     setItens([novoItem()])
@@ -359,7 +366,11 @@ export function CreateStructuredExperience({
         setStatus('error')
         return
       }
-      await enviar({ mode: 'free_text', freeText: texto })
+      // ADR-0041: as Restrições do perfil que seguem marcadas vão junto (sobem só quando há alguma). No
+      // Prompt aberto só as do perfil são opção — `doPedido` é a interseção com o perfil (protege contra um
+      // toque herdado do ramo estruturado: alternar de modo preserva o estado).
+      const pedidas = selRestricoes.doPedido
+      await enviar({ mode: 'free_text', freeText: texto, ...(pedidas.length > 0 ? { restricoes: pedidas } : {}) })
       return
     }
 
@@ -658,6 +669,7 @@ export function CreateStructuredExperience({
             selected={restricoes}
             onToggle={toggleRestricao}
           />
+          <RestricoesPerfilHint visivel={selRestricoes.vemDoPerfil} />
 
           {/* Porções */}
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
@@ -718,6 +730,13 @@ export function CreateStructuredExperience({
               >
                 {freeText.trim().length}/{FREE_TEXT_MAX}
               </span>
+              {/* ADR-0041: as Restrições salvas no perfil, já marcadas; tocar tira deste pedido. */}
+              <RestricoesPedidoChips
+                perfil={selRestricoes.perfil}
+                selecionadas={selRestricoes.doPedido}
+                onToggle={(r) => toggleRestricao(r)}
+                disabled={status === 'loading'}
+              />
             </div>
           )}
 

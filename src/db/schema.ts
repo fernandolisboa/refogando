@@ -692,6 +692,13 @@ export const users = pgTable(
     // tabela populada; contas existentes nascem NULL = eixo NEUTRO. A validação do valor (isNivelChef)
     // é a fronteira do app (PATCH /api/me), não do banco — mesma tese de `locale`/`bio`.
     nivelPadrao: text('nivel_padrao'),
+    // Restrições alimentares SALVAS do Usuário (ADR-0041): o DEFAULT pré-marcado na criação, na Sugestão de
+    // cardápio e na Busca — cada pedido pode mudar. Mesmo tipo de `recipe.restricoes` (pgEnum `restricao[]`,
+    // NOT NULL default '{}': vazio = nenhuma). ADD COLUMN com default constante = metadata-only (sem rewrite);
+    // contas existentes nascem `{}`. PRIVADO e SENSÍVEL (pode revelar saúde/crença — LGPD Art. 5 II/11):
+    // nunca vai à sessão do Better Auth (não é additionalField), ao perfil público nem a log; entra no export
+    // e é zerado na eliminação. Só a rota owner-only `/api/me/restricoes` lê/escreve (validação na borda).
+    restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
     // Bio curta do perfil (#124, frente Perfil). text livre, NULLABLE; o CAP de tamanho
     // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
     // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).

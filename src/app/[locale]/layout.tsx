@@ -7,6 +7,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provider'
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
+import { RestricoesPerfilProvider } from '@/components/profile/restricoes-perfil-provider'
 import { AppUpdateGuard } from '@/components/app-update-guard'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
@@ -107,6 +108,9 @@ export default async function LocaleLayout({
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
            <RecipeVariantProvider enabled={variantEnabled}>
+            {/* ADR-0041: Restrições alimentares salvas no perfil — default pré-marcado na criação, na Sugestão
+                de cardápio e na Busca. Client, carga preguiçosa (só busca quando uma superfície pede). */}
+            <RestricoesPerfilProvider>
             {/* #5 (protótipo final): o termo de busca (`q`) é ELEVADO aqui pra que a pílula viva
                 DENTRO do SiteHeader (linha 2, só na home) enquanto o cérebro da Busca segue em
                 SearchExperience (que é IRMÃO do header). `children` passa como PROP por este client
@@ -128,6 +132,7 @@ export default async function LocaleLayout({
               {/* Tour guiado (ADR-0039): sem DOM até abrir; abre só na home (conta nova ou pedido do /guia). */}
               <GuidedTour />
             </HomeSearchProvider>
+            </RestricoesPerfilProvider>
            </RecipeVariantProvider>
           </CozinhaVocabProvider>
         </LocaleProvider>
