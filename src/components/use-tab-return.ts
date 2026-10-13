@@ -8,6 +8,9 @@
  * `enabled=false` não instala listeners. O instante do último disparo vive num ref (sobrevive a
  * enabled piscar, ex.: isPending do useSession durante um refetch) e o callback é sempre o mais
  * recente (ref) — os listeners não são reinstalados a cada render.
+ *
+ * A coalescência é POR INSTÂNCIA: dois consumidores montados (ex.: o AuthSlot do desktop e o da gaveta
+ * mobile aberta) disparam cada um uma vez (ADR-0028, Adendo).
  */
 import { useEffect, useRef } from 'react'
 
