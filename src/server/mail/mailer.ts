@@ -60,11 +60,11 @@ const RESEND_TIMEOUT_MS = 8_000
  */
 export class RealResendMailer implements Mailer {
   async sendDpoAlert(input: MailInput): Promise<{ sent: boolean }> {
-    return sendViaResend(process.env.DSAR_MAIL_FROM, input)
+    return sendViaResend('encarregado', process.env.DSAR_MAIL_FROM, input)
   }
 
   async sendAccountEmail(input: MailInput): Promise<{ sent: boolean }> {
-    return sendViaResend(accountMailFrom(), input)
+    return sendViaResend('conta', accountMailFrom(), input)
   }
 
   /** Lido PREGUIÇOSAMENTE (na chamada), como os envios: mesma regra de "desligado" do `sendViaResend`. */
@@ -78,16 +78,27 @@ function accountMailFrom(): string | undefined {
   return process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM || undefined
 }
 
+/** Tipo do e-mail, só para o log (`[mail] … (conta)`): diz qual fluxo enviou sem citar destinatário. */
+type MailKind = 'conta' | 'encarregado'
+
 /**
  * POST único ao Resend. `from` resolvido pelo chamador (cada tipo de e-mail tem seu remetente) e repassado COMO
  * ESTÁ: o Resend aceita o endereço puro (`nao-responda@dominio`) ou `"Nome <nao-responda@dominio>"` — o domínio
  * precisa estar verificado na conta. Sucesso = 200 com `{ id }`; basta o `res.ok`.
+ *
+ * Todo desfecho deixa UMA linha `[mail]` no log (desligado, aceito, recusado, falha de rede) — sem destinatário,
+ * remetente, assunto ou corpo (sem PII): é o que permite ver nos logs da Vercel se os e-mails estão saindo.
  */
-async function sendViaResend(from: string | undefined, input: MailInput): Promise<{ sent: boolean }> {
+async function sendViaResend(kind: MailKind, from: string | undefined, input: MailInput): Promise<{ sent: boolean }> {
   // Fail-closed: sem credencial, sem remetente verificado OU sem destinatário ⇒ no-op. NÃO toca a rede.
   const key = process.env.RESEND_API_KEY
   const to = input.to?.trim()
-  if (!key || !from || !to) return { sent: false }
+  if (!key || !from || !to) {
+    const fromEnv = kind === 'conta' ? 'AUTH_MAIL_FROM/DSAR_MAIL_FROM' : 'DSAR_MAIL_FROM'
+    const missing = [!key && 'RESEND_API_KEY', !from && fromEnv, !to && 'destinatário'].filter(Boolean)
+    console.info(`[mail] envio desligado (${kind}): falta ${missing.join(', ')}`)
+    return { sent: false }
+  }
 
   try {
     const res = await fetch(RESEND_ENDPOINT, {
@@ -109,12 +120,14 @@ async function sendViaResend(from: string | undefined, input: MailInput): Promis
     // Não-2xx (401/403 domínio não verificado/422/429/5xx) ⇒ degrada sem lançar. Loga SÓ o status — nada do
     // corpo da resposta nem do destinatário (sem PII).
     if (!res.ok) {
-      console.warn(`[mail] Resend recusou o envio: HTTP ${res.status}`)
+      console.warn(`[mail] Resend recusou o envio (${kind}): HTTP ${res.status}`)
       return { sent: false }
     }
+    console.info(`[mail] Resend aceitou o envio (${kind})`)
     return { sent: true }
-  } catch {
-    // Rede, DNS, timeout (AbortSignal), TLS — tudo vira { sent: false }.
+  } catch (err) {
+    // Rede, DNS, timeout (AbortSignal), TLS — tudo vira { sent: false }. Loga só o NOME do erro (ex.: TimeoutError).
+    console.warn(`[mail] falha ao chamar o Resend (${kind}): ${err instanceof Error ? err.name : 'erro'}`)
     return { sent: false }
   }
 }

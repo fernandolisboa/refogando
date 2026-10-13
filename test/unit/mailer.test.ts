@@ -30,6 +30,7 @@ const input = { to: TO, subject: 'Alerta', text: 'corpo do alerta' }
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe('RealResendMailer (#413) — fail-closed (não toca a rede)', () => {
@@ -135,6 +136,69 @@ describe('RealResendMailer (#413) — envio + degradação', () => {
     vi.stubEnv('DSAR_MAIL_FROM', FROM)
     mockFetch({ throw: true })
     await expect(mailer.sendDpoAlert(input)).resolves.toEqual({ sent: false })
+  })
+})
+
+describe('RealResendMailer — uma linha [mail] por desfecho, sem PII', () => {
+  function spyLogs() {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const all = () => [...info.mock.calls, ...warn.mock.calls].map((c) => String(c[0]))
+    return { info, warn, all }
+  }
+
+  it('aceito pelo Resend → info com o tipo do e-mail', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const { info, all } = spyLogs()
+    mockFetch({ ok: true })
+    expect(await mailer.sendAccountEmail(input)).toEqual({ sent: true })
+    expect(info).toHaveBeenCalledWith('[mail] Resend aceitou o envio (conta)')
+    for (const line of all()) {
+      expect(line).not.toContain(TO)
+      expect(line).not.toContain(FROM)
+      expect(line).not.toContain(input.subject)
+    }
+  })
+
+  it('recusado → warn com o tipo e o status', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const { warn } = spyLogs()
+    mockFetch({ ok: false, status: 422 })
+    await mailer.sendDpoAlert(input)
+    expect(warn).toHaveBeenCalledWith('[mail] Resend recusou o envio (encarregado): HTTP 422')
+  })
+
+  it('exceção de rede → warn só com o nome do erro', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const { warn } = spyLogs()
+    mockFetch({ throw: true })
+    await mailer.sendDpoAlert(input)
+    expect(warn).toHaveBeenCalledWith('[mail] falha ao chamar o Resend (encarregado): TypeError')
+    expect(String(warn.mock.calls[0][0])).not.toContain('network down')
+  })
+
+  it('desligado → info dizendo o que falta (nomes, nunca valores)', async () => {
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', '')
+    const { info, all } = spyLogs()
+    mockFetch({ ok: true })
+    await mailer.sendAccountEmail(input)
+    expect(info).toHaveBeenCalledWith('[mail] envio desligado (conta): falta RESEND_API_KEY, AUTH_MAIL_FROM/DSAR_MAIL_FROM')
+    expect(all().join('\n')).not.toContain(TO)
+  })
+
+  it('desligado sem destinatário → info nomeia só o destinatário', async () => {
+    vi.stubEnv('RESEND_API_KEY', KEY)
+    vi.stubEnv('DSAR_MAIL_FROM', FROM)
+    const { info } = spyLogs()
+    mockFetch({ ok: true })
+    await mailer.sendDpoAlert({ ...input, to: ' ' })
+    expect(info).toHaveBeenCalledWith('[mail] envio desligado (encarregado): falta destinatário')
   })
 })
 
