@@ -1800,6 +1800,13 @@ export const enUS: Messages = {
     s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
     s34Corpo:
       'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground).',
+    s35Titulo: '3.5. Saved dietary restrictions',
+    s35Valores: [
+      'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile.',
+      'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider only within a request in which you keep them checked.',
+      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button) and revocable at any time by unchecking them all and saving.',
+      'until you uncheck them or delete your account; they are included in your data export and erased when the account is deleted.',
+    ],
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [

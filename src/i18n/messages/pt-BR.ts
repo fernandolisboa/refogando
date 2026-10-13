@@ -1905,6 +1905,13 @@ export const ptBR = {
     s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
     s34Corpo:
       'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo).',
+    s35Titulo: '3.5. Restrições alimentares salvas',
+    s35Valores: [
+      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público.',
+      'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA dentro de um pedido em que você as mantém marcadas.',
+      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão) e revogável a qualquer momento desmarcando todas e salvando.',
+      'até você desmarcá-las ou excluir a conta; entram na exportação dos seus dados e são apagadas na exclusão da conta.',
+    ],
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
     s4Itens: [
