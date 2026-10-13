@@ -1,16 +1,18 @@
 'use client'
 /**
  * Hook da Caixa de Notificações (#371, ADR-0028 dec 2 — in-app, PULL). Busca `/api/notifications` no
- * mount E ao FOCAR a aba / ficar visível (sem push/realtime/poll — proporcional ao app). SÓ-LOGADO +
- * Modelo B: `useSession` é client-only/pendente no SSR ⇒ no servidor e p/ Visitante devolve estado
- * vazio e NÃO busca (a chrome anon/cacheável segue byte-idêntica). Falha/401/rede ⇒ assistivo (some,
- * sem badge). Espelha `use-recommended-cooks` (AbortController + token anti-race).
+ * mount E uma vez por volta à aba (foco/visível coalescidos — `useOnTabReturn`), sem push/realtime/poll
+ * (proporcional ao app). SÓ-LOGADO + Modelo B: `useSession` é client-only/pendente no SSR ⇒ no servidor
+ * e p/ Visitante devolve estado vazio e NÃO busca (a chrome anon/cacheável segue byte-idêntica).
+ * Falha/401/rede ⇒ assistivo (some, sem badge). Espelha `use-recommended-cooks` (AbortController +
+ * token anti-race).
  *
  * `markAllRead()` (ao abrir o painel): POST `/api/notifications/read` SEM body (= marca-tudo no server),
  * zera o badge local otimista e adota o `unreadCount` recontado que o server devolve.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from '@/lib/auth-client'
+import { useOnTabReturn } from '@/components/use-tab-return'
 import type { NotificationDTO } from '@/server/notification'
 
 type Snapshot = {
@@ -28,7 +30,7 @@ export function useNotifications(): UseNotifications {
   const authed = !session.isPending && !session.error && !!session.data
 
   const [snapshot, setSnapshot] = useState<Snapshot>(EMPTY)
-  // Token anti-race: só o fetch mais recente pode aplicar seu resultado (foco dispara vários).
+  // Token anti-race: só o fetch mais recente pode aplicar seu resultado (mount, volta à aba).
   const reqTokenRef = useRef(0)
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -48,8 +50,13 @@ export function useNotifications(): UseNotifications {
     }
   }, [])
 
+  // Controller do effect corrente: a volta à aba busca com o MESMO signal (abortado na desmontagem /
+  // logout, como o fetch de mount).
+  const controllerRef = useRef<AbortController | null>(null)
+
   useEffect(() => {
     const controller = new AbortController()
+    controllerRef.current = controller
     // A limpeza do estado anon vive DENTRO do async IIFE (não no corpo síncrono do effect) — mesmo
     // padrão de `use-recommended-cooks` (evita o cascading-render do lint). Update funcional dá no-op
     // quando já está vazio (sem re-render espúrio no SSR/anon → chrome indexável byte-idêntica).
@@ -63,22 +70,12 @@ export function useNotifications(): UseNotifications {
       }
       await load(controller.signal)
     })()
-    // Visitante (Modelo B): NÃO instala listeners nem busca — só aborta na desmontagem.
-    if (!authed) return () => controller.abort()
-    // PULL do ADR-0028: re-busca ao focar / ficar visível. LANDMINE: `visibilitychange` também
-    // dispara ao ESCONDER — só agir em 'visible'.
-    const onFocus = () => void load(controller.signal)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void load(controller.signal)
-    }
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      controller.abort()
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
+    return () => controller.abort()
   }, [authed, load])
+
+  // PULL do ADR-0028: re-busca na volta à aba — `focus` e `visibilitychange` coalescidos em UM load
+  // (useOnTabReturn). Visitante (Modelo B): NÃO instala listeners.
+  useOnTabReturn(() => void load(controllerRef.current?.signal), authed)
 
   const markAllRead = useCallback(() => {
     // Otimista: zera o badge já. Se o POST falhar, o próximo pull (foco) reconcilia.

@@ -18,6 +18,11 @@ import { adminClient } from 'better-auth/client/plugins'
 
 export const authClient = createAuthClient({
   plugins: [adminClient()],
+  // Refetch de foco DESLIGADO (ADR-0028): por padrão o Better Auth refaz o get-session em todo
+  // `visibilitychange`→visible — e em dobro (o GET do refresh manager + o do toggle do sessionSignal).
+  // O AuthSlot é dono do refetch de volta à aba (foco + visível coalescidos, `useOnTabReturn`), então
+  // o da lib só duplicava requests. O refetch ao voltar `online` e o BroadcastChannel seguem ligados.
+  sessionOptions: { refetchOnWindowFocus: false },
 })
 
 // Esqueci minha senha (#469): `requestPasswordReset` (POST /request-password-reset) e `resetPassword`

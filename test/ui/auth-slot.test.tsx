@@ -46,6 +46,7 @@ vi.mock('@/lib/auth-client', () => ({
 
 import { LocaleProvider } from '@/i18n/provider'
 import { AuthSlot } from '@/components/auth-slot'
+import { TAB_RETURN_COALESCE_MS } from '@/components/use-tab-return'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
@@ -82,6 +83,7 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
   afterEach(() => {
     // Restaura qualquer override de visibilityState pra não vazar entre testes no jsdom compartilhado.
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('anônimo: mostra Entrar com href /sign-in?returnTo=<pathname>, sem gatilho de conta nem Sair', () => {
@@ -246,21 +248,50 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   })
 
-  // #372 (ADR-0028 dec 5-B): refetch no foco / ao ficar visível / ao navegar — a chrome corrige
-  // papel velho em segundos, sem reload, sem toast.
-  it('refetcha no foco da aba e ao ficar visível', () => {
+  // #372 (ADR-0028 dec 5-B): refetch na volta à aba / ao navegar — a chrome corrige papel velho em
+  // segundos, sem reload, sem toast. Volta à aba = `focus` + `visibilitychange` coalescidos em UM
+  // get-session (useOnTabReturn); Date fixo pra controlar a janela de coalescência.
+  const visivel = () => vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  const voltaAba = () => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('focus'))
+  }
+
+  it('volta à aba (visibilitychange + focus) refetcha UMA vez', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 13, 12, 0, 0))
     mockSession = authed()
     renderSlot('pt-BR')
     // O useSession já fez o fetch de mount (não instrumentado aqui); zeramos pra medir só os eventos.
     mockSession.refetch.mockClear()
+    visivel()
+
+    voltaAba()
+    expect(mockSession.refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('refoco simples da janela (só focus) refetcha UMA vez', () => {
+    mockSession = authed()
+    renderSlot('pt-BR')
+    mockSession.refetch.mockClear()
 
     window.dispatchEvent(new Event('focus'))
     expect(mockSession.refetch).toHaveBeenCalledTimes(1)
+  })
 
-    // Voltar a ficar visível também refetcha (dupla-chamada com focus é intencional/idempotente).
-    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    document.dispatchEvent(new Event('visibilitychange'))
-    expect(mockSession.refetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  it('duas voltas separadas por mais que a janela de coalescência → 2 refetches', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const t0 = new Date(2026, 9, 13, 12, 0, 0).getTime()
+    vi.setSystemTime(t0)
+    mockSession = authed()
+    renderSlot('pt-BR')
+    mockSession.refetch.mockClear()
+    visivel()
+
+    voltaAba()
+    vi.setSystemTime(t0 + TAB_RETURN_COALESCE_MS + 1)
+    voltaAba()
+    expect(mockSession.refetch).toHaveBeenCalledTimes(2)
   })
 
   it('visibilitychange com hide NÃO refetcha (guard do landmine)', () => {
@@ -310,11 +341,13 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     unmount()
   })
 
-  it('isPending não instala listeners de foco (efeito A com early-return)', () => {
+  it('isPending não instala listeners de volta à aba (efeito A desabilitado)', () => {
     mockSession = fakeSession({ isPending: true })
     renderSlot('pt-BR')
     mockSession.refetch.mockClear()
     window.dispatchEvent(new Event('focus'))
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
     expect(mockSession.refetch).not.toHaveBeenCalled()
   })
 
