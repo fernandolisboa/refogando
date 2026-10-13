@@ -114,6 +114,8 @@ export type SelecaoRestricoesPedido = {
   alternar: (r: Restricao) => void
   resetar: () => void
   congelar: () => void
+  /** Volta a ler o perfil vivo (o wizard, ao VOLTAR ao passo das restrições — o que chegou aparece, com a dica). */
+  descongelar: () => void
 }
 
 export function useSelecaoRestricoes(): SelecaoRestricoesPedido {
@@ -132,6 +134,7 @@ export function useSelecaoRestricoes(): SelecaoRestricoesPedido {
     setCongelado(null)
   }, [])
   const congelar = useCallback(() => setCongelado((c) => c ?? { perfil: perfilVivo }), [perfilVivo])
+  const descongelar = useCallback(() => setCongelado(null), [])
 
   return useMemo(
     () => ({
@@ -143,7 +146,8 @@ export function useSelecaoRestricoes(): SelecaoRestricoesPedido {
       alternar,
       resetar,
       congelar,
+      descongelar,
     }),
-    [sel, perfil, alternar, resetar, congelar],
+    [sel, perfil, alternar, resetar, congelar, descongelar],
   )
 }

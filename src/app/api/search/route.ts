@@ -245,9 +245,14 @@ export async function GET(request: Request): Promise<Response> {
   const body = buildSearchResponse(hits, requestLocale, viewerId, consulta, sugestoes)
   if (restricoesPerfil.length > 0) {
     // Eco das salvas APLICADAS (só ao próprio titular, nesta resposta): a UI mostra o aviso "Mostrando só
-    // receitas que declaram…" e marca a trilha sem precisar buscar a lista em separado. Por-titular e
-    // sensível ⇒ nunca cacheada por intermediários.
+    // receitas que declaram…" e marca a trilha sem precisar buscar a lista em separado.
     body.restricoesPerfil = restricoesPerfil
+  }
+  // LOGADO ⇒ a resposta é por-viewer (as próprias Receitas, privadas inclusive, `isOwn`, e o eco das
+  // Restrições salvas), e a chave de cache de um intermediário é a URL: nunca cacheada (como `/api/cooks`).
+  // Visitante: sem header, como sempre (resposta igual para todos). O caminho neutro (early-return acima)
+  // não resolve a sessão de propósito — não toca o DB — e devolve o mesmo corpo vazio para todos.
+  if (viewerId !== undefined) {
     return Response.json(body, { headers: { 'cache-control': 'private, no-store' } })
   }
   return Response.json(body)

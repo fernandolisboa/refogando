@@ -91,7 +91,10 @@ describe('GET /api/search — Restrições salvas no perfil (ADR-0041 dec.3)', (
     const frango = await seedCurry('Curry de frango', [])
     const headers = await logadoCom('sem-pedido@restricoes.test', ['vegano'])
 
-    const b = await body(await search({ q: 'curry' }, headers))
+    const res = await search({ q: 'curry' }, headers)
+    // Logado ⇒ resposta por-viewer, nunca cacheada — mesmo sem o pedido do perfil.
+    expect(res.headers.get('cache-control')).toBe('private, no-store')
+    const b = await body(res)
     expect(allIds(b)).toEqual(expect.arrayContaining([vegano, frango]))
     expect(b).not.toHaveProperty('restricoesPerfil')
   })
@@ -100,7 +103,10 @@ describe('GET /api/search — Restrições salvas no perfil (ADR-0041 dec.3)', (
     const vegano = await seedCurry('Curry vegano de grão-de-bico', ['vegano'])
     const frango = await seedCurry('Curry de frango', [])
 
-    const b = await body(await search({ q: 'curry', restricaoPerfil: '1' }))
+    const res = await search({ q: 'curry', restricaoPerfil: '1' })
+    // Visitante: sem header de cache, como antes.
+    expect(res.headers.get('cache-control')).toBeNull()
+    const b = await body(res)
     expect(allIds(b)).toEqual(expect.arrayContaining([vegano, frango]))
     expect(b).not.toHaveProperty('restricoesPerfil')
   })

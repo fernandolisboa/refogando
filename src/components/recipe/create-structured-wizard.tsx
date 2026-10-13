@@ -269,6 +269,9 @@ export function CreateStructuredWizard({
   }
   function voltar() {
     if (step > 0) {
+      // ADR-0041: de volta ao passo das restrições, o default volta a ser o perfil vivo — uma lista que chegou
+      // nesse meio-tempo aparece marcada, com a dica. "Continuar" congela de novo.
+      if (step === 2) selRestricoes.descongelar()
       setStep((s) => s - 1)
     } else {
       onExit()

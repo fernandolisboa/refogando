@@ -803,7 +803,7 @@ describe('SearchExperience — termo semeado de ?q= não auto-dispara a web', ()
     expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
   })
 
-  it('S3 — re-buscar o MESMO termo semeado (sessão resolvendo, faceta) NÃO consome a guarda', async () => {
+  it('guarda do link forjado (?q=): re-buscar o MESMO termo (sessão resolvendo, faceta) não auto-dispara a web', async () => {
     // Regressão: a guarda era consumida na 1ª busca concluída; a sessão resolvendo DEPOIS (ADR-0041 manda
     // `restricaoPerfil=1` só logado) re-buscava o mesmo termo e a web auto-disparava com o link forjado.
     sessionState = { ...authed(), data: null, isPending: true }
@@ -834,6 +834,10 @@ describe('SearchExperience — termo semeado de ?q= não auto-dispara a web', ()
     const depoisDaSessao = searches().length
     await user.click(screen.getByRole('checkbox', { name: ptBR.categoriaLabel.sobremesa }))
     await waitFor(() => expect(searches().length).toBeGreaterThan(depoisDaSessao))
+    // Espera a RESPOSTA da busca da faceta ser processada (região viva sai de aria-busy) — é ali que a decisão
+    // de auto-disparar a web acontece; só então a ausência da chamada à web prova alguma coisa.
+    const regiao = document.querySelector('[aria-live="polite"][aria-busy]')
+    await waitFor(() => expect(regiao).toHaveAttribute('aria-busy', 'false'))
     await screen.findByRole('button', { name: M.webManualCta })
     expect(discoveryCalls(fetchMock).length).toBe(0)
   })

@@ -444,6 +444,39 @@ describe('Default do perfil na criação', () => {
     expect((post?.body?.briefing as { restricoes: string[] }).restricoes).toEqual([])
   })
 
+  it('wizard: voltar ao passo 2 descongela — a lista que chegou aparece marcada, com a dica', async () => {
+    const user = userEvent.setup()
+    let soltar: (l: string[]) => void = () => {}
+    const salvas = new Promise<string[]>((r) => {
+      soltar = r
+    })
+    const calls = mockFetch(
+      () => salvas,
+      (url) => (url.includes('/api/generations') ? { outcome: 'impossible', recipeId: null, advisory: null } : {}),
+    )
+    render(
+      <Providers>
+        <Drawer />
+      </Providers>,
+    )
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoEstruturadoTitulo) }))
+    await user.type(screen.getByPlaceholderText(/cebola/i), 'feijão')
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+
+    soltar(['vegano'])
+    await waitFor(() => expect(perfilGets(calls)).toHaveLength(1))
+    await user.click(screen.getAllByRole('button', { name: D.voltar }).at(-1)!)
+    expect(await screen.findByText(R.vemDoPerfil)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: L.vegano })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: W.continuar }))
+    await user.click(screen.getByRole('button', { name: W.gerar }))
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/api/generations'))).toBe(true))
+    const post = calls.find((c) => c.url.includes('/api/generations'))
+    expect((post?.body?.briefing as { restricoes: string[] }).restricoes).toEqual(['vegano'])
+  })
+
   it('wizard: "Criar outra" volta ao default do perfil', async () => {
     const user = userEvent.setup()
     mockFetch(['vegano'], (url) => {
