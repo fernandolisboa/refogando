@@ -20,7 +20,7 @@ Dois follow-ups dos handoffs 60 e 61 fecham o ciclo da Despensa (ADR-0038). Até
 
 ## Consequências
 
-- **Migração `0073_pantry_basics`**: `ALTER TABLE users ADD COLUMN pantry_basics text[]` (NULLABLE, sem default: metadata-only, nenhum backfill). Outro branch também gera uma 0073; quem entrar depois renumera (apagar `0073_*.sql` + snapshot, reverter `_journal.json`, `npx drizzle-kit generate --name pantry_basics`).
+- **Migração `0074_pantry_basics`**: `ALTER TABLE users ADD COLUMN pantry_basics text[]` (NULLABLE, sem default: metadata-only, nenhum backfill). Renumerada de 0073 depois que a `0073_users_restricoes` (ADR-0041, #567) entrou na main.
 - Domínio `@/domain/pantry`: `MAX_PANTRY_BASICS`, `resolvePantryBasics`, `parsePantryBasics`, `parsePantryRestore`, `splitCookedPantryItems`.
 - Servidor `@/server/pantry/pantry`: `queryPantryMatches` recebe os itens com id e os básicos efetivos, e ganha `withUsed`; `loadPantryBasics`, `applySetPantryBasics`, `applyCookedMealToPantry`. `loadPantryMatches` e `applyPantryMissingToShoppingList` usam os básicos da pessoa.
 - Rotas: `GET /api/me/pantry` devolve também `basics` e `basicsCustom`; `PUT/DELETE /api/me/pantry/basics`; `POST /api/me/pantry/restore`; `POST /api/me/meal-plan/entries/[entryId]/cooked`.

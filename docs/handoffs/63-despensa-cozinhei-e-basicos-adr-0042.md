@@ -1,6 +1,6 @@
 # Handoff 63 — Despensa: "Cozinhei" no Cardápio e básicos de cada pessoa (ADR-0042)
 
-**Sessão:** 2026-10-13. **Branch:** `claude/project-thread-e6iox3-pantry` (um PR, a partir da main em `4a0ca65`). **Migração:** `0073_pantry_basics` (uma coluna em `users`; outro branch também gera uma 0073 — quem entrar depois renumera, ver seção 4). **Merge:** pendente.
+**Sessão:** 2026-10-13. **Branch:** `claude/project-thread-e6iox3-pantry` (um PR, rebaseado na main em `29a73e2`, depois do #567). **Migração:** `0074_pantry_basics` (uma coluna em `users`; renumerada de 0073 depois que a `0073_users_restricoes` do #567 entrou). **Merge:** pendente.
 
 Documento auto-suficiente: o que entrou, onde mora no código, o que não pode regredir e o que ficou de follow-up.
 
@@ -37,7 +37,6 @@ Dois follow-ups dos handoffs 60 e 61 que fecham o ciclo da Despensa (planejar �
 
 ## 4. Landmines
 
-- **Migração 0073 em conflito.** Outro branch também adiciona uma 0073. Quem mergear depois: apagar `drizzle/0073_pantry_basics.sql` + `drizzle/meta/0073_snapshot.json`, reverter `drizzle/meta/_journal.json` e rodar `npx drizzle-kit generate --name pantry_basics` de novo sobre a main nova (não precisa de banco). A migração é auto-suficiente: um `ADD COLUMN` NULLABLE, sem backfill.
 - **`users` também está sendo mexida por outro branch** (restrições alimentares no perfil). Conflito textual provável em `src/db/schema.ts` (a coluna `pantryBasics` fica entre `imageGenBlockedReason` e `pendingSignupAt`) e talvez em `account-export.ts`/`account-erasure.ts`: resolver mantendo as duas colunas.
 - **`withUsed` muda a FORMA da query.** A coluna `origin` (id do item da Despensa) só entra nas CTEs dos termos quando `withUsed` é verdadeiro (`originCol`/`basicOrigin`/`srcItems`), e a CTE `used` só existe nesse caso. Carregar a coluna sempre, mesmo nula, deixava a lista de resultados ~10% mais lenta no acervo sintético (4.000 Receitas × 10 Itens, 200 itens na Despensa). Medido depois: ~0,55 s antes e depois. Não "simplificar" para uma query só com `origin` sempre presente. As landmines do handoff 60 (barras invertidas em `sql.raw(String.raw…)`, `MATERIALIZED`, `statement_timeout`) seguem valendo.
 - **`origin` sem qualificação.** Nas CTEs, `${originCol}` vira `, origin` sem alias de tabela; funciona porque em cada `FROM` só uma relação tem essa coluna. Ao mexer num `FROM` (juntar outra CTE que também tenha `origin`), qualificar.
@@ -55,12 +54,12 @@ Dois follow-ups dos handoffs 60 e 61 que fecham o ciclo da Despensa (planejar �
 
 ## 6. Critério de saída
 
-PR mergeado com o painel de revisão limpo e o "checks" verde; migração renumerada se a outra 0073 entrar antes, e aplicada no deploy de produção; memória do projeto atualizada.
+PR mergeado com o painel de revisão limpo e o "checks" verde; migração 0074 aplicada no deploy de produção; memória do projeto atualizada.
 
 ---
 
 ## Kickoff da próxima sessão (colar como primeira mensagem)
 
 ```
-Leia docs/handoffs/63-despensa-cozinhei-e-basicos-adr-0042.md e o ADR-0042. O "Cozinhei" no Cardápio (tira da Despensa o que a Receita usa, nunca os básicos, com Desfazer) e os básicos de cada pessoa (users.pantry_basics, NULL = lista padrão) estão no branch claude/project-thread-e6iox3-pantry. Antes do merge, conferir a numeração da migração 0073 contra a main (seção 4). Próximo passo sugerido: um follow-up da seção 5. Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
+Leia docs/handoffs/63-despensa-cozinhei-e-basicos-adr-0042.md e o ADR-0042. O "Cozinhei" no Cardápio (tira da Despensa o que a Receita usa, nunca os básicos, com Desfazer) e os básicos de cada pessoa (users.pantry_basics, NULL = lista padrão) estão em produção. Próximo passo sugerido: um follow-up da seção 5. Seguir o fluxo de 8 passos do CLAUDE.md e respeitar os princípios da seção 3.
 ```
