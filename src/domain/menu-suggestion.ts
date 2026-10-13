@@ -25,11 +25,15 @@ import {
 import { CATEGORIAS, RESTRICOES, type Categoria, type Restricao } from '@/domain/vocabulary'
 import type { Role } from '@/domain/user'
 import type { TextUsage } from '@/domain/text-cost'
+import { MENU_NOTE_MAX } from '@/domain/menu-suggestion-limits'
 
 // ── Limites ──────────────────────────────────────────────────────────────────────
 
-/** Tamanho máximo da nota livre ("jantares leves, peixe na sexta"). */
-export const MENU_NOTE_MAX = 200
+/**
+ * Tamanho máximo da nota livre ("jantares leves, peixe na sexta"). Mora em `menu-suggestion-limits.ts`
+ * (sem zod): o painel client precisa só dele, e importá-lo daqui levaria o zod inteiro para o bundle.
+ */
+export { MENU_NOTE_MAX }
 
 /** Candidatas do ACERVO do Usuário (Salvos + Minhas criações), mais recentes primeiro. */
 export const MENU_CANDIDATES_OWN_MAX = 100

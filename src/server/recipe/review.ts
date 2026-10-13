@@ -309,22 +309,25 @@ export async function loadRecipeReviews(
   const gate = await loadReviewGate(db, id)
   if (!gate) return null
 
-  const agg = await loadAggregate(db, id)
-  const rows = await db
-    .select({
-      id: recipeReview.id,
-      rating: recipeReview.rating,
-      comment: recipeReview.comment,
-      photoUrl: recipeReview.photoUrl,
-      authorName: users.name,
-      authorHandle: users.handle,
-      createdAt: recipeReview.createdAt,
-    })
-    .from(recipeReview)
-    .innerJoin(users, eq(users.id, recipeReview.userId))
-    .where(and(eq(recipeReview.recipeId, id), isNull(recipeReview.moderatedAt), isNull(users.deletedAt)))
-    .orderBy(desc(recipeReview.createdAt))
-    .limit(REVIEW_LIST_LIMIT)
+  // Agregado e lista são independentes (os dois só filtram por `recipe_id`): em paralelo.
+  const [agg, rows] = await Promise.all([
+    loadAggregate(db, id),
+    db
+      .select({
+        id: recipeReview.id,
+        rating: recipeReview.rating,
+        comment: recipeReview.comment,
+        photoUrl: recipeReview.photoUrl,
+        authorName: users.name,
+        authorHandle: users.handle,
+        createdAt: recipeReview.createdAt,
+      })
+      .from(recipeReview)
+      .innerJoin(users, eq(users.id, recipeReview.userId))
+      .where(and(eq(recipeReview.recipeId, id), isNull(recipeReview.moderatedAt), isNull(users.deletedAt)))
+      .orderBy(desc(recipeReview.createdAt))
+      .limit(REVIEW_LIST_LIMIT),
+  ])
 
   const reviews: ReviewView[] = rows.map((r) => ({
     id: r.id,

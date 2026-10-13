@@ -4,14 +4,15 @@
  * DEFAULT, pré-marcada, nos pedidos: criação (Estruturado, Prompt aberto, Conversa), Sugestão de cardápio e
  * Busca. Cada pedido pode mudar; o perfil só decide o ponto de partida.
  *
- * Aqui vive: a validação da lista (zod, contra o vocabulário), a forma canônica gravada (sem repetição, na
- * ordem do vocabulário) e a regra de "seleção com default" que todas as superfícies usam — enquanto a
- * pessoa não mexe, vale o que está no perfil; no primeiro toque, a seleção passa a ser dela (inclusive
- * vazia). O efeito (rota `/api/me/restricoes`) e a UI moram fora.
+ * Aqui vive: a forma canônica gravada (sem repetição, na ordem do vocabulário) e a regra de "seleção com
+ * default" que todas as superfícies usam — enquanto a pessoa não mexe, vale o que está no perfil; no
+ * primeiro toque, a seleção passa a ser dela (inclusive vazia). O efeito (rota `/api/me/restricoes`) e a UI
+ * moram fora. A validação ESTRITA com zod (`parseListaRestricoes`) mora em `restricoes-perfil-parse.ts`:
+ * este módulo é importado pelo `RestricoesPerfilProvider` do root layout, e um schema zod no topo dele
+ * arrastava o zod inteiro (~65 KB gzip) para o bundle de TODA página.
  *
  * Dado SENSÍVEL (pode revelar saúde ou crença — LGPD Art. 5 II/11): nada aqui loga ou serializa a lista.
  */
-import { z } from 'zod'
 import { RESTRICOES, isRestricao, type Restricao } from '@/domain/vocabulary'
 
 /**
@@ -20,26 +21,10 @@ import { RESTRICOES, isRestricao, type Restricao } from '@/domain/vocabulary'
  */
 export const RESTRICOES_INPUT_MAX = 32
 
-const listaSchema = z.array(z.enum(RESTRICOES)).max(RESTRICOES_INPUT_MAX)
-
 /** Forma canônica: sem repetição e na ORDEM do vocabulário (gravação e comparação estáveis). */
 export function ordenarRestricoes(lista: readonly Restricao[]): Restricao[] {
   const set = new Set(lista)
   return RESTRICOES.filter((r) => set.has(r))
-}
-
-export type ListaRestricoesParse = { ok: true; restricoes: Restricao[] } | { ok: false }
-
-/**
- * Validação ESTRITA de uma lista vinda do cliente (corpo do PUT do perfil e o campo `restricoes` dos pedidos
- * de geração): array de valores do vocabulário, até `RESTRICOES_INPUT_MAX`. Qualquer valor fora do
- * vocabulário recusa a lista INTEIRA (não descarta em silêncio — a pessoa veria uma restrição sumir).
- * Ausente (`undefined`/`null`) NÃO é tratado aqui: cada borda decide o que ausente significa.
- */
-export function parseListaRestricoes(raw: unknown): ListaRestricoesParse {
-  const parsed = listaSchema.safeParse(raw)
-  if (!parsed.success) return { ok: false }
-  return { ok: true, restricoes: ordenarRestricoes(parsed.data) }
 }
 
 /**

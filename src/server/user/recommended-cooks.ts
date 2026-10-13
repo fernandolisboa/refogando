@@ -91,9 +91,10 @@ export async function loadRecommendedCooks(
   const cursor = args.cursor ?? null
 
   // #368: constantes da mistura + C (média global da nota, prior da Bayesiana). Carregados 1× por
-  // request. Fallback 3.0 em TS (número real, NUNCA NULL — senão o CASE ELSE C ⇒ NULL ⇒ NULLS FIRST).
-  const cfg = await loadPopularityConfig(db)
-  const C = (await loadGlobalRatingAverage(db)) ?? 3.0
+  // request, em paralelo (independentes). Fallback 3.0 em TS (número real, NUNCA NULL — senão o CASE ELSE
+  // C ⇒ NULL ⇒ NULLS FIRST).
+  const [cfg, avg] = await Promise.all([loadPopularityConfig(db), loadGlobalRatingAverage(db)])
+  const C = avg ?? 3.0
 
   // Exclusões per-viewer SÓ quando logado; anônimo/global NÃO binda NULL (omite as cláusulas).
   const viewerExclusionSql = viewerId

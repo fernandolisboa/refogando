@@ -343,6 +343,28 @@ export const recipe = pgTable(
     index('recipe_image_id_idx')
       .on(t.imageId)
       .where(sql`${t.imageId} IS NOT NULL`),
+    // Feed de Descoberta / Seguindo (feed.ts): `ORDER BY created_at DESC, id DESC LIMIT n` sobre o gate
+    // `result_kind <> 'playful' AND moderation_removed_at IS NULL`. Parcial NESSE gate (o predicado da
+    // query o implica literalmente) ⇒ o planner anda o índice de trás pra frente e para no LIMIT, em vez de
+    // ordenar o pool inteiro a cada página. O keyset `(created_at, id) < cursor` casa a mesma ordem.
+    // Colunas ASC de propósito: a varredura reversa dá `DESC NULLS FIRST`, exatamente o `ORDER BY ... DESC`
+    // da query (um índice `DESC` sairia `DESC NULLS LAST`, que o planner não casa com ele).
+    index('recipe_feed_created_idx')
+      .on(t.createdAt, t.id)
+      .where(sql`${t.resultKind} <> 'playful' AND ${t.moderationRemovedAt} IS NULL`),
+    // FKs sem índice que o Postgres varre (seq scan de `recipe`) a cada DELETE do lado referenciado:
+    // apagar uma Receita (self-FK `parent_recipe_id` ON DELETE set null) e apagar um usuário (purge diário
+    // de cadastros pendentes; `moderated_by`/`reviewed_by` ON DELETE set null). Colunas esparsas ⇒
+    // índices parciais `IS NOT NULL` enxutos (o `fk = $1` do gatilho de RI implica IS NOT NULL).
+    index('recipe_parent_recipe_id_idx')
+      .on(t.parentRecipeId)
+      .where(sql`${t.parentRecipeId} IS NOT NULL`),
+    index('recipe_moderated_by_idx')
+      .on(t.moderatedBy)
+      .where(sql`${t.moderatedBy} IS NOT NULL`),
+    index('recipe_reviewed_by_idx')
+      .on(t.reviewedBy)
+      .where(sql`${t.reviewedBy} IS NOT NULL`),
   ],
 )
 
@@ -601,7 +623,15 @@ export const recipeIngredient = pgTable(
     nota: text('nota'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('recipe_ingredient_recipe_id_idx').on(t.recipeId)],
+  (t) => [
+    index('recipe_ingredient_recipe_id_idx').on(t.recipeId),
+    // Ramo de ingrediente CANÔNICO da Busca (`JOIN recipe_ingredient ri ON ri.ingredient_id = ...`,
+    // search.ts) e o ON DELETE set null quando o Curador apaga um ingrediente. Parcial: só linhas já
+    // casadas com o catálogo canônico têm o id.
+    index('recipe_ingredient_ingredient_id_idx')
+      .on(t.ingredientId)
+      .where(sql`${t.ingredientId} IS NOT NULL`),
+  ],
 )
 
 export const tag = pgTable(
@@ -804,35 +834,61 @@ export const session = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex('session_token_uq').on(t.token)],
+  (t) => [
+    uniqueIndex('session_token_uq').on(t.token),
+    // Better Auth lista/revoga sessões por usuário (`revokeSessionsOnPasswordReset`, listSessions); o
+    // purge testa `NOT EXISTS (session WHERE user_id)` e o ON DELETE cascade de `users` também filtra aqui.
+    index('session_user_id_idx').on(t.userId),
+  ],
 )
 
-export const account = pgTable('account', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
-  scope: text('scope'),
-  idToken: text('id_token'),
-  password: text('password'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const account = pgTable(
+  'account',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+    scope: text('scope'),
+    idToken: text('id_token'),
+    password: text('password'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Better Auth: login por e-mail lê as contas do usuário (`account WHERE user_id`) e o login social
+    // acha a conta por `(provider_id, account_id)`. Sem índice, os dois eram seq scan da tabela inteira.
+    // Não-único de propósito: a lib não promete unicidade e um UNIQUE aqui poderia falhar na migração.
+    index('account_user_id_idx').on(t.userId),
+    index('account_provider_account_idx').on(t.providerId, t.accountId),
+  ],
+)
 
-export const verification = pgTable('verification', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  identifier: text('identifier').notNull(),
-  value: text('value').notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const verification = pgTable(
+  'verification',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // Better Auth: `identifier = ? ORDER BY created_at DESC LIMIT 1` (reset de senha, confirmação de
+    // e-mail) e as contagens/limpezas por identifier do slot de e-mail e do purge (auth.ts,
+    // pending-signup-purge.ts). `created_at` ASC: a varredura reversa serve o `ORDER BY created_at DESC`.
+    index('verification_identifier_created_idx').on(t.identifier, t.createdAt),
+    // Todo `findVerificationValue` da lib apaga os vencidos (`DELETE WHERE expires_at < now()`).
+    index('verification_expires_at_idx').on(t.expiresAt),
+  ],
+)
 
 // ── Rate limit persistente (issue #449, SEC) ────────────────────────────────────
 //
@@ -1073,6 +1129,11 @@ export const creationSession = pgTable(
   },
   (t) => [
     index('creation_session_user_id_idx').on(t.userId),
+    // FK `recipe_id` ON DELETE set null (apagar uma Receita varria a tabela inteira) + a leitura por
+    // Receita do regenerar. Parcial: a sessão só ganha `recipe_id` quando vira Receita.
+    index('creation_session_recipe_id_idx')
+      .on(t.recipeId)
+      .where(sql`${t.recipeId} IS NOT NULL`),
     // mode=structured EXIGE briefing (AC2). CHECK simples na própria tabela (espelha
     // recipe_playful_private_chk); a rede de banco contra structured-sem-briefing.
     check(
@@ -1366,6 +1427,14 @@ export const notification = pgTable(
       .on(t.recipientId)
       .where(sql`${t.readAt} is null`),
     index('notification_actor_id_idx').on(t.actorId),
+    // FKs ON DELETE cascade a partir de `recipe` e `recipe_review`: sem índice, apagar uma Receita ou uma
+    // Avaliação varria `notification` inteira (a tabela de maior volume). Parciais (colunas opcionais).
+    index('notification_recipe_id_idx')
+      .on(t.recipeId)
+      .where(sql`${t.recipeId} IS NOT NULL`),
+    index('notification_review_id_idx')
+      .on(t.reviewId)
+      .where(sql`${t.reviewId} IS NOT NULL`),
   ],
 )
 
@@ -1415,6 +1484,9 @@ export const report = pgTable(
     index('report_review_status_idx').on(t.reviewId, t.status),
     // Fila do Curador: pending ordenada por data de criação.
     index('report_status_created_idx').on(t.status, t.createdAt),
+    // FK `reporter_id` ON DELETE cascade a partir de `users` (purge de cadastros pendentes) e o NOT EXISTS
+    // do candidato do purge.
+    index('report_reporter_id_idx').on(t.reporterId),
     // #366: EXATAMENTE UM alvo — recipe XOR review (backstop de banco do polimorfismo). As linhas
     // legadas (recipe_id set, review_id null) passam: false <> true = TRUE.
     check('report_target_chk', sql`(${t.recipeId} is null) <> (${t.reviewId} is null)`),
@@ -1635,6 +1707,10 @@ export const shoppingListItem = pgTable(
       .on(t.listId, t.matchKey, t.unidade)
       .nullsNotDistinct(),
     index('shopping_list_item_list_id_idx').on(t.listId),
+    // FK `source_recipe_id` ON DELETE set null: apagar uma Receita varria todos os itens de lista.
+    index('shopping_list_item_source_recipe_id_idx')
+      .on(t.sourceRecipeId)
+      .where(sql`${t.sourceRecipeId} IS NOT NULL`),
   ],
 )
 

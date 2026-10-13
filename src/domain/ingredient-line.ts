@@ -37,7 +37,10 @@ import { formatQuantityDisplay } from '@/domain/quantity-format'
  * exibe só a medida estruturada localizada, ao menos. Supera o remendo do PR #354, que exibia
  * `rawText` cru (a linha humana completa) — agora a linha é COMPOSTA da fonte única.
  */
-export function formatIngredientLine(item: IngredientView, m: Messages, locale: string): string {
+/** Só os rótulos que a linha de ingrediente usa — permite passar um recorte do catálogo (ver `RecipeDetailView`). */
+export type IngredientLineMessages = Pick<Messages, 'unidadeLabel' | 'unidadeLabelPlural' | 'unidadeConector'>
+
+export function formatIngredientLine(item: IngredientView, m: IngredientLineMessages, locale: string): string {
   const nome = item.rawText?.trim() ?? ''
   const hasQty = item.quantidade != null && item.quantidade !== ''
   const qtyFmt = hasQty ? formatQuantityDisplay(item.quantidade as string, locale) : null
@@ -82,7 +85,7 @@ export function formatIngredientLine(item: IngredientView, m: Messages, locale: 
  * quando qty ≠ 1 E não é fração < 1 (qty===1 singular; 0<qty≤1 singular "½ xícara"; qty>1 incl. 2.5
  * plural; qty null não chega aqui pelo caminho não-contável, mas o singular é o default seguro).
  */
-function unitLabelFor(unidade: string, qtyNum: number | null, m: Messages): string {
+function unitLabelFor(unidade: string, qtyNum: number | null, m: IngredientLineMessages): string {
   if (!isUnidade(unidade)) return unidade
   const plural = qtyNum != null && !(qtyNum > 0 && qtyNum <= 1)
   return plural ? m.unidadeLabelPlural[unidade] : m.unidadeLabel[unidade]

@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
-import { normalizarRestricoes, parseListaRestricoes } from '@/domain/restricoes-perfil'
+import { normalizarRestricoes } from '@/domain/restricoes-perfil'
+import { parseListaRestricoes } from '@/domain/restricoes-perfil-parse'
 
 /**
  * Restrições alimentares SALVAS do logado (ADR-0041) — `users.restricoes`. Rota PRÓPRIA, fora de `/api/me`,

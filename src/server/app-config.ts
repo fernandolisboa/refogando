@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
 import { DEFAULT_TASK_MODEL, DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
@@ -103,8 +104,25 @@ export type AppConfig = {
   proCaps: ProCaps | null
 }
 
-export async function loadAppConfig(db: Database): Promise<AppConfig> {
+/**
+ * Leitura CRUA da linha singleton, deduplicada por request com `React.cache`. Um render de página lia a
+ * mesma linha 2–4 vezes (layout + home + receita da semana + popularidade; layout + aviso de catálogo no
+ * detalhe), cada uma um round trip. Dentro de um render a 2ª chamada reusa a 1ª; fora dele (route
+ * handlers, crons, scripts, testes) `cache` não tem escopo de request e chama direto — então o
+ * read-after-write do PUT de `/api/admin/config` continua lendo do banco. Só a linha é compartilhada e o
+ * parse abaixo roda por chamada; alguns campos jsonb (tetos por papel) saem da linha por referência, então
+ * a config devolvida é SÓ LEITURA (nenhum caller a muta hoje).
+ */
+async function selectAppConfigRow(db: Database) {
   const [row] = await db.select().from(appConfig)
+  return row
+}
+const readAppConfigRow = cache(selectAppConfigRow)
+
+export async function loadAppConfig(db: Database): Promise<AppConfig> {
+  // `cache` memoiza também a REJEIÇÃO: sem o fallback, um soluço do Neon na leitura compartilhada derrubaria
+  // todas as leituras do render (antes cada uma tentava sozinha). Na falha, tenta de novo direto no banco.
+  const row = await readAppConfigRow(db).catch(() => selectAppConfigRow(db))
   if (!row) {
     return {
       defaultModel: DEFAULT_TEXT_MODEL,

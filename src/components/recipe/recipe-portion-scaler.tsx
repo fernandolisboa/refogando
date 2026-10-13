@@ -4,8 +4,11 @@ import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { IngredientView } from '@/domain/recipe-read'
 import type { Messages } from '@/i18n/messages'
-import { formatIngredientLine, scaleIngredient } from '@/domain/ingredient-line'
+import { formatIngredientLine, scaleIngredient, type IngredientLineMessages } from '@/domain/ingredient-line'
 import { usePortionScale } from './recipe-portion-scale-context'
+
+/** Só `detalhe` + rótulos de unidade (o servidor passa este recorte, não o catálogo inteiro, no payload RSC). */
+type PortionScalerMessages = Pick<Messages, 'detalhe'> & IngredientLineMessages
 
 const MIN_PORCOES = 1
 const MAX_PORCOES = 99
@@ -35,7 +38,7 @@ export function RecipePortionScaler({
   locale,
 }: {
   ingredients: readonly IngredientView[]
-  m: Messages
+  m: PortionScalerMessages
   locale: string
 }) {
   const { porcoes, factor, setPorcoes } = usePortionScale()
