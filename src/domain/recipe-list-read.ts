@@ -14,7 +14,7 @@
  * devolver string vazia, cai no rótulo localizado `semTitulo` — o dono nunca vê um card mudo.
  */
 import type { LineageKind, Origin, ResultKind, Visibility } from '@/domain/recipe'
-import { resolveName, type TranslationRow } from '@/domain/recipe-read'
+import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
 
 /**
  * Linha da Receita que a lista do dono consome: a espinha (id/origin/visibility/resultKind/
@@ -43,7 +43,7 @@ export type RecipeListRow = {
   // (resolvido no loader). `undefined` quando o dono não tem tradução COM slug naquele locale (só o
   // original, ou slug ainda não congelado) ⇒ o card cai no fallback canônico por UUID.
   slug?: string
-  translations: ReadonlyArray<TranslationRow>
+  translations: ReadonlyArray<TranslationNameRow>
 }
 
 /**

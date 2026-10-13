@@ -1,13 +1,9 @@
 import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
-import { recipe, users } from '@/db/schema'
+import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
-import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
-import { loadImageGenConfig } from '@/server/app-config'
-import { loadGallery } from '@/server/recipe/image'
-import { resolveRecipeView } from '@/domain/recipe-read'
-import { isCommunityVisible } from '@/domain/recipe-visibility-check'
+import { loadRecipeDetailView } from '@/server/recipe/detail-view'
 import {
   isActiveCozinha,
   isCategoria,
@@ -27,14 +23,13 @@ import { canonicalLocale } from '@/i18n/locale'
 import { editOwnRecipe, deleteOwnRecipe, type OwnRecipePatch } from '@/server/recipe/owner-edit'
 
 /**
- * Leitura localizada da Receita (issue #3). Route fino: carrega a espinha +
- * traduções + ingredientes + tags via `loadRecipeRows` (loader de servidor
- * compartilhado — DRY com a retomada da #8) e delega a montagem da view ao módulo
- * PURO `resolveRecipeView` (sem DB). `?locale` escolhe o idioma pedido (padrão
- * DEFAULT_LOCALE). SOMENTE leitura — sem write/edit aqui.
+ * Leitura localizada da Receita (issue #3). Route FINO: delega TUDO a `loadRecipeDetailView`
+ * (loader de servidor compartilhado com a página `/{locale}/recipes/[id]` — o caminho do dono a
+ * chama direto, sem self-fetch). `?locale` escolhe o idioma pedido (padrão DEFAULT_LOCALE).
+ * SOMENTE leitura — sem write/edit aqui.
  *
- * Gating de leitura (ADR-0011): catálogo/sistema (owner_id NULL) e Receitas `public`
- * são legíveis por qualquer um (sem auth — preserva os testes da #3). Receita com
+ * Gating de leitura (ADR-0011, aplicado no loader): catálogo/sistema (owner_id NULL) e Receitas
+ * `public` são legíveis por qualquer um (sem auth — preserva os testes da #3). Receita com
  * dono + `private` (cobre toda geração da #8 e as playful) só é legível pelo próprio
  * dono; sem sessão OU dono diferente → 404 not_found (NÃO 401/403 — não vaza
  * existência).
@@ -52,106 +47,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await params
-  if (!isUuid(id)) return Response.json({ error: 'not_found' }, { status: 404 })
-
-  const db = getDb()
-
-  // Gating barato ANTES de carregar a view: lê só owner_id + visibility. Receita
-  // ausente cai no mesmo not_found (malformado/ausente/sem-acesso indistinguíveis).
-  const [gate] = await db
-    .select({
-      ownerId: recipe.ownerId,
-      visibility: recipe.visibility,
-      // #18: removida do pool pela moderação sai da leitura pública (não-dono → 404).
-      moderationRemovedAt: recipe.moderationRemovedAt,
-      // #238: rascunho de catálogo (pending/editing/rejected) NÃO é leitura pública — anônimo → 404.
-      curationStatus: recipe.curationStatus,
-    })
-    .from(recipe)
-    .where(eq(recipe.id, id))
-  if (!gate) return Response.json({ error: 'not_found' }, { status: 404 })
-
-  // Pública/catálogo (owner_id NULL = sistema, ADR-0011) → legível por qualquer um.
-  // Caso contrário (com dono + private) exige ser o próprio dono; senão 404 (não vaza
-  // existência — mesma forma da rota de retomada em creation-sessions/[id]).
-  //
-  // #18: uma Receita removida do pool NÃO é leitura pública (isPublicRead=false) — anônimo/
-  // não-dono cai no ramo privado → 404 (não vaza). O Owner da própria removida cai no ramo
-  // privado, confirma ownership e lê a linha privada (200). Remover-do-pool NÃO toca
-  // `visibility` (≠ despublicar, AC3).
-  //
-  // `viewerId` (#59) habilita os campos de gestão (`canManage`/`visibility`/`resultKind`)
-  // quando o requester é o dono — NUNCA altera corpo/gate de leitura. Resolvido com
-  // parcimônia: nunca lemos a sessão no tráfego anônimo quente (a Busca linka direto pra cá).
-  const isPublicRead =
-    isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) &&
-    gate.moderationRemovedAt == null
-  const requestLocale = parseRequestLocale(request)
-
-  let viewerId: string | undefined
-  let rows: Awaited<ReturnType<typeof loadRecipeRows>>
-  if (!isPublicRead) {
-    // Ramo privado: a sessão GATEIA se vale carregar — só pagamos `loadRecipeRows` depois
-    // de confirmar que o requester é o dono (sequencial de propósito: não carregar sem acesso).
-    const g = await requireSession(request)
-    if (!g.ok || g.session.user.id !== gate.ownerId) {
-      return Response.json({ error: 'not_found' }, { status: 404 })
-    }
-    viewerId = g.session.user.id
-    rows = await loadRecipeRows(db, id)
-  } else if (request.headers.get('cookie') != null) {
-    // Ramo público COM cookie (com OU sem dono — #16): só vale descobrir o requester quando
-    // há cookie (pula o anônimo puro — perf). Antes (#59) este ramo exigia `ownerId != null`,
-    // o que NUNCA resolvia o viewerId no Catálogo (ownerId NULL); mas Catálogo É
-    // votável/salvável (#16), então um logado que salvou no Catálogo precisa ver
-    // `viewerSaved` no detalhe. Resolver a sessão sempre que houver cookie corrige isso.
-    // Lê só `g.ok`/`g.session`; JAMAIS `g.response` (leitura pública permanece
-    // anônima-friendly, nunca vira 401/404 aqui). A sessão NÃO gateia a carga ⇒ sobrepomos
-    // `requireSession` e `loadRecipeRows` (colapsa o round-trip serial do logado quente).
-    const [g, loaded] = await Promise.all([requireSession(request), loadRecipeRows(db, id)])
-    if (g.ok) viewerId = g.session.user.id
-    rows = loaded
-  } else {
-    // Ramo público anônimo (sem cookie) ou catálogo anônimo: nenhuma sessão a resolver.
-    rows = await loadRecipeRows(db, id)
-  }
-  if (!rows) return Response.json({ error: 'not_found' }, { status: 404 })
-
-  // Estado social (#16/#362): `viewerSaved` SÓ quando há viewerId. #134: a config de geração-por-IA
-  // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
-  // NÃO paga essa query — preserva o caminho quente). As duas leituras são independentes ⇒ paralelas.
-  const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
-  const [social, imageGenEnabled, imageGenBlocked, gallery] = await Promise.all([
-    loadSocialState(db, { id, viewerId }),
-    isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
-    // #226: a restrição GRANULAR de geração-por-IA do usuário (flag por-conta do Curador), owner-gated
-    // como imageGenEnabled — a flag é por-USUÁRIO e a ação de gerar é owner-only ⇒ é o bloqueio do
-    // próprio dono. O tráfego anônimo/não-dono NÃO paga essa query (afordância proativa de esconder).
-    isOwner && viewerId != null
-      ? db
-          .select({ blockedAt: users.imageGenBlockedAt })
-          .from(users)
-          .where(eq(users.id, viewerId))
-          .then((rows) => rows[0]?.blockedAt != null)
-      : Promise.resolve(undefined),
-    // #222: a GALERIA da linhagem SÓ quando o requester é o DONO (mirror de imageGenEnabled, NÃO
-    // dentro de loadRecipeRows — que o caminho público-por-slug reusa). O tráfego anônimo/não-dono
-    // NÃO paga essa query e a vista pública NUNCA carrega o campo `gallery` (owner-gated).
-    isOwner && rows.recipe.lineageId != null
-      ? loadGallery(db, rows.recipe.lineageId, rows.recipe.imageId ?? null)
-      : Promise.resolve(undefined),
-  ])
-
-  const view = resolveRecipeView({
-    ...rows,
-    requestLocale,
-    viewerId,
-    viewerSaved: social.viewerSaved,
-    imageGenEnabled,
-    imageGenBlocked,
-    gallery,
+  // Toda a leitura (gate barato, sessão só quando precisa, view) mora no loader compartilhado com a
+  // página do detalhe. `null` = malformado/ausente/sem-acesso ⇒ o MESMO 404 leak-safe.
+  const view = await loadRecipeDetailView(getDb(), {
+    id,
+    requestLocale: parseRequestLocale(request),
+    headers: request.headers,
   })
-
+  if (view == null) return Response.json({ error: 'not_found' }, { status: 404 })
   return Response.json(view)
 }
 

@@ -16,7 +16,7 @@
  */
 import type { Origin } from '@/domain/recipe'
 import type { ProfileLink } from '@/domain/links'
-import { resolveName, type TranslationRow } from '@/domain/recipe-read'
+import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
 
 /**
  * Linha de Receita pública do perfil (o loader a projeta): a espinha mínima para o título +
@@ -37,7 +37,7 @@ export type ProfileRecipeRow = {
   // `imageUrl`/`imageAiGenerated` aqui (não no loader), espelhando `projectResult` da Busca.
   imageUrl?: string | null
   imageProvenance?: string | null
-  translations: ReadonlyArray<TranslationRow>
+  translations: ReadonlyArray<TranslationNameRow>
 }
 
 /** Um item de receita no perfil público — o mínimo que `RecipeResultItem` consome. */

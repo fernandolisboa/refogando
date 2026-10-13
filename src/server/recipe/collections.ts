@@ -13,7 +13,7 @@ import { validateCollectionName, MAX_COLLECTIONS_PER_USER } from '@/domain/colle
 import { pgCode } from '@/server/recipe/visibility'
 import { viewerReadableSqlFragment } from '@/server/recipe/visibility-sql'
 import { resolveRecipeListItem, type RecipeListItem } from '@/domain/recipe-list-read'
-import type { TranslationRow } from '@/domain/recipe-read'
+import type { TranslationNameRow } from '@/domain/recipe-read'
 
 /**
  * Núcleo com efeito das Coleções (issue #364, ADR-0027) — a camada de PASTAS PRIVADAS M:N sobre o
@@ -421,29 +421,18 @@ export async function hydrateRecipeListItems(
       recipeId: recipeTranslation.recipeId,
       locale: recipeTranslation.locale,
       titulo: recipeTranslation.titulo,
-      descricao: recipeTranslation.descricao,
-      passos: recipeTranslation.passos,
-      notas: recipeTranslation.notas,
+      // Só o que `resolveName` lê (card exibe só o título): sem descricao/passos/notas/stale.
       provenance: recipeTranslation.provenance,
-      stale: recipeTranslation.stale,
       slug: recipeTranslation.slug,
     })
     .from(recipeTranslation)
     .where(inArray(recipeTranslation.recipeId, ids))
 
-  const byRecipe = new Map<string, TranslationRow[]>()
+  const byRecipe = new Map<string, TranslationNameRow[]>()
   const slugByRecipe = new Map<string, string>()
   for (const t of translations) {
     const list = byRecipe.get(t.recipeId) ?? []
-    list.push({
-      locale: t.locale,
-      titulo: t.titulo,
-      descricao: t.descricao,
-      passos: t.passos,
-      notas: t.notas,
-      provenance: t.provenance,
-      stale: t.stale,
-    })
+    list.push({ locale: t.locale, titulo: t.titulo, provenance: t.provenance })
     byRecipe.set(t.recipeId, list)
     if (t.locale === requestLocale && t.slug != null) slugByRecipe.set(t.recipeId, t.slug)
   }

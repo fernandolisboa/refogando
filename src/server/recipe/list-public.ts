@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeTranslation } from '@/db/schema'
 import type { ProfileRecipeRow } from '@/domain/recipe-profile-read'
-import type { TranslationRow } from '@/domain/recipe-read'
+import type { TranslationNameRow } from '@/domain/recipe-read'
 
 /**
  * Loader das Receitas PÚBLICAS de um dono (#129) — alimenta o perfil público `/u/<handle>`.
@@ -70,11 +70,8 @@ export async function listPublicRecipesByOwner(
       recipeId: recipeTranslation.recipeId,
       locale: recipeTranslation.locale,
       titulo: recipeTranslation.titulo,
-      descricao: recipeTranslation.descricao,
-      passos: recipeTranslation.passos,
-      notas: recipeTranslation.notas,
+      // Só o que `resolveName` lê (card exibe só o título): sem descricao/passos/notas/stale.
       provenance: recipeTranslation.provenance,
-      stale: recipeTranslation.stale,
       // Slug por idioma (#231, ADR-0020): projetado pra montar o link canônico do card. O loader é
       // locale-agnóstico — devolve `slugByLocale` e o builder escolhe pelo requestLocale.
       slug: recipeTranslation.slug,
@@ -84,19 +81,11 @@ export async function listPublicRecipesByOwner(
 
   // Agrupa as traduções por receita (ausente ⇒ []; resolveName cai no fallback / item pulado).
   // Em paralelo, colhe os slugs por idioma (#231): `{ locale → slug }` só dos não-NULL.
-  const byRecipe = new Map<string, TranslationRow[]>()
+  const byRecipe = new Map<string, TranslationNameRow[]>()
   const slugsByRecipe = new Map<string, Record<string, string>>()
   for (const t of translations) {
     const list = byRecipe.get(t.recipeId) ?? []
-    list.push({
-      locale: t.locale,
-      titulo: t.titulo,
-      descricao: t.descricao,
-      passos: t.passos,
-      notas: t.notas,
-      provenance: t.provenance,
-      stale: t.stale,
-    })
+    list.push({ locale: t.locale, titulo: t.titulo, provenance: t.provenance })
     byRecipe.set(t.recipeId, list)
     if (t.slug != null) {
       const map = slugsByRecipe.get(t.recipeId) ?? {}

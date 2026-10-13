@@ -2,7 +2,7 @@ import { and, eq, desc, inArray, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeTranslation } from '@/db/schema'
 import { resolveRecipeListItem, type RecipeListItem } from '@/domain/recipe-list-read'
-import type { TranslationRow } from '@/domain/recipe-read'
+import type { TranslationNameRow } from '@/domain/recipe-read'
 
 /**
  * Loader de servidor de "Minhas criações" (issue #61). Carrega TODAS as Receitas do dono
@@ -61,11 +61,8 @@ export async function listMyRecipes(
       recipeId: recipeTranslation.recipeId,
       locale: recipeTranslation.locale,
       titulo: recipeTranslation.titulo,
-      descricao: recipeTranslation.descricao,
-      passos: recipeTranslation.passos,
-      notas: recipeTranslation.notas,
+      // Só o que `resolveName` lê (card exibe só o título): sem descricao/passos/notas/stale.
       provenance: recipeTranslation.provenance,
-      stale: recipeTranslation.stale,
       // Slug por idioma (#231, ADR-0020): projetado pra montar o link canônico do card. Só o slug
       // da tradução do `requestLocale` é repassado ao DTO (mapa abaixo).
       slug: recipeTranslation.slug,
@@ -76,19 +73,11 @@ export async function listMyRecipes(
   // Agrupa as traduções por receita (ausente ⇒ []; resolveName cai no fallback). Em paralelo,
   // colhe o slug do locale CORRENTE por receita (#231): só a tradução do `requestLocale` COM slug
   // não-NULL — o card linka `/{locale}/recipes/<slug>`; ausente ⇒ fallback por UUID.
-  const byRecipe = new Map<string, TranslationRow[]>()
+  const byRecipe = new Map<string, TranslationNameRow[]>()
   const slugByRecipe = new Map<string, string>()
   for (const t of translations) {
     const list = byRecipe.get(t.recipeId) ?? []
-    list.push({
-      locale: t.locale,
-      titulo: t.titulo,
-      descricao: t.descricao,
-      passos: t.passos,
-      notas: t.notas,
-      provenance: t.provenance,
-      stale: t.stale,
-    })
+    list.push({ locale: t.locale, titulo: t.titulo, provenance: t.provenance })
     byRecipe.set(t.recipeId, list)
     if (t.locale === requestLocale && t.slug != null) slugByRecipe.set(t.recipeId, t.slug)
   }
