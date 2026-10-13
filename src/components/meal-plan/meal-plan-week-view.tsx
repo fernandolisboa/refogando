@@ -750,7 +750,10 @@ function useCookedMeal(entryId: string, locale: string, m: M, cookRef: React.Ref
   useEffect(() => {
     if (!focusCookAfterUndo.current || busy != null || undoPending) return
     focusCookAfterUndo.current = false
-    cookRef.current?.focus()
+    // Só resgata o foco que caiu no <body> com o "Desfazer" que sumiu: se a pessoa já foi para outro
+    // controle enquanto a restauração voava, o foco fica onde ela está.
+    const active = document.activeElement
+    if (active == null || active === document.body) cookRef.current?.focus()
   }, [busy, undoPending, cookRef])
 
   async function cook() {
