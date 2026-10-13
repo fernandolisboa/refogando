@@ -16,9 +16,10 @@
  *
  *  2. DONO (privado/dinâmico): quando o caminho 1 devolve `null` (Receita privada/playful/removida
  *     OU slug inexistente), OU quando o `[id]` é um UUID legado que NÃO 308-ou (= a Receita não é
- *     leitura pública: sem slug público), caímos no caminho do dono — `?original` legado + self-fetch
- *     `/api/recipes/[id]` com cookie de sessão (a rota reimpõe ownership e devolve 404 leak-safe a
- *     quem não é dono). Esse caminho é dinâmico por natureza (lê cookie) e PRESERVA o fluxo de
+ *     leitura pública: sem slug público), caímos no caminho do dono — `?original` legado +
+ *     `loadRecipeDetailView` (o MESMO loader do `GET /api/recipes/[id]`, chamado direto com os headers
+ *     da request — sem self-fetch HTTP; reimpõe ownership e devolve `null` ⇒ 404 leak-safe a quem não
+ *     é dono). Esse caminho é dinâmico por natureza (lê cookie) e PRESERVA o fluxo de
  *     leitura+edição do dono do rework Criar/Editar — mas NÃO contamina o caminho 1.
  *
  * Canonicalização UUID→slug (permanente): mora AQUI, no Server Component. Um `[id]` com forma de
@@ -68,10 +69,10 @@ import {
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
+import { loadRecipeDetailView } from '@/server/recipe/detail-view'
 import { loadRecipeReviews } from '@/server/recipe/review'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
-import { getBaseUrl, getBaseUrlFromEnv } from '@/server/http/base-url'
-import { handleResponse } from '@/server/http/handle-response'
+import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
 /**
@@ -236,15 +237,16 @@ export default async function RecipeDetailPage({
   // ── DONO/privado: caminho DINÂMICO (cookie). Chega aqui quando:
   //    (a) o `[id]` é um SLUG cuja leitura pública deu null (privada/playful/removida/inexistente), OU
   //    (b) o `[id]` é um UUID legado que NÃO 308-ou acima (= não é leitura pública: sem slug público).
-  //    Reusa a rota /api/recipes/[id] que reimpõe ownership e devolve 404 leak-safe a quem não é
-  //    dono — preserva o fluxo leitura+edição do dono. NUNCA redireciona nem revela slug aqui.
+  //    Reusa o loader do /api/recipes/[id] (`loadRecipeDetailView`), que reimpõe ownership e devolve
+  //    `null` (404 leak-safe) a quem não é dono — preserva o fluxo leitura+edição do dono. NUNCA
+  //    redireciona nem revela slug aqui.
   const sp = await searchParams
-  // `headers()` (lido para encaminhar o cookie de sessão abaixo) já marca ESTE branch como
+  // `headers()` (lido para resolver a sessão do dono abaixo) já marca ESTE branch como
   // DINÂMICO (correto — leitura do dono), sem afetar o branch público acima (que retornou sem
   // tocar `headers()`/`cookies()`, ficando estaticamente renderizável/cacheável).
   const headerStore = await headers()
 
-  // Resolve o UUID interno (chave da API de dados): se o `[id]` JÁ é um UUID legado, usa-o direto;
+  // Resolve o UUID interno (chave do loader): se o `[id]` JÁ é um UUID legado, usa-o direto;
   // se é um SLUG (link interno do dono), acha a Receita pelo slug — INCLUSIVE privada do dono, então
   // a busca NÃO aplica o gate público. Sem casamento ⇒ 404 leak-safe.
   const ownerUuid =
@@ -254,26 +256,18 @@ export default async function RecipeDetailPage({
   if (ownerUuid == null) notFound()
 
   const contentLocale = resolveContentLocale({ pageLocale: locale, original: sp.original })
-  const base = await getBaseUrl()
-  const url = `${base}/api/recipes/${encodeURIComponent(ownerUuid)}?locale=${encodeURIComponent(contentLocale)}`
-  // Encaminha o cookie de sessão: sem isto a rota vê requisição anônima e o dono nunca lê a própria
-  // privada. `no-store` permanece (resposta dependente de sessão nunca é cacheável).
-  const cookieHeader = headerStore.get('cookie')
-  const res = await fetch(url, {
-    cache: 'no-store',
-    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+  // Os headers da request levam o cookie de sessão: sem eles o loader vê leitor anônimo e o dono
+  // nunca lê a própria privada. A view é JSON-pura (sem `Date`), então passá-la direto aos client
+  // components equivale ao `res.json()` do antigo self-fetch.
+  const view = await loadRecipeDetailView(getDb(), {
+    id: ownerUuid,
+    requestLocale: contentLocale,
+    headers: headerStore,
   })
-
-  const outcome = handleResponse(res)
-  if (outcome.kind === 'notFound') notFound()
-  if (outcome.kind === 'error') {
-    throw new Error(`Falha ao carregar a receita: ${outcome.status}`)
-  }
-
-  const view = (await res.json()) as RecipeView
+  if (view == null) notFound()
   // As três leituras abaixo são independentes entre si (só pedem o id e o `view.origin`): em paralelo.
   //  - #237: mesma cortesia editorial no caminho do dono (catálogo + ligado). A view do dono vem do
-  //    JSON da rota /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
+  //    loader do /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
   //    já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
   //  - Avaliações (#363) no caminho do dono: para uma privada, `loadRecipeReviews` devolve `null`
   //    (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Sinal

@@ -1,26 +1,27 @@
 /**
  * Página do perfil PÚBLICO (#129) — Server Component. Mirror de `/recipes/[id]/page.tsx`:
- * resolve o locale do SEGMENTO DA URL (`params.locale`, ADR-0020 — a URL é a verdade do idioma),
- * monta a URL absoluta e faz `fetch` da própria rota `GET /api/u/[handle]` (ADR-0010: a UI consome
- * ROUTE HANDLERS, não Server Actions; não reimplementa domínio), renderizando o `PublicProfile`.
+ * resolve o locale do SEGMENTO DA URL (`params.locale`, ADR-0020 — a URL é a verdade do idioma) e
+ * chama DIRETO o loader `loadPublicProfile` — o MESMO que o route `GET /api/u/[handle]` usa
+ * (ADR-0010: a UI não reimplementa domínio; reusar o loader evita o self-fetch HTTP, que custava uma
+ * 2ª invocação de função por visita), renderizando o `PublicProfile`.
  *
- * ANÔNIMO-readable: NÃO encaminha cookie de sessão (o perfil público é o mesmo p/ todos; nada
- * depende de sessão). 404 leak-safe (handle inexistente/conta desativada) ⇒ `notFound()`. Outro
- * erro ⇒ `throw` (cai em error.tsx global).
+ * ANÔNIMO-readable: o loader NUNCA lê sessão (o perfil público é o mesmo p/ todos). 404 leak-safe
+ * (handle inexistente/conta desativada ⇒ `null`) ⇒ `notFound()`. Erro do loader propaga (cai em
+ * error.tsx global).
  *
- * `fetch` sem cache: leitura viva (o dono pode ter publicado/despublicado/trocado o handle).
+ * Leitura viva a cada request (a página já é dinâmica — lê cookies/headers): o dono pode ter
+ * publicado/despublicado/trocado o handle.
  */
 import type { Metadata } from 'next'
 import { cookies, headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/container'
 import { PublicProfileView } from '@/components/profile/public-profile-view'
-import type { PublicProfile } from '@/domain/recipe-profile-read'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
-import { getBaseUrl } from '@/server/http/base-url'
-import { handleResponse } from '@/server/http/handle-response'
+import { getDb } from '@/server/deps'
 import { resolvePageLocale } from '@/server/http/page-locale'
+import { loadPublicProfile } from '@/server/user/public-profile'
 
 // #462: título fino do perfil público = `@handle` (único, zero-custo — vem do param da URL, sem um
 // 2º fetch do perfil). Página PÚBLICA/indexável — sem noindex.
@@ -51,17 +52,8 @@ export default async function PublicProfilePage({
     acceptLanguage: headerStore.get('accept-language'),
   })
 
-  const base = await getBaseUrl()
-  const url = `${base}/api/u/${encodeURIComponent(handle)}?locale=${encodeURIComponent(locale)}`
-  const res = await fetch(url, { cache: 'no-store' })
-
-  const outcome = handleResponse(res)
-  if (outcome.kind === 'notFound') notFound()
-  if (outcome.kind === 'error') {
-    throw new Error(`Falha ao carregar o perfil: ${outcome.status}`)
-  }
-
-  const profile = (await res.json()) as PublicProfile
+  const profile = await loadPublicProfile(getDb(), handle, locale)
+  if (profile === null) notFound()
   const messages = MESSAGES[locale]
 
   return (

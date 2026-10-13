@@ -152,6 +152,12 @@ export type TranslationRow = {
 }
 
 /**
+ * Recorte de `TranslationRow` que `resolveName` lê (locale/título/proveniência). Os loaders de LISTA
+ * (cards só exibem o título) projetam só isto — não trazem `descricao`/`passos`/`notas`/`stale`.
+ */
+export type TranslationNameRow = Pick<TranslationRow, 'locale' | 'titulo' | 'provenance'>
+
+/**
  * Item de ingrediente conforme o LOADER projeta (entrada de `resolveRecipeView`) —
  * parte das INVARIANTES (não traduzido na #3). `quantidade` é `numeric(10,3)` e VOLTA
  * COMO STRING do driver: mantém-se string (ex. `'2.500'`), nunca número.
@@ -445,10 +451,10 @@ export type RecipeView = {
 }
 
 /** Acha a tradução do locale pedido (ou `undefined`). */
-function findTranslation(
-  translations: ReadonlyArray<TranslationRow>,
+function findTranslation<T extends { locale: string }>(
+  translations: ReadonlyArray<T>,
   locale: string,
-): TranslationRow | undefined {
+): T | undefined {
   return translations.find((t) => t.locale === locale)
 }
 
@@ -504,7 +510,7 @@ export function resolveIngredientName(
 export function resolveName(input: {
   originalLocale: string
   requestLocale: string
-  translations: ReadonlyArray<TranslationRow>
+  translations: ReadonlyArray<TranslationNameRow>
 }): string {
   const original = findTranslation(input.translations, input.originalLocale)
   // O original é a fonte: seu `titulo` é o nome-base. Se faltar (não deveria),

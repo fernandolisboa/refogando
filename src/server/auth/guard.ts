@@ -47,7 +47,15 @@ function toSession(user: RawSessionUser): Session {
 
 /** 401 se sem sessão ou conta soft-deletada (D4). */
 export async function requireSession(req: Request): Promise<GuardResult> {
-  const raw = await getAuth().api.getSession({ headers: req.headers })
+  return requireSessionFromHeaders(req.headers)
+}
+
+/**
+ * Mesma regra de `requireSession`, a partir dos HEADERS crus — para Server Components, que não têm
+ * `Request` (passam `await headers()` de `next/headers`). Fonte única: `requireSession` delega aqui.
+ */
+export async function requireSessionFromHeaders(headers: Headers): Promise<GuardResult> {
+  const raw = await getAuth().api.getSession({ headers })
   const user = raw?.user as RawSessionUser | undefined
   if (!user) {
     return { ok: false, response: Response.json({ error: 'nao_autenticado' }, { status: 401 }) }

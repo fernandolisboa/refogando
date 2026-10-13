@@ -20,7 +20,6 @@ import { RecipeDetailView } from '@/components/recipe/recipe-detail-view'
 import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-context'
 import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { cozinhaVocabFixture } from '../helpers/cozinha-vocab'
-import { handleResponse } from '@/server/http/handle-response'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
 /**
@@ -41,9 +40,9 @@ function withScale(view: RecipeView, node: ReactNode) {
 /**
  * Teste de COMPONENTE jsdom do detalhe da Receita (#57) — seam de frontend da #54 (sem
  * browser/Postgres). O nó testado é o PURO `RecipeDetailView` (a página depende de
- * `headers()`/fetch server, que lançam fora do request scope no jsdom). Fixtures no shape
- * REAL `RecipeView`. A lógica NOVA da página (status→efeito; precedência de `?locale`) é
- * coberta pelos helpers puros `handleResponse`/`resolvePageLocale` (T5/T6).
+ * `headers()` e do banco, fora do request scope no jsdom). Fixtures no shape REAL `RecipeView`.
+ * A precedência de `?locale` da página é coberta pelo helper puro `resolvePageLocale` (T6); o
+ * loader do caminho do dono, por `test/integration/detail-loaders.test.ts`.
  */
 
 const M = ptBR
@@ -459,12 +458,6 @@ describe('RecipeDetailView (#57)', () => {
     const contador = document.querySelector('[aria-live="polite"]')
     expect(contador?.textContent?.trim()).toBe('Porções: 6')
     expect(screen.queryByText('8')).toBeNull()
-  })
-
-  it('T5 — handleResponse mapeia status → efeito (caminho not-found, leak-safe)', () => {
-    expect(handleResponse({ ok: false, status: 404 })).toEqual({ kind: 'notFound' })
-    expect(handleResponse({ ok: false, status: 500 })).toEqual({ kind: 'error', status: 500 })
-    expect(handleResponse({ ok: true, status: 200 })).toEqual({ kind: 'ok' })
   })
 
   it('T6 — resolvePageLocale: ?locale válido vence; inválido cai no cookie; ausente → Accept-Language; case-insensitive', () => {
