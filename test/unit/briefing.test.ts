@@ -10,6 +10,8 @@ import {
   buildFreeTextPrompt,
   buildConversationPrompt,
   buildSystemPrompt,
+  comRestricoesPedidas,
+  restricoesPedidasFragment,
   composeSystemPrompt,
   buildVozCozinhaFragment,
   resolveVozCozinhaAxis,
@@ -417,6 +419,43 @@ describe('buildConversationPrompt — determinístico (#12)', () => {
     const rotulosNoInicio = linhas.filter((l) => /^(Usuário|Assistente): /.test(l))
     expect(rotulosNoInicio).toHaveLength(1)
     expect(rotulosNoInicio[0].startsWith('Usuário: ')).toBe(true)
+  })
+})
+
+describe('Restrições pedidas do perfil no Prompt aberto e na Conversa (ADR-0041)', () => {
+  it('free_text: sem Restrições o userPrompt é o texto cru, byte-a-byte (regeneração e call sites antigos)', () => {
+    expect(buildFreeTextPrompt('  um bolo de fubá simples  ')).toEqual(
+      buildFreeTextPrompt('um bolo de fubá simples', NEUTRAL_AXES, []),
+    )
+    expect(buildFreeTextPrompt('um bolo de fubá simples').userPrompt).toBe('um bolo de fubá simples')
+  })
+
+  it('free_text: as Restrições entram como a MESMA linha "Restrições:" do briefing, depois do texto', () => {
+    const { systemPrompt, userPrompt } = buildFreeTextPrompt('um bolo de fubá', NEUTRAL_AXES, [
+      'sem_gluten',
+      'vegano',
+    ])
+    expect(userPrompt).toBe('um bolo de fubá\n\nRestrições: sem_gluten, vegano')
+    // O systemPrompt não muda (o base já manda respeitar as restrições estritamente).
+    expect(systemPrompt).toBe(buildSystemPrompt('free_text'))
+  })
+
+  it('fragmento: vazio ⇒ null e identidade; com Restrições ⇒ anexa ao fim, nomeando cada uma', () => {
+    expect(restricoesPedidasFragment([])).toBeNull()
+    expect(comRestricoesPedidas('BASE', [])).toBe('BASE')
+    const out = comRestricoesPedidas('BASE', ['sem_lactose'])
+    expect(out.startsWith('BASE ')).toBe(true)
+    expect(out).toContain('sem_lactose')
+    expect(out).toContain('advisory')
+  })
+
+  it('conversa: a destilação recebe o fragmento no systemPrompt; a Transcrição (userPrompt) fica intacta', () => {
+    const t: TranscriptMessage[] = [{ role: 'user', content: 'quero um bolo' }]
+    const sem = buildConversationPrompt(t)
+    const com = buildConversationPrompt(t, NEUTRAL_AXES, ['vegano'])
+    expect(com.userPrompt).toBe(sem.userPrompt)
+    expect(com.systemPrompt).toBe(comRestricoesPedidas(SYSTEM_PROMPT_DISTILLATION, ['vegano']))
+    expect(buildConversationPrompt(t, NEUTRAL_AXES, [])).toEqual(sem)
   })
 })
 

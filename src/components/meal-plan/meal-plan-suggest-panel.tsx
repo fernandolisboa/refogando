@@ -20,7 +20,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MEAL_PLAN_PORCOES_MAX, MEAL_PLAN_PORCOES_MIN, MEAL_SLOTS, type MealSlot } from '@/domain/meal-plan'
 import { MENU_NOTE_MAX, type MenuSource } from '@/domain/menu-suggestion'
-import { RESTRICOES, type Restricao } from '@/domain/vocabulary'
+import { RESTRICOES } from '@/domain/vocabulary'
+import {
+  SELECAO_INICIAL,
+  alternarRestricao,
+  restricoesEfetivas,
+  vemDoPerfil,
+  type SelecaoRestricoes,
+} from '@/domain/restricoes-perfil'
+import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
+import { RestricoesPerfilHint } from '@/components/profile/restricoes-perfil-hint'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { Messages } from '@/i18n/messages'
 import { capitalizeFirst, formatShortDay, formatWeekday, mealSlotLabel } from './meal-plan-format'
@@ -112,7 +121,11 @@ export function MealPlanSuggestPanel({
   // Texto livre no campo (apagar pra digitar outro número não pode virar "1" no meio); validado ao pedir.
   const [porcoesText, setPorcoesText] = useState<string>(() => String(readStoredPorcoes()))
   const porcoes = parsePorcoesText(porcoesText)
-  const [restricoes, setRestricoes] = useState<Restricao[]>([])
+  // Restrições (ADR-0041): pré-marcadas com as SALVAS no perfil enquanto a pessoa não mexe (com o aviso
+  // "marcadas a partir do seu perfil"); o 1º toque torna a seleção dela, inclusive vazia.
+  const perfilRestricoes = useRestricoesPerfil()
+  const [selRestricoes, setSelRestricoes] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
+  const restricoes = restricoesEfetivas(selRestricoes, perfilRestricoes)
   const [source, setSource] = useState<MenuSource>('all')
   const [onlyEmpty, setOnlyEmpty] = useState(true)
   const [note, setNote] = useState('')
@@ -275,12 +288,13 @@ export function MealPlanSuggestPanel({
                     type="checkbox"
                     className="sr-only"
                     checked={restricoes.includes(r)}
-                    onChange={() => setRestricoes((prev) => toggle(prev, r))}
+                    onChange={() => setSelRestricoes((prev) => alternarRestricao(prev, perfilRestricoes, r))}
                   />
                   {messages.restricaoLabel[r]}
                 </label>
               ))}
             </div>
+            <RestricoesPerfilHint visivel={vemDoPerfil(selRestricoes, perfilRestricoes)} comLink />
           </fieldset>
 
           <div className="flex flex-wrap items-end gap-4">

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "restricoes" "restricao"[] DEFAULT '{}' NOT NULL;

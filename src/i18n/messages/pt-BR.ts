@@ -975,6 +975,29 @@ export const ptBR = {
     precisaEntrar: 'Entre na sua conta para editar seu perfil.',
     erro: 'Não foi possível salvar seu perfil. Tente de novo.',
   },
+  // Restrições alimentares SALVAS no perfil (ADR-0041): a seção do /me/profile e as indicações de que o
+  // default veio de lá, nas superfícies que o aplicam (criação, Sugestão de cardápio, Busca).
+  restricoesPerfil: {
+    titulo: 'Restrições alimentares',
+    descricao:
+      'Marque o que você costuma precisar respeitar. Elas já vêm marcadas quando você cria uma receita, pede uma sugestão de cardápio ou busca — e dá para mudar em cada pedido.',
+    privado: 'Só você vê. Não aparece no seu perfil público.',
+    aviso: 'As receitas declaram as restrições que atendem; isso não é verificado. Em caso de alergia, confira os ingredientes.',
+    legenda: 'Suas restrições',
+    consentimento:
+      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos (e enviá-las à IA quando você gerar com elas marcadas). Desmarque tudo e salve para apagar.',
+    salvar: 'Salvar restrições',
+    salvando: 'Salvando…',
+    salvo: 'Restrições salvas.',
+    erro: 'Não foi possível salvar as restrições. Tente de novo.',
+    erroCarregar: 'Não foi possível carregar suas restrições.',
+    vemDoPerfil: 'Marcadas a partir do seu perfil.',
+    editarNoPerfil: 'Editar no perfil',
+    considerarLegenda: 'Considerar suas restrições',
+    considerarDica: 'Do seu perfil. Toque numa para tirá-la deste pedido.',
+    buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
+    buscaMostrarTudo: 'Mostrar tudo',
+  },
   // Perfil PÚBLICO (#129) — a página `/u/<handle>` que um Visitante anônimo vê: nome, avatar,
   // bio, links e as receitas PÚBLICAS daquela pessoa. Distinto de `perfil` (a tela de EDIÇÃO do
   // próprio dono em /me/profile). `receitasTitulo`/`semReceitas` rotulam a seção de receitas.
@@ -2365,6 +2388,7 @@ export const ptBR = {
     contaTitulo: 'Conta e preferências',
     contaItens: [
       'No menu da sua conta (seu nome, no topo): perfil público, editar perfil, listas de compras e este guia.',
+      'Em “Editar perfil”, salve suas restrições alimentares (só você vê). Elas já vêm marcadas ao criar uma receita, ao pedir uma sugestão de cardápio e ao buscar — e dá para mudar ou tirar em cada pedido.',
       'No rodapé, troque o idioma (português ou inglês) e o tema claro ou escuro.',
     ],
   },

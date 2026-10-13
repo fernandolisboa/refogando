@@ -41,7 +41,17 @@ import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { RESTRICOES, UNIDADES, PORCOES } from '@/domain/vocabulary'
+import { RESTRICOES, UNIDADES, PORCOES, type Restricao } from '@/domain/vocabulary'
+import {
+  SELECAO_INICIAL,
+  alternarRestricao,
+  restricoesEfetivas,
+  vemDoPerfil,
+  type SelecaoRestricoes,
+} from '@/domain/restricoes-perfil'
+import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
+import { RestricoesPerfilHint } from '@/components/profile/restricoes-perfil-hint'
+import { RestricoesPedidoChips } from '@/components/profile/restricoes-pedido-chips'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { STRENGTHS, type Strength } from '@/domain/briefing'
@@ -155,7 +165,12 @@ export function CreateStructuredExperience({
   // do slug `cozinha`); o servidor materializa o termo `suggested` e o estampa na Receita.
   const [outraAtiva, setOutraAtiva] = useState(false)
   const [outra, setOutra] = useState('')
-  const [restricoes, setRestricoes] = useState<string[]>([])
+  // Restrições (ADR-0041): default = as SALVAS no perfil enquanto a pessoa não mexe. No estruturado, todas as
+  // opções com as do perfil pré-marcadas; no Prompt aberto, só as do perfil ("considerar suas restrições"),
+  // removíveis por pedido. Um único estado serve aos dois ramos (alternar de modo preserva o trabalho).
+  const perfilRestricoes = useRestricoesPerfil()
+  const [selRestricoes, setSelRestricoes] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
+  const restricoes = restricoesEfetivas(selRestricoes, perfilRestricoes)
   const [porcoes, setPorcoes] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [itens, setItens] = useState<ItemDraft[]>([novoItem()])
@@ -261,9 +276,7 @@ export function CreateStructuredExperience({
   }
 
   function toggleRestricao(value: string) {
-    setRestricoes((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
-    )
+    setSelRestricoes((prev) => alternarRestricao(prev, perfilRestricoes, value as Restricao))
   }
 
   // Troca de modo: preserva o trabalho dos dois ramos (campos + freeText), mas DESCARTA o
@@ -328,7 +341,7 @@ export function CreateStructuredExperience({
     setCozinha('')
     setOutraAtiva(false)
     setOutra('')
-    setRestricoes([])
+    setSelRestricoes(SELECAO_INICIAL) // ADR-0041: nova receita volta ao default do perfil.
     setPorcoes('')
     setObservacoes('')
     setItens([novoItem()])
@@ -359,7 +372,11 @@ export function CreateStructuredExperience({
         setStatus('error')
         return
       }
-      await enviar({ mode: 'free_text', freeText: texto })
+      // ADR-0041: as Restrições do perfil que seguem marcadas vão junto (sobem só quando há alguma). No
+      // Prompt aberto só as do perfil são opção — a interseção protege contra um toque herdado do ramo
+      // estruturado (alternar de modo preserva o estado).
+      const pedidas = restricoes.filter((r) => perfilRestricoes?.includes(r))
+      await enviar({ mode: 'free_text', freeText: texto, ...(pedidas.length > 0 ? { restricoes: pedidas } : {}) })
       return
     }
 
@@ -658,6 +675,7 @@ export function CreateStructuredExperience({
             selected={restricoes}
             onToggle={toggleRestricao}
           />
+          <RestricoesPerfilHint visivel={vemDoPerfil(selRestricoes, perfilRestricoes)} />
 
           {/* Porções */}
           <div className="flex flex-col gap-4 sm:flex-row sm:gap-6">
@@ -718,6 +736,12 @@ export function CreateStructuredExperience({
               >
                 {freeText.trim().length}/{FREE_TEXT_MAX}
               </span>
+              {/* ADR-0041: as Restrições salvas no perfil, já marcadas; tocar tira deste pedido. */}
+              <RestricoesPedidoChips
+                perfil={perfilRestricoes}
+                selecionadas={restricoes}
+                onToggle={(r) => toggleRestricao(r)}
+              />
             </div>
           )}
 

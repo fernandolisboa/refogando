@@ -11,6 +11,7 @@ import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
 import { AvatarUploader } from '@/components/profile/avatar-uploader'
 import { ProfileForm } from '@/components/profile/profile-form'
+import { RestricoesPerfilForm } from '@/components/profile/restricoes-perfil-form'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
 import { MESSAGES } from '@/i18n/messages'
 import { resolvePageLocale } from '@/server/http/page-locale'
@@ -41,6 +42,8 @@ export default async function ProfilePage() {
       </div>
       <AvatarUploader />
       <ProfileForm />
+      {/* ADR-0041: restrições alimentares salvas — seção PRIVADA, separada do perfil (público). */}
+      <RestricoesPerfilForm />
     </Container>
   )
 }

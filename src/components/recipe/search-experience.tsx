@@ -19,7 +19,7 @@
  * Estados tratados (impeccable): repouso (feed seeded, sem chamar a Busca — espelha o early-return do
  * handler), carregando, erro+retry, vazio, sugestões.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
@@ -28,7 +28,17 @@ import { Container } from '@/components/container'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { CATEGORIAS, RESTRICOES } from '@/domain/vocabulary'
+import { CATEGORIAS, RESTRICOES, type Restricao } from '@/domain/vocabulary'
+import {
+  SELECAO_INICIAL,
+  SELECAO_LIMPA,
+  alternarRestricao,
+  restricaoEhCriterio,
+  restricoesDaBusca,
+  vemDoPerfil,
+  type SelecaoRestricoes,
+} from '@/domain/restricoes-perfil'
+import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
 import { createFromSearchHref, fitEncoded, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
@@ -118,7 +128,12 @@ export function SearchExperience({
   const { q, setQ, registerSubmit, setWide } = useHomeSearch()
   const [cozinha, setCozinha] = useState<string[]>([])
   const [categoria, setCategoria] = useState<string[]>([])
-  const [restricao, setRestricao] = useState<string[]>([])
+  // Restrição (ADR-0041 dec.4): as SALVAS no perfil entram como filtro default quando a pessoa REFINA (termo,
+  // cozinha ou categoria) e não mexeu na faceta — marcadas na trilha e com o aviso "Mostrando só receitas que
+  // declaram… [Mostrar tudo]" acima dos resultados. Sozinhas não tiram a home do repouso (o feed fica igual
+  // para todos). Visitante: perfil `null` ⇒ nada muda.
+  const perfilRestricoes = useRestricoesPerfil()
+  const [selRestricao, setSelRestricao] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
   // Ordenação da Comunidade (#62). `relevancia` é o default; só vai à URL quando difere
   // (espelha o estilo de `q`/facetas). Mudar `sort` re-monta `doSearch` ⇒ o effect
   // debounced re-busca. O servidor reordena SÓ a Comunidade (Catálogo é editorial, ADR-0003).
@@ -176,11 +191,14 @@ export function SearchExperience({
   // aviso "nada na web" indevidamente.
   const webManualTokenRef = useRef(0)
 
-  const hasCriteria =
-    q.trim() !== '' ||
-    cozinha.length > 0 ||
-    categoria.length > 0 ||
-    restricao.length > 0
+  const outroCriterio = q.trim() !== '' || cozinha.length > 0 || categoria.length > 0
+  const hasCriteria = outroCriterio || restricaoEhCriterio(selRestricao)
+  // Memoizado: entra nas deps do `doSearch`/reflexo de URL — um array novo a cada render relançaria a busca.
+  const restricao: Restricao[] = useMemo(
+    () => restricoesDaBusca(selRestricao, perfilRestricoes, outroCriterio),
+    [selRestricao, perfilRestricoes, outroCriterio],
+  )
+  const restricaoDoPerfil = outroCriterio && vemDoPerfil(selRestricao, perfilRestricoes)
 
   /**
    * #164 (ADR-0019): descoberta na web — só chamada pelo `doSearch` QUANDO o acervo local veio raso.
@@ -643,7 +661,10 @@ export function SearchExperience({
             legend={m.filtroRestricao}
             options={restricaoOptions}
             selected={restricao}
-            onToggle={toggle(setRestricao)}
+            // Alterna sobre o que está APLICADO (o que a trilha mostra) e passa a seleção à pessoa.
+            onToggle={(v) =>
+              setSelRestricao(alternarRestricao({ tocada: true, escolhidas: restricao }, null, v as Restricao))
+            }
           />
         </aside>
 
@@ -656,6 +677,25 @@ export function SearchExperience({
             hasCriteria ? 'lg:row-start-2' : 'lg:row-start-1',
           )}
         >
+          {/* ADR-0041: o filtro default do perfil NUNCA age calado — diz o que está filtrando e oferece tirar. */}
+          {restricaoDoPerfil && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+              <span>
+                {messages.restricoesPerfil.buscaAviso.replace(
+                  '{lista}',
+                  () => restricao.map((r) => messages.restricaoLabel[r]).join(', '),
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelRestricao(SELECAO_LIMPA)}
+                className="font-medium text-brand-ink underline-offset-2 hover:underline"
+              >
+                {messages.restricoesPerfil.buscaMostrarTudo}
+              </button>
+            </p>
+          )}
+
           {/* Consulta resolvida (#10) — eco READ-ONLY (Decisão 6). Some quando há faceta explícita. Gated
               por `status==='done'`: nunca mostra a resolução de uma busca ANTERIOR junto de erro/loading. */}
           {status === 'done' && data?.consulta && (

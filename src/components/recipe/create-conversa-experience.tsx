@@ -34,7 +34,7 @@
  * página e sem placeholders rotativos. Apagar/Ver transcrição/Nova conversa ficam fora desta
  * fatia (a reabertura do drawer já zera o estado via `key`).
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
@@ -52,6 +52,14 @@ import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { isFreePlanUser } from '@/domain/plan'
 import { QuotaUpsellCard } from './quota-upsell-card'
 import { GeneratedRecipePlanAction } from '@/components/meal-plan/generated-recipe-plan-action'
+import {
+  SELECAO_INICIAL,
+  alternarRestricao,
+  restricoesEfetivas,
+  type SelecaoRestricoes,
+} from '@/domain/restricoes-perfil'
+import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
+import { RestricoesPedidoChips } from '@/components/profile/restricoes-pedido-chips'
 
 export function CreateConversaExperience({
   resumeSessionId,
@@ -67,6 +75,14 @@ export function CreateConversaExperience({
   const session = useSession()
   const pathname = usePathname()
   const returnTo = pathname ?? '/create'
+
+  // ADR-0041: as Restrições salvas no perfil valem para a conversa (chips já marcados acima do campo); tirar
+  // uma vale a partir do próximo turno. Vão em cada POST — o servidor não as guarda na Session.
+  const perfilRestricoes = useRestricoesPerfil()
+  const [selRestricoes, setSelRestricoes] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
+  const restricoesPedidas = restricoesEfetivas(selRestricoes, perfilRestricoes).filter((r) =>
+    perfilRestricoes?.includes(r),
+  )
 
   const {
     transcript,
@@ -88,7 +104,7 @@ export function CreateConversaExperience({
     onSubmit,
     onKeyDown,
     redestilar,
-  } = useConversationChat({ locale, resumeSessionId })
+  } = useConversationChat({ locale, resumeSessionId, restricoes: restricoesPedidas })
 
   // Reporta o loading ao shell do drawer: enquanto uma destilação corre (streaming/distilling), o
   // drawer trava ESC/scrim/X (igual aos outros caminhos) — fechar orfanaria a geração em voo.
@@ -200,6 +216,11 @@ export function CreateConversaExperience({
             onKeyDown={onKeyDown}
             placeholder={m.inputPlaceholder}
             className="resize-y"
+          />
+          <RestricoesPedidoChips
+            perfil={perfilRestricoes}
+            selecionadas={restricoesPedidas}
+            onToggle={(r) => setSelRestricoes((prev) => alternarRestricao(prev, perfilRestricoes, r))}
           />
           <div className="flex flex-wrap items-center gap-3">
             {/* "Enviar" é a ÚNICA ação primária. A Receita aparece como TERMINAL de cada turno de

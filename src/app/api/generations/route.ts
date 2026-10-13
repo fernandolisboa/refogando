@@ -29,6 +29,8 @@ import {
   type RestrictionNotice,
 } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
+import { parseListaRestricoes } from '@/domain/restricoes-perfil'
+import type { Restricao } from '@/domain/vocabulary'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
 import {
   persistGeneration,
@@ -133,6 +135,9 @@ export async function POST(req: Request): Promise<Response> {
     nivel?: unknown
     // #423: opt-in "Gerar 2 versões". `true` + config ligada + modo structured ⇒ caminho de variação.
     variar2?: unknown
+    // ADR-0041: Restrições pedidas no PROMPT ABERTO (pré-marcadas do perfil; a pessoa pode tirar). Só
+    // free_text — no structured as Restrições vivem DENTRO do briefing. Validadas contra o vocabulário.
+    restricoes?: unknown
   }
 
   // mode obrigatório + válido.
@@ -309,8 +314,17 @@ export async function POST(req: Request): Promise<Response> {
     if (body.freeText.trim().length > MAX_FREE_TEXT_LENGTH) {
       return Response.json({ error: 'free_text_muito_longo' }, { status: 400 })
     }
+    // ADR-0041: Restrições pedidas junto do texto (default do perfil, removível por pedido). Ausente/null ⇒
+    // nenhuma (back-compat). Fora do vocabulário ⇒ 400 restricao_invalida (mesma chave do briefing), ANTES do
+    // seam. NÃO são gravadas à parte (minimização, dado sensível): a Receita entregue declara as suas.
+    let restricoesPedidas: Restricao[] = []
+    if (body.restricoes != null) {
+      const r = parseListaRestricoes(body.restricoes)
+      if (!r.ok) return Response.json({ error: 'restricao_invalida' }, { status: 400 })
+      restricoesPedidas = r.restricoes
+    }
     freeText = body.freeText.trim()
-    const prompt = buildFreeTextPrompt(freeText, axes)
+    const prompt = buildFreeTextPrompt(freeText, axes, restricoesPedidas)
     systemPrompt = prompt.systemPrompt
     userPrompt = prompt.userPrompt
   }

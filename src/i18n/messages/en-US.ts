@@ -906,6 +906,29 @@ export const enUS: Messages = {
     precisaEntrar: 'Sign in to edit your profile.',
     erro: "We couldn't save your profile. Try again.",
   },
+  // Dietary restrictions SAVED on the profile (ADR-0041): the /me/profile section and the hints that the
+  // default came from there, on the surfaces that apply it (creation, menu suggestion, search).
+  restricoesPerfil: {
+    titulo: 'Dietary restrictions',
+    descricao:
+      'Mark what you usually need to stick to. They come pre-selected when you create a recipe, ask for a menu suggestion or search — and you can change them each time.',
+    privado: 'Only you can see this. It does not appear on your public profile.',
+    aviso: 'Recipes declare the restrictions they meet; this is not verified. If you have an allergy, check the ingredients.',
+    legenda: 'Your restrictions',
+    consentimento:
+      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests (and send them to the AI when you generate with them selected). Clear them all and save to delete.',
+    salvar: 'Save restrictions',
+    salvando: 'Saving…',
+    salvo: 'Restrictions saved.',
+    erro: 'Could not save your restrictions. Please try again.',
+    erroCarregar: 'Could not load your restrictions.',
+    vemDoPerfil: 'Pre-selected from your profile.',
+    editarNoPerfil: 'Edit in profile',
+    considerarLegenda: 'Consider your restrictions',
+    considerarDica: 'From your profile. Tap one to leave it out of this request.',
+    buscaAviso: 'Showing only recipes that declare: {lista} (from your profile).',
+    buscaMostrarTudo: 'Show all',
+  },
   // PUBLIC profile (#129) — the `/u/<handle>` page an anonymous Visitor sees: name, avatar, bio,
   // links, and that person's PUBLIC recipes. Distinct from `perfil` (the owner's EDIT screen at
   // /me/profile). `receitasTitulo`/`semReceitas` label the recipes section.
@@ -2243,6 +2266,7 @@ export const enUS: Messages = {
     contaTitulo: 'Account and preferences',
     contaItens: [
       'In your account menu (your name, at the top): public profile, edit profile, shopping lists and this guide.',
+      'In “Edit profile”, save your dietary restrictions (only you can see them). They come pre-selected when you create a recipe, ask for a menu suggestion and search — and you can change or remove them each time.',
       'In the footer, switch the language (Portuguese or English) and the light or dark theme.',
     ],
   },

@@ -512,6 +512,13 @@
       "when": 1790622594266,
       "tag": "0072_pantry",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791862270519,
+      "tag": "0073_users_restricoes",
+      "breakpoints": true
     }
   ]
 }
