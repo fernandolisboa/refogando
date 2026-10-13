@@ -20,7 +20,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MEAL_PLAN_PORCOES_MAX, MEAL_PLAN_PORCOES_MIN, MEAL_SLOTS, type MealSlot } from '@/domain/meal-plan'
 import { MENU_NOTE_MAX, type MenuSource } from '@/domain/menu-suggestion'
-import { RESTRICOES, type Restricao } from '@/domain/vocabulary'
+import { RESTRICOES } from '@/domain/vocabulary'
+import { useSelecaoRestricoes } from '@/components/profile/restricoes-perfil-provider'
+import { CheckboxChip } from '@/components/ui/checkbox-chip'
+import { RestricoesPerfilHint } from '@/components/profile/restricoes-perfil-hint'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import type { Messages } from '@/i18n/messages'
 import { capitalizeFirst, formatShortDay, formatWeekday, mealSlotLabel } from './meal-plan-format'
@@ -112,7 +115,10 @@ export function MealPlanSuggestPanel({
   // Texto livre no campo (apagar pra digitar outro número não pode virar "1" no meio); validado ao pedir.
   const [porcoesText, setPorcoesText] = useState<string>(() => String(readStoredPorcoes()))
   const porcoes = parsePorcoesText(porcoesText)
-  const [restricoes, setRestricoes] = useState<Restricao[]>([])
+  // Restrições (ADR-0041): pré-marcadas com as SALVAS no perfil enquanto a pessoa não mexe (com o aviso
+  // "marcadas a partir do seu perfil"); o 1º toque torna a seleção dela, inclusive vazia.
+  const selRestricoes = useSelecaoRestricoes()
+  const restricoes = selRestricoes.restricoes
   const [source, setSource] = useState<MenuSource>('all')
   const [onlyEmpty, setOnlyEmpty] = useState(true)
   const [note, setNote] = useState('')
@@ -214,8 +220,6 @@ export function MealPlanSuggestPanel({
 
   const selectedCount = preview ? preview.items.filter((i) => checked.has(itemKey(i))).length : 0
   const checkboxClass = 'size-4 accent-brand-strong'
-  const chipClass =
-    'flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm text-fg has-[:checked]:border-brand has-[:checked]:bg-brand/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand'
 
   return (
     <section
@@ -236,15 +240,13 @@ export function MealPlanSuggestPanel({
             <legend className="mb-1 text-xs font-medium text-muted">{m.sugerirDias}</legend>
             <div className="flex flex-wrap gap-2">
               {days.map((d) => (
-                <label key={d} className={chipClass}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={selectedDays.includes(d)}
-                    onChange={() => setSelectedDays((prev) => toggle(prev, d))}
-                  />
+                <CheckboxChip
+                  key={d}
+                  checked={selectedDays.includes(d)}
+                  onChange={() => setSelectedDays((prev) => toggle(prev, d))}
+                >
                   {capitalizeFirst(formatShortDay(d, locale))}
-                </label>
+                </CheckboxChip>
               ))}
             </div>
           </fieldset>
@@ -253,34 +255,31 @@ export function MealPlanSuggestPanel({
             <legend className="mb-1 text-xs font-medium text-muted">{m.sugerirRefeicoes}</legend>
             <div className="flex flex-wrap gap-2">
               {MEAL_SLOTS.map((s) => (
-                <label key={s} className={chipClass}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={slots.includes(s)}
-                    onChange={() => setSlots((prev) => toggle(prev, s))}
-                  />
+                <CheckboxChip key={s} checked={slots.includes(s)} onChange={() => setSlots((prev) => toggle(prev, s))}>
                   {mealSlotLabel(s, m)}
-                </label>
+                </CheckboxChip>
               ))}
             </div>
           </fieldset>
 
-          <fieldset className="flex flex-col gap-2" disabled={phase === 'loading'}>
+          <fieldset
+            className="flex flex-col gap-2"
+            disabled={phase === 'loading'}
+            aria-describedby={selRestricoes.vemDoPerfil ? 'cardapio-restricoes-perfil' : undefined}
+          >
             <legend className="mb-1 text-xs font-medium text-muted">{m.sugerirRestricoes}</legend>
             <div className="flex flex-wrap gap-2">
               {RESTRICOES.map((r) => (
-                <label key={r} className={chipClass}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={restricoes.includes(r)}
-                    onChange={() => setRestricoes((prev) => toggle(prev, r))}
-                  />
+                <CheckboxChip
+                  key={r}
+                  checked={restricoes.includes(r)}
+                  onChange={() => selRestricoes.alternar(r)}
+                >
                   {messages.restricaoLabel[r]}
-                </label>
+                </CheckboxChip>
               ))}
             </div>
+            <RestricoesPerfilHint id="cardapio-restricoes-perfil" visivel={selRestricoes.vemDoPerfil} comLink />
           </fieldset>
 
           <div className="flex flex-wrap items-end gap-4">

@@ -65,6 +65,10 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
       bio: users.bio,
       links: users.links,
       locale: users.locale,
+      // Nível de habilidade padrão (#421).
+      nivelPadrao: users.nivelPadrao,
+      // Restrições salvas (ADR-0041 — dado sensível, LGPD Art. 11; o titular tem acesso a ele aqui).
+      restricoes: users.restricoes,
       image: users.image,
       role: users.role,
       emailVerified: users.emailVerified,

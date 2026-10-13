@@ -147,6 +147,8 @@ export function PrivacyPolicy() {
       <Ficha labels={defLabels} values={m.s33Valores} todoLabel={todo} />
       <H4>{m.s34Titulo}</H4>
       <P>{ph(m.s34Corpo)}</P>
+      <H4>{m.s35Titulo}</H4>
+      <Ficha labels={defLabels} values={m.s35Valores} todoLabel={todo} />
 
       <H3>{m.s4Titulo}</H3>
       <List items={m.s4Itens} todoLabel={todo} />

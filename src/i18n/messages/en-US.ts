@@ -906,6 +906,29 @@ export const enUS: Messages = {
     precisaEntrar: 'Sign in to edit your profile.',
     erro: "We couldn't save your profile. Try again.",
   },
+  // Dietary restrictions SAVED on the profile (ADR-0041): the /me/profile section and the hints that the
+  // default came from there, on the surfaces that apply it (creation, menu suggestion, search).
+  restricoesPerfil: {
+    titulo: 'Dietary restrictions',
+    descricao:
+      'Mark what you usually need to stick to. They come pre-selected when you create a recipe, ask for a menu suggestion or search — and you can change them each time.',
+    privado: 'Only you can see this. It does not appear on your public profile.',
+    aviso: 'Recipes declare the restrictions they meet; this is not verified. If you have an allergy, check the ingredients.',
+    legenda: 'Your restrictions',
+    consentimento:
+      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests (and send them to the AI when you generate with them selected). Clear them all and save to delete.',
+    salvar: 'Save restrictions',
+    salvando: 'Saving…',
+    salvo: 'Restrictions saved.',
+    erro: 'Could not save your restrictions. Please try again.',
+    erroCarregar: 'Could not load your restrictions.',
+    vemDoPerfil: 'Pre-selected from your profile.',
+    editarNoPerfil: 'Edit in profile',
+    considerarLegenda: 'Consider your restrictions',
+    considerarDica: 'From your profile. Tap one to leave it out of this request.',
+    buscaAviso: 'Showing only recipes that declare: {lista} (from your profile).',
+    buscaMostrarTudo: 'Show all',
+  },
   // PUBLIC profile (#129) — the `/u/<handle>` page an anonymous Visitor sees: name, avatar, bio,
   // links, and that person's PUBLIC recipes. Distinct from `perfil` (the owner's EDIT screen at
   // /me/profile). `receitasTitulo`/`semReceitas` label the recipes section.
@@ -1762,7 +1785,7 @@ export const enUS: Messages = {
     ],
     s32Titulo: '3.2. Content created in the app (recipes, collections, ratings, Meal plan, shopping lists and Pantry)',
     s32Valores: [
-      'recipes you create, save, rate and organize; language preferences; text content you write; your Meal plan (the meals planned for each day, with servings and the free-text notes you write, such as "eating out"); your shopping lists (list name and items, with quantity, unit, source recipe and the bought check mark); and your Pantry (the names of the items you say you have at home).',
+      'recipes you create, save, rate and organize; language preferences; text content you write; your Meal plan (the meals planned for each day, with servings and the free-text notes you write, such as "eating out"); your shopping lists (list name and items, with quantity, unit, source recipe and the bought check mark); and your Pantry (the names of the items you say you have at home and, if you edit it, your list of basics, the items you consider always at home).',
       'deliver the app functionality (store and display your content, build collections, feed and search, plan meals, build shopping lists and show what you can cook with what you have at home).',
       'performance of a contract — Art. 7, V.',
       'while the account exists or until you delete the content. If you delete your account, the Meal plan and the Pantry are erased immediately; recipes, ratings, saved recipes, collections and shopping lists are kept, linked to the anonymized account (item 3.1).',
@@ -1777,6 +1800,13 @@ export const enUS: Messages = {
     s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
     s34Corpo:
       'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground).',
+    s35Titulo: '3.5. Saved dietary restrictions',
+    s35Valores: [
+      'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile.',
+      'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider only within a request in which you keep them checked.',
+      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button) and revocable at any time by unchecking them all and saving.',
+      'until you uncheck them or delete your account; they are included in your data export and erased when the account is deleted.',
+    ],
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [
@@ -2243,6 +2273,7 @@ export const enUS: Messages = {
     contaTitulo: 'Account and preferences',
     contaItens: [
       'In your account menu (your name, at the top): public profile, edit profile, shopping lists and this guide.',
+      'In “Edit profile”, save your dietary restrictions (only you can see them). They come pre-selected when you create a recipe, ask for a menu suggestion and search — and you can change or remove them each time.',
       'In the footer, switch the language (Portuguese or English) and the light or dark theme.',
     ],
   },

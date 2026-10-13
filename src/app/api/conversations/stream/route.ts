@@ -11,6 +11,7 @@ import { parseTranscript, type TranscriptMessage } from '@/domain/transcript'
 import {
   buildSystemPrompt,
   buildConversationPrompt,
+  comRestricoesPedidas,
   promptStampFor,
   resolveNivelChefAxis,
   isNivelChef,
@@ -19,6 +20,8 @@ import {
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
+import { parseListaRestricoes } from '@/domain/restricoes-perfil'
+import type { Restricao } from '@/domain/vocabulary'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
 import { persistGeneration } from '@/server/generation/persist'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
@@ -183,12 +186,24 @@ export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => ({}))) as {
     transcript?: unknown
     sessionId?: unknown // #15: retoma a Session quando presente (uuid); lazy-create quando ausente.
+    // ADR-0041: Restrições pedidas na conversa (pré-marcadas do perfil; a pessoa pode tirar a cada turno).
+    restricoes?: unknown
   }
 
   // 2. Shape da Transcrição: 400 JSON ANTES de abrir o stream (seam NUNCA tocado).
   const parsed = parseTranscript(body.transcript)
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
   const transcript = parsed.transcript
+
+  // 2b. ADR-0041: Restrições pedidas — ausente/null ⇒ nenhuma (back-compat). Fora do vocabulário ⇒ 400
+  // restricao_invalida ANTES do stream. Entram no systemPrompt das duas chamadas; NÃO são gravadas na
+  // Session nem no carimbo (minimização — dado sensível; a Receita destilada declara as suas).
+  let restricoesPedidas: Restricao[] = []
+  if (body.restricoes != null) {
+    const r = parseListaRestricoes(body.restricoes)
+    if (!r.ok) return Response.json({ error: 'restricao_invalida' }, { status: 400 })
+    restricoesPedidas = r.restricoes
+  }
 
   // #15: sessionId só é honrado se for uuid válido; qualquer outra coisa cai no lazy-create
   // (a posse é re-checada na persistência — só o dono retoma a própria Session).
@@ -270,9 +285,10 @@ export async function POST(req: Request): Promise<Response> {
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
         let assistantText = ''
         const tokens = getClaudeClient().streamConversation({
-          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + eixos dos
-          // axes). Neutro na Wave 1 ⇒ exatamente o base do modo (== SYSTEM_PROMPT_CONVERSATION_STREAM).
-          systemPrompt: buildSystemPrompt('conversation_stream', axes),
+          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + os fragmentos
+          // dos eixos dos `axes`), e ADR-0041: + o fragmento das Restrições pedidas neste turno. Sem
+          // restrições pedidas, `comRestricoesPedidas` é a identidade (o prompt é byte-a-byte o de antes).
+          systemPrompt: comRestricoesPedidas(buildSystemPrompt('conversation_stream', axes), restricoesPedidas),
           transcript,
           model,
           signal,
@@ -313,7 +329,7 @@ export async function POST(req: Request): Promise<Response> {
         // #318: constrange a cozinha destilada ao vocabulário VIVO (data-driven, ADR-0025). Conjunto
         // ATIVO do DB DIRETO, carregado aqui (já passamos do gate de abort/quota acima).
         const cozinhaSlugs = [...(await loadActiveCozinhaSlugs(getDb()))]
-        const prompt = buildConversationPrompt(transcript, axes)
+        const prompt = buildConversationPrompt(transcript, axes, restricoesPedidas)
         const out = await getClaudeClient().generateRecipe({
           systemPrompt: prompt.systemPrompt,
           userPrompt: prompt.userPrompt,

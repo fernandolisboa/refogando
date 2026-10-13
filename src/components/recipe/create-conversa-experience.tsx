@@ -52,6 +52,8 @@ import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { isFreePlanUser } from '@/domain/plan'
 import { QuotaUpsellCard } from './quota-upsell-card'
 import { GeneratedRecipePlanAction } from '@/components/meal-plan/generated-recipe-plan-action'
+import { useSelecaoRestricoes } from '@/components/profile/restricoes-perfil-provider'
+import { RestricoesPedidoChips } from '@/components/profile/restricoes-pedido-chips'
 
 export function CreateConversaExperience({
   resumeSessionId,
@@ -67,6 +69,11 @@ export function CreateConversaExperience({
   const session = useSession()
   const pathname = usePathname()
   const returnTo = pathname ?? '/create'
+
+  // ADR-0041: as Restrições salvas no perfil valem para a conversa (chips já marcados acima do campo); tirar
+  // uma vale a partir do próximo turno. Vão em cada POST — o servidor não as guarda na Session.
+  const selRestricoes = useSelecaoRestricoes()
+  const restricoesPedidas = selRestricoes.doPedido
 
   const {
     transcript,
@@ -88,7 +95,7 @@ export function CreateConversaExperience({
     onSubmit,
     onKeyDown,
     redestilar,
-  } = useConversationChat({ locale, resumeSessionId })
+  } = useConversationChat({ locale, resumeSessionId, restricoes: restricoesPedidas })
 
   // Reporta o loading ao shell do drawer: enquanto uma destilação corre (streaming/distilling), o
   // drawer trava ESC/scrim/X (igual aos outros caminhos) — fechar orfanaria a geração em voo.
@@ -200,6 +207,12 @@ export function CreateConversaExperience({
             onKeyDown={onKeyDown}
             placeholder={m.inputPlaceholder}
             className="resize-y"
+          />
+          <RestricoesPedidoChips
+            perfil={selRestricoes.perfil}
+            selecionadas={restricoesPedidas}
+            onToggle={selRestricoes.alternar}
+            disabled={inFlight}
           />
           <div className="flex flex-wrap items-center gap-3">
             {/* "Enviar" é a ÚNICA ação primária. A Receita aparece como TERMINAL de cada turno de

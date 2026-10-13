@@ -975,6 +975,29 @@ export const ptBR = {
     precisaEntrar: 'Entre na sua conta para editar seu perfil.',
     erro: 'Não foi possível salvar seu perfil. Tente de novo.',
   },
+  // Restrições alimentares SALVAS no perfil (ADR-0041): a seção do /me/profile e as indicações de que o
+  // default veio de lá, nas superfícies que o aplicam (criação, Sugestão de cardápio, Busca).
+  restricoesPerfil: {
+    titulo: 'Restrições alimentares',
+    descricao:
+      'Marque o que você costuma precisar respeitar. Elas já vêm marcadas quando você cria uma receita, pede uma sugestão de cardápio ou busca — e dá para mudar em cada pedido.',
+    privado: 'Só você vê. Não aparece no seu perfil público.',
+    aviso: 'As receitas declaram as restrições que atendem; isso não é verificado. Em caso de alergia, confira os ingredientes.',
+    legenda: 'Suas restrições',
+    consentimento:
+      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos (e enviá-las à IA quando você gerar com elas marcadas). Desmarque tudo e salve para apagar.',
+    salvar: 'Salvar restrições',
+    salvando: 'Salvando…',
+    salvo: 'Restrições salvas.',
+    erro: 'Não foi possível salvar as restrições. Tente de novo.',
+    erroCarregar: 'Não foi possível carregar suas restrições.',
+    vemDoPerfil: 'Marcadas a partir do seu perfil.',
+    editarNoPerfil: 'Editar no perfil',
+    considerarLegenda: 'Considerar suas restrições',
+    considerarDica: 'Do seu perfil. Toque numa para tirá-la deste pedido.',
+    buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
+    buscaMostrarTudo: 'Mostrar tudo',
+  },
   // Perfil PÚBLICO (#129) — a página `/u/<handle>` que um Visitante anônimo vê: nome, avatar,
   // bio, links e as receitas PÚBLICAS daquela pessoa. Distinto de `perfil` (a tela de EDIÇÃO do
   // próprio dono em /me/profile). `receitasTitulo`/`semReceitas` rotulam a seção de receitas.
@@ -1867,7 +1890,7 @@ export const ptBR = {
     ],
     s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações, Cardápio, listas de compras e Despensa)',
     s32Valores: [
-      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve; o seu Cardápio (as refeições planejadas por dia, com as porções e as anotações livres que você escreve, como "jantar fora"); as suas listas de compras (nome da lista e itens, com quantidade, unidade, receita de origem e a marcação de comprado); e a sua Despensa (os nomes dos itens que você diz ter em casa).',
+      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve; o seu Cardápio (as refeições planejadas por dia, com as porções e as anotações livres que você escreve, como "jantar fora"); as suas listas de compras (nome da lista e itens, com quantidade, unidade, receita de origem e a marcação de comprado); e a sua Despensa (os nomes dos itens que você diz ter em casa e, se você a editar, a sua lista de básicos, os itens que você considera sempre ter em casa).',
       'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca, planejar refeições, montar listas de compras e mostrar o que dá pra fazer com o que você tem em casa).',
       'execução de contrato — Art. 7º, V.',
       'enquanto a conta existir ou até você apagar o conteúdo. Se você eliminar a conta, o Cardápio e a Despensa são apagados na hora; as receitas, as avaliações, os salvos, as coleções e as listas de compras são mantidos, ligados à conta anonimizada (item 3.1).',
@@ -1882,6 +1905,13 @@ export const ptBR = {
     s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
     s34Corpo:
       'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo).',
+    s35Titulo: '3.5. Restrições alimentares salvas',
+    s35Valores: [
+      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público.',
+      'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA dentro de um pedido em que você as mantém marcadas.',
+      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão) e revogável a qualquer momento desmarcando todas e salvando.',
+      'até você desmarcá-las ou excluir a conta; entram na exportação dos seus dados e são apagadas na exclusão da conta.',
+    ],
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
     s4Itens: [
@@ -2365,6 +2395,7 @@ export const ptBR = {
     contaTitulo: 'Conta e preferências',
     contaItens: [
       'No menu da sua conta (seu nome, no topo): perfil público, editar perfil, listas de compras e este guia.',
+      'Em “Editar perfil”, salve suas restrições alimentares (só você vê). Elas já vêm marcadas ao criar uma receita, ao pedir uma sugestão de cardápio e ao buscar — e dá para mudar ou tirar em cada pedido.',
       'No rodapé, troque o idioma (português ou inglês) e o tema claro ou escuro.',
     ],
   },

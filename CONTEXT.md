@@ -37,8 +37,8 @@ Caminho de **pré-publicação EXCLUSIVO do catálogo** (`origin=catalog`, owner
 _Avoid_: aplicar curadoria de catálogo a receita de usuário (é não-aplicável — usuário publica sem curadoria); confundir com **Moderação reativa** (pós-publicação) ou com **Visibilidade**; tratar a rejeição como deleção (é tombstone rastreável); "lavar" IA não-revisada como editorial sem a revisão registrada; um gate de curadoria sobre receita de **usuário** (default-open intacto, ADR-0020).
 
 **Restrição alimentar**:
-Condição que a receita deve atender ou excluir por dieta, alergia ou intolerância (sem glúten, vegano, sem lactose). É **contrato de adequação**, não tag descritiva. Numa receita de IA, "atende" é **afirmação da IA, não garantia verificada**.
-_Avoid_: Dieta (mais amplo); Preferência; Tag; tratar como fato verificado.
+Condição que a receita deve atender ou excluir por dieta, alergia ou intolerância (sem glúten, vegano, sem lactose). É **contrato de adequação**, não tag descritiva. Numa receita de IA, "atende" é **afirmação da IA, não garantia verificada**. O Usuário pode guardar as suas como **Restrições salvas** no perfil (privadas — só ele vê): elas viram o **default pré-marcado** de cada pedido — criação (Estruturado, Prompt aberto, Conversa), Sugestão de cardápio e Busca —, sempre com indicação visível e mudáveis em cada pedido; nunca filtram calado. Dado **sensível** (pode revelar saúde ou crença). Ver ADR-0041.
+_Avoid_: Dieta (mais amplo); Preferência; Tag; tratar como fato verificado; "perfil de dieta"/"preferências alimentares" para as Restrições salvas; aplicar as salvas sem a pessoa ver.
 
 **Aviso de restrição**:
 Aviso leve e honesto numa receita: restrições declaradas (por usuário ou IA) aparecem como **"declarado, não verificado"**, e quando o nosso dado acidentalmente flagra uma contradição óbvia (farinha de trigo em "sem glúten") mostramos um alerta amigável. **Não** suprime receita, **não** bloqueia, **não** trava — a responsabilidade final é do usuário, e o app deixa isso claro com um aviso, não com burocracia.

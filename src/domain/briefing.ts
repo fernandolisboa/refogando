@@ -538,8 +538,35 @@ export function buildBriefingPrompt(
 export function buildFreeTextPrompt(
   freeText: string,
   axes: PromptAxes = NEUTRAL_AXES,
+  // ADR-0041: Restrições pedidas JUNTO do texto (pré-marcadas do perfil, a pessoa pode tirar). Entram como a
+  // MESMA linha "Restrições:" do briefing — o base já manda respeitá-las estritamente. Vazio/ausente ⇒ o
+  // userPrompt é o texto cru, byte-a-byte (a regeneração #20 e os call sites antigos não mudam).
+  restricoes: readonly Restricao[] = [],
 ): { systemPrompt: string; userPrompt: string } {
-  return { systemPrompt: buildSystemPrompt('free_text', axes), userPrompt: freeText.trim() }
+  const texto = freeText.trim()
+  const userPrompt = restricoes.length > 0 ? `${texto}\n\nRestrições: ${restricoes.join(', ')}` : texto
+  return { systemPrompt: buildSystemPrompt('free_text', axes), userPrompt }
+}
+
+/**
+ * ADR-0041 — Restrições pedidas no modo CONVERSA (pré-marcadas do perfil; a pessoa pode tirar a qualquer
+ * turno). A conversa não tem briefing e a Transcrição vai VERBATIM como conteúdo (defesa de rótulo de papel),
+ * então o pedido entra no SYSTEM prompt das DUAS chamadas (a resposta breve na tela e a destilação). NÃO é
+ * eixo do ADR-0029: eixos são carimbados em `generation.prompt_stamp`, e a lista é dado sensível que não
+ * precisa ser guardada para a correlação de qualidade. PURO; vazio ⇒ `null` (o prompt fica byte-a-byte igual).
+ */
+export function restricoesPedidasFragment(restricoes: readonly Restricao[]): string | null {
+  if (restricoes.length === 0) return null
+  return (
+    `Restrições alimentares pedidas pelo Usuário: ${restricoes.join(', ')}. Respeite-as estritamente em tudo o que sugerir.` +
+    ' Se a conversa pedir algo que contradiga alguma delas, não a ignore em silêncio: diga isso ao Usuário (na receita, no campo consultivo — advisory).'
+  )
+}
+
+/** Anexa o fragmento de Restrições pedidas a um systemPrompt já composto. Sem Restrições ⇒ identidade. */
+export function comRestricoesPedidas(systemPrompt: string, restricoes: readonly Restricao[]): string {
+  const frag = restricoesPedidasFragment(restricoes)
+  return frag == null ? systemPrompt : `${systemPrompt} ${frag}`
 }
 
 // ── Montagem DESTILAÇÃO (modo conversa) → { systemPrompt, userPrompt } (#12) ─────
@@ -570,11 +597,17 @@ function colapsaConteudo(content: string): string {
 export function buildConversationPrompt(
   transcript: ReadonlyArray<TranscriptMessage>,
   axes: PromptAxes = NEUTRAL_AXES,
+  // ADR-0041: Restrições pedidas na conversa — anexadas ao systemPrompt da destilação. Vazio/ausente ⇒
+  // byte-a-byte igual (regeneração #20 e call sites antigos).
+  restricoes: readonly Restricao[] = [],
 ): { systemPrompt: string; userPrompt: string } {
   const userPrompt = transcript
     .map((m) => `${rotuloFala(m.role)}: ${colapsaConteudo(m.content)}`)
     .join('\n')
-  return { systemPrompt: buildSystemPrompt('distillation', axes), userPrompt }
+  return {
+    systemPrompt: comRestricoesPedidas(buildSystemPrompt('distillation', axes), restricoes),
+    userPrompt,
+  }
 }
 
 // ── Costura para o Aviso (AC5) — montar `items` para o motor #7 ─────────────────

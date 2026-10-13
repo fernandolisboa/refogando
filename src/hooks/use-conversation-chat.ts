@@ -13,7 +13,8 @@
  * reimplementa domínio. O transporte é NDJSON em streaming:
  *  - `POST /api/creation-sessions` → `{sessionId}` no INÍCIO de uma conversa NOVA (a UI segura
  *    o id para retomar/apagar). Na retomada, o id vem da rota (`/conversation/[id]`).
- *  - `POST /api/conversations/stream` body `{transcript, sessionId}` → ReadableStream NDJSON:
+ *  - `POST /api/conversations/stream` body `{transcript, sessionId, restricoes?}` → ReadableStream NDJSON
+ *    (`restricoes`, ADR-0041: as do perfil que seguem marcadas, em CADA turno; omitido quando vazio):
  *    zero-ou-mais `{type:'token',text}` e DEPOIS EXATAMENTE UM terminal:
  *      `{type:'recipe',outcome,recipeId,advisory,avisos?}` | `{type:'impossible',advisory}`
  *      | `{type:'error',error:'geracao_invalida'|'conflito_concorrente'}`.
@@ -32,6 +33,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Locale } from '@/i18n/locale'
 import type { RecipeView, AvisoView } from '@/domain/recipe-read'
+import type { Restricao } from '@/domain/vocabulary'
 
 /** Uma fala do transcript LOCAL (o servidor atribui `seq`; a UI guarda role+content). */
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
@@ -120,9 +122,15 @@ export type ConversationChat = {
 export function useConversationChat({
   locale,
   resumeSessionId,
+  restricoes = [],
 }: {
   locale: Locale
   resumeSessionId?: string
+  /**
+   * ADR-0041: Restrições pedidas nesta conversa (as do perfil que seguem marcadas). Vão em CADA turno (o
+   * servidor não as guarda na Session); a pessoa pode tirar/recolocar entre turnos. Vazio ⇒ o corpo é o de antes.
+   */
+  restricoes?: readonly Restricao[]
 }): ConversationChat {
   // Transcrição LOCAL (cresce a cada turno). O sessionId é segurado p/ retomar/apagar: vem do
   // POST /api/creation-sessions no 1º turno de uma conversa NOVA, ou da rota na retomada.
@@ -352,7 +360,11 @@ export function useConversationChat({
       const res = await fetch('/api/conversations/stream', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ transcript: t, sessionId: id ?? undefined }),
+        body: JSON.stringify({
+          transcript: t,
+          sessionId: id ?? undefined,
+          ...(restricoes.length > 0 ? { restricoes } : {}),
+        }),
         signal: controller.signal,
       })
 

@@ -16,7 +16,7 @@ Do ponto de vista da LGPD, é essencial separar dois titulares, porque **têm ca
 
 | Titular | Que dado pessoal existe | Como pede remoção hoje |
 |---|---|---|
-| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil, receitas, salvos, coleções, avaliações, Cardápio (com anotações livres), Listas de compras, Despensa | **self-service autenticado**: exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`) |
+| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil (inclusive as Restrições alimentares salvas — dado sensível, ADR-0041), receitas, salvos, coleções, avaliações, Cardápio (com anotações livres), Listas de compras, Despensa (com os básicos que a pessoa edita, ADR-0042) | **self-service autenticado**: exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`) |
 | **B) Autor/publisher da receita de terceiro** | **apenas `source_name` (nome) + `source_url` (URL)** de receitas `origin='web_imported'` (`src/db/schema.ts` ~L216-222) | **formulário público** em `/seus-direitos` (sem login) ou e-mail `privacidade@refogando.com`; o operador executa a remoção |
 
 O ponto crítico de #276 é o **titular B**: o dado dele (o nome do autor) é gravado sem que ele seja usuário, então **ele não tem login para se auto-atender**. O canal de takedown existe justamente para ele. A minimização já está implementada de verdade (só nome + URL; foto e headnote nunca copiados), o que reduz muito a superfície — mas não elimina a obrigação de ter um canal público e um fluxo.
