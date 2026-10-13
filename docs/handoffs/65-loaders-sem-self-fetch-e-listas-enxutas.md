@@ -17,7 +17,7 @@
 
 1. `src/server/recipe/detail-view.ts` — o gate do detalhe por UUID e por que ele recebe `headers` (e não um `viewerId`).
 2. `test/integration/detail-loaders.test.ts` — desfechos leak-safe e a prova de que o valor do loader é JSON-puro (a página recebe o mesmo que o antigo `res.json()`).
-3. `/mnt/project-files/perf-audit/respostas-2026-10-13.md` — as respostas ao Fernando sobre o item 1 e os achados A–J, com a ordem dos próximos PRs.
+3. `docs/perf/2026-10-13-respostas.md` — as respostas ao Fernando sobre o item 1 e os achados A–J, com a ordem dos próximos PRs.
 
 ## 3. Princípios inegociáveis
 

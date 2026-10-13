@@ -246,7 +246,7 @@ export default async function RecipeDetailPage({
   // tocar `headers()`/`cookies()`, ficando estaticamente renderizável/cacheável).
   const headerStore = await headers()
 
-  // Resolve o UUID interno (chave da API de dados): se o `[id]` JÁ é um UUID legado, usa-o direto;
+  // Resolve o UUID interno (chave do loader): se o `[id]` JÁ é um UUID legado, usa-o direto;
   // se é um SLUG (link interno do dono), acha a Receita pelo slug — INCLUSIVE privada do dono, então
   // a busca NÃO aplica o gate público. Sem casamento ⇒ 404 leak-safe.
   const ownerUuid =

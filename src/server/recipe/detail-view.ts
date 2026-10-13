@@ -28,7 +28,7 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  * `null` = malformado/ausente/sem-acesso (indistinguíveis de propósito). A view é JSON-pura (sem
  * `Date`/`undefined`): o que a página recebe direto é o mesmo que o JSON da rota entregava.
  *
- * Recebe os `headers` crus (e não um `viewerId` já resolvido, como os outros loaders de `server/`)
+ * Recebe os `headers` crus (e não um `viewerId` já resolvido, como outros loaders de `server/`)
  * porque decidir SE e QUANDO ler a sessão faz parte do gate: o ramo privado só lê depois do gate,
  * e o público só lê quando há cookie (o anônimo quente nunca paga a sessão).
  */
