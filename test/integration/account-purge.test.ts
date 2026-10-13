@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { GET } from '@/app/api/cron/account-purge/route'
 import { purgeAnonymizedAccounts } from '@/server/legal/account-purge-scan'
@@ -161,5 +161,41 @@ describe('GET /api/cron/account-purge (auth fail-closed no CRON_SECRET)', () => 
     expect(body.reviewsCleared).toBeGreaterThanOrEqual(1)
     expect(store.blobs.has(url)).toBe(false)
     expect(await loadReviewPhoto(reviewId)).toBeNull()
+  })
+
+  it('cada passada deixa UMA linha [account-purge] com as contagens (só números)', async () => {
+    process.env.CRON_SECRET = 'segredo-de-teste'
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const res = await call({ authorization: 'Bearer segredo-de-teste' })
+      expect(res.status).toBe(200)
+      const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[account-purge]'))
+      expect(lines).toEqual([
+        '[account-purge] passada concluída: scanned=0 blobsReaped=0 reviewsCleared=0 pendingSignupsPurged=0',
+      ])
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  it('uma varredura falha → 500, a outra roda, e a linha sai como warn "com falha" só com as contagens dela', async () => {
+    process.env.CRON_SECRET = 'segredo-de-teste'
+    const userId = await seedAnonymizedUser(new Date(Date.now() - 200 * 86_400_000))
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    await seedReviewWithPhoto(userId, recipeId)
+    vi.spyOn(store, 'owns').mockImplementation(() => {
+      throw new Error('store fora do ar')
+    })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const res = await call({ authorization: 'Bearer segredo-de-teste' })
+      expect(res.status).toBe(500)
+      expect(await res.json()).toEqual({ pendingSignupsPurged: 0 })
+      expect(error).toHaveBeenCalledWith('[account-purge] expurgo de contas anonimizadas falhou: Error')
+      expect(warn).toHaveBeenCalledWith('[account-purge] passada com falha: pendingSignupsPurged=0')
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })

@@ -12,7 +12,8 @@ import { purgeStalePendingSignups } from '@/server/auth/pending-signup-purge'
  * Na mesma passada, APAGA (hard-delete) os CADASTROS PENDENTES abandonados (#470 follow-up, ADR-0014): contas de
  * email+senha criadas com a confirmação ligada e nunca provadas em 48h (`purgeStalePendingSignups`). As duas
  * varreduras são independentes: a falha de uma não impede a outra; qualquer falha responde 500 (só com o nome do
- * erro no log) para aparecer no painel de crons.
+ * erro no log) para aparecer no painel de crons. Toda passada termina com UMA linha `[account-purge]` com as
+ * contagens (só números).
  *
  * FAIL-CLOSED (igual ao dsar-sla): exige `Authorization: Bearer ${CRON_SECRET}`. SEM `CRON_SECRET` no
  * ambiente (deploy-gate humano) OU header ausente/errado → 401. O Vercel Cron injeta esse header a partir
@@ -45,6 +46,15 @@ export async function GET(request: Request): Promise<Response> {
     purgeAnonymizedAccounts(getDb(), getImageStore(), now),
   )
   const pending = await run('expurgo de cadastros pendentes', () => purgeStalePendingSignups(getDb(), now))
-  // Só CONTAGENS (metadado não-sensível) — nunca dado do titular no corpo/log.
-  return Response.json({ ...anonymized, ...pending }, { status: failed ? 500 : 200 })
+  // Só CONTAGENS (metadado não-sensível) — nunca dado do titular no corpo/log. A linha de log é o que mostra, nos
+  // logs da Vercel, quanto cada passada apagou (o painel de crons só guarda o status).
+  const counts = { ...anonymized, ...pending }
+  // Só campos NUMÉRICOS entram na linha: um campo novo não-numérico nos resultados (ex.: lista de ids) não vaza.
+  const summary = Object.entries(counts)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([k, v]) => `${k}=${v}`)
+    .join(' ')
+  const log = failed ? console.warn : console.info
+  log(`[account-purge] passada ${failed ? 'com falha' : 'concluída'}: ${summary || 'sem contagens'}`)
+  return Response.json(counts, { status: failed ? 500 : 200 })
 }
