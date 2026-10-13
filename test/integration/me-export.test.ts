@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/me/export/route'
 import { getDb } from '@/server/deps'
-import { mealPlanEntry, notification, pantryItem, shoppingList, shoppingListItem, userFollow } from '@/db/schema'
+import { eq } from 'drizzle-orm'
+import { mealPlanEntry, notification, pantryItem, shoppingList, shoppingListItem, userFollow, users } from '@/db/schema'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import {
   seedRecipe,
@@ -90,6 +91,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       .values({ userId, day: '2026-09-29', slot: 'almoco', recipeId: feijoada, porcoes: 4 })
     await getDb().insert(mealPlanEntry).values({ userId, day: '2026-09-30', slot: 'jantar', note: 'Jantar fora' })
     await getDb().insert(pantryItem).values({ userId, nome: 'Ovo caipira', matchKey: 'ovo caipira' })
+    await getDb().update(users).set({ pantryBasics: ['sal', 'alho'] }).where(eq(users.id, userId))
 
     const res = await get(headers)
     expect(res.status).toBe(200)
@@ -110,6 +112,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       }>
       mealPlan: Array<{ day: string; slot: string; recipeId: string | null; note: string | null; porcoes: number | null }>
       pantry: Array<{ nome: string }>
+      pantryBasics: string[] | null
     }
 
     expect(dump.format).toBe('refogando-account-export/v1')
@@ -143,6 +146,8 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     ])
     // Despensa (ADR-0038): os nomes que o titular digitou.
     expect(dump.pantry).toEqual([expect.objectContaining({ nome: 'Ovo caipira' })])
+    // E os básicos que ele escolheu (ADR-0042).
+    expect(dump.pantryBasics).toEqual(['sal', 'alho'])
   })
 
   it('NÃO vaza PII de terceiros: seguindo traz só handle, seguidores só contagem, sem e-mail de outros', async () => {

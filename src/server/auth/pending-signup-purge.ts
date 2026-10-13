@@ -137,6 +137,9 @@ export async function purgeStalePendingSignups(
     lt(users.pendingSignupAt, cutoff),
     eq(users.emailVerified, false),
     isNull(users.deletedAt),
+    // Básicos da Despensa editados (ADR-0042) são uso da conta, como uma linha nas `CONTENT_GUARDS` — só que
+    // moram na própria linha `users`, então a guarda vai aqui (e o DELETE a re-checa).
+    isNull(users.pantryBasics),
   )
 
   return db.transaction(async (tx) => {

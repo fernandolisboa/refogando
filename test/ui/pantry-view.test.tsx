@@ -46,7 +46,14 @@ type Match = {
 }
 type Call = { url: string; method: string; body: unknown }
 
-function mockFetch(state: { items: Item[]; matches: Match[]; missingStatus?: number }) {
+function mockFetch(state: {
+  items: Item[]
+  matches: Match[]
+  missingStatus?: number
+  basics?: string[]
+  basicsCustom?: boolean
+  basicsStatus?: number
+}) {
   const calls: Call[] = []
   const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input)
@@ -57,7 +64,23 @@ function mockFetch(state: { items: Item[]; matches: Match[]; missingStatus?: num
     let payload: unknown = {}
     if (url === '/api/me/pantry' && method === 'GET') {
       status = 200
-      payload = { items: [...state.items] }
+      payload = {
+        items: [...state.items],
+        ...(state.basics !== undefined ? { basics: state.basics, basicsCustom: state.basicsCustom ?? false } : {}),
+      }
+    } else if (url === '/api/me/pantry/basics' && state.basicsStatus) {
+      status = state.basicsStatus
+      payload = { error: 'dados_invalidos' }
+    } else if (url === '/api/me/pantry/basics' && method === 'PUT') {
+      status = 200
+      state.basics = body.basics
+      state.basicsCustom = true
+      payload = { ok: true, basics: body.basics, custom: true }
+    } else if (url === '/api/me/pantry/basics' && method === 'DELETE') {
+      status = 200
+      state.basics = ['sal', 'água']
+      state.basicsCustom = false
+      payload = { ok: true, basics: state.basics, custom: false }
     } else if (url === '/api/me/pantry' && method === 'POST') {
       status = 200
       const names = String(body.names)
@@ -274,5 +297,67 @@ describe('PantryView', () => {
     expect(body.recipeId).toBe('r1')
     expect(body).not.toHaveProperty('porcoes')
     expect(typeof body.day).toBe('string')
+  })
+
+  it('básicos padrão: o rótulo de sempre; básicos da pessoa: o rótulo mostra a lista dela (ADR-0042)', async () => {
+    mockFetch({ items: [{ id: 'a', nome: 'ovo' }], matches: [], basics: ['sal', 'água'], basicsCustom: false })
+    const { unmount } = renderView()
+    expect(await screen.findByText(M.basicos.replace('{lista}', M.basicosLista))).toBeInTheDocument()
+    unmount()
+
+    mockFetch({ items: [{ id: 'a', nome: 'ovo' }], matches: [], basics: ['alho', 'sal'], basicsCustom: true })
+    const second = renderView()
+    expect(await second.findByText(M.basicos.replace('{lista}', 'alho, sal'))).toBeInTheDocument()
+    second.unmount()
+
+    mockFetch({ items: [{ id: 'a', nome: 'ovo' }], matches: [], basics: [], basicsCustom: true })
+    renderView()
+    expect(await screen.findByText(M.basicosNenhum)).toBeInTheDocument()
+  })
+
+  it('"Seus básicos": adicionar e tirar gravam a lista INTEIRA; "Voltar ao padrão" apaga a escolha', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({ items: [{ id: 'a', nome: 'ovo' }], matches: [], basics: ['sal', 'água'] })
+    renderView()
+    await user.click(await screen.findByRole('button', { name: M.basicosEditar }))
+    // Lista padrão: sem "Voltar ao padrão".
+    expect(screen.queryByRole('button', { name: M.basicosPadrao })).not.toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(M.basicoAdicionarRotulo), 'Alho, sal')
+    const form = screen.getByLabelText(M.basicoAdicionarRotulo).closest('form')!
+    await user.click(within(form).getByRole('button', { name: M.adicionar }))
+    // "sal" já estava: só "Alho" entra, no fim.
+    await waitFor(() =>
+      expect(calls.find((c) => c.url === '/api/me/pantry/basics' && c.method === 'PUT')?.body).toEqual({
+        basics: ['sal', 'água', 'Alho'],
+      }),
+    )
+    expect(await screen.findByText(M.basicos.replace('{lista}', 'sal, água, Alho'))).toBeInTheDocument()
+    // Os resultados recarregam (os básicos entram no casamento).
+    await waitFor(() => expect(calls.filter((c) => c.url.includes('/api/me/pantry/matches')).length).toBeGreaterThan(1))
+
+    await user.click(screen.getByRole('button', { name: M.basicoRemover.replace('{nome}', 'água') }))
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url === '/api/me/pantry/basics' && c.method === 'PUT').at(-1)?.body).toEqual({
+        basics: ['sal', 'Alho'],
+      }),
+    )
+
+    await user.click(await screen.findByRole('button', { name: M.basicosPadrao }))
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/api/me/pantry/basics' && c.method === 'DELETE')).toBe(true),
+    )
+    expect(await screen.findByText(M.basicos.replace('{lista}', M.basicosLista))).toBeInTheDocument()
+  })
+
+  it('"Seus básicos": recusa do servidor vira o aviso de limite', async () => {
+    const user = userEvent.setup()
+    mockFetch({ items: [], matches: [], basics: ['sal'], basicsStatus: 400 })
+    renderView()
+    await user.click(await screen.findByRole('button', { name: M.basicosEditar }))
+    const form = screen.getByLabelText(M.basicoAdicionarRotulo).closest('form')!
+    await user.type(screen.getByLabelText(M.basicoAdicionarRotulo), 'alho')
+    await user.click(within(form).getByRole('button', { name: M.adicionar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.basicosErroDados.replace('{max}', '60').replace('{teto}', '30'))
   })
 })

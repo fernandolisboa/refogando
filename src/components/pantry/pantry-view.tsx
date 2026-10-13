@@ -7,17 +7,23 @@
  * que tenho" (`/create?q=`, nunca gera sozinho).
  * Consome `GET/POST/DELETE /api/me/pantry`, `DELETE /api/me/pantry/[itemId]`, `GET /api/me/pantry/matches`
  * e `POST /api/me/pantry/missing-to-list`.
+ *
+ * ADR-0042: os básicos são da pessoa — "Seus básicos" edita a lista (`PUT/DELETE /api/me/pantry/basics`), e
+ * o rótulo de "Tenho o básico" mostra a lista dela (a padrão, com o texto de sempre, para quem nunca mexeu).
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChefHat, ShoppingCart, Sparkles, X } from 'lucide-react'
+import { ChefHat, ChevronDown, ShoppingCart, Sparkles, X } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import {
   MAX_PANTRY_ADD_BATCH,
+  MAX_PANTRY_BASICS,
   MAX_PANTRY_ITEMS,
+  PANTRY_BASICS,
   PANTRY_NAME_MAX,
   pantryMatchKey,
+  splitPantryInput,
   splitPantryMatches,
 } from '@/domain/pantry'
 import { createFromSearchHref } from '@/domain/generate-from-search'
@@ -50,6 +56,9 @@ export function PantryView() {
   const pathname = usePathname()
 
   const [items, setItems] = useState<PantryItem[]>([])
+  // Os básicos efetivos da pessoa (ADR-0042); `basicsCustom: false` = a lista padrão (rótulo de sempre).
+  const [basicsList, setBasicsList] = useState<readonly string[]>([])
+  const [basicsCustom, setBasicsCustom] = useState(false)
   const [status, setStatus] = useState<Status>('loading')
   const [matches, setMatches] = useState<PantryMatch[]>([])
   const [matchStatus, setMatchStatus] = useState<Status>('loading')
@@ -90,8 +99,11 @@ export function PantryView() {
         setStatus('error')
         return
       }
-      const body = (await res.json()) as { items: PantryItem[] }
+      const body = (await res.json()) as { items: PantryItem[]; basics?: string[]; basicsCustom?: boolean }
       setItems(body.items)
+      // A rota sempre manda os básicos; sem eles (resposta antiga em cache), a lista padrão — nunca "nenhum".
+      setBasicsList(body.basics ?? PANTRY_BASICS)
+      setBasicsCustom(body.basicsCustom === true)
       setStatus('idle')
     } catch {
       setStatus('error')
@@ -261,6 +273,11 @@ export function PantryView() {
   }
 
   const presentKeys = new Set(items.map((i) => pantryMatchKey(i.nome)))
+  const basicsLabel = !basicsCustom
+    ? m.basicos.replace('{lista}', m.basicosLista)
+    : basicsList.length === 0
+      ? m.basicosNenhum
+      : m.basicos.replace('{lista}', () => basicsList.join(', '))
   const suggestions = m.sugestoes.filter((s) => !presentKeys.has(pantryMatchKey(s)))
   const { ready, almost } = splitPantryMatches(matches)
   const createHref = createFromSearchHref(m.criarPrompt.replace('{lista}', () => items.map((i) => i.nome).join(', ')))
@@ -352,6 +369,17 @@ export function PantryView() {
             </ul>
           </div>
         )}
+
+        <PantryBasicsEditor
+          basics={basicsList}
+          custom={basicsCustom}
+          onSaved={(next, custom) => {
+            setBasicsList(next)
+            setBasicsCustom(custom)
+            // Os básicos entram no casamento: com a opção ligada, os resultados mudam.
+            if (basics && items.length > 0) void loadMatches()
+          }}
+        />
       </section>
 
       {items.length > 0 && (
@@ -367,7 +395,7 @@ export function PantryView() {
                 onChange={(e) => setBasics(e.target.checked)}
                 className="size-4 accent-brand"
               />
-              {m.basicos.replace('{lista}', m.basicosLista)}
+              {basicsLabel}
             </label>
             <p className="text-xs text-muted">{m.comoCasa}</p>
           </div>
@@ -509,6 +537,154 @@ function MatchSection({
           )
         })}
       </ul>
+    </div>
+  )
+}
+
+/**
+ * "Seus básicos" (ADR-0042 dec.4): a lista que "Tenho o básico" conta como em casa e que o "Cozinhei" do
+ * Cardápio nunca tira. Fechada por padrão. Cada mudança grava a lista INTEIRA (`PUT`); "Voltar ao padrão"
+ * apaga a escolha (`DELETE`). Uma gravação por vez (os botões travam), então duas não chegam fora de ordem.
+ */
+function PantryBasicsEditor({
+  basics,
+  custom,
+  onSaved,
+}: {
+  basics: readonly string[]
+  custom: boolean
+  onSaved: (basics: readonly string[], custom: boolean) => void
+}) {
+  const { messages } = useLocale()
+  const m = messages.despensa
+  const [open, setOpen] = useState(false)
+  const [input, setInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const panelId = 'despensa-basicos'
+  const invalidMessage = m.basicosErroDados
+    .replace('{max}', String(PANTRY_NAME_MAX))
+    .replace('{teto}', String(MAX_PANTRY_BASICS))
+
+  async function save(next: readonly string[] | null): Promise<boolean> {
+    if (saving) return false
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/me/pantry/basics', {
+        method: next === null ? 'DELETE' : 'PUT',
+        ...(next === null
+          ? {}
+          : { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ basics: next }) }),
+      })
+      if (!res.ok) {
+        setError(res.status === 400 ? invalidMessage : m.erro)
+        return false
+      }
+      const body = (await res.json()) as { basics: string[]; custom: boolean }
+      onSaved(body.basics, body.custom)
+      return true
+    } catch {
+      setError(m.erro)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const parsed = splitPantryInput(input)
+    if (parsed === 'invalid' || parsed === 'too_many') {
+      setError(invalidMessage)
+      return
+    }
+    const present = new Set(basics.map(pantryMatchKey))
+    const fresh = parsed.filter((n) => !present.has(pantryMatchKey(n)))
+    if (fresh.length === 0) {
+      setInput('')
+      return
+    }
+    if (await save([...basics, ...fresh])) setInput('')
+  }
+
+  async function handleRemove(nome: string) {
+    // O botão focado some com o chip: devolve o foco ao campo (senão cai no <body>).
+    document.getElementById('despensa-basico-adicionar')?.focus()
+    await save(basics.filter((b) => b !== nome))
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="self-start"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronDown className={open ? 'rotate-180 transition-transform' : 'transition-transform'} aria-hidden />
+        {m.basicosEditar}
+      </Button>
+      {open && (
+        <div id={panelId} className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4">
+          <p className="text-xs text-muted">{m.basicosDica}</p>
+          {basics.length === 0 ? (
+            <p className="text-sm text-muted">{m.basicosVazio}</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2" aria-label={m.basicosEditar}>
+              {basics.map((b) => (
+                <li
+                  key={b}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-surface py-1 pr-1 pl-3 text-sm text-fg"
+                >
+                  {b}
+                  <button
+                    type="button"
+                    disabled={saving}
+                    aria-label={m.basicoRemover.replace('{nome}', () => b)}
+                    onClick={() => void handleRemove(b)}
+                    className="inline-flex size-6 items-center justify-center rounded-full text-muted hover:bg-brand/10 hover:text-fg disabled:opacity-50"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
+            <div className="flex w-full flex-col gap-1 sm:w-64">
+              <label htmlFor="despensa-basico-adicionar" className="text-xs font-medium text-muted">
+                {m.basicoAdicionarRotulo}
+              </label>
+              <Input
+                id="despensa-basico-adicionar"
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  setError(null)
+                }}
+                placeholder={m.basicoAdicionarPlaceholder}
+              />
+            </div>
+            <Button type="submit" variant="secondary" size="sm" disabled={saving || input.trim() === ''}>
+              {m.adicionar}
+            </Button>
+            {custom && (
+              <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => void save(null)}>
+                {m.basicosPadrao}
+              </Button>
+            )}
+          </form>
+          {error != null && (
+            <p role="alert" className="text-sm font-medium text-fg">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

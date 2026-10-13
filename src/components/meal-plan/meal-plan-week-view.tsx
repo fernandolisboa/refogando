@@ -12,6 +12,10 @@
  * porções — e "Copiar semana anterior" (`POST .../copy-previous-week`) repete a semana de antes nas
  * refeições vazias (na semana corrente, de hoje em diante).
  *
+ * ADR-0042: uma Refeição com Receita tem "Cozinhei" (`POST .../entries/[id]/cooked`), que tira da Despensa o
+ * que a Receita usa (o servidor decide o quê; nunca os básicos) e mostra o que saiu com "Desfazer"
+ * (`POST /api/me/pantry/restore` com exatamente esses nomes). Não muda a semana: nada recarrega.
+ *
  * "Hoje" e "esta semana" são do FUSO DO NAVEGADOR (`localTodayIso`, ADR-0035 dec.2) — o servidor
  * nunca deriva o dia. A semana visível vive na URL (`?semana=YYYY-MM-DD`, segunda-feira) pra
  * recarregar/voltar cair na mesma semana.
@@ -19,7 +23,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, ChevronRight, CopyPlus, Minus, NotebookPen, Plus, ShoppingCart, Sparkles, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  CookingPot,
+  CopyPlus,
+  Minus,
+  NotebookPen,
+  Plus,
+  ShoppingCart,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -586,6 +601,10 @@ function EntryRow({
   // (a Receita não declara porções) — o seletor some, como o escalador do detalhe.
   const porcoes = entry.porcoes ?? r?.porcoes ?? null
   const moveValue = `${entry.day}|${entry.slot}`
+  // "Cozinhei" desta linha (ADR-0042): o resultado vive só na tela, nada é gravado na entrada.
+  const cookRef = useRef<HTMLButtonElement>(null)
+  const cooking = useCookedMeal(entry.id, locale, m, cookRef)
+  const cooked = cooking.cooked
 
   return (
     <li className="flex items-start gap-3">
@@ -668,7 +687,13 @@ function EntryRow({
               </optgroup>
             ))}
           </select>
+          {r != null && <CookedButton name={name} m={m} cooking={cooking} buttonRef={cookRef} />}
         </div>
+        {/* Região viva SEMPRE no DOM (o texto entra nela; inserida junto, o leitor de tela a ignoraria). */}
+        <p role="status" aria-live="polite" className="text-xs text-fg empty:sr-only">
+          {cooked != null && cookedMessage(cooked, m)}
+        </p>
+        {cooked != null && <CookedOutcome m={m} cooking={cooking} />}
       </div>
       <button
         type="button"
@@ -679,5 +704,165 @@ function EntryRow({
         <X className="size-4" aria-hidden />
       </button>
     </li>
+  )
+}
+
+// ── "Cozinhei" (ADR-0042) ────────────────────────────────────────────────────────
+
+/**
+ * O que o último "Cozinhei" de uma linha fez. `removed` são os nomes que SAÍRAM (o que o "Desfazer"
+ * devolve); `keptBasics`, os que bateram mas ficaram por serem básicos. `undone` depois do "Desfazer";
+ * `error` quando o toque (ou o desfazer) falhou.
+ */
+type Cooked = {
+  removed: string[]
+  keptBasics: string[]
+  undone?: boolean
+  error?: string
+}
+
+/** A frase da região viva para um resultado do "Cozinhei". */
+function cookedMessage(c: Cooked, m: M): string {
+  // Erro do toque: só o alerta. Erro do desfazer: a frase do que saiu continua (o botão também).
+  if (c.error != null && c.removed.length === 0) return ''
+  if (c.undone) return m.cozinheiDesfeito.replace('{lista}', () => c.removed.join(', '))
+  const kept = c.keptBasics.join(', ')
+  if (c.removed.length === 0) {
+    return c.keptBasics.length > 0 ? m.cozinheiSoBasicos.replace('{lista}', () => kept) : m.cozinheiNada
+  }
+  const removed = m.cozinheiRemovidos.replace('{lista}', () => c.removed.join(', '))
+  return c.keptBasics.length > 0 ? `${removed} ${m.cozinheiBasicosFicaram.replace('{lista}', () => kept)}` : removed
+}
+
+/**
+ * Estado do "Cozinhei" de UMA linha: o último resultado e o que está em voo. Uma ação por vez — e "Cozinhei"
+ * fica travado enquanto há um "Desfazer" pendente: um segundo toque não acharia mais os itens, e a resposta
+ * vazia apagaria da tela o "Desfazer" que ainda pode devolvê-los (ou, com o desfazer em voo, a tela diria
+ * "voltou" para itens tirados de novo). Depois do "Desfazer", o foco volta ao "Cozinhei" (o botão de desfazer
+ * some da tela).
+ */
+function useCookedMeal(entryId: string, locale: string, m: M, cookRef: React.RefObject<HTMLButtonElement | null>) {
+  const [cooked, setCooked] = useState<Cooked | null>(null)
+  const [busy, setBusy] = useState<'cook' | 'undo' | null>(null)
+  const focusCookAfterUndo = useRef(false)
+  const undoPending = cooked != null && cooked.removed.length > 0 && !cooked.undone
+
+  useEffect(() => {
+    if (!focusCookAfterUndo.current || busy != null || undoPending) return
+    focusCookAfterUndo.current = false
+    // Só resgata o foco que caiu no <body> com o "Desfazer" que sumiu: se a pessoa já foi para outro
+    // controle enquanto a restauração voava, o foco fica onde ela está.
+    const active = document.activeElement
+    if (active == null || active === document.body) cookRef.current?.focus()
+  }, [busy, undoPending, cookRef])
+
+  async function cook() {
+    if (busy != null || undoPending) return
+    setBusy('cook')
+    try {
+      const res = await fetch(`/api/me/meal-plan/entries/${entryId}/cooked?locale=${encodeURIComponent(locale)}`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        setCooked({ removed: [], keptBasics: [], error: m.erroCozinhei })
+        return
+      }
+      const body = (await res.json()) as { removed: { nome: string }[]; keptBasics: string[] }
+      setCooked({ removed: body.removed.map((r) => r.nome), keptBasics: body.keptBasics })
+    } catch {
+      setCooked({ removed: [], keptBasics: [], error: m.erroCozinhei })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function undo() {
+    if (busy != null || cooked == null || !undoPending) return
+    const outcome = cooked
+    setBusy('undo')
+    try {
+      const res = await fetch('/api/me/pantry/restore', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ names: outcome.removed }),
+      })
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string }
+        setCooked({ ...outcome, error: err.error === 'despensa_cheia' ? m.erroDesfazerCheia : m.erroDesfazer })
+        return
+      }
+      focusCookAfterUndo.current = true
+      setCooked({ removed: outcome.removed, keptBasics: [], undone: true })
+    } catch {
+      setCooked({ ...outcome, error: m.erroDesfazer })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return { cooked, busy, undoPending, cook, undo }
+}
+
+type CookedMeal = ReturnType<typeof useCookedMeal>
+
+function CookedButton({
+  name,
+  m,
+  cooking,
+  buttonRef,
+}: {
+  name: string
+  m: M
+  cooking: CookedMeal
+  buttonRef: React.RefObject<HTMLButtonElement | null>
+}) {
+  return (
+    <Button
+      ref={buttonRef}
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 px-2 text-xs"
+      title={m.cozinheiDica}
+      aria-label={m.cozinheiAria.replace('{nome}', () => name)}
+      disabled={cooking.busy != null || cooking.undoPending}
+      onClick={() => void cooking.cook()}
+    >
+      <CookingPot aria-hidden />
+      {cooking.busy === 'cook' ? m.cozinhando : m.cozinhei}
+    </Button>
+  )
+}
+
+/** O erro do "Cozinhei" e o "Desfazer" (que devolve EXATAMENTE os nomes que saíram) + o link da Despensa. */
+function CookedOutcome({ m, cooking }: { m: M; cooking: CookedMeal }) {
+  const outcome = cooking.cooked
+  if (outcome == null) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {outcome.error != null && (
+        <span role="alert" className="font-medium text-fg">
+          {outcome.error}
+        </span>
+      )}
+      {/* Só enquanto há o que devolver (um erro no desfazer mantém o botão pra tentar de novo). */}
+      {cooking.undoPending && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={cooking.busy != null}
+          onClick={() => void cooking.undo()}
+        >
+          {cooking.busy === 'undo' ? m.desfazendo : m.desfazer}
+        </Button>
+      )}
+      {outcome.error == null && (
+        <Link href="/me/pantry" className="font-medium text-brand-ink underline-offset-4 hover:underline">
+          {m.verDespensa}
+        </Link>
+      )}
+    </div>
   )
 }

@@ -56,7 +56,7 @@ function groupBy<T, K extends string>(rows: T[], key: (row: T) => K): Map<K, T[]
 
 export async function buildAccountExport(db: Database, userId: string): Promise<Record<string, unknown>> {
   // ── Perfil (dados de conta do próprio titular) ────────────────────────────────
-  const [profile] = await db
+  const [profileRow] = await db
     .select({
       id: users.id,
       name: users.name,
@@ -74,9 +74,13 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
       emailVerified: users.emailVerified,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
+      // Os básicos da Despensa (ADR-0042) saem do perfil para a seção da Despensa, logo abaixo.
+      pantryBasics: users.pantryBasics,
     })
     .from(users)
     .where(eq(users.id, userId))
+  // `null` = nunca mexeu (vale a lista padrão do app). Fora de `account`, junto da Despensa.
+  const { pantryBasics = null, ...account } = profileRow ?? {}
 
   // ── Receitas que o titular criou/possui (owner_id = titular) ──────────────────
   const recipeRows = await db
@@ -249,7 +253,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     .where(eq(mealPlanEntry.userId, userId))
     .orderBy(asc(mealPlanEntry.day), asc(mealPlanEntry.createdAt))
 
-  // ── Despensa (ADR-0038): os nomes que o próprio titular digitou ────────────────────────────
+  // ── Despensa (ADR-0038): os nomes que o próprio titular digitou, e os básicos dele (ADR-0042) ─────
   const pantry = await db
     .select({ nome: pantryItem.nome, createdAt: pantryItem.createdAt })
     .from(pantryItem)
@@ -420,7 +424,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
   return {
     format: EXPORT_FORMAT,
     exportedAt: new Date().toISOString(),
-    account: profile ?? null,
+    account: profileRow ? account : null,
     recipes,
     reviews,
     savedRecipes,
@@ -428,6 +432,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     shoppingLists,
     mealPlan,
     pantry,
+    pantryBasics,
     social: {
       followingCount: followingRows.length,
       followersCount,

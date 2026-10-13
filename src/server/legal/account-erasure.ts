@@ -27,8 +27,8 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
  *  4. AUDITA: grava um evento `DSAR_RECEIVED` (canal `self_service`) na MESMA transação (atomicidade:
  *     ou elimina-E-audita, ou nada — espelha `clearSourceAttribution`/`createTakedownTicket`).
  *
- * O Plano de refeições (ADR-0035) e a Despensa (ADR-0038) são APAGADOS na mesma transação: são privados e
- * nenhum terceiro depende deles.
+ * O Plano de refeições (ADR-0035) e a Despensa (ADR-0038, com os básicos da pessoa — ADR-0042) são APAGADOS
+ * na mesma transação: são privados e nenhum terceiro depende deles.
  *
  * O CONTEÚDO do usuário (receitas, avaliações, saves) é MANTIDO (owner_id segue apontando para a linha
  * anonimizada): apagá-lo em cascata destruiria dados dos quais TERCEIROS dependem (ex.: avaliações
@@ -91,6 +91,8 @@ export async function eraseOwnAccount(
         restricoes: [],
         // Nível de habilidade padrão (#421):
         nivelPadrao: null,
+        // Os básicos da Despensa (ADR-0042) somem com a Despensa: privados, só do titular.
+        pantryBasics: null,
         deletedAt: now,
         anonymizedAt: now,
         updatedAt: now,

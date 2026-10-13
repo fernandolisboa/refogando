@@ -9,8 +9,9 @@ import { loadPantryMatches } from '@/server/pantry/pantry'
  * "O que dá pra fazer com o que eu tenho" (ADR-0038 dec.2–4): as Receitas que o usuário pode salvar com no
  * máximo 3 Itens faltando frente à SUA Despensa, ordenadas pelo que falta.
  *
- * GET ?basics=0|1[&locale] → `{ matches: PantryMatch[] }`. `basics` ("Tenho o básico": sal, água, óleo,
- * azeite, pimenta-do-reino) é ligado por padrão — só `basics=0` desliga.
+ * GET ?basics=0|1[&locale] → `{ matches: PantryMatch[] }`. `basics` ("Tenho o básico": os básicos da pessoa,
+ * ADR-0042 — a lista padrão sal, água, óleo, azeite, pimenta-do-reino para quem nunca mexeu) é ligado por
+ * padrão — só `basics=0` desliga.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
