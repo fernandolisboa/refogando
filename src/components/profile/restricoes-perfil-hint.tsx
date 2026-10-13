@@ -7,12 +7,21 @@
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 
-export function RestricoesPerfilHint({ visivel, comLink = false }: { visivel: boolean; comLink?: boolean }) {
+export function RestricoesPerfilHint({
+  visivel,
+  comLink = false,
+  id,
+}: {
+  visivel: boolean
+  comLink?: boolean
+  /** Para o grupo de chips apontar para a dica (`aria-describedby`) — o leitor de tela ouve a origem junto. */
+  id?: string
+}) {
   const { messages } = useLocale()
   const m = messages.restricoesPerfil
   if (!visivel) return null
   return (
-    <p className="text-xs text-muted">
+    <p id={id} className="text-xs text-muted">
       {m.vemDoPerfil}
       {comLink && (
         <>

@@ -7,9 +7,12 @@ import {
   normalizarRestricoes,
   ordenarRestricoes,
   parseListaRestricoes,
+  buscaUsaPerfil,
   restricaoEhCriterio,
-  restricoesDaBusca,
+  restricoesDoPedido,
   restricoesEfetivas,
+  restricoesExplicitasDaBusca,
+  somarRestricoes,
   vemDoPerfil,
 } from '@/domain/restricoes-perfil'
 import { RESTRICOES } from '@/domain/vocabulary'
@@ -101,22 +104,44 @@ describe('seleção com default do perfil', () => {
   })
 })
 
-describe('Busca (dec.4): o perfil filtra só quando a pessoa refina', () => {
-  it('no repouso (sem outro critério) o perfil NÃO filtra e nem conta como critério', () => {
-    expect(restricoesDaBusca(SELECAO_INICIAL, ['vegano'], false)).toEqual([])
+describe('restricoesDoPedido: Prompt aberto e Conversa só oferecem as salvas', () => {
+  it('sem toque, são as do perfil; Visitante/sem perfil, nenhuma', () => {
+    expect(restricoesDoPedido(SELECAO_INICIAL, ['vegano', 'sem_gluten'])).toEqual(['vegano', 'sem_gluten'])
+    expect(restricoesDoPedido(SELECAO_INICIAL, null)).toEqual([])
+  })
+
+  it('um toque herdado do estruturado fora do perfil NÃO sobe', () => {
+    const sel = { tocada: true, escolhidas: ['vegano' as const, 'sem_lactose' as const] }
+    expect(restricoesDoPedido(sel, ['vegano'])).toEqual(['vegano'])
+  })
+})
+
+describe('restricaoEhCriterio: só a escolha da pessoa conta como substância', () => {
+  it('o default intocado nunca conta (nem como critério da Busca, nem como briefing não-vazio)', () => {
     expect(restricaoEhCriterio(SELECAO_INICIAL)).toBe(false)
-  })
-
-  it('com termo/faceta, o perfil entra como filtro default', () => {
-    expect(restricoesDaBusca(SELECAO_INICIAL, ['vegano'], true)).toEqual(['vegano'])
-    expect(restricoesDaBusca(SELECAO_INICIAL, null, true)).toEqual([])
-  })
-
-  it('a escolha da pessoa vale sempre — inclusive "Mostrar tudo" (vazia) e no repouso', () => {
-    expect(restricoesDaBusca(SELECAO_LIMPA, ['vegano'], true)).toEqual([])
-    const escolhida = { tocada: true, escolhidas: ['sem_lactose' as const] }
-    expect(restricoesDaBusca(escolhida, ['vegano'], false)).toEqual(['sem_lactose'])
-    expect(restricaoEhCriterio(escolhida)).toBe(true)
     expect(restricaoEhCriterio(SELECAO_LIMPA)).toBe(false)
+    expect(restricaoEhCriterio({ tocada: true, escolhidas: ['sem_lactose'] })).toBe(true)
+  })
+})
+
+describe('Busca (dec.3): o perfil vai como pedido ao servidor, nunca como valores na URL', () => {
+  it('sem toque, o perfil é pedido só quando a pessoa refina', () => {
+    expect(buscaUsaPerfil(SELECAO_INICIAL, false)).toBe(false)
+    expect(buscaUsaPerfil(SELECAO_INICIAL, true)).toBe(true)
+  })
+
+  it('depois do toque (inclusive "Mostrar tudo"), não pede o perfil e valem só as escolhidas', () => {
+    expect(buscaUsaPerfil(SELECAO_LIMPA, true)).toBe(false)
+    expect(restricoesExplicitasDaBusca(SELECAO_LIMPA)).toEqual([])
+    expect(restricoesExplicitasDaBusca({ tocada: true, escolhidas: ['sem_lactose'] })).toEqual(['sem_lactose'])
+  })
+
+  it('o default intocado NÃO é explícito (não vai à URL nem conta como faceta)', () => {
+    expect(restricoesExplicitasDaBusca(SELECAO_INICIAL)).toEqual([])
+  })
+
+  it('servidor: soma as do perfil às da busca, na forma canônica', () => {
+    expect(somarRestricoes(['vegano'], ['sem_gluten', 'vegano'])).toEqual(ordenarRestricoes(['vegano', 'sem_gluten']))
+    expect(somarRestricoes([], [])).toEqual([])
   })
 })

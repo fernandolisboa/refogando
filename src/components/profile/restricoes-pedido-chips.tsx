@@ -5,7 +5,9 @@
  * quando há algo salvo: quem não salvou nada vê a tela exatamente como antes. Não oferece o vocabulário
  * inteiro de propósito (aí já seria o Formulário estruturado) — uma restrição a mais vai no próprio texto.
  */
+import { useId } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { CheckboxChip } from '@/components/ui/checkbox-chip'
 import type { Restricao } from '@/domain/vocabulary'
 
 export function RestricoesPedidoChips({
@@ -23,26 +25,21 @@ export function RestricoesPedidoChips({
 }) {
   const { messages } = useLocale()
   const m = messages.restricoesPerfil
+  const dicaId = useId()
   if (perfil == null || perfil.length === 0) return null
-  const chipClass =
-    'flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm text-fg has-[:checked]:border-brand has-[:checked]:bg-brand/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand'
   return (
-    <fieldset className="flex flex-col gap-2" disabled={disabled}>
+    <fieldset className="flex flex-col gap-2" disabled={disabled} aria-describedby={dicaId}>
       <legend className="mb-1 text-sm font-medium text-fg">{m.considerarLegenda}</legend>
       <div className="flex flex-wrap gap-2">
         {perfil.map((r) => (
-          <label key={r} className={chipClass}>
-            <input
-              type="checkbox"
-              className="sr-only"
-              checked={selecionadas.includes(r)}
-              onChange={() => onToggle(r)}
-            />
+          <CheckboxChip key={r} checked={selecionadas.includes(r)} onChange={() => onToggle(r)}>
             {messages.restricaoLabel[r]}
-          </label>
+          </CheckboxChip>
         ))}
       </div>
-      <p className="text-xs text-muted">{m.considerarDica}</p>
+      <p id={dicaId} className="text-xs text-muted">
+        {m.considerarDica}
+      </p>
     </fieldset>
   )
 }

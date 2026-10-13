@@ -93,25 +93,53 @@ export function vemDoPerfil(sel: SelecaoRestricoes, perfil: readonly Restricao[]
 }
 
 /**
- * Busca (ADR-0041 dec.4): as restrições do perfil SOZINHAS não tiram a home do repouso (o feed indexável fica
- * igual para todos). Só uma restrição escolhida pela pessoa conta como critério; quando há OUTRO critério
- * (termo, cozinha, categoria), a busca usa as efetivas — o default do perfil incluído, visível na trilha e
- * no aviso acima dos resultados.
+ * As Restrições que a PESSOA escolheu neste pedido (tocou e deixou alguma marcada)? Só isso conta como
+ * substância/critério por conta própria: o default do perfil, intocado, nunca tira a home do repouso
+ * (ADR-0041 dec.3) nem sozinho torna um briefing não-vazio (gastaria uma geração só com restrições que a
+ * pessoa nem escolheu agora).
  */
 export function restricaoEhCriterio(sel: SelecaoRestricoes): boolean {
   return sel.tocada && sel.escolhidas.length > 0
 }
 
 /**
- * Busca (ADR-0041 dec.4): as Restrições APLICADAS agora. Escolha da pessoa (`tocada`) vale sempre; sem toque,
- * o perfil só entra quando há OUTRO critério (`outroCriterio`: termo, cozinha ou categoria) — no repouso a
- * home mostra o feed sem filtro, e a trilha mostra exatamente o que está aplicado (nada marcado "de enfeite").
+ * Caminhos que só OFERECEM as salvas (Prompt aberto e Conversa): as que valem agora, restritas às do perfil.
+ * A interseção protege contra um toque herdado do ramo estruturado (alternar de modo preserva o estado).
  */
-export function restricoesDaBusca(
-  sel: SelecaoRestricoes,
-  perfil: readonly Restricao[] | null,
-  outroCriterio: boolean,
-): Restricao[] {
-  if (sel.tocada) return [...sel.escolhidas]
-  return outroCriterio ? [...(perfil ?? [])] : []
+export function restricoesDoPedido(sel: SelecaoRestricoes, perfil: readonly Restricao[] | null): Restricao[] {
+  if (perfil == null) return []
+  return restricoesEfetivas(sel, perfil).filter((r) => perfil.includes(r))
+}
+
+// ── Busca (ADR-0041 dec.3) ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Parâmetro de `/api/search` que pede "aplique as minhas Restrições salvas" — SEM valores: a lista nunca vai
+ * para URL nenhuma (nem a barra de endereço nem a da API). O servidor lê `users.restricoes` da sessão;
+ * Visitante ⇒ ignorado.
+ */
+export const PARAM_RESTRICAO_PERFIL = 'restricaoPerfil'
+
+/**
+ * As Restrições que a pessoa escolheu À MÃO na Busca — as únicas que vão para a URL (`?restricao=`) e contam
+ * como faceta explícita (suprimem a lente de Perfil culinário, como qualquer faceta).
+ */
+export function restricoesExplicitasDaBusca(sel: SelecaoRestricoes): Restricao[] {
+  return sel.tocada ? [...sel.escolhidas] : []
+}
+
+/**
+ * A Busca pede o default do perfil ao servidor? Só quando a pessoa REFINA (`outroCriterio`: termo, cozinha
+ * ou categoria) e não mexeu na faceta de restrição. No repouso nada muda: o feed é o mesmo para todos.
+ */
+export function buscaUsaPerfil(sel: SelecaoRestricoes, outroCriterio: boolean): boolean {
+  return !sel.tocada && outroCriterio
+}
+
+/**
+ * Servidor: as Restrições do perfil se SOMAM às da busca (explícitas ou resolvidas pela lente) — o filtro é
+ * "declara todas" (`@>`), então somar é o mesmo que aplicar as duas. Forma canônica.
+ */
+export function somarRestricoes(base: readonly Restricao[], perfil: readonly Restricao[]): Restricao[] {
+  return ordenarRestricoes([...base, ...perfil])
 }

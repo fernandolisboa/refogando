@@ -285,9 +285,9 @@ export async function POST(req: Request): Promise<Response> {
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
         let assistantText = ''
         const tokens = getClaudeClient().streamConversation({
-          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + eixos dos
-          // axes). Neutro na Wave 1 ⇒ exatamente o base do modo (== SYSTEM_PROMPT_CONVERSATION_STREAM).
-          // ADR-0041: + as Restrições pedidas (identidade quando não há nenhuma).
+          // #420 (ADR-0029): systemPrompt composto pelo SEAM (base 'conversation_stream' + os fragmentos
+          // dos eixos dos `axes`), e ADR-0041: + o fragmento das Restrições pedidas neste turno. Sem
+          // restrições pedidas, `comRestricoesPedidas` é a identidade (o prompt é byte-a-byte o de antes).
           systemPrompt: comRestricoesPedidas(buildSystemPrompt('conversation_stream', axes), restricoesPedidas),
           transcript,
           model,

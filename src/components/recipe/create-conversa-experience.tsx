@@ -34,7 +34,7 @@
  * página e sem placeholders rotativos. Apagar/Ver transcrição/Nova conversa ficam fora desta
  * fatia (a reabertura do drawer já zera o estado via `key`).
  */
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
@@ -52,13 +52,7 @@ import { resolveCozinhaLabel } from '@/domain/cozinha-label'
 import { isFreePlanUser } from '@/domain/plan'
 import { QuotaUpsellCard } from './quota-upsell-card'
 import { GeneratedRecipePlanAction } from '@/components/meal-plan/generated-recipe-plan-action'
-import {
-  SELECAO_INICIAL,
-  alternarRestricao,
-  restricoesEfetivas,
-  type SelecaoRestricoes,
-} from '@/domain/restricoes-perfil'
-import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
+import { useSelecaoRestricoes } from '@/components/profile/restricoes-perfil-provider'
 import { RestricoesPedidoChips } from '@/components/profile/restricoes-pedido-chips'
 
 export function CreateConversaExperience({
@@ -78,11 +72,8 @@ export function CreateConversaExperience({
 
   // ADR-0041: as Restrições salvas no perfil valem para a conversa (chips já marcados acima do campo); tirar
   // uma vale a partir do próximo turno. Vão em cada POST — o servidor não as guarda na Session.
-  const perfilRestricoes = useRestricoesPerfil()
-  const [selRestricoes, setSelRestricoes] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
-  const restricoesPedidas = restricoesEfetivas(selRestricoes, perfilRestricoes).filter((r) =>
-    perfilRestricoes?.includes(r),
-  )
+  const selRestricoes = useSelecaoRestricoes()
+  const restricoesPedidas = selRestricoes.doPedido
 
   const {
     transcript,
@@ -218,9 +209,10 @@ export function CreateConversaExperience({
             className="resize-y"
           />
           <RestricoesPedidoChips
-            perfil={perfilRestricoes}
+            perfil={selRestricoes.perfil}
             selecionadas={restricoesPedidas}
-            onToggle={(r) => setSelRestricoes((prev) => alternarRestricao(prev, perfilRestricoes, r))}
+            onToggle={selRestricoes.alternar}
+            disabled={inFlight}
           />
           <div className="flex flex-wrap items-center gap-3">
             {/* "Enviar" é a ÚNICA ação primária. A Receita aparece como TERMINAL de cada turno de

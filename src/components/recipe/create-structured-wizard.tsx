@@ -23,21 +23,14 @@
  * `onBackHandlerChange` — no passo >0 volta um passo; no passo 0 retorna ao método-picker
  * (`onExit`). O rodapé "Voltar" usa o MESMO handler. Voltar preserva todo o estado do Briefing.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { RESTRICOES, UNIDADES, PORCOES, type Restricao } from '@/domain/vocabulary'
-import {
-  SELECAO_INICIAL,
-  alternarRestricao,
-  restricoesEfetivas,
-  vemDoPerfil,
-  type SelecaoRestricoes,
-} from '@/domain/restricoes-perfil'
-import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
+import { useSelecaoRestricoes } from '@/components/profile/restricoes-perfil-provider'
 import { RestricoesPerfilHint } from '@/components/profile/restricoes-perfil-hint'
 import { NIVEIS_CHEF, type NivelChef } from '@/domain/briefing'
 import { parseQuantityInput } from '@/domain/quantity-format'
@@ -153,10 +146,11 @@ export function CreateStructuredWizard({
   const [outraAtiva, setOutraAtiva] = useState(false)
   const [outra, setOutra] = useState('')
   // Restrições (ADR-0041): pré-marcadas com as SALVAS no perfil enquanto a pessoa não mexe; o 1º toque
-  // torna a seleção dela (inclusive vazia). O perfil chega por fetch depois da montagem — lido na hora.
-  const perfilRestricoes = useRestricoesPerfil()
-  const [selRestricoes, setSelRestricoes] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
-  const restricoes = restricoesEfetivas(selRestricoes, perfilRestricoes)
+  // torna a seleção dela (inclusive vazia). O perfil chega por fetch depois da montagem — lido na hora até a
+  // pessoa SAIR do passo 2, quando é congelado (uma lista que chegue depois não entra sem ser vista).
+  const selRestricoes = useSelecaoRestricoes()
+  const restricoes = selRestricoes.restricoes
+  const restricoesHintId = useId()
   const [porcoes, setPorcoes] = useState(PORCOES_DEFAULT)
   // Nível de habilidade (#421, ADR-0029 dec.2): override do eixo NESTA geração. `null` = "usar meu
   // padrão" (o servidor cai no default do Perfil). Substitui a antiga Dificuldade-como-entrada.
@@ -189,7 +183,7 @@ export function CreateStructuredWizard({
   }
 
   function toggleRestricao(value: Restricao) {
-    setSelRestricoes((prev) => alternarRestricao(prev, perfilRestricoes, value))
+    selRestricoes.alternar(value)
   }
 
   // ── Briefing (mesmo shape do caminho estruturado da /create) ─────────────────
@@ -248,11 +242,29 @@ export function CreateStructuredWizard({
   async function gerar() {
     if (status === 'loading') return // anti-duplicação (duplo-clique)
     setErrorKey(null)
-    await enviar(buildBody())
+    const corpo = buildBody()
+    // Briefing vazio (espelha `isBriefingVazio`), com UMA diferença do lado do cliente (ADR-0041): as
+    // Restrições do perfil que a pessoa nem tocou NÃO bastam — senão um "Gerar" sem nada gastaria uma geração
+    // só com o default. Restrição escolhida à mão segue contando, como antes.
+    const b = corpo.briefing
+    const vazio =
+      b.itens.length === 0 &&
+      b.cozinha == null &&
+      !('cozinhaOutra' in corpo) &&
+      b.observacoes == null &&
+      !selRestricoes.escolhaExplicita
+    if (vazio) {
+      setErrorKey('briefing_vazio')
+      setStatus('error')
+      return
+    }
+    await enviar(corpo)
   }
 
   // ── Navegação ────────────────────────────────────────────────────────────────
   function avancar() {
+    // ADR-0041: ao sair do passo das restrições, o que estava na tela é o que vai no pedido.
+    if (step === 1) selRestricoes.congelar()
     setStep((s) => Math.min(2, s + 1))
   }
   function voltar() {
@@ -271,7 +283,7 @@ export function CreateStructuredWizard({
     setCozinha('')
     setOutraAtiva(false)
     setOutra('')
-    setSelRestricoes(SELECAO_INICIAL) // ADR-0041: nova receita volta ao default do perfil.
+    selRestricoes.resetar() // ADR-0041: nova receita volta ao default (vivo) do perfil.
     setPorcoes(PORCOES_DEFAULT)
     setNivel(null)
     setObservacoes('')
@@ -576,7 +588,12 @@ export function CreateStructuredWizard({
                   {w.restricoesTitulo}
                 </h2>
                 <p className="text-sm text-muted">{w.restricoesIntro}</p>
-                <div className="flex flex-wrap gap-2">
+                <div
+                  role="group"
+                  aria-label={w.restricoesTitulo}
+                  aria-describedby={selRestricoes.vemDoPerfil ? restricoesHintId : undefined}
+                  className="flex flex-wrap gap-2"
+                >
                   {RESTRICOES.map((r) => (
                     <Chip
                       key={r}
@@ -587,7 +604,7 @@ export function CreateStructuredWizard({
                     </Chip>
                   ))}
                 </div>
-                <RestricoesPerfilHint visivel={vemDoPerfil(selRestricoes, perfilRestricoes)} />
+                <RestricoesPerfilHint id={restricoesHintId} visivel={selRestricoes.vemDoPerfil} />
               </div>
             </div>
           )}

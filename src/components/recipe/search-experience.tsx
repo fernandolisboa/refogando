@@ -30,15 +30,16 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIAS, RESTRICOES, type Restricao } from '@/domain/vocabulary'
 import {
+  PARAM_RESTRICAO_PERFIL,
   SELECAO_INICIAL,
   SELECAO_LIMPA,
   alternarRestricao,
+  buscaUsaPerfil,
+  normalizarRestricoes,
   restricaoEhCriterio,
-  restricoesDaBusca,
-  vemDoPerfil,
+  restricoesExplicitasDaBusca,
   type SelecaoRestricoes,
 } from '@/domain/restricoes-perfil'
-import { useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
 import { createFromSearchHref, fitEncoded, searchTermReadiness } from '@/domain/generate-from-search'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
@@ -68,6 +69,20 @@ const DEBOUNCE_MS = 300
  * taxa o caminho quente). Conforme o acervo cresce, a ponte some sozinha.
  */
 const SHALLOW_THRESHOLD = 3
+
+/** ADR-0041: a aba lembra o "Mostrar tudo" da Busca (só um "1", nunca a lista). */
+const BUSCA_SEM_PERFIL_KEY = 'refogando.busca.semRestricoesPerfil'
+
+function lerSelecaoInicialDaBusca(): SelecaoRestricoes {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage.getItem(BUSCA_SEM_PERFIL_KEY) === '1') {
+      return SELECAO_LIMPA
+    }
+  } catch {
+    // storage bloqueado (aba privada etc.): nada lembrado
+  }
+  return SELECAO_INICIAL
+}
 
 // Um link da web (#164) — resultado externo da descoberta, NUNCA armazenado nem ranqueado. O tipo é
 // OWNED por `import-recipe-dialog` (que o consome como gatilho de import, #169) e re-usado aqui.
@@ -128,12 +143,14 @@ export function SearchExperience({
   const { q, setQ, registerSubmit, setWide } = useHomeSearch()
   const [cozinha, setCozinha] = useState<string[]>([])
   const [categoria, setCategoria] = useState<string[]>([])
-  // Restrição (ADR-0041 dec.4): as SALVAS no perfil entram como filtro default quando a pessoa REFINA (termo,
-  // cozinha ou categoria) e não mexeu na faceta — marcadas na trilha e com o aviso "Mostrando só receitas que
-  // declaram… [Mostrar tudo]" acima dos resultados. Sozinhas não tiram a home do repouso (o feed fica igual
-  // para todos). Visitante: perfil `null` ⇒ nada muda.
-  const perfilRestricoes = useRestricoesPerfil()
-  const [selRestricao, setSelRestricao] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
+  // Restrição (ADR-0041 dec.3): as SALVAS no perfil entram como filtro default quando a pessoa REFINA (termo,
+  // cozinha ou categoria) e não mexeu na faceta. A lista NUNCA vai para URL nenhuma: a Busca manda só
+  // `?restricaoPerfil=1` (logado) e o servidor aplica as salvas da sessão e as ECOA na resposta
+  // (`restricoesPerfil`) — é daí que vêm a trilha marcada e o aviso "Mostrando só receitas que declaram…
+  // [Mostrar tudo]". Sozinhas não tiram a home do repouso (o feed fica igual para todos). Visitante: nada muda.
+  // Começa LIMPA quando a pessoa já disse "Mostrar tudo" nesta aba (ver `mostrarTudo`). Sem divergência de
+  // hidratação: até a 1ª resposta, as duas seleções renderizam igual (nada marcado, sem aviso).
+  const [selRestricao, setSelRestricao] = useState<SelecaoRestricoes>(lerSelecaoInicialDaBusca)
   // Ordenação da Comunidade (#62). `relevancia` é o default; só vai à URL quando difere
   // (espelha o estilo de `q`/facetas). Mudar `sort` re-monta `doSearch` ⇒ o effect
   // debounced re-busca. O servidor reordena SÓ a Comunidade (Catálogo é editorial, ADR-0003).
@@ -160,7 +177,7 @@ export function SearchExperience({
   // (degradação graciosa, sem provedor/allowlist). Reseta a `idle` a cada nova busca (ver `doSearch`).
   const [webManualState, setWebManualState] = useState<'idle' | 'loading' | 'done'>('idle')
   // Termo semeado de `?q=` na montagem (ver o efeito de semeadura): a 1ª busca com ele NÃO auto-dispara
-  // a web; `webAutoHeld` troca o auto pelo CTA manual nesse caso raso. Ambos zeram na busca seguinte.
+  // a web; `webAutoHeld` troca o auto pelo CTA manual nesse caso raso. A guarda cai quando o termo muda.
   const seededTermRef = useRef<string | null>(null)
   const [webAutoHeld, setWebAutoHeld] = useState(false)
 
@@ -193,12 +210,35 @@ export function SearchExperience({
 
   const outroCriterio = q.trim() !== '' || cozinha.length > 0 || categoria.length > 0
   const hasCriteria = outroCriterio || restricaoEhCriterio(selRestricao)
-  // Memoizado: entra nas deps do `doSearch`/reflexo de URL — um array novo a cada render relançaria a busca.
-  const restricao: Restricao[] = useMemo(
-    () => restricoesDaBusca(selRestricao, perfilRestricoes, outroCriterio),
-    [selRestricao, perfilRestricoes, outroCriterio],
+  // As ESCOLHIDAS à mão — as únicas que vão à URL e contam como faceta. Memoizado: entra nas deps do
+  // `doSearch`/reflexo de URL — um array novo a cada render relançaria a busca.
+  const restricaoExplicita: Restricao[] = useMemo(() => restricoesExplicitasDaBusca(selRestricao), [selRestricao])
+  // Pede o default do perfil ao servidor? Só logado (Visitante não tem perfil; a sessão é só a cópia aqui —
+  // o servidor revalida e ignora o pedido sem sessão).
+  const pedePerfil = authed && buscaUsaPerfil(selRestricao, outroCriterio)
+  // As do perfil que o servidor APLICOU na última busca (eco). Só valem enquanto o pedido segue de pé.
+  const restricaoDoPerfil: Restricao[] = useMemo(
+    () => (pedePerfil ? normalizarRestricoes(data?.restricoesPerfil) : []),
+    [pedePerfil, data],
   )
-  const restricaoDoPerfil = outroCriterio && vemDoPerfil(selRestricao, perfilRestricoes)
+  // O que a trilha mostra marcado = o que está aplicado: as escolhidas, ou (sem toque) as do perfil.
+  const restricao: Restricao[] = selRestricao.tocada ? restricaoExplicita : restricaoDoPerfil
+
+  // "Mostrar tudo" tira o aviso (e o próprio botão) da tela: o foco vai para a região dos resultados, que é
+  // o que acabou de mudar — nunca cai no <body>.
+  const resultadosRef = useRef<HTMLDivElement | null>(null)
+  // B4: a escolha "Mostrar tudo" vale para a ABA (sessionStorage) — voltar/avançar no histórico remonta a
+  // Busca, e sem isto o default do perfil voltaria a filtrar sem a pessoa pedir. Armazenamento opcional:
+  // aba privada/bloqueada ⇒ só a sessão atual do componente lembra.
+  const mostrarTudo = useCallback(() => {
+    setSelRestricao(SELECAO_LIMPA)
+    try {
+      window.sessionStorage.setItem(BUSCA_SEM_PERFIL_KEY, '1')
+    } catch {
+      // sem storage: segue só em memória
+    }
+    resultadosRef.current?.focus()
+  }, [])
 
   /**
    * #164 (ADR-0019): descoberta na web — só chamada pelo `doSearch` QUANDO o acervo local veio raso.
@@ -329,7 +369,8 @@ export function SearchExperience({
     url.searchParams.set('locale', locale)
     if (cozinha.length > 0) url.searchParams.set('cozinha', cozinha.join(','))
     if (categoria.length > 0) url.searchParams.set('categoria', categoria.join(','))
-    if (restricao.length > 0) url.searchParams.set('restricao', restricao.join(','))
+    if (restricaoExplicita.length > 0) url.searchParams.set('restricao', restricaoExplicita.join(','))
+    if (pedePerfil) url.searchParams.set(PARAM_RESTRICAO_PERFIL, '1')
     if (sort === 'popularidade') url.searchParams.set('sort', 'popularidade')
 
     setStatus('loading')
@@ -363,9 +404,10 @@ export function SearchExperience({
       const term = q.trim()
       // Termo semeado de `?q=` (link/returnTo, sem gesto da pessoa): a web NÃO auto-dispara — um link
       // forjado não pode gastar a cota diária da Brave (global) com a sessão de quem clicou. Em vez do
-      // auto, o CTA manual aparece (`webAutoHeld`). Consumido na 1ª busca concluída; depois, tudo como antes.
+      // auto, o CTA manual aparece (`webAutoHeld`). A guarda vale enquanto o TERMO for o semeado — uma
+      // re-busca do mesmo termo (sessão resolvendo, faceta, ordenação) NÃO a consome; só digitar outro termo.
       const heldForSeed = seededTermRef.current !== null && seededTermRef.current === term
-      seededTermRef.current = null
+      if (!heldForSeed) seededTermRef.current = null
       setWebAutoHeld(false)
       if (webAvailable && term !== '' && localCount < SHALLOW_THRESHOLD && hasAny && !heldForSeed) {
         void discoverWeb(term)
@@ -382,7 +424,19 @@ export function SearchExperience({
       if (err instanceof DOMException && err.name === 'AbortError') return
       setStatus('error')
     }
-  }, [hasCriteria, q, locale, cozinha, categoria, restricao, sort, discoverWeb, discoverCooks, webAvailable])
+  }, [
+    hasCriteria,
+    q,
+    locale,
+    cozinha,
+    categoria,
+    restricaoExplicita,
+    pedePerfil,
+    sort,
+    discoverWeb,
+    discoverCooks,
+    webAvailable,
+  ])
 
   // Debounce: re-busca quando q / facetas / locale mudam. Locale muda → re-busca no novo
   // idioma (AC bilíngue). Cleanup limpa o timeout E aborta a req em voo.
@@ -436,14 +490,15 @@ export function SearchExperience({
     if (q.trim() !== '') params.set('q', q.trim())
     if (cozinha.length > 0) params.set('cozinha', cozinha.join(','))
     if (categoria.length > 0) params.set('categoria', categoria.join(','))
-    if (restricao.length > 0) params.set('restricao', restricao.join(','))
+    // ADR-0041: SÓ as escolhidas à mão — o default do perfil nunca aparece na barra de endereço.
+    if (restricaoExplicita.length > 0) params.set('restricao', restricaoExplicita.join(','))
     if (sort === 'popularidade') params.set('sort', 'popularidade')
     const query = params.toString()
     const target = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`
     // Só reescreve se MUDOU (evita um replace redundante por render que poderia laçar com o router).
     const current = `${window.location.pathname}${window.location.search}`
     if (target !== current) router.replace(target)
-  }, [q, cozinha, categoria, restricao, sort, router])
+  }, [q, cozinha, categoria, restricaoExplicita, sort, router])
 
   useEffect(() => {
     return () => {
@@ -677,25 +732,6 @@ export function SearchExperience({
             hasCriteria ? 'lg:row-start-2' : 'lg:row-start-1',
           )}
         >
-          {/* ADR-0041: o filtro default do perfil NUNCA age calado — diz o que está filtrando e oferece tirar. */}
-          {restricaoDoPerfil && (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-              <span>
-                {messages.restricoesPerfil.buscaAviso.replace(
-                  '{lista}',
-                  () => restricao.map((r) => messages.restricaoLabel[r]).join(', '),
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelRestricao(SELECAO_LIMPA)}
-                className="font-medium text-brand-ink underline-offset-2 hover:underline"
-              >
-                {messages.restricoesPerfil.buscaMostrarTudo}
-              </button>
-            </p>
-          )}
-
           {/* Consulta resolvida (#10) — eco READ-ONLY (Decisão 6). Some quando há faceta explícita. Gated
               por `status==='done'`: nunca mostra a resolução de uma busca ANTERIOR junto de erro/loading. */}
           {status === 'done' && data?.consulta && (
@@ -726,7 +762,32 @@ export function SearchExperience({
           {/* Região VIVA dos resultados de BUSCA. `aria-live=polite` + `aria-busy` anunciam fim de loading
               e resultado (chegada/vazio/erro) sem recarregar. O texto VISÍVEL de cada estado é o anunciado
               (sem duplicar nó SR-only, que faria `findByText` casar dois elementos). */}
-          <div aria-live="polite" aria-busy={status === 'loading'} className="flex flex-col gap-8">
+          <div
+            ref={resultadosRef}
+            tabIndex={-1}
+            aria-live="polite"
+            aria-busy={status === 'loading'}
+            className="flex flex-col gap-8 focus:outline-none"
+          >
+            {/* ADR-0041: o filtro default do perfil NUNCA age calado — diz o que está filtrando e oferece tirar.
+                Dentro da região viva: chega anunciado junto dos resultados que ele filtrou. */}
+            {restricaoDoPerfil.length > 0 && (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+                <span>
+                  {messages.restricoesPerfil.buscaAviso.replace('{lista}', () =>
+                    restricaoDoPerfil.map((r) => messages.restricaoLabel[r]).join(', '),
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={mostrarTudo}
+                  className="font-medium text-brand-ink underline-offset-2 hover:underline"
+                >
+                  {messages.restricoesPerfil.buscaMostrarTudo}
+                </button>
+              </p>
+            )}
+
             {/* #279: cluster de Cozinheiros flutua no TOPO dos resultados quando alguém casa o termo.
                 Gated `status!=='error'` (espelha "Da web"); `key`=assinatura dos cooks (remonta ⇒ reseta
                 "Ver todos"). null quando ninguém casa. */}

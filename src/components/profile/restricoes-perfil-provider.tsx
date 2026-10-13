@@ -9,12 +9,25 @@
  * Auth de propósito (dado sensível fora do payload de sessão).
  *
  * DEFAULT GRACIOSO: sem provider montado (testes que montam só o `LocaleProvider`), `useRestricoesPerfil()`
- * devolve `null` = "sem default" — a superfície se comporta exatamente como antes. Falha do GET também vira
- * "sem default" (nunca pré-marca o que não sabe).
+ * devolve `null` = "sem default" — a superfície se comporta exatamente como antes. Falha do GET (HTTP não-ok
+ * OU rede caída) também vira "sem default" (nunca pré-marca o que não sabe) e NÃO é guardada: o próximo
+ * consumidor a montar tenta de novo.
+ *
+ * A Busca NÃO usa este contexto (ADR-0041 dec.3): pede o default ao servidor (`?restricaoPerfil=1`) e recebe
+ * as aplicadas na resposta — a home nunca dispara o GET.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSession } from '@/lib/auth-client'
-import { normalizarRestricoes } from '@/domain/restricoes-perfil'
+import {
+  SELECAO_INICIAL,
+  alternarRestricao,
+  normalizarRestricoes,
+  restricaoEhCriterio,
+  restricoesDoPedido,
+  restricoesEfetivas,
+  vemDoPerfil,
+  type SelecaoRestricoes,
+} from '@/domain/restricoes-perfil'
 import type { Restricao } from '@/domain/vocabulary'
 
 type Ctx = {
@@ -44,11 +57,12 @@ export function RestricoesPerfilProvider({ children }: { children: ReactNode }) 
     void (async () => {
       try {
         const res = await fetch('/api/me/restricoes')
-        const body = res.ok ? ((await res.json()) as { restricoes?: unknown }) : null
-        setCarregado({ userId, restricoes: normalizarRestricoes(body?.restricoes) })
+        if (!res.ok) throw new Error('restricoes_indisponiveis')
+        const body = (await res.json()) as { restricoes?: unknown }
+        setCarregado({ userId, restricoes: normalizarRestricoes(body.restricoes) })
       } catch {
-        // Rede caída: sem default agora; o próximo consumidor a montar tenta de novo.
-        pedidoRef.current = null
+        // HTTP não-ok ou rede caída: sem default agora; o próximo consumidor a montar tenta de novo.
+        if (pedidoRef.current === userId) pedidoRef.current = null
       }
     })()
   }, [userId])
@@ -79,4 +93,57 @@ export function useRestricoesPerfil(): Restricao[] | null {
 /** Publica uma lista recém-salva (o formulário do perfil). */
 export function useAtualizarRestricoesPerfil(): (restricoes: Restricao[]) => void {
   return useContext(RestricoesPerfilContext).atualizar
+}
+
+/**
+ * A "seleção com default" de UM pedido (ADR-0041 dec.3), ligada ao perfil — a mesma fiação para o wizard, o
+ * Formulário estruturado/Prompt aberto, a Conversa e a Sugestão de cardápio:
+ * - `restricoes`: as que valem agora (as escolhidas, ou sem toque as do perfil);
+ * - `doPedido`: as que valem, restritas às do perfil (Prompt aberto e Conversa só oferecem as salvas);
+ * - `vemDoPerfil`: acende a indicação "marcadas a partir do seu perfil";
+ * - `escolhaExplicita`: a pessoa tocou e deixou alguma (só isso conta como substância do briefing);
+ * - `congelar()`: fixa o perfil visto AGORA (o wizard, ao sair do passo das restrições — uma lista que chegue
+ *   depois não entra num pedido sem a pessoa ter visto); `resetar()` volta ao default vivo.
+ */
+export type SelecaoRestricoesPedido = {
+  perfil: Restricao[] | null
+  restricoes: Restricao[]
+  doPedido: Restricao[]
+  vemDoPerfil: boolean
+  escolhaExplicita: boolean
+  alternar: (r: Restricao) => void
+  resetar: () => void
+  congelar: () => void
+}
+
+export function useSelecaoRestricoes(): SelecaoRestricoesPedido {
+  const perfilVivo = useRestricoesPerfil()
+  const [sel, setSel] = useState<SelecaoRestricoes>(SELECAO_INICIAL)
+  // `{ perfil }` quando congelado (o valor pode ser `null`: congelou antes de a lista chegar ⇒ nenhuma).
+  const [congelado, setCongelado] = useState<{ perfil: Restricao[] | null } | null>(null)
+  const perfil = congelado ? congelado.perfil : perfilVivo
+
+  const alternar = useCallback(
+    (r: Restricao) => setSel((prev) => alternarRestricao(prev, perfil, r)),
+    [perfil],
+  )
+  const resetar = useCallback(() => {
+    setSel(SELECAO_INICIAL)
+    setCongelado(null)
+  }, [])
+  const congelar = useCallback(() => setCongelado((c) => c ?? { perfil: perfilVivo }), [perfilVivo])
+
+  return useMemo(
+    () => ({
+      perfil,
+      restricoes: restricoesEfetivas(sel, perfil),
+      doPedido: restricoesDoPedido(sel, perfil),
+      vemDoPerfil: vemDoPerfil(sel, perfil),
+      escolhaExplicita: restricaoEhCriterio(sel),
+      alternar,
+      resetar,
+      congelar,
+    }),
+    [sel, perfil, alternar, resetar, congelar],
+  )
 }

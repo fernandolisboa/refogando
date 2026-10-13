@@ -13,7 +13,7 @@ import { normalizarRestricoes, parseListaRestricoes } from '@/domain/restricoes-
  * Sem id no caminho ⇒ sem IDOR. Toca SÓ `users`. ADR-0010: route handler, nunca Server Action.
  *
  * GET → `{ restricoes }` (forma canônica). PUT `{ restricoes: Restricao[] }` → valida com zod contra o
- * vocabulário (qualquer valor desconhecido recusa a lista inteira: 400 `restricoes_invalidas`), grava a
+ * vocabulário (qualquer valor desconhecido recusa a lista inteira: 400 `restricao_invalida`), grava a
  * forma canônica (sem repetição, na ordem do vocabulário) e a devolve. Lista vazia limpa. NUNCA loga a lista.
  */
 
@@ -38,7 +38,7 @@ export async function PUT(req: Request): Promise<Response> {
   if (!g.ok) return g.response
   const body = (await req.json().catch(() => null)) as { restricoes?: unknown } | null
   const parsed = parseListaRestricoes(body?.restricoes)
-  if (!parsed.ok) return Response.json({ error: 'restricoes_invalidas' }, { status: 400 })
+  if (!parsed.ok) return Response.json({ error: 'restricao_invalida' }, { status: 400 })
 
   const [row] = await getDb()
     .update(users)

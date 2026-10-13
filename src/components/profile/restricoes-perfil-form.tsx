@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
+import { CheckboxChip } from '@/components/ui/checkbox-chip'
 import { RESTRICOES, type Restricao } from '@/domain/vocabulary'
 import { normalizarRestricoes, ordenarRestricoes } from '@/domain/restricoes-perfil'
 import { useAtualizarRestricoesPerfil } from './restricoes-perfil-provider'
@@ -28,6 +29,9 @@ export function RestricoesPerfilForm() {
 
   const [restricoes, setRestricoes] = useState<Restricao[]>([])
   const [status, setStatus] = useState<Status>('loading')
+
+  // Incrementar re-dispara a carga ("Tentar de novo" depois de uma falha).
+  const [tentativa, setTentativa] = useState(0)
 
   useEffect(() => {
     if (!authed) return
@@ -48,7 +52,12 @@ export function RestricoesPerfilForm() {
       }
     })()
     return () => controller.abort()
-  }, [authed])
+  }, [authed, tentativa])
+
+  function tentarDeNovo() {
+    setStatus('loading')
+    setTentativa((n) => n + 1)
+  }
 
   function toggle(r: Restricao) {
     setStatus('idle')
@@ -81,9 +90,6 @@ export function RestricoesPerfilForm() {
 
   if (!authed) return null
 
-  const chipClass =
-    'flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm text-fg has-[:checked]:border-brand has-[:checked]:bg-brand/10 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand'
-
   return (
     <section aria-labelledby="restricoes-perfil-titulo" className="flex max-w-xl flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -99,32 +105,45 @@ export function RestricoesPerfilForm() {
           {messages.system.loading}
         </div>
       ) : status === 'load_failed' ? (
-        <p role="alert" className="text-sm font-medium text-fg">
-          {m.erroCarregar}
-        </p>
+        <div className="flex flex-col items-start gap-3">
+          <p role="alert" className="text-sm font-medium text-fg">
+            {m.erroCarregar}
+          </p>
+          <Button type="button" variant="secondary" onClick={tentarDeNovo}>
+            {messages.system.retry}
+          </Button>
+        </div>
       ) : (
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <fieldset className="flex flex-col gap-2" disabled={status === 'saving'}>
+          <fieldset
+            className="flex flex-col gap-2"
+            disabled={status === 'saving'}
+            aria-describedby="restricoes-perfil-aviso"
+          >
             <legend className="mb-1 text-sm font-medium text-fg">{m.legenda}</legend>
             <div className="flex flex-wrap gap-2">
               {RESTRICOES.map((r) => (
-                <label key={r} className={chipClass}>
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={restricoes.includes(r)}
-                    onChange={() => toggle(r)}
-                  />
+                <CheckboxChip key={r} checked={restricoes.includes(r)} onChange={() => toggle(r)}>
                   {messages.restricaoLabel[r]}
-                </label>
+                </CheckboxChip>
               ))}
             </div>
-            <p className="text-xs text-muted">{m.aviso}</p>
+            <p id="restricoes-perfil-aviso" className="text-xs text-muted">
+              {m.aviso}
+            </p>
           </fieldset>
-          {/* Dado sensível (LGPD Art. 11): o propósito e como apagar ficam DESTACADOS junto do salvar. */}
-          <p className="text-xs text-fg">{m.consentimento}</p>
+          {/* Dado sensível (LGPD Art. 11): o propósito e como apagar ficam DESTACADOS junto do salvar — e o
+              botão aponta para o texto, então o leitor de tela o ouve no momento de consentir. */}
+          <p id="restricoes-perfil-consentimento" className="text-xs text-fg">
+            {m.consentimento}
+          </p>
           <div>
-            <Button type="submit" variant="secondary" disabled={status === 'saving'}>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={status === 'saving'}
+              aria-describedby="restricoes-perfil-consentimento"
+            >
               {status === 'saving' ? m.salvando : m.salvar}
             </Button>
           </div>

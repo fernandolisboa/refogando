@@ -802,4 +802,39 @@ describe('SearchExperience — termo semeado de ?q= não auto-dispara a web', ()
     expect(discoveryCalls(fetchMock).length).toBe(1)
     expect(screen.queryByRole('button', { name: M.webManualCta })).not.toBeInTheDocument()
   })
+
+  it('S3 — re-buscar o MESMO termo semeado (sessão resolvendo, faceta) NÃO consome a guarda', async () => {
+    // Regressão: a guarda era consumida na 1ª busca concluída; a sessão resolvendo DEPOIS (ADR-0041 manda
+    // `restricaoPerfil=1` só logado) re-buscava o mesmo termo e a web auto-disparava com o link forjado.
+    sessionState = { ...authed(), data: null, isPending: true }
+    const fetchMock = stubFetchRouting(localWith(1), WEB_LINKS)
+    const user = userEvent.setup()
+    const tree = () => (
+      <LocaleProvider initialLocale="pt-BR">
+        <CozinhaVocabProvider value={COZINHA_VOCAB_PT_BR}>
+          <HomeSearchProvider>
+            <HomeSearchBar />
+            <SearchExperience />
+          </HomeSearchProvider>
+        </CozinhaVocabProvider>
+      </LocaleProvider>
+    )
+    window.history.replaceState(null, '', '/?q=feijoada')
+    const { rerender } = render(tree())
+    await screen.findByRole('button', { name: M.webManualCta })
+    const searches = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes('/api/search?'))
+    const antes = searches().length
+
+    // A sessão resolve (logado): nova busca do MESMO termo, agora com o pedido do perfil.
+    sessionState = authed()
+    rerender(tree())
+    await waitFor(() => expect(searches().length).toBeGreaterThan(antes))
+    expect(String(searches().at(-1)?.[0])).toContain('restricaoPerfil=1')
+    // E uma faceta marcada (mesmo termo) também re-busca sem gastar a cota da web.
+    const depoisDaSessao = searches().length
+    await user.click(screen.getByRole('checkbox', { name: ptBR.categoriaLabel.sobremesa }))
+    await waitFor(() => expect(searches().length).toBeGreaterThan(depoisDaSessao))
+    await screen.findByRole('button', { name: M.webManualCta })
+    expect(discoveryCalls(fetchMock).length).toBe(0)
+  })
 })

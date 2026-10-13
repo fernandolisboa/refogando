@@ -13,7 +13,8 @@
  * reimplementa domínio. O transporte é NDJSON em streaming:
  *  - `POST /api/creation-sessions` → `{sessionId}` no INÍCIO de uma conversa NOVA (a UI segura
  *    o id para retomar/apagar). Na retomada, o id vem da rota (`/conversation/[id]`).
- *  - `POST /api/conversations/stream` body `{transcript, sessionId}` → ReadableStream NDJSON:
+ *  - `POST /api/conversations/stream` body `{transcript, sessionId, restricoes?}` → ReadableStream NDJSON
+ *    (`restricoes`, ADR-0041: as do perfil que seguem marcadas, em CADA turno; omitido quando vazio):
  *    zero-ou-mais `{type:'token',text}` e DEPOIS EXATAMENTE UM terminal:
  *      `{type:'recipe',outcome,recipeId,advisory,avisos?}` | `{type:'impossible',advisory}`
  *      | `{type:'error',error:'geracao_invalida'|'conflito_concorrente'}`.

@@ -23,6 +23,7 @@ import {
 } from '@/domain/recipe'
 import { resolveName, type RecipeAuthor, type TranslationRow } from '@/domain/recipe-read'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
+import type { Restricao } from '@/domain/vocabulary'
 
 // Re-export para os consumidores da Busca/Feed (#129) — a Autoria nasce em `recipe-read`
 // (módulo mais fundamental; evita ciclo de import) e é compartilhada com o detalhe.
@@ -153,6 +154,9 @@ export type SearchResponse = {
    * a chave é OMITIDA senão (preserva o estado neutro byte-a-byte). Mesmos 4 campos de
    * SearchResult — NUNCA score/cosseno/matchKind. */
   sugestoes?: SearchResult[]
+  /** Restrições SALVAS no perfil que a Busca aplicou a pedido (`?restricaoPerfil=1`, ADR-0041 dec.3). ADITIVA:
+   * presente só para o próprio titular logado e só quando aplicou alguma; omitida senão. */
+  restricoesPerfil?: Restricao[]
 }
 
 /** Campos que `resolveName` nunca lê de uma `TranslationRow` ao resolver o NOME —

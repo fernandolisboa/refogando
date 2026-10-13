@@ -89,13 +89,13 @@ describe('/api/me/restricoes — contrato (ADR-0041)', () => {
     expect(await readRestricoes(userId)).toEqual([])
   })
 
-  it('valor fora do vocabulário / corpo malformado → 400 restricoes_invalidas, nada gravado', async () => {
+  it('valor fora do vocabulário / corpo malformado → 400 restricao_invalida, nada gravado', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'invalida@restricoes.test' })
     await put({ restricoes: ['vegano'] }, headers)
     for (const body of [{ restricoes: ['vegano', 'kosher'] }, { restricoes: 'vegano' }, {}, null]) {
       const res = await put(body, headers)
       expect(res.status).toBe(400)
-      await expect(res.json()).resolves.toEqual({ error: 'restricoes_invalidas' })
+      await expect(res.json()).resolves.toEqual({ error: 'restricao_invalida' })
     }
     expect(await readRestricoes(userId)).toEqual(['vegano'])
   })
