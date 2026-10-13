@@ -1888,19 +1888,19 @@ export const ptBR = {
       'execução de contrato com o titular — Art. 7º, V da LGPD.',
       'enquanto a conta existir; após a exclusão, anonimizamos imediatamente os dados de identificação e eliminamos os resquícios físicos (como imagens) após um prazo de retenção.',
     ],
-    s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações)',
+    s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações, Cardápio, listas de compras e Despensa)',
     s32Valores: [
-      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve.',
-      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca).',
+      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve; o seu Cardápio (as refeições planejadas por dia, com as porções e as anotações livres que você escreve, como "jantar fora"); as suas listas de compras (nome da lista e itens, com quantidade, unidade, receita de origem e a marcação de comprado); e a sua Despensa (os nomes dos itens que você diz ter em casa e, se você a editar, a sua lista de básicos, os itens que você considera sempre ter em casa).',
+      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca, planejar refeições, montar listas de compras e mostrar o que dá pra fazer com o que você tem em casa).',
       'execução de contrato — Art. 7º, V.',
-      'enquanto a conta existir ou até você apagar o conteúdo.',
+      'enquanto a conta existir ou até você apagar o conteúdo. Se você eliminar a conta, o Cardápio e a Despensa são apagados na hora; as receitas, as avaliações, os salvos, as coleções e as listas de compras são mantidos, ligados à conta anonimizada (item 3.1).',
     ],
     s33Titulo: '3.3. Imagens geradas por IA e conteúdo assistido por IA',
     s33Valores: [
-      'prompts e imagens que você gera; metadados de uso (para controle de custo/cota).',
-      'gerar imagens de pratos e apoiar a criação de receitas; controlar limites de uso.',
+      'prompts e imagens que você gera; o pedido que você faz à Sugestão de cardápio (refeições, restrições e uma nota livre opcional), enviado ao provedor de IA junto com o título e a classificação das receitas candidatas e não guardado por nós; metadados de uso (para controle de custo/cota).',
+      'gerar imagens de pratos, apoiar a criação de receitas e sugerir um cardápio com receitas existentes; controlar limites de uso.',
       'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX.',
-      'enquanto a conta existir ou até você apagar o conteúdo.',
+      'enquanto a conta existir ou até você apagar o conteúdo. Uma sugestão de cardápio só é guardada como refeição planejada se você a aceitar. Os metadados de uso (data e, quando houver, modelo, tokens e custo) não são apagados na eliminação da conta: ficam ligados à conta anonimizada.',
     ],
     s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
     s34Corpo:
@@ -2023,9 +2023,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v2',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-07-03',
+    rodapeData: '2026-10-13',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },
@@ -2040,7 +2040,7 @@ export const ptBR = {
 
     titularATitulo: 'Você tem conta no Refogando',
     titularACorpo:
-      'Se você é usuário do app, boa parte dos seus direitos é atendida direto na sua conta (perfil, receitas, coleções). Para o que ainda não é self-service, use o formulário abaixo ou o e-mail de privacidade — sempre dentro do prazo de 15 dias.',
+      'Se você é usuário do app, boa parte dos seus direitos é atendida direto na sua conta (perfil, receitas, coleções, Cardápio, listas de compras e Despensa). Para o que ainda não é self-service, use o formulário abaixo ou o e-mail de privacidade — sempre dentro do prazo de 15 dias.',
     titularBTitulo: 'Você é autor de uma receita importada da web',
     titularBCorpo:
       'Se uma receita sua foi importada de um site externo para o Refogando, guardamos apenas o seu nome (crédito) e o link de origem — nunca a foto nem o texto autoral. Você pode pedir a remoção do seu nome (o crédito passa a exibir só o site) ou a remoção integral. Você NÃO precisa ter conta: use o formulário abaixo.',
@@ -2089,9 +2089,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v2',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-07-03',
+    rodapeData: '2026-10-13',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },

@@ -1783,19 +1783,19 @@ export const enUS: Messages = {
       'performance of a contract with the data subject — Art. 7, V of the LGPD.',
       'while the account exists; after deletion, we immediately anonymize the identifying data and erase the physical residue (such as images) after a retention period.',
     ],
-    s32Titulo: '3.2. Content created in the app (recipes, collections, ratings)',
+    s32Titulo: '3.2. Content created in the app (recipes, collections, ratings, Meal plan, shopping lists and Pantry)',
     s32Valores: [
-      'recipes you create, save, rate and organize; language preferences; text content you write.',
-      'deliver the app functionality (store and display your content, build collections, feed and search).',
+      'recipes you create, save, rate and organize; language preferences; text content you write; your Meal plan (the meals planned for each day, with servings and the free-text notes you write, such as "eating out"); your shopping lists (list name and items, with quantity, unit, source recipe and the bought check mark); and your Pantry (the names of the items you say you have at home and, if you edit it, your list of basics, the items you consider always at home).',
+      'deliver the app functionality (store and display your content, build collections, feed and search, plan meals, build shopping lists and show what you can cook with what you have at home).',
       'performance of a contract — Art. 7, V.',
-      'while the account exists or until you delete the content.',
+      'while the account exists or until you delete the content. If you delete your account, the Meal plan and the Pantry are erased immediately; recipes, ratings, saved recipes, collections and shopping lists are kept, linked to the anonymized account (item 3.1).',
     ],
     s33Titulo: '3.3. AI-generated images and AI-assisted content',
     s33Valores: [
-      'prompts and images you generate; usage metadata (for cost/quota control).',
-      'generate dish images and support recipe creation; enforce usage limits.',
+      'prompts and images you generate; what you ask the Menu suggestion for (meals, dietary restrictions and an optional free-text note), sent to the AI provider together with the title and classification of the candidate recipes and not stored by us; usage metadata (for cost/quota control).',
+      'generate dish images, support recipe creation and suggest a menu from existing recipes; enforce usage limits.',
       'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX.',
-      'while the account exists or until you delete the content.',
+      'while the account exists or until you delete the content. A menu suggestion is only stored as a planned meal if you accept it. Usage metadata (date and, when available, model, tokens and cost) is not erased when you delete your account: it stays linked to the anonymized account.',
     ],
     s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
     s34Corpo:
@@ -1918,9 +1918,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v2',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-07-03',
+    rodapeData: '2026-10-13',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — legal review in progress',
   },
@@ -1935,7 +1935,7 @@ export const enUS: Messages = {
 
     titularATitulo: 'You have a Refogando account',
     titularACorpo:
-      'If you are an app user, many of your rights are handled directly in your account (profile, recipes, collections). For anything not yet self-service, use the form below or the privacy email — always within the 15-day deadline.',
+      'If you are an app user, many of your rights are handled directly in your account (profile, recipes, collections, Meal plan, shopping lists and Pantry). For anything not yet self-service, use the form below or the privacy email — always within the 15-day deadline.',
     titularBTitulo: 'You are the author of a recipe imported from the web',
     titularBCorpo:
       'If a recipe of yours was imported from an external site into Refogando, we keep only your name (credit) and the source link — never the photo or the authorial text. You may request removal of your name (the credit then shows only the site) or full removal. You do NOT need an account: use the form below.',
@@ -1984,9 +1984,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v2',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-07-03',
+    rodapeData: '2026-10-13',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — legal review in progress',
   },
