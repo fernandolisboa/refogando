@@ -134,7 +134,9 @@ export async function loadNotifications(
     )
   }
 
-  const rows = await db
+  // Página e contador de não-lidas são independentes (o sino pede os dois a cada abertura/foco): em
+  // paralelo. Já eram duas leituras separadas, sem transação — o par continua equivalente.
+  const pageQuery = db
     .select({
       id: notification.id,
       type: notification.type,
@@ -159,6 +161,7 @@ export async function loadNotifications(
     .where(and(...conditions))
     .orderBy(desc(notification.createdAt), asc(notification.id))
     .limit(limit + 1)
+  const [rows, unreadCount] = await Promise.all([pageQuery, countUnread(db, viewerId)])
 
   const hasMore = rows.length > limit
   const kept = hasMore ? rows.slice(0, limit) : rows
@@ -180,7 +183,6 @@ export async function loadNotifications(
   const nextCursor =
     hasMore && last ? encodeNotificationCursor({ ts: last.cursorTs, id: last.id }) : null
 
-  const unreadCount = await countUnread(db, viewerId)
   return { notifications, unreadCount, nextCursor }
 }
 

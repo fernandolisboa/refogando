@@ -124,6 +124,17 @@ export function RecipeDetailView({
     .map((item) => ({ ordem: item.ordem, text: formatIngredientLine(item, m, locale) }))
     .filter((line) => line.text !== '')
 
+  // Recortes do catálogo para os filhos CLIENT (escalador e Modo cozinha). Quando este componente roda
+  // no servidor (detalhe da receita), cada prop de um client component vai serializada no payload RSC: o
+  // `m` inteiro (~100 KB de JSON) ia junto em toda página de receita só para os ~15 rótulos usados.
+  const scalerMessages = {
+    detalhe: m.detalhe,
+    unidadeLabel: m.unidadeLabel,
+    unidadeLabelPlural: m.unidadeLabelPlural,
+    unidadeConector: m.unidadeConector,
+  }
+  const cookModeMessages = { detalhe: m.detalhe }
+
   const hasScalars =
     view.porcoes != null ||
     view.dificuldade != null ||
@@ -219,7 +230,7 @@ export function RecipeDetailView({
           precisa de `key` aqui (o remonte-por-receita acontece no Provider ancestral). */}
       {ingredientLines.length > 0 &&
         (view.porcoes != null ? (
-          <RecipePortionScaler ingredients={view.ingredients} m={m} locale={locale} />
+          <RecipePortionScaler ingredients={view.ingredients} m={scalerMessages} locale={locale} />
         ) : (
           <section className="flex flex-col gap-3">
             <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.ingredientes}</h2>
@@ -237,7 +248,7 @@ export function RecipeDetailView({
         <section className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-display text-xl font-semibold text-fg">{m.detalhe.passos}</h2>
-            <RecipeCookMode passos={view.body.passos} m={m} />
+            <RecipeCookMode passos={view.body.passos} m={cookModeMessages} />
           </div>
           <ol className="flex max-w-[68ch] list-decimal flex-col gap-2 pl-5 text-fg">
             {view.body.passos.map((passo, i) => (

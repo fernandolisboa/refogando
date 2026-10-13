@@ -67,15 +67,12 @@ export async function GET(
     .limit(1)
   if (!owner) return notFound()
 
-  // Receitas PÚBLICAS (pool) do dono — privadas/playful/removidas NUNCA entram (list-public.ts).
-  const recipeRows = await listPublicRecipesByOwner(db, owner.id)
-
   // Bloco SOCIAL (#274): contadores + preview das listas. PÚBLICO e SEM estado do viewer — esta rota
   // NUNCA lê a sessão (o "eu sigo?" é client-side, pra o perfil seguir anon-cacheável / Modelo B).
   // As seams gateiam soft-deleted; o `owner.id` é só interno (nunca emitido no DTO). DEGRADA: um erro
   // transitório no bloco social (assistivo) NÃO derruba o payload SEO-crítico (identidade + receitas)
   // — cai p/ social vazio (a view já omite listas vazias). `owner.id` nunca é emitido no DTO.
-  const social = await Promise.all([
+  const socialQuery = Promise.all([
     countFollowers(db, owner.id),
     countFollowing(db, owner.id),
     listFollowers(db, owner.id, FOLLOW_LIST_PREVIEW),
@@ -88,6 +85,10 @@ export async function GET(
       following,
     }))
     .catch(() => ({ followerCount: 0, followingCount: 0, followers: [], following: [] }))
+
+  // Receitas PÚBLICAS (pool) do dono — privadas/playful/removidas NUNCA entram (list-public.ts). Só
+  // dependem do `owner.id`, como o bloco social: as duas leituras correm juntas (o social nunca rejeita).
+  const [recipeRows, social] = await Promise.all([listPublicRecipesByOwner(db, owner.id), socialQuery])
 
   // Defesa-em-profundidade (#127/#129): re-valida os links http(s)-only antes de emitir. Lista
   // inválida (não deveria ocorrer — a escrita já valida) ⇒ cai p/ vazia, nunca emite link inseguro.

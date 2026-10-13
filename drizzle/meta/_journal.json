@@ -526,6 +526,13 @@
       "when": 1791883857928,
       "tag": "0074_pantry_basics",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791916619557,
+      "tag": "0075_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

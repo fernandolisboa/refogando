@@ -4,6 +4,7 @@
  * neste projeto, o @testing-library/react registra o afterEach de limpeza sozinho.
  * NÃO carrega o setup de banco do projeto node (sem DI/Postgres aqui).
  */
+import { beforeEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 
 /**
@@ -28,3 +29,13 @@ elementProto.scrollIntoView ??= () => {}
 elementProto.hasPointerCapture ??= () => false
 elementProto.setPointerCapture ??= () => {}
 elementProto.releasePointerCapture ??= () => {}
+
+/**
+ * URL limpa a cada teste. O jsdom mantém a `location` entre os testes de um arquivo, e a Busca reflete o
+ * estado na URL com `window.history.replaceState` real (#236) — sem este reset, o `?q=` de um teste vazaria
+ * para o seguinte (que semearia o termo na montagem). Roda ANTES dos `beforeEach` do arquivo (setup é
+ * registrado primeiro), então um teste que monta numa URL própria continua podendo fazê-lo.
+ */
+beforeEach(() => {
+  window.history.replaceState(null, '', '/')
+})

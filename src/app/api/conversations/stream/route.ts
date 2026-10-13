@@ -20,7 +20,7 @@ import {
 } from '@/domain/briefing'
 import { decidePostGenerationRestrictionNotices } from '@/domain/recipe-restrictions'
 import { renderAvisos } from '@/domain/recipe-read'
-import { parseListaRestricoes } from '@/domain/restricoes-perfil'
+import { parseListaRestricoes } from '@/domain/restricoes-perfil-parse'
 import type { Restricao } from '@/domain/vocabulary'
 import { parseRequestLocale, isUuid } from '@/server/http/params'
 import { persistGeneration } from '@/server/generation/persist'

@@ -4,7 +4,7 @@ import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { IngredientView } from '@/domain/recipe-read'
 import type { Messages } from '@/i18n/messages'
-import { formatIngredientLine, scaleIngredient } from '@/domain/ingredient-line'
+import { formatIngredientLine, scaleIngredient, type IngredientLineMessages } from '@/domain/ingredient-line'
 import { usePortionScale } from './recipe-portion-scale-context'
 
 const MIN_PORCOES = 1
@@ -35,7 +35,7 @@ export function RecipePortionScaler({
   locale,
 }: {
   ingredients: readonly IngredientView[]
-  m: Messages
+  m: Pick<Messages, 'detalhe'> & IngredientLineMessages
   locale: string
 }) {
   const { porcoes, factor, setPorcoes } = usePortionScale()

@@ -8,8 +8,9 @@
  *    via `<DiscoveryFeed>` (paginação por cursor no `/api/feed`). É o estado INDEXÁVEL — o crawler já viu
  *    o feed no HTML; o cliente apenas o reflete e pagina.
  *  - REFINADO (com `q`/faceta/`sort`): a Busca assume a superfície e mostra os resultados. O estado é
- *    REFLETIDO na URL (`router.replace`) — recarregar com `?q=`/faceta cai no `noindex` do
- *    `generateMetadata` (#236). Limpar tudo volta a URL pro repouso `/{locale}` e o feed seeded reaparece.
+ *    REFLETIDO na URL (`history.replaceState`, sem ida ao servidor) — recarregar com `?q=`/faceta cai
+ *    no `noindex` do `generateMetadata` (#236). Limpar tudo volta a URL pro repouso `/{locale}` e o
+ *    feed seeded reaparece.
  *
  * ADR-0010: a UI consome o ROUTE HANDLER `GET /api/search` via `fetch` — NÃO Server Actions. NÃO
  * reimplementa regra de domínio: renderiza o que a rota devolve (seções já vêm separadas e ordenadas;
@@ -458,7 +459,7 @@ export function SearchExperience({
 
   /**
    * #236: REFLETE o estado de busca/filtro na URL (refino INLINE na MESMA superfície). REFINADO ⇒
-   * `?q=…`/facetas (`router.replace`, sem empilhar histórico a cada tecla) → recarregar cai no
+   * `?q=…`/facetas (`history.replaceState`, sem empilhar histórico a cada tecla) → recarregar cai no
    * `noindex` do `generateMetadata`. REPOUSO (sem critério) ⇒ a URL volta ao caminho NU `/{locale}`
    * (sem query) — o estado indexável. `sort` só vai à URL quando difere do default (espelha a query).
    * O `pathname` corrente é a base: NÃO recompõe o prefixo de locale (o proxy/path já o garante).
@@ -495,10 +496,15 @@ export function SearchExperience({
     if (sort === 'popularidade') params.set('sort', 'popularidade')
     const query = params.toString()
     const target = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`
-    // Só reescreve se MUDOU (evita um replace redundante por render que poderia laçar com o router).
+    // Só reescreve se MUDOU (evita um replace redundante por render).
     const current = `${window.location.pathname}${window.location.search}`
-    if (target !== current) router.replace(target)
-  }, [q, cozinha, categoria, restricaoExplicita, sort, router])
+    // `history.replaceState` (não `router.replace`): o Next sincroniza `usePathname`/`useSearchParams`
+    // com ele SEM ida ao servidor. A home é dinâmica e o render dela não depende da query (só o
+    // `generateMetadata` lê `searchParams`), então `router.replace` pedia um RSC da home inteira (feed,
+    // receita da semana, config) a CADA tecla só para descartar o resultado. Recarregar com `?q=` segue
+    // caindo no `noindex` do SSR.
+    if (target !== current) window.history.replaceState(null, '', target)
+  }, [q, cozinha, categoria, restricaoExplicita, sort])
 
   useEffect(() => {
     return () => {

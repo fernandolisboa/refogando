@@ -176,8 +176,13 @@ export async function GET(request: Request): Promise<Response> {
   // ⇒ degradação graciosa (só-precisa). Erro de DB do loader NÃO é capturado aqui (500).
   // Consequência consciente: até o cliente real plugar, getEmbedder() devolve RealEmbedder,
   // que lança ⇒ toda Busca degrada silenciosamente pra só-precisa.
-  let queryVector: number[] | null = null
-  if (q.length > 0) {
+  //
+  // Nunca lança: o embed tem try/catch próprio e a validação zera saídas malformadas. Isso permite
+  // rodá-lo EM PARALELO com a leitura da sessão abaixo (o embed é um HTTP externo de ~100–300 ms; antes a
+  // sessão só começava depois dele).
+  async function embedQueryVector(): Promise<number[] | null> {
+    if (q.length === 0) return null
+    let queryVector: number[] | null = null
     try {
       // CONSULTA: `RETRIEVAL_QUERY` (par assimétrico com `RETRIEVAL_DOCUMENT` no índice).
       queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN), 'RETRIEVAL_QUERY')
@@ -197,6 +202,7 @@ export async function GET(request: Request): Promise<Response> {
     ) {
       queryVector = null
     }
+    return queryVector
   }
 
   // #16: ordenacao da Comunidade. Borda PERMISSIVA (degrada p/ 'relevancia', nunca 400).
@@ -205,7 +211,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // #116: sessão OPCIONAL — anônimo (ou conta desativada) NÃO é 401 aqui, só não recebe
   // `viewerId`. LOGADO ⇒ a Busca inclui também as próprias Receitas (privadas inclusive).
-  const g = await requireSession(request)
+  const [queryVector, g] = await Promise.all([embedQueryVector(), requireSession(request)])
   const viewerId = g.ok ? g.session.user.id : undefined
 
   // ADR-0041 dec.3: `?restricaoPerfil=1` (SEM valores — a lista nunca anda em URL) pede as Restrições SALVAS

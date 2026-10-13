@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import type { Database } from '@/db/client'
 import { appConfig } from '@/db/schema'
 import { DEFAULT_TASK_MODEL, DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
@@ -103,8 +104,21 @@ export type AppConfig = {
   proCaps: ProCaps | null
 }
 
-export async function loadAppConfig(db: Database): Promise<AppConfig> {
+/**
+ * Leitura CRUA da linha singleton, deduplicada por request com `React.cache`. Um render de página lia a
+ * mesma linha 2–4 vezes (layout + home + receita da semana + popularidade; layout + aviso de catálogo no
+ * detalhe), cada uma um round trip. Dentro de um render a 2ª chamada reusa a 1ª; fora dele (route
+ * handlers, crons, scripts, testes) `cache` não tem escopo de request e chama direto — então o
+ * read-after-write do PUT de `/api/admin/config` continua lendo do banco. Só a linha é compartilhada: o
+ * parse abaixo roda por chamada, e cada caller recebe objetos próprios.
+ */
+const readAppConfigRow = cache(async (db: Database) => {
   const [row] = await db.select().from(appConfig)
+  return row
+})
+
+export async function loadAppConfig(db: Database): Promise<AppConfig> {
+  const row = await readAppConfigRow(db)
   if (!row) {
     return {
       defaultModel: DEFAULT_TEXT_MODEL,

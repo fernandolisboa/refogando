@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach, type MockInstance } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -182,9 +182,13 @@ function SearchTree() {
   )
 }
 
+// #236: a Busca reflete a URL com `window.history.replaceState` (não `router.replace`).
+let historyReplace: MockInstance<History['replaceState']>
+
 beforeEach(() => {
   sessionState = authed()
   nav.replace.mockClear()
+  historyReplace = vi.spyOn(window.history, 'replaceState')
 })
 
 afterEach(() => {
@@ -665,8 +669,8 @@ describe('Default do perfil no Cardápio e na Busca', () => {
     expect(ultima).not.toContain('restricao=')
     expect(ultima).not.toContain('vegano')
     // A barra de endereço só reflete o que a pessoa escolheu — nunca o default do perfil.
-    expect(nav.replace).toHaveBeenCalled()
-    for (const [alvo] of nav.replace.mock.calls) expect(String(alvo)).not.toMatch(/restricao|vegano/)
+    expect(historyReplace).toHaveBeenCalled()
+    for (const [, , alvo] of historyReplace.mock.calls) expect(String(alvo)).not.toMatch(/restricao|vegano/)
     // Nem o GET das salvas: o eco da Busca basta.
     expect(perfilGets(calls)).toHaveLength(0)
   })

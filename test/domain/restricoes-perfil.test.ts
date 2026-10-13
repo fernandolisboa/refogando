@@ -6,7 +6,6 @@ import {
   alternarRestricao,
   normalizarRestricoes,
   ordenarRestricoes,
-  parseListaRestricoes,
   buscaUsaPerfil,
   restricaoEhCriterio,
   restricoesDoPedido,
@@ -15,6 +14,7 @@ import {
   somarRestricoes,
   vemDoPerfil,
 } from '@/domain/restricoes-perfil'
+import { parseListaRestricoes } from '@/domain/restricoes-perfil-parse'
 import { RESTRICOES } from '@/domain/vocabulary'
 
 /**

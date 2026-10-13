@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach, type MockInstance } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -24,10 +24,10 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-const routerReplace = vi.fn()
+let historyReplace: MockInstance<History['replaceState']>
 const routerPush = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: routerPush, replace: routerReplace }),
+  useRouter: () => ({ push: routerPush, replace: vi.fn() }),
   usePathname: () => '/',
 }))
 
@@ -98,16 +98,10 @@ beforeEach(() => {
   sessionState = anon()
   // Location de REPOUSO entre testes (senão a URL vaza de um teste pro outro).
   window.history.replaceState(null, '', '/')
-  // O `replace` do router REFLETE a URL — o efeito de #236 lê `window.location` no guard
-  // `target !== current` pra decidir se reescreve. Um `vi.fn()` puro NÃO muda a location, então
-  // o guard nunca "casa": digitar reescreve em loop e LIMPAR não gera replace nenhum, deixando a
-  // asserção de "última chamada" à mercê da ordem de flush dos efeitos (flake). Emular o efeito
-  // real (mudar a location) torna ambos os testes de URL DETERMINÍSTICOS. `mockImplementation`
-  // (não só no `vi.fn` inicial) porque o `restoreAllMocks` do afterEach zeraria a impl.
-  routerReplace.mockReset()
-  routerReplace.mockImplementation((url: string) => {
-    window.history.replaceState(null, '', url)
-  })
+  // #236: a Busca reflete o estado na URL com `window.history.replaceState` (sem RSC da home a cada
+  // tecla). O spy chama o original — a location muda de verdade, então o guard `target !== current` do
+  // efeito casa como em produção. Criado DEPOIS do reset acima (que não deve contar como reflexo).
+  historyReplace = vi.spyOn(window.history, 'replaceState')
   routerPush.mockReset()
 })
 
@@ -131,7 +125,7 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     expect(within(fe).getByRole('link')).toHaveAttribute('href', '/pt-BR/recipes/feijoada-seeded')
   })
 
-  it('BUSCA INLINE: digitar reflete o termo na URL (router.replace com ?q=) — mesma superfície', async () => {
+  it('BUSCA INLINE: digitar reflete o termo na URL (history.replaceState com ?q=) — mesma superfície', async () => {
     stubFetchOk({ minhas: [], catalogo: [feedItem('r9', 'Resultado')], comunidade: [] })
     const user = userEvent.setup()
     renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
@@ -141,7 +135,7 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     // O resultado da busca aparece (refino na MESMA tela)...
     await screen.findByText('Resultado')
     // ...e o estado foi refletido na URL (recarregar com ?q= cai no noindex do generateMetadata).
-    const replaceCalls = routerReplace.mock.calls.map((c) => String(c[0]))
+    const replaceCalls = historyReplace.mock.calls.map((c) => String(c[2]))
     expect(replaceCalls.some((u) => u.includes('q=bolo'))).toBe(true)
   })
 
@@ -154,12 +148,12 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     await user.type(box, 'bolo')
     await screen.findByText('Resultado')
 
-    routerReplace.mockClear()
+    historyReplace.mockClear()
     await user.clear(box)
 
     // De volta ao repouso: o feed seeded reaparece e a URL não carrega mais ?q=.
     await screen.findByText('Feijoada Seeded')
-    const replaceCalls = routerReplace.mock.calls.map((c) => String(c[0]))
+    const replaceCalls = historyReplace.mock.calls.map((c) => String(c[2]))
     // A última reflexão de URL NÃO tem o termo de busca (voltou ao repouso `/pt-BR`).
     expect(replaceCalls.at(-1) ?? '').not.toContain('q=bolo')
   })
@@ -175,7 +169,7 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
     const searched = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(searched.some((u) => u.includes('q=feijoada'))).toBe(true)
     // O reflexo da montagem (que ainda via q='') NÃO apagou o ?q= da URL.
-    const replaceCalls = routerReplace.mock.calls.map((c) => String(c[0]))
+    const replaceCalls = historyReplace.mock.calls.map((c) => String(c[2]))
     expect(replaceCalls.every((u) => u.includes('q=feijoada'))).toBe(true)
     expect(window.location.search).toContain('q=feijoada')
   })

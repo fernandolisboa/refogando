@@ -398,10 +398,11 @@ export async function searchRecipes(
   let popularityColVisibleSql: SQL = sql`0::float8`
   let popularityColBucket2Sql: SQL = sql`0::float8`
   if (isPop) {
-    const cfg = await loadPopularityConfig(db)
+    // Config e média global são independentes: em paralelo (espelha recipe-of-week.ts).
+    const [cfg, avg] = await Promise.all([loadPopularityConfig(db), loadGlobalRatingAverage(db)])
     // Fallback 3.0 bindado em TS como número real — NUNCA NULL (senão o CASE ELSE C ⇒ NULL ⇒ NULLS FIRST
     // no DESC ⇒ receitas de 0-nota ao topo, quebrando o guarda-corpo (b)).
-    const C = (await loadGlobalRatingAverage(db)) ?? 3.0
+    const C = avg ?? 3.0
     savesJoinSql = sql`LEFT JOIN (${savesAggBodySql}) sv ON sv.recipe_id = r.id`
     ratingJoinSql = sql`LEFT JOIN (${ratingAggBodySql}) rt ON rt.recipe_id = r.id`
     bucket2SavesJoinSql = sql`LEFT JOIN (${savesAggBodySql}) sv ON sv.recipe_id = s.recipe_id`

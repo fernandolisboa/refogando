@@ -22,7 +22,10 @@ import { parseStepTimer } from '@/domain/step-timer'
 import type { Messages } from '@/i18n/messages'
 import { cn } from '@/lib/utils'
 
-export function RecipeCookMode({ passos, m }: { passos: string[]; m: Messages }) {
+/** Só a seção `detalhe` (o servidor passa este recorte, não o catálogo inteiro, no payload RSC). */
+type CookModeMessages = Pick<Messages, 'detalhe'>
+
+export function RecipeCookMode({ passos, m }: { passos: string[]; m: CookModeMessages }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -40,7 +43,7 @@ function CookModeOverlay({
   onClose,
 }: {
   passos: string[]
-  m: Messages
+  m: CookModeMessages
   onClose: () => void
 }) {
   const [stepIndex, setStepIndex] = useState(0)
@@ -227,7 +230,7 @@ function CookModeOverlay({
  * quando `timer` deixa de existir/existe de novo entre passos, então o intervalo do passo anterior
  * já foi limpo pelo cleanup do efeito antes de qualquer novo passo montar o seu).
  */
-function StepTimerButton({ minutes, m }: { minutes: number; m: Messages }) {
+function StepTimerButton({ minutes, m }: { minutes: number; m: CookModeMessages }) {
   const [remaining, setRemaining] = useState<number | null>(null) // segundos restantes
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 

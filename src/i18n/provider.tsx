@@ -7,7 +7,7 @@
  * `setLocale` grava o cookie (D9) e re-renderiza a chrome (#4.AC1). NÃO chama nenhum
  * endpoint de Receita (#4.AC4 — isolamento): o único efeito é cookie + estado.
  */
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import { type Locale } from '@/i18n/locale'
 import { MESSAGES, type Messages } from '@/i18n/messages'
 import { applyLocaleSideEffects } from '@/i18n/cookie'
@@ -33,11 +33,10 @@ export function LocaleProvider({
     // valor do SSR (a11y/SEO). Guard de `document` para não quebrar em SSR.
     if (typeof document !== 'undefined') applyLocaleSideEffects(document, l)
   }, [])
-  return (
-    <LocaleContext.Provider value={{ locale, messages: MESSAGES[locale], setLocale }}>
-      {children}
-    </LocaleContext.Provider>
-  )
+  // Valor memoizado: um re-render do provider sem troca de locale (ex.: `router.refresh()` re-renderiza o
+  // layout) não re-renderiza os ~120 consumidores de `useLocale()`.
+  const value = useMemo(() => ({ locale, messages: MESSAGES[locale], setLocale }), [locale, setLocale])
+  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
 }
 
 export function useLocale(): Ctx {

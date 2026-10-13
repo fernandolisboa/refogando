@@ -185,17 +185,26 @@ export default async function RecipeDetailPage({
         ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
         ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
       })
-      // JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
-      // aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
-      const [slugMap, activeCozinhas] = await Promise.all([
+      // Tudo abaixo depende só do id e do `view.origin` (já resolvidos acima), então roda em PARALELO —
+      // antes eram 4 etapas seriais (slugMap+cozinhas → avaliações → aviso de catálogo → semelhantes).
+      //  - JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
+      //    aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
+      //  - Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora do
+      //    pool ⇒ a seção some. O MESMO agregado (média CRUA + contagem REAL, já filtrado
+      //    `moderated_at IS NULL`) alimenta o `aggregateRating` do JSON-LD (#367) — SEM query nova; o
+      //    número do markup casa com o exibido na página.
+      //  - #237: aviso de catálogo AI-assistido — CORTESIA editorial. Lê a config (DB direto, SEM cookie:
+      //    mantém o caminho público anônimo/cacheável) e resolve o TEXTO só quando deve mostrar (catálogo +
+      //    ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
+      //  - #454: trilho de semelhantes — vitrine pública não-personalizada, mesma leitura anônima
+      //    cacheável (sem cookie, sem IA na hora).
+      const [slugMap, activeCozinhas, reviewData, catalogDisclosure, similar] = await Promise.all([
         loadRecipeSlugMapCached(getDb(), publicRows.recipe.id),
         loadActiveCozinhaSlugsCached(getDb()),
+        loadRecipeReviews(getDb(), { id: publicRows.recipe.id }),
+        resolveCatalogDisclosure(view.origin),
+        loadSimilarForDetail(publicRows.recipe.id, locale),
       ])
-      // Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora
-      // do pool ⇒ a seção some. O MESMO agregado (média CRUA + contagem REAL, já filtrado
-      // `moderated_at IS NULL`) alimenta o `aggregateRating` do JSON-LD (#367) — SEM query nova; o
-      // número do markup casa com o exibido na página. Carregado ANTES de montar o SEO input.
-      const reviewData = await loadRecipeReviews(getDb(), { id: publicRows.recipe.id })
       const seoInput = buildRecipeSeoInputFromRows({
         rows: publicRows,
         locale,
@@ -209,15 +218,7 @@ export default async function RecipeDetailPage({
           : {}),
       })
       const jsonLd = serializeJsonLd(buildRecipeJsonLd(seoInput))
-      // #237: aviso de catálogo AI-assistido — CORTESIA editorial. Lê a config (DB direto, SEM cookie:
-      // mantém o caminho público anônimo/cacheável) e resolve o TEXTO só quando deve mostrar (catálogo +
-      // ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
-      const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
       const reviews = serializeReviews(reviewData)
-      // #454: trilho de semelhantes — vitrine pública não-personalizada, mesma leitura anônima
-      // cacheável (sem cookie, sem IA na hora). Carregado em paralelo seria ideal, mas depende do
-      // `view.origin`/id já resolvidos acima; roda depois, ainda sem tocar headers/cookies.
-      const similar = await loadSimilarForDetail(publicRows.recipe.id, locale)
       return (
         <DetailChrome
           view={view}
@@ -270,17 +271,21 @@ export default async function RecipeDetailPage({
   }
 
   const view = (await res.json()) as RecipeView
-  // #237: mesma cortesia editorial no caminho do dono (catálogo + ligado). A view do dono vem do
-  // JSON da rota /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
-  // já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
-  const catalogDisclosure = await resolveCatalogDisclosure(view.origin)
-  // Avaliações (#363) no caminho do dono: para uma privada, `loadRecipeReviews` devolve `null`
-  // (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Sinal
-  // INDEPENDENTE de pool (não passa por resolveRecipeView), reusado pelo gate de engajamento.
-  const reviews = serializeReviews(await loadRecipeReviews(getDb(), { id: ownerUuid }))
-  // #454: mesmo trilho no caminho do dono — não-personalizado (sem viewerId), a mesma vitrine
-  // pública que qualquer um veria; a leitura extra não muda a natureza dinâmica deste branch.
-  const similar = await loadSimilarForDetail(ownerUuid, locale)
+  // As três leituras abaixo são independentes entre si (só pedem o id e o `view.origin`): em paralelo.
+  //  - #237: mesma cortesia editorial no caminho do dono (catálogo + ligado). A view do dono vem do
+  //    JSON da rota /api/recipes/[id] (sem a config), então resolvemos o aviso aqui também. Este branch
+  //    já é dinâmico (cookie); a leitura extra da config não muda isso. Aditivo, não toca selos.
+  //  - Avaliações (#363) no caminho do dono: para uma privada, `loadRecipeReviews` devolve `null`
+  //    (fora do pool) ⇒ seção some; para a própria pública/catálogo, traz o agregado. Sinal
+  //    INDEPENDENTE de pool (não passa por resolveRecipeView), reusado pelo gate de engajamento.
+  //  - #454: mesmo trilho no caminho do dono — não-personalizado (sem viewerId), a mesma vitrine
+  //    pública que qualquer um veria; a leitura extra não muda a natureza dinâmica deste branch.
+  const [catalogDisclosure, reviewData, similar] = await Promise.all([
+    resolveCatalogDisclosure(view.origin),
+    loadRecipeReviews(getDb(), { id: ownerUuid }),
+    loadSimilarForDetail(ownerUuid, locale),
+  ])
+  const reviews = serializeReviews(reviewData)
   return (
     <DetailChrome
       view={view}
