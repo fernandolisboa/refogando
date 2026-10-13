@@ -651,6 +651,41 @@ describe('Despensa — "Cozinhei" no Cardápio (ADR-0042)', () => {
     expect(body.removed.map((x) => x.nome)).toEqual(['ovo'])
   })
 
+  it('casa pela FK do canônico: o Item "gemas" com ingredient_id do ovo tira o "ovo" (ramo canon do used)', async () => {
+    const { headers, userId } = await session()
+    const egg = await seedIngredient({ slug: `ovo-fk-${crypto.randomUUID()}` })
+    await seedIngredientTranslation({ ingredientId: egg, locale: 'pt-BR', nome: 'ovo' })
+    const r = await catalogRecipe('Creme do cozinhei', ['leite condensado'])
+    // "gemas" não casa "ovo" por palavra: só a FK do canônico cobre a linha.
+    await seedRecipeIngredient({ recipeId: r, ordem: 5, rawText: 'gemas', ingredientId: egg })
+    await addNames(headers, 'ovo, farinha')
+    const body = (await (await cook(headers, await planEntry(userId, r))).json()) as Cooked
+    expect(body.removed.map((x) => x.nome)).toEqual(['ovo'])
+    expect((await pantryState(headers)).items.map((i) => i.nome)).toEqual(['farinha'])
+  })
+
+  it('Receita planejada que ficou inelegível (lúdica, removida por moderação) não casa: nada sai', async () => {
+    const { headers, userId } = await session()
+    const other = await session()
+    const playful = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      ownerId: userId,
+      visibility: 'private',
+      resultKind: 'playful',
+    })
+    await seedRecipeIngredient({ recipeId: playful, ordem: 0, rawText: 'ovo' })
+    const removed = await catalogRecipe('Removida do cozinhei', ['ovo'])
+    await seedRemovedFromPool({ recipeId: removed, curatorId: other.userId })
+    await addNames(headers, 'ovo')
+    for (const recipeId of [playful, removed]) {
+      const res = await cook(headers, await planEntry(userId, recipeId))
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as Cooked).removed).toEqual([])
+    }
+    expect((await pantryState(headers)).items.map((i) => i.nome)).toEqual(['ovo'])
+  })
+
   it('nada bateu ⇒ removed vazio e a Despensa intacta; Despensa vazia também', async () => {
     const { headers, userId } = await session()
     const r = await catalogRecipe('Sopa do cozinhei', ['abóbora', 'gengibre'])

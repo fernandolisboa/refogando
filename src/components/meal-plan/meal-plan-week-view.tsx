@@ -601,8 +601,10 @@ function EntryRow({
   // (a Receita não declara porções) — o seletor some, como o escalador do detalhe.
   const porcoes = entry.porcoes ?? r?.porcoes ?? null
   const moveValue = `${entry.day}|${entry.slot}`
-  // Resultado do último "Cozinhei" desta linha (ADR-0042): só na tela, nada é gravado na entrada.
-  const [cooked, setCooked] = useState<Cooked | null>(null)
+  // "Cozinhei" desta linha (ADR-0042): o resultado vive só na tela, nada é gravado na entrada.
+  const cookRef = useRef<HTMLButtonElement>(null)
+  const cooking = useCookedMeal(entry.id, locale, m, cookRef)
+  const cooked = cooking.cooked
 
   return (
     <li className="flex items-start gap-3">
@@ -685,13 +687,13 @@ function EntryRow({
               </optgroup>
             ))}
           </select>
-          {r != null && <CookedButton entryId={entry.id} name={name} m={m} locale={locale} onDone={setCooked} />}
+          {r != null && <CookedButton name={name} m={m} cooking={cooking} buttonRef={cookRef} />}
         </div>
         {/* Região viva SEMPRE no DOM (o texto entra nela; inserida junto, o leitor de tela a ignoraria). */}
         <p role="status" aria-live="polite" className="text-xs text-fg empty:sr-only">
           {cooked != null && cookedMessage(cooked, m)}
         </p>
-        {cooked != null && <CookedOutcome outcome={cooked} m={m} onUndone={setCooked} />}
+        {cooked != null && <CookedOutcome m={m} cooking={cooking} />}
       </div>
       <button
         type="button"
@@ -732,65 +734,49 @@ function cookedMessage(c: Cooked, m: M): string {
   return c.keptBasics.length > 0 ? `${removed} ${m.cozinheiBasicosFicaram.replace('{lista}', () => kept)}` : removed
 }
 
-function CookedButton({
-  entryId,
-  name,
-  m,
-  locale,
-  onDone,
-}: {
-  entryId: string
-  name: string
-  m: M
-  locale: string
-  onDone: (c: Cooked) => void
-}) {
-  const [busy, setBusy] = useState(false)
+/**
+ * Estado do "Cozinhei" de UMA linha: o último resultado e o que está em voo. Uma ação por vez — e "Cozinhei"
+ * fica travado enquanto há um "Desfazer" pendente: um segundo toque não acharia mais os itens, e a resposta
+ * vazia apagaria da tela o "Desfazer" que ainda pode devolvê-los (ou, com o desfazer em voo, a tela diria
+ * "voltou" para itens tirados de novo). Depois do "Desfazer", o foco volta ao "Cozinhei" (o botão de desfazer
+ * some da tela).
+ */
+function useCookedMeal(entryId: string, locale: string, m: M, cookRef: React.RefObject<HTMLButtonElement | null>) {
+  const [cooked, setCooked] = useState<Cooked | null>(null)
+  const [busy, setBusy] = useState<'cook' | 'undo' | null>(null)
+  const focusCookAfterUndo = useRef(false)
+  const undoPending = cooked != null && cooked.removed.length > 0 && !cooked.undone
+
+  useEffect(() => {
+    if (!focusCookAfterUndo.current || busy != null || undoPending) return
+    focusCookAfterUndo.current = false
+    cookRef.current?.focus()
+  }, [busy, undoPending, cookRef])
 
   async function cook() {
-    if (busy) return
-    setBusy(true)
+    if (busy != null || undoPending) return
+    setBusy('cook')
     try {
       const res = await fetch(`/api/me/meal-plan/entries/${entryId}/cooked?locale=${encodeURIComponent(locale)}`, {
         method: 'POST',
       })
       if (!res.ok) {
-        onDone({ removed: [], keptBasics: [], error: m.erroCozinhei })
+        setCooked({ removed: [], keptBasics: [], error: m.erroCozinhei })
         return
       }
       const body = (await res.json()) as { removed: { nome: string }[]; keptBasics: string[] }
-      onDone({ removed: body.removed.map((r) => r.nome), keptBasics: body.keptBasics })
+      setCooked({ removed: body.removed.map((r) => r.nome), keptBasics: body.keptBasics })
     } catch {
-      onDone({ removed: [], keptBasics: [], error: m.erroCozinhei })
+      setCooked({ removed: [], keptBasics: [], error: m.erroCozinhei })
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-7 px-2 text-xs"
-      title={m.cozinheiDica}
-      aria-label={m.cozinheiAria.replace('{nome}', () => name)}
-      disabled={busy}
-      onClick={() => void cook()}
-    >
-      <CookingPot aria-hidden />
-      {busy ? m.cozinhando : m.cozinhei}
-    </Button>
-  )
-}
-
-/** O erro do "Cozinhei" e o "Desfazer" (que devolve EXATAMENTE os nomes que saíram) + o link da Despensa. */
-function CookedOutcome({ outcome, m, onUndone }: { outcome: Cooked; m: M; onUndone: (c: Cooked) => void }) {
-  const [busy, setBusy] = useState(false)
-
   async function undo() {
-    if (busy) return
-    setBusy(true)
+    if (busy != null || cooked == null || !undoPending) return
+    const outcome = cooked
+    setBusy('undo')
     try {
       const res = await fetch('/api/me/pantry/restore', {
         method: 'POST',
@@ -799,19 +785,56 @@ function CookedOutcome({ outcome, m, onUndone }: { outcome: Cooked; m: M; onUndo
       })
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string }
-        onUndone({ ...outcome, error: err.error === 'despensa_cheia' ? m.erroDesfazerCheia : m.erroDesfazer })
+        setCooked({ ...outcome, error: err.error === 'despensa_cheia' ? m.erroDesfazerCheia : m.erroDesfazer })
         return
       }
-      onUndone({ removed: outcome.removed, keptBasics: [], undone: true })
+      focusCookAfterUndo.current = true
+      setCooked({ removed: outcome.removed, keptBasics: [], undone: true })
     } catch {
-      onUndone({ ...outcome, error: m.erroDesfazer })
+      setCooked({ ...outcome, error: m.erroDesfazer })
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
-  // Desfazer só existe enquanto há o que devolver (um erro no desfazer mantém o botão pra tentar de novo).
-  const canUndo = outcome.removed.length > 0 && !outcome.undone
+  return { cooked, busy, undoPending, cook, undo }
+}
+
+type CookedMeal = ReturnType<typeof useCookedMeal>
+
+function CookedButton({
+  name,
+  m,
+  cooking,
+  buttonRef,
+}: {
+  name: string
+  m: M
+  cooking: CookedMeal
+  buttonRef: React.RefObject<HTMLButtonElement | null>
+}) {
+  return (
+    <Button
+      ref={buttonRef}
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 px-2 text-xs"
+      title={m.cozinheiDica}
+      aria-label={m.cozinheiAria.replace('{nome}', () => name)}
+      disabled={cooking.busy != null || cooking.undoPending}
+      onClick={() => void cooking.cook()}
+    >
+      <CookingPot aria-hidden />
+      {cooking.busy === 'cook' ? m.cozinhando : m.cozinhei}
+    </Button>
+  )
+}
+
+/** O erro do "Cozinhei" e o "Desfazer" (que devolve EXATAMENTE os nomes que saíram) + o link da Despensa. */
+function CookedOutcome({ m, cooking }: { m: M; cooking: CookedMeal }) {
+  const outcome = cooking.cooked
+  if (outcome == null) return null
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       {outcome.error != null && (
@@ -819,16 +842,17 @@ function CookedOutcome({ outcome, m, onUndone }: { outcome: Cooked; m: M; onUndo
           {outcome.error}
         </span>
       )}
-      {canUndo && (
+      {/* Só enquanto há o que devolver (um erro no desfazer mantém o botão pra tentar de novo). */}
+      {cooking.undoPending && (
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-xs"
-          disabled={busy}
-          onClick={() => void undo()}
+          disabled={cooking.busy != null}
+          onClick={() => void cooking.undo()}
         >
-          {busy ? m.desfazendo : m.desfazer}
+          {cooking.busy === 'undo' ? m.desfazendo : m.desfazer}
         </Button>
       )}
       {outcome.error == null && (

@@ -20,6 +20,7 @@ import {
   MAX_PANTRY_ADD_BATCH,
   MAX_PANTRY_BASICS,
   MAX_PANTRY_ITEMS,
+  PANTRY_BASICS,
   PANTRY_NAME_MAX,
   pantryMatchKey,
   splitPantryInput,
@@ -100,7 +101,8 @@ export function PantryView() {
       }
       const body = (await res.json()) as { items: PantryItem[]; basics?: string[]; basicsCustom?: boolean }
       setItems(body.items)
-      setBasicsList(body.basics ?? [])
+      // A rota sempre manda os básicos; sem eles (resposta antiga em cache), a lista padrão — nunca "nenhum".
+      setBasicsList(body.basics ?? PANTRY_BASICS)
       setBasicsCustom(body.basicsCustom === true)
       setStatus('idle')
     } catch {

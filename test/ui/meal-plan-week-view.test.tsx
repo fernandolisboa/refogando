@@ -82,6 +82,8 @@ function mockFetch(opts: {
   copy?: FetchResult
   cooked?: FetchResult
   restore?: FetchResult
+  /** Segura o "Desfazer" até a promessa resolver (pra observar o desfazer em voo). */
+  restoreGate?: () => Promise<void>
 }) {
   const calls: Call[] = []
   const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -95,6 +97,7 @@ function mockFetch(opts: {
     } else if (url.pathname.endsWith('/cooked') && method === 'POST') {
       r = opts.cooked ?? { status: 200, body: { ok: true, removed: [], keptBasics: [] } }
     } else if (url.pathname === '/api/me/pantry/restore' && method === 'POST') {
+      if (opts.restoreGate) await opts.restoreGate()
       r = opts.restore ?? { status: 200, body: { ok: true, added: [], existing: 0 } }
     } else if (url.pathname.startsWith('/api/me/meal-plan/entries/') && method === 'PATCH') {
       if (opts.patchGate) await opts.patchGate()
@@ -574,5 +577,47 @@ describe('MealPlanWeekView — "Cozinhei" (ADR-0042)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroDesfazerCheia)
     expect(screen.getByText(M.cozinheiRemovidos.replace('{lista}', 'ovo'))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: M.desfazer })).toBeInTheDocument()
+  })
+
+  it('com um "Desfazer" pendente o "Cozinhei" trava (um 2º toque apagaria o desfazer); depois dele, volta e recebe o foco', async () => {
+    const user = userEvent.setup()
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    const { calls } = mockFetch({
+      entries: [entry()],
+      cooked: { status: 200, body: { ok: true, removed: [{ id: 'p1', nome: 'ovo' }], keptBasics: [] } },
+      restoreGate: () => gate,
+    })
+    renderView()
+    await waitLoaded(1)
+    const cookButton = screen.getByRole('button', { name: cookName })
+    await user.click(cookButton)
+    await screen.findByRole('button', { name: M.desfazer })
+    expect(cookButton).toBeDisabled()
+
+    // Desfazer em voo: nada de "Cozinhei" no meio (a tela diria "voltou" para itens tirados de novo).
+    await user.click(screen.getByRole('button', { name: M.desfazer }))
+    expect(await screen.findByRole('button', { name: M.desfazendo })).toBeDisabled()
+    expect(cookButton).toBeDisabled()
+    release()
+
+    expect(await screen.findByText(M.cozinheiDesfeito.replace('{lista}', 'ovo'))).toBeInTheDocument()
+    await waitFor(() => expect(cookButton).toBeEnabled())
+    // O botão de desfazer some: o foco não cai no <body>, volta ao "Cozinhei".
+    await waitFor(() => expect(cookButton).toHaveFocus())
+    expect(calls.filter((c) => c.url.pathname.endsWith('/cooked'))).toHaveLength(1)
+  })
+
+  it('nada saiu: o "Cozinhei" segue disponível (não há o que desfazer)', async () => {
+    const user = userEvent.setup()
+    mockFetch({ entries: [entry()] })
+    renderView()
+    await waitLoaded(1)
+    const cookButton = screen.getByRole('button', { name: cookName })
+    await user.click(cookButton)
+    await screen.findByText(M.cozinheiNada)
+    expect(cookButton).toBeEnabled()
   })
 })

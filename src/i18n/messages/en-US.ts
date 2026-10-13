@@ -2185,7 +2185,7 @@ export const enUS: Messages = {
     erroCopiaVazia: 'The previous week has nothing for those days.',
     erroCopiar: 'Couldn’t copy the week. Try again.',
     cozinhei: 'I cooked this',
-    cozinheiAria: 'I cooked {nome}: remove what the recipe uses from the pantry',
+    cozinheiAria: 'I cooked this ({nome}): remove what the recipe uses from the pantry',
     cozinheiDica: 'Removes this recipe’s ingredients from your pantry (except your basics).',
     cozinhando: 'Updating…',
     cozinheiRemovidos: 'Removed from your pantry: {lista}.',
@@ -2284,7 +2284,7 @@ export const enUS: Messages = {
     despensaItens: [
       'In “Pantry”, list what you have at home: several names at once, separated by commas. No quantities.',
       'The app shows the recipes you can cook now and the ones that are almost there (up to 3 ingredients missing), with what is missing.',
-      '“I have the basics” counts salt, water, oil, olive oil and black pepper as already at home. You can turn it off, and in “Your basics” you can change the list or reset it to the default.',
+      '“I have the basics” counts your basics (by default salt, water, oil, olive oil and black pepper) as already at home. You can turn it off, and in “Your basics” you can change the list or reset it to the default.',
       '“Add missing items to list” sends only the missing ingredients to your shopping list.',
       '“Add to meal plan” plans the recipe straight from your pantry, on the day and meal you pick.',
       'On your shopping list, “Add checked items to pantry” moves what you bought into your pantry.',

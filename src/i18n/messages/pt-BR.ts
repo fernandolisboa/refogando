@@ -2309,7 +2309,7 @@ export const ptBR = {
     cozinheiAria: 'Cozinhei {nome}: tirar da despensa o que a receita usa',
     cozinheiDica: 'Tira da sua despensa os ingredientes desta receita (menos os básicos).',
     cozinhando: 'Atualizando…',
-    cozinheiRemovidos: 'Tirei da despensa: {lista}.',
+    cozinheiRemovidos: 'Saiu da despensa: {lista}.',
     cozinheiBasicosFicaram: 'Os básicos ficam: {lista}.',
     cozinheiSoBasicos: 'Só bateram básicos, e eles ficam na despensa: {lista}.',
     cozinheiNada: 'Nada da sua despensa bateu com esta receita.',
@@ -2408,7 +2408,7 @@ export const ptBR = {
     despensaItens: [
       'Em “Despensa”, diga o que você tem em casa: vários nomes de uma vez, separados por vírgula. Sem quantidade.',
       'O app mostra as receitas que dá pra fazer agora e as que falta pouco (até 3 ingredientes), com o que falta.',
-      '“Tenho o básico” conta sal, água, óleo, azeite e pimenta-do-reino como já em casa. Dá para desligar, e em “Seus básicos” você troca a lista ou volta ao padrão.',
+      '“Tenho o básico” conta os seus básicos (por padrão, sal, água, óleo, azeite e pimenta-do-reino) como já em casa. Dá para desligar, e em “Seus básicos” você troca a lista ou volta ao padrão.',
       '“Pôr o que falta na lista” leva só os ingredientes que faltam para a sua lista de compras.',
       '“Pôr no cardápio” planeja a receita direto da Despensa, no dia e na refeição que você escolher.',
       'Na lista de compras, “Guardar marcados na despensa” passa o que você comprou para a Despensa.',

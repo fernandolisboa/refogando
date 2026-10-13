@@ -10,7 +10,7 @@ Documento auto-suficiente: o que entrou, onde mora no código, o que não pode r
 
 Dois follow-ups dos handoffs 60 e 61 que fecham o ciclo da Despensa (planejar → cozinhar → a casa muda).
 
-- **"Cozinhei" no Cardápio.** Toda Refeição planejada com Receita legível tem o botão (Anotação e Receita indisponível não). O servidor parte só do id da entrada, roda o MESMO casamento do "o que dá pra fazer" restrito àquela Receita e tira da Despensa os itens que cobrem algum Item dela — **nunca os básicos da pessoa**. A linha mostra "Tirei da despensa: farinha, ovo." (+ "Os básicos ficam: sal." quando for o caso), com **"Desfazer"** (devolve exatamente aqueles nomes) e "Ver despensa". Nada bateu ⇒ "Nada da sua despensa bateu com esta receita." Sem estado gravado: o segundo toque não tira nada.
+- **"Cozinhei" no Cardápio.** Toda Refeição planejada com Receita legível tem o botão (Anotação e Receita indisponível não). O servidor parte só do id da entrada, roda o MESMO casamento do "o que dá pra fazer" restrito àquela Receita e tira da Despensa os itens que cobrem algum Item dela — **nunca os básicos da pessoa**. A linha mostra "Saiu da despensa: farinha, ovo." (+ "Os básicos ficam: sal." quando for o caso), com **"Desfazer"** (devolve exatamente aqueles nomes) e "Ver despensa". Nada bateu ⇒ "Nada da sua despensa bateu com esta receita." Sem estado gravado: o segundo toque não tira nada.
 - **Básicos de cada pessoa.** Na Despensa, "Seus básicos" (fechado por padrão): chips da lista efetiva com "tirar", campo para adicionar (vários com vírgula) e "Voltar ao padrão". Quem nunca mexeu fica com a lista padrão de antes (`users.pantry_basics` NULL) e vê o rótulo de sempre em "Tenho o básico"; quem mexeu vê a lista dela no rótulo. "Tenho o básico", "Pôr o que falta na lista" e a exclusão do "Cozinhei" usam os básicos da pessoa.
 - **Dados do titular:** `pantryBasics` no export LGPD; eliminação zera a coluna; guarda `pantry_basics IS NULL` no expurgo de cadastro pendente.
 - **Guia "Como usar"** (pt-BR e en-US): linha nova no Cardápio ("Cozinhei") e a linha dos básicos da Despensa atualizada. `CONTEXT.md` (Despensa, Plano de refeições) e um ponteiro no ADR-0038 dec.3.
@@ -22,7 +22,7 @@ Dois follow-ups dos handoffs 60 e 61 que fecham o ciclo da Despensa (planejar �
 3. `src/domain/pantry.ts` — fim do arquivo: `MAX_PANTRY_BASICS`, `resolvePantryBasics`, `parsePantryBasics`, `parsePantryRestore`, `splitCookedPantryItems`.
 4. `src/server/pantry/pantry.ts` — `queryPantryMatches` (agora recebe `items` com id, os básicos efetivos e `withUsed`; leia o comentário das CTEs e o bloco `usedCte`/`originCol`), `loadPantryBasics`, `applySetPantryBasics`, `applyCookedMealToPantry`.
 5. Rotas: `src/app/api/me/meal-plan/entries/[entryId]/cooked/route.ts`, `src/app/api/me/pantry/{basics,restore}/route.ts`, `GET src/app/api/me/pantry/route.ts` (devolve `basics`/`basicsCustom`).
-6. UI: `src/components/meal-plan/meal-plan-week-view.tsx` (fim do arquivo: `cookedMessage`, `CookedButton`, `CookedOutcome`) e `src/components/pantry/pantry-view.tsx` (`PantryBasicsEditor`, `basicsLabel`).
+6. UI: `src/components/meal-plan/meal-plan-week-view.tsx` (fim do arquivo: `cookedMessage`, `useCookedMeal`, `CookedButton`, `CookedOutcome`) e `src/components/pantry/pantry-view.tsx` (`PantryBasicsEditor`, `basicsLabel`).
 7. Testes: `test/domain/pantry.test.ts`, `test/integration/pantry.test.ts` (blocos ADR-0042), `test/ui/meal-plan-week-view.test.tsx` e `test/ui/pantry-view.test.tsx`.
 
 ## 3. Princípios inegociáveis (não regredir)
@@ -32,6 +32,7 @@ Dois follow-ups dos handoffs 60 e 61 que fecham o ciclo da Despensa (planejar �
 - **Básicos nunca saem** — os da pessoa, pela chave de dedup, com a opção "Tenho o básico" ligada ou não.
 - **NULL = lista padrão, byte a byte.** Quem nunca editou recebe `PANTRY_BASICS` no casamento e o texto `despensa.basicosLista` no rótulo. `{}` é "nenhum básico", não volta ao padrão.
 - **Desfazer devolve exatamente o que saiu:** um nome por elemento, sem split por vírgula (`parsePantryRestore`), pelo mesmo `applyAddPantryItems` (idempotente, teto tudo-ou-nada).
+- **Um "Desfazer" pendente trava o "Cozinhei" da linha** (`useCookedMeal`): sem isso, o segundo toque devolve `removed: []` e apaga o "Desfazer" que ainda pode devolver os itens. Uma ação por linha em voo; depois do "Desfazer", foco no "Cozinhei".
 - **Região viva sempre no DOM** na linha da refeição (`role="status"` com `empty:sr-only`), como no ADR-0040.
 
 ## 4. Landmines

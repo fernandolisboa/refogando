@@ -333,8 +333,8 @@ async function queryPantryMatches(input: {
     ),
     basic_pattern AS (
       -- Básico: só a LINHA INTEIRA feita de básicos, separados por espaço (a vírgula já virou espaço), "e",
-      -- "and", "ou" ou "or", com "a gosto"/"to taste"/"q.b." no fim. Regex pequena (uma dúzia de termos),
-      -- ancorada no começo: falha rápido. Os termos já são só letras/dígitos/espaço; escapados mesmo assim.
+      -- "and", "ou" ou "or", com "a gosto"/"to taste"/"q.b." no fim. Regex pequena (no máximo os 30 básicos da
+      -- pessoa, ADR-0042 dec.4, mais as expansões pelo canônico), ancorada no começo: falha rápido. Os termos já são só letras/dígitos/espaço; escapados mesmo assim.
       SELECT
         '^(' || string_agg(${ESC_TERM}, '|') || ')(e?s)?(( e | and | ou | or | )('
           || string_agg(${ESC_TERM}, '|') || ')(e?s)?)*( a gosto| to taste| q b)?$' AS re
@@ -494,13 +494,16 @@ export async function loadPantryMatches(input: {
   fallbackName: string
 }): Promise<PantryMatch[]> {
   const { db, userId, requestLocale, fallbackName } = input
-  const items = await loadPantryTerms(db, userId)
+  const [items, basics] = await Promise.all([
+    loadPantryTerms(db, userId),
+    basicsForMatching(db, userId, input.basics),
+  ])
   if (items.length === 0) return []
   const matches = await queryPantryMatches({
     db,
     userId,
     items,
-    basics: await basicsForMatching(db, userId, input.basics),
+    basics,
     locale: requestLocale,
     maxMissing: PANTRY_MAX_MISSING,
     limit: PANTRY_MATCH_LIMIT,
@@ -556,12 +559,15 @@ export async function applyPantryMissingToShoppingList(input: {
   listId?: string
 }): Promise<PantryMissingToListResult> {
   const { db, userId, recipeId, locale } = input
-  const items = await loadPantryTerms(db, userId)
+  const [items, basics] = await Promise.all([
+    loadPantryTerms(db, userId),
+    basicsForMatching(db, userId, input.basics),
+  ])
   const [match] = await queryPantryMatches({
     db,
     userId,
     items,
-    basics: items.length === 0 ? [] : await basicsForMatching(db, userId, input.basics),
+    basics,
     locale,
     maxMissing: NO_MISSING_CAP, // sem teto aqui: o que falta agora é o que se quer comprar
     limit: 1,
@@ -625,7 +631,7 @@ export async function applyCookedMealToPantry(input: {
   if (!entry) return { kind: 'not_found' }
   if (entry.recipeId == null) return { kind: 'no_recipe' }
 
-  const items = await loadPantryTerms(db, userId)
+  const [items, { basics }] = await Promise.all([loadPantryTerms(db, userId), loadPantryBasics({ db, userId })])
   const [match] = await queryPantryMatches({
     db,
     userId,
@@ -640,11 +646,7 @@ export async function applyCookedMealToPantry(input: {
   const usedIds = match?.used_ids ?? []
   if (usedIds.length === 0) return { kind: 'ok', removed: [], keptBasics: [] }
 
-  const { remove, keptBasics } = splitCookedPantryItems(
-    items,
-    usedIds,
-    resolvePantryBasics(await loadStoredBasics(db, userId)),
-  )
+  const { remove, keptBasics } = splitCookedPantryItems(items, usedIds, basics)
   const kept = keptBasics.map((k) => k.nome)
   if (remove.length === 0) return { kind: 'ok', removed: [], keptBasics: kept }
 

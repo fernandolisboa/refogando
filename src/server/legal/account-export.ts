@@ -56,7 +56,7 @@ function groupBy<T, K extends string>(rows: T[], key: (row: T) => K): Map<K, T[]
 
 export async function buildAccountExport(db: Database, userId: string): Promise<Record<string, unknown>> {
   // ── Perfil (dados de conta do próprio titular) ────────────────────────────────
-  const [profile] = await db
+  const [profileRow] = await db
     .select({
       id: users.id,
       name: users.name,
@@ -74,9 +74,13 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
       emailVerified: users.emailVerified,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
+      // Os básicos da Despensa (ADR-0042) saem do perfil para a seção da Despensa, logo abaixo.
+      pantryBasics: users.pantryBasics,
     })
     .from(users)
     .where(eq(users.id, userId))
+  // `null` = nunca mexeu (vale a lista padrão do app). Fora de `account`, junto da Despensa.
+  const { pantryBasics = null, ...account } = profileRow ?? {}
 
   // ── Receitas que o titular criou/possui (owner_id = titular) ──────────────────
   const recipeRows = await db
@@ -255,11 +259,6 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     .from(pantryItem)
     .where(eq(pantryItem.userId, userId))
     .orderBy(asc(pantryItem.createdAt))
-  // Os básicos que o titular escolheu (ADR-0042); `null` = nunca mexeu (vale a lista padrão do app).
-  const [{ basics: pantryBasics } = { basics: null }] = await db
-    .select({ basics: users.pantryBasics })
-    .from(users)
-    .where(eq(users.id, userId))
 
   // ── Social: SÓ handles públicos de quem o titular segue + contagens. NUNCA PII de terceiros
   //    (sem e-mail/nome de terceiros); a lista de SEGUIDORES é só CONTAGEM (escolha de terceiros).
@@ -425,7 +424,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
   return {
     format: EXPORT_FORMAT,
     exportedAt: new Date().toISOString(),
-    account: profile ?? null,
+    account: profileRow ? account : null,
     recipes,
     reviews,
     savedRecipes,
