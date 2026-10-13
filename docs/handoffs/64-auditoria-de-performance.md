@@ -9,20 +9,21 @@ Documento auto-suficiente: o que a auditoria achou, o que entrou neste PR (sem m
 ## 1. O que foi entregue
 
 - **zod fora do bundle de toda página (−65 KB gzip, −283 KB brutos).** O `RestricoesPerfilProvider` do root layout importava `domain/restricoes-perfil.ts`, que criava um schema zod no topo do módulo; o zod inteiro ia para as 37 rotas. A validação estrita (`parseListaRestricoes`) mudou para `domain/restricoes-perfil-parse.ts`, importado só pelas 3 rotas que recebem a lista. O mesmo para `MENU_NOTE_MAX` (`domain/menu-suggestion-limits.ts`), que levava o zod para `/me/meal-plan`. Medido no build: nenhum chunk client contém zod; `/[locale]/recipes/[id]` foi de 384,7 para 319,2 KB gzip de first-load JS.
-- **Busca da home sem render no servidor a cada tecla.** `search-experience.tsx` refletia o termo na URL com `router.replace`, sem debounce; a home é dinâmica, então cada tecla pedia um RSC (metadata + feed + receita da semana + config) só para descartar. Agora usa `window.history.replaceState` (o Next sincroniza `usePathname`/`useSearchParams`). A URL resultante é a mesma.
+- **Busca da home sem render no servidor a cada tecla.** `search-experience.tsx` refletia o termo na URL com `router.replace`, sem debounce; a home é dinâmica, então cada tecla pedia um RSC (metadata + feed + receita da semana + config) só para descartar. Agora usa `window.history.replaceState` (o Next sincroniza `usePathname`/`useSearchParams`). A URL resultante é a mesma. Duas diferenças aceitas, apontadas pelo painel: (a) o `router.replace` rolava a página para o topo quando o topo dos resultados estava fora da tela (ex.: marcar uma faceta depois de rolar); agora a página fica onde está; (b) o feed de repouso e a receita da semana que reaparecem ao limpar a busca são os da carga da página (antes vinham do último RSC, disparado pela última tecla).
 - **Migração 0075 com 15 índices** (ver `src/db/schema.ts`, comentários junto a cada um):
   - better-auth: `account(user_id)`, `account(provider_id, account_id)`, `session(user_id)`, `verification(identifier, created_at)`, `verification(expires_at)`;
-  - feed: `recipe(created_at, id)` parcial no gate do feed (EXPLAIN local: `Index Scan Backward`, para no LIMIT);
+  - feed: `recipe(created_at, id)` parcial no gate do feed (EXPLAIN local, com seq scan desligado: `Index Scan Backward`). O filtro de visibilidade fica fora do índice; se as receitas mais novas forem quase todas privadas, a varredura anda mais antes de encher o LIMIT, e o planner escolhe pelo custo real;
   - Busca: `recipe_ingredient(ingredient_id)` parcial;
   - FKs de cascade/set null que eram seq scan: `notification(recipe_id)`, `notification(review_id)`, `creation_session(recipe_id)`, `recipe(parent_recipe_id)`, `shopping_list_item(source_recipe_id)`, `recipe(moderated_by)`, `recipe(reviewed_by)`, `report(reporter_id)`.
-- **`app_config` lido uma vez por render.** `loadAppConfig` passa por `readAppConfigRow = cache(...)` (React). Antes: 2–4 leituras da mesma linha por página (layout + home + receita da semana + popularidade).
+- **`app_config` lido uma vez por render.** `loadAppConfig` passa por `readAppConfigRow = cache(...)` (React). Antes: 2–4 leituras da mesma linha por página (layout + home + receita da semana + popularidade). Se a leitura compartilhada falha, cada chamada tenta de novo direto no banco (o `cache` memoiza a rejeição).
 - **Waterfalls removidos (`Promise.all`):** detalhe da receita (slug map, cozinhas, avaliações, aviso de catálogo e semelhantes juntos, nos dois caminhos); `loadRecipeReviews` (agregado + lista); `/api/search` (embedding em paralelo com a sessão); popularidade + média global em `search.ts` e `recommended-cooks.ts`; notificações (página + contador); `/api/u/[handle]` (receitas + bloco social).
 - **Payload RSC do detalhe:** `RecipeDetailView` passa ao escalador de porções e ao Modo cozinha só os recortes do catálogo que eles usam (`detalhe` + rótulos de unidade), não o `Messages` inteiro (~100 KB de JSON por página de receita).
 - **`LocaleProvider`:** valor do contexto memoizado.
+- **Pool:** os `Promise.all` sobem o pico de queries simultâneas por request (detalhe público ~5–6). O postgres.js com `max: 10` enfileira o excedente; acompanhar p95 se o tráfego crescer.
 
 ## 2. O que ler primeiro
 
-1. Relatório da auditoria (no project folder do Refogando: `perf-audit/relatorio-performance.md`) — os 5 achados principais e a tabela de propostas.
+1. `docs/perf/2026-10-13-auditoria.md` — o relatório da auditoria: reconhecimento, os 5 achados principais e a tabela de propostas.
 2. `src/server/app-config.ts` — o comentário de `readAppConfigRow` (por que `cache` é seguro fora de render).
 3. `src/components/recipe/search-experience.tsx` — o efeito de reflexo da URL (#236).
 4. `drizzle/0075_perf_indexes.sql` e os blocos de índice em `src/db/schema.ts`.
@@ -38,7 +39,7 @@ Documento auto-suficiente: o que a auditoria achou, o que entrou neste PR (sem m
 ## 4. Landmines
 
 - **Testes de UI e a URL:** a Busca agora muda a `location` de verdade no jsdom. `test/ui/setup.ts` zera a URL em todo `beforeEach`; os testes que conferem o reflexo espionam `window.history.replaceState` (`discovery-home`, `restricoes-perfil`).
-- **Migração 0075 e o preview da Vercel:** PR com migração flaka no preview (o build roda antes do branch do Neon existir). `CREATE INDEX` sem `CONCURRENTLY` (o migrator roda em transação): trava escrita nas tabelas durante a criação; com o volume atual é instantâneo.
+- **Migração 0075 e o preview da Vercel:** PR com migração flaka no preview (o build roda antes do branch do Neon existir). `CREATE INDEX` sem `CONCURRENTLY` (o migrator roda em transação): bloqueia escrita nas 10 tabelas até o commit; com o volume atual é instantâneo. A migração abre com `SET LOCAL lock_timeout = '5s'` (se um lock não vier em 5 s o build falha e é só refazer, em vez de enfileirar escritas) e cria os índices de `recipe` primeiro, na mesma ordem em que um DELETE de Receita trava as tabelas das cascatas.
 - **Ambiente local:** Postgres 17 + pgvector do PGDG na porta 5433; `TEST_DATABASE_URL` passado inline por comando, nunca exportado.
 
 ## 5. Propostas que ficaram fora (precisam de decisão)

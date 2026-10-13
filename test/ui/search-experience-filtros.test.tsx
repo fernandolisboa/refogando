@@ -26,8 +26,8 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// #169: a Busca usa useRouter().push (navega após importar). #236: usa .replace (reflete a busca na
-// URL) — mock p/ o jsdom (sem AppRouter montado).
+// #169: a Busca usa useRouter().push (navega após importar). #236: reflete a busca na URL com
+// `window.history.replaceState` (não pelo router) — mock p/ o jsdom (sem AppRouter montado).
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/',

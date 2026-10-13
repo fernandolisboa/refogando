@@ -25,7 +25,7 @@ O dono (2026-10-13) notou que a pessoa redigita as mesmas Restrições alimentar
 ## Consequências
 
 - **Migração 0073** (`0073_users_restricoes`): `ALTER TABLE users ADD COLUMN restricoes restricao[] DEFAULT '{}' NOT NULL` (default constante: metadata-only, sem rewrite).
-- Domínio: `@/domain/restricoes-perfil` (validação zod, forma canônica, seleção com default, regra da Busca). `@/domain/briefing` ganha o parâmetro `restricoes` em `buildFreeTextPrompt`/`buildConversationPrompt` e `comRestricoesPedidas` — vazio é byte-a-byte o prompt de antes.
+- Domínio: `@/domain/restricoes-perfil` (forma canônica, seleção com default, regra da Busca) e `@/domain/restricoes-perfil-parse` (validação zod, só servidor — separada no handoff 64 para o zod não ir ao bundle client). `@/domain/briefing` ganha o parâmetro `restricoes` em `buildFreeTextPrompt`/`buildConversationPrompt` e `comRestricoesPedidas` — vazio é byte-a-byte o prompt de antes.
 - Servidor: `src/app/api/me/restricoes/route.ts`; `restricoes` aceito em `POST /api/generations` (só `free_text`) e em `POST /api/conversations/stream`; `?restricaoPerfil=1` em `GET /api/search` (lê da sessão; `SearchResponse.restricoesPerfil`, aditiva); export e eliminação.
 - UI: `RestricoesPerfilProvider` + `useSelecaoRestricoes` (layout/superfícies de criação e Cardápio), `RestricoesPerfilForm` (perfil), `RestricoesPerfilHint`, `RestricoesPedidoChips`, `CheckboxChip` (ui); wizard, Prompt aberto, Conversa, Sugestão de cardápio e Busca.
 - Guia "Como usar": um item em "Conta e preferências" (pt-BR e en-US).

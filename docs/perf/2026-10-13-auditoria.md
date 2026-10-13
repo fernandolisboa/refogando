@@ -1,0 +1,58 @@
+# Auditoria de performance do Refogando (2026-10-13)
+
+Base: `main` em 6b06b5c. Medidas de bundle tiradas de um `next build` de produção (Next 16.2.9, Turbopack). O resto vem da leitura do código, com `arquivo:linha`.
+
+## 1. Reconhecimento
+
+- **Stack:** Next.js 16 App Router + React 19 (Vercel), Drizzle ORM sobre postgres.js no Neon (pooler, `prepare:false`), better-auth 1.6 (sessão sem cookieCache, rate limit em tabela), Anthropic SDK, embeddings Gemini, Vercel Blob, Tailwind 4, radix-ui, lucide-react, zod 4.
+- **Entradas:** `src/proxy.ts` (só locale, sem DB), root layout `src/app/[locale]/layout.tsx` (2 leituras de DB por request + 5 providers client), ~110 route handlers em `src/app/api`, 3 crons em `vercel.json`.
+- **Config:** `next.config.ts` só tem headers de segurança e `remotePatterns`; minificação e tree-shaking são o default do Next (ok). `tsconfig` ok. Não há Webpack/Vite/estado global para auditar.
+- **Pontos fortes já existentes:** pool do DB e instância do better-auth são singletons; o proxy não toca o banco; vocabulário tem cache de 30 s; o detalhe da receita já deduplica metadata e render com `cache()`; a home já carrega feed, receita da semana e config em paralelo.
+
+## 2. Top 5 (o que mais custa)
+
+### 2.1 `get-session` paga 3 queries de rate limit (uma delas é escrita) a cada chamada
+- `src/lib/auth.ts:267` usa `rateLimit.storage: 'database'` sem regra para `/get-session`. O better-auth faz `findMany` antes e `findMany` + `insert/update` depois de cada request em `/api/auth/*`.
+- `src/components/auth-slot.tsx:46-84` chama `get-session` na montagem, a cada navegação e 2× ao voltar para a aba. Visitante anônimo também (escreve uma linha em `rate_limit` por IP).
+- **Custo:** ~3 round trips seriais + 1 escrita por navegação de qualquer pessoa. É a maior carga de escrita do banco.
+- **Correção proposta (decisão sua):** `'/get-session': false` em `customRules`. Sessão idêntica; o que muda é que `get-session` deixa de ter teto de 100/60 s por IP (é leitura, sem senha). **Não está no PR** por mexer numa regra de segurança (#449).
+
+### 2.2 Bundle: zod inteiro e os dois dicionários vão para toda página
+- Os 20 chunks compartilhados somam **369 KB gzip**. Dois itens evitáveis:
+  - **zod 4 completo (65 KB gz):** `src/domain/restricoes-perfil.ts:23` cria um schema no topo do módulo; o `RestricoesPerfilProvider` do root layout importa o módulo e arrasta o zod para todas as rotas, embora só use os helpers sem zod.
+  - **pt-BR + en-US (61 KB gz):** `src/i18n/provider.tsx` importa `MESSAGES` dos dois idiomas; cada página só usa um.
+- **Correção do zod (no PR):** a validação com zod passa para um módulo só do servidor (`restricoes-perfil-parse.ts`, `menu-suggestion-limits.ts`). Medido: nenhum chunk client tem zod.
+- **Dicionários (fora do PR, proposta):** testei wrappers client por idioma e o Next carrega todos os client components do layout, então os dois chunks seguem indo. Passar o catálogo por prop troca JS cacheável por ~30 KB gzip no HTML de cada carga completa, um trade-off que não é claramente ganho. O caminho melhor é tirar do catálogo client as seções usadas só por páginas server (`admin`, `privacidade`, `seusDireitos`, `guia`: ~41 KB de JSON por idioma).
+
+### 2.3 Cada tecla na busca da home renderiza a home de novo no servidor
+- `src/components/recipe/search-experience.tsx:483-500` reflete o termo na URL com `router.replace` a cada tecla, sem debounce. A home é dinâmica, então cada tecla é um request RSC que roda `generateMetadata`, feed, receita da semana e config (3+ queries) e devolve o feed inteiro.
+- Digitar "frango" = 6 renders da home, além da busca com debounce.
+- **Correção (no PR):** `window.history.replaceState` (o Next sincroniza `useSearchParams`/`usePathname` com ele). A URL muda igual, sem ida ao servidor.
+
+### 2.4 Índices faltando em caminhos quentes e em cascatas
+- **better-auth:** `account` não tem índice nenhum (login e Google buscam por `user_id` e `provider_id+account_id`); `verification` não tem índice em `identifier` nem em `expires_at` (todo `findVerificationValue` faz `DELETE WHERE expires_at < now()`); `session.user_id` sem índice (reset de senha revoga sessões, purge).
+- **Feed:** `src/server/recipe/feed.ts:54-77` ordena todo o pool por `(created_at, id)` a cada página; o próprio comentário diz "índice deferido".
+- **Busca por ingrediente canônico:** `recipe_ingredient.ingredient_id` sem índice (`search.ts:648`).
+- **Cascatas sem índice na FK:** `notification.recipe_id/review_id`, `creation_session.recipe_id`, `recipe.parent_recipe_id`, `shopping_list_item.source_recipe_id`; e as FKs para `users` que o purge diário varre por usuário (`recipe.moderated_by/reviewed_by`, `report.reporter_id`, …).
+- **Correção (no PR):** uma migração só com `CREATE INDEX` (0075). Índices parciais `IS NOT NULL` nas colunas esparsas.
+
+### 2.5 Leituras repetidas e cascatas seriais (waterfalls)
+- `app_config` é lido 2–4× por request (layout + home + receita da semana + popularidade), sem dedupe (`src/server/app-config.ts:106`).
+- Detalhe da receita: ~9 round trips seriais onde ~4 bastam (`recipes/[id]/page.tsx:189-220`; `loadRecipeReviews` também é serial).
+- `/api/search` espera o embedding (HTTP externo) antes de começar a sessão; popularidade e média global em série em `search.ts:401` e `recommended-cooks.ts:95`; notificações (página + contagem) em série.
+- **Correção (no PR):** `cache()` por request no `app_config`; `Promise.all` onde não há dependência.
+
+## 3. Achados estruturais (propostas, fora do PR)
+
+| # | Achado | Por que não entrou |
+|---|---|---|
+| A | Nenhuma página é cacheada: o root layout lê `cookies()` (tema) e o DB, então até `/privacidade` e o detalhe público renderizam a cada hit. | Muda como o tema é aplicado (script pré-pintura) e exige tags de revalidação. Decisão de arquitetura. |
+| B | "Receitas semelhantes" e a busca semântica calculam a distância contra **todos** os embeddings (o `DISTINCT ON` impede o índice HNSW). Cresce linear com o catálogo, em toda visita a uma receita. | Um top-k via HNSW é aproximado: os resultados podem mudar. |
+| C | Full-text e trigram da busca não usam os índices GIN (`recipe_ts_config(rt.locale)` por linha; `similarity() >= 0.3` em OR). O ramo de ingrediente faz `to_tsvector` de cada linha a cada busca. | Reescrever a query (e uma coluna `tsvector` nova em `recipe_ingredient`) pede teste de equivalência e migração de schema. |
+| D | Perfil público e a receita do dono chamam a própria API por HTTPS (`fetch(getBaseUrl()/api/...)`): duas invocações por visita. | Refactor maior (extrair loaders); bom candidato para o próximo PR. |
+| E | Pantry matches normaliza todo o corpus de ingredientes a cada request (`pantry.ts:350`). | Precisa de colunas geradas (migração de schema). |
+| F | Popularidade (receita da semana, cozinheiros recomendados, `sort=popularidade`) agrega `recipe_save`/`recipe_review` inteiras a cada request. | Cache ou view materializada: muda o frescor dos números. |
+| G | Gaveta "Criar" (~340 KB de fonte) entra no header de toda página. | `next/dynamic` introduz o primeiro lazy chunk; o `AppUpdateGuard` pede revisão quando isso acontecer. |
+| H | Listas sem LIMIT (`/api/me/recipes`, perfil, salvos) e trazendo `passos`/`descricao` que só viram título. | Paginar muda o que a tela mostra. |
+| I | Imagens do feed em tamanho cheio (PNG do Gemini) para thumbs de 144 px. | Reencodar (WebP) ou `next/image` muda o pipeline de imagem. |
+| J | Foco + `visibilitychange` disparam 2 `get-session` e 2 `/api/notifications` ao voltar para a aba. | O ADR-0028 diz que é intencional. |

@@ -8,12 +8,12 @@ import type { SearchResponse, SearchResult } from '@/domain/recipe-search-read'
 /**
  * Home-Descoberta inline (#236, ADR-0020) — "a Descoberta é a home": o `SearchExperience` em REPOUSO
  * mostra o feed SSR SEEDADO (o crawler já o viu; o cliente o reflete) e a Busca refina INLINE a MESMA
- * superfície (não é tela separada). Ao buscar/filtrar, o estado vai pra URL (`router.replace`) →
+ * superfície (não é tela separada). Ao buscar/filtrar, o estado vai pra URL (`history.replaceState`) →
  * recarregar com `?q=`/faceta cai no `noindex` do `generateMetadata`. Sem critério, a URL volta a
  * `/{locale}` (repouso) e o feed seeded reaparece.
  *
- * Seam jsdom (sem browser/Postgres). `fetch` mockado no shape REAL de `SearchResponse`; `router`
- * mockado pra capturar a reflexão da URL.
+ * Seam jsdom (sem browser/Postgres). `fetch` mockado no shape REAL de `SearchResponse`; spy em
+ * `window.history.replaceState` pra capturar a reflexão da URL.
  */
 
 vi.mock('next/link', () => ({
@@ -96,11 +96,10 @@ function stubFetchOk(body: SearchResponse) {
 
 beforeEach(() => {
   sessionState = anon()
-  // Location de REPOUSO entre testes (senão a URL vaza de um teste pro outro).
-  window.history.replaceState(null, '', '/')
   // #236: a Busca reflete o estado na URL com `window.history.replaceState` (sem RSC da home a cada
   // tecla). O spy chama o original — a location muda de verdade, então o guard `target !== current` do
-  // efeito casa como em produção. Criado DEPOIS do reset acima (que não deve contar como reflexo).
+  // efeito casa como em produção. A URL de repouso entre testes vem do `beforeEach` de `test/ui/setup.ts`
+  // (roda antes deste, então o reset não conta como reflexo).
   historyReplace = vi.spyOn(window.history, 'replaceState')
   routerPush.mockReset()
 })
@@ -161,6 +160,7 @@ describe('SearchExperience como home-Descoberta (#236)', () => {
   it('VOLTA com ?q= (returnTo do "Entrar para buscar", reload): semeia o termo, busca e mantém o ?q= na URL', async () => {
     const fetchMock = stubFetchOk({ minhas: [], catalogo: [feedItem('r9', 'Resultado')], comunidade: [] })
     window.history.replaceState(null, '', '/?q=feijoada')
+    historyReplace.mockClear() // a semeadura acima é do teste, não um reflexo da Busca
     renderHome({ initialFeed: [feedItem('r1', 'Feijoada Seeded')], initialNextCursor: null })
 
     // O termo chega na pílula e a busca roda com ele (sem a pessoa redigitar).

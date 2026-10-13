@@ -24,8 +24,8 @@ vi.mock('next/link', () => ({
   ),
 }))
 
-// #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201. #236: usa
-// .replace pra refletir a busca na URL (refino inline). #458: usePathname alimenta o `?returnTo=`
+// #169: a Busca usa useRouter().push para levar o usuário à receita importada após o 201. #236: reflete
+// a busca na URL com `window.history.replaceState` (refino inline, sem o router). #458: usePathname alimenta o `?returnTo=`
 // dos convites de entrar.
 const push = vi.fn()
 vi.mock('next/navigation', () => ({
