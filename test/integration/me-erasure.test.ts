@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/me/erasure/route'
 import { GET as GET_ME } from '@/app/api/me/route'
 import { getDb } from '@/server/deps'
@@ -238,7 +238,7 @@ describe('/api/me/erasure — eliminação conservadora do titular (#401)', () =
     expect(await getDb().select().from(mealPlanEntry).where(eq(mealPlanEntry.userId, b))).toHaveLength(1)
   })
 
-  it('apaga a Despensa do titular (ADR-0038) e não toca a de outra conta', async () => {
+  it('apaga a Despensa do titular (ADR-0038) e os básicos dele (ADR-0042), sem tocar os de outra conta', async () => {
     const a = await seedUser({ email: 'despensa-a@erasure.test' })
     const b = await seedUser({ email: 'despensa-b@erasure.test' })
     await getDb()
@@ -247,11 +247,16 @@ describe('/api/me/erasure — eliminação conservadora do titular (#401)', () =
         { userId: a, nome: 'ovo', matchKey: 'ovo' },
         { userId: b, nome: 'ovo', matchKey: 'ovo' },
       ])
+    await getDb().update(users).set({ pantryBasics: ['alho'] }).where(inArray(users.id, [a, b]))
 
     expect((await eraseOwnAccount(getDb(), { userId: a })).kind).toBe('erased')
 
     expect(await getDb().select().from(pantryItem).where(eq(pantryItem.userId, a))).toEqual([])
     expect(await getDb().select().from(pantryItem).where(eq(pantryItem.userId, b))).toHaveLength(1)
+    const basics = async (id: string) =>
+      (await getDb().select({ b: users.pantryBasics }).from(users).where(eq(users.id, id)))[0].b
+    expect(await basics(a)).toBeNull()
+    expect(await basics(b)).toEqual(['alho'])
   })
 
   it('não toca outra conta (sem IDOR): eliminar A preserva a PII de B', async () => {

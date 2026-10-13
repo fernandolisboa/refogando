@@ -285,6 +285,13 @@ describe('purgeStalePendingSignups', () => {
     expect(await purgeStalePendingSignups(getDb(), new Date())).toEqual({ pendingSignupsPurged: 0 })
   })
 
+  it('guarda dos básicos da Despensa (ADR-0042): marcada com básicos editados não é apagada', async () => {
+    const edited = await pendingSignup('basicos@pending.test')
+    await getDb().update(users).set({ pantryBasics: [] }).where(eq(users.id, edited))
+    await ageMarker(edited, 72)
+    expect(await purgeStalePendingSignups(getDb(), new Date())).toEqual({ pendingSignupsPurged: 0 })
+  })
+
   it('toda FK cascade/restrict para users (fora session/account) está nas guardas de conteúdo', () => {
     const name = (t: PgTable) => getTableConfig(t).name
     const expected = new Set<string>()

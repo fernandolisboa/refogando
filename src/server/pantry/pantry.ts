@@ -1,15 +1,16 @@
 import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { pantryItem, recipe, recipeImage, shoppingList, shoppingListItem } from '@/db/schema'
+import { mealPlanEntry, pantryItem, recipe, recipeImage, shoppingList, shoppingListItem, users } from '@/db/schema'
 import { normalizeOneLineText } from '@/domain/meal-plan'
 import {
   MAX_PANTRY_ITEMS,
-  PANTRY_BASICS,
   PANTRY_MATCH_LIMIT,
   PANTRY_MAX_MISSING,
   PANTRY_NAME_MAX,
   pantryMatchKey,
   parsePantryName,
+  resolvePantryBasics,
+  splitCookedPantryItems,
 } from '@/domain/pantry'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { RECIPE_LIST_COLS, hydrateRecipeListItems } from '@/server/recipe/collections'
@@ -23,6 +24,9 @@ import { applyAddRecipeLinesToShoppingList, ensureDefaultShoppingList } from '@/
  *
  * O CASAMENTO com as Receitas (`loadPantryMatches`, dec.2) é UMA query SQL crua parametrizada (como a Busca):
  * nomes e básicos entram como `text[]` bindados, nunca interpolados.
+ *
+ * ADR-0042: os básicos são da pessoa (`users.pantry_basics`, NULL = a lista padrão) e o "Cozinhei" do Cardápio
+ * (`applyCookedMealToPantry`) tira da Despensa o que a Receita usa pelo MESMO casamento, nunca os básicos.
  */
 
 // ── Tipos ────────────────────────────────────────────────────────────────────────
@@ -44,6 +48,19 @@ export type PantryMissingToListResult =
   | { kind: 'ok'; listId: string; listName: string; addedLines: number }
   | { kind: 'not_found' }
   | { kind: 'nothing_missing' }
+
+/** Os básicos efetivos da pessoa e se ela já trocou a lista padrão (ADR-0042 dec.4). */
+export type PantryBasicsView = { basics: readonly string[]; custom: boolean }
+
+/**
+ * "Cozinhei" (ADR-0042): o que saiu da Despensa (vazio = nada da Despensa bateu com a Receita, ou já tinha
+ * saído) e os itens que bateram mas FICARAM por serem básicos da pessoa.
+ */
+export type PantryCookedResult =
+  | { kind: 'ok'; removed: PantryItemView[]; keptBasics: string[] }
+  | { kind: 'not_found' }
+  /** A entrada é uma Anotação (ADR-0037): não há Receita, não há o que tirar. */
+  | { kind: 'no_recipe' }
 
 export type PantryFromCheckedResult =
   | { kind: 'ok'; added: number; existing: number }
@@ -179,11 +196,19 @@ type MatchRow = {
   covered: number
   missing_ids: string[] | null
   missing_names: string[] | null
+  /** Ids dos itens REAIS da Despensa que cobrem algum Item da Receita (só com `withUsed`; senão `null`). */
+  used_ids: string[] | null
 }
+
+/** Um item da Despensa como entra no casamento: o id (pra saber QUAL item cobriu) e o nome. */
+type PantryTerm = { id: string; nome: string }
 
 /**
  * O casamento em si (dec.2–4), numa query só. Etapas (CTEs):
- *  1. `src`: os nomes da Despensa (`basic=false`) e, com "Tenho o básico", os básicos (`basic=true`).
+ *  1. `src`: os nomes da Despensa (`basic=false`) e, com "Tenho o básico", os básicos da pessoa
+ *     (`basic=true`). Com `withUsed`, cada nome leva o id do item em `origin` (nulo nos básicos), e a coluna
+ *     viaja por todas as etapas dos termos reais: é o que diz QUAL item cobriu cada linha (o "Cozinhei",
+ *     ADR-0042).
  *  2. `canon`: o Ingrediente canônico que cada termo resolve — nome OU alias, qualquer locale, igualdade da
  *     forma normalizada (como a Busca #9: "cebola" não resolve "cebola roxa").
  *  3. `terms`: o termo + os nomes/aliases (todos os locales) do canônico que ele resolveu; e, para plural na
@@ -207,22 +232,54 @@ type MatchRow = {
  *  7. `per_recipe`: total, cobertos, cobertos por item REAL, e os ids/nomes do que falta.
  * Filtro final: ao menos um Item coberto por item real (dec.3) e no máximo `maxMissing` faltando.
  *
- * `onlyRecipeId` restringe a UMA Receita (o "pôr o que falta na lista" recalcula no servidor, dec.5a).
+ * `onlyRecipeId` restringe a UMA Receita (o "pôr o que falta na lista" recalcula no servidor, dec.5a; o
+ * "Cozinhei" também, ADR-0042). `withUsed` devolve em `used_ids` os itens REAIS que cobrem algum Item (por
+ * palavra ou por canônico) — só o "Cozinhei" pede; a lista de resultados não paga por isso.
  */
 async function queryPantryMatches(input: {
   db: Database
   userId: string
-  names: readonly string[]
-  basics: boolean
+  items: readonly PantryTerm[]
+  /** Os básicos efetivos da pessoa com "Tenho o básico" ligado; `[]` com a opção desligada. */
+  basics: readonly string[]
   locale: string
   maxMissing: number
   limit: number
   onlyRecipeId?: string
+  withUsed?: boolean
 }): Promise<MatchRow[]> {
-  const { db, userId, names, basics, locale, maxMissing, limit, onlyRecipeId } = input
-  if (names.length === 0) return []
-  const basicNames = basics ? [...PANTRY_BASICS] : []
+  const { db, userId, items, basics, locale, maxMissing, limit, onlyRecipeId, withUsed } = input
+  if (items.length === 0) return []
   const recipeFilter = onlyRecipeId !== undefined ? sql`AND r.id = ${onlyRecipeId}` : sql``
+  // Os itens REAIS que cobrem algum Item de cada Receita, por palavra (`real_token_hits`) ou pelo canônico — a
+  // mesma regra de `real_hit`. Só o "Cozinhei" pede (sempre com UMA Receita): sem `withUsed`, a CTE nem entra na
+  // query.
+  const usedCte = withUsed
+    ? sql`used AS (
+      SELECT x.recipe_id, array_agg(DISTINCT x.origin ORDER BY x.origin) AS ids
+      FROM (
+        SELECT l.recipe_id, th.origin FROM real_token_hits th JOIN lines l ON l.line_id = th.line_id
+        UNION ALL
+        SELECT l.recipe_id, c.origin FROM lines l JOIN canon c ON c.ingredient_id = l.ingredient_id
+        WHERE NOT c.basic
+      ) x
+      GROUP BY x.recipe_id
+    ),`
+    : sql``
+  const usedIds = withUsed
+    ? sql`(SELECT u.ids FROM used u WHERE u.recipe_id = pr.recipe_id)`
+    : sql`NULL::uuid[]`
+  // A coluna `origin` (o id do item da Despensa; nula nos básicos) só existe com `withUsed`: sem ela, cada CTE
+  // dos termos é EXATAMENTE a de antes do ADR-0042 (medido: carregar a coluna, mesmo nula, deixava a lista de
+  // resultados ~10% mais lenta no acervo sintético do handoff 60).
+  const originCol = withUsed ? sql`, origin` : sql``
+  const basicOrigin = withUsed ? sql`, NULL::uuid` : sql``
+  const srcItems = withUsed
+    ? sql`SELECT n.name AS name, false AS basic, n.origin AS origin
+      FROM unnest(${sql.param(items.map((i) => i.id))}::uuid[], ${sql.param(items.map((i) => i.nome))}::text[])
+        AS n(origin, name)`
+    : sql`SELECT n.name AS name, false AS basic
+      FROM unnest(${sql.param(items.map((i) => i.nome))}::text[]) AS n(name)`
 
   // Teto de tempo da consulta: um acervo que cresça além do previsto vira erro (500) em vez de segurar uma
   // conexão do pool. `SET LOCAL` só vale dentro da transação.
@@ -230,12 +287,12 @@ async function queryPantryMatches(input: {
     await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(`'${PANTRY_QUERY_TIMEOUT_MS}ms'`)}`)
     const rows = await tx.execute<MatchRow>(sql`
     WITH src AS (
-      SELECT n.name AS name, false AS basic FROM unnest(${sql.param(names)}::text[]) AS n(name)
+      ${srcItems}
       UNION ALL
-      SELECT b.name, true FROM unnest(${sql.param(basicNames)}::text[]) AS b(name)
+      SELECT b.name, true${basicOrigin} FROM unnest(${sql.param([...basics])}::text[]) AS b(name)
     ),
     src_norm AS (
-      SELECT DISTINCT ${norm(sql`s.name`)} AS term, s.basic AS basic FROM src s
+      SELECT DISTINCT ${norm(sql`s.name`)} AS term, s.basic AS basic${originCol} FROM src s
     ),
     it_names AS MATERIALIZED (
       -- Nomes e aliases de TODOS os Ingredientes canônicos, normalizados UMA vez: o join abaixo vira igualdade
@@ -246,28 +303,28 @@ async function queryPantryMatches(input: {
       FROM ingredient_translation it CROSS JOIN LATERAL unnest(it.aliases) AS a(alias)
     ),
     canon AS (
-      SELECT DISTINCT n.ingredient_id, s.basic
+      SELECT DISTINCT n.ingredient_id, s.basic${originCol}
       FROM src_norm s JOIN it_names n ON n.n = s.term
       WHERE s.term <> ''
     ),
     expanded AS (
-      SELECT term, basic FROM src_norm
+      SELECT term, basic${originCol} FROM src_norm
       UNION
-      SELECT n.n, c.basic FROM canon c JOIN it_names n ON n.ingredient_id = c.ingredient_id
+      SELECT n.n, c.basic${originCol} FROM canon c JOIN it_names n ON n.ingredient_id = c.ingredient_id
     ),
     terms AS (
-      SELECT term, basic FROM expanded
+      SELECT term, basic${originCol} FROM expanded
       UNION
-      SELECT ${SINGULAR_ES}, basic FROM expanded
+      SELECT ${SINGULAR_ES}, basic${originCol} FROM expanded
       UNION
-      SELECT ${SINGULAR_S}, basic FROM expanded
+      SELECT ${SINGULAR_S}, basic${originCol} FROM expanded
     ),
     real_forms AS (
       -- As formas que casam o texto do Item: o termo, o plural regular da ÚLTIMA palavra ("ovo" → "ovos",
       -- "farinha" → "farinhas") e o da PRIMEIRA ("tomate cereja" → "tomates cereja"), com a 1ª palavra e o
       -- número de palavras já separados (o join abaixo casa pela 1ª palavra e só então confere o resto).
       SELECT DISTINCT f.form AS form, split_part(f.form, ' ', 1) AS first_word,
-        array_length(string_to_array(f.form, ' '), 1) AS n_words
+        array_length(string_to_array(f.form, ' '), 1) AS n_words${originCol}
       FROM terms t
       CROSS JOIN LATERAL (
         VALUES (t.term), (t.term || 's'), (t.term || 'es'), (${PLURAL_FIRST_S}), (${PLURAL_FIRST_ES})
@@ -326,13 +383,18 @@ async function queryPantryMatches(input: {
       CROSS JOIN LATERAL (VALUES (string_to_array(l.raw_n, ' ')), (string_to_array(l.tr_n, ' '))) AS w(arr)
       CROSS JOIN LATERAL unnest(w.arr) WITH ORDINALITY AS t(word, pos)
     ),
-    real_line_hits AS (
-      SELECT DISTINCT tk.line_id
+    real_token_hits AS (
+      -- (linha, item da Despensa) que casam por palavra; real_line_hits é só a linha.
+      SELECT DISTINCT tk.line_id${originCol}
       FROM tokens tk
       JOIN real_forms f ON f.first_word = tk.word
       WHERE f.n_words = 1
         OR array_to_string(tk.arr[tk.pos:tk.pos + f.n_words - 1], ' ') = f.form
     ),
+    real_line_hits AS (
+      SELECT DISTINCT line_id FROM real_token_hits
+    ),
+    ${usedCte}
     hits AS MATERIALIZED (
       SELECT
         l.line_id,
@@ -361,7 +423,7 @@ async function queryPantryMatches(input: {
       FROM hits h
       GROUP BY h.recipe_id
     )
-    SELECT pr.recipe_id, pr.total, pr.covered, pr.missing_ids, pr.missing_names
+    SELECT pr.recipe_id, pr.total, pr.covered, pr.missing_ids, pr.missing_names, ${usedIds} AS used_ids
     FROM per_recipe pr
     JOIN recipe r ON r.id = pr.recipe_id
     WHERE pr.real_covered >= 1
@@ -373,14 +435,50 @@ async function queryPantryMatches(input: {
   })
 }
 
-/** Os nomes da Despensa do Usuário (o que alimenta o casamento). */
-async function loadPantryNames(db: Database, userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ nome: pantryItem.nome })
+/** Os itens da Despensa do Usuário (o que alimenta o casamento): id + nome. */
+async function loadPantryTerms(db: Database, userId: string): Promise<PantryTerm[]> {
+  return db
+    .select({ id: pantryItem.id, nome: pantryItem.nome })
     .from(pantryItem)
     .where(eq(pantryItem.userId, userId))
+    .orderBy(asc(pantryItem.matchKey))
     .limit(MAX_PANTRY_ITEMS)
-  return rows.map((r) => r.nome)
+}
+
+// ── Básicos por pessoa (ADR-0042 dec.4) ──────────────────────────────────────────
+
+/** A lista guardada (`null` = nunca mexeu). */
+async function loadStoredBasics(db: Database, userId: string): Promise<string[] | null> {
+  const [row] = await db.select({ basics: users.pantryBasics }).from(users).where(eq(users.id, userId))
+  return row?.basics ?? null
+}
+
+/** Os básicos efetivos da pessoa (a lista dela ou a padrão) e se ela já trocou a padrão. */
+export async function loadPantryBasics(input: { db: Database; userId: string }): Promise<PantryBasicsView> {
+  const stored = await loadStoredBasics(input.db, input.userId)
+  return { basics: resolvePantryBasics(stored), custom: stored !== null }
+}
+
+/**
+ * Grava os básicos da pessoa — já validados (`parsePantryBasics`) — ou `null` para voltar à lista padrão.
+ * Devolve o estado efetivo depois da escrita.
+ */
+export async function applySetPantryBasics(input: {
+  db: Database
+  userId: string
+  basics: readonly string[] | null
+}): Promise<PantryBasicsView> {
+  const { db, userId, basics } = input
+  await db
+    .update(users)
+    .set({ pantryBasics: basics === null ? null : [...basics], updatedAt: new Date() })
+    .where(eq(users.id, userId))
+  return { basics: resolvePantryBasics(basics), custom: basics !== null }
+}
+
+/** Os básicos que entram no casamento: os da pessoa com a opção ligada; nenhum com ela desligada. */
+async function basicsForMatching(db: Database, userId: string, on: boolean): Promise<readonly string[]> {
+  return on ? resolvePantryBasics(await loadStoredBasics(db, userId)) : []
 }
 
 /**
@@ -395,13 +493,14 @@ export async function loadPantryMatches(input: {
   requestLocale: string
   fallbackName: string
 }): Promise<PantryMatch[]> {
-  const { db, userId, basics, requestLocale, fallbackName } = input
-  const names = await loadPantryNames(db, userId)
+  const { db, userId, requestLocale, fallbackName } = input
+  const items = await loadPantryTerms(db, userId)
+  if (items.length === 0) return []
   const matches = await queryPantryMatches({
     db,
     userId,
-    names,
-    basics,
+    items,
+    basics: await basicsForMatching(db, userId, input.basics),
     locale: requestLocale,
     maxMissing: PANTRY_MAX_MISSING,
     limit: PANTRY_MATCH_LIMIT,
@@ -456,13 +555,13 @@ export async function applyPantryMissingToShoppingList(input: {
   locale: string
   listId?: string
 }): Promise<PantryMissingToListResult> {
-  const { db, userId, recipeId, basics, locale } = input
-  const names = await loadPantryNames(db, userId)
+  const { db, userId, recipeId, locale } = input
+  const items = await loadPantryTerms(db, userId)
   const [match] = await queryPantryMatches({
     db,
     userId,
-    names,
-    basics,
+    items,
+    basics: items.length === 0 ? [] : await basicsForMatching(db, userId, input.basics),
     locale,
     maxMissing: NO_MISSING_CAP, // sem teto aqui: o que falta agora é o que se quer comprar
     limit: 1,
@@ -499,6 +598,74 @@ export async function applyPantryMissingToShoppingList(input: {
     listName: list.name,
     addedLines: res.addedLines,
   }
+}
+
+/**
+ * "Cozinhei" numa Refeição planejada (ADR-0042 dec.1–3): tira da Despensa os itens que cobrem algum Item da
+ * Receita daquela entrada, pelo MESMO casamento do "o que dá pra fazer" (`queryPantryMatches` com
+ * `withUsed`, restrito à Receita), e nunca os básicos da pessoa. Tudo recalculado no servidor a partir do
+ * id da entrada: o cliente não diz nem a Receita nem os nomes. Idempotente sem estado gravado: o segundo
+ * toque não acha mais os itens e devolve `removed: []`.
+ *
+ * Os básicos ficam FORA do casamento aqui: eles só cobrem linhas e nunca saem; o que importa é qual item
+ * REAL cobre, e isso não depende da opção "Tenho o básico". Receita que ficou inelegível (o mesmo gate de
+ * Salvar do casamento) não casa: `removed: []`, como "nada bateu".
+ */
+export async function applyCookedMealToPantry(input: {
+  db: Database
+  userId: string
+  entryId: string
+  locale: string
+}): Promise<PantryCookedResult> {
+  const { db, userId, entryId, locale } = input
+  const [entry] = await db
+    .select({ recipeId: mealPlanEntry.recipeId })
+    .from(mealPlanEntry)
+    .where(and(eq(mealPlanEntry.id, entryId), eq(mealPlanEntry.userId, userId)))
+  if (!entry) return { kind: 'not_found' }
+  if (entry.recipeId == null) return { kind: 'no_recipe' }
+
+  const items = await loadPantryTerms(db, userId)
+  const [match] = await queryPantryMatches({
+    db,
+    userId,
+    items,
+    basics: [],
+    locale,
+    maxMissing: NO_MISSING_CAP, // tudo que a Receita usa, por mais que falte
+    limit: 1,
+    onlyRecipeId: entry.recipeId,
+    withUsed: true,
+  })
+  const usedIds = match?.used_ids ?? []
+  if (usedIds.length === 0) return { kind: 'ok', removed: [], keptBasics: [] }
+
+  const { remove, keptBasics } = splitCookedPantryItems(
+    items,
+    usedIds,
+    resolvePantryBasics(await loadStoredBasics(db, userId)),
+  )
+  const kept = keptBasics.map((k) => k.nome)
+  if (remove.length === 0) return { kind: 'ok', removed: [], keptBasics: kept }
+
+  // Escopado pelo dono de novo (defesa em profundidade) e pelo que ainda existe: um item tirado à mão no
+  // meio do caminho não volta no "Desfazer" porque não aparece aqui.
+  const deleted = await db
+    .delete(pantryItem)
+    .where(
+      and(
+        eq(pantryItem.userId, userId),
+        inArray(
+          pantryItem.id,
+          remove.map((r) => r.id),
+        ),
+      ),
+    )
+    .returning({ id: pantryItem.id, nome: pantryItem.nome, createdAt: pantryItem.createdAt })
+  const removed = deleted
+    .map((r) => ({ id: r.id, nome: r.nome, createdAt: r.createdAt.toISOString() }))
+    .sort((a, b) => (pantryMatchKey(a.nome) < pantryMatchKey(b.nome) ? -1 : 1)) // a ordem dos chips
+  return { kind: 'ok', removed, keptBasics: kept }
 }
 
 /**

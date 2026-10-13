@@ -2,13 +2,14 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { readJsonObject } from '@/server/http/params'
 import { splitPantryInput } from '@/domain/pantry'
-import { applyAddPantryItems, applyClearPantry, loadPantry } from '@/server/pantry/pantry'
+import { applyAddPantryItems, applyClearPantry, loadPantry, loadPantryBasics } from '@/server/pantry/pantry'
 
 /**
  * Despensa do PRÓPRIO usuário (ADR-0038). `requireSession` ANTES do DB (Visitante ⇒ 401, zero efeito),
  * resposta pessoal `no-store`, escopo HARD-WIRED em `session.user.id`.
  *
- * GET → `{ items: PantryItemView[] }`.
+ * GET → `{ items: PantryItemView[], basics: string[], basicsCustom: boolean }` — os básicos efetivos da pessoa
+ *   (ADR-0042 dec.4; `basicsCustom: false` = a lista padrão).
  * POST {names: string | string[]} → 200 `{ ok: true, added, existing }` (vários de uma vez, separados por
  *   vírgula; o que já está na Despensa conta em `existing`, idempotente) | 400 dados_invalidos (vazio, nome
  *   longo demais, mais de 50 de uma vez) | 422 despensa_cheia (passaria do teto; nada é gravado).
@@ -20,8 +21,13 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 export async function GET(request: Request): Promise<Response> {
   const g = await requireSession(request)
   if (!g.ok) return g.response
-  const items = await loadPantry({ db: getDb(), userId: g.session.user.id })
-  return Response.json({ items }, { headers: { 'cache-control': 'no-store' } })
+  const db = getDb()
+  const userId = g.session.user.id
+  const [items, basics] = await Promise.all([loadPantry({ db, userId }), loadPantryBasics({ db, userId })])
+  return Response.json(
+    { items, basics: basics.basics, basicsCustom: basics.custom },
+    { headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 export async function POST(request: Request): Promise<Response> {

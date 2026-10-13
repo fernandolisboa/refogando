@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { and, eq, isNotNull } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
-import { pantryItem, shoppingList, shoppingListItem } from '@/db/schema'
-import { MAX_PANTRY_ITEMS } from '@/domain/pantry'
+import { mealPlanEntry, pantryItem, shoppingList, shoppingListItem, users } from '@/db/schema'
+import { MAX_PANTRY_ITEMS, PANTRY_BASICS } from '@/domain/pantry'
 import { GET as pantryGet, POST as pantryPost, DELETE as pantryClear } from '@/app/api/me/pantry/route'
 import { DELETE as pantryItemDelete } from '@/app/api/me/pantry/[itemId]/route'
 import { GET as matchesGet } from '@/app/api/me/pantry/matches/route'
 import { POST as missingPost } from '@/app/api/me/pantry/missing-to-list/route'
 import { POST as checkedToPantry } from '@/app/api/me/shopping-lists/[listId]/items/checked/to-pantry/route'
+import { PUT as basicsPut, DELETE as basicsReset } from '@/app/api/me/pantry/basics/route'
+import { POST as restorePost } from '@/app/api/me/pantry/restore/route'
+import { POST as cookedPost } from '@/app/api/me/meal-plan/entries/[entryId]/cooked/route'
 import { seedSessionHeaders } from '../helpers/users'
 import {
   seedIngredient,
@@ -510,5 +513,191 @@ describe('Despensa — pontes', () => {
       existing: number
     }
     expect(again).toMatchObject({ added: 0, existing: 2 })
+  })
+})
+
+// ── ADR-0042: básicos por pessoa e "Cozinhei" ──────────────────────────────────────
+
+async function pantryState(headers: Headers): Promise<{ items: { nome: string }[]; basics: string[]; basicsCustom: boolean }> {
+  const res = await pantryGet(req('/api/me/pantry', 'GET', headers))
+  expect(res.status).toBe(200)
+  return (await res.json()) as { items: { nome: string }[]; basics: string[]; basicsCustom: boolean }
+}
+
+async function putBasics(headers: Headers, basics: unknown): Promise<Response> {
+  return basicsPut(req('/api/me/pantry/basics', 'PUT', headers, { basics }))
+}
+
+async function planEntry(userId: string, recipeId: string | null, note?: string): Promise<string> {
+  const [row] = await getDb()
+    .insert(mealPlanEntry)
+    .values({ userId, day: '2026-10-14', slot: 'jantar', recipeId, ...(note !== undefined ? { note } : {}) })
+    .returning({ id: mealPlanEntry.id })
+  return row.id
+}
+
+type Cooked = { removed: { id: string; nome: string }[]; keptBasics: string[] }
+
+async function cook(headers: Headers, entryId: string): Promise<Response> {
+  return cookedPost(req(`/api/me/meal-plan/entries/${entryId}/cooked?locale=pt-BR`, 'POST', headers), {
+    params: Promise.resolve({ entryId }),
+  })
+}
+
+describe('Despensa — básicos por pessoa (ADR-0042)', () => {
+  it('quem nunca mexeu vê a lista padrão; PUT troca, DELETE volta ao padrão (NULL no banco)', async () => {
+    const { headers, userId } = await session()
+    expect(await pantryState(headers)).toMatchObject({ basics: [...PANTRY_BASICS], basicsCustom: false })
+
+    const res = await putBasics(headers, ['Sal', 'sal', 'alho'])
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ basics: ['Sal', 'alho'], custom: true })
+    expect(await pantryState(headers)).toMatchObject({ basics: ['Sal', 'alho'], basicsCustom: true })
+
+    // Lista vazia é escolha explícita: não volta ao padrão.
+    await putBasics(headers, [])
+    expect(await pantryState(headers)).toMatchObject({ basics: [], basicsCustom: true })
+
+    const reset = await basicsReset(req('/api/me/pantry/basics', 'DELETE', headers))
+    expect(await reset.json()).toMatchObject({ basics: [...PANTRY_BASICS], custom: false })
+    const [row] = await getDb().select({ b: users.pantryBasics }).from(users).where(eq(users.id, userId))
+    expect(row.b).toBeNull()
+  })
+
+  it('valida: não-array, nome inválido e acima do teto ⇒ 400 sem gravar; Visitante ⇒ 401', async () => {
+    const { headers } = await session()
+    expect((await putBasics(headers, 'sal')).status).toBe(400)
+    expect((await putBasics(headers, ['x'.repeat(61)])).status).toBe(400)
+    expect((await putBasics(headers, Array.from({ length: 31 }, (_, i) => `b${i}`))).status).toBe(400)
+    expect((await pantryState(headers)).basicsCustom).toBe(false)
+    expect((await basicsPut(req('/api/me/pantry/basics', 'PUT', undefined, { basics: [] }))).status).toBe(401)
+  })
+
+  it('"Tenho o básico" usa os básicos da pessoa: alho entra, sal sai; lista vazia não cobre nada', async () => {
+    const { headers } = await session()
+    const r = await catalogRecipe('Arroz de alho da despensa', ['arroz', 'alho', 'sal'])
+    await addNames(headers, 'arroz')
+
+    // Padrão: sal coberto, alho falta.
+    expect((await matches(headers)).find((x) => x.id === r)).toMatchObject({ covered: 2, missing: ['alho'] })
+
+    await putBasics(headers, ['alho'])
+    expect((await matches(headers)).find((x) => x.id === r)).toMatchObject({ covered: 2, missing: ['sal'] })
+
+    await putBasics(headers, [])
+    expect((await matches(headers)).find((x) => x.id === r)).toMatchObject({ covered: 1, missing: ['alho', 'sal'] })
+
+    // E o "pôr o que falta na lista" recalcula com os mesmos básicos.
+    await putBasics(headers, ['alho'])
+    const res = await missingPost(req('/api/me/pantry/missing-to-list', 'POST', headers, { recipeId: r }))
+    const body = (await res.json()) as { listId: string }
+    const items = await getDb().select().from(shoppingListItem).where(eq(shoppingListItem.listId, body.listId))
+    expect(items.map((i) => i.nome)).toEqual(['sal'])
+  })
+})
+
+describe('Despensa — "Cozinhei" no Cardápio (ADR-0042)', () => {
+  it('tira o que a Receita usa pelo MESMO casamento, mantém os básicos e o resto; o segundo toque não tira nada', async () => {
+    const { headers, userId } = await session()
+    const bolo = await catalogRecipe('Bolo do cozinhei', ['ovos', 'farinha de trigo', 'sal', 'açúcar'])
+    // "sal" (real E básico) fica; "salsinha" não casa "sal"; "leite" não está na Receita.
+    await addNames(headers, 'ovo, farinha, Sal, leite, salsinha')
+    const entryId = await planEntry(userId, bolo)
+
+    const res = await cook(headers, entryId)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Cooked
+    expect(body.removed.map((r) => r.nome)).toEqual(['farinha', 'ovo'])
+    expect(body.keptBasics).toEqual(['Sal'])
+    expect((await pantryState(headers)).items.map((i) => i.nome).sort()).toEqual(['Sal', 'leite', 'salsinha'])
+
+    const again = (await (await cook(headers, entryId)).json()) as Cooked
+    expect(again.removed).toEqual([])
+
+    // Desfazer devolve exatamente o que saiu.
+    const undo = await restorePost(
+      req('/api/me/pantry/restore', 'POST', headers, { names: body.removed.map((r) => r.nome) }),
+    )
+    expect(undo.status).toBe(200)
+    expect((await pantryState(headers)).items.map((i) => i.nome).sort()).toEqual([
+      'Sal',
+      'farinha',
+      'leite',
+      'ovo',
+      'salsinha',
+    ])
+  })
+
+  it('os básicos são os da pessoa: com farinha nos básicos ela fica, e o sal sai', async () => {
+    const { headers, userId } = await session()
+    const pao = await catalogRecipe('Pão do cozinhei', ['farinha de trigo', 'sal', 'fermento'])
+    await addNames(headers, 'farinha, sal')
+    await putBasics(headers, ['Farinha'])
+    const body = (await (await cook(headers, await planEntry(userId, pao))).json()) as Cooked
+    expect(body.removed.map((r) => r.nome)).toEqual(['sal'])
+    expect(body.keptBasics).toEqual(['farinha'])
+  })
+
+  it('casa pelo canônico cross-locale: "ovo" sai ao cozinhar uma Receita en-US com "eggs"', async () => {
+    const { headers, userId } = await session()
+    const egg = await seedIngredient({ slug: `ovo-cozinhei-${crypto.randomUUID()}` })
+    await seedIngredientTranslation({ ingredientId: egg, locale: 'pt-BR', nome: 'ovo' })
+    await seedIngredientTranslation({ ingredientId: egg, locale: 'en-US', nome: 'egg' })
+    const r = await seedRecipe({ origin: 'catalog', originalLocale: 'en-US', ownerId: null })
+    await seedTranslation({ recipeId: r, locale: 'en-US', titulo: 'Cooked eggs', provenance: 'escrita_por_pessoa' })
+    await seedRecipeIngredient({ recipeId: r, ordem: 0, rawText: 'large eggs' })
+    await addNames(headers, 'ovo, manteiga')
+    const body = (await (await cook(headers, await planEntry(userId, r))).json()) as Cooked
+    expect(body.removed.map((x) => x.nome)).toEqual(['ovo'])
+  })
+
+  it('nada bateu ⇒ removed vazio e a Despensa intacta; Despensa vazia também', async () => {
+    const { headers, userId } = await session()
+    const r = await catalogRecipe('Sopa do cozinhei', ['abóbora', 'gengibre'])
+    const entryId = await planEntry(userId, r)
+    expect(((await (await cook(headers, entryId)).json()) as Cooked).removed).toEqual([])
+    await addNames(headers, 'ovo')
+    expect(((await (await cook(headers, entryId)).json()) as Cooked).removed).toEqual([])
+    expect((await pantryState(headers)).items).toHaveLength(1)
+  })
+
+  it('privado: entrada de outra pessoa e uuid inválido ⇒ 404; Anotação ⇒ 409; Visitante ⇒ 401', async () => {
+    const a = await session()
+    const b = await session()
+    const r = await catalogRecipe('Omelete do cozinhei', ['ovo'])
+    await addNames(a.headers, 'ovo')
+    await addNames(b.headers, 'ovo')
+    const entryA = await planEntry(a.userId, r)
+
+    expect((await cook(b.headers, entryA)).status).toBe(404)
+    expect((await getDb().select().from(pantryItem).where(eq(pantryItem.userId, b.userId))).length).toBe(1)
+    expect((await cook(a.headers, 'nope')).status).toBe(404)
+    expect((await cook(a.headers, await planEntry(a.userId, null, 'jantar fora'))).status).toBe(409)
+    expect(
+      (
+        await cookedPost(req(`/api/me/meal-plan/entries/${entryA}/cooked`, 'POST'), {
+          params: Promise.resolve({ entryId: entryA }),
+        })
+      ).status,
+    ).toBe(401)
+    // Só a Despensa de A muda.
+    expect(((await (await cook(a.headers, entryA)).json()) as Cooked).removed.map((x) => x.nome)).toEqual(['ovo'])
+    expect((await getDb().select().from(pantryItem).where(eq(pantryItem.userId, b.userId))).length).toBe(1)
+  })
+
+  it('desfazer: um nome por elemento (vírgula fica), vazio ⇒ 400, teto ⇒ 422', async () => {
+    const { headers, userId } = await session()
+    const res = await restorePost(req('/api/me/pantry/restore', 'POST', headers, { names: ['sal, pimenta'] }))
+    expect(res.status).toBe(200)
+    expect((await pantryState(headers)).items.map((i) => i.nome)).toEqual(['sal, pimenta'])
+    expect((await restorePost(req('/api/me/pantry/restore', 'POST', headers, { names: [] }))).status).toBe(400)
+    await getDb()
+      .insert(pantryItem)
+      .values(
+        Array.from({ length: MAX_PANTRY_ITEMS - 1 }, (_, i) => ({ userId, nome: `item ${i}`, matchKey: `item ${i}` })),
+      )
+    expect(
+      (await restorePost(req('/api/me/pantry/restore', 'POST', headers, { names: ['ovo'] }))).status,
+    ).toBe(422)
   })
 })

@@ -744,6 +744,12 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     imageGenBlockedReason: text('image_gen_blocked_reason'),
+    // Básicos da Despensa da pessoa (ADR-0042 dec.4): o que "Tenho o básico" conta como em casa e o que o
+    // "Cozinhei" nunca tira. NULL = nunca mexeu ⇒ a lista padrão (`PANTRY_BASICS`), byte-idêntico ao de antes;
+    // `{}` = tirou todos (escolha explícita). Coluna e não tabela: é UMA lista curta por pessoa, sempre lida
+    // inteira, e o NULL distingue "padrão" de "vazia" sem marcador extra. Nomes e teto (30) validados na borda
+    // (`parsePantryBasics`), mesma tese de `bio`/`links`. NULLABLE, sem default: ADD COLUMN metadata-only.
+    pantryBasics: text('pantry_basics').array(),
     // Marcador EXPLÍCITO de cadastro pendente (#470 follow-up, ADR-0014): gravado SÓ pelo cadastro de
     // email+senha com a confirmação de email ligada (a conta nasce não confirmada, com handle de espera) e
     // limpo quando alguém prova o email (link de confirmação, "conclua seu cadastro", admin) ou entra na

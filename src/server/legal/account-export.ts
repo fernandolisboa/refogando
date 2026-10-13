@@ -249,12 +249,17 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     .where(eq(mealPlanEntry.userId, userId))
     .orderBy(asc(mealPlanEntry.day), asc(mealPlanEntry.createdAt))
 
-  // ── Despensa (ADR-0038): os nomes que o próprio titular digitou ────────────────────────────
+  // ── Despensa (ADR-0038): os nomes que o próprio titular digitou, e os básicos dele (ADR-0042) ─────
   const pantry = await db
     .select({ nome: pantryItem.nome, createdAt: pantryItem.createdAt })
     .from(pantryItem)
     .where(eq(pantryItem.userId, userId))
     .orderBy(asc(pantryItem.createdAt))
+  // Os básicos que o titular escolheu (ADR-0042); `null` = nunca mexeu (vale a lista padrão do app).
+  const [{ basics: pantryBasics } = { basics: null }] = await db
+    .select({ basics: users.pantryBasics })
+    .from(users)
+    .where(eq(users.id, userId))
 
   // ── Social: SÓ handles públicos de quem o titular segue + contagens. NUNCA PII de terceiros
   //    (sem e-mail/nome de terceiros); a lista de SEGUIDORES é só CONTAGEM (escolha de terceiros).
@@ -428,6 +433,7 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     shoppingLists,
     mealPlan,
     pantry,
+    pantryBasics,
     social: {
       followingCount: followingRows.length,
       followersCount,

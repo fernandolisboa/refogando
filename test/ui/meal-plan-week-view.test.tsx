@@ -80,6 +80,8 @@ function mockFetch(opts: {
   patchGate?: () => Promise<void>
   del?: FetchResult
   copy?: FetchResult
+  cooked?: FetchResult
+  restore?: FetchResult
 }) {
   const calls: Call[] = []
   const impl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -90,6 +92,10 @@ function mockFetch(opts: {
     if (url.pathname === '/api/me/meal-plan' && method === 'GET') {
       const entries = typeof opts.entries === 'function' ? opts.entries() : (opts.entries ?? [])
       r = { status: 200, body: { entries } }
+    } else if (url.pathname.endsWith('/cooked') && method === 'POST') {
+      r = opts.cooked ?? { status: 200, body: { ok: true, removed: [], keptBasics: [] } }
+    } else if (url.pathname === '/api/me/pantry/restore' && method === 'POST') {
+      r = opts.restore ?? { status: 200, body: { ok: true, added: [], existing: 0 } }
     } else if (url.pathname.startsWith('/api/me/meal-plan/entries/') && method === 'PATCH') {
       if (opts.patchGate) await opts.patchGate()
       r = opts.patch ?? { status: 200, body: { ok: true } }
@@ -473,5 +479,100 @@ describe('MealPlanWeekView — Anotação e copiar semana (ADR-0037)', () => {
     await screen.findByText(M.vazioSemana)
     await user.click(screen.getByRole('button', { name: M.copiarSemana }))
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroCopiaVazia)
+  })
+})
+
+describe('MealPlanWeekView — "Cozinhei" (ADR-0042)', () => {
+  const cookName = M.cozinheiAria.replace('{nome}', 'Feijoada')
+
+  it('Refeição com Receita tem "Cozinhei"; Anotação e Receita indisponível não', async () => {
+    mockFetch({
+      entries: [
+        entry({ id: 'e1' }),
+        entry({ id: 'n1', note: 'Jantar fora', recipe: null }),
+        entry({ id: 'x1', slot: 'almoco', recipe: null }),
+      ],
+    })
+    renderView()
+    await waitLoaded(3)
+    expect(screen.getAllByRole('button', { name: /^Cozinhei / })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: cookName })).toBeInTheDocument()
+  })
+
+  it('mostra o que saiu e os básicos que ficaram; "Desfazer" devolve EXATAMENTE esses nomes', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch({
+      entries: [entry()],
+      cooked: {
+        status: 200,
+        body: { ok: true, removed: [{ id: 'p1', nome: 'farinha' }, { id: 'p2', nome: 'ovo' }], keptBasics: ['sal'] },
+      },
+    })
+    renderView()
+    await waitLoaded(1)
+    const getsBefore = calls.filter((c) => c.url.pathname === '/api/me/meal-plan').length
+    await user.click(screen.getByRole('button', { name: cookName }))
+
+    const status = await screen.findByText(
+      `${M.cozinheiRemovidos.replace('{lista}', 'farinha, ovo')} ${M.cozinheiBasicosFicaram.replace('{lista}', 'sal')}`,
+    )
+    expect(status).toHaveAttribute('role', 'status')
+    const post = calls.find((c) => c.url.pathname.endsWith('/cooked'))!
+    expect(post.url.pathname).toBe('/api/me/meal-plan/entries/e1/cooked')
+    expect(post.url.searchParams.get('locale')).toBe('pt-BR')
+    // O cliente não manda nomes nem Receita: o servidor recalcula a partir da entrada.
+    expect(post.body).toBeUndefined()
+    expect(screen.getByRole('link', { name: M.verDespensa })).toHaveAttribute('href', '/me/pantry')
+    // "Cozinhei" não mexe na semana: nada recarrega.
+    expect(calls.filter((c) => c.url.pathname === '/api/me/meal-plan').length).toBe(getsBefore)
+
+    await user.click(screen.getByRole('button', { name: M.desfazer }))
+    expect(await screen.findByText(M.cozinheiDesfeito.replace('{lista}', 'farinha, ovo'))).toBeInTheDocument()
+    expect(calls.find((c) => c.url.pathname === '/api/me/pantry/restore')?.body).toEqual({ names: ['farinha', 'ovo'] })
+    expect(screen.queryByRole('button', { name: M.desfazer })).not.toBeInTheDocument()
+  })
+
+  it('nada bateu: avisa, sem "Desfazer"', async () => {
+    const user = userEvent.setup()
+    mockFetch({ entries: [entry()] })
+    renderView()
+    await waitLoaded(1)
+    await user.click(screen.getByRole('button', { name: cookName }))
+    expect(await screen.findByText(M.cozinheiNada)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: M.desfazer })).not.toBeInTheDocument()
+  })
+
+  it('só básicos bateram: diz que eles ficam', async () => {
+    const user = userEvent.setup()
+    mockFetch({ entries: [entry()], cooked: { status: 200, body: { ok: true, removed: [], keptBasics: ['sal'] } } })
+    renderView()
+    await waitLoaded(1)
+    await user.click(screen.getByRole('button', { name: cookName }))
+    expect(await screen.findByText(M.cozinheiSoBasicos.replace('{lista}', 'sal'))).toBeInTheDocument()
+  })
+
+  it('falha no "Cozinhei": alerta localizado', async () => {
+    const user = userEvent.setup()
+    mockFetch({ entries: [entry()], cooked: { status: 500, body: {} } })
+    renderView()
+    await waitLoaded(1)
+    await user.click(screen.getByRole('button', { name: cookName }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroCozinhei)
+  })
+
+  it('desfazer com a despensa cheia: alerta, e o "Desfazer" continua para tentar de novo', async () => {
+    const user = userEvent.setup()
+    mockFetch({
+      entries: [entry()],
+      cooked: { status: 200, body: { ok: true, removed: [{ id: 'p1', nome: 'ovo' }], keptBasics: [] } },
+      restore: { status: 422, body: { error: 'despensa_cheia' } },
+    })
+    renderView()
+    await waitLoaded(1)
+    await user.click(screen.getByRole('button', { name: cookName }))
+    await user.click(await screen.findByRole('button', { name: M.desfazer }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroDesfazerCheia)
+    expect(screen.getByText(M.cozinheiRemovidos.replace('{lista}', 'ovo'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: M.desfazer })).toBeInTheDocument()
   })
 })
