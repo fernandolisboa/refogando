@@ -1,6 +1,8 @@
 # Canal de atendimento ao titular e fluxo de remoção — Descoberta na web (Refogando, issue #276)
 
 > **Atualização de 2026-09-24.** Os gaps GAP-1 a GAP-7 da §8 foram implementados entre 2026-07-01 e 2026-07-05. A §8 mostra a situação atual; a §4.2 descreve o fluxo com as ferramentas que existem hoje. As perguntas da §9 continuam valendo.
+>
+> **Atualização de 2026-10-13.** A §1 e a §6 passam a citar o Cardápio (com as anotações livres), as Listas de compras, a Despensa e o ledger da Sugestão de cardápio, e o que a exportação e a eliminação fazem com cada um. A Política de Privacidade (v2) foi ajustada no mesmo sentido.
 
 > **Rascunho para revisão jurídica — não constitui parecer.** Este documento foi redigido pela equipe do Refogando como material de trabalho para um(a) advogado(a) de LGPD/PI **revisar, corrigir e assinar** antes do go-live. Onde a lei é incerta ou depende de interpretação, o texto **sinaliza expressamente** o ponto para validação profissional (marcado como **[VALIDAR]**). As referências legais são a nossa pesquisa interna (registrada no ADR-0019) e podem estar erradas. Nada aqui deve ser publicado ou tratado como posição oficial sem o sign-off.
 
@@ -14,7 +16,7 @@ Do ponto de vista da LGPD, é essencial separar dois titulares, porque **têm ca
 
 | Titular | Que dado pessoal existe | Como pede remoção hoje |
 |---|---|---|
-| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil, receitas, coleções, avaliações | **self-service autenticado**: exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`) |
+| **A) Usuário do app** (dono da conta) | conta, e-mail, perfil, receitas, salvos, coleções, avaliações, Cardápio (com anotações livres), Listas de compras, Despensa | **self-service autenticado**: exportação (`GET /api/me/export`) e eliminação por anonimização (`POST /api/me/erasure`) |
 | **B) Autor/publisher da receita de terceiro** | **apenas `source_name` (nome) + `source_url` (URL)** de receitas `origin='web_imported'` (`src/db/schema.ts` ~L216-222) | **formulário público** em `/seus-direitos` (sem login) ou e-mail `privacidade@refogando.com`; o operador executa a remoção |
 
 O ponto crítico de #276 é o **titular B**: o dado dele (o nome do autor) é gravado sem que ele seja usuário, então **ele não tem login para se auto-atender**. O canal de takedown existe justamente para ele. A minimização já está implementada de verdade (só nome + URL; foto e headnote nunca copiados), o que reduz muito a superfície — mas não elimina a obrigação de ter um canal público e um fluxo.
@@ -103,6 +105,10 @@ Cada pedido deve gerar entradas de auditoria (a skill DSAR e o Art. 10 da Res. C
 ## 6. Verificação de identidade e eliminação vs. retenção (Arts. 6º III, 16)
 
 - **Identidade (Art. 6º, III — necessidade):** autenticado ⇒ suficiente; não-autenticado ⇒ o mínimo (confirmação pelo contato público já ligado à URL). **Proibido** exigir mais dados pessoais como condição de atendimento.
+- **O que a exportação e a eliminação fazem hoje (titular A):**
+  - **Exportação** (`GET /api/me/export`, `src/server/legal/account-export.ts`): inclui o Cardápio (`mealPlan`, com a anotação livre `note`), as Listas de compras com os itens (`shoppingLists`) e a Despensa (`pantry`). **Não** inclui o ledger da Sugestão de cardápio (`meal_plan_suggestion_event`: só data, modelo, tokens e custo, sem conteúdo do usuário) nem o da Extração (`extraction_event`) (ADR-0036 dec.7, que segue o que já valia para a Extração) — o ledger de imagem (`image_generation`) entra.
+  - **Eliminação** (`POST /api/me/erasure`, `src/server/legal/account-erasure.ts`): **apaga** o Cardápio e a Despensa na mesma transação. As **Listas de compras são mantidas**, ligadas à conta anonimizada, como receitas, avaliações, salvos e coleções (a linha `users` não é apagada, então os `ON DELETE cascade` não disparam). Os ledgers de uso (Sugestão de cardápio, imagem, Extração) também ficam. O expurgo pós-retenção (`account-purge`) só remove fotos de avaliações.
+  - A nota livre da Sugestão de cardápio vai à Anthropic no prompt e não é guardada; a sugestão só vira linha do Cardápio quando o usuário aceita.
 - **Eliminação × retenção legal (Art. 16):** para o **titular A**, um pedido de exclusão de conta deve checar retenções obrigatórias (fiscal/registros) → **bloqueio lógico + anonimização** durante o prazo, eliminação depois. Para o **titular B**, não há retenção fiscal do "nome do autor" — a única razão de manter algo é a **atribuição** (§4.1), que **cede** diante de um pedido de eliminação integral legítimo **[VALIDAR]**.
 
 ---
@@ -125,7 +131,7 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 | **GAP-6** | Formulário de intake + DSAR do titular A | **Fechado.** Formulário (PR #407); exportação e eliminação (PR #410); expurgo de fotos após 180 dias (cron `account-purge`). |
 | **GAP-7** | Alertas de SLA | **Fechado.** Cron diário, alertas 10/13/15, e-mail ao encarregado, painel admin (PRs #408, #415, #416). **Depende do dono:** `RESEND_API_KEY`, `DSAR_MAIL_FROM`, `DSAR_DPO_EMAIL`, `CRON_SECRET`. |
 | **Novo** | Fechamento do ticket | **Fechado.** O painel de SLA tem "Marcar como atendido" e "Recusar" (com motivo): `POST /api/admin/takedown-sla/resolve` muda o status e grava `DSAR_FULFILLED` (hash) ou `DSAR_REJECTED` (motivo). `DSAR_IDENTITY_VERIFIED` continua sem gravação (a verificação é feita fora do app). |
-| **Novo** | Retenção | **Aberto (advogado + #473).** Tickets de takedown, log de auditoria e conteúdo de contas eliminadas sem prazo definido. |
+| **Novo** | Retenção | **Aberto (advogado + #473).** Tickets de takedown, log de auditoria e conteúdo de contas eliminadas sem prazo definido — inclusive as Listas de compras, que a eliminação mantém (§6), e os ledgers de uso. |
 
 **O que ainda bloqueia ligar a Descoberta na web (#276):** o **sign-off jurídico** dos pontos **[VALIDAR]** — sobretudo §4.1 (quando a atribuição cede) e §7 (base legal) — e a configuração operacional do dono (alias de e-mail e Resend), sem a qual o canal publicado pode não receber pedidos.
 
