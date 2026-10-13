@@ -33,7 +33,7 @@
 ## 5. Próximos passos (aprovados pelo Fernando em 2026-10-13)
 
 Ordem em `respostas-2026-10-13.md` §"Ordem proposta":
-1. Item 1 + J: `'/get-session': false` no rate limit; um refetch de sessão e de notificações por volta à aba (hoje 4 + 2); emenda curta no ADR-0028 (e marcá-lo implementado).
+1. ~~Item 1 + J~~ **feito no PR seguinte** (`useOnTabReturn` em `src/components/use-tab-return.ts`; adendo no ADR-0028): `'/get-session': false` no rate limit; um refetch de sessão e de notificações por volta à aba (hoje 4 + 2); emenda curta no ADR-0028 (e marcá-lo implementado).
 2. Busca: full-text dos títulos e trigram usando os GIN (sem migração, resultado idêntico) + bug do curinga `%`/`_` no ILIKE; cache de 10 min da receita da semana com tag.
 3. Cache das páginas públicas (A): tema por script pré-pintura, leituras do layout com `unstable_cache` + tags.
 4. Migração 1: ingrediente cru do C + colunas normalizadas da Despensa (E). Migração 2: derivados WebP da capa (~1280 px e ~400 px), original guardado, `srcset`, backfill (I).
