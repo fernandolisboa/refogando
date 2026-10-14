@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getImageStore, setImageStore, resetDeps } from '@/server/deps'
 import {
   RealImageStore,
@@ -14,8 +14,9 @@ import {
  * nunca toca rede), Throwing (degradação). `resetDeps()` (no beforeEach global de setup.ts) DEVE
  * zerar o override — senão um store injetado vazaria entre testes.
  *
- * NENHUM teste aqui toca a rede: a impl Real é exercitada só por `owns` (puro) e pela GUARDA de
- * token ausente (lança ANTES de qualquer `put`/`del`). O resto é o Fake.
+ * NENHUM teste aqui toca a rede: a impl Real é exercitada por `owns` (puro), pela GUARDA de token
+ * ausente (lança ANTES de qualquer `put`/`del`) e pelo `get` com o `fetch` global trocado por um dublê
+ * (limites de tempo, redirect e tamanho). O resto é o Fake.
  */
 
 const sampleInput: StoreImageInput = {
@@ -69,6 +70,50 @@ describe('RealImageStore — owns (puro) + guarda de token', () => {
   it('delete de URL estrangeira é no-op mesmo sem token (owns=false ⇒ nem tenta)', async () => {
     const real: ImageStore = new RealImageStore()
     await expect(real.delete(FOREIGN_URL)).resolves.toBeUndefined()
+  })
+})
+
+describe('RealImageStore.get — limites do download (fetch dublê, sem rede)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** Body em stream com `n` pedaços de `size` bytes (sem `content-length`, como um chunked). */
+  function chunked(n: number, size: number): ReadableStream<Uint8Array> {
+    let sent = 0
+    return new ReadableStream({
+      pull(controller) {
+        if (sent++ >= n) return controller.close()
+        controller.enqueue(new Uint8Array(size))
+      },
+    })
+  }
+
+  it('passa timeout e `redirect: error` ao fetch e devolve os bytes', async () => {
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const got = await new RealImageStore().get(BLOB_URL)
+    expect(got?.contentType).toBe('image/png')
+    expect([...got!.data]).toEqual([1, 2, 3])
+    const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+    expect(init.redirect).toBe('error')
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('!ok ⇒ null, como antes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nada', { status: 404 })))
+    expect(await new RealImageStore().get(BLOB_URL)).toBeNull()
+  })
+
+  it('content-length acima de 25 MB ⇒ lança sem ler o body', async () => {
+    const res = new Response(chunked(1, 10), { headers: { 'content-length': String(26 * 1024 * 1024) } })
+    vi.stubGlobal('fetch', vi.fn(async () => res))
+    await expect(new RealImageStore().get(BLOB_URL)).rejects.toMatchObject({ name: 'ImageTooLarge' })
+  })
+
+  it('sem content-length, o stream passa de 25 MB ⇒ lança ao estourar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(chunked(30, 1024 * 1024))))
+    await expect(new RealImageStore().get(BLOB_URL)).rejects.toMatchObject({ name: 'ImageTooLarge' })
   })
 })
 
