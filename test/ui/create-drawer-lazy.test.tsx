@@ -383,6 +383,42 @@ describe('Pedido de abertura pendente (o chunk ainda chegando)', () => {
     await releaseAndExpectClosed(gate)
   })
 
+  it('toque que só arrasta (pointerdown sem click) não cancela, como o Radix com a gaveta aberta', async () => {
+    const { gate, criar } = await pendingOpen()
+
+    fireEvent.pointerDown(screen.getByRole('link', { name: ptBR.app.name }), { pointerType: 'touch' })
+    expect(criar).toHaveAttribute('aria-busy', 'true')
+
+    await act(async () => gate.release())
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker))
+  })
+
+  it('ativação por teclado de um link (click sem pointerdown) cancela o pedido', async () => {
+    const { gate, criar } = await pendingOpen()
+
+    fireEvent.click(screen.getByRole('link', { name: ptBR.app.name }))
+    expect(criar).not.toHaveAttribute('aria-busy')
+
+    await releaseAndExpectClosed(gate)
+  })
+
+  it('com a gaveta pronta e aberta, pointerdown e click dentro dela não a fecham', async () => {
+    const user = userEvent.setup()
+    mockDrawerChunk()
+    await renderHeader()
+    await act(async () => idleCallbacks[0]())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+
+    await user.click(criarButton())
+    const dialog = screen.getByRole('dialog')
+    const title = within(dialog).getByText(ptBR.criarDrawer.tituloPicker)
+    fireEvent.pointerDown(title)
+    fireEvent.click(title)
+    await act(async () => {})
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+  })
+
   it('celular: abrir o menu com o pedido pendente o cancela; a gaveta não empilha sobre o menu', async () => {
     const user = userEvent.setup()
     const gate = deferred()

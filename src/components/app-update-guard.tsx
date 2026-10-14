@@ -13,9 +13,10 @@
  * `import()` não-capturada (a falha de <script> de chunk ele não reconhece, ver abaixo). Hoje é
  * praticamente inerte. O único lazy-import do app é a gaveta "Criar" (`create-drawer-lazy.tsx`,
  * handoff 70), que trata a própria rejeição (vira estado `failed`; o clique navega para `/create`)
- * e por isso nunca chega aqui como `unhandledrejection`. Quem acrescentar outro `import()` mid-screen: capture a rejeição e dê um
- * fallback próprio, ou aceite o reload daqui (e revisite o guard de nav-em-voo ou a persistência de
- * rascunho que o #372 registra como direção, pra não recarregar perdendo tela).
+ * e por isso nunca chega aqui como `unhandledrejection`. Quem acrescentar outro `import()`
+ * mid-screen: capture a rejeição e dê um fallback próprio, ou aceite o reload daqui (e revisite o
+ * guard de nav-em-voo ou a persistência de rascunho que o #372 registra como direção, pra não
+ * recarregar perdendo tela).
  *
  * Falha de <script> de chunk: o listener de captura abaixo a vê, mas como `Event` de recurso, sem
  * `error` nem `message`, e `isChunkLoadError` não a reconhece (o erro com nome `ChunkLoadError` só

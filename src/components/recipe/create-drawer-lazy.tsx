@@ -100,9 +100,10 @@ export function preloadCreateDrawer(): void {
       if (snapshot.status === 'loading') publish({ status: 'ready', Drawer: m.CreateDrawer })
     },
     (err: unknown) => {
-      console.warn('[criar] a gaveta não carregou; o "Criar" vai abrir /create', err)
       // Idem: a gaveta registrada pela `/create` vale mais que a falha do chunk lazy.
-      if (snapshot.status === 'loading') publish({ status: 'failed', Drawer: null })
+      if (snapshot.status !== 'loading') return
+      console.warn('[criar] a gaveta não carregou; o "Criar" vai abrir /create', err)
+      publish({ status: 'failed', Drawer: null })
     },
   )
 }
@@ -185,7 +186,9 @@ export function LazyCreateDrawer({
   // da página nova ou do menu mobile. Fase de captura: o cancelamento vem antes do handler do
   // alvo (um link navega, o hambúrguer abre o menu). O `click` cobre a ativação por teclado
   // (Enter num link ou no hambúrguer), que não gera pointerdown. O "Criar" fica de fora: o
-  // `onClick` dele é que cancela (um pointerdown aqui o faria reabrir no clique seguinte).
+  // `onClick` dele é que cancela (um pointerdown aqui o faria reabrir no clique seguinte). Toque
+  // (`pointerType === 'touch'`) espera o `click`, como o `DismissableLayer` do Radix: um arrasto
+  // para rolar a página não fechava a gaveta aberta, então também não desfaz o pedido.
   useEffect(() => {
     if (!pending) return
     const cancel = () => onOpenChange(false)
@@ -195,6 +198,7 @@ export function LazyCreateDrawer({
     const onPointerOrClick = (e: Event) => {
       const target = e.target
       if (target instanceof Element && target.closest(`[${CREATE_DRAWER_TRIGGER_ATTR}]`)) return
+      if (e.type === 'pointerdown' && (e as PointerEvent).pointerType === 'touch') return
       cancel()
     }
     document.addEventListener('keydown', onKeyDown)
