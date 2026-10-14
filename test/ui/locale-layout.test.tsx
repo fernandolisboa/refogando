@@ -64,7 +64,7 @@ vi.mock('@/components/i18n/cozinha-vocab-provider', () => ({
 import LocaleLayout from '@/app/[locale]/layout'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
-import { THEME_INIT_SCRIPT } from '@/lib/theme'
+import { THEME_INIT_SCRIPT } from '@/lib/theme-script'
 
 type ElementWithProps = { props: Record<string, unknown> }
 /** Acha o 1º nó cujo props casa o predicado, BFS na árvore de elementos React devolvida. */
@@ -205,6 +205,27 @@ describe('LocaleLayout (#228)', () => {
       falhar()
       const tree = await render('pt-BR')
       expect(findNode(tree, (p) => typeof p.lang === 'string')).not.toBeNull()
+      expect(connection).toHaveBeenCalledTimes(1)
+    })
+
+    it('as duas leituras começam juntas (em paralelo), não uma depois da outra', async () => {
+      let release!: (terms: unknown[]) => void
+      loadVocab.mockReturnValue(new Promise<unknown[]>((resolve) => (release = resolve)))
+      const pending = render('pt-BR')
+      // O vocabulário ainda não respondeu e a config já foi pedida.
+      await vi.waitFor(() => expect(loadConfig).toHaveBeenCalledTimes(1))
+      release([])
+      await pending
+    })
+
+    it('uma leitura falha e a outra não: só a que falhou degrada', async () => {
+      loadVocab.mockRejectedValue(new Error('neon'))
+      const link = { platform: 'instagram', url: 'https://www.instagram.com/refogando', enabled: true }
+      loadConfig.mockResolvedValue({ variantEnabled: true, socialLinks: [link] })
+      const tree = await render('pt-BR')
+      expect(findNode(tree, (p) => Array.isArray(p.value))?.props.value).toEqual([])
+      expect(findNode(tree, (p) => typeof p.enabled === 'boolean')?.props.enabled).toBe(true)
+      expect(findNode(tree, (p) => Array.isArray(p.socialLinks))?.props.socialLinks).toEqual([link])
       expect(connection).toHaveBeenCalledTimes(1)
     })
 

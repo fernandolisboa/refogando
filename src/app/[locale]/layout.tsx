@@ -14,11 +14,11 @@ import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
-import { DEFAULT_THEME_CLASS, THEME_INIT_SCRIPT } from '@/lib/theme'
+import { DEFAULT_THEME_CLASS } from '@/lib/theme'
+import { THEME_INIT_SCRIPT } from '@/lib/theme-script'
 import { getDb } from '@/server/deps'
-import { loadLayoutAppConfig, loadLayoutCozinhaVocab } from '@/server/layout-data'
+import { loadLayoutAppConfig, loadLayoutCozinhaVocab, type LayoutAppConfig } from '@/server/layout-data'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
-import type { SocialLink } from '@/domain/social-links-config'
 
 export const metadata: Metadata = {
   title: 'Refogando',
@@ -65,38 +65,42 @@ export default async function LocaleLayout({
   // `connection()` na degradação: a página degradada NÃO pode virar HTML estático/ISR (ficaria sem
   // cozinhas até a próxima revalidação). No pré-render (build ou regeneração ISR) ele marca a rota como
   // dinâmica e aborta aquele pré-render; num request já dinâmico não faz nada, e a degradação é a de
-  // sempre. No build sem banco (CI) as rotas simplesmente saem dinâmicas, como antes.
-  let cozinhaVocab: CozinhaOption[] = []
-  let layoutDataFailed = false
-  try {
-    cozinhaVocab = localizeCozinhaVocab(await loadLayoutCozinhaVocab(getDb()), locale)
-  } catch {
-    cozinhaVocab = []
-    layoutDataFailed = true
-  }
-
-  // #423 + #451: do app_config o layout só usa o liga/desliga do "gerar 2" e os links sociais do footer
-  // (já filtrados por `enabled` no servidor — o footer, client, só recebe o que renderiza; link
-  // desligado não vaza no HTML). Data Cache com tag (`loadLayoutAppConfig`, invalidado no PUT de
-  // `/api/admin/config`). Mesmo tratamento gracioso da cozinha: soluço do Neon ⇒ variar2 desligado +
-  // footer sem links (degrada, nunca tela quebrada). O servidor revalida `variar2` de qualquer forma.
-  let variantEnabled = false
-  let socialLinks: SocialLink[] = []
-  try {
-    const cfg = await loadLayoutAppConfig(getDb())
-    variantEnabled = cfg.variantEnabled
-    socialLinks = cfg.socialLinks
-  } catch {
-    variantEnabled = false
-    socialLinks = []
-    layoutDataFailed = true
-  }
-  if (layoutDataFailed) await connection()
+  // sempre. No build sem banco (CI) as rotas simplesmente saem dinâmicas, como antes. Numa regeneração
+  // ISR só chega aqui quem não tem entrada nenhuma no Data Cache: com uma entrada vencida (por tempo ou
+  // pela tag, perfil `'max'`), o `unstable_cache` devolve o valor antigo quando o banco falha.
+  //
+  // As duas leituras são independentes e rodam em paralelo, cada uma com a sua degradação (`null` =
+  // falhou; o `try` dentro de cada `async` pega também o `getDb()` que lança sem `DATABASE_URL`, como no
+  // build da CI).
+  const [vocabRead, configRead] = await Promise.all([
+    (async (): Promise<CozinhaOption[] | null> => {
+      try {
+        return localizeCozinhaVocab(await loadLayoutCozinhaVocab(getDb()), locale)
+      } catch {
+        return null
+      }
+    })(),
+    // #423 + #451: do app_config o layout só usa o liga/desliga do "gerar 2" e os links sociais do footer
+    // (já filtrados por `enabled` no servidor — o footer, client, só recebe o que renderiza; link
+    // desligado não vaza no HTML). Data Cache com tag (`loadLayoutAppConfig`, invalidado no PUT de
+    // `/api/admin/config`). Mesmo tratamento gracioso da cozinha: soluço do Neon ⇒ variar2 desligado +
+    // footer sem links (degrada, nunca tela quebrada). O servidor revalida `variar2` de qualquer forma.
+    (async (): Promise<LayoutAppConfig | null> => {
+      try {
+        return await loadLayoutAppConfig(getDb())
+      } catch {
+        return null
+      }
+    })(),
+  ])
+  if (vocabRead === null || configRead === null) await connection()
+  const cozinhaVocab = vocabRead ?? []
+  const { variantEnabled, socialLinks } = configRead ?? { variantEnabled: false, socialLinks: [] }
 
   return (
     <html lang={locale} className={DEFAULT_THEME_CLASS} suppressHydrationWarning>
       <head>
-        {/* Tema antes da primeira pintura (ver `THEME_INIT_SCRIPT` em src/lib/theme.ts). Inline e
+        {/* Tema antes da primeira pintura (ver `THEME_INIT_SCRIPT` em src/lib/theme-script.ts). Inline e
             síncrono de propósito: um `next/script` rodaria depois da pintura. A CSP permite
             (`script-src 'unsafe-inline'`, next.config.ts). */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />

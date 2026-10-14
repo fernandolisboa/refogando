@@ -6,13 +6,8 @@ import { RequestCookies } from 'next/dist/server/web/spec-extension/cookies'
 
 import { LocaleProvider } from '@/i18n/provider'
 import { ThemeToggle } from '@/components/theme-toggle'
-import {
-  DEFAULT_THEME_CLASS,
-  THEME_COOKIE,
-  THEME_INIT_SCRIPT,
-  applyThemeFromCookie,
-  resolveThemeClass,
-} from '@/lib/theme'
+import { DEFAULT_THEME_CLASS, THEMES, THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
+import { THEME_INIT_SCRIPT, applyThemeFromCookie } from '@/lib/theme-script'
 import { ptBR } from '@/i18n/messages/pt-BR'
 
 /**
@@ -46,9 +41,23 @@ function fakeDoc(cookie: string) {
   return { cookie, documentElement: html }
 }
 
+// Casos gerados de CADA valor de `Theme` (um tema novo ganha paridade sem editar esta lista): sozinho,
+// entre outros cookies, com e sem espaço, em maiúsculas, com nome parecido, codificado e o último par
+// vencendo em toda combinação de dois temas.
+const PER_THEME = THEMES.flatMap((t) => [
+  `theme=${t}`,
+  `locale=en-US; theme=${t}`,
+  `theme=${t}; locale=en-US`,
+  `theme=${t};locale=en-US`,
+  `theme=${t.toUpperCase()}`,
+  `xtheme=${t}`,
+  `theme=%${t.charCodeAt(0).toString(16)}${t.slice(1)}`,
+  ...THEMES.map((u) => `theme=${t}; theme=${u}`),
+])
+
 // Sem espaço no começo: o `Headers` (e o HTTP) apara o valor do header, e o `document.cookie` nunca começa
 // com espaço, então esse caso não existe nos dois lados ao mesmo tempo.
-const COOKIES = [
+const EDGE_COOKIES = [
   '',
   'theme=dark',
   'theme=light',
@@ -72,6 +81,7 @@ const COOKIES = [
   'theme=dark=1',
   'a=b; ; theme=dark',
 ]
+const COOKIES = [...new Set([...EDGE_COOKIES, ...PER_THEME])]
 
 beforeEach(() => {
   // Estado limpo entre os testes: o `<html>` como o servidor emite e sem cookie de tema.
