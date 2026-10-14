@@ -54,7 +54,7 @@ Base: `main` em 6b06b5c. Medidas de bundle tiradas de um `next build` de produç
 | F | Popularidade (receita da semana, cozinheiros recomendados, `sort=popularidade`) agrega `recipe_save`/`recipe_review` inteiras a cada request. | **Resolvido** (handoff 66): o vencedor da receita da semana fica 10 min em cache, invalidado ao salvar a config (§4). `sort=popularidade` e cozinheiros recomendados seguem ao vivo, como combinado. |
 | G | Gaveta "Criar" (~340 KB de fonte) entra no header de toda página. | `next/dynamic` introduz o primeiro lazy chunk; o `AppUpdateGuard` pede revisão quando isso acontecer. |
 | H | Listas sem LIMIT (`/api/me/recipes`, perfil, salvos) e trazendo `passos`/`descricao` que só viram título. | As colunas pesadas saíram no PR seguinte (handoff 65). Paginar muda o que a tela mostra: adiado. |
-| I | Imagens do feed em tamanho cheio (PNG do Gemini) para thumbs de 144 px. | Reencodar (WebP) ou `next/image` muda o pipeline de imagem. |
+| I | Imagens do feed em tamanho cheio (PNG do Gemini) para thumbs de 144 px. | **Resolvido** (handoff 69, migração 0077): todo caminho que cria uma `recipe_image` gera dois derivados WebP com sharp (`detail_url` ~1280 px, `thumb_url` ~400 px) ao lado do original, que não muda; a `<img>` ganha `srcset`/`sizes` e cai no original sem derivados. As imagens antigas entram em lotes pelo cron `/api/cron/image-derivatives`. Card: 1,56 MB → 20 KB (§7). |
 | J | Foco + `visibilitychange` disparam 2 `get-session` e 2 `/api/notifications` ao voltar para a aba (mais 2 `get-session` do próprio client do better-auth). | **Resolvido** junto com o item 1: um refetch de cada por volta à aba. O ADR-0028 não pedia a chamada dupla (o "intencional" estava no código). |
 
 ## 4. Achados C (parcial) e F: medidas (handoff 66)
@@ -139,3 +139,25 @@ Banco local (PG 17.11): a base do §4 (8.000 receitas de catálogo, 12.200 tradu
 **Equivalência.** (a) `test/integration/ingredient-index-equivalence.test.ts`: num corpus adversarial (acento, caixa, largura total, ligadura, emoji, NBSP, tab e quebra de linha, pontuação pura, NULL e vazio; pt-BR, en-US, es-ES, `pt`, en-GB), cada coluna gerada é igual, linha a linha, à expressão que a consulta antiga calculava (e acompanha INSERT e UPDATE); o `ingredient_raw_hit` antigo (copiado literal) e o novo dão os mesmos pares (Receita, termo) em 41 conjuntos de termos, anônimo e com dois viewers; a Despensa antiga (a query de hoje com cada coluna trocada pela expressão que ela guarda) e a nova dão a mesma resposta em 48 combinações (quatro despensas, dois viewers, com e sem básicos, três locales); os GIN atendem o `@@` de cada braço. (b) No banco local reduzido (860 Receitas, 8.480 Itens), o módulo de `main` contra o novo: `searchRecipes` em 864 combinações (54 consultas × any/all × pt-BR/en-US × anônimo/dono × relevância/popularidade; 736 com resultado), `loadPantryMatches` em 12 e o "Cozinhei" (`withUsed` + `onlyRecipeId`) em 400 (380 não vazias): nenhuma diferença. (c) O SQL da Despensa de `main` é, byte a byte, o de hoje com `ri.raw_text_norm`/`it.nome_norm` trocados pela expressão (fora as linhas de comentário).
 
 **Custo da migração.** A reescrita de `recipe_ingredient` levou 326 ms com 40.000 Itens no banco local; em produção (~2.400 Itens) são dezenas de ms sob ACCESS EXCLUSIVE (leitura de Itens bloqueada nesse intervalo).
+
+## 7. Achado I: derivados WebP da Imagem da receita (handoff 69, migração 0077)
+
+**Antes.** Todo card, miniatura e capa servia o `blob_url` da `recipe_image`: o PNG que o Gemini devolve (~1,5 MB a 1024²) ou a foto enviada (até 2 MB, sem reencode). Um feed de 20 cards baixava ~30 MB de imagem para slots de 128–144 px.
+
+**O que mudou.**
+- Migração 0077: `recipe_image.thumb_url`, `detail_url` (NULL = sem derivado) e `derivatives_attempted_at` (fila do backfill), com o CHECK `recipe_image_derivatives_pair_chk` (os dois juntos ou nenhum). Só ADD COLUMN nullable sem default e um CHECK, num ALTER TABLE, com `lock_timeout` de 5 s.
+- Escrita (`src/server/images/image-derivatives.ts`): upload do dono e do catálogo e a geração por IA (`generateAndStoreGalleryImage`) reduzem o original com sharp em paralelo com o `put` dele, sobem os dois WebP (`recipes/w1280/`, `recipes/w400/`) e gravam as URLs na mesma linha. Falha nos derivados loga `[imagens] derivados não gerados (<etapa>): <erro>` e segue com as colunas NULL; o upload e a geração respondem como antes.
+- Leitura: feed, Busca, Seguindo, receita da semana, perfil público, semelhantes, cozinheiros recomendados, Minhas criações, Salvos/coleções, Cardápio, Despensa, capa do detalhe e a galeria do estúdio do dono ganham `srcset` (thumb 400w, detail 1280w) e `sizes` do slot (`IMAGE_SIZES` em `src/domain/image-variants.ts`). `src` segue sendo o original. Ficam no original: OG/Twitter e o `image` do JSON-LD (scrapers de preview tratam WebP de forma desigual e pedem ≥1200 px; é um acesso por compartilhamento), as telas do Curador (moderação, fila de revisão, comparador, estúdio do catálogo: julgar a imagem pede o arquivo inteiro) e o preview da geração no estúdio do dono.
+- Imagens antigas: cron diário `/api/cron/image-derivatives` (10:30 UTC), 25 imagens ou 40 s por passada, faces públicas primeiro; idempotente e não destrutivo.
+
+**Medidas** (sharp 0.34.5, WebP q80; PNG sintético "tipo Gemini": textura fractal `feTurbulence` + 120 formas com borda, o gerador de `test/integration/image-derivatives.test.ts`):
+
+| Original | PNG | `detail_url` | `thumb_url` | sharp (mediana de 5) |
+|---|---|---|---|---|
+| 1024×1024 | 1.564 KB | 1024×1024, 66 KB (24×) | 400×400, 20 KB (78×) | 142 ms |
+| 1536×1024 | 2.514 KB | 1280×853, 73 KB (35×) | 400×267, 16 KB (162×) | 212 ms |
+
+Um feed de 20 cards cai de ~31 MB para ~0,4 MB. O WebP de foto real tende a ser um pouco maior que o desta textura; a ordem de grandeza é a mesma.
+
+**Qual derivado o navegador escolhe** (`test/unit/image-variants.test.ts`, regra conservadora do Safari: o menor candidato com densidade ≥ DPR): card em lista (128–144 px) ⇒ thumb em celular até DPR 3 e em desktop até DPR 2; miniaturas ⇒ thumb; capa do detalhe ⇒ detail; cards de Minhas criações/Salvos (~350 px) ⇒ thumb em DPR 1, detail acima.
+

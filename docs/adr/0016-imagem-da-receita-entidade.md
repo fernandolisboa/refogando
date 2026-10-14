@@ -27,3 +27,13 @@ A entidade ainda é o lar natural da **proveniência da imagem** (e do selo "ger
 - **Avatar do Usuário NÃO usa esta entidade:** avatar é 1:1 com a pessoa, sem compartilhamento/carry-forward, e vive em `users.image` (URL). Os dois reusam só o **primitivo de storage** (`storeImage`/`deleteImage`), não a tabela `recipe_image`.
 - **Moderação:** o Curador ganha a ação **"remover só a imagem"** (seta `moderated_at`, não apaga o blob nem zera o `image_id`); o Owner continua vendo no privado. Eixo **ortogonal e rastreável** a remover-a-receita-do-pool (ADR-0003), espelhando `recipe.moderation_removed_at`. O gate de pool de imagem ganha `AND image.moderated_at IS NULL`.
 - O blob de storage é Vercel Blob atrás de interface fina (ver adendo no ADR-0010); o contrato de geração de IA que **produz** imagens `ai_generated` está no ADR-0017.
+
+## Atualização (2026-10-14, handoff 69, migração 0077): derivados WebP para servir
+
+Achado I da auditoria de performance (`docs/perf/2026-10-13-auditoria.md` §7): o feed servia o PNG cheio do Gemini (~1,5 MB) num thumb de 128–144 px. Decidido com o dono em 2026-10-13 ("manter o original intocado"):
+
+- **O original (`blob_url`) não muda e segue sendo a fonte de verdade.** A edição imagem-a-imagem do Gemini (ADR-0022) lê dele, e um futuro "baixar original" também. Nada que edita ou regenera lê um derivado.
+- **Derivados só para exibir:** `recipe_image.detail_url` (WebP de ~1280 px de largura, capa do detalhe) e `thumb_url` (~400 px, cards e miniaturas), gerados com sharp e guardados no mesmo Blob (`recipes/w1280/`, `recipes/w400/`) em todo caminho que cria uma `recipe_image` (upload do dono, upload do catálogo, geração por IA). Os dois existem juntos ou nenhum (CHECK `recipe_image_derivatives_pair_chk`). Sem ampliar originais pequenos; orientação EXIF aplicada; imagem animada não ganha derivado.
+- **Best-effort:** falhar nos derivados nunca falha o upload nem a geração; as colunas ficam NULL e a tela usa o original. As imagens anteriores à 0077 (e as que falharam) são preenchidas em lotes pelo cron `/api/cron/image-derivatives`, que só lê o original e só preenche colunas NULL.
+- **Exibição:** a `<img>` mantém `src` = original e ganha `srcset` com os dois derivados mais `sizes` do slot; o navegador escolhe. Mesmo layout, recorte e `alt`. O `srcset` segue o mesmo gate de moderação da foto. OG/Twitter e o `image` do JSON-LD continuam no original; as telas do Curador também.
+- **Ref-count/deleção:** os derivados são parte da linha. Quem apaga a `recipe_image` (APAGAR da galeria, reap do hard-delete) apaga os três blobs depois do commit.
