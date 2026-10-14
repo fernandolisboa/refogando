@@ -1,9 +1,11 @@
 import { sql } from 'drizzle-orm'
+import { revalidateTag, unstable_cache } from 'next/cache'
 import type { Database } from '@/db/client'
 import { loadRecipeOfWeekConfig, loadPopularityConfig } from '@/server/app-config'
 import { loadGlobalRatingAverage } from '@/server/recipe/popularity'
 import { savesAggBodySql, ratingAggBodySql, popularityScoreSql } from '@/server/recipe/search'
 import { projectResult, type SearchHitRow, type SearchResult } from '@/domain/recipe-search-read'
+import { escapeLike } from '@/server/sql/like'
 
 /**
  * "Receita da semana" (#457, ADR-0026) — slot EDITORIAL fixo da home. Server-side, ANÔNIMO (sem
@@ -18,7 +20,8 @@ import { projectResult, type SearchHitRow, type SearchResult } from '@/domain/re
  *  2. FALLBACK MECÂNICO por Popularidade (`recipeId` ausente OU escolha inválida): a receita de
  *     MAIOR score de popularidade (mistura save+nota+frescor, #368) dentre o catálogo aprovado.
  *     Espelha a fórmula EXATA de `search.ts` (`popularityScoreSql`) — MESMA disciplina de
- *     self-exclusão e universo vivo (save/nota de usuário soft-deletado não conta).
+ *     self-exclusão e universo vivo (save/nota de usuário soft-deletado não conta). O VENCEDOR fica
+ *     em cache por 10 min (`RECIPE_OF_WEEK_POPULAR_TAG`); a linha exibida é sempre relida.
  *
  * NÃO fere o guarda-corpo "popularidade-sem-autoridade" (CONTEXT.md, Popularidade): aqui ela não
  * promove nada a catálogo (a receita já É catálogo aprovado) — só ordena qual das JÁ aprovadas
@@ -45,10 +48,60 @@ export async function loadRecipeOfTheWeek(
     // desde a escolha) ⇒ degrada pro fallback abaixo, SEM lançar/quebrar a home.
   }
 
-  const [cfg, globalAvg] = await Promise.all([loadPopularityConfig(db), loadGlobalRatingAverage(db)])
-  const C = globalAvg ?? 3.0 // mesmo fallback em TS de `search.ts` (NUNCA bindar NULL no SQL — ver popularity.ts)
-  const top = await loadMostPopularCatalogRow(db, requestLocale, cfg, C)
-  return top !== null ? projectResult(top, requestLocale) : null
+  // Fallback por Popularidade: o vencedor vem do cache de 10 min; a linha exibida é lida AGORA
+  // (`loadChosenCatalogRow`, busca por PK com o mesmo gate do agregado).
+  const cachedId = await unstable_cache(
+    () => loadMostPopularCatalogId(db),
+    RECIPE_OF_WEEK_POPULAR_CACHE_KEY,
+    { revalidate: RECIPE_OF_WEEK_POPULAR_REVALIDATE_S, tags: [RECIPE_OF_WEEK_POPULAR_TAG] },
+  )()
+  if (cachedId !== null) {
+    const row = await loadChosenCatalogRow(db, cachedId, requestLocale)
+    if (row !== null) return projectResult(row, requestLocale)
+  }
+  // Cache sem vencedor (catálogo vazio quando foi preenchido) ou o vencedor guardado deixou de ser
+  // elegível (removido pela moderação, apagado, saiu de `approved`): recalcula ao vivo, como antes do
+  // cache. O valor guardado só é renovado no fim dos 10 min (revalidar durante o render não é permitido).
+  const liveId = await loadMostPopularCatalogId(db)
+  if (liveId === null) return null
+  const row = await loadChosenCatalogRow(db, liveId, requestLocale)
+  return row !== null ? projectResult(row, requestLocale) : null
+}
+
+/**
+ * Cache do vencedor por Popularidade da "Receita da semana" (achado F da auditoria de performance,
+ * 2026-10-13). O agregado (`savesAggBodySql`/`ratingAggBodySql` sobre `recipe_save`/`recipe_review`
+ * inteiras, mais a média global e a config) rodava a cada visita à home sem escolha do Curador.
+ *
+ * O QUE é cacheado: só o `recipe_id` vencedor (ou `null`), por `RECIPE_OF_WEEK_POPULAR_REVALIDATE_S`
+ * segundos, no Data Cache do Next (`unstable_cache`; o app não liga `cacheComponents`, então não há
+ * `use cache`). Uma entrada só, para todos: o vencedor não depende de quem vê (a home é anônima, não há
+ * viewer na query) nem do idioma (candidatos e score não leem locale; o idioma só escolhe o título).
+ *
+ * O QUE NÃO é cacheado: a linha exibida (título, slug, imagem). Ela é lida a cada request por PK
+ * (`loadChosenCatalogRow`), que RE-VALIDA a elegibilidade com o mesmo gate do agregado (catálogo,
+ * `approved`, não-`playful`, não-removida). Por isso uma receita cacheada não sobrevive à remoção pela
+ * moderação, à exclusão nem à saída de `approved` (o catálogo não tem dono, então "ficar privada" não se
+ * aplica), e uma edição de título ou a moderação da imagem aparecem na hora. Escolhemos re-checar na
+ * leitura em vez de invalidar a tag em cada escrita: são muitos caminhos de escrita (moderação, curadoria,
+ * exclusão, purge) e a checagem custa uma busca por PK que a home já fazia para montar a linha.
+ *
+ * INVALIDAÇÃO: `PUT /api/admin/config` chama `revalidateRecipeOfWeekPopularCache()` quando grava
+ * `recipeOfWeek` ou `popularity` (os pesos mudam o vencedor). A escolha do Curador nunca passa pelo cache
+ * (a config é lida a cada request), então aparece na hora; limpar a escolha volta para um vencedor
+ * recalculado. `sort=popularidade` da Busca e os cozinheiros recomendados seguem ao vivo.
+ */
+export const RECIPE_OF_WEEK_POPULAR_TAG = 'receita-da-semana:popularidade'
+export const RECIPE_OF_WEEK_POPULAR_REVALIDATE_S = 600
+const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v1']
+
+/**
+ * Expira na hora o vencedor cacheado (`{ expire: 0 }`: o próximo request recalcula, sem servir o valor
+ * antigo; o perfil `'max'` serviria o antigo uma vez, em stale-while-revalidate). Só em Route Handler ou
+ * Server Action: o Next recusa `revalidateTag` durante o render.
+ */
+export function revalidateRecipeOfWeekPopularCache(): void {
+  revalidateTag(RECIPE_OF_WEEK_POPULAR_TAG, { expire: 0 })
 }
 
 /**
@@ -122,7 +175,8 @@ export type RecipeOfWeekSearchHit = { recipeId: string; titulo: string; slug: st
  * pela rota (`requireRole('admin')`); esta função em si é só a query. `titulo`/`slug` do locale
  * PEDIDO — sem tradução naquele locale ⇒ `titulo` cai no ORIGINAL (a receita ainda aparece na
  * busca do curador, mas sem link direto até traduzir). `q` vazio/só-espaço ⇒ `[]` (não lista o
- * catálogo inteiro por engano).
+ * catálogo inteiro por engano). `%`, `_` e `\` digitados casam literalmente (`escapeLike`; antes viravam
+ * curinga do ILIKE).
  */
 export async function searchCatalogApprovedRecipes(
   db: Database,
@@ -141,7 +195,7 @@ export async function searchCatalogApprovedRecipes(
       AND r.curation_status = 'approved'
       AND r.result_kind <> 'playful'
       AND r.moderation_removed_at IS NULL
-      AND COALESCE(req_t.titulo, orig_t.titulo) ILIKE ${'%' + q + '%'}
+      AND COALESCE(req_t.titulo, orig_t.titulo) ILIKE ${'%' + escapeLike(q) + '%'}
     ORDER BY COALESCE(req_t.titulo, orig_t.titulo)
     LIMIT ${RECIPE_OF_WEEK_SEARCH_LIMIT}
   `)
@@ -177,49 +231,30 @@ export async function loadCatalogApprovedRecipeTitle(
   return row ? { recipeId: row.recipe_id, titulo: row.titulo, slug: row.slug } : null
 }
 
-/** Fallback: a receita de MAIOR score de Popularidade dentre o catálogo aprovado (top-1). */
-async function loadMostPopularCatalogRow(
-  db: Database,
-  requestLocale: string,
-  cfg: Awaited<ReturnType<typeof loadPopularityConfig>>,
-  C: number,
-): Promise<SearchHitRow | null> {
-  const rows = await db.execute<SearchHitRow>(sql`
+/**
+ * Fallback: o id da receita de MAIOR score de Popularidade dentre o catálogo aprovado (top-1). A linha de
+ * exibição sai de `loadChosenCatalogRow` (mesmo gate, mesmas colunas e joins que esta query projetava),
+ * para o vencedor poder ser cacheado sem cachear título/imagem. Os joins de tradução e imagem saíram
+ * daqui: são 1:1 (único por `recipe_id, locale`; imagem por PK), então não mudavam o top-1.
+ */
+async function loadMostPopularCatalogId(db: Database): Promise<string | null> {
+  const [cfg, globalAvg] = await Promise.all([loadPopularityConfig(db), loadGlobalRatingAverage(db)])
+  const C = globalAvg ?? 3.0 // mesmo fallback em TS de `search.ts` (NUNCA bindar NULL no SQL — ver popularity.ts)
+  const rows = await db.execute<{ recipe_id: string }>(sql`
     WITH candidates AS (
-      SELECT r.id AS recipe_id, r.origin AS origin, r.original_locale AS original_locale,
-             r.owner_id AS owner_id, r.image_id AS image_id, r.created_at AS created_at
+      SELECT r.id AS recipe_id, r.created_at AS created_at
       FROM recipe r
       WHERE r.origin = 'catalog'
         AND r.curation_status = 'approved'
         AND r.result_kind <> 'playful'
         AND r.moderation_removed_at IS NULL
     )
-    SELECT
-      c.recipe_id AS recipe_id,
-      c.origin AS origin,
-      c.original_locale AS original_locale,
-      c.owner_id AS owner_id,
-      'catalogo' AS section,
-      req_t.titulo AS requested_titulo,
-      req_t.provenance AS requested_provenance,
-      orig_t.titulo AS original_titulo,
-      orig_t.provenance AS original_provenance,
-      NULL AS owner_name,
-      NULL AS owner_handle,
-      ri.blob_url AS image_url,
-      ri.provenance AS image_provenance,
-      req_t.slug AS slug
+    SELECT c.recipe_id AS recipe_id
     FROM candidates c
     LEFT JOIN (${savesAggBodySql}) sv ON sv.recipe_id = c.recipe_id
     LEFT JOIN (${ratingAggBodySql}) rt ON rt.recipe_id = c.recipe_id
-    LEFT JOIN recipe_translation req_t
-      ON req_t.recipe_id = c.recipe_id AND req_t.locale = ${requestLocale}
-    LEFT JOIN recipe_translation orig_t
-      ON orig_t.recipe_id = c.recipe_id AND orig_t.locale = c.original_locale
-    LEFT JOIN recipe_image ri
-      ON ri.id = c.image_id AND ri.moderated_at IS NULL
     ORDER BY (${popularityScoreSql(cfg, C, sql`c.created_at`)}) DESC, c.recipe_id
     LIMIT 1
   `)
-  return rows[0] ?? null
+  return rows[0]?.recipe_id ?? null
 }

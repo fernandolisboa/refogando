@@ -26,7 +26,10 @@ import {
   parseRecipeOfWeekConfig,
   type RecipeOfWeekConfig,
 } from '@/domain/recipe-of-week-config'
-import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
+import {
+  isCatalogRecipeApproved,
+  revalidateRecipeOfWeekPopularCache,
+} from '@/server/recipe/recipe-of-week'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -308,6 +311,12 @@ export async function PUT(req: Request): Promise<Response> {
     })
   } catch {
     return Response.json({ error: 'erro_interno' }, { status: 500 })
+  }
+
+  // O vencedor por Popularidade da "Receita da semana" fica 10 min em cache (recipe-of-week.ts). Os pesos
+  // mudam o vencedor, e limpar a escolha do Curador deve mostrar um vencedor recalculado: expira agora.
+  if (set.popularityConfig !== undefined || set.recipeOfWeekConfig !== undefined) {
+    revalidateRecipeOfWeekPopularCache()
   }
 
   // Relê o estado completo persistido (espelha o GET) — a UI reflete o singleton inteiro.

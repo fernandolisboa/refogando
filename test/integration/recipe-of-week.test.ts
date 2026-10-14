@@ -1,16 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '@/server/deps'
-import { appConfig, recipe } from '@/db/schema'
+import { appConfig, recipe, recipeImage, recipeTranslation } from '@/db/schema'
 import {
   loadRecipeOfTheWeek,
   isCatalogRecipeApproved,
   searchCatalogApprovedRecipes,
   loadCatalogApprovedRecipeTitle,
+  RECIPE_OF_WEEK_POPULAR_TAG,
 } from '@/server/recipe/recipe-of-week'
 import { GET as highlightSearchGET } from '@/app/api/admin/catalog/highlight-search/route'
-import { seedRecipe, seedTranslation, seedSave, seedRemovedFromPool } from '../helpers/recipes'
+import { PUT as adminConfigPUT } from '@/app/api/admin/config/route'
+import { DEFAULT_POPULARITY_CONFIG } from '@/domain/popularity'
+import {
+  seedRecipe,
+  seedTranslation,
+  seedSave,
+  seedRemovedFromPool,
+  seedRecipeImage,
+} from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
+import { cachedEntryCount, revalidatedTags } from '../helpers/next-cache'
 
 const db = () => getDb()
 
@@ -98,6 +108,138 @@ describe('loadRecipeOfTheWeek (#457)', () => {
   })
 })
 
+/** Catálogo aprovado com título pt-BR (e en-US opcional). */
+async function seedCatalogRecipe(tituloPt: string, tituloEn?: string): Promise<string> {
+  const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+  await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: tituloPt, provenance: 'escrita_por_pessoa' })
+  if (tituloEn) {
+    await seedTranslation({ recipeId: id, locale: 'en-US', titulo: tituloEn, provenance: 'automatica_revisada' })
+  }
+  return id
+}
+
+let fanSeq = 0
+/** `n` saves de usuários distintos (self-save não conta). */
+async function giveSaves(recipeId: string, n: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    const userId = await seedUser({ email: `row-cache-fan${++fanSeq}@ex.com` })
+    await seedSave({ userId, recipeId })
+  }
+}
+
+async function adminPut(body: unknown): Promise<Response> {
+  const { headers } = await seedSessionHeaders({ email: `row-cache-admin${++fanSeq}@ex.com`, role: 'admin' })
+  return adminConfigPUT(
+    new Request('http://localhost/api/admin/config', { method: 'PUT', headers, body: JSON.stringify(body) }),
+  )
+}
+
+/**
+ * Cache de 10 min do vencedor por Popularidade (achado F, auditoria de performance 2026-10-13). O
+ * `next/cache` é o dublê de test/helpers/next-cache.ts (registrado em test/setup.ts, zerado por teste).
+ */
+describe('loadRecipeOfTheWeek — cache do vencedor por Popularidade (achado F)', () => {
+  it('o vencedor fica em cache: popularidade nova só aparece depois da invalidação pelo admin', async () => {
+    const a = await seedCatalogRecipe('Bolo A')
+    const b = await seedCatalogRecipe('Bolo B')
+    await giveSaves(a, 2)
+
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+    expect(cachedEntryCount()).toBe(1)
+
+    // B passa A em popularidade: o slot segue em A enquanto o vencedor estiver em cache.
+    await giveSaves(b, 5)
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+
+    // Salvar os pesos de popularidade expira o vencedor na hora.
+    expect((await adminPut({ popularity: DEFAULT_POPULARITY_CONFIG })).status).toBe(200)
+    expect(revalidatedTags()).toEqual([{ tag: RECIPE_OF_WEEK_POPULAR_TAG, profile: { expire: 0 } }])
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(b)
+  })
+
+  it('salvar a Receita da semana invalida; salvar outro eixo da config não', async () => {
+    await seedCatalogRecipe('Bolo único')
+    expect((await adminPut({ catalogDisclosure: { enabled: true, text: 'Aviso' } })).status).toBe(200)
+    expect(revalidatedTags()).toEqual([])
+    expect((await adminPut({ recipeOfWeek: { recipeId: null } })).status).toBe(200)
+    expect(revalidatedTags()).toEqual([{ tag: RECIPE_OF_WEEK_POPULAR_TAG, profile: { expire: 0 } }])
+  })
+
+  it('a escolha do Curador aparece na hora, mesmo com um vencedor em cache', async () => {
+    const popular = await seedCatalogRecipe('Bolo popular')
+    const escolhida = await seedCatalogRecipe('Escolhida pela curadoria')
+    await giveSaves(popular, 3)
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(popular)
+
+    expect((await adminPut({ recipeOfWeek: { recipeId: escolhida } })).status).toBe(200)
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(escolhida)
+  })
+
+  it('o vencedor em cache removido pela moderação some na hora (re-checagem por PK)', async () => {
+    const a = await seedCatalogRecipe('Bolo A')
+    const b = await seedCatalogRecipe('Bolo B')
+    await giveSaves(a, 3)
+    await giveSaves(b, 1)
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+
+    const curatorId = await seedUser({ email: 'row-cache-curator@ex.com' })
+    await seedRemovedFromPool({ recipeId: a, curatorId })
+    // Sem invalidação: o id guardado (A) não passa no gate e o vencedor é recalculado ao vivo.
+    expect(revalidatedTags()).toEqual([])
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(b)
+  })
+
+  it('o vencedor em cache que sai de approved ou é apagado some na hora', async () => {
+    const a = await seedCatalogRecipe('Bolo A')
+    const b = await seedCatalogRecipe('Bolo B')
+    const c = await seedCatalogRecipe('Bolo C')
+    await giveSaves(a, 4)
+    await giveSaves(b, 2)
+    await giveSaves(c, 1)
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+
+    await db().update(recipe).set({ curationStatus: 'rejected' }).where(eq(recipe.id, a))
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(b)
+
+    await db().delete(recipe).where(eq(recipe.id, b))
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(c)
+  })
+
+  it('uma entrada só para os dois idiomas; título e imagem relidos a cada request', async () => {
+    const a = await seedCatalogRecipe('Bolo de fubá', 'Cornmeal cake')
+    const curatorId = await seedUser({ email: 'row-cache-img@ex.com' })
+    const imageId = await seedRecipeImage({ recipeId: a, provenance: 'user_photo' })
+
+    const pt = await loadRecipeOfTheWeek(db(), 'pt-BR')
+    const en = await loadRecipeOfTheWeek(db(), 'en-US')
+    expect(pt?.recipeId).toBe(a)
+    expect(en?.recipeId).toBe(a)
+    expect(pt?.displayedTitle).toBe('Bolo de fubá')
+    expect(en?.displayedTitle).toContain('Cornmeal cake')
+    expect(pt?.imageUrl).toBeDefined()
+    expect(cachedEntryCount()).toBe(1) // o vencedor não depende do idioma
+
+    // Edição de título e moderação da imagem depois do cache aparecem já no próximo request.
+    await db()
+      .update(recipeTranslation)
+      .set({ titulo: 'Bolo de fubá cremoso' })
+      .where(and(eq(recipeTranslation.recipeId, a), eq(recipeTranslation.locale, 'pt-BR')))
+    await db()
+      .update(recipeImage)
+      .set({ moderatedAt: new Date(), moderatedReason: 'teste', moderatedBy: curatorId })
+      .where(eq(recipeImage.id, imageId))
+    const depois = await loadRecipeOfTheWeek(db(), 'pt-BR')
+    expect(depois?.displayedTitle).toBe('Bolo de fubá cremoso')
+    expect(depois?.imageUrl).toBeUndefined()
+  })
+
+  it('catálogo vazio quando o cache foi preenchido: a primeira receita aprovada aparece sem esperar', async () => {
+    expect(await loadRecipeOfTheWeek(db(), 'pt-BR')).toBeNull()
+    const a = await seedCatalogRecipe('Primeira do catálogo')
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+  })
+})
+
 describe('isCatalogRecipeApproved (#457)', () => {
   it('true para catálogo aprovado; false para pending/comunidade/removida', async () => {
     const approved = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
@@ -131,6 +273,23 @@ describe('searchCatalogApprovedRecipes / loadCatalogApprovedRecipeTitle (#457, p
 
     const hits = await searchCatalogApprovedRecipes(db(), { q: 'limão', requestLocale: 'pt-BR' })
     expect(hits).toEqual([{ recipeId: alvo, titulo: 'Torta de limão siciliano', slug: null }])
+  })
+
+  it('"%", "_" e "\\" digitados casam literalmente (antes eram curinga do ILIKE)', async () => {
+    const integral = await seedCatalogRecipe('Bolo 100% integral')
+    await seedCatalogRecipe('Bolo 1000 folhas') // '%100%%' antigo casava este também
+    const pao = await seedCatalogRecipe('Pão de queijo') // '%p_o%' antigo casava 'pão'
+    const sublinhado = await seedCatalogRecipe('Receita p_o teste')
+    await seedCatalogRecipe('Receita ab teste') // '%a\\b%' antigo = '%ab%'
+    const barra = await seedCatalogRecipe('Receita a\\b teste')
+
+    const ids = async (q: string) =>
+      (await searchCatalogApprovedRecipes(db(), { q, requestLocale: 'pt-BR' })).map((h) => h.recipeId)
+    expect(await ids('100%')).toEqual([integral])
+    expect(await ids('p_o')).toEqual([sublinhado])
+    expect(await ids('a\\b')).toEqual([barra])
+    // Controle positivo: sem curinga a busca segue igual.
+    expect(await ids('queijo')).toEqual([pao])
   })
 
   it('q vazio/só-espaço ⇒ [] (não lista o catálogo inteiro)', async () => {
