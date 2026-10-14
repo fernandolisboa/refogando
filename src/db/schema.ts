@@ -425,6 +425,18 @@ export const recipeImage = pgTable(
     // false: um ADD COLUMN com default constante é metadata-only no Postgres moderno (sem rewrite) —
     // seguro na tabela populada do prod; linhas existentes ficam false.
     reviewRequired: boolean('review_required').notNull().default(false),
+    // ── Derivados WebP para servir (achado I da auditoria de performance, migração 0077) ──────
+    // O `blob_url` segue sendo o ORIGINAL intocado: a edição imagem-a-imagem do Gemini (#285) lê
+    // dele, e um futuro "baixar original" também. Os derivados são cópias reduzidas, só para EXIBIR:
+    // `detail_url` (~1280 px de largura, capa do detalhe) e `thumb_url` (~400 px, cards e miniaturas).
+    // NULL = sem derivado (falhou, ou imagem anterior à 0077 ainda não preenchida pelo backfill) ⇒ a
+    // tela cai no original. Os dois andam JUNTOS (CHECK abaixo): o `srcset` nunca fica com um só
+    // tamanho. Escritos na criação (`createGalleryImage`) ou pelo backfill, que só preenche NULL.
+    thumbUrl: text('thumb_url'),
+    detailUrl: text('detail_url'),
+    // Última tentativa do backfill de derivados (`server/images/derivatives-backfill.ts`). Só
+    // ordena a fila: quem falhou vai para o fim e a falha permanente de uma imagem não trava as outras.
+    derivativesAttemptedAt: timestamp('derivatives_attempted_at', { withTimezone: true }),
   },
   (t) => [
     // Consistência (espelha recipe_moderation_consistency_chk): at e by setados JUNTOS ou ambos NULL.
@@ -432,6 +444,11 @@ export const recipeImage = pgTable(
     check(
       'recipe_image_moderation_consistency_chk',
       sql`(${t.moderatedAt} IS NULL) = (${t.moderatedBy} IS NULL)`,
+    ),
+    // Derivados (0077): os dois tamanhos existem juntos ou nenhum (o `srcset` usa o par).
+    check(
+      'recipe_image_derivatives_pair_chk',
+      sql`(${t.thumbUrl} IS NULL) = (${t.detailUrl} IS NULL)`,
     ),
     // Índice parcial nas imagens moderadas (enxuto — a maioria é NULL).
     index('recipe_image_moderated_idx')

@@ -540,6 +540,13 @@
       "when": 1791966555935,
       "tag": "0076_perf_ingredient_tsv_norm",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1791970990746,
+      "tag": "0077_perf_image_derivatives",
+      "breakpoints": true
     }
   ]
 }
