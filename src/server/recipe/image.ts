@@ -16,6 +16,13 @@ import { pgCode } from '@/server/recipe/visibility' // #285: lê o SQLSTATE p/ t
 import { loadRecipeRows } from '@/server/recipe/load'
 import { loadAppConfig } from '@/server/app-config'
 import { assertImageGenSlotInTx, QuotaExceededError } from '@/server/quota/atomic'
+import {
+  imageRowBlobUrls,
+  renderImageDerivativesSafe,
+  storeImageDerivatives,
+  type ImageDerivativeUrls,
+} from '@/server/images/image-derivatives'
+import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
  * Núcleo com efeito da Imagem da receita (#130/#132/#222, ADR-0016/0017/0022) — o ESTÚDIO de imagem
@@ -75,6 +82,16 @@ export type RecipeImageGenResult =
 /** Tipo da transação do Drizzle (mesmas APIs de query que `Database`). */
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
 
+/**
+ * Os blobs de uma linha `recipe_image`: o original e os derivados WebP (achado I, 0077). Quem APAGA a
+ * linha lê os três (SELECT/RETURNING) e apaga todos depois do commit (`imageRowBlobUrls`).
+ */
+export const IMAGE_BLOB_COLS = {
+  blobUrl: recipeImage.blobUrl,
+  thumbUrl: recipeImage.thumbUrl,
+  detailUrl: recipeImage.detailUrl,
+} as const
+
 export async function applyRecipeImageUpload(input: {
   db: Database
   store: ImageStore
@@ -91,12 +108,16 @@ export async function applyRecipeImageUpload(input: {
   if (!gate || gate.ownerId == null || gate.ownerId !== userId) return { kind: 'not_found' }
 
   // 2. Guarda o blob ANTES de qualquer escrita no banco: se o storage falhar, nada mudou (503).
+  //    Achado I (0077): os derivados WebP são reduzidos em paralelo com o `put` do original e só sobem
+  //    depois dele; falha neles nunca vira erro (colunas NULL ⇒ a tela usa o original).
+  const rendering = renderImageDerivativesSafe(data)
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({ data, contentType, pathPrefix: 'recipes' }))
   } catch {
     return { kind: 'storage' }
   }
+  const derivatives = await storeImageDerivatives(store, await rendering)
 
   // 3. Cria a recipe_image (user_photo) na linhagem e AUTO-SELECIONA (image_id). NÃO reapa (#222).
   try {
@@ -106,6 +127,7 @@ export async function applyRecipeImageUpload(input: {
         provenance: 'user_photo',
         userId,
         lineageId: gate.lineageId,
+        derivatives,
       })
       // E5: reimpõe ownership na escrita (espelha visibility.ts) — defesa-em-profundidade.
       await tx
@@ -115,7 +137,7 @@ export async function applyRecipeImageUpload(input: {
     })
   } catch (err) {
     // A tx falhou DEPOIS do store ⇒ o blob NOVO ficou órfão. Limpa best-effort e relança (500 honesto).
-    await deleteOrphanBlob(store, blobUrl)
+    await deleteOrphanBlobs(store, imageRowBlobUrls({ blobUrl, ...derivatives }))
     throw err
   }
 
@@ -322,6 +344,9 @@ export async function generateAndStoreGalleryImage(input: {
     return { kind: 'generator' }
   }
 
+  // Achado I (0077): derivados WebP reduzidos em paralelo com o `put` do original (o PNG do Gemini fica
+  // intocado: a edição imagem-a-imagem lê dele). Falha nos derivados nunca falha a geração.
+  const rendering = renderImageDerivativesSafe(generated.data)
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({
@@ -332,6 +357,7 @@ export async function generateAndStoreGalleryImage(input: {
   } catch {
     return { kind: 'storage' }
   }
+  const derivatives = await storeImageDerivatives(store, await rendering)
 
   let newImageId: string
   try {
@@ -351,6 +377,7 @@ export async function generateAndStoreGalleryImage(input: {
         usage: generated.usageMetadata,
         model: generated.model ?? model,
         sourceImageId,
+        derivatives,
       })
       // #238 (H4): catálogo AUTO-SELECIONA na MESMA tx (insert+ledger+face atômicos ⇒ retry seguro, sem
       // cobrança dupla). Owner NÃO seleciona (preview #222). NÃO reapa (a galeria mantém tudo).
@@ -360,7 +387,7 @@ export async function generateAndStoreGalleryImage(input: {
       return imageId
     })
   } catch (err) {
-    await deleteOrphanBlob(store, blobUrl)
+    await deleteOrphanBlobs(store, imageRowBlobUrls({ blobUrl, ...derivatives }))
     // #446: cota estourada ATOMICAMENTE (corrida perdida sob a advisory lock) ⇒ 429. O blob recém-gerado
     // já foi limpo acima (a geração foi desperdiçada — inerente à corrida, igual ao recipe-gen).
     if (err instanceof QuotaExceededError) return { kind: 'quota', retryAfterMs: err.retryAfterMs }
@@ -375,6 +402,7 @@ export async function generateAndStoreGalleryImage(input: {
     image: {
       id: newImageId,
       url: blobUrl,
+      ...galleryImageSrcSet(derivatives?.thumbUrl, derivatives?.detailUrl),
       aiGenerated: true,
       selected: autoSelect,
       moderated: false,
@@ -412,6 +440,9 @@ export async function createGalleryImage(
     // #285: parentesco de edição (image-to-image) — a imagem-base de que esta variante foi editada.
     // Ausente/undefined ⇒ gerada do zero / upload (source_image_id null).
     sourceImageId?: string
+    // Achado I (0077): URLs dos derivados WebP já guardados. Ausente/null (falharam) ⇒ colunas NULL, a
+    // tela usa o original e o backfill tenta de novo.
+    derivatives?: ImageDerivativeUrls | null
   },
 ): Promise<string> {
   const { blobUrl, provenance, userId, lineageId, writeLedger, usage, model, reviewRequired } = args
@@ -424,6 +455,8 @@ export async function createGalleryImage(
       lineageId,
       reviewRequired: reviewRequired ?? false,
       sourceImageId: args.sourceImageId ?? null,
+      thumbUrl: args.derivatives?.thumbUrl ?? null,
+      detailUrl: args.derivatives?.detailUrl ?? null,
     })
     .returning({ id: recipeImage.id })
 
@@ -514,7 +547,7 @@ export async function applyRecipeGalleryImageDelete(input: {
 
   // Alcance: a imagem é membro da galeria desta linhagem? Senão not_found (leak-safe).
   const [img] = await db
-    .select({ blobUrl: recipeImage.blobUrl })
+    .select(IMAGE_BLOB_COLS)
     .from(recipeImage)
     .where(and(eq(recipeImage.id, imageId), eq(recipeImage.lineageId, gate.lineageId)))
     .limit(1)
@@ -522,19 +555,23 @@ export async function applyRecipeGalleryImageDelete(input: {
 
   // Ref-count GLOBAL: ainda é a face de ALGUMA versão? ⇒ in_use (409). Numa tx para evitar corrida
   // entre o COUNT e o DELETE (uma seleção concorrente entre os dois reativaria a referência).
-  const orphanBlobUrl = await db.transaction(async (tx) => {
+  const orphanBlobUrls = await db.transaction(async (tx) => {
     const [{ refs }] = await tx
       .select({ refs: sql<number>`count(*)::int` })
       .from(recipe)
       .where(eq(recipe.imageId, imageId))
     if (refs > 0) return null
-    await tx.delete(recipeImage).where(eq(recipeImage.id, imageId))
-    return img.blobUrl
+    // Achado I (0077): os derivados da linha vão junto do original (senão ficariam órfãos no Blob).
+    const [deleted] = await tx
+      .delete(recipeImage)
+      .where(eq(recipeImage.id, imageId))
+      .returning(IMAGE_BLOB_COLS)
+    return imageRowBlobUrls(deleted ?? img)
   })
 
-  if (orphanBlobUrl === null) return { kind: 'in_use' }
+  if (orphanBlobUrls === null) return { kind: 'in_use' }
 
-  await deleteOrphanBlob(store, orphanBlobUrl)
+  await deleteOrphanBlobs(store, orphanBlobUrls)
   return buildView(db, id, requestLocale, userId)
 }
 
@@ -622,6 +659,8 @@ export async function loadGallery(
       provenance: recipeImage.provenance,
       moderatedAt: recipeImage.moderatedAt,
       sourceImageId: recipeImage.sourceImageId,
+      thumbUrl: recipeImage.thumbUrl,
+      detailUrl: recipeImage.detailUrl,
     })
     .from(recipeImage)
     .where(eq(recipeImage.lineageId, lineageId))
@@ -629,6 +668,7 @@ export async function loadGallery(
   return rows.map((r) => ({
     id: r.id,
     url: r.blobUrl,
+    ...galleryImageSrcSet(r.thumbUrl, r.detailUrl),
     aiGenerated: r.provenance === 'ai_generated',
     selected: r.id === selectedImageId,
     moderated: r.moderatedAt != null,
@@ -641,8 +681,9 @@ export async function loadGallery(
  * Ref-count: a imagem ANTERIOR (`oldImageId`) ficou órfã? A Receita JÁ foi repontada (para
  * `newImageId` ou NULL) ANTES desta chamada, então `COUNT(recipe WHERE image_id = old)` exclui a
  * linha atual e conta só OUTRAS versões que ainda compartilham o blob (carry-forward #131). Zero
- * refs ⇒ apaga a LINHA recipe_image e devolve o `blob_url` (pra deleção pós-commit do blob); >0 ⇒
- * mantém (outra versão ainda usa) e devolve null. No-op quando não havia imagem ou ela não mudou.
+ * refs ⇒ apaga a LINHA recipe_image e devolve os blobs dela (o original e, desde a 0077, os derivados
+ * WebP) pra deleção pós-commit; >0 ⇒ mantém (outra versão ainda usa) e devolve `[]`. No-op (`[]`)
+ * quando não havia imagem ou ela não mudou.
  *
  * #222: NÃO é mais chamado por generate/upload (o reap-on-swap saiu de cena — a galeria mantém todas).
  * PERMANECE para o HARD-delete da Receita (#146, owner-edit.ts): lá `newImageId=null` e a Receita já
@@ -652,19 +693,18 @@ export async function reapOrphanImage(
   tx: Tx,
   oldImageId: string | null,
   newImageId: string | null,
-): Promise<string | null> {
-  if (oldImageId == null || oldImageId === newImageId) return null
+): Promise<string[]> {
+  if (oldImageId == null || oldImageId === newImageId) return []
   const [{ refs }] = await tx
     .select({ refs: sql<number>`count(*)::int` })
     .from(recipe)
     .where(eq(recipe.imageId, oldImageId))
-  if (refs > 0) return null
+  if (refs > 0) return []
   const [old] = await tx
-    .select({ blobUrl: recipeImage.blobUrl })
-    .from(recipeImage)
+    .delete(recipeImage)
     .where(eq(recipeImage.id, oldImageId))
-  await tx.delete(recipeImage).where(eq(recipeImage.id, oldImageId))
-  return old?.blobUrl ?? null
+    .returning(IMAGE_BLOB_COLS)
+  return old ? imageRowBlobUrls(old) : []
 }
 
 /** Apaga o blob órfão se houver E se for NOSSO (no-op silencioso para URL estrangeira/ausente). */
@@ -675,6 +715,20 @@ export async function deleteOrphanBlob(store: ImageStore, blobUrl: string | null
   } catch {
     // Órfão tolerável: a Receita já foi repontada/limpa; não propagamos a falha de limpeza.
   }
+}
+
+/** `deleteOrphanBlob` para todos os blobs de uma linha (original + derivados, `imageRowBlobUrls`). */
+export async function deleteOrphanBlobs(store: ImageStore, blobUrls: ReadonlyArray<string>): Promise<void> {
+  for (const url of blobUrls) await deleteOrphanBlob(store, url)
+}
+
+/** `srcSet` de um item da galeria (achado I): só com os dois derivados; "ausente ≠ vazio". */
+function galleryImageSrcSet(
+  thumbUrl: string | null | undefined,
+  detailUrl: string | null | undefined,
+): { srcSet?: string } {
+  const srcSet = buildImageSrcSet(thumbUrl, detailUrl)
+  return srcSet !== undefined ? { srcSet } : {}
 }
 
 /**

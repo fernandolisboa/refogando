@@ -10,8 +10,14 @@ import {
   generateAndStoreGalleryImage,
   createGalleryImage,
   loadGallery,
-  deleteOrphanBlob,
+  deleteOrphanBlobs,
+  IMAGE_BLOB_COLS,
 } from '@/server/recipe/image'
+import {
+  imageRowBlobUrls,
+  renderImageDerivativesSafe,
+  storeImageDerivatives,
+} from '@/server/images/image-derivatives'
 
 /**
  * Estúdio de imagem do CATÁLOGO (#238, ADR-0026 emenda dec.10) — variante CURADOR das ops de imagem.
@@ -129,12 +135,15 @@ export async function applyCatalogImageUpload(input: {
   const gate = await loadCatalogGate(db, id)
   if (!gate) return { kind: 'not_found' }
 
+  // Achado I (0077): derivados WebP em paralelo com o `put` do original; falha neles nunca vira erro.
+  const rendering = renderImageDerivativesSafe(data)
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({ data, contentType, pathPrefix: 'recipes' }))
   } catch {
     return { kind: 'storage' }
   }
+  const derivatives = await storeImageDerivatives(store, await rendering)
 
   let newImageId: string
   try {
@@ -144,6 +153,7 @@ export async function applyCatalogImageUpload(input: {
         provenance: 'user_photo',
         userId: curatorId,
         lineageId: gate.lineageId,
+        derivatives,
       })
       // Auto-seleciona. Escopa por owner_id IS NULL (defense-in-depth — espelha o owner_id=userId do dono).
       await tx
@@ -153,7 +163,7 @@ export async function applyCatalogImageUpload(input: {
       return imageId
     })
   } catch (err) {
-    await deleteOrphanBlob(store, blobUrl)
+    await deleteOrphanBlobs(store, imageRowBlobUrls({ blobUrl, ...derivatives }))
     throw err
   }
 
@@ -214,7 +224,7 @@ export async function applyCatalogGalleryImageDelete(input: {
   if (!gate) return { kind: 'not_found' }
 
   const [img] = await db
-    .select({ blobUrl: recipeImage.blobUrl })
+    .select(IMAGE_BLOB_COLS)
     .from(recipeImage)
     .where(and(eq(recipeImage.id, imageId), eq(recipeImage.lineageId, gate.lineageId)))
     .limit(1)
@@ -222,17 +232,18 @@ export async function applyCatalogGalleryImageDelete(input: {
 
   // Ref-count GLOBAL numa tx (evita corrida COUNT↔DELETE). Uma imagem em uso (= face de alguma
   // versão) ⇒ in_use; logo a face atual NUNCA é apagável ⇒ `gate.imageId` segue válido p/ a galeria.
-  const orphanBlobUrl = await db.transaction(async (tx) => {
+  const orphanBlobUrls = await db.transaction(async (tx) => {
     const [{ refs }] = await tx
       .select({ refs: sql<number>`count(*)::int` })
       .from(recipe)
       .where(eq(recipe.imageId, imageId))
     if (refs > 0) return null
-    await tx.delete(recipeImage).where(eq(recipeImage.id, imageId))
-    return img.blobUrl
+    // Achado I (0077): os derivados da linha vão junto do original (senão ficariam órfãos no Blob).
+    const [deleted] = await tx.delete(recipeImage).where(eq(recipeImage.id, imageId)).returning(IMAGE_BLOB_COLS)
+    return imageRowBlobUrls(deleted ?? img)
   })
-  if (orphanBlobUrl === null) return { kind: 'in_use' }
+  if (orphanBlobUrls === null) return { kind: 'in_use' }
 
-  await deleteOrphanBlob(store, orphanBlobUrl)
+  await deleteOrphanBlobs(store, orphanBlobUrls)
   return okWithGallery(db, gate.lineageId, gate.imageId)
 }
