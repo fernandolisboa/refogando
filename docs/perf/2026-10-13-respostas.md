@@ -173,3 +173,5 @@ Vai no PR do item 1.
 5. **Migração 1:** C (ingrediente) + E. **Migração 2:** I (thumbs).
 6. **PR de UI:** G + largura da gaveta.
 7. **Em espera, até o catálogo crescer:** B e H passo 2.
+
+**Status (2026-10-14): concluída.** Os passos 1 a 6 foram entregues (#570 a #575 e o PR do handoff 70). O A entrou sem o ISR do detalhe público, que fica como decisão à parte; o 7 segue em espera. Detalhe em `2026-10-13-auditoria.md` §9.

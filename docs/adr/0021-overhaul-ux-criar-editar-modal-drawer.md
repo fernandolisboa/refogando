@@ -49,3 +49,9 @@ Isto é UX reorg, não expansão do modelo de domínio: nenhuma migração de sc
 - **Config:** `maxDuration=60` nas rotas `/api/generations` e `/api/conversations/stream` — reversível.
 - **Glossário:** `CONTEXT.md` corrigido (defasagem pré-existente do #88) — Proveniência ganha `ai_free_text`; Sessão de criação passa a `conversation | structured | free_text`; novo termo **Modo prompt aberto**; contraste **edição própria é in-place** na Receita derivada.
 - **Diferido:** "tempo de preparo" como atributo invariante da Receita → issue #188 (`needs-triage`), fatia própria com grill→ADR→migração.
+
+## Atualização (2026-10-14, handoff 70): gaveta sob demanda e 512 px
+
+- **Largura:** do tablet para cima a gaveta passa de 448 px (`sm:max-w-md`) a 512 px (`sm:max-w-lg`); no celular segue tela cheia (até os 384 px da primitiva `Sheet`).
+- **Código sob demanda:** o "Criar" do header monta `LazyCreateDrawer` (`src/components/recipe/create-drawer-lazy.tsx`), que baixa a `CreateDrawer` por `import()`, com pré-carga no ocioso e no hover/foco/pointerdown do botão. Com o código carregado, o clique abre como antes; antes disso, a gaveta abre assim que ele chega; se o chunk falhar (aba antiga depois de um deploy), o clique navega para `/{locale}/create`, que segue sendo o shell da decisão 2 e importa a gaveta direto. Conteúdo, foco, Escape e o bloqueio durante a geração (decisão 5) não mudaram.
+
