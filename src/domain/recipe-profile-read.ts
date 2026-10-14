@@ -38,8 +38,8 @@ export type ProfileRecipeRow = {
   // `imageUrl`/`imageAiGenerated` aqui (não no loader), espelhando `projectResult` da Busca.
   imageUrl?: string | null
   // Derivados WebP da mesma foto (achado I, migração 0077), do mesmo JOIN. NULL ⇒ só o original.
-  imageThumbUrl?: string | null
-  imageDetailUrl?: string | null
+  imageThumbUrl: string | null
+  imageDetailUrl: string | null
   imageProvenance?: string | null
   translations: ReadonlyArray<TranslationNameRow>
 }
@@ -115,8 +115,11 @@ export function projectProfileRecipe(
   // #231: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o locale pedido tem
   // slug (o builder/loader é locale-agnóstico — a escolha é por `requestLocale` aqui).
   const slug = row.slugByLocale?.[requestLocale]
-  const imageSrcSet =
-    row.imageUrl != null ? buildImageSrcSet(row.imageThumbUrl, row.imageDetailUrl) : undefined
+  const imageSrcSet = buildImageSrcSet({
+    original: row.imageUrl,
+    thumbUrl: row.imageThumbUrl,
+    detailUrl: row.imageDetailUrl,
+  })
   return {
     recipeId: row.id,
     displayedTitle,

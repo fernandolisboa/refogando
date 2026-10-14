@@ -98,10 +98,10 @@ export async function listMyRecipes(
         // `moderation_removed_at NÃO NULL` ⇒ saiu do acervo público (a SELECT-projection é a
         // única mudança; sem migração — a coluna já existe no schema).
         moderationRemovida: r.moderationRemovedAt != null,
-        imageUrl: r.imageUrl ?? undefined,
+        imageUrl: r.imageUrl,
         imageThumbUrl: r.imageThumbUrl,
         imageDetailUrl: r.imageDetailUrl,
-        imageProvenance: r.imageProvenance ?? undefined,
+        imageProvenance: r.imageProvenance,
         slug: slugByRecipe.get(r.id),
         translations: byRecipe.get(r.id) ?? [],
       },

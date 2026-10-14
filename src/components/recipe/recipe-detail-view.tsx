@@ -31,7 +31,7 @@ import { RestrictionWarning } from './restriction-warning'
 import { StaleNoticeBanner } from './stale-notice-banner'
 import { RecipePortionScaler } from './recipe-portion-scaler'
 import { RecipeCookMode } from './recipe-cook-mode'
-import { IMAGE_SIZES } from '@/domain/image-variants'
+import { imageSrcSetProps } from '@/domain/image-variants'
 
 /**
  * Classe-base dos chips de faceta (restrições/tags) — espelha o padrão `BASE` de
@@ -156,8 +156,7 @@ export function RecipeDetailView({
           <img
             // Achado I (0077): `srcset` com os derivados WebP (a capa baixa o de ~1280 px, não o PNG
             // original); sem derivados ⇒ só o `src` original. Mesmo layout/recorte (é o CSS que manda).
-            srcSet={view.imageSrcSet}
-            sizes={view.imageSrcSet ? IMAGE_SIZES.detailHero : undefined}
+            {...imageSrcSetProps(view.imageSrcSet, 'detailHero')}
             src={view.imageUrl}
             alt={view.name}
             referrerPolicy="no-referrer"

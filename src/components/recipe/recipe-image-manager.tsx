@@ -37,7 +37,7 @@ import type { GalleryImage } from '@/domain/recipe-read'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
 import { isFreePlanUser } from '@/domain/plan'
-import { IMAGE_SIZES } from '@/domain/image-variants'
+import { imageSrcSetProps } from '@/domain/image-variants'
 import { QuotaUpsellCard } from './quota-upsell-card'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
@@ -704,8 +704,7 @@ function RecipeImageGallery({
                 <img
                   // Achado I (0077): a miniatura baixa o derivado de ~400 px. `img.url` segue sendo o
                   // original (o preview e o "Editar a partir desta" do servidor leem o original).
-                  srcSet={img.srcSet}
-                  sizes={img.srcSet ? IMAGE_SIZES.galleryThumb : undefined}
+                  {...imageSrcSetProps(img.srcSet, 'galleryThumb')}
                   src={img.url}
                   alt={m.imagemTitulo}
                   className="size-20 object-cover"

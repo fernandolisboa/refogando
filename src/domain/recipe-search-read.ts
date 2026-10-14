@@ -72,12 +72,11 @@ export type SearchHitRow = {
   image_url: string | null
   /**
    * Derivados WebP da MESMA `recipe_image` (achado I, migração 0077): `thumb_url` (~400 px) e
-   * `detail_url` (~1280 px), do mesmo LEFT JOIN (mesmo gate de moderação). Opcionais: um loader que
-   * ainda não os seleciona (ou imagem sem derivados) dá `undefined`/NULL ⇒ o card usa só o original.
-   * `projectResult` os junta em `SearchResult.imageSrcSet`.
+   * `detail_url` (~1280 px), do mesmo LEFT JOIN (mesmo gate de moderação). NULL (imagem sem derivados)
+   * ⇒ o card usa só o original. `projectResult` os junta em `SearchResult.imageSrcSet`.
    */
-  image_thumb_url?: string | null
-  image_detail_url?: string | null
+  image_thumb_url: string | null
+  image_detail_url: string | null
   /**
    * Proveniência da imagem (#132) — `recipe_image.provenance` da thumbnail (NULL sem imagem).
    * `projectResult` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA"). NUNCA expõe o id.
@@ -258,8 +257,11 @@ export function projectResult(
   // (owner_name E owner_handle não-NULL — Catálogo/sistema tem ambos NULL ⇒ sem byline).
   // "ausente ≠ vazio": a chave `author` só existe quando há autor — nada de autor falso.
   const author = projectAuthor(hit.owner_name, hit.owner_handle)
-  const imageSrcSet =
-    hit.image_url != null ? buildImageSrcSet(hit.image_thumb_url, hit.image_detail_url) : undefined
+  const imageSrcSet = buildImageSrcSet({
+    original: hit.image_url,
+    thumbUrl: hit.image_thumb_url,
+    detailUrl: hit.image_detail_url,
+  })
   return {
     recipeId: hit.recipe_id,
     displayedTitle,

@@ -16,7 +16,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { classifySection, type Origin, type SearchSection } from '@/domain/recipe'
 import type { RecipeAuthor } from '@/domain/recipe-search-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
-import { IMAGE_SIZES } from '@/domain/image-variants'
+import { imageSrcSetProps } from '@/domain/image-variants'
 import { cn } from '@/lib/utils'
 
 /** Rótulos de selo por seção, já localizados. O item escolhe pelo seu próprio
@@ -59,8 +59,8 @@ export type RecipeResultItemProps = {
   /** Imagem da receita (#130) — `blob_url` PÚBLICO da thumbnail. */
   imageUrl?: string
   /**
-   * `srcset` dos derivados WebP (achado I, 0077). Com ele, o navegador baixa o derivado de ~400 px
-   * no card em vez do original; ausente ⇒ só o `imageUrl` original, como antes.
+   * `srcset` dos derivados WebP (achado I, 0077). Com ele, o navegador baixa um derivado (o de ~400 px
+   * na lista, o de ~1280 px na grade) em vez do original; ausente ⇒ só o `imageUrl` original, como antes.
    */
   imageSrcSet?: string
   /** Imagem gerada por IA (#132)? Mostra o selo "✨ gerada por IA" sobre a thumbnail. */
@@ -118,10 +118,9 @@ export function RecipeResultItem({
       {imageUrl != null ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          // Achado I: `srcSet`/`sizes` ANTES do `src` (o navegador já vê o `srcset` ao montar a `<img>`
-          // no client e não começa a baixar o original). `sizes` espelha a largura do slot do layout.
-          srcSet={imageSrcSet}
-          sizes={imageSrcSet ? (layout === 'grid' ? IMAGE_SIZES.resultGrid : IMAGE_SIZES.resultList) : undefined}
+          // Achado I (0077): `srcSet`/`sizes` dos derivados WebP para o slot do layout (lista: thumb;
+          // grade: só o detail, ver `IMAGE_SLOTS`). Sem derivados ⇒ só o `src` original.
+          {...imageSrcSetProps(imageSrcSet, layout === 'grid' ? 'resultGrid' : 'resultList')}
           src={imageUrl}
           alt={displayedTitle}
           referrerPolicy="no-referrer"

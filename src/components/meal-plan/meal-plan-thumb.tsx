@@ -5,7 +5,7 @@
  */
 import { ImageIcon, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { IMAGE_SIZES } from '@/domain/image-variants'
+import { imageSrcSetProps } from '@/domain/image-variants'
 
 export function MealPlanThumb({
   imageUrl,
@@ -26,8 +26,7 @@ export function MealPlanThumb({
       {imageUrl != null ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          srcSet={imageSrcSet}
-          sizes={imageSrcSet ? IMAGE_SIZES.smallThumb : undefined}
+          {...imageSrcSetProps(imageSrcSet, 'smallThumb')}
           src={imageUrl}
           alt=""
           referrerPolicy="no-referrer"

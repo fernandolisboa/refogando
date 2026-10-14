@@ -34,16 +34,17 @@ export type RecipeListRow = {
   // Removida-do-pool pela moderação (#18). É dado do PRÓPRIO dono (query owner-scoped, sem
   // vazamento): a lista mostra TUDO que é seu, inclusive o que saiu do acervo público.
   moderationRemovida: boolean
-  // Imagem da receita (#130/#206): `blob_url` PÚBLICO da thumbnail, já gateado por
-  // `moderated_at IS NULL` no loader (espelha feed.ts). `undefined` = sem imagem.
-  imageUrl?: string
-  // Derivados WebP da mesma thumbnail (achado I, migração 0077), do mesmo JOIN. `undefined`/null =
-  // sem derivados ⇒ o card usa só o original. `resolveRecipeListItem` os junta em `imageSrcSet`.
-  imageThumbUrl?: string | null
-  imageDetailUrl?: string | null
-  // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail. `undefined` = sem imagem.
-  // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (espelha `projectResult`).
-  imageProvenance?: 'user_photo' | 'ai_generated'
+  // Imagem: as colunas CRUAS do LEFT JOIN da thumbnail (`recipe_image`), já gateado por
+  // `moderated_at IS NULL` no loader (espelha feed.ts). Uma convenção só: NULL = ausente.
+  // `blob_url` PÚBLICO da thumbnail (#130/#206). NULL = sem imagem (ou imagem moderada).
+  imageUrl: string | null
+  // Derivados WebP da mesma thumbnail (achado I, migração 0077). NULL = sem derivados ⇒ o card usa só o
+  // original. `resolveRecipeListItem` os junta em `imageSrcSet`.
+  imageThumbUrl: string | null
+  imageDetailUrl: string | null
+  // Proveniência da imagem (#216). NULL = sem imagem. `resolveRecipeListItem` deriva o booleano
+  // `imageAiGenerated` (espelha `projectResult`).
+  imageProvenance: 'user_photo' | 'ai_generated' | null
   // Slug do locale CORRENTE (#231, ADR-0020): `recipe_translation.slug` da tradução do requestLocale
   // (resolvido no loader). `undefined` quando o dono não tem tradução COM slug naquele locale (só o
   // original, ou slug ainda não congelado) ⇒ o card cai no fallback canônico por UUID.
@@ -93,8 +94,11 @@ export function resolveRecipeListItem(
     requestLocale,
     translations: row.translations,
   })
-  const imageSrcSet =
-    row.imageUrl != null ? buildImageSrcSet(row.imageThumbUrl, row.imageDetailUrl) : undefined
+  const imageSrcSet = buildImageSrcSet({
+    original: row.imageUrl,
+    thumbUrl: row.imageThumbUrl,
+    detailUrl: row.imageDetailUrl,
+  })
   return {
     id: row.id,
     name: name.length > 0 ? name : fallbackName,
@@ -104,7 +108,7 @@ export function resolveRecipeListItem(
     lineageKind: row.lineageKind,
     updatedAt: row.updatedAt,
     moderationRemovida: row.moderationRemovida,
-    imageUrl: row.imageUrl,
+    imageUrl: row.imageUrl ?? undefined,
     ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
     // #231: slug do locale corrente pro link canônico. "ausente ≠ vazio": só quando há slug.

@@ -25,6 +25,8 @@ function hit(over: Partial<SearchHitRow> = {}): SearchHitRow {
     owner_handle: null,
     // #130/Imagem: sem foto por default (a maioria dos hits não tem) — casos com imagem sobrescrevem.
     image_url: null,
+    image_thumb_url: null,
+    image_detail_url: null,
     image_provenance: null, // #132: proveniência da imagem (ai_generated dispara o selo)
     slug: null, // #231: slug do locale pedido (req_t.slug); null ⇒ DTO sem slug ⇒ card no fallback UUID
     ...over,

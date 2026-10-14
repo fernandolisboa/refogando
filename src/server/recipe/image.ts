@@ -392,7 +392,7 @@ export async function generateAndStoreGalleryImage(input: {
     image: {
       id: newImageId,
       url: blobUrl,
-      ...galleryImageSrcSet(derivatives?.thumbUrl, derivatives?.detailUrl),
+      ...galleryImageSrcSet(blobUrl, derivatives?.thumbUrl, derivatives?.detailUrl),
       aiGenerated: true,
       selected: autoSelect,
       moderated: false,
@@ -658,7 +658,7 @@ export async function loadGallery(
   return rows.map((r) => ({
     id: r.id,
     url: r.blobUrl,
-    ...galleryImageSrcSet(r.thumbUrl, r.detailUrl),
+    ...galleryImageSrcSet(r.blobUrl, r.thumbUrl, r.detailUrl),
     aiGenerated: r.provenance === 'ai_generated',
     selected: r.id === selectedImageId,
     moderated: r.moderatedAt != null,
@@ -699,10 +699,11 @@ export async function reapOrphanImage(
 
 /** `srcSet` de um item da galeria (achado I): só com os dois derivados; "ausente ≠ vazio". */
 function galleryImageSrcSet(
+  original: string,
   thumbUrl: string | null | undefined,
   detailUrl: string | null | undefined,
 ): { srcSet?: string } {
-  const srcSet = buildImageSrcSet(thumbUrl, detailUrl)
+  const srcSet = buildImageSrcSet({ original, thumbUrl, detailUrl })
   return srcSet !== undefined ? { srcSet } : {}
 }
 

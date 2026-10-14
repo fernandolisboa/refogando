@@ -134,7 +134,11 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     authorRow != null ? { name: authorRow.name, handle: authorRow.handle } : undefined
 
   const imageUrl = imageRows[0]?.blobUrl ?? undefined
-  const imageSrcSet = imageUrl ? buildImageSrcSet(imageRows[0]?.thumbUrl, imageRows[0]?.detailUrl) : undefined
+  const imageSrcSet = buildImageSrcSet({
+    original: imageUrl,
+    thumbUrl: imageRows[0]?.thumbUrl,
+    detailUrl: imageRows[0]?.detailUrl,
+  })
   const imageAiGenerated = imageRows[0]?.provenance === 'ai_generated'
   const imageModerated = imageRows[0]?.moderatedAt != null
 

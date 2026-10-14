@@ -30,6 +30,10 @@ function listRow(over: Partial<RecipeListRow> = {}): RecipeListRow {
     originalLocale: 'pt-BR',
     updatedAt: '2026-06-23T00:00:00.000Z',
     moderationRemovida: false,
+    imageUrl: null,
+    imageThumbUrl: null,
+    imageDetailUrl: null,
+    imageProvenance: null,
     translations: [ptTranslation],
     ...over,
   }
@@ -53,6 +57,8 @@ function profileRow(over: Partial<ProfileRecipeRow> = {}): ProfileRecipeRow {
     id: 'r-1',
     origin: 'ai_chat',
     originalLocale: 'pt-BR',
+    imageThumbUrl: null,
+    imageDetailUrl: null,
     translations: [ptTranslation],
     ...over,
   }
