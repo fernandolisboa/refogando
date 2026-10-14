@@ -279,3 +279,18 @@ describe('Gaveta "Criar" sob demanda (handoff 70)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
+
+describe('Largura da gaveta (handoff 70)', () => {
+  it('tela cheia no celular e 512 px (sm:max-w-lg) do tablet para cima', async () => {
+    const { LocaleProvider } = await import('@/i18n/provider')
+    const { CreateDrawer } = await import('@/components/recipe/create-drawer')
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <CreateDrawer open onOpenChange={() => {}} />
+      </LocaleProvider>,
+    )
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveClass('w-full', 'max-w-sm', 'sm:max-w-lg')
+    expect(dialog).not.toHaveClass('sm:max-w-md')
+  })
+})
