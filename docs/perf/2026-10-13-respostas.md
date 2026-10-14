@@ -174,4 +174,4 @@ Vai no PR do item 1.
 6. **PR de UI:** G + largura da gaveta.
 7. **Em espera, até o catálogo crescer:** B e H passo 2.
 
-**Status (2026-10-14): concluída, exceto o 2º passo do A (ISR do detalhe público), que é o próximo.** Os passos 1 a 6 foram entregues (#570 a #575 e o PR do handoff 70), com o A só no 1º passo; o 7 segue em espera. Detalhe em `2026-10-13-auditoria.md` §9.
+**Status (2026-10-14): concluída.** O 2º passo do A (ISR do detalhe público) não foi entregue: a proposta, com as decisões do dono, está em `2026-10-14-a-passo2-isr-detalhe-proposta.md`. Os passos 1 a 6 foram entregues (#570 a #575 e o PR do handoff 70), com o A só no 1º passo; o 7 segue em espera. Detalhe em `2026-10-13-auditoria.md` §9.
