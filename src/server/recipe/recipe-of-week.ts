@@ -27,8 +27,9 @@ import { escapeLike } from '@/server/sql/like'
  * promove nada a catálogo (a receita já É catálogo aprovado) — só ordena qual das JÁ aprovadas
  * aparece quando NENHUM humano escolheu. Quem controla o slot primariamente é o Curador.
  *
- * Devolve `null` só quando o catálogo aprovado está VAZIO (nenhuma receita elegível) — a home
- * simplesmente omite o slot nesse caso (não é erro).
+ * Devolve `null` quando o catálogo aprovado está VAZIO (nenhuma receita elegível) — ou estava, no
+ * cálculo cacheado de até 10 min atrás (ver `RECIPE_OF_WEEK_POPULAR_TAG`) — e a home simplesmente omite
+ * o slot nesse caso (não é erro).
  *
  * SEM dedupe com o feed (decisão deliberada): a receita destacada aqui PODE reaparecer no
  * `loadDiscoveryFeed` logo abaixo. Os dois são superfícies independentes (o slot é editorial/fixo,
@@ -56,7 +57,8 @@ export async function loadRecipeOfTheWeek(
     { revalidate: RECIPE_OF_WEEK_POPULAR_REVALIDATE_S, tags: [RECIPE_OF_WEEK_POPULAR_TAG] },
   )()
   // O Next serve a entrada vencida e recalcula em segundo plano: sem este corte, com pouco tráfego a home
-  // mostraria um vencedor de dias atrás. Vencida ⇒ ignora e calcula ao vivo (o refresh de fundo segue).
+  // mostraria um vencedor de dias atrás. Vencida ⇒ ignora e calcula ao vivo (o refresh de fundo segue,
+  // então essa visita custa dois agregados: o ao vivo e o do Next em segundo plano).
   if (Date.now() - cached.computedAt <= RECIPE_OF_WEEK_POPULAR_REVALIDATE_S * 1000) {
     // Catálogo vazio quando a entrada foi calculada: sem vencedor, sem segundo agregado.
     if (cached.id === null) return null
@@ -116,7 +118,7 @@ async function loadCatalogResult(
  */
 export const RECIPE_OF_WEEK_POPULAR_TAG = 'receita-da-semana:popularidade'
 export const RECIPE_OF_WEEK_POPULAR_REVALIDATE_S = 600
-const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v1']
+const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v2']
 
 /**
  * Expira na hora o vencedor cacheado (`{ expire: 0 }`: o próximo request recalcula, sem servir o valor
