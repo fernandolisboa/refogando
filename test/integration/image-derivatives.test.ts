@@ -10,8 +10,9 @@ import {
   storeImageDerivatives,
 } from '@/server/images/image-derivatives'
 import { backfillImageDerivatives } from '@/server/images/derivatives-backfill'
-import { applyCatalogImageUpload } from '@/server/curate/catalog-image'
+import { applyCatalogGalleryImageDelete, applyCatalogImageUpload } from '@/server/curate/catalog-image'
 import { deleteOwnRecipe } from '@/server/recipe/owner-edit'
+import { operatorEscalateSource } from '@/server/recipe/operator-clear-attribution'
 import { listMyRecipes } from '@/server/recipe/list-mine'
 import { loadDiscoveryFeed } from '@/server/recipe/feed'
 import { searchRecipes } from '@/server/recipe/search'
@@ -33,20 +34,34 @@ import { seedSessionHeaders, seedUser } from '../helpers/users'
 /**
  * Derivados WebP da Imagem da receita (achado I da auditoria de performance, migração 0077). Blob
  * sempre pelo `FakeImageStore` (nunca rede). Cobre:
- *  - o sharp: larguras 1280/400, WebP, sem ampliar, orientação EXIF aplicada, animada e lixo ⇒ sem derivado;
+ *  - o sharp: larguras 1280/400, WebP, sem ampliar, orientação EXIF aplicada; animada, lixo e formato fora
+ *    de JPEG/PNG/WebP (SVG rotulado png, GIF, TIFF) ⇒ sem derivado, sem renderizar;
  *  - os 3 caminhos de escrita (upload do dono, upload do catálogo, geração por IA): original INTOCADO
  *    (bytes iguais), par de derivados gravado; falha nos derivados NUNCA falha a escrita (colunas NULL);
  *  - a imagem-a-imagem segue lendo o ORIGINAL (o PNG), não o WebP;
- *  - apagar da galeria / hard-delete da Receita apaga os derivados junto do original;
+ *  - apagar da galeria (dono e catálogo) / hard-delete da Receita / escalada do operador apaga os
+ *    derivados junto do original;
  *  - leitura: `imageSrcSet` no feed, Busca, Minhas criações, perfil e detalhe, sob o MESMO gate de
  *    moderação da foto; ausente sem derivados;
- *  - backfill: preenche, é idempotente, não destrói, prioriza faces, não passa fome com falha
- *    permanente, respeita lote/orçamento, descarta (e apaga) o par quando a linha muda no meio; cron fail-closed.
+ *  - backfill: preenche, é idempotente, não destrói, prioriza as selecionadas, tira da fila por 7 dias
+ *    a falha permanente e a imagem moderada, respeita lote/orçamento/reserva, descarta (e apaga) o par
+ *    quando a linha muda no meio; cron fail-closed.
  */
 
 let PNG: Buffer // "tipo Gemini": 1536×1024 (~2,5 MB; só pela geração, passa do teto de 2 MB do upload)
 let UPLOAD_PNG: Buffer // 1200×800 (~1,5 MB, dentro do teto do upload)
 let SMALL_PNG: Buffer // 300×200 (menor que os dois alvos)
+
+/**
+ * SVG pequeno com filtros caros (`feTurbulence` + `feGaussianBlur` numa tela grande): o sharp o
+ * renderizaria se o deixássemos (um parecido custou ~30 s de CPU). Só serve se o formato for barrado
+ * ANTES de decodificar.
+ */
+const HEAVY_SVG = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="4800" height="4800">' +
+    '<filter id="f"><feTurbulence baseFrequency="0.9" numOctaves="10"/><feGaussianBlur stdDeviation="40"/>' +
+    '<feGaussianBlur stdDeviation="80"/></filter><rect width="100%" height="100%" filter="url(#f)"/></svg>',
+)
 
 /**
  * PNG "tipo Gemini" (foto de prato): textura fractal (`feTurbulence`) + 120 círculos com borda, ~2,5 MB em
@@ -155,15 +170,36 @@ async function seedLegacyImage(
 }
 
 describe('renderImageDerivatives (sharp)', () => {
-  it('PNG de 1536×1024 ⇒ detail 1280 px e thumb 400 px, WebP, proporção mantida, muito menores', async () => {
+  it('PNG de 1536×1024 ⇒ detail 1280 px e thumb 400 px, WebP, proporção mantida, thumb < detail < original', async () => {
     const r = await renderImageDerivatives(PNG)
     const d = await sharp(r.detail).metadata()
     const t = await sharp(r.thumb).metadata()
     expect([d.format, d.width, d.height]).toEqual(['webp', 1280, 853])
     expect([t.format, t.width, t.height]).toEqual(['webp', 400, 267])
-    expect(PNG.length).toBeGreaterThan(1_500_000)
-    expect(r.detail.length).toBeLessThan(PNG.length / 10)
-    expect(r.thumb.length).toBeLessThan(PNG.length / 50)
+    expect(r.thumb.length).toBeLessThan(r.detail.length)
+    expect(r.detail.length).toBeLessThan(PNG.length)
+  })
+
+  it('JPEG e WebP (os outros formatos aceitos pelo upload) também ganham derivados', async () => {
+    for (const bytes of [await sharp(UPLOAD_PNG).jpeg().toBuffer(), await sharp(UPLOAD_PNG).webp().toBuffer()]) {
+      const r = await renderImageDerivatives(bytes)
+      expect((await sharp(r.detail).metadata()).width).toBe(1200)
+      expect((await sharp(r.thumb).metadata()).width).toBe(400)
+    }
+  })
+
+  it('SVG rotulado image/png (filtros caros) ⇒ sem derivado, sem renderizar: termina rápido', async () => {
+    const t0 = performance.now()
+    expect(await renderImageDerivativesSafe(HEAVY_SVG)).toBeNull()
+    expect(performance.now() - t0).toBeLessThan(1_000)
+    await expect(renderImageDerivatives(HEAVY_SVG)).rejects.toThrow(/formato svg/)
+  })
+
+  it('GIF e TIFF (o sharp decodifica, mas não são JPEG/PNG/WebP) ⇒ sem derivado', async () => {
+    const base = sharp({ create: { width: 40, height: 20, channels: 3, background: '#c86432' } })
+    for (const bytes of [await base.clone().gif().toBuffer(), await base.clone().tiff().toBuffer()]) {
+      expect(await renderImageDerivativesSafe(bytes)).toBeNull()
+    }
   })
 
   it('original menor que os alvos NÃO é ampliado', async () => {
@@ -224,7 +260,7 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(UPLOAD_PNG)).toBe(true)
     expect(store.blobs.get(img.thumbUrl!)!.contentType).toBe('image/webp')
     expect(view.imageUrl).toBe(img.blobUrl)
-    expect(view.imageSrcSet).toBe(buildImageSrcSet(img.thumbUrl, img.detailUrl))
+    expect(view.imageSrcSet).toBe(buildImageSrcSet({ original: img.blobUrl, ...img }))
   })
 
   it('upload do dono com o Blob dos derivados fora: 200, original guardado, colunas NULL, sem srcset', async () => {
@@ -253,6 +289,22 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     expect(store.blobs.size).toBe(1)
   })
 
+  it('upload de SVG rotulado image/png: 200 como antes, rápido, só o original (sem derivado)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'svg@deriv.test' })
+    const id = await seedOwned(userId)
+    const t0 = performance.now()
+    const res = await uploadRoute(uploadReq(id, HEAVY_SVG, headers), ctx(id))
+    expect(performance.now() - t0).toBeLessThan(2_000)
+    expect(res.status).toBe(200)
+    const view = (await res.json()) as { imageUrl?: string; imageSrcSet?: string }
+    const img = await imageRow((await faceOf(id))!)
+    expect([img.thumbUrl, img.detailUrl]).toEqual([null, null])
+    expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(HEAVY_SVG)).toBe(true)
+    expect(store.blobs.size).toBe(1)
+    expect(view.imageUrl).toBe(img.blobUrl)
+    expect(view.imageSrcSet).toBeUndefined()
+  })
+
   it('upload do catálogo (curador): original + par', async () => {
     const curator = await seedUser({ email: 'cur@deriv.test', role: 'curador' })
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, curationStatus: 'pending' })
@@ -271,7 +323,7 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     expect(img.thumbUrl).not.toBeNull()
     expect(img.detailUrl).not.toBeNull()
     expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(PNG)).toBe(true)
-    expect(res.kind === 'ok' && res.gallery[0].srcSet).toBe(buildImageSrcSet(img.thumbUrl, img.detailUrl))
+    expect(res.kind === 'ok' && res.gallery[0].srcSet).toBe(buildImageSrcSet({ original: img.blobUrl, ...img }))
   })
 
   it('geração por IA: PNG original + par; a edição imagem-a-imagem lê o ORIGINAL (PNG), não o WebP', async () => {
@@ -286,7 +338,7 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     const img = await imageRow(image.id)
     expect(img.blobUrl).toBe(image.url)
     expect(img.thumbUrl).not.toBeNull()
-    expect(image.srcSet).toBe(buildImageSrcSet(img.thumbUrl, img.detailUrl))
+    expect(image.srcSet).toBe(buildImageSrcSet({ original: img.blobUrl, ...img }))
     expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(PNG)).toBe(true)
 
     const edit = await generateRoute(genReq(id, headers, { prompt: 'mais luz', sourceImageId: image.id }), ctx(id))
@@ -325,6 +377,50 @@ describe('apagar a imagem apaga os derivados', () => {
     expect(store.blobs.size).toBe(3)
   })
 
+  it('APAGAR da galeria do catálogo (curador): original + 2 derivados somem', async () => {
+    const curator = await seedUser({ email: 'catdel@deriv.test', role: 'curador' })
+    const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, curationStatus: 'pending' })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Vatapá', provenance: 'automatica_nao_revisada' })
+    const upload = (data: Buffer) =>
+      applyCatalogImageUpload({ db: getDb(), store, id, curatorId: curator, data, contentType: 'image/png' })
+    expect((await upload(UPLOAD_PNG)).kind).toBe('ok')
+    const first = (await faceOf(id))!
+    expect((await upload(SMALL_PNG)).kind).toBe('ok') // a 2ª vira a face; a 1ª fica livre
+    expect(store.blobs.size).toBe(6)
+    const row = await imageRow(first)
+
+    const res = await applyCatalogGalleryImageDelete({ db: getDb(), store, id, imageId: first })
+    expect(res.kind).toBe('ok')
+    expect(store.blobs.size).toBe(3)
+    for (const url of [row.blobUrl, row.thumbUrl!, row.detailUrl!]) expect(store.blobs.has(url)).toBe(false)
+  })
+
+  it('escalada `record_deletion` do operador (reap): original + derivados da importada somem', async () => {
+    const admin = await seedUser({ email: 'op@deriv.test', role: 'admin' })
+    const id = await seedRecipe({ origin: 'web_imported', originalLocale: 'pt-BR', visibility: 'private', ownerId: null })
+    await getDb()
+      .update(recipe)
+      .set({ sourceName: 'Blog da Fulana', sourceUrl: 'https://blog.example/bolo' })
+      .where(eq(recipe.id, id))
+    const { imageId } = await seedLegacyImage(id, { face: true })
+    await backfillImageDerivatives(getDb(), store)
+    const row = await imageRow(imageId)
+    expect(row.thumbUrl).not.toBeNull()
+    expect(store.blobs.size).toBe(3)
+
+    const res = await operatorEscalateSource({
+      db: getDb(),
+      actorId: admin,
+      query: { sourceName: 'Blog da Fulana' },
+      action: 'record_deletion',
+      apply: true,
+      store,
+    })
+    expect(res.matched).toBe(1)
+    expect(await imageRow(imageId)).toBeUndefined()
+    expect(store.blobs.size).toBe(0)
+  })
+
   it('hard-delete da Receita (reap): original + derivados somem', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'hard@deriv.test' })
     const id = await seedOwned(userId)
@@ -341,7 +437,7 @@ describe('leitura: srcset nas superfícies, sob o gate de moderação da foto', 
     const { imageId } = await seedLegacyImage(id, { face: true })
     await backfillImageDerivatives(getDb(), store)
     const img = await imageRow(imageId)
-    return { id, imageId, srcSet: buildImageSrcSet(img.thumbUrl, img.detailUrl)! }
+    return { id, imageId, srcSet: buildImageSrcSet({ original: img.blobUrl, ...img })! }
   }
 
   it('feed, Busca, Minhas criações, perfil e detalhe trazem o mesmo srcset; moderada ⇒ nada', async () => {
@@ -410,7 +506,16 @@ describe('backfill dos derivados', () => {
     const b = await seedLegacyImage(id)
 
     const r1 = await backfillImageDerivatives(getDb(), store)
-    expect(r1).toEqual({ pendentes: 2, tentadas: 2, preenchidas: 2, falhas: 0, descartadas: 0 })
+    expect(r1).toEqual({
+      pendentes: 2,
+      nuncaTentadas: 2,
+      tentadas: 2,
+      preenchidas: 2,
+      falhas: 0,
+      descartadas: 0,
+      restantes: 0,
+      nuncaTentadasRestantes: 0,
+    })
     for (const { imageId, blobUrl } of [a, b]) {
       const row = await imageRow(imageId)
       expect(row.blobUrl).toBe(blobUrl)
@@ -421,7 +526,16 @@ describe('backfill dos derivados', () => {
     expect(store.blobs.size).toBe(6)
 
     const r2 = await backfillImageDerivatives(getDb(), store)
-    expect(r2).toEqual({ pendentes: 0, tentadas: 0, preenchidas: 0, falhas: 0, descartadas: 0 })
+    expect(r2).toEqual({
+      pendentes: 0,
+      nuncaTentadas: 0,
+      tentadas: 0,
+      preenchidas: 0,
+      falhas: 0,
+      descartadas: 0,
+      restantes: 0,
+      nuncaTentadasRestantes: 0,
+    })
     expect(store.blobs.size).toBe(6)
   })
 
@@ -438,27 +552,63 @@ describe('backfill dos derivados', () => {
       .where(eq(recipeImage.id, done.imageId))
 
     const r = await backfillImageDerivatives(getDb(), store, { limit: 1 })
-    expect(r).toMatchObject({ pendentes: 2, tentadas: 1, preenchidas: 1 })
+    expect(r).toMatchObject({ pendentes: 2, tentadas: 1, preenchidas: 1, restantes: 1, nuncaTentadasRestantes: 1 })
     expect((await imageRow(face.imageId)).thumbUrl).not.toBeNull()
     expect((await imageRow(galleryOnly.imageId)).thumbUrl).toBeNull()
     expect((await imageRow(done.imageId)).thumbUrl).toBe('https://fake-blob.local/x/t.webp')
   })
 
-  it('falha permanente vai para o fim da fila (sem fome) e conta em falhas', async () => {
+  it('falha permanente sai da fila por 7 dias (sem fome, sem baixar todo dia) e conta em falhas', async () => {
     const owner = await seedUser({ email: 'bf3@deriv.test' })
     const id = await seedOwned(owner)
     const broken = await seedLegacyImage(id, { face: true, createdAt: new Date('2026-01-01T00:00:00Z') })
     store.blobs.delete(broken.blobUrl) // original sumiu do Blob
     const ok = await seedLegacyImage(id)
+    const day0 = new Date('2026-10-14T10:30:00Z')
+    const at = (days: number) => new Date(day0.getTime() + days * 86_400_000)
 
-    const r1 = await backfillImageDerivatives(getDb(), store, { limit: 1 })
-    expect(r1).toMatchObject({ tentadas: 1, falhas: 1, preenchidas: 0 })
-    expect((await imageRow(broken.imageId)).derivativesAttemptedAt).toBeInstanceOf(Date)
+    const r1 = await backfillImageDerivatives(getDb(), store, { limit: 1, now: day0 })
+    expect(r1).toMatchObject({ pendentes: 2, nuncaTentadas: 2, tentadas: 1, falhas: 1, preenchidas: 0 })
+    expect(r1).toMatchObject({ restantes: 1, nuncaTentadasRestantes: 1 })
+    expect((await imageRow(broken.imageId)).derivativesAttemptedAt).toEqual(day0)
 
-    const r2 = await backfillImageDerivatives(getDb(), store, { limit: 1 })
-    expect(r2).toMatchObject({ tentadas: 1, preenchidas: 1 })
+    const r2 = await backfillImageDerivatives(getDb(), store, { limit: 1, now: at(1) })
+    expect(r2).toMatchObject({ pendentes: 1, tentadas: 1, preenchidas: 1, restantes: 0, nuncaTentadasRestantes: 0 })
     expect((await imageRow(ok.imageId)).thumbUrl).not.toBeNull()
-    expect((await imageRow(broken.imageId)).thumbUrl).toBeNull()
+
+    // Dentro dos 7 dias a quebrada não volta: a passada é só a contagem.
+    let gets = 0
+    const spy: ImageStore = Object.assign(Object.create(store), {
+      get: async (url: string) => {
+        gets++
+        return store.get(url)
+      },
+    })
+    const r3 = await backfillImageDerivatives(getDb(), spy, { now: at(6) })
+    expect(r3).toMatchObject({ pendentes: 0, tentadas: 0, restantes: 0 })
+    expect(gets).toBe(0)
+
+    // Passados 7 dias, volta UMA vez, falha de novo e sai por mais 7 dias.
+    const r4 = await backfillImageDerivatives(getDb(), spy, { now: at(8) })
+    expect(r4).toMatchObject({ pendentes: 1, nuncaTentadas: 0, tentadas: 1, falhas: 1, restantes: 0 })
+    expect(gets).toBe(1)
+    expect((await imageRow(broken.imageId)).derivativesAttemptedAt).toEqual(at(8))
+    expect((await backfillImageDerivatives(getDb(), spy, { now: at(9) })).tentadas).toBe(0)
+  })
+
+  it('imagem moderada fica fora da fila (não é baixada nem contada)', async () => {
+    const owner = await seedUser({ email: 'bf8@deriv.test' })
+    const curator = await seedUser({ email: 'bf8c@deriv.test', role: 'curador' })
+    const id = await seedOwned(owner)
+    const moderated = await seedLegacyImage(id, { face: true })
+    await getDb()
+      .update(recipeImage)
+      .set({ moderatedAt: new Date(), moderatedReason: 'teste', moderatedBy: curator })
+      .where(eq(recipeImage.id, moderated.imageId))
+    const r = await backfillImageDerivatives(getDb(), store)
+    expect(r).toMatchObject({ pendentes: 0, tentadas: 0, restantes: 0 })
+    const row = await imageRow(moderated.imageId)
+    expect([row.thumbUrl, row.derivativesAttemptedAt]).toEqual([null, null])
   })
 
   it('URL que não é do nosso Blob não é buscada', async () => {
@@ -486,8 +636,20 @@ describe('backfill dos derivados', () => {
     await seedLegacyImage(id)
     await seedLegacyImage(id)
     let t = 0
-    const res = await backfillImageDerivatives(getDb(), store, { budgetMs: 10, clock: () => (t += 6) })
-    expect(res).toMatchObject({ pendentes: 2, tentadas: 1 })
+    const res = await backfillImageDerivatives(getDb(), store, { budgetMs: 10, reserveMs: 0, clock: () => (t += 6) })
+    expect(res).toMatchObject({ pendentes: 2, tentadas: 1, restantes: 1 })
+  })
+
+  it('reserva do orçamento: com menos de 15 s sobrando (padrão), não começa imagem nova', async () => {
+    const owner = await seedUser({ email: 'bf9@deriv.test' })
+    const id = await seedOwned(owner)
+    await seedLegacyImage(id)
+    await seedLegacyImage(id)
+    // Cada leitura do relógio avança 20 s (início em 0): a 1ª imagem começa aos 20 s (sobram 20 s dos
+    // 40), a 2ª começaria aos 40 s (sobra 0 < 15 s) e não começa.
+    let t = -20_000
+    const res = await backfillImageDerivatives(getDb(), store, { clock: () => (t += 20_000) })
+    expect(res).toMatchObject({ pendentes: 2, tentadas: 1, preenchidas: 1, restantes: 1 })
   })
 
   it('a linha foi preenchida no meio da passada: descarta e APAGA o par recém-gerado', async () => {
@@ -550,11 +712,13 @@ describe('GET /api/cron/image-derivatives', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       pendentes: 1,
+      nuncaTentadas: 1,
       tentadas: 1,
       preenchidas: 1,
       falhas: 0,
       descartadas: 0,
       restantes: 0,
+      nuncaTentadasRestantes: 0,
     })
   })
 })
