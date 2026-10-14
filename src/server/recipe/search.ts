@@ -7,6 +7,7 @@ import type { SortMode } from '@/domain/sort-params'
 import { loadPopularityConfig } from '@/server/app-config'
 import { loadGlobalRatingAverage } from '@/server/recipe/popularity'
 import type { PopularityConfig } from '@/domain/popularity'
+import { escapeLikeSql } from '@/server/sql/like'
 
 /**
  * Loader FTS multi-row da Busca (issue #6, §3.4; estendido pela #9, §3.1). Diverge de
@@ -15,11 +16,11 @@ import type { PopularityConfig } from '@/domain/popularity'
  * Drizzle (bind seguro de `q`/`requestLocale`/`terms`/`mode`, sem interpolação → sem
  * injeção).
  *
- * #6 (TÍTULO, preservado VERBATIM): casa CROSS-LOCALE (cada linha de
+ * #6 (TÍTULO, resultado preservado): casa CROSS-LOCALE (cada linha de
  * `recipe_translation` é indexada na sua própria config via a coluna gerada
- * `search_vector`; o tsquery é construído na MESMA config por linha —
- * `recipe_ts_config(rt.locale)` — para os lexemas casarem) → dedup por Receita
- * (`MAX(ts_rank)` entre as traduções que casaram).
+ * `search_vector`; o tsquery é construído na MESMA config da linha —
+ * `recipe_ts_config(rt.locale)`, um braço por config em `titleFtsMatchedSql` — para os
+ * lexemas casarem) → dedup por Receita (`MAX(ts_rank)` entre as traduções que casaram).
  *
  * #9 (INGREDIENTE, novo eixo): cada termo de `?q=` (split por vírgula) resolve OU a um
  * Ingrediente canônico (match NORMALIZADO exato — lower+immutable_unaccent+fold
@@ -39,10 +40,11 @@ import type { PopularityConfig } from '@/domain/popularity'
  * `SearchHitRow` é OWNED pelo domínio (`@/domain/recipe-search-read`): o domínio define
  * o contrato de linha e o server o preenche — #9 emite EXATAMENTE os mesmos 8 campos.
  *
- * Nota de plano (§3.4/§6): config correlacionada por linha ⇒ o `@@` vira Filter sobre
- * Seq Scan (não usa o GIN nesta query); a resolução canônica e a degradação raw_text
- * também são Seq Scan (sem índice de expressão). ACEITO no v1 (tabelas minúsculas, cap
- * ~50; #14 retrabalha o ranking). Índice deferido.
+ * Nota de plano (§3.4/§6; atualizada na auditoria de performance de 2026-10-13, achado C): o
+ * full-text do TÍTULO e a lane de trigrama usam os GIN de `recipe_translation` (ver
+ * `titleFtsMatchedSql` e `trgmMatchedCteSql`). A resolução canônica e a degradação raw_text
+ * seguem Seq Scan (sem índice de expressão em `recipe_ingredient`): a coluna `tsvector` do
+ * ingrediente vem numa migração própria, junto com o achado E.
  */
 
 export const MAX_QUERY_LEN = 256
@@ -72,8 +74,13 @@ const SEMANTIC_CAP = 10
  * TUNÁVEL (sem migração): 'ovos' vs 'ovoss' (~0.5) e 'ovos' vs 'ovo' (~0.75) passam folgado;
  * palavras de 4 letras genuinamente não-relacionadas tendem a ficar abaixo. O ramo
  * ILIKE-contém NÃO é afetado por este piso (substring exata).
+ *
+ * FONTE ÚNICA do piso: o ramo fuzzy usa o operador `%` do pg_trgm (que é o que o GIN
+ * trigrama atende), e o `%` compara contra o GUC `pg_trgm.similarity_threshold`. A Busca
+ * fixa esse GUC para ESTE valor na própria transação (`trgmThresholdSql`, `set_config(...,
+ * true)`), em vez de confiar no default do ambiente. Exportado pra suíte de equivalência.
  */
-const TRGM_MIN_SIM = 0.3
+export const TRGM_MIN_SIM = 0.3
 /**
  * Comprimento mínimo de termo para o predicado de trigrama (#118). 3 chars é o piso de
  * usabilidade do índice GIN trigrama: `show_trgm` de um termo de 2 chars rende ZERO trigramas
@@ -208,17 +215,9 @@ function facetPredicates(facets: EffectiveFacets): SQL {
  * `combined`, então um id privado de outro dono nunca aflora mesmo se o join fosse burlado.
  *
  * BIND: o termo é bindado SÓ via `${sql.param(term)}` dentro do template `sql\`...\``
- * (idêntico a `${q}`/`${sql.param(terms)}`); o `'%' || ... || '%'`, o `ILIKE` e o
- * `similarity(...)` são TEXTO LITERAL do template (não entrada de usuário) — sem injeção e
- * sem wildcard-injection. NÃO usar concatenação `sql.raw(...)+sql.param(...)`.
- *
- * ÍNDICE: o ramo ILIKE-contém (operador `%`/LIKE family) usa o índice GIN trigrama quando o
- * termo tem >= 3 chars; o ramo `similarity() >= piso` é um FILTER de seqscan aceito (o `>=`
- * não usa o índice — só o operador `%` cru gateado por `set_limit` usa). A guarda
- * TRGM_MIN_TERM_LEN garante >= 1 trigrama no ramo ILIKE => índice alcançável.
- *
- * LANDMINE: NENHUM backtick dentro deste template (nem em comentário) — terminaria o
- * `sql\`...\``. Comentários explicativos ficam AQUI no TS, fora do template.
+ * (idêntico a `${q}`/`${sql.param(terms)}`); o `'%' || ... || '%'`, o `ILIKE` e o `%` são
+ * TEXTO LITERAL do template (não entrada de usuário) — sem injeção. NÃO usar concatenação
+ * `sql.raw(...)+sql.param(...)`. Os predicados por termo moram em `trgmTitlePredicateSql`.
  */
 function trgmMatchedCteSql(
   terms: string[],
@@ -229,12 +228,7 @@ function trgmMatchedCteSql(
   const longTerms = terms.filter((t) => t.trim().length >= TRGM_MIN_TERM_LEN)
   if (longTerms.length === 0) return sql``
   // Um predicado por termo; AND-combinados (todos os termos longos devem casar o título).
-  const preds = longTerms.map(
-    (term) => sql`(
-        lower(immutable_unaccent(rt2.titulo)) ILIKE '%' || lower(immutable_unaccent(${sql.param(term)})) || '%'
-        OR similarity(lower(immutable_unaccent(rt2.titulo)), lower(immutable_unaccent(${sql.param(term)}))) >= ${TRGM_MIN_SIM}
-      )`,
-  )
+  const preds = longTerms.map((term) => trgmTitlePredicateSql(term))
   return sql`
     , trgm_matched AS (
       SELECT DISTINCT rt2.recipe_id AS recipe_id
@@ -245,6 +239,106 @@ function trgmMatchedCteSql(
         AND r_tg.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
         AND ${sql.join(preds, sql` AND `)}
     )`
+}
+
+/**
+ * Predicado de UM termo da lane de trigrama (#118) sobre `rt2.titulo`. Exportado só pra suíte
+ * de equivalência (test/integration/search-index-equivalence.test.ts).
+ *
+ * ÍNDICE: os DOIS ramos casam a expressão do GIN `recipe_translation_titulo_trgm_gin`
+ * (drizzle/0012: `lower(immutable_unaccent(titulo)) gin_trgm_ops`) byte a byte, então o planner
+ * faz BitmapOr de dois Bitmap Index Scan (ILIKE é a estratégia LIKE do gin_trgm_ops; `%` é a de
+ * similaridade). Antes o ramo fuzzy era `similarity(...) >= TRGM_MIN_SIM`: função, não operador,
+ * e o OR com ela derrubava a query inteira (até o ramo ILIKE) para Seq Scan.
+ *
+ * EQUIVALÊNCIA do `%` (pg_trgm 1.6, PG 17): `a % b` é `similarity(a, b) >= similarity_threshold`
+ * (`>=`, não `>`, apesar da doc dizer "greater than"; conferido no PG 17 local com um par de
+ * similaridade exatamente 0.3, coberto na suíte de equivalência). O GUC é float8 0.3 e a
+ * similaridade é float4; o predicado antigo comparava com o parâmetro em float4 (0.3f, um pouco
+ * acima de 0.3). Nenhum float4 fica entre 0.3 e 0.3f, então os dois cortes coincidem. O GUC é
+ * fixado em `TRGM_MIN_SIM` na transação da Busca (`trgmThresholdSql`); o índice GIN é com
+ * recheck, então a linha devolvida passa sempre pelo mesmo `%`.
+ *
+ * CURINGA (correção de bug): o termo do ramo ILIKE-contém é escapado (`escapeLikeSql`) DEPOIS da
+ * normalização, então `%`, `_` e `\` digitados casam literalmente (antes viravam curinga: "100%"
+ * casava qualquer título com "100"). Termo sem esses caracteres ⇒ padrão idêntico ao de antes. O
+ * ramo `%` não é padrão LIKE (curinga não existe ali): segue com o termo normalizado cru.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentário) — terminaria o
+ * `sql\`...\``. Comentários explicativos ficam AQUI no TS, fora do template.
+ */
+export function trgmTitlePredicateSql(term: string): SQL {
+  const normTerm = sql`lower(immutable_unaccent(${sql.param(term)}))`
+  return sql`(
+        lower(immutable_unaccent(rt2.titulo)) ILIKE '%' || ${escapeLikeSql(normTerm)} || '%'
+        OR lower(immutable_unaccent(rt2.titulo)) % ${normTerm}
+      )`
+}
+
+/**
+ * Fixa `pg_trgm.similarity_threshold = TRGM_MIN_SIM` na transação corrente (`is_local = true`:
+ * some no COMMIT/ROLLBACK, não vaza para outra query da conexão nem para outro cliente do pooler
+ * do Neon em modo transação). Roda ANTES da query da Busca, na mesma transação, sempre que a lane
+ * de trigrama está ativa.
+ *
+ * Por que não confiar no default (0.3 compilado no pg_trgm): um `ALTER DATABASE/ROLE SET`
+ * mudaria o corte da Busca em silêncio. Por que não no mesmo statement (CTE com `set_config`): a
+ * ordem de avaliação entre CTE e index scan não é garantida. Por que não parâmetro de conexão: o
+ * pooler do Neon recusa startup parameters fora de uma lista curta.
+ *
+ * CUSTO: a transação acrescenta 3 idas e voltas (BEGIN, set_config, COMMIT) às buscas com termo
+ * de 3+ caracteres; contadas no fio com um proxy TCP que injeta atraso, com o cliente do pooler
+ * (`prepare:false`). O set_config vai como literal (query simples, 1 ida e volta). No pooler do Neon
+ * na mesma região isso é da ordem de poucos ms; a rota já espera o embedding (HTTP externo, centenas de
+ * ms) antes desta query. Em troca, o FTS e o fuzzy deixam de varrer todas as traduções: com 12 mil
+ * traduções semeadas, ~30 ms e ~80 ms de Seq Scan viram ~4 ms e ~2 ms (docs/perf/2026-10-13-
+ * auditoria.md, achado C, tem os planos e as medidas).
+ */
+export function trgmThresholdSql(): SQL {
+  // Literal, não parâmetro: com parâmetro o postgres.js (prepare:false, pooler) faz Parse+Describe antes
+  // do Bind, uma ida e volta a mais. O valor é a constante numérica acima, nunca entrada de usuário.
+  return sql.raw(`SELECT set_config('pg_trgm.similarity_threshold', '${TRGM_MIN_SIM}', true)`)
+}
+
+/**
+ * Configs de full-text que `recipe_ts_config(locale)` pode devolver (drizzle/0005_busca_fts.sql:
+ * `CASE WHEN $1 LIKE 'pt%' THEN 'portuguese' ELSE 'english' END`; STRICT, então locale NULL dá
+ * NULL). A suíte de equivalência trava o corpo da função: um idioma novo na função sem entrar aqui
+ * quebra o teste em vez de sumir da Busca.
+ */
+export const RECIPE_TS_CONFIGS = ['portuguese', 'english'] as const
+
+/**
+ * CTE `matched` do full-text de TÍTULO (#6): match cross-locale + `ts_rank` por LINHA de
+ * tradução, cada linha na config do seu `search_vector` (`recipe_ts_config(rt.locale)`).
+ *
+ * Um braço por config, com o tsquery em config CONSTANTE, unidos por UNION ALL. Antes era um
+ * braço só com `websearch_to_tsquery(recipe_ts_config(rt.locale), ...)`: tsquery por linha, e o
+ * `@@` virava Filter de Seq Scan (o GIN `recipe_translation_search_vector_gin` só atende um
+ * tsquery constante). EQUIVALÊNCIA: toda linha tem `recipe_ts_config(rt.locale)` igual a
+ * exatamente uma das configs (ou NULL, que antes dava tsquery NULL e nunca casava; agora não
+ * entra em braço nenhum), então cai em um braço só, com o MESMO tsquery e o MESMO `ts_rank` de
+ * antes (a config substituída é a que a função devolveria). O `ranked` (MAX por receita) não
+ * muda. Coberto pela suíte de equivalência.
+ *
+ * O nome da config entra por `sql.raw` (constante de código, nunca entrada de usuário); `q` é
+ * bindado em cada braço.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentário).
+ */
+export function titleFtsMatchedSql(q: string): SQL {
+  const arms = RECIPE_TS_CONFIGS.map((cfg) => {
+    const cfgSql = sql.raw(`'${cfg}'::regconfig`)
+    return sql`
+      SELECT
+        rt.recipe_id AS recipe_id,
+        ts_rank(rt.search_vector, websearch_to_tsquery(${cfgSql}, immutable_unaccent(${q}))) AS rank
+      FROM recipe_translation rt
+      WHERE recipe_ts_config(rt.locale) = ${cfgSql}
+        AND rt.search_vector @@ websearch_to_tsquery(${cfgSql}, immutable_unaccent(${q}))`
+  })
+  return sql.join(arms, sql`
+      UNION ALL`)
 }
 
 /**
@@ -587,28 +681,15 @@ export async function searchRecipes(
       ${bucket2Sql}
     `
 
-  const rows = await db.execute<SearchHitRow>(sql`
+  const mainSql = sql`
     WITH params AS (
       SELECT ${requestLocale}::text AS req_locale
     ),
     matched AS (
-      -- #6 VERBATIM: match cross-locale + rank por LINHA de traducao; per-row config no
-      -- tsquery (a MESMA config do indice da linha, recipe_ts_config(rt.locale)). Roda
-      -- sobre o ?q= INTEIRO (virgula vira AND no websearch_to_tsquery).
-      SELECT
-        rt.recipe_id AS recipe_id,
-        ts_rank(
-          rt.search_vector,
-          websearch_to_tsquery(
-            recipe_ts_config(rt.locale),
-            immutable_unaccent(${q})
-          )
-        ) AS rank
-      FROM recipe_translation rt
-      WHERE rt.search_vector @@ websearch_to_tsquery(
-        recipe_ts_config(rt.locale),
-        immutable_unaccent(${q})
-      )
+      -- #6: match cross-locale + rank por LINHA de traducao, cada linha na config do seu
+      -- indice (recipe_ts_config(rt.locale)); um braco por config, tsquery constante (usa o
+      -- GIN). Roda sobre o ?q= INTEIRO (virgula vira AND no websearch_to_tsquery).
+      ${titleFtsMatchedSql(q)}
     ),
     ranked AS (
       -- #6 VERBATIM: dedup por Receita: MAX rank entre as traducoes que casaram.
@@ -770,7 +851,17 @@ export async function searchRecipes(
       FROM visible
     )
     ${displayTailSql(sql`n.rn <= ${SECTION_CAP}`, sql`n.section, n.rn`)}
-  `)
+  `
+
+  // Lane de trigrama ativa: o operador % lê pg_trgm.similarity_threshold, então a query roda numa
+  // transação que antes fixa o GUC em TRGM_MIN_SIM (trgmThresholdSql explica o porquê e o custo).
+  // Inativa: nenhum % na query, uma ida só ao banco como antes.
+  const rows = trgmActive
+    ? await db.transaction(async (tx) => {
+        await tx.execute(trgmThresholdSql())
+        return tx.execute<SearchHitRow>(mainSql)
+      })
+    : await db.execute<SearchHitRow>(mainSql)
 
   const hits = [...rows]
 

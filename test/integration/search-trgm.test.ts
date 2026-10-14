@@ -162,4 +162,40 @@ describe('#118 — lane de trigrama: substring + typo no título', () => {
     })
     expect(planJson).toContain('recipe_translation_titulo_trgm_gin')
   })
+
+  // Correção do curinga (auditoria de performance 2026-10-13, achado C): '%', '_' e '\' digitados
+  // casam LITERALMENTE no ramo ILIKE-contém. Cada negativo é NÃO-vácuo: o padrão antigo
+  // ('%' || termo || '%' sem escape) casaria o título (ver search-index-equivalence.test.ts). Os
+  // títulos não têm lexema FTS em comum com o termo e a similaridade fica bem abaixo do piso, então o
+  // único caminho possível seria o ILIKE.
+  it('TC8: "_" digitado é literal ("_yzw" não casa "Bolo xyzwq")', async () => {
+    const bolo = await seedCatalog('Bolo xyzwq')
+    expect(allIds(await searchBody('_yzw'))).not.toContain(bolo)
+  })
+
+  it('TC9: "%" digitado é literal ("qq%" não casa "Torta qqzzk")', async () => {
+    const torta = await seedCatalog('Torta qqzzk')
+    expect(allIds(await searchBody('qq%'))).not.toContain(torta)
+  })
+
+  it('TC10: termo com "%" ainda casa o título que TEM o "%" (controle positivo)', async () => {
+    const bolo = await seedCatalog('Bolo zz%kk')
+    expect(allIds(await searchBody('z%k'))).toContain(bolo)
+  })
+
+  it('TC11: curinga de largura total (％, ＿) vira ASCII no unaccent e continua literal', async () => {
+    // O unaccent mapeia ％ -> % e ＿ -> _: o escape roda DEPOIS da normalização (escapeLikeSql).
+    const literal = await seedCatalog('Bolo zz%kk')
+    const outro = await seedCatalog('Bolo xyzwq')
+    expect(allIds(await searchBody('z％k'))).toContain(literal)
+    expect(allIds(await searchBody('＿yzw'))).not.toContain(outro)
+  })
+
+  it('TC12: "\\" digitado é literal ("a\\b" casa "Pão a\\b" e não "Pão ab")', async () => {
+    const com = await seedCatalog('Pão a\\bcx')
+    const sem = await seedCatalog('Pão abcx')
+    const got = allIds(await searchBody('a\\bc'))
+    expect(got).toContain(com)
+    expect(got).not.toContain(sem)
+  })
 })
