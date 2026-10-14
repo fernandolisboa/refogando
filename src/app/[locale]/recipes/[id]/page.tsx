@@ -183,6 +183,7 @@ export default async function RecipeDetailPage({
         requestLocale: locale,
         ...(publicRows.author ? { author: publicRows.author } : {}),
         ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
+        ...(publicRows.imageSrcSet ? { imageSrcSet: publicRows.imageSrcSet } : {}),
         ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
         ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
       })

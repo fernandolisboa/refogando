@@ -194,7 +194,10 @@ export async function loadMenuCandidates(input: {
 // ── Prévia ───────────────────────────────────────────────────────────────────────
 
 /** Card de Receita da prévia (o mesmo recorte do card do Cardápio). */
-export type MenuPreviewRecipe = Pick<RecipeListItem, 'id' | 'name' | 'slug' | 'imageUrl' | 'imageAiGenerated'>
+export type MenuPreviewRecipe = Pick<
+  RecipeListItem,
+  'id' | 'name' | 'slug' | 'imageUrl' | 'imageSrcSet' | 'imageAiGenerated'
+>
 
 /**
  * Cards das Receitas escolhidas (≤ 28), pela MESMA hidratação de Salvos/Cardápio (título por locale,
@@ -225,6 +228,7 @@ export async function loadMenuPreviewCards(input: {
         name: c.name,
         ...(c.slug !== undefined ? { slug: c.slug } : {}),
         ...(c.imageUrl !== undefined ? { imageUrl: c.imageUrl } : {}),
+        ...(c.imageSrcSet !== undefined ? { imageSrcSet: c.imageSrcSet } : {}),
         ...(c.imageAiGenerated ? { imageAiGenerated: true } : {}),
       },
     ]),

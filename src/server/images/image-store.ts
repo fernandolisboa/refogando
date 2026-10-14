@@ -56,6 +56,44 @@ export interface ImageStore {
  */
 const VERCEL_BLOB_HOST_SUFFIX = '.public.blob.vercel-storage.com'
 
+/** Tempo máximo de um `get` (download do original). Uma imagem nossa tem ~1,5–2 MB. */
+const GET_TIMEOUT_MS = 10_000
+
+/** Teto de bytes de um `get`: folga larga sobre os 2 MB do upload e o ~1,5–2,5 MB do Gemini. */
+const GET_MAX_BYTES = 25 * 1024 * 1024
+
+/** Body grande demais para um `get` (o `name` vai para os logs do call-site). */
+class ImageTooLargeError extends Error {
+  override name = 'ImageTooLarge'
+}
+
+/**
+ * Lê o body inteiro com teto: recusa pelo `content-length` declarado antes de ler e, lendo em stream,
+ * aborta assim que os bytes passam do teto (sem materializar o resto).
+ */
+async function readBodyCapped(res: Response, maxBytes: number): Promise<Buffer> {
+  const declared = Number(res.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => {})
+    throw new ImageTooLargeError(`body acima de ${maxBytes} bytes`)
+  }
+  if (!res.body) return Buffer.alloc(0)
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      throw new ImageTooLargeError(`body acima de ${maxBytes} bytes`)
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks, total)
+}
+
 /** Extensão de arquivo por content-type (allowlist de imagem). Vazio se desconhecido. */
 function extForContentType(contentType: string): string {
   switch (contentType) {
@@ -116,10 +154,16 @@ export class RealImageStore implements ImageStore {
 
   async get(url: string): Promise<{ data: Buffer; contentType: string } | null> {
     // Blob PUBLIC: a URL serve direto (leitura não exige token). `!res.ok` ⇒ null (não lê o body);
-    // um erro de rede genuíno borbulha pro call-site (→ 503).
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const data = Buffer.from(await res.arrayBuffer())
+    // um erro de rede genuíno borbulha pro call-site (→ 503). Limites (achado I, backfill dos
+    // derivados): tempo (`AbortSignal.timeout`), sem seguir redirect (o blob público responde 200 direto;
+    // um redirect levaria a um host que `owns` não conferiu) e teto de tamanho, pelo `content-length` e
+    // de novo contando os bytes lidos (o header pode faltar ou mentir). Estourar qualquer um LANÇA.
+    const res = await fetch(url, { signal: AbortSignal.timeout(GET_TIMEOUT_MS), redirect: 'error' })
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {})
+      return null
+    }
+    const data = await readBodyCapped(res, GET_MAX_BYTES)
     // content-type ausente/vazio ⇒ default 'image/png' (espelha o fallback do generator).
     const contentType = res.headers.get('content-type')?.trim() || 'image/png'
     return { data, contentType }

@@ -5,7 +5,8 @@ import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary
 import type { ImageStore } from '@/server/images/image-store'
 import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
-import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
+import { reapOrphanImage } from '@/server/recipe/image'
+import { deleteOrphanBlobs } from '@/server/images/image-blobs'
 import { replaceIngredients } from '@/server/recipe/ingredients'
 import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
 import { conciliarTempoPreparo } from '@/domain/tempo'
@@ -305,11 +306,12 @@ export async function deleteOwnRecipe(
     if (deleted.length === 0) return { kind: 'not_found' as const }
     // A Receita foi apagada NESTA tx ⇒ o COUNT do reap a exclui e conta só OUTRAS versões que ainda
     // compartilham o blob (carry-forward #131). image_id null ⇒ reap no-op (Receita sem imagem).
-    const orphanBlobUrl = await reapOrphanImage(tx, deleted[0].imageId, null)
-    return { kind: 'ok' as const, orphanBlobUrl }
+    // Achado I (0077): o reap devolve o original E os derivados WebP da linha apagada.
+    const orphanBlobUrls = await reapOrphanImage(tx, deleted[0].imageId, null)
+    return { kind: 'ok' as const, orphanBlobUrls }
   })
   if (outcome.kind === 'not_found') return 'not_found'
   // Blob best-effort DEPOIS do commit (não há rollback de blob); só apaga se for NOSSO (store.owns).
-  await deleteOrphanBlob(store, outcome.orphanBlobUrl)
+  await deleteOrphanBlobs(store, outcome.orphanBlobUrls)
   return 'ok'
 }

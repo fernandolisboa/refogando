@@ -39,7 +39,7 @@ import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { formatShortDay, mealPlanErrorMessage, mealSlotLabel, slotForNow } from './meal-plan-format'
 import { MealPlanThumb } from './meal-plan-thumb'
 
-type Candidate = Pick<RecipeListItem, 'id' | 'name' | 'imageUrl' | 'imageAiGenerated'>
+type Candidate = Pick<RecipeListItem, 'id' | 'name' | 'imageUrl' | 'imageSrcSet' | 'imageAiGenerated'>
 /** Marca de "enviando uma Anotação" em `busyId` (nunca colide com um uuid de Receita). */
 const NOTE_BUSY = 'note'
 type Status = 'unloaded' | 'loading' | 'idle' | 'error'
@@ -67,7 +67,13 @@ async function fetchCandidates(locale: string): Promise<Candidate[] | null> {
       continue
     }
     seen.add(r.id)
-    merged.push({ id: r.id, name: r.name, imageUrl: r.imageUrl, imageAiGenerated: r.imageAiGenerated })
+    merged.push({
+      id: r.id,
+      name: r.name,
+      imageUrl: r.imageUrl,
+      imageSrcSet: r.imageSrcSet,
+      imageAiGenerated: r.imageAiGenerated,
+    })
   }
   return merged
 }
@@ -335,6 +341,7 @@ function PickerBody({
               >
                 <MealPlanThumb
                   imageUrl={c.imageUrl}
+                  imageSrcSet={c.imageSrcSet}
                   aiGenerated={c.imageAiGenerated}
                   aiLabel={messages.busca.imagemSeloIa}
                   className="size-10"

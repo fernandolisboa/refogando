@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { imageSrcSetProps } from '@/domain/image-variants'
 import { ShoppingListAddBar } from './shopping-list-add-bar'
 
 type Summary = { id: string; name: string; createdAt: string; itemCount: number }
@@ -325,6 +326,7 @@ export function SavedRecipesView() {
                   <div className="relative mb-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
+                      {...imageSrcSetProps(item.imageSrcSet, 'listCard')}
                       src={item.imageUrl}
                       alt={item.name}
                       referrerPolicy="no-referrer"

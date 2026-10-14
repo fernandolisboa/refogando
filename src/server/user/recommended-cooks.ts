@@ -249,6 +249,8 @@ async function loadCookRecipePreviews(
     original_provenance: SearchHitRow['original_provenance']
     slug: string | null
     image_url: string | null
+    image_thumb_url: string | null
+    image_detail_url: string | null
     image_provenance: string | null
   }
   const recipeRows = await db.execute<RecipeRow>(sql`
@@ -276,6 +278,8 @@ async function loadCookRecipePreviews(
       orig_t.provenance AS original_provenance,
       req_t.slug AS slug,
       ri.blob_url AS image_url,
+      ri.thumb_url AS image_thumb_url, -- achado I (0077): derivados WebP (NULL ⇒ o card usa o original)
+      ri.detail_url AS image_detail_url,
       ri.provenance AS image_provenance
     FROM ranked
     LEFT JOIN recipe_translation req_t
@@ -306,6 +310,8 @@ async function loadCookRecipePreviews(
       owner_name: null,
       owner_handle: null,
       image_url: row.image_url,
+      image_thumb_url: row.image_thumb_url,
+      image_detail_url: row.image_detail_url,
       image_provenance: row.image_provenance,
       slug: row.slug,
     }
@@ -316,6 +322,7 @@ async function loadCookRecipePreviews(
       displayedTitle: projected.displayedTitle,
       ...(projected.slug !== undefined ? { slug: projected.slug } : {}),
       ...(projected.imageUrl !== undefined ? { imageUrl: projected.imageUrl } : {}),
+      ...(projected.imageSrcSet !== undefined ? { imageSrcSet: projected.imageSrcSet } : {}),
       ...(projected.imageAiGenerated !== undefined
         ? { imageAiGenerated: projected.imageAiGenerated }
         : {}),

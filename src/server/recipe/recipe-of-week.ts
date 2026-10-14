@@ -169,6 +169,8 @@ async function loadChosenCatalogRow(
       NULL AS owner_name, -- catálogo é sempre owner_id NULL: sem autor humano (espelha feedQuery)
       NULL AS owner_handle,
       ri.blob_url AS image_url,
+      ri.thumb_url AS image_thumb_url, -- achado I (0077): derivados WebP (NULL ⇒ o card usa o original)
+      ri.detail_url AS image_detail_url,
       ri.provenance AS image_provenance,
       req_t.slug AS slug
     FROM recipe r

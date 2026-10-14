@@ -41,6 +41,9 @@ export async function listMyRecipes(
       // Imagem (#130/#206): LEFT JOIN da thumbnail com o gate público `moderated_at IS NULL`
       // (espelha feed.ts/#133). Sem casamento (sem imagem ou imagem moderada) ⇒ NULL ⇒ placeholder.
       imageUrl: recipeImage.blobUrl,
+      // Achado I (0077): derivados WebP do mesmo JOIN (NULL ⇒ o card usa o original).
+      imageThumbUrl: recipeImage.thumbUrl,
+      imageDetailUrl: recipeImage.detailUrl,
       // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail (NULL sem imagem).
       // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA").
       imageProvenance: recipeImage.provenance,
@@ -95,8 +98,10 @@ export async function listMyRecipes(
         // `moderation_removed_at NÃO NULL` ⇒ saiu do acervo público (a SELECT-projection é a
         // única mudança; sem migração — a coluna já existe no schema).
         moderationRemovida: r.moderationRemovedAt != null,
-        imageUrl: r.imageUrl ?? undefined,
-        imageProvenance: r.imageProvenance ?? undefined,
+        imageUrl: r.imageUrl,
+        imageThumbUrl: r.imageThumbUrl,
+        imageDetailUrl: r.imageDetailUrl,
+        imageProvenance: r.imageProvenance,
         slug: slugByRecipe.get(r.id),
         translations: byRecipe.get(r.id) ?? [],
       },

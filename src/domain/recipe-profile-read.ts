@@ -17,6 +17,7 @@
 import type { Origin } from '@/domain/recipe'
 import type { ProfileLink } from '@/domain/links'
 import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
+import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
  * Linha de Receita pública do perfil (o loader a projeta): a espinha mínima para o título +
@@ -36,6 +37,9 @@ export type ProfileRecipeRow = {
   // moderated_at IS NULL no loader). Nullable (sem imagem / imagem moderada ⇒ NULL). O projetor deriva
   // `imageUrl`/`imageAiGenerated` aqui (não no loader), espelhando `projectResult` da Busca.
   imageUrl?: string | null
+  // Derivados WebP da mesma foto (achado I, migração 0077), do mesmo JOIN. NULL ⇒ só o original.
+  imageThumbUrl: string | null
+  imageDetailUrl: string | null
   imageProvenance?: string | null
   translations: ReadonlyArray<TranslationNameRow>
 }
@@ -51,6 +55,8 @@ export type ProfileRecipeItem = {
   // Foto de capa (#130) — `blob_url` PÚBLICO da thumbnail. AUSENTE ("ausente ≠ vazio") quando a Receita
   // não tem imagem ⇒ o card cai no placeholder. Espelha `SearchResult.imageUrl`; nunca o `image_id`.
   imageUrl?: string
+  // `srcset` dos derivados WebP (achado I, 0077). AUSENTE ⇒ o card usa só o `imageUrl` original.
+  imageSrcSet?: string
   // Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto.
   imageAiGenerated?: boolean
 }
@@ -109,6 +115,11 @@ export function projectProfileRecipe(
   // #231: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o locale pedido tem
   // slug (o builder/loader é locale-agnóstico — a escolha é por `requestLocale` aqui).
   const slug = row.slugByLocale?.[requestLocale]
+  const imageSrcSet = buildImageSrcSet({
+    original: row.imageUrl,
+    thumbUrl: row.imageThumbUrl,
+    detailUrl: row.imageDetailUrl,
+  })
   return {
     recipeId: row.id,
     displayedTitle,
@@ -117,6 +128,7 @@ export function projectProfileRecipe(
     // #130/Imagem: foto de capa PÚBLICA. "ausente ≠ vazio": só quando há blob (imageUrl != null —
     // o LEFT JOIN traz NULL sem imagem ou com imagem moderada). Espelha `projectResult` da Busca.
     ...(row.imageUrl != null ? { imageUrl: row.imageUrl } : {}),
+    ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated (foto do dono NÃO).
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
   }

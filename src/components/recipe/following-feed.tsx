@@ -210,6 +210,7 @@ export function FollowingFeed() {
               author={it.author}
               byLabel={mb.porAutor}
               imageUrl={it.imageUrl}
+              imageSrcSet={it.imageSrcSet}
               imageAiGenerated={it.imageAiGenerated}
               aiLabel={mb.imagemSeloIa}
             />

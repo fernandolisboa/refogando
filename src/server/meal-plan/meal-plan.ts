@@ -49,7 +49,7 @@ function maxEntriesIn(range: PlanRange): number {
 /** Receita resumida de uma Refeição planejada: o card de lista + as porções que ela declara. */
 export type MealPlanRecipe = Pick<
   RecipeListItem,
-  'id' | 'name' | 'slug' | 'imageUrl' | 'imageAiGenerated'
+  'id' | 'name' | 'slug' | 'imageUrl' | 'imageSrcSet' | 'imageAiGenerated'
 > & { porcoes: number | null }
 
 export type MealPlanEntryView = {
@@ -378,6 +378,7 @@ export async function loadMealPlan(input: {
             porcoes: r.recipePorcoes,
             ...(card.slug !== undefined ? { slug: card.slug } : {}),
             ...(card.imageUrl !== undefined ? { imageUrl: card.imageUrl } : {}),
+            ...(card.imageSrcSet !== undefined ? { imageSrcSet: card.imageSrcSet } : {}),
             ...(card.imageAiGenerated ? { imageAiGenerated: true } : {}),
           }
         : null,

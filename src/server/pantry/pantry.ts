@@ -38,7 +38,10 @@ export type PantryAddResult = { kind: 'ok'; added: PantryItemView[]; existing: n
 export type PantryRemoveResult = { kind: 'ok' } | { kind: 'not_found' }
 
 /** Uma Receita casada com a Despensa: o card de lista + a contagem + os nomes do que falta. */
-export type PantryMatch = Pick<RecipeListItem, 'id' | 'name' | 'slug' | 'imageUrl' | 'imageAiGenerated'> & {
+export type PantryMatch = Pick<
+  RecipeListItem,
+  'id' | 'name' | 'slug' | 'imageUrl' | 'imageSrcSet' | 'imageAiGenerated'
+> & {
   total: number
   covered: number
   missing: string[]
@@ -541,6 +544,7 @@ export async function loadPantryMatches(input: {
       name: card.name,
       ...(card.slug !== undefined ? { slug: card.slug } : {}),
       ...(card.imageUrl !== undefined ? { imageUrl: card.imageUrl } : {}),
+      ...(card.imageSrcSet !== undefined ? { imageSrcSet: card.imageSrcSet } : {}),
       ...(card.imageAiGenerated ? { imageAiGenerated: true } : {}),
       total: m.total,
       covered: m.covered,

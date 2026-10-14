@@ -16,6 +16,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { classifySection, type Origin, type SearchSection } from '@/domain/recipe'
 import type { RecipeAuthor } from '@/domain/recipe-search-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { imageSrcSetProps } from '@/domain/image-variants'
 import { cn } from '@/lib/utils'
 
 /** Rótulos de selo por seção, já localizados. O item escolhe pelo seu próprio
@@ -57,6 +58,11 @@ export type RecipeResultItemProps = {
   byLabel?: string
   /** Imagem da receita (#130) — `blob_url` PÚBLICO da thumbnail. */
   imageUrl?: string
+  /**
+   * `srcset` dos derivados WebP (achado I, 0077). Com ele, o navegador baixa um derivado (o de ~400 px
+   * na lista, o de ~1280 px na grade) em vez do original; ausente ⇒ só o `imageUrl` original, como antes.
+   */
+  imageSrcSet?: string
   /** Imagem gerada por IA (#132)? Mostra o selo "✨ gerada por IA" sobre a thumbnail. */
   imageAiGenerated?: boolean
   /** Rótulo do selo "gerada por IA", já localizado. Lido só quando `imageAiGenerated`. */
@@ -85,6 +91,7 @@ export function RecipeResultItem({
   author,
   byLabel,
   imageUrl,
+  imageSrcSet,
   imageAiGenerated = false,
   aiLabel,
   layout = 'list',
@@ -111,6 +118,9 @@ export function RecipeResultItem({
       {imageUrl != null ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          // Achado I (0077): `srcSet`/`sizes` dos derivados WebP para o slot do layout (lista: thumb;
+          // grade: só o detail, ver `IMAGE_SLOTS`). Sem derivados ⇒ só o `src` original.
+          {...imageSrcSetProps(imageSrcSet, layout === 'grid' ? 'resultGrid' : 'resultList')}
           src={imageUrl}
           alt={displayedTitle}
           referrerPolicy="no-referrer"

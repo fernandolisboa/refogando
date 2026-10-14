@@ -4,7 +4,8 @@ import { recipe } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { hasRemovableSourceName } from '@/server/recipe/clear-attribution'
-import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
+import { reapOrphanImage } from '@/server/recipe/image'
+import { deleteOrphanBlobs } from '@/server/images/image-blobs'
 
 /**
  * Atendimento ao autor EXTERNO (titular B, sem conta) pelo operador/Encarregado — #396/GAP-4
@@ -259,10 +260,8 @@ export async function operatorEscalateSource(input: {
       // #146: a receita já saiu NESTA tx ⇒ o COUNT do reap só conta OUTRAS versões que compartilham o
       // blob; zero ⇒ apaga recipe_image e devolve o blob p/ deleção pós-commit. (Importada raramente tem
       // imagem, mas o estúdio pode ter derivado uma — robusto e barato.)
-      for (const d of deleted) {
-        const blobUrl = await reapOrphanImage(tx, d.imageId, null)
-        if (blobUrl) orphanBlobUrls.push(blobUrl)
-      }
+      // Achado I (0077): o reap devolve o original E os derivados WebP da linha apagada.
+      for (const d of deleted) orphanBlobUrls.push(...(await reapOrphanImage(tx, d.imageId, null)))
     }
 
     // `removedSourceName`/`removedSourceUrl`: DISTINTOS de fato afetados, juntos por ' | '. Entram SÓ no
@@ -293,8 +292,6 @@ export async function operatorEscalateSource(input: {
   })
 
   // Blobs órfãos DEPOIS do commit (best-effort; só apaga se for NOSSO — store.owns).
-  if (input.store) {
-    for (const blobUrl of orphanBlobUrls) await deleteOrphanBlob(input.store, blobUrl)
-  }
+  if (input.store) await deleteOrphanBlobs(input.store, orphanBlobUrls)
   return result
 }

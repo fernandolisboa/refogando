@@ -10,8 +10,9 @@ import {
   generateAndStoreGalleryImage,
   createGalleryImage,
   loadGallery,
-  deleteOrphanBlob,
 } from '@/server/recipe/image'
+import { renderImageDerivativesSafe, storeImageDerivatives } from '@/server/images/image-derivatives'
+import { IMAGE_BLOB_COLS, deleteOrphanBlobs, imageRowBlobUrls } from '@/server/images/image-blobs'
 
 /**
  * Estúdio de imagem do CATÁLOGO (#238, ADR-0026 emenda dec.10) — variante CURADOR das ops de imagem.
@@ -19,7 +20,8 @@ import {
  * Aqui o gate é `origin='catalog' && owner_id IS NULL` (defense-in-depth — não afrouxa p/ um só) e a
  * AUTORIZAÇÃO é da BORDA (`requireRole('curador')`). Rotas de DONO ficam byte-idênticas (zero
  * regressão no caminho pago). Reusa o NÚCLEO compartilhado (`generateAndStoreGalleryImage`,
- * `createGalleryImage`, `loadGallery`, `deleteOrphanBlob`) — só os WRAPPERS de autorização mudam.
+ * `createGalleryImage`, `loadGallery`, e `deleteOrphanBlobs` de `image-blobs.ts`) — só os WRAPPERS de
+ * autorização mudam.
  *
  * Decisões: (dec.11) geração de catálogo é QUOTA-EXEMPT (não aplica teto por papel nem o bloqueio
  * por-usuário #226 — é op administrativa, não abuso) mas respeita o kill-switch global #134
@@ -129,12 +131,15 @@ export async function applyCatalogImageUpload(input: {
   const gate = await loadCatalogGate(db, id)
   if (!gate) return { kind: 'not_found' }
 
+  // Achado I (0077): derivados WebP em paralelo com o `put` do original; falha neles nunca vira erro.
+  const rendering = renderImageDerivativesSafe(data)
   let blobUrl: string
   try {
     ;({ url: blobUrl } = await store.store({ data, contentType, pathPrefix: 'recipes' }))
   } catch {
     return { kind: 'storage' }
   }
+  const derivatives = await storeImageDerivatives(store, await rendering)
 
   let newImageId: string
   try {
@@ -144,6 +149,7 @@ export async function applyCatalogImageUpload(input: {
         provenance: 'user_photo',
         userId: curatorId,
         lineageId: gate.lineageId,
+        derivatives,
       })
       // Auto-seleciona. Escopa por owner_id IS NULL (defense-in-depth — espelha o owner_id=userId do dono).
       await tx
@@ -153,7 +159,7 @@ export async function applyCatalogImageUpload(input: {
       return imageId
     })
   } catch (err) {
-    await deleteOrphanBlob(store, blobUrl)
+    await deleteOrphanBlobs(store, imageRowBlobUrls({ blobUrl, ...derivatives }))
     throw err
   }
 
@@ -214,7 +220,7 @@ export async function applyCatalogGalleryImageDelete(input: {
   if (!gate) return { kind: 'not_found' }
 
   const [img] = await db
-    .select({ blobUrl: recipeImage.blobUrl })
+    .select(IMAGE_BLOB_COLS)
     .from(recipeImage)
     .where(and(eq(recipeImage.id, imageId), eq(recipeImage.lineageId, gate.lineageId)))
     .limit(1)
@@ -222,17 +228,18 @@ export async function applyCatalogGalleryImageDelete(input: {
 
   // Ref-count GLOBAL numa tx (evita corrida COUNT↔DELETE). Uma imagem em uso (= face de alguma
   // versão) ⇒ in_use; logo a face atual NUNCA é apagável ⇒ `gate.imageId` segue válido p/ a galeria.
-  const orphanBlobUrl = await db.transaction(async (tx) => {
+  const orphanBlobUrls = await db.transaction(async (tx) => {
     const [{ refs }] = await tx
       .select({ refs: sql<number>`count(*)::int` })
       .from(recipe)
       .where(eq(recipe.imageId, imageId))
     if (refs > 0) return null
-    await tx.delete(recipeImage).where(eq(recipeImage.id, imageId))
-    return img.blobUrl
+    // Achado I (0077): os derivados da linha vão junto do original (senão ficariam órfãos no Blob).
+    const [deleted] = await tx.delete(recipeImage).where(eq(recipeImage.id, imageId)).returning(IMAGE_BLOB_COLS)
+    return imageRowBlobUrls(deleted ?? img)
   })
-  if (orphanBlobUrl === null) return { kind: 'in_use' }
+  if (orphanBlobUrls === null) return { kind: 'in_use' }
 
-  await deleteOrphanBlob(store, orphanBlobUrl)
+  await deleteOrphanBlobs(store, orphanBlobUrls)
   return okWithGallery(db, gate.lineageId, gate.imageId)
 }

@@ -5,14 +5,18 @@
  */
 import { ImageIcon, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { imageSrcSetProps } from '@/domain/image-variants'
 
 export function MealPlanThumb({
   imageUrl,
+  imageSrcSet,
   aiGenerated,
   aiLabel,
   className,
 }: {
   imageUrl?: string
+  /** `srcset` dos derivados WebP (achado I, 0077): a miniatura baixa o de ~400 px. Ausente ⇒ o original. */
+  imageSrcSet?: string
   aiGenerated?: boolean
   aiLabel: string
   className?: string
@@ -22,6 +26,7 @@ export function MealPlanThumb({
       {imageUrl != null ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          {...imageSrcSetProps(imageSrcSet, 'smallThumb')}
           src={imageUrl}
           alt=""
           referrerPolicy="no-referrer"

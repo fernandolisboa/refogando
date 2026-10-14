@@ -3,7 +3,7 @@ import type { Database } from '@/db/client'
 import { recipeReview, users } from '@/db/schema'
 import { RETENTION_DAYS } from '@/domain/account-purge'
 import type { ImageStore } from '@/server/images/image-store'
-import { deleteOrphanBlob } from '@/server/recipe/image'
+import { deleteOrphanBlob } from '@/server/images/image-blobs'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 
 /**

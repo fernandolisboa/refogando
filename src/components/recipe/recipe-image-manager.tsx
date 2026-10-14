@@ -37,6 +37,7 @@ import type { GalleryImage } from '@/domain/recipe-read'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
 import { isFreePlanUser } from '@/domain/plan'
+import { imageSrcSetProps } from '@/domain/image-variants'
 import { QuotaUpsellCard } from './quota-upsell-card'
 
 const ACCEPT = 'image/jpeg,image/png,image/webp'
@@ -700,7 +701,14 @@ function RecipeImageGallery({
                 className={`relative overflow-hidden rounded-md border ${img.selected ? 'border-brand-ink ring-2 ring-brand-ink' : 'border-border'} ${busy ? 'opacity-70' : ''} ${img.moderated ? 'opacity-60' : ''}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- thumbnail de blob público; sem otimização */}
-                <img src={img.url} alt={m.imagemTitulo} className="size-20 object-cover" />
+                <img
+                  // Achado I (0077): a miniatura baixa o derivado de ~400 px. `img.url` segue sendo o
+                  // original (o preview e o "Editar a partir desta" do servidor leem o original).
+                  {...imageSrcSetProps(img.srcSet, 'galleryThumb')}
+                  src={img.url}
+                  alt={m.imagemTitulo}
+                  className="size-20 object-cover"
+                />
                 {/* #285: selo distinto — "editada com IA" quando é variante de outra imagem (editedFromId),
                     senão "gerada por IA". Toda imagem editada é ai_generated, então a condição cobre ambas. */}
                 {img.aiGenerated && (

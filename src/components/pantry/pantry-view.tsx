@@ -40,6 +40,7 @@ type PantryMatch = {
   name: string
   slug?: string
   imageUrl?: string
+  imageSrcSet?: string
   imageAiGenerated?: boolean
   total: number
   covered: number
@@ -477,6 +478,7 @@ function MatchSection({
             <li key={r.id} className="flex min-w-0 gap-3 rounded-xl border border-border bg-surface p-3 shadow-sm">
               <MealPlanThumb
                 imageUrl={r.imageUrl}
+                imageSrcSet={r.imageSrcSet}
                 aiGenerated={r.imageAiGenerated}
                 aiLabel={aiLabel}
                 className="size-16"

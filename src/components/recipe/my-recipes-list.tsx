@@ -25,6 +25,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { imageSrcSetProps } from '@/domain/image-variants'
 
 type Status = 'loading' | 'idle' | 'error'
 
@@ -141,6 +142,7 @@ export function MyRecipesList() {
                     <div className="relative mb-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
+                        {...imageSrcSetProps(item.imageSrcSet, 'listCard')}
                         src={item.imageUrl}
                         alt={item.name}
                         referrerPolicy="no-referrer"
