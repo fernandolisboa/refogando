@@ -30,7 +30,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { CreateDrawer } from '@/components/recipe/create-drawer'
+import {
+  LazyCreateDrawer,
+  preloadCreateDrawer,
+  useCreateDrawerStatus,
+} from '@/components/recipe/create-drawer-lazy'
 import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
 import { cn } from '@/lib/utils'
@@ -48,7 +52,11 @@ export function SiteHeader() {
   // atual (sem navegar pra /create — o contexto fica atrás). É um Sheet independente do menu
   // mobile acima. Sem deep-links aqui (abre limpo no método-picker); a semeadura por
   // `?q`/`?resume`/`?mode=conversa` é trabalho do shell `/create`.
+  // O código da gaveta vem sob demanda (`LazyCreateDrawer`, achado G da auditoria, handoff 70):
+  // `createPending` = o clique pediu a abertura e o chunk ainda não chegou (o botão fica `aria-busy`).
   const [createOpen, setCreateOpen] = useState(false)
+  const createDrawerStatus = useCreateDrawerStatus()
+  const createPending = createOpen && createDrawerStatus === 'loading'
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto da
   // Descoberta-home pública (#236): "Minhas criações" é o espaço PRIVADO do dono; a home `/` é o feed
   // público + Busca.
@@ -100,13 +108,25 @@ export function SiteHeader() {
 
   // "Criar" ABRE o drawer (#191) — não navega. No drawer mobile, primeiro FECHA o menu (o
   // SheetClose embrulha o botão) e o seu onClick abre o drawer de criação. No desktop é um botão
-  // direto. Mesmo visual de CTA leve (borda em páprica) de antes.
+  // direto. Mesmo visual de CTA leve (borda em páprica) de antes. Hover, foco e pointerdown
+  // pré-carregam o código da gaveta (handoff 70); sem o chunk, o `LazyCreateDrawer` abre assim que
+  // ele chega ou, se ele falhou, navega para a `/create`.
   const ctaButton = (
     <button
       type="button"
       data-tour="criar"
-      onClick={() => setCreateOpen(true)}
-      className="rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10"
+      onPointerEnter={preloadCreateDrawer}
+      onPointerDown={preloadCreateDrawer}
+      onFocus={preloadCreateDrawer}
+      onClick={() => {
+        preloadCreateDrawer()
+        setCreateOpen(true)
+      }}
+      aria-busy={createPending || undefined}
+      className={cn(
+        'rounded-md border border-brand/60 px-3 py-1.5 text-brand-ink transition-colors hover:border-brand hover:bg-brand/10',
+        createPending && 'cursor-progress',
+      )}
     >
       {messages.nav.create}
     </button>
@@ -172,7 +192,14 @@ export function SiteHeader() {
         </div>
 
         {/* Gatilho hambúrguer: só abaixo de `sm:`. O Sheet (Radix Dialog) cuida da a11y. */}
-        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        {/* Abrir o menu também pré-carrega a gaveta: no celular o "Criar" mora aqui dentro. */}
+        <Sheet
+          open={menuOpen}
+          onOpenChange={(next) => {
+            setMenuOpen(next)
+            if (next) preloadCreateDrawer()
+          }}
+        >
           <SheetTrigger
             aria-label={messages.nav.abrirMenu}
             data-tour="menu-mobile"
@@ -231,8 +258,9 @@ export function SiteHeader() {
       </Container>
 
       {/* Drawer "Nova receita" (#191) — controlado pelo header; aberto pelo botão "Criar" do nav
-          (desktop e mobile). Renderiza num Portal (Radix Dialog), por cima da chrome. */}
-      <CreateDrawer open={createOpen} onOpenChange={setCreateOpen} />
+          (desktop e mobile). Renderiza num Portal (Radix Dialog), por cima da chrome. O código vem
+          sob demanda (handoff 70): o wrapper monta a mesma `CreateDrawer` quando o chunk chega. */}
+      <LazyCreateDrawer open={createOpen} onOpenChange={setCreateOpen} />
     </header>
   )
 }

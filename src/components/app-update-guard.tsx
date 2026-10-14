@@ -10,10 +10,18 @@
  * Escopo × invariante do ADR-0028 ("reload só na fronteira de navegação, nunca no meio de uma
  * tela"): o caminho PRIMÁRIO — chunk de rota jogado em render — passa pela error boundary, que
  * JÁ é uma fronteira de navegação. Este guard é belt-and-suspenders pro que escapa (rejeição de
- * `import()` não-capturada / falha de <script> de chunk). Hoje é praticamente inerte: a base NÃO
- * tem nenhum `next/dynamic`/`React.lazy`/`await import(...)` que possa estourar no meio de uma
- * tela. Se um lazy-import mid-screen for adicionado, revisitar aqui (guard de nav-em-voo ou a
- * persistência de rascunho que o #372 registra como direção) pra não recarregar perdendo tela.
+ * `import()` não-capturada / falha de <script> de chunk). Hoje é praticamente inerte. O único
+ * lazy-import do app é a gaveta "Criar" (`create-drawer-lazy.tsx`, handoff 70), que trata a própria
+ * rejeição (vira estado `failed`; o clique navega para `/create`) e por isso nunca chega aqui como
+ * `unhandledrejection`. Quem acrescentar outro `import()` mid-screen: capture a rejeição e dê um
+ * fallback próprio, ou aceite o reload daqui (e revisite o guard de nav-em-voo ou a persistência de
+ * rascunho que o #372 registra como direção, pra não recarregar perdendo tela).
+ *
+ * Falha de <script> de chunk: o listener de captura abaixo a vê, mas como `Event` de recurso, sem
+ * `error` nem `message`, e `isChunkLoadError` não a reconhece (o erro com nome `ChunkLoadError` só
+ * existe na rejeição da promessa do Turbopack). A gaveta depende disso: se este guard passar a
+ * reconhecer falha de <script> (pelo `e.target`), ele recarregaria a página antes do fallback da
+ * gaveta. Nesse caso, ignore o chunk da gaveta ou deixe a decisão para quem fez o `import()`.
  *
  * Sem toast, sem timer, sem /api/version, sem generateBuildId (ADR-0028 rejeita o nudge).
  */
