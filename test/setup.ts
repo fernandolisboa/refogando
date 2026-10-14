@@ -1,10 +1,16 @@
-import { afterAll, beforeAll, beforeEach, inject } from 'vitest'
+import { afterAll, beforeAll, beforeEach, inject, vi } from 'vitest'
 import type { Sql } from 'postgres'
 import type { Database } from '@/db/client'
 import { makeDb, makeSql } from '@/db/client'
 import { setDb, resetDeps, setModelCatalog, setModelProbe } from '@/server/deps'
 import { truncateAll } from './helpers/db'
 import { seedVocabularyCozinhas } from './helpers/vocabulary'
+import { resetFakeNextCache } from './helpers/next-cache'
+
+// `next/cache` só funciona dentro do servidor do Next (incrementalCache). A suíte node chama loaders e
+// route handlers direto, então troca o módulo por um dublê em memória (ver helpers/next-cache.ts),
+// zerado em todo teste abaixo.
+vi.mock('next/cache', () => import('./helpers/next-cache'))
 
 /**
  * setupFiles roda uma vez por arquivo de teste (em cada worker). Conecta no banco
@@ -24,6 +30,7 @@ beforeAll(() => {
 
 beforeEach(async () => {
   resetDeps()
+  resetFakeNextCache()
   // Nenhum teste fala com a Models API de verdade: sem dublê explícito, a lista vazia cai no fallback
   // pinado (sem o log de erro da API fora).
   setModelCatalog({ listModels: async () => [] })

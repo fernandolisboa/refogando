@@ -61,11 +61,13 @@ export default async function setup({ provide }: GlobalSetupContext) {
   let appUrl: string
   let container: StartedPostgreSqlContainer | null = null
   let dropThrowawayDb: (() => Promise<void>) | null = null
+  // Mesmo padrão de nome nos dois caminhos (no container também, em vez do default "test"): testes que
+  // mexem no próprio banco (ALTER DATABASE) conferem current_database() contra ele antes.
+  const dbName = `refogando_test_${randSuffix()}`
+  assertSafeDbName(dbName)
 
   if (external) {
     const adminUrl = pickAdminUrl()
-    const dbName = `refogando_test_${randSuffix()}`
-    assertSafeDbName(dbName)
 
     const admin = makeSql(adminUrl, { max: 1 })
     try {
@@ -97,7 +99,7 @@ export default async function setup({ provide }: GlobalSetupContext) {
       }
     }
   } else {
-    container = await new PostgreSqlContainer(IMAGE).start()
+    container = await new PostgreSqlContainer(IMAGE).withDatabase(dbName).start()
     appUrl = container.getConnectionUri()
   }
 
@@ -112,7 +114,7 @@ export default async function setup({ provide }: GlobalSetupContext) {
     const [{ current_database }] = await migrationSql<{ current_database: string }[]>`
       select current_database()
     `
-    if (external && !current_database.startsWith('refogando_test_')) {
+    if (current_database !== dbName) {
       throw new Error(`migrei o banco errado: ${current_database}`)
     }
   } catch (err) {
