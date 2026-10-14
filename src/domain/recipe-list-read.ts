@@ -15,6 +15,7 @@
  */
 import type { LineageKind, Origin, ResultKind, Visibility } from '@/domain/recipe'
 import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
+import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
  * Linha da Receita que a lista do dono consome: a espinha (id/origin/visibility/resultKind/
@@ -36,6 +37,10 @@ export type RecipeListRow = {
   // Imagem da receita (#130/#206): `blob_url` PÚBLICO da thumbnail, já gateado por
   // `moderated_at IS NULL` no loader (espelha feed.ts). `undefined` = sem imagem.
   imageUrl?: string
+  // Derivados WebP da mesma thumbnail (achado I, migração 0077), do mesmo JOIN. `undefined`/null =
+  // sem derivados ⇒ o card usa só o original. `resolveRecipeListItem` os junta em `imageSrcSet`.
+  imageThumbUrl?: string | null
+  imageDetailUrl?: string | null
   // Proveniência da imagem (#216): `recipe_image.provenance` da thumbnail. `undefined` = sem imagem.
   // `resolveRecipeListItem` deriva o booleano `imageAiGenerated` (espelha `projectResult`).
   imageProvenance?: 'user_photo' | 'ai_generated'
@@ -63,6 +68,8 @@ export type RecipeListItem = {
   moderationRemovida: boolean
   // Imagem da receita (#130/#206): `blob_url` da thumbnail; `undefined` = sem imagem (placeholder).
   imageUrl?: string
+  // `srcset` dos derivados WebP (achado I, 0077). AUSENTE ⇒ o card usa só o `imageUrl` original.
+  imageSrcSet?: string
   // Imagem gerada por IA (#216): derivado de `imageProvenance === 'ai_generated'` — a UI sobrepõe
   // o selo "✨ gerada por IA" na thumbnail (espelha `projectResult`/RecipeResultItem). Omitido se falso.
   imageAiGenerated?: boolean
@@ -86,6 +93,8 @@ export function resolveRecipeListItem(
     requestLocale,
     translations: row.translations,
   })
+  const imageSrcSet =
+    row.imageUrl != null ? buildImageSrcSet(row.imageThumbUrl, row.imageDetailUrl) : undefined
   return {
     id: row.id,
     name: name.length > 0 ? name : fallbackName,
@@ -96,6 +105,7 @@ export function resolveRecipeListItem(
     updatedAt: row.updatedAt,
     moderationRemovida: row.moderationRemovida,
     imageUrl: row.imageUrl,
+    ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
     // #231: slug do locale corrente pro link canônico. "ausente ≠ vazio": só quando há slug.
     ...(row.slug != null ? { slug: row.slug } : {}),

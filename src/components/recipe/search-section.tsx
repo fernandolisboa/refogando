@@ -68,6 +68,7 @@ export function SearchSection({
             author={result.author}
             byLabel={byLabel}
             imageUrl={result.imageUrl}
+            imageSrcSet={result.imageSrcSet}
             imageAiGenerated={result.imageAiGenerated}
             aiLabel={aiLabel}
           />

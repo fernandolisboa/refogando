@@ -36,6 +36,8 @@ export type RecommendedCookRecipe = {
   displayedTitle: string
   slug?: string
   imageUrl?: string
+  /** `srcset` dos derivados WebP da thumbnail (achado I, 0077). Ausente ⇒ só o `imageUrl` original. */
+  imageSrcSet?: string
   imageAiGenerated?: boolean
 }
 

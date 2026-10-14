@@ -85,6 +85,8 @@ function feedQuery(args: {
       u.name AS owner_name,
       u.handle AS owner_handle,
       ri.blob_url AS image_url,
+      ri.thumb_url AS image_thumb_url, -- achado I (0077): derivados WebP (NULL ⇒ o card usa o original)
+      ri.detail_url AS image_detail_url,
       ri.provenance AS image_provenance,
       req_t.slug AS slug -- #231: slug do locale PEDIDO (mesmo LEFT JOIN do título) pro link canônico
     FROM feed_rows fr

@@ -49,6 +49,7 @@ export function RecipeSimilarRail({
             author={r.author}
             byLabel={busca.porAutor}
             imageUrl={r.imageUrl}
+            imageSrcSet={r.imageSrcSet}
             imageAiGenerated={r.imageAiGenerated}
             aiLabel={busca.imagemSeloIa}
             layout="grid"

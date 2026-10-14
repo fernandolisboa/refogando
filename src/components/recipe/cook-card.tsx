@@ -17,6 +17,7 @@ import { Sparkles } from 'lucide-react'
 import { Avatar } from '@/components/profile/avatar'
 import { CookFollowButton } from './cook-follow-button'
 import type { RecommendedCookRecipe } from '@/domain/recommended-cooks-read'
+import { IMAGE_SIZES } from '@/domain/image-variants'
 
 export type CookCardCook = {
   name: string
@@ -119,7 +120,15 @@ function CookRecipeRow({ recipe, aiLabel }: { recipe: RecommendedCookRecipe; aiL
       <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-border bg-brand/[0.07]">
         {recipe.imageUrl != null ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={recipe.imageUrl} alt="" referrerPolicy="no-referrer" loading="lazy" className="size-full object-cover" />
+          <img
+            srcSet={recipe.imageSrcSet}
+            sizes={recipe.imageSrcSet ? IMAGE_SIZES.smallThumb : undefined}
+            src={recipe.imageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            className="size-full object-cover"
+          />
         ) : null}
         {recipe.imageAiGenerated && (
           <span className="absolute bottom-0.5 right-0.5 flex size-3.5 items-center justify-center rounded-full bg-bg text-brand shadow-sm">

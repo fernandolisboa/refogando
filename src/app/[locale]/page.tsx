@@ -120,6 +120,7 @@ export default async function Home({
             author={recipeOfWeek.author}
             byLabel={m.porAutor}
             imageUrl={recipeOfWeek.imageUrl}
+            imageSrcSet={recipeOfWeek.imageSrcSet}
             imageAiGenerated={recipeOfWeek.imageAiGenerated}
             aiLabel={m.imagemSeloIa}
           />

@@ -36,7 +36,14 @@ export type SuggestionItem = {
   day: string
   slot: MealSlot
   motivo: string
-  recipe: { id: string; name: string; slug?: string; imageUrl?: string; imageAiGenerated?: boolean }
+  recipe: {
+    id: string
+    name: string
+    slug?: string
+    imageUrl?: string
+    imageSrcSet?: string
+    imageAiGenerated?: boolean
+  }
 }
 type Preview = { items: SuggestionItem[]; comentario: string; targetCount: number }
 type Phase = 'form' | 'loading' | 'preview'
@@ -465,6 +472,7 @@ function PreviewRow({
       />
       <MealPlanThumb
         imageUrl={item.recipe.imageUrl}
+        imageSrcSet={item.recipe.imageSrcSet}
         aiGenerated={item.recipe.imageAiGenerated}
         aiLabel={aiLabel}
         className="size-12"

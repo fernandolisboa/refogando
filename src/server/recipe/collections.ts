@@ -385,6 +385,9 @@ export const RECIPE_LIST_COLS = {
   updatedAt: recipe.updatedAt,
   moderationRemovedAt: recipe.moderationRemovedAt,
   imageUrl: recipeImage.blobUrl,
+  // Achado I (0077): derivados WebP do mesmo JOIN (NULL ⇒ o card usa o original).
+  imageThumbUrl: recipeImage.thumbUrl,
+  imageDetailUrl: recipeImage.detailUrl,
   imageProvenance: recipeImage.provenance,
 } as const
 
@@ -398,6 +401,8 @@ export type RecipeListBaseRow = {
   updatedAt: Date
   moderationRemovedAt: Date | null
   imageUrl: string | null
+  imageThumbUrl: string | null
+  imageDetailUrl: string | null
   imageProvenance: ImageProvenance | null
 }
 
@@ -449,6 +454,8 @@ export async function hydrateRecipeListItems(
         updatedAt: r.updatedAt.toISOString(),
         moderationRemovida: r.moderationRemovedAt != null,
         imageUrl: r.imageUrl ?? undefined,
+        imageThumbUrl: r.imageThumbUrl,
+        imageDetailUrl: r.imageDetailUrl,
         imageProvenance: r.imageProvenance ?? undefined,
         slug: slugByRecipe.get(r.id),
         translations: byRecipe.get(r.id) ?? [],

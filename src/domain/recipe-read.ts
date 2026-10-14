@@ -216,6 +216,11 @@ export type ResolveInput = {
    * owner-gated). NUNCA carrega o `image_id` interno.
    */
   imageUrl?: string
+  /**
+   * `srcset` dos derivados WebP da foto (achado I, migração 0077; `buildImageSrcSet`). Só com os dois
+   * derivados; ausente ⇒ a capa usa só o original (`imageUrl`). Segue o MESMO gate de `imageUrl`.
+   */
+  imageSrcSet?: string
   /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA". AUSENTE quando não/foto. */
   imageAiGenerated?: boolean
   /**
@@ -262,6 +267,11 @@ export type ResolveInput = {
 export type GalleryImage = {
   id: string
   url: string
+  /**
+   * `srcset` dos derivados WebP (achado I, 0077) para a miniatura da galeria. Ausente ⇒ só `url` (o
+   * original). `url` segue sendo o original: o preview e a edição imagem-a-imagem usam ele.
+   */
+  srcSet?: string
   /** `true` quando `provenance = 'ai_generated'` — dirige o selo "✨ gerada por IA" no thumbnail. */
   aiGenerated: boolean
   /** `true` para a imagem que é a face pública atual (`recipe.image_id`). */
@@ -384,6 +394,11 @@ export type RecipeView = {
    * vê a Receita vê a foto) — NÃO owner-gated como `canManage`. Nunca expõe o `image_id` interno.
    */
   imageUrl?: string
+  /**
+   * `srcset` dos derivados WebP da foto (achado I, migração 0077): a capa escolhe o tamanho pela tela.
+   * AUSENTE quando a imagem não tem derivados (a capa usa o `imageUrl` original). Mesmo gate da foto.
+   */
+  imageSrcSet?: string
   /**
    * Imagem gerada por IA (#132, ADR-0017)? `true` quando a foto é `ai_generated` — dirige o selo
    * PÚBLICO "✨ gerada por IA" (honestidade). AUSENTE ("ausente ≠ vazio") quando não há imagem ou é
@@ -801,6 +816,8 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     ...(input.imageUrl != null && (!input.imageModerated || canManage)
       ? {
           imageUrl: input.imageUrl,
+          // Achado I (0077): derivados WebP da MESMA foto, sob o mesmo gate. "ausente ≠ vazio".
+          ...(input.imageSrcSet != null ? { imageSrcSet: input.imageSrcSet } : {}),
           // Selo "✨ gerada por IA" (#132): só quando há imagem VISÍVEL e é ai_generated. "ausente ≠ vazio".
           ...(input.imageAiGenerated ? { imageAiGenerated: true } : {}),
         }

@@ -157,6 +157,7 @@ export function PublicProfileView({
                 badgeLabels={badgeLabels}
                 autoTranslationLabel={mb.traducaoAutomatica}
                 imageUrl={r.imageUrl}
+                imageSrcSet={r.imageSrcSet}
                 imageAiGenerated={r.imageAiGenerated}
                 aiLabel={mb.imagemSeloIa}
               />

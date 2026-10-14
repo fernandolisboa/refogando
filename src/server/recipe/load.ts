@@ -13,6 +13,7 @@ import {
 } from '@/db/schema'
 import type { RecipeAuthor, RecipeRow, TranslationRow, IngredientItem } from '@/domain/recipe-read'
 import { eligibleForPublicRead } from '@/domain/recipe-detail-route'
+import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
  * Loader de servidor compartilhado da Receita (issue #8, §7b — refactor DRY com #3).
@@ -45,6 +46,11 @@ export type LoadedRecipeRows = {
    * que vê a Receita. NUNCA expõe o `image_id` interno — só a URL servível.
    */
   imageUrl?: string
+  /**
+   * `srcset` dos derivados WebP da mesma `recipe_image` (achado I, migração 0077). AUSENTE quando ela
+   * não tem os dois derivados (a capa usa o `imageUrl` original). O gate de moderação é o do `imageUrl`.
+   */
+  imageSrcSet?: string
   /**
    * Imagem gerada por IA? (#132) — `true` quando a `recipe_image` apontada tem
    * `provenance = 'ai_generated'`. Dirige o selo "✨ gerada por IA" no público (honestidade,
@@ -114,6 +120,9 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
             // a query) — quem decide esconder do público é o módulo PURO (recipe-read), preservando
             // a visão do Owner. Espelha o `AND moderated_at IS NULL` do feed/busca, mas sem perder o dado.
             moderatedAt: recipeImage.moderatedAt,
+            // Achado I (0077): derivados WebP para o `srcset` da capa (NULL ⇒ só o original).
+            thumbUrl: recipeImage.thumbUrl,
+            detailUrl: recipeImage.detailUrl,
           })
           .from(recipeImage)
           .where(eq(recipeImage.id, row.imageId))
@@ -125,6 +134,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     authorRow != null ? { name: authorRow.name, handle: authorRow.handle } : undefined
 
   const imageUrl = imageRows[0]?.blobUrl ?? undefined
+  const imageSrcSet = imageUrl ? buildImageSrcSet(imageRows[0]?.thumbUrl, imageRows[0]?.detailUrl) : undefined
   const imageAiGenerated = imageRows[0]?.provenance === 'ai_generated'
   const imageModerated = imageRows[0]?.moderatedAt != null
 
@@ -135,6 +145,7 @@ export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRe
     tags: tags.map((t) => t.nome),
     ...(author ? { author } : {}),
     ...(imageUrl ? { imageUrl } : {}),
+    ...(imageSrcSet ? { imageSrcSet } : {}),
     ...(imageAiGenerated ? { imageAiGenerated } : {}),
     // #133: repassa a flag de moderação ao PURO (que esconde a imagem do não-dono). "ausente ≠ vazio".
     ...(imageModerated ? { imageModerated } : {}),

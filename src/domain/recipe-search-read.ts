@@ -24,6 +24,7 @@ import {
 import { resolveName, type RecipeAuthor, type TranslationRow } from '@/domain/recipe-read'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
 import type { Restricao } from '@/domain/vocabulary'
+import { buildImageSrcSet } from '@/domain/image-variants'
 
 // Re-export para os consumidores da Busca/Feed (#129) — a Autoria nasce em `recipe-read`
 // (módulo mais fundamental; evita ciclo de import) e é compartilhada com o detalhe.
@@ -70,6 +71,14 @@ export type SearchHitRow = {
    */
   image_url: string | null
   /**
+   * Derivados WebP da MESMA `recipe_image` (achado I, migração 0077): `thumb_url` (~400 px) e
+   * `detail_url` (~1280 px), do mesmo LEFT JOIN (mesmo gate de moderação). Opcionais: um loader que
+   * ainda não os seleciona (ou imagem sem derivados) dá `undefined`/NULL ⇒ o card usa só o original.
+   * `projectResult` os junta em `SearchResult.imageSrcSet`.
+   */
+  image_thumb_url?: string | null
+  image_detail_url?: string | null
+  /**
    * Proveniência da imagem (#132) — `recipe_image.provenance` da thumbnail (NULL sem imagem).
    * `projectResult` deriva o booleano `imageAiGenerated` (selo "✨ gerada por IA"). NUNCA expõe o id.
    */
@@ -109,6 +118,11 @@ export type SearchResult = {
    * `image_url` do loader; nunca carrega o `image_id` interno.
    */
   imageUrl?: string
+  /**
+   * `srcset` dos derivados WebP da thumbnail (achado I, 0077; `buildImageSrcSet`). AUSENTE quando a
+   * imagem não tem os dois derivados ⇒ o card usa só o `imageUrl` original, como antes.
+   */
+  imageSrcSet?: string
   /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto. */
   imageAiGenerated?: boolean
   /**
@@ -244,6 +258,8 @@ export function projectResult(
   // (owner_name E owner_handle não-NULL — Catálogo/sistema tem ambos NULL ⇒ sem byline).
   // "ausente ≠ vazio": a chave `author` só existe quando há autor — nada de autor falso.
   const author = projectAuthor(hit.owner_name, hit.owner_handle)
+  const imageSrcSet =
+    hit.image_url != null ? buildImageSrcSet(hit.image_thumb_url, hit.image_detail_url) : undefined
   return {
     recipeId: hit.recipe_id,
     displayedTitle,
@@ -253,6 +269,8 @@ export function projectResult(
     ...(author !== undefined ? { author } : {}),
     // #130/Imagem: thumbnail PÚBLICA do card. "ausente ≠ vazio": só quando há blob (image_url != null).
     ...(hit.image_url != null ? { imageUrl: hit.image_url } : {}),
+    // Achado I (0077): derivados WebP da mesma thumbnail (só com a imagem presente e os dois derivados).
+    ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated.
     ...(hit.image_provenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
     // #231/Slug: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o LEFT JOIN

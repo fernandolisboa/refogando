@@ -41,6 +41,9 @@ export async function listPublicRecipesByOwner(
       // Foto de capa (#130/#132): blob PÚBLICO + proveniência da thumbnail. NULL sem imagem ou com
       // imagem MODERADA (o gate moderated_at IS NULL vive na cláusula ON do JOIN, não no WHERE).
       imageUrl: recipeImage.blobUrl,
+      // Achado I (0077): derivados WebP do mesmo JOIN (NULL ⇒ o card usa o original).
+      imageThumbUrl: recipeImage.thumbUrl,
+      imageDetailUrl: recipeImage.detailUrl,
       imageProvenance: recipeImage.provenance,
     })
     .from(recipe)
@@ -103,6 +106,8 @@ export async function listPublicRecipesByOwner(
       ...(slugByLocale ? { slugByLocale } : {}),
       // CRUS do LEFT JOIN (nullable): a derivação imageUrl/imageAiGenerated é PURA no projetor.
       imageUrl: r.imageUrl,
+      imageThumbUrl: r.imageThumbUrl,
+      imageDetailUrl: r.imageDetailUrl,
       imageProvenance: r.imageProvenance,
       translations: byRecipe.get(r.id) ?? [],
     }

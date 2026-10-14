@@ -618,6 +618,7 @@ function EntryRow({
       ) : (
         <MealPlanThumb
           imageUrl={r?.imageUrl}
+          imageSrcSet={r?.imageSrcSet}
           aiGenerated={r?.imageAiGenerated}
           aiLabel={aiLabel}
           className="size-12"

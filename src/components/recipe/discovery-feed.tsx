@@ -136,6 +136,7 @@ export function DiscoveryFeed({
               author={it.author}
               byLabel={m.porAutor}
               imageUrl={it.imageUrl}
+              imageSrcSet={it.imageSrcSet}
               imageAiGenerated={it.imageAiGenerated}
               aiLabel={m.imagemSeloIa}
             />
