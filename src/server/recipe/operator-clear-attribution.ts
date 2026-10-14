@@ -4,7 +4,8 @@ import { recipe } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { hasRemovableSourceName } from '@/server/recipe/clear-attribution'
-import { reapOrphanImage, deleteOrphanBlob } from '@/server/recipe/image'
+import { reapOrphanImage } from '@/server/recipe/image'
+import { deleteOrphanBlobs } from '@/server/images/image-blobs'
 
 /**
  * Atendimento ao autor EXTERNO (titular B, sem conta) pelo operador/Encarregado — #396/GAP-4
@@ -291,8 +292,6 @@ export async function operatorEscalateSource(input: {
   })
 
   // Blobs órfãos DEPOIS do commit (best-effort; só apaga se for NOSSO — store.owns).
-  if (input.store) {
-    for (const blobUrl of orphanBlobUrls) await deleteOrphanBlob(input.store, blobUrl)
-  }
+  if (input.store) await deleteOrphanBlobs(input.store, orphanBlobUrls)
   return result
 }

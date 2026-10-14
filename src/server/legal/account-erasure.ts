@@ -3,7 +3,7 @@ import type { Database } from '@/db/client'
 import { account, mealPlanEntry, pantryItem, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { getImageStore } from '@/server/deps'
-import { deleteOrphanBlob } from '@/server/recipe/image'
+import { deleteOrphanBlob } from '@/server/images/image-blobs'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 
 /**

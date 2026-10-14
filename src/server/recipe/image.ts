@@ -17,11 +17,11 @@ import { loadRecipeRows } from '@/server/recipe/load'
 import { loadAppConfig } from '@/server/app-config'
 import { assertImageGenSlotInTx, QuotaExceededError } from '@/server/quota/atomic'
 import {
-  imageRowBlobUrls,
   renderImageDerivativesSafe,
   storeImageDerivatives,
   type ImageDerivativeUrls,
 } from '@/server/images/image-derivatives'
+import { IMAGE_BLOB_COLS, deleteOrphanBlobs, imageRowBlobUrls } from '@/server/images/image-blobs'
 import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
@@ -81,16 +81,6 @@ export type RecipeImageGenResult =
 
 /** Tipo da transação do Drizzle (mesmas APIs de query que `Database`). */
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
-
-/**
- * Os blobs de uma linha `recipe_image`: o original e os derivados WebP (achado I, 0077). Quem APAGA a
- * linha lê os três (SELECT/RETURNING) e apaga todos depois do commit (`imageRowBlobUrls`).
- */
-export const IMAGE_BLOB_COLS = {
-  blobUrl: recipeImage.blobUrl,
-  thumbUrl: recipeImage.thumbUrl,
-  detailUrl: recipeImage.detailUrl,
-} as const
 
 export async function applyRecipeImageUpload(input: {
   db: Database
@@ -705,21 +695,6 @@ export async function reapOrphanImage(
     .where(eq(recipeImage.id, oldImageId))
     .returning(IMAGE_BLOB_COLS)
   return old ? imageRowBlobUrls(old) : []
-}
-
-/** Apaga o blob órfão se houver E se for NOSSO (no-op silencioso para URL estrangeira/ausente). */
-export async function deleteOrphanBlob(store: ImageStore, blobUrl: string | null): Promise<void> {
-  if (!blobUrl || !store.owns(blobUrl)) return
-  try {
-    await store.delete(blobUrl)
-  } catch {
-    // Órfão tolerável: a Receita já foi repontada/limpa; não propagamos a falha de limpeza.
-  }
-}
-
-/** `deleteOrphanBlob` para todos os blobs de uma linha (original + derivados, `imageRowBlobUrls`). */
-export async function deleteOrphanBlobs(store: ImageStore, blobUrls: ReadonlyArray<string>): Promise<void> {
-  for (const url of blobUrls) await deleteOrphanBlob(store, url)
 }
 
 /** `srcSet` de um item da galeria (achado I): só com os dois derivados; "ausente ≠ vazio". */

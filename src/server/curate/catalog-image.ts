@@ -10,14 +10,9 @@ import {
   generateAndStoreGalleryImage,
   createGalleryImage,
   loadGallery,
-  deleteOrphanBlobs,
-  IMAGE_BLOB_COLS,
 } from '@/server/recipe/image'
-import {
-  imageRowBlobUrls,
-  renderImageDerivativesSafe,
-  storeImageDerivatives,
-} from '@/server/images/image-derivatives'
+import { renderImageDerivativesSafe, storeImageDerivatives } from '@/server/images/image-derivatives'
+import { IMAGE_BLOB_COLS, deleteOrphanBlobs, imageRowBlobUrls } from '@/server/images/image-blobs'
 
 /**
  * Estúdio de imagem do CATÁLOGO (#238, ADR-0026 emenda dec.10) — variante CURADOR das ops de imagem.
@@ -25,7 +20,8 @@ import {
  * Aqui o gate é `origin='catalog' && owner_id IS NULL` (defense-in-depth — não afrouxa p/ um só) e a
  * AUTORIZAÇÃO é da BORDA (`requireRole('curador')`). Rotas de DONO ficam byte-idênticas (zero
  * regressão no caminho pago). Reusa o NÚCLEO compartilhado (`generateAndStoreGalleryImage`,
- * `createGalleryImage`, `loadGallery`, `deleteOrphanBlob`) — só os WRAPPERS de autorização mudam.
+ * `createGalleryImage`, `loadGallery`, e `deleteOrphanBlobs` de `image-blobs.ts`) — só os WRAPPERS de
+ * autorização mudam.
  *
  * Decisões: (dec.11) geração de catálogo é QUOTA-EXEMPT (não aplica teto por papel nem o bloqueio
  * por-usuário #226 — é op administrativa, não abuso) mas respeita o kill-switch global #134
