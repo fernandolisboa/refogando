@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateMetadata } from '@/app/[locale]/following/page'
+import { generateMetadata } from '@/app/[locale]/(com-carregamento)/following/page'
 
 /**
  * Página Seguindo (#277, AC3) — metadados. A superfície é SÓ-LOGADA e personalizada, então NÃO pode

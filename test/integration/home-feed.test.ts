@@ -35,7 +35,7 @@ vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
 }))
 
-import Home, { generateMetadata } from '@/app/[locale]/page'
+import Home, { generateMetadata } from '@/app/[locale]/(com-carregamento)/page'
 import { LocaleProvider } from '@/i18n/provider'
 import type { Locale } from '@/i18n/locale'
 

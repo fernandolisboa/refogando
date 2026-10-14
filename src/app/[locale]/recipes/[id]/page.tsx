@@ -31,6 +31,11 @@
  * não é dono. Assim NÃO se vaza o slug (derivado do título) nem a existência de Receita privada.
  * Manter o gate+redirect AQUI (não no proxy) honra o ADR ("leitura/gate no server component") e
  * mantém o proxy header-only (sem DB no caminho quente de toda navegação).
+ *
+ * Status HTTP: esta rota fica FORA do grupo `(com-carregamento)` (sem `loading.tsx` acima dela), então
+ * nada é enviado antes de o render decidir o desfecho. O 308 sai como 308 com `Location`, e o
+ * `notFound()` como 404 de verdade. Não pôr Suspense/`loading.tsx` acima das chamadas de
+ * `permanentRedirect`/`notFound` abaixo: o status voltaria a ser 200.
  */
 import { cache } from 'react'
 import type { Metadata } from 'next'
