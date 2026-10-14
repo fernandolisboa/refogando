@@ -16,6 +16,13 @@ import { useSearchParams } from 'next/navigation'
 import { parseMealPlanTarget } from '@/domain/meal-plan'
 import { MealPlanTargetProvider } from '@/components/meal-plan/meal-plan-target-context'
 import { CreateDrawer } from './create-drawer'
+import { registerCreateDrawer } from './create-drawer-lazy'
+
+// A `/create` já traz a gaveta no bundle da página: entrega o componente ao store do header
+// (handoff 70). O "Criar" do header abre na hora e a pré-carga do ocioso não baixa de novo, pelos
+// chunks lazy, os mesmos módulos. Na carga do módulo (antes da hidratação e do ocioso do header),
+// não num efeito; no servidor é no-op.
+registerCreateDrawer(CreateDrawer)
 
 export function CreateShellClient() {
   const params = useSearchParams()

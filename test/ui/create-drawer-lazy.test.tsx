@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, act, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -18,8 +18,17 @@ import type { Locale } from '@/i18n/locale'
  * `vi.resetModules()` e importa header/provider/guard de novo. O `import('./create-drawer')` do
  * wrapper passa pelo `vi.doMock`: assim cada teste controla QUANDO o chunk chega (`gate`), se ele
  * falha e quantas vezes foi pedido (`loads`). `requestIdleCallback` é dublado para o ocioso só
- * disparar quando o teste mandar.
+ * disparar quando o teste mandar. `usePathname`/`useSearchParams` leem `nav`, para simular a troca
+ * de rota e montar o shell da `/create`.
  */
+
+const nav = { pathname: '/pt-BR', search: '' }
+
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  usePathname: () => nav.pathname,
+  useSearchParams: () => new URLSearchParams(nav.search),
+}))
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
@@ -68,6 +77,8 @@ beforeEach(() => {
   ready = 0
   epoch++
   idleCallbacks = []
+  nav.pathname = '/pt-BR'
+  nav.search = ''
   window.sessionStorage.clear()
   const w = window as unknown as Record<string, unknown>
   w.requestIdleCallback = vi.fn((cb: () => void) => {
@@ -90,6 +101,7 @@ afterEach(() => {
   const w = window as unknown as Record<string, unknown>
   delete w.requestIdleCallback
   delete w.cancelIdleCallback
+  delete (navigator as unknown as Record<string, unknown>).connection
   Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
   vi.restoreAllMocks()
 })
@@ -110,16 +122,24 @@ function mockDrawerChunk(opts: { gate?: Promise<void>; fail?: boolean } = {}) {
   })
 }
 
-async function renderHeader(locale: Locale = 'pt-BR') {
+async function renderHeader(locale: Locale = 'pt-BR', page?: ReactNode) {
   const { LocaleProvider } = await import('@/i18n/provider')
   const { SiteHeader } = await import('@/components/site-header')
   const { AppUpdateGuard } = await import('@/components/app-update-guard')
-  return render(
+  const tree = () => (
     <LocaleProvider initialLocale={locale}>
       <AppUpdateGuard />
       <SiteHeader />
-    </LocaleProvider>,
+      {page}
+    </LocaleProvider>
   )
+  const view = render(tree())
+  /** Navegação client-side: o header persiste e o `usePathname` passa a devolver `pathname`. */
+  const navigate = (pathname: string) => {
+    nav.pathname = pathname
+    view.rerender(tree())
+  }
+  return { ...view, navigate }
 }
 
 const criarButton = () => screen.getByRole('button', { name: ptBR.nav.create })
@@ -242,8 +262,10 @@ describe('Gaveta "Criar" sob demanda (handoff 70)', () => {
     await user.click(criarButton())
     expect(criarButton()).toHaveAttribute('aria-busy', 'true')
 
-    // A falha real tem duas faces: o `error` do <script> do chunk (Event de recurso, sem
-    // `error`/`message`, visto pelo listener de captura do guard) e a rejeição do `import()`.
+    // A falha real tem duas faces. Aqui elas são simuladas em separado: um `Event('error')`
+    // sintético num `<script>` (a forma do evento de recurso, sem `error`/`message`, que chega ao
+    // listener de captura do guard) e a rejeição do `import()` com `name: 'ChunkLoadError'`. O
+    // que se afere: o guard não recarrega com nenhuma das duas, e o clique navega.
     const script = document.createElement('script')
     document.body.appendChild(script)
     script.dispatchEvent(new Event('error'))
@@ -273,10 +295,171 @@ describe('Gaveta "Criar" sob demanda (handoff 70)', () => {
     expect(assign).toHaveBeenCalledWith('/en-US/create')
     await user.click(criar)
     expect(assign).toHaveBeenCalledTimes(2)
-    // Sem novo import (o runtime guarda a promessa rejeitada do chunk) e sem reload.
+    // O store não pede um 2º `import()` depois de `failed` (o motivo, o runtime do Turbopack
+    // guardar a promessa rejeitada, não é exercido aqui) e não há reload.
     expect(loads).toBe(1)
     expect(reload).not.toHaveBeenCalled()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('com saveData, o ocioso não pré-carrega; hover e clique seguem pré-carregando', async () => {
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: { saveData: true },
+    })
+    mockDrawerChunk()
+    await renderHeader()
+    await act(async () => {})
+    expect(idleCallbacks).toHaveLength(0)
+    expect(loads).toBe(0)
+
+    fireEvent.pointerEnter(criarButton())
+    await waitFor(() => expect(loads).toBe(1))
+  })
+})
+
+describe('Pedido de abertura pendente (o chunk ainda chegando)', () => {
+  /** Header montado, chunk segurado por `gate` e um clique no "Criar": o pedido fica pendente. */
+  async function pendingOpen() {
+    const user = userEvent.setup()
+    const gate = deferred()
+    mockDrawerChunk({ gate: gate.promise })
+    const view = await renderHeader()
+    const criar = criarButton()
+    await user.click(criar)
+    expect(criar).toHaveAttribute('aria-busy', 'true')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    return { user, gate, criar, ...view }
+  }
+
+  /** O chunk chega: a gaveta já montou (fechada) e nenhum dialog abriu. */
+  async function releaseAndExpectClosed(gate: { release: () => void }) {
+    await act(async () => gate.release())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  }
+
+  it('navegar no client antes do chunk chegar desfaz o pedido: a gaveta não abre na página nova', async () => {
+    const { user, gate, criar, navigate } = await pendingOpen()
+
+    navigate('/pt-BR/privacidade')
+    expect(criar).not.toHaveAttribute('aria-busy')
+
+    await releaseAndExpectClosed(gate)
+    // O "Criar" segue funcionando na página nova, agora na hora.
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('Escape com o pedido pendente o cancela, como fecharia a gaveta aberta', async () => {
+    const { user, gate, criar } = await pendingOpen()
+
+    await user.keyboard('{Escape}')
+    expect(criar).not.toHaveAttribute('aria-busy')
+
+    await releaseAndExpectClosed(gate)
+  })
+
+  it('um 2º clique no "Criar" com o pedido pendente o cancela; o 3º abre na hora', async () => {
+    const { user, gate, criar } = await pendingOpen()
+
+    await user.click(criar)
+    expect(criar).not.toHaveAttribute('aria-busy')
+
+    await releaseAndExpectClosed(gate)
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+    expect(loads).toBe(1)
+  })
+
+  it('pointerdown fora do "Criar" (num link) cancela o pedido, como o overlay de antes', async () => {
+    const { gate, criar } = await pendingOpen()
+
+    fireEvent.pointerDown(screen.getByRole('link', { name: ptBR.app.name }))
+    expect(criar).not.toHaveAttribute('aria-busy')
+
+    await releaseAndExpectClosed(gate)
+  })
+
+  it('celular: abrir o menu com o pedido pendente o cancela; a gaveta não empilha sobre o menu', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    mockDrawerChunk({ gate: gate.promise })
+    await renderHeader()
+    const hamburger = screen.getByRole('button', { name: ptBR.nav.abrirMenu })
+
+    // "Criar" no menu: fecha o menu e pede a gaveta, que ainda não chegou.
+    await user.click(hamburger)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: ptBR.nav.create }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(criarButton()).toHaveAttribute('aria-busy', 'true')
+
+    // Reabrir o menu (antes, com a gaveta modal aberta, o hambúrguer nem era alcançável).
+    await user.click(hamburger)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.nav.menu)
+
+    await act(async () => gate.release())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+    const dialogs = screen.getAllByRole('dialog')
+    expect(dialogs).toHaveLength(1)
+    expect(dialogs[0]).toHaveAccessibleName(ptBR.nav.menu)
+    expect(screen.queryByRole('dialog', { name: ptBR.criarDrawer.tituloPicker, hidden: true })).toBeNull()
+  })
+
+  it('celular, pelo teclado: Enter no hambúrguer com o pedido pendente também o cancela', async () => {
+    const user = userEvent.setup()
+    const gate = deferred()
+    mockDrawerChunk({ gate: gate.promise })
+    await renderHeader()
+    const hamburger = screen.getByRole('button', { name: ptBR.nav.abrirMenu })
+
+    await user.click(hamburger)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: ptBR.nav.create }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    act(() => hamburger.focus())
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.nav.menu)
+
+    await act(async () => gate.release())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+    const dialogs = screen.getAllByRole('dialog')
+    expect(dialogs).toHaveLength(1)
+    expect(dialogs[0]).toHaveAccessibleName(ptBR.nav.menu)
+    expect(screen.queryByRole('dialog', { name: ptBR.criarDrawer.tituloPicker, hidden: true })).toBeNull()
+  })
+})
+
+describe('Rota /create: a gaveta do bundle da página semeia o store (handoff 70)', () => {
+  it('nenhum import() da gaveta; o "Criar" do header abre na hora e a gaveta da rota segue igual', async () => {
+    const user = userEvent.setup()
+    nav.pathname = '/pt-BR/create'
+    // O shell entra ANTES do dublê: a importação estática dele carrega a gaveta real (como o
+    // bundle da `/create`) e a registra. Daí em diante, um `import()` da gaveta passaria pelo
+    // dublê e contaria em `loads`.
+    const { CreateShellClient } = await import('@/components/recipe/create-shell-client')
+    mockDrawerChunk()
+    await renderHeader('pt-BR', <CreateShellClient />)
+
+    // A gaveta da própria rota abre ao montar, no método-picker, como antes.
+    const routeDrawer = await screen.findByRole('dialog')
+    expect(routeDrawer).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // Ocioso, hover e clique: nada é pedido de novo, e o clique abre síncrono, sem aria-busy.
+    for (const cb of idleCallbacks) await act(async () => cb())
+    const criar = criarButton()
+    fireEvent.pointerEnter(criar)
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+    expect(criar).not.toHaveAttribute('aria-busy')
+    await act(async () => {})
+    expect(loads).toBe(0)
   })
 })
 

@@ -31,6 +31,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import {
+  CREATE_DRAWER_TRIGGER_ATTR,
   LazyCreateDrawer,
   preloadCreateDrawer,
   useCreateDrawerStatus,
@@ -54,9 +55,10 @@ export function SiteHeader() {
   // `?q`/`?resume`/`?mode=conversa` é trabalho do shell `/create`.
   // O código da gaveta vem sob demanda (`LazyCreateDrawer`, achado G da auditoria, handoff 70):
   // `createPending` = o clique pediu a abertura e o chunk ainda não chegou (o botão fica `aria-busy`).
+  // O pedido pendente se cancela como a gaveta aberta se fecharia antes (ver `LazyCreateDrawer`).
   const [createOpen, setCreateOpen] = useState(false)
   const createDrawerStatus = useCreateDrawerStatus()
-  const createPending = createOpen && createDrawerStatus === 'loading'
+  const createPending = createOpen && createDrawerStatus !== 'ready'
   // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto da
   // Descoberta-home pública (#236): "Minhas criações" é o espaço PRIVADO do dono; a home `/` é o feed
   // público + Busca.
@@ -110,15 +112,21 @@ export function SiteHeader() {
   // SheetClose embrulha o botão) e o seu onClick abre o drawer de criação. No desktop é um botão
   // direto. Mesmo visual de CTA leve (borda em páprica) de antes. Hover, foco e pointerdown
   // pré-carregam o código da gaveta (handoff 70); sem o chunk, o `LazyCreateDrawer` abre assim que
-  // ele chega ou, se ele falhou, navega para a `/create`.
+  // ele chega ou, se ele falhou, navega para a `/create`. Um 2º clique com o pedido ainda pendente
+  // o CANCELA: antes, esse clique cairia no overlay da gaveta já aberta e a fecharia.
   const ctaButton = (
     <button
       type="button"
       data-tour="criar"
+      {...{ [CREATE_DRAWER_TRIGGER_ATTR]: '' }}
       onPointerEnter={preloadCreateDrawer}
       onPointerDown={preloadCreateDrawer}
       onFocus={preloadCreateDrawer}
       onClick={() => {
+        if (createPending) {
+          setCreateOpen(false)
+          return
+        }
         preloadCreateDrawer()
         setCreateOpen(true)
       }}
@@ -192,12 +200,17 @@ export function SiteHeader() {
         </div>
 
         {/* Gatilho hambúrguer: só abaixo de `sm:`. O Sheet (Radix Dialog) cuida da a11y. */}
-        {/* Abrir o menu também pré-carrega a gaveta: no celular o "Criar" mora aqui dentro. */}
+        {/* Abrir o menu também pré-carrega a gaveta: no celular o "Criar" mora aqui dentro. E
+            desfaz um pedido de gaveta pendente: antes, com a gaveta aberta (modal), o hambúrguer
+            nem era alcançável, então a gaveta nunca empilhava sobre o menu. */}
         <Sheet
           open={menuOpen}
           onOpenChange={(next) => {
             setMenuOpen(next)
-            if (next) preloadCreateDrawer()
+            if (next) {
+              preloadCreateDrawer()
+              if (createPending) setCreateOpen(false)
+            }
           }}
         >
           <SheetTrigger
