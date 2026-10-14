@@ -74,6 +74,15 @@
 - Herdados: nenhum backtick dentro de `sql\`...\``; `searchRecipes` não roda dentro de outra transação (GUC do trigrama).
 - **Chave do Data Cache da receita da semana agora é `'v3'`:** suba de novo quando o formato guardado, os defaults ou a tag mudarem.
 - Postgres local: cluster `17/perf` na 5433 (`postgres:postgres`). `TEST_DATABASE_URL`/`DATABASE_URL` vão inline por comando, nunca exportados. Para `drizzle-kit migrate`, passe também `DATABASE_URL_UNPOOLED` inline (o `drizzle.config.ts` prefere essa). Um vitest por vez no cluster.
+- **`db:migrate` que falha por `lock_timeout` não diz o motivo no log:** o `drizzle-kit migrate` só imprime os NOTICEs e sai com 1. A transação volta inteira (nenhuma coluna, índice ou estatística fica pela metade); basta refazer o deploy.
+- **Desfazer só no banco (raro; reverter o código basta, a mudança é aditiva):**
+  ```sql
+  DROP STATISTICS recipe_original_locale_ts_config_stx;
+  DROP INDEX recipe_ingredient_raw_text_tsv_portuguese_gin, recipe_ingredient_raw_text_tsv_english_gin;
+  ALTER TABLE recipe_ingredient DROP COLUMN raw_text_tsv_portuguese, DROP COLUMN raw_text_tsv_english, DROP COLUMN raw_text_norm;
+  ALTER TABLE ingredient_translation DROP COLUMN nome_norm;
+  DELETE FROM drizzle.__drizzle_migrations WHERE created_at = 1791966555935;
+  ```
 
 ## 6. Próximos passos (ordem aprovada em 2026-10-13)
 
@@ -86,6 +95,6 @@
 
 - PR mergeado com painel de revisão limpo e "checks" verde.
 - **Em produção, depois do deploy:**
-  - a 0076 aplicada: no Neon, `SELECT tag FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1` é a 0076 (leitura só), ou o log do build da Vercel mostra o `db:migrate` sem erro;
+  - a 0076 aplicada: no Neon, `SELECT id, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1` devolve `created_at = 1791966555935` (o `when` da 0076 no `_journal.json`; a tabela do drizzle não tem coluna de nome; leitura só), ou o log do build da Vercel mostra o `db:migrate` sem erro;
   - smoke da Busca: `/pt-BR?q=frango` e um termo que só exista no texto de um Item devolvem resultado;
   - smoke da Despensa: `/pt-BR/me/pantry` com alguns itens mostra "Dá pra fazer agora"/"Falta pouco" como antes, sem 500.

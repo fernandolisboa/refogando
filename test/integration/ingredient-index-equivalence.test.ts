@@ -27,7 +27,7 @@ import { seedUser } from '../helpers/users'
  *     adversarial (acento, caixa, largura total, pontuação, espaços Unicode, NULL e vazio), e acompanha
  *     toda escrita (INSERT e UPDATE; coluna gerada não depende de caminho de escrita);
  *  2. o ramo `raw_text` da Busca antigo (copiado aqui, literal) e o novo (`ingredientRawHitSql`) devolvem
- *     os mesmos pares (Receita, termo), nos dois locales, com e sem viewer;
+ *     os mesmos pares (Receita, termo), em vários locales, com e sem viewer;
  *  3. o casamento da Despensa antigo (a MESMA query com cada coluna trocada pela expressão que ela guarda,
  *     que é a query de antes) e o novo devolvem a mesma resposta;
  *  4. os GIN novos ficam alcançáveis (com `enable_seqscan = off`, como em search-index-equivalence).
@@ -479,7 +479,7 @@ const PANTRIES: string[][] = [
 ]
 
 describe('achado E — casamento da Despensa nas colunas normalizadas geradas', () => {
-  it('mesma resposta que a consulta antiga, em várias despensas, com e sem básicos, nos dois locales', async () => {
+  it('mesma resposta que a consulta antiga, em várias despensas, com e sem básicos, nos três locales', async () => {
     const { ownerId } = await seedCorpus()
     const seen = new Set<string>()
     const legacy = legacyPantryDb(db(), seen)
