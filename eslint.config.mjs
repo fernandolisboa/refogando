@@ -26,6 +26,20 @@ const eslintConfig = [
       '@next/next/no-html-link-for-pages': 'off',
     },
   },
+  {
+    // Handoff 71: o `useSession` cru do Better Auth quebra a hidratação (snapshot de servidor = valor
+    // atual do atom). Use o `useSession` de `@/lib/auth-client`, que embrulha o da lib.
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'authClient',
+          property: 'useSession',
+          message: 'Use o useSession de @/lib/auth-client (corrige a hidratação; handoff 71).',
+        },
+      ],
+    },
+  },
 ]
 
 export default eslintConfig

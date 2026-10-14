@@ -39,6 +39,7 @@ export const {
   sendVerificationEmail,
 } = authClient
 
+// eslint-disable-next-line no-restricted-properties -- o único lugar que embrulha o hook da lib
 const useSessionStore = authClient.useSession
 
 function subscribeNever() {

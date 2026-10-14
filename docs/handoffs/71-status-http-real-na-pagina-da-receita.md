@@ -55,13 +55,14 @@ O `src/app/[locale]/loading.tsx` abria um Suspense acima de TODA rota de `[local
 - **Navegação no cliente para uma receita** (clicar num card): antes, o esqueleto aparecia na hora e a receita entrava depois. Agora a página anterior fica na tela até a receita chegar, sem esqueleto. Foi a troca aceita pelo dono.
 - **Carga dura da receita**: o HTML não traz mais o esqueleto antes da receita; vem a receita inteira (ou o 404, ou o 308).
 - **Banco fora na página da receita**: 500 em vez de 200, com a mesma tela de erro.
-- **404 e 500 da receita**: o HTML chega vazio e a tela (header, "Não encontrado.", footer) é montada pelo JavaScript; o tema do cookie é aplicado antes da pintura (`ThemeCookieSync`).
+- **404 e 500 da receita**: o HTML chega vazio e a tela (header, "Não encontrado.", footer) é montada pelo JavaScript; o tema do cookie é aplicado antes da pintura do conteúdo (`ThemeCookieSync`). O shell vazio pode pintar um quadro sem classe, que segue o tema do sistema.
 - Nada muda nas outras rotas: o boundary do `loading.tsx` ficou um segmento abaixo (o grupo), mas sem `layout.tsx` no meio, então o esqueleto cobre a mesma área.
 
 ## 6. Princípios inegociáveis
 
 - Nada de `loading.tsx` ou `<Suspense>` ACIMA das chamadas de `permanentRedirect`/`notFound` da página da receita: o status volta a ser 200. Um Suspense dentro do JSX que a página devolve (como o do `DetailChrome`) é seguro, porque a decisão já foi tomada. Um `loading.*` em `app/`, `[locale]/`, `recipes/` ou `recipes/[id]/`, ou um `<Suspense>` no `layout.tsx` de `[locale]`, quebra o teste estrutural; um `<Suspense>` na página acima dessas chamadas não quebra teste nenhum, e só o `curl` do §8 mostra.
-- Componente client que renderiza diferente conforme a sessão usa o `useSession` de `@/lib/auth-client` (o wrapper), nunca o `authClient.useSession` direto.
+- Componente client que renderiza diferente conforme a sessão usa o `useSession` de `@/lib/auth-client` (o wrapper), nunca o `authClient.useSession` direto (o ESLint barra, `no-restricted-properties`).
+- Nada dentro do `DetailChrome` chama `useSearchParams()`: o Suspense dele esconderia do build o bailout, e o corpo da receita sairia do HTML.
 - Rota nova em `[locale]` vai para dentro de `(com-carregamento)/` (para ter o esqueleto), salvo se precisar de status HTTP real, como `recipes/`.
 - O redirect e o gate continuam no Server Component (ADR-0020), não no proxy.
 

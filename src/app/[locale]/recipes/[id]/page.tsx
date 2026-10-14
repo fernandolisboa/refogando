@@ -394,6 +394,8 @@ async function DetailChrome({
   // rodou), então o conteúdo sai inteiro no HTML, com o status já decidido pela página. Se a hidratação
   // desta árvore divergir do HTML, o React refaz só ela no client, e não o documento inteiro (o que
   // recriaria o `<html>` com o tema padrão). Antes era o Suspense do `loading.tsx` que fazia esse papel.
+  // Nada aqui dentro pode chamar `useSearchParams()`: com este Suspense, o build não acusa mais o
+  // bailout, e o corpo da receita sumiria do HTML em silêncio (renderizado só no client, ruim para SEO).
   return (
     <Suspense>
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
