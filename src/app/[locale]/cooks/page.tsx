@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { connection } from 'next/server'
 import { Container } from '@/components/container'
 import { getDb } from '@/server/deps'
 import { loadRecommendedCooks } from '@/server/user/recommended-cooks'
@@ -19,6 +20,11 @@ export const metadata: Metadata = {
 }
 
 export default async function CooksPage({ params }: { params: Promise<{ locale: string }> }) {
+  // Segue DINÂMICA de propósito (achado A da auditoria de performance, handoff 67): sem o cookie do tema
+  // no root layout ela viraria ISR, e a semente de cozinheiros (lida do banco aqui) passaria a ter até
+  // 1 h de idade, e a degradação para lista vazia num soluço do Neon ficaria cacheada. Cachear esta
+  // página é decisão à parte (frescor da recomendação + não cachear a degradação).
+  await connection()
   const { locale: rawLocale } = await params
   const locale = canonicalLocale(rawLocale) ?? DEFAULT_LOCALE
 

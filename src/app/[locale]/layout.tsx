@@ -1,8 +1,8 @@
 import '../globals.css'
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
-import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
+import { connection } from 'next/server'
 import { LocaleProvider } from '@/i18n/provider'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provider'
@@ -14,11 +14,10 @@ import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
-import { THEME_COOKIE, resolveThemeClass } from '@/lib/theme'
+import { DEFAULT_THEME_CLASS, THEME_INIT_SCRIPT } from '@/lib/theme'
 import { getDb } from '@/server/deps'
-import { loadVocabulary } from '@/server/vocabulary/load'
+import { loadLayoutAppConfig, loadLayoutCozinhaVocab } from '@/server/layout-data'
 import { localizeCozinhaVocab, type CozinhaOption } from '@/domain/cozinha-label'
-import { loadAppConfig } from '@/server/app-config'
 import type { SocialLink } from '@/domain/social-links-config'
 
 export const metadata: Metadata = {
@@ -49,47 +48,59 @@ export default async function LocaleLayout({
   const locale = canonicalLocale(rawLocale)
   if (!locale) notFound()
 
-  // Tema continua vindo do cookie (ADR-0018): não é uma dimensão da URL. Cookie
-  // ausente/desconhecido → 'light' (padrão inicial, issue #208); 'dark' → a classe vence a
-  // @media do SO. SSR sem flash. O ThemeToggle e o seletor de idioma (#162) vivem no FOOTER.
-  const cookieStore = await cookies()
-  const themeClass = resolveThemeClass(cookieStore.get(THEME_COOKIE)?.value)
-  // `initialTheme` para o toggle (client): 'light'/'dark' explícito. SiteFooter é client,
-  // então a preferência é threadada do servidor (sem ler cookie no client).
-  const initialTheme = themeClass
+  // Tema (ADR-0018): o cookie `theme` segue sendo a fonte da verdade, mas o layout NÃO o lê mais
+  // (`cookies()` tornava TODA rota dinâmica — achado A da auditoria de performance). O HTML sai com
+  // `DEFAULT_THEME_CLASS` ('light', o mesmo de quem não tem cookie, issue #208) e o script inline do
+  // `<head>` troca a classe pela do cookie antes da primeira pintura: sem flash, e o mesmo HTML serve
+  // a todos. `suppressHydrationWarning` no `<html>` porque a classe pode diferir da do servidor quando
+  // o React hidrata (só aquele elemento, não os filhos). O ThemeToggle e o seletor de idioma (#162)
+  // vivem no FOOTER; o toggle lê o tema do `<html>`.
 
   // Vocabulário de cozinha (#317, ADR-0025): resolvido UMA vez no ancestral comum de TODA
-  // rota e semeado no contexto (escopo `active` — só termos vivos viram opção em forms). O
-  // leitor tem cache de 30s por instância, então o roundtrip extra é amortizado. Como ESTE
-  // layout é a raiz de cada página, um erro do leitor (soluço do Neon) NÃO pode derrubar
-  // sign-in/erro/estáticas — degrada p/ `[]` (a faceta de cozinha some, o resto segue).
+  // rota e semeado no contexto (escopo `active` — só termos vivos viram opção em forms). Vem do Data
+  // Cache com tag (`loadLayoutCozinhaVocab`, invalidado pelas rotas de admin/curadoria que mudam o
+  // escopo `active`). Como ESTE layout é a raiz de cada página, um erro do leitor (soluço do Neon) NÃO
+  // pode derrubar sign-in/erro/estáticas — degrada p/ `[]` (a faceta de cozinha some, o resto segue).
+  //
+  // `connection()` na degradação: a página degradada NÃO pode virar HTML estático/ISR (ficaria sem
+  // cozinhas até a próxima revalidação). No pré-render (build ou regeneração ISR) ele marca a rota como
+  // dinâmica e aborta aquele pré-render; num request já dinâmico não faz nada, e a degradação é a de
+  // sempre. No build sem banco (CI) as rotas simplesmente saem dinâmicas, como antes.
   let cozinhaVocab: CozinhaOption[] = []
+  let layoutDataFailed = false
   try {
-    cozinhaVocab = localizeCozinhaVocab(await loadVocabulary(getDb(), 'cozinha', 'active'), locale)
+    cozinhaVocab = localizeCozinhaVocab(await loadLayoutCozinhaVocab(getDb()), locale)
   } catch {
     cozinhaVocab = []
+    layoutDataFailed = true
   }
 
-  // #423: a feature "gerar 2, o usuário escolhe" está ligada? Semeado no contexto (o opt-in aparece só
-  // com a config ligada). Mesmo tratamento gracioso da cozinha — um soluço do Neon vira `false` (a
-  // feature some), nunca uma tela quebrada. O servidor revalida `variar2` de qualquer forma.
-  // #423 + #451: uma ÚNICA leitura de app_config por request (mesma linha singleton) — a feature
-  // "gerar 2" está ligada? e os links sociais do footer. Mesmo tratamento gracioso da cozinha: soluço
-  // do Neon ⇒ variar2 desligado + footer sem links (degrada, nunca tela quebrada). Filtramos os links
-  // habilitados NO SERVIDOR — o footer (client) só recebe o que renderiza (payload menor; link
-  // desligado não vaza no HTML).
+  // #423 + #451: do app_config o layout só usa o liga/desliga do "gerar 2" e os links sociais do footer
+  // (já filtrados por `enabled` no servidor — o footer, client, só recebe o que renderiza; link
+  // desligado não vaza no HTML). Data Cache com tag (`loadLayoutAppConfig`, invalidado no PUT de
+  // `/api/admin/config`). Mesmo tratamento gracioso da cozinha: soluço do Neon ⇒ variar2 desligado +
+  // footer sem links (degrada, nunca tela quebrada). O servidor revalida `variar2` de qualquer forma.
   let variantEnabled = false
   let socialLinks: SocialLink[] = []
   try {
-    const cfg = await loadAppConfig(getDb())
-    variantEnabled = cfg.recipeVariant.enabled
-    socialLinks = cfg.socialLinks.filter((l) => l.enabled)
+    const cfg = await loadLayoutAppConfig(getDb())
+    variantEnabled = cfg.variantEnabled
+    socialLinks = cfg.socialLinks
   } catch {
     variantEnabled = false
     socialLinks = []
+    layoutDataFailed = true
   }
+  if (layoutDataFailed) await connection()
+
   return (
-    <html lang={locale} className={themeClass}>
+    <html lang={locale} className={DEFAULT_THEME_CLASS} suppressHydrationWarning>
+      <head>
+        {/* Tema antes da primeira pintura (ver `THEME_INIT_SCRIPT` em src/lib/theme.ts). Inline e
+            síncrono de propósito: um `next/script` rodaria depois da pintura. A CSP permite
+            (`script-src 'unsafe-inline'`, next.config.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="flex min-h-svh flex-col">
         {/* #461 (a11y): skip-link — PRIMEIRO tab stop do documento, oculto acima da viewport até
             receber foco (então desliza pra `top-2`), pulando os ~7 tab stops repetidos do header
@@ -128,7 +139,7 @@ export default async function LocaleLayout({
               >
                 {children}
               </div>
-              <SiteFooter initialTheme={initialTheme} socialLinks={socialLinks} />
+              <SiteFooter socialLinks={socialLinks} />
               {/* Tour guiado (ADR-0039): sem DOM até abrir; abre só na home (conta nova ou pedido do /guia). */}
               <GuidedTour />
             </HomeSearchProvider>

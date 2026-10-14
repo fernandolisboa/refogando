@@ -7,6 +7,7 @@ import {
   setCozinhaStatus,
   VOICE_NOTE_MAX,
 } from '@/server/vocabulary/admin'
+import { expireCozinhaVocabCache } from '@/server/layout-data'
 
 /**
  * CRUD da taxonomia de cozinhas — ADMIN-ONLY (#321, ADR-0025: curadoria proativa). GET lista;
@@ -17,7 +18,9 @@ import {
  * do repo). DB embrulhado em try/catch → `erro_interno` 500 sem stack (igual /api/admin/config).
  *
  * A rota NÃO busta o cache de 30s de `loadVocabulary` (mesmo trade-off do /api/admin/config): um
- * add/depreciar reflete nas facetas/rótulos após ≤30s — aceitável por #315.
+ * add/depreciar reflete nas facetas/rótulos após ≤30s — aceitável por #315. Já o vocabulário do ROOT
+ * LAYOUT (Data Cache com tag, `src/server/layout-data.ts`) é expirado na hora em toda escrita que
+ * gravou: sem isso as páginas estáticas mostrariam a lista velha por até 1 h.
  */
 
 export async function GET(req: Request): Promise<Response> {
@@ -61,6 +64,8 @@ export async function POST(req: Request): Promise<Response> {
     const status = result.error === 'slug_em_uso' ? 409 : 400
     return Response.json({ error: result.error }, { status })
   }
+  // Cozinha nova nasce `active`: entra no vocabulário do layout. Não lança (falha só atrasa).
+  expireCozinhaVocabCache()
   // Relê a linha recém-criada (espelha o GET item) — a UI insere o que a rota devolve.
   return Response.json({ cozinha: await readOne(result.slug) })
 }
@@ -100,6 +105,9 @@ export async function PATCH(req: Request): Promise<Response> {
     return Response.json({ error: 'status_invalido' }, { status: 400 })
   }
 
+  // Rótulo e status são duas escritas: se a 1ª gravou e a 2ª falhou, o layout ainda precisa expirar.
+  // O `finally` expira sempre que ALGUMA gravou, inclusive nos `return` de erro (não lança).
+  let wrote = false
   try {
     if (hasLabels || hasVoiceNote) {
       const r = await editCozinhaLabels(getDb(), body.slug, {
@@ -112,13 +120,17 @@ export async function PATCH(req: Request): Promise<Response> {
         const status = r.error === 'rotulos_invalidos' ? 400 : 404
         return Response.json({ error: r.error }, { status })
       }
+      wrote = true
     }
     if (hasStatus) {
       const r = await setCozinhaStatus(getDb(), body.slug, body.status as 'active' | 'deprecated')
       if (!r.ok) return Response.json({ error: r.error }, { status: 404 })
+      wrote = true
     }
   } catch {
     return Response.json({ error: 'erro_interno' }, { status: 500 })
+  } finally {
+    if (wrote) expireCozinhaVocabCache()
   }
 
   return Response.json({ cozinha: await readOne(body.slug) })

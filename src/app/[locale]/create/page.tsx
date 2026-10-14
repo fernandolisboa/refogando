@@ -15,6 +15,7 @@
  * `useSearchParams() should be wrapped in a suspense boundary`).
  */
 import { Suspense } from 'react'
+import { connection } from 'next/server'
 import { Container } from '@/components/container'
 import { CreateShellClient } from '@/components/recipe/create-shell-client'
 import { loggedInPageMetadata } from '@/server/http/page-metadata'
@@ -24,7 +25,12 @@ export function generateMetadata({ params }: { params: Promise<{ locale: string 
   return loggedInPageMetadata(params, (m) => m.criar.titulo)
 }
 
-export default function CreatePage() {
+export default async function CreatePage() {
+  // Segue DINÂMICA de propósito (achado A da auditoria de performance, handoff 67). Quando o root layout
+  // deixou de ler o cookie do tema, esta rota viraria estática, e numa rota estática o `useSearchParams`
+  // do `CreateShellClient` cai no fallback do `<Suspense>` no servidor (bailout para render só no
+  // client) em vez de renderizar com os deep-links. Fica como era até alguém decidir o contrário.
+  await connection()
   return (
     <Container as="main" size="reading" className="py-8 sm:py-12">
       <Suspense>

@@ -61,7 +61,28 @@ export async function loadVocabulary(
   const entry = cache.get(key)
   if (entry && entry.expiresAt > Date.now()) return entry.snapshot
 
-  const rows = await db
+  const rows = await selectVocabulary(db, kind, scope)
+
+  // Congela array + linhas: o snapshot é compartilhado por TODAS as requisições da instância
+  // dentro do TTL; mutação acidental por um futuro consumidor (#316/#317/#318) falharia AQUI em
+  // vez de envenenar silenciosamente o cache. Custo zero por leitura (congela uma vez, na escrita).
+  const snapshot: ReadonlyVocabulary = Object.freeze(rows.map((r) => Object.freeze(r)))
+  cache.set(key, { expiresAt: Date.now() + READ_TTL_MS, snapshot })
+  return snapshot
+}
+
+/**
+ * A query do leitor, SEM o cache de 30 s por instância. Usada por `loadVocabulary` e pelo cache com
+ * tag do root layout (`src/server/layout-data.ts`): este último PRECISA ler o banco direto, senão,
+ * logo depois de uma escrita que expirou a tag, recalcularia a entrada a partir de um snapshot de até
+ * 30 s atrás e o guardaria no Data Cache até a próxima invalidação.
+ */
+export async function selectVocabulary(
+  db: Database,
+  kind: VocabularyKind,
+  scope: VocabularyScope,
+): Promise<VocabularyTermView[]> {
+  return db
     .select({
       slug: vocabularyTerm.slug,
       labelPtBr: vocabularyTerm.labelPtBr,
@@ -74,13 +95,6 @@ export async function loadVocabulary(
     .where(and(eq(vocabularyTerm.kind, kind), inArray(vocabularyTerm.status, [...VOCABULARY_SCOPES[scope]])))
     // (kind,status,sort) do #314 respalda o WHERE; o PG adiciona um nó de sort p/ o desempate por slug.
     .orderBy(asc(vocabularyTerm.sort), asc(vocabularyTerm.slug))
-
-  // Congela array + linhas: o snapshot é compartilhado por TODAS as requisições da instância
-  // dentro do TTL; mutação acidental por um futuro consumidor (#316/#317/#318) falharia AQUI em
-  // vez de envenenar silenciosamente o cache. Custo zero por leitura (congela uma vez, na escrita).
-  const snapshot: ReadonlyVocabulary = Object.freeze(rows.map((r) => Object.freeze(r)))
-  cache.set(key, { expiresAt: Date.now() + READ_TTL_MS, snapshot })
-  return snapshot
 }
 
 // Existe SÓ p/ testes: truncate+reseed por caso esvazia as LINHAS, não este Map em memória.

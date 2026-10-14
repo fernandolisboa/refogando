@@ -22,6 +22,7 @@ type Entry = { json: string | undefined; tags: string[]; expiresAt: number }
 const store = new Map<string, Entry>()
 let calls: Array<{ tag: string; profile: unknown }> = []
 let serveStale = false
+let failRevalidate = false
 
 export function unstable_cache<T extends Callback>(
   cb: T,
@@ -44,6 +45,7 @@ export function unstable_cache<T extends Callback>(
 
 export function revalidateTag(tag: string, profile: unknown): void {
   calls.push({ tag, profile })
+  if (failRevalidate) throw new Error(`revalidateTag falhou (dublê): ${tag}`)
   for (const [key, entry] of store) {
     if (entry.tags.includes(tag)) store.delete(key)
   }
@@ -54,11 +56,20 @@ export function resetFakeNextCache(): void {
   store.clear()
   calls = []
   serveStale = false
+  failRevalidate = false
 }
 
 /** Devolve as entradas vencidas em vez de recalcular, como o Next no primeiro request depois do prazo. */
 export function serveStaleEntries(on = true): void {
   serveStale = on
+}
+
+/**
+ * Faz `revalidateTag` lançar (a chamada ainda fica registrada e nada é removido), para provar que uma
+ * falha ao expirar a tag não transforma a escrita gravada num erro.
+ */
+export function failRevalidateTag(on = true): void {
+  failRevalidate = on
 }
 
 /** Chamadas de `revalidateTag` desde o último reset, para asserir a invalidação. */

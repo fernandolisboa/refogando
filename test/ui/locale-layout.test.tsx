@@ -8,28 +8,45 @@ import type { ReactNode } from 'react'
  * O layout é um Server Component AWAITABLE: invocamos a função direto e inspecionamos a ÁRVORE de
  * elementos React que ela devolve (sem montar no jsdom — `<html>`/`<body>` não rendem bem em
  * jsdom, e o foco é o WIRING: lang canônico + initialLocale do PATH + notFound no desconhecido).
- * Mockamos `next/headers` (cookies), `next/navigation` (notFound como sentinela) e os filhos
- * pesados (SiteHeader/SiteFooter) — o que importa é o nó <html> e o LocaleProvider.
+ * Mockamos `next/navigation` (notFound como sentinela), `next/server` (`connection`), as leituras
+ * cacheadas do layout e os filhos pesados (SiteHeader/SiteFooter).
+ *
+ * Achado A da auditoria de performance (handoff 67): o layout NÃO lê mais cookie nem header (seria
+ * dinâmico em toda rota). `next/headers` fica mockado com espiões que FALHAM o teste se chamados; o tema
+ * sai como `DEFAULT_THEME_CLASS` + o script pré-pintura no `<head>`.
  */
 
 // `vi.mock` é içado pro topo do arquivo; as referências que a factory usa precisam vir de
 // `vi.hoisted` (içado junto), senão acessamos a const antes da inicialização.
-const { NotFoundSignal, notFound, cookieGet } = vi.hoisted(() => {
+const { NotFoundSignal, notFound, cookies, headers, connection, loadVocab, loadConfig } = vi.hoisted(() => {
   class NotFoundSignal extends Error {}
   return {
     NotFoundSignal,
     notFound: vi.fn(() => {
       throw new NotFoundSignal('NEXT_NOT_FOUND')
     }),
-    cookieGet: vi.fn<(name: string) => { value: string } | undefined>(() => undefined),
+    cookies: vi.fn(async () => ({ get: () => undefined })),
+    headers: vi.fn(async () => new Headers()),
+    connection: vi.fn(async () => {}),
+    loadVocab: vi.fn<() => Promise<unknown[]>>(async () => []),
+    loadConfig: vi.fn<() => Promise<{ variantEnabled: boolean; socialLinks: unknown[] }>>(async () => ({
+      variantEnabled: false,
+      socialLinks: [],
+    })),
   }
 })
 vi.mock('next/navigation', () => ({ notFound }))
-vi.mock('next/headers', () => ({
-  cookies: async () => ({ get: cookieGet }),
+vi.mock('next/headers', () => ({ cookies, headers }))
+vi.mock('next/server', () => ({ connection }))
+// Leituras do layout (Data Cache com tag, src/server/layout-data.ts). No jsdom não há DB.
+vi.mock('@/server/layout-data', () => ({
+  loadLayoutCozinhaVocab: loadVocab,
+  loadLayoutAppConfig: loadConfig,
 }))
+vi.mock('@/server/deps', () => ({ getDb: () => ({}) }))
 
-// Filhos pesados → stubs leves (o foco é o <html lang> + o initialLocale do provider).
+// Filhos pesados → stubs leves (o foco é o <html lang> + o initialLocale do provider). O footer devolve
+// um marcador com os links que recebeu, para conferir o que o layout passa.
 vi.mock('@/components/site-header', () => ({ SiteHeader: () => null }))
 vi.mock('@/components/site-footer', () => ({ SiteFooter: () => null }))
 vi.mock('@/i18n/provider', () => ({
@@ -39,10 +56,7 @@ vi.mock('@/i18n/provider', () => ({
     </div>
   ),
 }))
-// #317: o layout passou a semear o vocabulário de cozinha (leitor DB → contexto). No jsdom não
-// há DB; mockamos o leitor p/ `[]` e o provider p/ passar os filhos — o foco do teste segue
-// sendo o <html lang> + initialLocale, não a faceta de cozinha.
-vi.mock('@/server/vocabulary/load', () => ({ loadVocabulary: async () => [] }))
+// #317: o layout semeia o vocabulário de cozinha (leitor → contexto); o provider só passa os filhos.
 vi.mock('@/components/i18n/cozinha-vocab-provider', () => ({
   CozinhaVocabProvider: ({ children }: { children: ReactNode }) => children,
 }))
@@ -50,6 +64,7 @@ vi.mock('@/components/i18n/cozinha-vocab-provider', () => ({
 import LocaleLayout from '@/app/[locale]/layout'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
+import { THEME_INIT_SCRIPT } from '@/lib/theme'
 
 type ElementWithProps = { props: Record<string, unknown> }
 /** Acha o 1º nó cujo props casa o predicado, BFS na árvore de elementos React devolvida. */
@@ -71,9 +86,18 @@ function findNode(
 
 beforeEach(() => {
   notFound.mockClear()
-  cookieGet.mockReset()
-  cookieGet.mockReturnValue(undefined)
+  cookies.mockClear()
+  headers.mockClear()
+  connection.mockClear()
+  loadVocab.mockReset()
+  loadVocab.mockResolvedValue([])
+  loadConfig.mockReset()
+  loadConfig.mockResolvedValue({ variantEnabled: false, socialLinks: [] })
 })
+
+function render(locale = 'pt-BR') {
+  return LocaleLayout({ children: <span>x</span>, params: Promise.resolve({ locale }) })
+}
 
 describe('LocaleLayout (#228)', () => {
   it('locale do PATH desconhecido → notFound() (validação de param, defesa em profundidade)', async () => {
@@ -86,11 +110,8 @@ describe('LocaleLayout (#228)', () => {
     expect(notFound).toHaveBeenCalledTimes(1)
   })
 
-  it('<html lang> reflete o locale CANÔNICO do path (não o cookie)', async () => {
-    // Cookie em pt-BR, path em en-US: a URL é a verdade do idioma → lang = en-US (não o cookie).
-    cookieGet.mockImplementation((name: string) =>
-      name === 'locale' ? { value: 'pt-BR' } : undefined,
-    )
+  it('<html lang> reflete o locale CANÔNICO do path', async () => {
+    // A URL é a verdade do idioma (o layout nem lê o cookie de locale).
     const tree = await LocaleLayout({
       children: <span>x</span>,
       params: Promise.resolve({ locale: 'en-US' }),
@@ -138,5 +159,63 @@ describe('LocaleLayout (#228)', () => {
     })
     const skip = findNode(tree, (p) => p.href === '#conteudo')
     expect(skip?.props.children).toBe(enUS.nav.pularParaConteudo)
+  })
+
+  // Achado A (handoff 67): nada do request no layout, tema por script.
+  describe('tema e dados do layout sem ler o request (achado A)', () => {
+    it('não chama cookies() nem headers(): o layout pode ser estático', async () => {
+      await render('pt-BR')
+      expect(cookies).not.toHaveBeenCalled()
+      expect(headers).not.toHaveBeenCalled()
+    })
+
+    it('<html> sai com a classe padrão (claro) + suppressHydrationWarning; o <head> leva o script do tema', async () => {
+      const tree = await render('pt-BR')
+      const html = findNode(tree, (p) => typeof p.lang === 'string')
+      expect(html?.props.className).toBe('light')
+      expect(html?.props.suppressHydrationWarning).toBe(true)
+      const script = findNode(tree, (p) => {
+        const inner = p.dangerouslySetInnerHTML as { __html?: string } | undefined
+        return inner?.__html === THEME_INIT_SCRIPT
+      })
+      expect(script).not.toBeNull()
+    })
+
+    it('semeia as cozinhas localizadas e passa ao footer só os links que o loader devolveu', async () => {
+      loadVocab.mockResolvedValue([{ slug: 'italiana', labelPtBr: 'Italiana', labelEnUs: 'Italian', sort: 0 }])
+      const link = { platform: 'instagram', url: 'https://www.instagram.com/refogando', enabled: true }
+      loadConfig.mockResolvedValue({ variantEnabled: true, socialLinks: [link] })
+
+      const tree = await render('en-US')
+      const vocab = findNode(tree, (p) => Array.isArray(p.value))
+      expect(vocab?.props.value).toEqual([{ value: 'italiana', label: 'Italian' }])
+      const variant = findNode(tree, (p) => typeof p.enabled === 'boolean')
+      expect(variant?.props.enabled).toBe(true)
+      const footer = findNode(tree, (p) => Array.isArray(p.socialLinks))
+      expect(footer?.props.socialLinks).toEqual([link])
+      expect(footer?.props).not.toHaveProperty('initialTheme')
+      // Leitura bem-sucedida: nada força a rota a ser dinâmica.
+      expect(connection).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['vocabulário', () => loadVocab.mockRejectedValue(new Error('neon'))],
+      ['app_config', () => loadConfig.mockRejectedValue(new Error('neon'))],
+    ])('falha ao ler %s: degrada (nunca tela quebrada) e chama connection() para não cachear a degradação', async (_nome, falhar) => {
+      falhar()
+      const tree = await render('pt-BR')
+      expect(findNode(tree, (p) => typeof p.lang === 'string')).not.toBeNull()
+      expect(connection).toHaveBeenCalledTimes(1)
+    })
+
+    it('degradado: sem cozinhas, "gerar 2" desligado e footer sem links', async () => {
+      loadVocab.mockRejectedValue(new Error('neon'))
+      loadConfig.mockRejectedValue(new Error('neon'))
+      const tree = await render('pt-BR')
+      expect(findNode(tree, (p) => Array.isArray(p.value))?.props.value).toEqual([])
+      expect(findNode(tree, (p) => typeof p.enabled === 'boolean')?.props.enabled).toBe(false)
+      expect(findNode(tree, (p) => Array.isArray(p.socialLinks))?.props.socialLinks).toEqual([])
+      expect(connection).toHaveBeenCalledTimes(1)
+    })
   })
 })

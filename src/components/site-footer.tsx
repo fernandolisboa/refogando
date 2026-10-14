@@ -5,22 +5,19 @@
  * rodapé pelo wrapper flex-1 do layout (não precisa de mt-auto).
  * O seletor de IDIOMA (#162) e o ThemeToggle vivem AQUI, lado a lado — o header fica enxuto
  * com [wordmark, nav, conta]. Trocar idioma segue idêntico (cookie + `<html lang>` via
- * `setLocale`, em i18n/provider). `initialTheme` é threadado do servidor (cookie `theme`,
- * layout.tsx).
+ * `setLocale`, em i18n/provider). O tema não vem mais do servidor: o ThemeToggle lê a classe do
+ * `<html>`, aplicada pelo script pré-pintura do layout (achado A da auditoria de performance).
  */
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { LocaleSwitcher } from '@/i18n/locale-switcher'
-import { type Theme } from '@/lib/theme'
 import { PLATFORM_DISPLAY, type SocialLink } from '@/domain/social-links-config'
 
 export function SiteFooter({
-  initialTheme = null,
   socialLinks = [],
 }: {
-  initialTheme?: Theme | null
   // #451: links de redes sociais do site, JÁ filtrados por `enabled` no servidor (layout.tsx).
   socialLinks?: SocialLink[]
 }) {
@@ -74,7 +71,7 @@ export function SiteFooter({
         {/* Controles de apresentação da chrome (#162): idioma + tema, lado a lado. */}
         <div className="flex items-center gap-3">
           <LocaleSwitcher />
-          <ThemeToggle initialTheme={initialTheme} />
+          <ThemeToggle />
         </div>
       </Container>
     </footer>

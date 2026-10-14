@@ -4,8 +4,9 @@
  *
  * Os forms (Busca/Criar/Editar/Catálogo) e os previews de geração recebem as opções de
  * cozinha do MESMO jeito que já recebem `messages`: um contexto semeado no servidor. O
- * layout (`[locale]/layout.tsx`) resolve `loadVocabulary('cozinha','active')` UMA vez, no
- * ancestral comum de TODA rota, e passa o array já localizado aqui — o cliente nunca vê os
+ * layout (`[locale]/layout.tsx`) resolve o vocabulário `active` UMA vez (`loadLayoutCozinhaVocab`, Data
+ * Cache com a tag `vocab:cozinha`), no ancestral comum de TODA rota, e passa o array já localizado
+ * aqui — o cliente nunca vê os
  * dois rótulos crus nem faz lógica de locale (isso vive em `domain/cozinha-label.ts`).
  *
  * DEFAULT GRACIOSO: sem provider montado, `useCozinhaVocab()` devolve `[]` (NÃO lança). Isso
