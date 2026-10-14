@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -25,6 +25,11 @@ describe('rotas da receita fora de qualquer loading.tsx', () => {
       const loading = readdirSync(dir).filter((f) => /^loading\.(tsx|ts|jsx|js)$/.test(f))
       expect(loading, dir).toEqual([])
     }
+  })
+
+  it('o layout de [locale] não tem <Suspense> (um Suspense ali também mandaria o 200 antes)', () => {
+    const layout = readFileSync(path.join(LOCALE, 'layout.tsx'), 'utf8')
+    expect(layout).not.toMatch(/<Suspense\b/)
   })
 
   it('o esqueleto continua no grupo (com-carregamento), que não contém recipes/', () => {

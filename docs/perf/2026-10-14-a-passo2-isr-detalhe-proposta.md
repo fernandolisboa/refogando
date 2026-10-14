@@ -26,7 +26,7 @@ Os cinco bloqueios estão no §3. Cada um precisa de uma decisão do dono, porqu
 
 **Achado de passagem (fora do escopo, não mexi):** o ADR-0020 trata o "308" do link legado como permanente para SEO. Hoje ele sai como 200 com redirect no client, e o 404 é soft. As duas coisas vêm do mesmo Suspense do `loading.tsx`.
 
-> **Atualização (2026-10-14):** corrigido a pedido do dono (handoff 71). As rotas de `recipes/` saíram de baixo do `loading.tsx` (grupo `(com-carregamento)`): o UUID legado público responde 308 com `Location`, e o slug privado (para quem não é dono) e o inexistente respondem 404. A tabela acima é o estado da `main` antes da correção.
+> **Atualização (2026-10-14):** corrigido a pedido do dono (handoff 71). As rotas de `recipes/` saíram de baixo do `loading.tsx` (grupo `(com-carregamento)`): o UUID legado público responde 308 com `Location`, e o slug privado (para quem não é dono) e o inexistente respondem 404. A tabela acima é o estado da `main` antes da correção. Os "como hoje" do protótipo 2 (§3, B1) também descrevem esse estado anterior, e o custo "o esqueleto do `loading.tsx` some do HTML do anônimo" já não se aplica: a rota não tem mais esqueleto.
 
 ## 2. Mapa: o que a página e os metadados mostram, e quem escreve cada coisa
 

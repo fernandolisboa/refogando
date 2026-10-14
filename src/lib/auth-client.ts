@@ -13,6 +13,7 @@
  * bater com a instância do servidor (mesmos atoms). NÃO usamos papel nesta fatia (#55
  * gateia por PRESENÇA de sessão; papéis são #63 — LANDMINE #51): nada aqui lê role.
  */
+import { useSyncExternalStore } from 'react'
 import { createAuthClient } from 'better-auth/react'
 import { adminClient } from 'better-auth/client/plugins'
 
@@ -30,7 +31,6 @@ export const authClient = createAuthClient({
 // o reenvio do link). O cliente é um PROXY de caminho: desestruturar é o jeito certo — `.bind` ou
 // qualquer outra propriedade vira segmento de URL e dispara um fetch.
 export const {
-  useSession,
   signIn,
   signUp,
   signOut,
@@ -38,3 +38,30 @@ export const {
   resetPassword,
   sendVerificationEmail,
 } = authClient
+
+const useSessionStore = authClient.useSession
+
+function subscribeNever() {
+  return () => {}
+}
+
+/**
+ * `useSession` do Better Auth com uma correção de hidratação. O da lib lê o atom de sessão com
+ * `useSyncExternalStore(subscribe, get, get)`: o snapshot de servidor é o valor ATUAL do atom no
+ * navegador. No servidor o atom está sempre pendente (`isPending: true`, `data: null`), mas quando o
+ * get-session já respondeu antes de uma parte da árvore hidratar (um Suspense hidrata depois da raiz),
+ * o client renderiza logado/anônimo onde o servidor renderizou "carregando": erro de hidratação (#418) e
+ * o React refaz a árvore no client. Aqui, enquanto hidrata, o hook devolve o estado do servidor
+ * (pendente) e, logo depois, o valor real; fora da hidratação (componente montado depois, navegação
+ * client-side) devolve o valor real direto, sem render extra.
+ */
+export function useSession(): ReturnType<typeof useSessionStore> {
+  const session = useSessionStore()
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  )
+  if (hydrated) return session
+  return { ...session, data: null, error: null, isPending: true, isRefetching: false }
+}
