@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { and, eq } from 'drizzle-orm'
+import { describe, it, expect, vi } from 'vitest'
+import { and, eq, type SQL } from 'drizzle-orm'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { getDb } from '@/server/deps'
 import { appConfig, recipe, recipeImage, recipeTranslation } from '@/db/schema'
 import {
@@ -8,6 +9,7 @@ import {
   searchCatalogApprovedRecipes,
   loadCatalogApprovedRecipeTitle,
   RECIPE_OF_WEEK_POPULAR_TAG,
+  RECIPE_OF_WEEK_POPULAR_REVALIDATE_S,
 } from '@/server/recipe/recipe-of-week'
 import { GET as highlightSearchGET } from '@/app/api/admin/catalog/highlight-search/route'
 import { PUT as adminConfigPUT } from '@/app/api/admin/config/route'
@@ -20,7 +22,7 @@ import {
   seedRecipeImage,
 } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
-import { cachedEntryCount, revalidatedTags } from '../helpers/next-cache'
+import { cachedEntryCount, revalidatedTags, serveStaleEntries } from '../helpers/next-cache'
 
 const db = () => getDb()
 
@@ -134,6 +136,34 @@ async function adminPut(body: unknown): Promise<Response> {
   )
 }
 
+/** Roda `fn` com `Date.now()` adiantado em `ms` (só o relógio do JS; o `now()` do banco não muda). */
+async function withClockAhead<T>(ms: number, fn: () => Promise<T>): Promise<T> {
+  const ahead = Date.now() + ms
+  const spy = vi.spyOn(Date, 'now').mockReturnValue(ahead)
+  try {
+    return await fn()
+  } finally {
+    spy.mockRestore()
+  }
+}
+
+/** Conta as execuções do agregado de Popularidade (`loadMostPopularCatalogId`) feitas por `fn`. */
+async function countPopularAggregates<T>(fn: () => Promise<T>): Promise<{ value: T; aggregates: number }> {
+  const dialect = new PgDialect()
+  const spy = vi.spyOn(db(), 'execute')
+  try {
+    const value = await fn()
+    const aggregates = spy.mock.calls.filter(([q]) =>
+      dialect.sqlToQuery(q as SQL).sql.includes('WITH candidates AS'),
+    ).length
+    return { value, aggregates }
+  } finally {
+    spy.mockRestore()
+  }
+}
+
+const TTL_MS = RECIPE_OF_WEEK_POPULAR_REVALIDATE_S * 1000
+
 /**
  * Cache de 10 min do vencedor por Popularidade (achado F, auditoria de performance 2026-10-13). O
  * `next/cache` é o dublê de test/helpers/next-cache.ts (registrado em test/setup.ts, zerado por teste).
@@ -233,10 +263,37 @@ describe('loadRecipeOfTheWeek — cache do vencedor por Popularidade (achado F)'
     expect(depois?.imageUrl).toBeUndefined()
   })
 
-  it('catálogo vazio quando o cache foi preenchido: a primeira receita aprovada aparece sem esperar', async () => {
-    expect(await loadRecipeOfTheWeek(db(), 'pt-BR')).toBeNull()
-    const a = await seedCatalogRecipe('Primeira do catálogo')
+  it('entrada mais velha que o prazo é ignorada (o Next a serviria): calcula ao vivo', async () => {
+    const a = await seedCatalogRecipe('Bolo A')
+    const b = await seedCatalogRecipe('Bolo B')
+    await giveSaves(a, 2)
     expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a)
+    await giveSaves(b, 5)
+
+    // Como o Next com tráfego esparso: a entrada vencida ainda é devolvida pelo cache.
+    serveStaleEntries()
+    expect((await loadRecipeOfTheWeek(db(), 'pt-BR'))?.recipeId).toBe(a) // dentro do prazo: cache
+    const depois = await withClockAhead(TTL_MS + 1_000, () =>
+      countPopularAggregates(() => loadRecipeOfTheWeek(db(), 'pt-BR')),
+    )
+    expect(depois.value?.recipeId).toBe(b)
+    expect(depois.aggregates).toBe(1) // o cálculo ao vivo (o dublê não roda o refresh de fundo)
+  })
+
+  it('miss calcula o agregado uma vez só; entrada fresca sem vencedor ⇒ null sem agregado', async () => {
+    const vazio = await countPopularAggregates(() => loadRecipeOfTheWeek(db(), 'pt-BR'))
+    expect(vazio).toEqual({ value: null, aggregates: 1 })
+    const deNovo = await countPopularAggregates(() => loadRecipeOfTheWeek(db(), 'pt-BR'))
+    expect(deNovo).toEqual({ value: null, aggregates: 0 })
+
+    // A primeira receita aprovada de um catálogo que estava vazio aparece quando a entrada vence (até 10 min).
+    const a = await seedCatalogRecipe('Primeira do catálogo')
+    expect(await loadRecipeOfTheWeek(db(), 'pt-BR')).toBeNull()
+    const depois = await withClockAhead(TTL_MS + 1_000, () =>
+      countPopularAggregates(() => loadRecipeOfTheWeek(db(), 'pt-BR')),
+    )
+    expect(depois.value?.recipeId).toBe(a)
+    expect(depois.aggregates).toBe(1)
   })
 })
 

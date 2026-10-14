@@ -315,8 +315,13 @@ export async function PUT(req: Request): Promise<Response> {
 
   // O vencedor por Popularidade da "Receita da semana" fica 10 min em cache (recipe-of-week.ts). Os pesos
   // mudam o vencedor, e limpar a escolha do Curador deve mostrar um vencedor recalculado: expira agora.
+  // A config já está gravada: uma falha aqui só atrasa o vencedor novo (até 10 min), nunca vira 500.
   if (set.popularityConfig !== undefined || set.recipeOfWeekConfig !== undefined) {
-    revalidateRecipeOfWeekPopularCache()
+    try {
+      revalidateRecipeOfWeekPopularCache()
+    } catch (err) {
+      console.warn('[admin/config] falha ao expirar o cache da receita da semana; vale em até 10 min', err)
+    }
   }
 
   // Relê o estado completo persistido (espelha o GET) — a UI reflete o singleton inteiro.

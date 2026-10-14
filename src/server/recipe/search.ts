@@ -69,7 +69,7 @@ const SEMANTIC_CAP = 10
 
 /**
  * Lane de TRIGRAMA (#118): recall por substring/typo no TÍTULO (pg_trgm), além do FTS.
- * `TRGM_MIN_SIM` é o piso da similaridade trigrama (`similarity()`) no ramo fuzzy — um termo
+ * `TRGM_MIN_SIM` é o piso da similaridade trigrama no ramo fuzzy (operador `%`) — um termo
  * só casa por fuzzy se a similaridade com o título normalizado for >= este valor. Constante
  * TUNÁVEL (sem migração): 'ovos' vs 'ovoss' (~0.5) e 'ovos' vs 'ovo' (~0.75) passam folgado;
  * palavras de 4 letras genuinamente não-relacionadas tendem a ficar abaixo. O ramo
@@ -252,12 +252,12 @@ function trgmMatchedCteSql(
  * e o OR com ela derrubava a query inteira (até o ramo ILIKE) para Seq Scan.
  *
  * EQUIVALÊNCIA do `%` (pg_trgm 1.6, PG 17): `a % b` é `similarity(a, b) >= similarity_threshold`
- * (`>=`, não `>`, apesar da doc dizer "greater than"; conferido no PG 17 local com um par de
- * similaridade exatamente 0.3, coberto na suíte de equivalência). O GUC é float8 0.3 e a
- * similaridade é float4; o predicado antigo comparava com o parâmetro em float4 (0.3f, um pouco
- * acima de 0.3). Nenhum float4 fica entre 0.3 e 0.3f, então os dois cortes coincidem. O GUC é
- * fixado em `TRGM_MIN_SIM` na transação da Busca (`trgmThresholdSql`); o índice GIN é com
- * recheck, então a linha devolvida passa sempre pelo mesmo `%`.
+ * (`>=`, não `>`, apesar da doc dizer "greater than"; a suíte de equivalência prova com o GUC
+ * fixado exatamente na similaridade float4 de um par, 0.3f). O GUC é float8 0.3 e a similaridade é
+ * float4 (promovida a float8 na comparação); o predicado antigo comparava em float4 com o parâmetro
+ * inferido como real (0.3f, um pouco acima de 0.3). Nenhum float4 fica em [0.3, 0.3f), então os dois
+ * cortes coincidem. O GUC é fixado em `TRGM_MIN_SIM` na transação da Busca (`trgmThresholdSql`); o
+ * índice GIN é com recheck, então a linha devolvida passa sempre pelo mesmo `%`.
  *
  * CURINGA (correção de bug): o termo do ramo ILIKE-contém é escapado (`escapeLikeSql`) DEPOIS da
  * normalização, então `%`, `_` e `\` digitados casam literalmente (antes viravam curinga: "100%"
@@ -286,25 +286,27 @@ export function trgmTitlePredicateSql(term: string): SQL {
  * ordem de avaliação entre CTE e index scan não é garantida. Por que não parâmetro de conexão: o
  * pooler do Neon recusa startup parameters fora de uma lista curta.
  *
- * CUSTO: a transação acrescenta 3 idas e voltas (BEGIN, set_config, COMMIT) às buscas com termo
- * de 3+ caracteres; contadas no fio com um proxy TCP que injeta atraso, com o cliente do pooler
- * (`prepare:false`). O set_config vai como literal (query simples, 1 ida e volta). No pooler do Neon
- * na mesma região isso é da ordem de poucos ms; a rota já espera o embedding (HTTP externo, centenas de
+ * CUSTO: a transação acrescenta 2 idas e voltas (BEGIN e COMMIT) às buscas com termo de 3+
+ * caracteres; contadas no fio com um proxy TCP, com o cliente do pooler (`prepare:false`). O
+ * set_config vai como literal (query simples) no mesmo envio que a query principal (pipeline do
+ * postgres.js na conexão reservada; ver `searchRecipes`), então não soma ida e volta. No pooler do
+ * Neon na mesma região isso é da ordem de poucos ms; a rota já espera o embedding (HTTP externo, centenas de
  * ms) antes desta query. Em troca, o FTS e o fuzzy deixam de varrer todas as traduções: com 12 mil
  * traduções semeadas, ~30 ms e ~80 ms de Seq Scan viram ~4 ms e ~2 ms (docs/perf/2026-10-13-
  * auditoria.md, achado C, tem os planos e as medidas).
  */
 export function trgmThresholdSql(): SQL {
   // Literal, não parâmetro: com parâmetro o postgres.js (prepare:false, pooler) faz Parse+Describe antes
-  // do Bind, uma ida e volta a mais. O valor é a constante numérica acima, nunca entrada de usuário.
+  // do Bind e segura o pipeline ali, uma ida e volta a mais. O valor é a constante numérica acima, nunca
+  // entrada de usuário.
   return sql.raw(`SELECT set_config('pg_trgm.similarity_threshold', '${TRGM_MIN_SIM}', true)`)
 }
 
 /**
  * Configs de full-text que `recipe_ts_config(locale)` pode devolver (drizzle/0005_busca_fts.sql:
- * `CASE WHEN $1 LIKE 'pt%' THEN 'portuguese' ELSE 'english' END`; STRICT, então locale NULL dá
- * NULL). A suíte de equivalência trava o corpo da função: um idioma novo na função sem entrar aqui
- * quebra o teste em vez de sumir da Busca.
+ * `CASE WHEN $1 LIKE 'pt%' THEN 'portuguese' ELSE 'english' END`; `recipe_translation.locale` é NOT
+ * NULL, então o caso STRICT de locale NULL não acontece). A suíte de equivalência trava o corpo da
+ * função: um idioma novo na função sem entrar aqui quebra o teste em vez de sumir da Busca.
  */
 export const RECIPE_TS_CONFIGS = ['portuguese', 'english'] as const
 
@@ -316,10 +318,9 @@ export const RECIPE_TS_CONFIGS = ['portuguese', 'english'] as const
  * braço só com `websearch_to_tsquery(recipe_ts_config(rt.locale), ...)`: tsquery por linha, e o
  * `@@` virava Filter de Seq Scan (o GIN `recipe_translation_search_vector_gin` só atende um
  * tsquery constante). EQUIVALÊNCIA: toda linha tem `recipe_ts_config(rt.locale)` igual a
- * exatamente uma das configs (ou NULL, que antes dava tsquery NULL e nunca casava; agora não
- * entra em braço nenhum), então cai em um braço só, com o MESMO tsquery e o MESMO `ts_rank` de
- * antes (a config substituída é a que a função devolveria). O `ranked` (MAX por receita) não
- * muda. Coberto pela suíte de equivalência.
+ * exatamente uma das configs (o locale é NOT NULL, então a função nunca devolve NULL), então cai
+ * em um braço só, com o MESMO tsquery e o MESMO `ts_rank` de antes (a config substituída é a que
+ * a função devolveria). O `ranked` (MAX por receita) não muda. Coberto pela suíte de equivalência.
  *
  * O nome da config entra por `sql.raw` (constante de código, nunca entrada de usuário); `q` é
  * bindado em cada braço.
@@ -856,10 +857,17 @@ export async function searchRecipes(
   // Lane de trigrama ativa: o operador % lê pg_trgm.similarity_threshold, então a query roda numa
   // transação que antes fixa o GUC em TRGM_MIN_SIM (trgmThresholdSql explica o porquê e o custo).
   // Inativa: nenhum % na query, uma ida só ao banco como antes.
+  // Os dois statements vão juntos (Promise.all): na conexão reservada da transação o postgres.js os
+  // escreve em ordem no mesmo envio (pipeline), e o servidor executa o set_config antes de ler a query
+  // principal, então o GUC já vale para ela. Não chamar searchRecipes dentro de outra transação: o GUC
+  // local duraria até o fim da transação de fora (o savepoint não o desfaz no RELEASE).
   const rows = trgmActive
     ? await db.transaction(async (tx) => {
-        await tx.execute(trgmThresholdSql())
-        return tx.execute<SearchHitRow>(mainSql)
+        const [, main] = await Promise.all([
+          tx.execute(trgmThresholdSql()),
+          tx.execute<SearchHitRow>(mainSql),
+        ])
+        return main
       })
     : await db.execute<SearchHitRow>(mainSql)
 

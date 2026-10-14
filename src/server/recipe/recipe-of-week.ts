@@ -42,29 +42,44 @@ export async function loadRecipeOfTheWeek(
   const config = await loadRecipeOfWeekConfig(db)
 
   if (config.recipeId !== null) {
-    const chosen = await loadChosenCatalogRow(db, config.recipeId, requestLocale)
-    if (chosen !== null) return projectResult(chosen, requestLocale)
+    const chosen = await loadCatalogResult(db, config.recipeId, requestLocale)
+    if (chosen !== null) return chosen
     // Escolha inválida (id nunca existiu, ou a Receita saiu de `approved`/`catalog`/foi removida
     // desde a escolha) ⇒ degrada pro fallback abaixo, SEM lançar/quebrar a home.
   }
 
-  // Fallback por Popularidade: o vencedor vem do cache de 10 min; a linha exibida é lida AGORA
-  // (`loadChosenCatalogRow`, busca por PK com o mesmo gate do agregado).
-  const cachedId = await unstable_cache(
-    () => loadMostPopularCatalogId(db),
+  // Fallback por Popularidade: o vencedor vem do cache (no máximo 10 min de idade, ver `computedAt`); a
+  // linha exibida é lida AGORA (`loadChosenCatalogRow`, busca por PK com o mesmo gate do agregado).
+  const cached = await unstable_cache(
+    async (): Promise<PopularWinner> => ({ id: await loadMostPopularCatalogId(db), computedAt: Date.now() }),
     RECIPE_OF_WEEK_POPULAR_CACHE_KEY,
     { revalidate: RECIPE_OF_WEEK_POPULAR_REVALIDATE_S, tags: [RECIPE_OF_WEEK_POPULAR_TAG] },
   )()
-  if (cachedId !== null) {
-    const row = await loadChosenCatalogRow(db, cachedId, requestLocale)
-    if (row !== null) return projectResult(row, requestLocale)
+  // O Next serve a entrada vencida e recalcula em segundo plano: sem este corte, com pouco tráfego a home
+  // mostraria um vencedor de dias atrás. Vencida ⇒ ignora e calcula ao vivo (o refresh de fundo segue).
+  if (Date.now() - cached.computedAt <= RECIPE_OF_WEEK_POPULAR_REVALIDATE_S * 1000) {
+    // Catálogo vazio quando a entrada foi calculada: sem vencedor, sem segundo agregado.
+    if (cached.id === null) return null
+    const row = await loadCatalogResult(db, cached.id, requestLocale)
+    if (row !== null) return row
   }
-  // Cache sem vencedor (catálogo vazio quando foi preenchido) ou o vencedor guardado deixou de ser
-  // elegível (removido pela moderação, apagado, saiu de `approved`): recalcula ao vivo, como antes do
-  // cache. O valor guardado só é renovado no fim dos 10 min (revalidar durante o render não é permitido).
+  // Entrada vencida, ou o vencedor guardado deixou de ser elegível (removido pela moderação, apagado,
+  // saiu de `approved`): recalcula ao vivo, como antes do cache. O valor guardado só é renovado pelo
+  // próprio cache (revalidar durante o render não é permitido).
   const liveId = await loadMostPopularCatalogId(db)
-  if (liveId === null) return null
-  const row = await loadChosenCatalogRow(db, liveId, requestLocale)
+  return liveId === null ? null : loadCatalogResult(db, liveId, requestLocale)
+}
+
+/** Vencedor por Popularidade como fica no cache: o id (ou `null`, catálogo vazio) e quando foi calculado. */
+type PopularWinner = { id: string | null; computedAt: number }
+
+/** Linha de exibição gateada (`loadChosenCatalogRow`) já projetada no locale pedido; `null` se inelegível. */
+async function loadCatalogResult(
+  db: Database,
+  recipeId: string,
+  requestLocale: string,
+): Promise<SearchResult | null> {
+  const row = await loadChosenCatalogRow(db, recipeId, requestLocale)
   return row !== null ? projectResult(row, requestLocale) : null
 }
 
@@ -73,10 +88,18 @@ export async function loadRecipeOfTheWeek(
  * 2026-10-13). O agregado (`savesAggBodySql`/`ratingAggBodySql` sobre `recipe_save`/`recipe_review`
  * inteiras, mais a média global e a config) rodava a cada visita à home sem escolha do Curador.
  *
- * O QUE é cacheado: só o `recipe_id` vencedor (ou `null`), por `RECIPE_OF_WEEK_POPULAR_REVALIDATE_S`
- * segundos, no Data Cache do Next (`unstable_cache`; o app não liga `cacheComponents`, então não há
+ * O QUE é cacheado: só o `recipe_id` vencedor (ou `null`, catálogo vazio) e o instante do cálculo
+ * (`computedAt`), no Data Cache do Next (`unstable_cache`; o app não liga `cacheComponents`, então não há
  * `use cache`). Uma entrada só, para todos: o vencedor não depende de quem vê (a home é anônima, não há
- * viewer na query) nem do idioma (candidatos e score não leem locale; o idioma só escolhe o título).
+ * viewer na query) nem do idioma (candidatos e score não leem locale; o idioma só escolhe o título). É
+ * um desvio consciente do "por idioma" de docs/perf/2026-10-13-respostas.md (achado F): uma entrada
+ * por idioma guardaria o mesmo id várias vezes.
+ *
+ * IDADE MÁXIMA: `RECIPE_OF_WEEK_POPULAR_REVALIDATE_S` segundos. O `revalidate` sozinho não garante isso:
+ * o Next devolve a entrada vencida ao primeiro request depois do prazo e só então recalcula em segundo
+ * plano (com tráfego esparso, o vencedor exibido teria a idade do intervalo entre visitas). Por isso a
+ * leitura compara `computedAt` com o prazo e, vencida, calcula ao vivo. Um vencedor novo (inclusive a
+ * primeira receita de um catálogo que estava vazio) aparece em até 10 min.
  *
  * O QUE NÃO é cacheado: a linha exibida (título, slug, imagem). Ela é lida a cada request por PK
  * (`loadChosenCatalogRow`), que RE-VALIDA a elegibilidade com o mesmo gate do agregado (catálogo,
@@ -125,7 +148,11 @@ export async function isCatalogRecipeApproved(db: Database, recipeId: string): P
   return rows.length > 0
 }
 
-/** Carrega a linha de display da Receita ESCOLHIDA, gateada (RE-VALIDA elegibilidade nesta query). */
+/**
+ * Carrega a linha de display de UMA Receita do catálogo, gateada (RE-VALIDA a elegibilidade nesta
+ * query): serve à escolha do Curador e também à re-checagem do vencedor por Popularidade (cacheado ou
+ * calculado agora), por isso o gate aqui é o mesmo do agregado de `loadMostPopularCatalogId`.
+ */
 async function loadChosenCatalogRow(
   db: Database,
   recipeId: string,

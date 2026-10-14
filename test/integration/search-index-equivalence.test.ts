@@ -188,29 +188,45 @@ describe('achado C — lane de trigrama com o operador % (piso fixado na transa�
     expect(nonEmpty).toBeGreaterThanOrEqual(8)
   })
 
-  it('% é >= (não >): par com similaridade EXATAMENTE 0.3 casa nos dois predicados', async () => {
-    // similarity('3416a75f', '341') = 3/10 em float4 (medido no PG 17 local). Um corte com '>' perderia o par.
+  it('% é >= (não >): com o GUC exatamente na similaridade do par (0.3f), o par casa pelo %', async () => {
+    // similarity('3416a75f', '341') = 3/10 em float4 (0.3f = 0.30000001192092896 em float8). Com o GUC
+    // nesse valor exato, só um corte '>=' casa o par; o GUC logo acima é o controle de que o teste separa
+    // '>' de '>='. Com o GUC em 0.3 (float8, abaixo de 0.3f) '>' e '>=' dariam o mesmo resultado.
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: '3416a75f', provenance: 'escrita_por_pessoa' })
-    const [sim] = await db().execute<{ s: number }>(sql`SELECT similarity('3416a75f', '341') AS s`)
-    expect(sim.s).toBeCloseTo(0.3, 6)
-    // O termo é substring do título: tira o ILIKE do caminho com um termo que só casa por similaridade.
-    const [row] = await db().transaction(async (tx) => {
-      await tx.execute(trgmThresholdSql())
-      return tx.execute<{ pct: boolean; ge: boolean }>(sql`
-        SELECT ('3416a75f' % '341') AS pct, (similarity('3416a75f', '341') >= ${TRGM_MIN_SIM}) AS ge
-      `)
-    })
-    expect(row).toEqual({ pct: true, ge: true })
-    expect(await trgmIds(trgmTitlePredicateSql('341'))).toEqual([id])
+    const [sim] = await db().execute<{ exact: boolean }>(
+      sql`SELECT similarity('3416a75f', '341') = 0.3::float4 AS exact`,
+    )
+    expect(sim.exact).toBe(true)
+    // Só o ramo fuzzy (o mesmo % do GIN, sobre a mesma expressão): o ILIKE casaria '341' por substring.
+    const fuzzyIds = (thr: string) =>
+      db().transaction(async (tx) => {
+        await tx.execute(sql`SELECT set_config('pg_trgm.similarity_threshold', ${thr}, true)`)
+        const rows = await tx.execute<{ recipe_id: string }>(sql`
+          SELECT rt2.recipe_id AS recipe_id FROM recipe_translation rt2
+          WHERE lower(immutable_unaccent(rt2.titulo)) % lower(immutable_unaccent(${'341'}))
+        `)
+        return rows.map((r) => r.recipe_id)
+      })
+    expect(await fuzzyIds('0.30000001192092896')).toEqual([id])
+    expect(await fuzzyIds('0.30000002')).toEqual([])
   })
 
   it('o corte não depende do GUC do ambiente: com o default do banco em 0.9, o typo ainda casa', async () => {
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Ovos Mexidos Cremosos', provenance: 'escrita_por_pessoa' })
     const [{ dbname }] = await rawSql<{ dbname: string }[]>`SELECT current_database() AS dbname`
-    expect(dbname.startsWith('refogando_test_')).toBe(true)
-    await rawSql.unsafe(`ALTER DATABASE "${dbname}" SET pg_trgm.similarity_threshold = 0.9`)
+    // Só no banco descartável: test/global-setup.ts dá esse padrão de nome nos dois caminhos (container e
+    // TEST_DATABASE_URL).
+    expect(dbname).toMatch(/^refogando_test_[a-z0-9]+$/)
+    // O GUC só existe depois que o pg_trgm carrega na sessão; sem isso o ALTER grava um placeholder, que
+    // um papel sem superusuário não pode gravar. show_limit() carrega a extensão na MESMA conexão (begin).
+    const alterDb = (stmt: string) =>
+      rawSql.begin(async (t) => {
+        await t`SELECT show_limit()`
+        await t.unsafe(`ALTER DATABASE "${dbname}" ${stmt}`)
+      })
+    await alterDb('SET pg_trgm.similarity_threshold = 0.9')
     // Conexão NOVA (o ALTER DATABASE só vale para sessões abertas depois dele).
     const freshSql = makeSql(inject('databaseUrl'), { max: 1 })
     try {
@@ -235,7 +251,7 @@ describe('achado C — lane de trigrama com o operador % (piso fixado na transa�
       expect(after).toBe('0.9')
     } finally {
       await freshSql.end({ timeout: 5 })
-      await rawSql.unsafe(`ALTER DATABASE "${dbname}" RESET pg_trgm.similarity_threshold`)
+      await alterDb('RESET pg_trgm.similarity_threshold')
     }
   })
 

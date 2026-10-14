@@ -191,7 +191,7 @@ describe('#118 — lane de trigrama: substring + typo no título', () => {
     expect(allIds(await searchBody('＿yzw'))).not.toContain(outro)
   })
 
-  it('TC12: "\\" digitado é literal ("a\\b" casa "Pão a\\b" e não "Pão ab")', async () => {
+  it('TC12: "\\" digitado é literal ("a\\bc" casa "Pão a\\bcx" e não "Pão abcx")', async () => {
     const com = await seedCatalog('Pão a\\bcx')
     const sem = await seedCatalog('Pão abcx')
     const got = allIds(await searchBody('a\\bc'))
