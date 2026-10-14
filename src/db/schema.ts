@@ -602,6 +602,15 @@ export const ingredientTranslation = pgTable(
     nome: text('nome').notNull(),
     aliases: text('aliases').array(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Coluna GERADA STORED (achado E da auditoria de performance, migração 0076): o `nome` na
+    // normalização do casamento da Despensa (`norm` em src/server/pantry/pantry.ts: minúsculo, sem
+    // acento, espaço e pontuação viram UM espaço). A Despensa lia `norm(nome)` de TODA tradução a cada
+    // consulta; agora lê a coluna. A expressão é a de `norm`, byte a byte (test/integration/
+    // ingredient-index-equivalence.test.ts trava as duas). Os `aliases` seguem normalizados na consulta:
+    // coluna gerada não aceita subquery, e o catálogo canônico é pequeno.
+    nomeNorm: text('nome_norm').generatedAlwaysAs(
+      sql`btrim(regexp_replace(lower(immutable_unaccent(nome)), '[[:space:][:punct:]]+', ' ', 'g'))`,
+    ),
   },
   (t) => [uniqueIndex('ingredient_translation_ingredient_locale_uq').on(t.ingredientId, t.locale)],
 )
@@ -622,9 +631,35 @@ export const recipeIngredient = pgTable(
     // FORA de escopo da #3.
     nota: text('nota'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Colunas GERADAS STORED (auditoria de performance de 2026-10-13, achados C e E; migração 0076).
+    // Read-only para a app (fora de $inferInsert); recalculadas pelo banco a cada escrita de `raw_text`,
+    // então nenhum caminho de escrita precisa lembrar delas. As expressões ESPELHAM o SQL da migração.
+    //
+    // `raw_text_tsv_<config>`: o full-text do texto cru, um por config de `recipe_ts_config` (as duas de
+    // `RECIPE_TS_CONFIGS`, search.ts). A config certa de uma linha vem de `recipe.original_locale`, outra
+    // tabela, que coluna gerada não alcança; com uma coluna por config, a Busca escolhe o braço pela config
+    // da Receita (como o título faz com `search_vector`) e casa o tsquery constante no GIN. Config constante
+    // (`'portuguese'::regconfig` é uma constante já no parse): a expressão é IMMUTABLE, sem cast de texto.
+    rawTextTsvPortuguese: tsvector('raw_text_tsv_portuguese').generatedAlwaysAs(
+      sql`to_tsvector('portuguese'::regconfig, immutable_unaccent(raw_text))`,
+    ),
+    rawTextTsvEnglish: tsvector('raw_text_tsv_english').generatedAlwaysAs(
+      sql`to_tsvector('english'::regconfig, immutable_unaccent(raw_text))`,
+    ),
+    // `raw_text_norm`: o `raw_text` na normalização do casamento da Despensa (`norm` em
+    // src/server/pantry/pantry.ts), byte a byte. A Despensa normalizava todos os Itens a cada consulta.
+    rawTextNorm: text('raw_text_norm').generatedAlwaysAs(
+      sql`btrim(regexp_replace(lower(immutable_unaccent(raw_text)), '[[:space:][:punct:]]+', ' ', 'g'))`,
+    ),
   },
   (t) => [
     index('recipe_ingredient_recipe_id_idx').on(t.recipeId),
+    // Ramo `raw_text` da Busca (`ingredientRawHitSql`, search.ts): um GIN por config, cada um atendendo o
+    // braço da sua config. A 0076 também cria, fora do schema (o drizzle não modela CREATE STATISTICS), a
+    // estatística `recipe_original_locale_ts_config_stx` em `recipe`, que dá ao planner a fração de Receitas
+    // de cada config.
+    index('recipe_ingredient_raw_text_tsv_portuguese_gin').using('gin', t.rawTextTsvPortuguese),
+    index('recipe_ingredient_raw_text_tsv_english_gin').using('gin', t.rawTextTsvEnglish),
     // Ramo de ingrediente CANÔNICO da Busca (`JOIN recipe_ingredient ri ON ri.ingredient_id = ...`,
     // search.ts) e o ON DELETE set null quando o Curador apaga um ingrediente. Parcial: só linhas já
     // casadas com o catálogo canônico têm o id.

@@ -42,9 +42,9 @@ import { escapeLikeSql } from '@/server/sql/like'
  *
  * Nota de plano (§3.4/§6; atualizada na auditoria de performance de 2026-10-13, achado C): o
  * full-text do TÍTULO e a lane de trigrama usam os GIN de `recipe_translation` (ver
- * `titleFtsMatchedSql` e `trgmMatchedCteSql`). A resolução canônica e a degradação raw_text
- * seguem Seq Scan (sem índice de expressão em `recipe_ingredient`): a coluna `tsvector` do
- * ingrediente vem numa migração própria, junto com o achado E.
+ * `titleFtsMatchedSql` e `trgmMatchedCteSql`), e a degradação raw_text usa os GIN das colunas
+ * `tsvector` geradas de `recipe_ingredient` (migração 0076, `ingredientRawHitSql`). A resolução
+ * canônica segue Seq Scan em `ingredient_translation` (catálogo canônico pequeno).
  */
 
 export const MAX_QUERY_LEN = 256
@@ -340,6 +340,75 @@ export function titleFtsMatchedSql(q: string): SQL {
   })
   return sql.join(arms, sql`
       UNION ALL`)
+}
+
+/**
+ * Coluna `tsvector` GERADA de `recipe_ingredient` para cada config de `RECIPE_TS_CONFIGS`
+ * (drizzle/0076: `to_tsvector('<config>'::regconfig, immutable_unaccent(raw_text))`, um GIN em cada).
+ * Tipada por config: um idioma novo em `RECIPE_TS_CONFIGS` sem a coluna dele não compila.
+ */
+const RAW_TEXT_TSV_COLUMN: Record<(typeof RECIPE_TS_CONFIGS)[number], string> = {
+  portuguese: 'raw_text_tsv_portuguese',
+  english: 'raw_text_tsv_english',
+}
+
+/**
+ * CTE `ingredient_raw_hit` (#9): a degradação por `raw_text` de cada termo, como pares (Receita,
+ * termo). Lê a CTE `terms` da query da Busca. Exportado só pra suíte de equivalência
+ * (test/integration/ingredient-index-equivalence.test.ts).
+ *
+ * Um braço por config, unidos por UNION ALL e deduplicados no SELECT DISTINCT de fora, como no full-text do
+ * título (`titleFtsMatchedSql`). Antes era um braço só com
+ * `to_tsvector(recipe_ts_config(r2.original_locale), immutable_unaccent(ri.raw_text)) @@ websearch_to_tsquery(
+ * recipe_ts_config(r2.original_locale), immutable_unaccent(t.term))`: o tsvector de TODA linha de Item era
+ * recalculado a cada busca (uma vez por par linha × termo), sem índice possível (a config vem de outra
+ * tabela). Agora cada braço filtra as Receitas da sua config e casa o tsquery dessa config, constante por
+ * termo, na coluna gerada da mesma config, que o GIN atende (achado C da auditoria de performance).
+ *
+ * EQUIVALÊNCIA: a coluna `raw_text_tsv_<cfg>` guarda exatamente `to_tsvector('<cfg>', immutable_unaccent(
+ * raw_text))`, e `recipe_ts_config(original_locale)` de uma linha é igual a exatamente uma das configs
+ * (`original_locale` é NOT NULL), então cada par (linha, termo) é avaliado em um braço só, com o mesmo
+ * tsvector e o mesmo tsquery de antes. `raw_text` NULL dá coluna NULL (a função é STRICT), que não casa,
+ * como antes. Os gates (playful, leitura do viewer, pool) são os de antes, em cada braço.
+ *
+ * GATE (#116, load-bearing): o gate de leitura aqui ESPELHA o do CTE `visible` (`viewerReadableSqlFragment`,
+ * mesmo `viewerId` bindado). Com viewer logado o `visible` deixa passar as PRÓPRIAS privadas; se este
+ * filtrasse só a comunidade, um ingrediente-por-raw_text da própria privada não casaria (overlap=0) e a
+ * Receita do dono não apareceria por ingrediente.
+ *
+ * PLANO: com volume, cada braço vira um Bitmap Index Scan no GIN da config, parametrizado por termo
+ * (`terms` por fora do Nested Loop), e só então junta `recipe` pela PK. Para isso o planner precisa saber
+ * quantas Receitas há de cada config: a 0076 cria a estatística `recipe_original_locale_ts_config_stx` sobre
+ * `recipe_ts_config(original_locale)`. Sem ela a estimativa é 0,5% das Receitas e, com muitos termos, o
+ * planner vai pela Receita e testa o `@@` em todo Item (medido com 16 termos e 8 mil Receitas: 3,3 s sem a
+ * estatística, ~0,2 s com; antes da 0076, 13 s).
+ *
+ * O nome da config e o da coluna entram por `sql.raw` (constantes de código, nunca entrada de usuário);
+ * o termo vem da CTE `terms` (bindado lá) e o `viewerId` é bindado em cada braço.
+ *
+ * LANDMINE: NENHUM backtick dentro deste template (nem em comentário).
+ */
+export function ingredientRawHitSql(viewerId: string | undefined): SQL {
+  const arms = RECIPE_TS_CONFIGS.map((cfg) => {
+    const cfgSql = sql.raw(`'${cfg}'::regconfig`)
+    const tsvSql = sql.raw(`ri.${RAW_TEXT_TSV_COLUMN[cfg]}`)
+    return sql`
+      SELECT ri.recipe_id AS recipe_id, t.idx AS term_idx
+      FROM recipe_ingredient ri
+      JOIN recipe r2 ON r2.id = ri.recipe_id
+      CROSS JOIN terms t
+      WHERE ri.raw_text IS NOT NULL
+        AND r2.result_kind <> 'playful'
+        AND ${viewerReadableSqlFragment('r2', viewerId)}
+        AND r2.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
+        AND recipe_ts_config(r2.original_locale) = ${cfgSql}
+        AND ${tsvSql} @@ websearch_to_tsquery(${cfgSql}, immutable_unaccent(t.term))`
+  })
+  return sql`
+      SELECT DISTINCT x.recipe_id AS recipe_id, x.term_idx AS term_idx
+      FROM (${sql.join(arms, sql`
+      UNION ALL`)}
+      ) x`
 }
 
 /**
@@ -732,37 +801,11 @@ export async function searchRecipes(
     ),
     ingredient_raw_hit AS (
       -- #9 (LANDMINE): degradacao raw_text. raw_text nao tem locale por-linha => a
-      -- config do to_tsvector vem de recipe.original_locale via JOIN (tempo de query).
-      -- Os DOIS lados usam a MESMA config => lexemas casam. NUNCA referencia
-      -- quantidade/unidade (AC4).
-      -- PERF (v1, bounded/correto): o lado-documento to_tsvector(raw_text) NAO depende
-      -- de t.term, mas o CROSS JOIN terms faz o Postgres reconstruir o tsvector uma vez
-      -- por par (linha-raw_text x termo) -- ate MAX_TERMS vezes por linha. Aceitavel no
-      -- v1 (tabelas minusculas); #14 deve materializar to_tsvector(raw_text) UMA vez por
-      -- linha (ja gated) e dar @@ em cada termo.
-      -- Gate de leitura empurrado para CA (perf, preservando comportamento): r2 (recipe)
-      -- ja esta joinado aqui, entao aplicamos o MESMO gate do CTE visible
-      -- (viewerReadableSqlFragment: playful excluido + owner NULL OR public OR owner=viewer)
-      -- ANTES do @@ caro, descartando linhas que o CTE visible dropa de qualquer jeito.
-      -- #116 (load-bearing): o gate aqui DEVE espelhar o do CTE visible -- com viewer logado,
-      -- o visible agora deixa passar as PROPRIAS privadas, entao se este filtrasse so
-      -- comunidade um ingrediente-por-raw_text da PROPRIA privada nao casaria (overlap=0) e a
-      -- receita do dono nao apareceria por ingrediente. Mesmo viewerId BINDADO dos dois lados.
-      SELECT DISTINCT ri.recipe_id AS recipe_id, t.idx AS term_idx
-      FROM recipe_ingredient ri
-      JOIN recipe r2 ON r2.id = ri.recipe_id
-      CROSS JOIN terms t
-      WHERE ri.raw_text IS NOT NULL
-        AND r2.result_kind <> 'playful'
-        AND ${viewerReadableSqlFragment('r2', viewerId)}
-        AND r2.moderation_removed_at IS NULL -- gate de pool #18: ver recipe-pool.ts
-        AND to_tsvector(
-              recipe_ts_config(r2.original_locale),
-              immutable_unaccent(ri.raw_text)
-            ) @@ websearch_to_tsquery(
-              recipe_ts_config(r2.original_locale),
-              immutable_unaccent(t.term)
-            )
+      -- config vem de recipe.original_locale via JOIN; um braco por config, cada um no
+      -- tsvector GERADO daquela config (GIN). NUNCA referencia quantidade/unidade (AC4).
+      -- O porque (e a equivalencia com o to_tsvector por linha de antes) mora em
+      -- ingredientRawHitSql, no TS.
+      ${ingredientRawHitSql(viewerId)}
     ),
     ingredient_signal AS (
       -- #9: UNIAO dos dois sinais (canonico OR degradado satisfaz o termo). UNION (nao

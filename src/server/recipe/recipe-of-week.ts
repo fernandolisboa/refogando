@@ -116,12 +116,13 @@ async function loadCatalogResult(
  * (`src/server/cache-tags.ts`, `{ expire: 0 }`: o próximo request recalcula, sem servir o valor antigo;
  * a home é dinâmica, então não há HTML em cache a perder) quando grava `recipeOfWeek` ou `popularity`
  * (os pesos mudam o vencedor). A escolha do Curador nunca passa pelo cache (a config é lida a cada
- * request), então aparece na hora; limpar a escolha volta para um vencedor recalculado. `sort=popularidade` da Busca e os cozinheiros recomendados seguem ao vivo.
+ * request), então aparece na hora; limpar a escolha volta para um vencedor recalculado. `sort=popularidade`
+ * da Busca e os cozinheiros recomendados seguem ao vivo.
  */
 export const RECIPE_OF_WEEK_POPULAR_REVALIDATE_S = 600
-// Suba o 'v2' quando o formato guardado (`PopularWinner`) ou os defaults mudarem: o Data Cache da Vercel
-// sobrevive ao deploy.
-const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v2']
+// Suba a versão quando o formato guardado (`PopularWinner`), os defaults ou a tag mudarem: o Data Cache da
+// Vercel sobrevive ao deploy. 'v3': a tag ganhou o prefixo `refogando:` no #573.
+const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v3']
 
 /**
  * Verifica se um `recipeId` é HOJE um catálogo aprovado elegível (origin=catalog, approved,
