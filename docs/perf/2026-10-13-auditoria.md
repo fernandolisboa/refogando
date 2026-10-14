@@ -48,11 +48,30 @@ Base: `main` em 6b06b5c. Medidas de bundle tiradas de um `next build` de produç
 |---|---|---|
 | A | Nenhuma página é cacheada: o root layout lê `cookies()` (tema) e o DB, então até `/privacidade` e o detalhe público renderizam a cada hit. | Muda como o tema é aplicado (script pré-pintura) e exige tags de revalidação. Decisão de arquitetura. |
 | B | "Receitas semelhantes" e a busca semântica calculam a distância contra **todos** os embeddings (o `DISTINCT ON` impede o índice HNSW). Cresce linear com o catálogo, em toda visita a uma receita. | Um top-k via HNSW é aproximado: os resultados podem mudar. |
-| C | Full-text e trigram da busca não usam os índices GIN (`recipe_ts_config(rt.locale)` por linha; `similarity() >= 0.3` em OR). O ramo de ingrediente faz `to_tsvector` de cada linha a cada busca. | Reescrever a query (e uma coluna `tsvector` nova em `recipe_ingredient`) pede teste de equivalência e migração de schema. |
+| C | Full-text e trigram da busca não usam os índices GIN (`recipe_ts_config(rt.locale)` por linha; `similarity() >= 0.3` em OR). O ramo de ingrediente faz `to_tsvector` de cada linha a cada busca. | **Parcial** (handoff 66): títulos e trigrama usam os GIN, sem migração e com resultado idêntico (§4); de quebra, `%`/`_`/`\` digitados deixaram de ser curinga no ILIKE. **Pendente:** o ingrediente cru (coluna `tsvector` em `recipe_ingredient`), na migração do E. |
 | D | Perfil público e a receita do dono chamam a própria API por HTTPS (`fetch(getBaseUrl()/api/...)`): duas invocações por visita. | **Resolvido** no PR seguinte (handoff 65): loaders compartilhados, sem self-fetch. |
 | E | Pantry matches normaliza todo o corpus de ingredientes a cada request (`pantry.ts:350`). | Precisa de colunas geradas (migração de schema). |
-| F | Popularidade (receita da semana, cozinheiros recomendados, `sort=popularidade`) agrega `recipe_save`/`recipe_review` inteiras a cada request. | Cache ou view materializada: muda o frescor dos números. |
+| F | Popularidade (receita da semana, cozinheiros recomendados, `sort=popularidade`) agrega `recipe_save`/`recipe_review` inteiras a cada request. | **Resolvido** (handoff 66): o vencedor da receita da semana fica 10 min em cache, invalidado ao salvar a config (§4). `sort=popularidade` e cozinheiros recomendados seguem ao vivo, como combinado. |
 | G | Gaveta "Criar" (~340 KB de fonte) entra no header de toda página. | `next/dynamic` introduz o primeiro lazy chunk; o `AppUpdateGuard` pede revisão quando isso acontecer. |
 | H | Listas sem LIMIT (`/api/me/recipes`, perfil, salvos) e trazendo `passos`/`descricao` que só viram título. | As colunas pesadas saíram no PR seguinte (handoff 65). Paginar muda o que a tela mostra: adiado. |
 | I | Imagens do feed em tamanho cheio (PNG do Gemini) para thumbs de 144 px. | Reencodar (WebP) ou `next/image` muda o pipeline de imagem. |
 | J | Foco + `visibilitychange` disparam 2 `get-session` e 2 `/api/notifications` ao voltar para a aba (mais 2 `get-session` do próprio client do better-auth). | **Resolvido** junto com o item 1: um refetch de cada por volta à aba. O ADR-0028 não pedia a chamada dupla (o "intencional" estava no código). |
+
+## 4. Achados C (parcial) e F: medidas (handoff 66)
+
+Banco local (PG 17.11, pg_trgm 1.6) com 8.000 receitas de catálogo, 12.200 traduções (pt-BR, en-US e 200 es-ES) e 40.000 itens de ingrediente. `EXPLAIN (ANALYZE, BUFFERS)` da query inteira da Busca, `requestLocale=pt-BR`, sem vetor:
+
+| Nó | Antes | Depois |
+|---|---|---|
+| `matched` (full-text do título) | Seq Scan, `Filter: search_vector @@ websearch_to_tsquery(recipe_ts_config(locale), ...)`, ~31–33 ms | Dois braços, cada um `Bitmap Index Scan on recipe_translation_search_vector_gin` + `Filter: recipe_ts_config(locale) = <config>`, ~0,1–3,8 ms |
+| `trgm_matched` (trigrama do título) | Seq Scan, `Filter: ILIKE ... OR similarity(...) >= 0.3`, ~72–93 ms | `BitmapOr` de dois `Bitmap Index Scan on recipe_translation_titulo_trgm_gin` (ILIKE e `%`), ~0,7–1,9 ms |
+| `ingredient_raw_hit` | `to_tsvector` por linha, ~290 ms | igual (pendente: migração do E) |
+
+Query inteira: 410–500 ms antes, 304–332 ms depois (o que sobra é o ingrediente cru). Em produção (~500 traduções) os dois Seq Scans somam poucos ms; o ganho cresce linear com o catálogo.
+
+**Equivalência.** (a) `test/integration/search-index-equivalence.test.ts` roda o predicado antigo (copiado literal) e o novo sobre o mesmo corpus (pt-BR, en-US, es-ES, en-GB, `pt`) e compara ids e `ts_rank` exatos, e prova que o `%` é `>=` com um par de similaridade exatamente 0,3. (b) No banco local, a Busca antiga e a nova devolveram respostas idênticas (ids, seções e ordem) em 152 buscas (38 termos, pt/en, `any`/`all`, typos, multi-termo, operadores do websearch).
+
+**Piso do trigrama.** O `%` lê `pg_trgm.similarity_threshold`. A Busca fixa o GUC em `TRGM_MIN_SIM` com `set_config(..., true)` numa transação (local, não vaza no pooler). Custo contado no fio com um proxy TCP com atraso e o cliente em `prepare:false`: 3 idas e voltas a mais (BEGIN, `set_config` em query simples, COMMIT), só quando há termo de 3+ caracteres. Com RTT de 10 ms simulado: 420 ms antes, 357 ms depois no banco de 8.000 receitas. Num catálogo do tamanho do de hoje o saldo fica perto de zero (alguns ms de RTT contra alguns ms de Seq Scan); a rota já espera o embedding antes da query.
+
+**Receita da semana (F).** Só o id do vencedor por Popularidade vai para o Data Cache (`unstable_cache`, 10 min, tag `receita-da-semana:popularidade`), uma entrada para todos: o vencedor não depende de quem vê nem do idioma. A linha exibida é relida por PK com o mesmo gate a cada request, então remoção pela moderação, exclusão ou saída de `approved` valem na hora, sem invalidar tag nessas escritas. `PUT /api/admin/config` expira a tag (`{ expire: 0 }`) ao gravar `recipeOfWeek` ou `popularity`. Num acerto de cache o slot custa a leitura da config (já deduplicada no render) e uma busca por PK, em vez da média global e do agregado sobre `recipe_save`/`recipe_review`.
+

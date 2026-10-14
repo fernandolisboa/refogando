@@ -4,7 +4,7 @@ Status: aceito
 
 A busca é **híbrida e em um único datastore (Postgres/Neon)** desde o início:
 
-- **Camada precisa (âncora):** full-text por idioma (`tsvector` com config `portuguese`/`english` + `unaccent`, índice GIN) para nome/descrição; busca por **ingrediente canônico**; filtros por facetas (cozinha/categoria/tag).
+- **Camada precisa (âncora):** full-text por idioma (`tsvector` com config `portuguese`/`english` + `unaccent`, índice GIN) para nome/descrição; busca por **ingrediente canônico**; filtros por facetas (cozinha/categoria/tag). *Atualização (2026-10-14, handoff 66): o full-text do título e o trigrama (#118) passaram a usar os GIN (um braço de tsquery por config; operador `%` com o piso fixado na transação), com resultado idêntico; o texto cru do ingrediente segue sem índice até a migração do achado E.*
 - **Camada semântica:** embeddings em **pgvector** (índice HNSW, distância cosseno) para intenção difusa ("algo reconfortante de inverno, sem lactose") que palavra-chave não pega.
 - As duas **se combinam num ranking** — FTS/facetas ancoram a precisão, o vetor re-ranqueia/expande por significado. **Não** é busca puramente vetorial (que erraria match exato de nome).
 
