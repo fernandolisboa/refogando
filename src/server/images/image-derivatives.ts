@@ -1,5 +1,6 @@
 import sharp from 'sharp'
 import type { ImageStore } from '@/server/images/image-store'
+import { deleteOrphanBlobs } from '@/server/images/image-blobs'
 import { IMAGE_DETAIL_WIDTH, IMAGE_THUMB_WIDTH } from '@/domain/image-variants'
 
 /**
@@ -10,9 +11,10 @@ import { IMAGE_DETAIL_WIDTH, IMAGE_THUMB_WIDTH } from '@/domain/image-variants'
  * imagem-a-imagem do Gemini, #285, lê o original; um "baixar original" futuro também).
  *
  * BEST-EFFORT, NUNCA LANÇA: falhar aqui não pode derrubar o upload nem a geração do usuário. Qualquer
- * erro (bytes que o sharp não decodifica, imagem acima do teto de pixels, Blob fora) loga UMA linha
- * `[imagens]` só com o nome do erro e devolve `null`: as colunas ficam NULL e a tela cai no original;
- * o backfill (`derivatives-backfill.ts`) tenta de novo depois. Os dois derivados andam juntos (CHECK
+ * erro (bytes que o sharp não decodifica, formato fora de JPEG/PNG/WebP, imagem animada, acima do teto
+ * de pixels ou do tempo, Blob fora) loga UMA linha `[imagens]` só com o nome do erro (ou o motivo) e
+ * devolve `null`: as colunas ficam NULL e a tela cai no original; o backfill
+ * (`derivatives-backfill.ts`) tenta de novo depois. Os dois derivados andam juntos (CHECK
  * `recipe_image_derivatives_pair_chk`): se só um subir, ele é apagado e o par fica NULL.
  *
  * Duas etapas separadas para o caminho de escrita sobrepor CPU e rede: `renderImageDerivatives` (CPU, no
@@ -27,39 +29,75 @@ export type RenderedImageDerivatives = { thumb: Buffer; detail: Buffer }
 export type ImageDerivativeUrls = { thumbUrl: string; detailUrl: string }
 
 /**
- * Teto de pixels da ENTRADA (anti bomba de descompressão), o mesmo da foto da avaliação: o upload aceita
- * até 2 MB, mas um PNG muito compressível pode decodificar para gigabytes. Acima disso o sharp lança e
- * a imagem fica sem derivado (o original segue servido, como antes da 0077).
+ * Teto de pixels da ENTRADA (anti bomba de descompressão), compartilhado com a foto da avaliação
+ * (`/api/recipes/[id]/reviews`): o upload aceita até 2 MB, mas um PNG muito compressível pode
+ * decodificar para gigabytes. Acima disso o sharp lança e a imagem fica sem derivado (o original segue
+ * servido, como antes da 0077).
  */
-const LIMIT_INPUT_PIXELS = 24_000_000
+export const IMAGE_INPUT_PIXEL_LIMIT = 24_000_000
+
+/**
+ * Formatos que ganham derivado. O route do upload só confere o `file.type` DECLARADO pelo cliente, e o
+ * sharp decodifica pelos BYTES: um SVG (ou TIFF/GIF/HEIF) rotulado `image/png` seria renderizado. Um SVG
+ * de 1,3 KB com `feTurbulence`/`feGaussianBlur` custou ~30 s de CPU. Então o formato vem do `metadata()`
+ * (que só lê o cabeçalho, sem renderizar) e só JPEG, PNG e WebP seguem; o resto fica sem derivado e a
+ * tela usa o original, exatamente como antes da 0077 (o upload em si não muda: não rejeitamos aqui).
+ */
+const DERIVABLE_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
+
+/** Teto de CPU de cada pipeline do sharp (defesa extra além do formato e do teto de pixels). */
+const PIPELINE_TIMEOUT_SECONDS = 10
 
 /** Qualidade WebP dos derivados. Medida no handoff 69 (PNG de 1024–1536 px do tipo do Gemini). */
 const WEBP_QUALITY = 80
 
-/** Linha de log sem dado do usuário (só a etapa e o nome do erro), no estilo `[account-purge]`. */
+/** Entrada que, de propósito, não ganha derivado (não é falha do sharp): o motivo vai para o log. */
+class DerivativeSkipped extends Error {
+  override name = 'DerivativeSkipped'
+  constructor(readonly reason: string) {
+    super(`sem derivado: ${reason}`)
+  }
+}
+
+/**
+ * Linha de log sem dado do usuário (só a etapa e o nome do erro, ou o motivo de não gerar, que é um
+ * formato do sharp ou "animada"), no estilo `[account-purge]`.
+ */
 function logFailure(stage: string, err: unknown): void {
-  console.warn(`[imagens] derivados não gerados (${stage}): ${err instanceof Error ? err.name : 'erro'}`)
+  const why = err instanceof DerivativeSkipped ? err.reason : err instanceof Error ? err.name : 'erro'
+  console.warn(`[imagens] derivados não gerados (${stage}): ${why}`)
 }
 
 /**
  * Gera os dois derivados (lança em erro; use `renderImageDerivativesSafe` no caminho de escrita).
- * `.rotate()` sem argumento aplica a orientação EXIF antes de reduzir: o navegador mostra o original
- * já rotacionado pela EXIF, e o WebP sai sem metadado (o sharp não copia EXIF/ICC sem `withMetadata`),
- * então os pixels precisam vir rotacionados para a tela ficar igual. `withoutEnlargement`: um original
- * menor que a largura-alvo não é ampliado (o derivado fica do tamanho dele). Imagem ANIMADA (WebP/GIF
- * com mais de um quadro) não ganha derivado: o sharp pegaria só o primeiro quadro e a tela mudaria.
+ *
+ * - Lê o `metadata()` PRIMEIRO: formato fora de JPEG/PNG/WebP (`DERIVABLE_FORMATS`) ou imagem ANIMADA
+ *   (WebP com mais de um quadro: o sharp pegaria só o primeiro e a tela mudaria) ⇒ sem derivado.
+ * - `.rotate()` sem argumento aplica a orientação EXIF antes de reduzir: o navegador mostra o original
+ *   já rotacionado pela EXIF, e o WebP sai sem metadado (o sharp não copia EXIF/ICC sem `withMetadata`),
+ *   então os pixels precisam vir rotacionados para a tela ficar igual.
+ * - `withoutEnlargement`: um original menor que a largura-alvo não é ampliado.
+ * - Os dois renders rodam um DEPOIS do outro, cada um decodificando o original: em paralelo (`clone()`)
+ *   eram duas decodificações cheias ao mesmo tempo (~87 MB acima da base num PNG de 24 MP). Derivar o
+ *   thumb do detail economizaria uma decodificação, mas o arredondamento da altura poderia mudar em 1 px
+ *   e o thumb sairia de um WebP já com perda. A latência extra fica escondida atrás do `put` do original.
  */
 export async function renderImageDerivatives(data: Buffer): Promise<RenderedImageDerivatives> {
-  const meta = await sharp(data, { limitInputPixels: LIMIT_INPUT_PIXELS }).metadata()
-  if ((meta.pages ?? 1) > 1) {
-    const err = new Error('imagem animada: sem derivado')
-    err.name = 'AnimatedImage'
-    throw err
+  const input = { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }
+  const meta = await sharp(data, input).metadata()
+  if (!meta.format || !DERIVABLE_FORMATS.has(meta.format)) {
+    throw new DerivativeSkipped(`formato ${meta.format ?? 'desconhecido'}`)
   }
-  const base = sharp(data, { limitInputPixels: LIMIT_INPUT_PIXELS }).rotate()
+  if ((meta.pages ?? 1) > 1) throw new DerivativeSkipped('animada')
   const toWidth = (width: number) =>
-    base.clone().resize({ width, withoutEnlargement: true }).webp({ quality: WEBP_QUALITY }).toBuffer()
-  const [detail, thumb] = await Promise.all([toWidth(IMAGE_DETAIL_WIDTH), toWidth(IMAGE_THUMB_WIDTH)])
+    sharp(data, input)
+      .rotate()
+      .resize({ width, withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY })
+      .timeout({ seconds: PIPELINE_TIMEOUT_SECONDS })
+      .toBuffer()
+  const detail = await toWidth(IMAGE_DETAIL_WIDTH)
+  const thumb = await toWidth(IMAGE_THUMB_WIDTH)
   return { thumb, detail }
 }
 
@@ -91,9 +129,10 @@ export async function storeImageDerivatives(
   if (thumb.status === 'fulfilled' && detail.status === 'fulfilled') {
     return { thumbUrl: thumb.value.url, detailUrl: detail.value.url }
   }
-  for (const r of [thumb, detail]) {
-    if (r.status === 'fulfilled') await deleteBlobQuietly(store, r.value.url)
-  }
+  await deleteOrphanBlobs(
+    store,
+    [thumb, detail].flatMap((r) => (r.status === 'fulfilled' ? [r.value.url] : [])),
+  )
   const failed = thumb.status === 'rejected' ? thumb : (detail as PromiseRejectedResult)
   logFailure('storage', failed.reason)
   return null
@@ -105,28 +144,4 @@ export async function generateImageDerivatives(
   data: Buffer,
 ): Promise<ImageDerivativeUrls | null> {
   return storeImageDerivatives(store, await renderImageDerivativesSafe(data))
-}
-
-/**
- * Todos os blobs de uma linha `recipe_image`: o original e os derivados presentes. Quem apaga a linha
- * (APAGAR da galeria, reap do hard-delete) apaga os três; senão os derivados ficariam órfãos no Blob.
- */
-export function imageRowBlobUrls(row: {
-  blobUrl: string
-  thumbUrl?: string | null
-  detailUrl?: string | null
-}): string[] {
-  return [row.blobUrl, row.thumbUrl, row.detailUrl].filter(
-    (u): u is string => typeof u === 'string' && u.length > 0,
-  )
-}
-
-/** Apaga um blob NOSSO sem propagar erro (órfão tolerável, como `deleteOrphanBlob`). */
-async function deleteBlobQuietly(store: ImageStore, url: string): Promise<void> {
-  if (!store.owns(url)) return
-  try {
-    await store.delete(url)
-  } catch {
-    // órfão tolerável.
-  }
 }
