@@ -26,10 +26,8 @@ import {
   parseRecipeOfWeekConfig,
   type RecipeOfWeekConfig,
 } from '@/domain/recipe-of-week-config'
-import {
-  isCatalogRecipeApproved,
-  revalidateRecipeOfWeekPopularCache,
-} from '@/server/recipe/recipe-of-week'
+import { isCatalogRecipeApproved } from '@/server/recipe/recipe-of-week'
+import { APP_CONFIG_TAG, RECIPE_OF_WEEK_POPULAR_TAG, expireCacheTag } from '@/server/cache-tags'
 
 /**
  * Config de app — ADMIN-ONLY (Curador/Usuário → 403). GET lê; PUT grava. Persiste no singleton
@@ -313,15 +311,16 @@ export async function PUT(req: Request): Promise<Response> {
     return Response.json({ error: 'erro_interno' }, { status: 500 })
   }
 
+  // A config já está gravada: `expireCacheTag` não lança (uma falha só atrasa o valor novo, nunca vira 500).
+  // O root layout guarda no Data Cache o recorte da config que ele usa ("gerar 2" e links sociais,
+  // `src/server/layout-data.ts`). Expira em toda gravação: é barato e não exige lembrar quais campos o
+  // layout lê. Perfil `'max'`: o layout mostra o valor novo um request depois do save.
+  expireCacheTag(APP_CONFIG_TAG)
+
   // O vencedor por Popularidade da "Receita da semana" fica 10 min em cache (recipe-of-week.ts). Os pesos
   // mudam o vencedor, e limpar a escolha do Curador deve mostrar um vencedor recalculado: expira agora.
-  // A config já está gravada: uma falha aqui só atrasa o vencedor novo (até 10 min), nunca vira 500.
   if (set.popularityConfig !== undefined || set.recipeOfWeekConfig !== undefined) {
-    try {
-      revalidateRecipeOfWeekPopularCache()
-    } catch (err) {
-      console.warn('[admin/config] falha ao expirar o cache da receita da semana; vale em até 10 min', err)
-    }
+    expireCacheTag(RECIPE_OF_WEEK_POPULAR_TAG)
   }
 
   // Relê o estado completo persistido (espelha o GET) — a UI reflete o singleton inteiro.

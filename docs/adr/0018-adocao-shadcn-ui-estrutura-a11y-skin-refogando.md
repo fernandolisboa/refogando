@@ -44,7 +44,7 @@ O `@theme` base ganha só dois tokens novos (`--font-mono`, `--shadow-lg`). A es
 A #54 só tinha `@media (prefers-color-scheme: dark)` — escuro acompanhava o SO, sem controle do usuário. Adicionamos um **toggle**:
 
 - `globals.css`: além da `@media`, classes `.dark` e `.light` (mesmos valores), e `@custom-variant dark` (classe) para `dark:` pontual. Ordem de fonte garante a precedência correta: cookie ausente → SO decide (`@media`); cookie explícito → `.dark`/`.light` vencem (mesma especificidade, vêm depois), inclusive `.light` derrota a `@media` quando o usuário força claro sob um SO escuro.
-- `layout.tsx` (server) lê o cookie `theme` e emite `<html class="dark|light|">` — **SSR sem flash**, consistente com o render do cliente (mesmo padrão do locale, #4).
+- `layout.tsx` (server) lê o cookie `theme` e emite `<html class="dark|light|">` — **SSR sem flash**, consistente com o render do cliente (mesmo padrão do locale, #4). *Atualização (2026-10-14, handoff 67): o layout não lê mais o cookie (`cookies()` deixava toda rota dinâmica). O HTML sai com `class="light"` (o padrão de quem não tem cookie, #208) e um script inline no `<head>` (`THEME_INIT_SCRIPT`, `src/lib/theme-script.ts`, só no servidor) aplica a classe do cookie antes da primeira pintura; o cookie segue sendo a fonte da verdade e o ThemeToggle lê o tema da classe do `<html>`. Duas linhas desta seção já estavam velhas: desde o #208 cookie ausente → `light` (o `<html>` sempre tem classe, então a `@media` do SO não decide mais sozinha), e desde o #162 o ThemeToggle vive no footer, ao lado do seletor de idioma, não no header.*
 - `ThemeToggle` (client, no header, ao lado do seletor de idioma) grava o cookie e alterna a classe no `documentElement`. Sol/lua em Lucide.
 
 ## Teste

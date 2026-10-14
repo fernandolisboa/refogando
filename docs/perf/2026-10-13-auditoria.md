@@ -46,7 +46,7 @@ Base: `main` em 6b06b5c. Medidas de bundle tiradas de um `next build` de produç
 
 | # | Achado | Por que não entrou |
 |---|---|---|
-| A | Nenhuma página é cacheada: o root layout lê `cookies()` (tema) e o DB, então até `/privacidade` e o detalhe público renderizam a cada hit. | Muda como o tema é aplicado (script pré-pintura) e exige tags de revalidação. Decisão de arquitetura. |
+| A | Nenhuma página é cacheada: o root layout lê `cookies()` (tema) e o DB, então até `/privacidade` e o detalhe público renderizam a cada hit. | **Parcial** (handoff 67): tema por script pré-pintura (o layout não lê mais `cookies()`) e as leituras do layout no Data Cache com as tags `refogando:vocab:cozinha` e `refogando:app-config`, expiradas pelos escritores (perfil `'max'`). `/privacidade`, `/seus-direitos`, `/guia`, `/plano`, `/following`, `/forgot-password` e os redirects `/conversation` e `/recipes` viram ISR de 1 h (§5). **Pendente:** ISR do detalhe público; a home (lê `searchParams` no `generateMetadata`); `/cooks` e `/create`, mantidas dinâmicas de propósito (§5). |
 | B | "Receitas semelhantes" e a busca semântica calculam a distância contra **todos** os embeddings (o `DISTINCT ON` impede o índice HNSW). Cresce linear com o catálogo, em toda visita a uma receita. | Um top-k via HNSW é aproximado: os resultados podem mudar. |
 | C | Full-text e trigram da busca não usam os índices GIN (`recipe_ts_config(rt.locale)` por linha; `similarity() >= 0.3` em OR). O ramo de ingrediente faz `to_tsvector` de cada linha a cada busca. | **Parcial** (handoff 66): títulos e trigrama usam os GIN, sem migração e com resultado idêntico (§4); de quebra, `%`/`_`/`\` digitados deixaram de ser curinga no ILIKE. **Pendente:** o ingrediente cru (coluna `tsvector` em `recipe_ingredient`), na migração do E. |
 | D | Perfil público e a receita do dono chamam a própria API por HTTPS (`fetch(getBaseUrl()/api/...)`): duas invocações por visita. | **Resolvido** no PR seguinte (handoff 65): loaders compartilhados, sem self-fetch. |
@@ -74,4 +74,43 @@ Query inteira: 410–500 ms antes, 304–332 ms depois (o que sobra é o ingredi
 **Piso do trigrama.** O `%` lê `pg_trgm.similarity_threshold`. A Busca fixa o GUC em `TRGM_MIN_SIM` com `set_config(..., true)` numa transação (local, não vaza no pooler). Custo contado no fio com um proxy TCP e o cliente em `prepare:false`: 2 idas e voltas a mais (BEGIN e COMMIT), só quando há termo de 3+ caracteres. O `set_config` vai como query simples no mesmo envio que a query principal (`Promise.all` na conexão reservada da transação: o postgres.js escreve os dois em ordem e o servidor aplica o GUC antes de ler a query principal), então não soma ida e volta. Com RTT de 10 ms simulado (mediana de 15 buscas, três rodadas): 420–445 ms antes, 385–400 ms depois no banco de 8.000 receitas. Num catálogo do tamanho do de hoje o saldo fica perto de zero (alguns ms de RTT contra alguns ms de Seq Scan); a rota já espera o embedding antes da query.
 
 **Receita da semana (F).** Só o id do vencedor por Popularidade (e o instante do cálculo) vai para o Data Cache (`unstable_cache`, 10 min, tag `receita-da-semana:popularidade`), uma entrada para todos: o vencedor não depende de quem vê nem do idioma. É um desvio consciente do "por idioma" de `2026-10-13-respostas.md`: por idioma, o mesmo id ficaria guardado várias vezes. O `revalidate` sozinho não limita a idade (o Next serve a entrada vencida e recalcula em segundo plano, então com pouco tráfego o vencedor teria a idade do intervalo entre visitas); a leitura compara o instante do cálculo com os 10 min e, vencida, calcula ao vivo. Um vencedor novo, inclusive a primeira receita de um catálogo vazio, aparece em até 10 min. A linha exibida é relida por PK com o mesmo gate a cada request, então remoção pela moderação, exclusão ou saída de `approved` valem na hora, sem invalidar tag nessas escritas. `PUT /api/admin/config` expira a tag (`{ expire: 0 }`) ao gravar `recipeOfWeek` ou `popularity`. Num acerto de cache o slot custa a leitura da config (já deduplicada no render) e uma busca por PK, em vez da média global e do agregado sobre `recipe_save`/`recipe_review`.
+
+## 5. Achado A (parcial): o que virou estático (handoff 67)
+
+`next build` (Next 16.2.9) contra um Postgres local migrado, antes e depois. Sem `DATABASE_URL` (o build da CI) tudo segue dinâmico, como antes: a leitura do layout falha e o `connection()` da degradação marca a rota como dinâmica.
+
+| Rota | Antes | Depois | Por quê |
+|---|---|---|---|
+| `/[locale]/privacidade`, `/seus-direitos`, `/guia`, `/plano` | ƒ | ● ISR 1 h | Só leem `params`; o único bloqueio era o layout. |
+| `/[locale]/following`, `/forgot-password` | ƒ | ● ISR 1 h | Idem: casca server sem leitura do request; os dados vêm do client. |
+| `/[locale]/conversation`, `/recipes` | ƒ | ● ISR 1 h | Só `redirect()`/`permanentRedirect()`; a resposta (200 com o redirect no HTML, igual a antes) fica em cache. |
+| `/[locale]/create` | ƒ | ƒ (de propósito) | Estática, o `useSearchParams` do `CreateShellClient` cairia no fallback do `<Suspense>` no servidor (bailout para o client). `connection()` na página. |
+| `/[locale]/cooks` | ƒ | ƒ (de propósito) | Lê do banco a semente de cozinheiros; como ISR ela teria 1 h ou mais de idade (stale-while-revalidate) e a degradação para lista vazia ficaria em cache. `connection()` na página. Decisão à parte. |
+| `/[locale]` (home) | ƒ | ƒ | `generateMetadata` lê `searchParams` (gate de índice). |
+| `/[locale]/recipes/[id]` | ƒ | ƒ | Lê `searchParams` e `headers()` (ramo do dono). ISR por slug é o próximo passo. |
+| `/[locale]/u/[handle]`, `/me/*` | ƒ | ƒ | Leem `cookies()`/`headers()` (`resolvePageLocale`, sessão). |
+| `/[locale]/sign-in`, `/sign-up`, `/reset-password`, `/verify-email` | ƒ | ƒ | Leem `searchParams`. |
+| `/[locale]/admin/*` | ƒ | ƒ | Sessão por `headers()` (`admin/gate.tsx`). |
+| `/[locale]/conversation/[id]` | ƒ | ƒ | Segmento `[id]` sem `generateStaticParams` (só redireciona). |
+
+Com `next start`: `/pt-BR/privacidade` responde `x-nextjs-cache: HIT` e `Cache-Control: s-maxage=3600, stale-while-revalidate=31532400`; com e sem `Cookie: theme=dark` o HTML é byte a byte o mesmo, e o script do `<head>` (minificado no build) põe `dark` só com o cookie. O HTML de cada página, sem os scripts, é o de antes, exceto a classe do `<html>` (agora `light` sempre, trocada pelo script), o próprio script e o segundo ícone do ThemeToggle (lua e sol no HTML, um escondido por CSS).
+
+**Degradação não vai para o cache.** Simulado com o banco recusando conexões e `revalidate` de 5 s num build de teste: com uma entrada vencida no Data Cache, o `unstable_cache` a devolve quando o recálculo falha (a página regenera com o valor antigo); sem entrada nenhuma, a leitura falha, o `connection()` aborta a regeneração em segundo plano e o Next segue servindo o HTML anterior. Sem o `connection()`, a página degradada (sem cozinhas e sem links sociais) ficou em cache como `HIT` mesmo depois de o banco voltar.
+
+**Expirar a tag com `{ expire: 0 }` derrubava as páginas ISR (corrigido: perfil `'max'`).** A primeira versão expirava as tags do layout na hora. Isso tira a cópia velha da página: o próximo request regenera bloqueando e, se o banco falhar nesse intervalo, a leitura não tem entrada para devolver, o `connection()` aborta e o Next responde 500 ("Page changed from static to dynamic", digest `DYNAMIC_SERVER_USAGE`) em todo request até o banco voltar. Reproduzido com `next build` + `next start` contra um Postgres local, numa cópia com uma rota descartável que expira as duas tags, e o banco tirado do ar (`ALTER DATABASE … ALLOW_CONNECTIONS false` + `pg_terminate_backend`):
+
+| `/pt-BR/privacidade` | `{ expire: 0 }` (antes) | `'max'` (agora) |
+|---|---|---|
+| aquecida | 200 `HIT` | 200 `HIT` |
+| expira as tags, banco fora: 1º request | **500** | 200 `STALE` (HTML antigo) |
+| 2º e 3º requests, banco fora | **500**, **500** | 200 `HIT` (regenerada com o valor antigo do `unstable_cache`) |
+| banco de volta | 200 `MISS`, depois `HIT` | 200 `HIT` |
+
+Com o banco no ar, `'max'` entrega o valor novo um request depois do save: um rótulo de cozinha trocado no banco + expiração ⇒ 1º request `STALE` com o rótulo antigo, 2º `HIT` com o novo. A tag da receita da semana segue `{ expire: 0 }`: só a home (dinâmica) a lê. Tags e perfis em `src/server/cache-tags.ts`; tabela de rotas do build idêntica antes e depois da correção.
+
+**Frescor de escrita fora do app.** A revalidação de 1 h também é stale-while-revalidate: o valor novo aparece na primeira regeneração depois de ≥1 h (o request que acha a página vencida ainda leva a antiga), ou um request depois de qualquer save no admin que expire a tag.
+
+**O script do tema fica fora do bundle do client.** `applyThemeFromCookie`/`THEME_INIT_SCRIPT` moraram em `src/lib/theme.ts`, que o ThemeToggle (client) importa: a função ia para `.next/static`. Agora vivem em `src/lib/theme-script.ts`, importado só pelo layout; `grep -rl 'cookie.split' .next/static` não acha nada (antes: um chunk).
+
+**`Vary: Accept-Language`.** O proxy põe o header também nos caminhos já prefixados, mas no `next start` o `Vary` do próprio Next (`rsc, next-router-state-tree, …`) substitui o do proxy nas respostas de página; só o 302 da raiz o mantém. O conteúdo dos caminhos prefixados não depende do `Accept-Language` (`resolvePageLocale` usa o locale da URL quando ele é válido, e o proxy garante isso). Não mexi: o efeito na CDN da Vercel precisa ser conferido num deploy (headers de `/pt-BR/privacidade` em produção).
 

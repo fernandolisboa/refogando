@@ -1,11 +1,12 @@
 import { sql } from 'drizzle-orm'
-import { revalidateTag, unstable_cache } from 'next/cache'
+import { unstable_cache } from 'next/cache'
 import type { Database } from '@/db/client'
 import { loadRecipeOfWeekConfig, loadPopularityConfig } from '@/server/app-config'
 import { loadGlobalRatingAverage } from '@/server/recipe/popularity'
 import { savesAggBodySql, ratingAggBodySql, popularityScoreSql } from '@/server/recipe/search'
 import { projectResult, type SearchHitRow, type SearchResult } from '@/domain/recipe-search-read'
 import { escapeLike } from '@/server/sql/like'
+import { RECIPE_OF_WEEK_POPULAR_TAG } from '@/server/cache-tags'
 
 /**
  * "Receita da semana" (#457, ADR-0026) — slot EDITORIAL fixo da home. Server-side, ANÔNIMO (sem
@@ -21,15 +22,15 @@ import { escapeLike } from '@/server/sql/like'
  *     MAIOR score de popularidade (mistura save+nota+frescor, #368) dentre o catálogo aprovado.
  *     Espelha a fórmula EXATA de `search.ts` (`popularityScoreSql`) — MESMA disciplina de
  *     self-exclusão e universo vivo (save/nota de usuário soft-deletado não conta). O VENCEDOR fica
- *     em cache por 10 min (`RECIPE_OF_WEEK_POPULAR_TAG`); a linha exibida é sempre relida.
+ *     em cache por 10 min (`RECIPE_OF_WEEK_POPULAR_REVALIDATE_S`); a linha exibida é sempre relida.
  *
  * NÃO fere o guarda-corpo "popularidade-sem-autoridade" (CONTEXT.md, Popularidade): aqui ela não
  * promove nada a catálogo (a receita já É catálogo aprovado) — só ordena qual das JÁ aprovadas
  * aparece quando NENHUM humano escolheu. Quem controla o slot primariamente é o Curador.
  *
  * Devolve `null` quando o catálogo aprovado está VAZIO (nenhuma receita elegível) — ou estava, no
- * cálculo cacheado de até 10 min atrás (ver `RECIPE_OF_WEEK_POPULAR_TAG`) — e a home simplesmente omite
- * o slot nesse caso (não é erro).
+ * cálculo cacheado de até 10 min atrás (ver `RECIPE_OF_WEEK_POPULAR_REVALIDATE_S`) — e a home
+ * simplesmente omite o slot nesse caso (não é erro).
  *
  * SEM dedupe com o feed (decisão deliberada): a receita destacada aqui PODE reaparecer no
  * `loadDiscoveryFeed` logo abaixo. Os dois são superfícies independentes (o slot é editorial/fixo,
@@ -111,23 +112,16 @@ async function loadCatalogResult(
  * leitura em vez de invalidar a tag em cada escrita: são muitos caminhos de escrita (moderação, curadoria,
  * exclusão, purge) e a checagem custa uma busca por PK que a home já fazia para montar a linha.
  *
- * INVALIDAÇÃO: `PUT /api/admin/config` chama `revalidateRecipeOfWeekPopularCache()` quando grava
- * `recipeOfWeek` ou `popularity` (os pesos mudam o vencedor). A escolha do Curador nunca passa pelo cache
- * (a config é lida a cada request), então aparece na hora; limpar a escolha volta para um vencedor
- * recalculado. `sort=popularidade` da Busca e os cozinheiros recomendados seguem ao vivo.
+ * INVALIDAÇÃO: `PUT /api/admin/config` chama `expireCacheTag(RECIPE_OF_WEEK_POPULAR_TAG)`
+ * (`src/server/cache-tags.ts`, `{ expire: 0 }`: o próximo request recalcula, sem servir o valor antigo;
+ * a home é dinâmica, então não há HTML em cache a perder) quando grava `recipeOfWeek` ou `popularity`
+ * (os pesos mudam o vencedor). A escolha do Curador nunca passa pelo cache (a config é lida a cada
+ * request), então aparece na hora; limpar a escolha volta para um vencedor recalculado. `sort=popularidade` da Busca e os cozinheiros recomendados seguem ao vivo.
  */
-export const RECIPE_OF_WEEK_POPULAR_TAG = 'receita-da-semana:popularidade'
 export const RECIPE_OF_WEEK_POPULAR_REVALIDATE_S = 600
+// Suba o 'v2' quando o formato guardado (`PopularWinner`) ou os defaults mudarem: o Data Cache da Vercel
+// sobrevive ao deploy.
 const RECIPE_OF_WEEK_POPULAR_CACHE_KEY = ['receita-da-semana', 'vencedor-popularidade', 'v2']
-
-/**
- * Expira na hora o vencedor cacheado (`{ expire: 0 }`: o próximo request recalcula, sem servir o valor
- * antigo; o perfil `'max'` serviria o antigo uma vez, em stale-while-revalidate). Só em Route Handler ou
- * Server Action: o Next recusa `revalidateTag` durante o render.
- */
-export function revalidateRecipeOfWeekPopularCache(): void {
-  revalidateTag(RECIPE_OF_WEEK_POPULAR_TAG, { expire: 0 })
-}
 
 /**
  * Verifica se um `recipeId` é HOJE um catálogo aprovado elegível (origin=catalog, approved,

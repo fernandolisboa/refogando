@@ -15,6 +15,10 @@ import type { NextConfig } from 'next'
  * (avatares/imagens da receita) E de `lh3.googleusercontent.com` (avatar vindo do Google OAuth,
  * gravado em `users.image`). `script-src`/`style-src` com `'unsafe-inline'` é o compromisso
  * pragmático do App Router sem nonce — endurecer para nonce exigiria middleware (deferido).
+ * Atenção (handoff 67): uma CSP com nonce força render dinâmico em TODA rota (o nonce é por request, então
+ * as páginas ISR deixariam de ser estáticas) e, com um nonce presente, o navegador IGNORA o
+ * `'unsafe-inline'`: o script pré-pintura do tema (`THEME_INIT_SCRIPT`, inline e sem nonce, no `<head>` do
+ * root layout) seria bloqueado. Quem for por esse caminho precisa dar o nonce a esse script (ou um hash).
  */
 const CSP_REPORT_ONLY = [
   "default-src 'self'",
@@ -32,8 +36,9 @@ const CSP_REPORT_ONLY = [
 /**
  * Headers de segurança (#444). Antes disto o app não emitia NENHUM — sem CSP, X-Frame-Options,
  * nosniff, Referrer-Policy nem Permissions-Policy, e ainda vazava `x-powered-by`. Estes são
- * defesa-em-profundidade: o único `dangerouslySetInnerHTML` do repo (JSON-LD) já é escapado por
- * `serializeJsonLd`, mas estes headers blindam contra clickjacking, MIME-sniffing e um XSS futuro.
+ * defesa-em-profundidade: os `dangerouslySetInnerHTML` do repo são o JSON-LD, já escapado por
+ * `serializeJsonLd`, e o script do tema, texto fixo gerado no servidor (`src/lib/theme-script.ts`), mas
+ * estes headers blindam contra clickjacking, MIME-sniffing e um XSS futuro.
  */
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
