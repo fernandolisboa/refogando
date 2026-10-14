@@ -137,7 +137,9 @@ export function CreateDrawer({
       <SheetContent
         side="right"
         closeLabel={d.fechar}
-        className="w-full gap-6 overflow-y-auto sm:max-w-md"
+        // Largura: no celular, tela cheia até os 384 px do `max-w-sm` da primitiva; do tablet para
+        // cima, 512 px (`sm:max-w-lg`; era 448 px, `sm:max-w-md`, até o handoff 70).
+        className="w-full gap-6 overflow-y-auto sm:max-w-lg"
         // Bloqueia o dismiss por ESC / clique fora enquanto a geração roda (ver `generating`).
         // O `preventDefault` impede o Radix de fechar; o painel segue "aberto e bloqueante".
         onEscapeKeyDown={(e) => {
