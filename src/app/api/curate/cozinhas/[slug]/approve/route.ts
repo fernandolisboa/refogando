@@ -1,7 +1,7 @@
 import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { approveCozinha } from '@/server/vocabulary/curate'
-import { expireCozinhaVocabCache } from '@/server/layout-data'
+import { COZINHA_VOCAB_TAG, expireCacheTag } from '@/server/cache-tags'
 
 /**
  * Curador APROVA uma cozinha sugerida (#320). POST curador-only: `requireRole(req,'curador')`
@@ -12,8 +12,9 @@ import { expireCozinhaVocabCache } from '@/server/layout-data'
  * Corpo de erro sempre `{ error:'<chave>' }` com os literais EXATOS de `curate.ts` (a UI mapeia pela
  * CHAVE). Mapa de status: nao_encontrado→404, ja_resolvido→409, slug_em_uso→409, rotulos_invalidos/
  * slug_invalido→400. NÃO busta o cache de 30s de `loadVocabulary` (mesmo trade-off do /api/admin/*),
- * mas expira na hora o vocabulário do root layout (`src/server/layout-data.ts`): a aprovada vira
- * `active`. Mesclar e rejeitar não expiram (a sugerida vira lápide; o escopo `active` não muda).
+ * mas expira o vocabulário do root layout (`src/server/layout-data.ts`, perfil `'max'`: a lista nova
+ * aparece um request depois): a aprovada vira `active`. Mesclar e rejeitar não expiram (a sugerida
+ * vira lápide; o escopo `active` não muda).
  *
  * Ordem de portaria: `requireRole` ANTES de `decodeURIComponent` (um `%` solto faz o decode lançar
  * URIError — não-autenticado não pode arrancar 500 antes do portão). Decode embrulhado → 404
@@ -54,7 +55,7 @@ export async function POST(
 
     if (res.ok) {
       // Não lança: uma falha só atrasa a cozinha nova no layout, nunca vira 500 de uma aprovação salva.
-      expireCozinhaVocabCache()
+      expireCacheTag(COZINHA_VOCAB_TAG)
       return Response.json({ ok: true, slug: res.slug }, { status: 200 })
     }
     const status =

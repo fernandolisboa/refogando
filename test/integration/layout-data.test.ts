@@ -5,12 +5,8 @@ import { PUT as configPut } from '@/app/api/admin/config/route'
 import { POST as APPROVE } from '@/app/api/curate/cozinhas/[slug]/approve/route'
 import { POST as MERGE } from '@/app/api/curate/cozinhas/[slug]/merge/route'
 import { POST as REJECT } from '@/app/api/curate/cozinhas/[slug]/reject/route'
-import {
-  APP_CONFIG_TAG,
-  COZINHA_VOCAB_TAG,
-  loadLayoutAppConfig,
-  loadLayoutCozinhaVocab,
-} from '@/server/layout-data'
+import { loadLayoutAppConfig, loadLayoutCozinhaVocab } from '@/server/layout-data'
+import { APP_CONFIG_TAG, COZINHA_VOCAB_TAG } from '@/server/cache-tags'
 import { __clearVocabularyCache, loadVocabulary } from '@/server/vocabulary/load'
 import { suggestCozinha } from '@/server/vocabulary/suggest'
 import { getDb } from '@/server/deps'
@@ -24,13 +20,14 @@ import { cachedEntryCount, failRevalidateTag, revalidatedTags } from '../helpers
  * `src/server/layout-data.ts`). Contra Postgres real, com o dublê de `next/cache` (test/setup.ts).
  * Prova, para cada tag:
  *  - a leitura fica em cache (escrita por fora do app não aparece até a invalidação);
- *  - CADA escritor que muda o que o layout mostra expira a tag certa, com `{ expire: 0 }`, só quando
- *    gravou (erro de validação/404 não expira);
+ *  - CADA escritor que muda o que o layout mostra expira a tag certa, com o perfil `'max'`
+ *    (stale-while-revalidate, ver src/server/cache-tags.ts), só quando gravou (erro de validação/404 não
+ *    expira; a 1ª de duas escritas gravada expira mesmo se a 2ª falhar);
  *  - quem não muda o escopo `active` (mesclar, rejeitar, o "Outra") não expira;
  *  - uma falha ao expirar não vira 500: a escrita fica gravada e a rota responde 200.
  */
 
-const EXPIRE = { expire: 0 }
+const EXPIRE = 'max'
 const vocabExpired = () => revalidatedTags().filter((c) => c.tag === COZINHA_VOCAB_TAG)
 const configExpired = () => revalidatedTags().filter((c) => c.tag === APP_CONFIG_TAG)
 const slugsOf = async () => (await loadLayoutCozinhaVocab(getDb())).map((t) => t.slug)
@@ -76,7 +73,7 @@ function curate(
   )
 }
 
-describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag vocab:cozinha', () => {
+describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag refogando:vocab:cozinha', () => {
   it('lê só as ativas, na ordem do leitor, e guarda em cache', async () => {
     const seeded = [...COZINHA_SEED].sort((a, b) => a.sort - b.sort || a.slug.localeCompare(b.slug))
     expect(await slugsOf()).toEqual(seeded.map((t) => t.slug))
@@ -149,6 +146,35 @@ describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag vocab:cozi
     expect(vocabExpired()).toHaveLength(1)
   })
 
+  it('PATCH de rótulo + status: a 1ª escrita gravou e a 2ª falhou ⇒ 500, mas a tag expira (finally)', async () => {
+    const admin = await headersFor('admin', 'vocab-second-fails@layout.test')
+    await slugsOf()
+    // `editCozinhaLabels` e `setCozinhaStatus` fazem um `db.update` cada: deixa passar o 1º e derruba o 2º.
+    const db = getDb()
+    const realUpdate = db.update.bind(db)
+    let updates = 0
+    vi.spyOn(db, 'update').mockImplementation(((...args: Parameters<typeof realUpdate>) => {
+      updates += 1
+      if (updates === 2) throw new Error('falha simulada na 2ª escrita')
+      return realUpdate(...args)
+    }) as typeof db.update)
+
+    const res = await patch({ slug: 'italiana', labelPtBr: 'Italiana (meio salvo)', status: 'deprecated' }, admin)
+    expect(res.status).toBe(500)
+    expect(updates).toBe(2)
+    vi.restoreAllMocks()
+
+    const [row] = await getDb()
+      .select({ labelPtBr: vocabularyTerm.labelPtBr, status: vocabularyTerm.status })
+      .from(vocabularyTerm)
+      .where(eq(vocabularyTerm.slug, 'italiana'))
+    expect(row).toEqual({ labelPtBr: 'Italiana (meio salvo)', status: 'active' })
+    expect(vocabExpired()).toEqual([{ tag: COZINHA_VOCAB_TAG, profile: EXPIRE }])
+    expect((await loadLayoutCozinhaVocab(getDb())).find((t) => t.slug === 'italiana')?.labelPtBr).toBe(
+      'Italiana (meio salvo)',
+    )
+  })
+
   it('aprovar uma sugestão expira (vira active); mesclar, rejeitar e o "Outra" não', async () => {
     const curador = await headersFor('curador', 'curate@layout.test')
     await slugsOf()
@@ -167,6 +193,23 @@ describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag vocab:cozi
     expect(res.status).toBe(200)
     expect(vocabExpired()).toEqual([{ tag: COZINHA_VOCAB_TAG, profile: EXPIRE }])
     expect(await slugsOf()).toContain('georgiana')
+  })
+
+  it('aprovação com falha ao expirar não vira 500: a cozinha fica active e a rota responde 200', async () => {
+    const curador = await headersFor('curador', 'curate-fail@layout.test')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await suggestCozinha(getDb(), 'Georgiana')).toBe('georgiana')
+    failRevalidateTag()
+
+    const res = await curate(APPROVE, 'approve', 'georgiana', { labelPtBr: 'Georgiana', labelEnUs: 'Georgian' }, curador)
+    expect(res.status).toBe(200)
+    const [row] = await getDb()
+      .select({ status: vocabularyTerm.status })
+      .from(vocabularyTerm)
+      .where(eq(vocabularyTerm.slug, 'georgiana'))
+    expect(row?.status).toBe('active')
+    expect(vocabExpired()).toHaveLength(1)
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('aprovação recusada (já resolvida) não expira', async () => {
@@ -192,7 +235,7 @@ describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag vocab:cozi
   })
 })
 
-describe('loadLayoutAppConfig — recorte da config do layout com a tag app-config', () => {
+describe('loadLayoutAppConfig — recorte da config do layout com a tag refogando:app-config', () => {
   it('sem linha: defaults ("gerar 2" desligado, sem links)', async () => {
     expect(await loadLayoutAppConfig(getDb())).toEqual({ variantEnabled: false, socialLinks: [] })
   })
@@ -250,6 +293,6 @@ describe('loadLayoutAppConfig — recorte da config do layout com a tag app-conf
     expect((await put({ socialLinks: links }, admin)).status).toBe(200)
     const [row] = await getDb().select({ socialLinks: appConfig.socialLinks }).from(appConfig)
     expect(row?.socialLinks).toEqual(links)
-    expect(warn).toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 })

@@ -8,9 +8,9 @@ import {
   isCatalogRecipeApproved,
   searchCatalogApprovedRecipes,
   loadCatalogApprovedRecipeTitle,
-  RECIPE_OF_WEEK_POPULAR_TAG,
   RECIPE_OF_WEEK_POPULAR_REVALIDATE_S,
 } from '@/server/recipe/recipe-of-week'
+import { RECIPE_OF_WEEK_POPULAR_TAG } from '@/server/cache-tags'
 import { GET as highlightSearchGET } from '@/app/api/admin/catalog/highlight-search/route'
 import { PUT as adminConfigPUT } from '@/app/api/admin/config/route'
 import { DEFAULT_POPULARITY_CONFIG } from '@/domain/popularity'
@@ -22,9 +22,10 @@ import {
   seedRecipeImage,
 } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
-import { cachedEntryCount, revalidatedTags, serveStaleEntries } from '../helpers/next-cache'
+import { cachedEntryCount, failRevalidateTag, revalidatedTags, serveStaleEntries } from '../helpers/next-cache'
 
-// O PUT da config também expira a tag do layout (`app-config`, handoff 67): aqui só interessa a do vencedor.
+// O PUT da config também expira a tag do layout (`refogando:app-config`, handoff 67): aqui só interessa a
+// do vencedor.
 const recipeOfWeekExpired = () => revalidatedTags().filter((c) => c.tag === RECIPE_OF_WEEK_POPULAR_TAG)
 
 const db = () => getDb()
@@ -196,6 +197,22 @@ describe('loadRecipeOfTheWeek — cache do vencedor por Popularidade (achado F)'
     expect(recipeOfWeekExpired()).toEqual([])
     expect((await adminPut({ recipeOfWeek: { recipeId: null } })).status).toBe(200)
     expect(recipeOfWeekExpired()).toEqual([{ tag: RECIPE_OF_WEEK_POPULAR_TAG, profile: { expire: 0 } }])
+  })
+
+  it('falha ao expirar (layout e vencedor) não vira 500: a config fica gravada e o PUT responde 200', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    failRevalidateTag()
+    const pesos = { ...DEFAULT_POPULARITY_CONFIG, wSave: DEFAULT_POPULARITY_CONFIG.wSave + 1 }
+    try {
+      expect((await adminPut({ popularity: pesos, recipeOfWeek: { recipeId: null } })).status).toBe(200)
+      expect(recipeOfWeekExpired()).toEqual([{ tag: RECIPE_OF_WEEK_POPULAR_TAG, profile: { expire: 0 } }])
+      // Um aviso por tag: a do layout (`'max'`) e a do vencedor (`{ expire: 0 }`), ambas pelo mesmo helper.
+      expect(warn).toHaveBeenCalledTimes(2)
+      const [row] = await db().select({ popularityConfig: appConfig.popularityConfig }).from(appConfig)
+      expect(row?.popularityConfig).toMatchObject({ wSave: pesos.wSave })
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('a escolha do Curador aparece na hora, mesmo com um vencedor em cache', async () => {

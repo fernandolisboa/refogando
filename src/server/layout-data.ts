@@ -1,8 +1,9 @@
-import { revalidateTag, unstable_cache } from 'next/cache'
+import { unstable_cache } from 'next/cache'
 import type { Database } from '@/db/client'
 import { loadAppConfig } from '@/server/app-config'
 import { selectVocabulary, type VocabularyTermView } from '@/server/vocabulary/load'
 import type { SocialLink } from '@/domain/social-links-config'
+import { APP_CONFIG_TAG, COZINHA_VOCAB_TAG } from '@/server/cache-tags'
 
 /**
  * Leituras de banco do ROOT LAYOUT (`src/app/[locale]/layout.tsx`) no Data Cache do Next, com tag
@@ -17,25 +18,28 @@ import type { SocialLink } from '@/domain/social-links-config'
  *    O resto da config (tetos, modelos, IA) segue lido ao vivo por quem usa (`loadAppConfig`, com o
  *    dedupe por request do `React.cache`).
  *
- * INVALIDAÇÃO por tag, expirando na hora (`{ expire: 0 }`), nos Route Handlers que escrevem:
+ * INVALIDAÇÃO por tag (`src/server/cache-tags.ts`, perfil `'max'`), nos Route Handlers que escrevem:
  *  - `COZINHA_VOCAB_TAG`: `POST`/`PATCH /api/admin/vocabulary` (criar, editar rótulo/nota, depreciar/
  *    reativar) e `POST /api/curate/cozinhas/[slug]/approve` (a sugestão vira `active`). Mesclar e
  *    rejeitar só levam uma `suggested` a lápide, e o "Outra" (`suggestCozinha`) só grava `suggested`:
  *    nenhum dos três muda o escopo `active`, então não expiram.
  *  - `APP_CONFIG_TAG`: `PUT /api/admin/config` (o único escritor de `app_config`).
- * A expiração por tempo (`LAYOUT_DATA_REVALIDATE_S`) é a rede para escrita fora do app (migração,
- * SQL à mão): nesses casos o valor novo aparece em até 1 h, ou na hora se alguém salvar pelo admin.
- *
- * `revalidateTag` só roda em Route Handler ou Server Action (o Next recusa durante o render).
+ * `'max'` é stale-while-revalidate: o primeiro request depois do save ainda recebe o HTML/valor antigo e
+ * dispara a regeneração, então o admin vê a mudança UM request depois. Não é `{ expire: 0 }` de
+ * propósito: sem cópia velha, uma falha do banco antes da próxima visita viraria 500 nas páginas ISR (o
+ * porquê está em cache-tags.ts).
+ * A expiração por tempo (`LAYOUT_DATA_REVALIDATE_S`) é a rede para escrita fora do app (migração, SQL à
+ * mão), e também é stale-while-revalidate: o valor novo aparece na primeira regeneração depois de ≥1 h
+ * (o request que acha a entrada vencida ainda leva a antiga; com pouco tráfego, bem depois de 1 h), ou um
+ * request depois de qualquer save no admin que expire a tag.
  */
-export const COZINHA_VOCAB_TAG = 'vocab:cozinha'
-export const APP_CONFIG_TAG = 'app-config'
 export const LAYOUT_DATA_REVALIDATE_S = 3600
 
 /** Vocabulário de cozinha `active`, lido direto do banco (sem o cache de 30 s por instância). */
 export async function loadLayoutCozinhaVocab(db: Database): Promise<VocabularyTermView[]> {
   return unstable_cache(
     () => selectVocabulary(db, 'cozinha', 'active'),
+    // Suba o 'v1' quando o formato guardado ou os defaults mudarem: o Data Cache da Vercel sobrevive ao deploy.
     ['layout', 'vocab-cozinha-active', 'v1'],
     { revalidate: LAYOUT_DATA_REVALIDATE_S, tags: [COZINHA_VOCAB_TAG] },
   )()
@@ -58,28 +62,8 @@ export async function loadLayoutAppConfig(db: Database): Promise<LayoutAppConfig
         socialLinks: cfg.socialLinks.filter((l) => l.enabled),
       }
     },
+    // Suba o 'v1' quando o formato guardado ou os defaults mudarem: o Data Cache da Vercel sobrevive ao deploy.
     ['layout', 'app-config', 'v1'],
     { revalidate: LAYOUT_DATA_REVALIDATE_S, tags: [APP_CONFIG_TAG] },
   )()
-}
-
-/**
- * Expira a tag na hora. Chamado DEPOIS da escrita gravada: uma falha aqui só atrasa o valor novo no
- * layout (até `LAYOUT_DATA_REVALIDATE_S`), nunca transforma a escrita salva num 500. Por isso engole
- * o erro (com aviso no log) em vez de deixar o caller tratar.
- */
-function expireTag(tag: string): void {
-  try {
-    revalidateTag(tag, { expire: 0 })
-  } catch (err) {
-    console.warn(`[layout-data] falha ao expirar a tag ${tag}; vale em até ${LAYOUT_DATA_REVALIDATE_S} s`, err)
-  }
-}
-
-export function expireCozinhaVocabCache(): void {
-  expireTag(COZINHA_VOCAB_TAG)
-}
-
-export function expireAppConfigCache(): void {
-  expireTag(APP_CONFIG_TAG)
 }

@@ -5,11 +5,13 @@
  * zera o armazenamento em todo `beforeEach`.
  *
  * Imita o que os testes precisam observar: a chave (`cb.toString()` + `keyParts` + argumentos, como o
- * Next), o valor passando por JSON (o Data Cache guarda JSON), a expiração por `revalidate` e a remoção
- * por tag. Diferença consciente: o Next serve o valor vencido e recalcula em segundo plano
- * (stale-while-revalidate); aqui, por padrão, o vencido é recalculado na hora. `serveStaleEntries()`
- * liga o comportamento do Next de devolver a entrada vencida, mas o refresh em segundo plano NÃO é
- * modelado: a entrada fica vencida até o reset, uma invalidação por tag ou o desligamento do modo.
+ * Next), o valor passando por JSON (o Data Cache guarda JSON), a expiração por `revalidate` e a
+ * invalidação por tag conforme o perfil: `{ expire: 0 }` (ou sem perfil) remove a entrada; `'max'` só a
+ * deixa vencida (o Next a serviria uma vez e recalcularia em segundo plano). Diferença consciente: o
+ * Next serve o valor vencido e recalcula em segundo plano (stale-while-revalidate); aqui, por padrão, o
+ * vencido é recalculado na hora. `serveStaleEntries()` liga o comportamento do Next de devolver a
+ * entrada vencida, mas o refresh em segundo plano NÃO é modelado: a entrada fica vencida até o reset,
+ * uma invalidação `{ expire: 0 }` ou o desligamento do modo.
  *
  * Só existem aqui os exports que o app usa hoje (`unstable_cache`, `revalidateTag`): uma API nova de
  * `next/cache` (revalidatePath, updateTag, refresh…) precisa de um stub aqui, senão chega `undefined`.
@@ -47,7 +49,9 @@ export function revalidateTag(tag: string, profile: unknown): void {
   calls.push({ tag, profile })
   if (failRevalidate) throw new Error(`revalidateTag falhou (dublê): ${tag}`)
   for (const [key, entry] of store) {
-    if (entry.tags.includes(tag)) store.delete(key)
+    if (!entry.tags.includes(tag)) continue
+    if (profile === 'max') entry.expiresAt = 0
+    else store.delete(key)
   }
 }
 

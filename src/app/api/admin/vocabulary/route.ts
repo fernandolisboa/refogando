@@ -7,7 +7,7 @@ import {
   setCozinhaStatus,
   VOICE_NOTE_MAX,
 } from '@/server/vocabulary/admin'
-import { expireCozinhaVocabCache } from '@/server/layout-data'
+import { COZINHA_VOCAB_TAG, expireCacheTag } from '@/server/cache-tags'
 
 /**
  * CRUD da taxonomia de cozinhas — ADMIN-ONLY (#321, ADR-0025: curadoria proativa). GET lista;
@@ -19,8 +19,9 @@ import { expireCozinhaVocabCache } from '@/server/layout-data'
  *
  * A rota NÃO busta o cache de 30s de `loadVocabulary` (mesmo trade-off do /api/admin/config): um
  * add/depreciar reflete nas facetas/rótulos após ≤30s — aceitável por #315. Já o vocabulário do ROOT
- * LAYOUT (Data Cache com tag, `src/server/layout-data.ts`) é expirado na hora em toda escrita que
- * gravou: sem isso as páginas estáticas mostrariam a lista velha por até 1 h.
+ * LAYOUT (Data Cache com tag, `src/server/layout-data.ts`) é expirado em toda escrita que gravou (perfil
+ * `'max'`: o layout mostra a lista nova um request depois). Sem isso as páginas ISR só a veriam na
+ * primeira regeneração depois de ≥1 h (stale-while-revalidate; com pouco tráfego, bem depois).
  */
 
 export async function GET(req: Request): Promise<Response> {
@@ -65,7 +66,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: result.error }, { status })
   }
   // Cozinha nova nasce `active`: entra no vocabulário do layout. Não lança (falha só atrasa).
-  expireCozinhaVocabCache()
+  expireCacheTag(COZINHA_VOCAB_TAG)
   // Relê a linha recém-criada (espelha o GET item) — a UI insere o que a rota devolve.
   return Response.json({ cozinha: await readOne(result.slug) })
 }
@@ -130,7 +131,7 @@ export async function PATCH(req: Request): Promise<Response> {
   } catch {
     return Response.json({ error: 'erro_interno' }, { status: 500 })
   } finally {
-    if (wrote) expireCozinhaVocabCache()
+    if (wrote) expireCacheTag(COZINHA_VOCAB_TAG)
   }
 
   return Response.json({ cozinha: await readOne(body.slug) })
