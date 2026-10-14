@@ -168,8 +168,16 @@ export async function applyClearPantry(input: { db: Database; userId: string }):
  * Normalização SQL dos DOIS lados do casamento (termo e texto do Item): minúsculo, sem acento, e tudo que é
  * espaço ou pontuação vira UM espaço. Uma expressão só, aplicada ao nome da Despensa, aos básicos, aos nomes
  * e aliases do canônico e ao texto do Item — então "Pimenta-do-Reino" e "pimenta do reino" casam.
+ *
+ * O texto do Item e o nome do canônico não passam mais por aqui na consulta: vêm das colunas GERADAS
+ * `recipe_ingredient.raw_text_norm` e `ingredient_translation.nome_norm` (migração 0076, achado E da
+ * auditoria de performance), que gravam ESTA expressão na escrita. Mudou a expressão? Mude as duas colunas
+ * numa migração (com a reescrita da tabela) no mesmo PR; a suíte
+ * test/integration/ingredient-index-equivalence.test.ts compara as colunas com esta função linha a linha.
+ * O nome traduzido (`tr.nome`, do jsonb de `recipe_translation`) segue normalizado aqui: coluna gerada não
+ * alcança outra tabela (ver `lines`). Exportado só pra essa suíte.
  */
-function norm(expr: SQL): SQL {
+export function norm(expr: SQL): SQL {
   return sql`btrim(regexp_replace(lower(immutable_unaccent(${expr})), '[[:space:][:punct:]]+', ' ', 'g'))`
 }
 
@@ -221,9 +229,9 @@ type PantryTerm = { id: string; nome: string }
  *     "água" cobriria "água de coco". Os termos já estão normalizados, e mesmo assim são escapados.
  *  5. `lines`: os Itens com nome das Receitas que o viewer pode SALVAR (o gate de `eligibleToSaveByViewer`
  *     em SQL: leitura do viewer + barreiras do pool — o mesmo da Sugestão de cardápio), com o texto
- *     normalizado UMA vez: `raw_text` (locale de origem) e o nome traduzido do locale do viewer, só quando
- *     ainda casa com o `raw_text` (ADR-0030). Item sem `raw_text` fica de fora: sem nome, não há o que
- *     mostrar como faltando nem o que pôr na lista.
+ *     normalizado: `raw_text` (locale de origem; lido da coluna gerada `raw_text_norm`) e o nome traduzido
+ *     do locale do viewer, só quando ainda casa com o `raw_text` (ADR-0030; normalizado UMA vez aqui). Item
+ *     sem `raw_text` fica de fora: sem nome, não há o que mostrar como faltando nem o que pôr na lista.
  *  6. `tokens` + `real_line_hits` + `hits`: cada linha vira palavras; um termo real cobre a linha quando a
  *     primeira palavra dele é IGUAL a uma palavra da linha e a fatia seguinte do array bate com o resto
  *     (palavra(s) inteira(s) em qualquer ponto: "farinha" cobre "farinha de trigo", "sal" não cobre
@@ -296,8 +304,9 @@ async function queryPantryMatches(input: {
     ),
     it_names AS MATERIALIZED (
       -- Nomes e aliases de TODOS os Ingredientes canônicos, normalizados UMA vez: o join abaixo vira igualdade
-      -- simples (hash join), sem recalcular a normalização por par (termo × tradução × alias).
-      SELECT it.ingredient_id, ${norm(sql`it.nome`)} AS n FROM ingredient_translation it
+      -- simples (hash join), sem recalcular a normalização por par (termo × tradução × alias). O nome vem
+      -- da coluna gerada nome_norm (a mesma normalização, gravada na escrita); os aliases, normalizados aqui.
+      SELECT it.ingredient_id, it.nome_norm AS n FROM ingredient_translation it
       UNION ALL
       SELECT it.ingredient_id, ${norm(sql`a.alias`)}
       FROM ingredient_translation it CROSS JOIN LATERAL unnest(it.aliases) AS a(alias)
@@ -354,7 +363,7 @@ async function queryPantryMatches(input: {
         ri.ordem AS ordem,
         ri.ingredient_id AS ingredient_id,
         COALESCE(tr.nome, btrim(ri.raw_text)) AS display_name,
-        ${norm(sql`ri.raw_text`)} AS raw_n,
+        ri.raw_text_norm AS raw_n,
         ${norm(sql`tr.nome`)} AS tr_n
       FROM recipe_ingredient ri
       JOIN recipe r ON r.id = ri.recipe_id
