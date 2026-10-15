@@ -14,7 +14,7 @@
  *
  * Status HTTP (handoff 72): esta rota fica FORA do grupo `(com-carregamento)`, como `recipes/`, para o
  * `notFound()` sair como 404 de verdade (antes, 200 com a tela de "não encontrado"). Não pôr
- * Suspense/`loading.tsx` acima dele. O `<Suspense>` abaixo fica depois da decisão.
+ * Suspense/`loading.tsx` acima do `notFound()`. O `<Suspense>` abaixo fica depois da decisão.
  */
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
@@ -63,6 +63,8 @@ export default async function PublicProfilePage({
 
   // Suspense sem fallback, só como fronteira de hidratação (o mesmo papel do da página da receita):
   // nada aqui dentro suspende, então o perfil sai inteiro no HTML, com o status já decidido acima.
+  // Nada aqui dentro pode chamar `useSearchParams()`: sem o aviso do build, o corpo do perfil (público e
+  // indexável) sumiria do HTML em silêncio (ver o comentário do `DetailChrome` da receita).
   return (
     <Suspense>
       <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">

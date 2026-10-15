@@ -5,8 +5,9 @@
 ## 1. O que mudou
 
 - **`u/` saiu do grupo `(com-carregamento)`** (`git mv` para `src/app/[locale]/u/`), pelo mesmo motivo de `recipes/` no handoff 71: o `loading.tsx` do grupo abre um Suspense que manda o HTML com 200 antes de o `notFound()` da página rodar. Fora do grupo, o render decide antes do primeiro byte. URLs não mudam; a tabela de rotas do `next build` é a mesma (`ƒ /[locale]/u/[handle]`).
-- **`<Suspense>` sem fallback** em volta do conteúdo do perfil, abaixo do `notFound()`, como fronteira de hidratação (o mesmo papel do `DetailChrome` da receita). Nada ali suspende, então o perfil sai inteiro no HTML.
-- Comentários do `loading.tsx` do grupo, do `[locale]/layout.tsx` e do topo de `u/[handle]/page.tsx` dizem que ficam fora do grupo `recipes/` e `u/`.
+- **`<Suspense>` sem fallback** em volta do conteúdo do perfil, abaixo do `notFound()`, como fronteira de hidratação (o mesmo papel do `DetailChrome` da receita). Nada ali suspende, então o perfil sai inteiro no HTML; nada ali dentro pode chamar `useSearchParams()`.
+- Comentários do `loading.tsx` do grupo, do `[locale]/layout.tsx` e do topo de `u/[handle]/page.tsx` dizem que `recipes/` e `u/` ficam fora do grupo.
+- Nota de implementação do ADR-0020 decisão 4 passa a citar o perfil entre as rotas fora do grupo.
 - `test/unit/recipe-route-status.test.ts` passou a travar também `u/` e `u/[handle]/` (nenhum `loading.*` neles; o grupo não tem `u/`).
 
 ## 2. Evidência
@@ -23,7 +24,7 @@ As rotas da receita seguem como no handoff 71 (308 no UUID legado, 404 no privad
 
 ## 3. O que muda para quem vê
 
-O mesmo trade-off da receita: numa navegação no client para um perfil, o esqueleto de carregamento não aparece mais; a página anterior fica na tela até o perfil chegar (o perfil faz uma leitura só, `loadPublicProfile`).
+O mesmo trade-off da receita: numa navegação no client para um perfil, o esqueleto de carregamento não aparece mais; a página anterior fica na tela até o perfil chegar (o `loadPublicProfile` faz 6 consultas em 2 idas ao banco, as mesmas de antes).
 
 ## 4. Landmines
 

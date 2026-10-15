@@ -3,11 +3,12 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Guarda estrutural do status HTTP da receita (ADR-0020 decisão 4). Um `loading.tsx` abre um Suspense
- * que manda o HTML com 200 antes de a página decidir o desfecho; abaixo dele, o `permanentRedirect` do
- * link antigo e o `notFound()` viram 308/404 só no payload (redirect no cliente, soft 404). Por isso o
- * esqueleto mora no grupo `(com-carregamento)`, e `recipes/` e `u/` (perfil, handoff 72) ficam fora. O status em si é verificado num
- * build de produção (`next start`); aqui só se trava a estrutura que o produz.
+ * Guarda estrutural do status HTTP das rotas fora do grupo (receita: ADR-0020 decisão 4; perfil:
+ * handoff 72). Um `loading.tsx` abre um Suspense que manda o HTML com 200 antes de a página decidir o
+ * desfecho; abaixo dele, o `permanentRedirect` do link antigo e o `notFound()` viram 308/404 só no
+ * payload (redirect no cliente, soft 404). Por isso o esqueleto mora no grupo `(com-carregamento)`, e
+ * `recipes/` e `u/` ficam fora. O status em si é verificado num build de produção (`next start`); aqui
+ * só se trava a estrutura que o produz.
  */
 const APP = path.join(process.cwd(), 'src', 'app')
 const LOCALE = path.join(APP, '[locale]')
