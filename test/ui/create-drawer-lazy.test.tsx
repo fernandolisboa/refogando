@@ -192,6 +192,10 @@ describe('Gaveta "Criar" sob demanda (handoff 70)', () => {
     await renderHeader()
     act(() => criarButton().focus())
     await waitFor(() => expect(loads).toBe(1))
+    // Espera o módulo chegar: um `import()` ainda em voo atravessaria o `resetModules` e o teste
+    // seguinte receberia a mesma promessa, sem passar pelo próprio `doMock` (loads ficaria 0). A
+    // 1ª transformação da gaveta real passa de 1 s com outras suítes rodando em paralelo.
+    await waitFor(() => expect(ready).toBe(1), { timeout: 10_000 })
   })
 
   it('abrir o menu mobile pré-carrega (o "Criar" do celular mora nele)', async () => {
@@ -351,6 +355,25 @@ describe('Pedido de abertura pendente (o chunk ainda chegando)', () => {
     await user.click(criar)
     expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
     expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('com a gaveta ABERTA, navegar no client a fecha (handoff 74): a página nova não fica atrás do fundo borrado', async () => {
+    const user = userEvent.setup()
+    mockDrawerChunk()
+    const { navigate } = await renderHeader()
+    await act(async () => idleCallbacks[0]())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+
+    const criar = criarButton()
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    navigate('/pt-BR/recipes/refogado-de-abobrinha')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // Fechou de verdade (o estado do header), não só sumiu: o "Criar" reabre na hora.
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
   })
 
   it('Escape com o pedido pendente o cancela, como fecharia a gaveta aberta', async () => {

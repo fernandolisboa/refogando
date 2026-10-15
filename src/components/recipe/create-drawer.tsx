@@ -17,9 +17,16 @@
  *
  * Reabrir o drawer RESETA o wizard (paridade com o protótipo) via `key` no conteúdo interno —
  * assim trocar de método/gerar/voltar ao picker é estado local, sem vazar entre aberturas.
+ *
+ * NAVEGAR FECHA A GAVETA (handoff 74): "Ver receita", "Ver cardápio", o autor, "Entrar" e o
+ * voltar/avançar do navegador levam a outra página, e o header (onde a gaveta mora) persiste entre
+ * rotas. Sem fechar, a página nova carregava por trás do painel e do fundo borrado. Ver
+ * `useFecharAoNavegar`.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { splitLocalePrefix } from '@/i18n/locale-path'
 import {
   Sheet,
   SheetContent,
@@ -77,6 +84,8 @@ export function CreateDrawer({
     if (!next && generating) return
     onOpenChange(next)
   }
+
+  const fecharSeLinkParaEstaPagina = useFecharAoNavegar(open, generating, onOpenChange)
 
   // Método escolhido. Reaberturas re-semeiam o método inicial a partir dos deep-links.
   const seededMethod = (): Method => {
@@ -140,6 +149,7 @@ export function CreateDrawer({
         // Largura: no celular, tela cheia até os 384 px do `max-w-sm` da primitiva; do tablet para
         // cima, 512 px (`sm:max-w-lg`; era 448 px, `sm:max-w-md`, até o handoff 70).
         className="w-full gap-6 overflow-y-auto sm:max-w-lg"
+        onClick={fecharSeLinkParaEstaPagina}
         // Bloqueia o dismiss por ESC / clique fora enquanto a geração roda (ver `generating`).
         // O `preventDefault` impede o Radix de fechar; o painel segue "aberto e bloqueante".
         onEscapeKeyDown={(e) => {
@@ -249,4 +259,60 @@ export function CreateDrawer({
       </SheetContent>
     </Sheet>
   )
+}
+
+/**
+ * Fecha a gaveta quando a pessoa sai da página por um link dela ou pelo voltar/avançar.
+ *
+ *  - TROCA DE ROTA: o `pathname` mudou com a gaveta aberta → fecha. O `usePathname` só muda quando
+ *    a navegação (uma transição do App Router) é montada: na receita, que não tem `loading.tsx`
+ *    desde o handoff 71, quando a página chega, então o painel some junto com a página antiga, sem
+ *    mostrá-la de novo no meio do caminho; nas rotas de `(com-carregamento)`, quando o esqueleto
+ *    aparece. Enquanto a geração está EM VOO, não fecha: desmontar o conteúdo orfanaria o
+ *    `POST /api/generations` (ADR-0021 dec. 5, igual ao ESC/scrim/X).
+ *  - LINK PARA A PRÓPRIA PÁGINA: o `pathname` não muda, então o efeito acima não dispara (ex.:
+ *    "Ver cardápio" com a gaveta aberta sobre o próprio Cardápio). Um clique simples num link
+ *    interno para o caminho da página atual fecha na hora. A `/create` fica de fora: lá os links
+ *    da gaveta (`/create?mode=conversa`) a RE-SEMEIAM, não saem dela. Âncoras (`#…`), nova aba,
+ *    download e cliques com modificador também ficam de fora. Aqui o caminho atual vem de
+ *    `window.location` (o `usePathname` pode ser `null` fora do AppRouter; no clique, a URL do
+ *    documento é a da página na tela).
+ */
+function useFecharAoNavegar(
+  open: boolean,
+  generating: boolean,
+  onOpenChange: (open: boolean) => void,
+): (e: MouseEvent) => void {
+  const pathname = usePathname()
+  const lastPathnameRef = useRef(pathname)
+  useEffect(() => {
+    if (lastPathnameRef.current === pathname) return
+    lastPathnameRef.current = pathname
+    if (open && !generating) onOpenChange(false)
+  }, [pathname, open, generating, onOpenChange])
+
+  return (e) => {
+    if (generating || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    const link = e.target instanceof Element ? e.target.closest('a[href]') : null
+    if (!(link instanceof HTMLAnchorElement)) return
+    if ((link.target && link.target !== '_self') || link.hasAttribute('download')) return
+    // `link.href` já é absoluto; um href malformado volta cru e o `new URL` lança. (Sem
+    // `URL.canParse`: falta no Safari 16 e no Chrome 111, que o browserslist do Next cobre.)
+    let destino: URL
+    try {
+      destino = new URL(link.href)
+    } catch {
+      return
+    }
+    if (destino.origin !== window.location.origin || destino.hash !== '') return
+    const atual = splitLocalePrefix(window.location.pathname)
+    if (atual.rest === '/create') return
+    // Link sem locale (`/me/meal-plan`): o proxy o prefixa com o locale atual, então compara sem o
+    // prefixo. Link COM locale compara inteiro: o de outro locale troca o `pathname` (o efeito fecha).
+    const alvo = splitLocalePrefix(destino.pathname)
+    const mesmaPagina =
+      alvo.locale === null ? alvo.rest === atual.rest : destino.pathname === window.location.pathname
+    if (!mesmaPagina) return
+    onOpenChange(false)
+  }
 }

@@ -18,6 +18,15 @@ import type { RecipeView } from '@/domain/recipe-read'
  * Os polyfills de ponteiro do Radix vêm de test/ui/setup.ts.
  */
 
+// `usePathname` lê `nav`: um `rerender` com outro `pathname` simula a navegação client-side (o header,
+// onde a gaveta mora, persiste entre rotas). `null` por padrão, como sem AppRouter (o `returnTo` do
+// "Entrar" cai em `/create` nesse caso, e os testes antigos contam com isso).
+const nav: { pathname: string | null } = { pathname: null }
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  usePathname: () => nav.pathname,
+}))
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
@@ -255,6 +264,7 @@ function mockConversaFetch(opts: {
 
 beforeEach(() => {
   sessionState = authed()
+  nav.pathname = null
 })
 
 afterEach(() => {
@@ -545,6 +555,128 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
     expect(
       screen.getByRole('button', { name: new RegExp(enUS.criarDrawer.metodoPromptTitulo) }),
     ).toBeInTheDocument()
+  })
+})
+
+describe('CreateDrawer — navegar fecha a gaveta (handoff 74)', () => {
+  // O jsdom não navega: segura a ação padrão do `<a>` (o `Link` do Next também a segura). Só em
+  // links: num botão de submit, isso cancelaria o envio do formulário.
+  const segurarLink = (e: Event) => {
+    if (e.target instanceof Element && e.target.closest('a[href]')) e.preventDefault()
+  }
+  beforeEach(() => document.addEventListener('click', segurarLink))
+  afterEach(() => document.removeEventListener('click', segurarLink))
+
+  async function gerarReceita(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: new RegExp(D.metodoPromptTitulo) }))
+    await user.type(screen.getByLabelText(M.textareaLabel), 'um refogado de abobrinha sem cebola')
+    await user.click(screen.getByRole('button', { name: M.gerar }))
+  }
+
+  const CRIADA = {
+    status: 201,
+    body: { outcome: 'success', recipeId: 'r-1', advisory: null, slug: 'refogado-de-abobrinha', locale: 'pt-BR' },
+  }
+
+  it('N1 — "Ver receita": a gaveta segue aberta até a página da receita chegar e fecha quando o pathname muda', async () => {
+    const user = userEvent.setup()
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    const { rerender } = render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    // Outra página: quem fecha é a troca de rota, não o clique (sem mostrar a página antiga no meio).
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    nav.pathname = '/pt-BR/recipes/refogado-de-abobrinha'
+    rerender(<Harness />)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N2 — voltar/avançar com a gaveta aberta (sem geração em voo) também a fecha', async () => {
+    const { rerender } = render(<Harness />)
+    expect(drawer()).toBeInTheDocument()
+    nav.pathname = '/pt-BR/search'
+    rerender(<Harness />)
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N3 — com a geração EM VOO, a troca de rota NÃO fecha (orfanaria o POST, ADR-0021 dec.5)', async () => {
+    const user = userEvent.setup()
+    const d = deferred()
+    mockFetch({ generations: d.factory, recipes: { status: 200, body: baseView() } })
+    const { rerender } = render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByRole('button', { name: M.gerando })).toBeInTheDocument()
+
+    nav.pathname = '/pt-BR/search'
+    rerender(<Harness />)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    d.release(CRIADA)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('N4 — link para a PRÓPRIA página (o pathname não muda): o clique fecha na hora', async () => {
+    const user = userEvent.setup()
+    // A gaveta foi aberta sobre a própria receita.
+    window.history.replaceState(null, '', '/pt-BR/recipes/refogado-de-abobrinha')
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N4b — link SEM locale para a própria página (o proxy prefixa) também fecha no clique', async () => {
+    const user = userEvent.setup()
+    sessionState = anon()
+    // "Entrar" aponta para `/sign-in?returnTo=…`, sem locale; a página atual é a `/pt-BR/sign-in`.
+    window.history.replaceState(null, '', '/pt-BR/sign-in')
+    render(<Harness conversaHint />)
+
+    await user.click(screen.getByRole('link', { name: ptBR.nav.signIn }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N4c — link para a mesma receita em OUTRO locale troca o pathname: o clique não fecha (o efeito fecha)', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/en-US/recipes/refogado-de-abobrinha')
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('N4d — clique com modificador (nova aba) num link para a própria página não fecha', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/pt-BR/recipes/refogado-de-abobrinha')
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.keyboard('{Control>}')
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    await user.keyboard('{/Control}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('N5 — na /create, um link da gaveta para a /create re-semeia em vez de sair: não fecha', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/pt-BR/create?resume=sess-x')
+    mockConversaFetch({ resume: { status: 404, body: { error: 'not_found' } } })
+    render(<Harness resumeSessionId="sess-x" />)
+
+    await user.click(await screen.findByRole('link', { name: CV.novaConversa }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 })
 
