@@ -100,7 +100,7 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     document.documentElement.lang = 'pt-BR'
   })
 
-  it('#5: logado: nav = Explorar < Seguindo < Minhas criações (SEM "Criar"); "Criar" no cluster direito', () => {
+  it('#5/ADR-0043: logado: nav = Explorar < Minhas receitas < Planejar (SEM "Criar"); "Criar" no cluster direito', () => {
     authMock.current = {
       data: { user: { id: 'u1', name: 'X', email: 'x@y.z', role: 'user', deletedAt: null } },
       error: null,
@@ -117,13 +117,8 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     const navLabels = Array.from(nav.querySelectorAll('a, button')).map((el) => el.textContent)
     // #5 (protótipo final): "Criar" SAIU da nav (foi pro cluster direito, ao lado de "Você").
     expect(navLabels).not.toContain('Criar')
-    // #277: ordem dos links de nav: Explorar < Seguindo < Minhas criações.
-    const iExplorar = navLabels.indexOf(ptBR.nav.home)
-    const iSeguindo = navLabels.indexOf(ptBR.nav.seguindo)
-    const iMinhas = navLabels.indexOf('Minhas criações')
-    expect(iExplorar).toBeGreaterThanOrEqual(0)
-    expect(iSeguindo).toBeGreaterThan(iExplorar)
-    expect(iMinhas).toBeGreaterThan(iSeguindo)
+    // ADR-0043: a nav mostra só as 3 seções, nesta ordem (as páginas viram subabas na SectionTabs).
+    expect(navLabels).toEqual([ptBR.nav.home, ptBR.nav.minhasReceitas, ptBR.nav.planejar])
     // "Criar" agora é um BOTÃO no header (banner), fora da nav.
     expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Criar' })).toBeInTheDocument()
   })
@@ -152,7 +147,7 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
   })
 
-  it('#277: em /pt-BR/following, a aba "Seguindo" fica ATIVA (aria-current) e "Explorar" não', () => {
+  it('#277/ADR-0043: em /pt-BR/following, a seção "Explorar" fica ATIVA (Seguindo é aba dela)', () => {
     // Prova o isActive LOCALE-AWARE: `usePathname()` vem prefixado (`/pt-BR/following`); sem tirar o
     // prefixo de locale o aria-current NUNCA dispararia (`'/pt-BR/following' === '/following'` é false).
     authMock.current = {
@@ -169,8 +164,9 @@ describe('Shell — troca de locale (seletor no footer) NAVEGA pra URL irmã', (
       </LocaleProvider>,
     )
     const nav = screen.getByRole('navigation')
-    expect(within(nav).getByRole('link', { name: ptBR.nav.seguindo })).toHaveAttribute('aria-current', 'page')
-    expect(within(nav).getByRole('link', { name: ptBR.nav.home })).not.toHaveAttribute('aria-current')
+    // "true" e não "page": a página atual é a aba Seguindo, e a seção é o item atual do conjunto.
+    expect(within(nav).getByRole('link', { name: ptBR.nav.home })).toHaveAttribute('aria-current', 'true')
+    expect(within(nav).getByRole('link', { name: ptBR.nav.minhasReceitas })).not.toHaveAttribute('aria-current')
   })
 
   it('#162: idioma vive no footer (ao lado do ThemeToggle); header mantém só o AuthSlot', () => {

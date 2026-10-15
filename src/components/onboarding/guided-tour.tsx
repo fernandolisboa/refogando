@@ -94,12 +94,10 @@ function stepCopy(step: TourStep, t: Messages['tour'], authed: boolean): { title
       return { title: t.buscaTitulo, body: t.buscaTexto }
     case 'criar':
       return { title: t.criarTitulo, body: t.criarTexto }
-    case 'salvos':
-      return { title: t.salvosTitulo, body: t.salvosTexto }
-    case 'cardapio':
-      return { title: t.cardapioTitulo, body: t.cardapioTexto }
-    case 'despensa':
-      return { title: t.despensaTitulo, body: t.despensaTexto }
+    case 'minhasReceitas':
+      return { title: t.minhasReceitasTitulo, body: t.minhasReceitasTexto }
+    case 'planejar':
+      return { title: t.planejarTitulo, body: t.planejarTexto }
     case 'conta':
       return { title: t.contaTitulo, body: authed ? t.contaTexto : t.contaTextoVisitante }
     case 'fim':
