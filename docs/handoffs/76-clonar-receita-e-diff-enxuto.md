@@ -12,7 +12,7 @@
 ## 2. Evidência
 
 - Testes: `test/unit/recipe-diff.test.ts` (igualdade semântica, poda, `stepChanges`; o caso "null vs [] distintos" virou "iguais"), `test/ui/recipe-diff-view.test.tsx` (T5–T8), `test/ui/recipe-detail-actions.test.tsx` (Clonar), `test/integration/recipe-derive.test.ts` (clone fiel, gates, 400 ambíguo, salvar sem mexer ⇒ diff vazio, diff legado podado no GET).
-- Suíte completa, lint e `tsc` verdes localmente (Postgres 17 na 5433).
+- Suíte completa, lint e `tsc` verdes localmente (Postgres 17 na 5433). Painel de revisão (bugs, segurança+performance, qualidade+ADR): sem bloqueantes; aplicados o 404 para receita removida do pool, `ordem` preservada no clone, fingerprints copiados, FK casada por rawText aparado, corpo JSON `null` ⇒ 400 e quantidade comparada na escala do banco.
 
 ## 3. Landmines
 

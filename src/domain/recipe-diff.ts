@@ -18,7 +18,11 @@
  * por `ordem`), sem reordenar — duas chamadas com a mesma entrada produzem o MESMO JSON.
  *
  * `campos.passos` compara as listas como um todo (mudou ⇔ as listas diferem) e carrega as
- * listas inteiras em `de`/`para` — granularidade por-passo fica fora (apresentacional).
+ * listas inteiras em `de`/`para`; a vista mostra só os passos que entraram/saíram via
+ * `stepChanges` (ADR-0045 dec.3, apresentacional — a forma gravada não muda).
+ *
+ * ADR-0045: as comparações são SEMÂNTICAS (como o leitor lê), não byte a byte — ver os helpers
+ * de igualdade abaixo e `pruneNoopChanges` para os diffs gravados antes disso.
  */
 
 import type { Restricao } from '@/domain/vocabulary'
@@ -29,7 +33,7 @@ export const DERIVED_DIFF_VERSION = 1 as const
  * Item de ingrediente como o diff o consome: `nome` é o RÓTULO de comparação (o `rawText`
  * do snapshot — texto livre monolíngue) e `quantidade` é `numeric(10,3)` ⇒ string|null,
  * NUNCA number (mesma trava de `recipe_ingredient.quantidade`). Itens são casados por `nome`
- * (igualdade exata): a base e as edições usam o mesmo rótulo de superfície para o mesmo item.
+ * aparado (ADR-0045): a base e as edições usam o mesmo rótulo de superfície para o mesmo item.
  */
 export type DiffIngrediente = {
   nome: string
@@ -96,7 +100,10 @@ function normTexto(v: string | null | undefined): string | null {
   return t === '' ? null : t
 }
 
-/** Quantidade: numérica ⇒ compara o NÚMERO ("3.000" = "3" = "3.0"); senão o texto aparado. */
+/**
+ * Quantidade: numérica ⇒ compara o NÚMERO na escala do banco (`numeric(10,3)`: "3.000" = "3",
+ * e "0.5004" = "0.500", que o banco grava igual); senão o texto aparado.
+ */
 export function quantidadesIguais(a: string | null, b: string | null): boolean {
   const x = normTexto(a)
   const y = normTexto(b)
@@ -104,7 +111,7 @@ export function quantidadesIguais(a: string | null, b: string | null): boolean {
   if (x == null || y == null) return false
   const nx = Number(x)
   const ny = Number(y)
-  return Number.isFinite(nx) && Number.isFinite(ny) && nx === ny
+  return Number.isFinite(nx) && Number.isFinite(ny) && Math.round(nx * 1000) === Math.round(ny * 1000)
 }
 
 /** Passos como o form os devolve: um por linha, aparados, sem linhas vazias; lista vazia ⇔ null. */
@@ -136,7 +143,7 @@ function chaveNome(nome: string): string {
  * Compara a Receita-base com as edições do leitor e devolve o diff APRESENTACIONAL
  * congelado. PURO/total: nunca lança; entradas idênticas ⇒ saída byte-idêntica.
  *
- * Ingredientes: casados por `nome` (igualdade exata). Presente só nos edits ⇒ adicionado;
+ * Ingredientes: casados por `nome` aparado. Presente só nos edits ⇒ adicionado;
  * só na base ⇒ removido; nos dois com `quantidade` diferente ⇒ quantidadeAlterada (de/para).
  * A ordem de saída segue a ordem das listas de entrada (sem reordenar).
  *

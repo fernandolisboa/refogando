@@ -201,9 +201,15 @@ describe('RecipeDetailActions — Clonar num clique (ADR-0045)', () => {
 
     await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.system.error)
+    expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.minhasCriacoes.clonarErro)
     expect(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar })).toBeEnabled()
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('visitante não vê "Clonar" (só o convite de entrar)', () => {
+    sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+    expect(screen.queryByRole('button', { name: ptBR.minhasCriacoes.clonar })).not.toBeInTheDocument()
   })
 
   it('o dono não vê "Clonar" (a própria se edita no lugar)', () => {

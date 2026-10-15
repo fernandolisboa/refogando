@@ -951,6 +951,7 @@ export const ptBR = {
     // ADR-0045: atalho de cópia fiel num clique, ao lado de "Criar minha versão".
     clonar: 'Clonar',
     clonarDica: 'Cria uma cópia sua, igual à original, sem passar pela edição',
+    clonarErro: 'Não deu para clonar a receita. Tente de novo.',
     // Bloco do diff da derivada (título da seção; os rótulos das linhas vêm de `derivada`).
     diffTitulo: 'O que mudou em relação à original',
     // Convites de entrar (gating consistente em /create, /conversation e nos botões do detalhe).

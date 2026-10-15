@@ -235,6 +235,7 @@ describe('decideDerivedDiff — igualdade semântica (ADR-0045)', () => {
     expect(quantidadesIguais(null, '0')).toBe(false)
     expect(quantidadesIguais(' a gosto ', 'a gosto')).toBe(true)
     expect(quantidadesIguais('abc', 'abd')).toBe(false)
+    expect(quantidadesIguais('0.5004', '0.500')).toBe(true) // numeric(10,3) grava igual
   })
 })
 

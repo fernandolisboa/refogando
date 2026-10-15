@@ -56,7 +56,7 @@ export function RecipeCloneButton({ recipeId, locale }: { recipeId: string; loca
           role="alert"
           className="basis-full rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
         >
-          {messages.system.error}
+          {m.clonarErro}
         </p>
       )}
     </>

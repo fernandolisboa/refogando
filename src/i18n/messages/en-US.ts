@@ -883,7 +883,8 @@ export const enUS: Messages = {
     criarMinhaVersao: 'Create my version',
     // ADR-0045: one-click faithful copy, next to "Create my version".
     clonar: 'Clone',
-    clonarDica: 'Make your own copy as is, without editing first',
+    clonarDica: 'Makes your own copy, same as the original, without editing first',
+    clonarErro: 'Couldn’t clone this recipe. Try again.',
     diffTitulo: 'What changed from the original',
     convidaEntrarTitulo: 'Sign in to do this',
     convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',

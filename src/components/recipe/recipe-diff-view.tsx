@@ -1,8 +1,9 @@
 'use client'
 /**
  * Vista do DIFF da DERIVADA (#61) — renderiza o `derivedDiff` CONGELADO (recipe-diff.ts) que a
- * rota projeta SÓ pro dono da derivada (`view.derivedDiff`, owner-gated). PURO de domínio: não
- * recomputa nada — itera os arrays/campos prontos e os rotula com `messages.derivada`/`detalhe`.
+ * rota projeta SÓ pro dono da derivada (`view.derivedDiff`, owner-gated). Nunca compara contra a
+ * base: itera os arrays/campos gravados e os rotula com `messages.derivada`/`detalhe`; o único
+ * cálculo é remodelar o `de`/`para` dos passos gravados em entrou/saiu (`stepChanges`).
  *
  * Âmbar é EXCLUSIVO do Aviso de restrição (ADR-0004): este bloco é informativo (o que mudou em
  * relação à original), NÃO um alerta — tokens NEUTROS (border-border/bg-surface/text-muted/fg).

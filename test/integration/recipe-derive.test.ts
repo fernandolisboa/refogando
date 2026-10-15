@@ -8,7 +8,7 @@ import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { FakeEmbedder } from '@/server/embedding/embedder'
 import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
-import type { DerivedDiff } from '@/domain/recipe-diff'
+import { isEmptyDiff, type DerivedDiff } from '@/domain/recipe-diff'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation, seedRecipeIngredient, seedIngredient } from '../helpers/recipes'
 
@@ -552,13 +552,16 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
     await seedRecipeIngredient({
       recipeId: baseId,
       ingredientId: queijoId,
-      ordem: 2,
+      ordem: 5, // buraco na ordem: a cópia mantém o 5 (os nomes por-locale são indexados por ele)
       quantidade: '0.250',
       unidade: 'kg',
       rawText: 'queijo meia-cura',
       nota: 'ralado',
     })
-    const nomesEn = [{ ordem: 0, nome: 'tapioca starch', nomeOrigem: 'polvilho' }]
+    const nomesEn = [
+      { ordem: 0, nome: 'tapioca starch', nomeOrigem: 'polvilho' },
+      { ordem: 5, nome: 'semi-cured cheese', nomeOrigem: 'queijo meia-cura' },
+    ]
     await seedTranslation({
       recipeId: baseId,
       locale: 'en-US',
@@ -568,6 +571,8 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
       notas: 'Best warm.',
       provenance: 'automatica_nao_revisada',
       ingredientes: nomesEn,
+      sourceFingerprint: 'src-fp',
+      mtFingerprint: 'mt-fp',
     })
     const baseBefore = await readState(baseId)
 
@@ -607,7 +612,7 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
     expect(ings).toEqual([
       { ordem: 0, quantidade: '0.500', unidade: 'kg', rawText: 'polvilho', ingredientId: null, nota: null },
       { ordem: 1, quantidade: null, unidade: 'a_gosto', rawText: 'sal', ingredientId: null, nota: null },
-      { ordem: 2, quantidade: '0.250', unidade: 'kg', rawText: 'queijo meia-cura', ingredientId: queijoId, nota: 'ralado' },
+      { ordem: 5, quantidade: '0.250', unidade: 'kg', rawText: 'queijo meia-cura', ingredientId: queijoId, nota: 'ralado' },
     ])
 
     // Traduções: todas, como estão (provenance original, nomes por-locale), com slug próprio.
@@ -619,6 +624,7 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
         provenance: recipeTranslation.provenance,
         ingredientes: recipeTranslation.ingredientes,
         slug: recipeTranslation.slug,
+        mtFingerprint: recipeTranslation.mtFingerprint,
       })
       .from(recipeTranslation)
       .where(eq(recipeTranslation.recipeId, recipeId))
@@ -629,11 +635,12 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
     ])
     expect(trs[0].notas).toBe('Best warm.')
     expect(trs[0].ingredientes).toEqual(nomesEn)
+    expect(trs[0].mtFingerprint).toBe('mt-fp')
     expect(trs.every((t) => t.slug)).toBe(true)
 
     // GET do dono: diff presente e vazio (a UI esconde "O que mudou").
     const view = (await (await get(recipeId, headers)).json()) as { derivedDiff?: DerivedDiff }
-    expect(view.derivedDiff?.ingredientes.quantidadeAlterada).toEqual([])
+    expect(view.derivedDiff && isEmptyDiff(view.derivedDiff)).toBe(true)
 
     // Base byte-inalterada; clonar de novo cria outra cópia independente.
     expect(await readState(baseId)).toEqual(baseBefore)
@@ -654,6 +661,29 @@ describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', 
     expect((await cloneReq(privada, headers)).status).toBe(404)
     expect((await cloneReq(catalogo)).status).toBe(401)
     expect(await countRecipes()).toBe(before)
+  })
+
+  it('receita removida do pool pelo Curador ⇒ 404, nem clona nem deriva', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'clone-moderada@ex.com' })
+    const { userId: dono } = await seedSessionHeaders({ email: 'clone-moderada-dono@ex.com' })
+    const { userId: curador } = await seedSessionHeaders({ email: 'clone-moderada-cur@ex.com' })
+    const baseId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: dono })
+    await seedTranslation({ recipeId: baseId, locale: 'pt-BR', titulo: 'Removida', provenance: 'escrita_por_pessoa' })
+    await getDb()
+      .update(recipe)
+      .set({ moderationRemovedAt: new Date(), moderationReason: 'spam', moderatedBy: curador })
+      .where(eq(recipe.id, baseId))
+    const before = await countRecipes()
+
+    expect((await cloneReq(baseId, headers)).status).toBe(404)
+    expect((await derive(baseId, { titulo: 'Editada' }, headers)).status).toBe(404)
+    expect(await countRecipes()).toBe(before)
+  })
+
+  it('corpo JSON null ⇒ 400, não 500', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'clone-null@ex.com' })
+    const baseId = await seedCatalogBase()
+    expect((await cloneReq(baseId, headers, null)).status).toBe(400)
   })
 
   it('clone junto com edits é ambíguo ⇒ 400', async () => {
