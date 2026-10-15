@@ -12,8 +12,8 @@ export const enUS: Messages = {
   // brand name is not).
   footer: { abreEmNovaAba: 'opens in a new tab' },
   nav: {
-    // #277: the Discovery/home is now labeled "Explore" in the nav (a tab next to "Following").
-    // Key stays `home` (links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
+    // #277/ADR-0043: label of the "Explore" SECTION (the home itself is the "Discover" tab). Key stays
+    // `home` (the section links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
     home: 'Explore',
     // #277: "Following" tab — feed of recipes from the cooks the viewer follows. Logged-in only.
     seguindo: 'Following',
@@ -36,8 +36,9 @@ export const enUS: Messages = {
     pularParaConteudo: 'Skip to content',
     cardapio: 'Meal plan',
     despensa: 'Pantry',
+    secoesAria: 'Sections',
     minhasReceitas: 'My recipes',
-    planejar: 'Plan',
+    planejar: 'Planner',
     descobrir: 'Discover',
     cozinheiros: 'Cooks',
     criacoes: 'Creations',
@@ -2225,7 +2226,7 @@ export const enUS: Messages = {
     minhasReceitasTitulo: 'Your recipes',
     minhasReceitasTexto: 'The recipes you created and the ones you saved live here. Tap “Save” on a recipe and it shows up in “Saved”, where you can organize it into collections.',
     planejarTitulo: 'Plan your week',
-    planejarTexto: '“Plan” holds your weekly Meal plan, your Shopping lists and your Pantry: build the week, generate a list with the right servings and see what you can cook with what you have.',
+    planejarTexto: '“Planner” holds your weekly Meal plan, your Shopping lists and your Pantry: build the week, generate a list with the right servings and see what you can cook with what you have.',
     contaTitulo: 'Your account',
     contaTexto: 'Your profile and this guide (“How to use”) live here, so you can replay the tour anytime.',
     contaTextoVisitante: 'Sign in or create an account to save recipes, create with AI and plan your week.',
@@ -2242,7 +2243,7 @@ export const enUS: Messages = {
     indice: 'On this page',
     buscarTitulo: 'Finding recipes',
     buscarItens: [
-      'On the home page (“Explore”), type a dish, an ingredient or a style in the search. Filters narrow it down by cuisine, category and dietary restriction.',
+      'In “Explore”, under the “Discover” tab (the home page), type a dish, an ingredient or a style in the search. Filters narrow it down by cuisine, category and dietary restriction.',
       'Didn’t find it? With an account and at least 3 letters, use “Generate with AI” to create a recipe from what you searched for.',
       'With an account you can also search the web. Recipes from other sites can be imported into your profile: they stay private and credit the source.',
     ],
@@ -2271,11 +2272,11 @@ export const enUS: Messages = {
     listaItens: [
       'On a recipe, “Add to shopping list” brings in the ingredients for the servings you choose. Matching items add up.',
       'Check off what you’ve bought, edit amounts and add extra items. Nothing disappears on its own: clearing the list is always your call.',
-      'Your lists are in “Plan”, under the “Shopping lists” tab.',
+      'Your lists are in “Planner”, under the “Shopping lists” tab.',
     ],
     cardapioTitulo: 'Weekly meal plan',
     cardapioItens: [
-      'In “Plan”, under the “Meal plan” tab, add recipes to each day and meal, with the number of servings. You can move or remove them later.',
+      'In “Planner”, under the “Meal plan” tab, add recipes to each day and meal, with the number of servings. You can move or remove them later.',
       'A meal without a recipe? Jot down free text, like “eating out” or “leftovers”.',
       'Nothing in your collection fits? Under “Add”, “Create a new recipe with AI” opens recipe creation with the request filled in; after generating, one tap adds the recipe to that meal.',
       '“Suggest with AI” proposes a menu from your Saved recipes, your creations and, if you want, the community. Nothing is added until you accept.',
@@ -2285,7 +2286,7 @@ export const enUS: Messages = {
     ],
     despensaTitulo: 'Pantry',
     despensaItens: [
-      'In “Plan”, under the “Pantry” tab, list what you have at home: several names at once, separated by commas. No quantities.',
+      'In “Planner”, under the “Pantry” tab, list what you have at home: several names at once, separated by commas. No quantities.',
       'The app shows the recipes you can cook now and the ones that are almost there (up to 3 ingredients missing), with what is missing.',
       '“I have the basics” counts your basics (by default salt, water, oil, olive oil and black pepper) as already at home. You can turn it off, and in “Your basics” you can change the list or reset it to the default.',
       '“Add missing items to list” sends only the missing ingredients to your shopping list.',

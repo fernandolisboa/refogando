@@ -18,7 +18,7 @@ import { splitLocalePrefix } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Container } from '@/components/container'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
-import { activeNav, tabsFor } from '@/domain/nav-sections'
+import { activeNav, ariaCurrentFor, tabsFor } from '@/domain/nav-sections'
 import { rememberTab } from '@/components/nav/last-tab-store'
 import { sectionLabel, tabLabel } from '@/components/nav/nav-labels'
 import { cn } from '@/lib/utils'
@@ -29,8 +29,11 @@ export function SectionTabs() {
   const rest = splitLocalePrefix(usePathname() ?? '/').rest
   const { wide } = useHomeSearch()
   const active = activeNav(rest)
+  const authed = !session.isPending && !session.error && !!session.data
 
-  const rememberSection = active?.section.remembersLastTab ? active.section.id : null
+  // Só lembra a aba de quem está logado: um Visitante que cai em /me/* num aparelho compartilhado não
+  // decide pra onde vai o "Planejar" de quem entrar depois (o "Sair" também apaga, ver AuthSlot).
+  const rememberSection = authed && active?.section.remembersLastTab ? active.section.id : null
   const rememberHref = active?.tab.href
   useEffect(() => {
     if (rememberSection && rememberHref) rememberTab(rememberSection, rememberHref)
@@ -38,15 +41,15 @@ export function SectionTabs() {
 
   if (!active) return null
 
-  const authed = !session.isPending && !session.error && !!session.data
-  // Seção pessoal: a tira aparece JÁ durante o carregamento da sessão, pra não empurrar a página para
-  // baixo quando a sessão resolve (quem abre /me/* quase sempre está logado). Erro ou anônimo: sem tira
-  // (a página mostra o próprio estado de Visitante). Na seção pública, a aba só-logada ("Seguindo")
-  // espera a sessão: o Visitante nunca a vê piscar.
+  // Seção pessoal: a tira aparece JÁ durante o carregamento da sessão (e num erro de leitura dela), pra
+  // não empurrar a página quando a sessão resolve (quem abre /me/* quase sempre está logado). Só some com
+  // o Visitante CONFIRMADO (a página mostra o próprio estado de Visitante). Na seção pública, a aba
+  // só-logada ("Seguindo", a última) espera a sessão: o Visitante nunca a vê piscar.
+  const confirmedAnon = !session.isPending && !session.error && !session.data
   const tabs = active.section.authOnly
-    ? session.isPending || authed
-      ? active.section.tabs
-      : []
+    ? confirmedAnon
+      ? []
+      : active.section.tabs
     : tabsFor(active.section, authed)
   if (tabs.length < 2) return null
 
@@ -63,9 +66,7 @@ export function SectionTabs() {
               <Link
                 key={t.id}
                 href={t.href}
-                // Na própria aba é a página atual; numa subrota dela (o detalhe de uma lista), a aba
-                // continua marcada, mas como "item atual do conjunto", não como a página.
-                aria-current={current ? (rest === t.href ? 'page' : 'true') : undefined}
+                aria-current={ariaCurrentFor(rest, t.href)}
                 className={cn(
                   'border-b-2 py-3 transition-colors',
                   current ? 'border-brand text-fg' : 'border-transparent text-muted hover:text-fg',

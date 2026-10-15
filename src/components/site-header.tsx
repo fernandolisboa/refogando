@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import type { TourAnchor } from '@/domain/onboarding-tour'
 import {
   activeNav,
+  ariaCurrentFor,
   matchesHref,
   sectionEntryHref,
   sectionsFor,
@@ -81,14 +82,14 @@ export function SiteHeader() {
   const [createOpen, setCreateOpen] = useState(false)
   const createDrawerStatus = useCreateDrawerStatus()
   const createPending = createOpen && createDrawerStatus !== 'ready'
-  // "Minhas criações" só aparece para quem está logado (Visitante não tem criações). Distinto da
-  // Descoberta-home pública (#236): "Minhas criações" é o espaço PRIVADO do dono; a home `/` é o feed
+  // As seções "Minhas receitas" e "Planejar" só aparecem para quem está logado (ADR-0043): são o espaço
+  // PRIVADO do dono, distinto da Descoberta-home pública (#236); a home `/` é o feed
   // público + Busca.
   const authed = !session.isPending && !session.error && !!session.data
   // "Painel" (#125) NÃO vive mais na nav: migrou pro menu da conta (#267), dentro do AuthSlot, que
   // é quem agora computa o gating de papel (curador+, fail-closed). O header só decide "logado?".
-  // Link de nav com estado ATIVO (protótipo Header.jsx): a rota atual ganha text-fg +
-  // aria-current="page"; inativos herdam o text-muted do <nav> e vão a text-fg no hover.
+  // Link de nav com estado ATIVO (protótipo Header.jsx): o ativo ganha text-fg + aria-current (regra em
+  // `ariaCurrentFor`/`sectionLink`); inativos herdam o text-muted do <nav> e vão a text-fg no hover.
   // `usePathname()` vem PREFIXADO pelo locale (`/pt-BR/following`), mas os hrefs do nav são NUS
   // (`/`, `/following`) — então tiramos o prefixo (`splitLocalePrefix → rest`) ANTES de comparar.
   // Sem isso o estado ativo NUNCA dispararia (#277: `'/pt-BR/following' === '/following'` é false).
@@ -112,26 +113,22 @@ export function SiteHeader() {
   // home, irrelevante (sem busca/3-col).
   const { wide } = useHomeSearch()
 
-  // Link de aba do drawer mobile (`wrap` = SheetClose: fecha o painel ao navegar). No desktop as abas
-  // vivem na `SectionTabs`, e a nav mostra só as seções (`sectionLink` abaixo).
-  const navLink = (
-    href: string,
-    label: string,
-    wrap: (node: React.ReactNode) => React.ReactNode,
-  ) =>
-    wrap(
+  // Link de aba do drawer mobile (embrulhado em SheetClose: fecha o painel ao navegar). No desktop as
+  // abas vivem na `SectionTabs`, e a nav mostra só as seções (`sectionLink` abaixo).
+  const tabLink = (href: string, label: string) =>
+    inSheet(
       <Link
         href={href}
-        aria-current={rest === href ? 'page' : isActive(href) ? 'true' : undefined}
+        aria-current={ariaCurrentFor(rest, href)}
         className={cn('transition-colors hover:text-fg', isActive(href) && 'text-fg')}
       >
         {label}
       </Link>,
     )
 
-  // Link de SEÇÃO do desktop (ADR-0043). Ativo em qualquer aba da seção: `aria-current="page"` só quando
-  // a rota é o próprio destino do link; nas outras abas, "true" (item atual do conjunto). O destino das
-  // seções pessoais é a última aba visitada (`useLastTabs`), ou a 1ª.
+  // Link de SEÇÃO do desktop (ADR-0043). Ativo em qualquer aba da seção, sempre com `aria-current="true"`
+  // (item atual do conjunto): a página atual quem marca é a aba, na tira, e o leitor de tela não ouve
+  // "página atual" duas vezes. O destino das seções pessoais é a última aba visitada (`useLastTabs`), ou a 1ª.
   const sections = sectionsFor(authed)
   const sectionLink = (section: NavSection) => {
     const href = sectionEntryHref(section, lastTabs[section.id])
@@ -141,7 +138,7 @@ export function SiteHeader() {
         key={section.id}
         href={href}
         data-tour={SECTION_TOUR[section.id]}
-        aria-current={active ? (rest === href ? 'page' : 'true') : undefined}
+        aria-current={active ? 'true' : undefined}
         className={cn('transition-colors hover:text-fg', active && 'text-fg')}
       >
         {sectionLabel(messages, section.id)}
@@ -202,7 +199,9 @@ export function SiteHeader() {
           {messages.app.name}
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
-        <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
+        <nav
+          aria-label={messages.nav.secoesAria}
+          className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
           {/* ADR-0043: uma entrada por SEÇÃO. "Explorar" (a home, #236/#277) para todos; "Minhas
               receitas" e "Planejar" só logado. "Criar" mora no cluster direito (#5). */}
           {sections.map(sectionLink)}
@@ -265,7 +264,7 @@ export function SiteHeader() {
                       {sectionLabel(messages, s.id)}
                     </span>
                     {tabsFor(s, authed).map((t) => (
-                      <Fragment key={t.id}>{navLink(t.href, tabLabel(messages, t.id), inSheet)}</Fragment>
+                      <Fragment key={t.id}>{tabLink(t.href, tabLabel(messages, t.id))}</Fragment>
                     ))}
                   </div>
                 )

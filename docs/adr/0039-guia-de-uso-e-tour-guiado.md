@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Emendado por ADR-0043 (2026-10-15):** com o header em seções, os passos Salvos, Cardápio e Despensa do tour viraram um passo por seção (Minhas receitas, Planejar), com âncoras `nav-minhas-receitas` e `nav-planejar`; o guia diz em que seção e aba cada recurso fica.
+
 O dono (2026-09-28) notou que o app pode ser difícil de aprender para parte dos usuários e pediu duas coisas: um **guia/tutorial de como usar** e um **tour "invasivo"** que escurece a tela, foca um componente por passo e mostra onde clicar, **com um jeito de dispensar**, porque nem todo mundo gosta. Os dois saem juntos. Termos no `CONTEXT.md` (**Guia de uso**, **Tour guiado**). Relaciona: ADR-0020 (locale na URL), ADR-0035/0036/0037 (Cardápio), ADR-0032 (Lista de compras), ADR-0027 (Salvar e coleções).
 
 ## Decisões

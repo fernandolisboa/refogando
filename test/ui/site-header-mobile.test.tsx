@@ -121,7 +121,7 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(within(dialog).queryByText(ptBR.nav.painel)).not.toBeInTheDocument()
   })
 
-  it('curador logado: o painel mobile inclui Minhas criações, Criar e o MENU DA CONTA (Painel + Sair)', async () => {
+  it('curador logado: o painel mobile inclui as seções agrupadas, Criar e o MENU DA CONTA (Painel + Sair)', async () => {
     authMock.current = sessionFor('curador')
     const user = userEvent.setup()
     renderHeader()

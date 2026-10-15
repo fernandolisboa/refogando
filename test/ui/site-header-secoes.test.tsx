@@ -80,22 +80,25 @@ describe('Header — seções (ADR-0043)', () => {
     expect(within(desktopNav()).getAllByRole('link').map((a) => a.textContent)).toEqual([ptBR.nav.home])
   })
 
-  it('a seção fica ativa em qualquer aba: "page" no próprio destino, "true" nas outras', () => {
-    authMock.current = logged
-    nav.pathname = '/pt-BR/me/meal-plan'
-    const { unmount } = renderHeader()
-    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('aria-current', 'page')
-    expect(sectionLink(ptBR.nav.minhasReceitas)).not.toHaveAttribute('aria-current')
-    unmount()
-
-    nav.pathname = '/pt-BR/me/shopping-lists/0b5c'
+  it('a nav do header tem nome próprio (divide a página com a nav da tira)', () => {
     renderHeader()
-    expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('aria-current', 'true')
+    expect(desktopNav()).toHaveAccessibleName(ptBR.nav.secoesAria)
   })
 
-  it('fora das seções (receita, perfil, guia) nenhuma fica ativa', () => {
+  it.each(['/pt-BR/me/meal-plan', '/pt-BR/me/pantry', '/pt-BR/me/shopping-lists/0b5c'])(
+    'em %s a seção Planejar fica ativa como item atual ("true"; a página atual quem marca é a aba)',
+    (path) => {
+      authMock.current = logged
+      nav.pathname = path
+      renderHeader()
+      expect(sectionLink(ptBR.nav.planejar)).toHaveAttribute('aria-current', 'true')
+      expect(sectionLink(ptBR.nav.minhasReceitas)).not.toHaveAttribute('aria-current')
+    },
+  )
+
+  it.each(['/pt-BR/recipes/arroz', '/pt-BR/u/ana', '/pt-BR/guia'])('fora das seções (%s) nenhuma fica ativa', (path) => {
     authMock.current = logged
-    nav.pathname = '/pt-BR/guia'
+    nav.pathname = path
     renderHeader()
     for (const a of within(desktopNav()).getAllByRole('link')) expect(a).not.toHaveAttribute('aria-current')
   })

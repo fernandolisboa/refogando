@@ -46,9 +46,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     authOnly: false,
     remembersLastTab: false,
     tabs: [
+      // "Seguindo" (só-logada) vem por ÚLTIMO: ela só aparece quando a sessão resolve, e no fim da tira
+      // a chegada dela não empurra nenhuma outra aba para o lado.
       { id: 'descobrir', href: '/', authOnly: false },
-      { id: 'seguindo', href: '/following', authOnly: true },
       { id: 'cozinheiros', href: '/cooks', authOnly: false },
+      { id: 'seguindo', href: '/following', authOnly: true },
     ],
   },
   {
@@ -78,6 +80,16 @@ export const NAV_SECTIONS: readonly NavSection[] = [
  */
 export function matchesHref(rest: string, href: string): boolean {
   return href === '/' ? rest === '/' : rest === href || rest.startsWith(`${href}/`)
+}
+
+/**
+ * `aria-current` de um link de ABA (tira e drawer): "page" na própria rota; "true" numa subrota dela (o
+ * detalhe de uma lista é a aba Listas, mas não é a página da aba); nada fora dela. O link de SEÇÃO do
+ * header usa sempre "true" quando ativo: a página atual quem marca é a aba.
+ */
+export function ariaCurrentFor(rest: string, href: string): 'page' | 'true' | undefined {
+  if (rest === href) return 'page'
+  return matchesHref(rest, href) ? 'true' : undefined
 }
 
 /** Seção e aba da rota atual, ou `null` fora das seções (receita, perfil, /create, /admin, /guia…). */

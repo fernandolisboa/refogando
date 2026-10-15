@@ -5,18 +5,20 @@
 ## 1. O que mudou
 
 - **Header:** Explorar · Minhas receitas · Planejar (o Visitante vê só Explorar), no lugar de 6 links. "Criar", sino e conta seguem no cluster direito.
-- **`SectionTabs`** (`src/components/nav/section-tabs.tsx`), montada no `[locale]/layout.tsx` logo depois do `SiteHeader`, fora do header sticky: Descobrir/Seguindo/Cozinheiros, Criações/Salvos, Cardápio/Listas de compras/Despensa. Segue a largura do header (e o `xl:max-w-wide` da home com 3 colunas). Fora das seções, não renderiza.
+- **`SectionTabs`** (`src/components/nav/section-tabs.tsx`), montada no `[locale]/layout.tsx` logo depois do `SiteHeader`, fora do header sticky: Descobrir/Cozinheiros/Seguindo, Criações/Salvos, Cardápio/Listas de compras/Despensa. Segue a largura do header (e o `xl:max-w-wide` da home com 3 colunas). Fora das seções, não renderiza.
 - **Kernel puro** `src/domain/nav-sections.ts`: `NAV_SECTIONS`, `activeNav`, `matchesHref`, `sectionsFor`/`tabsFor`, `sectionEntryHref`, `parseLastTabs`. Rótulos em `src/components/nav/nav-labels.ts`.
-- **Última aba lembrada** (`src/components/nav/last-tab-store.ts`, `localStorage` `refogando:nav:ultima-aba:v1`): o link de Minhas receitas/Planejar abre a última aba visitada; o valor só vira href se for aba da própria seção.
+- **Última aba lembrada** (`src/components/nav/last-tab-store.ts`, `localStorage` `refogando:nav:ultima-aba:v1`): o link de Minhas receitas/Planejar abre a última aba visitada; o valor só vira href se for aba da própria seção. Só grava logado; o "Sair" apaga.
+- **Header:** a nav se chama "Seções"; o link de seção ativo leva `aria-current="true"` (o "page" fica na aba). Em inglês, Planejar é "Planner".
 - **Drawer mobile** agrupado por seção (`role="group"` rotulado), depois "Criar" e a conta.
 - **Menu da conta** sem "Listas de compras" (agora aba de Planejar).
 - **Tour guiado:** passos `minhasReceitas` e `planejar` (âncoras `nav-minhas-receitas`, `nav-planejar`) no lugar de `salvos`/`cardapio`/`despensa`; 7 passos logado, 5 Visitante. Chave do tour segue `v1`.
+- **ADR-0024, 0035 e 0039** ganharam a nota "Emendado por ADR-0043".
 - **Guia "Como usar"** (pt-BR e en-US) diz onde cada coisa fica ("em Planejar, na aba Cardápio"); textos do tour e do menu da conta sem as listas.
 - Testes: `test/domain/nav-sections.test.ts`, `test/ui/section-tabs.test.tsx`, `test/ui/site-header-secoes.test.tsx` (substitui os testes por link `site-header-{salvos,cardapio,despensa}`); ajustes em shell, mobile, auth-slot, tour e âncoras.
 
 ## 2. Evidência
 
-`npm run typecheck`, `npm run lint` (só os 4 avisos de `<img>` que já existiam) e a suíte `ui` inteira verdes; os testes de domínio novos e o do tour rodados à parte (a suíte `node` precisa de Postgres). Conferido na tela com `next dev` contra um Postgres local: desktop 1280 px (home logado e Visitante, Cardápio, Listas, Salvos, Cozinheiros no tema escuro), 820 px (Despensa: o header cabe numa linha) e 390 px (tira rolável e drawer agrupado). Depois de visitar a Despensa, o link "Planejar" passou a apontar para `/me/pantry`.
+`npm run typecheck`, `eslint src test` (só os 4 avisos de `<img>` que já existiam) e a suíte `ui` inteira verdes; painel de revisão (bugs, segurança+performance, qualidade+ADR) sem bloqueios, achados menores corrigidos; os testes de domínio novos e o do tour rodados à parte (a suíte `node` precisa de Postgres). Conferido na tela com `next dev` contra um Postgres local: desktop 1280 px (home logado e Visitante, Cardápio, Listas, Salvos, Cozinheiros no tema escuro), 820 px (Despensa: o header cabe numa linha) e 390 px (tira rolável e drawer agrupado). Depois de visitar a Despensa, o link "Planejar" passou a apontar para `/me/pantry`.
 
 ## 3. Landmines
 

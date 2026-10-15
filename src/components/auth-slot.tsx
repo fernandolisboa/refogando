@@ -30,6 +30,7 @@ import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession, signOut } from '@/lib/auth-client'
 import { useOnTabReturn } from '@/components/use-tab-return'
+import { forgetTabs } from '@/components/nav/last-tab-store'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -105,6 +106,8 @@ export function AuthSlot() {
   // signOut + refetch: numa falha de transporte do signOut (offline) o finally NÃO deixa promise
   // rejeitada não-tratada e ainda re-busca a sessão pra a chrome refletir o estado real do servidor.
   const doSignOut = async () => {
+    // ADR-0043: a última aba de "Minhas receitas"/"Planejar" é deste aparelho, não da conta.
+    forgetTabs()
     try {
       await signOut()
     } finally {

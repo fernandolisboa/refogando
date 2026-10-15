@@ -59,6 +59,16 @@ export function useLastTabs(): LastTabs {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 
+/** Esquece as abas lembradas (no "Sair": o próximo a entrar neste aparelho começa do padrão). */
+export function forgetTabs() {
+  try {
+    window.localStorage.removeItem(LAST_TAB_STORAGE_KEY)
+  } catch {
+    return
+  }
+  for (const l of listeners) l()
+}
+
 /** Grava a aba da seção (no-op quando já é a lembrada). */
 export function rememberTab(section: NavSectionId, href: string) {
   const current = getSnapshot()

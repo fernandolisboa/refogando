@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   NAV_SECTIONS,
   activeNav,
+  ariaCurrentFor,
   matchesHref,
   parseLastTabs,
   sectionEntryHref,
@@ -50,6 +51,15 @@ describe('activeNav', () => {
   )
 })
 
+describe('ariaCurrentFor', () => {
+  it('"page" na própria rota, "true" na subrota, nada fora', () => {
+    expect(ariaCurrentFor('/me/shopping-lists', '/me/shopping-lists')).toBe('page')
+    expect(ariaCurrentFor('/me/shopping-lists/0b5c', '/me/shopping-lists')).toBe('true')
+    expect(ariaCurrentFor('/me/pantry', '/me/shopping-lists')).toBeUndefined()
+    expect(ariaCurrentFor('/following', '/')).toBeUndefined()
+  })
+})
+
 describe('visibilidade', () => {
   it('Visitante: só Explorar, sem a aba Seguindo', () => {
     expect(sectionsFor(false).map((s) => s.id)).toEqual(['explorar'])
@@ -58,7 +68,8 @@ describe('visibilidade', () => {
 
   it('logado: as 3 seções, com todas as abas', () => {
     expect(sectionsFor(true).map((s) => s.id)).toEqual(['explorar', 'minhasReceitas', 'planejar'])
-    expect(tabsFor(section('explorar'), true).map((t) => t.id)).toEqual(['descobrir', 'seguindo', 'cozinheiros'])
+    // Seguindo por último: chega depois da sessão sem empurrar as outras abas.
+    expect(tabsFor(section('explorar'), true).map((t) => t.id)).toEqual(['descobrir', 'cozinheiros', 'seguindo'])
   })
 })
 

@@ -95,17 +95,23 @@ describe('SectionTabs (ADR-0043)', () => {
     ])
   })
 
-  it('Explorar logado: Descobrir, Seguindo e Cozinheiros', () => {
+  it('Explorar logado: Descobrir, Cozinheiros e Seguindo (por último)', () => {
     authMock.current = logged
     renderTabs('/pt-BR/cooks')
     expect(tabs()).toEqual([
       [ptBR.nav.descobrir, '/'],
-      [ptBR.nav.seguindo, '/following'],
       [ptBR.nav.cozinheiros, '/cooks'],
+      [ptBR.nav.seguindo, '/following'],
     ])
   })
 
-  it('Explorar Visitante: sem Seguindo, nem enquanto a sessão carrega', () => {
+  it('Explorar Visitante: sem Seguindo', () => {
+    renderTabs('/pt-BR')
+    expect(tabs().map(([label]) => label)).toEqual([ptBR.nav.descobrir, ptBR.nav.cozinheiros])
+  })
+
+  it('Explorar com a sessão carregando: Seguindo espera (o Visitante nunca a vê piscar)', () => {
+    authMock.current = pending
     renderTabs('/pt-BR')
     expect(tabs().map(([label]) => label)).toEqual([ptBR.nav.descobrir, ptBR.nav.cozinheiros])
   })
@@ -114,6 +120,12 @@ describe('SectionTabs (ADR-0043)', () => {
     authMock.current = pending
     renderTabs('/pt-BR/me/meal-plan')
     expect(tabs()).toHaveLength(3)
+  })
+
+  it('seção pessoal com erro ao ler a sessão: a tira fica (só some com o Visitante confirmado)', () => {
+    authMock.current = { ...pending, isPending: false, error: new Error('rede') }
+    renderTabs('/pt-BR/me/saved')
+    expect(tabs()).toHaveLength(2)
   })
 
   it('seção pessoal para o Visitante: sem tira', () => {
@@ -129,6 +141,12 @@ describe('SectionTabs (ADR-0043)', () => {
       expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     },
   )
+
+  it('não lembra a aba de quem não está logado', () => {
+    authMock.current = pending
+    renderTabs('/pt-BR/me/pantry')
+    expect(window.localStorage.getItem(LAST_TAB_STORAGE_KEY)).toBeNull()
+  })
 
   it('lembra a aba das seções pessoais, não a de Explorar', () => {
     authMock.current = logged

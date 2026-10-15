@@ -243,7 +243,7 @@ describe('GuidedTour — pedido do /guia', () => {
     await user.click(screen.getByRole('button', { name: t.proximo }))
     await findTour(t.criarTitulo)
     await user.click(screen.getByRole('button', { name: t.proximo }))
-    // Pula direto para a conta: Salvos e Cardápio não existem para o Visitante.
+    // Pula direto para a conta: as seções Minhas receitas e Planejar não existem para o Visitante.
     const conta = await findTour(t.contaTitulo)
     expect(conta).toHaveTextContent(t.contaTextoVisitante)
   })

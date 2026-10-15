@@ -11,8 +11,8 @@ export const ptBR = {
   // de marca da rede, não). NUNCA rotular o app como "bilíngue" em texto ao usuário (regra do dono).
   footer: { abreEmNovaAba: 'abre em nova aba' },
   nav: {
-    // #277: a Descoberta/home virou "Explorar" na nav (aba ao lado de "Seguindo"). O key segue
-    // `home` (linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
+    // #277/ADR-0043: rótulo da SEÇÃO "Explorar" (a home em si é a aba "Descobrir"). O key segue `home`
+    // (a seção linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
     home: 'Explorar',
     // #277: aba "Seguindo" — feed das Receitas de quem o viewer segue. Só-logada (gateada por authed).
     seguindo: 'Seguindo',
@@ -42,8 +42,10 @@ export const ptBR = {
     cardapio: 'Cardápio',
     // ADR-0038: "Despensa", aba de "Planejar" (ADR-0043).
     despensa: 'Despensa',
-    // ADR-0043: as 3 seções do header (Explorar reusa `home`) e as abas que não têm rótulo em outra seção
-    // do catálogo ("Seguindo", "Salvos", "Cardápio", "Listas de compras" e "Despensa" reusam os seus).
+    // ADR-0043: as 3 seções do header (Explorar reusa `home`) e as abas sem rótulo próprio no catálogo
+    // ("Seguindo", "Salvos", "Cardápio", "Listas de compras" e "Despensa" reusam rótulos já existentes).
+    // `secoesAria` nomeia a nav do header, que agora divide a página com a nav da tira de abas.
+    secoesAria: 'Seções',
     minhasReceitas: 'Minhas receitas',
     planejar: 'Planejar',
     descobrir: 'Descobrir',
@@ -2368,7 +2370,7 @@ export const ptBR = {
     indice: 'Nesta página',
     buscarTitulo: 'Encontrar receitas',
     buscarItens: [
-      'Na página inicial (“Explorar”), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
+      'Em “Explorar”, na aba “Descobrir” (a página inicial), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
       'Não achou? Com a conta e pelo menos 3 letras, use “Gerar com IA” para criar uma receita a partir do que você buscou.',
       'Com a conta, dá também para buscar na web. Receitas de outros sites podem ser importadas para o seu perfil: ficam privadas e com o crédito da fonte.',
     ],

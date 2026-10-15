@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 
 /**
  * Pontos de entrada do guia e âncoras do tour (ADR-0039): o header marca com `data-tour` o que o tour
- * destaca (busca, Criar, Salvos, Cardápio, conta, botão do menu mobile); "Como usar" (/guia) aparece
+ * destaca (busca, Criar, as seções Minhas receitas e Planejar, conta, botão do menu mobile); "Como usar" (/guia) aparece
  * no menu da conta e no rodapé (este também para o Visitante).
  */
 vi.mock('next/link', () => ({
