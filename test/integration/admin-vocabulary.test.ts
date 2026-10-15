@@ -212,7 +212,7 @@ describe('/api/admin/vocabulary — nota de voz (#422)', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
   })
 
-  // ADR-0043: nota visual (prompt da IMAGEM) — mesma regra da nota de voz, teto próprio.
+  // ADR-0044: nota visual (prompt da IMAGEM) — mesma regra da nota de voz, teto próprio.
   it('PATCH grava/limpa a nota visual e a devolve; acima do teto → 400 visual_note_muito_longa', async () => {
     const headers = await adminHeaders('visualnote@vocab.test')
     const visualOf = async () =>

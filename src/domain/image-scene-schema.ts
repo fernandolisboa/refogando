@@ -1,5 +1,5 @@
 /**
- * Schema da saída structured do diretor de arte (ADR-0043) — SÓ servidor (zod). Separado de
+ * Schema da saída structured do diretor de arte (ADR-0044) — SÓ servidor (zod). Separado de
  * `image-scene.ts` porque o modal de imagem importa os registros de lá, e importar este arquivo levaria
  * o zod inteiro para o bundle do client (mesma divisão de `menu-suggestion-limits.ts`).
  *

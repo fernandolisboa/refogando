@@ -6,7 +6,7 @@
  *  - `translation` — tradução por LLM (ADR-0030);
  *  - `extraction`  — Extração de ingredientes (#112);
  *  - `menu`        — Sugestão de cardápio (ADR-0036): escolhe Receitas existentes para a semana;
- *  - `imageScene`  — Cenário da imagem (ADR-0043): o diretor de arte escolhe a cena da foto do prato.
+ *  - `imageScene`  — Cenário da imagem (ADR-0044): o diretor de arte escolhe a cena da foto do prato.
  *
  * Ajustes (`ModelSettings`) são guardados POR MODELO dentro da tarefa: trocar de modelo e voltar
  * recupera o ajuste anterior. `effort: null` e `thinking: 'default'` = não manda o parâmetro (cada
@@ -49,7 +49,7 @@ export type StoredAiTasks = Partial<Record<AiTask, { model?: string; byModel?: R
  *  - Sugestão de cardápio (ADR-0036): esforço low (escolher de uma lista fechada é tarefa curta, e a
  *    chamada tem o prazo de 50s com ~150 Receitas no prompt); thinking no default do modelo (com folga
  *    no `max_tokens`).
- *  - Cenário da imagem (ADR-0043): esforço low e thinking DESLIGADO (classificação curta antes de cada
+ *  - Cenário da imagem (ADR-0044): esforço low e thinking DESLIGADO (classificação curta antes de cada
  *    imagem, com prazo de 8s; o default Sonnet 5 aceita desligar).
  */
 export const TASK_DEFAULT_SETTINGS: Record<AiTask, ModelSettings> = {

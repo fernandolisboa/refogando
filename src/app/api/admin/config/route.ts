@@ -37,7 +37,7 @@ import { APP_CONFIG_TAG, RECIPE_OF_WEEK_POPULAR_TAG, expireCacheTag } from '@/se
  *  - `defaultModel` (#5) — modelo da Geração (legado; a UI manda `aiTasks.generation`). Tratado como a
  *    tarefa Geração com o ajuste já salvo para o modelo: mesmos portões do `aiTasks` abaixo (modelos
  *    SELECIONÁVEIS segundo a Models API, com lista pinada de fallback; Haiku não é selecionável).
- *  - `imageGen { enabled, model, dailyCapByRole, sceneDirector? }` (#134, ADR-0043) — geração de imagem
+ *  - `imageGen { enabled, model, dailyCapByRole, sceneDirector? }` (#134, ADR-0044) — geração de imagem
  *    por IA (aba IA, `/admin/ia`). A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts`
  *    → `image-gen-config.ts`). `sceneDirector` (o diretor de arte do cenário) é opcional no corpo.
  *  - `recipeGenCapByRole` (#167) — teto diário de geração de RECEITA por papel (também a aba IA, `/admin/ia`).
@@ -60,7 +60,7 @@ import { APP_CONFIG_TAG, RECIPE_OF_WEEK_POPULAR_TAG, expireCacheTag } from '@/se
  *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
  *
  *  - `aiTasks { [tarefa]: { model, settings } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
- *    IA de texto (Geração, Tradução, Extração, Sugestão de cardápio — ADR-0036, Cenário da imagem — ADR-0043), validados por
+ *    IA de texto (Geração, Tradução, Extração, Sugestão de cardápio — ADR-0036, Cenário da imagem — ADR-0044), validados por
  *    capacidades + chamada de teste. O jsonb é regravado sob lock da linha (salvamentos concorrentes
  *    não se sobrescrevem).
  *
@@ -144,7 +144,7 @@ export async function PUT(req: Request): Promise<Response> {
     set.imageGenEnabled = parsed.value.enabled
     set.imageGenModel = parsed.value.model
     set.imageGenCapByRole = parsed.value.dailyCapByRole
-    // ADR-0043: o diretor de arte só muda quando o corpo o traz (cliente antigo não o religa sem querer).
+    // ADR-0044: o diretor de arte só muda quando o corpo o traz (cliente antigo não o religa sem querer).
     if (parsed.value.sceneDirector !== undefined) set.imageSceneDirectorEnabled = parsed.value.sceneDirector
   }
 

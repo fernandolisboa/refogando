@@ -128,7 +128,7 @@ describe('/api/admin/config — imageGen (#134, admin-only)', () => {
     })
   })
 
-  // ADR-0043: `sceneDirector` é opcional no PUT — ausente não mexe na coluna; presente grava.
+  // ADR-0044: `sceneDirector` é opcional no PUT — ausente não mexe na coluna; presente grava.
   it('PUT imageGen com sceneDirector=false desliga o diretor; PUT sem o campo não o religa', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ig-scene@cfg.test', role: 'admin' })
     const off = await put({ imageGen: { ...okImageGen, sceneDirector: false } }, headers)

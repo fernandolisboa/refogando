@@ -9,7 +9,7 @@ import {
 } from '@/domain/image-prompt'
 import { SCENE_LIBRARY, type ImageScene } from '@/domain/image-scene'
 
-/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017; cenário ADR-0043). */
+/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017; cenário ADR-0044). */
 
 const SCENE: ImageScene = {
   registro: 'caseiro',
@@ -68,7 +68,7 @@ describe('buildDishImagePrompt', () => {
   })
 })
 
-describe('buildStylePreamble (cenário, ADR-0043)', () => {
+describe('buildStylePreamble (cenário, ADR-0044)', () => {
   it('a cena vem do registro: registros distintos ⇒ cenas distintas', () => {
     const casa = buildStylePreamble('r1', { ...SCENE, registro: 'caseiro' }, null)
     const fino = buildStylePreamble('r1', { ...SCENE, registro: 'alta_gastronomia' }, null)

@@ -68,7 +68,7 @@ import {
 
 /**
  * Modelo de Tradução/Extração/Sugestão de cardápio/Cenário da imagem enquanto o admin não escolheu um
- * (ADR-0034/0036/0043): a env var (ADR-0030 dec.2 / #112 / `MENU_MODEL` / `IMAGE_SCENE_MODEL`) ou
+ * (ADR-0034/0036/0044): a env var (ADR-0030 dec.2 / #112 / `MENU_MODEL` / `IMAGE_SCENE_MODEL`) ou
  * Sonnet 5. Lido no load do módulo, como antes.
  */
 export const TASK_FALLBACK_MODELS = {

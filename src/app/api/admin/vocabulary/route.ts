@@ -82,7 +82,7 @@ export async function PATCH(req: Request): Promise<Response> {
     labelEnUs?: unknown
     // #422: nota de voz curada — OPCIONAL (string | null). '' vira null no domínio (limpar a nota).
     voiceNote?: unknown
-    // ADR-0043: nota visual curada — OPCIONAL (string | null), mesma regra da nota de voz.
+    // ADR-0044: nota visual curada — OPCIONAL (string | null), mesma regra da nota de voz.
     visualNote?: unknown
     status?: unknown
   }
@@ -109,7 +109,7 @@ export async function PATCH(req: Request): Promise<Response> {
   if (hasVisualNote && body.visualNote !== null && typeof body.visualNote !== 'string') {
     return Response.json({ error: 'dados_invalidos' }, { status: 400 })
   }
-  // ADR-0043: a nota visual vai no prompt de toda imagem daquela cozinha — teto próprio, 400 no excesso.
+  // ADR-0044: a nota visual vai no prompt de toda imagem daquela cozinha — teto próprio, 400 no excesso.
   if (hasVisualNote && typeof body.visualNote === 'string' && body.visualNote.trim().length > VISUAL_NOTE_MAX) {
     return Response.json({ error: 'visual_note_muito_longa' }, { status: 400 })
   }

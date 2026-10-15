@@ -66,7 +66,7 @@ export function AiConfigSection() {
 
   const [enabled, setEnabled] = useState(true)
   const [model, setModel] = useState<string>(DEFAULT_IMAGE_MODEL)
-  // ADR-0043: diretor de arte do cenário (a tarefa `imageScene` define o modelo, no bloco de tarefas).
+  // ADR-0044: diretor de arte do cenário (a tarefa `imageScene` define o modelo, no bloco de tarefas).
   const [sceneDirector, setSceneDirector] = useState(true)
   const [caps, setCaps] = useState<CapsForm>(() => capsToForm({ usuario: 3, curador: 5, admin: null }))
   // #167: teto de geração de RECEITA por papel (eixo separado do teto de imagem).
@@ -235,7 +235,7 @@ export function AiConfigSection() {
               {m.aiHabilitadaLabel}
             </label>
 
-            {/* ADR-0043: diretor de arte — escolhe o cenário de cada imagem pela receita. */}
+            {/* ADR-0044: diretor de arte — escolhe o cenário de cada imagem pela receita. */}
             <div className="flex flex-col gap-1">
               <label className="flex items-center gap-2 text-sm font-medium text-fg">
                 <input

@@ -1,6 +1,6 @@
-# Handoff 73 — Cenário dinâmico nas imagens geradas
+# Handoff 75 — Cenário dinâmico nas imagens geradas
 
-**Sessão:** 2026-10-15. **Branch:** `claude/project-thread-fmi2hy`. **Migração:** `0078_image_scene`. Origem: o dono achou "todas as imagens geradas muito parecidas" e pediu que o cenário acompanhasse o prato (tipo, país, cozinha), por exemplo "um prato contemporâneo numa mesa de restaurante mais refinado". Ele escolheu a opção "Diretor + regras" da proposta. Decisões no ADR-0043; termos no `CONTEXT.md` (**Cenário da imagem**, **Diretor de arte**, **Nota visual**).
+**Sessão:** 2026-10-15. **Branch:** `claude/project-thread-fmi2hy`. **Migração:** `0078_image_scene`. O 73 e o 74 (e o ADR-0043) são do #580 e do #581, em voo junto. Origem: o dono achou "todas as imagens geradas muito parecidas" e pediu que o cenário acompanhasse o prato (tipo, país, cozinha), por exemplo "um prato contemporâneo numa mesa de restaurante mais refinado". Ele escolheu a opção "Diretor + regras" da proposta. Decisões no ADR-0044; termos no `CONTEXT.md` (**Cenário da imagem**, **Diretor de arte**, **Nota visual**).
 
 ## 1. O que mudou
 
@@ -14,7 +14,7 @@
 
 ## 2. Evidência
 
-- Testes novos: `test/unit/image-scene.test.ts`, `test/unit/image-prompt.test.ts` (reescrito), o bloco "cenário (ADR-0043)" de `test/integration/recipe-image-generate.test.ts` (diretor ok, falha ⇒ regras, diretor que lança ⇒ regras, escolha do usuário pula o diretor com fonte `usuario`, `cena` inválida ignorada, diretor desligado, nota visual do banco, edição sem cena), `cena` na rota da curadoria (`catalog-image.test.ts`), tetos do prompt do diretor, `directImageScene` em `claude-client-real-params`, nota visual em `admin-vocabulary`, `sceneDirector` em `admin-config`, seletor em `recipe-image-manager`.
+- Testes novos: `test/unit/image-scene.test.ts`, `test/unit/image-prompt.test.ts` (reescrito), o bloco "cenário (ADR-0044)" de `test/integration/recipe-image-generate.test.ts` (diretor ok, falha ⇒ regras, diretor que lança ⇒ regras, escolha do usuário pula o diretor com fonte `usuario`, `cena` inválida ignorada, diretor desligado, nota visual do banco, edição sem cena), `cena` na rota da curadoria (`catalog-image.test.ts`), tetos do prompt do diretor, `directImageScene` em `claude-client-real-params`, nota visual em `admin-vocabulary`, `sceneDirector` em `admin-config`, seletor em `recipe-image-manager`.
 - Suíte completa, lint, `tsc` e `next build` verdes localmente (Postgres 17 na 5433).
 
 ## 3. O que muda para quem vê
@@ -29,7 +29,7 @@
 - **`IMAGE_SCENE_MODEL`** na env troca o modelo padrão do diretor; a escolha salva no admin vence.
 - **Log para conferir em produção:** `[image-scene] diretor ok|prazo|falhou: registro=… fonte=diretor|regras recipe=… modelo=… in=… out=… ms=…`. `prazo` ou `falhou` com `fonte=regras` é o fallback funcionando, não erro de imagem; muitos `prazo` pedem olhar o modelo escolhido no admin. `[image-scene] diretor lançou` só deveria aparecer com dublê de teste.
 - **Zod fora do cliente:** `image-scene.ts` é importado pelo modal e pelas mensagens de i18n; não importar zod nem o prompt do diretor ali.
-- Não persistimos o cenário nem a versão do preâmbulo na imagem (ADR-0043 dec.7). Quem quiser estatística por registro lê o log.
+- Não persistimos o cenário nem a versão do preâmbulo na imagem (ADR-0044 dec.7). Quem quiser estatística por registro lê o log.
 
 ## 5. Critério de saída
 
@@ -37,5 +37,5 @@
 
 ## 6. O que resta
 
-- Custo do diretor no painel de uso, se ele crescer (ADR-0043 dec.6).
+- Custo do diretor no painel de uso, se ele crescer (ADR-0044 dec.6).
 - Afinar as variantes da biblioteca e as regras conforme o dono for vendo imagens; as notas visuais ele mesmo ajusta no admin.

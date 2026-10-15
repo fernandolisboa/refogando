@@ -137,7 +137,7 @@ describe('Imagem de catálogo — comportamento', () => {
     expect(await imageIdOf(draft)).toBe(body.gallery[0].id)
   })
 
-  it('gerar com `cena` (ADR-0043) ⇒ gera naquela cena sem chamar o diretor de arte', async () => {
+  it('gerar com `cena` (ADR-0044) ⇒ gera naquela cena sem chamar o diretor de arte', async () => {
     const claude = new FakeClaudeClient()
     setClaudeClient(claude)
     const { headers: cur } = await curator()

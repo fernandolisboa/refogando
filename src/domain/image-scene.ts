@@ -1,5 +1,5 @@
 /**
- * Cenário da imagem gerada do prato (ADR-0043) — PURO: vocabulário, regras e biblioteca de cenas.
+ * Cenário da imagem gerada do prato (ADR-0044) — PURO: vocabulário, regras e biblioteca de cenas.
  * Sem DB/I/O e sem zod: o modal de imagem importa os registros daqui. O prompt do diretor de arte mora
  * em `image-scene-director.ts` e o schema da saída structured em `image-scene-schema.ts`, ambos só no
  * servidor.
@@ -19,7 +19,7 @@
  * INVARIANTE do ADR-0022 mantido: o prato é sempre o sujeito; o cenário só descreve o entorno.
  */
 
-/** Registros de cena (ADR-0043). A ordem é a do seletor do modal; o slug é estável (vai na API). */
+/** Registros de cena (ADR-0044). A ordem é a do seletor do modal; o slug é estável (vai na API). */
 export const IMAGE_SCENE_REGISTROS = [
   'caseiro',
   'rustico_tradicional',
@@ -157,7 +157,7 @@ export function normalizeDirectorScene(
 }
 
 /**
- * BIBLIOTECA de cenas por registro (ADR-0043): cada variante é um bloco COERENTE (ambiente, superfície,
+ * BIBLIOTECA de cenas por registro (ADR-0044): cada variante é um bloco COERENTE (ambiente, superfície,
  * louça, luz e clima juntos). A variante sai do hash do id da receita, então duas receitas do mesmo
  * registro não ficam idênticas e a mesma receita mantém a cena ao regerar. Bump `STYLE_LIBRARY_VERSION`
  * (image-prompt.ts) ao mexer no conteúdo; não reordenar sem intenção.

@@ -35,7 +35,7 @@ import {
 import type { GalleryImage } from '@/domain/recipe-read'
 // #223: cap do refino vem do domínio (módulo client-safe: puro, sem DB/IO) — evita drift cliente/servidor.
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
-// ADR-0043: registros de cenário (módulo client-safe, sem zod nem o prompt do diretor).
+// ADR-0044: registros de cenário (módulo client-safe, sem zod nem o prompt do diretor).
 import { IMAGE_SCENE_REGISTROS, isImageSceneRegistro, type ImageSceneRegistro } from '@/domain/image-scene'
 import { fieldClassName } from '@/components/button'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
@@ -129,7 +129,7 @@ export function RecipeImageManager({
   const [refino, setRefino] = useState('')
   const [showRefino, setShowRefino] = useState(false)
   const [basePrompt, setBasePrompt] = useState<string | null>(null)
-  // ADR-0043: cenário escolhido no modal ('' = automático: o diretor de arte escolhe pela receita) e o
+  // ADR-0044: cenário escolhido no modal ('' = automático: o diretor de arte escolhe pela receita) e o
   // cenário que o servidor usou na última geração (pra mostrar "Cenário: …"; null na edição).
   const [cena, setCena] = useState<ImageSceneRegistro | ''>('')
   const [cenaUsada, setCenaUsada] = useState<ImageSceneRegistro | null>(null)
@@ -163,7 +163,7 @@ export function RecipeImageManager({
       const payload = {
         ...(trimmed ? { prompt: trimmed } : {}),
         ...(editBaseId ? { sourceImageId: editBaseId } : {}),
-        // ADR-0043: só manda o cenário quando escolhido e fora da edição (a edição mantém a cena da foto).
+        // ADR-0044: só manda o cenário quando escolhido e fora da edição (a edição mantém a cena da foto).
         ...(cena && !editBaseId ? { cena } : {}),
       }
       const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
@@ -598,7 +598,7 @@ export function RecipeImageManager({
               )}
             </div>
 
-            {/* ADR-0043: cenário da foto. "Automático" deixa o diretor de arte escolher pela receita; um
+            {/* ADR-0044: cenário da foto. "Automático" deixa o diretor de arte escolher pela receita; um
                 registro gera direto naquela cena. Na edição a cena vem da imagem-base (seletor travado). */}
             <div className="flex w-full max-w-prose flex-col gap-1 text-sm">
               <label className="flex flex-col gap-1 font-medium text-fg">

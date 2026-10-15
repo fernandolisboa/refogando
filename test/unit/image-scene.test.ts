@@ -18,7 +18,7 @@ import {
   buildSceneDirectorPrompt,
 } from '@/domain/image-scene-director'
 
-/** Cenário da imagem gerada (ADR-0043): regras de reserva, normalização do diretor e o prompt dele. */
+/** Cenário da imagem gerada (ADR-0044): regras de reserva, normalização do diretor e o prompt dele. */
 
 describe('hashString', () => {
   it('é puro e determinístico: mesma string ⇒ mesmo número', () => {

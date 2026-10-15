@@ -11,7 +11,7 @@
  *    propósito, ao contrário da lista viva do `default_model`, ADR-0033). Repassado ao seam `ImageGenerator`.
  *  - `dailyCapByRole`: teto diário por papel na janela 24h. `null` = ILIMITADO (admin ∞) — JSON não
  *    tem `Infinity`, então persistimos `null` no jsonb e mapeamos `null → Infinity` em `capFromConfig`.
- *  - `sceneDirector` (ADR-0043): liga/desliga o diretor de arte que escolhe o cenário de cada imagem.
+ *  - `sceneDirector` (ADR-0044): liga/desliga o diretor de arte que escolhe o cenário de cada imagem.
  */
 
 import { ROLES, type Role } from '@/domain/user'
@@ -49,7 +49,7 @@ export type ImageGenConfig = {
   model: ImageGenModel
   dailyCapByRole: ImageGenCapByRole
   /**
-   * ADR-0043: o diretor de arte (tarefa `imageScene`) escolhe o cenário de cada imagem. Desligado ⇒ só
+   * ADR-0044: o diretor de arte (tarefa `imageScene`) escolhe o cenário de cada imagem. Desligado ⇒ só
    * as regras de reserva (categoria + cozinha), sem chamada extra. Default ligado.
    */
   sceneDirector: boolean
@@ -122,7 +122,7 @@ export type ImageGenConfigParse =
 
 /**
  * Valida o objeto `imageGen` cru do PUT (substituição COMPLETA dos 3 campos — a UI sempre os envia).
- * `enabled` boolean; `model` na allowlist; `dailyCapByRole` válido; `sceneDirector` (ADR-0043) opcional,
+ * `enabled` boolean; `model` na allowlist; `dailyCapByRole` válido; `sceneDirector` (ADR-0044) opcional,
  * mas boolean quando presente. Qualquer desvio ⇒ `{ ok: false }` (o route mapeia a 400). PURO.
  */
 export function parseImageGenConfig(raw: unknown): ImageGenConfigParse {

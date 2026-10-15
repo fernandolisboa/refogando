@@ -37,7 +37,7 @@ beforeEach(async () => {
   setModelCatalog({ listModels: async () => [] })
   // Nem a chamada de teste de modelo (ADR-0034): sem dublê explícito, a Anthropic "aceita" tudo.
   setModelProbe({ probe: async () => ({ kind: 'ok' }) })
-  // Nem o diretor de arte da imagem (ADR-0043): toda geração de imagem o chama por padrão. O dublê sem
+  // Nem o diretor de arte da imagem (ADR-0044): toda geração de imagem o chama por padrão. O dublê sem
   // nada enlatado devolve `failed` (o cenário cai nas regras) e lança nos demais métodos, então um teste
   // que gera Receita sem configurar o seu cliente falha alto em vez de tentar a Anthropic de verdade.
   setClaudeClient(new FakeClaudeClient())

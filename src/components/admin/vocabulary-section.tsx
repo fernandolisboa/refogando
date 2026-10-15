@@ -26,7 +26,7 @@ type Cozinha = {
   labelEnUs: string | null
   // #422: nota de voz curada (locale-neutra, opcional). Instrui a IA a cozinhar autenticamente.
   voiceNote: string | null
-  // ADR-0043: nota visual curada (opcional): louça/empratamento típicos para o prompt da IMAGEM.
+  // ADR-0044: nota visual curada (opcional): louça/empratamento típicos para o prompt da IMAGEM.
   visualNote: string | null
   status: 'active' | 'deprecated'
   sort: number
@@ -79,7 +79,7 @@ export function VocabularySection() {
   const [editEn, setEditEn] = useState('')
   // #422: rascunho da nota de voz (string vazia = sem nota; o servidor a normaliza p/ null).
   const [editVoice, setEditVoice] = useState('')
-  // ADR-0043: rascunho da nota visual (string vazia = sem nota; o servidor a normaliza p/ null).
+  // ADR-0044: rascunho da nota visual (string vazia = sem nota; o servidor a normaliza p/ null).
   const [editVisual, setEditVisual] = useState('')
   const [savingRow, setSavingRow] = useState<string | null>(null)
 
@@ -298,7 +298,7 @@ export function VocabularySection() {
                         placeholder={m.vocabNotaVozPlaceholder}
                       />
                     </label>
-                    {/* ADR-0043: nota visual (opcional) — louça/empratamento típicos na foto gerada. */}
+                    {/* ADR-0044: nota visual (opcional) — louça/empratamento típicos na foto gerada. */}
                     <label className="flex flex-col gap-1 text-xs font-medium text-fg">
                       {m.vocabNotaVisual}
                       <Textarea

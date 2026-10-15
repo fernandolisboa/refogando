@@ -1,5 +1,5 @@
 /**
- * Montagem PURA do prompt de geração da imagem do prato (issue #132, ADR-0017; cenário ADR-0043, que
+ * Montagem PURA do prompt de geração da imagem do prato (issue #132, ADR-0017; cenário ADR-0044, que
  * substitui a rotação de eixos do #424/ADR-0029 dec.5). Sem DB/I/O, determinístico. O default é "um
  * clique": o prompt é montado da receita ATUAL (título + ingredientes + cozinha/categoria) com um
  * preâmbulo de CENÁRIO. Quem quiser refina/edita (a rota aceita um refino do usuário, que vira nota de
@@ -7,7 +7,7 @@
  *
  * NÃO inclui quantidades (irrelevantes pra aparência) nem passos (a foto é do prato pronto).
  *
- * ── Cenário (ADR-0043) ───────────────────────────────────────────────────────────────────────────
+ * ── Cenário (ADR-0044) ───────────────────────────────────────────────────────────────────────────
  * O preâmbulo vem de um `ImageScene` já resolvido no servidor (diretor de arte ou regras, ver
  * `image-scene.ts`): o REGISTRO puxa um bloco de cena coerente da biblioteca (variante pelo hash do id
  * da receita), mais o enquadramento, a região de origem e os detalhes de cena (textos curtos já
@@ -28,7 +28,7 @@ export type DishImagePromptInput = {
   /** Rótulos de ingrediente (rawText) — só os nomes; quantidades são irrelevantes pra imagem. */
   ingredientes: ReadonlyArray<string>
   /**
-   * Cenário já resolvido no servidor (diretor de arte, escolha do usuário ou regras, ADR-0043). `null`
+   * Cenário já resolvido no servidor (diretor de arte, escolha do usuário ou regras, ADR-0044). `null`
    * na EDIÇÃO imagem-a-imagem: a cena já está na foto-base, e o prompt fica só com a âncora do prato.
    */
   scene: ImageScene | null
@@ -45,12 +45,12 @@ const STYLE_BASE =
 
 /**
  * Versão do conteúdo do preâmbulo (proveniência de prompt — ADR-0029 dec.7). v1 = eixos sorteados
- * (#424); v2 = cenário (ADR-0043). Bump ao mexer na biblioteca de cenas ou nos textos daqui.
+ * (#424); v2 = cenário (ADR-0044). Bump ao mexer na biblioteca de cenas ou nos textos daqui.
  */
 export const STYLE_LIBRARY_VERSION = 2
 
 /**
- * Compõe o PREÂMBULO de cenário de UMA receita (ADR-0043): base fixa + cena do registro + câmera +
+ * Compõe o PREÂMBULO de cenário de UMA receita (ADR-0044): base fixa + cena do registro + câmera +
  * região/detalhes quando houver + nota visual da cozinha quando houver. Sem cenário (edição) ⇒ só a
  * base. PURO e determinístico.
  */

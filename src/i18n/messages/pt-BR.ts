@@ -320,7 +320,7 @@ export const ptBR = {
     lanche: 'Lanche',
     cafe_da_manha: 'Café da manhã',
   } satisfies Record<Categoria, string>,
-  // ADR-0043: rótulo de cada registro de cenário da imagem (seletor do modal).
+  // ADR-0044: rótulo de cada registro de cenário da imagem (seletor do modal).
   cenarioLabel: {
     caseiro: 'Mesa de casa',
     rustico_tradicional: 'Rústico e tradicional',
@@ -484,7 +484,7 @@ export const ptBR = {
     // #265: CTA primário do modal no estado de REPOUSO (sem preview ainda). Distinto de
     // `imagemGerar` ("✨ Gerar com IA", botão externo) — não gera ao abrir, só no clique.
     imagemGerarAgora: 'Gerar',
-    // ADR-0043: seletor de cenário no modal. "Automático" = o diretor de arte escolhe pela receita.
+    // ADR-0044: seletor de cenário no modal. "Automático" = o diretor de arte escolhe pela receita.
     imagemCenarioRotulo: 'Cenário',
     imagemCenarioAutomatico: 'Automático (pela receita)',
     imagemCenarioEdicao: 'Na edição, o cenário vem da imagem escolhida.',
@@ -1357,7 +1357,7 @@ export const ptBR = {
     vocabNotaVoz: 'Nota de voz (opcional)',
     vocabNotaVozPlaceholder:
       'Como a IA deve cozinhar nesta tradição: técnicas, ingredientes e temperos típicos. Deixe em branco para usar só a instrução genérica.',
-    // ADR-0043: nota visual curada por cozinha (entra no prompt da IMAGEM do prato; sem deploy).
+    // ADR-0044: nota visual curada por cozinha (entra no prompt da IMAGEM do prato; sem deploy).
     vocabNotaVisual: 'Nota visual da imagem (opcional)',
     vocabNotaVisualPlaceholder:
       'Louça, empratamento e superfície típicos desta cozinha, para a foto gerada. Ex.: panela de barro e colher de pau, tons terrosos.',

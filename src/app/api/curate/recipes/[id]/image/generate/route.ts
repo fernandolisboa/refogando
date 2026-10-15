@@ -37,7 +37,7 @@ export async function POST(
     id,
     curatorId: g.session.user.id,
     promptOverride,
-    // ADR-0043: registro de cenário escolhido pelo curador; qualquer outro valor ⇒ automático.
+    // ADR-0044: registro de cenário escolhido pelo curador; qualquer outro valor ⇒ automático.
     sceneChoice: parseSceneChoice(body.cena),
   })
 

@@ -1,4 +1,4 @@
--- ADR-0043 (cenário dinâmico das imagens geradas): duas colunas e a cópia do mapa fixo de convenção
+-- ADR-0044 (cenário dinâmico das imagens geradas): duas colunas e a cópia do mapa fixo de convenção
 -- visual por cozinha (#424) para o banco.
 --  - `app_config.image_scene_director_enabled`: liga/desliga o diretor de arte (tarefa de IA `imageScene`)
 --    que escolhe o cenário de cada imagem. NOT NULL + DEFAULT constante: no PG11+ o ADD COLUMN é só de

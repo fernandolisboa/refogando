@@ -75,7 +75,7 @@ export type RecipeImageSelectResult = RecipeImageResult | { kind: 'moderated' }
  * sempre re-derivado no servidor; o cliente nunca o envia (só o refino) — invariante do #214.
  */
 export type RecipeImageGenResult =
-  | { kind: 'ok'; image: GalleryImage; basePrompt: string; scene: ImageScene | null } // 200 — preview + prompt-base + cenário (ADR-0043; null na edição)
+  | { kind: 'ok'; image: GalleryImage; basePrompt: string; scene: ImageScene | null } // 200 — preview + prompt-base + cenário (ADR-0044; null na edição)
   | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
   | { kind: 'blocked' } //                            403 — geração-por-IA BLOQUEADA p/ este usuário (#226)
   | { kind: 'disabled' } //                           403 — geração desligada na config (#134)
@@ -156,9 +156,9 @@ export async function applyRecipeImageGeneration(input: {
   promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
   // #285 (image-to-image): id da imagem-base — a variante é editada a partir dela. Ausente ⇒ do zero.
   sourceImageId?: string
-  // ADR-0043: registro de cenário escolhido no modal. Ausente/null ⇒ automático (diretor ou regras).
+  // ADR-0044: registro de cenário escolhido no modal. Ausente/null ⇒ automático (diretor ou regras).
   sceneChoice?: ImageSceneRegistro | null
-  // ADR-0043: seam do diretor de arte. Ausente ⇒ o da app (`getClaudeClient`).
+  // ADR-0044: seam do diretor de arte. Ausente ⇒ o da app (`getClaudeClient`).
   claude?: ClaudeClient
 }): Promise<RecipeImageGenResult> {
   const { db, store, generator, id, userId, role, promptOverride, sourceImageId } = input
@@ -318,9 +318,9 @@ export async function generateAndStoreGalleryImage(input: {
     ingredientes: string[]
   }
   model: string // genConfig.model (o que de fato foi pedido)
-  // ADR-0043: config da app (diretor de arte ligado? modelo/ajuste da tarefa `imageScene`).
+  // ADR-0044: config da app (diretor de arte ligado? modelo/ajuste da tarefa `imageScene`).
   appCfg: AppConfig
-  // ADR-0043: registro escolhido pelo usuário (null ⇒ automático) e o seam do diretor (default da app).
+  // ADR-0044: registro escolhido pelo usuário (null ⇒ automático) e o seam do diretor (default da app).
   sceneChoice?: ImageSceneRegistro | null
   claude?: ClaudeClient
   promptOverride?: string
@@ -350,7 +350,7 @@ export async function generateAndStoreGalleryImage(input: {
     quota,
   } = input
 
-  // ADR-0043: cenário da foto (escolha do usuário, diretor de arte ou regras) + nota visual da cozinha.
+  // ADR-0044: cenário da foto (escolha do usuário, diretor de arte ou regras) + nota visual da cozinha.
   // Nunca falha. Na EDIÇÃO não há cenário: a cena já está na foto-base, e descrever outra mandaria o
   // Gemini repintar o fundo (o base da edição fica só com a âncora do prato).
   const resolved = sourceImageId

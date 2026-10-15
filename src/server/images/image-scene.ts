@@ -14,7 +14,7 @@ import {
 } from '@/domain/image-scene'
 
 /**
- * Resolve o CENÁRIO de uma imagem a gerar do zero (ADR-0043): o registro escolhido pelo usuário pula o
+ * Resolve o CENÁRIO de uma imagem a gerar do zero (ADR-0044): o registro escolhido pelo usuário pula o
  * diretor (gera direto naquela cena, sem custo extra); senão o diretor de arte (tarefa de IA
  * `imageScene`) quando ligado; as regras de reserva quando desligado ou em qualquer falha. Lê também a
  * nota visual da cozinha (`vocabulary_term.visual_note`). NUNCA lança: a imagem nunca falha por causa
@@ -22,7 +22,7 @@ import {
  * aqui (a cena já está na foto-base).
  *
  * Custo: a chamada do diretor fica FORA do ledger de imagem (como a Extração, #463); o log abaixo traz
- * modelo e tokens para conferir no Vercel. Limite aceito no ADR-0043.
+ * modelo e tokens para conferir no Vercel. Limite aceito no ADR-0044.
  */
 export async function resolveImageScene(input: {
   db: Database

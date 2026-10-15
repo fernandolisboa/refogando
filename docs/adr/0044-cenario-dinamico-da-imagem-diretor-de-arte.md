@@ -1,4 +1,4 @@
-# ADR-0043 — Cenário dinâmico da imagem gerada: diretor de arte + regras
+# ADR-0044 — Cenário dinâmico da imagem gerada: diretor de arte + regras
 
 Status: aceito
 

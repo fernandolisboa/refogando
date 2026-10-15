@@ -550,7 +550,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect((within(dialog2).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('ADR-0043: o cenário escolhido vai como `cena`, o usado aparece depois de gerar, e reabrir volta ao automático', async () => {
+  it('ADR-0044: o cenário escolhido vai como `cena`, o usado aparece depois de gerar, e reabrir volta ao automático', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith('/image/generate')

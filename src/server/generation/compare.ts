@@ -80,7 +80,7 @@ export async function runComparison(
   const recipe = result.recipe
   let imageDataUrl: string | null = null
   if (options.withImage) {
-    // ADR-0022: o PRATO é SEMPRE o sujeito. Cenário pelas REGRAS (ADR-0043), sem o diretor de arte nem a
+    // ADR-0022: o PRATO é SEMPRE o sujeito. Cenário pelas REGRAS (ADR-0044), sem o diretor de arte nem a
     // nota visual do banco: a bancada compara PROMPTS de receita, e o cenário fica reproduzível (mesma
     // fixture ⇒ mesma cena). Lados velho/novo divergem só porque a Receita diverge. Sem override.
     const base = buildDishImagePrompt({

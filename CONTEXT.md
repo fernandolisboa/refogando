@@ -232,7 +232,7 @@ A foto ou ilustração do prato. É **language-neutral** e portanto **invariante
 Os **derivados de exibição** (WebP de ~400 e ~1280 px, ADR-0016) são cópias reduzidas da **mesma** imagem, só para servir: não são itens da **Galeria** nem uma **Receita derivada**, não têm proveniência própria e nunca servem de imagem-base.
 _Avoid_: tratar como conteúdo traduzível; URL solta copiada por linha; "thumbnail"/"avatar" (avatar é do Usuário, não da Receita); confundir proveniência da imagem (`user_photo`/`ai_generated`) com a Proveniência da Receita (`catalog`/`ai_*`/`user_edited`); apagar o arquivo/zerar `image_id` ao moderar (é flag, não deleção); descartar a imagem anterior ao gerar/enviar uma nova (ela vai pra Galeria).
 
-**Cenário da imagem** (ADR-0043):
+**Cenário da imagem** (ADR-0044):
 O **registro** de cena em que uma imagem gerada do zero retrata o prato: mesa de casa, rústico e tradicional, bistrô, restaurante refinado, comida de rua, boteco, café e padaria, festa, ao ar livre ou estúdio, mais um **enquadramento** (de cima, 45°, altura da mesa, close). Cada registro descreve superfície, louça, luz e entorno que combinam entre si; a variante dentro do registro sai do hash da receita. Quem escolhe é o **Diretor de arte**, ou as **regras** (cozinha + categoria) quando ele está desligado ou falha; o usuário pode fixar o registro no modal. **Edição de imagem não tem cenário** (a cena já está na foto-base). O prato segue sendo o sujeito (ADR-0022); o cenário só muda o entorno. Não é gravado na imagem.
 _Avoid_: "estilo" ou "preset" (soltos — o cenário é o registro coerente, não eixos sorteados); "fundo" (o registro inclui louça e luz, não só o fundo); deixar o cenário substituir ou esconder o prato.
 

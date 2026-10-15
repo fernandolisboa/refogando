@@ -120,7 +120,7 @@ export interface ClaudeClient {
   // pedidos (NÃO gera Receita). Mesma disciplina structured (messages.parse + reparo) no
   // `MenuSuggestionSchema`, com o modelo/ajuste da tarefa `menu`. Reusa `GenerationInput`.
   suggestMenu(input: GenerationInput): Promise<MenuSuggestionOutput>
-  // Diretor de arte da imagem (ADR-0043): escolhe o CENÁRIO da foto do prato (registro, enquadramento,
+  // Diretor de arte da imagem (ADR-0044): escolhe o CENÁRIO da foto do prato (registro, enquadramento,
   // região, detalhes) a partir da receita. Structured no `ImageSceneDirectorSchema`, modelo/ajuste da
   // tarefa `imageScene`. UMA tentativa, sem reparo (roda antes de toda imagem, com prazo curto): qualquer
   // não-sucesso é `failed` e a imagem segue com as regras de reserva. NUNCA lança.
@@ -500,7 +500,7 @@ export class RealClaudeClient implements ClaudeClient {
   async directImageScene(input: GenerationInput): Promise<ImageSceneDirectorOutput> {
     // Mesma disciplina structured da Sugestão de cardápio, sem o reparo: o diretor roda antes de cada
     // imagem e uma 2ª chamada dobraria a espera; falhou, as regras de reserva decidem o cenário. O prazo
-    // vem no `signal` do chamador (8s). O `usage` volta pro log do chamador (fora do ledger, ADR-0043).
+    // vem no `signal` do chamador (8s). O `usage` volta pro log do chamador (fora do ledger, ADR-0044).
     let usage: TextUsage | undefined
     try {
       const client = new Anthropic()
@@ -576,7 +576,7 @@ export class FakeClaudeClient implements ClaudeClient {
   // sites existentes compilem sem mudança. `generateRecipeVariants` o devolve (ignora axes/cozinhaSlugs,
   // como os demais), ou estoura se ausente.
   // `cannedMenu` (ADR-0036) é o SEXTO arg OPCIONAL, pela mesma razão. `suggestMenu` o devolve, ou estoura.
-  // `cannedScene` (ADR-0043) é o SÉTIMO arg OPCIONAL, pela mesma razão. `directImageScene` o devolve; sem
+  // `cannedScene` (ADR-0044) é o SÉTIMO arg OPCIONAL, pela mesma razão. `directImageScene` o devolve; sem
   // ele devolve `failed` (NÃO estoura: a imagem nunca depende do diretor, e as rotas de imagem que não
   // configuram o diretor caem nas regras, como em produção quando ele falha).
   /** Última entrada recebida por `directImageScene` (asserções: prompt, modelo, ajuste). */

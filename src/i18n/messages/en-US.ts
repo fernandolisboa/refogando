@@ -292,7 +292,7 @@ export const enUS: Messages = {
     lanche: 'Snack',
     cafe_da_manha: 'Breakfast',
   } satisfies Record<Categoria, string>,
-  // ADR-0043: label for each image scene register (modal picker).
+  // ADR-0044: label for each image scene register (modal picker).
   cenarioLabel: {
     caseiro: 'Home table',
     rustico_tradicional: 'Rustic and traditional',
@@ -438,7 +438,7 @@ export const enUS: Messages = {
     // #265: primary modal CTA in the RESTING state (no preview yet). Distinct from `imagemGerar`
     // ("✨ Generate with AI", outer button) — opening does not generate; only the click does.
     imagemGerarAgora: 'Generate',
-    // ADR-0043: scene picker in the modal. "Automatic" = the art director picks from the recipe.
+    // ADR-0044: scene picker in the modal. "Automatic" = the art director picks from the recipe.
     imagemCenarioRotulo: 'Scene',
     imagemCenarioAutomatico: 'Automatic (from the recipe)',
     imagemCenarioEdicao: 'When editing, the scene comes from the chosen image.',
@@ -1251,7 +1251,7 @@ export const enUS: Messages = {
     vocabNotaVoz: 'Voice note (optional)',
     vocabNotaVozPlaceholder:
       'How the AI should cook in this tradition: typical techniques, ingredients and seasonings. Leave blank to use only the generic instruction.',
-    // ADR-0043: curated visual note per cuisine (goes into the dish IMAGE prompt; no deploy).
+    // ADR-0044: curated visual note per cuisine (goes into the dish IMAGE prompt; no deploy).
     vocabNotaVisual: 'Image visual note (optional)',
     vocabNotaVisualPlaceholder:
       'Typical tableware, plating and surface for this cuisine, used in the generated photo. E.g.: clay pot and wooden spoon, earthy tones.',

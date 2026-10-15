@@ -18,7 +18,7 @@ import { parseSceneChoice } from '@/domain/image-scene'
  */
 
 export const runtime = 'nodejs' // postgres-js + Buffer + fetch exigem Node, não Edge.
-// ADR-0043: o diretor de arte (até 8s) roda antes do Gemini; folga igual à das outras rotas com IA.
+// ADR-0044: o diretor de arte (até 8s) roda antes do Gemini; folga igual à das outras rotas com IA.
 export const maxDuration = 60
 
 export async function POST(
@@ -57,7 +57,7 @@ export async function POST(
     plan: g.session.user.plan,
     promptOverride,
     sourceImageId,
-    // ADR-0043: registro de cenário escolhido no modal; qualquer outro valor ⇒ automático.
+    // ADR-0044: registro de cenário escolhido no modal; qualquer outro valor ⇒ automático.
     sceneChoice: parseSceneChoice(body.cena),
   })
 
@@ -65,7 +65,7 @@ export async function POST(
     case 'ok':
       // #222/#223: devolve a imagem-preview (deselecionada — a face não mudou) + o `basePrompt`
       // (prompt-base montado da receita, pro modal exibir read-only). O cliente nunca envia o base.
-      // ADR-0043: + o cenário usado (registro e quem o escolheu), pro modal mostrar "Cenário: …".
+      // ADR-0044: + o cenário usado (registro e quem o escolheu), pro modal mostrar "Cenário: …".
       return Response.json(
         {
           image: res.image,

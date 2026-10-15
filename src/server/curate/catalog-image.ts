@@ -80,7 +80,7 @@ export async function applyCatalogImageGeneration(input: {
   id: string // já validado uuid pela borda
   curatorId: string // session.user.id (route passou por requireRole 'curador')
   promptOverride?: string
-  // ADR-0043: registro de cenário escolhido pelo curador. Ausente/null ⇒ automático (diretor ou regras).
+  // ADR-0044: registro de cenário escolhido pelo curador. Ausente/null ⇒ automático (diretor ou regras).
   sceneChoice?: ImageSceneRegistro | null
 }): Promise<CatalogImageGenResult> {
   const { db, store, generator, id, curatorId, promptOverride } = input

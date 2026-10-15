@@ -139,7 +139,7 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     spy.mockRestore()
   })
 
-  it('Diretor de arte (ADR-0043): default esforço low + thinking desligado, teto de 400, sinal do chamador, UMA tentativa', async () => {
+  it('Diretor de arte (ADR-0044): default esforço low + thinking desligado, teto de 400, sinal do chamador, UMA tentativa', async () => {
     const scene = { registro: 'bistro', enquadramento: '45_graus', regiao: null, detalhes: null }
     parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: scene, usage: { input_tokens: 50, output_tokens: 9 } })
     const signal = AbortSignal.timeout(8_000)

@@ -554,8 +554,8 @@ describe('#285 image-to-image (editar a partir de outra)', () => {
   })
 })
 
-// ── ADR-0043: cenário da foto (diretor de arte + regras + escolha do usuário + nota visual) ───────────
-describe('/api/recipes/[id]/image/generate — cenário (ADR-0043)', () => {
+// ── ADR-0044: cenário da foto (diretor de arte + regras + escolha do usuário + nota visual) ───────────
+describe('/api/recipes/[id]/image/generate — cenário (ADR-0044)', () => {
   const STREET: ImageSceneDirectorOutput = {
     kind: 'ok',
     scene: { registro: 'comida_de_rua', enquadramento: 'de_cima', regiao: 'Oaxaca', detalhes: 'limão\ne salsa verde' },
