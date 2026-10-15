@@ -100,7 +100,6 @@ export function parseSceneChoice(raw: unknown): ImageSceneRegistro | null {
  */
 export function sanitizeSceneText(raw: unknown, max: number): string | null {
   if (typeof raw !== 'string') return null
-  // eslint-disable-next-line no-control-regex
   const clean = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim()
   if (clean.length === 0) return null
   return clean.length > max ? clean.slice(0, max).trimEnd() : clean

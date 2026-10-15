@@ -14,7 +14,7 @@
 
 ## 2. Evidência
 
-- Testes novos: `test/unit/image-scene.test.ts`, `test/unit/image-prompt.test.ts` (reescrito), o bloco "cenário (ADR-0043)" de `test/integration/recipe-image-generate.test.ts` (diretor ok, falha ⇒ regras, escolha do usuário pula o diretor, `cena` inválida ignorada, diretor desligado, nota visual do banco, edição sem cena), `directImageScene` em `claude-client-real-params`, nota visual em `admin-vocabulary`, `sceneDirector` em `admin-config`, seletor em `recipe-image-manager`.
+- Testes novos: `test/unit/image-scene.test.ts`, `test/unit/image-prompt.test.ts` (reescrito), o bloco "cenário (ADR-0043)" de `test/integration/recipe-image-generate.test.ts` (diretor ok, falha ⇒ regras, diretor que lança ⇒ regras, escolha do usuário pula o diretor com fonte `usuario`, `cena` inválida ignorada, diretor desligado, nota visual do banco, edição sem cena), `cena` na rota da curadoria (`catalog-image.test.ts`), tetos do prompt do diretor, `directImageScene` em `claude-client-real-params`, nota visual em `admin-vocabulary`, `sceneDirector` em `admin-config`, seletor em `recipe-image-manager`.
 - Suíte completa, lint, `tsc` e `next build` verdes localmente (Postgres 17 na 5433).
 
 ## 3. O que muda para quem vê
