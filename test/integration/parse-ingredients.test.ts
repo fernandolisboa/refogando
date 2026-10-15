@@ -98,6 +98,9 @@ class ExplodingClaudeClient implements ClaudeClient {
   async suggestMenu(): Promise<never> {
     throw new Error('seam tocado: suggestMenu não devia ser chamado')
   }
+  async directImageScene(): Promise<never> {
+    throw new Error('seam tocado: directImageScene não devia ser chamado')
+  }
 }
 
 describe('POST /api/parse-ingredients — Extração de ingredientes (#112)', () => {

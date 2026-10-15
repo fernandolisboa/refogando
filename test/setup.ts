@@ -2,7 +2,8 @@ import { afterAll, beforeAll, beforeEach, inject, vi } from 'vitest'
 import type { Sql } from 'postgres'
 import type { Database } from '@/db/client'
 import { makeDb, makeSql } from '@/db/client'
-import { setDb, resetDeps, setModelCatalog, setModelProbe } from '@/server/deps'
+import { setDb, resetDeps, setClaudeClient, setModelCatalog, setModelProbe } from '@/server/deps'
+import { FakeClaudeClient } from '@/server/claude/client'
 import { truncateAll } from './helpers/db'
 import { seedVocabularyCozinhas } from './helpers/vocabulary'
 import { resetFakeNextCache } from './helpers/next-cache'
@@ -36,6 +37,10 @@ beforeEach(async () => {
   setModelCatalog({ listModels: async () => [] })
   // Nem a chamada de teste de modelo (ADR-0034): sem dublê explícito, a Anthropic "aceita" tudo.
   setModelProbe({ probe: async () => ({ kind: 'ok' }) })
+  // Nem o diretor de arte da imagem (ADR-0044): toda geração de imagem o chama por padrão. O dublê sem
+  // nada enlatado devolve `failed` (o cenário cai nas regras) e lança nos demais métodos, então um teste
+  // que gera Receita sem configurar o seu cliente falha alto em vez de tentar a Anthropic de verdade.
+  setClaudeClient(new FakeClaudeClient())
   await truncateAll(sql)
   // Baseline de PRODUÇÃO: `vocabulary_term` nunca está vazia — a migração 0033 (#314) semeia as
   // cozinhas no deploy. `truncateAll` apaga essa seed antes de cada teste, então re-semeamos o

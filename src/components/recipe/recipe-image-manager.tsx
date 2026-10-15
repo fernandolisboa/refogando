@@ -35,6 +35,9 @@ import {
 import type { GalleryImage } from '@/domain/recipe-read'
 // #223: cap do refino vem do domínio (módulo client-safe: puro, sem DB/IO) — evita drift cliente/servidor.
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
+// ADR-0044: registros de cenário (módulo client-safe, sem zod nem o prompt do diretor).
+import { IMAGE_SCENE_REGISTROS, isImageSceneRegistro, type ImageSceneRegistro } from '@/domain/image-scene'
+import { fieldClassName } from '@/components/button'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
 import { isFreePlanUser } from '@/domain/plan'
 import { imageSrcSetProps } from '@/domain/image-variants'
@@ -103,6 +106,7 @@ export function RecipeImageManager({
 }) {
   const { messages } = useLocale()
   const m = messages.detalhe
+  const cenarioLabel = messages.cenarioLabel
   const router = useRouter()
   // Fase 2 de billing (flag-off): este componente só monta pro DONO (`view.canManage`), então a
   // sessão já está presente aqui — só o plano decide se o upsell aparece no limite.
@@ -125,6 +129,10 @@ export function RecipeImageManager({
   const [refino, setRefino] = useState('')
   const [showRefino, setShowRefino] = useState(false)
   const [basePrompt, setBasePrompt] = useState<string | null>(null)
+  // ADR-0044: cenário escolhido no modal ('' = automático: o diretor de arte escolhe pela receita) e o
+  // cenário que o servidor usou na última geração (pra mostrar "Cenário: …"; null na edição).
+  const [cena, setCena] = useState<ImageSceneRegistro | ''>('')
+  const [cenaUsada, setCenaUsada] = useState<ImageSceneRegistro | null>(null)
   // DECISION 6: houve ≥1 geração nesta sessão de modal? ⇒ refresh ao fechar sem selecionar.
   const [generatedThisSession, setGeneratedThisSession] = useState(false)
   // #265: geração-EM-CURSO (≠ `busy` genérico). Distingue "gerando" de operações da galeria
@@ -155,6 +163,8 @@ export function RecipeImageManager({
       const payload = {
         ...(trimmed ? { prompt: trimmed } : {}),
         ...(editBaseId ? { sourceImageId: editBaseId } : {}),
+        // ADR-0044: só manda o cenário quando escolhido e fora da edição (a edição mantém a cena da foto).
+        ...(cena && !editBaseId ? { cena } : {}),
       }
       const res = await fetch(`/api/recipes/${recipeId}/image/generate`, {
         method: 'POST',
@@ -182,8 +192,13 @@ export function RecipeImageManager({
         setStatus('idle')
         return
       }
-      const body = (await res.json().catch(() => ({}))) as { image?: PreviewImage; basePrompt?: string }
+      const body = (await res.json().catch(() => ({}))) as {
+        image?: PreviewImage
+        basePrompt?: string
+        scene?: { registro?: unknown } | null
+      }
       if (body.image) setPreview(body.image)
+      setCenaUsada(isImageSceneRegistro(body.scene?.registro) ? body.scene.registro : null)
       // #223: guarda o prompt-base devolvido (pro reveal read-only). Vem do servidor a cada geração.
       if (typeof body.basePrompt === 'string') setBasePrompt(body.basePrompt)
       setGeneratedThisSession(true) // DECISION 6: a galeria server-side mudou
@@ -211,6 +226,8 @@ export function RecipeImageManager({
     setRefino('')
     setShowRefino(false)
     setBasePrompt(null)
+    setCena('')
+    setCenaUsada(null)
     // #285: from-scratch zera o modo edição (defesa: nunca vazar um sourceImageId stale numa geração
     // do zero — entrada autoritativa, não depende do fechamento anterior ter limpado).
     setEditBaseId(null)
@@ -231,6 +248,8 @@ export function RecipeImageManager({
     setRefino('')
     setShowRefino(true)
     setBasePrompt(null)
+    setCena('') // a edição não usa cenário; "Cancelar edição" volta ao Automático
+    setCenaUsada(null)
     setModalOpen(true)
   }
 
@@ -245,6 +264,8 @@ export function RecipeImageManager({
       setRefino('')
       setShowRefino(false)
       setBasePrompt(null)
+      setCena('')
+      setCenaUsada(null)
       // #285: sai do modo edição ao fechar.
       setEditBaseId(null)
     }
@@ -574,6 +595,36 @@ export function RecipeImageManager({
                 <p role="alert" className="font-medium text-fg">
                   {m.imagemGerarErro}
                 </p>
+              )}
+            </div>
+
+            {/* ADR-0044: cenário da foto. "Automático" deixa o diretor de arte escolher pela receita; um
+                registro gera direto naquela cena. Na edição a cena vem da imagem-base (seletor travado). */}
+            <div className="flex w-full max-w-prose flex-col gap-1 text-sm">
+              <label className="flex flex-col gap-1 font-medium text-fg">
+                {m.imagemCenarioRotulo}
+                <select
+                  value={editBaseId ? '' : cena}
+                  onChange={(e) => setCena(isImageSceneRegistro(e.target.value) ? e.target.value : '')}
+                  disabled={busy || !!editBaseId}
+                  aria-describedby={editBaseId ? 'imagem-cenario-edicao' : undefined}
+                  className={fieldClassName}
+                >
+                  <option value="">{m.imagemCenarioAutomatico}</option>
+                  {IMAGE_SCENE_REGISTROS.map((r) => (
+                    <option key={r} value={r}>
+                      {cenarioLabel[r]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {editBaseId && (
+                <p id="imagem-cenario-edicao" className="text-muted">
+                  {m.imagemCenarioEdicao}
+                </p>
+              )}
+              {preview && cenaUsada && (
+                <p className="text-muted">{m.imagemCenarioUsado.replace('{cenario}', cenarioLabel[cenaUsada])}</p>
               )}
             </div>
 

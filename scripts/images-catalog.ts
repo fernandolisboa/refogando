@@ -6,7 +6,9 @@
 // É um passo de DADOS (não migração): `tsx --env-file=.env.local scripts/images-catalog.ts`. O
 // .env.local aponta pro DB de PRODUÇÃO **e precisa das credenciais de imagem** (chave Gemini +
 // token do Blob) — as MESMAS da geração ao vivo. CUSTA DINHEIRO: ~7¢ USD (~R$0,36) por imagem
-// gerada (ledger `image_generation`). Idempotente por construção: pula quem já tem face.
+// gerada (ledger `image_generation`), mais ~0,6¢ do diretor de arte do cenário (ADR-0044; fora do
+// ledger, só no log `[image-scene]`; sem ANTHROPIC_API_KEY ele falha e o cenário sai das regras).
+// Idempotente por construção: pula quem já tem face.
 //
 // AUTO-SELECIONA a face (núcleo, autoSelect=true) e escreve no ledger (custo). Cada geração é
 // independente — uma falha (Gemini/Blob fora) NÃO aborta o lote (loga e segue).

@@ -59,6 +59,7 @@ function configBody(
         curador: over.curador ?? 5,
         admin: over.admin ?? null,
       },
+      sceneDirector: true,
     },
     recipeGenCapByRole: {
       usuario: over.recipeUsuario ?? 10,
@@ -129,6 +130,7 @@ describe('AiConfigSection (#134 + #167)', () => {
     renderSection()
 
     await user.click(await screen.findByLabelText(A.aiHabilitadaLabel)) // desliga
+    await user.click(screen.getByLabelText(A.aiCenarioDiretorLabel)) // desliga o diretor do cenário
     const imgUsuario = within(fieldsetByLegend(A.aiTetosLabel)).getByLabelText(A.papelUsuario)
     await user.clear(imgUsuario)
     await user.type(imgUsuario, '2')
@@ -144,6 +146,7 @@ describe('AiConfigSection (#134 + #167)', () => {
         enabled: false,
         model: DEFAULT_IMAGE_MODEL,
         dailyCapByRole: { usuario: 2, curador: 5, admin: null },
+        sceneDirector: false,
       },
       recipeGenCapByRole: { usuario: 7, curador: 20, admin: null },
       // #423: a seção também envia o eixo de variação (default, não editado neste caso).

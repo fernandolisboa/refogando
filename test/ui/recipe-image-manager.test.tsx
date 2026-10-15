@@ -550,6 +550,40 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect((within(dialog2).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement).value).toBe('')
   })
 
+  it('ADR-0044: o cenário escolhido vai como `cena`, o usado aparece depois de gerar, e reabrir volta ao automático', async () => {
+    const user = userEvent.setup()
+    const { calls } = mockFetch((method, url) =>
+      method === 'POST' && url.endsWith('/image/generate')
+        ? {
+            status: 200,
+            body: {
+              image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true },
+              basePrompt: 'Prato: Feijoada.',
+              scene: { registro: 'boteco', fonte: 'regras' },
+            },
+          }
+        : { status: 405 },
+    )
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    const select = within(dialog).getByLabelText(M.imagemCenarioRotulo) as HTMLSelectElement
+    expect(select.value).toBe('')
+    await user.selectOptions(select, 'boteco')
+    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+    await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
+    const gen = calls.filter((c) => c.url.endsWith('/image/generate'))
+    expect(JSON.parse(String(gen[0].body))).toEqual({ cena: 'boteco' })
+    expect(within(dialog).getByText(M.imagemCenarioUsado.replace('{cenario}', ptBR.cenarioLabel.boteco))).toBeInTheDocument()
+
+    await user.click(within(dialog).getByLabelText(M.imagemFechar))
+    await waitFor(() => expect(within(document.body).queryByRole('dialog')).not.toBeInTheDocument())
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog2 = await screen.findByRole('dialog')
+    expect((within(dialog2).getByLabelText(M.imagemCenarioRotulo) as HTMLSelectElement).value).toBe('')
+  })
+
   it('#222 cap 429 no modal: mostra o countdown e NÃO chama refresh', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 429, body: { error: 'limite_geracao', retryAfterMs: 3600000 } }))

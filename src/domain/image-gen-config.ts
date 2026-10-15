@@ -5,12 +5,13 @@
  * (singleton `app_config`) e passa os valores no lugar dos fixos. `decideImageQuota` já recebe o
  * `cap` por parâmetro — aqui só resolvemos o cap A PARTIR da config.
  *
- * Forma `imageGen { enabled, model, dailyCapByRole }`:
+ * Forma `imageGen { enabled, model, dailyCapByRole, sceneDirector }`:
  *  - `enabled`: liga/desliga a geração (desligada ⇒ a rota bloqueia, a UI esconde a ação).
  *  - `model`: modelo do gerador (allowlist EM CÓDIGO — muda mais rápido que migração; estática de
  *    propósito, ao contrário da lista viva do `default_model`, ADR-0033). Repassado ao seam `ImageGenerator`.
  *  - `dailyCapByRole`: teto diário por papel na janela 24h. `null` = ILIMITADO (admin ∞) — JSON não
  *    tem `Infinity`, então persistimos `null` no jsonb e mapeamos `null → Infinity` em `capFromConfig`.
+ *  - `sceneDirector` (ADR-0044): liga/desliga o diretor de arte que escolhe o cenário de cada imagem.
  */
 
 import { ROLES, type Role } from '@/domain/user'
@@ -47,6 +48,11 @@ export type ImageGenConfig = {
   enabled: boolean
   model: ImageGenModel
   dailyCapByRole: ImageGenCapByRole
+  /**
+   * ADR-0044: o diretor de arte (tarefa `imageScene`) escolhe o cenário de cada imagem. Desligado ⇒ só
+   * as regras de reserva (categoria + cozinha), sem chamada extra. Default ligado.
+   */
+  sceneDirector: boolean
 }
 
 /** Config default (geração LIGADA, modelo default, tetos fixos da #132) — usada quando não há linha. */
@@ -54,6 +60,7 @@ export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
   enabled: true,
   model: DEFAULT_IMAGE_MODEL,
   dailyCapByRole: DEFAULT_IMAGE_GEN_CAP_BY_ROLE,
+  sceneDirector: true,
 }
 
 /**
@@ -106,21 +113,33 @@ export function parseImageGenCapByRole(raw: unknown): ImageGenCapByRole | null {
   return out
 }
 
+/** Valor do PUT: os 3 campos de sempre + `sceneDirector` OPCIONAL (ausente ⇒ a coluna não muda). */
+export type ImageGenConfigUpdate = Omit<ImageGenConfig, 'sceneDirector'> & { sceneDirector?: boolean }
+
 export type ImageGenConfigParse =
-  | { ok: true; value: ImageGenConfig }
+  | { ok: true; value: ImageGenConfigUpdate }
   | { ok: false }
 
 /**
- * Valida o objeto `imageGen` cru do PUT (substituição COMPLETA — a UI sempre envia os 3 campos).
- * `enabled` boolean; `model` na allowlist; `dailyCapByRole` válido. Qualquer desvio ⇒ `{ ok: false }`
- * (o route mapeia a 400). PURO: sem DB/I/O.
+ * Valida o objeto `imageGen` cru do PUT (substituição COMPLETA dos 3 campos — a UI sempre os envia).
+ * `enabled` boolean; `model` na allowlist; `dailyCapByRole` válido; `sceneDirector` (ADR-0044) opcional,
+ * mas boolean quando presente. Qualquer desvio ⇒ `{ ok: false }` (o route mapeia a 400). PURO.
  */
 export function parseImageGenConfig(raw: unknown): ImageGenConfigParse {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false }
-  const obj = raw as { enabled?: unknown; model?: unknown; dailyCapByRole?: unknown }
+  const obj = raw as { enabled?: unknown; model?: unknown; dailyCapByRole?: unknown; sceneDirector?: unknown }
   if (typeof obj.enabled !== 'boolean') return { ok: false }
   if (!isImageGenModel(obj.model)) return { ok: false }
   const caps = parseImageGenCapByRole(obj.dailyCapByRole)
   if (caps === null) return { ok: false }
-  return { ok: true, value: { enabled: obj.enabled, model: obj.model, dailyCapByRole: caps } }
+  if (obj.sceneDirector !== undefined && typeof obj.sceneDirector !== 'boolean') return { ok: false }
+  return {
+    ok: true,
+    value: {
+      enabled: obj.enabled,
+      model: obj.model,
+      dailyCapByRole: caps,
+      ...(obj.sceneDirector !== undefined ? { sceneDirector: obj.sceneDirector } : {}),
+    },
+  }
 }

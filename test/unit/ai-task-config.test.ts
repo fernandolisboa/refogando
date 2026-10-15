@@ -68,6 +68,7 @@ describe('resolveAiTasks + activeSettings', () => {
     translation: 'claude-sonnet-5',
     extraction: 'claude-sonnet-5',
     menu: 'claude-sonnet-5',
+    imageScene: 'claude-sonnet-5',
   }
 
   it('Geração sempre usa o modelo de fora (coluna); Tradução/Extração usam o jsonb quando tem', () => {

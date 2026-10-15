@@ -66,6 +66,8 @@ export function AiConfigSection() {
 
   const [enabled, setEnabled] = useState(true)
   const [model, setModel] = useState<string>(DEFAULT_IMAGE_MODEL)
+  // ADR-0044: diretor de arte do cenário (a tarefa `imageScene` define o modelo, no bloco de tarefas).
+  const [sceneDirector, setSceneDirector] = useState(true)
   const [caps, setCaps] = useState<CapsForm>(() => capsToForm({ usuario: 3, curador: 5, admin: null }))
   // #167: teto de geração de RECEITA por papel (eixo separado do teto de imagem).
   const [recipeCaps, setRecipeCaps] = useState<CapsForm>(() =>
@@ -91,6 +93,7 @@ export function AiConfigSection() {
     recipeVariant: RecipeVariantConfig
   }) {
     setEnabled(cfg.imageGen.enabled)
+    setSceneDirector(cfg.imageGen.sceneDirector)
     setModel(cfg.imageGen.model)
     setCaps(capsToForm(cfg.imageGen.dailyCapByRole))
     setRecipeCaps(capsToForm(cfg.recipeGenCapByRole))
@@ -115,6 +118,7 @@ export function AiConfigSection() {
       // Inline (não via `applyConfig`): assim `load` fecha SÓ sobre setters estáveis + a pura
       // `capsToForm` (módulo) ⇒ o effect de montagem não acusa exhaustive-deps (espelha config-section).
       setEnabled(body.imageGen.enabled)
+      setSceneDirector(body.imageGen.sceneDirector)
       setModel(body.imageGen.model)
       setCaps(capsToForm(body.imageGen.dailyCapByRole))
       setRecipeCaps(capsToForm(body.recipeGenCapByRole))
@@ -159,7 +163,7 @@ export function AiConfigSection() {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          imageGen: { enabled, model, dailyCapByRole },
+          imageGen: { enabled, model, dailyCapByRole, sceneDirector },
           recipeGenCapByRole,
           recipeVariant: {
             enabled: variant.enabled,
@@ -230,6 +234,23 @@ export function AiConfigSection() {
               />
               {m.aiHabilitadaLabel}
             </label>
+
+            {/* ADR-0044: diretor de arte — escolhe o cenário de cada imagem pela receita. */}
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-sm font-medium text-fg">
+                <input
+                  type="checkbox"
+                  checked={sceneDirector}
+                  onChange={(e) => {
+                    setSceneDirector(e.target.checked)
+                    setStatus('idle')
+                  }}
+                  className="size-4 rounded border-border"
+                />
+                {m.aiCenarioDiretorLabel}
+              </label>
+              <p className="max-w-[60ch] text-sm text-muted">{m.aiCenarioDiretorAjuda}</p>
+            </div>
 
             {/* Modelo */}
             <label className="flex max-w-xs flex-col gap-1 text-sm font-medium text-fg">

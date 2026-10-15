@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/[id]/image/generate/route'
 import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/select/route'
-import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
+import { getDb, setClaudeClient, setImageStore, setImageGenerator } from '@/server/deps'
+import { FakeClaudeClient } from '@/server/claude/client'
+import { SCENE_LIBRARY } from '@/domain/image-scene'
+import type { ImageSceneDirectorOutput } from '@/domain/image-scene-schema'
+import { vocabularyTerm } from '@/db/schema'
 import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator, FAKE_IMAGE_USAGE } from '@/server/images/image-generator'
 import { recipe, recipeImage, imageGeneration, appConfig, users } from '@/db/schema'
@@ -547,5 +551,138 @@ describe('#285 image-to-image (editar a partir de outra)', () => {
     const res = await POST(genReq(id, headers, 'mais clara', source.id), ctx(id))
     expect(res.status).toBe(503)
     expect(await countAiGen()).toBe(before) // nada nasceu (falhou antes do insert)
+  })
+})
+
+// ── ADR-0044: cenário da foto (diretor de arte + regras + escolha do usuário + nota visual) ───────────
+describe('/api/recipes/[id]/image/generate — cenário (ADR-0044)', () => {
+  const STREET: ImageSceneDirectorOutput = {
+    kind: 'ok',
+    scene: { registro: 'comida_de_rua', enquadramento: 'de_cima', regiao: 'Oaxaca', detalhes: 'limão\ne salsa verde' },
+    usage: { inputTokens: 900, outputTokens: 40 },
+  }
+  function director(out?: ImageSceneDirectorOutput): FakeClaudeClient {
+    const c = new FakeClaudeClient(undefined, undefined, undefined, undefined, undefined, undefined, out)
+    setClaudeClient(c)
+    return c
+  }
+  function genReqBody(id: string, headers: Headers, body: Record<string, unknown>): Request {
+    return new Request(`http://localhost/api/recipes/${id}/image/generate`, {
+      method: 'POST',
+      headers: { ...Object.fromEntries(headers), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+  const includesAny = (text: string | null | undefined, variants: readonly string[]) => variants.some((v) => text?.includes(v))
+
+  it('diretor ok ⇒ a cena do registro dele, região e detalhes (sanitizados) entram no prompt e voltam na resposta', async () => {
+    const claude = director(STREET)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-ok@gen.test' })
+    const id = await seedOwned(userId, 'Tacos al pastor')
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { scene: { registro: string; fonte: string } | null; basePrompt: string }
+    expect(body.scene).toEqual({ registro: 'comida_de_rua', fonte: 'diretor' })
+    expect(includesAny(gen.lastPrompt, SCENE_LIBRARY.comida_de_rua)).toBe(true)
+    expect(gen.lastPrompt).toContain('Região de origem do prato: Oaxaca.')
+    expect(gen.lastPrompt).toContain('Detalhes de cena: limão e salsa verde.') // quebra de linha virou espaço
+    expect(gen.lastPrompt).toContain('Prato: Tacos al pastor.')
+    expect(body.basePrompt).toBe(gen.lastPrompt)
+    // O diretor recebeu a receita delimitada e o modelo/ajuste da tarefa `imageScene` (defaults).
+    expect(claude.sceneCalls).toBe(1)
+    expect(claude.lastSceneInput?.userPrompt).toContain('Título: Tacos al pastor')
+    expect(claude.lastSceneInput?.model).toBe('claude-sonnet-5')
+    expect(claude.lastSceneInput?.settings).toEqual({ effort: 'low', thinking: 'off' })
+  })
+
+  it('diretor falha ⇒ regras (brasileira ⇒ caseiro) e a imagem sai normalmente', async () => {
+    director({ kind: 'failed' })
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-falha@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { scene: { registro: string; fonte: string } }
+    expect(body.scene).toEqual({ registro: 'caseiro', fonte: 'regras' })
+    expect(includesAny(gen.lastPrompt, SCENE_LIBRARY.caseiro)).toBe(true)
+    expect(gen.calls).toBe(1)
+  })
+
+  it('cenário escolhido pelo usuário ⇒ pula o diretor e gera naquela cena', async () => {
+    const claude = director(STREET)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-escolha@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReqBody(id, headers, { cena: 'alta_gastronomia' }), ctx(id))
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'alta_gastronomia', fonte: 'usuario' })
+    expect(includesAny(gen.lastPrompt, SCENE_LIBRARY.alta_gastronomia)).toBe(true)
+    expect(claude.sceneCalls).toBe(0)
+  })
+
+  it('diretor que lança ⇒ regras e a imagem sai mesmo assim (falha acessória nunca derruba a geração)', async () => {
+    const claude = new FakeClaudeClient()
+    claude.directImageScene = async () => {
+      throw new Error('boom')
+    }
+    setClaudeClient(claude)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-lanca@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'caseiro', fonte: 'regras' })
+    expect(gen.calls).toBe(1)
+  })
+
+  it('cenário inválido no corpo ⇒ ignorado (automático: o diretor decide)', async () => {
+    const claude = director(STREET)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-lixo@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReqBody(id, headers, { cena: 'nave_espacial' }), ctx(id))
+    expect(res.status).toBe(200)
+    expect(claude.sceneCalls).toBe(1)
+  })
+
+  it('diretor desligado no admin ⇒ não é chamado; regras decidem', async () => {
+    const claude = director(STREET)
+    await getDb().insert(appConfig).values({ id: true, imageSceneDirectorEnabled: false })
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-off@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200)
+    expect(claude.sceneCalls).toBe(0)
+    expect(((await res.json()) as { scene: { fonte: string } }).scene.fonte).toBe('regras')
+  })
+
+  it('a nota visual da cozinha (vocabulary_term.visual_note) entra no prompt', async () => {
+    director({ kind: 'failed' })
+    await getDb()
+      .update(vocabularyTerm)
+      .set({ visualNote: 'prato rústico ou panela de barro' })
+      .where(eq(vocabularyTerm.slug, 'brasileira'))
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-nota@gen.test' })
+    const id = await seedOwned(userId)
+
+    expect((await POST(genReq(id, headers), ctx(id))).status).toBe(200)
+    expect(gen.lastPrompt).toContain('Referências visuais da cozinha, só no que combinar com a cena: prato rústico ou panela de barro.')
+  })
+
+  it('edição imagem-a-imagem ⇒ sem diretor e sem cenário no prompt (a cena já está na foto-base)', async () => {
+    const claude = director(STREET)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-edit@gen.test' })
+    const id = await seedOwned(userId)
+    const first = (await (await POST(genReq(id, headers), ctx(id))).json()) as { image: { id: string } }
+    claude.sceneCalls = 0
+
+    const res = await POST(genReqBody(id, headers, { prompt: 'mais luz', sourceImageId: first.image.id, cena: 'boteco' }), ctx(id))
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { scene: unknown }).scene).toBeNull()
+    expect(claude.sceneCalls).toBe(0)
+    expect(gen.lastPrompt).not.toContain('Cena:')
+    expect(gen.lastPrompt).toContain('Prato: Bolo de fubá.')
   })
 })

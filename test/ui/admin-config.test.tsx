@@ -69,6 +69,7 @@ function aiTasks(over: Partial<Record<string, { model: string; byModel: Record<s
     translation: { model: 'claude-sonnet-5', byModel: {} },
     extraction: { model: 'claude-sonnet-5', byModel: {} },
     menu: { model: 'claude-sonnet-5', byModel: {} },
+    imageScene: { model: 'claude-sonnet-5', byModel: {} },
     ...over,
   }
 }

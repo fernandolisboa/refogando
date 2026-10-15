@@ -114,6 +114,7 @@ describe('/api/admin/config — imageGen (#134, admin-only)', () => {
     enabled: false,
     model: DEFAULT_IMAGE_MODEL,
     dailyCapByRole: { usuario: 1, curador: 2, admin: null },
+    sceneDirector: true,
   }
 
   it('GET traz imageGen com defaults em código quando a linha está ausente', async () => {
@@ -123,7 +124,25 @@ describe('/api/admin/config — imageGen (#134, admin-only)', () => {
       enabled: true,
       model: DEFAULT_IMAGE_MODEL,
       dailyCapByRole: { usuario: 3, curador: 5, admin: null },
+      sceneDirector: true,
     })
+  })
+
+  // ADR-0044: `sceneDirector` é opcional no PUT — ausente não mexe na coluna; presente grava.
+  it('PUT imageGen com sceneDirector=false desliga o diretor; PUT sem o campo não o religa', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ig-scene@cfg.test', role: 'admin' })
+    const off = await put({ imageGen: { ...okImageGen, sceneDirector: false } }, headers)
+    expect(off.status).toBe(200)
+    expect(((await off.json()) as { imageGen: ImageGenConfig }).imageGen.sceneDirector).toBe(false)
+
+    const { sceneDirector: _omit, ...semCampo } = okImageGen
+    void _omit
+    const again = await put({ imageGen: semCampo }, headers)
+    expect(again.status).toBe(200)
+    expect(((await again.json()) as { imageGen: ImageGenConfig }).imageGen.sceneDirector).toBe(false)
+
+    const bad = await put({ imageGen: { ...okImageGen, sceneDirector: 'sim' } }, headers)
+    expect(bad.status).toBe(400)
   })
 
   it('PUT imageGen válido persiste e GET relê (round-trip) — sem afetar defaultModel', async () => {
@@ -784,6 +803,7 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
       translation: { model: 'claude-sonnet-5', byModel: {} },
       extraction: { model: 'claude-sonnet-5', byModel: {} },
       menu: { model: 'claude-sonnet-5', byModel: {} },
+      imageScene: { model: 'claude-sonnet-5', byModel: {} },
     })
   })
 

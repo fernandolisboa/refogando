@@ -2,135 +2,121 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDishImagePrompt,
   buildStylePreamble,
-  cuisineVisualConvention,
-  hashString,
   composeImagePrompt,
   composeEditImagePrompt,
   IMAGE_PROMPT_OVERRIDE_MAX,
+  STYLE_LIBRARY_VERSION,
 } from '@/domain/image-prompt'
+import { SCENE_LIBRARY, type ImageScene } from '@/domain/image-scene'
 
-/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017; variedade #424, ADR-0029 dec.5). */
+/** Montagem PURA do prompt de imagem do prato (#132, ADR-0017; cenário ADR-0044). */
+
+const SCENE: ImageScene = {
+  registro: 'caseiro',
+  enquadramento: '45_graus',
+  regiao: null,
+  detalhes: null,
+  fonte: 'regras',
+}
+
+function input(over: Partial<Parameters<typeof buildDishImagePrompt>[0]> = {}) {
+  return {
+    recipeId: 'r1',
+    titulo: 'Feijoada',
+    cozinha: 'brasileira',
+    categoria: 'prato_principal',
+    ingredientes: ['feijão preto', 'carne seca'],
+    scene: SCENE,
+    visualNote: null,
+    ...over,
+  }
+}
 
 describe('buildDishImagePrompt', () => {
   it('inclui título, ingredientes e estilo (cozinha/categoria)', () => {
-    const p = buildDishImagePrompt({
-      recipeId: 'r1',
-      titulo: 'Feijoada',
-      cozinha: 'brasileira',
-      categoria: 'prato_principal',
-      ingredientes: ['feijão preto', 'carne seca'],
-    })
-    expect(p).toContain('Feijoada')
+    const p = buildDishImagePrompt(input())
+    expect(p).toContain('Prato: Feijoada.')
     expect(p).toContain('feijão preto, carne seca')
     expect(p).toContain('brasileira, prato_principal')
   })
 
   it('omite a seção de ingredientes quando vazia (e ignora rótulos em branco)', () => {
-    const p = buildDishImagePrompt({ recipeId: 'r1', titulo: 'Água', cozinha: null, categoria: null, ingredientes: ['', '  '] })
+    const p = buildDishImagePrompt(input({ titulo: 'Água', cozinha: null, categoria: null, ingredientes: ['', '  '] }))
     expect(p).toContain('Água')
     expect(p).not.toContain('Ingredientes principais')
     expect(p).not.toContain('Estilo:')
   })
 
   it('determinístico: mesma entrada ⇒ mesma saída', () => {
-    const input = { recipeId: 'r1', titulo: 'Bolo', cozinha: 'francesa', categoria: null, ingredientes: ['farinha'] }
-    expect(buildDishImagePrompt(input)).toBe(buildDishImagePrompt(input))
+    expect(buildDishImagePrompt(input())).toBe(buildDishImagePrompt(input()))
   })
 
   it('trima o título', () => {
-    expect(buildDishImagePrompt({ recipeId: 'r1', titulo: '  Torta  ', cozinha: null, categoria: null, ingredientes: [] })).toContain('Prato: Torta.')
+    expect(buildDishImagePrompt(input({ titulo: '  Torta  ' }))).toContain('Prato: Torta.')
   })
 
-  it('o prato (base) segue sendo o sujeito mesmo com a rotação de estilo (#424, invariante ADR-0022)', () => {
-    const p = buildDishImagePrompt({ recipeId: 'abc', titulo: 'Moqueca', cozinha: 'baiana', categoria: null, ingredientes: ['peixe'] })
-    expect(p).toContain('Prato: Moqueca.')
-    expect(p).toContain('Fotografia de comida realista')
-  })
-})
-
-/**
- * #424 — variedade AUTOMÁTICA e DETERMINÍSTICA por receita (ADR-0029 dec.5). O preâmbulo vira uma
- * composição rotacionada por hash do `recipeId`; um MAPA cozinha → convenção visual enriquece por
- * cozinha. Puro, sem Date.now/Math.random. Mesma receita ⇒ mesma foto; ids distintos ⇒ diversidade.
- */
-describe('hashString', () => {
-  it('é puro e determinístico: mesma string ⇒ mesmo número', () => {
-    expect(hashString('r1')).toBe(hashString('r1'))
-    expect(hashString('')).toBe(hashString(''))
-  })
-
-  it('strings distintas tendem a números distintos', () => {
-    expect(hashString('r1')).not.toBe(hashString('r2'))
-    expect(hashString('abc')).not.toBe(hashString('cba'))
-  })
-
-  it('devolve um uint32 não-negativo', () => {
-    for (const s of ['', 'r1', 'moqueca', 'x'.repeat(100)]) {
-      const h = hashString(s)
-      expect(Number.isInteger(h)).toBe(true)
-      expect(h).toBeGreaterThanOrEqual(0)
-      expect(h).toBeLessThanOrEqual(0xffffffff)
+  it('o prato segue sendo o sujeito em qualquer cenário (invariante ADR-0022)', () => {
+    for (const registro of Object.keys(SCENE_LIBRARY) as ImageScene['registro'][]) {
+      const p = buildDishImagePrompt(input({ titulo: 'Moqueca', scene: { ...SCENE, registro } }))
+      expect(p).toContain('Prato: Moqueca.')
+      expect(p).toContain('o sujeito principal da foto')
     }
   })
-})
 
-describe('buildStylePreamble (rotação determinística #424)', () => {
-  it('mesma receita ⇒ MESMO preâmbulo (foto estável até regerar)', () => {
-    expect(buildStylePreamble('recipe-42', 'italiana')).toBe(buildStylePreamble('recipe-42', 'italiana'))
-  })
-
-  it('ancora SEMPRE a base fotográfica realista (nenhum eixo a substitui)', () => {
-    expect(buildStylePreamble('anything', null)).toContain('Fotografia de comida realista')
-  })
-
-  it('ids diferentes ⇒ diversidade real de presets (não tudo igual)', () => {
-    const ids = Array.from({ length: 60 }, (_, i) => `recipe-${i}`)
-    const preambulos = new Set(ids.map((id) => buildStylePreamble(id, null)))
-    // Com 4 eixos de ≥5 opções, dezenas de receitas devem render muitos preâmbulos distintos.
-    expect(preambulos.size).toBeGreaterThan(10)
-  })
-
-  it('os eixos rotacionam de forma independente (não em lockstep)', () => {
-    // Dois ids que colidem num eixo não precisam colidir nos outros — a diversidade não desaba.
-    const a = buildStylePreamble('seed-A', null)
-    const b = buildStylePreamble('seed-B', null)
-    expect(a).not.toBe(b)
+  it('não usa mais "editorial" (o termo puxava toda foto pro mesmo look)', () => {
+    expect(buildDishImagePrompt(input())).not.toMatch(/editorial/i)
   })
 })
 
-describe('cuisineVisualConvention (mapa cozinha → convenção #424)', () => {
-  it('cozinhas distintas ⇒ convenções visuais distintas (baiana ≠ japonesa)', () => {
-    const baiana = cuisineVisualConvention('baiana')
-    const japonesa = cuisineVisualConvention('japonesa')
-    expect(baiana).toBeTruthy()
-    expect(japonesa).toBeTruthy()
-    expect(baiana).not.toBe(japonesa)
+describe('buildStylePreamble (cenário, ADR-0044)', () => {
+  it('a cena vem do registro: registros distintos ⇒ cenas distintas', () => {
+    const casa = buildStylePreamble('r1', { ...SCENE, registro: 'caseiro' }, null)
+    const fino = buildStylePreamble('r1', { ...SCENE, registro: 'alta_gastronomia' }, null)
+    expect(casa).not.toBe(fino)
+    expect(SCENE_LIBRARY.alta_gastronomia.some((v) => fino.includes(v))).toBe(true)
+    expect(SCENE_LIBRARY.caseiro.some((v) => casa.includes(v))).toBe(true)
   })
 
-  it('cozinha não-mapeada ou nula ⇒ undefined (fallback silencioso, sem abrir cozinha livre)', () => {
-    expect(cuisineVisualConvention(null)).toBeUndefined()
-    expect(cuisineVisualConvention(undefined)).toBeUndefined()
-    expect(cuisineVisualConvention('marciana')).toBeUndefined()
+  it('a variante do registro é estável por receita e varia entre receitas', () => {
+    expect(buildStylePreamble('r1', SCENE, null)).toBe(buildStylePreamble('r1', SCENE, null))
+    const variantes = new Set(Array.from({ length: 30 }, (_, i) => buildStylePreamble(`r${i}`, SCENE, null)))
+    expect(variantes.size).toBeGreaterThan(1)
   })
 
-  it('a cozinha muda o preâmbulo (convenção entra no texto)', () => {
-    const jp = buildStylePreamble('mesmo-id', 'japonesa')
-    const br = buildStylePreamble('mesmo-id', 'baiana')
-    // Mesmo id ⇒ mesmos eixos de rotação; só a convenção da cozinha difere ⇒ preâmbulos distintos.
-    expect(jp).not.toBe(br)
-    expect(jp).toContain('Apresentação típica da cozinha')
+  it('o enquadramento entra como câmera', () => {
+    expect(buildStylePreamble('r1', { ...SCENE, enquadramento: 'de_cima' }, null)).toContain('Câmera: vista de cima')
   })
 
-  it('sem convenção mapeada ⇒ não injeta a linha de cozinha no preâmbulo', () => {
-    expect(buildStylePreamble('id', 'marciana')).not.toContain('Apresentação típica da cozinha')
+  it('região e detalhes entram só quando presentes', () => {
+    const sem = buildStylePreamble('r1', SCENE, null)
+    expect(sem).not.toContain('Região de origem')
+    expect(sem).not.toContain('Detalhes de cena')
+    const com = buildStylePreamble('r1', { ...SCENE, regiao: 'Oaxaca', detalhes: 'limão e salsa verde' }, null)
+    expect(com).toContain('Região de origem do prato: Oaxaca.')
+    expect(com).toContain('Detalhes de cena: limão e salsa verde.')
+  })
+
+  it('a nota visual da cozinha entra subordinada à cena; nula/em branco não entra', () => {
+    expect(buildStylePreamble('r1', SCENE, 'panela de barro')).toContain(
+      'Referências visuais da cozinha, só no que combinar com a cena: panela de barro.',
+    )
+    expect(buildStylePreamble('r1', SCENE, '   ')).not.toContain('Referências visuais')
+    expect(buildStylePreamble('r1', SCENE, null)).not.toContain('Referências visuais')
+  })
+
+  it('sem cenário (edição) ⇒ só a base, sem cena nem câmera nem nota', () => {
+    const p = buildStylePreamble('r1', null, 'panela de barro')
+    expect(p).toContain('Fotografia de comida realista')
+    expect(p).not.toContain('Cena:')
+    expect(p).not.toContain('Câmera:')
+    expect(p).not.toContain('Referências visuais')
+  })
+
+  it('versão da biblioteca subiu para 2 (proveniência do prompt)', () => {
+    expect(STYLE_LIBRARY_VERSION).toBe(2)
   })
 })
 
-/**
- * Composição segura do prompt (#214/#223, stopgap de segurança → template estruturado): o `base` da
- * receita fica SEMPRE presente — o override do usuário NUNCA o substitui, só vira NOTA DE ESTILO num
- * template estruturado que reafirma que o prato (o base) é o SUJEITO fotográfico. Limitado a 200 chars.
- */
 describe('composeImagePrompt', () => {
   const base = buildDishImagePrompt({
     recipeId: 'r1',
@@ -138,6 +124,8 @@ describe('composeImagePrompt', () => {
     cozinha: 'brasileira',
     categoria: 'prato_principal',
     ingredientes: ['feijão preto'],
+    scene: SCENE,
+    visualNote: null,
   })
 
   it('sem override ⇒ é exatamente o base', () => {
@@ -192,6 +180,8 @@ describe('composeEditImagePrompt', () => {
     cozinha: 'brasileira',
     categoria: 'prato_principal',
     ingredientes: ['feijão preto'],
+    scene: SCENE,
+    visualNote: null,
   })
 
   it('sem instrução ⇒ é exatamente o base (a base é a âncora)', () => {

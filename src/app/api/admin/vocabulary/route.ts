@@ -6,6 +6,7 @@ import {
   listCozinhasForAdmin,
   setCozinhaStatus,
   VOICE_NOTE_MAX,
+  VISUAL_NOTE_MAX,
 } from '@/server/vocabulary/admin'
 import { COZINHA_VOCAB_TAG, expireCacheTag } from '@/server/cache-tags'
 
@@ -81,6 +82,8 @@ export async function PATCH(req: Request): Promise<Response> {
     labelEnUs?: unknown
     // #422: nota de voz curada — OPCIONAL (string | null). '' vira null no domínio (limpar a nota).
     voiceNote?: unknown
+    // ADR-0044: nota visual curada — OPCIONAL (string | null), mesma regra da nota de voz.
+    visualNote?: unknown
     status?: unknown
   }
   if (typeof body.slug !== 'string' || body.slug.length === 0) {
@@ -90,8 +93,9 @@ export async function PATCH(req: Request): Promise<Response> {
   const hasLabels = body.labelPtBr !== undefined || body.labelEnUs !== undefined
   // #422: patch SÓ-de-nota é válido (a nota não é obrigatória). voiceNote deve ser string OU null.
   const hasVoiceNote = body.voiceNote !== undefined
+  const hasVisualNote = body.visualNote !== undefined
   const hasStatus = body.status !== undefined
-  if (!hasLabels && !hasVoiceNote && !hasStatus) {
+  if (!hasLabels && !hasVoiceNote && !hasVisualNote && !hasStatus) {
     return Response.json({ error: 'dados_invalidos' }, { status: 400 })
   }
   if (hasVoiceNote && body.voiceNote !== null && typeof body.voiceNote !== 'string') {
@@ -102,6 +106,13 @@ export async function PATCH(req: Request): Promise<Response> {
   if (hasVoiceNote && typeof body.voiceNote === 'string' && body.voiceNote.trim().length > VOICE_NOTE_MAX) {
     return Response.json({ error: 'voice_note_muito_longa' }, { status: 400 })
   }
+  if (hasVisualNote && body.visualNote !== null && typeof body.visualNote !== 'string') {
+    return Response.json({ error: 'dados_invalidos' }, { status: 400 })
+  }
+  // ADR-0044: a nota visual vai no prompt de toda imagem daquela cozinha — teto próprio, 400 no excesso.
+  if (hasVisualNote && typeof body.visualNote === 'string' && body.visualNote.trim().length > VISUAL_NOTE_MAX) {
+    return Response.json({ error: 'visual_note_muito_longa' }, { status: 400 })
+  }
   if (hasStatus && body.status !== 'active' && body.status !== 'deprecated') {
     return Response.json({ error: 'status_invalido' }, { status: 400 })
   }
@@ -110,11 +121,12 @@ export async function PATCH(req: Request): Promise<Response> {
   // O `finally` expira sempre que ALGUMA gravou, inclusive nos `return` de erro (não lança).
   let wrote = false
   try {
-    if (hasLabels || hasVoiceNote) {
+    if (hasLabels || hasVoiceNote || hasVisualNote) {
       const r = await editCozinhaLabels(getDb(), body.slug, {
         labelPtBr: body.labelPtBr as string | undefined,
         labelEnUs: body.labelEnUs as string | undefined,
         voiceNote: hasVoiceNote ? (body.voiceNote as string | null) : undefined,
+        visualNote: hasVisualNote ? (body.visualNote as string | null) : undefined,
       })
       // Mapeia pela CHAVE: rótulo vazio é validação (400), não inexistência da linha (404).
       if (!r.ok) {

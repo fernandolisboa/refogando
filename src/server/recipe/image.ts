@@ -14,7 +14,11 @@ import { capFromConfig } from '@/domain/image-gen-config'
 import { buildDishImagePrompt, composeImagePrompt, composeEditImagePrompt } from '@/domain/image-prompt'
 import { pgCode } from '@/server/recipe/visibility' // #285: lê o SQLSTATE p/ tratar o FK da imagem-base (23503)
 import { loadRecipeRows } from '@/server/recipe/load'
-import { loadAppConfig } from '@/server/app-config'
+import { loadAppConfig, type AppConfig } from '@/server/app-config'
+import type { ClaudeClient } from '@/server/claude/client'
+import { getClaudeClient } from '@/server/deps'
+import { resolveImageScene } from '@/server/images/image-scene'
+import type { ImageScene, ImageSceneRegistro } from '@/domain/image-scene'
 import { assertImageGenSlotInTx, QuotaExceededError } from '@/server/quota/atomic'
 import {
   renderImageDerivativesSafe,
@@ -71,7 +75,7 @@ export type RecipeImageSelectResult = RecipeImageResult | { kind: 'moderated' }
  * sempre re-derivado no servidor; o cliente nunca o envia (só o refino) — invariante do #214.
  */
 export type RecipeImageGenResult =
-  | { kind: 'ok'; image: GalleryImage; basePrompt: string } // 200 — imagem (preview) + prompt-base read-only
+  | { kind: 'ok'; image: GalleryImage; basePrompt: string; scene: ImageScene | null } // 200 — preview + prompt-base + cenário (ADR-0044; null na edição)
   | { kind: 'not_found' } //                          404 — inexistente / não-dono / catálogo
   | { kind: 'blocked' } //                            403 — geração-por-IA BLOQUEADA p/ este usuário (#226)
   | { kind: 'disabled' } //                           403 — geração desligada na config (#134)
@@ -152,6 +156,10 @@ export async function applyRecipeImageGeneration(input: {
   promptOverride?: string // prompt editado pelo usuário (refino); ausente ⇒ um-clique (monta da receita)
   // #285 (image-to-image): id da imagem-base — a variante é editada a partir dela. Ausente ⇒ do zero.
   sourceImageId?: string
+  // ADR-0044: registro de cenário escolhido no modal. Ausente/null ⇒ automático (diretor ou regras).
+  sceneChoice?: ImageSceneRegistro | null
+  // ADR-0044: seam do diretor de arte. Ausente ⇒ o da app (`getClaudeClient`).
+  claude?: ClaudeClient
 }): Promise<RecipeImageGenResult> {
   const { db, store, generator, id, userId, role, promptOverride, sourceImageId } = input
   const plan = input.plan ?? DEFAULT_PLAN
@@ -238,13 +246,11 @@ export async function applyRecipeImageGeneration(input: {
     recipeId: id,
     lineageId,
     actorUserId: userId,
-    content: {
-      titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
-      cozinha: rows.recipe.cozinha ?? null,
-      categoria: rows.recipe.categoria ?? null,
-      ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
-    },
+    content: imageContentFromRows(rows),
     model: genConfig.model,
+    appCfg,
+    sceneChoice: input.sceneChoice ?? null,
+    claude: input.claude,
     promptOverride,
     source,
     sourceImageId,
@@ -255,12 +261,30 @@ export async function applyRecipeImageGeneration(input: {
     quota: Number.isFinite(cap) ? { userId, cap } : undefined,
   })
   if (core.kind !== 'ok') return core
-  return { kind: 'ok', image: core.image, basePrompt: core.basePrompt }
+  return { kind: 'ok', image: core.image, basePrompt: core.basePrompt, scene: core.scene }
+}
+
+/** Conteúdo da receita que o prompt e o diretor de arte leem (título/descrição no locale original). */
+export function imageContentFromRows(rows: NonNullable<Awaited<ReturnType<typeof loadRecipeRows>>>): {
+  titulo: string
+  descricao: string | null
+  cozinha: string | null
+  categoria: string | null
+  ingredientes: string[]
+} {
+  const original = rows.translations.find((t) => t.locale === rows.recipe.originalLocale)
+  return {
+    titulo: original?.titulo ?? '',
+    descricao: original?.descricao ?? null,
+    cozinha: rows.recipe.cozinha ?? null,
+    categoria: rows.recipe.categoria ?? null,
+    ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
+  }
 }
 
 /** Resultado do núcleo de geração+persistência (#238): `ok` carrega o id (pro caller selecionar/lote). */
 export type GenerateGalleryResult =
-  | { kind: 'ok'; imageId: string; image: GalleryImage; basePrompt: string }
+  | { kind: 'ok'; imageId: string; image: GalleryImage; basePrompt: string; scene: ImageScene | null }
   | { kind: 'generator' } //  503 — geração por IA indisponível
   | { kind: 'storage' } //    503 — ImageStore indisponível
   | { kind: 'not_found' } //  404 — TOCTOU: a imagem-base sumiu entre o validate e o insert (FK 23503)
@@ -286,8 +310,19 @@ export async function generateAndStoreGalleryImage(input: {
   recipeId: string // já validado/autorizado pelo caller
   lineageId: string
   actorUserId: string // `created_by` da imagem + `user_id` do ledger (dono OU curador)
-  content: { titulo: string; cozinha: string | null; categoria: string | null; ingredientes: string[] }
+  content: {
+    titulo: string
+    descricao: string | null
+    cozinha: string | null
+    categoria: string | null
+    ingredientes: string[]
+  }
   model: string // genConfig.model (o que de fato foi pedido)
+  // ADR-0044: config da app (diretor de arte ligado? modelo/ajuste da tarefa `imageScene`).
+  appCfg: AppConfig
+  // ADR-0044: registro escolhido pelo usuário (null ⇒ automático) e o seam do diretor (default da app).
+  sceneChoice?: ImageSceneRegistro | null
+  claude?: ClaudeClient
   promptOverride?: string
   source?: { data: Buffer; contentType: string } // image-to-image, JÁ lida (só owner)
   sourceImageId?: string
@@ -315,13 +350,29 @@ export async function generateAndStoreGalleryImage(input: {
     quota,
   } = input
 
+  // ADR-0044: cenário da foto (escolha do usuário, diretor de arte ou regras) + nota visual da cozinha.
+  // Nunca falha. Na EDIÇÃO não há cenário: a cena já está na foto-base, e descrever outra mandaria o
+  // Gemini repintar o fundo (o base da edição fica só com a âncora do prato).
+  const resolved = sourceImageId
+    ? null
+    : await resolveImageScene({
+        db,
+        claude: input.claude ?? getClaudeClient(),
+        appCfg: input.appCfg,
+        recipeId,
+        content,
+        registroFixo: input.sceneChoice ?? null,
+      })
   const base = buildDishImagePrompt({
-    recipeId, // #424: semente do hash de rotação de estilo (mesma receita ⇒ mesma foto)
+    recipeId, // semente da variante de cena (mesma receita + mesmo cenário ⇒ mesmo prompt)
     titulo: content.titulo,
     cozinha: content.cozinha,
     categoria: content.categoria,
     ingredientes: content.ingredientes,
+    scene: resolved?.scene ?? null,
+    visualNote: resolved?.visualNote ?? null,
   })
+  const scene = resolved?.scene ?? null
   // #285: edição (imagem-base presente) usa o template de EDIÇÃO (ainda ancorado no prato). Do zero ⇒ geração.
   const prompt = sourceImageId
     ? composeEditImagePrompt(base, promptOverride)
@@ -399,6 +450,7 @@ export async function generateAndStoreGalleryImage(input: {
       editedFromId: sourceImageId ?? null,
     },
     basePrompt: base,
+    scene,
   }
 }
 

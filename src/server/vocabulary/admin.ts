@@ -32,6 +32,9 @@ const ADMIN_VISIBLE_STATUSES = ['active', 'deprecated'] as const
  */
 export const VOICE_NOTE_MAX = 800
 
+/** Teto da nota VISUAL (ADR-0044) — mora no domínio (o form do admin também o usa). */
+export { VISUAL_NOTE_MAX } from '@/domain/image-scene'
+
 /** Linha de cozinha como o Admin a vê (inclui `status`, ao contrário da view de leitura). */
 export type AdminCozinhaRow = {
   slug: string
@@ -40,6 +43,8 @@ export type AdminCozinhaRow = {
   // #422 (ADR-0029 dec.3): nota de voz curada, editável AQUI (Admin proativo) sem deploy. LOCALE-
   // NEUTRA e OPCIONAL (null quando não curada). NÃO entra na fila do Curador — é edição proativa.
   voiceNote: string | null
+  // ADR-0044: nota visual curada (louça/empratamento típicos) para o prompt da IMAGEM. Opcional.
+  visualNote: string | null
   status: 'active' | 'deprecated'
   sort: number
 }
@@ -72,6 +77,7 @@ export async function listCozinhasForAdmin(db: Database): Promise<AdminCozinhaRo
       labelPtBr: vocabularyTerm.labelPtBr,
       labelEnUs: vocabularyTerm.labelEnUs,
       voiceNote: vocabularyTerm.voiceNote,
+      visualNote: vocabularyTerm.visualNote,
       status: vocabularyTerm.status,
       sort: vocabularyTerm.sort,
     })
@@ -130,7 +136,7 @@ export async function addCozinha(
 }
 
 /**
- * Edita os RÓTULOS e/ou a NOTA DE VOZ (#422) de uma cozinha (nunca o slug — identidade congelada,
+ * Edita os RÓTULOS, a NOTA DE VOZ (#422) e/ou a NOTA VISUAL (ADR-0044) de uma cozinha (nunca o slug — identidade congelada,
  * ADR-0025 Decisão 2). Só atualiza os campos PRESENTES. Rótulos, se presentes, trimados NÃO-vazios
  * (rótulo é obrigatório). A `voiceNote` (#422) é OPCIONAL e distinta: aceita `''`/só-espaços → `null`
  * (limpar a nota é uma edição válida — a nota NÃO é obrigatória; um patch SÓ-de-nota é permitido).
@@ -140,12 +146,13 @@ export async function addCozinha(
 export async function editCozinhaLabels(
   db: Database,
   slug: string,
-  labels: { labelPtBr?: string; labelEnUs?: string; voiceNote?: string | null },
+  labels: { labelPtBr?: string; labelEnUs?: string; voiceNote?: string | null; visualNote?: string | null },
 ): Promise<EditCozinhaResult> {
   const set: {
     labelPtBr?: string
     labelEnUs?: string
     voiceNote?: string | null
+    visualNote?: string | null
     updatedAt: Date
   } = { updatedAt: new Date() }
   if (labels.labelPtBr !== undefined) {
@@ -162,6 +169,11 @@ export async function editCozinhaLabels(
   if (labels.voiceNote !== undefined) {
     const v = typeof labels.voiceNote === 'string' ? labels.voiceNote.trim() : ''
     set.voiceNote = v.length === 0 ? null : v
+  }
+  // ADR-0044: nota visual OPCIONAL — mesma regra da nota de voz (vazio/só-espaços ⇒ NULL).
+  if (labels.visualNote !== undefined) {
+    const v = typeof labels.visualNote === 'string' ? labels.visualNote.trim() : ''
+    set.visualNote = v.length === 0 ? null : v
   }
 
   const updated = await db

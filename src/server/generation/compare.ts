@@ -18,6 +18,7 @@ import type { ModelSettings } from '@/domain/ai-task-config'
 import { getClaudeClient, getImageGenerator } from '@/server/deps'
 import { classify } from '@/domain/generation'
 import { buildDishImagePrompt, composeImagePrompt } from '@/domain/image-prompt'
+import { sceneFromRules } from '@/domain/image-scene'
 import {
   comparatorPrompt,
   recipeView,
@@ -79,15 +80,17 @@ export async function runComparison(
   const recipe = result.recipe
   let imageDataUrl: string | null = null
   if (options.withImage) {
-    // ADR-0022: o PRATO é SEMPRE o sujeito. `fixture.id` é a semente do hash de rotação de estilo
-    // (#424) — mesma fixture ⇒ mesma estética (reproduzível); lados velho/novo divergem só porque a
-    // Receita (título/ingredientes) diverge. Sem override do usuário (bancada automática).
+    // ADR-0022: o PRATO é SEMPRE o sujeito. Cenário pelas REGRAS (ADR-0044), sem o diretor de arte nem a
+    // nota visual do banco: a bancada compara PROMPTS de receita, e o cenário fica reproduzível (mesma
+    // fixture ⇒ mesma cena). Lados velho/novo divergem só porque a Receita diverge. Sem override.
     const base = buildDishImagePrompt({
       recipeId: fixture.id,
       titulo: recipe.titulo,
       cozinha: recipe.cozinha,
       categoria: recipe.categoria,
       ingredientes: recipe.ingredientes.map((ing) => ing.nome),
+      scene: sceneFromRules({ recipeId: fixture.id, cozinha: recipe.cozinha, categoria: recipe.categoria }),
+      visualNote: null,
     })
     // Sem `model`: o gerador cai no default de imagem (Nano Banana / DEFAULT_IMAGE_MODEL). NÃO passar
     // aqui o `options.model` (que é o modelo de TEXTO do Claude) — são famílias distintas de modelo.
