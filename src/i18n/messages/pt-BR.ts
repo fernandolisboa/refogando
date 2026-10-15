@@ -496,7 +496,8 @@ export const ptBR = {
     // ADR-0044: seletor de cenário no modal. "Automático" = o diretor de arte escolhe pela receita.
     imagemCenarioRotulo: 'Cenário',
     imagemCenarioAutomatico: 'Automático (pela receita)',
-    imagemCenarioEdicao: 'Na edição, o cenário vem da imagem escolhida.',
+    imagemCenarioEscolher: 'Escolher o cenário (agora: {cenario})',
+    imagemGerarNoCenario: '{acao} · {cenario}',
     // {cenario} interpolado no componente via `.replace`.
     imagemCenarioUsado: 'Cenário: {cenario}',
     imagemFechar: 'Fechar',

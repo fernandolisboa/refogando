@@ -447,7 +447,8 @@ export const enUS: Messages = {
     // ADR-0044: scene picker in the modal. "Automatic" = the art director picks from the recipe.
     imagemCenarioRotulo: 'Scene',
     imagemCenarioAutomatico: 'Automatic (from the recipe)',
-    imagemCenarioEdicao: 'When editing, the scene comes from the chosen image.',
+    imagemCenarioEscolher: 'Choose the scene (now: {cenario})',
+    imagemGerarNoCenario: '{acao} · {cenario}',
     // {cenario} interpolated in the component via `.replace`.
     imagemCenarioUsado: 'Scene: {cenario}',
     imagemFechar: 'Close',
