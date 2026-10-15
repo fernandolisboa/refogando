@@ -106,10 +106,12 @@ export function AuthSlot() {
   // signOut + refetch: numa falha de transporte do signOut (offline) o finally NÃO deixa promise
   // rejeitada não-tratada e ainda re-busca a sessão pra a chrome refletir o estado real do servidor.
   const doSignOut = async () => {
-    // ADR-0043: a última aba de "Minhas receitas"/"Planejar" é deste aparelho, não da conta.
+    // ADR-0043: a última aba de "Minhas receitas"/"Planejar" é deste aparelho, não da conta. Apaga antes
+    // e de novo depois: uma navegação entre abas DURANTE o signOut (sessão ainda logada) regravaria a chave.
     forgetTabs()
     try {
       await signOut()
+      forgetTabs()
     } finally {
       await refetch()
     }

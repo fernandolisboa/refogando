@@ -1,6 +1,6 @@
 'use client'
 /**
- * Tira de subabas da seção atual (ADR-0043), logo abaixo do header: "Descobrir · Seguindo · Cozinheiros"
+ * Tira de subabas da seção atual (ADR-0043), logo abaixo do header: "Descobrir · Cozinheiros · Seguindo"
  * em Explorar, "Criações · Salvos" em Minhas receitas, "Cardápio · Listas de compras · Despensa" em
  * Planejar. Fora das seções (receita, perfil, /create, /admin, /guia) não renderiza nada.
  *

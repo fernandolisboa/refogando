@@ -83,8 +83,7 @@ export function SiteHeader() {
   const createDrawerStatus = useCreateDrawerStatus()
   const createPending = createOpen && createDrawerStatus !== 'ready'
   // As seções "Minhas receitas" e "Planejar" só aparecem para quem está logado (ADR-0043): são o espaço
-  // PRIVADO do dono, distinto da Descoberta-home pública (#236); a home `/` é o feed
-  // público + Busca.
+  // PRIVADO do dono, distinto da Descoberta-home pública (#236; a home `/` é o feed público + Busca).
   const authed = !session.isPending && !session.error && !!session.data
   // "Painel" (#125) NÃO vive mais na nav: migrou pro menu da conta (#267), dentro do AuthSlot, que
   // é quem agora computa o gating de papel (curador+, fail-closed). O header só decide "logado?".
@@ -201,7 +200,8 @@ export function SiteHeader() {
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav
           aria-label={messages.nav.secoesAria}
-          className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
+          className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex"
+        >
           {/* ADR-0043: uma entrada por SEÇÃO. "Explorar" (a home, #236/#277) para todos; "Minhas
               receitas" e "Planejar" só logado. "Criar" mora no cluster direito (#5). */}
           {sections.map(sectionLink)}
