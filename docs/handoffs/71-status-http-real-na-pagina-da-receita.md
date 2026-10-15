@@ -68,7 +68,7 @@ O `src/app/[locale]/loading.tsx` abria um Suspense acima de TODA rota de `[local
 
 ## 7. Landmines
 
-- **`/u/[handle]` (perfil) segue com soft 404** (200 com "não encontrado" para handle inexistente), pelo mesmo motivo. Ficou fora do pedido (que era a página da receita). Corrigir é mover `u/` para fora do grupo, com a mesma troca visual.
+- **`/u/[handle]` (perfil) segue com soft 404** (200 com "não encontrado" para handle inexistente), pelo mesmo motivo. Ficou fora do pedido (que era a página da receita). Corrigir é mover `u/` para fora do grupo, com a mesma troca visual. **Corrigido no handoff 72.**
 - `docs/legal/pacote-consulta-juridica.md` cita `src/app/[locale]/seus-direitos/page.tsx`, que agora mora em `(com-carregamento)/seus-direitos/`. Não mexi porque mudanças em `docs/legal` passam pelo dono; a URL pública não mudou.
 - **Tempo de resposta do 404 (anterior a este PR).** Um slug privado faz mais consultas que um inexistente (`resolveRecipeIdBySlug` acha a linha e o `loadRecipeDetailView` roda o gate e a sessão) antes de cair no mesmo 404: ~2 ms a mais medidos em localhost. Status, headers e corpo são idênticos. Antes do PR o 1º byte (o esqueleto) saía em tempo constante, mas o tempo total já diferia do mesmo jeito, então a exposição não é nova. Atalho avaliado e não feito: `notFound()` direto quando o request não tem cookie de sessão. Ele não fecha a diferença, porque quem sonda manda um cookie qualquer e cai no caminho lento. Fechar de verdade pediria igualar o trabalho dos dois caminhos.
 - Os `redirect()` que ficaram dentro do grupo seguem saindo como 200 com redirect no cliente (as rotas legadas de `conversation/`, o `admin` mandando para `/sign-in`). Já era assim antes do PR e não pesa em SEO.
