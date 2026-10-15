@@ -18,6 +18,7 @@ import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { VISUAL_NOTE_MAX } from '@/domain/image-scene'
 
 type Cozinha = {
   slug: string
@@ -25,6 +26,8 @@ type Cozinha = {
   labelEnUs: string | null
   // #422: nota de voz curada (locale-neutra, opcional). Instrui a IA a cozinhar autenticamente.
   voiceNote: string | null
+  // ADR-0043: nota visual curada (opcional): louça/empratamento típicos para o prompt da IMAGEM.
+  visualNote: string | null
   status: 'active' | 'deprecated'
   sort: number
 }
@@ -35,6 +38,7 @@ type ErroChave =
   | 'vocabErroSlugEmUso'
   | 'vocabErroNaoEncontrado'
   | 'vocabErroInterno'
+  | 'vocabErroNotaLonga'
 
 /** Mapeia a CHAVE do corpo `{error}` da rota → chave de i18n. Desconhecida → erro interno. */
 function erroChave(key: string | undefined): ErroChave {
@@ -47,6 +51,9 @@ function erroChave(key: string | undefined): ErroChave {
       return 'vocabErroSlugEmUso'
     case 'nao_encontrado':
       return 'vocabErroNaoEncontrado'
+    case 'voice_note_muito_longa':
+    case 'visual_note_muito_longa':
+      return 'vocabErroNotaLonga'
     default:
       return 'vocabErroInterno'
   }
@@ -72,6 +79,8 @@ export function VocabularySection() {
   const [editEn, setEditEn] = useState('')
   // #422: rascunho da nota de voz (string vazia = sem nota; o servidor a normaliza p/ null).
   const [editVoice, setEditVoice] = useState('')
+  // ADR-0043: rascunho da nota visual (string vazia = sem nota; o servidor a normaliza p/ null).
+  const [editVisual, setEditVisual] = useState('')
   const [savingRow, setSavingRow] = useState<string | null>(null)
 
   const [errorKey, setErrorKey] = useState<ErroChave | null>(null)
@@ -145,6 +154,7 @@ export function VocabularySection() {
     setEditPt(c.labelPtBr ?? '')
     setEditEn(c.labelEnUs ?? '')
     setEditVoice(c.voiceNote ?? '')
+    setEditVisual(c.visualNote ?? '')
     setErrorKey(null)
     setOkMessage(null)
   }
@@ -178,7 +188,12 @@ export function VocabularySection() {
 
   async function handleSaveLabels(slugToSave: string) {
     // #422: envia a nota de voz junto (o servidor normaliza '' → null). Patch atômico rótulos+nota.
-    const ok = await patch(slugToSave, { labelPtBr: editPt, labelEnUs: editEn, voiceNote: editVoice })
+    const ok = await patch(slugToSave, {
+      labelPtBr: editPt,
+      labelEnUs: editEn,
+      voiceNote: editVoice,
+      visualNote: editVisual,
+    })
     if (ok) setEditing(null)
   }
 
@@ -281,6 +296,17 @@ export function VocabularySection() {
                         onChange={(e) => setEditVoice(e.target.value)}
                         rows={3}
                         placeholder={m.vocabNotaVozPlaceholder}
+                      />
+                    </label>
+                    {/* ADR-0043: nota visual (opcional) — louça/empratamento típicos na foto gerada. */}
+                    <label className="flex flex-col gap-1 text-xs font-medium text-fg">
+                      {m.vocabNotaVisual}
+                      <Textarea
+                        value={editVisual}
+                        onChange={(e) => setEditVisual(e.target.value)}
+                        rows={2}
+                        maxLength={VISUAL_NOTE_MAX}
+                        placeholder={m.vocabNotaVisualPlaceholder}
                       />
                     </label>
                     <div className="flex gap-2">

@@ -1006,6 +1006,9 @@ export const appConfig = pgTable(
       .$type<ImageGenCapByRole>()
       .notNull()
       .default(DEFAULT_IMAGE_GEN_CAP_BY_ROLE),
+    // ADR-0043: liga/desliga o diretor de arte (tarefa `imageScene`) que escolhe o cenário da imagem.
+    // Desligado ⇒ só as regras de reserva. Default ligado (NOT NULL + default: ADD COLUMN só de catálogo).
+    imageSceneDirectorEnabled: boolean('image_scene_director_enabled').notNull().default(true),
     recipeGenCapByRole: jsonb('recipe_gen_cap_by_role')
       .$type<RecipeGenCapByRole>()
       .notNull()
@@ -1570,6 +1573,11 @@ export const vocabularyTerm = pgTable(
     // e SEM default (a maioria fica NULL → só o genérico dispara). Editável pelo Admin SEM deploy
     // (dado em vocabulary_term, coerente com o data-driven do ADR-0025). Só faz sentido em kind='cozinha'.
     voiceNote: text('voice_note'),
+    // ADR-0043: "nota visual" curada, OPCIONAL, por cozinha: louça, empratamento e superfície típicos que
+    // entram no prompt da IMAGEM do prato (a nota de voz acima vai no prompt da RECEITA). Substitui o mapa
+    // fixo `CUISINE_VISUAL_CONVENTION` do #424 (a migração 0078 copiou as 15 entradas dele). Locale-neutra,
+    // editável pelo Admin sem deploy, NULL = sem linha de apresentação no prompt.
+    visualNote: text('visual_note'),
     sort: integer('sort').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

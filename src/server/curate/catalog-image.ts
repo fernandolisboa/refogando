@@ -4,11 +4,13 @@ import { recipe, recipeImage } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
 import type { ImageGenerator } from '@/server/images/image-generator'
 import type { GalleryImage } from '@/domain/recipe-read'
-import { loadImageGenConfig } from '@/server/app-config'
+import { loadAppConfig } from '@/server/app-config'
+import type { ImageSceneRegistro } from '@/domain/image-scene'
 import { loadRecipeRows } from '@/server/recipe/load'
 import {
   generateAndStoreGalleryImage,
   createGalleryImage,
+  imageContentFromRows,
   loadGallery,
 } from '@/server/recipe/image'
 import { renderImageDerivativesSafe, storeImageDerivatives } from '@/server/images/image-derivatives'
@@ -78,6 +80,8 @@ export async function applyCatalogImageGeneration(input: {
   id: string // já validado uuid pela borda
   curatorId: string // session.user.id (route passou por requireRole 'curador')
   promptOverride?: string
+  // ADR-0043: registro de cenário escolhido pelo curador. Ausente/null ⇒ automático (diretor ou regras).
+  sceneChoice?: ImageSceneRegistro | null
 }): Promise<CatalogImageGenResult> {
   const { db, store, generator, id, curatorId, promptOverride } = input
 
@@ -86,7 +90,8 @@ export async function applyCatalogImageGeneration(input: {
     return { kind: 'not_found' }
   }
   // #134: kill-switch GLOBAL respeitado (se o admin desligou a geração, vale p/ catálogo também).
-  const genConfig = await loadImageGenConfig(db)
+  const appCfg = await loadAppConfig(db)
+  const genConfig = appCfg.imageGen
   if (!genConfig.enabled) return { kind: 'disabled' }
 
   const lineageId = rows.recipe.lineageId ?? ''
@@ -97,13 +102,10 @@ export async function applyCatalogImageGeneration(input: {
     recipeId: id,
     lineageId,
     actorUserId: curatorId,
-    content: {
-      titulo: rows.translations.find((t) => t.locale === rows.recipe.originalLocale)?.titulo ?? '',
-      cozinha: rows.recipe.cozinha ?? null,
-      categoria: rows.recipe.categoria ?? null,
-      ingredientes: rows.ingredients.map((i) => i.rawText ?? '').filter((s) => s.length > 0),
-    },
+    content: imageContentFromRows(rows),
     model: genConfig.model,
+    appCfg,
+    sceneChoice: input.sceneChoice ?? null,
     promptOverride,
     reviewRequired: false, // catálogo: o curador É o revisor; não enfileira na fila proativa
     autoSelect: true, // catálogo seta a face na mesma tx (sem cobrança dupla)

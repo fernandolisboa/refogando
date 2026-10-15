@@ -1,0 +1,39 @@
+# ADR-0043 — Cenário dinâmico da imagem gerada: diretor de arte + regras
+
+Status: aceito
+
+O dono achou as imagens geradas "todas muito parecidas" e pediu que o cenário acompanhasse o prato: "um prato contemporâneo era melhor ser retratado numa mesa de restaurante mais refinado". O ADR-0029 dec.5 tinha trocado o preâmbulo único por quatro eixos (enquadramento, luz, mood, superfície) sorteados por hash da receita, mais uma convenção visual por cozinha. Na prática os eixos eram independentes do prato e entre si (uma superfície de mármore com mood "rústico"), não havia eixo de **cenário** nenhum, e o "editorial" fixo do preâmbulo puxava toda foto para a mesma estética de revista. Termos no `CONTEXT.md` (**Cenário da imagem**, **Diretor de arte**, **Nota visual**). Substitui em parte o ADR-0029 dec.5; mantém o invariante do ADR-0022 (o prato é sempre o sujeito). Relaciona: ADR-0034 (configuração de IA por tarefa), #548/#551 (geração tolerante: uma falha acessória nunca derruba a principal), #463 (custo da Extração fora do ledger).
+
+## Decisões
+
+1. **Um cenário é um REGISTRO coerente, não eixos soltos.** Dez registros fechados (`IMAGE_SCENE_REGISTROS` em `@/domain/image-scene`): mesa de casa, rústico e tradicional, bistrô, restaurante refinado, comida de rua, boteco, café e padaria, festa, ao ar livre, estúdio. Cada um tem 2–3 descrições completas (superfície, louça, luz e entorno que combinam entre si) na `SCENE_LIBRARY`; a variante sai do hash `recipeId::scene::registro`, então a mesma receita no mesmo registro recebe a mesma cena e receitas diferentes variam. O enquadramento (de cima, 45°, altura da mesa, close) é um eixo à parte, porque ele combina com qualquer registro. **Rejeitado: manter os quatro eixos e só acrescentar "cenário"** (seguiriam se contradizendo; o problema era a falta de coerência, não de eixos).
+
+2. **Quem escolhe o registro é um diretor de arte (LLM), com regras determinísticas de reserva.** Nova tarefa de IA `imageScene` ("Cenário da imagem", ADR-0034): Sonnet 5 por padrão (`IMAGE_SCENE_MODEL` na env), esforço baixo, thinking desligado, saída estruturada (`registro`, `enquadramento`, `regiao`, `detalhes`), **uma tentativa com prazo de 8 s**. Ele lê título, descrição, cozinha, categoria e até 30 ingredientes, delimitados em `<receita>` sem `<`/`>`, com a instrução de ignorar ordens dentro do bloco. `regiao` (≤40) e `detalhes` (≤140) passam por `sanitizeSceneText` (sem quebras nem controles); registro ou enquadramento fora do vocabulário caem no valor das regras. As regras (`sceneFromRules`) cobrem o caso comum só com cozinha e categoria: bebida ⇒ estúdio, café da manhã ⇒ padaria, lanche americano/mexicano ⇒ comida de rua, francesa ⇒ bistrô, baiana/mineira/portuguesa/árabe/indiana ⇒ rústico tradicional, resto ⇒ mesa de casa. **Qualquer falha do diretor (recusa, timeout, rede, saída inválida) cai nas regras e a imagem sai mesmo assim**; a resolução nunca lança. Um liga/desliga no admin (`app_config.image_scene_director_enabled`, padrão ligado) troca o diretor pelas regras sem deploy. **Rejeitado: só regras** (cozinha e categoria não distinguem "contemporâneo" de "caseiro", que era o exemplo do dono). **Rejeitado: só o diretor** (sem reserva, uma falha dele viraria imagem genérica ou erro).
+
+3. **O usuário pode fixar o registro no modal, e aí o diretor não roda.** "Cenário: Automático ▾" no modal de gerar imagem (dono e curadoria). Escolher um registro manda `cena` na requisição; o servidor valida com `parseSceneChoice` (valor desconhecido ⇒ automático, nunca erro) e usa as regras com aquele registro fixo, sem chamar o diretor (a escolha já é a decisão; pagar a chamada só para ganhar `regiao`/`detalhes` não compensa). A resposta devolve o registro usado e a fonte, e o modal mostra "Cenário: Bistrô" junto da prévia.
+
+4. **Editar uma imagem não recebe cenário.** Na edição imagem-a-imagem a cena já está na foto-base; descrever outra cena no prompt brigaria com ela. O preâmbulo da edição é só o `STYLE_BASE`, e o seletor fica desabilitado com uma nota.
+
+5. **A convenção visual da cozinha vira dado editável: `vocabulary_term.visual_note`.** O mapa fixo do código (`CUISINE_VISUAL_CONVENTION`, 15 cozinhas) foi copiado palavra por palavra para a coluna pela migração; o admin edita na aba Vocabulário (≤400 caracteres, vazio ⇒ sem nota). No prompt ela entra subordinada à cena ("Referências visuais da cozinha, só no que combinar com a cena"), porque a nota da mineira fala em fogão a lenha e um prato mineiro contemporâneo pode ir para o restaurante refinado.
+
+6. **O custo do diretor fica fora do ledger de imagem.** Como a Extração (#463), a chamada é registrada só numa linha de log, `[image-scene] diretor ok|falhou: registro= fonte= recipe= modelo= in= out= ms=`, sem conteúdo da receita. Estimativa: ~1,5 mil tokens de entrada e ~80 de saída, cerca de US$ 0,006 por imagem no Sonnet 5, contra ~US$ 0,07 da imagem. A cota diária por papel continua contando imagens, não chamadas do diretor. **Aceito como limite:** o custo do diretor não aparece no painel de uso; se crescer, entra no ledger num follow-up.
+
+7. **Imagens existentes ficam como estão; o cenário não é gravado.** Nada é regerado. O registro e a `STYLE_LIBRARY_VERSION` (agora 2) não são persistidos na imagem: a resposta da geração os devolve, mas a Galeria não sabe depois em que cena uma imagem nasceu. **Aceito como limite de proveniência**, o mesmo de antes (os eixos do ADR-0029 também não eram gravados); gravar exigiria coluna nova em `recipe_image` sem leitor hoje.
+
+## Consequências
+
+- **Migração `0078_image_scene`**: `app_config.image_scene_director_enabled boolean NOT NULL DEFAULT true` e `vocabulary_term.visual_note text` (ambas metadata-only), mais um `UPDATE` que preenche a nota das 15 cozinhas só onde ela é NULL.
+- Domínio: `@/domain/image-scene` (puro, importável no cliente: registros, regras, biblioteca, sanitização), `@/domain/image-scene-director` (prompt do diretor, só servidor), `@/domain/image-scene-schema` (zod, só servidor, fora do bundle como pede o #569). `@/domain/image-prompt` perde os eixos e a convenção por cozinha; `buildStylePreamble(recipeId, scene, visualNote)`.
+- `ClaudeClient.directImageScene` (real e Fake; o Fake ganhou `cannedScene` como 7º argumento e o setup dos testes instala um Fake por padrão, para nenhum teste chamar a API de verdade).
+- Servidor: `resolveImageScene` em `@/server/images/image-scene`; `generateAndStoreGalleryImage` resolve a cena só na geração do zero. A rota de geração do dono ganhou `maxDuration = 60` (o diretor soma até 8 s antes da imagem).
+- Admin: tarefa "Cenário da imagem" na aba IA (modelo, esforço, thinking, teste ao salvar), liga/desliga do diretor no bloco de imagem, nota visual na aba Vocabulário.
+- O comparador de gerações (`compare.ts`) usa as regras, sem diretor, para continuar determinístico.
+
+## Alternativas rejeitadas
+
+- **Acrescentar um eixo "cenário" aos quatro eixos** — dec.1.
+- **Só regras, ou só o diretor** — dec.2.
+- **Chamar o diretor mesmo com o registro escolhido pelo usuário** — dec.3.
+- **Cenário também na edição** — dec.4.
+- **Manter a convenção por cozinha no código** (cada ajuste exigiria deploy; o dono quer afinar o visual sem PR) — dec.5.
+- **Regerar as imagens existentes** (custo e troca da cara pública de receitas sem pedido do dono) — dec.7.

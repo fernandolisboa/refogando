@@ -41,6 +41,7 @@ const TASK_COPY = {
   translation: { titulo: 'tarefaTraducaoTitulo', descricao: 'tarefaTraducaoDescricao' },
   extraction: { titulo: 'tarefaExtracaoTitulo', descricao: 'tarefaExtracaoDescricao' },
   menu: { titulo: 'tarefaCardapioTitulo', descricao: 'tarefaCardapioDescricao' },
+  imageScene: { titulo: 'tarefaCenarioTitulo', descricao: 'tarefaCenarioDescricao' },
 } as const satisfies Record<AiTask, { titulo: string; descricao: string }>
 
 const EFFORT_LABEL = {

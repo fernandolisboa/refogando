@@ -4,6 +4,7 @@
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
+import type { ImageSceneRegistro } from '@/domain/image-scene'
 import type { Messages } from './pt-BR'
 
 export const enUS: Messages = {
@@ -291,6 +292,19 @@ export const enUS: Messages = {
     lanche: 'Snack',
     cafe_da_manha: 'Breakfast',
   } satisfies Record<Categoria, string>,
+  // ADR-0043: label for each image scene register (modal picker).
+  cenarioLabel: {
+    caseiro: 'Home table',
+    rustico_tradicional: 'Rustic and traditional',
+    bistro: 'Bistro',
+    alta_gastronomia: 'Fine dining',
+    comida_de_rua: 'Street food',
+    boteco: 'Bar snacks',
+    cafe_padaria: 'Café and bakery',
+    festa: 'Party',
+    ao_ar_livre: 'Outdoors',
+    estudio: 'Studio',
+  } satisfies Record<ImageSceneRegistro, string>,
   // Rótulo amigável por valor do enum UNIDADES (#57), traduzido por locale.
   unidadeLabel: {
     g: 'g',
@@ -424,6 +438,12 @@ export const enUS: Messages = {
     // #265: primary modal CTA in the RESTING state (no preview yet). Distinct from `imagemGerar`
     // ("✨ Generate with AI", outer button) — opening does not generate; only the click does.
     imagemGerarAgora: 'Generate',
+    // ADR-0043: scene picker in the modal. "Automatic" = the art director picks from the recipe.
+    imagemCenarioRotulo: 'Scene',
+    imagemCenarioAutomatico: 'Automatic (from the recipe)',
+    imagemCenarioEdicao: 'When editing, the scene comes from the chosen image.',
+    // {cenario} interpolated in the component via `.replace`.
+    imagemCenarioUsado: 'Scene: {cenario}',
     imagemFechar: 'Close',
     imagemGaleria: 'Image gallery',
     imagemGaleriaVazia: 'No images yet. Generate one with AI or upload your own photo.',
@@ -1136,6 +1156,9 @@ export const enUS: Messages = {
     tarefaCardapioTitulo: 'Menu suggestion',
     tarefaCardapioDescricao:
       "Fills the week in the meal planner by picking recipes from the user's collection and the community. Low effort by default.",
+    tarefaCenarioTitulo: 'Image scene',
+    tarefaCenarioDescricao:
+      'The art director reads the recipe and picks the photo scene before each generated image. Low effort and thinking off by default.',
     modeloLabel: 'Model',
     modeloForaDaLista: 'in use, no longer listed',
     salvar: 'Save',
@@ -1228,6 +1251,10 @@ export const enUS: Messages = {
     vocabNotaVoz: 'Voice note (optional)',
     vocabNotaVozPlaceholder:
       'How the AI should cook in this tradition: typical techniques, ingredients and seasonings. Leave blank to use only the generic instruction.',
+    // ADR-0043: curated visual note per cuisine (goes into the dish IMAGE prompt; no deploy).
+    vocabNotaVisual: 'Image visual note (optional)',
+    vocabNotaVisualPlaceholder:
+      'Typical tableware, plating and surface for this cuisine, used in the generated photo. E.g.: clay pot and wooden spoon, earthy tones.',
     vocabCancelar: 'Cancel',
     vocabDepreciar: 'Deprecate',
     vocabReativar: 'Reactivate',
@@ -1242,6 +1269,7 @@ export const enUS: Messages = {
     vocabErroSlugEmUso: 'A cuisine with that slug already exists.',
     vocabErroNaoEncontrado: 'Cuisine not found.',
     vocabErroInterno: 'Something went wrong. Try again.',
+    vocabErroNotaLonga: 'The note is too long. Shorten it and try again.',
     // #268: the /admin/descoberta tab holds the SEARCH infra — web discovery + embeddings; generative AI
     // (recipe model + image generation + caps) moved to the "AI" tab (/admin/ia).
     navDescoberta: 'Discovery',
@@ -1287,6 +1315,9 @@ export const enUS: Messages = {
     aiTitulo: 'AI image generation',
     aiDescricao: 'Control recipe image generation: on/off, model and daily caps per role.',
     aiHabilitadaLabel: 'Image generation on',
+    aiCenarioDiretorLabel: 'Art director picks the scene',
+    aiCenarioDiretorAjuda:
+      'Before each image, a short AI call reads the recipe and picks the photo scene (home table, fine dining, street food…). When off, the scene comes from simple rules by category and cuisine. The model is set in the "Image scene" task.',
     aiModeloLabel: 'Model',
     aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
     aiTetosLabel: 'Image caps per role (24h window)',

@@ -3,6 +3,7 @@ import { getDb, getImageStore, getImageGenerator } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { applyCatalogImageGeneration } from '@/server/curate/catalog-image'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
+import { parseSceneChoice } from '@/domain/image-scene'
 
 /**
  * POST /api/curate/recipes/[id]/image/generate — gera imagem por IA p/ um rascunho de CATÁLOGO
@@ -25,7 +26,7 @@ export async function POST(
   if (!g.ok) return g.response
 
   // Refino opcional (sufixo de estilo) — o núcleo SEMPRE ancora no prato; truncado por defesa (#214).
-  const body = (await req.json().catch(() => ({}))) as { prompt?: unknown }
+  const body = (await req.json().catch(() => ({}))) as { prompt?: unknown; cena?: unknown }
   const promptOverride =
     typeof body.prompt === 'string' ? body.prompt.slice(0, IMAGE_PROMPT_OVERRIDE_MAX) : undefined
 
@@ -36,6 +37,8 @@ export async function POST(
     id,
     curatorId: g.session.user.id,
     promptOverride,
+    // ADR-0043: registro de cenário escolhido pelo curador; qualquer outro valor ⇒ automático.
+    sceneChoice: parseSceneChoice(body.cena),
   })
 
   switch (res.kind) {

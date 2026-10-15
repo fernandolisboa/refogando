@@ -3,6 +3,7 @@ import { getDb, getImageStore, getImageGenerator } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { applyRecipeImageGeneration } from '@/server/recipe/image'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
+import { parseSceneChoice } from '@/domain/image-scene'
 
 /**
  * Geração de imagem por IA da Receita = PREVIEW (#132/#222, ADR-0017/0022) —
@@ -17,6 +18,8 @@ import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
  */
 
 export const runtime = 'nodejs' // postgres-js + Buffer + fetch exigem Node, não Edge.
+// ADR-0043: o diretor de arte (até 8s) roda antes do Gemini; folga igual à das outras rotas com IA.
+export const maxDuration = 60
 
 export async function POST(
   request: Request,
@@ -32,7 +35,11 @@ export async function POST(
   // Defesa-em-profundidade (#214): truncamos o override a IMAGE_PROMPT_OVERRIDE_MAX já aqui; o núcleo
   // (composeImagePrompt) também ancora SEMPRE no base da receita e re-limita — o servidor é a fonte
   // da verdade, o cliente não burla.
-  const body = (await request.json().catch(() => ({}))) as { prompt?: unknown; sourceImageId?: unknown }
+  const body = (await request.json().catch(() => ({}))) as {
+    prompt?: unknown
+    sourceImageId?: unknown
+    cena?: unknown
+  }
   const promptOverride =
     typeof body.prompt === 'string' ? body.prompt.slice(0, IMAGE_PROMPT_OVERRIDE_MAX) : undefined
   // #285 (image-to-image): id da imagem-base OPCIONAL. O núcleo own-gateia pela linhagem (404 leak-safe
@@ -50,13 +57,23 @@ export async function POST(
     plan: g.session.user.plan,
     promptOverride,
     sourceImageId,
+    // ADR-0043: registro de cenário escolhido no modal; qualquer outro valor ⇒ automático.
+    sceneChoice: parseSceneChoice(body.cena),
   })
 
   switch (res.kind) {
     case 'ok':
       // #222/#223: devolve a imagem-preview (deselecionada — a face não mudou) + o `basePrompt`
       // (prompt-base montado da receita, pro modal exibir read-only). O cliente nunca envia o base.
-      return Response.json({ image: res.image, basePrompt: res.basePrompt }, { status: 200 })
+      // ADR-0043: + o cenário usado (registro e quem o escolheu), pro modal mostrar "Cenário: …".
+      return Response.json(
+        {
+          image: res.image,
+          basePrompt: res.basePrompt,
+          scene: res.scene ? { registro: res.scene.registro, fonte: res.scene.fonte } : null,
+        },
+        { status: 200 },
+      )
     case 'blocked':
       // #226: o Curador BLOQUEOU a geração-por-IA deste usuário (abuso confirmado). 403 distinto do
       // `disabled` (config-global) — a UI mostra uma mensagem própria (e também esconde a ação).

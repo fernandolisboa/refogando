@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { GET, PATCH, POST } from '@/app/api/admin/vocabulary/route'
-import { VOICE_NOTE_MAX } from '@/server/vocabulary/admin'
+import { VISUAL_NOTE_MAX, VOICE_NOTE_MAX } from '@/server/vocabulary/admin'
 import { __clearVocabularyCache, loadVocabulary } from '@/server/vocabulary/load'
 import { getDb } from '@/server/deps'
 import { vocabularyTerm, recipe } from '@/db/schema'
@@ -210,6 +210,34 @@ describe('/api/admin/vocabulary — nota de voz (#422)', () => {
     const res = await patch({ slug: 'italiana', voiceNote: 42 }, headers)
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
+  })
+
+  // ADR-0043: nota visual (prompt da IMAGEM) — mesma regra da nota de voz, teto próprio.
+  it('PATCH grava/limpa a nota visual e a devolve; acima do teto → 400 visual_note_muito_longa', async () => {
+    const headers = await adminHeaders('visualnote@vocab.test')
+    const visualOf = async () =>
+      (
+        await getDb()
+          .select({ v: vocabularyTerm.visualNote })
+          .from(vocabularyTerm)
+          .where(eq(vocabularyTerm.slug, 'italiana'))
+      )[0]?.v
+    const res = await patch({ slug: 'italiana', visualNote: '  louça branca de trattoria  ' }, headers)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cozinha: { visualNote: string | null; voiceNote: string | null } }
+    expect(body.cozinha.visualNote).toBe('louça branca de trattoria')
+    expect(await visualOf()).toBe('louça branca de trattoria')
+
+    expect((await patch({ slug: 'italiana', visualNote: '' }, headers)).status).toBe(200)
+    expect(await visualOf()).toBeNull()
+
+    const longa = await patch({ slug: 'italiana', visualNote: 'x'.repeat(VISUAL_NOTE_MAX + 1) }, headers)
+    expect(longa.status).toBe(400)
+    await expect(longa.json()).resolves.toMatchObject({ error: 'visual_note_muito_longa' })
+    expect((await patch({ slug: 'italiana', visualNote: 'x'.repeat(VISUAL_NOTE_MAX) }, headers)).status).toBe(200)
+
+    const tipo = await patch({ slug: 'italiana', visualNote: 7 }, headers)
+    expect(tipo.status).toBe(400)
   })
 
   it('PATCH voiceNote acima do teto → 400 voice_note_muito_longa; no teto passa (#436)', async () => {

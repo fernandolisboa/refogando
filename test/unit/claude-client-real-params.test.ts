@@ -139,6 +139,35 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     spy.mockRestore()
   })
 
+  it('Diretor de arte (ADR-0043): default esforço low + thinking desligado, teto de 400, sinal do chamador, UMA tentativa', async () => {
+    const scene = { registro: 'bistro', enquadramento: '45_graus', regiao: null, detalhes: null }
+    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: scene, usage: { input_tokens: 50, output_tokens: 9 } })
+    const signal = AbortSignal.timeout(8_000)
+    const out = await new RealClaudeClient().directImageScene({ ...input('claude-sonnet-5'), signal })
+    expect(out).toEqual({ kind: 'ok', scene, usage: { inputTokens: 50, outputTokens: 9 } })
+    const [params, options] = parse.mock.lastCall!
+    expect(params.output_config.effort).toBe('low')
+    expect(params.thinking).toEqual({ type: 'disabled' })
+    expect(params.max_tokens).toBe(400)
+    expect(options.signal).toBe(signal)
+
+    parse.mockReset()
+    parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: null, usage: { input_tokens: 50, output_tokens: 0 } })
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(await new RealClaudeClient().directImageScene(input('claude-sonnet-5'))).toEqual({
+      kind: 'failed',
+      usage: { inputTokens: 50, outputTokens: 0 },
+    })
+    expect(parse).toHaveBeenCalledTimes(1) // sem reparo: falhou, as regras decidem
+    parse.mockReset()
+    parse.mockResolvedValue({ stop_reason: 'refusal', parsed_output: null })
+    expect((await new RealClaudeClient().directImageScene(input('claude-sonnet-5'))).kind).toBe('failed')
+    parse.mockReset()
+    parse.mockRejectedValue(new Error('boom'))
+    expect(await new RealClaudeClient().directImageScene(input('claude-sonnet-5'))).toEqual({ kind: 'failed' })
+    spy.mockRestore()
+  })
+
   it('Tradução: usa o modelo e o ajuste que o loader devolve a cada chamada', async () => {
     parse.mockResolvedValue({
       stop_reason: 'end_turn',

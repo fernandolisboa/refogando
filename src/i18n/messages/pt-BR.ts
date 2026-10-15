@@ -4,6 +4,7 @@
  */
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
+import type { ImageSceneRegistro } from '@/domain/image-scene'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -319,6 +320,19 @@ export const ptBR = {
     lanche: 'Lanche',
     cafe_da_manha: 'Café da manhã',
   } satisfies Record<Categoria, string>,
+  // ADR-0043: rótulo de cada registro de cenário da imagem (seletor do modal).
+  cenarioLabel: {
+    caseiro: 'Mesa de casa',
+    rustico_tradicional: 'Rústico e tradicional',
+    bistro: 'Bistrô',
+    alta_gastronomia: 'Restaurante refinado',
+    comida_de_rua: 'Comida de rua',
+    boteco: 'Boteco',
+    cafe_padaria: 'Café e padaria',
+    festa: 'Festa',
+    ao_ar_livre: 'Ao ar livre',
+    estudio: 'Estúdio',
+  } satisfies Record<ImageSceneRegistro, string>,
   // Rótulo amigável por valor do enum UNIDADES (#57). Os valores do enum são tokens
   // machine-readable (snake_case); este mapa os converte em texto legível na linha do
   // ingrediente. `satisfies Record<Unidade, string>` trava drift do enum.
@@ -470,6 +484,12 @@ export const ptBR = {
     // #265: CTA primário do modal no estado de REPOUSO (sem preview ainda). Distinto de
     // `imagemGerar` ("✨ Gerar com IA", botão externo) — não gera ao abrir, só no clique.
     imagemGerarAgora: 'Gerar',
+    // ADR-0043: seletor de cenário no modal. "Automático" = o diretor de arte escolhe pela receita.
+    imagemCenarioRotulo: 'Cenário',
+    imagemCenarioAutomatico: 'Automático (pela receita)',
+    imagemCenarioEdicao: 'Na edição, o cenário vem da imagem escolhida.',
+    // {cenario} interpolado no componente via `.replace`.
+    imagemCenarioUsado: 'Cenário: {cenario}',
     imagemFechar: 'Fechar',
     imagemGaleria: 'Galeria de imagens',
     imagemGaleriaVazia: 'Nenhuma imagem ainda. Gere uma com IA ou envie a sua foto.',
@@ -1237,6 +1257,9 @@ export const ptBR = {
     tarefaCardapioTitulo: 'Sugestão de cardápio',
     tarefaCardapioDescricao:
       'Monta a semana no Cardápio escolhendo receitas do acervo do usuário e da comunidade. Esforço baixo por padrão.',
+    tarefaCenarioTitulo: 'Cenário da imagem',
+    tarefaCenarioDescricao:
+      'O diretor de arte lê a receita e escolhe o cenário da foto antes de cada imagem gerada. Esforço baixo e thinking desligado por padrão.',
     modeloLabel: 'Modelo',
     modeloForaDaLista: 'em uso, fora da lista atual',
     salvar: 'Salvar',
@@ -1334,6 +1357,10 @@ export const ptBR = {
     vocabNotaVoz: 'Nota de voz (opcional)',
     vocabNotaVozPlaceholder:
       'Como a IA deve cozinhar nesta tradição: técnicas, ingredientes e temperos típicos. Deixe em branco para usar só a instrução genérica.',
+    // ADR-0043: nota visual curada por cozinha (entra no prompt da IMAGEM do prato; sem deploy).
+    vocabNotaVisual: 'Nota visual da imagem (opcional)',
+    vocabNotaVisualPlaceholder:
+      'Louça, empratamento e superfície típicos desta cozinha, para a foto gerada. Ex.: panela de barro e colher de pau, tons terrosos.',
     vocabCancelar: 'Cancelar',
     vocabDepreciar: 'Depreciar',
     vocabReativar: 'Reativar',
@@ -1348,6 +1375,7 @@ export const ptBR = {
     vocabErroSlugEmUso: 'Já existe uma cozinha com esse slug.',
     vocabErroNaoEncontrado: 'Cozinha não encontrada.',
     vocabErroInterno: 'Algo deu errado. Tente de novo.',
+    vocabErroNotaLonga: 'A nota está longa demais. Encurte e tente de novo.',
     // #268: a aba /admin/descoberta abriga a infra de BUSCA — descoberta na web + embeddings; a IA
     // generativa (modelo de receita + geração de imagem + tetos) foi p/ a aba "IA" (/admin/ia).
     navDescoberta: 'Descoberta',
@@ -1393,6 +1421,9 @@ export const ptBR = {
     aiTitulo: 'Geração de imagem por IA',
     aiDescricao: 'Controle a geração de imagem das receitas: ligar/desligar, modelo e tetos diários por papel.',
     aiHabilitadaLabel: 'Geração de imagem ligada',
+    aiCenarioDiretorLabel: 'Diretor de arte escolhe o cenário',
+    aiCenarioDiretorAjuda:
+      'Antes de cada imagem, uma chamada curta à IA lê a receita e escolhe o cenário da foto (mesa de casa, restaurante refinado, comida de rua…). Desligado, o cenário sai de regras simples por categoria e cozinha. O modelo fica na tarefa "Cenário da imagem".',
     aiModeloLabel: 'Modelo',
     aiModeloNanoBanana: 'Nano Banana 2 (Gemini)',
     aiTetosLabel: 'Tetos de imagem por papel (janela de 24h)',

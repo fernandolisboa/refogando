@@ -44,6 +44,11 @@ import {
   MenuSuggestionSchema,
   type MenuSuggestionOutput,
 } from '@/domain/menu-suggestion'
+import {
+  IMAGE_SCENE_DIRECTOR_MAX_TOKENS,
+  ImageSceneDirectorSchema,
+  type ImageSceneDirectorOutput,
+} from '@/domain/image-scene-schema'
 
 /**
  * Forma da entrada da geração (em #8, mínima: o prompt já montado vive a montante).
@@ -115,6 +120,11 @@ export interface ClaudeClient {
   // pedidos (NÃO gera Receita). Mesma disciplina structured (messages.parse + reparo) no
   // `MenuSuggestionSchema`, com o modelo/ajuste da tarefa `menu`. Reusa `GenerationInput`.
   suggestMenu(input: GenerationInput): Promise<MenuSuggestionOutput>
+  // Diretor de arte da imagem (ADR-0043): escolhe o CENÁRIO da foto do prato (registro, enquadramento,
+  // região, detalhes) a partir da receita. Structured no `ImageSceneDirectorSchema`, modelo/ajuste da
+  // tarefa `imageScene`. UMA tentativa, sem reparo (roda antes de toda imagem, com prazo curto): qualquer
+  // não-sucesso é `failed` e a imagem segue com as regras de reserva. NUNCA lança.
+  directImageScene(input: GenerationInput): Promise<ImageSceneDirectorOutput>
 }
 
 // Mapeia o `message.usage` cru da Anthropic → `TextUsage` normalizado (#463). DEFENSIVO e NULL-HONESTO:
@@ -487,6 +497,36 @@ export class RealClaudeClient implements ClaudeClient {
     }
   }
 
+  async directImageScene(input: GenerationInput): Promise<ImageSceneDirectorOutput> {
+    // Mesma disciplina structured da Sugestão de cardápio, sem o reparo: o diretor roda antes de cada
+    // imagem e uma 2ª chamada dobraria a espera; falhou, as regras de reserva decidem o cenário. O prazo
+    // vem no `signal` do chamador (8s). O `usage` volta pro log do chamador (fora do ledger, ADR-0043).
+    let usage: TextUsage | undefined
+    try {
+      const client = new Anthropic()
+      const settings = withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.imageScene)
+      const message = await client.messages.parse(
+        {
+          model: input.model,
+          max_tokens: maxTokensFor(IMAGE_SCENE_DIRECTOR_MAX_TOKENS, settings),
+          system: input.systemPrompt,
+          messages: [{ role: 'user' as const, content: input.userPrompt }],
+          ...structuredTuning(zodOutputFormat(ImageSceneDirectorSchema), settings),
+        },
+        { signal: input.signal },
+      )
+      usage = mapTextUsage(message.usage)
+      if (message.stop_reason === 'refusal' || message.parsed_output === null) {
+        logSeamParseFailed('directImageScene', message.stop_reason === 'refusal' ? 'recusa' : 'saída nula', message)
+        return { kind: 'failed', usage }
+      }
+      return { kind: 'ok', scene: message.parsed_output, usage }
+    } catch (err) {
+      logSeamError('directImageScene', err, input.signal)
+      return { kind: 'failed', usage }
+    }
+  }
+
   async *streamConversation(input: ConversationStreamInput): AsyncIterable<string> {
     // #463: o STREAM da conversa rende só TEXTO (sem canal de retorno de usage nesta interface). O custo
     // desse turno de chat NÃO tem linha própria em `generation` — a linha da conversa nasce da DESTILAÇÃO
@@ -536,6 +576,14 @@ export class FakeClaudeClient implements ClaudeClient {
   // sites existentes compilem sem mudança. `generateRecipeVariants` o devolve (ignora axes/cozinhaSlugs,
   // como os demais), ou estoura se ausente.
   // `cannedMenu` (ADR-0036) é o SEXTO arg OPCIONAL, pela mesma razão. `suggestMenu` o devolve, ou estoura.
+  // `cannedScene` (ADR-0043) é o SÉTIMO arg OPCIONAL, pela mesma razão. `directImageScene` o devolve; sem
+  // ele devolve `failed` (NÃO estoura: a imagem nunca depende do diretor, e as rotas de imagem que não
+  // configuram o diretor caem nas regras, como em produção quando ele falha).
+  /** Última entrada recebida por `directImageScene` (asserções: prompt, modelo, ajuste). */
+  lastSceneInput: GenerationInput | null = null
+  /** Quantas vezes `directImageScene` foi chamado (provar que o diretor rodou ou não). */
+  sceneCalls = 0
+
   constructor(
     private readonly reply: (text: string) => string = (text) => text,
     private readonly canned?: GenerationOutput,
@@ -543,6 +591,7 @@ export class FakeClaudeClient implements ClaudeClient {
     private readonly cannedExtraction?: ExtractionOutput,
     private readonly cannedVariants?: GenerationOutput[],
     private readonly cannedMenu?: MenuSuggestionOutput,
+    private readonly cannedScene?: ImageSceneDirectorOutput,
   ) {}
 
   async echo(text: string): Promise<string> {
@@ -579,6 +628,12 @@ export class FakeClaudeClient implements ClaudeClient {
       throw new Error('FakeClaudeClient: nenhuma sugestão de cardápio enlatada (passe-a como 6º arg do construtor).')
     }
     return this.cannedMenu
+  }
+
+  async directImageScene(input: GenerationInput): Promise<ImageSceneDirectorOutput> {
+    this.sceneCalls++
+    this.lastSceneInput = input
+    return this.cannedScene ?? { kind: 'failed' }
   }
 
   async *streamConversation(input?: ConversationStreamInput): AsyncIterable<string> {
