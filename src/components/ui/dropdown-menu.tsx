@@ -15,7 +15,8 @@ import { cn } from '@/lib/utils'
  *
  * `DropdownMenuContent` SEMPRE entra num `Portal` (igual a `SelectContent`/`SheetContent`): isso é o
  * que permite o menu escapar pro `body` mesmo quando o gatilho mora dentro do drawer mobile (Radix
- * Dialog) — o consumidor usa `modal={false}` lá pra não empilhar dois scroll-locks. Sem `dark:` (os
+ * Dialog). Menu curto dentro de Dialog pode usar `modal={false}` (ex.: auth-slot); lista longa
+ * fica modal (padrão), senão o remove-scroll do Dialog trava a rolagem do menu. Sem `dark:` (os
  * tokens viram sozinhos via globals.css). Sem ring custom: o realce de item usa a lavagem de páprica
  * `bg-brand/10` via `data-[highlighted]` (NUNCA a erva `accent`, reservada ao selo do Catálogo —
  * mesma regra do `SelectItem`).
