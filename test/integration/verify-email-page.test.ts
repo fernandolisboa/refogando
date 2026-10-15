@@ -24,7 +24,7 @@ vi.mock('next/headers', () => ({
   headers: async () => headersMock.current,
 }))
 
-import VerifyEmailPage from '@/app/[locale]/verify-email/page'
+import VerifyEmailPage from '@/app/[locale]/(com-carregamento)/verify-email/page'
 import { VerifyEmailRetry } from '@/components/auth/verify-email-retry'
 
 type Query = { returnTo?: string | string[]; error?: string | string[] }

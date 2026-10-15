@@ -31,8 +31,14 @@
  * não é dono. Assim NÃO se vaza o slug (derivado do título) nem a existência de Receita privada.
  * Manter o gate+redirect AQUI (não no proxy) honra o ADR ("leitura/gate no server component") e
  * mantém o proxy header-only (sem DB no caminho quente de toda navegação).
+ *
+ * Status HTTP: esta rota fica FORA do grupo `(com-carregamento)` (sem `loading.tsx` acima dela), então
+ * nada é enviado antes de o render decidir o desfecho. O 308 sai como 308 com `Location`, e o
+ * `notFound()` como 404 de verdade. Não pôr Suspense/`loading.tsx` acima das chamadas de
+ * `permanentRedirect`/`notFound` abaixo: o status voltaria a ser 200. O `<Suspense>` dentro do
+ * `DetailChrome` fica abaixo da decisão (ver o comentário lá).
  */
-import { cache } from 'react'
+import { cache, Suspense } from 'react'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound, permanentRedirect } from 'next/navigation'
@@ -384,7 +390,14 @@ async function DetailChrome({
   const cozinhaLabel = resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha, {
     unknownAsAbsent: true,
   })
+  // Suspense SEM fallback, só como fronteira de hidratação: nada aqui dentro suspende (o `await` acima já
+  // rodou), então o conteúdo sai inteiro no HTML, com o status já decidido pela página. Se a hidratação
+  // desta árvore divergir do HTML, o React refaz só ela no client, e não o documento inteiro (o que
+  // recriaria o `<html>` com o tema padrão). Antes era o Suspense do `loading.tsx` que fazia esse papel.
+  // Nada aqui dentro pode chamar `useSearchParams()`: com este Suspense, o build não acusa mais o
+  // bailout, e o corpo da receita sumiria do HTML em silêncio (renderizado só no client, ruim para SEO).
   return (
+    <Suspense>
     <Container as="main" size="reading" className="flex flex-col gap-8 py-8 sm:py-12">
       {/* JSON-LD Recipe (#234): só no caminho público. `dangerouslySetInnerHTML` é a forma idiomática
           de embutir JSON-LD; a string já vem com `<`→`<` (anti-XSS de `</script>`). */}
@@ -478,5 +491,6 @@ async function DetailChrome({
           vazio (sem embedding próprio / nenhum vizinho elegível). */}
       <RecipeSimilarRail results={similar} locale={locale} m={messages} />
     </Container>
+    </Suspense>
   )
 }

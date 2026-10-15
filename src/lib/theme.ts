@@ -9,8 +9,9 @@
  * a todos (cacheável) e quem guardou 'dark' não vê flash. O client grava o cookie e alterna a classe
  * (ThemeToggle).
  *
- * Este módulo é importado pelo ThemeToggle (client): só constantes e a regra pura, NADA do script (ele
- * vive em `./theme-script.ts`, importado só pelo layout, para não ir no bundle do client).
+ * Este módulo é importado pelo ThemeToggle (client): só constantes e a regra pura, NADA do script (o texto
+ * dele vive em `./theme-script.ts`, importado só pelo layout, para não ir no bundle do client; a função
+ * que ele roda, em `./theme-apply.ts`).
  *
  * `THEME_COOKIE` é a fonte única do nome do cookie. NÃO-HttpOnly e não-sensível: é só
  * preferência de apresentação (o client precisa lê-lo/gravá-lo via document.cookie),

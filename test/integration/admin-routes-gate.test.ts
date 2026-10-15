@@ -97,17 +97,17 @@ async function run(
 const as = (m: Promise<unknown>): Promise<PageModule> => m as Promise<PageModule>
 // ADR-0020: as rotas agora vivem sob `[locale]` (locale-no-caminho, #228). Os imports
 // apontam pro novo caminho; o gate de papel em si (o que este teste prova) não mudou.
-const layout = () => as(import('@/app/[locale]/admin/layout'))
-const index = () => as(import('@/app/[locale]/admin/page'))
-const config = () => as(import('@/app/[locale]/admin/ia/page'))
-const ai = () => as(import('@/app/[locale]/admin/descoberta/page'))
-const comparador = () => as(import('@/app/[locale]/admin/comparador/page'))
-const vocabulario = () => as(import('@/app/[locale]/admin/vocabulario/page'))
-const users = () => as(import('@/app/[locale]/admin/users/page'))
-const plano = () => as(import('@/app/[locale]/admin/plano/page'))
-const moderation = () => as(import('@/app/[locale]/admin/moderation/page'))
-const translations = () => as(import('@/app/[locale]/admin/translations/page'))
-const catalog = () => as(import('@/app/[locale]/admin/catalog/page'))
+const layout = () => as(import('@/app/[locale]/(com-carregamento)/admin/layout'))
+const index = () => as(import('@/app/[locale]/(com-carregamento)/admin/page'))
+const config = () => as(import('@/app/[locale]/(com-carregamento)/admin/ia/page'))
+const ai = () => as(import('@/app/[locale]/(com-carregamento)/admin/descoberta/page'))
+const comparador = () => as(import('@/app/[locale]/(com-carregamento)/admin/comparador/page'))
+const vocabulario = () => as(import('@/app/[locale]/(com-carregamento)/admin/vocabulario/page'))
+const users = () => as(import('@/app/[locale]/(com-carregamento)/admin/users/page'))
+const plano = () => as(import('@/app/[locale]/(com-carregamento)/admin/plano/page'))
+const moderation = () => as(import('@/app/[locale]/(com-carregamento)/admin/moderation/page'))
+const translations = () => as(import('@/app/[locale]/(com-carregamento)/admin/translations/page'))
+const catalog = () => as(import('@/app/[locale]/(com-carregamento)/admin/catalog/page'))
 
 beforeEach(() => {
   headersMock.current = new Headers()

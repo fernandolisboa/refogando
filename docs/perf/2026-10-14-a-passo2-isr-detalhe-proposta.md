@@ -26,6 +26,8 @@ Os cinco bloqueios estão no §3. Cada um precisa de uma decisão do dono, porqu
 
 **Achado de passagem (fora do escopo, não mexi):** o ADR-0020 trata o "308" do link legado como permanente para SEO. Hoje ele sai como 200 com redirect no client, e o 404 é soft. As duas coisas vêm do mesmo Suspense do `loading.tsx`.
 
+> **Atualização (2026-10-14):** corrigido a pedido do dono (handoff 71). As rotas de `recipes/` saíram de baixo do `loading.tsx` (grupo `(com-carregamento)`): o UUID legado público responde 308 com `Location`, e o slug privado (para quem não é dono) e o inexistente respondem 404. A tabela acima é o estado da `main` antes da correção. Os "como hoje" do protótipo 2 (§3, B1) também descrevem esse estado anterior, e o custo "o esqueleto do `loading.tsx` some do HTML do anônimo" já não se aplica: a rota não tem mais esqueleto.
+
 ## 2. Mapa: o que a página e os metadados mostram, e quem escreve cada coisa
 
 | O que aparece | Fonte | Quem escreve |
@@ -111,7 +113,7 @@ A correção é uma tag por `(locale, slug)` no 404, expirada por todo escritor 
 1. Vale ISR só para anônimos, com logados seguindo dinâmicos (B1)?
 2. Aceita `{ expire: 0 }` nas remoções (sem vazamento, 500 numa queda do banco logo depois) no lugar do `'max'` obrigatório (B2/B5)?
 3. Aceita a tag global no trilho de semelhantes (toda escrita de receita expira todas as páginas de detalhe)? Ou prefere uma janela de frescor só no trilho, declarada?
-4. Abre issue para o 308 legado e o soft 404 que saem como 200 (§1)?
+4. Abre issue para o 308 legado e o soft 404 que saem como 200 (§1)? **Decidido: corrigir já** (handoff 71).
 
 ## 6. Reprodução
 

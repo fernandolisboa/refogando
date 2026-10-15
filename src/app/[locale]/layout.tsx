@@ -9,6 +9,7 @@ import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provid
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { RestricoesPerfilProvider } from '@/components/profile/restricoes-perfil-provider'
 import { AppUpdateGuard } from '@/components/app-update-guard'
+import { ThemeCookieSync } from '@/components/theme-cookie-sync'
 import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
@@ -28,6 +29,9 @@ export const metadata: Metadata = {
 // Locale-no-caminho (ADR-0020): o app inteiro vive sob `[locale]`, então este É o root layout
 // (renderiza `<html>`/`<body>`) — não há `app/layout.tsx` acima. As duas variantes são
 // pré-renderizadas; um locale fora do conjunto cai em `notFound()`.
+//
+// Rota nova embaixo de `[locale]` entra no grupo `(com-carregamento)/`, que tem o `loading.tsx`. Fora dele
+// fica só o que precisa de status HTTP real (308/404), hoje `recipes/` (ver o `loading.tsx` do grupo).
 export function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }))
 }
@@ -120,6 +124,9 @@ export default async function LocaleLayout({
             (retorna null), independente de provider/locale/sessão. Montado incondicionalmente ⇒
             o visitante anônimo também se beneficia do reload quieto pós-deploy. */}
         <AppUpdateGuard />
+        {/* Reaplica o tema do cookie quando o React monta o `<html>` no client sem o script do `<head>` ter
+            rodado (404/500 da página da receita, erro de hidratação). Sem DOM; no caminho normal é no-op. */}
+        <ThemeCookieSync />
         <LocaleProvider initialLocale={locale}>
           <CozinhaVocabProvider value={cozinhaVocab}>
            <RecipeVariantProvider enabled={variantEnabled}>
