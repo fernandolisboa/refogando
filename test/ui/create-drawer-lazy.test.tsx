@@ -353,6 +353,25 @@ describe('Pedido de abertura pendente (o chunk ainda chegando)', () => {
     expect(assign).not.toHaveBeenCalled()
   })
 
+  it('com a gaveta ABERTA, navegar no client a fecha (handoff 73): a página nova não fica atrás do fundo borrado', async () => {
+    const user = userEvent.setup()
+    mockDrawerChunk()
+    const { navigate } = await renderHeader()
+    await act(async () => idleCallbacks[0]())
+    await waitFor(() => expect(ready).toBe(1))
+    await act(async () => {})
+
+    const criar = criarButton()
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    navigate('/pt-BR/recipes/refogado-de-abobrinha')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    // Fechou de verdade (o estado do header), não só sumiu: o "Criar" reabre na hora.
+    await user.click(criar)
+    expect(screen.getByRole('dialog')).toHaveAccessibleName(ptBR.criarDrawer.tituloPicker)
+  })
+
   it('Escape com o pedido pendente o cancela, como fecharia a gaveta aberta', async () => {
     const { user, gate, criar } = await pendingOpen()
 
