@@ -192,6 +192,10 @@ describe('Gaveta "Criar" sob demanda (handoff 70)', () => {
     await renderHeader()
     act(() => criarButton().focus())
     await waitFor(() => expect(loads).toBe(1))
+    // Espera o módulo chegar: um `import()` ainda em voo atravessaria o `resetModules` e o teste
+    // seguinte receberia a mesma promessa, sem passar pelo próprio `doMock` (loads ficaria 0). A
+    // 1ª transformação da gaveta real passa de 1 s com outras suítes rodando em paralelo.
+    await waitFor(() => expect(ready).toBe(1), { timeout: 10_000 })
   })
 
   it('abrir o menu mobile pré-carrega (o "Criar" do celular mora nele)', async () => {

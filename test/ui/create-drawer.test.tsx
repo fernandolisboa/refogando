@@ -619,11 +619,10 @@ describe('CreateDrawer — navegar fecha a gaveta (handoff 73)', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
-  it('N4 — link para a PRÓPRIA página (o pathname não muda): o clique fecha na hora, ignorando o prefixo de locale', async () => {
+  it('N4 — link para a PRÓPRIA página (o pathname não muda): o clique fecha na hora', async () => {
     const user = userEvent.setup()
-    // A gaveta foi aberta sobre a própria receita (o link de fallback por UUID também casaria aqui
-    // se viesse sem locale: o caminho é comparado sem o prefixo).
-    window.history.replaceState(null, '', '/en-US/recipes/refogado-de-abobrinha')
+    // A gaveta foi aberta sobre a própria receita.
+    window.history.replaceState(null, '', '/pt-BR/recipes/refogado-de-abobrinha')
     mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
     render(<Harness />)
     await gerarReceita(user)
@@ -631,6 +630,43 @@ describe('CreateDrawer — navegar fecha a gaveta (handoff 73)', () => {
 
     await user.click(screen.getByRole('link', { name: M.verReceita }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N4b — link SEM locale para a própria página (o proxy prefixa) também fecha no clique', async () => {
+    const user = userEvent.setup()
+    sessionState = anon()
+    // "Entrar" aponta para `/sign-in?returnTo=…`, sem locale; a página atual é a `/pt-BR/sign-in`.
+    window.history.replaceState(null, '', '/pt-BR/sign-in')
+    render(<Harness conversaHint />)
+
+    await user.click(screen.getByRole('link', { name: ptBR.nav.signIn }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('N4c — link para a mesma receita em OUTRO locale troca o pathname: o clique não fecha (o efeito fecha)', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/en-US/recipes/refogado-de-abobrinha')
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('N4d — clique com modificador (nova aba) num link para a própria página não fecha', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState(null, '', '/pt-BR/recipes/refogado-de-abobrinha')
+    mockFetch({ generations: CRIADA, recipes: { status: 200, body: baseView() } })
+    render(<Harness />)
+    await gerarReceita(user)
+    expect(await screen.findByText(M.resultadoSucesso)).toBeInTheDocument()
+
+    await user.keyboard('{Control>}')
+    await user.click(screen.getByRole('link', { name: M.verReceita }))
+    await user.keyboard('{/Control}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('N5 — na /create, um link da gaveta para a /create re-semeia em vez de sair: não fecha', async () => {

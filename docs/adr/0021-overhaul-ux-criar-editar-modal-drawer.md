@@ -57,5 +57,5 @@ Isto é UX reorg, não expansão do modelo de domínio: nenhuma migração de sc
 
 ## Atualização (2026-10-15, handoff 73): navegar fecha a gaveta
 
-- A gaveta do header atravessava a navegação (o header persiste entre rotas): "Ver receita" carregava a receita por trás do painel e do fundo borrado. Agora a própria `CreateDrawer` fecha quando o `pathname` muda com ela aberta (link de dentro dela ou voltar/avançar do navegador), no momento em que a página nova chega. Um link para a própria página (o `pathname` não muda) fecha no clique; na `/create` não, porque lá os links da gaveta a re-semeiam (decisão 2).
+- A gaveta do header atravessava a navegação (o header persiste entre rotas): "Ver receita" carregava a receita por trás do painel e do fundo borrado. Agora a própria `CreateDrawer` fecha quando o `pathname` muda com ela aberta (link de dentro dela ou voltar/avançar do navegador), quando a navegação é montada: na receita, quando a página chega; nas rotas de `(com-carregamento)`, quando o esqueleto aparece. Um link para a própria página (o `pathname` não muda) fecha no clique; na `/create` não, porque lá os links da gaveta a re-semeiam (decisão 2).
 - O bloqueio da decisão 5 vale aqui também: com a geração em voo, a troca de rota não fecha.
