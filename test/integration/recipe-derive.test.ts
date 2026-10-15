@@ -8,7 +8,7 @@ import { EMBEDDING_DIMENSIONS } from '@/db/schema'
 import { FakeEmbedder } from '@/server/embedding/embedder'
 import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
-import type { DerivedDiff } from '@/domain/recipe-diff'
+import { isEmptyDiff, type DerivedDiff } from '@/domain/recipe-diff'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation, seedRecipeIngredient, seedIngredient } from '../helpers/recipes'
 
@@ -529,5 +529,223 @@ describe('POST /api/recipes/[id]/derive — Receita DERIVADA (#17)', () => {
       .from(recipeEmbedding)
       .where(and(eq(recipeEmbedding.recipeId, recipeId), eq(recipeEmbedding.locale, 'pt-BR')))
     expect(emb?.dims).toBe(EMBEDDING_DIMENSIONS)
+  })
+})
+
+/** POST /derive com `{ clone: true }` (ADR-0045) — corpo cru, sem `edits`. */
+function cloneReq(id: string, headers?: Headers, body: unknown = { clone: true }): Promise<Response> {
+  return deriveRoute(
+    new Request(`http://localhost/api/recipes/${id}/derive?locale=pt-BR`, {
+      method: 'POST',
+      headers: { ...(headers ? Object.fromEntries(headers) : {}), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id }) },
+  )
+}
+
+describe('POST /api/recipes/[id]/derive { clone: true } — Clonar (ADR-0045)', () => {
+  it('cópia fiel: mesmas regras do fork, conteúdo da base intacto, diff vazio', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'clone-catalog@ex.com' })
+    const baseId = await seedCatalogBase()
+    const queijoId = await seedIngredient({ slug: `queijo-${crypto.randomUUID()}` })
+    await seedRecipeIngredient({
+      recipeId: baseId,
+      ingredientId: queijoId,
+      ordem: 5, // buraco na ordem: a cópia mantém o 5 (os nomes por-locale são indexados por ele)
+      quantidade: '0.250',
+      unidade: 'kg',
+      rawText: 'queijo meia-cura',
+      nota: 'ralado',
+    })
+    const nomesEn = [
+      { ordem: 0, nome: 'tapioca starch', nomeOrigem: 'polvilho' },
+      { ordem: 5, nome: 'semi-cured cheese', nomeOrigem: 'queijo meia-cura' },
+    ]
+    await seedTranslation({
+      recipeId: baseId,
+      locale: 'en-US',
+      titulo: 'Cheese bread',
+      descricao: 'Minas snack.',
+      passos: ['Mix.', 'Bake.'],
+      notas: 'Best warm.',
+      provenance: 'automatica_nao_revisada',
+      ingredientes: nomesEn,
+      sourceFingerprint: 'src-fp',
+      mtFingerprint: 'mt-fp',
+    })
+    const baseBefore = await readState(baseId)
+
+    const res = await cloneReq(baseId, headers)
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+
+    const copia = await readState(recipeId)
+    expect(copia).toMatchObject({
+      origin: 'user_edited',
+      ownerId: userId,
+      visibility: 'private',
+      lineageKind: 'edited',
+      parentRecipeId: baseId,
+      restricoes: ['sem_gluten'],
+    })
+    expect(copia.derivedDiff).toEqual({
+      v: 1,
+      ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: {},
+    })
+
+    // Ingredientes: os mesmos, com unidade, FK canônica e nota.
+    const ings = await getDb()
+      .select({
+        ordem: recipeIngredient.ordem,
+        quantidade: recipeIngredient.quantidade,
+        unidade: recipeIngredient.unidade,
+        rawText: recipeIngredient.rawText,
+        ingredientId: recipeIngredient.ingredientId,
+        nota: recipeIngredient.nota,
+      })
+      .from(recipeIngredient)
+      .where(eq(recipeIngredient.recipeId, recipeId))
+      .orderBy(recipeIngredient.ordem)
+    expect(ings).toEqual([
+      { ordem: 0, quantidade: '0.500', unidade: 'kg', rawText: 'polvilho', ingredientId: null, nota: null },
+      { ordem: 1, quantidade: null, unidade: 'a_gosto', rawText: 'sal', ingredientId: null, nota: null },
+      { ordem: 5, quantidade: '0.250', unidade: 'kg', rawText: 'queijo meia-cura', ingredientId: queijoId, nota: 'ralado' },
+    ])
+
+    // Traduções: todas, como estão (provenance original, nomes por-locale), com slug próprio.
+    const trs = await getDb()
+      .select({
+        locale: recipeTranslation.locale,
+        titulo: recipeTranslation.titulo,
+        notas: recipeTranslation.notas,
+        provenance: recipeTranslation.provenance,
+        ingredientes: recipeTranslation.ingredientes,
+        slug: recipeTranslation.slug,
+        mtFingerprint: recipeTranslation.mtFingerprint,
+      })
+      .from(recipeTranslation)
+      .where(eq(recipeTranslation.recipeId, recipeId))
+      .orderBy(recipeTranslation.locale)
+    expect(trs.map((t) => [t.locale, t.titulo, t.provenance])).toEqual([
+      ['en-US', 'Cheese bread', 'automatica_nao_revisada'],
+      ['pt-BR', 'Pão de queijo', 'escrita_por_pessoa'],
+    ])
+    expect(trs[0].notas).toBe('Best warm.')
+    expect(trs[0].ingredientes).toEqual(nomesEn)
+    expect(trs[0].mtFingerprint).toBe('mt-fp')
+    expect(trs.every((t) => t.slug)).toBe(true)
+
+    // GET do dono: diff presente e vazio (a UI esconde "O que mudou").
+    const view = (await (await get(recipeId, headers)).json()) as { derivedDiff?: DerivedDiff }
+    expect(view.derivedDiff && isEmptyDiff(view.derivedDiff)).toBe(true)
+
+    // Base byte-inalterada; clonar de novo cria outra cópia independente.
+    expect(await readState(baseId)).toEqual(baseBefore)
+    const res2 = await cloneReq(baseId, headers)
+    expect(res2.status).toBe(201)
+    expect(((await res2.json()) as { recipeId: string }).recipeId).not.toBe(recipeId)
+  })
+
+  it('mesmos gates do fork: própria ⇒ 409, privada de outro ⇒ 404, visitante ⇒ 401', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'clone-gates@ex.com' })
+    const { userId: outro } = await seedSessionHeaders({ email: 'clone-gates-b@ex.com' })
+    const propria = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    const privada = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: outro })
+    const catalogo = await seedCatalogBase()
+    const before = await countRecipes()
+
+    expect((await cloneReq(propria, headers)).status).toBe(409)
+    expect((await cloneReq(privada, headers)).status).toBe(404)
+    expect((await cloneReq(catalogo)).status).toBe(401)
+    expect(await countRecipes()).toBe(before)
+  })
+
+  it('receita removida do pool pelo Curador ⇒ 404, nem clona nem deriva', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'clone-moderada@ex.com' })
+    const { userId: dono } = await seedSessionHeaders({ email: 'clone-moderada-dono@ex.com' })
+    const { userId: curador } = await seedSessionHeaders({ email: 'clone-moderada-cur@ex.com' })
+    const baseId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: dono })
+    await seedTranslation({ recipeId: baseId, locale: 'pt-BR', titulo: 'Removida', provenance: 'escrita_por_pessoa' })
+    await getDb()
+      .update(recipe)
+      .set({ moderationRemovedAt: new Date(), moderationReason: 'spam', moderatedBy: curador })
+      .where(eq(recipe.id, baseId))
+    const before = await countRecipes()
+
+    expect((await cloneReq(baseId, headers)).status).toBe(404)
+    expect((await derive(baseId, { titulo: 'Editada' }, headers)).status).toBe(404)
+    expect(await countRecipes()).toBe(before)
+  })
+
+  it('corpo JSON null ⇒ 400, não 500', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'clone-null@ex.com' })
+    const baseId = await seedCatalogBase()
+    expect((await cloneReq(baseId, headers, null)).status).toBe(400)
+  })
+
+  it('clone junto com edits é ambíguo ⇒ 400', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'clone-ambiguo@ex.com' })
+    const baseId = await seedCatalogBase()
+    const before = await countRecipes()
+    const res = await cloneReq(baseId, headers, { clone: true, edits: baseEdits })
+    expect(res.status).toBe(400)
+    expect(await countRecipes()).toBe(before)
+  })
+})
+
+describe('"O que mudou" só com o que mudou (ADR-0045)', () => {
+  it('salvar o modal sem mexer em nada (forma do form: "0.5", textos aparados) ⇒ diff vazio', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'derive-noop@ex.com' })
+    const baseId = await seedCatalogBase()
+    const res = await derive(
+      baseId,
+      {
+        titulo: 'Pão de queijo',
+        descricao: 'Salgadinho mineiro de polvilho.',
+        passos: ['Misture.', 'Asse.'],
+        notas: null,
+        ingredientes: [
+          { rawText: 'polvilho', quantidade: '0.5', unidade: 'kg' },
+          { rawText: 'sal', quantidade: null, unidade: 'a_gosto' },
+        ],
+        restricoes: ['sem_gluten'],
+      },
+      headers,
+    )
+    expect(res.status).toBe(201)
+    const { recipeId } = (await res.json()) as { recipeId: string }
+    const diff = (await readState(recipeId)).derivedDiff
+    expect(diff?.ingredientes.quantidadeAlterada).toEqual([])
+    expect(diff?.campos).toEqual({})
+  })
+
+  it('diff antigo já gravado com ruído ("0.500 → 0.5") sai podado no GET do dono', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'derive-legado@ex.com' })
+    const baseId = await seedCatalogBase()
+    const { recipeId } = (await (await derive(baseId, baseEdits, headers)).json()) as { recipeId: string }
+    const ruidoso: DerivedDiff = {
+      v: 1,
+      ingredientes: {
+        adicionados: ['queijo'],
+        removidos: [],
+        quantidadeAlterada: [{ nome: 'polvilho', de: '0.500', para: '0.5' }],
+      },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: { titulo: { de: 'Pão de queijo', para: 'Pão de queijo ' } },
+    }
+    await getDb().update(recipe).set({ derivedDiff: ruidoso }).where(eq(recipe.id, recipeId))
+
+    const view = (await (await get(recipeId, headers)).json()) as { derivedDiff?: DerivedDiff }
+    expect(view.derivedDiff).toEqual({
+      v: 1,
+      ingredientes: { adicionados: ['queijo'], removidos: [], quantidadeAlterada: [] },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: {},
+    })
+    // O armazenado fica como está (nada é reescrito na leitura).
+    expect((await readState(recipeId)).derivedDiff).toEqual(ruidoso)
   })
 })

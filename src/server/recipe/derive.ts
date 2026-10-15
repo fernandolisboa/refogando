@@ -31,6 +31,13 @@ import { embedTranslation } from '@/server/embedding/recompute'
  *    — história 289: apagar a base anula parent_recipe_id e um diff recomputado sumiria).
  *  - Traduções/ingredientes são COPIADOS (snapshot NOW), NÃO referência viva à base: editar a
  *    base depois NÃO toca a derivada (nem o conteúdo, nem o diff).
+ *
+ * Clonar (ADR-0045): `edits: null` = CÓPIA FIEL num clique, sem o modal. Mesmas regras do fork
+ * (dona = leitor, privada, linhagem `edited` apontando a base, galeria vazia); o conteúdo é a
+ * base tal como está: TODAS as traduções com a provenance original (nenhuma vira
+ * 'escrita_por_pessoa', nenhum locale novo é inventado), com nomes de ingrediente por-locale,
+ * `stale` e fingerprints; ingredientes com a MESMA `ordem`, quantidade, unidade, nota e FK
+ * canônica; restrições da base. O diff congelado sai VAZIO (nada mudou) e a UI esconde "O que mudou".
  */
 
 export type DeriveEdits = {
@@ -84,7 +91,8 @@ export async function deriveRecipe(input: {
   db: Database
   baseId: string // já validado uuid + autorizado pelo route (NÃO-próprio, legível)
   viewerId: string // session.user.id (o futuro dono da derivada)
-  edits: DeriveEdits
+  /** `null` ⇒ clonar: cópia fiel da base (ADR-0045). */
+  edits: DeriveEdits | null
   locale: string // requestLocale — o locale em que as edições textuais se aplicam
 }): Promise<DeriveResult> {
   const { db, baseId, viewerId, edits, locale } = input
@@ -110,13 +118,16 @@ export async function deriveRecipe(input: {
     restricoes: baseRecipe.restricoes.filter(isRestricao),
   })
 
-  const editsLado = toDiffLado({
-    titulo: edits.titulo,
-    descricao: edits.descricao,
-    passos: edits.passos,
-    ingredientes: edits.ingredientes,
-    restricoes: edits.restricoes,
-  })
+  // Clonar: os "edits" SÃO a base ⇒ diff vazio por construção.
+  const editsLado = edits
+    ? toDiffLado({
+        titulo: edits.titulo,
+        descricao: edits.descricao,
+        passos: edits.passos,
+        ingredientes: edits.ingredientes,
+        restricoes: edits.restricoes,
+      })
+    : baseLado
 
   // Diff CONGELADO no instante do fork (apresentacional, versionado). Armazenado, nunca recomputado.
   const derivedDiff = decideDerivedDiff({ base: baseLado, edits: editsLado })
@@ -128,14 +139,43 @@ export async function deriveRecipe(input: {
   // (rawText → ingredientId) direto. Primeiro casamento por rawText vence (determinístico).
   const baseIngredientFk = new Map<string, string>()
   const baseIngRows = await db
-    .select({ rawText: recipeIngredient.rawText, ingredientId: recipeIngredient.ingredientId })
+    .select({
+      ordem: recipeIngredient.ordem,
+      rawText: recipeIngredient.rawText,
+      ingredientId: recipeIngredient.ingredientId,
+      quantidade: recipeIngredient.quantidade,
+      unidade: recipeIngredient.unidade,
+      nota: recipeIngredient.nota,
+    })
     .from(recipeIngredient)
     .where(eq(recipeIngredient.recipeId, baseId))
     .orderBy(recipeIngredient.ordem, recipeIngredient.id)
   for (const ing of baseIngRows) {
-    if (ing.rawText != null && ing.ingredientId != null && !baseIngredientFk.has(ing.rawText)) {
-      baseIngredientFk.set(ing.rawText, ing.ingredientId)
+    // Chave aparada (ADR-0045): o form apara o rawText; um espaço sobrando na base não pode
+    // custar a FK (e com ela o Aviso de alérgeno) na derivada.
+    const chave = ing.rawText?.trim()
+    if (chave && ing.ingredientId != null && !baseIngredientFk.has(chave)) {
+      baseIngredientFk.set(chave, ing.ingredientId)
     }
+  }
+
+  // Clonar: fingerprints/versão do prompt por locale (#496). O loader não os projeta; uma leitura
+  // só no caminho do clone (o fork editado não os copia).
+  const baseFingerprints = new Map<
+    string,
+    { promptVersion: number | null; sourceFingerprint: string | null; mtFingerprint: string | null }
+  >()
+  if (!edits) {
+    const fps = await db
+      .select({
+        locale: recipeTranslation.locale,
+        promptVersion: recipeTranslation.promptVersion,
+        sourceFingerprint: recipeTranslation.sourceFingerprint,
+        mtFingerprint: recipeTranslation.mtFingerprint,
+      })
+      .from(recipeTranslation)
+      .where(eq(recipeTranslation.recipeId, baseId))
+    for (const { locale: l, ...fp } of fps) baseFingerprints.set(l, fp)
   }
 
   try {
@@ -154,7 +194,7 @@ export async function deriveRecipe(input: {
           // o valor lido É um membro válido do enum) — herdadas inalteradas da base.
           cozinha: baseRecipe.cozinha as Cozinha | null,
           categoria: baseRecipe.categoria as Categoria | null,
-          restricoes: [...edits.restricoes],
+          restricoes: edits ? [...edits.restricoes] : baseRecipe.restricoes.filter(isRestricao),
           porcoes: baseRecipe.porcoes,
           dificuldade: baseRecipe.dificuldade,
           // Tempo de preparo (#261, ADR-0023): HERDADO da base inalterado (invariante no fork, fora
@@ -180,29 +220,42 @@ export async function deriveRecipe(input: {
       // Traduções: COPIA todas as da base (snapshot), MAS para o locale pedido aplica as edições
       // textuais (titulo/descricao/passos/notas do request). Provenance preservada da base; a do
       // locale editado nasce 'escrita_por_pessoa' (o leitor escreveu/curou o texto editado).
-      const translationsToInsert = baseRows.translations.map((t) =>
-        t.locale === locale
-          ? {
-              recipeId: r.id,
-              locale,
-              titulo: edits.titulo,
-              descricao: edits.descricao,
-              passos: edits.passos,
-              notas: edits.notas,
-              provenance: 'escrita_por_pessoa' as const,
-            }
-          : {
-              recipeId: r.id,
-              locale: t.locale,
-              titulo: t.titulo,
-              descricao: t.descricao,
-              passos: t.passos,
-              notas: t.notas,
-              provenance: t.provenance,
-            },
-      )
+      // Clonar (edits null): todas copiadas como estão, provenance preservada.
+      const translationsToInsert: Omit<typeof recipeTranslation.$inferInsert, 'slug'>[] =
+        baseRows.translations.map((t) =>
+          edits && t.locale === locale
+            ? {
+                recipeId: r.id,
+                locale,
+                titulo: edits.titulo,
+                descricao: edits.descricao,
+                passos: edits.passos,
+                notas: edits.notas,
+                provenance: 'escrita_por_pessoa' as const,
+              }
+            : {
+                recipeId: r.id,
+                locale: t.locale,
+                titulo: t.titulo,
+                descricao: t.descricao,
+                passos: t.passos,
+                notas: t.notas,
+                provenance: t.provenance,
+                // Clonar: os ingredientes são os MESMOS (ordem + raw_text), então os nomes traduzidos
+                // por-locale (#426) seguem válidos; `stale` e os fingerprints (#496) também (o
+                // conteúdo é byte-idêntico, e sem eles a re-tradução nunca tocaria a linha). No
+                // fork editado ficam fora (a lista mudou e o display cai no raw_text, como antes).
+                ...(edits
+                  ? {}
+                  : {
+                      ingredientes: t.ingredientes,
+                      stale: t.stale,
+                      ...baseFingerprints.get(t.locale),
+                    }),
+              },
+          )
       // Se a base NÃO tinha o locale pedido, ele entra como tradução nova (edições + origem do leitor).
-      if (!baseRows.translations.some((t) => t.locale === locale)) {
+      if (edits && !baseRows.translations.some((t) => t.locale === locale)) {
         translationsToInsert.push({
           recipeId: r.id,
           locale,
@@ -231,11 +284,27 @@ export async function deriveRecipe(input: {
       // `ingredientId` HERDA a FK canônica da base quando o `rawText` casa um item canônico
       // (snapshot fiel ⇒ o dado de alérgeno segue alimentando o Aviso no GET); item novo/sem
       // casamento ⇒ null (raw-text-only). quantidade string|null; ordem por índice.
-      if (edits.ingredientes.length > 0) {
+      if (!edits) {
+        // Clonar: a lista da base como está (ordem, quantidade, unidade, FK canônica).
+        if (baseIngRows.length > 0) {
+          await tx.insert(recipeIngredient).values(
+            baseIngRows.map((it) => ({
+              recipeId: r.id,
+              ingredientId: it.ingredientId,
+              // A MESMA ordem: os nomes por-locale (#426) são indexados por ela.
+              ordem: it.ordem,
+              quantidade: it.quantidade,
+              unidade: it.unidade,
+              rawText: it.rawText,
+              nota: it.nota,
+            })),
+          )
+        }
+      } else if (edits.ingredientes.length > 0) {
         await tx.insert(recipeIngredient).values(
           edits.ingredientes.map((it, i) => ({
             recipeId: r.id,
-            ingredientId: it.rawText != null ? (baseIngredientFk.get(it.rawText) ?? null) : null,
+            ingredientId: it.rawText != null ? (baseIngredientFk.get(it.rawText.trim()) ?? null) : null,
             ordem: i,
             quantidade: it.quantidade, // string|null
             unidade: it.unidade,

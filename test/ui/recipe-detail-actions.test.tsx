@@ -157,3 +157,64 @@ describe('RecipeDetailActions — não-dono autenticado deriva no modal (#196)',
     ).not.toBeInTheDocument()
   })
 })
+
+/**
+ * ADR-0045: "Clonar" ao lado de "Criar minha versão" — a cópia num clique, sem o modal. POST
+ * /derive com `{ clone: true }` e navega pra nova Receita.
+ */
+describe('RecipeDetailActions — Clonar num clique (ADR-0045)', () => {
+  function logado() {
+    sessionState = {
+      data: { user: { id: 'u-1' } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    }
+  }
+
+  it('clicar "Clonar" faz o POST de clone e navega pra cópia, sem abrir o modal', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ recipeId: 'nova-1', imageReviewSuggested: false }), { status: 201 }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar }))
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/recipes/r-1/derive?locale=pt-BR')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ clone: true })
+    expect(push).toHaveBeenCalledWith(expect.stringContaining('nova-1'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('falha no clone ⇒ mensagem neutra e o botão volta a ficar clicável', async () => {
+    const user = userEvent.setup()
+    logado()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(ptBR.minhasCriacoes.clonarErro)
+    expect(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar })).toBeEnabled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('visitante não vê "Clonar" (só o convite de entrar)', () => {
+    sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+    expect(screen.queryByRole('button', { name: ptBR.minhasCriacoes.clonar })).not.toBeInTheDocument()
+  })
+
+  it('o dono não vê "Clonar" (a própria se edita no lugar)', () => {
+    logado()
+    renderActions(ownerView())
+    expect(screen.queryByRole('button', { name: ptBR.minhasCriacoes.clonar })).not.toBeInTheDocument()
+  })
+})

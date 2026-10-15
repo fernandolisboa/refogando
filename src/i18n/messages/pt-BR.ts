@@ -312,7 +312,7 @@ export const ptBR = {
     removido: 'Removido',
     quantidadeAlterada: 'Quantidade alterada',
     restricaoAlterada: 'Restrição alterada',
-    copiaTitulo: 'Criando uma cópia',
+    passosReordenados: 'Ordem dos passos alterada',
     copiaAviso: 'Você está editando uma receita que não é sua — vamos criar uma cópia sua.',
   },
   // #317 (ADR-0025): `cozinhaLabel` saiu do i18n — os rótulos de cozinha agora vêm da tabela
@@ -948,6 +948,10 @@ export const ptBR = {
     regenerar: 'Gerar nova versão',
     // CTA de derivar uma receita NÃO-própria (catálogo/pública de outra pessoa).
     criarMinhaVersao: 'Criar minha versão',
+    // ADR-0045: atalho de cópia fiel num clique, ao lado de "Criar minha versão".
+    clonar: 'Clonar',
+    clonarDica: 'Cria uma cópia sua, igual à original, sem passar pela edição',
+    clonarErro: 'Não deu para clonar a receita. Tente de novo.',
     // Bloco do diff da derivada (título da seção; os rótulos das linhas vêm de `derivada`).
     diffTitulo: 'O que mudou em relação à original',
     // Convites de entrar (gating consistente em /create, /conversation e nos botões do detalhe).

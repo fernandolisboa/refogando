@@ -22,7 +22,8 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  *      - ownerId === viewer → 409 (derivar-da-própria é proibido; o in-place é #21).
  *      - ownerId !== null E visibility !== 'public' → 404 (privada de OUTRO; leak-safe).
  *      - senão (catálogo ownerId NULL, OU pública de outro) → PROSSEGUE.
- *   4. parse + valida body.edits → 400 dados_invalidos em forma ruim.
+ *   4. parse + valida body.edits → 400 dados_invalidos em forma ruim. `{ clone: true }` (sem
+ *      edits) = CLONAR: cópia fiel da base num clique, sem o modal (ADR-0045).
  *   5. deriveRecipe → 201 { recipeId }.
  *
  * 404-not-403 em ownership (nunca vaza existência). Vocabulário de erro alinhado às outras
@@ -35,6 +36,7 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 type RawIngrediente = { rawText?: unknown; quantidade?: unknown; unidade?: unknown }
 
 type DeriveBody = {
+  clone?: unknown
   edits?: {
     titulo?: unknown
     descricao?: unknown
@@ -134,6 +136,7 @@ export async function POST(
       ownerId: recipe.ownerId,
       visibility: recipe.visibility,
       curationStatus: recipe.curationStatus,
+      moderationRemovedAt: recipe.moderationRemovedAt,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
@@ -148,14 +151,24 @@ export async function POST(
   // Privada de OUTRO (com dono e não-pública) ⇒ 404 leak-safe. Catálogo (ownerId NULL) CURADO
   // (#238: rascunho pending/editing/rejected NÃO é forkável — não vaza o draft cru) e pública de
   // outro PASSAM. Espelha o gate de leitura do GET (não vaza existência).
-  if (!isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus)) {
+  // Removida do pool pelo Curador (#18): para o não-dono ela não é leitura pública (detail-view
+  // dá 404), então também não é forkável — senão Clonar (ADR-0045) traria o conteúdo removido de
+  // volta numa cópia limpa e republicável.
+  if (
+    !isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) ||
+    gate.moderationRemovedAt != null
+  ) {
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 
   // Valida o corpo SÓ depois de autorizar (não revela forma do contrato a quem não pode derivar).
-  const body = (await request.json().catch(() => ({}))) as DeriveBody
-  const edits = parseEdits(body.edits)
-  if (edits === null) return badRequest()
+  // `?? {}`: um corpo JSON `null` viraria TypeError (500) no `body.clone` abaixo.
+  const body = ((await request.json().catch(() => ({}))) ?? {}) as DeriveBody
+  // Clonar (ADR-0045): `clone: true` SEM `edits` — os dois juntos é ambíguo ⇒ 400.
+  const clone = body.clone === true
+  if (clone && body.edits !== undefined) return badRequest()
+  const edits = clone ? null : parseEdits(body.edits)
+  if (!clone && edits === null) return badRequest()
 
   const locale = parseRequestLocale(request)
   const res = await deriveRecipe({ db, baseId: id, viewerId, edits, locale })

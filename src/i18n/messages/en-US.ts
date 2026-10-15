@@ -282,7 +282,7 @@ export const enUS: Messages = {
     removido: 'Removed',
     quantidadeAlterada: 'Quantity changed',
     restricaoAlterada: 'Dietary restriction changed',
-    copiaTitulo: 'Making a copy',
+    passosReordenados: 'Steps reordered',
     copiaAviso: 'You’re editing a recipe that isn’t yours — we’ll make a copy for you.',
   },
   // #317 (ADR-0025): `cozinhaLabel` saiu do i18n — os rótulos de cozinha agora vêm da tabela
@@ -881,6 +881,10 @@ export const enUS: Messages = {
     apagar: 'Delete',
     regenerar: 'Generate a new version',
     criarMinhaVersao: 'Create my version',
+    // ADR-0045: one-click faithful copy, next to "Create my version".
+    clonar: 'Clone',
+    clonarDica: 'Makes your own copy, same as the original, without editing first',
+    clonarErro: 'Couldn’t clone this recipe. Try again.',
     diffTitulo: 'What changed from the original',
     convidaEntrarTitulo: 'Sign in to do this',
     convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',

@@ -12,7 +12,8 @@
  *    MESMO modal compartilhado (`RecipeEditModal mode="derive"`), prefilled da base; o Salvar
  *    DERIVA (POST /derive — a base nunca é mutada) e navega pra nova Receita (sua, privada).
  *    Gating #22 (descope): Visitante vê um CONVITE de entrar; logado vê o gatilho de derivar.
- *    Derivar a PRÓPRIA já é impossível aqui (o dono cai no ramo `canManage`).
+ *    Derivar a PRÓPRIA já é impossível aqui (o dono cai no ramo `canManage`). ADR-0045: ao lado,
+ *    "Clonar" faz a mesma cópia num clique, sem o modal (`RecipeCloneButton`).
  *
  * `canDerive`: catálogo (origin 'catalog') OU comunidade NÃO-própria. Como a rota só expõe
  * `visibility` ao dono, no não-dono usamos a presença do detalhe + a ausência de `canManage`:
@@ -29,6 +30,7 @@ import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeEditModal } from './recipe-edit-modal'
+import { RecipeCloneButton } from './recipe-clone-button'
 import { LineageVersionControls } from './lineage-version-controls'
 import { RecipeDiffView } from './recipe-diff-view'
 import { ClearAttributionButton } from './clear-attribution-button'
@@ -94,5 +96,11 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
   // compartilhado abre em `mode="derive"` — Salvar deriva (POST /derive) e navega pra nova
   // Receita. Toda leitura não-dono é catálogo/pública por construção do gate (privada de outro
   // é 404 e nunca chega aqui).
-  return <RecipeEditModal view={view} mode="derive" locale={locale} />
+  // ADR-0045: "Clonar" ao lado — a mesma cópia, num clique, sem passar pelo modal.
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <RecipeEditModal view={view} mode="derive" locale={locale} />
+      <RecipeCloneButton recipeId={view.id} locale={locale} />
+    </div>
+  )
 }
