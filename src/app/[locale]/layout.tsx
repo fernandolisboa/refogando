@@ -11,6 +11,7 @@ import { RestricoesPerfilProvider } from '@/components/profile/restricoes-perfil
 import { AppUpdateGuard } from '@/components/app-update-guard'
 import { ThemeCookieSync } from '@/components/theme-cookie-sync'
 import { SiteHeader } from '@/components/site-header'
+import { SectionTabs } from '@/components/nav/section-tabs'
 import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
@@ -140,6 +141,9 @@ export default async function LocaleLayout({
                 renderizados no servidor. O resto do estado da Busca NÃO sobe — só o `q`. */}
             <HomeSearchProvider>
               <SiteHeader />
+              {/* ADR-0043: subabas da seção atual (Explorar, Minhas receitas, Planejar), fora do header
+                  sticky; nada fora das seções. */}
+              <SectionTabs />
               {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
                   então mantém um único landmark main por documento. #461: alvo do skip-link
                   (`id="conteudo"` + `tabIndex={-1}` p/ receber foco programático sem virar tab stop). */}

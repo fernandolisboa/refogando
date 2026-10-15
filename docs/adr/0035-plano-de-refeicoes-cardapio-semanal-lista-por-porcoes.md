@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Emendado por ADR-0043 (2026-10-15):** o Cardápio e o índice das Listas de compras deixaram a nav e o menu da conta e viraram abas da seção "Planejar" (com a Despensa).
+
 O dono pediu (2026-09-28) "a próxima feature grande, que mude alguma coisa no app". O handoff 54 e o ADR-0032 deixaram o **planejador semanal** como o degrau seguinte da Lista de compras: a agregação por ingrediente e a escala por porções já existiam, faltava o "o que vou cozinhar quando". Termo no `CONTEXT.md` (**Plano de refeições**). Relaciona: ADR-0032 (Lista de compras, merge/snapshot), ADR-0027 (Salvar — o gate de elegibilidade), #452 (escalador de porções), ADR-0011 (privacidade por dono).
 
 ## Decisões

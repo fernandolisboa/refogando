@@ -11,8 +11,8 @@ export const ptBR = {
   // de marca da rede, não). NUNCA rotular o app como "bilíngue" em texto ao usuário (regra do dono).
   footer: { abreEmNovaAba: 'abre em nova aba' },
   nav: {
-    // #277: a Descoberta/home virou "Explorar" na nav (aba ao lado de "Seguindo"). O key segue
-    // `home` (linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
+    // #277/ADR-0043: rótulo da SEÇÃO "Explorar" (a home em si é a aba "Descobrir"). O key segue `home`
+    // (a seção linka a `/`, e not-found reusa este valor de "voltar pra home"); só o RÓTULO mudou.
     home: 'Explorar',
     // #277: aba "Seguindo" — feed das Receitas de quem o viewer segue. Só-logada (gateada por authed).
     seguindo: 'Seguindo',
@@ -37,11 +37,20 @@ export const ptBR = {
     // #461 (a11y): skip-link (1º tab stop, oculto até focar) que pula o header repetido e leva ao
     // conteúdo principal (`#conteudo`, o wrapper do `<main>` de cada página).
     pularParaConteudo: 'Pular para o conteúdo',
-    // ADR-0035: "Cardápio" (Plano de refeições da semana) na nav logada. O índice das Listas de compras
-    // (menu da conta) reusa `listaDeCompras.indiceTitulo`.
+    // ADR-0035: "Cardápio" (Plano de refeições da semana), aba de "Planejar" (ADR-0043). A aba das Listas
+    // de compras reusa `listaDeCompras.indiceTitulo`.
     cardapio: 'Cardápio',
-    // ADR-0038: "Despensa" na nav logada.
+    // ADR-0038: "Despensa", aba de "Planejar" (ADR-0043).
     despensa: 'Despensa',
+    // ADR-0043: as 3 seções do header (Explorar reusa `home`) e as abas sem rótulo próprio no catálogo
+    // ("Seguindo", "Salvos", "Cardápio", "Listas de compras" e "Despensa" reusam rótulos já existentes).
+    // `secoesAria` nomeia a nav do header, que agora divide a página com a nav da tira de abas.
+    secoesAria: 'Seções',
+    minhasReceitas: 'Minhas receitas',
+    planejar: 'Planejar',
+    descobrir: 'Descobrir',
+    cozinheiros: 'Cozinheiros',
+    criacoes: 'Criações',
     // ADR-0039: página "Como usar" (/guia), no menu da conta e no rodapé.
     comoUsar: 'Como usar',
   },
@@ -2339,15 +2348,13 @@ export const ptBR = {
     buscaTitulo: 'Busque qualquer prato',
     buscaTexto: 'Digite um prato, um ingrediente ou um estilo. Não achou o que queria? Com a conta, dá para gerar a receita com IA a partir da própria busca.',
     criarTitulo: 'Crie a sua receita',
-    criarTexto: 'Em “Criar”, a IA monta uma receita do seu jeito: por um formulário, descrevendo o prato de uma vez ou conversando. O que você cria fica em “Minhas criações”.',
-    salvosTitulo: 'Guarde o que gostou',
-    salvosTexto: 'Toque em “Salvar” numa receita e ela vem para cá. Organize em coleções e mande várias de uma vez para a lista de compras.',
-    cardapioTitulo: 'Planeje a semana',
-    cardapioTexto: 'Monte o cardápio da semana, peça uma sugestão à IA, copie a semana anterior e gere a lista de compras com as porções certas.',
-    despensaTitulo: 'O que dá pra fazer',
-    despensaTexto: 'Na “Despensa”, diga o que tem em casa e veja as receitas que dá pra fazer agora ou que falta pouco. O que faltar vai direto para a lista de compras.',
+    criarTexto: 'Em “Criar”, a IA monta uma receita do seu jeito: por um formulário, descrevendo o prato de uma vez ou conversando. O que você cria fica em “Minhas receitas”.',
+    minhasReceitasTitulo: 'Suas receitas',
+    minhasReceitasTexto: 'Aqui ficam as receitas que você criou e as que salvou. Toque em “Salvar” numa receita e ela aparece em “Salvos”, onde dá para organizar em coleções.',
+    planejarTitulo: 'Planeje a semana',
+    planejarTexto: 'Em “Planejar” ficam o Cardápio da semana, as Listas de compras e a Despensa: monte a semana, gere a lista com as porções certas e veja o que dá pra fazer com o que tem em casa.',
     contaTitulo: 'Sua conta',
-    contaTexto: 'Aqui ficam o seu perfil, as listas de compras e este guia (“Como usar”), para rever o tour quando quiser.',
+    contaTexto: 'Aqui ficam o seu perfil e este guia (“Como usar”), para rever o tour quando quiser.',
     contaTextoVisitante: 'Entre ou crie uma conta para salvar receitas, criar com IA e planejar a semana.',
     fimTitulo: 'Pronto!',
     fimTexto: 'Esse é o básico. O guia completo explica cada recurso com calma, e dá para refazer o tour por lá.',
@@ -2363,7 +2370,7 @@ export const ptBR = {
     indice: 'Nesta página',
     buscarTitulo: 'Encontrar receitas',
     buscarItens: [
-      'Na página inicial (“Explorar”), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
+      'Em “Explorar”, na aba “Descobrir” (a página inicial), digite um prato, um ingrediente ou um estilo na busca. Os filtros refinam por cozinha, categoria e restrição.',
       'Não achou? Com a conta e pelo menos 3 letras, use “Gerar com IA” para criar uma receita a partir do que você buscou.',
       'Com a conta, dá também para buscar na web. Receitas de outros sites podem ser importadas para o seu perfil: ficam privadas e com o crédito da fonte.',
     ],
@@ -2373,7 +2380,7 @@ export const ptBR = {
       'Toda receita nasce privada. Quando quiser, publique para a comunidade.',
       'Nas suas receitas você pode editar, pedir uma nova versão à IA e adicionar uma foto (enviada por você ou gerada com IA).',
       'Gostou da receita de outra pessoa mas quer mudar algo? “Criar minha versão” faz uma cópia sua, sem mexer na original.',
-      'Tudo o que você cria fica em “Minhas criações”.',
+      'Tudo o que você cria fica em “Minhas receitas”, na aba “Criações”.',
     ],
     receitaTitulo: 'Na página da receita',
     receitaItens: [
@@ -2384,7 +2391,7 @@ export const ptBR = {
     ],
     salvosTitulo: 'Salvos e coleções',
     salvosItens: [
-      'Toque em “Salvar” em qualquer receita. Todas aparecem em “Salvos”.',
+      'Toque em “Salvar” em qualquer receita. Todas aparecem em “Minhas receitas”, na aba “Salvos”.',
       'Crie coleções (por exemplo “Almoço de domingo”) para organizar. Tirar uma receita de uma coleção não tira dos Salvos.',
       'Em “Salvos”, selecione várias receitas para mandá-las de uma vez para uma lista de compras.',
     ],
@@ -2392,11 +2399,11 @@ export const ptBR = {
     listaItens: [
       'Na receita, “Adicionar à lista de compras” leva os ingredientes nas porções que você escolher. Itens iguais se somam.',
       'Marque o que já comprou, edite quantidades e inclua itens avulsos. Nada some sozinho: limpar a lista é sempre uma ação sua.',
-      'Suas listas ficam no menu da sua conta, em “Listas de compras”.',
+      'Suas listas ficam em “Planejar”, na aba “Listas de compras”.',
     ],
     cardapioTitulo: 'Cardápio da semana',
     cardapioItens: [
-      'Em “Cardápio”, adicione receitas a cada dia e refeição, com o número de porções. Dá para mover e tirar depois.',
+      'Em “Planejar”, na aba “Cardápio”, adicione receitas a cada dia e refeição, com o número de porções. Dá para mover e tirar depois.',
       'Refeição sem receita? Anote um texto livre, como “comer fora” ou “sobras”.',
       'Nada no acervo serve? Em “Adicionar”, “Criar receita nova com IA” abre a criação com o pedido pronto; depois de gerar, um toque põe a receita naquela refeição.',
       '“Sugerir com IA” propõe um cardápio a partir dos seus Salvos, das suas criações e, se você quiser, da comunidade. Nada entra até você aceitar.',
@@ -2406,7 +2413,7 @@ export const ptBR = {
     ],
     despensaTitulo: 'Despensa',
     despensaItens: [
-      'Em “Despensa”, diga o que você tem em casa: vários nomes de uma vez, separados por vírgula. Sem quantidade.',
+      'Em “Planejar”, na aba “Despensa”, diga o que você tem em casa: vários nomes de uma vez, separados por vírgula. Sem quantidade.',
       'O app mostra as receitas que dá pra fazer agora e as que falta pouco (até 3 ingredientes), com o que falta.',
       '“Tenho o básico” conta os seus básicos (por padrão, sal, água, óleo, azeite e pimenta-do-reino) como já em casa. Dá para desligar, e em “Seus básicos” você troca a lista ou volta ao padrão.',
       '“Pôr o que falta na lista” leva só os ingredientes que faltam para a sua lista de compras.',
@@ -2415,13 +2422,13 @@ export const ptBR = {
     ],
     comunidadeTitulo: 'Comunidade',
     comunidadeItens: [
-      'Siga cozinheiros que você curte; as receitas deles aparecem na aba “Seguindo”.',
+      'Siga cozinheiros que você curte; as receitas deles aparecem em “Explorar”, na aba “Seguindo”. Na aba “Cozinheiros” você encontra quem seguir.',
       'Cada pessoa tem um perfil público com as receitas que publicou.',
       'O sino no topo avisa quando alguém segue você ou avalia uma receita sua.',
     ],
     contaTitulo: 'Conta e preferências',
     contaItens: [
-      'No menu da sua conta (seu nome, no topo): perfil público, editar perfil, listas de compras e este guia.',
+      'No menu da sua conta (seu nome, no topo): perfil público, editar perfil e este guia.',
       'Em “Editar perfil”, salve suas restrições alimentares (só você vê). Elas já vêm marcadas ao criar uma receita, ao pedir uma sugestão de cardápio e ao buscar — e dá para mudar ou tirar em cada pedido.',
       'No rodapé, troque o idioma (português ou inglês) e o tema claro ou escuro.',
     ],
