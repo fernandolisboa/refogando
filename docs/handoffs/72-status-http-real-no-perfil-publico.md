@@ -24,7 +24,7 @@ As rotas da receita seguem como no handoff 71 (308 no UUID legado, 404 no privad
 
 ## 3. O que muda para quem vê
 
-O mesmo trade-off da receita: numa navegação no client para um perfil, o esqueleto de carregamento não aparece mais; a página anterior fica na tela até o perfil chegar (o `loadPublicProfile` faz 6 consultas em 2 idas ao banco, as mesmas de antes).
+O mesmo trade-off da receita: numa navegação no client para um perfil, o esqueleto de carregamento não aparece mais; a página anterior fica na tela até o perfil chegar (o `loadPublicProfile` faz até 7 consultas em até 3 idas ao banco: o dono, depois receitas e traduções em paralelo com o bloco social; as mesmas de antes).
 
 ## 4. Landmines
 
