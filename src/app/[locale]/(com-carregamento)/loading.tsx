@@ -6,12 +6,12 @@
  * de tela, dentro do landmark <main> (consistente com error/not-found). Motion respeita
  * prefers-reduced-motion (gate global no globals.css).
  *
- * Mora no grupo `(com-carregamento)`, que tem todas as rotas de `[locale]` MENOS `recipes/`. Um
+ * Mora no grupo `(com-carregamento)`, que tem todas as rotas de `[locale]` MENOS `recipes/` e `u/`. Um
  * `loading.tsx` abre um Suspense que manda o HTML (com status 200) antes de a página terminar, então
  * um `notFound()`/`permanentRedirect()` dentro dela vira 404/308 só no payload, com a resposta já em
- * 200. As rotas de `recipes/` ficam fora para responder 404 e 308 de verdade (ADR-0020 decisão 4);
- * numa navegação no cliente, a página anterior fica na tela até a receita chegar. URLs não mudam: o
- * nome entre parênteses não entra no caminho.
+ * 200. As rotas de `recipes/` (ADR-0020 decisão 4) e o perfil público `u/[handle]` ficam fora para
+ * responder 404 e 308 de verdade; numa navegação no cliente, a página anterior fica na tela até a nova
+ * chegar. URLs não mudam: o nome entre parênteses não entra no caminho.
  */
 import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'

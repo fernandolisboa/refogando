@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 // pré-renderizadas; um locale fora do conjunto cai em `notFound()`.
 //
 // Rota nova embaixo de `[locale]` entra no grupo `(com-carregamento)/`, que tem o `loading.tsx`. Fora dele
-// fica só o que precisa de status HTTP real (308/404), hoje `recipes/` (ver o `loading.tsx` do grupo).
+// fica só o que precisa de status HTTP real (308/404), hoje `recipes/` e `u/` (ver o `loading.tsx` do grupo).
 export function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }))
 }
