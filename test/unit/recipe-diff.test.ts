@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   decideDerivedDiff,
   DERIVED_DIFF_VERSION,
+  isEmptyDiff,
+  pruneNoopChanges,
+  quantidadesIguais,
+  stepChanges,
+  type DerivedDiff,
   type DiffLado,
 } from '@/domain/recipe-diff'
 
@@ -123,10 +128,11 @@ describe('decideDerivedDiff — diff derivado congelado (#17)', () => {
     expect(decideDerivedDiff({ base, edits }).campos.passos).toBeUndefined()
   })
 
-  it('passos null vs [] são distintos', () => {
+  // ADR-0045: "sem passos" é "sem passos" para quem lê — null e [] deixaram de contar como mudança.
+  it('passos null vs [] são iguais (nenhum passo nos dois lados)', () => {
     const base = lado({ passos: null })
     const edits = lado({ passos: [] })
-    expect(decideDerivedDiff({ base, edits }).campos.passos).toEqual({ de: null, para: [] })
+    expect(decideDerivedDiff({ base, edits }).campos.passos).toBeUndefined()
   })
 
   it('byte-estável: duas chamadas idênticas produzem o MESMO JSON', () => {
@@ -176,5 +182,131 @@ describe('decideDerivedDiff — diff derivado congelado (#17)', () => {
     expect(diff.campos.titulo).toEqual({ de: 'Base', para: 'Editada' })
     expect(diff.campos.descricao).toBeUndefined()
     expect(diff.campos.passos).toEqual({ de: ['p1'], para: ['p1', 'p2'] })
+  })
+})
+
+/**
+ * ADR-0045: igualdade SEMÂNTICA. O form devolve as coisas noutra forma que o banco guarda
+ * ("3.000" → "3", textos aparados, passos um por linha). Uma cópia sem mudança nenhuma não pode
+ * listar "sal: 3 → 3".
+ */
+describe('decideDerivedDiff — igualdade semântica (ADR-0045)', () => {
+  it('cópia sem mudança, na forma que o form devolve ⇒ diff vazio', () => {
+    const base = lado({
+      titulo: 'Bolo de fubá ',
+      descricao: 'Bolo simples de fubá.\n',
+      passos: ['Misture.\nBata bem.', '', 'Asse.'],
+      ingredientes: [
+        { nome: 'fubá ', quantidade: '2.000' },
+        { nome: 'açúcar', quantidade: '0.500' },
+        { nome: 'sal', quantidade: null },
+      ],
+    })
+    const doForm = lado({
+      titulo: 'Bolo de fubá',
+      descricao: 'Bolo simples de fubá.',
+      passos: ['Misture.', 'Bata bem.', 'Asse.'],
+      ingredientes: [
+        { nome: 'fubá', quantidade: '2' },
+        { nome: 'açúcar', quantidade: '0.5' },
+        { nome: 'sal', quantidade: null },
+      ],
+    })
+    const diff = decideDerivedDiff({ base, edits: doForm })
+    expect(isEmptyDiff(diff)).toBe(true)
+  })
+
+  it('descrição vazia ⇔ null; quantidade "" ⇔ null', () => {
+    const base = lado({ descricao: '', ingredientes: [{ nome: 'sal', quantidade: '' }] })
+    const edits = lado({ descricao: null, ingredientes: [{ nome: 'sal', quantidade: null }] })
+    expect(isEmptyDiff(decideDerivedDiff({ base, edits }))).toBe(true)
+  })
+
+  it('mudança real de quantidade continua aparecendo, com os valores originais', () => {
+    const base = lado({ ingredientes: [{ nome: 'fubá', quantidade: '2.000' }] })
+    const edits = lado({ ingredientes: [{ nome: 'fubá', quantidade: '2.5' }] })
+    const diff = decideDerivedDiff({ base, edits })
+    expect(diff.ingredientes.quantidadeAlterada).toEqual([{ nome: 'fubá', de: '2.000', para: '2.5' }])
+  })
+
+  it('quantidadesIguais: número compara por valor; texto não-numérico compara aparado', () => {
+    expect(quantidadesIguais('3.000', '3')).toBe(true)
+    expect(quantidadesIguais('3.000', '3.5')).toBe(false)
+    expect(quantidadesIguais(null, '0')).toBe(false)
+    expect(quantidadesIguais(' a gosto ', 'a gosto')).toBe(true)
+    expect(quantidadesIguais('abc', 'abd')).toBe(false)
+  })
+})
+
+describe('pruneNoopChanges — poda na leitura de diffs antigos (ADR-0045)', () => {
+  const ruidoso: DerivedDiff = {
+    v: 1,
+    ingredientes: {
+      adicionados: ['sal', 'queijo'],
+      removidos: ['sal ', 'pimenta'],
+      quantidadeAlterada: [
+        { nome: 'fubá', de: '3.000', para: '3' },
+        { nome: 'leite', de: '1.000', para: '2' },
+      ],
+    },
+    restricoes: { adicionadas: [], removidas: [] },
+    campos: {
+      titulo: { de: 'Bolo ', para: 'Bolo' },
+      descricao: { de: 'Velha', para: 'Nova' },
+      passos: { de: ['A.', '', 'B.'], para: ['A.', 'B.'] },
+    },
+  }
+
+  it('descarta só o que não muda nada; mantém as mudanças reais', () => {
+    const p = pruneNoopChanges(ruidoso)
+    expect(p.ingredientes).toEqual({
+      adicionados: ['queijo'],
+      removidos: ['pimenta'],
+      quantidadeAlterada: [{ nome: 'leite', de: '1.000', para: '2' }],
+    })
+    expect(p.campos).toEqual({ descricao: { de: 'Velha', para: 'Nova' } })
+  })
+
+  it('é idempotente e não muta a entrada', () => {
+    const copia = structuredClone(ruidoso)
+    const p = pruneNoopChanges(ruidoso)
+    expect(pruneNoopChanges(p)).toEqual(p)
+    expect(ruidoso).toEqual(copia)
+  })
+
+  it('o caso relatado (cópia sem mudança, "3.000 → 3") fica vazio', () => {
+    const relatado: DerivedDiff = {
+      v: 1,
+      ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [{ nome: 'ovo', de: '3.000', para: '3' }] },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: {},
+    }
+    expect(isEmptyDiff(pruneNoopChanges(relatado))).toBe(true)
+  })
+})
+
+describe('stepChanges — só os passos que entraram/saíram (ADR-0045)', () => {
+  it('troca de um passo', () => {
+    expect(stepChanges(['A.', 'B.', 'C.'], ['A.', 'B2.', 'C.'])).toEqual({
+      adicionados: ['B2.'],
+      removidos: ['B.'],
+      reordenados: false,
+    })
+  })
+
+  it('passo repetido conta como multiconjunto', () => {
+    expect(stepChanges(['Mexa.', 'Mexa.'], ['Mexa.'])).toEqual({
+      adicionados: [],
+      removidos: ['Mexa.'],
+      reordenados: false,
+    })
+  })
+
+  it('só reordenou', () => {
+    expect(stepChanges(['A.', 'B.'], ['B.', 'A.'])).toEqual({ adicionados: [], removidos: [], reordenados: true })
+  })
+
+  it('null de um lado', () => {
+    expect(stepChanges(null, ['A.'])).toEqual({ adicionados: ['A.'], removidos: [], reordenados: false })
   })
 })

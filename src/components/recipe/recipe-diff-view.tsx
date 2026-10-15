@@ -11,9 +11,12 @@
  * a nota de que a original sumiu mas a versão continua completa (história #289). NEUTRA.
  *
  * Sem `<h1>` (o detalhe já emite o seu): a seção abre num `<h2>` subordinado.
+ *
+ * ADR-0045: só o que mudou de fato. Diff vazio (cópia fiel, ex.: "Clonar") ⇒ a seção NÃO aparece
+ * (sem vínculo perdido a mostrar). Passos listam só os que entraram/saíram, não as listas inteiras.
  */
 import { useLocale } from '@/i18n/provider'
-import type { DerivedDiff } from '@/domain/recipe-diff'
+import { isEmptyDiff, stepChanges, type DerivedDiff } from '@/domain/recipe-diff'
 import { isRestricao } from '@/domain/vocabulary'
 import { formatQuantityDisplay } from '@/domain/quantity-format'
 
@@ -43,7 +46,11 @@ export function RecipeDiffView({
 
   const restricaoLabel = (r: string) => (isRestricao(r) ? messages.restricaoLabel[r] : r)
 
-  // Linhas de campo textual alteradas (titulo/descricao/passos) — só as presentes.
+  // Diff vazio: nada a mostrar. Com vínculo perdido, a seção sai SÓ com a nota (#289).
+  const vazio = isEmptyDiff(diff)
+  if (vazio && !vinculoPerdido) return null
+
+  // Linhas de campo textual alteradas (titulo/descricao) — só as presentes.
   const camposAlterados: Array<{ rotulo: string; texto: string }> = []
   if (campos.titulo) {
     camposAlterados.push({ rotulo: messages.criar.titulo, texto: dePara(campos.titulo.de, campos.titulo.para) })
@@ -54,19 +61,8 @@ export function RecipeDiffView({
       texto: dePara(campos.descricao.de, campos.descricao.para),
     })
   }
-  if (campos.passos) {
-    const de = campos.passos.de && campos.passos.de.length > 0 ? campos.passos.de.join(' · ') : null
-    const para = campos.passos.para && campos.passos.para.length > 0 ? campos.passos.para.join(' · ') : null
-    camposAlterados.push({ rotulo: messages.detalhe.passos, texto: dePara(de, para) })
-  }
-
-  const temAlgo =
-    ingredientes.adicionados.length > 0 ||
-    ingredientes.removidos.length > 0 ||
-    ingredientes.quantidadeAlterada.length > 0 ||
-    restricoes.adicionadas.length > 0 ||
-    restricoes.removidas.length > 0 ||
-    camposAlterados.length > 0
+  // Passos: só os que entraram/saíram (ADR-0045 dec.3); reordenar sem mudar texto vira uma linha.
+  const passos = campos.passos ? stepChanges(campos.passos.de, campos.passos.para) : null
 
   return (
     <section
@@ -83,9 +79,7 @@ export function RecipeDiffView({
         </p>
       )}
 
-      {!temAlgo ? (
-        <p className="text-sm text-muted">{md.copiaTitulo}</p>
-      ) : (
+      {!vazio && (
         <dl className="flex flex-col gap-3 text-sm">
           {ingredientes.adicionados.length > 0 && (
             <div className="flex flex-col gap-1">
@@ -154,6 +148,27 @@ export function RecipeDiffView({
               <dd className="text-fg">{c.texto}</dd>
             </div>
           ))}
+
+          {passos && (
+            <div className="flex flex-col gap-1">
+              <dt className="font-medium text-muted">{messages.detalhe.passos}</dt>
+              <dd className="text-fg">
+                <ul role="list" className="flex flex-col gap-0.5">
+                  {passos.adicionados.map((p, i) => (
+                    <li key={`padd-${i}`}>
+                      {md.adicionado}: {p}
+                    </li>
+                  ))}
+                  {passos.removidos.map((p, i) => (
+                    <li key={`prem-${i}`}>
+                      {md.removido}: {p}
+                    </li>
+                  ))}
+                  {passos.reordenados && <li>{md.passosReordenados}</li>}
+                </ul>
+              </dd>
+            </div>
+          )}
         </dl>
       )}
     </section>

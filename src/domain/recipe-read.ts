@@ -31,7 +31,7 @@ import {
   type TranslationProvenance,
   type Visibility,
 } from '@/domain/recipe'
-import type { DerivedDiff } from '@/domain/recipe-diff'
+import { pruneNoopChanges, type DerivedDiff } from '@/domain/recipe-diff'
 import {
   decideRestrictionNotices,
   type RestrictionNotice,
@@ -842,11 +842,12 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
       : {}),
     // Diff DERIVADO (#17): OWNER-GATED como a gestão (só o dono da derivada vê o próprio diff)
     // E presente só quando a linha de fato CARREGA um diff (`lineageKind='edited'` ⇒
-    // derivedDiff != null). Repassado 1:1 do que o fork ARMAZENOU — NUNCA recomputado aqui
-    // (história 289). Catálogo / não-dono / receita não-derivada ⇒ ausente ("ausente ≠ vazio").
+    // derivedDiff != null). Vem do que o fork ARMAZENOU — NUNCA recomputado contra a base
+    // (história 289); só PODADO das "mudanças" de forma que não mudam nada (ADR-0045 dec.2:
+    // diffs antigos guardaram "3.000 → 3"). Catálogo / não-dono / receita não-derivada ⇒ ausente.
     ...(canManage && input.recipe.derivedDiff != null
       ? {
-          derivedDiff: input.recipe.derivedDiff,
+          derivedDiff: pruneNoopChanges(input.recipe.derivedDiff),
           // Vínculo perdido (#289): a derivada carrega diff (logo é lineageKind='edited') MAS
           // seu parentRecipeId é NULL ⇒ a base foi apagada (FK set null). Sinaliza SÓ aqui (sai
           // junto com o diff, owner-gated). "ausente ≠ vazio": só quando perdido (parent NULL).

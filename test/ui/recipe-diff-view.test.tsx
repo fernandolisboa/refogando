@@ -73,4 +73,52 @@ describe('RecipeDiffView (#61)', () => {
     expect(screen.getAllByText(enUS.derivada.adicionado).length).toBeGreaterThan(0)
     expect(screen.getByText(enUS.derivada.quantidadeAlterada)).toBeInTheDocument()
   })
+
+  it('T5 — ADR-0045: diff vazio (cópia fiel) ⇒ a seção não aparece', () => {
+    const vazio = diff({
+      ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: {},
+    })
+    const { container } = renderDiff(vazio)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('T6 — diff vazio com vínculo perdido ⇒ só a nota, sem lista', () => {
+    const vazio = diff({
+      ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+      restricoes: { adicionadas: [], removidas: [] },
+      campos: {},
+    })
+    const { container } = renderDiff(vazio, { vinculoPerdido: true })
+    expect(screen.getByText(ptBR.edicaoPropria.vinculoPerdido)).toBeInTheDocument()
+    expect(container.querySelector('dl')).toBeNull()
+  })
+
+  it('T7 — passos: só o passo que entrou e o que saiu, não as listas inteiras', () => {
+    renderDiff(
+      diff({
+        ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+        restricoes: { adicionadas: [], removidas: [] },
+        campos: {
+          passos: { de: ['Misture.', 'Asse.', 'Sirva.'], para: ['Misture.', 'Asse por 40 min.', 'Sirva.'] },
+        },
+      }),
+    )
+    expect(screen.getByText(`${M.adicionado}: Asse por 40 min.`)).toBeInTheDocument()
+    expect(screen.getByText(`${M.removido}: Asse.`)).toBeInTheDocument()
+    expect(screen.queryByText(/Misture\./)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sirva\./)).not.toBeInTheDocument()
+  })
+
+  it('T8 — passos só reordenados ⇒ uma linha dizendo isso', () => {
+    renderDiff(
+      diff({
+        ingredientes: { adicionados: [], removidos: [], quantidadeAlterada: [] },
+        restricoes: { adicionadas: [], removidas: [] },
+        campos: { passos: { de: ['A.', 'B.'], para: ['B.', 'A.'] } },
+      }),
+    )
+    expect(screen.getByText(M.passosReordenados)).toBeInTheDocument()
+  })
 })
