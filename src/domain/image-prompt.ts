@@ -19,8 +19,6 @@
 
 import { ENQUADRAMENTO_TEXT, sceneDescription, type ImageScene } from '@/domain/image-scene'
 
-export { hashString } from '@/domain/image-scene'
-
 export type DishImagePromptInput = {
   /** Id da receita — semente da variante de cena. Mesma receita + mesmo cenário ⇒ mesmo prompt. */
   recipeId: string

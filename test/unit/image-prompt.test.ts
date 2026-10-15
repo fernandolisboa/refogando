@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDishImagePrompt,
   buildStylePreamble,
-  hashString,
   composeImagePrompt,
   composeEditImagePrompt,
   IMAGE_PROMPT_OVERRIDE_MAX,
@@ -115,21 +114,6 @@ describe('buildStylePreamble (cenário, ADR-0043)', () => {
 
   it('versão da biblioteca subiu para 2 (proveniência do prompt)', () => {
     expect(STYLE_LIBRARY_VERSION).toBe(2)
-  })
-})
-
-describe('hashString', () => {
-  it('é puro e determinístico: mesma string ⇒ mesmo número', () => {
-    expect(hashString('r1')).toBe(hashString('r1'))
-  })
-
-  it('devolve um uint32 não-negativo', () => {
-    for (const s of ['', 'r1', 'moqueca', 'x'.repeat(100)]) {
-      const h = hashString(s)
-      expect(Number.isInteger(h)).toBe(true)
-      expect(h).toBeGreaterThanOrEqual(0)
-      expect(h).toBeLessThanOrEqual(0xffffffff)
-    }
   })
 })
 

@@ -52,18 +52,21 @@ export async function resolveImageScene(input: {
   const { systemPrompt, userPrompt } = buildSceneDirectorPrompt(content)
   const startedAt = Date.now()
   let scene = rules
+  const signal = AbortSignal.timeout(IMAGE_SCENE_DIRECTOR_DEADLINE_MS)
   try {
     const out = await claude.directImageScene({
       systemPrompt,
       userPrompt,
       model: task.model,
       settings: activeSettings('imageScene', task),
-      signal: AbortSignal.timeout(IMAGE_SCENE_DIRECTOR_DEADLINE_MS),
+      signal,
     })
     if (out.kind === 'ok') scene = normalizeDirectorScene(out.scene, rules)
-    // Sem conteúdo da receita no log: só o desfecho, o registro, o modelo, os tokens e o tempo.
+    // Sem conteúdo da receita no log: só o desfecho, o registro, o modelo, os tokens e o tempo. No
+    // `prazo` os tokens saem `?` (a chamada foi abortada), mas a entrada pode ter sido cobrada.
+    const desfecho = out.kind === 'ok' ? 'ok' : signal.aborted ? 'prazo' : 'falhou'
     console.info(
-      `[image-scene] diretor ${out.kind === 'ok' ? 'ok' : 'falhou'}: registro=${scene.registro} fonte=${scene.fonte} ` +
+      `[image-scene] diretor ${desfecho}: registro=${scene.registro} fonte=${scene.fonte} ` +
         `recipe=${recipeId} modelo=${task.model} in=${out.usage?.inputTokens ?? '?'} out=${out.usage?.outputTokens ?? '?'} ms=${Date.now() - startedAt}`,
     )
   } catch (err) {

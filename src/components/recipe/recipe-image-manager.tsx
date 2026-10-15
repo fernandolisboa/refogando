@@ -248,6 +248,7 @@ export function RecipeImageManager({
     setRefino('')
     setShowRefino(true)
     setBasePrompt(null)
+    setCena('') // a edição não usa cenário; "Cancelar edição" volta ao Automático
     setCenaUsada(null)
     setModalOpen(true)
   }

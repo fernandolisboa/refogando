@@ -616,9 +616,24 @@ describe('/api/recipes/[id]/image/generate — cenário (ADR-0043)', () => {
 
     const res = await POST(genReqBody(id, headers, { cena: 'alta_gastronomia' }), ctx(id))
     expect(res.status).toBe(200)
-    expect(((await res.json()) as { scene: { registro: string } }).scene.registro).toBe('alta_gastronomia')
+    expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'alta_gastronomia', fonte: 'usuario' })
     expect(includesAny(gen.lastPrompt, SCENE_LIBRARY.alta_gastronomia)).toBe(true)
     expect(claude.sceneCalls).toBe(0)
+  })
+
+  it('diretor que lança ⇒ regras e a imagem sai mesmo assim (falha acessória nunca derruba a geração)', async () => {
+    const claude = new FakeClaudeClient()
+    claude.directImageScene = async () => {
+      throw new Error('boom')
+    }
+    setClaudeClient(claude)
+    const { headers, userId } = await seedSessionHeaders({ email: 'cena-lanca@gen.test' })
+    const id = await seedOwned(userId)
+
+    const res = await POST(genReq(id, headers), ctx(id))
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'caseiro', fonte: 'regras' })
+    expect(gen.calls).toBe(1)
   })
 
   it('cenário inválido no corpo ⇒ ignorado (automático: o diretor decide)', async () => {

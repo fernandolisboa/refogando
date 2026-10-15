@@ -93,7 +93,7 @@ export function AiConfigSection() {
     recipeVariant: RecipeVariantConfig
   }) {
     setEnabled(cfg.imageGen.enabled)
-    setSceneDirector(cfg.imageGen.sceneDirector ?? true)
+    setSceneDirector(cfg.imageGen.sceneDirector)
     setModel(cfg.imageGen.model)
     setCaps(capsToForm(cfg.imageGen.dailyCapByRole))
     setRecipeCaps(capsToForm(cfg.recipeGenCapByRole))
@@ -118,7 +118,7 @@ export function AiConfigSection() {
       // Inline (não via `applyConfig`): assim `load` fecha SÓ sobre setters estáveis + a pura
       // `capsToForm` (módulo) ⇒ o effect de montagem não acusa exhaustive-deps (espelha config-section).
       setEnabled(body.imageGen.enabled)
-      setSceneDirector(body.imageGen.sceneDirector ?? true)
+      setSceneDirector(body.imageGen.sceneDirector)
       setModel(body.imageGen.model)
       setCaps(capsToForm(body.imageGen.dailyCapByRole))
       setRecipeCaps(capsToForm(body.recipeGenCapByRole))

@@ -1,7 +1,8 @@
 /**
- * Cenário da imagem gerada do prato (ADR-0043) — PURO: vocabulário, regras, biblioteca de cenas e o
- * prompt do diretor de arte. Sem DB/I/O e sem zod (o modal de imagem importa os registros daqui; o
- * schema da saída structured do diretor mora em `image-scene-schema.ts`, só no servidor).
+ * Cenário da imagem gerada do prato (ADR-0043) — PURO: vocabulário, regras e biblioteca de cenas.
+ * Sem DB/I/O e sem zod: o modal de imagem importa os registros daqui. O prompt do diretor de arte mora
+ * em `image-scene-director.ts` e o schema da saída structured em `image-scene-schema.ts`, ambos só no
+ * servidor.
  *
  * Antes (#424, ADR-0029 dec.5) o preâmbulo sorteava quatro eixos independentes pelo hash do id da
  * receita (enquadramento, luz, mood, superfície): tudo saía como "foto editorial de prato na mesa", e
@@ -44,8 +45,8 @@ export type ImageScene = {
   regiao: string | null
   /** Um ou dois objetos de cena ("copo de cerveja gelada ao lado"). Texto curto, sanitizado. */
   detalhes: string | null
-  /** Quem decidiu: o diretor de arte (IA) ou as regras de reserva. */
-  fonte: 'diretor' | 'regras'
+  /** Quem decidiu: o diretor de arte (IA), as regras de reserva ou o usuário (registro fixado no modal). */
+  fonte: 'diretor' | 'regras' | 'usuario'
 }
 
 /** Tetos dos textos livres do diretor (entram no prompt da imagem; curtos de propósito). */
@@ -135,7 +136,7 @@ export function sceneFromRules(input: {
     enquadramento: pick(`${input.recipeId}::framing`, IMAGE_SCENE_ENQUADRAMENTOS),
     regiao: null,
     detalhes: null,
-    fonte: 'regras',
+    fonte: input.registroFixo ? 'usuario' : 'regras',
   }
 }
 

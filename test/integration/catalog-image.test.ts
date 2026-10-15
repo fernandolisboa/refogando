@@ -6,7 +6,9 @@ import { POST as catSelect } from '@/app/api/curate/recipes/[id]/images/[imageId
 import { DELETE as catImgDelete } from '@/app/api/curate/recipes/[id]/images/[imageId]/route'
 import { GET as catGet, PATCH as catEdit } from '@/app/api/curate/recipes/[id]/route'
 import { POST as approveRoute } from '@/app/api/curate/recipes/[id]/approve/route'
-import { getDb, setImageStore, setImageGenerator } from '@/server/deps'
+import { getDb, setClaudeClient, setImageStore, setImageGenerator } from '@/server/deps'
+import { FakeClaudeClient } from '@/server/claude/client'
+import { SCENE_LIBRARY } from '@/domain/image-scene'
 import { FakeImageStore } from '@/server/images/image-store'
 import { FakeImageGenerator, ThrowingImageGenerator } from '@/server/images/image-generator'
 import { recipe, recipeImage, recipeIngredient, imageGeneration } from '@/db/schema'
@@ -133,6 +135,18 @@ describe('Imagem de catálogo — comportamento', () => {
     expect(body.gallery[0].aiGenerated).toBe(true)
     // a face foi setada no banco (auto-select).
     expect(await imageIdOf(draft)).toBe(body.gallery[0].id)
+  })
+
+  it('gerar com `cena` (ADR-0043) ⇒ gera naquela cena sem chamar o diretor de arte', async () => {
+    const claude = new FakeClaudeClient()
+    setClaudeClient(claude)
+    const { headers: cur } = await curator()
+    const draft = await seedCatalogDraft()
+
+    const res = await catGen(jsonReq(`http://localhost/x`, cur, 'POST', { cena: 'boteco' }), ctx(draft))
+    expect(res.status).toBe(200)
+    expect(SCENE_LIBRARY.boteco.some((v) => gen.lastPrompt?.includes(v))).toBe(true)
+    expect(claude.sceneCalls).toBe(0)
   })
 
   it('subir foto: cria user_photo e auto-seleciona; deselecionar zera a face', async () => {
