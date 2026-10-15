@@ -10,8 +10,13 @@
  * drawer (primitiva `ui/sheet`, sobre Radix Dialog) com a nav + a conta + Criar. O drawer
  * herda do Dialog a a11y crítica: foco move pro painel, ESC fecha, clique-fora fecha, trap de
  * foco, e o gatilho ganha `aria-expanded`/`aria-controls`. Fecha ao navegar via `SheetClose`.
+ *
+ * Seções (ADR-0043): a nav mostra 3 SEÇÕES (Explorar, Minhas receitas, Planejar) em vez de um link por
+ * página; as páginas de cada seção viram subabas na `SectionTabs`, logo abaixo do header. O drawer
+ * mobile lista as mesmas abas agrupadas sob o título de cada seção. A estrutura vem de
+ * `domain/nav-sections`; aqui só se traduz e desenha.
  */
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { MenuIcon } from 'lucide-react'
@@ -40,6 +45,23 @@ import { HomeSearchBar } from '@/components/recipe/home-search-bar'
 import { useHomeSearch } from '@/components/recipe/home-search-context'
 import { cn } from '@/lib/utils'
 import type { TourAnchor } from '@/domain/onboarding-tour'
+import {
+  activeNav,
+  matchesHref,
+  sectionEntryHref,
+  sectionsFor,
+  tabsFor,
+  type NavSection,
+  type NavSectionId,
+} from '@/domain/nav-sections'
+import { useLastTabs } from '@/components/nav/last-tab-store'
+import { sectionLabel, tabLabel } from '@/components/nav/nav-labels'
+
+// Âncoras do tour guiado (ADR-0039) nos links de seção do desktop. "Explorar" não tem passo próprio.
+const SECTION_TOUR: Partial<Record<NavSectionId, TourAnchor>> = {
+  minhasReceitas: 'nav-minhas-receitas',
+  planejar: 'nav-planejar',
+}
 
 // O cluster direito do header é só o slot de conta (AuthSlot). O idioma (#162) e o ThemeToggle
 // vivem no footer, então o header não precisa mais nem do seletor de locale nem do tema.
@@ -73,8 +95,11 @@ export function SiteHeader() {
   // `usePathname()` é null fora do contexto de router (ex.: seam jsdom) → null-safe via `rest = '/'`.
   const pathname = usePathname()
   const rest = splitLocalePrefix(pathname ?? '/').rest
-  const isActive = (href: string) =>
-    href === '/' ? rest === '/' : rest === href || rest.startsWith(`${href}/`)
+  const isActive = (href: string) => matchesHref(rest, href)
+  // ADR-0043: a SEÇÃO da rota atual (Explorar fica ativa também em /following e /cooks; Planejar, em
+  // qualquer aba dela, inclusive o detalhe de uma lista de compras).
+  const activeSectionId = activeNav(rest)?.section.id ?? null
+  const lastTabs = useLastTabs()
   // #5: a busca (HomeSearchBar) vive no header SÓ na home (a Descoberta é a home, ADR-0020). Fora da home
   // não há busca no header. `rest === '/'` espelha o `isActive('/')`.
   const isHome = rest === '/'
@@ -87,26 +112,42 @@ export function SiteHeader() {
   // home, irrelevante (sem busca/3-col).
   const { wide } = useHomeSearch()
 
-  // Item de nav reutilizado nas DUAS vistas. No drawer mobile (`wrap` = SheetClose) cada link
-  // fecha o painel ao navegar; no desktop o wrap é a identidade (link inline puro).
-  // `tour` (ADR-0039): âncora do tour guiado, só nas instâncias do desktop (no celular o tour destaca o
-  // botão do menu, porque o drawer está fechado).
+  // Link de aba do drawer mobile (`wrap` = SheetClose: fecha o painel ao navegar). No desktop as abas
+  // vivem na `SectionTabs`, e a nav mostra só as seções (`sectionLink` abaixo).
   const navLink = (
     href: string,
     label: string,
     wrap: (node: React.ReactNode) => React.ReactNode,
-    tour?: TourAnchor,
   ) =>
     wrap(
       <Link
         href={href}
-        data-tour={tour}
-        aria-current={isActive(href) ? 'page' : undefined}
+        aria-current={rest === href ? 'page' : isActive(href) ? 'true' : undefined}
         className={cn('transition-colors hover:text-fg', isActive(href) && 'text-fg')}
       >
         {label}
       </Link>,
     )
+
+  // Link de SEÇÃO do desktop (ADR-0043). Ativo em qualquer aba da seção: `aria-current="page"` só quando
+  // a rota é o próprio destino do link; nas outras abas, "true" (item atual do conjunto). O destino das
+  // seções pessoais é a última aba visitada (`useLastTabs`), ou a 1ª.
+  const sections = sectionsFor(authed)
+  const sectionLink = (section: NavSection) => {
+    const href = sectionEntryHref(section, lastTabs[section.id])
+    const active = activeSectionId === section.id
+    return (
+      <Link
+        key={section.id}
+        href={href}
+        data-tour={SECTION_TOUR[section.id]}
+        aria-current={active ? (rest === href ? 'page' : 'true') : undefined}
+        className={cn('transition-colors hover:text-fg', active && 'text-fg')}
+      >
+        {sectionLabel(messages, section.id)}
+      </Link>
+    )
+  }
 
   // "Criar" ABRE o drawer (#191) — não navega. No drawer mobile, primeiro FECHA o menu (o
   // SheetClose embrulha o botão) e o seu onClick abre o drawer de criação. No desktop é um botão
@@ -141,7 +182,6 @@ export function SiteHeader() {
   )
   const ctaLink = (wrap: (node: React.ReactNode) => React.ReactNode) => wrap(ctaButton)
 
-  const identity = (node: React.ReactNode) => node
   const inSheet = (node: React.ReactNode) => <SheetClose asChild>{node}</SheetClose>
 
   return (
@@ -163,22 +203,9 @@ export function SiteHeader() {
         </Link>
         {/* Nav inline do desktop: escondida abaixo de `sm:` (o drawer assume lá). */}
         <nav className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted sm:flex">
-          {/* #236/#277: a Descoberta É a home, agora rotulada "Explorar" — leva ao feed público +
-              Busca. O antigo link "Receitas" (índice do feed à parte) FUNDIU na home. */}
-          {navLink('/', messages.nav.home, identity)}
-          {/* #277: aba "Seguindo" (logado) — feed das Receitas de quem o viewer segue, ao lado de
-              "Explorar". Só-logada (a conta/Painel vive no AuthSlot à direita). */}
-          {authed && navLink('/following', messages.nav.seguindo, identity)}
-          {/* #5 (protótipo final): "Criar" SAIU da nav e foi pro CLUSTER DIREITO (ao lado de
-              "Você"/AuthSlot), espelhando o mock `[Criar][Você]`. No mobile segue no drawer. */}
-          {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, identity)}
-          {/* #468: "Salvos" (`/me/saved`, coleções #364) ao lado de "Minhas criações" — antes a
-              página existia mas nenhuma chrome linkava pra ela. Só-logada, como as vizinhas. */}
-          {authed && navLink('/me/saved', messages.colecoes.titulo, identity, 'nav-salvos')}
-          {/* ADR-0035: "Cardápio" (Plano de refeições da semana), ao lado de "Salvos" — só-logada. */}
-          {authed && navLink('/me/meal-plan', messages.nav.cardapio, identity, 'nav-cardapio')}
-          {/* ADR-0038: "Despensa" (o que dá pra fazer com o que tenho), ao lado do Cardápio — só-logada. */}
-          {authed && navLink('/me/pantry', messages.nav.despensa, identity, 'nav-despensa')}
+          {/* ADR-0043: uma entrada por SEÇÃO. "Explorar" (a home, #236/#277) para todos; "Minhas
+              receitas" e "Planejar" só logado. "Criar" mora no cluster direito (#5). */}
+          {sections.map(sectionLink)}
         </nav>
         {/* Cluster direito do desktop: "Criar" (CTA leve, borda em páprica) + slot de conta —
             espelha o mock `[Criar][Você]`. Escondido abaixo de `sm:` (vai pro drawer). `ml-auto` empurra
@@ -227,16 +254,22 @@ export function SiteHeader() {
                   (silencia o warning) e dá contexto a leitores de tela. */}
               <SheetDescription className="sr-only">{messages.nav.menuDescricao}</SheetDescription>
             </SheetHeader>
-            <nav className="flex flex-col items-start gap-4 text-base font-medium text-muted">
-              {/* #236/#277: a Descoberta É a home, rotulada "Explorar". */}
-              {navLink('/', messages.nav.home, inSheet)}
-              {/* #277: aba "Seguindo" (logado), ao lado de "Explorar". */}
-              {authed && navLink('/following', messages.nav.seguindo, inSheet)}
-              {authed && navLink('/me/recipes', messages.minhasCriacoes.titulo, inSheet)}
-              {authed && navLink('/me/saved', messages.colecoes.titulo, inSheet)}
-              {authed && navLink('/me/meal-plan', messages.nav.cardapio, inSheet)}
-              {authed && navLink('/me/pantry', messages.nav.despensa, inSheet)}
-              {/* "Painel" saiu da nav (#267): vive no menu da conta do AuthSlot abaixo. */}
+            {/* ADR-0043: as abas de cada seção, agrupadas sob o título da seção (role=group rotulado,
+                como a SectionNav do Console). "Painel" saiu da nav (#267): vive no menu da conta abaixo. */}
+            <nav className="flex flex-col items-start gap-5 overflow-y-auto text-base font-medium text-muted">
+              {sections.map((s) => {
+                const labelId = `menu-secao-${s.id}`
+                return (
+                  <div key={s.id} role="group" aria-labelledby={labelId} className="flex flex-col items-start gap-3">
+                    <span id={labelId} className="text-xs font-semibold tracking-wide text-muted uppercase">
+                      {sectionLabel(messages, s.id)}
+                    </span>
+                    {tabsFor(s, authed).map((t) => (
+                      <Fragment key={t.id}>{navLink(t.href, tabLabel(messages, t.id), inSheet)}</Fragment>
+                    ))}
+                  </div>
+                )
+              })}
               {ctaLink(inSheet)}
             </nav>
             {/* Área de CONTA dentro do painel: o mesmo AuthSlot do desktop (avatar/nome/Sair, ou

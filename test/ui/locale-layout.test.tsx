@@ -48,6 +48,7 @@ vi.mock('@/server/deps', () => ({ getDb: () => ({}) }))
 // Filhos pesados → stubs leves (o foco é o <html lang> + o initialLocale do provider). O footer devolve
 // um marcador com os links que recebeu, para conferir o que o layout passa.
 vi.mock('@/components/site-header', () => ({ SiteHeader: () => null }))
+vi.mock('@/components/nav/section-tabs', () => ({ SectionTabs: () => null }))
 vi.mock('@/components/site-footer', () => ({ SiteFooter: () => null }))
 vi.mock('@/i18n/provider', () => ({
   LocaleProvider: ({ initialLocale, children }: { initialLocale: string; children: ReactNode }) => (

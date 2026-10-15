@@ -56,23 +56,21 @@ afterEach(() => {
 })
 
 describe('âncoras do tour no header', () => {
-  it('logado na home: busca, Criar, Salvos, Cardápio, conta e menu mobile', () => {
+  it('logado na home: busca, Criar, Minhas receitas, Planejar, conta e menu mobile', () => {
     authMock.current = logged
     render(wrap(<SiteHeader />))
     expect(anchor('busca')).not.toBeNull()
     expect(anchor('criar')).toHaveTextContent(ptBR.nav.create)
-    expect(anchor('nav-salvos')).toHaveAttribute('href', '/me/saved')
-    expect(anchor('nav-cardapio')).toHaveAttribute('href', '/me/meal-plan')
-    expect(anchor('nav-despensa')).toHaveAttribute('href', '/me/pantry')
+    expect(anchor('nav-minhas-receitas')).toHaveAttribute('href', '/me/recipes')
+    expect(anchor('nav-planejar')).toHaveAttribute('href', '/me/meal-plan')
     expect(anchor('conta')).not.toBeNull()
     expect(anchor('menu-mobile')).toHaveAccessibleName(ptBR.nav.abrirMenu)
   })
 
   it('Visitante: sem as âncoras de links só-logados', () => {
     render(wrap(<SiteHeader />))
-    expect(anchor('nav-salvos')).toBeNull()
-    expect(anchor('nav-cardapio')).toBeNull()
-    expect(anchor('nav-despensa')).toBeNull()
+    expect(anchor('nav-minhas-receitas')).toBeNull()
+    expect(anchor('nav-planejar')).toBeNull()
     expect(anchor('criar')).not.toBeNull()
   })
 })

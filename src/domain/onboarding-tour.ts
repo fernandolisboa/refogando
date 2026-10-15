@@ -13,9 +13,8 @@
 export type TourAnchor =
   | 'busca'
   | 'criar'
-  | 'nav-salvos'
-  | 'nav-cardapio'
-  | 'nav-despensa'
+  | 'nav-minhas-receitas'
+  | 'nav-planejar'
   | 'conta'
   | 'menu-mobile'
 
@@ -23,9 +22,8 @@ export type TourStepId =
   | 'boasVindas'
   | 'busca'
   | 'criar'
-  | 'salvos'
-  | 'cardapio'
-  | 'despensa'
+  | 'minhasReceitas'
+  | 'planejar'
   | 'conta'
   | 'fim'
 
@@ -41,9 +39,9 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'boasVindas', anchors: [], authOnly: false },
   { id: 'busca', anchors: ['busca'], authOnly: false },
   { id: 'criar', anchors: ['criar', 'menu-mobile'], authOnly: false },
-  { id: 'salvos', anchors: ['nav-salvos', 'menu-mobile'], authOnly: true },
-  { id: 'cardapio', anchors: ['nav-cardapio', 'menu-mobile'], authOnly: true },
-  { id: 'despensa', anchors: ['nav-despensa', 'menu-mobile'], authOnly: true },
+  // ADR-0043: um passo por SEÇÃO do header (Salvos, Cardápio e Despensa viraram abas dentro delas).
+  { id: 'minhasReceitas', anchors: ['nav-minhas-receitas', 'menu-mobile'], authOnly: true },
+  { id: 'planejar', anchors: ['nav-planejar', 'menu-mobile'], authOnly: true },
   { id: 'conta', anchors: ['conta', 'menu-mobile'], authOnly: false },
   { id: 'fim', anchors: [], authOnly: false },
 ]

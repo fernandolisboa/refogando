@@ -13,11 +13,11 @@ import {
 
 /** Tour guiado (ADR-0039) — o kernel puro: passos, âncoras, abertura automática e posição do cartão. */
 describe('tourStepsFor', () => {
-  it('logado: começa nas boas-vindas, termina no fim e inclui Salvos e Cardápio', () => {
+  it('logado: começa nas boas-vindas, termina no fim e inclui as seções Minhas receitas e Planejar', () => {
     const ids = tourStepsFor(true).map((s) => s.id)
     expect(ids[0]).toBe('boasVindas')
     expect(ids.at(-1)).toBe('fim')
-    expect(ids).toEqual(['boasVindas', 'busca', 'criar', 'salvos', 'cardapio', 'despensa', 'conta', 'fim'])
+    expect(ids).toEqual(['boasVindas', 'busca', 'criar', 'minhasReceitas', 'planejar', 'conta', 'fim'])
   })
 
   it('Visitante: sem os passos de links só-logados', () => {
@@ -27,18 +27,18 @@ describe('tourStepsFor', () => {
 })
 
 describe('resolveAnchor', () => {
-  const salvos = tourStepsFor(true).find((s) => s.id === 'salvos')!
+  const minhasReceitas = tourStepsFor(true).find((s) => s.id === 'minhasReceitas')!
 
   it('prefere a âncora do desktop quando visível', () => {
-    expect(resolveAnchor(salvos, () => true)).toBe('nav-salvos')
+    expect(resolveAnchor(minhasReceitas, () => true)).toBe('nav-minhas-receitas')
   })
 
   it('no celular (nav escondida) cai no botão do menu', () => {
-    expect(resolveAnchor(salvos, (a) => a === 'menu-mobile')).toBe('menu-mobile')
+    expect(resolveAnchor(minhasReceitas, (a) => a === 'menu-mobile')).toBe('menu-mobile')
   })
 
   it('nada visível ⇒ null (cartão centrado, o passo não some)', () => {
-    expect(resolveAnchor(salvos, () => false)).toBeNull()
+    expect(resolveAnchor(minhasReceitas, () => false)).toBeNull()
   })
 
   it('passo sem âncora (boas-vindas) ⇒ null', () => {

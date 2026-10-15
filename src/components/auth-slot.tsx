@@ -140,10 +140,7 @@ export function AuthSlot() {
         <DropdownMenuItem asChild>
           <Link href="/me/profile">{messages.nav.editarPerfil}</Link>
         </DropdownMenuItem>
-        {/* ADR-0035: índice das Listas de compras — antes nenhuma chrome levava a elas. */}
-        <DropdownMenuItem asChild>
-          <Link href="/me/shopping-lists">{messages.listaDeCompras.indiceTitulo}</Link>
-        </DropdownMenuItem>
+        {/* As Listas de compras saíram daqui (ADR-0043): são uma aba de "Planejar", no header. */}
         {/* ADR-0039: "Como usar" (/guia) — o guia de uso e o botão de refazer o tour guiado. */}
         <DropdownMenuItem asChild>
           <Link href="/guia">{messages.nav.comoUsar}</Link>
