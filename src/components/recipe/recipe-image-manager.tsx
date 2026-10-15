@@ -557,9 +557,14 @@ export function RecipeImageManager({
                 <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
                 {/* #285: selo do preview — "Editada com IA" se veio de uma base, senão "Gerada por IA". */}
                 <span className="text-xs text-muted">
-                  {preview.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa}
-                  {/* ADR-0044: o cenário que o servidor usou nesta imagem (o do diretor, as regras ou o escolhido). */}
-                  {cenaUsada && ` · ${m.imagemCenarioUsado.replace('{cenario}', cenarioLabel[cenaUsada])}`}
+                  {/* ADR-0044: com o cenário que o servidor usou nesta imagem (o do diretor, as regras ou o escolhido). */}
+                  {cenaUsada
+                    ? m.imagemSeloComCenario
+                        .replace('{selo}', preview.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa)
+                        .replace('{cenario}', cenarioLabel[cenaUsada])
+                    : preview.editedFromId
+                      ? m.imagemSeloIaEditada
+                      : m.imagemSeloIa}
                 </span>
               </div>
             ) : generating ? (
@@ -629,33 +634,36 @@ export function RecipeImageManager({
                   <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted" />
                 )}
               </button>
-              {showRefino && (
-                <div id="imagem-refino" className="flex flex-col gap-2 border-t border-border px-3 py-3 text-sm">
-                  {basePrompt && (
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium text-muted">{m.imagemPromptBase}</span>
-                      {/* Base READ-ONLY: <p> simples (não <output>) — evita role=status/aria-live
-                          fazer o leitor de tela anunciar o prompt inteiro ao revelar (a11y, #223).
-                          Não é campo editável e nunca é postado: o cliente só envia o refino. */}
-                      <p className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
-                        {basePrompt}
-                      </p>
-                    </div>
-                  )}
-                  <label className="flex flex-col gap-1">
-                    <span className="font-medium text-fg">{m.imagemPromptRotulo}</span>
-                    <textarea
-                      value={refino}
-                      onChange={(e) => setRefino(e.target.value)}
-                      maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
-                      rows={2}
-                      placeholder={editBaseId ? m.imagemEdicaoPlaceholder : m.imagemPromptPlaceholder}
-                      disabled={busy}
-                      className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
-                    />
-                  </label>
-                </div>
-              )}
+              {/* Sempre no DOM (o `aria-controls` aponta pra ele); `hidden` quando fechado. */}
+              <div
+                id="imagem-refino"
+                hidden={!showRefino}
+                className="flex flex-col gap-2 border-t border-border px-3 py-3 text-sm"
+              >
+                {basePrompt && (
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium text-muted">{m.imagemPromptBase}</span>
+                    {/* Base READ-ONLY: <p> simples (não <output>) — evita role=status/aria-live
+                        fazer o leitor de tela anunciar o prompt inteiro ao revelar (a11y, #223).
+                        Não é campo editável e nunca é postado: o cliente só envia o refino. */}
+                    <p className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
+                      {basePrompt}
+                    </p>
+                  </div>
+                )}
+                <label className="flex flex-col gap-1">
+                  <span className="font-medium text-fg">{m.imagemPromptRotulo}</span>
+                  <textarea
+                    value={refino}
+                    onChange={(e) => setRefino(e.target.value)}
+                    maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
+                    rows={2}
+                    placeholder={editBaseId ? m.imagemEdicaoPlaceholder : m.imagemPromptPlaceholder}
+                    disabled={busy}
+                    className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* #265: rodapé condicional ao preview. Em REPOUSO (sem preview) só há o CTA primário
@@ -691,7 +699,8 @@ export function RecipeImageManager({
  * lado, colada e com o mesmo estilo, abre a lista de cenários (`role=menuitemradio`, setas e Escape
  * do Radix). Escolher troca o rótulo ("Gerar · Bistrô"); "Automático" volta ao rótulo simples e deixa o
  * diretor de arte decidir pela receita. `cena === null` ⇒ edição de imagem: sem seta (a cena vem da
- * imagem-base). `modal={false}`: o menu abre dentro do modal (Radix Dialog) sem um segundo scroll-lock.
+ * imagem-base). O menu fica MODAL (o padrão do Radix), mesmo dentro do modal de imagem: com `modal={false}`
+ * o scroll-lock do Dialog engoliria a rolagem do menu (portal fora dele) numa tela baixa.
  */
 function GenerateSplitButton({
   label,
@@ -720,18 +729,21 @@ function GenerateSplitButton({
   }
   const atual = cena ? cenarioLabel[cena] : m.imagemCenarioAutomatico
   return (
-    <div className="inline-flex">
+    <div className="inline-flex max-w-full min-w-0">
       <Button
         type="button"
         size="sm"
         variant={variant}
         onClick={onGenerate}
         disabled={disabled}
-        className="rounded-r-none"
+        className="min-w-0 rounded-r-none"
       >
-        {cena ? m.imagemGerarNoCenario.replace('{acao}', label).replace('{cenario}', cenarioLabel[cena]) : label}
+        {/* Rótulo longo ("Gerar outra · Rústico e tradicional") corta com reticências num celular estreito. */}
+        <span className="truncate">
+          {cena ? m.imagemGerarNoCenario.replace('{acao}', label).replace('{cenario}', cenarioLabel[cena]) : label}
+        </span>
       </Button>
-      <DropdownMenu modal={false}>
+      <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"

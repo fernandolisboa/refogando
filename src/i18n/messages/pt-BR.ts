@@ -496,10 +496,12 @@ export const ptBR = {
     // ADR-0044: seletor de cenário no modal. "Automático" = o diretor de arte escolhe pela receita.
     imagemCenarioRotulo: 'Cenário',
     imagemCenarioAutomatico: 'Automático (pela receita)',
-    imagemCenarioEscolher: 'Escolher o cenário (agora: {cenario})',
+    // {cenario}, {acao} e {selo} interpolados no componente via `.replace`. Nome acessível da seta do
+    // botão dividido (anuncia o cenário atual) e o rótulo do botão com um cenário escolhido.
+    imagemCenarioEscolher: 'Escolher o cenário, agora: {cenario}',
     imagemGerarNoCenario: '{acao} · {cenario}',
-    // {cenario} interpolado no componente via `.replace`.
-    imagemCenarioUsado: 'Cenário: {cenario}',
+    // Selo da prévia com o cenário que o servidor usou.
+    imagemSeloComCenario: '{selo} · Cenário: {cenario}',
     imagemFechar: 'Fechar',
     imagemGaleria: 'Galeria de imagens',
     imagemGaleriaVazia: 'Nenhuma imagem ainda. Gere uma com IA ou envie a sua foto.',

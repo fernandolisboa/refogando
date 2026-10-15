@@ -438,11 +438,11 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
 
     // Por padrão o base NÃO aparece.
-    expect(within(dialog).queryByText('Prato: Feijoada com feijão preto.')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).not.toBeVisible()
 
     // O botão menos-destacado revela o base read-only.
     await user.click(within(dialog).getByText(M.imagemRefinar))
-    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).toBeVisible()
   })
 
   it('#223 o base revelado é READ-ONLY (não um campo editável que posta)', async () => {
@@ -584,7 +584,9 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     const gen = calls.filter((c) => c.url.endsWith('/image/generate'))
     expect(JSON.parse(String(gen[0].body))).toEqual({ cena: 'boteco' })
-    expect(within(dialog).getByText(M.imagemCenarioUsado.replace('{cenario}', boteco), { exact: false })).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(M.imagemSeloComCenario.replace('{selo}', M.imagemSeloIa).replace('{cenario}', boteco)),
+    ).toBeInTheDocument()
     // Com prévia, o "Gerar outra" mantém o cenário escolhido no rótulo.
     expect(
       within(dialog).getByRole('button', {
@@ -608,14 +610,17 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
     const toggle = within(dialog).getByRole('button', { name: M.imagemRefinar })
+    const campo = within(dialog).getByLabelText(M.imagemPromptRotulo)
+    // O painel fica no DOM (alvo do `aria-controls`), escondido por `hidden` quando fechado.
+    expect(toggle).toHaveAttribute('aria-controls', campo.closest('[id]')!.id)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(within(dialog).queryByLabelText(M.imagemPromptRotulo)).not.toBeInTheDocument()
+    expect(campo).not.toBeVisible()
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(within(dialog).getByLabelText(M.imagemPromptRotulo)).toBeInTheDocument()
+    expect(campo).toBeVisible()
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(within(dialog).queryByLabelText(M.imagemPromptRotulo)).not.toBeInTheDocument()
+    expect(campo).not.toBeVisible()
   })
 
   it('#222 cap 429 no modal: mostra o countdown e NÃO chama refresh', async () => {
@@ -860,7 +865,8 @@ describe('RecipeImageManager — image-to-image (editar a partir de outra) (#285
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(M.imagemEditandoDesta)).toBeInTheDocument()
     // ADR-0044: na edição o botão não tem a seta do cenário (a cena vem da imagem-base).
-    expect(within(dialog).queryByRole('button', { name: /^Escolher o cenário/ })).not.toBeInTheDocument()
+    const seta = M.imagemCenarioEscolher.split('{')[0]
+    expect(within(dialog).queryAllByRole('button').filter((b) => b.getAttribute('aria-label')?.startsWith(seta))).toHaveLength(0)
 
     // Sem instrução, "Gerar" está DESABILITADO (edição exige refino).
     const gerar = within(dialog).getByText(M.imagemGerarAgora).closest('button') as HTMLButtonElement

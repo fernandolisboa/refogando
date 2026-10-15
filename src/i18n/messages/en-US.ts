@@ -447,10 +447,12 @@ export const enUS: Messages = {
     // ADR-0044: scene picker in the modal. "Automatic" = the art director picks from the recipe.
     imagemCenarioRotulo: 'Scene',
     imagemCenarioAutomatico: 'Automatic (from the recipe)',
-    imagemCenarioEscolher: 'Choose the scene (now: {cenario})',
+    // {cenario}, {acao} and {selo} interpolated in the component via `.replace`. Accessible name of the
+    // split button's arrow (announces the current scene) and the button label with a chosen scene.
+    imagemCenarioEscolher: 'Choose the scene, now: {cenario}',
     imagemGerarNoCenario: '{acao} · {cenario}',
-    // {cenario} interpolated in the component via `.replace`.
-    imagemCenarioUsado: 'Scene: {cenario}',
+    // Preview badge with the scene the server used.
+    imagemSeloComCenario: '{selo} · Scene: {cenario}',
     imagemFechar: 'Close',
     imagemGaleria: 'Image gallery',
     imagemGaleriaVazia: 'No images yet. Generate one with AI or upload your own photo.',
