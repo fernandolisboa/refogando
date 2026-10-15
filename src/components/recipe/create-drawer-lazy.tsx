@@ -213,7 +213,7 @@ export function LazyCreateDrawer({
 
   // Troca de rota com o pedido pendente (voltar/avançar do navegador, `router.push` de algum
   // fluxo): desfaz o pedido, para a gaveta não abrir por cima da página nova. Com a gaveta já
-  // aberta, quem fecha é a própria `CreateDrawer` (`useFecharAoNavegar`, handoff 73).
+  // aberta, quem fecha é a própria `CreateDrawer` (`useFecharAoNavegar`, handoff 74).
   const lastPathnameRef = useRef(pathname)
   useEffect(() => {
     if (lastPathnameRef.current === pathname) return

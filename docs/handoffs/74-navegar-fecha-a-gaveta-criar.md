@@ -1,6 +1,6 @@
-# Handoff 73 — Navegar fecha a gaveta "Criar"
+# Handoff 74 — Navegar fecha a gaveta "Criar"
 
-**Sessão:** 2026-10-15. **Branch:** `claude/fix-criar-drawer-close-on-navigate-spvmxa` (sobre a main em `3be8597`, depois do #579). **Migração:** nenhuma. Origem: relato do dono: depois de gerar uma receita na gaveta "Criar", "Ver receita" carregava a página da receita por trás, mas a gaveta e o fundo borrado ficavam na tela.
+**Sessão:** 2026-10-15. **Branch:** `claude/fix-criar-drawer-close-on-navigate-spvmxa` (sobre a main em `3be8597`, depois do #579; o 73 é o das seções da navegação, #580). **Migração:** nenhuma. Origem: relato do dono: depois de gerar uma receita na gaveta "Criar", "Ver receita" carregava a página da receita por trás, mas a gaveta e o fundo borrado ficavam na tela.
 
 ## 1. Causa
 

@@ -55,7 +55,7 @@ Isto é UX reorg, não expansão do modelo de domínio: nenhuma migração de sc
 - **Largura:** do tablet para cima a gaveta passa de 448 px (`sm:max-w-md`) a 512 px (`sm:max-w-lg`); no celular segue tela cheia (até os 384 px da primitiva `Sheet`).
 - **Código sob demanda:** o "Criar" do header monta `LazyCreateDrawer` (`src/components/recipe/create-drawer-lazy.tsx`), que baixa a `CreateDrawer` por `import()`, com pré-carga no ocioso e no hover/foco/pointerdown do botão. Com o código carregado, o clique abre como antes; antes disso, a gaveta abre assim que ele chega; se o chunk falhar (aba antiga depois de um deploy), o clique navega para `/{locale}/create`, que segue sendo o shell da decisão 2 e importa a gaveta direto (e a registra no store do header, para a rota não baixá-la duas vezes). Conteúdo, foco, Escape e o bloqueio durante a geração (decisão 5) não mudaram.
 
-## Atualização (2026-10-15, handoff 73): navegar fecha a gaveta
+## Atualização (2026-10-15, handoff 74): navegar fecha a gaveta
 
 - A gaveta do header atravessava a navegação (o header persiste entre rotas): "Ver receita" carregava a receita por trás do painel e do fundo borrado. Agora a própria `CreateDrawer` fecha quando o `pathname` muda com ela aberta (link de dentro dela ou voltar/avançar do navegador), quando a navegação é montada: na receita, quando a página chega; nas rotas de `(com-carregamento)`, quando o esqueleto aparece. Um link para a própria página (o `pathname` não muda) fecha no clique; na `/create` não, porque lá os links da gaveta a re-semeiam (decisão 2).
 - O bloqueio da decisão 5 vale aqui também: com a geração em voo, a troca de rota não fecha.

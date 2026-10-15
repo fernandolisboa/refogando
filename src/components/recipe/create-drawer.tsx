@@ -18,7 +18,7 @@
  * Reabrir o drawer RESETA o wizard (paridade com o protótipo) via `key` no conteúdo interno —
  * assim trocar de método/gerar/voltar ao picker é estado local, sem vazar entre aberturas.
  *
- * NAVEGAR FECHA A GAVETA (handoff 73): "Ver receita", "Ver cardápio", o autor, "Entrar" e o
+ * NAVEGAR FECHA A GAVETA (handoff 74): "Ver receita", "Ver cardápio", o autor, "Entrar" e o
  * voltar/avançar do navegador levam a outra página, e o header (onde a gaveta mora) persiste entre
  * rotas. Sem fechar, a página nova carregava por trás do painel e do fundo borrado. Ver
  * `useFecharAoNavegar`.

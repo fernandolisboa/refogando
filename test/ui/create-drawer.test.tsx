@@ -558,7 +558,7 @@ describe('CreateDrawer — "Nova receita" (#191)', () => {
   })
 })
 
-describe('CreateDrawer — navegar fecha a gaveta (handoff 73)', () => {
+describe('CreateDrawer — navegar fecha a gaveta (handoff 74)', () => {
   // O jsdom não navega: segura a ação padrão do `<a>` (o `Link` do Next também a segura). Só em
   // links: num botão de submit, isso cancelaria o envio do formulário.
   const segurarLink = (e: Event) => {

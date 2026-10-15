@@ -357,7 +357,7 @@ describe('Pedido de abertura pendente (o chunk ainda chegando)', () => {
     expect(assign).not.toHaveBeenCalled()
   })
 
-  it('com a gaveta ABERTA, navegar no client a fecha (handoff 73): a página nova não fica atrás do fundo borrado', async () => {
+  it('com a gaveta ABERTA, navegar no client a fecha (handoff 74): a página nova não fica atrás do fundo borrado', async () => {
     const user = userEvent.setup()
     mockDrawerChunk()
     const { navigate } = await renderHeader()
