@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Emendado por ADR-0043 (2026-10-15):** "Explorar" passou a ser o rótulo da **seção** do header que contém a Descoberta (aba "Descobrir", a home), a Descoberta de Cozinheiros (aba "Cozinheiros") e o Feed Seguindo (aba "Seguindo", a última, só logado). As rotas e o resto deste ADR seguem iguais.
+
 > **Emendado por ADR-0027 e ADR-0028 (2026-06-30):** o `apreço` do trilho "Cozinheiros em alta" deixa de ler **votos + favoritos** (votos aposentados; favoritos viraram **saves**) e passa a usar a **Popularidade misturada** do ADR-0027. E as **notificações** que este ADR deixou deferidas (item 7) foram **retomadas pelo ADR-0028** — "novo seguidor" entra no catálogo da caixa in-app.
 
 O Refogando ganha uma **camada social** — seguir **Cozinheiros**, um **feed "Seguindo"**, um trilho de **recomendações** e **busca de pessoas**. Origem: requisição do dono (item 8 de uma rodada de novas requisições), grelhada em sessão de domínio. A decisão central, da qual todas as outras derivam: adicionar o eixo social **sem tocar** na home **indexável** que o ADR-0020 acabou de estabelecer. Tudo aqui é incremental — **uma** tabela nova (`user_follow`) + reuso de Busca/feed/votos/favoritos existentes.

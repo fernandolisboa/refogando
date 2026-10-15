@@ -123,15 +123,23 @@ describe('AuthSlot — estado de sessão na chrome (#55) + menu da conta (#267)'
     expect(screen.queryByRole('menuitem', { name: ptBR.nav.painel })).not.toBeInTheDocument()
   })
 
-  it('o menu tem "Listas de compras" → /me/shopping-lists (ADR-0035)', async () => {
+  it('as "Listas de compras" saíram do menu da conta: são uma aba de "Planejar" (ADR-0043)', async () => {
     const user = userEvent.setup()
     mockSession = authed()
     renderSlot('pt-BR')
     await openMenu(user, 'Ana')
-    expect(screen.getByRole('menuitem', { name: ptBR.listaDeCompras.indiceTitulo })).toHaveAttribute(
-      'href',
-      '/me/shopping-lists',
-    )
+    expect(screen.queryByRole('menuitem', { name: ptBR.listaDeCompras.indiceTitulo })).not.toBeInTheDocument()
+  })
+
+  it('Sair esquece a última aba de Minhas receitas/Planejar deste aparelho (ADR-0043)', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem('refogando:nav:ultima-aba:v1', JSON.stringify({ planejar: '/me/pantry' }))
+    mockSession = authed()
+    renderSlot('pt-BR')
+    await openMenu(user, 'Ana')
+    await user.click(screen.getByRole('menuitem', { name: ptBR.nav.signOut }))
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
+    expect(window.localStorage.getItem('refogando:nav:ultima-aba:v1')).toBeNull()
   })
 
   it('handle ausente: o item "Ver meu perfil público" não aparece (degradação graciosa)', async () => {

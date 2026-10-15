@@ -87,6 +87,10 @@ _Avoid_: estoque/inventário com quantidade; "geladeira" como termo de domínio.
 A página pública `/guia` que explica, em texto, como usar cada recurso do app (buscar, criar com IA, a página da Receita, Salvos, Lista de compras, Cardápio, Comunidade, Conta) e de onde se refaz o **Tour guiado**. Linkada no rodapé e no menu da conta. Cada feature nova visível ao Usuário atualiza o guia. Ver ADR-0039.
 _Avoid_: FAQ, Ajuda, Tutorial (como nome da página); guia só para logados.
 
+**Seções da navegação**:
+O header mostra três **seções**, cada uma com **subabas** numa tira logo abaixo dele: **Explorar** (Descobrir = a home, Cozinheiros, Seguindo), **Minhas receitas** (Criações, Salvos) e **Planejar** (Cardápio, Listas de compras, Despensa). O Visitante vê só Explorar, sem Seguindo. As seções só agrupam rotas: nenhuma URL muda. O link de Minhas receitas e de Planejar volta à última aba visitada no dispositivo. O menu da conta guarda só o que é da conta (perfil, Como usar, Painel, Sair). Ver ADR-0043.
+_Avoid_: um link no header por feature nova (ela vira aba da seção que a contém); dropdown no hover para as seções.
+
 **Tour guiado**:
 Sobreposição que escurece a tela e destaca um componente da chrome por passo, na home, com um cartão explicando o que ele faz. Abre sozinho **uma vez** para conta nova (até 14 dias) e sempre que pedido pelo Guia de uso; é **dispensável em qualquer passo** (X e Esc em todos; "Agora não" no primeiro, "Pular tour" nos do meio), e o desfecho (`done`/`dismissed`) fica gravado por Usuário **no dispositivo**. Informativo: não navega nem clica por ninguém. Ver ADR-0039.
 _Avoid_: Onboarding (como nome da feature, que sugere um fluxo obrigatório de cadastro); Walkthrough; forçar o tour sem saída.
@@ -156,7 +160,7 @@ _Avoid_: Filtro (para a ação completa); Pesquisa (usar Busca); Find; a Busca d
 _Avoid_: "Feed" e "Descoberta" como sinônimos soltos (Descoberta = a superfície; Feed = seu estado de repouso); a Busca como tela separada do feed; "Início" como tela distinta de "Receitas" (são a mesma superfície).
 
 **Feed Seguindo** (superfície social):
-A superfície **só-logado** que mostra as **receitas públicas** dos Cozinheiros que você **segue** (ADR-0024) — distinta da **Descoberta** (a home global, anônima e **indexável**, que segue **intacta**: o social **não** personaliza a home). Reusa o gate de pool (visibilidade/moderação) + filtro `owner_id ∈ seguidos`; **não revela privados** de terceiros e **não inclui catálogo** (sem Cozinheiro por trás). É **não-indexável** (sem sitemap/hreflang). Na nav, entra como aba **"Seguindo"** ao lado de **"Explorar"** (rótulo da Descoberta), com **empty state** que aponta pra **Descoberta de Cozinheiros** quando você ainda não segue ninguém.
+A superfície **só-logado** que mostra as **receitas públicas** dos Cozinheiros que você **segue** (ADR-0024) — distinta da **Descoberta** (a home global, anônima e **indexável**, que segue **intacta**: o social **não** personaliza a home). Reusa o gate de pool (visibilidade/moderação) + filtro `owner_id ∈ seguidos`; **não revela privados** de terceiros e **não inclui catálogo** (sem Cozinheiro por trás). É **não-indexável** (sem sitemap/hreflang). Na nav, é a aba **"Seguindo"** (a última, só logado) da seção **"Explorar"**, junto da Descoberta e da Descoberta de Cozinheiros (ver **Seções da navegação**), com **empty state** que aponta pra **Descoberta de Cozinheiros** quando você ainda não segue ninguém.
 _Avoid_: personalizar a Descoberta/home por follow (ela é a porta indexável do SEO — o feed Seguindo é superfície à parte); indexar o feed Seguindo; sumir a aba "Seguindo" quando vazia (mostra empty state, ensina a usar).
 
 **Descoberta de Cozinheiros** (superfície social, distinta da Descoberta-home):

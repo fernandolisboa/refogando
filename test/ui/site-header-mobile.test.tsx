@@ -97,7 +97,13 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     await user.click(screen.getByRole('button', { name: ABRIR }))
     const dialog = await screen.findByRole('dialog')
 
-    expect(within(dialog).getByRole('link', { name: ptBR.nav.home })).toBeInTheDocument()
+    // ADR-0043: as abas vêm agrupadas sob o título da seção; a home é a aba "Descobrir" de "Explorar".
+    const explorar = within(dialog).getByRole('group', { name: ptBR.nav.home })
+    expect(within(explorar).getByRole('link', { name: ptBR.nav.descobrir })).toHaveAttribute('href', '/')
+    expect(within(explorar).getByRole('link', { name: ptBR.nav.cozinheiros })).toHaveAttribute('href', '/cooks')
+    // O Visitante não vê as seções pessoais.
+    expect(within(dialog).queryByRole('group', { name: ptBR.nav.minhasReceitas })).toBeNull()
+    expect(within(dialog).queryByRole('group', { name: ptBR.nav.planejar })).toBeNull()
     // #236: "Receitas" (índice do feed) fundiu na home — só "Explorar" (a Descoberta) no nav. A chave
     // i18n `nav.recipes` foi removida; asseguramos a ausência pelo rótulo LITERAL de antes.
     expect(within(dialog).queryByRole('link', { name: 'Receitas' })).toBeNull()
@@ -108,28 +114,30 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     expect(within(dialog).queryByRole('link', { name: ptBR.nav.create })).toBeNull()
     // Área de conta: Visitante vê "Entrar".
     expect(within(dialog).getByRole('link', { name: ptBR.nav.signIn })).toBeInTheDocument()
-    // Visitante NÃO vê "Minhas criações" nem "Painel".
-    expect(within(dialog).queryByText(ptBR.minhasCriacoes.titulo)).not.toBeInTheDocument()
+    // Visitante NÃO vê "Criações" nem "Painel".
+    expect(within(dialog).queryByText(ptBR.nav.criacoes)).not.toBeInTheDocument()
     // #468: Visitante também não vê "Salvos" (não tem saves).
     expect(within(dialog).queryByText(ptBR.colecoes.titulo)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(ptBR.nav.painel)).not.toBeInTheDocument()
   })
 
-  it('curador logado: o painel mobile inclui Minhas criações, Criar e o MENU DA CONTA (Painel + Sair)', async () => {
+  it('curador logado: o painel mobile inclui as seções agrupadas, Criar e o MENU DA CONTA (Painel + Sair)', async () => {
     authMock.current = sessionFor('curador')
     const user = userEvent.setup()
     renderHeader()
     await user.click(screen.getByRole('button', { name: ABRIR }))
     const dialog = await screen.findByRole('dialog')
 
+    // ADR-0043: "Minhas receitas" agrupa Criações e Salvos (#468); "Planejar", Cardápio, Listas e Despensa.
+    const minhas = within(dialog).getByRole('group', { name: ptBR.nav.minhasReceitas })
+    expect(within(minhas).getByRole('link', { name: ptBR.nav.criacoes })).toHaveAttribute('href', '/me/recipes')
+    expect(within(minhas).getByRole('link', { name: ptBR.colecoes.titulo })).toHaveAttribute('href', '/me/saved')
+    const planejar = within(dialog).getByRole('group', { name: ptBR.nav.planejar })
     expect(
-      within(dialog).getByRole('link', { name: ptBR.minhasCriacoes.titulo }),
-    ).toBeInTheDocument()
-    // #468: "Salvos" (só-logado) aparece no drawer, levando a /me/saved.
-    expect(within(dialog).getByRole('link', { name: ptBR.colecoes.titulo })).toHaveAttribute(
-      'href',
-      '/me/saved',
-    )
+      within(planejar)
+        .getAllByRole('link')
+        .map((a) => a.getAttribute('href')),
+    ).toEqual(['/me/meal-plan', '/me/shopping-lists', '/me/pantry'])
     // #277: a aba "Seguindo" (só-logada) aparece no drawer do logado.
     expect(within(dialog).getByRole('link', { name: ptBR.nav.seguindo })).toBeInTheDocument()
     // #191: "Criar" agora é um BOTÃO (abre o drawer "Nova receita"), não um link de navegação.
@@ -174,7 +182,7 @@ describe('Header mobile — hambúrguer + drawer (#163)', () => {
     await user.click(screen.getByRole('button', { name: ABRIR }))
     const dialog = await screen.findByRole('dialog')
 
-    await user.click(within(dialog).getByRole('link', { name: ptBR.nav.home }))
+    await user.click(within(dialog).getByRole('link', { name: ptBR.nav.descobrir }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 

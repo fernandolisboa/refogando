@@ -13,8 +13,8 @@ export const enUS: Messages = {
   // brand name is not).
   footer: { abreEmNovaAba: 'opens in a new tab' },
   nav: {
-    // #277: the Discovery/home is now labeled "Explore" in the nav (a tab next to "Following").
-    // Key stays `home` (links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
+    // #277/ADR-0043: label of the "Explore" SECTION (the home itself is the "Discover" tab). Key stays
+    // `home` (the section links to `/`, and not-found reuses this "back home" value); only the LABEL changed.
     home: 'Explore',
     // #277: "Following" tab — feed of recipes from the cooks the viewer follows. Logged-in only.
     seguindo: 'Following',
@@ -37,6 +37,12 @@ export const enUS: Messages = {
     pularParaConteudo: 'Skip to content',
     cardapio: 'Meal plan',
     despensa: 'Pantry',
+    secoesAria: 'Sections',
+    minhasReceitas: 'My recipes',
+    planejar: 'Planner',
+    descobrir: 'Discover',
+    cozinheiros: 'Cooks',
+    criacoes: 'Creations',
     comoUsar: 'How to use',
   },
   // Notifications inbox (#371, ADR-0028): bell in the chrome (logged-in only) + panel. Same FLAT-key
@@ -2247,15 +2253,13 @@ export const enUS: Messages = {
     buscaTitulo: 'Search for any dish',
     buscaTexto: 'Type a dish, an ingredient or a style. Can’t find what you want? With an account, you can generate the recipe with AI right from your search.',
     criarTitulo: 'Create your own recipe',
-    criarTexto: 'In “Create”, AI builds a recipe your way: with a form, by describing the dish in one go, or by chatting. What you create lives in “My creations”.',
-    salvosTitulo: 'Keep what you like',
-    salvosTexto: 'Tap “Save” on a recipe and it shows up here. Organize them into collections and send several to a shopping list at once.',
-    cardapioTitulo: 'Plan your week',
-    cardapioTexto: 'Build your weekly menu, ask AI for a suggestion, copy last week and generate a shopping list with the right servings.',
-    despensaTitulo: 'Cook with what you have',
-    despensaTexto: 'In “Pantry”, list what you have at home and see the recipes you can cook now or are almost there. Missing items go straight to your shopping list.',
+    criarTexto: 'In “Create”, AI builds a recipe your way: with a form, by describing the dish in one go, or by chatting. What you create lives in “My recipes”.',
+    minhasReceitasTitulo: 'Your recipes',
+    minhasReceitasTexto: 'The recipes you created and the ones you saved live here. Tap “Save” on a recipe and it shows up in “Saved”, where you can organize it into collections.',
+    planejarTitulo: 'Plan your week',
+    planejarTexto: '“Planner” holds your weekly Meal plan, your Shopping lists and your Pantry: build the week, generate a list with the right servings and see what you can cook with what you have.',
     contaTitulo: 'Your account',
-    contaTexto: 'Your profile, your shopping lists and this guide (“How to use”) live here, so you can replay the tour anytime.',
+    contaTexto: 'Your profile and this guide (“How to use”) live here, so you can replay the tour anytime.',
     contaTextoVisitante: 'Sign in or create an account to save recipes, create with AI and plan your week.',
     fimTitulo: 'You’re all set!',
     fimTexto: 'That’s the basics. The full guide explains each feature in detail, and you can replay the tour from there.',
@@ -2270,7 +2274,7 @@ export const enUS: Messages = {
     indice: 'On this page',
     buscarTitulo: 'Finding recipes',
     buscarItens: [
-      'On the home page (“Explore”), type a dish, an ingredient or a style in the search. Filters narrow it down by cuisine, category and dietary restriction.',
+      'In “Explore”, under the “Discover” tab (the home page), type a dish, an ingredient or a style in the search. Filters narrow it down by cuisine, category and dietary restriction.',
       'Didn’t find it? With an account and at least 3 letters, use “Generate with AI” to create a recipe from what you searched for.',
       'With an account you can also search the web. Recipes from other sites can be imported into your profile: they stay private and credit the source.',
     ],
@@ -2280,7 +2284,7 @@ export const enUS: Messages = {
       'Every recipe starts out private. Publish it to the community whenever you want.',
       'On your recipes you can edit, ask AI for a new version and add a photo (your own or generated with AI).',
       'Like someone else’s recipe but want to change something? “Create my version” makes a copy of your own without touching the original.',
-      'Everything you create lives in “My creations”.',
+      'Everything you create lives in “My recipes”, under the “Creations” tab.',
     ],
     receitaTitulo: 'On the recipe page',
     receitaItens: [
@@ -2291,7 +2295,7 @@ export const enUS: Messages = {
     ],
     salvosTitulo: 'Saved and collections',
     salvosItens: [
-      'Tap “Save” on any recipe. They all show up in “Saved”.',
+      'Tap “Save” on any recipe. They all show up in “My recipes”, under the “Saved” tab.',
       'Create collections (say, “Sunday lunch”) to stay organized. Removing a recipe from a collection doesn’t unsave it.',
       'In “Saved”, select several recipes to send them to a shopping list at once.',
     ],
@@ -2299,11 +2303,11 @@ export const enUS: Messages = {
     listaItens: [
       'On a recipe, “Add to shopping list” brings in the ingredients for the servings you choose. Matching items add up.',
       'Check off what you’ve bought, edit amounts and add extra items. Nothing disappears on its own: clearing the list is always your call.',
-      'Your lists are in your account menu, under “Shopping lists”.',
+      'Your lists are in “Planner”, under the “Shopping lists” tab.',
     ],
     cardapioTitulo: 'Weekly meal plan',
     cardapioItens: [
-      'In “Meal plan”, add recipes to each day and meal, with the number of servings. You can move or remove them later.',
+      'In “Planner”, under the “Meal plan” tab, add recipes to each day and meal, with the number of servings. You can move or remove them later.',
       'A meal without a recipe? Jot down free text, like “eating out” or “leftovers”.',
       'Nothing in your collection fits? Under “Add”, “Create a new recipe with AI” opens recipe creation with the request filled in; after generating, one tap adds the recipe to that meal.',
       '“Suggest with AI” proposes a menu from your Saved recipes, your creations and, if you want, the community. Nothing is added until you accept.',
@@ -2313,7 +2317,7 @@ export const enUS: Messages = {
     ],
     despensaTitulo: 'Pantry',
     despensaItens: [
-      'In “Pantry”, list what you have at home: several names at once, separated by commas. No quantities.',
+      'In “Planner”, under the “Pantry” tab, list what you have at home: several names at once, separated by commas. No quantities.',
       'The app shows the recipes you can cook now and the ones that are almost there (up to 3 ingredients missing), with what is missing.',
       '“I have the basics” counts your basics (by default salt, water, oil, olive oil and black pepper) as already at home. You can turn it off, and in “Your basics” you can change the list or reset it to the default.',
       '“Add missing items to list” sends only the missing ingredients to your shopping list.',
@@ -2322,13 +2326,13 @@ export const enUS: Messages = {
     ],
     comunidadeTitulo: 'Community',
     comunidadeItens: [
-      'Follow cooks you like; their recipes show up in the “Following” tab.',
+      'Follow cooks you like; their recipes show up in “Explore”, under the “Following” tab. The “Cooks” tab helps you find people to follow.',
       'Everyone has a public profile with the recipes they published.',
       'The bell at the top lets you know when someone follows you or rates one of your recipes.',
     ],
     contaTitulo: 'Account and preferences',
     contaItens: [
-      'In your account menu (your name, at the top): public profile, edit profile, shopping lists and this guide.',
+      'In your account menu (your name, at the top): public profile, edit profile and this guide.',
       'In “Edit profile”, save your dietary restrictions (only you can see them). They come pre-selected when you create a recipe, ask for a menu suggestion and search — and you can change or remove them each time.',
       'In the footer, switch the language (Portuguese or English) and the light or dark theme.',
     ],
