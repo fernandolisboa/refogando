@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { CheckIcon } from 'lucide-react'
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
@@ -14,7 +15,8 @@ import { cn } from '@/lib/utils'
  *
  * `DropdownMenuContent` SEMPRE entra num `Portal` (igual a `SelectContent`/`SheetContent`): isso é o
  * que permite o menu escapar pro `body` mesmo quando o gatilho mora dentro do drawer mobile (Radix
- * Dialog) — o consumidor usa `modal={false}` lá pra não empilhar dois scroll-locks. Sem `dark:` (os
+ * Dialog). Menu curto dentro de Dialog pode usar `modal={false}` (ex.: auth-slot); lista longa
+ * fica modal (padrão), senão o remove-scroll do Dialog trava a rolagem do menu. Sem `dark:` (os
  * tokens viram sozinhos via globals.css). Sem ring custom: o realce de item usa a lavagem de páprica
  * `bg-brand/10` via `data-[highlighted]` (NUNCA a erva `accent`, reservada ao selo do Catálogo —
  * mesma regra do `SelectItem`).
@@ -81,6 +83,40 @@ function DropdownMenuItem({
   )
 }
 
+function DropdownMenuRadioGroup({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+  return <DropdownMenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />
+}
+
+/**
+ * Item de escolha única (`role=menuitemradio`, `aria-checked`): o check à esquerda marca o atual,
+ * como o `SelectItem`. Mesmo realce de páprica do `DropdownMenuItem`.
+ */
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        'relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm text-foreground outline-none transition-colors select-none focus:bg-brand/10 focus:text-foreground data-[highlighted]:bg-brand/10 data-[highlighted]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+        className,
+      )}
+      {...props}
+    >
+      <span className="pointer-events-none absolute left-2 flex size-4 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <CheckIcon />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  )
+}
+
 function DropdownMenuLabel({
   className,
   inset,
@@ -116,6 +152,8 @@ export {
   DropdownMenuPortal,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 }

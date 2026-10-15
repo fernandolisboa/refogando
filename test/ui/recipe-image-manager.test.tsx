@@ -438,11 +438,11 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
 
     // Por padrão o base NÃO aparece.
-    expect(within(dialog).queryByText('Prato: Feijoada com feijão preto.')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).not.toBeVisible()
 
     // O botão menos-destacado revela o base read-only.
     await user.click(within(dialog).getByText(M.imagemRefinar))
-    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).toBeInTheDocument()
+    expect(within(dialog).getByText('Prato: Feijoada com feijão preto.')).toBeVisible()
   })
 
   it('#223 o base revelado é READ-ONLY (não um campo editável que posta)', async () => {
@@ -550,7 +550,7 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
     expect((within(dialog2).getByLabelText(M.imagemPromptRotulo) as HTMLTextAreaElement).value).toBe('')
   })
 
-  it('ADR-0044: o cenário escolhido vai como `cena`, o usado aparece depois de gerar, e reabrir volta ao automático', async () => {
+  it('ADR-0044: o cenário mora no botão de gerar (botão dividido): escolher troca o rótulo, vai como `cena`, o usado aparece no selo, e reabrir volta ao automático', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch((method, url) =>
       method === 'POST' && url.endsWith('/image/generate')
@@ -559,29 +559,68 @@ describe('RecipeImageManager — foto + galeria + preview (#130/#222)', () => {
             body: {
               image: { id: IMG1, url: 'https://fake-blob.local/recipes/0.png', aiGenerated: true },
               basePrompt: 'Prato: Feijoada.',
-              scene: { registro: 'boteco', fonte: 'regras' },
+              scene: { registro: 'boteco', fonte: 'usuario' },
             },
           }
         : { status: 405 },
     )
     renderManager({ hasImage: false })
+    const auto = M.imagemCenarioEscolher.replace('{cenario}', M.imagemCenarioAutomatico)
+    const boteco = ptBR.cenarioLabel.boteco
+    const gerarNoBoteco = M.imagemGerarNoCenario.replace('{acao}', M.imagemGerarAgora).replace('{cenario}', boteco)
 
     await user.click(screen.getByText(M.imagemGerar))
     const dialog = await screen.findByRole('dialog')
-    const select = within(dialog).getByLabelText(M.imagemCenarioRotulo) as HTMLSelectElement
-    expect(select.value).toBe('')
-    await user.selectOptions(select, 'boteco')
-    await user.click(within(dialog).getByText(M.imagemGerarAgora))
+    expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
+    // A seta ao lado do "Gerar" abre a lista; o atual (Automático) vem marcado.
+    await user.click(within(dialog).getByRole('button', { name: auto }))
+    expect(await screen.findByRole('menuitemradio', { name: M.imagemCenarioAutomatico })).toHaveAttribute('aria-checked', 'true')
+    await user.click(screen.getByRole('menuitemradio', { name: boteco }))
+    // O rótulo do botão troca; a seta anuncia o novo atual.
+    expect(within(dialog).getByRole('button', { name: gerarNoBoteco })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: M.imagemCenarioEscolher.replace('{cenario}', boteco) })).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: gerarNoBoteco }))
     await waitFor(() => expect(within(dialog).getByRole('img')).toBeInTheDocument())
     const gen = calls.filter((c) => c.url.endsWith('/image/generate'))
     expect(JSON.parse(String(gen[0].body))).toEqual({ cena: 'boteco' })
-    expect(within(dialog).getByText(M.imagemCenarioUsado.replace('{cenario}', ptBR.cenarioLabel.boteco))).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(M.imagemSeloComCenario.replace('{selo}', M.imagemSeloIa).replace('{cenario}', boteco)),
+    ).toBeInTheDocument()
+    // Com prévia, o "Gerar outra" mantém o cenário escolhido no rótulo.
+    expect(
+      within(dialog).getByRole('button', {
+        name: M.imagemGerarNoCenario.replace('{acao}', M.imagemGerarOutra).replace('{cenario}', boteco),
+      }),
+    ).toBeInTheDocument()
 
     await user.click(within(dialog).getByLabelText(M.imagemFechar))
     await waitFor(() => expect(within(document.body).queryByRole('dialog')).not.toBeInTheDocument())
     await user.click(screen.getByText(M.imagemGerar))
     const dialog2 = await screen.findByRole('dialog')
-    expect((within(dialog2).getByLabelText(M.imagemCenarioRotulo) as HTMLSelectElement).value).toBe('')
+    expect(within(dialog2).getByRole('button', { name: M.imagemGerarAgora })).toBeInTheDocument()
+    expect(within(dialog2).getByRole('button', { name: auto })).toBeInTheDocument()
+  })
+
+  it('#223 "Refinar o prompt" é um disclosure: aria-expanded abre e fecha o campo', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 405 }))
+    renderManager({ hasImage: false })
+
+    await user.click(screen.getByText(M.imagemGerar))
+    const dialog = await screen.findByRole('dialog')
+    const toggle = within(dialog).getByRole('button', { name: M.imagemRefinar })
+    const campo = within(dialog).getByLabelText(M.imagemPromptRotulo)
+    // O painel fica no DOM (alvo do `aria-controls`), escondido por `hidden` quando fechado.
+    expect(toggle).toHaveAttribute('aria-controls', campo.closest('[id]')!.id)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(campo).not.toBeVisible()
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(campo).toBeVisible()
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(campo).not.toBeVisible()
   })
 
   it('#222 cap 429 no modal: mostra o countdown e NÃO chama refresh', async () => {
@@ -825,6 +864,9 @@ describe('RecipeImageManager — image-to-image (editar a partir de outra) (#285
     await user.click(screen.getAllByText(M.imagemEditarDesta)[0])
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(M.imagemEditandoDesta)).toBeInTheDocument()
+    // ADR-0044: na edição o botão não tem a seta do cenário (a cena vem da imagem-base).
+    const seta = M.imagemCenarioEscolher.split('{')[0]
+    expect(within(dialog).queryAllByRole('button').filter((b) => b.getAttribute('aria-label')?.startsWith(seta))).toHaveLength(0)
 
     // Sem instrução, "Gerar" está DESABILITADO (edição exige refino).
     const gerar = within(dialog).getByText(M.imagemGerarAgora).closest('button') as HTMLButtonElement

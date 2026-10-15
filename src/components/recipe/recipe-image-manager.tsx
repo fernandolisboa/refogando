@@ -37,7 +37,17 @@ import type { GalleryImage } from '@/domain/recipe-read'
 import { IMAGE_PROMPT_OVERRIDE_MAX } from '@/domain/image-prompt'
 // ADR-0044: registros de cenário (módulo client-safe, sem zod nem o prompt do diretor).
 import { IMAGE_SCENE_REGISTROS, isImageSceneRegistro, type ImageSceneRegistro } from '@/domain/image-scene'
-import { fieldClassName } from '@/components/button'
+import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 // Fase 2 de billing (flag-off): upsell no limite de cota, só pro dono `free` da sessão.
 import { isFreePlanUser } from '@/domain/plan'
 import { imageSrcSetProps } from '@/domain/image-variants'
@@ -547,7 +557,14 @@ export function RecipeImageManager({
                 <img src={preview.url} alt={m.imagemPreviewTitulo} className="max-h-80 w-auto rounded-md border border-border" />
                 {/* #285: selo do preview — "Editada com IA" se veio de uma base, senão "Gerada por IA". */}
                 <span className="text-xs text-muted">
-                  {preview.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa}
+                  {/* ADR-0044: com o cenário que o servidor usou nesta imagem (o do diretor, as regras ou o escolhido). */}
+                  {cenaUsada
+                    ? m.imagemSeloComCenario
+                        .replace('{selo}', preview.editedFromId ? m.imagemSeloIaEditada : m.imagemSeloIa)
+                        .replace('{cenario}', cenarioLabel[cenaUsada])
+                    : preview.editedFromId
+                      ? m.imagemSeloIaEditada
+                      : m.imagemSeloIa}
                 </span>
               </div>
             ) : generating ? (
@@ -598,112 +615,167 @@ export function RecipeImageManager({
               )}
             </div>
 
-            {/* ADR-0044: cenário da foto. "Automático" deixa o diretor de arte escolher pela receita; um
-                registro gera direto naquela cena. Na edição a cena vem da imagem-base (seletor travado). */}
-            <div className="flex w-full max-w-prose flex-col gap-1 text-sm">
-              <label className="flex flex-col gap-1 font-medium text-fg">
-                {m.imagemCenarioRotulo}
-                <select
-                  value={editBaseId ? '' : cena}
-                  onChange={(e) => setCena(isImageSceneRegistro(e.target.value) ? e.target.value : '')}
-                  disabled={busy || !!editBaseId}
-                  aria-describedby={editBaseId ? 'imagem-cenario-edicao' : undefined}
-                  className={fieldClassName}
-                >
-                  <option value="">{m.imagemCenarioAutomatico}</option>
-                  {IMAGE_SCENE_REGISTROS.map((r) => (
-                    <option key={r} value={r}>
-                      {cenarioLabel[r]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {editBaseId && (
-                <p id="imagem-cenario-edicao" className="text-muted">
-                  {m.imagemCenarioEdicao}
-                </p>
-              )}
-              {preview && cenaUsada && (
-                <p className="text-muted">{m.imagemCenarioUsado.replace('{cenario}', cenarioLabel[cenaUsada])}</p>
-              )}
-            </div>
-
-            {/* #223: refino ancorado — botão menos-destacado (link) revela o prompt-base read-only
-                + um campo de refino livre. O base NUNCA é editável/postado: o cliente envia só o
-                refino; o servidor re-deriva e re-compõe o base (template estruturado, #214). */}
-            <div className="flex w-full max-w-prose flex-col gap-2">
+            {/* #223: refino ancorado — disclosure (chevron ⌄/⌃, `aria-expanded`) que revela o prompt-base
+                read-only + um campo de refino livre. O base NUNCA é editável/postado: o cliente envia só o
+                refino; o servidor re-deriva e re-compõe o base (template estruturado, #214). Fica numa
+                caixa da largura do modal, cabeçalho clicável em cima e o conteúdo dentro dela. */}
+            <div className="w-full rounded-md border border-border">
               <button
                 type="button"
                 onClick={() => setShowRefino((v) => !v)}
                 aria-expanded={showRefino}
-                className="self-start text-sm text-muted underline hover:text-fg"
+                aria-controls="imagem-refino"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-sm font-medium text-fg hover:bg-brand/10"
               >
                 {m.imagemRefinar}
+                {showRefino ? (
+                  <ChevronUpIcon aria-hidden className="size-4 shrink-0 text-muted" />
+                ) : (
+                  <ChevronDownIcon aria-hidden className="size-4 shrink-0 text-muted" />
+                )}
               </button>
-              {showRefino && (
-                <div className="flex flex-col gap-2 text-sm">
-                  {basePrompt && (
-                    <div className="flex flex-col gap-1">
-                      <span className="font-medium text-muted">{m.imagemPromptBase}</span>
-                      {/* Base READ-ONLY: <p> simples (não <output>) — evita role=status/aria-live
-                          fazer o leitor de tela anunciar o prompt inteiro ao revelar (a11y, #223).
-                          Não é campo editável e nunca é postado: o cliente só envia o refino. */}
-                      <p className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
-                        {basePrompt}
-                      </p>
-                    </div>
-                  )}
-                  <label className="flex flex-col gap-1">
-                    <span className="font-medium text-fg">{m.imagemPromptRotulo}</span>
-                    <textarea
-                      value={refino}
-                      onChange={(e) => setRefino(e.target.value)}
-                      maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
-                      rows={2}
-                      placeholder={editBaseId ? m.imagemEdicaoPlaceholder : m.imagemPromptPlaceholder}
-                      disabled={busy}
-                      className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
-                    />
-                  </label>
-                </div>
-              )}
+              {/* Sempre no DOM (o `aria-controls` aponta pra ele); `hidden` quando fechado. */}
+              <div
+                id="imagem-refino"
+                hidden={!showRefino}
+                className="flex flex-col gap-2 border-t border-border px-3 py-3 text-sm"
+              >
+                {basePrompt && (
+                  <div className="flex flex-col gap-1">
+                    <span className="font-medium text-muted">{m.imagemPromptBase}</span>
+                    {/* Base READ-ONLY: <p> simples (não <output>) — evita role=status/aria-live
+                        fazer o leitor de tela anunciar o prompt inteiro ao revelar (a11y, #223).
+                        Não é campo editável e nunca é postado: o cliente só envia o refino. */}
+                    <p className="block whitespace-pre-wrap rounded-md border border-border bg-bg px-3 py-2 text-muted">
+                      {basePrompt}
+                    </p>
+                  </div>
+                )}
+                <label className="flex flex-col gap-1">
+                  <span className="font-medium text-fg">{m.imagemPromptRotulo}</span>
+                  <textarea
+                    value={refino}
+                    onChange={(e) => setRefino(e.target.value)}
+                    maxLength={IMAGE_PROMPT_OVERRIDE_MAX}
+                    rows={2}
+                    placeholder={editBaseId ? m.imagemEdicaoPlaceholder : m.imagemPromptPlaceholder}
+                    disabled={busy}
+                    className="rounded-md border border-border bg-bg px-3 py-2 text-fg"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* #265: rodapé condicional ao preview. Em REPOUSO (sem preview) só há o CTA primário
-                "Gerar" — a geração é explícita. Com preview: "Usar esta" + "Gerar outra" (como antes). */}
+                "Gerar" — a geração é explícita. Com preview: "Usar esta" + "Gerar outra" (como antes).
+                ADR-0044: o cenário mora no próprio botão de gerar (botão dividido): clicar no texto gera,
+                a seta abre a lista de cenários, e o escolhido aparece no rótulo ("Gerar · Bistrô"). Na
+                edição não há seta: a cena vem da imagem-base. */}
             <div className="flex flex-wrap items-center justify-center gap-3">
-              {preview ? (
-                <>
-                  <Button type="button" size="sm" onClick={onUseThis} disabled={busy}>
-                    {m.imagemUsarEsta}
-                  </Button>
-                  {/* #285: no modo edição, exige a instrução (refino) — espelha o guard do "Gerar". */}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={onGenerate}
-                    disabled={busy || (!!editBaseId && !refino.trim())}
-                  >
-                    {generating ? m.imagemGerando : m.imagemGerarOutra}
-                  </Button>
-                </>
-              ) : (
-                // #285: no modo edição, "Gerar" exige a instrução de edição (refino não-vazio).
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={onGenerate}
-                  disabled={busy || (!!editBaseId && !refino.trim())}
-                >
-                  {generating ? m.imagemGerando : m.imagemGerarAgora}
+              {preview && (
+                <Button type="button" size="sm" onClick={onUseThis} disabled={busy}>
+                  {m.imagemUsarEsta}
                 </Button>
               )}
+              {/* #285: no modo edição, "Gerar" exige a instrução de edição (refino não-vazio). */}
+              <GenerateSplitButton
+                label={generating ? m.imagemGerando : preview ? m.imagemGerarOutra : m.imagemGerarAgora}
+                variant={preview ? 'secondary' : 'default'}
+                onGenerate={onGenerate}
+                disabled={busy || (!!editBaseId && !refino.trim())}
+                cena={editBaseId ? null : cena}
+                onCenaChange={setCena}
+              />
             </div>
           </div>
         </SheetContent>
       </Sheet>
     </section>
+  )
+}
+
+/**
+ * ADR-0044: o botão de gerar com o cenário embutido (botão dividido). A parte do texto gera; a seta ao
+ * lado, colada e com o mesmo estilo, abre a lista de cenários (`role=menuitemradio`, setas e Escape
+ * do Radix). Escolher troca o rótulo ("Gerar · Bistrô"); "Automático" volta ao rótulo simples e deixa o
+ * diretor de arte decidir pela receita. `cena === null` ⇒ edição de imagem: sem seta (a cena vem da
+ * imagem-base). O menu fica MODAL (o padrão do Radix), mesmo dentro do modal de imagem: com `modal={false}`
+ * o scroll-lock do Dialog engoliria a rolagem do menu (portal fora dele) numa tela baixa.
+ */
+function GenerateSplitButton({
+  label,
+  variant,
+  onGenerate,
+  disabled,
+  cena,
+  onCenaChange,
+}: {
+  label: string
+  variant: 'default' | 'secondary'
+  onGenerate: () => void
+  disabled: boolean
+  cena: ImageSceneRegistro | '' | null
+  onCenaChange: (cena: ImageSceneRegistro | '') => void
+}) {
+  const { messages } = useLocale()
+  const m = messages.detalhe
+  const cenarioLabel = messages.cenarioLabel
+  if (cena === null) {
+    return (
+      <Button type="button" size="sm" variant={variant} onClick={onGenerate} disabled={disabled}>
+        {label}
+      </Button>
+    )
+  }
+  const atual = cena ? cenarioLabel[cena] : m.imagemCenarioAutomatico
+  return (
+    <div className="inline-flex max-w-full min-w-0">
+      <Button
+        type="button"
+        size="sm"
+        variant={variant}
+        onClick={onGenerate}
+        disabled={disabled}
+        className="min-w-0 rounded-r-none"
+      >
+        {/* Rótulo longo ("Gerar outra · Rústico e tradicional") corta com reticências num celular estreito. */}
+        <span className="truncate">
+          {cena ? m.imagemGerarNoCenario.replace('{acao}', label).replace('{cenario}', cenarioLabel[cena]) : label}
+        </span>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant={variant}
+            disabled={disabled}
+            aria-label={m.imagemCenarioEscolher.replace('{cenario}', atual)}
+            className={cn(
+              'rounded-l-none px-2',
+              variant === 'default' ? 'border-l border-primary-foreground/30' : '-ml-px',
+            )}
+          >
+            <ChevronDownIcon aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>{m.imagemCenarioRotulo}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={cena}
+            onValueChange={(v) => onCenaChange(isImageSceneRegistro(v) ? v : '')}
+          >
+            <DropdownMenuRadioItem value="">{m.imagemCenarioAutomatico}</DropdownMenuRadioItem>
+            <DropdownMenuSeparator />
+            {IMAGE_SCENE_REGISTROS.map((r) => (
+              <DropdownMenuRadioItem key={r} value={r}>
+                {cenarioLabel[r]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 

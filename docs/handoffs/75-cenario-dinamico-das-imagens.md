@@ -9,7 +9,7 @@
 - **Diretor de arte**: tarefa de IA `imageScene` (Sonnet 5 por padrão, esforço baixo, thinking off), prompt em `src/domain/image-scene-director.ts`, schema em `src/domain/image-scene-schema.ts`, `ClaudeClient.directImageScene` (uma tentativa, prazo de 8 s). `src/server/images/image-scene.ts` (`resolveImageScene`) junta diretor, regras e nota visual e nunca lança.
 - **Geração**: `generateAndStoreGalleryImage` recebe `appCfg`, `sceneChoice` e `claude`; resolve a cena só sem `sourceImageId`. Rotas de geração do dono e da curadoria aceitam `cena` (só o modal do dono tem seletor; a fila de curadoria gera em Automático); a do dono devolve `scene: {registro, fonte}` e ganhou `maxDuration = 60`.
 - **Admin**: tarefa "Cenário da imagem" na aba IA; checkbox "Diretor de arte do cenário" no bloco de imagem (`app_config.image_scene_director_enabled`); campo "Nota visual" por cozinha na aba Vocabulário (≤400).
-- **Modal de imagem**: seletor "Cenário: Automático ▾" (desabilitado na edição) e "Cenário: X" junto da prévia.
+- **Modal de imagem**: o cenário mora no botão de gerar, um botão dividido (`GenerateSplitButton`): o texto gera, a seta abre a lista (`DropdownMenuRadioItem`, novo na primitiva) e o escolhido entra no rótulo ("Gerar · Bistrô"); na edição não há seta. O cenário usado aparece no selo da prévia. "Refinar o prompt" virou um disclosure da largura do modal com chevron ⌄/⌃ (`aria-expanded`). Ajuste de 2026-10-15, pedido do dono depois do primeiro layout (seletor solto acima do botão).
 - **Testes**: o `test/setup.ts` instala um `FakeClaudeClient` por padrão (nenhum teste chama a API). O Fake ganhou `cannedScene` (7º argumento), `lastSceneInput` e `sceneCalls`. Todo dublê `implements ClaudeClient` precisa de `directImageScene`.
 
 ## 2. Evidência
