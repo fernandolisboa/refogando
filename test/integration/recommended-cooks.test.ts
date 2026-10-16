@@ -390,6 +390,29 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     expect(directory.cooks.every((c) => c.following === true)).toBe(true)
   })
 
+  it('includeFollowed pagina pelo MESMO keyset (seguido na borda não duplica nem some)', async () => {
+    const me = await seedCook({ email: 'pg-me@c.test', handle: 'pg-me' })
+    const a = await seedCook({ email: 'pg-a@c.test', handle: 'pg-a' })
+    await seedCook({ email: 'pg-b@c.test', handle: 'pg-b' })
+    await seedCook({ email: 'pg-c@c.test', handle: 'pg-c' })
+    await follow(getDb(), me.cookId, a.cookId)
+    const seen: [string, boolean | undefined][] = []
+    let cursor = null as Parameters<typeof loadRecommendedCooks>[1]['cursor']
+    for (let i = 0; i < 5; i++) {
+      const page = await loadRecommendedCooks(getDb(), {
+        viewerId: me.cookId,
+        includeFollowed: true,
+        limit: 1,
+        cursor,
+      })
+      seen.push(...page.cooks.map((c) => [c.handle, c.following] as [string, boolean | undefined]))
+      if (!page.nextCursor) break
+      cursor = decodeRecsCursor(page.nextCursor)
+    }
+    expect(seen.map(([h]) => h).sort()).toEqual(['pg-a', 'pg-b', 'pg-c'])
+    expect(new Map(seen).get('pg-a')).toBe(true)
+  })
+
   it('includeFollowed sem viewer (anônimo) é ignorado: sem chave `following`', async () => {
     await seedCook({ email: 'anon-x@c.test', handle: 'anon-x' })
     const { cooks } = await loadRecommendedCooks(getDb(), { includeFollowed: true, limit: 50 })

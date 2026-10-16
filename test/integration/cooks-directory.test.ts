@@ -41,11 +41,15 @@ describe('GET /api/cooks (#308)', () => {
     const res = await req('', headers)
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    const body = (await res.json()) as { cooks: { handle: string; following?: boolean }[] }
+    const body = (await res.json()) as { cooks: ({ handle: string; following?: boolean } & Record<string, unknown>)[] }
     expect(body.cooks.map((c) => [c.handle, c.following]).sort()).toEqual([
       ['livre-cook', false],
       ['seg-cook', true],
     ])
+    // allowlist do DTO LOGADO: só ganha `following` (sem id/email/role).
+    for (const c of body.cooks) {
+      expect(Object.keys(c).sort()).toEqual(['following', 'handle', 'image', 'name', 'recipeCount', 'recipes'])
+    }
   })
 
   it('filtra por cozinha (multi)', async () => {

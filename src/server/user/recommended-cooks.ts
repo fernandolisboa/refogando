@@ -94,7 +94,7 @@ export async function loadRecommendedCooks(
   },
 ): Promise<RecommendedCooksPage> {
   const { viewerId, limit } = args
-  const markFollowed = viewerId !== undefined && args.includeFollowed === true
+  const markFollowed = !!viewerId && args.includeFollowed === true
   const requestLocale = args.requestLocale ?? DEFAULT_LOCALE
   const cozinhas = args.cozinhas ?? []
   const cursor = args.cursor ?? null
@@ -113,10 +113,11 @@ export async function loadRecommendedCooks(
       : sql`AND u.id <> ${viewerId} AND NOT EXISTS (
         SELECT 1 FROM user_follow uf WHERE uf.follower_id = ${viewerId} AND uf.followee_id = u.id
       )`
-  // Rótulo per-viewer (só no diretório logado): `u.id` está no GROUP BY ⇒ o EXISTS correlato é válido.
+  // Rótulo per-viewer (só no diretório logado), no SELECT EXTERNO: 1 lookup na PK de `user_follow` por
+  // linha da PÁGINA (`limit+1`), não por cozinheiro ranqueado. `ranked.uid` nunca sai da query.
   const followingSql = markFollowed
     ? sql`EXISTS (
-        SELECT 1 FROM user_follow uf WHERE uf.follower_id = ${viewerId} AND uf.followee_id = u.id
+        SELECT 1 FROM user_follow uf WHERE uf.follower_id = ${viewerId} AND uf.followee_id = ranked.uid
       )`
     : sql`false`
 
@@ -167,7 +168,7 @@ export async function loadRecommendedCooks(
             )
         )::numeric, 6)::float8 AS score,
         max(r.created_at) AS recency,
-        ${followingSql} AS following
+        u.id AS uid -- só p/ o EXISTS do \`following\` no SELECT externo; NUNCA projetado
       FROM users u
       JOIN recipe r
         ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
@@ -200,7 +201,7 @@ export async function loadRecommendedCooks(
       ranked.recipe_count AS recipe_count,
       ranked.score AS score,
       ranked.recency::text AS recency_text,
-      ranked.following AS following
+      ${followingSql} AS following
     FROM ranked
     WHERE ${keysetSql}
     ORDER BY ranked.score DESC, ranked.recency DESC, ranked.handle DESC

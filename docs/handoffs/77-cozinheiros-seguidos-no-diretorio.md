@@ -8,10 +8,10 @@ Não é erro de rede nem de banco. A página `/cooks` semeia no SSR a lista **gl
 
 ## 2. O que mudou
 
-- `loadRecommendedCooks` (`src/server/user/recommended-cooks.ts`) ganhou `includeFollowed`: com viewer, exclui só o próprio e projeta `following` (EXISTS em `user_follow`, correlato no `u.id` do GROUP BY). Sem a flag, o comportamento é o de antes (o trilho `/api/discovery/cooks` não passa a flag). Ordem e keyset não mudam.
+- `loadRecommendedCooks` (`src/server/user/recommended-cooks.ts`) ganhou `includeFollowed`: com viewer, exclui só o próprio e projeta `following` (EXISTS em `user_follow` no SELECT externo, só para as `limit+1` linhas da página; o `uid` sai da CTE mas nunca da query). Sem a flag, o comportamento é o de antes (o trilho `/api/discovery/cooks` não passa a flag). Ordem e keyset não mudam.
 - `/api/cooks` passa `includeFollowed: true`. O DTO `RecommendedCook` tem `following?: boolean`, só nessa resposta per-viewer (`no-store`).
 - `CookCard` semeia o `CookFollowButton` com `cook.following` e usa `key` pelo estado inicial: o seed e a página personalizada têm os mesmos handles, e sem remontar o `useState` do `useFollowToggle` ficaria preso no "Seguir" do seed.
-- ADR-0024 ganhou a emenda de 2026-10-16. Comentários de `cooks-discovery`, `cook-follow-button`, `use-follow-toggle` e da rota atualizados.
+- ADR-0024 ganhou a emenda de 2026-10-16 (e o trecho da emenda de 2026-06-29 foi riscado); o glossário do `CONTEXT.md` (Descoberta de Cozinheiros) foi atualizado. Comentários de `cooks-discovery`, `cook-follow-button`, `use-follow-toggle` e da rota atualizados.
 - Testes: `test/integration/recommended-cooks.test.ts` (seguido fica marcado, self sai; quem segue todo mundo ainda vê a lista enquanto o trilho segue vazio; anônimo não ganha a chave), `test/integration/cooks-directory.test.ts` (rota logada) e `test/ui/cooks-discovery.test.tsx` (página personalizada troca o seed e o seguido nasce "Seguindo"; falha sem a `key`).
 
 ## 3. Landmines
