@@ -357,6 +357,69 @@ describe('loadRecommendedCooks (#278) — exclusões', () => {
     expect(cooks.map((c) => c.handle)).toEqual(['nao-seguido'])
   })
 
+  it('includeFollowed (diretório /cooks): mantém os já-seguidos MARCADOS e só exclui o próprio', async () => {
+    const me = await seedCook({ email: 'dir-me@c.test', handle: 'dir-me' })
+    const seguido = await seedCook({ email: 'dir-seg@c.test', handle: 'dir-seguido' })
+    await seedCook({ email: 'dir-livre@c.test', handle: 'dir-livre' })
+    await follow(getDb(), me.cookId, seguido.cookId)
+    const { cooks } = await loadRecommendedCooks(getDb(), {
+      viewerId: me.cookId,
+      includeFollowed: true,
+      limit: 50,
+    })
+    const byHandle = new Map(cooks.map((c) => [c.handle, c.following]))
+    expect([...byHandle.keys()].sort()).toEqual(['dir-livre', 'dir-seguido']) // self fora
+    expect(byHandle.get('dir-seguido')).toBe(true)
+    expect(byHandle.get('dir-livre')).toBe(false)
+  })
+
+  it('includeFollowed: quem já segue TODO MUNDO ainda vê a lista (não esvazia)', async () => {
+    const me = await seedCook({ email: 'all-me@c.test', handle: 'all-me' })
+    const a = await seedCook({ email: 'all-a@c.test', handle: 'all-a' })
+    const b = await seedCook({ email: 'all-b@c.test', handle: 'all-b' })
+    await follow(getDb(), me.cookId, a.cookId)
+    await follow(getDb(), me.cookId, b.cookId)
+    const excluding = await loadRecommendedCooks(getDb(), { viewerId: me.cookId, limit: 50 })
+    expect(excluding.cooks).toEqual([]) // o trilho segue excluindo
+    const directory = await loadRecommendedCooks(getDb(), {
+      viewerId: me.cookId,
+      includeFollowed: true,
+      limit: 50,
+    })
+    expect(directory.cooks.map((c) => c.handle).sort()).toEqual(['all-a', 'all-b'])
+    expect(directory.cooks.every((c) => c.following === true)).toBe(true)
+  })
+
+  it('includeFollowed pagina pelo MESMO keyset (seguido na borda não duplica nem some)', async () => {
+    const me = await seedCook({ email: 'pg-me@c.test', handle: 'pg-me' })
+    const a = await seedCook({ email: 'pg-a@c.test', handle: 'pg-a' })
+    await seedCook({ email: 'pg-b@c.test', handle: 'pg-b' })
+    await seedCook({ email: 'pg-c@c.test', handle: 'pg-c' })
+    await follow(getDb(), me.cookId, a.cookId)
+    const seen: [string, boolean | undefined][] = []
+    let cursor = null as Parameters<typeof loadRecommendedCooks>[1]['cursor']
+    for (let i = 0; i < 5; i++) {
+      const page = await loadRecommendedCooks(getDb(), {
+        viewerId: me.cookId,
+        includeFollowed: true,
+        limit: 1,
+        cursor,
+      })
+      seen.push(...page.cooks.map((c) => [c.handle, c.following] as [string, boolean | undefined]))
+      if (!page.nextCursor) break
+      cursor = decodeRecsCursor(page.nextCursor)
+    }
+    expect(seen.map(([h]) => h).sort()).toEqual(['pg-a', 'pg-b', 'pg-c'])
+    expect(new Map(seen).get('pg-a')).toBe(true)
+  })
+
+  it('includeFollowed sem viewer (anônimo) é ignorado: sem chave `following`', async () => {
+    await seedCook({ email: 'anon-x@c.test', handle: 'anon-x' })
+    const { cooks } = await loadRecommendedCooks(getDb(), { includeFollowed: true, limit: 50 })
+    expect(cooks.map((c) => c.handle)).toEqual(['anon-x'])
+    expect('following' in cooks[0]!).toBe(false)
+  })
+
   it('exclui Cozinheiro soft-deletado', async () => {
     await seedCook({ email: 'vivo@c.test', handle: 'vivo' })
     const morto = await seedCook({ email: 'morto@c.test', handle: 'morto' })

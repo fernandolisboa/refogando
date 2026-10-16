@@ -26,6 +26,8 @@ export type CookCardCook = {
   /** Só na RECOMENDAÇÃO (preview rico); ausente na BUSCA. */
   recipeCount?: number
   recipes?: RecommendedCookRecipe[]
+  /** Só no diretório `/cooks` logado: o viewer já segue ⇒ o botão nasce "Seguindo". */
+  following?: boolean
 }
 
 export type CookCardLabels = {
@@ -85,9 +87,12 @@ export function CookCard({
           </span>
         </Link>
         {authed ? (
+          // `key` pelo estado inicial: o seed global (sem `following`) é trocado pela página personalizada
+          // com o MESMO handle — sem remontar, o `useState` do toggle ficaria preso no "Seguir" do seed.
           <CookFollowButton
+            key={cook.following ? 'seguindo' : 'seguir'}
             handle={cook.handle}
-            initialFollowing={false}
+            initialFollowing={cook.following ?? false}
             variant="outline"
             className={FOLLOW_BTN_CLASS}
             labels={{ seguir: labels.seguir, seguindo: labels.seguindo, erroSeguir: labels.erroSeguir }}

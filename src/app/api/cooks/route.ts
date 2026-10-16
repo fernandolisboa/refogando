@@ -11,8 +11,9 @@ import { decodeRecsCursor } from '@/domain/cooks-cursor'
  * de Cozinha e paginação keyset. GET `?cozinha=&cursor=&locale=` → `{ cooks, nextCursor }`. Distinta do
  * trilho `/api/discovery/cooks` (#278, top-N só-logado): este é o diretório navegável (página maior, anon).
  *
- * SESSÃO OPCIONAL (idiom de `/api/feed`): logado → PERSONALIZADO (exclui você + já-seguidos); anônimo →
- * GLOBAL. `viewerId` vem SEMPRE da sessão (anti-IDOR — NUNCA de query/body; senão um logado leria as
+ * SESSÃO OPCIONAL (idiom de `/api/feed`): logado → PERSONALIZADO (exclui você; os já-seguidos FICAM,
+ * marcados `following` — emenda 2026-10-16 da ADR-0024, senão quem segue todo mundo via o diretório vazio);
+ * anônimo → GLOBAL. `viewerId` vem SEMPRE da sessão (anti-IDOR — NUNCA de query/body; senão um logado leria as
  * recomendações de outro, que codificam o grafo de quem ele segue). Conta desativada/Visitante = `undefined`
  * ⇒ ramo global (conteúdo público, benigno).
  *
@@ -36,6 +37,7 @@ export async function GET(request: Request): Promise<Response> {
 
   const { cooks, nextCursor } = await loadRecommendedCooks(getDb(), {
     viewerId,
+    includeFollowed: true,
     limit: COOKS_DIRECTORY_PAGE_SIZE,
     requestLocale,
     cozinhas,

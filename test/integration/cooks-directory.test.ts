@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/cooks/route'
-import { seedUser } from '../helpers/users'
+import { getDb } from '@/server/deps'
+import { follow } from '@/server/user/follow'
+import { seedUser, seedSessionHeaders } from '../helpers/users'
 import { seedRecipe } from '../helpers/recipes'
 
 /**
@@ -15,8 +17,8 @@ async function seedCook(email: string, handle: string, cozinha?: string): Promis
   await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: id, cozinha: cozinha as never })
   return id
 }
-function req(query = '') {
-  return GET(new Request(`http://localhost/api/cooks${query}`))
+function req(query = '', headers?: Headers) {
+  return GET(new Request(`http://localhost/api/cooks${query}`, { headers: headers ?? new Headers() }))
 }
 
 describe('GET /api/cooks (#308)', () => {
@@ -28,6 +30,26 @@ describe('GET /api/cooks (#308)', () => {
     expect(res.headers.get('cache-control')).toBe('no-store')
     const body = (await res.json()) as { cooks: { handle: string }[]; nextCursor: string | null }
     expect(body.cooks.map((c) => c.handle).sort()).toEqual(['aa-cook', 'bb-cook'])
+  })
+
+  it('logado: já-seguidos FICAM com following=true; só o próprio sai (não esvazia a lista)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'viewer@d.test' })
+    await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    const seguido = await seedCook('s@d.test', 'seg-cook')
+    await seedCook('l@d.test', 'livre-cook')
+    await follow(getDb(), userId, seguido)
+    const res = await req('', headers)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const body = (await res.json()) as { cooks: ({ handle: string; following?: boolean } & Record<string, unknown>)[] }
+    expect(body.cooks.map((c) => [c.handle, c.following]).sort()).toEqual([
+      ['livre-cook', false],
+      ['seg-cook', true],
+    ])
+    // allowlist do DTO LOGADO: só ganha `following` (sem id/email/role).
+    for (const c of body.cooks) {
+      expect(Object.keys(c).sort()).toEqual(['following', 'handle', 'image', 'name', 'recipeCount', 'recipes'])
+    }
   })
 
   it('filtra por cozinha (multi)', async () => {
