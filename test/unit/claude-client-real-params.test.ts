@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Parâmetros que o `RealClaudeClient` manda à Anthropic na Geração (ADR-0033 dec.5), com o SDK
- * dublado: `effort` só p/ famílias selecionáveis (Haiku dá 400 com ele) e um sinal com prazo sempre
+ * dublado: `effort` só p/ quem aceita (`acceptsEffort`: o Haiku 4.5 legado dá 400 com ele) e um sinal com prazo sempre
  * presente (a rota tem `maxDuration = 60`).
  */
 const { parse, stream } = vi.hoisted(() => ({ parse: vi.fn(), stream: vi.fn() }))
@@ -27,9 +27,9 @@ afterEach(() => {
 })
 
 describe('RealClaudeClient.generateRecipe — parâmetros', () => {
-  it('Opus/Sonnet/Fable recebem effort medium e um sinal de prazo', async () => {
+  it('Opus/Sonnet/Haiku recebem effort medium e um sinal de prazo', async () => {
     parse.mockResolvedValue({ stop_reason: 'refusal' })
-    for (const model of ['claude-opus-5-5', 'claude-sonnet-5', 'claude-fable-5-1']) {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
       await expect(new RealClaudeClient().generateRecipe(input(model))).resolves.toEqual({ kind: 'refusal' })
       const [params, options] = parse.mock.lastCall!
       expect(params.model).toBe(model)
@@ -39,7 +39,7 @@ describe('RealClaudeClient.generateRecipe — parâmetros', () => {
     }
   })
 
-  it('modelo fora das famílias (Haiku legado) não recebe effort — nem com o ajuste default que as rotas passam', async () => {
+  it('modelo que não aceita effort (Haiku 4.5 legado) não recebe effort — nem com o ajuste default que as rotas passam', async () => {
     parse.mockResolvedValue({ stop_reason: 'refusal' })
     await new RealClaudeClient().generateRecipe(input('claude-haiku-4-5-20251001'))
     expect(parse.mock.lastCall![0].output_config).not.toHaveProperty('effort')
@@ -88,10 +88,17 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
 
   it('Extração: default da tarefa desliga o thinking e não manda effort; ajuste adaptativo ganha folga de tokens', async () => {
     parse.mockResolvedValue({ parsed_output: null })
-    await new RealClaudeClient().extractIngredients(input('claude-sonnet-5'))
+    await new RealClaudeClient().extractIngredients(input('claude-haiku-5-5'))
     const base = parse.mock.lastCall![0]
     expect(base.thinking).toEqual({ type: 'disabled' })
     expect(base.output_config).not.toHaveProperty('effort')
+
+    // Sonnet 5.5 recusa `disabled`: o default dele desliga com `between_tools`.
+    await new RealClaudeClient().extractIngredients(input('claude-sonnet-5-5'))
+    expect(parse.mock.lastCall![0].thinking).toEqual({ type: 'between_tools' })
+    // Opus 5.5 não desliga: o default não manda thinking.
+    await new RealClaudeClient().extractIngredients(input('claude-opus-5-5'))
+    expect(parse.mock.lastCall![0]).not.toHaveProperty('thinking')
 
     await new RealClaudeClient().extractIngredients({
       ...input('claude-opus-5-5'),
@@ -143,7 +150,7 @@ describe('ajustes por tarefa do admin (ADR-0034) viram parâmetros da request', 
     const scene = { registro: 'bistro', enquadramento: '45_graus', regiao: null, detalhes: null }
     parse.mockResolvedValue({ stop_reason: 'end_turn', parsed_output: scene, usage: { input_tokens: 50, output_tokens: 9 } })
     const signal = AbortSignal.timeout(8_000)
-    const out = await new RealClaudeClient().directImageScene({ ...input('claude-sonnet-5'), signal })
+    const out = await new RealClaudeClient().directImageScene({ ...input('claude-haiku-5-5'), signal })
     expect(out).toEqual({ kind: 'ok', scene, usage: { inputTokens: 50, outputTokens: 9 } })
     const [params, options] = parse.mock.lastCall!
     expect(params.output_config.effort).toBe('low')

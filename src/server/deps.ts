@@ -18,7 +18,7 @@ import { FakeBillingProvider, type BillingProvider } from '@/server/billing/prov
  *  - getDb()               → Postgres (Drizzle)
  *  - getClaudeClient()     → seam do Claude
  *  - getModelCatalog()     → seam da Models API da Anthropic (select de modelo do admin)
- *  - getModelProbe()       → chamada de teste de modelo + ajuste ao salvar no admin (ADR-0034)
+ *  - getModelProbe()       → chamada de teste de modelo + ajuste (salvar no admin, ADR-0034; cron de versão, ADR-0046)
  *  - getEmbedder()         → seam de embedding
  *  - getTranslator()       → seam de tradução automática (issue #23)
  *  - getImageStore()       → seam de storage de imagem (issue #126, Vercel Blob)

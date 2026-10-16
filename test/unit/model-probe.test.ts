@@ -60,6 +60,12 @@ describe('RealModelProbe', () => {
     })
   })
 
+  it('`betweenTools` vira `between_tools` (o mínimo do Sonnet 5.5)', async () => {
+    create.mockResolvedValue({})
+    await new RealModelProbe().probe('claude-sonnet-5-5', { effort: 'high', thinking: 'betweenTools' })
+    expect(create.mock.lastCall![0]).toMatchObject({ thinking: { type: 'between_tools' }, output_config: { effort: 'high' } })
+  })
+
   it('default/null não mandam thinking nem effort', async () => {
     create.mockResolvedValue({})
     await new RealModelProbe().probe('claude-opus-5-5', { effort: null, thinking: 'default' })

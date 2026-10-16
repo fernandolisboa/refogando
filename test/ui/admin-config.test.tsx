@@ -52,26 +52,29 @@ const MODELS_OK: FetchResult = {
     models: [
       { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', family: 'opus', capabilities: ALL },
       {
-        id: 'claude-sonnet-5',
-        displayName: 'Claude Sonnet 5',
+        id: 'claude-sonnet-5-5',
+        displayName: 'Claude Sonnet 5.5',
         family: 'sonnet',
         capabilities: { effort: ['low', 'medium', 'high'], adaptiveThinking: false },
       },
-      { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1', family: 'fable', capabilities: null },
+      { id: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5', family: 'haiku', capabilities: null },
     ],
   },
 }
 
 type Settings = { effort: string | null; thinking: string }
-function aiTasks(over: Partial<Record<string, { model: string; byModel: Record<string, Settings> }>> = {}) {
-  return {
+type TaskFixture = { model: string; byModel: Record<string, Settings>; auto?: boolean }
+function aiTasks(over: Partial<Record<string, TaskFixture>> = {}) {
+  const tasks: Record<string, TaskFixture> = {
     generation: { model: 'claude-opus-5-5', byModel: {} },
-    translation: { model: 'claude-sonnet-5', byModel: {} },
-    extraction: { model: 'claude-sonnet-5', byModel: {} },
-    menu: { model: 'claude-sonnet-5', byModel: {} },
-    imageScene: { model: 'claude-sonnet-5', byModel: {} },
+    translation: { model: 'claude-sonnet-5-5', byModel: {} },
+    extraction: { model: 'claude-sonnet-5-5', byModel: {} },
+    menu: { model: 'claude-sonnet-5-5', byModel: {} },
+    imageScene: { model: 'claude-sonnet-5-5', byModel: {} },
     ...over,
   }
+  // O GET sempre traz `auto` (ligado por padrão).
+  return Object.fromEntries(Object.entries(tasks).map(([k, t]) => [k, { auto: true, ...t }]))
 }
 const CONFIG_OK = (tasks = aiTasks()): FetchResult => ({ ok: true, status: 200, body: { aiTasks: tasks } })
 
@@ -98,14 +101,15 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
     renderConfig()
     const gen = await block(A.tarefaGeracaoTitulo)
     expect(gen.model.value).toBe('claude-opus-5-5')
-    expect(texts(gen.model)).toEqual(['Claude Opus 5.5', 'Claude Sonnet 5', 'Claude Fable 5.1'])
+    expect(texts(gen.model)).toEqual(['Claude Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5'])
     expect(gen.effort.value).toBe('medium')
     expect(gen.thinking.value).toBe('default')
 
     const tr = await block(A.tarefaTraducaoTitulo)
-    expect(tr.model.value).toBe('claude-sonnet-5')
+    expect(tr.model.value).toBe('claude-sonnet-5-5')
     expect(tr.effort.value).toBe('')
-    expect(tr.thinking.value).toBe('off')
+    // Sonnet 5.5 recusa `disabled`: o default da tarefa desliga com `between_tools`.
+    expect(tr.thinking.value).toBe('betweenTools')
     await block(A.tarefaExtracaoTitulo)
   })
 
@@ -127,13 +131,18 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
     const tr = await block(A.tarefaTraducaoTitulo)
     // Sonnet (no dublê): só low/medium/high, sem thinking adaptativo.
     expect(texts(tr.effort)).toEqual([A.padraoDoModelo, A.esforcoLow, A.esforcoMedium, A.esforcoHigh])
-    expect(texts(tr.thinking)).toEqual([A.padraoDoModelo, A.thinkingDesligado])
+    expect(texts(tr.thinking)).toEqual([A.padraoDoModelo, A.thinkingDesligado, A.thinkingMinimo])
 
     const user = userEvent.setup()
-    // Fable (sem capacidades conhecidas): oferece tudo; o servidor testa ao salvar.
-    await user.selectOptions(tr.model, 'claude-fable-5-1')
+    // Haiku (sem capacidades conhecidas no dublê): oferece tudo; o servidor testa ao salvar.
+    await user.selectOptions(tr.model, 'claude-haiku-5-5')
     expect(tr.effort.options).toHaveLength(6)
-    expect(texts(tr.thinking)).toEqual([A.padraoDoModelo, A.thinkingAdaptativo, A.thinkingDesligado])
+    expect(texts(tr.thinking)).toEqual([
+      A.padraoDoModelo,
+      A.thinkingAdaptativo,
+      A.thinkingDesligado,
+      A.thinkingMinimo,
+    ])
   })
 
   it('trocar o modelo recupera o ajuste salvo para ele, senão o default da tarefa', async () => {
@@ -142,7 +151,7 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
       'GET /api/admin/config': CONFIG_OK(
         aiTasks({
           extraction: {
-            model: 'claude-sonnet-5',
+            model: 'claude-sonnet-5-5',
             byModel: { 'claude-opus-5-5': { effort: 'max', thinking: 'adaptive' } },
           },
         }),
@@ -154,7 +163,7 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
     await user.selectOptions(ex.model, 'claude-opus-5-5')
     expect(ex.effort.value).toBe('max')
     expect(ex.thinking.value).toBe('adaptive')
-    await user.selectOptions(ex.model, 'claude-fable-5-1')
+    await user.selectOptions(ex.model, 'claude-haiku-5-5')
     expect(ex.effort.value).toBe('')
     expect(ex.thinking.value).toBe('off')
   })
@@ -178,9 +187,31 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
 
     const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? 'GET') === 'PUT')!
     expect(JSON.parse(String((put[1] as RequestInit).body))).toEqual({
-      aiTasks: { extraction: { model: 'claude-opus-5-5', settings: { effort: 'high', thinking: 'off' } } },
+      aiTasks: {
+        extraction: { model: 'claude-opus-5-5', settings: { effort: 'high', thinking: 'default' }, auto: true },
+      },
     })
     expect(await within(ex.group).findByText(A.salvo)).toBeInTheDocument()
+  })
+
+  it('"Atualizar sozinho" mostra o salvo e vai no PUT quando desmarcado', async () => {
+    const fetchMock = mockFetch({
+      'GET /api/admin/models': MODELS_OK,
+      'GET /api/admin/config': CONFIG_OK(aiTasks({ menu: { model: 'claude-sonnet-5-5', byModel: {}, auto: false } })),
+      'PUT /api/admin/config': CONFIG_OK(),
+    })
+    const user = userEvent.setup()
+    renderConfig()
+    const gen = await block(A.tarefaGeracaoTitulo)
+    const genAuto = within(gen.group).getByRole('checkbox', { name: A.iaAutoAtualizarLabel })
+    expect(genAuto).toBeChecked()
+    const menu = await block(A.tarefaCardapioTitulo)
+    expect(within(menu.group).getByRole('checkbox', { name: A.iaAutoAtualizarLabel })).not.toBeChecked()
+
+    await user.click(genAuto)
+    await user.click(gen.save)
+    const put = fetchMock.mock.calls.find((c) => (c[1]?.method ?? 'GET') === 'PUT')!
+    expect(JSON.parse(String((put[1] as RequestInit).body)).aiTasks.generation.auto).toBe(false)
   })
 
   it('400 ajuste_recusado → mensagem específica + o motivo que a Anthropic deu', async () => {
@@ -225,7 +256,7 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
       'GET /api/admin/models': MODELS_OK,
       'GET /api/admin/config': [
         { ok: false, status: 500, body: { error: 'erro_interno' } },
-        CONFIG_OK(aiTasks({ generation: { model: 'claude-sonnet-5', byModel: {} } })),
+        CONFIG_OK(aiTasks({ generation: { model: 'claude-sonnet-5-5', byModel: {} } })),
       ],
     })
     const user = userEvent.setup()
@@ -236,6 +267,6 @@ describe('ConfigSection — modelos de IA por tarefa (ADR-0034)', () => {
 
     await user.click(screen.getByRole('button', { name: ptBR.system.retry }))
     const gen = await block(A.tarefaGeracaoTitulo)
-    expect(gen.model.value).toBe('claude-sonnet-5')
+    expect(gen.model.value).toBe('claude-sonnet-5-5')
   })
 })

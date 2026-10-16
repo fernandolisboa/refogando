@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Revisado por ADR-0046 (2026-10-16):** o default da tarefa `menu` passou a `claude-sonnet-5-5`; `effort` vai para Opus, Sonnet e Haiku (menos o Haiku 4.5 legado). A versão troca sozinha dentro da família após chamada de teste.
+
 O dono pediu (2026-09-28) "a próxima feature grande". O ADR-0035 (Cardápio da semana) deixou a **sugestão de cardápio por IA** como follow-up natural: o plano já existia, a lista de compras por porções também, faltava quem preenche a semana. Termo no `CONTEXT.md` (**Sugestão de cardápio**). Relaciona: ADR-0035 (Plano de refeições), ADR-0034 (ajustes de IA por tarefa e por modelo), ADR-0027 (gate de Salvar), ADR-0009 (structured output), #446/#447 (cota atômica com ledger), #463 (custo de texto).
 
 ## Decisões

@@ -16,7 +16,7 @@ import type { ModelProbe } from '@/server/claude/model-probe'
 
 // Com a lista em fallback, aceita IDs das famílias selecionáveis no formato atual
 // (`claude-<família>-<maior>[-<menor>]`), nunca um ID arbitrário.
-const CURRENT_ID_SHAPE = /^claude-(opus|sonnet|fable)-\d+(-\d+)?$/
+const CURRENT_ID_SHAPE = /^claude-(opus|sonnet|haiku)-\d+(-\d+)?$/
 
 /**
  * Modelo aceitável para uma tarefa:
@@ -44,7 +44,8 @@ export function fitsCapabilities(option: ModelOption | undefined, settings: Mode
 }
 
 export type AiTaskUpdate =
-  | { ok: true; model: string; settings: ModelSettings }
+  // `auto` ausente ⇒ quem grava mantém o interruptor como estava.
+  | { ok: true; model: string; settings: ModelSettings; auto?: boolean }
   | { ok: false; error: 'config_invalida' | 'modelo_invalido' | 'ajuste_nao_suportado' }
   | { ok: false; error: 'ajuste_recusado'; message: string }
 
@@ -54,9 +55,10 @@ export async function validateAiTaskUpdate(
   deps: { catalog: ModelCatalog; probe: ModelProbe },
 ): Promise<AiTaskUpdate> {
   if (typeof raw !== 'object' || raw === null) return { ok: false, error: 'config_invalida' }
-  const { model, settings: rawSettings } = raw as { model?: unknown; settings?: unknown }
+  const { model, settings: rawSettings, auto } = raw as { model?: unknown; settings?: unknown; auto?: unknown }
   const settings = parseModelSettings(rawSettings)
   if (!isModelId(model) || !settings) return { ok: false, error: 'config_invalida' }
+  if (auto !== undefined && typeof auto !== 'boolean') return { ok: false, error: 'config_invalida' }
 
   const selectable = await loadSelectableModels(deps.catalog)
   if (!isAcceptableModel(model, currentModel, selectable)) return { ok: false, error: 'modelo_invalido' }
@@ -67,6 +69,6 @@ export async function validateAiTaskUpdate(
   // Sem como testar (sem chave, rede, 5xx) ⇒ grava sem verificar: não trava o admin por uma queda.
   const probe = await deps.probe.probe(model, settings)
   if (probe.kind === 'rejected') return { ok: false, error: 'ajuste_recusado', message: probe.message }
-  return { ok: true, model, settings }
+  return { ok: true, model, settings, ...(auto === undefined ? {} : { auto }) }
 }
 

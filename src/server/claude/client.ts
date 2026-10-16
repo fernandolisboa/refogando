@@ -18,9 +18,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 
-import { selectableFamilyOf } from '@/domain/claude-models'
+import { acceptsEffort } from '@/domain/claude-models'
 import {
-  TASK_DEFAULT_SETTINGS,
+  defaultSettings,
   maxTokensFor,
   tuningParams,
   type ModelSettings,
@@ -140,7 +140,7 @@ function mapTextUsage(usage: { input_tokens?: number; output_tokens?: number } |
 }
 
 // Teto de tokens da geração. É TETO, não custo (cobra-se o que sai). Largo porque o thinking entra na
-// conta: Opus 5.5 e Fable rodam com thinking SEMPRE ligado (não dá p/ desligar), e 4096 truncava a
+// conta: Opus 5.5 roda com thinking SEMPRE ligado (não dá p/ desligar), e 4096 truncava a
 // Receita no meio → stop_reason 'max_tokens'. Estourar → 'max_tokens'.
 const MAX_TOKENS = 12_000
 
@@ -161,31 +161,40 @@ function generationSignal(signal?: AbortSignal): AbortSignal {
 
 /**
  * Ajuste efetivo da Geração (e da conversa): o do admin (ADR-0034) ou o default da tarefa. `effort` só
- * vai para as famílias selecionáveis (Opus/Sonnet/Fable): uma linha legada com outro modelo (ex.: Haiku,
- * que dá 400 com `effort`) segue no default dele, mesmo quando a rota passa o ajuste default da tarefa.
+ * vai para quem aceita (`acceptsEffort`): uma linha legada com outro modelo (ex.: Haiku 4.5, que dá 400
+ * com `effort`) segue no default dele, mesmo quando a rota passa o ajuste default da tarefa.
  */
 function generationSettings(input: { model: string; settings?: ModelSettings }): ModelSettings {
-  return withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.generation)
+  return withoutUnsupportedEffort(input.model, input.settings ?? defaultSettings('generation', input.model))
 }
 
-/** `effort` só vai para as famílias selecionáveis (Opus/Sonnet/Fable); nos outros modelos, o default deles. */
+/** `effort` só vai para quem aceita (`acceptsEffort`); nos outros modelos, o default deles. */
 function withoutUnsupportedEffort(model: string, settings: ModelSettings): ModelSettings {
-  return selectableFamilyOf(model) ? settings : { ...settings, effort: null }
+  return acceptsEffort(model) ? settings : { ...settings, effort: null }
+}
+
+/**
+ * `thinking` no tipo do SDK. O SDK pinado (0.104) ainda não tipa `between_tools` (nível mais baixo do
+ * Sonnet 5.5); a API aceita, e o SDK repassa o objeto como veio.
+ */
+function sdkThinking(settings: ModelSettings): { thinking?: Anthropic.ThinkingConfigParam } {
+  const { thinking } = tuningParams(settings)
+  return thinking ? { thinking: thinking as Anthropic.ThinkingConfigParam } : {}
 }
 
 /** `thinking` + `output_config` (formato + esforço) de uma chamada structured com o ajuste dado. */
 function structuredTuning<F>(format: F, settings: ModelSettings) {
-  const { thinking, effort } = tuningParams(settings)
+  const { effort } = tuningParams(settings)
   return {
-    ...(thinking ? { thinking } : {}),
+    ...sdkThinking(settings),
     output_config: { format, ...(effort ? { effort } : {}) },
   }
 }
 
 /** `thinking` + `output_config.effort` de uma chamada de texto livre (stream da conversa). */
 function streamTuning(settings: ModelSettings) {
-  const { thinking, effort } = tuningParams(settings)
-  return { ...(thinking ? { thinking } : {}), ...(effort ? { output_config: { effort } } : {}) }
+  const { effort } = tuningParams(settings)
+  return { ...sdkThinking(settings), ...(effort ? { output_config: { effort } } : {}) }
 }
 
 /**
@@ -276,7 +285,7 @@ export class RealClaudeClient implements ClaudeClient {
         messages: [{ role: 'user' as const, content: input.userPrompt }],
         // Esforço/thinking do admin (ADR-0034). SEM prefill, SEM temperature custom: os modelos 4.7+
         // os rejeitam (landmine §11). Thinking `default` ⇒ o parâmetro não vai e cada modelo roda no
-        // seu default (Opus 5.5/Fable: adaptive, sempre ligado; Opus 4.8: desligado).
+        // seu default (Opus 5.5: adaptive, sempre ligado).
         ...structuredTuning(zodOutputFormat(schema), generationSettings(input)),
       }
 
@@ -405,7 +414,7 @@ export class RealClaudeClient implements ClaudeClient {
     // nem item parcial). NÃO ramifica por stop_reason em refusal/max_tokens: para a Extração,
     // qualquer não-sucesso é simplesmente parse_failed (a rota mapeia para 502).
     const client = new Anthropic()
-    const extractionSettings = input.settings ?? TASK_DEFAULT_SETTINGS.extraction
+    const extractionSettings = input.settings ?? defaultSettings('extraction', input.model)
 
     try {
       const params = {
@@ -445,7 +454,7 @@ export class RealClaudeClient implements ClaudeClient {
     // distingue `refusal` (a rota mostra o mesmo erro; o log diz a causa). O `usage` volta pra rota em
     // todo desfecho, que grava tokens e custo na linha do ledger da cota (ADR-0036).
     const client = new Anthropic()
-    const settings = withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.menu)
+    const settings = withoutUnsupportedEffort(input.model, input.settings ?? defaultSettings('menu', input.model))
 
     // Uso SOMADO das chamadas feitas (a principal + o reparo): toda chamada custa, mesmo a que termina em
     // recusa ou parse_failed — o ledger da cota registra o custo de todos os desfechos.
@@ -504,7 +513,7 @@ export class RealClaudeClient implements ClaudeClient {
     let usage: TextUsage | undefined
     try {
       const client = new Anthropic()
-      const settings = withoutUnsupportedEffort(input.model, input.settings ?? TASK_DEFAULT_SETTINGS.imageScene)
+      const settings = withoutUnsupportedEffort(input.model, input.settings ?? defaultSettings('imageScene', input.model))
       const message = await client.messages.parse(
         {
           model: input.model,

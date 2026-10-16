@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Revisado por ADR-0046 (2026-10-16):** as famílias selecionáveis passam a ser **Opus, Sonnet e Haiku** (Fable sai), e a dec.2 foi revogada: o modelo em uso troca **sozinho**, dentro da família, depois de uma chamada de teste aceita (cron diário `/api/cron/ai-models`, interruptor por tarefa no admin).
+
 Revisa ADR-0009 (modelo da Geração). Não muda o modelo da tradução (ADR-0030) nem o da Extração.
 
 > **Nota (ADR-0034, 2026-09-24):** o effort da Geração, o modelo e os ajustes da tradução e da Extração passaram a ser configuráveis por tarefa e por modelo no admin. A troca da linha para Opus 5.5 prometida na dec.4 foi na migração 0066. As consequências sobre `EXTRACTION_MODEL` e `thinking: disabled` na tradução abaixo foram substituídas pelo ADR-0034.
