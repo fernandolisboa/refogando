@@ -3,13 +3,16 @@ import type Anthropic from '@anthropic-ai/sdk'
 import {
   TASK_DEFAULT_SETTINGS,
   activeSettings,
+  defaultSettings,
   maxTokensFor,
   parseModelSettings,
   parseStoredAiTasks,
   resolveAiTasks,
   settingsForModel,
   tuningParams,
+  upgradeCandidates,
   withTaskSettings,
+  type AiTaskState,
   type ModelSettings,
 } from '@/domain/ai-task-config'
 import type { CatalogModel, ModelOption } from '@/domain/claude-models'
@@ -56,6 +59,13 @@ describe('parseStoredAiTasks', () => {
     })
   })
 
+  it('guarda o interruptor `auto` só quando é boolean', () => {
+    expect(parseStoredAiTasks({ menu: { auto: false }, extraction: { auto: 'sim' } })).toEqual({
+      menu: { auto: false },
+      extraction: {},
+    })
+  })
+
   it('lixo no topo ⇒ vazio', () => {
     expect(parseStoredAiTasks(null)).toEqual({})
     expect(parseStoredAiTasks('x')).toEqual({})
@@ -91,6 +101,13 @@ describe('resolveAiTasks + activeSettings', () => {
     })
   })
 
+  it('`auto` é ligado por padrão; o salvo vence', () => {
+    const cfg = resolveAiTasks({ menu: { auto: false } }, fallbacks)
+    expect(cfg.menu.auto).toBe(false)
+    expect(cfg.generation.auto).toBe(true)
+    expect(cfg.translation.auto).toBe(true)
+  })
+
   it('sem ajuste salvo para o modelo em uso ⇒ default da tarefa', () => {
     const cfg = resolveAiTasks({ translation: { byModel: { 'claude-opus-5-5': ON } } }, fallbacks)
     expect(activeSettings('translation', cfg.translation)).toEqual(TASK_DEFAULT_SETTINGS.translation)
@@ -114,6 +131,16 @@ describe('withTaskSettings', () => {
     })
   })
 
+  it('`auto` ausente mantém o salvo; presente substitui', () => {
+    let stored = withTaskSettings({}, 'menu', 'claude-sonnet-5-5', OFF, false)
+    expect(stored.menu?.auto).toBe(false)
+    stored = withTaskSettings(stored, 'menu', 'claude-opus-5-5', ON)
+    expect(stored.menu?.auto).toBe(false)
+    stored = withTaskSettings(stored, 'generation', 'claude-opus-5-5', ON, true)
+    expect(stored.generation).toEqual({ byModel: { 'claude-opus-5-5': ON }, auto: true })
+    expect(withTaskSettings({}, 'translation', 'claude-sonnet-5-5', OFF).translation).not.toHaveProperty('auto')
+  })
+
   it('tem teto de entradas por tarefa (descarta as mais antigas)', () => {
     let stored = {}
     for (let i = 0; i < 55; i++) stored = withTaskSettings(stored, 'translation', `claude-sonnet-${i}`, OFF)
@@ -129,12 +156,86 @@ describe('tuningParams + maxTokensFor', () => {
     expect(tuningParams({ effort: null, thinking: 'default' })).toEqual({})
     expect(tuningParams(ON)).toEqual({ thinking: { type: 'adaptive' }, effort: 'high' })
     expect(tuningParams(OFF)).toEqual({ thinking: { type: 'disabled' } })
+    expect(tuningParams({ effort: 'low', thinking: 'betweenTools' })).toEqual({
+      thinking: { type: 'between_tools' },
+      effort: 'low',
+    })
   })
 
   it('thinking que pode ligar ganha folga de tokens; desligado fica no teto base', () => {
     expect(maxTokensFor(4000, OFF)).toBe(4000)
     expect(maxTokensFor(4000, ON)).toBeGreaterThan(4000)
     expect(maxTokensFor(4000, { effort: null, thinking: 'default' })).toBeGreaterThan(4000)
+  })
+})
+
+describe('defaultSettings', () => {
+  it('tarefas com thinking desligado usam o jeito que cada modelo aceita', () => {
+    // Sonnet 5.5 recusa `disabled`: o mínimo é `between_tools`.
+    expect(defaultSettings('translation', 'claude-sonnet-5-5')).toEqual({ effort: null, thinking: 'betweenTools' })
+    expect(defaultSettings('imageScene', 'claude-sonnet-5-5')).toEqual({ effort: 'low', thinking: 'betweenTools' })
+    // Opus 5.5 não desliga: fica no default do modelo.
+    expect(defaultSettings('extraction', 'claude-opus-5-5')).toEqual({ effort: null, thinking: 'default' })
+    // Haiku 5.5 aceita `disabled` (com esforço ≤ high).
+    expect(defaultSettings('extraction', 'claude-haiku-5-5')).toEqual(TASK_DEFAULT_SETTINGS.extraction)
+    // Versão seguinte herda o default da família; versão anterior fica na base.
+    expect(defaultSettings('translation', 'claude-sonnet-6')).toEqual({ effort: null, thinking: 'betweenTools' })
+    expect(defaultSettings('translation', 'claude-sonnet-5')).toEqual(TASK_DEFAULT_SETTINGS.translation)
+    expect(defaultSettings('translation', 'claude-fable-5-1')).toEqual({ effort: null, thinking: 'default' })
+  })
+
+  it('tarefas com thinking no default do modelo não mudam', () => {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
+      expect(defaultSettings('generation', model)).toEqual(TASK_DEFAULT_SETTINGS.generation)
+      expect(defaultSettings('menu', model)).toEqual(TASK_DEFAULT_SETTINGS.menu)
+    }
+  })
+
+  it('activeSettings sem ajuste salvo usa o default para o modelo em uso', () => {
+    const state: AiTaskState = { model: 'claude-sonnet-5-5', byModel: {}, auto: true }
+    expect(activeSettings('translation', state)).toEqual({ effort: null, thinking: 'betweenTools' })
+  })
+})
+
+describe('upgradeCandidates', () => {
+  const ALL = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+  const state = (s: Partial<AiTaskState>): AiTaskState => ({
+    model: 'claude-sonnet-5',
+    byModel: {},
+    auto: true,
+    ...s,
+  })
+
+  it('thinking desligado: ajuste de hoje, os outros jeitos de desligar e por fim o default do modelo', () => {
+    const out = upgradeCandidates('translation', state({ byModel: { 'claude-sonnet-5': OFF } }), {
+      id: 'claude-sonnet-5-5',
+      effort: [...ALL],
+    })
+    expect(out).toEqual([OFF, { effort: null, thinking: 'betweenTools' }, { effort: null, thinking: 'default' }])
+  })
+
+  it('o ajuste já salvo para o modelo novo vem primeiro', () => {
+    const out = upgradeCandidates(
+      'generation',
+      state({ model: 'claude-opus-5-5', byModel: { 'claude-opus-6': ON } }),
+      { id: 'claude-opus-6', effort: [...ALL] },
+    )
+    expect(out[0]).toEqual(ON)
+    expect(out).toContainEqual(TASK_DEFAULT_SETTINGS.generation)
+  })
+
+  it('esforço que o modelo novo não oferece cai para o default do modelo', () => {
+    const out = upgradeCandidates(
+      'generation',
+      state({ model: 'claude-opus-5-5', byModel: { 'claude-opus-5-5': { effort: 'max', thinking: 'default' } } }),
+      { id: 'claude-opus-6', effort: ['low', 'medium', 'high'] },
+    )
+    expect(out[0]).toEqual({ effort: null, thinking: 'default' })
+  })
+
+  it('sem repetições', () => {
+    const out = upgradeCandidates('menu', state({}), { id: 'claude-sonnet-5-5', effort: null })
+    expect(out).toEqual([TASK_DEFAULT_SETTINGS.menu])
   })
 })
 
@@ -199,9 +300,10 @@ describe('isAcceptableModel', () => {
     expect(isAcceptableModel('claude-sonnet-6', 'x', live)).toBe(false)
   })
 
-  it('fallback: aceita família selecionável no formato atual, nunca Haiku ou lixo', () => {
+  it('fallback: aceita família selecionável no formato atual, nunca Fable ou lixo', () => {
     expect(isAcceptableModel('claude-sonnet-6', 'x', fallback)).toBe(true)
-    expect(isAcceptableModel('claude-haiku-5', 'x', fallback)).toBe(false)
+    expect(isAcceptableModel('claude-haiku-5-5', 'x', fallback)).toBe(true)
+    expect(isAcceptableModel('claude-fable-5-1', 'x', fallback)).toBe(false)
     expect(isAcceptableModel('claude-opus-5-5-evil', 'x', fallback)).toBe(false)
   })
 })
@@ -253,6 +355,21 @@ describe('validateAiTaskUpdate', () => {
       ok: false,
       error: 'ajuste_recusado',
       message: 'thinking.type.disabled is not supported',
+    })
+  })
+
+  it('`auto` só boolean; vai junto no resultado quando veio', async () => {
+    const probe = probeOf({ kind: 'ok' })
+    const deps = { catalog, probe }
+    expect(await validateAiTaskUpdate({ model: 'claude-opus-5-5', settings: ON, auto: 'sim' }, 'x', deps)).toEqual({
+      ok: false,
+      error: 'config_invalida',
+    })
+    expect(await validateAiTaskUpdate({ model: 'claude-opus-5-5', settings: ON, auto: false }, 'x', deps)).toEqual({
+      ok: true,
+      model: 'claude-opus-5-5',
+      settings: ON,
+      auto: false,
     })
   })
 

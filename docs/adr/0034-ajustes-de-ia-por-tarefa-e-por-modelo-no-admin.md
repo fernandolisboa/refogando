@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Revisado por ADR-0046 (2026-10-16):** default das tarefas `claude-sonnet-5-5`; novo modo de thinking `betweenTools` (`between_tools`, o mínimo do Sonnet 5.5, que recusa `disabled`); defaults de "thinking desligado" por modelo (`defaultSettings`); `effort` vai para Opus, Sonnet e Haiku (menos o Haiku 4.5 legado); cada tarefa ganhou `auto` (troca automática de versão após chamada de teste).
+
 Estende ADR-0033 (lista viva de modelos). Revisa ADR-0030 dec.1 (thinking da tradução) e a Extração de ingredientes (#112), que tinham modelo e parâmetros fixos em código.
 
 O dono pediu (2026-09-24) que qualquer ajuste específico de modelo, como desligar o thinking, fosse configurável no admin, com defaults, e habilitado só quando o modelo aceita. Antes: a Geração tinha modelo no admin e `effort: 'medium'` fixo; a tradução usava `TRANSLATION_MODEL` com `thinking: disabled` fixo (que Opus 5.5 e Fable recusam); a Extração usava `EXTRACTION_MODEL` (Haiku) fixo.

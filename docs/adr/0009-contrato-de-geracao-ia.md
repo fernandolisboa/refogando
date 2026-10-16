@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Nota (ADR-0046, 2026-10-16):** as famílias oferecidas passaram a Opus, Sonnet e Haiku (Fable saiu), e o modelo em uso troca sozinho para a versão nova da família depois de uma chamada de teste aceita.
+
 > **Nota (ADR-0033, 2026-09-24):** o modelo deixou de ser uma allowlist de duas opções em código. O default passa a `claude-opus-5-5` e o admin escolhe entre o mais novo de Opus, Sonnet e Fable, listados pela Models API da Anthropic.
 
 A geração por IA (Anthropic / Claude) tem um **contrato estrito** entre a saída probabilística do modelo e o dado do app:

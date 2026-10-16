@@ -36,8 +36,10 @@ function put(body: unknown, headers?: Headers): Promise<Response> {
 }
 
 // Dublê da Models API: a lista crua como a Anthropic devolveria (mais novo primeiro), com versões
-// antigas de cada família + Haiku. Nenhum teste toca a rede.
+// antigas de cada família + Fable (fora da lista desde 2026-10-16). Nenhum teste toca a rede.
 const LIVE_MODELS: CatalogModel[] = [
+  { id: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5', createdAt: '2026-10-01T00:00:00Z' },
+  { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5', createdAt: '2026-09-20T00:00:00Z' },
   { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1', createdAt: '2026-08-20T00:00:00Z' },
   { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', createdAt: '2026-08-10T00:00:00Z' },
   { id: 'claude-opus-5', displayName: 'Claude Opus 5', createdAt: '2026-06-01T00:00:00Z' },
@@ -59,13 +61,13 @@ describe('/api/admin/config — modelo default (admin-only)', () => {
   it('Usuário → 403 em GET e PUT', async () => {
     const { headers } = await seedSessionHeaders({ email: 'user@cfg.test', role: 'usuario' })
     expect((await get(headers)).status).toBe(403)
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(403)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(403)
   })
 
   it('Curador → 403 em GET e PUT', async () => {
     const { headers } = await seedSessionHeaders({ email: 'cur@cfg.test', role: 'curador' })
     expect((await get(headers)).status).toBe(403)
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(403)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(403)
   })
 
   it('sem sessão → 401 em GET', async () => {
@@ -97,14 +99,14 @@ describe('/api/admin/config — modelo default (admin-only)', () => {
   it('Admin PUT válido persiste e um GET subsequente relê o novo valor', async () => {
     const { headers } = await seedSessionHeaders({ email: 'admin4@cfg.test', role: 'admin' })
 
-    const putRes = await put({ defaultModel: 'claude-sonnet-5' }, headers)
+    const putRes = await put({ defaultModel: 'claude-sonnet-5-5' }, headers)
     expect(putRes.status).toBe(200)
-    await expect(putRes.json()).resolves.toMatchObject({ defaultModel: 'claude-sonnet-5' })
+    await expect(putRes.json()).resolves.toMatchObject({ defaultModel: 'claude-sonnet-5-5' })
 
     // Round-trip: nova Request de GET relê o singleton persistido.
     const getRes = await get(headers)
     expect(getRes.status).toBe(200)
-    await expect(getRes.json()).resolves.toMatchObject({ defaultModel: 'claude-sonnet-5' })
+    await expect(getRes.json()).resolves.toMatchObject({ defaultModel: 'claude-sonnet-5-5' })
   })
 })
 
@@ -160,11 +162,11 @@ describe('/api/admin/config — imageGen (#134, admin-only)', () => {
   it('PUT atualiza os DOIS eixos em separado sem um zerar o outro', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ig-both@cfg.test', role: 'admin' })
     // 1º grava só o defaultModel.
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     // 2º grava só o imageGen — NÃO pode reverter o defaultModel ao default.
     expect((await put({ imageGen: okImageGen }, headers)).status).toBe(200)
     const body = (await (await get(headers)).json()) as { defaultModel: string; imageGen: ImageGenConfig }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.imageGen).toEqual(okImageGen)
   })
 
@@ -214,13 +216,13 @@ describe('/api/admin/config — recipeGenCapByRole (#167, admin-only)', () => {
   it('PUT recipeGenCapByRole NÃO zera os outros eixos (defaultModel/imageGen preservados)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'rg-iso@cfg.test', role: 'admin' })
     // 1º grava o defaultModel; 2º grava só o teto de receita — o modelo de chat não pode reverter.
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect((await put({ recipeGenCapByRole: okCaps }, headers)).status).toBe(200)
     const body = (await (await get(headers)).json()) as {
       defaultModel: string
       recipeGenCapByRole: RecipeGenCapByRole
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.recipeGenCapByRole).toEqual(okCaps)
   })
 
@@ -261,14 +263,14 @@ describe('/api/admin/config — extractionCapByRole (#447, admin-only)', () => {
 
   it('PUT extractionCapByRole válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ex-put@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     const putRes = await put({ extractionCapByRole: okCaps }, headers)
     expect(putRes.status).toBe(200)
     const body = (await (await get(headers)).json()) as {
       defaultModel: string
       extractionCapByRole: ExtractionCapByRole
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5') // outro eixo preservado
+    expect(body.defaultModel).toBe('claude-sonnet-5-5') // outro eixo preservado
     expect(body.extractionCapByRole).toEqual(okCaps)
   })
 
@@ -302,11 +304,11 @@ describe('/api/admin/config — proCaps (Fase 2 #466, admin-only)', () => {
 
   it('PUT proCaps válido persiste e GET relê (round-trip); NÃO zera os outros eixos', async () => {
     const { headers } = await seedSessionHeaders({ email: 'pc-put@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     const putRes = await put({ proCaps: okProCaps }, headers)
     expect(putRes.status).toBe(200)
     const body = (await (await get(headers)).json()) as { defaultModel: string; proCaps: ProCaps | null }
-    expect(body.defaultModel).toBe('claude-sonnet-5') // outro eixo preservado
+    expect(body.defaultModel).toBe('claude-sonnet-5-5') // outro eixo preservado
     expect(body.proCaps).toEqual(okProCaps)
   })
 
@@ -370,13 +372,13 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
 
   it('PUT webSearch NÃO zera os outros eixos (defaultModel preservado)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ws-iso@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect((await put({ webSearch: { enabled: true, allowlist: ['a.com'] } }, headers)).status).toBe(200)
     const body = (await (await get(headers)).json()) as {
       defaultModel: string
       webSearch: { enabled: boolean; allowlist: string[] }
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.webSearch).toEqual({ enabled: true, allowlist: ['a.com'] })
   })
 
@@ -450,7 +452,7 @@ describe('/api/admin/config — catalogDisclosure (#237, admin-only)', () => {
 
   it('PUT catalogDisclosure NÃO zera os outros eixos (defaultModel preservado)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'cd-iso@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect(
       (await put({ catalogDisclosure: { enabled: true, text: 'Curadoria + IA.' } }, headers)).status,
     ).toBe(200)
@@ -458,7 +460,7 @@ describe('/api/admin/config — catalogDisclosure (#237, admin-only)', () => {
       defaultModel: string
       catalogDisclosure: { enabled: boolean; text: string }
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.catalogDisclosure).toEqual({ enabled: true, text: 'Curadoria + IA.' })
   })
 
@@ -501,13 +503,13 @@ describe('/api/admin/config — popularity (#368, admin-only)', () => {
 
   it('PUT popularity NÃO zera os outros eixos (defaultModel preservado)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'pop-iso@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect((await put({ popularity: okPopularity }, headers)).status).toBe(200)
     const body = (await (await get(headers)).json()) as {
       defaultModel: string
       popularity: PopularityConfig
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.popularity).toEqual(okPopularity)
   })
 
@@ -578,13 +580,13 @@ describe('/api/admin/config — socialLinks (#451, admin-only)', () => {
 
   it('PUT socialLinks NÃO zera os outros eixos (defaultModel preservado)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'sl-iso@cfg.test', role: 'admin' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect(
       (await put({ socialLinks: [{ platform: 'x', url: 'https://x.com/r', enabled: true }] }, headers))
         .status,
     ).toBe(200)
     const body = (await (await get(headers)).json()) as { defaultModel: string; socialLinks: unknown[] }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.socialLinks).toEqual([{ platform: 'x', url: 'https://x.com/r', enabled: true }])
   })
 
@@ -650,13 +652,13 @@ describe('/api/admin/config — recipeOfWeek (#457, admin-only)', () => {
     const { headers } = await seedSessionHeaders({ email: 'row-iso@cfg.test', role: 'admin' })
     const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     await seedTranslation({ recipeId, locale: 'pt-BR', titulo: 'Torta de limão', provenance: 'escrita_por_pessoa' })
-    expect((await put({ defaultModel: 'claude-sonnet-5' }, headers)).status).toBe(200)
+    expect((await put({ defaultModel: 'claude-sonnet-5-5' }, headers)).status).toBe(200)
     expect((await put({ recipeOfWeek: { recipeId } }, headers)).status).toBe(200)
     const body = (await (await get(headers)).json()) as {
       defaultModel: string
       recipeOfWeek: { recipeId: string | null }
     }
-    expect(body.defaultModel).toBe('claude-sonnet-5')
+    expect(body.defaultModel).toBe('claude-sonnet-5-5')
     expect(body.recipeOfWeek).toEqual({ recipeId })
   })
 
@@ -716,7 +718,7 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     return modelsGet(new Request('http://localhost/api/admin/models', { headers }))
   }
 
-  it('GET /api/admin/models: Curador → 403; Admin recebe o mais novo de Opus/Sonnet/Fable, sem Haiku', async () => {
+  it('GET /api/admin/models: Curador → 403; Admin recebe o mais novo de Opus/Sonnet/Haiku, sem Fable', async () => {
     const { headers: curH } = await seedSessionHeaders({ email: 'cur-models@cfg.test', role: 'curador' })
     expect((await models(curH)).status).toBe(403)
 
@@ -724,10 +726,10 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     const res = await models(headers)
     expect(res.status).toBe(200)
     const body = (await res.json()) as { models: { id: string }[] }
-    expect(body.models.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5', 'claude-fable-5-1'])
+    expect(body.models.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
   })
 
-  it('PUT rejeita Haiku e versões antigas quando há uma mais nova da família', async () => {
+  it('PUT rejeita Fable, o Haiku 4.5 e versões antigas quando há uma mais nova da família', async () => {
     const { headers } = await seedSessionHeaders({ email: 'admin-old@cfg.test', role: 'admin' })
     for (const old of ['claude-haiku-4-5-20251001', 'claude-opus-4-8', 'claude-sonnet-4-6']) {
       const res = await put({ defaultModel: old }, headers)
@@ -750,7 +752,7 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     expect((await put({ defaultModel: 'claude-opus-5-5' }, headers)).status).toBe(400)
   })
 
-  it('Models API fora do ar ⇒ lista pinada (Fable aceito), nunca vazia', async () => {
+  it('Models API fora do ar ⇒ lista pinada (Haiku 5.5 aceito), nunca vazia', async () => {
     setModelCatalog(
       catalogOf(async () => {
         throw new Error('rede')
@@ -758,8 +760,8 @@ describe('modelos selecionáveis — lista viva da Anthropic + fallback pinado',
     )
     const { headers } = await seedSessionHeaders({ email: 'admin-down@cfg.test', role: 'admin' })
     const body = (await (await models(headers)).json()) as { models: { id: string }[] }
-    expect(body.models.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5', 'claude-fable-5-1'])
-    expect((await put({ defaultModel: 'claude-fable-5-1' }, headers)).status).toBe(200)
+    expect(body.models.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
+    expect((await put({ defaultModel: 'claude-haiku-5-5' }, headers)).status).toBe(200)
   })
 
   it('salvar o modelo JÁ em uso é aceito mesmo fora da lista (no-op não vira erro)', async () => {
@@ -799,11 +801,11 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
   it('GET sem linha: modelos e ajustes default de cada tarefa', async () => {
     const body = await (await get(await admin())).json()
     expect(body.aiTasks).toEqual({
-      generation: { model: 'claude-opus-5-5', byModel: {} },
-      translation: { model: 'claude-sonnet-5', byModel: {} },
-      extraction: { model: 'claude-sonnet-5', byModel: {} },
-      menu: { model: 'claude-sonnet-5', byModel: {} },
-      imageScene: { model: 'claude-sonnet-5', byModel: {} },
+      generation: { model: 'claude-opus-5-5', byModel: {}, auto: true },
+      translation: { model: 'claude-sonnet-5-5', byModel: {}, auto: true },
+      extraction: { model: 'claude-sonnet-5-5', byModel: {}, auto: true },
+      menu: { model: 'claude-sonnet-5-5', byModel: {}, auto: true },
+      imageScene: { model: 'claude-sonnet-5-5', byModel: {}, auto: true },
     })
   })
 
@@ -815,26 +817,42 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
   it('salva o ajuste POR MODELO; trocar de modelo e voltar recupera o ajuste anterior', async () => {
     const headers = await admin()
     expect(
-      (await put({ aiTasks: { translation: { model: 'claude-sonnet-5', settings: { effort: 'low', thinking: 'off' } } } }, headers)).status,
+      (await put({ aiTasks: { translation: { model: 'claude-sonnet-5-5', settings: { effort: 'low', thinking: 'off' } } } }, headers)).status,
     ).toBe(200)
     const res = await put({ aiTasks: { translation: { model: 'claude-opus-5-5', settings: HIGH } } }, headers)
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.aiTasks.translation).toEqual({
       model: 'claude-opus-5-5',
-      byModel: { 'claude-sonnet-5': { effort: 'low', thinking: 'off' }, 'claude-opus-5-5': HIGH },
+      byModel: { 'claude-sonnet-5-5': { effort: 'low', thinking: 'off' }, 'claude-opus-5-5': HIGH },
+      auto: true,
     })
     // Outros eixos e tarefas intactos.
-    expect(body.aiTasks.extraction.model).toBe('claude-sonnet-5')
+    expect(body.aiTasks.extraction.model).toBe('claude-sonnet-5-5')
     expect(body.defaultModel).toBe('claude-opus-5-5')
   })
 
   it('Geração grava o modelo em default_model (a coluna que as rotas leem)', async () => {
-    const res = await put({ aiTasks: { generation: { model: 'claude-fable-5-1', settings: HIGH } } }, await admin())
+    const res = await put({ aiTasks: { generation: { model: 'claude-haiku-5-5', settings: HIGH } } }, await admin())
     expect(res.status).toBe(200)
     const cfg = await loadAppConfig(getDb())
-    expect(cfg.defaultModel).toBe('claude-fable-5-1')
-    expect(cfg.aiTasks.generation).toEqual({ model: 'claude-fable-5-1', byModel: { 'claude-fable-5-1': HIGH } })
+    expect(cfg.defaultModel).toBe('claude-haiku-5-5')
+    expect(cfg.aiTasks.generation).toEqual({
+      model: 'claude-haiku-5-5',
+      byModel: { 'claude-haiku-5-5': HIGH },
+      auto: true,
+    })
+  })
+
+  it('"Atualizar sozinho" desligado fica gravado; salvar sem `auto` não religa', async () => {
+    const headers = await admin()
+    const off = await put({ aiTasks: { menu: { model: 'claude-sonnet-5-5', settings: OFF, auto: false } } }, headers)
+    expect(off.status).toBe(200)
+    expect((await off.json()).aiTasks.menu.auto).toBe(false)
+    expect((await put({ aiTasks: { menu: { model: 'claude-opus-5-5', settings: HIGH } } }, headers)).status).toBe(200)
+    expect((await loadAppConfig(getDb())).aiTasks.menu).toMatchObject({ model: 'claude-opus-5-5', auto: false })
+    const bad = await put({ aiTasks: { menu: { model: 'claude-opus-5-5', settings: HIGH, auto: 'sim' } } }, headers)
+    expect(bad.status).toBe(400)
   })
 
   it('chamada de teste recusada ⇒ 400 ajuste_recusado com o motivo; nada é gravado', async () => {
@@ -853,14 +871,14 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
       message: 'thinking.type.disabled is not supported on this model',
     })
     expect(calls).toEqual([{ model: 'claude-opus-5-5', settings: OFF }])
-    expect((await loadAppConfig(getDb())).aiTasks.extraction.model).toBe('claude-sonnet-5')
+    expect((await loadAppConfig(getDb())).aiTasks.extraction.model).toBe('claude-sonnet-5-5')
   })
 
   it('ajuste fora das capacidades da Models API ⇒ 400 ajuste_nao_suportado, sem chamada de teste', async () => {
     setModelCatalog(
       catalogOf(async () => [
         {
-          id: 'claude-sonnet-5',
+          id: 'claude-sonnet-5-5',
           displayName: 'Claude Sonnet 5',
           createdAt: '2026-05-01T00:00:00Z',
           capabilities: { effort: ['low', 'medium', 'high'], adaptiveThinking: true },
@@ -875,7 +893,7 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
       },
     })
     const res = await put(
-      { aiTasks: { translation: { model: 'claude-sonnet-5', settings: { effort: 'max', thinking: 'off' } } } },
+      { aiTasks: { translation: { model: 'claude-sonnet-5-5', settings: { effort: 'max', thinking: 'off' } } } },
       await admin(),
     )
     expect(res.status).toBe(400)
@@ -889,17 +907,17 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
     const headers = await admin()
     const [a, b] = await Promise.all([
       put({ aiTasks: { translation: { model: 'claude-opus-5-5', settings: HIGH } } }, headers),
-      put({ aiTasks: { extraction: { model: 'claude-fable-5-1', settings: HIGH } } }, headers),
+      put({ aiTasks: { extraction: { model: 'claude-haiku-5-5', settings: HIGH } } }, headers),
     ])
     expect([a.status, b.status]).toEqual([200, 200])
     const cfg = await loadAppConfig(getDb())
     expect(cfg.aiTasks.translation.model).toBe('claude-opus-5-5')
-    expect(cfg.aiTasks.extraction.model).toBe('claude-fable-5-1')
+    expect(cfg.aiTasks.extraction.model).toBe('claude-haiku-5-5')
   })
 
   it('`defaultModel` legado passa pelos mesmos portões: chamada de teste com o ajuste salvo do modelo', async () => {
     const headers = await admin()
-    await put({ aiTasks: { generation: { model: 'claude-sonnet-5', settings: OFF } } }, headers)
+    await put({ aiTasks: { generation: { model: 'claude-sonnet-5-5', settings: OFF } } }, headers)
     const calls: unknown[] = []
     setModelProbe({
       probe: async (model, settings) => {
@@ -907,13 +925,13 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
         return { kind: 'rejected', message: 'nope' }
       },
     })
-    const res = await put({ defaultModel: 'claude-sonnet-5' }, headers)
+    const res = await put({ defaultModel: 'claude-sonnet-5-5' }, headers)
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: 'ajuste_recusado', task: 'generation' })
-    expect(calls).toEqual([{ model: 'claude-sonnet-5', settings: OFF }])
+    expect(calls).toEqual([{ model: 'claude-sonnet-5-5', settings: OFF }])
   })
 
-  it('`defaultModel` legado num modelo fora das famílias (Haiku em uso) testa SEM effort, como em runtime', async () => {
+  it('`defaultModel` legado num modelo que não aceita effort (Haiku 4.5 legado) testa SEM effort, como em runtime', async () => {
     await getDb().insert(appConfig).values({ id: true, defaultModel: 'claude-haiku-4-5-20251001' })
     const calls: unknown[] = []
     setModelProbe({
@@ -938,7 +956,7 @@ describe('/api/admin/config — aiTasks: modelo + ajuste por tarefa (ADR-0034)',
     const bad = await put({ aiTasks: { extraction: { model: 'claude-opus-5-5', settings: OFF } }, imageGen: 'x' }, headers)
     expect(bad.status).toBe(400)
     expect(probed).toBe(false)
-    const nullSettings = await put({ aiTasks: { generation: { model: 'claude-sonnet-5', settings: null } } }, headers)
+    const nullSettings = await put({ aiTasks: { generation: { model: 'claude-sonnet-5-5', settings: null } } }, headers)
     expect((await nullSettings.json()).error).toBe('config_invalida')
   })
 

@@ -180,7 +180,8 @@ describe('POST /api/parse-ingredients — Extração de ingredientes (#112)', ()
     expect((await post({ rawInput: '2 cebolas picadinhas' }, headers)).status).toBe(200)
 
     expect(seen.map((i) => [i.model, i.settings])).toEqual([
-      ['claude-sonnet-5', { effort: null, thinking: 'off' }],
+      // Default: Sonnet 5.5, que desliga o thinking com `between_tools` (recusa `disabled`).
+      ['claude-sonnet-5-5', { effort: null, thinking: 'betweenTools' }],
       ['claude-opus-5-5', settings],
     ])
   })

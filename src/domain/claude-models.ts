@@ -4,15 +4,17 @@
  * `server/claude/model-catalog.ts`).
  *
  * Por que DINÂMICO na OFERTA e FIXO no DEFAULT:
- *  - A lista do admin vem da Models API (`GET /v1/models`): quando a Anthropic lança um Opus/Sonnet/Fable
+ *  - A lista do admin vem da Models API (`GET /v1/models`): quando a Anthropic lança um Opus/Sonnet/Haiku
  *    novo, ele aparece no select sem deploy. Filtramos por FAMÍLIA (allowlist) e ficamos com o MAIS NOVO
- *    de cada uma — Haiku e Mythos ficam de fora de propósito.
- *  - O modelo EM USO nunca troca sozinho: só muda quando o admin salva. Um modelo novo pode trazer
- *    breaking change de API (ex.: Opus 5.5 recusa `thinking: disabled`), então a troca é uma decisão.
+ *    de cada uma — Fable e Mythos ficam de fora de propósito (desde 2026-10-16 o app usa só Haiku,
+ *    Sonnet e Opus; hoje os três na 5.5).
+ *  - O modelo EM USO só troca depois de uma chamada de teste aceita: quando o admin salva, ou no cron
+ *    diário que leva cada tarefa ao mais novo da MESMA família (ADR-0046, `model-auto-upgrade.ts`). Um
+ *    modelo novo pode trazer breaking change de API (ex.: Opus 5.5 recusa `thinking: disabled`).
  *  - API fora do ar / sem chave ⇒ `FALLBACK_SELECTABLE_MODELS` (pinados aqui), nunca uma lista vazia.
  *
  * Histórico: `generation.model` guarda o ID cru que gerou cada Receita. Nada aqui reescreve esse campo;
- * sair da lista selecionável NÃO apaga o modelo de linhas antigas (Haiku incluso).
+ * sair da lista selecionável NÃO apaga o modelo de linhas antigas (Fable incluso).
  */
 
 import { EFFORT_LEVELS, type EffortLevel } from '@/domain/ai-task-config'
@@ -21,10 +23,10 @@ import { EFFORT_LEVELS, type EffortLevel } from '@/domain/ai-task-config'
 export const DEFAULT_TEXT_MODEL = 'claude-opus-5-5'
 
 /** Modelo default das tarefas Tradução e Extração (ADR-0034) enquanto o admin não escolhe outro. */
-export const DEFAULT_TASK_MODEL = 'claude-sonnet-5'
+export const DEFAULT_TASK_MODEL = 'claude-sonnet-5-5'
 
 /** Famílias que o admin pode escolher, na ordem em que aparecem no select. */
-export const SELECTABLE_FAMILIES = ['opus', 'sonnet', 'fable'] as const
+export const SELECTABLE_FAMILIES = ['opus', 'sonnet', 'haiku'] as const
 export type SelectableFamily = (typeof SELECTABLE_FAMILIES)[number]
 
 /**
@@ -60,11 +62,21 @@ export type CatalogModel = {
 const ALL_CAPS: ModelCaps = { effort: [...EFFORT_LEVELS], adaptiveThinking: true }
 export const FALLBACK_SELECTABLE_MODELS: readonly ModelOption[] = [
   { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', family: 'opus', capabilities: ALL_CAPS },
-  { id: 'claude-sonnet-5', displayName: 'Claude Sonnet 5', family: 'sonnet', capabilities: ALL_CAPS },
-  { id: 'claude-fable-5-1', displayName: 'Claude Fable 5.1', family: 'fable', capabilities: ALL_CAPS },
+  { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5', family: 'sonnet', capabilities: ALL_CAPS },
+  { id: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5', family: 'haiku', capabilities: ALL_CAPS },
 ]
 
 const FAMILY_RE = /^claude-([a-z]+)-/
+
+/**
+ * O modelo aceita `output_config.effort`? Todas as famílias selecionáveis aceitam, menos o Haiku 4.5
+ * (legado, dá 400 com `effort`). Fora das famílias selecionáveis ⇒ não manda (cada modelo no default).
+ * Guarda de LEGADO (o Haiku 4.5 nem é oferecido): o único ponto em que um esforço salvo é descartado
+ * em silêncio, para uma linha antiga não quebrar a chamada.
+ */
+export function acceptsEffort(id: string): boolean {
+  return selectableFamilyOf(id) !== null && !id.startsWith('claude-haiku-4')
+}
 
 /** Família do ID (`claude-opus-5-5` → `opus`), ou `null` se não for uma família selecionável. */
 export function selectableFamilyOf(id: string): SelectableFamily | null {

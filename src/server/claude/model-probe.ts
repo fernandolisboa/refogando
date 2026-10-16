@@ -33,7 +33,8 @@ export class RealModelProbe implements ModelProbe {
         model,
         max_tokens: PROBE_MAX_TOKENS,
         messages: [{ role: 'user', content: 'Responda só: ok' }],
-        ...(thinking ? { thinking } : {}),
+        // `between_tools` ainda fora dos tipos do SDK pinado; a API aceita (ver client.ts).
+        ...(thinking ? { thinking: thinking as Anthropic.ThinkingConfigParam } : {}),
         ...(effort ? { output_config: { effort } } : {}),
       })
       return { kind: 'ok' }

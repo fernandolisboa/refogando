@@ -1162,16 +1162,16 @@ export const enUS: Messages = {
       'New recipes, variations, and the chef conversation.',
     tarefaTraducaoTitulo: 'Translation',
     tarefaTraducaoDescricao:
-      'Recipe translation between pt-BR and en-US. A faithful task: thinking off by default.',
+      'Recipe translation between pt-BR and en-US. A faithful task: thinking off by default where the model allows it.',
     tarefaExtracaoTitulo: 'Ingredient extraction',
     tarefaExtracaoDescricao:
-      'Reads the ingredient list the user pasted. Thinking off by default.',
+      'Reads the ingredient list the user pasted. Thinking off by default where the model allows it.',
     tarefaCardapioTitulo: 'Menu suggestion',
     tarefaCardapioDescricao:
       "Fills the week in the meal planner by picking recipes from the user's collection and the community. Low effort by default.",
     tarefaCenarioTitulo: 'Image scene',
     tarefaCenarioDescricao:
-      'The art director reads the recipe and picks the photo scene before each generated image. Low effort and thinking off by default.',
+      'The art director reads the recipe and picks the photo scene before each generated image. Low effort and thinking off by default where the model allows it.',
     modeloLabel: 'Model',
     modeloForaDaLista: 'in use, no longer listed',
     salvar: 'Save',
@@ -1188,6 +1188,8 @@ export const enUS: Messages = {
     padraoDoModelo: 'Model default',
     thinkingAdaptativo: 'On (adaptive)',
     thinkingDesligado: 'Off',
+    thinkingMinimo: 'Minimal (between_tools)',
+    iaAutoAtualizarLabel: 'Move to the new version of the family on its own (after a test call)',
     iaTarefaErroConfig: 'Invalid setting.',
     erroAjusteNaoSuportado: "This model doesn't offer that setting.",
     erroAjusteRecusado: 'Anthropic rejected this setting for this model.',

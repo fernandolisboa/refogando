@@ -1266,16 +1266,16 @@ export const ptBR = {
       'Receitas novas, variações e a conversa com o chef.',
     tarefaTraducaoTitulo: 'Tradução',
     tarefaTraducaoDescricao:
-      'Tradução de receitas entre pt-BR e en-US. Tarefa fiel: thinking desligado por padrão.',
+      'Tradução de receitas entre pt-BR e en-US. Tarefa fiel: por padrão, thinking desligado quando o modelo permite.',
     tarefaExtracaoTitulo: 'Extração de ingredientes',
     tarefaExtracaoDescricao:
-      'Lê a lista de ingredientes colada pelo usuário. Thinking desligado por padrão.',
+      'Lê a lista de ingredientes colada pelo usuário. Por padrão, thinking desligado quando o modelo permite.',
     tarefaCardapioTitulo: 'Sugestão de cardápio',
     tarefaCardapioDescricao:
       'Monta a semana no Cardápio escolhendo receitas do acervo do usuário e da comunidade. Esforço baixo por padrão.',
     tarefaCenarioTitulo: 'Cenário da imagem',
     tarefaCenarioDescricao:
-      'O diretor de arte lê a receita e escolhe o cenário da foto antes de cada imagem gerada. Esforço baixo e thinking desligado por padrão.',
+      'O diretor de arte lê a receita e escolhe o cenário da foto antes de cada imagem gerada. Por padrão, esforço baixo e thinking desligado quando o modelo permite.',
     modeloLabel: 'Modelo',
     modeloForaDaLista: 'em uso, fora da lista atual',
     salvar: 'Salvar',
@@ -1292,6 +1292,8 @@ export const ptBR = {
     padraoDoModelo: 'Padrão do modelo',
     thinkingAdaptativo: 'Ligado (adaptativo)',
     thinkingDesligado: 'Desligado',
+    thinkingMinimo: 'Mínimo (between_tools)',
+    iaAutoAtualizarLabel: 'Atualizar sozinho para a versão nova da família (após uma chamada de teste)',
     iaTarefaErroConfig: 'Ajuste inválido.',
     erroAjusteNaoSuportado: 'Este modelo não oferece esse ajuste.',
     erroAjusteRecusado: 'A Anthropic recusou esse ajuste para este modelo.',

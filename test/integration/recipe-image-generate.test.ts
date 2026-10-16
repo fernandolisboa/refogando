@@ -592,8 +592,8 @@ describe('/api/recipes/[id]/image/generate — cenário (ADR-0044)', () => {
     // O diretor recebeu a receita delimitada e o modelo/ajuste da tarefa `imageScene` (defaults).
     expect(claude.sceneCalls).toBe(1)
     expect(claude.lastSceneInput?.userPrompt).toContain('Título: Tacos al pastor')
-    expect(claude.lastSceneInput?.model).toBe('claude-sonnet-5')
-    expect(claude.lastSceneInput?.settings).toEqual({ effort: 'low', thinking: 'off' })
+    expect(claude.lastSceneInput?.model).toBe('claude-sonnet-5-5')
+    expect(claude.lastSceneInput?.settings).toEqual({ effort: 'low', thinking: 'betweenTools' })
   })
 
   it('diretor falha ⇒ regras (brasileira ⇒ caseiro) e a imagem sai normalmente', async () => {

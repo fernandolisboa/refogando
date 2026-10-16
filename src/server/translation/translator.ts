@@ -10,7 +10,7 @@
  * lógica testável (prompt, schema, fidelidade) vive no domínio (`translation-prompt.ts`).
  */
 
-import { TASK_DEFAULT_SETTINGS, maxTokensFor, tuningParams, type ModelSettings } from '@/domain/ai-task-config'
+import { defaultSettings, maxTokensFor, tuningParams, type ModelSettings } from '@/domain/ai-task-config'
 import Anthropic from '@anthropic-ai/sdk'
 import { TASK_FALLBACK_MODELS } from '@/server/app-config'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
@@ -53,7 +53,7 @@ export interface Translator {
 
 /**
  * Modelo + ajuste da tradução, lidos A CADA chamada (ADR-0034: escolhidos no admin, tarefa
- * `translation`). Default: Sonnet 5 com thinking desligado (ADR-0030 dec.1/2), ou a env var legada
+ * `translation`). Default: Sonnet 5.5 com thinking no mínimo (ADR-0030 dec.1/2), ou a env var legada
  * `TRANSLATION_MODEL`. `deps.ts` injeta o leitor de `app_config`.
  */
 export type TranslationTaskLoader = () => Promise<{ model: string; settings: ModelSettings }>
@@ -62,7 +62,7 @@ const TRANSLATION_DEADLINE_MS = 50_000
 
 const DEFAULT_TRANSLATION_TASK: TranslationTaskLoader = async () => ({
   model: TASK_FALLBACK_MODELS.translation,
-  settings: TASK_DEFAULT_SETTINGS.translation,
+  settings: defaultSettings('translation', TASK_FALLBACK_MODELS.translation),
 })
 
 /**
@@ -141,10 +141,12 @@ export class RealTranslator implements Translator {
       system: systemPrompt,
       messages: [{ role: 'user' as const, content: userPrompt }],
       output_config: { format: zodOutputFormat(TranslationSchema), ...(effort ? { effort } : {}) },
-      // Thinking do admin (ADR-0034); o default da tarefa é `disabled` EXPLÍCITO (ADR-0030 dec.1):
-      // Sonnet 5 roda adaptive-thinking por OMISSÃO e os tokens de raciocínio dividiriam o teto com o
-      // JSON. Sem temperature/top_p/seed: Opus/Sonnet os rejeitam (400).
-      ...(thinking ? { thinking } : {}),
+      // Thinking do admin (ADR-0034); o default da tarefa DESLIGA o thinking EXPLICITAMENTE (ADR-0030
+      // dec.1), no jeito que o modelo aceita (Sonnet 5.5: `between_tools`; ver `defaultSettings`): por
+      // OMISSÃO ele roda adaptive e os tokens de raciocínio dividiriam o teto com o JSON. Sem
+      // temperature/top_p/seed: os modelos atuais os rejeitam (400). `between_tools` ainda não está nos
+      // tipos do SDK pinado; a API aceita.
+      ...(thinking ? { thinking: thinking as Anthropic.ThinkingConfigParam } : {}),
     }
 
     // Prazo da chamada + reparo, abaixo do `maxDuration = 60` da rota: com o modelo/thinking do admin

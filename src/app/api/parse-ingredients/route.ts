@@ -68,7 +68,7 @@ export async function POST(req: Request): Promise<Response> {
   // Fase 2 (#466): `plan='pro'` + bundle ⇒ teto pro; `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O
   // `cap` thread p/ reserveExtractionSlot (gate atômico).
   const proCaps = cfg.proCaps
-  // ADR-0034: modelo + esforço/thinking da Extração escolhidos no admin (default: Sonnet 5, sem thinking).
+  // ADR-0034: modelo + esforço/thinking da Extração escolhidos no admin (default: Sonnet 5.5, thinking no mínimo via `defaultSettings`).
   const extraction = cfg.aiTasks.extraction
   const model = extraction.model
   const settings = activeSettings('extraction', extraction)

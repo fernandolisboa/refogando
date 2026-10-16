@@ -35,14 +35,17 @@ export type TextModelRates = {
  * Tabela de preço EM CÓDIGO (modelo → taxas/1M de tokens), em USD. **SNAPSHOT de 2026-07-05** — os
  * preços do provedor mudam; por isso GRAVAMOS o `cost_usd` derivado na linha (não recomputamos depois).
  *
- * Cobre os modelos selecionáveis hoje (o mais novo de Opus/Sonnet/Fable, ver `claude-models.ts`) e os
+ * Cobre os modelos selecionáveis hoje (o mais novo de Opus/Sonnet/Haiku, ver `claude-models.ts`) e os
  * que já geraram Receitas (os antigos ficam: a tabela só é lida na hora de gerar, mas não custa nada
  * manter). A lista do admin é DINÂMICA: um modelo novo que ainda não está aqui gera com custo `null`
  * (honesto) até alguém adicionar a linha. `claude-sonnet-5` traz o preço padrão (o introdutório
- * expirou em 2026-08-31). Opus 5.5 / Fable: preços de 2026-09-24.
+ * expirou em 2026-08-31). Opus 5.5 / Fable: preços de 2026-09-24. Sonnet 5.5 / Haiku 5.5: 2026-10-16.
  */
 export const TEXT_PRICE_TABLE: Record<string, TextModelRates> = {
   'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20 },
+  'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10 },
+  // Haiku 5.5: preço de prompt até 100K tokens (acima, $0,50/$2,50); os prompts do app ficam bem abaixo.
+  'claude-haiku-5-5': { inputPer1M: 0.1, outputPer1M: 0.5 },
   'claude-opus-5': { inputPer1M: 5, outputPer1M: 25 },
   'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50 },
   'claude-fable-5': { inputPer1M: 10, outputPer1M: 50 },

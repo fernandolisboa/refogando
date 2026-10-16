@@ -313,8 +313,8 @@ describe('Sugestão de cardápio — a prévia', () => {
     expect(await getDb().select().from(mealPlanEntry)).toHaveLength(0)
 
     const [event] = await ledger(me.userId)
-    expect(event).toMatchObject({ model: 'claude-sonnet-5', inputTokens: 1000, outputTokens: 200 })
-    expect(Number(event.costUsd)).toBeCloseTo((1000 * 3 + 200 * 15) / 1e6, 6)
+    expect(event).toMatchObject({ model: 'claude-sonnet-5-5', inputTokens: 1000, outputTokens: 200 })
+    expect(Number(event.costUsd)).toBeCloseTo((1000 * 2 + 200 * 10) / 1e6, 6)
   })
 
   it('com onlyEmpty=false, a Receita já planejada naquele mesmo dia × refeição cai da prévia', async () => {

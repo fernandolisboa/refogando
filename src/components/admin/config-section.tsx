@@ -9,6 +9,8 @@
  * salvo para ele (ou o default da tarefa). As opções de esforço/thinking seguem as capacidades que a
  * Models API informa para o modelo; o que ela não informa (ex.: se o thinking DESLIGA) o servidor
  * confirma com uma chamada de teste ao salvar, e a recusa volta com o motivo da Anthropic.
+ * "Atualizar sozinho" (ligado por padrão) deixa o cron diário trocar a tarefa para a versão
+ * nova da mesma família depois de uma chamada de teste aceita (`server/claude/model-auto-upgrade.ts`).
  *
  * ADR-0010: consome os ROUTE HANDLERS `GET/PUT /api/admin/config` e `GET /api/admin/models` via
  * `fetch` (NÃO Server Action). O servidor é a verdade: a lista vem de `/api/admin/models` e o PUT
@@ -158,6 +160,7 @@ function TaskBlock({
 
   const [model, setModel] = useState(state.model)
   const [settings, setSettings] = useState<ModelSettings>(() => activeSettings(task, state))
+  const [auto, setAuto] = useState(state.auto)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle')
   const [error, setError] = useState<{ key: ErrorKey; detail?: string } | null>(null)
@@ -190,7 +193,7 @@ function TaskBlock({
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ aiTasks: { [task]: { model, settings } } }),
+        body: JSON.stringify({ aiTasks: { [task]: { model, settings, auto } } }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null
@@ -219,6 +222,19 @@ function TaskBlock({
         </h3>
         <p className="text-sm text-muted">{m[copy.descricao]}</p>
       </div>
+
+      <label className="flex items-center gap-2 text-sm font-medium text-fg">
+        <input
+          type="checkbox"
+          checked={auto}
+          onChange={(e) => {
+            setAuto(e.target.checked)
+            reset()
+          }}
+          className="size-4 rounded border-border"
+        />
+        {m.iaAutoAtualizarLabel}
+      </label>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <label className="flex flex-col gap-1 text-sm font-medium text-fg">
@@ -269,6 +285,7 @@ function TaskBlock({
             <option value="default">{m.padraoDoModelo}</option>
             {adaptiveOffered && <option value="adaptive">{m.thinkingAdaptativo}</option>}
             <option value="off">{m.thinkingDesligado}</option>
+            <option value="betweenTools">{m.thinkingMinimo}</option>
           </select>
         </label>
 

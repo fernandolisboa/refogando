@@ -12,7 +12,7 @@ import {
 } from '@/domain/ai-task-config'
 import { appConfig } from '@/db/schema'
 import { loadAppConfig } from '@/server/app-config'
-import { selectableFamilyOf } from '@/domain/claude-models'
+import { acceptsEffort } from '@/domain/claude-models'
 import { parseImageGenConfig, type ImageGenConfig } from '@/domain/image-gen-config'
 import { parseRecipeGenCapByRole, type RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import { parseExtractionCapByRole, type ExtractionCapByRole } from '@/domain/extraction-cap-config'
@@ -36,7 +36,7 @@ import { APP_CONFIG_TAG, RECIPE_OF_WEEK_POPULAR_TAG, expireCacheTag } from '@/se
  * EIXOS INDEPENDENTES de config, atualizáveis em separado (cada UI envia só o seu):
  *  - `defaultModel` (#5) — modelo da Geração (legado; a UI manda `aiTasks.generation`). Tratado como a
  *    tarefa Geração com o ajuste já salvo para o modelo: mesmos portões do `aiTasks` abaixo (modelos
- *    SELECIONÁVEIS segundo a Models API, com lista pinada de fallback; Haiku não é selecionável).
+ *    SELECIONÁVEIS segundo a Models API, com lista pinada de fallback: Opus, Sonnet e Haiku).
  *  - `imageGen { enabled, model, dailyCapByRole, sceneDirector? }` (#134, ADR-0044) — geração de imagem
  *    por IA (aba IA, `/admin/ia`). A geração lê estes valores no lugar dos defaults fixos (`image-quota.ts`
  *    → `image-gen-config.ts`). `sceneDirector` (o diretor de arte do cenário) é opcional no corpo.
@@ -59,10 +59,11 @@ import { APP_CONFIG_TAG, RECIPE_OF_WEEK_POPULAR_TAG, expireCacheTag } from '@/se
  *    de cota. `null` LIMPA a tabela pro (volta ao byte-idêntico free); objeto ⇒ validado (tudo-ou-nada).
  *    NÃO ativa cobrança: só habilita um usuário `plan='pro'` (concedido à parte) a pegar tetos maiores.
  *
- *  - `aiTasks { [tarefa]: { model, settings } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
+ *  - `aiTasks { [tarefa]: { model, settings, auto? } }` (ADR-0034) — modelo + esforço/thinking por tarefa de
  *    IA de texto (Geração, Tradução, Extração, Sugestão de cardápio — ADR-0036, Cenário da imagem — ADR-0044), validados por
  *    capacidades + chamada de teste. O jsonb é regravado sob lock da linha (salvamentos concorrentes
- *    não se sobrescrevem).
+ *    não se sobrescrevem). `auto` (opcional, boolean) liga/desliga a troca automática para a versão nova
+ *    da família (cron `/api/cron/ai-models`); ausente ⇒ mantém.
  *
  * PUT aceita `defaultModel` E/OU `aiTasks` E/OU `imageGen` E/OU `recipeGenCapByRole` E/OU `webSearch` E/OU
  * `catalogDisclosure` E/OU `recipeOfWeek` E/OU `proCaps` (ao menos um); valida cada campo PRESENTE;
@@ -251,15 +252,15 @@ export async function PUT(req: Request): Promise<Response> {
 
   // Validado DEPOIS das checagens baratas dos outros eixos (a chamada de teste custa e leva segundos) e
   // ANTES da transação de escrita (não segura lock durante ela).
-  const aiValidated: Array<{ task: AiTask; model: string; settings: ModelSettings }> = []
+  const aiValidated: Array<{ task: AiTask; model: string; settings: ModelSettings; auto?: boolean }> = []
   if (aiUpdates.size > 0 || legacyGenerationModel !== null) {
     const cfg = await loadAppConfig(getDb())
     const tasks: Array<readonly [AiTask, unknown]> = [...aiUpdates.entries()]
     if (legacyGenerationModel !== null && !aiUpdates.has('generation')) {
-      // `defaultModel` legado: o ajuste salvo para o modelo (ou o default da tarefa), sem `effort` fora
-      // de Opus/Sonnet/Fable — o mesmo que a Geração manda em runtime (ex.: re-salvar um Haiku legado).
+      // `defaultModel` legado: o ajuste salvo para o modelo (ou o default da tarefa), sem `effort` onde o
+      // modelo não aceita — o mesmo que a Geração manda em runtime (ex.: re-salvar um Haiku 4.5 legado).
       const s = activeSettings('generation', { ...cfg.aiTasks.generation, model: legacyGenerationModel })
-      const settings = selectableFamilyOf(legacyGenerationModel) ? s : { ...s, effort: null }
+      const settings = acceptsEffort(legacyGenerationModel) ? s : { ...s, effort: null }
       tasks.push(['generation', { model: legacyGenerationModel, settings }])
     }
     // Tarefas validadas em paralelo: cada chamada de teste pode levar segundos.
@@ -282,7 +283,7 @@ export async function PUT(req: Request): Promise<Response> {
           { status: 400 },
         )
       }
-      aiValidated.push({ task, model: res.model, settings: res.settings })
+      aiValidated.push({ task, model: res.model, settings: res.settings, auto: res.auto })
       if (task === 'generation') set.defaultModel = res.model
     }
   }
@@ -300,7 +301,7 @@ export async function PUT(req: Request): Promise<Response> {
         await tx.insert(appConfig).values({ id: true }).onConflictDoNothing()
         const [row] = await tx.select({ aiTasks: appConfig.aiTasks }).from(appConfig).for('update')
         let stored = parseStoredAiTasks(row?.aiTasks)
-        for (const u of aiValidated) stored = withTaskSettings(stored, u.task, u.model, u.settings)
+        for (const u of aiValidated) stored = withTaskSettings(stored, u.task, u.model, u.settings, u.auto)
         set.aiTasks = stored
       }
       await tx

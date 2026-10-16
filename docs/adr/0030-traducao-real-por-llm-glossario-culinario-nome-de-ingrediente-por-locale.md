@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Revisado por ADR-0046 (2026-10-16):** o default da tradução passou a `claude-sonnet-5-5`, que recusa `thinking: disabled`; o default da tarefa desliga com `thinking: between_tools`. A versão troca sozinha dentro da família após chamada de teste.
+
 > **Nota (ADR-0033, 2026-09-24):** Fable agora é selecionável para a **Geração**, não para a tradução. A tradução segue em `claude-sonnet-5` com `thinking: disabled`, que Opus 5.5 e Fable recusam (400): subir a tradução para eles exige tirar esse parâmetro.
 >
 > **Nota (ADR-0034, 2026-09-24):** modelo, effort e thinking da tradução agora são configuráveis no admin (`app_config.ai_tasks`). O default segue `claude-sonnet-5` com thinking desligado; escolher um modelo que não desliga o thinking é recusado pela chamada de teste ao salvar.

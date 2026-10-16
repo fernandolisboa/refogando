@@ -2,6 +2,8 @@
 
 Status: aceito
 
+> **Revisado por ADR-0046 (2026-10-16):** o default do diretor de arte passou a `claude-sonnet-5-5`, que recusa `thinking: disabled`; o default da tarefa desliga com `thinking: between_tools` (esforço baixo). A versão troca sozinha dentro da família após chamada de teste.
+
 O dono achou as imagens geradas "todas muito parecidas" e pediu que o cenário acompanhasse o prato: "um prato contemporâneo era melhor ser retratado numa mesa de restaurante mais refinado". O ADR-0029 dec.5 tinha trocado o preâmbulo único por quatro eixos (enquadramento, luz, mood, superfície) sorteados por hash da receita, mais uma convenção visual por cozinha. Na prática os eixos eram independentes do prato e entre si (uma superfície de mármore com mood "rústico"), não havia eixo de **cenário** nenhum, e o "editorial" fixo do preâmbulo puxava toda foto para a mesma estética de revista. Termos no `CONTEXT.md` (**Cenário da imagem**, **Diretor de arte**, **Nota visual**). Substitui em parte o ADR-0029 dec.5; mantém o invariante do ADR-0022 (o prato é sempre o sujeito). Relaciona: ADR-0034 (configuração de IA por tarefa), #548/#551 (geração tolerante: uma falha acessória nunca derruba a principal), #463 (custo da Extração fora do ledger).
 
 ## Decisões
