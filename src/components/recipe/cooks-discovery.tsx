@@ -6,8 +6,8 @@
  * nos dois. Cartões reusam `CookCard`.
  *
  * Modelo B / cache: a PÁGINA (server) semeia a lista GLOBAL (viewer-independente → anon-cacheável). AQUI,
- * no cliente, se LOGADO re-busca a 1ª página personalizada (`/api/cooks` com cookie → exclui você +
- * já-seguidos); ANÔNIMO mantém o seed (sem fetch no estado-seed). Busca é cookie-free (viewer-independente).
+ * no cliente, se LOGADO re-busca a 1ª página personalizada (`/api/cooks` com cookie → exclui você; os
+ * já-seguidos ficam, com o botão em "Seguindo"); ANÔNIMO mantém o seed (sem fetch no estado-seed). Busca é cookie-free (viewer-independente).
  *
  * Anti-corrida: um `token` por (modo/termo/cozinha/login) — respostas de uma assinatura superada são
  * descartadas. `authed` (useSession) escolhe Seguir-inline vs bounce-pro-sign-in (no `CookCard`).

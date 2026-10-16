@@ -1,9 +1,9 @@
 'use client'
 /**
  * Botão Seguir COMPACTO do trilho "Cozinheiros pra seguir" (#278) — versão densa do botão do perfil
- * (`ProfileFollowSection`), SEM contador de seguidores e SEM GET-no-mount: o trilho já EXCLUI os
- * já-seguidos no servidor, então todo item nasce "não-seguindo" (`initialFollowing=false`) e o estado é
- * semeado por prop (zero fetch por item — evita N requisições num trilho de N cartões).
+ * (`ProfileFollowSection`), SEM contador de seguidores e SEM GET-no-mount: o estado é semeado por prop
+ * (zero fetch por item — evita N requisições num trilho de N cartões). O trilho EXCLUI os já-seguidos no
+ * servidor (todo item nasce "não-seguindo"); o diretório `/cooks` logado os mantém com `initialFollowing`.
  *
  * Reusa o seam `useFollowToggle` (mesma lógica otimista + revert do perfil). Otimismo no clique; no erro
  * reverte e mostra um aviso neutro curto. NÃO remove o cartão ao seguir (evita salto de layout) — só

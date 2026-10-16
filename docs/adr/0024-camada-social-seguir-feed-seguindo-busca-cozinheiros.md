@@ -72,3 +72,11 @@ Paridade com o protótipo de telas largas (`refogando-3-colunas-telas-maiores`, 
 - **`noindex` é por aplicação do Modelo B, NÃO por escala.** Indexar `/cooks` seria uma decisão **deliberada futura** (emendar esta ADR + sitemap dos Perfis) de fazer da descoberta de gente um canal de SEO — **nunca** um gatilho por contagem de usuários. São **três lógicas distintas de indexação** no produto: **Receita** = *default-open* por item (ADR-0020); **catálogo** = por **curadoria** (ADR-0026); **Descoberta de Cozinheiros** = **decisão deliberada à parte** (esta).
 - **Entradas:** o CTA do empty state do Feed Seguindo (`seguindoFeed.vazioCta`) e o **"Ver todos"** do trilho "Cozinheiros em alta" passam a apontar pra `/cooks` (antes sem destino).
 - **Reuso:** `loadRecommendedCooks` (#278) e `searchCooks` (#269/#279) ganham **filtro de Cozinha + cursor keyset**; UI reusa a faceta de Cozinha da Busca de receitas, o cook-card e `useFollowToggle`. Glossário: novo termo **Descoberta de Cozinheiros** (CONTEXT.md).
+
+## Emenda (2026-10-16) — no diretório `/cooks`, os já-seguidos ficam (marcados "Seguindo")
+
+Relato do dono: um usuário logado via a lista da `/cooks` pintar (seed global do SSR) e, logo depois, sumir para "Ainda não há cozinheiros para mostrar". Causa: a página personalizada do logado excluía você **e** os já-seguidos (emenda de 2026-06-29); quem já segue todos os outros Cozinheiros recebia uma página vazia. Com poucos Cozinheiros isso é o caso comum, não a borda. Decisão (reversível, sem migração):
+
+- **`/cooks` logado exclui só você.** Os já-seguidos continuam na lista, na mesma ordem de popularidade, com o botão já em **"Seguindo"** (dá pra deixar de seguir dali). O DTO ganha `following?: boolean`, presente só nessa resposta per-viewer (`/api/cooks` com sessão, `no-store`); o seed global/anônimo e o trilho não carregam a chave. `following` é rótulo, não entra no ranking nem no cursor keyset.
+- **O trilho "Cozinheiros em alta" (`/api/discovery/cooks`) não muda:** segue excluindo você e os já-seguidos, porque é vitrine de quem seguir, não diretório.
+- Fica como está (follow-up, se incomodar): a **busca** por nome/@handle é cookie-free (viewer-independente, cacheável) e por isso mostra "Seguir" mesmo para quem você já segue; e o seed global ainda pinta o seu próprio cartão por um instante antes da página personalizada chegar.

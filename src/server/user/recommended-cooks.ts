@@ -61,6 +61,12 @@ function cozinhaFilterSql(cozinhas: string[]) {
  * (não `IN`) é à prova de conjunto-vazio (sem o footgun do `IN ()`). Cozinheiro soft-deletado some via
  * `u.deleted_at IS NULL`.
  *
+ * `includeFollowed` (diretório `/cooks`, emenda 2026-10-16 da ADR-0024): os já-seguidos FICAM na lista,
+ * marcados com `following: true` (o cartão nasce "Seguindo"); só o próprio sai. Sem isso, quem já segue
+ * todo mundo via o diretório esvaziar ("Ainda não há cozinheiros") logo depois do seed global. O trilho
+ * "Cozinheiros em alta" segue excluindo (é vitrine de quem seguir, não diretório). A ORDEM não muda (mesmo
+ * keyset): `following` é só um rótulo per-viewer, nunca entra no ranking nem no cursor.
+ *
  * GATE DE DADOS (Modelo B / #269): o SELECT projeta SÓ `name/handle/image/recipe_count` — `id` NUNCA sai
  * (a recência sai como `::text` só pro cursor keyset; o score é interno ao ranking), e `email`/`role`
  * jamais entram. `::int`/`::float8` nos agregados garantem number (não a string de um bigint/numeric). A
@@ -79,6 +85,8 @@ export async function loadRecommendedCooks(
   db: Database,
   args: {
     viewerId?: string
+    /** Logado: mantém os já-seguidos (marcados `following`) em vez de excluí-los. Ignorado sem `viewerId`. */
+    includeFollowed?: boolean
     limit: number
     requestLocale?: string
     cozinhas?: string[]
@@ -86,6 +94,7 @@ export async function loadRecommendedCooks(
   },
 ): Promise<RecommendedCooksPage> {
   const { viewerId, limit } = args
+  const markFollowed = viewerId !== undefined && args.includeFollowed === true
   const requestLocale = args.requestLocale ?? DEFAULT_LOCALE
   const cozinhas = args.cozinhas ?? []
   const cursor = args.cursor ?? null
@@ -97,11 +106,19 @@ export async function loadRecommendedCooks(
   const C = avg ?? 3.0
 
   // Exclusões per-viewer SÓ quando logado; anônimo/global NÃO binda NULL (omite as cláusulas).
-  const viewerExclusionSql = viewerId
-    ? sql`AND u.id <> ${viewerId} AND NOT EXISTS (
+  const viewerExclusionSql = !viewerId
+    ? sql``
+    : markFollowed
+      ? sql`AND u.id <> ${viewerId}`
+      : sql`AND u.id <> ${viewerId} AND NOT EXISTS (
         SELECT 1 FROM user_follow uf WHERE uf.follower_id = ${viewerId} AND uf.followee_id = u.id
       )`
-    : sql``
+  // Rótulo per-viewer (só no diretório logado): `u.id` está no GROUP BY ⇒ o EXISTS correlato é válido.
+  const followingSql = markFollowed
+    ? sql`EXISTS (
+        SELECT 1 FROM user_follow uf WHERE uf.follower_id = ${viewerId} AND uf.followee_id = u.id
+      )`
+    : sql`false`
 
   // Keyset all-DESC (#308): a próxima página = o que vem DEPOIS do cursor = a tupla lexicograficamente
   // MENOR. Score/recency são AGREGADOS → o ranking vai numa CTE pra a comparação de linha valer no
@@ -120,6 +137,7 @@ export async function loadRecommendedCooks(
     recipe_count: number
     score: number
     recency_text: string
+    following: boolean
   }
   // Probe `limit+1`: descobre "tem próxima página?" sem um COUNT (mesma tese do feed/follow.ts).
   const rows = await db.execute<Row>(sql`
@@ -148,7 +166,8 @@ export async function loadRecommendedCooks(
               END
             )
         )::numeric, 6)::float8 AS score,
-        max(r.created_at) AS recency
+        max(r.created_at) AS recency,
+        ${followingSql} AS following
       FROM users u
       JOIN recipe r
         ON r.owner_id = u.id AND ${eligiblePublicRecipeSqlFragment('r')} AND ${cozinhaFilterSql(cozinhas)}
@@ -180,7 +199,8 @@ export async function loadRecommendedCooks(
       ranked.image AS image,
       ranked.recipe_count AS recipe_count,
       ranked.score AS score,
-      ranked.recency::text AS recency_text
+      ranked.recency::text AS recency_text,
+      ranked.following AS following
     FROM ranked
     WHERE ${keysetSql}
     ORDER BY ranked.score DESC, ranked.recency DESC, ranked.handle DESC
@@ -212,6 +232,7 @@ export async function loadRecommendedCooks(
       image: row.image,
       recipeCount: row.recipe_count,
       recipes: recipesByHandle.get(row.handle) ?? [],
+      ...(markFollowed ? { following: row.following === true } : {}),
     })),
     nextCursor,
   }

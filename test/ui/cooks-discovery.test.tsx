@@ -109,6 +109,42 @@ describe('CooksDiscovery (#308)', () => {
     })
   })
 
+  it('logado: a página personalizada troca o seed e o já-seguido nasce "Seguindo"', async () => {
+    authMock.current = {
+      data: { user: { id: 'u1' } },
+      error: null,
+      isPending: false,
+      isRefetching: false,
+      refetch: () => {},
+    }
+    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          cooks: [
+            { ...seedCook('seed-a'), following: true },
+            { ...seedCook('seed-b'), following: false },
+          ],
+          nextCursor: null,
+        }),
+        { status: 200 },
+      ),
+    )
+    renderDiscovery()
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/api/cooks')
+    const cardOf = (name: string) => screen.getByText(name).closest('div')!.parentElement!.parentElement!
+    // MESMO handle do seed: sem remontar o botão, o toggle ficaria preso no "Seguir" do seed.
+    await waitFor(() =>
+      expect(
+        within(cardOf('Cook seed-a')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguindo }),
+      ).toHaveAttribute('aria-pressed', 'true'),
+    )
+    expect(
+      within(cardOf('Cook seed-b')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguir }),
+    ).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByText(ptBR.descobrirCozinheiros.vazioLista)).not.toBeInTheDocument()
+  })
+
   it('anon: "Seguir" do cartão é um LINK pro sign-in com returnTo (bounce, não toggle)', () => {
     renderDiscovery()
     const card = screen.getByText('Cook seed-a').closest('div')!.parentElement!.parentElement!

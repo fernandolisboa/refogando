@@ -23,6 +23,11 @@ export type RecommendedCook = {
    * `owner_id`/`email`/`role` do dono nem o `image_id`/`recipe_translation.id` interno.
    */
   recipes: RecommendedCookRecipe[]
+  /**
+   * Só no diretório `/cooks` LOGADO (`includeFollowed`): o viewer já segue este Cozinheiro ⇒ o cartão
+   * nasce "Seguindo". Ausente no seed global/anônimo e no trilho (que exclui os já-seguidos).
+   */
+  following?: boolean
 }
 
 /**

@@ -22,7 +22,7 @@ export function useFollowToggle({
   initialFollowing = false,
 }: {
   handle: string
-  /** Estado inicial. O trilho semeia `false` (já-seguidos são excluídos ⇒ sem GET por item). */
+  /** Estado inicial, semeado pelo servidor (sem GET por item): o trilho exclui os já-seguidos ⇒ `false`. */
   initialFollowing?: boolean
 }) {
   const [isFollowing, setIsFollowing] = useState(initialFollowing)
