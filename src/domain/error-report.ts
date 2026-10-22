@@ -228,7 +228,9 @@ const BACKTICK_RE = /`[^`]*`/g
 const PROPERTY_CONTEXT_RE = /(?:reading|setting|property) $/
 const IDENTIFIER_RE = /^[A-Za-z_$][\w$.]{0,40}$/
 // Chave forjada e tag forjada: `msg` não pode trazer `origem=servidor`, `tipo=hidratacao`, `digest=…` nem
-// `[erro]` que casem as buscas por substring de `docs/observabilidade.md`. `=` vira `:`, `[erro]` vira `(erro)`.
+// `[erro]` que casem as buscas por substring de `docs/observabilidade.md`. `[erro]` vira `(erro)` logo no
+// começo; `=` vira `:` só no FIM, depois do token (o `TOKEN_RE` inclui `=`: trocar antes partiria
+// `sid=<segredo>` e o padding base64 em pedaços curtos que escapariam da máscara).
 const KEY_VALUE_RE = /=/g
 const TAG_RE = /\[erro\]/gi
 const URL_RE = /\b[a-z][a-z0-9+.-]{1,15}:\/\/[^\s"'<>]*/gi
@@ -240,6 +242,8 @@ const EMAIL_RE = /[\p{L}\p{N}_.+%-]{1,64}@[\p{L}\p{N}_-]{1,63}(?:\.[\p{L}\p{N}_-
 // O que sobrou com `@` depois do e-mail: `maria@gmail` (sem TLD) ⇒ `<email>`; `@maria_silva` solto ⇒ `<handle>`.
 // O lookbehind só deixa começar no início de uma palavra, então cada palavra é varrida uma vez (linear).
 const AT_WORD_RE = /(?<![^\s"'`<>()[\]{},;])[^\s"'`<>()[\]{},;]*@[^\s"'`<>()[\]{},;]*/gu
+// Pacote com escopo / alias de import (`@radix-ui/react-dialog`, `@/components/x`): é código, não handle.
+const SCOPED_PACKAGE_RE = /^@[\w.-]*\//
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
 const TOKEN_RE = /[A-Za-z0-9_\-+/=.]{24,}/g
 const NUMBER_RE = /\+?\(?\d[\d\s().\-/]{2,}\d/g
@@ -250,10 +254,10 @@ const NUMBER_RE = /\+?\(?\d[\d\s().\-/]{2,}\d/g
  * interpolar dado de usuário em `throw new Error(…)` no cliente — a sanitização é a rede, não o contrato.
  *
  * Ordem: corta em 1000 → `Minified React error #N` vira `React #N` (o resto são args da URL do React) →
- * controles viram espaço → `=` vira `:` e `[erro]` vira `(erro)` (nada de chave/tag forjada) → texto entre
+ * controles viram espaço → `[erro]` vira `(erro)` (nada de tag forjada) → texto entre
  * aspas some (duplas e crases sempre; simples também, exceto o identificador curto depois de
  * `reading `/`setting `/`property `) → URL, caminho, e-mail, palavra com `@` (`<email>`/`<handle>`), UUID,
- * token, número longo → espaços colapsados → ≤160 com `…`.
+ * token, número longo → `=` vira `:` (nada de chave forjada) → espaços colapsados → ≤160 com `…`.
  */
 export function sanitizeErrorMessage(raw: unknown): string {
   if (typeof raw !== 'string' || raw === '') return ''
@@ -262,7 +266,6 @@ export function sanitizeErrorMessage(raw: unknown): string {
   if (react) return `React #${react[1]}`
   s = s
     .replace(CONTROL_RE, ' ')
-    .replace(KEY_VALUE_RE, ':')
     .replace(TAG_RE, '(erro)')
     .replace(DOUBLE_QUOTED_RE, '"…"')
     .replace(BACKTICK_RE, '`…`')
@@ -274,10 +277,13 @@ export function sanitizeErrorMessage(raw: unknown): string {
     .replace(URL_RE, '<url>')
     .replace(PATH_RE, '$1<url>')
     .replace(EMAIL_RE, '<email>')
-    .replace(AT_WORD_RE, (m: string) => (m === '@' ? m : m.startsWith('@') ? '<handle>' : '<email>'))
+    .replace(AT_WORD_RE, (m: string) =>
+      m === '@' || SCOPED_PACKAGE_RE.test(m) ? m : m.startsWith('@') ? '<handle>' : '<email>',
+    )
     .replace(UUID_RE, '<id>')
     .replace(TOKEN_RE, '<token>')
     .replace(NUMBER_RE, (m: string) => (m.replace(/\D/g, '').length >= 4 ? '<num>' : m))
+    .replace(KEY_VALUE_RE, ':')
     .replace(/\s+/g, ' ')
     .trim()
   return s.length > ERROR_MESSAGE_MAX ? `${s.slice(0, ERROR_MESSAGE_MAX - 1).trimEnd()}…` : s

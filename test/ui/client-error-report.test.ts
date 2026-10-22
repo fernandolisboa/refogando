@@ -83,6 +83,7 @@ describe('reportClientError', () => {
     const opts = { enabled: true, send, storage: null, pathname: '/pt-BR' }
     expect(reportClientError('boundary', Object.assign(new Error('x'), { name: 'ChunkLoadError' }), opts)).toBe(false)
     expect(reportClientError('boundary', new Error('Loading chunk 9 failed.'), opts)).toBe(false)
+    expect(reportClientError('boundary', new Error('Failed to load chunk /_next/static/chunks/a.js'), opts)).toBe(false)
     expect(send).not.toHaveBeenCalled()
   })
 

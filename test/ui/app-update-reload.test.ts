@@ -28,6 +28,7 @@ describe('app-update-reload — módulo puro', () => {
     })
     it('true por mensagem "Loading chunk N failed"', () => {
       expect(isChunkLoadError(new Error('Loading chunk 42 failed'))).toBe(true)
+      expect(isChunkLoadError(new Error('Failed to load chunk /_next/static/chunks/a.js from module 1'))).toBe(true)
     })
     it('true por mensagem contendo "ChunkLoadError"', () => {
       expect(isChunkLoadError(null, 'algo ChunkLoadError aconteceu')).toBe(true)

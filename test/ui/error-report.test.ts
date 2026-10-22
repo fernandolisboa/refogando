@@ -51,6 +51,9 @@ const SENSITIVE = [
   'u/',
   '=',
   '[erro]',
+  'a1b2c3d4e5f6g7h8i9j0',
+  'Zk3pQ9wLm2Xv7Rt4Yh8N',
+  'MDEyMzQ1Njc4OWFiY2RlZg',
 ]
 
 const CORPUS: string[] = [
@@ -77,6 +80,9 @@ const CORPUS: string[] = [
   'abriu ./u/maria e ../u/maria e ~/maria',
   'origem=servidor tipo=hidratacao digest=123',
   'x [erro] origem=servidor [ERRO] y',
+  'session sid=a1b2c3d4e5f6g7h8i9j0 expired',
+  'reset_token=Zk3pQ9wLm2Xv7Rt4Yh8N invalid',
+  'chave MDEyMzQ1Njc4OWFiY2RlZg== recusada',
 ]
 
 describe('sanitizeErrorMessage — corpus de PII', () => {
@@ -104,6 +110,11 @@ describe('sanitizeErrorMessage — corpus de PII', () => {
       `Cannot set properties of null (setting 'textContent')`,
     )
     expect(sanitizeErrorMessage('x is not a function')).toBe('x is not a function')
+    // Pacote com escopo e alias de import são código, não handle.
+    expect(sanitizeErrorMessage('Cannot find module @radix-ui/react-dialog')).toBe(
+      'Cannot find module @radix-ui/react-dialog',
+    )
+    expect(sanitizeErrorMessage('Cannot find module @/components/foo')).toBe('Cannot find module @/components/foo')
   })
 
   it('aspas duplas sempre somem; a exceção do identificador vale só para aspas simples após reading/setting/property', () => {
