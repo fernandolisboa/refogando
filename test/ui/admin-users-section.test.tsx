@@ -35,11 +35,9 @@ function user(over: Partial<AdminUserListItem>): AdminUserListItem {
     role: 'usuario',
     plan: 'free',
     status: 'ativa',
-    emailVerified: true,
     locale: 'pt-BR',
     createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
     lastSeenAt: null,
-    pendingSignupAt: null,
     pendingPurgeAt: null,
     deletedAt: null,
     imageGenBlocked: false,
@@ -104,7 +102,6 @@ describe('UsersSection — lista', () => {
             handle: 'pendente-abc',
             email: 'caio@exemplo.com',
             status: 'pendente',
-            emailVerified: false,
             pendingPurgeAt: new Date(Date.now() + 10 * 3600_000 - 60_000).toISOString(),
           }),
           user({ id: 'u3', name: 'Bia Reis', email: 'bia@exemplo.com', role: 'curador', plan: 'pro' }),
@@ -154,6 +151,31 @@ describe('UsersSection — lista', () => {
     // O debounce não dispara uma consulta por tecla.
     const withQ = fetchMock.mock.calls.filter(([url]) => String(url).includes('q='))
     expect(withQ.length).toBe(1)
+  })
+
+  it('página além da última depois de a lista encolher volta para a última', async () => {
+    const fetchMock = mockFetch((url) => {
+      const pg = Number(url.searchParams.get('page'))
+      // Pág. 1: 26 contas (há pág. 2). Pág. 2: a lista encolheu para 25 e a pág. 2 veio vazia.
+      return pg === 1 ? ok(page([user({})], 26)) : ok({ ...page([], 25), page: 2 })
+    })
+    renderSection()
+    const u = userEvent.setup()
+    await u.click(await screen.findByRole('button', { name: new RegExp(A.usuariosProxima) }))
+    await waitFor(() => {
+      const pages = fetchMock.mock.calls.map(([url]) => new URL(String(url), 'http://x').searchParams.get('page'))
+      expect(pages).toEqual(['1', '2', '1'])
+    })
+    expect(await screen.findByText('ana@exemplo.com', { selector: 'table *' })).toBeInTheDocument()
+  })
+
+  it('cadastro pendente com o prazo vencido não mostra "expira em 0 h"', async () => {
+    mockFetch(() =>
+      ok(page([user({ status: 'pendente', pendingPurgeAt: new Date(Date.now() - 3600_000).toISOString() })])),
+    )
+    renderSection()
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText(A.usuariosStatusPendente)).toBeInTheDocument()
   })
 
   it('lista vazia e erro de carga com "Tentar de novo"', async () => {

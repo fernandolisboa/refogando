@@ -10,7 +10,7 @@
  * Email é dado pessoal e só aparece aqui, para admin. Nada desta tela vai a log. Cores: só tokens AA da #54;
  * sem erva (exclusiva do selo do Catálogo) e sem âmbar (exclusivo do aviso de restrição), ADR-0015.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Copy, ExternalLink, Search } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
@@ -127,6 +127,12 @@ export function UsersSection() {
         const body = (await res.json()) as AdminUserListPage
         setNow(Date.now())
         setLoaded({ key, data: body })
+        // A lista encolheu (papel mudou, conta saiu do filtro) e a página atual ficou além da última:
+        // volta para a última página que existe, em vez de "Mostrando 51–50 de 50" sobre uma lista vazia.
+        const last = Math.max(1, Math.ceil(body.total / body.pageSize))
+        if (body.users.length === 0 && body.total > 0 && body.page > last) {
+          setParams((p) => (p.page === params.page ? { ...p, page: last } : p))
+        }
       })
       .catch(() => {
         if (!ctrl.signal.aborted) setLoaded({ key, data: null })
@@ -147,11 +153,21 @@ export function UsersSection() {
   const [nextRole, setNextRole] = useState<Role>('usuario')
   const [saving, setSaving] = useState(false)
   const [roleStatus, setRoleStatus] = useState<
-    'done' | 'erroPapelInvalido' | 'erroNaoAplicado' | 'usuariosPapelProprio' | 'erroGenerico' | null
+    | 'done'
+    | 'erroPapelInvalido'
+    | 'erroNaoAplicado'
+    | 'usuariosPapelProprio'
+    | 'usuariosPapelContaInativa'
+    | 'erroGenerico'
+    | null
   >(null)
   const [copied, setCopied] = useState(false)
 
-  function open(u: AdminUserListItem) {
+  // Quem abriu a gaveta (a gaveta é controlada, sem SheetTrigger): o foco volta pra ele ao fechar.
+  const openerRef = useRef<HTMLElement | null>(null)
+
+  function open(u: AdminUserListItem, opener?: HTMLElement) {
+    openerRef.current = opener ?? null
     setSelected(u)
     setNextRole(u.role)
     setRoleStatus(null)
@@ -176,13 +192,16 @@ export function UsersSection() {
             ? 'erroPapelInvalido'
             : body?.error === 'papel_proprio'
               ? 'usuariosPapelProprio'
-              : body?.error === 'papel_nao_aplicado'
-                ? 'erroNaoAplicado'
-                : 'erroGenerico',
+              : body?.error === 'papel_conta_inativa'
+                ? 'usuariosPapelContaInativa'
+                : body?.error === 'papel_nao_aplicado'
+                  ? 'erroNaoAplicado'
+                  : 'erroGenerico',
         )
         return
       }
-      setSelected({ ...selected, role: nextRole })
+      // Funcional: a gaveta não fecha durante o PUT, mas a linha guardada pode ter sido trocada pela recarga.
+      setSelected((s) => (s?.id === selected.id ? { ...s, role: nextRole } : s))
       setRoleStatus('done')
       setReload((n) => n + 1) // contagens da tira e a linha refletem o papel novo
     } catch {
@@ -209,7 +228,8 @@ export function UsersSection() {
       case 'nao-confirmada':
         return m.usuariosStatusNaoConfirmada
       case 'pendente':
-        return u.pendingPurgeAt
+        // Prazo vencido (o expurgo diário ainda não passou): sem "expira em 0 h".
+        return u.pendingPurgeAt && hoursUntil(u.pendingPurgeAt, now) > 0
           ? m.usuariosStatusPendenteExpira.replace('{h}', String(hoursUntil(u.pendingPurgeAt, now)))
           : m.usuariosStatusPendente
       case 'desativada':
@@ -225,16 +245,21 @@ export function UsersSection() {
   const total = data?.total ?? 0
   const pageSize = data?.pageSize ?? 25
   const pages = Math.max(1, Math.ceil(total / pageSize))
-  const from = total === 0 ? 0 : (params.page - 1) * pageSize + 1
-  const to = Math.min(total, params.page * pageSize)
+  // Faixa da página CARREGADA (`data.page`, já com o teto do servidor), não da pedida: durante a recarga o
+  // rodapé segue descrevendo as linhas na tela.
+  const shownPage = data?.page ?? params.page
+  const from = total === 0 ? 0 : (shownPage - 1) * pageSize + 1
+  const to = Math.min(total, shownPage * pageSize)
   const users = data?.users ?? []
   const selfSelected = selected != null && selected.id === meId
+  // Sessão ainda carregando: não dá para saber se a linha é a própria conta, então o papel fica travado.
+  const roleLocked = meId == null || selfSelected
   const inactiveSelected = selected != null && INACTIVE.includes(selected.status)
 
   const nameButton = (u: AdminUserListItem, avatar: 'sm' | 'md') => (
     <button
       type="button"
-      onClick={() => open(u)}
+      onClick={(e) => open(u, e.currentTarget)}
       aria-label={m.usuariosAbrirDetalhes.replace('{nome}', u.name)}
       className="flex min-w-0 items-center gap-3 rounded-md text-left"
     >
@@ -259,9 +284,9 @@ export function UsersSection() {
               key={p}
               type="button"
               aria-pressed={on}
-              onClick={() => setParams((s) => ({ ...s, preset: p, page: 1 }))}
+              onClick={() => setParams((s) => (s.preset === p ? s : { ...s, preset: p, page: 1 }))}
               className={cn(
-                'inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors',
+                'inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors',
                 on ? 'border-fg bg-fg text-bg' : 'border-border text-fg hover:border-brand-ink',
               )}
             >
@@ -296,7 +321,9 @@ export function UsersSection() {
             <select
               value={params.sort}
               onChange={(e) =>
-                setParams((s) => ({ ...s, sort: e.target.value as AdminUserSort, page: 1 }))
+                setParams((s) =>
+                  s.sort === e.target.value ? s : { ...s, sort: e.target.value as AdminUserSort, page: 1 },
+                )
               }
               className="h-9 rounded-md border border-border bg-bg px-2 text-sm text-fg"
             >
@@ -347,7 +374,6 @@ export function UsersSection() {
                       key={u.id}
                       className={cn(
                         'border-t border-border transition-colors hover:bg-bg/60',
-                        INACTIVE.includes(u.status) && 'opacity-70',
                       )}
                     >
                       <td className="max-w-64 px-4 py-3">{nameButton(u, 'sm')}</td>
@@ -387,7 +413,6 @@ export function UsersSection() {
                   className={cn(
                     'flex flex-col gap-1.5 px-4 py-3',
                     i > 0 && 'border-t border-border',
-                    INACTIVE.includes(u.status) && 'opacity-70',
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -404,7 +429,7 @@ export function UsersSection() {
           </div>
         )}
 
-        {data && total > 0 && (
+        {data && users.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm text-muted">
             <span>
               {m.usuariosPaginacao
@@ -438,11 +463,16 @@ export function UsersSection() {
         )}
       </section>
 
-      <Sheet open={selected != null} onOpenChange={(o) => !o && setSelected(null)}>
+      {/* Não fecha com o PUT em voo (mesmo padrão da gaveta de criar receita do Catálogo). */}
+      <Sheet open={selected != null} onOpenChange={(o) => !o && !saving && setSelected(null)}>
         <SheetContent
           side="right"
-          closeLabel={m.usuariosFechar}
+          closeLabel={m.fechar}
           className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl lg:max-w-2xl"
+          onCloseAutoFocus={(e) => {
+            e.preventDefault()
+            openerRef.current?.focus()
+          }}
         >
           {selected && (
             <>
@@ -500,7 +530,7 @@ export function UsersSection() {
                   </div>
                   {selected.deletedAt && (
                     <div className="flex flex-col gap-0.5">
-                      <dt className="text-xs text-muted">{m.usuariosStatusDesativada}</dt>
+                      <dt className="text-xs text-muted">{m.usuariosDetalheDesativadaEm}</dt>
                       <dd className="text-fg">{formatDate(selected.deletedAt, locale)}</dd>
                     </div>
                   )}
@@ -524,13 +554,17 @@ export function UsersSection() {
                     className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-ink hover:underline"
                   >
                     {m.usuariosVerPerfil}
+                    <span className="sr-only"> ({messages.footer.abreEmNovaAba})</span>
                     <ExternalLink aria-hidden="true" className="size-3.5" />
                   </a>
                 ) : null}
 
                 <form onSubmit={applyRole} className="flex flex-col gap-4">
                   <fieldset
-                    disabled={selfSelected || inactiveSelected || saving}
+                    disabled={roleLocked || inactiveSelected || saving}
+                    aria-describedby={
+                      selfSelected ? 'papel-trava-propria' : inactiveSelected ? 'papel-trava-inativa' : undefined
+                    }
                     className="flex flex-col gap-2 rounded-lg border border-border p-4"
                   >
                     <legend className="px-1.5 text-sm font-semibold text-fg">{m.usuariosPapelLegenda}</legend>
@@ -569,8 +603,16 @@ export function UsersSection() {
                     })}
                   </fieldset>
 
-                  {selfSelected && <p className="text-sm text-muted">{m.usuariosPapelProprio}</p>}
-                  {inactiveSelected && <p className="text-sm text-muted">{m.usuariosPapelContaInativa}</p>}
+                  {selfSelected && (
+                    <p id="papel-trava-propria" className="text-sm text-muted">
+                      {m.usuariosPapelProprio}
+                    </p>
+                  )}
+                  {inactiveSelected && (
+                    <p id="papel-trava-inativa" className="text-sm text-muted">
+                      {m.usuariosPapelContaInativa}
+                    </p>
+                  )}
 
                   <div className="flex flex-wrap items-center justify-end gap-3">
                     {roleStatus === 'done' && (
@@ -585,7 +627,7 @@ export function UsersSection() {
                     )}
                     <Button
                       type="submit"
-                      disabled={selfSelected || inactiveSelected || saving || nextRole === selected.role}
+                      disabled={roleLocked || inactiveSelected || saving || nextRole === selected.role}
                       aria-busy={saving}
                     >
                       {saving ? m.aplicandoPapel : m.aplicarPapel}

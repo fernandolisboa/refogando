@@ -59,7 +59,8 @@ export function ConsoleShell({
       <main className="flex min-w-0 flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger
-            aria-label={m.abrirSecoes}
+            // Nome acessível = ação + seção atual (WCAG 2.5.3: contém o texto visível da seção).
+            aria-label={current ? `${m.abrirSecoes}: ${m[current.section.label]}` : m.abrirSecoes}
             className="flex min-h-11 items-center gap-3 rounded-md border border-border bg-surface px-3 text-left text-sm lg:hidden"
           >
             <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
@@ -70,7 +71,7 @@ export function ConsoleShell({
           </SheetTrigger>
           <SheetContent
             side="bottom"
-            closeLabel={m.usuariosFechar}
+            closeLabel={m.fechar}
             className="max-h-[85vh] gap-5 overflow-y-auto rounded-t-xl bg-surface"
           >
             <SheetHeader>

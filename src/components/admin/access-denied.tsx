@@ -6,7 +6,8 @@
  *  - `standalone` (default): o gate do `layout.tsx` a renderiza como a página inteira → rende
  *    o `<main>` do documento (único landmark <main>).
  *  - `standalone={false}`: a negação por seção (`SectionGate`) já vive DENTRO do `<main>` do
- *    `ConsoleShell` → rende um `<section>`, pra não aninhar landmarks (HTML inválido + a11y).
+ *    `ConsoleShell` → rende um `<section>`, pra não aninhar landmarks (HTML inválido + a11y), com
+ *    `<h2>`: o `<h1>` da página já é o título da seção no cabeçalho do shell.
  */
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
@@ -18,7 +19,11 @@ export function AccessDenied({ standalone = true }: { standalone?: boolean } = {
   const m = messages.admin
   const inner = (
     <>
-      <h1 className="font-display text-3xl font-semibold text-fg">{m.acessoNegadoTitulo}</h1>
+      {standalone ? (
+        <h1 className="font-display text-3xl font-semibold text-fg">{m.acessoNegadoTitulo}</h1>
+      ) : (
+        <h2 className="font-display text-2xl font-semibold text-fg">{m.acessoNegadoTitulo}</h2>
+      )}
       <p className="max-w-prose text-muted">{m.acessoNegado}</p>
       <Button asChild variant="secondary">
         <Link href="/">{m.voltarInicio}</Link>

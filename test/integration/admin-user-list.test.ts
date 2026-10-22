@@ -89,11 +89,9 @@ describe('GET /api/admin/users — atalhos, busca e colunas', () => {
     expect(byId[ana]).toMatchObject({ recipeCount: 2, publicRecipeCount: 1, status: 'ativa', role: 'usuario' })
     expect(byId[ana].lastSeenAt).toBe(seen.toISOString())
     expect(byId[bia]).toMatchObject({ recipeCount: 0, status: 'ativa', role: 'curador', plan: 'pro', lastSeenAt: null })
-    expect(byId[caio]).toMatchObject({ status: 'pendente', emailVerified: false })
-    expect(byId[caio].pendingSignupAt).not.toBeNull()
-    expect(
-      new Date(byId[caio].pendingPurgeAt!).getTime() - new Date(byId[caio].pendingSignupAt!).getTime(),
-    ).toBe(48 * 3600 * 1000)
+    expect(byId[caio]).toMatchObject({ status: 'pendente' })
+    const [caioRow] = await db.select({ at: users.pendingSignupAt }).from(users).where(eq(users.id, caio))
+    expect(new Date(byId[caio].pendingPurgeAt!).getTime() - caioRow.at!.getTime()).toBe(48 * 3600 * 1000)
 
     // Ordenação.
     const antigos = await list({ q: TAG, sort: 'antigos' }, admin.headers)
@@ -106,8 +104,8 @@ describe('GET /api/admin/users — atalhos, busca e colunas', () => {
     // Allowlist: nenhuma chave crua.
     expect(Object.keys(byId[ana]).sort()).toEqual(
       [
-        'id', 'name', 'handle', 'email', 'image', 'role', 'plan', 'status', 'emailVerified', 'locale',
-        'createdAt', 'lastSeenAt', 'pendingSignupAt', 'pendingPurgeAt', 'deletedAt', 'imageGenBlocked', 'recipeCount',
+        'id', 'name', 'handle', 'email', 'image', 'role', 'plan', 'status', 'locale',
+        'createdAt', 'lastSeenAt', 'pendingPurgeAt', 'deletedAt', 'imageGenBlocked', 'recipeCount',
         'publicRecipeCount',
       ].sort(),
     )

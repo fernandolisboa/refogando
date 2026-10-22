@@ -91,13 +91,10 @@ export type AdminUserListItem = {
   role: Role
   plan: Plan
   status: AdminUserStatus
-  emailVerified: boolean
   locale: string | null
   createdAt: string
   /** Última atualização de uma sessão ainda guardada (o Better Auth renova a sessão no uso). null = nenhuma. */
   lastSeenAt: string | null
-  /** Marcador do cadastro pendente (`users.pending_signup_at`). */
-  pendingSignupAt: string | null
   /** A partir de quando o expurgo diário pode apagar a conta pendente (marcador + `PENDING_SIGNUP_MAX_AGE_MS`). */
   pendingPurgeAt: string | null
   deletedAt: string | null

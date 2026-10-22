@@ -55,7 +55,7 @@ describe('ConsoleShell', () => {
   it('celular: o gatilho nomeia a seção atual e abre as seções numa gaveta que fecha ao navegar', async () => {
     renderShell('admin', '/pt-BR/admin/ia')
     const u = userEvent.setup()
-    const trigger = screen.getByRole('button', { name: A.abrirSecoes })
+    const trigger = screen.getByRole('button', { name: `${A.abrirSecoes}: ${A.navIa}` })
     expect(trigger).toHaveTextContent(A.navIa)
     await u.click(trigger)
     const dialog = await screen.findByRole('dialog')

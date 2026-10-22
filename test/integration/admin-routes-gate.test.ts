@@ -139,10 +139,10 @@ describe('Gate da rota /admin (layout, curador+)', () => {
 })
 
 describe('Index /admin redireciona para a primeira seção do papel', () => {
-  it('admin → /admin/ia (Governança)', async () => {
+  it('admin → /admin/users (1º link da barra lateral, ADR-0049)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'adm@idx.test', role: 'admin' })
     headersMock.current = headers
-    expect(await run(index)).toEqual({ kind: 'redirect', to: '/admin/ia' })
+    expect(await run(index)).toEqual({ kind: 'redirect', to: '/admin/users' })
   })
 
   it('curador → /admin/moderation (Curadoria; sem Governança)', async () => {

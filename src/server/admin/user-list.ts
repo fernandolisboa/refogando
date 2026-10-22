@@ -17,8 +17,9 @@ import {
 /**
  * Loader da lista de Usuários do Console (admin-only; a rota `GET /api/admin/users` aplica `requireRole
  * 'admin'`). Cada atalho é um WHERE FIXO daqui (o cliente só escolhe a chave do enum). A busca reusa o
- * `classifyUserQuery` da busca de Papéis (#269): UUID ⇒ id exato, `@x` ⇒ handle, `a@b` ⇒ email, texto ⇒ nome,
- * handle OU email (é admin, o email entra). Termo sempre escapado e bindado.
+ * `classifyUserQuery` da busca de Papéis (#269): UUID ⇒ id exato, `@x` ⇒ handle, `a@b` ⇒ email, texto ⇒ nome
+ * OU handle (os dois têm índice trigram; email entra só quando o termo tem `@`, como no `searchUsers`). Termo
+ * sempre escapado e bindado.
  *
  * Escala: `users` tem centenas de linhas; as contagens da tira são UMA varredura com `count(*) FILTER`, e as
  * colunas derivadas (última sessão, receitas) são subconsultas por linha da PÁGINA (25), servidas por
@@ -56,7 +57,7 @@ function searchWhere(q: string): SQL | undefined {
   const contains = `%${escapeLike(parsed.term)}%`
   if (parsed.kind === 'handle') return ilike(users.handle, contains)
   if (parsed.kind === 'email') return ilike(users.email, contains)
-  return or(ilike(users.name, contains), ilike(users.handle, contains), ilike(users.email, contains))
+  return or(ilike(users.name, contains), ilike(users.handle, contains))
 }
 
 // `users.id` LITERAL (não `${users.id}`): numa select de tabela única o Drizzle renderiza a coluna sem o
@@ -120,11 +121,9 @@ export async function listAdminUsers(db: Database, query: AdminUserListQuery): P
       role: r.role,
       plan: r.plan,
       status: deriveAdminUserStatus(r),
-      emailVerified: r.emailVerified,
       locale: r.locale,
       createdAt: r.createdAt.toISOString(),
       lastSeenAt: iso(r.lastSeenAt as Date | null),
-      pendingSignupAt: iso(r.pendingSignupAt),
       pendingPurgeAt: r.pendingSignupAt
         ? new Date(r.pendingSignupAt.getTime() + PENDING_SIGNUP_MAX_AGE_MS).toISOString()
         : null,
