@@ -45,8 +45,9 @@ import {
  *
  * #595 completou o export com o que ainda ficava de fora:
  *  - `recipeImages`: as imagens que o titular enviou ou gerou (`recipe_image.created_by`), com as URLs.
- *    `recipes[].imageId` é a capa de cada receita; pode apontar para uma imagem fora desta lista (de
- *    outra pessoa da linhagem, do Curador), então não é uma chave garantida para `recipeImages[]`.
+ *    `recipes[].imageId` é a capa de cada receita; pode apontar para uma imagem fora desta lista (gerada
+ *    pelo Curador, ou da galeria da linhagem com outro `created_by`), então não é chave garantida para
+ *    `recipeImages[]`.
  *  - `loginSessions`: os acessos (criação, última atividade, validade, IP e navegador).
  *  - `reports`: as denúncias que o titular FEZ (alvo, motivo, status, datas).
  *  - `extractionEvents` e `mealPlanSuggestionEvents`: os registros de uso da Extração de ingredientes e da
