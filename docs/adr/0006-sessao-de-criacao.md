@@ -15,3 +15,9 @@ Retomar uma conversa anterior é o que faz a criação por IA parecer mágica, e
 - Acúmulo indefinido de transcript é **PII**: o botão de apagar cobre a erasure iniciada pelo usuário, mas uma **política de retenção (LGPD)** fica como item **deferido explícito**, não esquecido.
 - `mode=structured` é função quase pura: guarda um **Briefing de geração** (o que foi pedido) em vez de mensagens — modelagem do brief em definição (próxima decisão).
 - `mode=free_text` (issue #88) é o **prompt aberto** one-shot: guarda o **texto livre cru** como proveniência (coluna `creation_session.free_text`, sem Briefing) e reusa o MESMO pipeline de geração (`generateRecipe`/`classify`/persistência); a Receita nasce com `origin=ai_free_text`. A estrutura vem da SAÍDA do modelo, não de pré-parse do texto; a segurança é o Aviso de restrição **pós-geração** (ADR-0004), que escaneia a Receita gerada.
+
+## Atualização (2026-10-22, ADR-0049): retenção decidida
+
+O item deferido acima está decidido no ADR-0049. Enquanto a conta existe, o transcript segue sem TTL e o usuário apaga a conversa de cada sessão, como antes. **Na eliminação da conta**, todas as sessões da pessoa perdem o texto na mesma transação: a Transcrição é apagada, `creation_session.free_text`, `generation.advisory_comment` e `generation.prompt_stamp` viram NULL, e o Briefing fica vazio (`briefing_item` apagado; `observacoes`, `cozinha`, `porcoes` e `dificuldade` NULL; `restricoes` vazio). A sessão e a geração ficam só com modo, datas, modelo, tokens e custo, e o cron de retenção apaga esses cascos aos 24 meses (geração, depois a sessão sem geração, depois o Briefing sem sessão).
+
+**Exceção deliberada à imutabilidade do Briefing** ("o que foi pedido", citada no ADR-0025): para conta eliminada, o pedido é dado pessoal sem titular a quem servir, e apagar a linha não é possível (o CHECK do modo estruturado exige o `briefing_id`). Para conta viva, o Briefing continua imutável.
