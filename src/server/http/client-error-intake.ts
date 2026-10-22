@@ -4,8 +4,8 @@ import {
   formatClientErrorLine,
   parseClientErrorReport,
 } from '@/domain/error-report'
+import { createIpBurstLimiter, ipRateKey } from '@/server/http/ip-burst-limit'
 import { clientIpFromHeaders } from '@/server/http/params'
-import { createDomainRateLimiter } from '@/server/import/rate-limit'
 
 /**
  * Intake PÚBLICO dos relatos de erro do navegador (`POST /api/client-errors`, issue #590, ADR-0048). Fábrica
@@ -16,16 +16,19 @@ import { createDomainRateLimiter } from '@/server/import/rate-limit'
  * corpo não é confiável — `parseClientErrorReport` re-sanitiza tudo. Ordem, do mais barato ao mais caro:
  *  1. `Sec-Fetch-Site` presente e ≠ `same-origin` ⇒ 204 sem log (outro site não escreve no nosso log; o
  *     relato legítimo sai da própria página). Ausente (cliente sem o header) passa.
- *  2. ~1 relato/s por IP (`createDomainRateLimiter`, best-effort por instância). Sem IP ⇒ pula este passo.
- *  3. Teto da instância: 60 linhas/min somando todos. Estourou ⇒ 429 e UMA linha `limite=atingido` por janela.
+ *  2. Rajada por IP (IPv6 pela /64): 5 requests a cada 10 s (`createIpBurstLimiter`, best-effort por
+ *     instância). Sem IP ⇒ pula este passo.
+ *  3. Teto da instância: 60 LINHAS/min somando todos. Estourou ⇒ 429 e UMA linha `limite=atingido` por
+ *     janela. Conta só a linha escrita: request de lixo (400/413) não gasta o teto.
  *  4. `content-length` > 2 KB ⇒ 413; e a leitura do corpo aborta ao passar de 2 KB (cobre chunked).
- *  5. JSON inválido ou fora do schema ⇒ 400.
+ *  5. JSON inválido ou fora do schema ⇒ 400 `{ error: 'dados_invalidos' }`.
  * Nunca 500: qualquer falha inesperada vira 400 sem detalhe.
  */
 
 export type ClientErrorIntakeOptions = {
   now?: () => number
-  perIpIntervalMs?: number
+  perIpBurst?: number
+  perIpWindowMs?: number
   perInstancePerMinute?: number
   bodyMaxBytes?: number
   /** Saída da linha. Default `console.warn`. */
@@ -43,7 +46,7 @@ function rateLimited(): Response {
 }
 
 function invalid(): Response {
-  return Response.json({ error: 'invalido' }, { status: 400 })
+  return Response.json({ error: 'dados_invalidos' }, { status: 400 })
 }
 
 /** Lê o corpo UMA vez, com teto em bytes. `null` = sem corpo; `'too_large'` = passou do teto. */
@@ -77,14 +80,31 @@ export function createClientErrorIntake(opts: ClientErrorIntakeOptions = {}): (r
   const perInstance = opts.perInstancePerMinute ?? CLIENT_ERROR_LIMITS.perInstancePerMinute
   const bodyMax = opts.bodyMaxBytes ?? CLIENT_ERROR_LIMITS.bodyMaxBytes
   const log = opts.log ?? ((line: string) => console.warn(line))
-  const perIp = createDomainRateLimiter({
-    minIntervalMs: opts.perIpIntervalMs ?? CLIENT_ERROR_LIMITS.perIpIntervalMs,
+  const perIp = createIpBurstLimiter({
+    max: opts.perIpBurst ?? CLIENT_ERROR_LIMITS.perIpBurst,
+    windowMs: opts.perIpWindowMs ?? CLIENT_ERROR_LIMITS.perIpWindowMs,
     now,
   })
-  // Janela fixa de 1 min por instância (estado em memória, como o limitador por IP).
+  // Janela fixa de 1 min por instância (estado em memória, como o limitador por IP). Conta LINHAS escritas.
   let windowStart = Number.NEGATIVE_INFINITY
   let windowCount = 0
   let limitLogged = false
+
+  /** Teto da instância esgotado nesta janela? Na 1ª vez por janela escreve a linha `limite=atingido`. */
+  function instanceFull(): boolean {
+    const t = now()
+    if (t - windowStart >= WINDOW_MS) {
+      windowStart = t
+      windowCount = 0
+      limitLogged = false
+    }
+    if (windowCount < perInstance) return false
+    if (!limitLogged) {
+      limitLogged = true
+      log(CLIENT_ERROR_LIMIT_LINE)
+    }
+    return true
+  }
 
   return async function intake(request: Request): Promise<Response> {
     try {
@@ -92,22 +112,11 @@ export function createClientErrorIntake(opts: ClientErrorIntakeOptions = {}): (r
       if (site && site !== 'same-origin') return noContent()
 
       const ip = clientIpFromHeaders(request)
-      if (ip && !perIp.tryAcquire(ip)) return rateLimited()
+      if (ip && !perIp.tryAcquire(ipRateKey(ip))) return rateLimited()
 
-      const t = now()
-      if (t - windowStart >= WINDOW_MS) {
-        windowStart = t
-        windowCount = 0
-        limitLogged = false
-      }
-      if (windowCount >= perInstance) {
-        if (!limitLogged) {
-          limitLogged = true
-          log(CLIENT_ERROR_LIMIT_LINE)
-        }
-        return rateLimited()
-      }
-      windowCount += 1
+      // Checa antes de ler o corpo (barato) e de novo antes de escrever: requests concorrentes passam juntos
+      // pelo 1º check enquanto leem.
+      if (instanceFull()) return rateLimited()
 
       const declared = Number(request.headers.get('content-length') ?? '0')
       if (Number.isFinite(declared) && declared > bodyMax) return new Response(null, { status: 413 })
@@ -124,6 +133,8 @@ export function createClientErrorIntake(opts: ClientErrorIntakeOptions = {}): (r
       const parsed = parseClientErrorReport(raw)
       if (!parsed.ok) return invalid()
 
+      if (instanceFull()) return rateLimited()
+      windowCount += 1
       log(formatClientErrorLine(parsed.value))
       return noContent()
     } catch {

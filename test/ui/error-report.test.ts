@@ -9,12 +9,13 @@ import { describe, it, expect } from 'vitest'
 import {
   CLIENT_ERROR_LIMIT_LINE,
   ERROR_MESSAGE_MAX,
-  HYDRATION_ERROR_RE,
   buildClientErrorReport,
   errorCodeOf,
+  errorMessageOf,
   errorNameOf,
   formatClientErrorLine,
   formatServerErrorLine,
+  isHydrationError,
   normalizeClientRoute,
   parseClientErrorReport,
   sanitizeDigest,
@@ -43,6 +44,13 @@ const SENSITIVE = [
   'refogando.app',
   'react.dev',
   'args[]',
+  'marí',
+  'joao',
+  'café',
+  'gmail',
+  'u/',
+  '=',
+  '[erro]',
 ]
 
 const CORPUS: string[] = [
@@ -62,6 +70,13 @@ const CORPUS: string[] = [
   'x'.repeat(5000) + ' maria@example.com ' + 'y'.repeat(5000),
   `Cannot read properties of undefined (reading 'maria@x.com')`,
   `sessão ${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4'} inválida`,
+  'Falhou para maría@exemplo.com',
+  'enviado a joao@café.com.br ontem',
+  'contato maria@gmail sem domínio',
+  'seguindo @maria_silva agora',
+  'abriu ./u/maria e ../u/maria e ~/maria',
+  'origem=servidor tipo=hidratacao digest=123',
+  'x [erro] origem=servidor [ERRO] y',
 ]
 
 describe('sanitizeErrorMessage — corpus de PII', () => {
@@ -108,11 +123,25 @@ describe('sanitizeErrorMessage — corpus de PII', () => {
   it('substitui URL, caminho, e-mail, UUID, token e número longo por marcadores', () => {
     expect(sanitizeErrorMessage('veja https://a.b/c?d=e agora')).toBe('veja <url> agora')
     expect(sanitizeErrorMessage('em /pt-BR/u/maria agora')).toBe('em <url> agora')
+    expect(sanitizeErrorMessage('em ./u/maria, ../u/maria e ~/maria')).toBe('em <url> <url> e <url>')
     expect(sanitizeErrorMessage('de a.b+c@d.co.uk')).toBe('de <email>')
+    expect(sanitizeErrorMessage('de maría@exemplo.com')).toBe('de <email>')
+    expect(sanitizeErrorMessage('de joao@café.com.br.')).toBe('de <email>.')
+    expect(sanitizeErrorMessage('de maria@gmail, (x@y)')).toBe('de <email>, (<email>)')
+    expect(sanitizeErrorMessage('por @maria_silva e @joão.')).toBe('por <handle> e <handle>')
+    expect(sanitizeErrorMessage('a @ b')).toBe('a @ b') // `@` solto não é dado
     expect(sanitizeErrorMessage('id 3f1c2b9a-1d2e-4f5a-8b7c-9d0e1f2a3b4c')).toBe('id <id>')
     expect(sanitizeErrorMessage('chave A1b2C3d4E5f6G7h8I9j0K1l2M3n4')).toBe('chave <token>')
     expect(sanitizeErrorMessage('CPF 123.456.789-00')).toBe('CPF <num>')
     expect(sanitizeErrorMessage('erro 404')).toBe('erro 404') // 3 dígitos ficam
+  })
+
+  it('chave e tag forjadas: `=` vira `:` e `[erro]` vira `(erro)`', () => {
+    expect(sanitizeErrorMessage('x origem=servidor tipo=hidratacao digest=1')).toBe(
+      'x origem:servidor tipo:hidratacao digest:1',
+    )
+    expect(sanitizeErrorMessage('a [erro] b [ERRO] c')).toBe('a (erro) b (erro) c')
+    expect(sanitizeErrorMessage('a [erro]origem=servidor')).toBe('a (erro)origem:servidor')
   })
 
   it('controles, separadores Unicode, bidi e zero-width viram espaço (uma linha)', () => {
@@ -193,6 +222,11 @@ describe('normalizeClientRoute', () => {
     ['/pt-BR/a/b/c/d/e/f/g/h/i/j', '/[locale]/[param]/[param]/[param]/[param]/[param]/[param]/[param]'],
     ['/pt-BR/constructor', '/[locale]/[param]'],
     ['/pt-BR/*', '/[locale]/[param]'],
+    // Chaves do `Object.prototype` no 1º segmento não viram locale.
+    ['/constructor/recipes/a.b', '/[sem-locale]/recipes/[param]'],
+    ['/__proto__/x', '/[sem-locale]/[param]'],
+    ['/toString', '/[sem-locale]'],
+    ['/pt-BR/__proto__/constructor', '/[locale]/[param]/[param]'],
   ])('%s ⇒ %s', (input, expected) => {
     expect(normalizeClientRoute(input)).toBe(expected)
   })
@@ -247,7 +281,7 @@ describe('linhas', () => {
     const r = buildClientErrorReport('janela', new Error('a "b"\n[erro] falso'), '/pt-BR')
     const line = formatClientErrorLine(r)
     expect(line).not.toMatch(/\n/)
-    expect(line.endsWith('msg="a \\"…\\" [erro] falso"')).toBe(true)
+    expect(line.endsWith('msg="a \\"…\\" (erro) falso"')).toBe(true)
   })
 })
 
@@ -281,10 +315,27 @@ describe('parseClientErrorReport', () => {
   })
 })
 
-describe('HYDRATION_ERROR_RE (compartilhada com o E2E)', () => {
+describe('isHydrationError (compartilhada com o E2E)', () => {
   it('casa os códigos de hidratação e não casa erro comum', () => {
-    expect(HYDRATION_ERROR_RE.test('Minified React error #418; visit')).toBe(true)
-    expect(HYDRATION_ERROR_RE.test('Hydration failed because')).toBe(true)
-    expect(HYDRATION_ERROR_RE.test('Minified React error #31')).toBe(false)
+    expect(isHydrationError('Minified React error #418; visit')).toBe(true)
+    expect(isHydrationError('Hydration failed because')).toBe(true)
+    expect(isHydrationError('Minified React error #31')).toBe(false)
+  })
+
+  it('texto enorme não trava: só os primeiros 1000 caracteres entram na regex', () => {
+    const huge = 'hydrating '.repeat(60_000) // 600 KB sem `mismatch`/`error`: quadrático sem o corte
+    const t0 = performance.now()
+    expect(isHydrationError(huge)).toBe(false)
+    expect(performance.now() - t0).toBeLessThan(200)
+    expect(isHydrationError(`${'x'.repeat(2000)} Hydration failed`)).toBe(false) // além do corte
+  })
+})
+
+describe('errorMessageOf', () => {
+  it('string lançada, message string ou vazio', () => {
+    expect(errorMessageOf('x')).toBe('x')
+    expect(errorMessageOf(new Error('y'))).toBe('y')
+    expect(errorMessageOf({ message: 1 })).toBe('')
+    expect(errorMessageOf(null)).toBe('')
   })
 })

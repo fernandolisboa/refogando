@@ -9,8 +9,10 @@ export const DEFAULT_LOCALE: Locale = 'pt-BR' // D10
 
 // Mapa lowercase → forma canônica (pt-br → pt-BR). Locales BCP-47 são
 // case-insensitive (RFC 5646 §2.1.1), então normalizamos antes de casar:
-// 'EN-US'/'pt-br' do navegador devem resolver para 'en-US'/'pt-BR'.
-const CANONICAL_BY_LOWER: Record<string, Locale> = Object.fromEntries(
+// 'EN-US'/'pt-br' do navegador devem resolver para 'en-US'/'pt-BR'. `Map`, não objeto
+// literal: o 1º segmento do caminho é texto do usuário, e `constructor`/`__proto__`
+// achariam a chave herdada do `Object.prototype` (#590: derrubava a tela do global-error).
+const CANONICAL_BY_LOWER: ReadonlyMap<string, Locale> = new Map(
   SUPPORTED_LOCALES.map((l) => [l.toLowerCase(), l]),
 )
 
@@ -23,7 +25,7 @@ const CANONICAL_BY_LOWER: Record<string, Locale> = Object.fromEntries(
  * a chave UNIQUE(recipe_id, locale). Sempre o canônico (`'EN-US'` → `'en-US'`).
  */
 export function canonicalLocale(v: string): Locale | null {
-  return CANONICAL_BY_LOWER[v.toLowerCase()] ?? null
+  return CANONICAL_BY_LOWER.get(v.toLowerCase()) ?? null
 }
 
 export function isSupportedLocale(v: string): v is Locale {

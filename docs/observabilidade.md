@@ -53,15 +53,15 @@ Um relato do navegador recebido por `POST /api/client-errors` (`src/server/http/
 | `tipo` | `boundary` (`src/app/[locale]/error.tsx`), `global` (`src/app/global-error.tsx`, erro no root layout), `janela` (erro não pego), `promessa` (rejeição sem `catch`), `hidratacao` (erro de hidratação do React). |
 | `erro` | o `name` do erro no navegador. |
 | `digest` | presente quando o erro veio de um Server Component: busque o mesmo digest em `origem=servidor` para achar a stack. |
-| `msg` | só sem digest. Mensagem sanitizada, em JSON, ≤160: aspas viram `"…"`/`'…'` (menos `(reading 'title')`), URL/caminho `<url>`, e-mail `<email>`, UUID `<id>`, token `<token>`, número longo `<num>`, `Minified React error #N` vira `React #N` (decodifique em `react.dev/errors/N`). |
+| `msg` | só sem digest. Mensagem sanitizada, em JSON, ≤160: aspas viram `"…"`/`'…'` (menos `(reading 'title')`), URL/caminho `<url>`, e-mail e palavra com `@` `<email>`, `@handle` solto `<handle>`, UUID `<id>`, token `<token>`, número longo `<num>`, `Minified React error #N` vira `React #N` (decodifique em `react.dev/errors/N`). `=` vira `:` e `[erro]` vira `(erro)`: a `msg` nunca casa `origem=servidor`, `tipo=…` ou `digest=…` numa busca por substring. |
 
 Um erro de hidratação recuperado pode chegar com a mensagem da CAUSA (o Next desembrulha `error.cause`), não com o `#418`.
 
-Não viram relato: erro de chunk velho pós-deploy (é atualização; a página recarrega), falha de rede (`Failed to fetch`, `NetworkError`, `Load failed`), `AbortError`, o loop do `ResizeObserver`, `Script error.` e erros de script de outra origem ou de extensão. O navegador manda no máximo 5 relatos por carga de página e 20 por sessão; o endpoint aceita ~1 por segundo por IP.
+Não viram relato: erro de chunk velho pós-deploy (é atualização; a página recarrega), falha de rede (`Failed to fetch`, `NetworkError`, `Load failed`), `AbortError`, o loop do `ResizeObserver`, `Script error.` e erros de script de outra origem ou de extensão. O navegador manda no máximo 5 relatos por carga de página e 20 por sessão; o endpoint aceita uma rajada de 5 requests a cada 10 s por IP (IPv6 pela /64). Corpo inválido ⇒ 400 `{ error: 'dados_invalidos' }`, sem linha.
 
 ### `[erro] origem=cliente limite=atingido` — `console.warn`
 
-O endpoint passou de 60 relatos no minuto nesta instância. Sai uma vez por janela de 1 minuto; o resto da janela é descartado em silêncio (429). Se aparecer com frequência, algo está quebrando para muita gente ao mesmo tempo — ou alguém está martelando o endpoint.
+O endpoint passou de 60 linhas de relato no minuto nesta instância (conta só relato válido escrito; request inválido não gasta). Sai uma vez por janela de 1 minuto; o resto da janela é descartado em silêncio (429). Se aparecer com frequência, algo está quebrando para muita gente ao mesmo tempo — ou alguém está martelando o endpoint.
 
 ## Outras tags
 

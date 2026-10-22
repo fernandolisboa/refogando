@@ -8,7 +8,7 @@
  *    erro pego por boundary explícito NÃO vira evento de janela, então a boundary relata;
  *  - os listeners de janela de `src/instrumentation-client.ts` (antes da hidratação): erro não pego
  *    (`janela`), rejeição sem `catch` (`promessa`) e os recuperáveis do React, que o Next manda para
- *    `window.reportError` (`hidratacao` quando a mensagem casa `HYDRATION_ERROR_RE`).
+ *    `window.reportError` (`hidratacao` quando a mensagem passa em `isHydrationError`).
  *
  * Contrato: NUNCA lança e NUNCA escreve no console (o guarda de console do E2E reprova, e um relato que
  * gera log gera relato). Só liga em produção. Tetos: 5 por carga, 20 por sessão, dedup por impressão
@@ -19,9 +19,10 @@
  */
 import {
   CLIENT_ERROR_LIMITS,
-  HYDRATION_ERROR_RE,
   buildClientErrorReport,
   clientErrorFingerprint,
+  errorMessageOf,
+  isHydrationError,
   type ClientErrorKind,
 } from '@/domain/error-report'
 import { isChunkLoadError } from '@/lib/app-update-reload'
@@ -77,12 +78,6 @@ function defaultSend(body: string): void {
   }).catch(() => {})
 }
 
-// Erro de chunk velho pós-deploy é atualização, não bug (D5): a boundary/o guard recarregam. O Turbopack
-// joga `Failed to load chunk …` (com `name = 'ChunkLoadError'`, que some ao atravessar serialização).
-function isChunkError(err: unknown, message: string): boolean {
-  return isChunkLoadError(err, message) || /Failed to load chunk/i.test(message)
-}
-
 function readSessionCount(storage: CountStorage | null): number {
   if (!storage) return sentThisSessionInMemory
   try {
@@ -114,8 +109,9 @@ export function reportClientError(
 ): boolean {
   try {
     if (!(opts.enabled ?? defaultEnabled())) return false
-    const rawMessage = messageOf(err, opts.message)
-    if (isChunkError(err, rawMessage)) return false
+    const rawMessage = opts.message ?? errorMessageOf(err)
+    // Chunk velho pós-deploy é atualização, não bug (ADR-0048 dec 7): a boundary/o guard recarregam.
+    if (isChunkLoadError(err, rawMessage)) return false
     const pathname = opts.pathname ?? window.location.pathname
     const report = buildClientErrorReport(tipo, err, pathname, rawMessage)
     const fp = clientErrorFingerprint(report)
@@ -134,13 +130,6 @@ export function reportClientError(
   }
 }
 
-function messageOf(err: unknown, explicit?: string): string {
-  if (typeof explicit === 'string') return explicit
-  if (typeof err === 'string') return err
-  const m = (err as { message?: unknown } | null)?.message
-  return typeof m === 'string' ? m : ''
-}
-
 // Ruído que não é bug nosso: rede caindo (cada navegador escreve de um jeito), abort de fetch, o loop do
 // ResizeObserver (benigno) e o "Script error." opaco de script de outra origem.
 const NETWORK_NOISE_RE = /Failed to fetch|NetworkError|Load failed|network connection was lost/i
@@ -151,8 +140,8 @@ function stackOf(err: unknown): string {
   return typeof s === 'string' ? s.slice(0, 4000) : ''
 }
 
-/** `true` quando o erro é ruído e não deve ser relatado. Exportado para teste. */
-export function isClientErrorNoise(err: unknown, message: string, filename: string | undefined, origin: string): boolean {
+/** `true` quando o erro é ruído e não deve ser relatado. */
+function isClientErrorNoise(err: unknown, message: string, filename: string | undefined, origin: string): boolean {
   if (message === 'Script error.' || message === 'Script error') return true
   if (filename) {
     try {
@@ -163,7 +152,7 @@ export function isClientErrorNoise(err: unknown, message: string, filename: stri
   }
   if (/-extension:\/\//.test(stackOf(err))) return true
   if (RESIZE_OBSERVER_RE.test(message)) return true
-  if (isChunkError(err, message)) return true
+  if (isChunkLoadError(err, message)) return true
   if ((err as { name?: unknown } | null)?.name === 'AbortError') return true
   if (NETWORK_NOISE_RE.test(message)) return true
   return false
@@ -183,10 +172,10 @@ export function installClientErrorListeners(win: Window, opts: ClientErrorReport
       if (typeof ev.message !== 'string' && ev.error === undefined) return // não é ErrorEvent
       // A mensagem do próprio erro antes da do evento (o evento prefixa "Uncaught …"); sem erro (script de
       // outra origem, "Script error."), fica a do evento.
-      const message = messageOf(ev.error) || (typeof ev.message === 'string' ? ev.message : '')
+      const message = errorMessageOf(ev.error) || (typeof ev.message === 'string' ? ev.message : '')
       const err: unknown = ev.error ?? { name: 'Error', message }
       if (isClientErrorNoise(err, message, ev.filename, origin)) return
-      const tipo: ClientErrorKind = HYDRATION_ERROR_RE.test(message) ? 'hidratacao' : 'janela'
+      const tipo: ClientErrorKind = isHydrationError(message) ? 'hidratacao' : 'janela'
       reportClientError(tipo, err, { ...opts, message })
     } catch {
       // nunca propaga
@@ -196,7 +185,7 @@ export function installClientErrorListeners(win: Window, opts: ClientErrorReport
     try {
       // Duck typing (sem `instanceof PromiseRejectionEvent`: o jsdom e navegadores antigos variam).
       const reason: unknown = (e as { reason?: unknown }).reason
-      const message = messageOf(reason)
+      const message = errorMessageOf(reason)
       if (isClientErrorNoise(reason, message, undefined, origin)) return
       reportClientError('promessa', reason, { ...opts, message })
     } catch {

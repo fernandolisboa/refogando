@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
+  canonicalLocale,
   isSupportedLocale,
+  localeFromTag,
   resolveLocale,
 } from '@/i18n/locale'
 
@@ -101,6 +103,15 @@ describe('isSupportedLocale + SUPPORTED_LOCALES', () => {
     expect(isSupportedLocale('en-us')).toBe(true)
     // base solta segue rejeitada, independente do casing.
     expect(isSupportedLocale('EN')).toBe(false)
+  })
+
+  it('#590: chave do Object.prototype não é locale (o 1º segmento do caminho é texto do usuário)', () => {
+    for (const k of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'CONSTRUCTOR']) {
+      expect(canonicalLocale(k)).toBeNull()
+      expect(isSupportedLocale(k)).toBe(false)
+      expect(localeFromTag(k)).toBeNull()
+    }
+    expect(resolveLocale({ preferred: 'constructor' })).toBe(DEFAULT_LOCALE)
   })
 
   it('SUPPORTED_LOCALES é exatamente [pt-BR, en-US] e DEFAULT é pt-BR', () => {

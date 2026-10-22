@@ -37,6 +37,15 @@ describe('GlobalErrorScreen', () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
+  it('1º segmento que é chave do Object.prototype (/constructor/…) ⇒ pt-BR, sem derrubar a tela', () => {
+    for (const path of ['/constructor/recipes/a.b', '/__proto__/x', '/toString']) {
+      window.history.replaceState(null, '', path)
+      const { unmount } = render(<GlobalErrorScreen error={new Error('boom')} retry={vi.fn()} />)
+      expect(screen.getByRole('heading', { name: ptBR.system.error })).toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('pathname sem locale ⇒ pt-BR', () => {
     render(<GlobalErrorScreen error={new Error('boom')} retry={vi.fn()} />)
     expect(screen.getByRole('heading', { name: ptBR.system.error })).toBeInTheDocument()

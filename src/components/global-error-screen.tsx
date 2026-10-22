@@ -35,7 +35,9 @@ export function GlobalErrorScreen({
   error: Error & { digest?: string }
   retry: () => void
 }) {
-  const { system } = MESSAGES[useLocaleFromPath()]
+  // Fallback defensivo: o locale vem do pathname (texto do usuário); um locale sem mensagens não pode
+  // derrubar a tela que existe justamente para quando tudo o mais caiu.
+  const { system } = MESSAGES[useLocaleFromPath()] ?? MESSAGES[DEFAULT_LOCALE]
   useEffect(() => {
     // Mesmo trato da boundary de `[locale]/error.tsx`: chunk velho pós-deploy ⇒ reload quieto e one-shot
     // (ADR-0028 dec 5); o resto vira uma linha no log do servidor (ADR-0048).

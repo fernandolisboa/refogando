@@ -3,11 +3,13 @@
  * log injetáveis; o `POST` do `route.ts` é exercitado uma vez para provar a ligação. Sem banco: roda no
  * projeto "ui".
  *
- * Cobre a ordem do intake (cross-site ⇒ por IP ⇒ teto da instância ⇒ tamanho ⇒ schema), a re-sanitização
- * do corpo não confiável (PII e tentativa de injetar linha) e o "nunca 500".
+ * Cobre a ordem do intake (cross-site ⇒ rajada por IP ⇒ teto da instância ⇒ tamanho ⇒ schema), a
+ * re-sanitização do corpo não confiável (PII, linha e chave forjadas), o teto contando LINHAS e o "nunca 500".
+ * O limitador por IP (`createIpBurstLimiter`/`ipRateKey`) é testado à parte no fim.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createClientErrorIntake } from '@/server/http/client-error-intake'
+import { createIpBurstLimiter, ipRateKey } from '@/server/http/ip-burst-limit'
 import { POST } from '@/app/api/client-errors/route'
 
 const URL_ = 'http://localhost/api/client-errors'
@@ -33,7 +35,7 @@ function postStream(chunks: string[], headers: Record<string, string> = {}): Req
   return new Request(URL_, { method: 'POST', headers, body: stream, duplex: 'half' } as RequestInit)
 }
 
-function setup(opts: { perInstancePerMinute?: number } = {}) {
+function setup(opts: { perInstancePerMinute?: number; perIpBurst?: number } = {}) {
   let t = 1_000_000
   const lines: string[] = []
   const intake = createClientErrorIntake({ now: () => t, log: (l) => lines.push(l), ...opts })
@@ -57,7 +59,7 @@ describe('createClientErrorIntake', () => {
     ])
   })
 
-  it('re-sanitiza o corpo: PII some e uma quebra de linha não forja outra linha [erro]', async () => {
+  it('re-sanitiza o corpo: PII some e uma quebra de linha não forja outra linha [erro] nem chave', async () => {
     const { intake, lines } = setup()
     const res = await intake(
       post({
@@ -74,8 +76,19 @@ describe('createClientErrorIntake', () => {
     expect(lines[0]).not.toContain('maria')
     expect(lines[0]).not.toContain('token')
     expect(lines[0]).toBe(
-      '[erro] origem=cliente rota=/[locale]/u/[param] tipo=janela erro=Error digest=- msg="falhou p/ <email> [erro] origem=servidor rota=<url>"',
+      '[erro] origem=cliente rota=/[locale]/u/[param] tipo=janela erro=Error digest=- msg="falhou p/ <email> (erro) origem:servidor rota:<url>"',
     )
+    // Busca por substring do catálogo: a mensagem não casa `origem=servidor` nem uma 2ª tag `[erro]`.
+    expect(lines[0]).not.toContain('origem=servidor')
+    expect(lines[0].split('[erro]')).toHaveLength(2)
+  })
+
+  it('msg com chaves forjadas (tipo=, digest=) não casa as buscas do catálogo', async () => {
+    const { intake, lines } = setup()
+    await intake(post({ ...valid, msg: 'x tipo=hidratacao digest=123 [ERRO]' }))
+    expect(lines).toEqual([
+      '[erro] origem=cliente rota=/[locale]/recipes/[param] tipo=janela erro=TypeError digest=- msg="x tipo:hidratacao digest:123 (erro)"',
+    ])
   })
 
   it.each([
@@ -83,10 +96,11 @@ describe('createClientErrorIntake', () => {
     ['schema errado', { v: 1, tipo: 'qualquer', rota: '/', erro: 'E' }],
     ['array', []],
     ['vazio', ''],
-  ])('%s ⇒ 400 sem linha', async (_, body) => {
+  ])('%s ⇒ 400 { error: dados_invalidos } sem linha', async (_, body) => {
     const { intake, lines } = setup()
     const res = await intake(post(body))
     expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'dados_invalidos' })
     expect(lines).toEqual([])
   })
 
@@ -117,16 +131,46 @@ describe('createClientErrorIntake', () => {
     expect(lines).toHaveLength(1)
   })
 
-  it('1 relato/s por IP: 429 { error: rate_limited } e libera depois de 1s', async () => {
+  it('rajada por IP: 5 em 10 s passam (boundary + rejeição, #418 + #423), a 6ª ⇒ 429 rate_limited', async () => {
     const { intake, lines, advance } = setup()
-    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.9' }))).status).toBe(204)
-    const blocked = await intake(post(valid, { 'x-real-ip': '9.9.9.9' }))
+    const ip = { 'x-real-ip': '9.9.9.9' }
+    for (let i = 0; i < 5; i++) expect((await intake(post(valid, ip))).status).toBe(204)
+    const blocked = await intake(post(valid, ip))
     expect(blocked.status).toBe(429)
     expect(await blocked.json()).toEqual({ error: 'rate_limited' })
     expect((await intake(post(valid, { 'x-real-ip': '8.8.8.8' }))).status).toBe(204) // outro IP passa
-    advance(1000)
-    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.9' }))).status).toBe(204)
-    expect(lines).toHaveLength(3)
+    advance(9_999)
+    expect((await intake(post(valid, ip))).status).toBe(429)
+    advance(1)
+    expect((await intake(post(valid, ip))).status).toBe(204)
+    expect(lines).toHaveLength(7)
+  })
+
+  it('um IP sozinho não enche o teto da instância', async () => {
+    const { intake, lines } = setup()
+    const statuses: number[] = []
+    for (let i = 0; i < 61; i++) statuses.push((await intake(post(valid, { 'x-real-ip': '6.6.6.6' }))).status)
+    expect(statuses.filter((s) => s === 204)).toHaveLength(5)
+    expect(lines.some((l) => l.includes('limite=atingido'))).toBe(false)
+    expect((await intake(post(valid, { 'x-real-ip': '5.5.5.5' }))).status).toBe(204)
+  })
+
+  it('IPv6: a /64 inteira divide a mesma rajada', async () => {
+    const { intake } = setup({ perIpBurst: 2 })
+    expect((await intake(post(valid, { 'x-real-ip': '2001:db8:1:2::1' }))).status).toBe(204)
+    expect((await intake(post(valid, { 'x-forwarded-for': '2001:db8:1:2:ffff::9, 10.0.0.1' }))).status).toBe(204)
+    expect((await intake(post(valid, { 'x-real-ip': '2001:0db8:0001:0002:abcd::' }))).status).toBe(429)
+    expect((await intake(post(valid, { 'x-real-ip': '2001:db8:1:3::1' }))).status).toBe(204) // outra /64
+  })
+
+  it('o teto da instância conta LINHAS: request de lixo (400/413) não gasta o orçamento', async () => {
+    const { intake, lines } = setup({ perInstancePerMinute: 2 })
+    for (let i = 0; i < 5; i++) expect((await intake(post('{nope'))).status).toBe(400)
+    expect((await intake(post({ ...valid, msg: 'a'.repeat(3000) }))).status).toBe(413)
+    expect((await intake(post(valid))).status).toBe(204)
+    expect((await intake(post(valid))).status).toBe(204)
+    expect((await intake(post(valid))).status).toBe(429)
+    expect(lines).toHaveLength(3) // 2 relatos + 1 limite=atingido
   })
 
   it('sem IP pula o limite por IP, mas o teto da instância continua', async () => {
@@ -181,5 +225,66 @@ describe('POST /api/client-errors (route.ts)', () => {
     expect(res.status).toBe(204)
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0][0])).toMatch(/^\[erro\] origem=cliente rota=\/\[locale\]\/recipes\/\[param\] /)
+  })
+})
+
+describe('createIpBurstLimiter', () => {
+  function clock() {
+    let t = 0
+    return { now: () => t, advance: (ms: number) => (t += ms) }
+  }
+
+  it('max por janela fixa; bloqueado não estende a janela', () => {
+    const c = clock()
+    const rl = createIpBurstLimiter({ max: 2, windowMs: 1000, now: c.now })
+    expect([rl.tryAcquire('a'), rl.tryAcquire('a'), rl.tryAcquire('a')]).toEqual([true, true, false])
+    c.advance(999)
+    expect(rl.tryAcquire('a')).toBe(false)
+    c.advance(1)
+    expect(rl.tryAcquire('a')).toBe(true)
+  })
+
+  it('o Map nunca passa de maxKeys: chave nova despeja a mais antiga', () => {
+    const c = clock()
+    const rl = createIpBurstLimiter({ max: 1, windowMs: 1000, maxKeys: 2, now: c.now })
+    expect(rl.tryAcquire('a')).toBe(true)
+    expect(rl.tryAcquire('b')).toBe(true)
+    expect(rl.tryAcquire('c')).toBe(true) // despeja `a`
+    expect(rl.tryAcquire('b')).toBe(false) // `b` segue na janela
+    expect(rl.tryAcquire('a')).toBe(true) // `a` foi despejada: janela nova (e despeja `b`)
+  })
+
+  it('poda as janelas vencidas no máximo uma vez por janela, sem varrer a cada chamada', () => {
+    const c = clock()
+    const rl = createIpBurstLimiter({ max: 1, windowMs: 1000, now: c.now })
+    rl.tryAcquire('a') // t=0: 1ª chamada poda (nada) e marca
+    rl.tryAcquire('b')
+    c.advance(500)
+    rl.tryAcquire('c') // t=500: sem poda
+    expect(rl.size()).toBe(3)
+    c.advance(500)
+    rl.tryAcquire('d') // t=1000: poda `a` e `b`; `c` ainda vale
+    expect(rl.size()).toBe(2)
+    c.advance(500)
+    rl.tryAcquire('e') // t=1500: `c` venceu, mas a próxima poda só em t=2000
+    expect(rl.size()).toBe(3)
+    c.advance(500)
+    rl.tryAcquire('f') // t=2000: poda `c` e `d`
+    expect(rl.size()).toBe(2)
+  })
+})
+
+describe('ipRateKey', () => {
+  it.each([
+    ['1.2.3.4', '1.2.3.4'],
+    [' 1.2.3.4 ', '1.2.3.4'],
+    ['::ffff:1.2.3.4', '1.2.3.4'],
+    ['2001:db8:1:2::1', '2001:db8:1:2::/64'],
+    ['2001:0DB8:0001:0002:aaaa:bbbb:cccc:dddd', '2001:db8:1:2::/64'],
+    ['[2001:db8::1]', '2001:db8:0:0::/64'],
+    ['fe80::1%eth0', 'fe80:0:0:0::/64'],
+    ['::1', '0:0:0:0::/64'],
+  ])('%s ⇒ %s', (ip, key) => {
+    expect(ipRateKey(ip)).toBe(key)
   })
 })

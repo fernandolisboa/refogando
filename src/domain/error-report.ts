@@ -16,24 +16,32 @@
 // Import relativo: o E2E (`e2e/fixtures/test.ts`) importa este módulo fora do bundler do Next.
 import { canonicalLocale } from '../i18n/locale'
 
-export const ERROR_LOG_TAG = '[erro]'
+const ERROR_LOG_TAG = '[erro]'
 
 /** Teto da `msg` do cliente na linha (com o `…` incluso). */
 export const ERROR_MESSAGE_MAX = 160
 /** Corte ANTES das regex: nenhuma passa de O(n) num texto deste tamanho, e uma mensagem de 10 KB não pesa. */
 const ERROR_MESSAGE_SCAN_MAX = 1000
-/** Teto da rota (servidor e cliente). */
-export const ERROR_ROUTE_MAX = 160
+/** Teto, em caracteres, da rota do SERVIDOR (a do cliente capa por número de segmentos). */
+const ERROR_ROUTE_MAX = 160
 /** Teto de segmentos da rota do cliente (o app mais fundo tem 4 sob o locale). */
 const CLIENT_ROUTE_SEGMENTS_MAX = 8
 
-/** Limites do relato do navegador (D8). Os do endpoint vivem aqui para o ADR e os testes lerem um lugar só. */
+/**
+ * Limites do relato do navegador (ADR-0048 dec 4). Os do endpoint vivem aqui para o ADR e os testes lerem um
+ * lugar só.
+ */
 export const CLIENT_ERROR_LIMITS = {
   /** Corpo do POST, em bytes. Um relato real tem ~300. */
   bodyMaxBytes: 2048,
-  /** Um relato por segundo por IP (best-effort por instância, como o takedown). */
-  perIpIntervalMs: 1000,
-  /** Teto de linhas por instância por minuto, somando todos os IPs. */
+  /**
+   * Rajada por IP (IPv6 pela /64): 5 requests a cada 10 s, best-effort por instância. Cabe a rajada legítima
+   * (boundary + rejeição no mesmo segundo, #418 seguido de #423) — o navegador já contou esses relatos nos
+   * tetos dele e não reenvia — e fica bem abaixo do teto da instância: um IP sozinho não o enche.
+   */
+  perIpBurst: 5,
+  perIpWindowMs: 10_000,
+  /** Teto de LINHAS por instância por minuto, somando todos os IPs (request inválido não gasta). */
   perInstancePerMinute: 60,
   /** Relatos por carga de página (o navegador para de enviar depois disso). */
   perPageLoad: 5,
@@ -41,12 +49,17 @@ export const CLIENT_ERROR_LIMITS = {
   perSession: 20,
 } as const
 
+// #418/#423/#425 são os códigos minificados de produção. O `.*` volta atrás a cada `hydrat…`: num texto
+// grande e sem fim é quadrático (17 s em 600 KB), por isso só roda sobre o corte de `isHydrationError`.
+const HYDRATION_ERROR_RE = /Minified React error #(418|423|425)\b|Hydration failed|hydrat(ion|ing).*(mismatch|error)/i
+
 /**
- * Erro de hidratação do React: a MESMA regex do guarda de console do E2E (`e2e/fixtures/test.ts` importa
- * daqui). #418/#423/#425 são os códigos minificados de produção.
+ * Erro de hidratação do React? O MESMO teste do guarda de console do E2E (`e2e/fixtures/test.ts` importa
+ * daqui). Olha só os primeiros 1000 caracteres: o texto vem do navegador, sem teto.
  */
-export const HYDRATION_ERROR_RE =
-  /Minified React error #(418|423|425)\b|Hydration failed|hydrat(ion|ing).*(mismatch|error)/i
+export function isHydrationError(message: string): boolean {
+  return HYDRATION_ERROR_RE.test(message.slice(0, ERROR_MESSAGE_SCAN_MAX))
+}
 
 // ─── Campos curtos ────────────────────────────────────────────────────────────────────────────────
 
@@ -67,6 +80,13 @@ export function errorNameOf(err: unknown): string {
   return typeof err
 }
 
+/** Mensagem crua de um valor lançado: `throw 'x'` ⇒ `x`; `message` string de um objeto; senão `''`. */
+export function errorMessageOf(err: unknown): string {
+  if (typeof err === 'string') return err
+  const m = (err as { message?: unknown } | null)?.message
+  return typeof m === 'string' ? m : ''
+}
+
 /** Nome do erro só se parecer identificador (`TypeError`, `DrizzleQueryError`); qualquer outra coisa vira `Error`. */
 export function sanitizeErrorName(name: unknown): string {
   return typeof name === 'string' && ERROR_NAME_RE.test(name) ? name : 'Error'
@@ -78,9 +98,10 @@ export function sanitizeDigest(digest: unknown): string {
 }
 
 /**
- * Código curto do erro (D7): SQLSTATE do Postgres (`23505`), código do Node (`ECONNREFUSED`). Olha o próprio
- * erro e, um nível abaixo, a `cause` (o Drizzle embrulha o erro do driver). Fora do formato ⇒ `null` (a chave
- * some da linha). Regra do ADR-0048: `code` nunca carrega dado de usuário — é constante de biblioteca.
+ * Código curto do erro (ADR-0048 dec 2): SQLSTATE do Postgres (`23505`), código do Node (`ECONNREFUSED`).
+ * Olha o próprio erro e, um nível abaixo, a `cause` (o Drizzle embrulha o erro do driver). Fora do formato ⇒
+ * `null` (a chave some da linha). Regra do ADR-0048: `code` nunca carrega dado de usuário — é constante de
+ * biblioteca.
  */
 export function errorCodeOf(err: unknown): string | null {
   for (const v of [err, (err as { cause?: unknown } | null)?.cause]) {
@@ -167,7 +188,9 @@ const EMPTY_NODE: RouteNode = {}
  * query/hash; o 1º segmento vira `[locale]` (locale suportado, ou o próprio `[locale]` — idempotência) ou
  * `[sem-locale]` (não `[?]`: o `?` viraria início de query na re-normalização); os demais ficam só se
  * forem filho estático do nó atual da árvore, senão `[param]` — um slug de Receita, um handle (`/u/maria` ⇒
- * `/u/[param]`, inclusive `/u/me`), um id. No máximo 8 segmentos. Não-string ⇒ `-`.
+ * `/u/[param]`, inclusive `/u/me`), um id. No máximo 8 segmentos. Não-string ⇒ `-`. Toda busca é por
+ * chave PRÓPRIA (`canonicalLocale` usa `Map`, a árvore `Object.hasOwn`): `/__proto__/constructor` não acha
+ * nada herdado do `Object.prototype`.
  */
 export function normalizeClientRoute(pathname: unknown): string {
   if (typeof pathname !== 'string') return '-'
@@ -186,7 +209,7 @@ export function normalizeClientRoute(pathname: unknown): string {
       node = child
     } else {
       out.push('[param]')
-      node = node['*'] ?? EMPTY_NODE
+      node = Object.hasOwn(node, '*') ? node['*'] : EMPTY_NODE
     }
   }
   return `/${out.join('/')}`
@@ -204,10 +227,19 @@ const BACKTICK_RE = /`[^`]*`/g
 // Exceção das aspas simples: `(reading 'title')` — nome de propriedade do código, não dado de usuário.
 const PROPERTY_CONTEXT_RE = /(?:reading|setting|property) $/
 const IDENTIFIER_RE = /^[A-Za-z_$][\w$.]{0,40}$/
+// Chave forjada e tag forjada: `msg` não pode trazer `origem=servidor`, `tipo=hidratacao`, `digest=…` nem
+// `[erro]` que casem as buscas por substring de `docs/observabilidade.md`. `=` vira `:`, `[erro]` vira `(erro)`.
+const KEY_VALUE_RE = /=/g
+const TAG_RE = /\[erro\]/gi
 const URL_RE = /\b[a-z][a-z0-9+.-]{1,15}:\/\/[^\s"'<>]*/gi
-// Caminho relativo solto (`/pt-BR/u/maria?token=…`): pode carregar handle, slug ou token.
-const PATH_RE = /(^|[\s(=:,])\/[^\s"'<>]+/g
-const EMAIL_RE = /[\w.+%-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63})+/g
+// Caminho solto (`/pt-BR/u/maria?token=…`, `./u/maria`, `../u/maria`, `~/maria`): pode carregar handle, slug
+// ou token. O prefixo `.`/`..`/`~` some junto.
+const PATH_RE = /(^|[\s(=:,])(?:\.{1,2}|~)?\/[^\s"'<>]+/g
+// Unicode (`maría@exemplo.com`, `joao@café.com.br`): com o `\w` ASCII sobrava `marí`.
+const EMAIL_RE = /[\p{L}\p{N}_.+%-]{1,64}@[\p{L}\p{N}_-]{1,63}(?:\.[\p{L}\p{N}_-]{1,63})+/gu
+// O que sobrou com `@` depois do e-mail: `maria@gmail` (sem TLD) ⇒ `<email>`; `@maria_silva` solto ⇒ `<handle>`.
+// O lookbehind só deixa começar no início de uma palavra, então cada palavra é varrida uma vez (linear).
+const AT_WORD_RE = /(?<![^\s"'`<>()[\]{},;])[^\s"'`<>()[\]{},;]*@[^\s"'`<>()[\]{},;]*/gu
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
 const TOKEN_RE = /[A-Za-z0-9_\-+/=.]{24,}/g
 const NUMBER_RE = /\+?\(?\d[\d\s().\-/]{2,}\d/g
@@ -218,9 +250,10 @@ const NUMBER_RE = /\+?\(?\d[\d\s().\-/]{2,}\d/g
  * interpolar dado de usuário em `throw new Error(…)` no cliente — a sanitização é a rede, não o contrato.
  *
  * Ordem: corta em 1000 → `Minified React error #N` vira `React #N` (o resto são args da URL do React) →
- * controles viram espaço → texto entre aspas some (duplas e crases sempre; simples também, exceto o
- * identificador curto depois de `reading `/`setting `/`property `) → URL, caminho, e-mail, UUID, token,
- * número longo → espaços colapsados → ≤160 com `…`.
+ * controles viram espaço → `=` vira `:` e `[erro]` vira `(erro)` (nada de chave/tag forjada) → texto entre
+ * aspas some (duplas e crases sempre; simples também, exceto o identificador curto depois de
+ * `reading `/`setting `/`property `) → URL, caminho, e-mail, palavra com `@` (`<email>`/`<handle>`), UUID,
+ * token, número longo → espaços colapsados → ≤160 com `…`.
  */
 export function sanitizeErrorMessage(raw: unknown): string {
   if (typeof raw !== 'string' || raw === '') return ''
@@ -229,6 +262,8 @@ export function sanitizeErrorMessage(raw: unknown): string {
   if (react) return `React #${react[1]}`
   s = s
     .replace(CONTROL_RE, ' ')
+    .replace(KEY_VALUE_RE, ':')
+    .replace(TAG_RE, '(erro)')
     .replace(DOUBLE_QUOTED_RE, '"…"')
     .replace(BACKTICK_RE, '`…`')
     .replace(SINGLE_QUOTED_RE, (m: string, inner: string, offset: number, all: string) =>
@@ -239,6 +274,7 @@ export function sanitizeErrorMessage(raw: unknown): string {
     .replace(URL_RE, '<url>')
     .replace(PATH_RE, '$1<url>')
     .replace(EMAIL_RE, '<email>')
+    .replace(AT_WORD_RE, (m: string) => (m === '@' ? m : m.startsWith('@') ? '<handle>' : '<email>'))
     .replace(UUID_RE, '<id>')
     .replace(TOKEN_RE, '<token>')
     .replace(NUMBER_RE, (m: string) => (m.replace(/\D/g, '').length >= 4 ? '<num>' : m))
@@ -282,7 +318,7 @@ export function formatServerErrorLine(err: unknown, method: unknown, ctx: Server
 }
 
 /** De onde veio o relato do navegador. */
-export const CLIENT_ERROR_KINDS = ['boundary', 'global', 'janela', 'promessa', 'hidratacao'] as const
+const CLIENT_ERROR_KINDS = ['boundary', 'global', 'janela', 'promessa', 'hidratacao'] as const
 export type ClientErrorKind = (typeof CLIENT_ERROR_KINDS)[number]
 
 /** Relato do navegador, schema v1 — o corpo do POST e o que a linha imprime. */
@@ -307,7 +343,7 @@ export function buildClientErrorReport(
   message?: unknown,
 ): ClientErrorReport {
   const digest = sanitizeDigest((err as { digest?: unknown } | null)?.digest)
-  const rawMsg = message ?? (err as { message?: unknown } | null)?.message ?? (typeof err === 'string' ? err : '')
+  const rawMsg = message ?? errorMessageOf(err)
   return {
     v: 1,
     tipo,

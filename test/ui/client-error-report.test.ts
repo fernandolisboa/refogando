@@ -82,7 +82,7 @@ describe('reportClientError', () => {
     const send = vi.fn()
     const opts = { enabled: true, send, storage: null, pathname: '/pt-BR' }
     expect(reportClientError('boundary', Object.assign(new Error('x'), { name: 'ChunkLoadError' }), opts)).toBe(false)
-    expect(reportClientError('boundary', new Error('Failed to load chunk /_next/static/chunks/a.js from module 1'), opts)).toBe(false)
+    expect(reportClientError('boundary', new Error('Loading chunk 9 failed.'), opts)).toBe(false)
     expect(send).not.toHaveBeenCalled()
   })
 
@@ -196,7 +196,10 @@ describe('installClientErrorListeners', () => {
     fireError({ error: Object.assign(new Error('boom'), { stack: 'Error: boom\n at chrome-extension://abc/x.js:1:1' }) })
     fireError({ error: new Error('ResizeObserver loop completed with undelivered notifications.') })
     fireError({ error: Object.assign(new Error('x'), { name: 'ChunkLoadError' }) })
-    fireRejection(new Error('Failed to load chunk /_next/static/chunks/a.js'))
+    // O Turbopack lança `Failed to load chunk …` com `name = 'ChunkLoadError'`.
+    fireRejection(
+      Object.assign(new Error('Failed to load chunk /_next/static/chunks/a.js'), { name: 'ChunkLoadError' }),
+    )
     fireRejection(new DOMException('The operation was aborted.', 'AbortError'))
     fireRejection(new TypeError('Failed to fetch'))
     fireRejection(new TypeError('NetworkError when attempting to fetch resource.'))
