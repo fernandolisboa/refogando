@@ -1,5 +1,6 @@
 import { NAV_SECTIONS } from '../../src/domain/nav-sections'
 import { sectionLabel, tabLabel } from '../../src/components/nav/nav-labels'
+import { TOUR_STORAGE_PREFIX, tourStorageKey, type TourState } from '../../src/domain/onboarding-tour'
 import {
   expect,
   newAccountData,
@@ -17,6 +18,9 @@ import {
  */
 
 const pathFor = (href: string) => (href === '/' ? '/pt-BR' : `/pt-BR${href}`)
+
+type TourRead = { key: string; value: string | null }
+type TourReadsWindow = Window & { __e2eTourReads?: TourRead[] }
 
 test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ page, isMobile }, testInfo) => {
   const conta = newAccountData(testInfo.workerIndex)
@@ -40,6 +44,20 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
   await menu.getByRole('menuitem', { name: t.nav.signOut }).click()
   await expect(page.locator('[data-tour="conta"] a[href^="/sign-in"]')).toBeAttached()
 
+  // Sinal determinístico da abertura automática: registra cada leitura da chave do tour. Na home, a
+  // casca só lê o storage quando o timer de AUTO_START_DELAY_MS dispara e decide abrir ou não; o login
+  // navega pelo cliente, então o script precisa entrar antes da página de login.
+  await page.addInitScript((prefix) => {
+    const reads: { key: string; value: string | null }[] = []
+    ;(window as Window & { __e2eTourReads?: typeof reads }).__e2eTourReads = reads
+    const getItem = Storage.prototype.getItem
+    Storage.prototype.getItem = function (this: Storage, key: string) {
+      const value = getItem.call(this, key)
+      if (key.startsWith(prefix)) reads.push({ key, value })
+      return value
+    }
+  }, TOUR_STORAGE_PREFIX)
+
   await page.goto('/pt-BR/sign-in')
   await waitForHydration(page)
   const login = page.getByRole('main')
@@ -49,7 +67,18 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
 
   await expect(page).not.toHaveURL(/sign-in/)
   await expect(page.locator('[data-tour="conta"]').getByRole('button', { name: conta.name, includeHidden: true })).toBeAttached()
-  // Dispensado neste aparelho: o tour não volta no login seguinte.
+  // Dispensado neste aparelho: o tour não volta no login seguinte. Espera a checagem automática da home
+  // ler o storage (prova que o timer já disparou) e confere que ela leu 'dismissed' (com null, abriria).
+  await expect(page).toHaveURL(/\/pt-BR$/)
+  const session = await page.request.get('/api/auth/get-session')
+  const userId = ((await session.json()) as { user: { id: string } }).user.id
+  const key = tourStorageKey(userId)
+  const dismissed: TourState = 'dismissed'
+  const readsOf = () =>
+    page.evaluate((k) => ((window as TourReadsWindow).__e2eTourReads ?? []).filter((r) => r.key === k), key)
+  await expect.poll(async () => (await readsOf()).length, { message: 'a home checou o tour' }).toBeGreaterThan(0)
+  expect((await readsOf())[0].value, 'o que a checagem automática leu').toBe(dismissed)
+  expect(await page.evaluate((k) => window.localStorage.getItem(k), key)).toBe(dismissed)
   await expect(page.getByTestId('tour-overlay')).toHaveCount(0)
 })
 
@@ -58,6 +87,7 @@ test('logado percorre todas as abas das seções; Planejar lembra a última aba'
   isMobile,
   account,
 }) => {
+  // Só pede a fixture (conta nova e logada); o valor não é usado.
   void account
   await page.goto('/pt-BR')
   await waitForHydration(page)

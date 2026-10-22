@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { E2E_CANARY_TITLE } from '../../src/server/e2e/canary'
-import { expect, openCreate, t, test, waitForHydration } from '../fixtures/test'
+import { expect, openCreate, recipePath, t, test, waitForHydration } from '../fixtures/test'
 
 /**
  * Criar pela gaveta (ADR-0021): "Criar" ⇒ Prompt aberto ⇒ Gerar ⇒ "Ver receita". O "Claude" do modo
@@ -13,6 +13,7 @@ test('gera pela gaveta (prompt aberto) e abre a Receita criada, sem diálogo sob
   isMobile,
   account,
 }) => {
+  // Só pede a fixture (conta nova e logada); o valor não é usado.
   void account
   const nonce = randomUUID().replace(/-/g, '').slice(0, 8)
   const titulo = `${E2E_CANARY_TITLE} ${nonce}`
@@ -29,7 +30,7 @@ test('gera pela gaveta (prompt aberto) e abre a Receita criada, sem diálogo sob
   await expect(drawer.getByRole('heading', { level: 1, name: titulo })).toBeVisible()
   await drawer.getByRole('link', { name: t.criar.verReceita }).click()
 
-  await expect(page).toHaveURL(new RegExp(`/pt-BR/recipes/arroz-de-forno-da-fumaca-${nonce}$`))
+  await expect(page).toHaveURL(new RegExp(`${recipePath(titulo)}$`))
   await expect(page.getByRole('heading', { level: 1, name: titulo })).toBeVisible()
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })

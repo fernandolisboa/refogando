@@ -5,7 +5,14 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { makeSql } from '@/db/client'
 import { runMigrations } from '@/db/migrate'
 import { isLoopbackUrl, VERCEL_MARKERS } from '@/server/e2e/mode'
-import { E2E_AUTH_SECRET, E2E_BASE_URL, E2E_BUILD_MARKER, E2E_PORT } from './constants'
+import {
+  E2E_AUTH_SECRET,
+  E2E_BASE_URL,
+  E2E_BUILD_MARKER,
+  E2E_DB_NAME_RE,
+  E2E_ORPHAN_MIN_AGE_MS,
+  E2E_PORT,
+} from './constants'
 import { seedE2e } from './seed'
 
 /**
@@ -14,10 +21,10 @@ import { seedE2e } from './seed'
  * `next start` em localhost:3100, no MODO FAKE (`REFOGANDO_E2E_FAKES=1`, ver src/server/e2e/mode.ts).
  * SIGTERM/SIGINT (o Playwright ao fim) ⇒ derruba o Next e apaga o banco / para o container.
  *
- * Banco (espelha test/global-setup.ts; duplicado de propósito — unificar os dois é follow-up):
+ * Banco (espelha test/global-setup.ts; duplicado de propósito — unificar os dois é o follow-up #593):
  *  - SEM `E2E_DATABASE_URL` ⇒ Testcontainers `pgvector/pgvector:pg17` (precisa de Docker local);
- *  - COM `E2E_DATABASE_URL` (só loopback) ⇒ CREATE DATABASE refogando_e2e_<rand> nesse Postgres e
- *    DROP ... WITH (FORCE) no fim. Varre órfãos `refogando_e2e_%` de execuções que morreram.
+ *  - COM `E2E_DATABASE_URL` (só loopback) ⇒ CREATE DATABASE refogando_e2e_<epoch>_<rand> nesse Postgres e
+ *    DROP ... WITH (FORCE) no fim. Varre órfãos com mais de 2h de execuções que morreram.
  * `DATABASE_URL`/`TEST_DATABASE_URL` do shell são IGNORADAS (podem apontar pra produção).
  *
  * Ambiente do Next: o `@next/env` carregaria `.env.production.local`, `.env.local`, `.env.production` e
@@ -62,7 +69,13 @@ function randSuffix(): string {
 }
 
 function assertSafeDbName(name: string): void {
-  if (!/^refogando_e2e_[a-z0-9]+$/.test(name)) throw new Error(`nome de banco inseguro: ${name}`)
+  if (!E2E_DB_NAME_RE.test(name)) throw new Error(`nome de banco inseguro: ${name}`)
+}
+
+/** Instante (ms) gravado no nome do banco; `null` se o nome não é do harness. */
+function dbCreatedAtMs(name: string): number | null {
+  const m = E2E_DB_NAME_RE.exec(name)
+  return m ? Number(m[1]) * 1000 : null
 }
 
 function swapDbName(url: string, dbName: string): string {
@@ -74,7 +87,7 @@ function swapDbName(url: string, dbName: string): string {
 type ThrowawayDb = { url: string; dbName: string; drop: () => Promise<void> }
 
 async function createThrowawayDb(): Promise<ThrowawayDb> {
-  const dbName = `refogando_e2e_${randSuffix()}`
+  const dbName = `refogando_e2e_${Math.floor(Date.now() / 1000)}_${randSuffix()}`
   assertSafeDbName(dbName)
   const external = process.env.E2E_DATABASE_URL?.trim()
 
@@ -84,16 +97,23 @@ async function createThrowawayDb(): Promise<ThrowawayDb> {
     }
     const admin = makeSql(external, { max: 1 })
     try {
-      // Órfãos de execuções que morreram (SIGKILL). Sem FORCE: um banco em uso por outro run não cai.
+      // Órfãos de execuções que morreram (SIGKILL), pela idade gravada no nome. Só os com mais de
+      // E2E_ORPHAN_MIN_AGE_MS: outro run local concorrente fica minutos sem conexão aberta no banco dele
+      // (durante o `next build`, por exemplo), e um DROP sem FORCE o derrubaria nessa janela. Sem FORCE
+      // mesmo assim (um órfão velho ainda conectado não cai). Nome fora do padrão (inclusive o formato
+      // antigo, sem o instante) fica quieto.
       const orphans = await admin<{ datname: string }[]>`
         select datname from pg_database where datname like 'refogando_e2e_%'
       `
+      const cutoff = Date.now() - E2E_ORPHAN_MIN_AGE_MS
       for (const o of orphans) {
+        const createdAt = dbCreatedAtMs(o.datname)
+        if (createdAt === null || createdAt > cutoff) continue
         try {
-          assertSafeDbName(o.datname)
           await admin.unsafe(`DROP DATABASE IF EXISTS "${o.datname}"`)
+          log(`órfão ${o.datname} apagado`)
         } catch {
-          // em uso (ou nome fora do padrão): deixa quieto.
+          // ainda em uso: deixa quieto.
         }
       }
       await admin.unsafe(`CREATE DATABASE "${dbName}"`)
@@ -164,9 +184,11 @@ function runNext(args: string[], env: NodeJS.ProcessEnv): ChildProcess {
   return spawn(process.execPath, [NEXT_BIN, ...args], { env, stdio: 'inherit' })
 }
 
+/** Espera o filho sair. Já morto (por código OU por sinal: aí `exitCode` fica null) ⇒ resolve na hora. */
 function waitExit(child: ChildProcess): Promise<number> {
   return new Promise((resolve) => {
     if (child.exitCode !== null) return resolve(child.exitCode)
+    if (child.signalCode !== null) return resolve(1)
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)))
   })
 }
@@ -183,7 +205,7 @@ async function main(): Promise<void> {
   // Idempotente (memoiza a promise): sinal + morte do Next podem chegar juntos.
   const cleanup = (): Promise<void> => {
     cleanupPromise ??= (async () => {
-      if (next && next.exitCode === null) {
+      if (next && next.exitCode === null && next.signalCode === null) {
         next.kill('SIGTERM')
         const killer = setTimeout(() => next?.kill('SIGKILL'), 10_000)
         await waitExit(next)

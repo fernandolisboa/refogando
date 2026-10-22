@@ -1,6 +1,6 @@
 # E2E de fumaça (Playwright)
 
-Issue #589. Um punhado de fluxos ponta a ponta, num navegador de verdade, contra um `next build` + `next start` de produção. Pega o que Vitest + jsdom não veem: hidratação quebrada, navegação entre seções, gaveta que não fecha, tema que pisca.
+Issue #589, decisão no [ADR-0047](adr/0047-e2e-fumaca-playwright-modo-fake.md). Um punhado de fluxos ponta a ponta, num navegador de verdade, contra um `next build` + `next start` de produção. Pega o que Vitest + jsdom não veem: hidratação quebrada, navegação entre seções, gaveta que não fecha, tema que pisca.
 
 ## O que roda
 
@@ -25,6 +25,8 @@ npm run e2e:ui         # modo interativo
 npx playwright show-report   # relatório da última execução (traces dos testes que falharam)
 ```
 
+Em Linux, se o Chromium não abrir por falta de biblioteca do sistema, instale as libs do SO junto: `npx playwright install --with-deps chromium` (pede sudo).
+
 O `webServer` do Playwright é o harness `e2e/harness/server.ts`. Ele faz, em ordem: banco descartável → migrações (`runMigrations`, nunca `drizzle-kit`) → seed (`e2e/harness/seed.ts`) → `next build` → `next start` em `http://localhost:3100`. No fim, derruba o Next e apaga o banco.
 
 ### Banco
@@ -36,7 +38,7 @@ O `webServer` do Playwright é o harness `e2e/harness/server.ts`. Ele faz, em or
   E2E_DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run e2e
   ```
 
-  O harness cria `refogando_e2e_<aleatório>` ali, apaga no fim e varre órfãos `refogando_e2e_%` de execuções que morreram. Só aceita host loopback.
+  O harness cria `refogando_e2e_<epoch>_<aleatório>` ali e apaga no fim. Na subida, varre órfãos de execuções que morreram, mas só os com mais de 2h pelo instante no nome: outra execução local em paralelo não perde o banco no meio do build. Nome fora desse padrão (inclusive o formato antigo, sem o instante) nunca é tocado; apague à mão se sobrar. Só aceita host loopback.
 
 `DATABASE_URL` e `TEST_DATABASE_URL` do shell são ignoradas.
 
@@ -51,7 +53,9 @@ O `webServer` do Playwright é o harness `e2e/harness/server.ts`. Ele faz, em or
 
 `REFOGANDO_E2E_FAKES=1` faz os getters de `src/server/deps.ts` devolverem os dublês de `src/server/e2e/fakes.ts`: "Claude" determinístico (Receita canário com o nonce do pedido no título), embedder de 1536 dimensões, tradutor identidade, imagem PNG 1×1, store em memória, busca na web e importador enlatados, mailer sem e-mail de conta (o cadastro entra direto, como produção sem Resend).
 
-A flag é segura por construção (`src/server/e2e/mode.ts`). Ela **lança** se aparecer com um marcador da Vercel não vazio, com `DATABASE_URL` fora de loopback, ou com `BETTER_AUTH_URL`/`APP_URL` que não sejam `http://` em loopback. A checagem roda em três lugares: no `next.config.ts` (derruba `next build` e `next start`), no `src/instrumentation.ts` (na subida do servidor) e em cada getter. Com a flag ligada, o instrumentation também embrulha o `fetch` global e recusa hosts fora de loopback. Esse guarda não cobre cliente que usa `undici` direto (SDK do Blob, fetch endurecido do importador), mas esses seams já estão trocados por dublês. `test/unit/e2e-mode.test.ts` trava a matriz da guarda e garante que todo `new Real*(` de `deps.ts` passa pelo ramo do modo fake.
+A flag é segura por construção (`src/server/e2e/mode.ts`). Ela **lança** se aparecer com um marcador da Vercel não vazio, com `DATABASE_URL` fora de loopback, ou com `BETTER_AUTH_URL`/`APP_URL` que não sejam `http://` em loopback. A checagem roda em três lugares: no `next.config.ts` (derruba `next build` e `next start`), no `src/instrumentation.ts` (na subida do servidor) e em cada getter. Com a flag ligada, o instrumentation também embrulha o `fetch` global e recusa hosts fora de loopback. O fetch endurecido do importador (`src/server/import/web-fetch.ts`) usa esse `fetch` global, com um `dispatcher` do undici, então passa pelo guarda; o `robotsAllows` de lá engole a rejeição (fail-open de propósito), e aí o único sinal é a linha `[e2e] fetch RECUSADO` no log. A única exceção conhecida é o SDK do `@vercel/blob`, que usa o `undici` direto e escapa do guarda, mas esse seam já está trocado por dublê. `test/unit/e2e-mode.test.ts` trava a matriz da guarda e garante que todo `new Real*(` de `deps.ts` passa pelo ramo do modo fake.
+
+**Fora do E2E, `REFOGANDO_E2E_FAKES` fica AUSENTE.** Não a ponha em `.env*`, no shell nem na Vercel: qualquer valor diferente de `'1'` lança, `'1'` lança em qualquer ambiente que não prove ser o harness (marcador da Vercel, banco ou URLs fora de loopback), e na Vercel isso derruba o build pelo `next.config.ts`. Quem liga a flag é só o harness, no env do processo filho.
 
 O `.env.local` deste repo aponta para produção. O harness passa `''` para toda chave dos arquivos `.env*` e das chaves de provedor conhecidas, e também passa `__NEXT_PROCESSED_ENV=true`, então o Next nem abre os arquivos.
 
@@ -62,6 +66,7 @@ O job `e2e` de `.github/workflows/ci.yml` roda em paralelo ao `checks`. Ele inst
 ## Escrevendo uma spec nova
 
 - Use `test`/`expect` de `e2e/fixtures/test.ts`. A fixture `account` dá uma conta nova e logada, com o tour já dispensado.
+- Para o slug de uma Receita, use `recipePath(titulo)` (deriva como o write-path); para planejar pelo popover do cardápio, `planFromPopover(page, refeicao)`.
 - Pegue os rótulos de `t` (o catálogo `pt-BR`) e prefira `getByRole`. Escopo o seletor ao diálogo ou região aberta, porque vários rótulos se repetem ("Adicionar", "Adicionar ao cardápio").
 - Não use `waitForTimeout` nem `networkidle`. Espere pelo estado visível (`expect(...).toBeVisible()`), e use `waitForHydration(page)` antes de interagir com uma página recém-carregada.
 - Os workers rodam em paralelo no mesmo banco: nada de dado compartilhado mutável. Use a Receita do seed só para leitura, e dê a todo título ou nome criado um sufixo único.

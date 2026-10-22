@@ -1,6 +1,6 @@
 /**
  * Dados do seed do E2E (#589) — fonte ÚNICA para o harness (`e2e/harness/seed.ts`, que grava) e para as
- * specs (que procuram). Sem imports `@/`: as specs rodam no processo do Playwright.
+ * specs (que procuram). Módulo folha, sem dependências.
  */
 
 /** Curadora que assina a Receita de catálogo aprovada (o CHECK exige reviewed_at/by juntos). */

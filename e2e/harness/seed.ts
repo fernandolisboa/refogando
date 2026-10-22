@@ -3,6 +3,7 @@ import { makeDb } from '@/db/client'
 import { users } from '@/db/schema'
 import { createCatalogRecipe } from '@/server/curate/create'
 import { SEED_COZINHEIRA, SEED_CURADORA, SEED_RECIPE } from '../fixtures/seed-data'
+import { E2E_DB_NAME_RE } from './constants'
 
 /**
  * Seed do banco descartável do E2E (#589). Roda no harness, DEPOIS das migrações (que já semeiam o
@@ -16,7 +17,7 @@ import { SEED_COZINHEIRA, SEED_CURADORA, SEED_RECIPE } from '../fixtures/seed-da
 export async function seedE2e(sql: Sql, expectedDbName: string): Promise<void> {
   // Mesma trava do harness do Vitest: só semeia o banco descartável que acabamos de criar.
   const [{ current_database }] = await sql<{ current_database: string }[]>`select current_database()`
-  if (current_database !== expectedDbName || !/^refogando_e2e_[a-z0-9]+$/.test(current_database)) {
+  if (current_database !== expectedDbName || !E2E_DB_NAME_RE.test(current_database)) {
     throw new Error(`[e2e/seed] banco inesperado: ${current_database}`)
   }
 

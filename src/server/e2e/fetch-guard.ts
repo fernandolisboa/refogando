@@ -6,9 +6,13 @@ import { isLoopbackUrl } from './mode'
  * o caminho que escapou (um provedor novo sem dublê, um `fetch` cru numa rota) — o E2E falha alto em vez
  * de chamar a Anthropic/Gemini/Resend de verdade.
  *
- * LIMITE CONHECIDO: só cobre o `fetch` global. Cliente que fala `undici`/`http` direto (o SDK do Vercel
- * Blob, o fetch endurecido do importador em `web-fetch.ts`) passa por fora — esses seams já estão
- * trocados por dublês no modo fake, então não chegam a rodar.
+ * Cobre todo `fetch` global, inclusive com `init.dispatcher` do undici: o fetch endurecido do importador
+ * (`src/server/import/web-fetch.ts`) usa o `fetch` GLOBAL com um `Agent` pinado, então passa por aqui.
+ * Lá, `robotsAllows` engole a rejeição (fail-open de propósito: robots indisponível ⇒ permitido), então
+ * o sinal desse caminho é só o log abaixo; o fetch da página propaga o erro normalmente.
+ *
+ * LIMITE CONHECIDO: cliente que fala `undici`/`http` direto passa por fora. A única exceção conhecida é o
+ * SDK do `@vercel/blob` (importa o `undici` dele), e esse seam já está trocado por dublê no modo fake.
  */
 export function installLoopbackFetchGuard(): void {
   const original = globalThis.fetch

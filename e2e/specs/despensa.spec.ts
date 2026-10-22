@@ -1,5 +1,6 @@
+import { pantryMatchKey } from '../../src/domain/pantry'
 import { PANTRY_HAVE, PANTRY_MISSING, SEED_RECIPE } from '../fixtures/seed-data'
-import { expect, fmt, t, test, waitForHydration } from '../fixtures/test'
+import { expect, fmt, planFromPopover, t, test, waitForHydration } from '../fixtures/test'
 
 /**
  * Despensa (ADR-0038/0042): o que a pessoa tem em casa persiste, "O que dá pra fazer" acha a Receita do
@@ -8,6 +9,7 @@ import { expect, fmt, t, test, waitForHydration } from '../fixtures/test'
  */
 
 test('despensa persiste, sugere a Receita do seed e "Cozinhei" consome os itens', async ({ page, account }) => {
+  // Só pede a fixture (conta nova e logada); o valor não é usado.
   void account
   await page.goto('/pt-BR/me/pantry')
   await waitForHydration(page)
@@ -43,15 +45,13 @@ test('despensa persiste, sugere a Receita do seed e "Cozinhei" consome os itens'
   await page.goto('/pt-BR/me/pantry')
   await waitForHydration(page)
   await resultados.getByRole('button', { name: `${t.cardapio.porNoCardapio}: ${SEED_RECIPE.titulo}` }).click()
-  const popover = page.getByRole('dialog')
-  await popover.getByRole('combobox', { name: t.cardapio.refeicao }).selectOption({ label: t.cardapio.slotJantar })
-  await popover.getByRole('button', { name: t.cardapio.planejar, exact: true }).click()
-  await popover.getByRole('link', { name: t.cardapio.verCardapio }).click()
+  await planFromPopover(page, t.cardapio.slotJantar)
 
-  await expect(page).toHaveURL(/\/pt-BR\/me\/meal-plan/)
   await page.getByRole('button', { name: fmt(t.cardapio.cozinheiAria, { nome: SEED_RECIPE.titulo }) }).click()
-  const status = page.getByRole('status').filter({ hasText: t.cardapio.cozinheiRemovidos.split('{')[0] })
-  for (const item of PANTRY_HAVE) await expect(status).toContainText(item)
+  // A frase inteira, montada do catálogo: o servidor devolve o que saiu na ordem dos chips (`pantryMatchKey`).
+  const removidos = [...PANTRY_HAVE].sort((a, b) => (pantryMatchKey(a) < pantryMatchKey(b) ? -1 : 1))
+  const frase = fmt(t.cardapio.cozinheiRemovidos, { lista: removidos.join(', ') })
+  await expect(page.getByRole('status').filter({ hasText: frase })).toBeVisible()
 
   await page.goto('/pt-BR/me/pantry')
   await waitForHydration(page)

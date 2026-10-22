@@ -1,12 +1,12 @@
 import { SEED_RECIPE } from '../fixtures/seed-data'
-import { expect, t, test, waitForHydration } from '../fixtures/test'
+import { expect, recipePath, t, test, waitForHydration } from '../fixtures/test'
 
 /**
  * Visitante (sem conta): a porta pública do app — home com locale, Busca, detalhe da Receita pelo slug
  * e o tema escolhido sobrevivendo à hidratação (o script pré-pintura e o React não podem brigar).
  */
 
-const RECIPE_PATH = '/pt-BR/recipes/bolo-de-cenoura-da-fumaca'
+const RECIPE_PATH = recipePath(SEED_RECIPE.titulo)
 
 test('busca "cenoura", abre a Receita do seed pelo slug e recarrega', async ({ page }) => {
   await page.goto('/')

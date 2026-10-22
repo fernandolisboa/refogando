@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { test as base, expect, type Locator, type Page } from '@playwright/test'
 import { ptBR } from '../../src/i18n/messages/pt-BR'
-import { TOUR_STORAGE_PREFIX } from '../../src/domain/onboarding-tour'
+import { tourStorageKey, type TourState } from '../../src/domain/onboarding-tour'
+import { recipeSlugBaseFromTitle } from '../../src/domain/recipe-slug'
 
 /**
  * Fixtures do E2E de fumaça (#589).
@@ -17,6 +18,7 @@ import { TOUR_STORAGE_PREFIX } from '../../src/domain/onboarding-tour'
  * contexto (os cookies de sessão já valem para o navegador). Nome e e-mail únicos (uuid): o handle nasce
  * do nome, sem retry de colisão, e os workers rodam em paralelo. O tour guiado abre sozinho para conta
  * nova; a fixture o marca como dispensado antes da 1ª página (a spec de cadastro testa o tour à parte).
+ * Spec que só precisa estar logada pede `account` e não lê o valor: o `void account` dela é isso.
  *
  * Rótulos vêm do catálogo `pt-BR` (a mesma fonte da UI): renomear um texto não quebra a spec à toa.
  */
@@ -40,15 +42,28 @@ export function newAccountData(workerIndex: number): Omit<Account, 'id'> {
   }
 }
 
+/**
+ * Caminho pt-BR do detalhe de uma Receita recém-criada, pelo título. Deriva o slug como o write-path
+ * (`recipeSlugBaseFromTitle`, ADR-0020): vale enquanto o título não colide com outro no locale (o seed
+ * é único e o canário leva um nonce).
+ */
+export function recipePath(titulo: string): string {
+  return `/pt-BR/recipes/${recipeSlugBaseFromTitle(titulo)}`
+}
+
 /** Marca o tour como dispensado para este usuário em todas as páginas do contexto (antes do script do app). */
 export async function dismissTour(page: Page, userId: string): Promise<void> {
-  await page.context().addInitScript((key) => {
-    try {
-      window.localStorage.setItem(key, 'dismissed')
-    } catch {
-      // storage bloqueado: o tour simplesmente não abre (o app trata assim também).
-    }
-  }, `${TOUR_STORAGE_PREFIX}${userId}`)
+  const state: TourState = 'dismissed'
+  await page.context().addInitScript(
+    ({ key, value }) => {
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        // storage bloqueado: o tour simplesmente não abre (o app trata assim também).
+      }
+    },
+    { key: tourStorageKey(userId), value: state },
+  )
 }
 
 /**
@@ -87,6 +102,20 @@ export async function openAccountMenu(page: Page, isMobile: boolean, name: strin
   const menu = page.getByRole('menu', { name })
   await expect(menu).toBeVisible()
   return menu
+}
+
+/**
+ * Com o popover "Adicionar ao cardápio"/"Pôr no cardápio" já aberto: escolhe a refeição (explícita, porque
+ * o default depende da hora do dia), planeja e segue o "Ver cardápio" até o Cardápio da semana.
+ * O popover é o único `dialog` aberto: "Adicionar" aparece também em outras partes da página.
+ */
+export async function planFromPopover(page: Page, slotLabel: string): Promise<void> {
+  const popover = page.getByRole('dialog')
+  await popover.getByRole('combobox', { name: t.cardapio.refeicao }).selectOption({ label: slotLabel })
+  await popover.getByRole('button', { name: t.cardapio.planejar, exact: true }).click()
+  await expect(popover.getByRole('status')).toContainText(slotLabel.toLowerCase())
+  await popover.getByRole('link', { name: t.cardapio.verCardapio }).click()
+  await expect(page).toHaveURL(/\/pt-BR\/me\/meal-plan/)
 }
 
 const HYDRATION_ERROR = /Minified React error #(418|423|425)\b|Hydration failed|hydrat(ion|ing).*(mismatch|error)/i

@@ -42,6 +42,11 @@ on:
       - '*.md'
       - '**/*.md'
 
+# Token do GITHUB_TOKEN só de leitura: nenhum step escreve no repo (checkout, cache e upload de
+# artefato não precisam de mais que isso).
+permissions:
+  contents: read
+
 # Cancela runs antigos do mesmo PR/branch quando chega um push novo.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
