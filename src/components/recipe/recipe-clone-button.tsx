@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
-import { formatCountdown } from '@/lib/countdown'
+import { readDeriveLimit } from '@/lib/countdown'
 
 export function RecipeCloneButton({ recipeId, locale }: { recipeId: string; locale: string }) {
   const { messages, locale: currentLocale } = useLocale()
@@ -41,15 +41,8 @@ export function RecipeCloneButton({ recipeId, locale }: { recipeId: string; loca
           return
         }
       }
-      if (res.status === 429) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string; retryAfterMs?: number }
-        if (b.error === 'limite_derivar') {
-          setErro({ kind: 'limite', tempo: formatCountdown(b.retryAfterMs ?? 0) })
-          setPending(false)
-          return
-        }
-      }
-      setErro({ kind: 'falha' })
+      const tempo = await readDeriveLimit(res)
+      setErro(tempo === null ? { kind: 'falha' } : { kind: 'limite', tempo })
       setPending(false)
     } catch {
       setErro({ kind: 'falha' })

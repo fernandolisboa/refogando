@@ -4,6 +4,7 @@ import { POST as statusPOST } from '@/app/api/me/following/status/route'
 import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 import { follow } from '@/server/user/follow'
+import { COOK_SEARCH_LIMIT } from '@/server/user/search'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 
 /**
@@ -80,15 +81,16 @@ describe('POST /api/me/following/status (#588)', () => {
     await expect(res.json()).resolves.toEqual({ following: [], self: null })
   })
 
-  it('corpo fora da forma ou acima de 50 handles ⇒ 400 dados_invalidos', async () => {
+  it('corpo fora da forma ou acima do teto (2 páginas da busca) ⇒ 400 dados_invalidos', async () => {
     const { headers } = await seedSessionHeaders({ email: 'viewer4@status.test' })
-    for (const bad of ['{nao-json', { handles: 'a,b' }, {}, null, { handles: Array.from({ length: 51 }, (_, i) => `h${i}`) }]) {
+    const max = 2 * COOK_SEARCH_LIMIT
+    for (const bad of ['{nao-json', { handles: 'a,b' }, {}, null, { handles: Array.from({ length: max + 1 }, (_, i) => `h${i}`) }]) {
       const res = await statusReq(bad, headers)
       expect(res.status).toBe(400)
       await expect(res.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
     }
-    // Exatamente 50 passa (o teto é inclusivo).
-    const ok = await statusReq({ handles: Array.from({ length: 50 }, (_, i) => `h${i}`) }, headers)
+    // Exatamente o teto passa (inclusivo).
+    const ok = await statusReq({ handles: Array.from({ length: max }, (_, i) => `h${i}`) }, headers)
     expect(ok.status).toBe(200)
   })
 

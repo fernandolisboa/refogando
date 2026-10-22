@@ -10,9 +10,11 @@ import {
 } from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS, decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
+import { pgCode } from '@/server/recipe/visibility'
 
 /**
- * Gate ATÔMICO de cota de geração por IA (#446) — fecha a corrida TOCTOU do teto.
+ * Gate ATÔMICO de cota de geração por IA (#446) — fecha a corrida TOCTOU do teto. Guarda também o teto
+ * anti-abuso de Derivar/Clonar (#588; não é IA, mas é o mesmo read-then-insert por usuário).
  *
  * O teto (recipe-gen #167, image-gen #132) era aplicado como read-then-act NÃO-atômico: um SELECT de
  * contagem (loadRecentRecipeGenAt / loadRecentAiGenAt) → decisão pura → mais tarde um INSERT, SEM lock.
@@ -23,7 +25,7 @@ import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
  *   DENTRO da MESMA transação que faz o INSERT de persistência:
  *     1. `SELECT pg_advisory_xact_lock(classId, hashtext(userId))` — serializa as requisições do MESMO
  *        usuário (a lock auto-libera no fim da tx, commit ou rollback). Usuários distintos ⇒ chaves
- *        distintas ⇒ sem contenção. O `classId` separa o domínio receita×imagem (nunca cross-block).
+ *        distintas ⇒ sem contenção. O `classId` separa as locks por domínio (nunca cross-block).
  *     2. reconta os eventos na janela 24h (agora vendo TODOS os commits anteriores, pois a lock serializou).
  *     3. decide pela função pura (mesma de sempre — fonte única do cálculo).
  *     4. estourou ⇒ LANÇA `QuotaExceededError` (a tx reverte, NADA persiste) → o caller mapeia p/ 429.
@@ -249,18 +251,43 @@ export async function peekDeriveQuota(
 }
 
 /**
+ * Teto da ESPERA pela lock do derive (#588). Uma rajada de POST /derive do MESMO usuário passa toda no
+ * peek (sem lock) e enfileira aqui, cada uma segurando uma conexão do pool (max 10 por instância) — sem
+ * teto, centenas de pedidos de um só usuário esgotariam o pool da instância pra todo mundo. 5s cobre com
+ * folga a fila legítima (cada fork segura a lock por uma transação curta).
+ */
+export const DERIVE_LOCK_TIMEOUT_MS = 5_000
+/** `retryAfterMs` do 429 quando a espera pela lock estoura (fila cheia, não teto atingido): curto. */
+export const DERIVE_LOCK_BUSY_RETRY_MS = 5_000
+
+/** SQLSTATE `lock_not_available`: o `lock_timeout` estourou esperando uma lock. */
+const LOCK_NOT_AVAILABLE = '55P03'
+
+/**
  * Gate ATÔMICO da cota de Derivar/Clonar (#588), DENTRO da tx do fork e SOB a advisory lock do usuário:
  * reconta as `user_edited` do usuário na janela 24h (agora vendo os forks já commitados pelas
  * requisições que a lock serializou antes) e decide por `decideRecipeGenQuota` (mesma janela deslizante
  * das cotas de IA). Estourou ⇒ LANÇA `QuotaExceededError` (a tx reverte, nenhuma linha nasce). DEVE ser
  * a PRIMEIRA operação da transação de `deriveRecipe` (antes do INSERT da `recipe`). `cap` não-finito
  * (admin) ⇒ no-op, sem lock.
+ *
+ * Só aqui a espera pela lock tem teto (`SET LOCAL lock_timeout`, `DERIVE_LOCK_TIMEOUT_MS`): estourou ⇒ o
+ * Postgres cancela o statement com 55P03 e vira o MESMO `QuotaExceededError` (429 `limite_derivar`, com
+ * `DERIVE_LOCK_BUSY_RETRY_MS`), nunca 500. Logo depois da lock o `lock_timeout` volta ao default da sessão,
+ * pra o resto da tx do fork não herdar o teto (um 55P03 lá adiante seria outra coisa e não deve virar 429).
  */
 export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap: number }): Promise<void> {
   const { userId, cap } = input
   if (!Number.isFinite(cap)) return
   const now = new Date()
-  await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.derive, userId)
+  await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
+  try {
+    await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.derive, userId)
+  } catch (e) {
+    if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)
+    throw e
+  }
+  await tx.execute(sql`set local lock_timeout to default`)
   const recentAt = await recentDerivedTimes(tx, userId, now)
   const decision = decideRecipeGenQuota({ cap, recentAt, now })
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)

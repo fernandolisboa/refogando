@@ -31,6 +31,15 @@ export function stripControlChars(s: string): string {
 }
 
 /**
+ * `true` se `s` tem algum byte de controle C0 (a MESMA classe de `stripControlChars`). Pura. Pra quem
+ * REJEITA/DESCARTA em vez de neutralizar: o cursor forjado (`cooks-cursor.ts`) e os itens do lote de
+ * `/api/me/following/status` (#588). `search` (não `test`): ignora o `lastIndex` da regex global `C0`.
+ */
+export function hasControlChars(s: string): boolean {
+  return s.search(C0) !== -1
+}
+
+/**
  * Fatia `?q=` por vírgula → trim cada → sanitiza C0 → dropa vazios → DEDUP termos
  * distintos → capa a MAX_TERMS. Pura. NÃO corta a `MAX_QUERY_LEN` (o route já fez isso
  * ANTES do split). O dedup vem ANTES do cap para que termos DISTINTOS preencham o

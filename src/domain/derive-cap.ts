@@ -11,7 +11,7 @@
  * `user_edited` vivas do usuário) é `assertDeriveSlotInTx` em `@/server/quota/atomic`.
  */
 
-import type { Role } from '@/domain/user'
+import { capFromRoleTable, type Role } from '@/domain/user'
 
 /**
  * Derivadas+clones por papel em qualquer janela de 24h. `null` = ilimitado. Curador ganha o dobro:
@@ -23,9 +23,7 @@ export const DERIVE_CAP_BY_ROLE: Record<Role, number | null> = {
   admin: null,
 }
 
-/** Teto numérico do papel. Papel desconhecido ⇒ o de `usuario` (fail-closed). `null` ⇒ `Infinity`. */
+/** Teto numérico do papel (`capFromRoleTable`: desconhecido ⇒ `usuario`, fail-closed; `null` ⇒ `Infinity`). */
 export function capForDerive(role: Role | null | undefined): number {
-  const raw =
-    role != null && Object.hasOwn(DERIVE_CAP_BY_ROLE, role) ? DERIVE_CAP_BY_ROLE[role] : DERIVE_CAP_BY_ROLE.usuario
-  return raw == null ? Infinity : raw
+  return capFromRoleTable(DERIVE_CAP_BY_ROLE, role)
 }

@@ -12,6 +12,7 @@
  * sign-in com `?returnTo=` (preserva a intenção — volta à página após login, guarda anti open-redirect).
  * O trilho é só-logado (Modelo B), então usa o default `authed=true`.
  */
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 import { Avatar } from '@/components/profile/avatar'
@@ -67,6 +68,34 @@ export function CookCard({
           String(cook.recipeCount),
         )
   const recipes = cook.recipes ?? []
+  // Controle de seguir: anônimo ⇒ link pro sign-in; logado ⇒ toggle inline, exceto no PRÓPRIO cartão (nada).
+  let followControl: ReactNode = null
+  if (!authed) {
+    // "Seguir" leva ao sign-in preservando a intenção (volta pra returnTo após login).
+    followControl = (
+      <Link
+        href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+        className={`inline-flex shrink-0 items-center justify-center rounded-full border px-3.5 py-1.5 text-sm font-medium ${FOLLOW_BTN_CLASS}`}
+      >
+        {labels.seguir}
+      </Link>
+    )
+  } else if (!cook.isSelf) {
+    // `key` pelo estado inicial: sem remontar, o `useState` do toggle ficaria preso no estado de quando o
+    // cartão nasceu. Dois casos com o MESMO handle: o seed global (sem `following`) trocado pela página
+    // personalizada, e (#588) o cartão da busca que nasce "Seguir" e só recebe o status
+    // (`POST /api/me/following/status`) depois que a página chegou.
+    followControl = (
+      <CookFollowButton
+        key={cook.following ? 'seguindo' : 'seguir'}
+        handle={cook.handle}
+        initialFollowing={cook.following ?? false}
+        variant="outline"
+        className={FOLLOW_BTN_CLASS}
+        labels={{ seguir: labels.seguir, seguindo: labels.seguindo, erroSeguir: labels.erroSeguir }}
+      />
+    )
+  }
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4">
       <div className="flex items-center gap-3">
@@ -89,26 +118,7 @@ export function CookCard({
             </span>
           </span>
         </Link>
-        {authed && cook.isSelf ? null : authed ? (
-          // `key` pelo estado inicial: o seed global (sem `following`) é trocado pela página personalizada
-          // com o MESMO handle — sem remontar, o `useState` do toggle ficaria preso no "Seguir" do seed.
-          <CookFollowButton
-            key={cook.following ? 'seguindo' : 'seguir'}
-            handle={cook.handle}
-            initialFollowing={cook.following ?? false}
-            variant="outline"
-            className={FOLLOW_BTN_CLASS}
-            labels={{ seguir: labels.seguir, seguindo: labels.seguindo, erroSeguir: labels.erroSeguir }}
-          />
-        ) : (
-          // Anônimo: "Seguir" leva ao sign-in preservando a intenção (volta pra returnTo após login).
-          <Link
-            href={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
-            className={`inline-flex shrink-0 items-center justify-center rounded-full border px-3.5 py-1.5 text-sm font-medium ${FOLLOW_BTN_CLASS}`}
-          >
-            {labels.seguir}
-          </Link>
-        )}
+        {followControl}
       </div>
       {recipes.length > 0 && (
         <ul className="flex flex-col">

@@ -3,9 +3,9 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import {
-  DERIVABLE_FORMATS,
   IMAGE_INPUT_PIXEL_LIMIT,
   PIPELINE_TIMEOUT_SECONDS,
+  classifyRasterInput,
 } from '@/server/images/image-derivatives'
 import { applyReview, loadRecipeReviews, type ReviewPhoto } from '@/server/recipe/review'
 
@@ -40,7 +40,9 @@ const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 /**
  * Resolve o descritor de FOTO (#365) a partir do corpo `multipart`. Devolve também o `rating`/
  * `comment` extraídos. VALIDA tipo+tamanho ANTES de ler os bytes (C9 — evita 2ª cópia em memória
- * de arquivo grande) e RE-ENCODA via sharp (C1 — strip de EXIF/GPS). `null` de erro vira Response.
+ * de arquivo grande), confere o FORMATO REAL pelos bytes (`metadata()` + `classifyRasterInput`: só
+ * JPEG/PNG/WebP de um quadro, #588) e RE-ENCODA via sharp (C1 — strip de EXIF/GPS). `null` de erro vira
+ * Response.
  */
 async function parseMultipart(
   request: Request,
@@ -83,16 +85,17 @@ async function parseMultipart(
     // #588 (formato pelos BYTES): o `file.type` acima é o DECLARADO pelo cliente, e o sharp decodifica
     // pelo conteúdo — um SVG (ou GIF/TIFF/HEIF) rotulado `image/png` seria RENDERIZADO (SVG de ~1 KB com
     // filtros custa dezenas de segundos de CPU). Então o `metadata()` (só lê o cabeçalho, sem renderizar)
-    // decide: só JPEG/PNG/WebP (`DERIVABLE_FORMATS`, a mesma allowlist dos derivados da Imagem da receita)
-    // e de UM quadro (GIF/WebP animado viraria só o 1º quadro, em silêncio) seguem; o resto ⇒ 400
-    // tipo_invalido. O pipeline ainda leva `.timeout` (`PIPELINE_TIMEOUT_SECONDS`) como teto de CPU. Os
+    // decide via `classifyRasterInput` (o MESMO gate dos derivados da Imagem da receita): só JPEG/PNG/WebP
+    // de UM quadro (GIF/WebP animado viraria só o 1º quadro, em silêncio) seguem; o resto ⇒ 400
+    // tipo_invalido. APNG passa (o sharp não reporta `pages` pra PNG) e é gravado só com o 1º quadro:
+    // limite aceito. O pipeline ainda leva `.timeout` (`PIPELINE_TIMEOUT_SECONDS`) como teto de CPU. Os
     // bytes são lidos UMA vez e reusados nas duas passadas do sharp.
     const input = { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }
     let clean: Buffer
     try {
       const data = Buffer.from(await file.arrayBuffer())
       const meta = await sharp(data, input).metadata()
-      if (!meta.format || !DERIVABLE_FORMATS.has(meta.format) || (meta.pages ?? 1) > 1) {
+      if (classifyRasterInput(meta) !== 'ok') {
         return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
       }
       clean = await sharp(data, input)

@@ -42,7 +42,8 @@ import { assertDeriveSlotInTx } from '@/server/quota/atomic'
  *
  * Teto (#588): a 1ª operação da transação é `assertDeriveSlotInTx` — lock do usuário + recontagem das
  * `user_edited` dele em 24h. Estourou ⇒ `QuotaExceededError` PROPAGA (a tx reverte, nada nasce) e a
- * rota mapeia pra 429. Derivar e Clonar dividem o MESMO teto (é o mesmo fork).
+ * rota mapeia pra 429. Derivar e Clonar dividem o MESMO teto (é o mesmo fork). A espera pela lock tem
+ * teto de 5s (rajada do mesmo usuário não prende o pool): estourou ⇒ o mesmo `QuotaExceededError`.
  */
 
 export type DeriveEdits = {
@@ -346,7 +347,8 @@ export async function deriveRecipe(input: {
     // num INSERT puro). NUNCA engolimos: P0001 é reconhecido explicitamente (via `pgCode`,
     // mesmo helper de visibility.ts) e RE-LANÇADO como 500 honesto; qualquer outro erro também
     // propaga intacto. O `if` documenta/audita a fronteira mesmo relançando nos dois ramos.
-    // QuotaExceededError (#588) também cai aqui e sobe intacto pra rota (429).
+    // QuotaExceededError (#588) também cai aqui e sobe intacto pra rota (429) — inclusive o da espera
+    // pela lock que estourou o `lock_timeout` (o 55P03 já sai convertido de `assertDeriveSlotInTx`).
     if (pgCode(e) === 'P0001') throw e // origin imutável (ADR-0002) — relança, não mascara
     throw e
   }

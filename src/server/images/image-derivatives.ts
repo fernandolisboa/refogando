@@ -37,15 +37,26 @@ export type ImageDerivativeUrls = { thumbUrl: string; detailUrl: string }
 export const IMAGE_INPUT_PIXEL_LIMIT = 24_000_000
 
 /**
- * Formatos que ganham derivado. O route do upload só confere o `file.type` DECLARADO pelo cliente, e o
- * sharp decodifica pelos BYTES: um SVG (ou TIFF/GIF/HEIF) rotulado `image/png` seria renderizado. Um SVG
- * de 1,3 KB com `feTurbulence`/`feGaussianBlur` custou ~30 s de CPU. Então o formato vem do `metadata()`
- * (que só lê o cabeçalho, sem renderizar) e só JPEG, PNG e WebP seguem; o resto fica sem derivado e a
- * tela usa o original, exatamente como antes da 0077 (o upload em si não muda: não rejeitamos aqui).
- * Exportado: a foto da avaliação (`/api/recipes/[id]/reviews`, #588) usa a MESMA allowlist pelos bytes, mas
- * lá rejeita (400 `tipo_invalido`), porque a foto é re-encodada no upload.
+ * Formatos raster seguros de decodificar. O route do upload só confere o `file.type` DECLARADO pelo
+ * cliente, e o sharp decodifica pelos BYTES: um SVG (ou TIFF/GIF/HEIF) rotulado `image/png` seria
+ * renderizado. Um SVG de 1,3 KB com `feTurbulence`/`feGaussianBlur` custou ~30 s de CPU. Então o formato
+ * vem do `metadata()` (que só lê o cabeçalho, sem renderizar) e só JPEG, PNG e WebP seguem. Aqui, o resto
+ * fica sem derivado e a tela usa o original, exatamente como antes da 0077 (o upload em si não muda: não
+ * rejeitamos aqui); na foto da avaliação (`/api/recipes/[id]/reviews`, #588) o resto vira 400
+ * `tipo_invalido`, porque a foto é re-encodada no upload. Os dois usam `classifyRasterInput`.
  */
-export const DERIVABLE_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
+export const SAFE_RASTER_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
+
+/**
+ * Decide pelo `metadata()` do sharp se a entrada segue pro pipeline: `'formato'` = fora de
+ * `SAFE_RASTER_FORMATS` (ou sem formato); `'animada'` = mais de um quadro (GIF/WebP animado viraria só o
+ * 1º quadro, em silêncio). Fonte ÚNICA do gate dos derivados e da foto da avaliação (#588).
+ */
+export function classifyRasterInput(meta: Pick<sharp.Metadata, 'format' | 'pages'>): 'ok' | 'formato' | 'animada' {
+  if (!meta.format || !SAFE_RASTER_FORMATS.has(meta.format)) return 'formato'
+  if ((meta.pages ?? 1) > 1) return 'animada'
+  return 'ok'
+}
 
 /**
  * Teto de CPU de cada pipeline do sharp (defesa extra além do formato e do teto de pixels). Compartilhado
@@ -76,7 +87,7 @@ function logFailure(stage: string, err: unknown): void {
 /**
  * Gera os dois derivados (lança em erro; use `renderImageDerivativesSafe` no caminho de escrita).
  *
- * - Lê o `metadata()` PRIMEIRO: formato fora de JPEG/PNG/WebP (`DERIVABLE_FORMATS`) ou imagem ANIMADA
+ * - Lê o `metadata()` PRIMEIRO (`classifyRasterInput`): formato fora de JPEG/PNG/WebP ou imagem ANIMADA
  *   (WebP com mais de um quadro: o sharp pegaria só o primeiro e a tela mudaria) ⇒ sem derivado.
  * - `.rotate()` sem argumento aplica a orientação EXIF antes de reduzir: o navegador mostra o original
  *   já rotacionado pela EXIF, e o WebP sai sem metadado (o sharp não copia EXIF/ICC sem `withMetadata`),
@@ -90,10 +101,9 @@ function logFailure(stage: string, err: unknown): void {
 export async function renderImageDerivatives(data: Buffer): Promise<RenderedImageDerivatives> {
   const input = { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }
   const meta = await sharp(data, input).metadata()
-  if (!meta.format || !DERIVABLE_FORMATS.has(meta.format)) {
-    throw new DerivativeSkipped(`formato ${meta.format ?? 'desconhecido'}`)
-  }
-  if ((meta.pages ?? 1) > 1) throw new DerivativeSkipped('animada')
+  const kind = classifyRasterInput(meta)
+  if (kind === 'formato') throw new DerivativeSkipped(`formato ${meta.format ?? 'desconhecido'}`)
+  if (kind === 'animada') throw new DerivativeSkipped('animada')
   const toWidth = (width: number) =>
     sharp(data, input)
       .rotate()

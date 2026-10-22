@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
 import { and, eq, sql } from 'drizzle-orm'
+import type { Sql } from 'postgres'
+import { makeSql } from '@/db/client'
 import { POST as deriveRoute } from '@/app/api/recipes/[id]/derive/route'
 import { getDb } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS } from '@/domain/recipe-gen-quota'
 import { DERIVE_CAP_BY_ROLE } from '@/domain/derive-cap'
+import { DERIVE_LOCK_BUSY_RETRY_MS, QUOTA_LOCK_CLASS } from '@/server/quota/atomic'
 import { seedRecipe, seedTranslation, seedRecipeIngredient } from '../helpers/recipes'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 
@@ -19,6 +22,15 @@ import { seedSessionHeaders, seedUser } from '../helpers/users'
  */
 
 const CAP = DERIVE_CAP_BY_ROLE.usuario as number
+
+// Conexão À PARTE (fora do pool do app) pra segurar a advisory lock do derive enquanto a rota espera.
+let holderSql: Sql
+beforeAll(() => {
+  holderSql = makeSql(inject('databaseUrl'))
+})
+afterAll(async () => {
+  await holderSql?.end({ timeout: 5 })
+})
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
 
@@ -143,6 +155,35 @@ describe('POST /api/recipes/[id]/derive — teto de derivar (#588)', () => {
     expect((await clone(ids[0], headers)).status).toBe(409)
     expect((await clone('00000000-0000-4000-8000-000000000000', headers)).status).toBe(404)
     expect((await post(baseId, { clone: true, edits: {} }, headers)).status).toBe(400)
+  })
+
+  it('lock presa além do lock_timeout (rajada enfileirada) ⇒ 429 limite_derivar com retry curto, nunca 500', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'cap-lock@derive.test' })
+    const baseId = await seedBase()
+
+    // Outra conexão segura a MESMA chave (classe do derive + hashtext(userId)) até o POST voltar.
+    let release!: () => void
+    const released = new Promise<void>((r) => (release = r))
+    let locked!: () => void
+    const isLocked = new Promise<void>((r) => (locked = r))
+    const holder = holderSql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(${QUOTA_LOCK_CLASS.derive}::int, hashtext(${userId}))`
+      locked()
+      await released
+    })
+    try {
+      await isLocked
+      const res = await clone(baseId, headers)
+      expect(res.status).toBe(429)
+      await expect(res.json()).resolves.toEqual({ error: 'limite_derivar', retryAfterMs: DERIVE_LOCK_BUSY_RETRY_MS })
+    } finally {
+      release()
+      await holder
+    }
+    expect(await countDerived(userId)).toBe(0)
+
+    // Lock livre ⇒ o fork segue normal (o lock_timeout do SET LOCAL não vaza pra conexão do pool).
+    expect((await clone(baseId, headers)).status).toBe(201)
   })
 
   it('concorrência (#446): 3 slots livres, 8 POSTs simultâneos ⇒ EXATAMENTE 3 nascem (201), 5 estouram (429)', async () => {

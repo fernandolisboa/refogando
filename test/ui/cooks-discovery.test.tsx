@@ -74,7 +74,8 @@ const authedSession = {
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
-const cardOf = (name: string) => screen.getByText(name).closest('div')!.parentElement!.parentElement!
+/** O cartão inteiro de um cozinheiro (o `<li>` da lista da ilha) — escopo pro `within`. */
+const cardOf = (name: string) => screen.getByText(name).closest('li')!
 
 beforeEach(() => {
   ioCallback = null
@@ -127,13 +128,7 @@ describe('CooksDiscovery (#308)', () => {
   })
 
   it('logado: a página personalizada troca o seed e o já-seguido nasce "Seguindo"', async () => {
-    authMock.current = {
-      data: { user: { id: 'u1' } },
-      error: null,
-      isPending: false,
-      isRefetching: false,
-      refetch: () => {},
-    }
+    authMock.current = authedSession
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -149,7 +144,6 @@ describe('CooksDiscovery (#308)', () => {
     renderDiscovery()
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/api/cooks')
-    const cardOf = (name: string) => screen.getByText(name).closest('div')!.parentElement!.parentElement!
     // MESMO handle do seed: sem remontar o botão, o toggle ficaria preso no "Seguir" do seed.
     await waitFor(() =>
       expect(
@@ -164,8 +158,7 @@ describe('CooksDiscovery (#308)', () => {
 
   it('anon: "Seguir" do cartão é um LINK pro sign-in com returnTo (bounce, não toggle)', () => {
     renderDiscovery()
-    const card = screen.getByText('Cook seed-a').closest('div')!.parentElement!.parentElement!
-    const seguir = within(card).getByRole('link', { name: ptBR.cozinheirosSugeridos.seguir })
+    const seguir = within(cardOf('Cook seed-a')).getByRole('link', { name: ptBR.cozinheirosSugeridos.seguir })
     expect(seguir).toHaveAttribute('href', expect.stringContaining('/sign-in?returnTo='))
     expect(seguir.getAttribute('href')).toContain(encodeURIComponent('/pt-BR/cooks'))
   })

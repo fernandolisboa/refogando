@@ -20,3 +20,14 @@ export const DEFAULT_ROLE: Role = 'usuario'
  * Usada por `requireRole` para "papel >= mínimo".
  */
 export const ROLE_RANK: Record<Role, number> = { usuario: 0, curador: 1, admin: 2 }
+
+/**
+ * Teto numérico de um papel numa tabela de cota EM CÓDIGO (`Record<Role, number | null>`: Sugestão de
+ * cardápio ADR-0036, Derivar/Clonar #588). Papel desconhecido/ausente ⇒ o de `usuario` (fail-closed;
+ * `Object.hasOwn` pra uma chave herdada como `toString` não passar por papel). `null` ⇒ `Infinity`
+ * (ilimitado: os gates de cota pulam lock e recontagem).
+ */
+export function capFromRoleTable(table: Record<Role, number | null>, role: Role | null | undefined): number {
+  const raw = role != null && Object.hasOwn(table, role) ? table[role] : table.usuario
+  return raw == null ? Infinity : raw
+}

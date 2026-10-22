@@ -33,7 +33,7 @@ import {
 } from '@/domain/vocabulary'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
-import { formatCountdown } from '@/lib/countdown'
+import { readDeriveLimit } from '@/lib/countdown'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import type { RecipeView } from '@/domain/recipe-read'
 
@@ -291,10 +291,11 @@ export function RecipeEditForm({
 
   /**
    * #196/ADR-0021: DERIVA uma Receita NÃO-própria. POST /api/recipes/[id]/derive (a base NUNCA é
-   * mutada) → 201 { recipeId } → NAVEGA pra nova Receita (sua, privada). Erro (qualquer não-201)
-   * mostra mensagem neutra e mantém o modal aberto (a edição não se perde). #131: mudança visual
-   * com imagem herdada ⇒ `?reviewImage=1`. #588: 429 `limite_derivar` (teto de derivar) ⇒ mensagem
-   * própria com o tempo até liberar, modal aberto (a edição segue lá pra tentar depois).
+   * mutada) → 201 { recipeId } → NAVEGA pra nova Receita (sua, privada). Erro (não-201, exceto o
+   * 429 do teto) mostra mensagem neutra e mantém o modal aberto (a edição não se perde). #131:
+   * mudança visual com imagem herdada ⇒ `?reviewImage=1`. #588: 429 `limite_derivar` (teto de
+   * derivar, lido por `readDeriveLimit`) ⇒ mensagem própria com o tempo até liberar, modal aberto (a
+   * edição segue lá pra tentar depois).
    */
   async function derivar() {
     if (saving) return
@@ -330,13 +331,11 @@ export function RecipeEditForm({
         onSaved?.()
         return
       }
-      if (res.status === 429) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string; retryAfterMs?: number }
-        if (b.error === 'limite_derivar') {
-          setLimiteTempo(formatCountdown(b.retryAfterMs ?? 0))
-          setErrorKey('limite')
-          return
-        }
+      const tempo = await readDeriveLimit(res)
+      if (tempo !== null) {
+        setLimiteTempo(tempo)
+        setErrorKey('limite')
+        return
       }
       setErrorKey('save')
     } catch {

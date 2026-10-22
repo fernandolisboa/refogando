@@ -1,6 +1,8 @@
-import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { users, userFollow } from '@/db/schema'
+import { emailVerificationRequired } from '@/lib/auth'
+import { publicAccountFilter } from '@/server/auth/pending-account'
 
 /**
  * Seam do grafo de SEGUIR (#274, ADR-0024). Escritas idempotentes (par único pela PK) e leituras
@@ -113,9 +115,9 @@ export type FollowStatusByHandles = { following: string[]; self: string | null }
 
 /**
  * "Eu sigo?" em LOTE, por handle (#588 — a busca de Cozinheiros é cookie-free, então o cartão nascia sempre
- * "Seguir"; a ilha logada pergunta aqui depois de cada página). UMA query: as contas PÚBLICAS (`publicFilter`
- * — o MESMO `publicAccountFilter` das rotas de seguir, passado pelo caller, que lê o gate de confirmação)
- * cujo handle está no lote, com LEFT JOIN na aresta viewer→conta (lookup pela PK). Devolve os handles
+ * "Seguir"; a ilha logada pergunta aqui depois de cada página). UMA query: as contas PÚBLICAS
+ * (`publicAccountFilter(emailVerificationRequired())`, o MESMO das rotas de seguir, do perfil público e da
+ * busca de Cozinheiros) cujo handle está no lote, com LEFT JOIN na aresta viewer→conta (lookup pela PK). Devolve os handles
  * ARMAZENADOS (não os pedidos) dos que o viewer segue + o handle do PRÓPRIO viewer se ele estiver no lote
  * (`self`, pra a UI esconder o botão no próprio cartão; comparado pelo id da sessão, nunca pelo handle).
  * Conta soft-deletada/pendente não casa ⇒ some das duas listas (indistinguível de inexistente). Lote vazio
@@ -125,7 +127,6 @@ export async function followStatusByHandles(
   db: Database,
   viewerId: string,
   handles: string[],
-  publicFilter: SQL,
 ): Promise<FollowStatusByHandles> {
   if (handles.length === 0) return { following: [], self: null }
   const rows = await db
@@ -135,7 +136,7 @@ export async function followStatusByHandles(
       userFollow,
       and(eq(userFollow.followeeId, users.id), eq(userFollow.followerId, viewerId)),
     )
-    .where(and(inArray(users.handle, handles), publicFilter))
+    .where(and(inArray(users.handle, handles), publicAccountFilter(emailVerificationRequired())))
   let self: string | null = null
   const following: string[] = []
   for (const r of rows) {

@@ -8,3 +8,15 @@ export function formatCountdown(ms: number): string {
   if (minutes >= 60) return `${Math.ceil(minutes / 60)}h`
   return `${minutes}min`
 }
+
+/**
+ * Lê a resposta do `POST /api/recipes/[id]/derive` (#588): se for o 429 do teto de Derivar/Clonar
+ * (`limite_derivar`), devolve o countdown já formatado pro `{tempo}` de `derivarLimite`; qualquer outra
+ * coisa (outro status, outro erro, corpo ilegível) ⇒ `null` e o caller cai na sua mensagem neutra. Usado
+ * pelo "Clonar" e pelo "Criar minha versão" (mesmo teto, mesma mensagem). Consome o corpo só no 429.
+ */
+export async function readDeriveLimit(res: Response): Promise<string | null> {
+  if (res.status !== 429) return null
+  const b = (await res.json().catch(() => ({}))) as { error?: string; retryAfterMs?: number }
+  return b.error === 'limite_derivar' ? formatCountdown(b.retryAfterMs ?? 0) : null
+}
