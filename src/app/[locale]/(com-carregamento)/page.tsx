@@ -41,6 +41,7 @@ import { isWebSearchOpen } from '@/domain/web-search-config'
 import { hasWebSearchCredential } from '@/server/web-search/web-search-provider'
 import { getDb } from '@/server/deps'
 import { MESSAGES } from '@/i18n/messages'
+import { errorLogFields } from '@/domain/error-report'
 
 /**
  * Metadados da home-Descoberta (#236): REPOUSO (sem param de refino) ⇒ index/follow + canonical
@@ -88,9 +89,10 @@ export default async function Home({
   const [{ feed, nextCursor }, recipeOfWeek, webSearch] = await Promise.all([
     loadDiscoveryFeed(db, { requestLocale: locale }),
     loadRecipeOfTheWeek(db, locale),
-    // Opcional: falha nesta leitura NÃO derruba a home — só esconde os gatilhos da web.
+    // Opcional: falha nesta leitura NÃO derruba a home — só esconde os gatilhos da web. No log, só nome e
+    // código do erro (ADR-0048): o erro do Drizzle leva os parâmetros da query.
     loadWebSearchConfig(db).catch((err: unknown) => {
-      console.warn('[home] falha ao ler a config da descoberta na web; gatilhos escondidos', err)
+      console.warn(`[home] falha ao ler a config da descoberta na web; gatilhos escondidos: ${errorLogFields(err)}`)
       return null
     }),
   ])

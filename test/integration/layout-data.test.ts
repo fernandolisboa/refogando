@@ -231,7 +231,10 @@ describe('loadLayoutCozinhaVocab — vocabulário do layout com a tag refogando:
       .from(vocabularyTerm)
       .where(eq(vocabularyTerm.slug, 'georgiana'))
     expect(row?.status).toBe('deprecated')
-    expect(warn).toHaveBeenCalledTimes(2)
+    // Só nome e código do erro (ADR-0048), nunca a mensagem.
+    const line =
+      '[cache-tags] falha ao expirar a tag refogando:vocab:cozinha; o valor novo espera a revalidação por tempo: erro=Error'
+    expect(warn.mock.calls).toEqual([[line], [line]])
   })
 })
 
