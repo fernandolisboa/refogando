@@ -14,7 +14,7 @@ import {
   users,
   verification,
 } from '@/db/schema'
-import { retentionCutoffs, type RetentionCutoffs } from '@/domain/data-retention'
+import { retentionCutoffs } from '@/domain/data-retention'
 import { RESOLVED_TAKEDOWN_STATUSES } from '@/domain/dsar-sla'
 import { purgeDsarEventsBefore } from '@/server/legal/dsar-audit'
 import type { TimeBudget } from '@/server/time-budget'
@@ -100,54 +100,64 @@ const sessionOfErased = sql`EXISTS (SELECT 1 FROM ${users} WHERE ${users.id} = $
 export type RetentionStep = {
   /** Chave da linha `[retencao]` e do corpo do cron. */
   key: string
-  /** Nome do passo na linha de falha. */
+  /** Nome do passo na linha de falha (`[retencao] <label> falhou: …`). */
   label: string
   run(db: Database, now: Date, opts?: RetentionStepOpts): Promise<number>
 }
-
-const cut = (now: Date): RetentionCutoffs => retentionCutoffs(now)
 
 /** Os passos, NA ORDEM em que o cron os roda (a ordem dos cascos importa — doc do módulo). */
 export const RETENTION_STEPS: readonly RetentionStep[] = [
   {
     key: 'imageGenerations',
-    label: 'registros de geração de imagem',
+    label: 'expurgo dos registros de geração de imagem',
     run: (db, now, opts = {}) =>
-      deleteWhere(db, imageGeneration, imageGeneration.id, lt(imageGeneration.createdAt, cut(now).usageLedger), opts),
+      deleteWhere(
+        db,
+        imageGeneration,
+        imageGeneration.id,
+        lt(imageGeneration.createdAt, retentionCutoffs(now).usageLedger),
+        opts,
+      ),
   },
   {
     key: 'mealPlanSuggestions',
-    label: 'registros de Sugestão de cardápio',
+    label: 'expurgo dos registros de Sugestão de cardápio',
     run: (db, now, opts = {}) =>
       deleteWhere(
         db,
         mealPlanSuggestionEvent,
         mealPlanSuggestionEvent.id,
-        lt(mealPlanSuggestionEvent.createdAt, cut(now).usageLedger),
+        lt(mealPlanSuggestionEvent.createdAt, retentionCutoffs(now).usageLedger),
         opts,
       ),
   },
   {
     key: 'extractionEvents',
-    label: 'registros de extração',
+    label: 'expurgo dos registros de extração',
     run: (db, now, opts = {}) =>
-      deleteWhere(db, extractionEvent, extractionEvent.id, lt(extractionEvent.createdAt, cut(now).extractionEvent), opts),
+      deleteWhere(
+        db,
+        extractionEvent,
+        extractionEvent.id,
+        lt(extractionEvent.createdAt, retentionCutoffs(now).extractionEvent),
+        opts,
+      ),
   },
   {
     key: 'sessions',
-    label: 'sessões vencidas',
+    label: 'expurgo das sessões vencidas',
     run: (db, now, opts = {}) => deleteWhere(db, session, session.id, lt(session.expiresAt, now), opts),
   },
   {
     key: 'verifications',
-    label: 'verificações vencidas',
+    label: 'expurgo das verificações vencidas',
     run: (db, now, opts = {}) => deleteWhere(db, verification, verification.id, lt(verification.expiresAt, now), opts),
   },
   {
     key: 'takedownTickets',
-    label: 'tickets de takedown encerrados',
+    label: 'expurgo dos tickets de takedown encerrados',
     run: (db, now, opts = {}) => {
-      const c = cut(now).resolvedTakedown
+      const c = retentionCutoffs(now).resolvedTakedown
       const closedAfterCutoff = db
         .select({ one: sql`1` })
         .from(dsarAuditEvent)
@@ -173,34 +183,37 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
   },
   {
     key: 'dsarEvents',
-    label: 'auditoria DSAR',
+    label: 'expurgo da auditoria DSAR',
     run: (db, now, opts = {}) =>
-      deleteInBatches((limit) => purgeDsarEventsBefore(db, cut(now).dsarAudit, limit), opts),
+      deleteInBatches((limit) => purgeDsarEventsBefore(db, retentionCutoffs(now).dsarAudit, limit), opts),
   },
   {
     key: 'erasedGenerations',
-    label: 'gerações de contas eliminadas',
+    label: 'expurgo das gerações de contas eliminadas',
     run: (db, now, opts = {}) => {
       const erasedSessions = db.select({ id: creationSession.id }).from(creationSession).where(sessionOfErased)
       return deleteWhere(
         db,
         generation,
         generation.id,
-        and(lt(generation.createdAt, cut(now).usageLedger), inArray(generation.creationSessionId, erasedSessions))!,
+        and(
+          lt(generation.createdAt, retentionCutoffs(now).usageLedger),
+          inArray(generation.creationSessionId, erasedSessions),
+        )!,
         opts,
       )
     },
   },
   {
     key: 'erasedCreationSessions',
-    label: 'sessões de criação de contas eliminadas',
+    label: 'expurgo das sessões de criação de contas eliminadas',
     run: (db, now, opts = {}) =>
       deleteWhere(
         db,
         creationSession,
         creationSession.id,
         and(
-          lt(creationSession.createdAt, cut(now).usageLedger),
+          lt(creationSession.createdAt, retentionCutoffs(now).usageLedger),
           sessionOfErased,
           sql`NOT EXISTS (SELECT 1 FROM ${generation} WHERE ${generation.creationSessionId} = ${creationSession.id})`,
         )!,
@@ -209,7 +222,7 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
   },
   {
     key: 'orphanBriefings',
-    label: 'briefings sem sessão',
+    label: 'expurgo dos briefings sem sessão',
     // `creation_session.briefing_id` é a ÚNICA FK para `briefing` (o `briefing_item` é filho em cascata).
     run: (db, now, opts = {}) =>
       deleteWhere(
@@ -217,7 +230,7 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
         briefing,
         briefing.id,
         and(
-          lt(briefing.createdAt, cut(now).usageLedger),
+          lt(briefing.createdAt, retentionCutoffs(now).usageLedger),
           sql`NOT EXISTS (SELECT 1 FROM ${creationSession} WHERE ${creationSession.briefingId} = ${briefing.id})`,
         )!,
         opts,
@@ -225,7 +238,7 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
   },
   {
     key: 'liveGenerationCosts',
-    label: 'tokens e custo de gerações de contas vivas',
+    label: 'limpeza de tokens e custo de gerações de contas vivas',
     run: (db, now, opts = {}) =>
       deleteInBatches(async (limit) => {
         const liveSessions = db
@@ -238,7 +251,7 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
           .from(generation)
           .where(
             and(
-              lt(generation.createdAt, cut(now).usageLedger),
+              lt(generation.createdAt, retentionCutoffs(now).usageLedger),
               or(isNotNull(generation.inputTokens), isNotNull(generation.outputTokens), isNotNull(generation.costUsd)),
               inArray(generation.creationSessionId, liveSessions),
             ),

@@ -75,7 +75,9 @@ export type NotificationsPage = {
  *
  * Destinatário com a conta ELIMINADA (`anonymized_at`, #473) não recebe: ninguém mais lê essa caixa, e a
  * eliminação acabou de apagar as notificações dele — uma avaliação nova numa Receita pública dele as
- * recriaria. Uma corrida com a eliminação em curso é inofensiva: a varredura diária apaga a sobra.
+ * recriaria. A checagem vai no próprio INSERT (`INSERT … SELECT … FROM users WHERE … anonymized_at IS NULL`),
+ * sem ida extra ao banco: conta eliminada (ou inexistente) ⇒ zero linha. Uma corrida com a eliminação em curso
+ * é inofensiva: a varredura diária apaga a sobra.
  */
 export async function emitNotification(
   db: Database,
@@ -88,19 +90,19 @@ export async function emitNotification(
   },
 ): Promise<void> {
   try {
-    const [recipient] = await db
-      .select({ anonymizedAt: users.anonymizedAt })
-      .from(users)
-      .where(eq(users.id, input.recipientId))
-      .limit(1)
-    if (!recipient || recipient.anonymizedAt != null) return
-    await db.insert(notification).values({
-      recipientId: input.recipientId,
-      type: input.type,
-      actorId: input.actorId ?? null,
-      recipeId: input.recipeId ?? null,
-      reviewId: input.reviewId ?? null,
-    })
+    // Colunas explícitas: `id`, `read_at` e `created_at` ficam com o default do banco.
+    const columns = sql.join(
+      [notification.recipientId, notification.type, notification.actorId, notification.recipeId, notification.reviewId].map(
+        (c) => sql.identifier(c.name),
+      ),
+      sql`, `,
+    )
+    await db.execute(sql`
+      INSERT INTO ${notification} (${columns})
+      SELECT ${users.id}, ${input.type}::notification_type, ${input.actorId ?? null}::uuid,
+        ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid
+      FROM ${users}
+      WHERE ${users.id} = ${input.recipientId} AND ${users.anonymizedAt} IS NULL`)
   } catch (err) {
     // Fora do caminho crítico: a caixa é conveniência, não pode derrubar a ação de origem.
     // Só nome + código (ADR-0048): a mensagem de um erro do driver traz a query com os parâmetros.
