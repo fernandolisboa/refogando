@@ -10,8 +10,7 @@ import '@testing-library/jest-dom/vitest'
  * trocar o select, PUT só da tarefa, erros por chave (`ajuste_recusado` com o motivo, 500 genérico) e
  * erro de CARGA + retry.
  *
- * As asserções da RolesSection vivem em `roles-section.test.tsx` (#269 trocou o "cole o UUID" por
- * busca → selecionar → atribuir; o componente ficou grande demais pra dividir o arquivo).
+ * A atribuição de papel vive na lista de Usuários (`admin-users-section.test.tsx`).
  */
 
 import { LocaleProvider } from '@/i18n/provider'

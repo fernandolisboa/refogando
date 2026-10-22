@@ -9,7 +9,9 @@ import { isRole } from '@/domain/user'
  * papel altera o gating efetivo (um ex-`usuario` virado `curador` passa em /api/curate).
  *
  * Corpo: `{ userId, role }` (role ∈ ROLES). Erros (D8): `papel_invalido` (400) na
- * validação; `papel_nao_aplicado` (status da lib) se o setRole lançar APIError (ex.:
+ * validação; `papel_proprio` (400) quando o admin tenta mudar o PRÓPRIO papel (um clique errado na lista
+ * de Usuários tiraria o único acesso de admin; outro admin, ou `npm run grant-role`, faz essa troca);
+ * `papel_nao_aplicado` (status da lib) se o setRole lançar APIError (ex.:
  * userId inexistente); `erro_interno` (500, SEM stack) para qualquer outro lançamento.
  *
  * NOTA: o código HTTP numérico do APIError vem em `e.statusCode` (number). `e.status` é
@@ -24,6 +26,9 @@ export async function PUT(req: Request): Promise<Response> {
     return Response.json({ error: 'papel_invalido' }, { status: 400 })
   }
   const { userId, role } = body
+  if (userId === g.session.user.id) {
+    return Response.json({ error: 'papel_proprio' }, { status: 400 })
+  }
 
   // E8 — setRole pode lançar (userId inexistente, papel rejeitado, etc.). Sem try/catch
   // o handler 500aria com stack vazando. Convertemos para um corpo {error} limpo.

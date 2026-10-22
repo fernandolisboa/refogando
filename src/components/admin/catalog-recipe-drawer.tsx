@@ -36,7 +36,7 @@ export function CatalogRecipeDrawer() {
         <SheetContent
           side="right"
           closeLabel={m.criarReceitaFechar}
-          className="w-full gap-6 overflow-y-auto sm:max-w-lg"
+          className="w-full gap-6 overflow-y-auto sm:max-w-2xl lg:max-w-3xl"
           // Espelha o create-drawer (ADR-0021 dec.5): Esc e clique-fora NÃO fecham com o POST em voo.
           onEscapeKeyDown={(e) => {
             if (loading) e.preventDefault()

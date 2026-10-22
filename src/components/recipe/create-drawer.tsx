@@ -146,9 +146,10 @@ export function CreateDrawer({
       <SheetContent
         side="right"
         closeLabel={d.fechar}
-        // Largura: no celular, tela cheia até os 384 px do `max-w-sm` da primitiva; do tablet para
-        // cima, 512 px (`sm:max-w-lg`; era 448 px, `sm:max-w-md`, até o handoff 70).
-        className="w-full gap-6 overflow-y-auto sm:max-w-lg"
+        // Largura: no celular, tela cheia até os 384 px do `max-w-sm` da primitiva; no tablet, 672 px
+        // (`sm:max-w-2xl`); do desktop para cima, 768 px (`lg:max-w-3xl`). Era 512 px (`sm:max-w-lg`)
+        // até o handoff 82 e 448 px até o handoff 70.
+        className="w-full gap-6 overflow-y-auto sm:max-w-2xl lg:max-w-3xl"
         onClick={fecharSeLinkParaEstaPagina}
         // Bloqueia o dismiss por ESC / clique fora enquanto a geração roda (ver `generating`).
         // O `preventDefault` impede o Radix de fechar; o painel segue "aberto e bloqueante".

@@ -65,6 +65,16 @@ describe('/api/admin/roles — promover/rebaixar altera o gating', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'papel_invalido' })
   })
 
+  it('admin não muda o PRÓPRIO papel → 400 papel_proprio, papel intacto', async () => {
+    const adminS = await seedSessionHeaders({ email: 'admin4@roles.test', role: 'admin' })
+    const res = await rolesPut({ userId: adminS.userId, role: 'usuario' }, adminS.headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'papel_proprio' })
+    // Segue admin: outra chamada admin-only ainda passa.
+    const other = await seedSessionHeaders({ email: 'alvo4@roles.test', role: 'usuario' })
+    expect((await rolesPut({ userId: other.userId, role: 'curador' }, adminS.headers)).status).toBe(200)
+  })
+
   it('não-admin (usuario) não pode chamar /api/admin/roles → 403', async () => {
     const u = await seedSessionHeaders({ email: 'naoadmin@roles.test', role: 'usuario' })
     const target = await seedSessionHeaders({ email: 'alvo3@roles.test', role: 'usuario' })

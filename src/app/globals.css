@@ -242,3 +242,22 @@
   white-space: nowrap;
   border-width: 0;
 }
+
+/* Console (/admin): cada `<section>` de primeiro nível de uma página vira um card (o `ConsoleShell` põe
+   `admin-panels` em volta do conteúdo). Pega a seção filha direta e a filha do wrapper `<div>` de página,
+   sem tocar nas seções aninhadas. Em `@layer components`: um utilitário da própria seção (ex. `p-0`) vence. */
+@layer components {
+  .admin-panels > section,
+  .admin-panels > div > section {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+  }
+  @media (width >= 40rem) {
+    .admin-panels > section,
+    .admin-panels > div > section {
+      padding: 1.5rem;
+    }
+  }
+}
