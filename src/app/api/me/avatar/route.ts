@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
 import { users } from '@/db/schema'
+import { AVATAR_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
 
 /**
  * Contrato `/api/me/avatar` — avatar do logado (#126, frente Perfil + fundação do `ImageStore`).
@@ -12,7 +13,9 @@ import { users } from '@/db/schema'
  * storage, o seam `ImageStore`).
  *
  * POST (multipart `file`): valida tipo (jpg/png/webp) e tamanho (rede do servidor; o cliente já
- * redimensiona), guarda os bytes no `ImageStore`, grava a URL em `users.image` e — best-effort —
+ * redimensiona), RE-ENCODA no servidor (#596, `reencodeUserPhoto` com `AVATAR_PHOTO_SPEC`: formato pelos
+ * bytes, teto de pixels, WebP ≤1024 px SEM EXIF/GPS — o avatar é servido público; recusa ⇒ 400
+ * `tipo_invalido`), guarda o WebP no `ImageStore`, grava a URL em `users.image` e — best-effort —
  * apaga o blob ANTERIOR se foi NÓS que guardamos (`store.owns`). Avatar vindo do OAuth (Google)
  * é URL ESTRANGEIRA e fica intacto. Devolve `{ image: <url> }`. Storage indisponível → 503
  * `storage_indisponivel` (degradação do seam tratada, não um 500 cru); o banco fica intacto.
@@ -20,7 +23,9 @@ import { users } from '@/db/schema'
  * DELETE: zera `users.image` e apaga o blob anterior se foi nosso. Devolve `{ image: null }`.
  */
 
-export const runtime = 'nodejs' // postgres-js + Buffer exigem Node, não Edge.
+export const runtime = 'nodejs' // postgres-js + Buffer + sharp exigem Node, não Edge.
+// O re-encode (#596) tem teto de 10 s de CPU por passada do sharp; 60 s cobre o pior caso com folga.
+export const maxDuration = 60
 
 /** Cap de tamanho do upload (2 MB). O cliente redimensiona p/ bem abaixo disso; isto é a rede. */
 const MAX_BYTES = 2 * 1024 * 1024
@@ -48,6 +53,13 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'arquivo_grande' }, { status: 400 })
   }
 
+  // #596: re-encode ANTES de tocar o banco/storage (depois do gate de sessão, tipo e tamanho): o blob público
+  // nunca leva o EXIF/GPS do celular. Bytes que não são JPEG/PNG/WebP estático de verdade ⇒ 400.
+  const clean = await reencodeUserPhoto(Buffer.from(await file.arrayBuffer()), AVATAR_PHOTO_SPEC)
+  if (!clean) {
+    return Response.json({ error: 'tipo_invalido' }, { status: 400 })
+  }
+
   const store = getImageStore()
   const db = getDb()
   const userId = g.session.user.id
@@ -59,10 +71,9 @@ export async function POST(req: Request): Promise<Response> {
   // Guarda o novo blob ANTES do UPDATE: se o store falhar, NADA foi alterado no banco. Trata a
   // degradação do seam (token ausente em runtime, Vercel Blob fora) com um erro ESTRUTURADO 503,
   // espelhando a convenção do repo (`{ error }`) em vez de deixar virar um 500 genérico sem corpo.
-  const data = Buffer.from(await file.arrayBuffer())
   let url: string
   try {
-    ;({ url } = await store.store({ data, contentType: file.type, pathPrefix: 'avatars' }))
+    ;({ url } = await store.store({ data: clean.data, contentType: clean.contentType, pathPrefix: 'avatars' }))
   } catch {
     return Response.json({ error: 'storage_indisponivel' }, { status: 503 })
   }

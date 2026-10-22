@@ -36,9 +36,11 @@ import { seedSessionHeaders, seedUser } from '../helpers/users'
  * sempre pelo `FakeImageStore` (nunca rede). Cobre:
  *  - o sharp: larguras 1280/400, WebP, sem ampliar, orientação EXIF aplicada; animada, lixo e formato fora
  *    de JPEG/PNG/WebP (SVG rotulado png, GIF, TIFF) ⇒ sem derivado, sem renderizar;
- *  - os 3 caminhos de escrita (upload do dono, upload do catálogo, geração por IA): original INTOCADO
- *    (bytes iguais), par de derivados gravado; falha nos derivados NUNCA falha a escrita (colunas NULL);
- *  - a imagem-a-imagem segue lendo o ORIGINAL (o PNG), não o WebP;
+ *  - os 3 caminhos de escrita (upload do dono, upload do catálogo, geração por IA): par de derivados
+ *    gravado ao lado do original; falha nos derivados NUNCA falha a escrita (colunas NULL). O original do
+ *    UPLOAD é o WebP re-encodado (#596: sem EXIF, ≤2048 px; bytes que não são imagem ⇒ 400 sem nada
+ *    guardado); o da GERAÇÃO é o PNG do Gemini intocado (bytes iguais);
+ *  - a imagem-a-imagem lê o ORIGINAL: o PNG gerado, ou o WebP re-encodado de uma foto enviada;
  *  - apagar da galeria (dono e catálogo) / hard-delete da Receita / escalada do operador apaga os
  *    derivados junto do original;
  *  - leitura: `imageSrcSet` no feed, Busca, Minhas criações, perfil e detalhe, sob o MESMO gate de
@@ -244,8 +246,8 @@ describe('renderImageDerivatives (sharp)', () => {
   })
 })
 
-describe('caminhos de escrita: derivados ao lado do original intocado', () => {
-  it('upload do dono: original com os MESMOS bytes + par WebP; a view do detalhe traz o srcset', async () => {
+describe('caminhos de escrita: derivados ao lado do original (o do upload, re-encodado — #596)', () => {
+  it('upload do dono: original re-encodado em WebP (sem EXIF, mesma largura) + par WebP; a view traz o srcset', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'dono@deriv.test' })
     const id = await seedOwned(userId)
 
@@ -256,8 +258,11 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     const img = await imageRow((await faceOf(id))!)
     expect(img.thumbUrl).toMatch(/\/recipes\/w400\/\d+\.webp$/)
     expect(img.detailUrl).toMatch(/\/recipes\/w1280\/\d+\.webp$/)
-    expect(img.blobUrl).toMatch(/\/recipes\/\d+\.png$/)
-    expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(UPLOAD_PNG)).toBe(true)
+    expect(img.blobUrl).toMatch(/\/recipes\/\d+\.webp$/)
+    const original = store.blobs.get(img.blobUrl)!
+    expect(original.contentType).toBe('image/webp')
+    const meta = await sharp(Buffer.from(original.bytes)).metadata()
+    expect([meta.format, meta.width, meta.height, meta.exif]).toEqual(['webp', 1200, 800, undefined])
     expect(store.blobs.get(img.thumbUrl!)!.contentType).toBe('image/webp')
     expect(view.imageUrl).toBe(img.blobUrl)
     expect(view.imageSrcSet).toBe(buildImageSrcSet({ original: img.blobUrl, ...img }))
@@ -279,50 +284,42 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     expect(view.imageSrcSet).toBeUndefined()
   })
 
-  it('upload de bytes que o sharp não lê (aceitos pelo route como antes): 200, só o original', async () => {
+  it('upload de bytes que o sharp não lê ⇒ 400 tipo_invalido (#596): nada guardado, nenhuma recipe_image', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'dono3@deriv.test' })
     const id = await seedOwned(userId)
     const res = await uploadRoute(uploadReq(id, Buffer.from([1, 2, 3, 4]), headers), ctx(id))
-    expect(res.status).toBe(200)
-    const img = await imageRow((await faceOf(id))!)
-    expect(img.thumbUrl).toBeNull()
-    expect(store.blobs.size).toBe(1)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await faceOf(id)).toBeNull()
+    expect(await getDb().select().from(recipeImage)).toEqual([])
   })
 
-  it('upload de SVG rotulado image/png: 200 como antes, rápido, só o original (sem derivado)', async () => {
+  it('upload de SVG rotulado image/png ⇒ 400 tipo_invalido, rápido (sem renderizar) e sem nada guardado', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'svg@deriv.test' })
     const id = await seedOwned(userId)
     const t0 = performance.now()
     const res = await uploadRoute(uploadReq(id, HEAVY_SVG, headers), ctx(id))
     expect(performance.now() - t0).toBeLessThan(2_000)
-    expect(res.status).toBe(200)
-    const view = (await res.json()) as { imageUrl?: string; imageSrcSet?: string }
-    const img = await imageRow((await faceOf(id))!)
-    expect([img.thumbUrl, img.detailUrl]).toEqual([null, null])
-    expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(HEAVY_SVG)).toBe(true)
-    expect(store.blobs.size).toBe(1)
-    expect(view.imageUrl).toBe(img.blobUrl)
-    expect(view.imageSrcSet).toBeUndefined()
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await getDb().select().from(recipeImage)).toEqual([])
   })
 
-  it('upload do catálogo (curador): original + par', async () => {
+  it('upload do catálogo (curador): original re-encodado em WebP (#596) + par', async () => {
     const curator = await seedUser({ email: 'cur@deriv.test', role: 'curador' })
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, curationStatus: 'pending' })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Moqueca', provenance: 'automatica_nao_revisada' })
 
-    const res = await applyCatalogImageUpload({
-      db: getDb(),
-      store,
-      id,
-      curatorId: curator,
-      data: PNG,
-      contentType: 'image/png',
-    })
+    const res = await applyCatalogImageUpload({ db: getDb(), store, id, curatorId: curator, data: PNG })
     expect(res.kind).toBe('ok')
     const img = await imageRow((await faceOf(id))!)
     expect(img.thumbUrl).not.toBeNull()
     expect(img.detailUrl).not.toBeNull()
-    expect(Buffer.from(store.blobs.get(img.blobUrl)!.bytes).equals(PNG)).toBe(true)
+    expect(img.blobUrl).toMatch(/\/recipes\/\d+\.webp$/)
+    const meta = await sharp(Buffer.from(store.blobs.get(img.blobUrl)!.bytes)).metadata()
+    expect([meta.format, meta.width, meta.height, meta.exif]).toEqual(['webp', 1536, 1024, undefined])
     expect(res.kind === 'ok' && res.gallery[0].srcSet).toBe(buildImageSrcSet({ original: img.blobUrl, ...img }))
   })
 
@@ -345,6 +342,25 @@ describe('caminhos de escrita: derivados ao lado do original intocado', () => {
     expect(edit.status).toBe(200)
     expect(generator.lastSource?.contentType).toBe('image/png')
     expect(generator.lastSource?.data.equals(PNG)).toBe(true)
+  })
+
+  it('a edição imagem-a-imagem de uma foto ENVIADA lê o original re-encodado (WebP, sem EXIF)', async () => {
+    const generator = new FakeImageGenerator({ data: PNG, contentType: 'image/png' })
+    setImageGenerator(generator)
+    const { userId, headers } = await seedSessionHeaders({ email: 'edit-upload@deriv.test' })
+    const id = await seedOwned(userId)
+    const jpeg = await sharp(UPLOAD_PNG)
+      .jpeg()
+      .withMetadata({ exif: { IFD0: { Make: 'CelularDaCozinha' }, IFD3: { GPSLatitudeRef: 'S', GPSLatitude: '23/1 33/1 0/1' } } })
+      .toBuffer()
+    expect((await sharp(jpeg).metadata()).exif).toBeDefined()
+
+    expect((await uploadRoute(uploadReq(id, jpeg, headers), ctx(id))).status).toBe(200)
+    const uploaded = (await faceOf(id))!
+    const edit = await generateRoute(genReq(id, headers, { prompt: 'mais luz', sourceImageId: uploaded }), ctx(id))
+    expect(edit.status).toBe(200)
+    expect(generator.lastSource?.contentType).toBe('image/webp')
+    expect((await sharp(generator.lastSource!.data).metadata()).exif).toBeUndefined()
   })
 
   it('geração com bytes que o sharp não lê: 200 e só o original (comportamento de antes)', async () => {
@@ -381,8 +397,7 @@ describe('apagar a imagem apaga os derivados', () => {
     const curator = await seedUser({ email: 'catdel@deriv.test', role: 'curador' })
     const id = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, curationStatus: 'pending' })
     await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Vatapá', provenance: 'automatica_nao_revisada' })
-    const upload = (data: Buffer) =>
-      applyCatalogImageUpload({ db: getDb(), store, id, curatorId: curator, data, contentType: 'image/png' })
+    const upload = (data: Buffer) => applyCatalogImageUpload({ db: getDb(), store, id, curatorId: curator, data })
     expect((await upload(UPLOAD_PNG)).kind).toBe('ok')
     const first = (await faceOf(id))!
     expect((await upload(SMALL_PNG)).kind).toBe('ok') // a 2ª vira a face; a 1ª fica livre

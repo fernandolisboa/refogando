@@ -4,17 +4,20 @@ import { isUuid } from '@/server/http/params'
 import {
   applyCatalogImageUpload,
   applyCatalogImageRemoval,
-  type CatalogImageResult,
+  type CatalogImageUploadResult,
 } from '@/server/curate/catalog-image'
 
 /**
  * POST/DELETE /api/curate/recipes/[id]/image — sobe foto / deseleciona a face de um rascunho de
  * CATÁLOGO (#238, ADR-0026 emenda dec.10). Curador-only; gate `origin='catalog'` (404 leak-safe).
  * Espelha a rota de DONO (`/api/recipes/[id]/image`) mas autoriza por papel, não posse. POST
- * (multipart `file`, jpg/png/webp ≤2MB) acrescenta à galeria + AUTO-SELECIONA; DELETE deseleciona
- * (volta ao placeholder, não apaga). `requireRole` ANTES de tocar DB/storage.
+ * (multipart `file`, jpg/png/webp ≤2MB) RE-ENCODA a foto (#596; bytes recusados ⇒ 400 `tipo_invalido`),
+ * acrescenta à galeria + AUTO-SELECIONA; DELETE deseleciona (volta ao placeholder, não apaga).
+ * `requireRole` ANTES de tocar DB/storage.
  */
-export const runtime = 'nodejs' // postgres-js + Buffer exigem Node, não Edge.
+export const runtime = 'nodejs' // postgres-js + Buffer + sharp exigem Node, não Edge.
+// Re-encode (#596) + derivados WebP: cada passada do sharp tem teto de 10 s; 60 s cobre o pior caso.
+export const maxDuration = 60
 
 const MAX_BYTES = 2 * 1024 * 1024
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
@@ -47,7 +50,6 @@ export async function POST(
     id,
     curatorId: g.session.user.id,
     data,
-    contentType: file.type,
   })
   return mapResult(res)
 }
@@ -66,10 +68,12 @@ export async function DELETE(
   return mapResult(res)
 }
 
-function mapResult(res: CatalogImageResult): Response {
+function mapResult(res: CatalogImageUploadResult): Response {
   switch (res.kind) {
     case 'ok':
       return Response.json({ gallery: res.gallery }, { status: 200 })
+    case 'invalid_image':
+      return Response.json({ error: 'tipo_invalido' }, { status: 400 })
     case 'storage':
       return Response.json({ error: 'storage_indisponivel' }, { status: 503 })
     case 'not_found':

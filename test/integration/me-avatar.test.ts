@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
+import sharp from 'sharp'
 import { POST, DELETE } from '@/app/api/me/avatar/route'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
@@ -11,13 +12,25 @@ import { seedFeijoadaCatalog } from '../helpers/recipes'
  * Round-trip do avatar do logado (#126) — contrato `/api/me/avatar` + fundação do `ImageStore`.
  *
  * Owner-only via requireSession (ADR-0011): Visitante → 401. POST(multipart `file`) valida tipo +
- * tamanho, guarda no `ImageStore` (FakeImageStore injetado — NUNCA toca a rede), grava `users.image`
- * e apaga o blob ANTERIOR se foi nosso (OAuth/estrangeiro fica intacto). DELETE zera `users.image`.
+ * tamanho, RE-ENCODA (#596: WebP ≤1024 px sem EXIF/GPS; bytes que não são imagem ⇒ 400), guarda no
+ * `ImageStore` (FakeImageStore injetado — NUNCA toca a rede), grava `users.image` e apaga o blob
+ * ANTERIOR se foi nosso (OAuth/estrangeiro fica intacto). DELETE zera `users.image`.
  *
  * Toca SÓ `users` — o avatar NÃO usa a entidade `recipe_image` (ADR-0016).
  */
 
 const FOREIGN_URL = 'https://lh3.googleusercontent.com/a/foto-do-google'
+
+/** Ponteiro para o IFD de GPS (tag 0x8825) no EXIF little-endian (`II`) que o libvips escreve. */
+const hasGpsIfd = (exif: Buffer) => exif.includes(Buffer.from([0x25, 0x88]))
+
+/** PNG de verdade: desde o #596 o servidor re-encoda, e bytes que não são imagem viram 400. */
+let PNG_BYTES: Uint8Array<ArrayBuffer>
+beforeAll(async () => {
+  PNG_BYTES = new Uint8Array(
+    await sharp({ create: { width: 64, height: 48, channels: 3, background: '#c33' } }).png().toBuffer(),
+  )
+})
 
 let store: FakeImageStore
 beforeEach(() => {
@@ -26,7 +39,7 @@ beforeEach(() => {
   setImageStore(store)
 })
 
-function pngFile(bytes = new Uint8Array([1, 2, 3, 4]), name = 'a.png'): File {
+function pngFile(bytes: Uint8Array<ArrayBuffer> = PNG_BYTES, name = 'a.png'): File {
   return new File([bytes], name, { type: 'image/png' })
 }
 
@@ -82,15 +95,66 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
     expect(await readImage(userId)).toBeNull()
   })
 
-  it('POST de imagem válida → 200, guarda o blob, grava users.image', async () => {
+  it('POST de imagem válida → 200, guarda o blob (WebP re-encodado), grava users.image', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'av@me-avatar.test' })
 
     const res = await POST(postReq(pngFile(), headers))
     expect(res.status).toBe(200)
     const body = (await res.json()) as { image: string }
     expect(store.owns(body.image)).toBe(true)
-    expect(store.blobs.has(body.image)).toBe(true)
+    expect(body.image).toMatch(/\/avatars\/\d+\.webp$/)
+    const blob = store.blobs.get(body.image)!
+    expect(blob.contentType).toBe('image/webp')
+    const meta = await sharp(Buffer.from(blob.bytes)).metadata()
+    expect([meta.format, meta.width, meta.height]).toEqual(['webp', 64, 48])
     expect(await readImage(userId)).toBe(body.image)
+  })
+
+  it('POST de JPEG com EXIF/GPS (#596) → o blob público sai sem EXIF, sem GPS e ≤1024 px', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'gps@me-avatar.test' })
+    const jpeg = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#3a6' } })
+      .jpeg()
+      .withMetadata({
+        exif: { IFD0: { Make: 'CelularDaCozinha' }, IFD3: { GPSLatitudeRef: 'S', GPSLatitude: '23/1 33/1 0/1' } },
+      })
+      .toBuffer()
+    const before = await sharp(jpeg).metadata()
+    expect(hasGpsIfd(before.exif!)).toBe(true)
+
+    const res = await POST(postReq(new File([new Uint8Array(jpeg)], 'a.jpg', { type: 'image/jpeg' }), headers))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { image: string }
+    const bytes = Buffer.from(store.blobs.get(body.image)!.bytes)
+    const meta = await sharp(bytes).metadata()
+    expect([meta.format, meta.width, meta.height, meta.exif, meta.icc, meta.xmp]).toEqual([
+      'webp',
+      1024,
+      683,
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(bytes.toString('latin1')).not.toContain('CelularDaCozinha')
+    expect(await readImage(userId)).toBe(body.image)
+  })
+
+  it('POST com bytes que não são imagem (rótulo image/png) → 400 tipo_invalido, sem blob e sem UPDATE', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'lixo@me-avatar.test' })
+    const res = await POST(postReq(pngFile(new Uint8Array([1, 2, 3, 4])), headers))
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await readImage(userId)).toBeNull()
+  })
+
+  it('POST de SVG rotulado image/png → 400 tipo_invalido (o formato vem dos bytes, não do rótulo)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'svg@me-avatar.test' })
+    const svg = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>')
+    const res = await POST(postReq(pngFile(svg), headers))
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await readImage(userId)).toBeNull()
   })
 
   it('POST que TROCA um avatar nosso apaga o blob anterior e mantém só o novo', async () => {

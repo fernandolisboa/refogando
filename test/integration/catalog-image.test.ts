@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
+import sharp from 'sharp'
 import { POST as catGen } from '@/app/api/curate/recipes/[id]/image/generate/route'
 import { POST as catUpload, DELETE as catDeselect } from '@/app/api/curate/recipes/[id]/image/route'
 import { POST as catSelect } from '@/app/api/curate/recipes/[id]/images/[imageId]/select/route'
@@ -23,6 +24,12 @@ import { seedSessionHeaders } from '../helpers/users'
  * Fakes (NUNCA tocam Gemini/Blob).
  */
 
+/** PNG de verdade: desde o #596 o servidor re-encoda, e bytes que não são imagem viram 400. */
+let PNG_BYTES: Buffer
+beforeAll(async () => {
+  PNG_BYTES = await sharp({ create: { width: 64, height: 48, channels: 3, background: '#c33' } }).png().toBuffer()
+})
+
 let store: FakeImageStore
 let gen: FakeImageGenerator
 beforeEach(() => {
@@ -44,9 +51,9 @@ function jsonReq(url: string, headers?: Headers, method = 'POST', body?: unknown
     body: noBody ? undefined : body !== undefined ? JSON.stringify(body) : '{}',
   })
 }
-function uploadReq(id: string, headers?: Headers): Request {
+function uploadReq(id: string, headers?: Headers, bytes: Buffer = PNG_BYTES): Request {
   const form = new FormData()
-  form.append('file', new Blob([Buffer.from([1, 2, 3, 4])], { type: 'image/png' }), 'x.png')
+  form.append('file', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'x.png')
   return new Request(`http://localhost/api/curate/recipes/${id}/image`, {
     method: 'POST',
     headers: { ...h(headers) },
@@ -149,6 +156,17 @@ describe('Imagem de catálogo — comportamento', () => {
     expect(claude.sceneCalls).toBe(0)
   })
 
+  it('#596 subir bytes que não são imagem → 400 tipo_invalido; nada guardado, face intocada', async () => {
+    const { headers: cur } = await curator()
+    const draft = await seedCatalogDraft()
+
+    const up = await catUpload(uploadReq(draft, cur, Buffer.from([1, 2, 3, 4])), ctx(draft))
+    expect(up.status).toBe(400)
+    await expect(up.json()).resolves.toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await imageIdOf(draft)).toBeNull()
+  })
+
   it('subir foto: cria user_photo e auto-seleciona; deselecionar zera a face', async () => {
     const { headers: cur } = await curator()
     const draft = await seedCatalogDraft()
@@ -156,6 +174,13 @@ describe('Imagem de catálogo — comportamento', () => {
     const up = await catUpload(uploadReq(draft, cur), ctx(draft))
     expect(up.status).toBe(200)
     expect(await imageIdOf(draft)).not.toBeNull()
+    // #596: o original guardado é o WebP re-encodado, não os bytes enviados.
+    const [img] = await getDb()
+      .select({ blobUrl: recipeImage.blobUrl })
+      .from(recipeImage)
+      .where(eq(recipeImage.id, (await imageIdOf(draft))!))
+    expect(img.blobUrl).toMatch(/\/recipes\/\d+\.webp$/)
+    expect(store.blobs.get(img.blobUrl)?.contentType).toBe('image/webp')
 
     const del = await catDeselect(jsonReq(`http://localhost/x`, cur, 'DELETE'), ctx(draft))
     expect(del.status).toBe(200)

@@ -15,6 +15,7 @@ import {
 } from '@/server/recipe/image'
 import { renderImageDerivativesSafe, storeImageDerivatives } from '@/server/images/image-derivatives'
 import { IMAGE_BLOB_COLS, deleteOrphanBlobs, imageRowBlobUrls } from '@/server/images/image-blobs'
+import { RECIPE_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
 
 /**
  * Estúdio de imagem do CATÁLOGO (#238, ADR-0026 emenda dec.10) — variante CURADOR das ops de imagem.
@@ -41,6 +42,8 @@ export type CatalogImageResult =
 export type CatalogImageGenResult = CatalogImageResult | { kind: 'disabled' } | { kind: 'generator' }
 export type CatalogImageSelectResult = CatalogImageResult | { kind: 'moderated' }
 export type CatalogGalleryDeleteResult = CatalogImageResult | { kind: 'in_use' }
+/** Upload (#596): `invalid_image` (400) quando os bytes não passam no re-encode — espelha o do dono. */
+export type CatalogImageUploadResult = CatalogImageResult | { kind: 'invalid_image' }
 
 /** Gate barato de catálogo: `origin='catalog' && owner_id IS NULL` + lineage/face. null ⇒ 404. */
 async function loadCatalogGate(
@@ -119,25 +122,32 @@ export async function applyCatalogImageGeneration(input: {
   return okWithGallery(db, lineageId, core.imageId)
 }
 
-/** SUBIR foto p/ um rascunho de catálogo (curador). Cria recipe_image (user_photo) + AUTO-SELECIONA. */
+/**
+ * SUBIR foto p/ um rascunho de catálogo (curador). RE-ENCODA (#596, mesmo `RECIPE_PHOTO_SPEC` do dono: a
+ * foto do curador também vai ao Blob público e pode trazer EXIF/GPS), cria recipe_image (user_photo) +
+ * AUTO-SELECIONA.
+ */
 export async function applyCatalogImageUpload(input: {
   db: Database
   store: ImageStore
   id: string
   curatorId: string
-  data: Buffer
-  contentType: string
-}): Promise<CatalogImageResult> {
-  const { db, store, id, curatorId, data, contentType } = input
+  data: Buffer // bytes CRUS do upload (o tipo declarado já passou pela allowlist do route)
+}): Promise<CatalogImageUploadResult> {
+  const { db, store, id, curatorId, data } = input
 
   const gate = await loadCatalogGate(db, id)
   if (!gate) return { kind: 'not_found' }
 
+  // #596: re-encode DEPOIS do gate (rascunho inexistente/não-catálogo nunca custa CPU do sharp).
+  const clean = await reencodeUserPhoto(data, RECIPE_PHOTO_SPEC)
+  if (!clean) return { kind: 'invalid_image' }
+
   // Achado I (0077): derivados WebP em paralelo com o `put` do original; falha neles nunca vira erro.
-  const rendering = renderImageDerivativesSafe(data)
+  const rendering = renderImageDerivativesSafe(clean.data)
   let blobUrl: string
   try {
-    ;({ url: blobUrl } = await store.store({ data, contentType, pathPrefix: 'recipes' }))
+    ;({ url: blobUrl } = await store.store({ data: clean.data, contentType: clean.contentType, pathPrefix: 'recipes' }))
   } catch {
     return { kind: 'storage' }
   }
