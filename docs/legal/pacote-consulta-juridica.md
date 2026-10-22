@@ -73,7 +73,7 @@ A Descoberta na web **só funciona** quando os três controles abaixo estão lig
 | GAP-3 | Remoção só do nome | **Fechado (mecanismo).** Escalada admin: `url_unlink` (zera URL e nome) ou `record_deletion` (apaga a receita importada) (PR #409). **Quando** usar é a pergunta 2. |
 | GAP-4 | Operador não alcança receitas de terceiros | **Fechado.** Remoção de atribuição em lote por nome ou URL, alcança receitas privadas de qualquer usuário (PR #406). |
 | GAP-5 | Sem auditoria DSAR | **Fechado.** Tabela `dsar_audit_event`, só inserção; `DSAR_FULFILLED` guarda **apenas hash** SHA-256 do que foi removido (PR #402). |
-| GAP-6 | Sem DSAR self-service do usuário | **Fechado.** `GET /api/me/export` e `POST /api/me/erasure` (anonimização) (PR #410). |
+| GAP-6 | Sem DSAR self-service do usuário | **Fechado.** `GET /api/me/export` e `POST /api/me/erasure` (anonimização) (PR #410) + interface em Editar perfil → Seus dados (#595). |
 | GAP-7 | Sem alertas de SLA | **Fechado.** Cron diário com alertas aos 10/13/15 dias, e-mail ao encarregado nos tickets vermelhos/vencidos, painel admin (PRs #408, #415, #416). |
 
 **Pontos ainda abertos, declarados por honestidade:**
