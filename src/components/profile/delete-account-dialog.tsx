@@ -8,7 +8,7 @@
  *
  * O diálogo diz o que é apagado e o que fica sem o nome da pessoa (`seusDados.apagadoItens`/`mantidoItens`,
  * o mesmo que o `eraseOwnAccount` faz), aponta "Minhas receitas" para quem quer apagar uma receita
- * publicada antes, oferece baixar os dados (o MESMO download da seção, `dl`) e só libera "Excluir
+ * publicada antes (só texto enquanto exclui), oferece baixar os dados (o MESMO download da seção, `dl`) e só libera "Excluir
  * definitivamente" com a caixa "Entendo…" marcada e nenhum download em andamento. Enquanto exclui, nada
  * fecha o diálogo: o `open` é controlado e o `guarded` ignora o fechamento, e o X some. `onPendingChange`
  * avisa a seção, que fica montada mesmo se a sessão virar `null` no meio (ver `AccountDataSection`).
@@ -18,9 +18,9 @@
  *  - 401: a sessão já tinha morrido; mostra `erroSessao`, deixa o mesmo aviso para depois da recarga e
  *    recarrega a página deslogada.
  *  - Ambíguo (o `fetch` lança, ou 5xx: um 504 pode ter vindo depois do commit): pergunta ao
- *    `GET /api/auth/get-session`, sem cache. A eliminação apaga as sessões na mesma transação, e a sessão
- *    estava viva segundos antes; sessão `null` ⇒ a conta foi excluída, saída normal. Sessão viva, ou sem
- *    resposta ⇒ `erroExcluir`.
+ *    `GET /api/auth/get-session`, sem cache e com teto de 8s. A eliminação apaga as sessões na mesma
+ *    transação, e a sessão estava viva segundos antes; sessão `null` ⇒ a conta foi excluída, saída normal.
+ *    Sessão viva, ou sem resposta ⇒ `erroExcluir`.
  *  - Outro 4xx: `erroExcluir`.
  * Na falha, o foco vai para "Excluir definitivamente" (ou para o alerta, se o botão estiver desabilitado),
  * para não cair no `body`.
@@ -61,6 +61,9 @@ type Erro = null | 'falha' | 'sessao'
 /** Teto do `signOut` na saída: a conta já foi excluída no servidor, a tela não espera a rede para sempre. */
 const SIGN_OUT_TIMEOUT_MS = 3_000
 
+/** Teto do get-session depois de um desfecho ambíguo: sem resposta, vale "não deu para saber". */
+const SESSION_CHECK_TIMEOUT_MS = 8_000
+
 /** A aba "Criações" de "Minhas receitas" (`domain/nav-sections`): onde a pessoa apaga uma receita sua. */
 const MINHAS_RECEITAS_HREF = '/me/recipes'
 
@@ -75,11 +78,16 @@ async function signOutWithTimeout(): Promise<void> {
 
 /**
  * Depois de um desfecho ambíguo: a sessão ainda existe? `false` = `null` do get-session (a eliminação a
- * apagou); `true` = sessão viva; `null` = não deu para saber (rede fora, resposta fora da forma).
+ * apagou); `true` = sessão viva; `null` = não deu para saber (rede fora, resposta fora da forma, ou nada em
+ * 8s: o `AbortSignal.timeout` corta o pedido e a leitura do corpo, e a tela não fica em "Excluindo…").
  */
 async function sessaoViva(): Promise<boolean | null> {
   try {
-    const res = await fetch('/api/auth/get-session', { cache: 'no-store', credentials: 'same-origin' })
+    const res = await fetch('/api/auth/get-session', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(SESSION_CHECK_TIMEOUT_MS),
+    })
     if (!res.ok) return null
     const body: unknown = await res.json()
     if (body === null) return false
@@ -224,11 +232,16 @@ export function DeleteAccountDialog({
           </ul>
         </div>
 
+        {/* Enquanto exclui, o rótulo vira texto: seguir o link desmontaria a página no meio da saída. */}
         <p className="text-sm text-muted">
           {publicadasAntes}
-          <Link href={MINHAS_RECEITAS_HREF} className={LINK}>
-            {sectionLabel(messages, 'minhasReceitas')}
-          </Link>
+          {busy ? (
+            <span className="font-medium text-fg">{sectionLabel(messages, 'minhasReceitas')}</span>
+          ) : (
+            <Link href={MINHAS_RECEITAS_HREF} className={LINK}>
+              {sectionLabel(messages, 'minhasReceitas')}
+            </Link>
+          )}
           {publicadasDepois}
         </p>
 

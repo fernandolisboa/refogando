@@ -90,7 +90,8 @@ function guest(): SessionState {
   return { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
 }
 
-type Reply = { status: number; body?: unknown } | 'throw' | Promise<{ status: number; body?: unknown }>
+/** `hang`: nunca responde, mas respeita o `signal` (rejeita no abort, como o fetch de verdade). */
+type Reply = { status: number; body?: unknown } | 'throw' | 'hang' | Promise<{ status: number; body?: unknown }>
 type Call = { url: string; method: string; init: RequestInit | undefined; body: unknown }
 type Route = 'export' | 'erasure' | 'session'
 
@@ -122,6 +123,11 @@ function mockFetch(routes: Partial<Record<Route, Reply[]>>) {
     const q = queues[key]
     const next = q.length > 1 ? q.shift()! : q[0]
     if (next === 'throw') throw new TypeError('Failed to fetch')
+    if (next === 'hang') {
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+      })
+    }
     const r = await next
     const payload = 'body' in r ? r.body : {}
     return {
@@ -462,6 +468,38 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
       expect(loc.reload).not.toHaveBeenCalled()
     })
 
+    it('get-session que não responde: desiste em 8s e mostra erroExcluir (não fica em "Excluindo…")', async () => {
+      const user = userEvent.setup()
+      // O `AbortSignal.timeout` nativo não segue os timers falsos: troca por um que segue, com o mesmo efeito.
+      const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+        const c = new AbortController()
+        window.setTimeout(() => c.abort(new DOMException('The operation timed out.', 'TimeoutError')), ms)
+        return c.signal
+      })
+      const { urls } = mockFetch({ erasure: ['throw'], session: ['hang'] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await user.click(within(dialog).getByRole('checkbox', { name: m.entendo }))
+      const confirmar = within(dialog).getByRole('button', { name: m.confirmar })
+
+      vi.useFakeTimers()
+      try {
+        fireEvent.click(confirmar)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(urls()).toEqual(['POST /api/me/erasure', 'GET /api/auth/get-session'])
+        expect(timeout).toHaveBeenCalledWith(8_000)
+        await vi.advanceTimersByTimeAsync(7_999)
+        expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
+        await vi.advanceTimersByTimeAsync(1)
+      } finally {
+        vi.useRealTimers()
+      }
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
+      expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeEnabled()
+      expect(loc.assign).not.toHaveBeenCalled()
+      expect(markAccountNotice).not.toHaveBeenCalled()
+    })
+
     it('get-session também falha → erroExcluir (sem saber, não sai)', async () => {
       const user = userEvent.setup()
       mockFetch({ erasure: ['throw'], session: ['throw'] })
@@ -501,7 +539,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(order).toEqual([])
   })
 
-  it('enquanto exclui: Esc não fecha, o X some e o botão fica aria-busy', async () => {
+  it('enquanto exclui: Esc não fecha, o X some, o link de Minhas receitas vira texto e o botão fica aria-busy', async () => {
     const user = userEvent.setup()
     const d = deferred<{ status: number; body?: unknown }>()
     mockFetch({ erasure: [d.promise], session: [LIVE_SESSION] })
@@ -515,10 +553,14 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(dialog).queryByRole('button', { name: m.fechar })).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog', { name: m.dialogoTitulo })).toBeInTheDocument()
+    // "Minhas receitas" vira texto: seguir o link desmontaria a página no meio da exclusão.
+    expect(within(dialog).queryByRole('link', { name: ptBR.nav.minhasReceitas })).not.toBeInTheDocument()
+    expect(within(dialog).getByText(ptBR.nav.minhasReceitas)).toBeInTheDocument()
 
     d.resolve({ status: 500 })
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
     expect(within(dialog).getByRole('button', { name: m.fechar })).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: ptBR.nav.minhasReceitas })).toHaveAttribute('href', '/me/recipes')
   })
 
   it('a sessão vira null no meio do pedido (refetch ao voltar online): o diálogo fica e termina a saída', async () => {

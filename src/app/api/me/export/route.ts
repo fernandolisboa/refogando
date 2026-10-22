@@ -3,6 +3,7 @@ import { formatServerErrorLine } from '@/domain/error-report'
 import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { crossSiteForbidden, isCrossSiteRequest } from '@/server/http/same-origin'
+import { textChunkStream } from '@/server/http/text-chunk-stream'
 import { accountExportSections } from '@/server/legal/account-export'
 
 /**
@@ -18,10 +19,11 @@ import { accountExportSections } from '@/server/legal/account-export'
  * barra (`none`) baixam; outro site recebe 403 antes de olhar a sessão. Sem isso, uma página de fora abriria
  * a URL numa janela e forçaria o download, ou usaria a resposta como oráculo de "esta pessoa está logada".
  *
- * Em streaming (#595): as seções saem uma de cada vez (`jsonObjectChunks`), com o mesmo texto que um
- * `JSON.stringify(dump, null, 2)` daria; ver `accountExportSections` para o porquê. Uma falha no meio do
- * corpo derruba a conexão (o cliente vê erro de rede, nunca um JSON cortado com cara de arquivo) e escreve
- * a linha `[erro] origem=servidor` do `onRequestError`, que não vê erro depois da resposta começar.
+ * Em streaming (#595): as seções saem uma de cada vez (`jsonObjectChunks` + `textChunkStream`), com o mesmo
+ * texto que um `JSON.stringify(dump, null, 2)` daria; ver `accountExportSections` para o porquê. Uma falha no
+ * meio do corpo derruba a conexão (o cliente vê erro de rede, nunca um JSON cortado com cara de arquivo) e
+ * escreve a linha `[erro] origem=servidor` do `onRequestError`, que não vê erro depois da resposta começar.
+ * O cliente que cancela (aba fechada, navegação, HEAD) só para o gerador, sem linha de erro.
  *
  * `Content-Disposition: attachment` torna a resposta um download (o titular guarda/reimporta o JSON). O
  * nome leva a data (`refogando-meus-dados-YYYY-MM-DD.json`, #595), do MESMO instante do `exportedAt`. A
@@ -42,34 +44,17 @@ export async function GET(req: Request): Promise<Response> {
   const now = new Date()
   const chunks = jsonObjectChunks(accountExportSections(getDb(), g.session.user.id, now))
 
-  return new Response(byteStream(chunks), {
+  const body = textChunkStream(chunks, (err) =>
+    console.error(formatServerErrorLine(err, 'GET', { routePath: '/api/me/export', routeType: 'route' })),
+  )
+
+  return new Response(body, {
     status: 200,
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'content-disposition': `attachment; filename="${accountExportFilename(now)}"`,
       // Dados pessoais: nunca cacheados por intermediários (a resposta é por-titular e sensível).
       'cache-control': 'no-store',
-    },
-  })
-}
-
-/** Um pedaço por `pull`: a próxima seção só é consultada quando o cliente lê a anterior. */
-function byteStream(chunks: AsyncGenerator<string>): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder()
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const { value, done } = await chunks.next()
-        if (done) controller.close()
-        else controller.enqueue(encoder.encode(value))
-      } catch (err) {
-        console.error(formatServerErrorLine(err, 'GET', { routePath: '/api/me/export', routeType: 'route' }))
-        controller.error(err)
-      }
-    },
-    async cancel() {
-      // O cliente desistiu: encerra o gerador (não consulta as seções que faltam).
-      await chunks.return(undefined)
     },
   })
 }

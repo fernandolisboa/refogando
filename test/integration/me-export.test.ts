@@ -35,7 +35,7 @@ import {
 } from '../helpers/recipes'
 
 /**
- * Export self-service dos dados da conta (#401, GAP-6; LGPD Art. 18 II/V). Contrato de
+ * Export self-service dos dados da conta (#401, GAP-6; LGPD Art. 18, II e V). Contrato de
  * `GET /api/me/export`: dump portável (JSON) SÓ do próprio titular, SEM PII de terceiros.
  *
  * Inegociáveis testados: só-titular (401 sem sessão / conta desativada); NUNCA e-mail de
