@@ -131,6 +131,7 @@ describe('DELETE /api/recipes/[id] — apagar a própria receita (#21)', () => {
         restricoes: [],
       },
       locale: 'pt-BR',
+      cap: Infinity, // teto de derivar (#588) fora do escopo deste teste
     })
     expect(derived.kind).toBe('ok')
     const derivedId = (derived as { kind: 'ok'; recipeId: string }).recipeId

@@ -33,6 +33,7 @@ import {
 } from '@/domain/vocabulary'
 import { useCozinhaVocab } from '@/components/i18n/cozinha-vocab-provider'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { formatCountdown } from '@/lib/countdown'
 import { formatQuantityInput, parseQuantityInput } from '@/domain/quantity-format'
 import type { RecipeView } from '@/domain/recipe-read'
 
@@ -170,7 +171,9 @@ export function RecipeEditForm({
   const [deleting, setDeleting] = useState(false)
   // `visibility` = falha PARCIAL no Salvar (PATCH ok, publish/unpublish falhou): o conteúdo gravou,
   // só a visibilidade não mudou — a edição NÃO se perde.
-  const [errorKey, setErrorKey] = useState<'save' | 'delete' | 'visibility' | null>(null)
+  const [errorKey, setErrorKey] = useState<'save' | 'delete' | 'visibility' | 'limite' | null>(null)
+  // #588: countdown (já formatado) do 429 `limite_derivar` no modo derive; só lido com errorKey 'limite'.
+  const [limiteTempo, setLimiteTempo] = useState('')
   const [dialog, setDialog] = useState<Dialog>('none')
 
   // Foco do diálogo: guarda o gatilho p/ devolver o foco ao fechar; foca o primário ao abrir.
@@ -290,7 +293,8 @@ export function RecipeEditForm({
    * #196/ADR-0021: DERIVA uma Receita NÃO-própria. POST /api/recipes/[id]/derive (a base NUNCA é
    * mutada) → 201 { recipeId } → NAVEGA pra nova Receita (sua, privada). Erro (qualquer não-201)
    * mostra mensagem neutra e mantém o modal aberto (a edição não se perde). #131: mudança visual
-   * com imagem herdada ⇒ `?reviewImage=1`.
+   * com imagem herdada ⇒ `?reviewImage=1`. #588: 429 `limite_derivar` (teto de derivar) ⇒ mensagem
+   * própria com o tempo até liberar, modal aberto (a edição segue lá pra tentar depois).
    */
   async function derivar() {
     if (saving) return
@@ -325,6 +329,14 @@ export function RecipeEditForm({
         router.refresh()
         onSaved?.()
         return
+      }
+      if (res.status === 429) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string; retryAfterMs?: number }
+        if (b.error === 'limite_derivar') {
+          setLimiteTempo(formatCountdown(b.retryAfterMs ?? 0))
+          setErrorKey('limite')
+          return
+        }
       }
       setErrorKey('save')
     } catch {
@@ -768,6 +780,16 @@ export function RecipeEditForm({
             className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
           >
             {messages.system.error}
+          </p>
+        )}
+
+        {/* #588: teto de derivar estourado (só no modo derive) — tempo até liberar o próximo slot. */}
+        {errorKey === 'limite' && (
+          <p
+            role="alert"
+            className="rounded-md border border-border bg-bg px-3 py-2 text-sm font-medium text-fg"
+          >
+            {messages.minhasCriacoes.derivarLimite.replace('{tempo}', limiteTempo)}
           </p>
         )}
 

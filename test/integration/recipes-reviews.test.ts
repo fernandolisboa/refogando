@@ -566,6 +566,64 @@ describe('POST/DELETE /api/recipes/[id]/reviews — foto (#365, ADR-0027)', () =
     expect(await countRows(id)).toBe(0)
   })
 
+  // #588: o `file.type` é o DECLARADO; o sharp decodifica pelos BYTES. Formato decodificável mas fora de
+  // JPEG/PNG/WebP (SVG renderizaria com custo de CPU arbitrário; GIF/TIFF passariam) ou com mais de um
+  // quadro ⇒ 400 tipo_invalido pelo `metadata()`, antes do pipeline. Sanidade: cada entrada É do formato
+  // que o teste diz (o sharp a lê assim), senão o 400 viria do caminho "não decodifica" e o teste mentiria.
+  it.each([
+    [
+      'SVG rotulado image/png',
+      'svg',
+      async () =>
+        Buffer.from(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>',
+        ),
+    ],
+    [
+      'GIF rotulado image/png',
+      'gif',
+      async () => sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 9, g: 9, b: 9 } } }).gif().toBuffer(),
+    ],
+    [
+      'WebP ANIMADO (2 quadros) rotulado image/webp',
+      'webp',
+      async () => {
+        const frame = (r: number) =>
+          sharp({ create: { width: 8, height: 8, channels: 3, background: { r, g: 0, b: 0 } } }).png().toBuffer()
+        return sharp([await frame(10), await frame(200)], { join: { animated: true } }).webp().toBuffer()
+      },
+    ],
+  ])('#588: %s ⇒ 400 tipo_invalido pelo formato REAL, nada armazenado/gravado', async (_label, format, make) => {
+    const { userId: owner } = await seedSessionHeaders({ email: `foto-fmt-${format}-owner@ex.com` })
+    const { headers } = await seedSessionHeaders({ email: `foto-fmt-${format}-user@ex.com` })
+    const id = await seedPublicCommunity(owner)
+
+    const buf = await make()
+    const meta = await sharp(buf).metadata()
+    expect(meta.format).toBe(format)
+    if (format === 'webp') expect(meta.pages).toBe(2)
+    const type = format === 'webp' ? 'image/webp' : 'image/png'
+    const file = new File([new Uint8Array(buf)], `x.${format === 'webp' ? 'webp' : 'png'}`, { type })
+
+    const res = await postMultipart(id, { rating: 5, file }, headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await countRows(id)).toBe(0)
+  })
+
+  it('#588: JPEG/PNG/WebP estáticos legítimos seguem aceitos (o gate pelos bytes não barra o normal)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'foto-fmt-ok-owner@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    for (const [i, type] of (['image/png', 'image/jpeg', 'image/webp'] as const).entries()) {
+      const { userId: uid, headers } = await seedSessionHeaders({ email: `foto-fmt-ok-${i}@ex.com` })
+      const res = await postMultipart(id, { rating: 5, file: await realImageFile(`p${i}`, type) }, headers)
+      expect(res.status).toBe(200)
+      expect(await photoUrlOf(id, uid)).not.toBeNull()
+    }
+    expect(store.blobs.size).toBe(3)
+  })
+
   it('acima de 2MB ⇒ 400 arquivo_grande (checado ANTES de ler os bytes)', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'foto-grande-owner@ex.com' })
     const { headers } = await seedSessionHeaders({ email: 'foto-grande-user@ex.com' })

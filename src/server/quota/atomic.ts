@@ -1,6 +1,13 @@
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { creationSession, extractionEvent, generation, imageGeneration, mealPlanSuggestionEvent } from '@/db/schema'
+import {
+  creationSession,
+  extractionEvent,
+  generation,
+  imageGeneration,
+  mealPlanSuggestionEvent,
+  recipe,
+} from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS, decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
 
@@ -36,7 +43,13 @@ type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
  * lock de geração de RECEITA e a de IMAGEM nunca se bloqueiem mutuamente (chaves de espaços distintos).
  * Valores arbitrários porém ESTÁVEIS (mudá-los invalidaria locks em voo num deploy — mantê-los fixos).
  */
-export const QUOTA_LOCK_CLASS = { recipeGen: 4671, imageGen: 4672, extraction: 4673, menuSuggestion: 4674 } as const
+export const QUOTA_LOCK_CLASS = {
+  recipeGen: 4671,
+  imageGen: 4672,
+  extraction: 4673,
+  menuSuggestion: 4674,
+  derive: 4675,
+} as const
 
 /**
  * Cota estourada detectada ATOMICAMENTE dentro da tx (após a lock + recontagem). Carrega o countdown
@@ -195,4 +208,60 @@ export async function reserveMenuSuggestionSlot(
       .returning({ id: mealPlanSuggestionEvent.id })
     return row.id
   })
+}
+
+/**
+ * Derivadas+clones VIVAS do usuário na janela 24h (fonte da cota de Derivar/Clonar, #588; `db` ou a tx
+ * do gate). SEM ledger: conta as próprias linhas `recipe` — derivar é o ÚNICO caminho que grava
+ * `origin='user_edited'` (setado só no INSERT, imutável depois) e `owner_id` é o leitor que forkou.
+ * `owner_id = $1` usa `recipe_owner_id_idx` (parcial, só receitas com dono). Consequência ACEITA: a
+ * contagem é sobre linhas VIVAS — apagar a derivada (hard delete do dono) libera o slot, então o ciclo
+ * derivar→apagar não tem teto (nem o custo do embedder nele). Fechar isso exige um ledger (migração);
+ * o teto mira o abuso que ACUMULA (clonar o pool em laço), que este conta (ADR-0045 emenda 2026-10-22).
+ */
+async function recentDerivedTimes(db: Database | Tx, userId: string, now: Date): Promise<Date[]> {
+  const rows = await db
+    .select({ createdAt: recipe.createdAt })
+    .from(recipe)
+    .where(
+      and(
+        eq(recipe.ownerId, userId),
+        eq(recipe.origin, 'user_edited'),
+        gte(recipe.createdAt, new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)),
+      ),
+    )
+  return rows.map((r) => r.createdAt)
+}
+
+/**
+ * Pré-checagem BARATA (sem lock) da cota de Derivar/Clonar (#588): quem já está no teto recebe o 429
+ * ANTES de a rota carregar a base inteira. Não é o gate — a corrida é fechada por `assertDeriveSlotInTx`.
+ */
+export async function peekDeriveQuota(
+  db: Database,
+  input: { userId: string; cap: number },
+): Promise<{ allowed: true } | { allowed: false; retryAfterMs: number }> {
+  const { userId, cap } = input
+  if (!Number.isFinite(cap)) return { allowed: true }
+  const now = new Date()
+  const recentAt = await recentDerivedTimes(db, userId, now)
+  return decideRecipeGenQuota({ cap, recentAt, now })
+}
+
+/**
+ * Gate ATÔMICO da cota de Derivar/Clonar (#588), DENTRO da tx do fork e SOB a advisory lock do usuário:
+ * reconta as `user_edited` do usuário na janela 24h (agora vendo os forks já commitados pelas
+ * requisições que a lock serializou antes) e decide por `decideRecipeGenQuota` (mesma janela deslizante
+ * das cotas de IA). Estourou ⇒ LANÇA `QuotaExceededError` (a tx reverte, nenhuma linha nasce). DEVE ser
+ * a PRIMEIRA operação da transação de `deriveRecipe` (antes do INSERT da `recipe`). `cap` não-finito
+ * (admin) ⇒ no-op, sem lock.
+ */
+export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap: number }): Promise<void> {
+  const { userId, cap } = input
+  if (!Number.isFinite(cap)) return
+  const now = new Date()
+  await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.derive, userId)
+  const recentAt = await recentDerivedTimes(tx, userId, now)
+  const decision = decideRecipeGenQuota({ cap, recentAt, now })
+  if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
 }

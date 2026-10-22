@@ -4,8 +4,10 @@ import { getDb } from '@/server/deps'
 import { recipe } from '@/db/schema'
 import { isUuid, parseRequestLocale } from '@/server/http/params'
 import { isRestricao, isUnidade, type Restricao, type Unidade } from '@/domain/vocabulary'
-import { deriveRecipe, type DeriveEdits } from '@/server/recipe/derive'
+import { deriveRecipe, type DeriveEdits, type DeriveResult } from '@/server/recipe/derive'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
+import { capForDerive } from '@/domain/derive-cap'
+import { QuotaExceededError, peekDeriveQuota } from '@/server/quota/atomic'
 
 /**
  * POST /api/recipes/[id]/derive — DERIVA (forka) uma Receita NÃO-própria (issue #17).
@@ -24,11 +26,17 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  *      - senão (catálogo ownerId NULL, OU pública de outro) → PROSSEGUE.
  *   4. parse + valida body.edits → 400 dados_invalidos em forma ruim. `{ clone: true }` (sem
  *      edits) = CLONAR: cópia fiel da base num clique, sem o modal (ADR-0045).
- *   5. deriveRecipe → 201 { recipeId }.
+ *   5. teto de derivar (#588), pré-checagem BARATA (sem lock) → 429 `limite_derivar` +
+ *      `retryAfterMs` ANTES de carregar a base. Depois dos 404/409/400: quem não pode derivar (ou
+ *      mandou lixo) recebe o mesmo erro de sempre, e um pedido inválido não diz nada sobre a cota.
+ *   6. deriveRecipe → 201 { recipeId }. O gate REAL do teto é a 1ª operação da tx do fork (lock do
+ *      usuário + recontagem): corrida que passou o passo 5 estoura lá ⇒ QuotaExceededError ⇒ o
+ *      MESMO 429 (sob Promise.all, nascem EXATAMENTE as que cabem).
  *
  * 404-not-403 em ownership (nunca vaza existência). Vocabulário de erro alinhado às outras
  * rotas: `nao_autenticado` (401), `not_found` (404), `dados_invalidos` (400). O 409 usa a chave
- * `derivar_da_propria` (i18n na UI #21/#61).
+ * `derivar_da_propria` (i18n na UI #21/#61); o 429, `limite_derivar` (teto anti-abuso por papel,
+ * `capForDerive`; Derivar e Clonar dividem o mesmo teto — ADR-0045 emenda 2026-10-22).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -170,8 +178,24 @@ export async function POST(
   const edits = clone ? null : parseEdits(body.edits)
   if (!clone && edits === null) return badRequest()
 
+  // Teto de derivar (#588): peek sem lock poupa a carga da base a quem já está no teto; o gate que
+  // segura a corrida é o da tx de `deriveRecipe` (mesmo 429 no catch).
+  const cap = capForDerive(g.session.user.role)
+  const peek = await peekDeriveQuota(db, { userId: viewerId, cap })
+  if (!peek.allowed) {
+    return Response.json({ error: 'limite_derivar', retryAfterMs: peek.retryAfterMs }, { status: 429 })
+  }
+
   const locale = parseRequestLocale(request)
-  const res = await deriveRecipe({ db, baseId: id, viewerId, edits, locale })
+  let res: DeriveResult
+  try {
+    res = await deriveRecipe({ db, baseId: id, viewerId, edits, locale, cap })
+  } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      return Response.json({ error: 'limite_derivar', retryAfterMs: err.retryAfterMs }, { status: 429 })
+    }
+    throw err
+  }
 
   switch (res.kind) {
     case 'ok':

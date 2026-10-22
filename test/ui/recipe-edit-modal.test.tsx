@@ -566,6 +566,33 @@ describe('RecipeEditModal — modo DERIVE (#196)', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('#588 — 429 limite_derivar: mensagem do teto com o tempo até liberar, modal aberto, edição preservada', async () => {
+    const user = userEvent.setup()
+    // 90min ⇒ arredonda pra cima em horas ("2h").
+    mockFetch(() => ({ status: 429, body: { error: 'limite_derivar', retryAfterMs: 90 * 60_000 } }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    const titulo = within(dialog).getByDisplayValue('Feijoada do catálogo')
+    await user.clear(titulo)
+    await user.type(titulo, 'Minha feijoada')
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+
+    const alert = await within(screen.getByRole('dialog')).findByRole('alert')
+    expect(alert).toHaveTextContent(ptBR.minhasCriacoes.derivarLimite.replace('{tempo}', '2h'))
+    expect(alert).not.toHaveTextContent(ptBR.system.error)
+    expect(push).not.toHaveBeenCalled()
+    expect(within(screen.getByRole('dialog')).getByDisplayValue('Minha feijoada')).toBeInTheDocument()
+  })
+
+  it('#588 — 429 sem o código do teto ⇒ cai na mensagem neutra de sempre', async () => {
+    const user = userEvent.setup()
+    mockFetch(() => ({ status: 429, body: {} }))
+    renderDeriveModal(baseView())
+    const dialog = await openDeriveModal(user)
+    await user.click(within(dialog).getByRole('button', { name: ptBR.minhasCriacoes.criarMinhaVersao }))
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(ptBR.system.error)
+  })
+
   it('en-US: gatilho e título de derivar traduzidos', async () => {
     const user = userEvent.setup()
     mockFetch(() => ({ status: 201, body: { recipeId: 'x' } }))

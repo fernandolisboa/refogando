@@ -1,5 +1,6 @@
 import { getDb, getImageStore } from '@/server/deps'
 import { backfillImageDerivatives } from '@/server/images/derivatives-backfill'
+import { isAuthorizedCron } from '@/server/http/cron-auth'
 
 /**
  * Cron do BACKFILL dos derivados WebP da Imagem da receita (achado I da auditoria de performance,
@@ -29,10 +30,8 @@ export const dynamic = 'force-dynamic' // nunca cacheia; roda a passada a cada d
 export const maxDuration = 60
 
 export async function GET(request: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  // Fail-closed: sem secret no ambiente OU header != "Bearer <secret>" → 401.
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Fail-closed: sem secret no ambiente OU header != "Bearer <secret>" → 401 (comparação em tempo constante).
+  if (!isAuthorizedCron(request)) {
     return new Response('Unauthorized', { status: 401 })
   }
 

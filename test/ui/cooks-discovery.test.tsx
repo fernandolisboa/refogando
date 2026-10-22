@@ -27,9 +27,14 @@ import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { CooksDiscovery } from '@/components/recipe/cooks-discovery'
 import { ptBR } from '@/i18n/messages/pt-BR'
 
-// jsdom não tem IntersectionObserver (scroll infinito) — stub inerte.
+// jsdom não tem IntersectionObserver (scroll infinito) — stub inerte que só GUARDA o callback (o teste de
+// load-more o dispara à mão).
+let ioCallback: ((entries: { isIntersecting: boolean }[]) => void) | null = null
 beforeAll(() => {
   class IO {
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      ioCallback = cb
+    }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -60,7 +65,19 @@ function renderDiscovery() {
   )
 }
 
+const authedSession = {
+  data: { user: { id: 'u1' } },
+  error: null,
+  isPending: false,
+  isRefetching: false,
+  refetch: () => {},
+}
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+const cardOf = (name: string) => screen.getByText(name).closest('div')!.parentElement!.parentElement!
+
 beforeEach(() => {
+  ioCallback = null
   authMock.current = authMock.anon
   vi.restoreAllMocks()
 })
@@ -151,5 +168,114 @@ describe('CooksDiscovery (#308)', () => {
     const seguir = within(card).getByRole('link', { name: ptBR.cozinheirosSugeridos.seguir })
     expect(seguir).toHaveAttribute('href', expect.stringContaining('/sign-in?returnTo='))
     expect(seguir.getAttribute('href')).toContain(encodeURIComponent('/pt-BR/cooks'))
+  })
+})
+
+describe('CooksDiscovery — "Seguindo" na busca logada (#588)', () => {
+  const searchCook = (handle: string) => ({ name: `Achado ${handle}`, handle, image: null })
+
+  it('logado + busca: pede o status SÓ dos handles da página e marca Seguindo / esconde o botão no próprio', async () => {
+    authMock.current = authedSession
+    // mockImplementation por URL: cada chamada ganha um Response NOVO (mockResolvedValue reusaria o mesmo
+    // corpo e o 2º `.json()` quebraria).
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('/api/search/cooks')) {
+        return json({ cooks: [searchCook('ana'), searchCook('beto'), searchCook('eu')], nextCursor: null })
+      }
+      if (url === '/api/me/following/status') return json({ following: ['ana'], self: 'eu' })
+      return json({ cooks: [seedCook('seed-a')], nextCursor: null }) // /api/cooks (recs logado)
+    })
+    const user = userEvent.setup()
+    renderDiscovery()
+    await user.type(screen.getByLabelText(ptBR.descobrirCozinheiros.buscarLabel), 'achado')
+
+    await waitFor(
+      () =>
+        expect(within(cardOf('Achado ana')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguindo })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        ),
+      { timeout: 1500 },
+    )
+    expect(within(cardOf('Achado beto')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguir })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(within(cardOf('Achado eu')).queryByRole('button')).not.toBeInTheDocument()
+
+    // A busca segue cookie-free; o status vai com cookie, por POST, com os handles da página no corpo.
+    const searchCall = fetchSpy.mock.calls.find(([u]) => String(u).startsWith('/api/search/cooks'))!
+    expect(searchCall[1]).toMatchObject({ credentials: 'omit' })
+    const statusCalls = fetchSpy.mock.calls.filter(([u]) => String(u) === '/api/me/following/status')
+    expect(statusCalls).toHaveLength(1)
+    expect(statusCalls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' })
+    expect(JSON.parse(String(statusCalls[0][1]?.body))).toEqual({ handles: ['ana', 'beto', 'eu'] })
+  })
+
+  it('load-more: pede o status só da página nova e NÃO zera o Seguindo da página anterior', async () => {
+    authMock.current = authedSession
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url.startsWith('/api/search/cooks')) {
+        return url.includes('cursor=c1')
+          ? json({ cooks: [searchCook('beto')], nextCursor: null })
+          : json({ cooks: [searchCook('ana')], nextCursor: 'c1' })
+      }
+      if (url === '/api/me/following/status') {
+        const { handles } = JSON.parse(String(init?.body)) as { handles: string[] }
+        return json({ following: handles, self: null }) // segue todo mundo que perguntarem
+      }
+      return json({ cooks: [], nextCursor: null })
+    })
+    const user = userEvent.setup()
+    renderDiscovery()
+    await user.type(screen.getByLabelText(ptBR.descobrirCozinheiros.buscarLabel), 'achado')
+    await waitFor(
+      () => expect(within(cardOf('Achado ana')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguindo })).toBeInTheDocument(),
+      { timeout: 1500 },
+    )
+
+    ioCallback?.([{ isIntersecting: true }])
+    await waitFor(() =>
+      expect(within(cardOf('Achado beto')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguindo })).toBeInTheDocument(),
+    )
+    expect(within(cardOf('Achado ana')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguindo })).toBeInTheDocument()
+    const bodies = fetchSpy.mock.calls
+      .filter(([u]) => String(u) === '/api/me/following/status')
+      .map(([, i]) => JSON.parse(String(i?.body)) as { handles: string[] })
+    expect(bodies).toEqual([{ handles: ['ana'] }, { handles: ['beto'] }])
+  })
+
+  it('falha do status ⇒ silenciosa: o cartão fica "Seguir"', async () => {
+    authMock.current = authedSession
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.startsWith('/api/search/cooks')) return json({ cooks: [searchCook('ana')], nextCursor: null })
+      if (url === '/api/me/following/status') return json({ error: 'x' }, 500)
+      return json({ cooks: [], nextCursor: null })
+    })
+    const user = userEvent.setup()
+    renderDiscovery()
+    await user.type(screen.getByLabelText(ptBR.descobrirCozinheiros.buscarLabel), 'achado')
+    await waitFor(() => expect(screen.getByText('Achado ana')).toBeInTheDocument(), { timeout: 1500 })
+    await waitFor(() =>
+      expect(fetchSpy.mock.calls.some(([u]) => String(u) === '/api/me/following/status')).toBe(true),
+    )
+    expect(within(cardOf('Achado ana')).getByRole('button', { name: ptBR.cozinheirosSugeridos.seguir })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+  })
+
+  it('anônimo na busca ⇒ NÃO pede status (só a busca cookie-free)', async () => {
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async () =>
+      json({ cooks: [searchCook('ana')], nextCursor: null }),
+    )
+    const user = userEvent.setup()
+    renderDiscovery()
+    await user.type(screen.getByLabelText(ptBR.descobrirCozinheiros.buscarLabel), 'achado')
+    await waitFor(() => expect(screen.getByText('Achado ana')).toBeInTheDocument(), { timeout: 1500 })
+    expect(fetchSpy.mock.calls.every(([u]) => String(u).startsWith('/api/search/cooks'))).toBe(true)
   })
 })

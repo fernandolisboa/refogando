@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { users, userFollow } from '@/db/schema'
 
@@ -106,6 +106,43 @@ export async function viewerFollows(
     .where(and(eq(userFollow.followerId, followerId), eq(userFollow.followeeId, followeeId)))
     .limit(1)
   return rows.length > 0
+}
+
+/** Estado de seguir do viewer sobre um LOTE de handles (#588) — só handles, NUNCA id. */
+export type FollowStatusByHandles = { following: string[]; self: string | null }
+
+/**
+ * "Eu sigo?" em LOTE, por handle (#588 — a busca de Cozinheiros é cookie-free, então o cartão nascia sempre
+ * "Seguir"; a ilha logada pergunta aqui depois de cada página). UMA query: as contas PÚBLICAS (`publicFilter`
+ * — o MESMO `publicAccountFilter` das rotas de seguir, passado pelo caller, que lê o gate de confirmação)
+ * cujo handle está no lote, com LEFT JOIN na aresta viewer→conta (lookup pela PK). Devolve os handles
+ * ARMAZENADOS (não os pedidos) dos que o viewer segue + o handle do PRÓPRIO viewer se ele estiver no lote
+ * (`self`, pra a UI esconder o botão no próprio cartão; comparado pelo id da sessão, nunca pelo handle).
+ * Conta soft-deletada/pendente não casa ⇒ some das duas listas (indistinguível de inexistente). Lote vazio
+ * ⇒ sem query. O caller já normalizou, deduplicou e capou o lote.
+ */
+export async function followStatusByHandles(
+  db: Database,
+  viewerId: string,
+  handles: string[],
+  publicFilter: SQL,
+): Promise<FollowStatusByHandles> {
+  if (handles.length === 0) return { following: [], self: null }
+  const rows = await db
+    .select({ id: users.id, handle: users.handle, edge: userFollow.followerId })
+    .from(users)
+    .leftJoin(
+      userFollow,
+      and(eq(userFollow.followeeId, users.id), eq(userFollow.followerId, viewerId)),
+    )
+    .where(and(inArray(users.handle, handles), publicFilter))
+  let self: string | null = null
+  const following: string[] = []
+  for (const r of rows) {
+    if (r.id === viewerId) self = r.handle
+    else if (r.edge !== null) following.push(r.handle)
+  }
+  return { following, self }
 }
 
 /** Quantos SEGUIDORES VIVOS tem `userId` (gate no FOLLOWER — counterparty — p/ casar com a lista). */

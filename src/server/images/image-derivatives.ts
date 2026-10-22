@@ -42,11 +42,16 @@ export const IMAGE_INPUT_PIXEL_LIMIT = 24_000_000
  * de 1,3 KB com `feTurbulence`/`feGaussianBlur` custou ~30 s de CPU. Então o formato vem do `metadata()`
  * (que só lê o cabeçalho, sem renderizar) e só JPEG, PNG e WebP seguem; o resto fica sem derivado e a
  * tela usa o original, exatamente como antes da 0077 (o upload em si não muda: não rejeitamos aqui).
+ * Exportado: a foto da avaliação (`/api/recipes/[id]/reviews`, #588) usa a MESMA allowlist pelos bytes, mas
+ * lá rejeita (400 `tipo_invalido`), porque a foto é re-encodada no upload.
  */
-const DERIVABLE_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
+export const DERIVABLE_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
 
-/** Teto de CPU de cada pipeline do sharp (defesa extra além do formato e do teto de pixels). */
-const PIPELINE_TIMEOUT_SECONDS = 10
+/**
+ * Teto de CPU de cada pipeline do sharp (defesa extra além do formato e do teto de pixels). Compartilhado
+ * com o re-encode da foto da avaliação (#588).
+ */
+export const PIPELINE_TIMEOUT_SECONDS = 10
 
 /** Qualidade WebP dos derivados. Medida no handoff 69 (PNG de 1024–1536 px do tipo do Gemini). */
 const WEBP_QUALITY = 80

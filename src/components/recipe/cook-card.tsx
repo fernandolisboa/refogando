@@ -26,8 +26,11 @@ export type CookCardCook = {
   /** Só na RECOMENDAÇÃO (preview rico); ausente na BUSCA. */
   recipeCount?: number
   recipes?: RecommendedCookRecipe[]
-  /** Só no diretório `/cooks` logado: o viewer já segue ⇒ o botão nasce "Seguindo". */
+  /** Só no diretório `/cooks` logado: o viewer já segue ⇒ o botão nasce "Seguindo". Na BUSCA, chega depois
+   * da página (`POST /api/me/following/status`, #588) e o botão remonta pela `key`. */
   following?: boolean
+  /** Só na BUSCA logada (#588): o cartão é do PRÓPRIO viewer ⇒ sem botão de Seguir (auto-seguir é 422). */
+  isSelf?: boolean
 }
 
 export type CookCardLabels = {
@@ -86,7 +89,7 @@ export function CookCard({
             </span>
           </span>
         </Link>
-        {authed ? (
+        {authed && cook.isSelf ? null : authed ? (
           // `key` pelo estado inicial: o seed global (sem `following`) é trocado pela página personalizada
           // com o MESMO handle — sem remontar, o `useState` do toggle ficaria preso no "Seguir" do seed.
           <CookFollowButton
