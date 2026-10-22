@@ -10,6 +10,13 @@
  * já-seguidos ficam, com o botão em "Seguindo"); ANÔNIMO mantém o seed (sem fetch no estado-seed). Busca
  * é cookie-free (viewer-independente).
  *
+ * #588 ("Seguindo" na busca): como a busca não lê o cookie, o cartão de um já-seguido nascia "Seguir". Logado
+ * + modo busca ⇒ depois da 1ª página E de cada load-more, a ilha pergunta o estado SÓ dos handles daquela
+ * página (`POST /api/me/following/status`, com cookie) e marca `following`/`isSelf` nesses itens (o
+ * `CookFollowButton` remonta pela `key`; o próprio cartão perde o botão). Mesmo guard de `token` das
+ * páginas (assinatura superada ⇒ descarta); itens de outras páginas não são tocados. Falha ⇒ silêncio
+ * (o cartão fica "Seguir", como antes). A busca em si SEGUE `credentials:'omit'`.
+ *
  * Anti-corrida: um `token` por (modo/termo/cozinha/login) — respostas de uma assinatura superada são
  * descartadas. `authed` (useSession) escolhe Seguir-inline vs bounce-pro-sign-in (no `CookCard`).
  */
@@ -27,6 +34,19 @@ import type { RecommendedCook } from '@/domain/recommended-cooks-read'
 const COOK_MIN_SEARCH = 3
 
 type Page = { cooks: CookCardCook[]; nextCursor: string | null }
+type FollowStatus = { following: string[]; self: string | null }
+
+/** Estado de seguir do viewer sobre os handles de UMA página da busca (#588). Lança em não-ok. */
+async function fetchFollowStatus(handles: string[]): Promise<FollowStatus> {
+  const res = await fetch('/api/me/following/status', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ handles }),
+  })
+  if (!res.ok) throw new Error('follow status failed')
+  return (await res.json()) as FollowStatus
+}
 
 export function CooksDiscovery({
   initialCooks,
@@ -87,6 +107,29 @@ export function CooksDiscovery({
     [mode, dq, cozinhaParam, locale],
   )
 
+  // #588: marca o estado de seguir nos cartões de UMA página da busca (só logado; recs já vem personalizado).
+  const markFollowStatus = useCallback(
+    (token: number, page: CookCardCook[]) => {
+      if (mode !== 'search' || !authed || page.length === 0) return
+      const handles = page.map((c) => c.handle)
+      fetchFollowStatus(handles)
+        .then((st) => {
+          if (token !== tokenRef.current) return // assinatura superada enquanto o status voava
+          const onPage = new Set(handles)
+          const following = new Set(st.following)
+          setItems((prev) =>
+            prev.map((c) =>
+              onPage.has(c.handle)
+                ? { ...c, following: following.has(c.handle), isSelf: c.handle === st.self }
+                : c,
+            ),
+          )
+        })
+        .catch(() => {}) // silencioso: fica "Seguir", como antes do #588
+    },
+    [mode, authed],
+  )
+
   // (re)carrega a 1ª página quando a assinatura OU o login muda. Pula SÓ o estado-seed inicial (recs
   // global anônimo), que o SSR já trouxe — evita um fetch redundante no caso anon mais comum.
   useEffect(() => {
@@ -106,6 +149,7 @@ export function CooksDiscovery({
         setItems(res.cooks)
         setCursor(res.nextCursor)
         setLoading(false)
+        markFollowStatus(token, res.cooks)
       })
       .catch(() => {
         if (token !== tokenRef.current) return
@@ -113,9 +157,9 @@ export function CooksDiscovery({
         setCursor(null)
         setLoading(false)
       })
-    // sig+authed+locale cobrem TODAS as deps de fetchPage (locale entra p/ re-buscar os títulos no idioma
-    // novo após troca de locale — a instância persiste na navegação irmã); reexecutar pela identidade do
-    // callback duplicaria.
+    // sig+authed+locale cobrem TODAS as deps de fetchPage e de markFollowStatus (locale entra p/ re-buscar
+    // os títulos no idioma novo após troca de locale — a instância persiste na navegação irmã); reexecutar
+    // pela identidade do callback duplicaria.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, authed, locale])
 
@@ -129,12 +173,13 @@ export function CooksDiscovery({
         setItems((prev) => [...prev, ...res.cooks])
         setCursor(res.nextCursor)
         setLoadingMore(false)
+        markFollowStatus(token, res.cooks)
       })
       .catch(() => {
         if (token !== tokenRef.current) return
         setLoadingMore(false)
       })
-  }, [cursor, loadingMore, loading, fetchPage])
+  }, [cursor, loadingMore, loading, fetchPage, markFollowStatus])
 
   // scroll infinito: observa o sentinela no fim da lista.
   const sentinelRef = useRef<HTMLDivElement | null>(null)

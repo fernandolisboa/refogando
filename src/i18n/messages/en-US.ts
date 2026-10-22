@@ -885,6 +885,8 @@ export const enUS: Messages = {
     clonar: 'Clone',
     clonarDica: 'Makes your own copy, same as the original, without editing first',
     clonarErro: 'Couldn’t clone this recipe. Try again.',
+    // #588: anti-abuse cap on Derive/Clone (rolling 24h, shared by both). {tempo} interpolated in the component.
+    derivarLimite: "You've hit the recipe copy limit for now. Frees up in ~{tempo}.",
     diffTitulo: 'What changed from the original',
     convidaEntrarTitulo: 'Sign in to do this',
     convidaEntrarTexto: 'Create an account or sign in to create, save, and manage recipes.',

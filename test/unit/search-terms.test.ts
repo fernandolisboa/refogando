@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSearchTerms, parseMatchMode, MAX_TERMS } from '@/domain/search-terms'
+import { parseSearchTerms, parseMatchMode, MAX_TERMS, hasControlChars } from '@/domain/search-terms'
 
 /**
  * Unit puro (#9, §4.2) de `parseSearchTerms` + `parseMatchMode` — a extração de termos
@@ -94,5 +94,21 @@ describe('parseMatchMode (#9, modo permissivo)', () => {
     expect(parseMatchMode('lixo')).toBe('any')
     expect(parseMatchMode('ALL')).toBe('any') // case-sensitive: só 'all' minúsculo
     expect(parseMatchMode('')).toBe('any')
+  })
+})
+
+describe('hasControlChars (#588, mesma classe C0 de stripControlChars)', () => {
+  it('detecta C0 (NUL, TAB, US) e é estável em chamadas repetidas (regex global sem lastIndex)', () => {
+    for (let i = 0; i < 3; i++) {
+      expect(hasControlChars('a\u0000b')).toBe(true)
+      expect(hasControlChars('a\tb')).toBe(true)
+      expect(hasControlChars('\u001f')).toBe(true)
+    }
+  })
+
+  it('texto sem C0 (incl. espaço, DEL e unicode) ⇒ false', () => {
+    expect(hasControlChars('')).toBe(false)
+    expect(hasControlChars('ana maria')).toBe(false)
+    expect(hasControlChars('\u007fçã')).toBe(false)
   })
 })

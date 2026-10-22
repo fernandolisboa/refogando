@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { resizeImage } from '@/lib/image-resize'
+import { formatCountdown } from '@/lib/countdown'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -66,13 +67,6 @@ function extFor(type: string): string {
   if (type === 'image/png') return 'png'
   if (type === 'image/jpeg') return 'jpg'
   return 'webp'
-}
-
-/** Countdown legível do teto (#132): horas (arredonda p/ cima) ou minutos quando < 1h. */
-function formatCountdown(ms: number): string {
-  const minutes = Math.max(1, Math.ceil(ms / 60_000))
-  if (minutes >= 60) return `${Math.ceil(minutes / 60)}h`
-  return `${minutes}min`
 }
 
 /** Imagem-preview devolvida por POST .../image/generate (#222/#223): `{ image, basePrompt }`. */

@@ -9,6 +9,7 @@ import { loadRecipeRows } from '@/server/recipe/load'
 import { pgCode } from '@/server/recipe/visibility'
 import { slugsForNewTranslations } from '@/server/recipe/slug'
 import { embedTranslation } from '@/server/embedding/recompute'
+import { assertDeriveSlotInTx } from '@/server/quota/atomic'
 
 /**
  * Derivação de Receita NÃO-própria (issue #17) — o KEYSTONE de "Minhas criações".
@@ -38,6 +39,11 @@ import { embedTranslation } from '@/server/embedding/recompute'
  * 'escrita_por_pessoa', nenhum locale novo é inventado), com nomes de ingrediente por-locale,
  * `stale` e fingerprints; ingredientes com a MESMA `ordem`, quantidade, unidade, nota e FK
  * canônica; restrições da base. O diff congelado sai VAZIO (nada mudou) e a UI esconde "O que mudou".
+ *
+ * Teto (#588): a 1ª operação da transação é `assertDeriveSlotInTx` — lock do usuário + recontagem das
+ * `user_edited` dele em 24h. Estourou ⇒ `QuotaExceededError` PROPAGA (a tx reverte, nada nasce) e a
+ * rota mapeia pra 429. Derivar e Clonar dividem o MESMO teto (é o mesmo fork). A espera pela lock tem
+ * teto de 5s (rajada do mesmo usuário não prende o pool): estourou ⇒ o mesmo `QuotaExceededError`.
  */
 
 export type DeriveEdits = {
@@ -94,8 +100,10 @@ export async function deriveRecipe(input: {
   /** `null` ⇒ clonar: cópia fiel da base (ADR-0045). */
   edits: DeriveEdits | null
   locale: string // requestLocale — o locale em que as edições textuais se aplicam
+  /** Teto de derivadas em 24h do papel do leitor (`capForDerive`); `Infinity` ⇒ sem gate (admin). */
+  cap: number
 }): Promise<DeriveResult> {
-  const { db, baseId, viewerId, edits, locale } = input
+  const { db, baseId, viewerId, edits, locale, cap } = input
 
   // Carrega a base (espinha + traduções + ingredientes). NULL ⇒ corrida pós-gate ⇒ 404.
   const baseRows = await loadRecipeRows(db, baseId)
@@ -180,6 +188,10 @@ export async function deriveRecipe(input: {
 
   try {
     const result = await db.transaction(async (tx) => {
+      // Teto ATÔMICO (#588): ANTES de qualquer INSERT — sob a lock do usuário, N forks simultâneos
+      // passam em EXATAMENTE `cap - contagem`; os demais lançam QuotaExceededError (tx revertida).
+      await assertDeriveSlotInTx(tx, { userId: viewerId, cap })
+
       // Pai primeiro (mirror de createCatalogRecipe). origin SÓ no INSERT (trigger P0001 só
       // dispara em UPDATE). resultKind HERDADO da base; playful ⇒ private satisfaz o CHECK.
       const [r] = await tx
@@ -335,6 +347,8 @@ export async function deriveRecipe(input: {
     // num INSERT puro). NUNCA engolimos: P0001 é reconhecido explicitamente (via `pgCode`,
     // mesmo helper de visibility.ts) e RE-LANÇADO como 500 honesto; qualquer outro erro também
     // propaga intacto. O `if` documenta/audita a fronteira mesmo relançando nos dois ramos.
+    // QuotaExceededError (#588) também cai aqui e sobe intacto pra rota (429) — inclusive o da espera
+    // pela lock que estourou o `lock_timeout` (o 55P03 já sai convertido de `assertDeriveSlotInTx`).
     if (pgCode(e) === 'P0001') throw e // origin imutável (ADR-0002) — relança, não mascara
     throw e
   }

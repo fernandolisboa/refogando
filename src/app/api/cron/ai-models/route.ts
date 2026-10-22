@@ -1,5 +1,6 @@
 import { getDb, getModelCatalog, getModelProbe } from '@/server/deps'
 import { autoUpgradeModels } from '@/server/claude/model-auto-upgrade'
+import { isAuthorizedCron } from '@/server/http/cron-auth'
 
 /**
  * Cron da troca AUTOMÁTICA de versão dos modelos de IA (ADR-0046). GET diário
@@ -21,9 +22,8 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function GET(request: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Fail-closed: sem secret no ambiente OU header != "Bearer <secret>" → 401 (comparação em tempo constante).
+  if (!isAuthorizedCron(request)) {
     return new Response('Unauthorized', { status: 401 })
   }
 

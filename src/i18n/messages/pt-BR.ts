@@ -952,6 +952,9 @@ export const ptBR = {
     clonar: 'Clonar',
     clonarDica: 'Cria uma cópia sua, igual à original, sem passar pela edição',
     clonarErro: 'Não deu para clonar a receita. Tente de novo.',
+    // #588: teto anti-abuso de Derivar/Clonar (24h deslizante, o mesmo pros dois). {tempo} interpolado
+    // no componente via `.replace` (countdown do `retryAfterMs` do 429).
+    derivarLimite: 'Você atingiu o limite de cópias de receita por enquanto. Libera em ~{tempo}.',
     // Bloco do diff da derivada (título da seção; os rótulos das linhas vêm de `derivada`).
     diffTitulo: 'O que mudou em relação à original',
     // Convites de entrar (gating consistente em /create, /conversation e nos botões do detalhe).

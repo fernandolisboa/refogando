@@ -18,6 +18,8 @@
  * virar 500. O cursor é minado de um probe `limit+1`, nunca de `rows.length < limit`.
  */
 
+import { hasControlChars } from '@/domain/search-terms'
+
 // Forma TEXTO do `timestamptz` do Postgres (`::text`) — com FAIXAS válidas (mês 01-12, dia 01-31, hora
 // 00-23, min/seg 00-59, offset 00-23[:00-59]). Sem as faixas, um cursor como `9999-99-99 99:99:99` passa
 // a regex e estoura `::timestamptz` → 500. NÃO usar `Date.parse` como guarda: `Date.parse('2026-06-29
@@ -31,16 +33,6 @@ const CURSOR_HANDLE_RE = /^[a-z0-9-]{1,30}$/
 // Limita. (O `score` do cursor de RECOMENDAÇÕES é float8 desde o #368 — não usa estes limites.)
 const INT4_MIN = -2147483648
 const INT4_MAX = 2147483647
-
-/** Rejeita strings com controles C0 (codepoint < 0x20). O NUL faz o postgres-js estourar ao bindar um
- *  text param; o `name` livre, vindo de um cursor forjado, pode trazê-lo. Char-code (sem literal de
- *  controle no fonte) evita escapes frágeis. */
-function hasControlChars(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    if (s.charCodeAt(i) < 0x20) return true
-  }
-  return false
-}
 
 export type RecsCursor = { score: number; recency: string; handle: string }
 export type SearchCursor = { rank: number; name: string; handle: string }

@@ -79,4 +79,12 @@ Relato do dono: um usuário logado via a lista da `/cooks` pintar (seed global d
 
 - **`/cooks` logado exclui só você.** Os já-seguidos continuam na lista, na mesma ordem de popularidade, com o botão já em **"Seguindo"** (dá pra deixar de seguir dali). O DTO ganha `following?: boolean`, presente só nessa resposta per-viewer (`/api/cooks` com sessão, `no-store`); o seed global/anônimo e o trilho não carregam a chave. `following` é rótulo, não entra no ranking nem no cursor keyset.
 - **O trilho "Cozinheiros em alta" (`/api/discovery/cooks`) não muda:** segue excluindo você e os já-seguidos, porque é vitrine de quem seguir, não diretório.
-- Fica como está (follow-up, se incomodar): a **busca** por nome/@handle é cookie-free (viewer-independente, cacheável) e por isso mostra "Seguir" mesmo para quem você já segue; e o seed global ainda pinta o seu próprio cartão por um instante antes da página personalizada chegar.
+- Fica como está (follow-up, se incomodar): ~~a **busca** por nome/@handle é cookie-free (viewer-independente, cacheável) e por isso mostra "Seguir" mesmo para quem você já segue; e~~ (resolvido — ver emenda 2026-10-22) o seed global ainda pinta o seu próprio cartão por um instante antes da página personalizada chegar.
+
+## Emenda (2026-10-22) — "Seguindo" também na busca da `/cooks` (#588)
+
+O follow-up acima (a busca por nome/@handle mostrava "Seguir" para quem você já segue) incomodou. Decisão (reversível, sem migração):
+
+- **A busca segue cookie-free.** `/api/search/cooks` não muda: continua viewer-independente e cacheável, e o cliente a chama com `credentials: 'omit'`.
+- **O estado vem à parte, por página.** Logado, a ilha da `/cooks` pergunta, depois de cada página da busca (a 1ª e cada load-more), só pelos handles daquela página: `POST /api/me/following/status` com `{ handles }` (no máximo 50; sessão obrigatória; `no-store`) → `{ following: string[], self: string | null }`. POST, e não GET com `?handles=`, para a lista de quem você procurou não cair em log de acesso. A resposta tem só handles armazenados de contas públicas (o mesmo `publicAccountFilter` das rotas de seguir), nunca id; não revela nada que o `GET /api/u/<handle>/follow` já não dissesse, um por um.
+- **No cartão:** o já-seguido vira "Seguindo" quando a resposta chega (o botão remonta); o seu próprio cartão perde o botão (`self`). Falha da chamada é silenciosa: o cartão fica "Seguir", como antes. Resposta de uma busca já superada é descartada (mesmo token das páginas).

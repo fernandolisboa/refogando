@@ -206,6 +206,27 @@ describe('RecipeDetailActions — Clonar num clique (ADR-0045)', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('#588 — 429 limite_derivar ⇒ mensagem do teto com o tempo até liberar; botão volta a ficar clicável', async () => {
+    const user = userEvent.setup()
+    logado()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'limite_derivar', retryAfterMs: 20 * 60_000 }), { status: 429 }),
+      ),
+    )
+    renderActions(nonOwnerView({ origin: 'catalog' }))
+
+    await user.click(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(ptBR.minhasCriacoes.derivarLimite.replace('{tempo}', '20min'))
+    expect(alert).not.toHaveTextContent(ptBR.minhasCriacoes.clonarErro)
+    expect(screen.getByRole('button', { name: ptBR.minhasCriacoes.clonar })).toBeEnabled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('visitante não vê "Clonar" (só o convite de entrar)', () => {
     sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
     renderActions(nonOwnerView({ origin: 'catalog' }))

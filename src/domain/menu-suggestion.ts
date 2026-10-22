@@ -23,7 +23,7 @@ import {
   type MealSlot,
 } from '@/domain/meal-plan'
 import { CATEGORIAS, RESTRICOES, type Categoria, type Restricao } from '@/domain/vocabulary'
-import type { Role } from '@/domain/user'
+import { capFromRoleTable, type Role } from '@/domain/user'
 import type { TextUsage } from '@/domain/text-cost'
 import { MENU_NOTE_MAX } from '@/domain/menu-suggestion-limits'
 
@@ -87,13 +87,9 @@ export const MENU_SUGGESTION_CAP_BY_ROLE: Record<Role, number | null> = {
   admin: null,
 }
 
-/** Teto numérico do papel. Papel desconhecido ⇒ o de `usuario` (fail-closed). `null` ⇒ `Infinity`. */
+/** Teto numérico do papel (`capFromRoleTable`: desconhecido ⇒ `usuario`, fail-closed; `null` ⇒ `Infinity`). */
 export function capForMenuSuggestion(role: Role | null | undefined): number {
-  const raw =
-    role != null && Object.hasOwn(MENU_SUGGESTION_CAP_BY_ROLE, role)
-      ? MENU_SUGGESTION_CAP_BY_ROLE[role]
-      : MENU_SUGGESTION_CAP_BY_ROLE.usuario
-  return raw == null ? Infinity : raw
+  return capFromRoleTable(MENU_SUGGESTION_CAP_BY_ROLE, role)
 }
 
 // ── Pedido ───────────────────────────────────────────────────────────────────────

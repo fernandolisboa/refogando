@@ -1,6 +1,7 @@
 import { getDb, getImageStore } from '@/server/deps'
 import { purgeAnonymizedAccounts } from '@/server/legal/account-purge-scan'
 import { purgeStalePendingSignups } from '@/server/auth/pending-signup-purge'
+import { isAuthorizedCron } from '@/server/http/cron-auth'
 
 /**
  * Cron de EXPURGO FÍSICO pós-retenção das contas anonimizadas (issue #411, LGPD Art. 16; `docs/legal/
@@ -24,10 +25,8 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 export const dynamic = 'force-dynamic' // nunca cacheia; roda a varredura a cada disparo.
 
 export async function GET(request: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET
-  const auth = request.headers.get('authorization')
-  // Fail-closed: sem secret no ambiente OU header != "Bearer <secret>" → 401.
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Fail-closed: sem secret no ambiente OU header != "Bearer <secret>" → 401 (comparação em tempo constante).
+  if (!isAuthorizedCron(request)) {
     return new Response('Unauthorized', { status: 401 })
   }
 

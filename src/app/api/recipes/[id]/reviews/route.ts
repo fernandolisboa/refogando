@@ -2,7 +2,11 @@ import sharp from 'sharp'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
-import { IMAGE_INPUT_PIXEL_LIMIT } from '@/server/images/image-derivatives'
+import {
+  IMAGE_INPUT_PIXEL_LIMIT,
+  PIPELINE_TIMEOUT_SECONDS,
+  classifyRasterInput,
+} from '@/server/images/image-derivatives'
 import { applyReview, loadRecipeReviews, type ReviewPhoto } from '@/server/recipe/review'
 
 /**
@@ -15,7 +19,8 @@ import { applyReview, loadRecipeReviews, type ReviewPhoto } from '@/server/recip
  * (sem requireSession, sem no-store) — agregado + lista pública; fora do pool ⇒ 404 leak-safe.
  *
  * #365 (FOTO, upload/câmera, SEM IA): quando o corpo é `multipart/form-data` a avaliação carrega
- * uma foto do prato. O border VALIDA tipo+tamanho ANTES de ler os bytes, depois RE-ENCODA via
+ * uma foto do prato. O border VALIDA tipo+tamanho ANTES de ler os bytes, confere o FORMATO REAL pelos
+ * bytes (`metadata()`: só JPEG/PNG/WebP estáticos, #588), depois RE-ENCODA via
  * `sharp` (webp, `.rotate()`) — isso DESCARTA todo EXIF/GPS (a foto é servida pública, não pode
  * vazar a localização da cozinha). Só o cano de BLOB do `ImageStore` é reusado: NUNCA vira
  * `recipe_image`/`lineage_id`/proveniência, NENHUMA rota/affordance de gerar por IA.
@@ -35,7 +40,9 @@ const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 /**
  * Resolve o descritor de FOTO (#365) a partir do corpo `multipart`. Devolve também o `rating`/
  * `comment` extraídos. VALIDA tipo+tamanho ANTES de ler os bytes (C9 — evita 2ª cópia em memória
- * de arquivo grande) e RE-ENCODA via sharp (C1 — strip de EXIF/GPS). `null` de erro vira Response.
+ * de arquivo grande), confere o FORMATO REAL pelos bytes (`metadata()` + `classifyRasterInput`: só
+ * JPEG/PNG/WebP de um quadro, #588) e RE-ENCODA via sharp (C1 — strip de EXIF/GPS). `null` de erro vira
+ * Response.
  */
 async function parseMultipart(
   request: Request,
@@ -75,16 +82,32 @@ async function parseMultipart(
     // p/ foto de celular legítima e o cliente já redimensiona p/ ~1 MP). O `.resize` com
     // fit:inside + withoutEnlargement LIMITA a dimensão do blob GRAVADO (≤2048) mesmo com cliente
     // hostil/burlado, sem ampliar imagem pequena. Um throw do sharp cai no catch → 400 tipo_invalido.
+    // #588 (formato pelos BYTES): o `file.type` acima é o DECLARADO pelo cliente, e o sharp decodifica
+    // pelo conteúdo — um SVG (ou GIF/TIFF/HEIF) rotulado `image/png` seria RENDERIZADO (SVG de ~1 KB com
+    // filtros custa dezenas de segundos de CPU). Então o `metadata()` (só lê o cabeçalho, sem renderizar)
+    // decide via `classifyRasterInput` (o MESMO gate dos derivados da Imagem da receita): só JPEG/PNG/WebP
+    // de UM quadro (GIF/WebP animado viraria só o 1º quadro, em silêncio) seguem; o resto ⇒ 400
+    // tipo_invalido. APNG passa (o sharp não reporta `pages` pra PNG) e é gravado só com o 1º quadro:
+    // limite aceito. O pipeline ainda leva `.timeout` (`PIPELINE_TIMEOUT_SECONDS`) como teto de CPU. Os
+    // bytes são lidos UMA vez e reusados nas duas passadas do sharp.
+    const input = { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }
     let clean: Buffer
     try {
-      clean = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT })
+      const data = Buffer.from(await file.arrayBuffer())
+      const meta = await sharp(data, input).metadata()
+      if (classifyRasterInput(meta) !== 'ok') {
+        return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
+      }
+      clean = await sharp(data, input)
         .rotate()
         .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 82 })
+        .timeout({ seconds: PIPELINE_TIMEOUT_SECONDS })
         .toBuffer()
     } catch {
-      // Bytes que o sharp não decodifica (arquivo corrompido / não-imagem com type forjado) OU
-      // entrada acima do limite de pixels (bomba de descompressão) → 400 (nunca 500/OOM).
+      // Bytes que o sharp não decodifica (arquivo corrompido / não-imagem com type forjado), entrada
+      // acima do limite de pixels (bomba de descompressão) OU pipeline que estourou o timeout → 400
+      // (nunca 500/OOM).
       return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
     }
     return { ok: true, rating, comment, photo: { kind: 'set', data: clean, contentType: 'image/webp' } }
