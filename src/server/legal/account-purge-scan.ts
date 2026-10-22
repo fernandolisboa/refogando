@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipeReview, users } from '@/db/schema'
 import { RETENTION_DAYS } from '@/domain/account-purge'
@@ -6,7 +6,12 @@ import { errorLogFields } from '@/domain/error-report'
 import type { ImageStore } from '@/server/images/image-store'
 import { deleteOrphanBlob, deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
-import { privateLeftovers, purgePrivateContentInTx } from '@/server/legal/private-content'
+import {
+  privateLeftovers,
+  purgePrivateContentInTx,
+  type PrivateContentCounts,
+} from '@/server/legal/private-content'
+import { timeBudget, type TimeBudget } from '@/server/time-budget'
 
 /**
  * As duas varreduras das contas anonimizadas (`docs/legal/takedown-e-remocao-titular.md` §6/§8; ADR-0049).
@@ -19,7 +24,7 @@ import { privateLeftovers, purgePrivateContentInTx } from '@/server/legal/privat
  *    Cobre as contas eliminadas antes do #473 (na 1ª passada depois do deploy) e as sobras de corrida (uma
  *    geração em voo que grava uma Receita privada depois do commit da eliminação). Uma conta por transação,
  *    em try/catch: a falha de uma conta é contada e logada (sem id) e a passada segue com as outras. Em
- *    lotes (`PRIVATE_PURGE_BATCH`) e com orçamento de tempo, no padrão do backfill de derivados.
+ *    lotes (`PRIVATE_PURGE_BATCH`), numa ordem que muda todo dia, e com o orçamento de tempo da rota.
  *  - `purgeAnonymizedAccounts` (#411, LGPD Art. 16): passado o prazo de retenção, remove a PII RESIDUAL em
  *    storage — as fotos das AVALIAÇÕES do titular (`recipe_review.photo_url`, foto do prato que subiu do
  *    dispositivo) — e nula os ponteiros, SEM apagar a linha `users` nem as avaliações.
@@ -125,14 +130,23 @@ export async function purgeAnonymizedAccounts(
 /** Contas por passada da varredura do conteúdo privado. */
 export const PRIVATE_PURGE_BATCH = 25
 
-/** Orçamento de tempo da varredura do conteúdo privado: abaixo do `maxDuration = 60` da rota, com folga. */
-export const PRIVATE_PURGE_BUDGET_MS = 40_000
+/**
+ * Orçamento de tempo da passada do cron `account-purge`, contado do começo da ROTA (as varreduras anteriores
+ * gastam dele): abaixo do `maxDuration = 60` da rota, com folga.
+ */
+export const ACCOUNT_PURGE_BUDGET_MS = 40_000
 
 /**
- * Não começa conta nova com menos que isto do orçamento: a última começa até os 25 s e, com centenas de
- * Receitas e os blobs depois do commit, termina antes do `maxDuration` de 60 s. A passada seguinte retoma.
+ * A varredura do conteúdo privado não começa conta nova com menos que isto do orçamento: a última começa até
+ * os 25 s e, com centenas de Receitas e os blobs depois do commit, termina antes do `maxDuration` de 60 s. A
+ * passada seguinte retoma (`privateAccountsDeferred` conta as que ficaram).
  */
-export const PRIVATE_PURGE_RESERVE_MS = 15_000
+export const ACCOUNT_PURGE_RESERVE_MS = 15_000
+
+/** O orçamento padrão da passada (a rota cria o seu no começo e passa o mesmo a cada varredura). */
+export function accountPurgeBudget(): TimeBudget {
+  return timeBudget({ budgetMs: ACCOUNT_PURGE_BUDGET_MS, reserveMs: ACCOUNT_PURGE_RESERVE_MS })
+}
 
 /** Contagens da varredura do conteúdo privado. A ORDEM das chaves é a da linha `[account-purge]`. */
 export type PrivatePurgeResult = {
@@ -140,50 +154,83 @@ export type PrivatePurgeResult = {
   privateAccountsSwept: number
   /** Contas cuja transação falhou (nada delas mudou; voltam na próxima passada). */
   privateAccountsFailed: number
+  /** Candidatas do lote que o orçamento de tempo não deixou começar (voltam na próxima passada). */
+  privateAccountsDeferred: number
   /** Receitas privadas apagadas. */
   privateRecipesDeleted: number
   /** Linhas `recipe_image` apagadas (faces sem referência e galeria). */
   privateImagesDeleted: number
   /** Blobs NOSSOS apagados depois do commit (imagens e fotos de avaliação). */
   privateBlobsReaped: number
-  /** As demais linhas apagadas ou limpas (sessões de criação, social, Plano, Despensa, fotos). */
+  /**
+   * As demais linhas APAGADAS (Transcrição, itens do Briefing, coleções, salvos, listas, follows, notificações,
+   * Plano, Despensa).
+   */
   privateRowsDeleted: number
+  /** Linhas LIMPAS, que ficam sem o texto (sessões de criação, gerações, Briefings). */
+  privateRowsScrubbed: number
 }
 
 /**
- * Varre as contas anonimizadas que ainda têm conteúdo privado (doc do módulo). `clock` mede o orçamento
- * (default `Date.now`); `now` carimba as linhas e o evento.
+ * Em que chave da linha cada contagem do núcleo entra. As fotos das avaliações são blobs (já contados em
+ * `privateBlobsReaped`), não linhas. Contagem nova no núcleo sem destino aqui não compila.
+ */
+const SUMMARY_KEY = {
+  recipes: 'privateRecipesDeleted',
+  images: 'privateImagesDeleted',
+  reviewPhotos: null,
+  transcriptMessages: 'privateRowsDeleted',
+  sessionsScrubbed: 'privateRowsScrubbed',
+  generationsScrubbed: 'privateRowsScrubbed',
+  briefingsScrubbed: 'privateRowsScrubbed',
+  briefingItems: 'privateRowsDeleted',
+  collections: 'privateRowsDeleted',
+  saves: 'privateRowsDeleted',
+  shoppingLists: 'privateRowsDeleted',
+  follows: 'privateRowsDeleted',
+  notifications: 'privateRowsDeleted',
+  mealPlanEntries: 'privateRowsDeleted',
+  pantryItems: 'privateRowsDeleted',
+} as const satisfies Record<keyof PrivateContentCounts, keyof PrivatePurgeResult | null>
+
+/**
+ * Varre as contas anonimizadas que ainda têm conteúdo privado (doc do módulo). `budget` é o orçamento da
+ * passada (o da rota; default, um novo, `accountPurgeBudget()`); `now` carimba as linhas e o evento.
  */
 export async function purgeAnonymizedPrivateContent(
   db: Database,
   store: ImageStore,
   now: Date,
-  opts: { batch?: number; budgetMs?: number; reserveMs?: number; clock?: () => number } = {},
+  opts: { batch?: number; budget?: TimeBudget } = {},
 ): Promise<PrivatePurgeResult> {
-  const budgetMs = opts.budgetMs ?? PRIVATE_PURGE_BUDGET_MS
-  const reserveMs = opts.reserveMs ?? PRIVATE_PURGE_RESERVE_MS
-  const clock = opts.clock ?? Date.now
-  const startedAt = clock()
+  const budget = opts.budget ?? accountPurgeBudget()
   const result: PrivatePurgeResult = {
     privateAccountsSwept: 0,
     privateAccountsFailed: 0,
+    privateAccountsDeferred: 0,
     privateRecipesDeleted: 0,
     privateImagesDeleted: 0,
     privateBlobsReaped: 0,
     privateRowsDeleted: 0,
+    privateRowsScrubbed: 0,
   }
 
-  // Sem espera de retenção: o conteúdo privado de conta eliminada não tem por que ficar. Uma conta que
-  // falha todo dia segue no começo da fila (a ordem é pelo carimbo); a linha de falha no log é o sinal.
+  // Sem espera de retenção: o conteúdo privado de conta eliminada não tem por que ficar. A ordem muda todo
+  // dia (hash do id com a data): uma conta que falha sempre não segura o lote, e a linha de falha no log é o
+  // sinal.
   const candidates = await db
     .select({ id: users.id })
     .from(users)
     .where(and(isNotNull(users.anonymizedAt), privateLeftovers(users.id)))
-    .orderBy(users.anonymizedAt, users.id)
+    .orderBy(sql`md5(${users.id}::text || current_date::text)`)
     .limit(opts.batch ?? PRIVATE_PURGE_BATCH)
 
-  for (const candidate of candidates) {
-    if (clock() - startedAt > budgetMs - reserveMs) break
+  for (const [i, candidate] of candidates.entries()) {
+    // Antes de cada conta, inclusive a 1ª: as varreduras anteriores da rota podem ter gasto o orçamento.
+    if (!budget.canStartMore()) {
+      result.privateAccountsDeferred = candidates.length - i
+      break
+    }
     try {
       const purge = await db.transaction(async (tx) => {
         // Trava a linha e re-confere: só conta anonimizada (a seleção acima foi fora da tx).
@@ -212,11 +259,11 @@ export async function purgeAnonymizedPrivateContent(
         return p
       })
       if (!purge?.changed) continue
-      const { recipes, images, ...rest } = purge.counts
       result.privateAccountsSwept += 1
-      result.privateRecipesDeleted += recipes
-      result.privateImagesDeleted += images
-      result.privateRowsDeleted += Object.values(rest).reduce((sum, n) => sum + n, 0)
+      for (const [key, n] of Object.entries(purge.counts) as [keyof PrivateContentCounts, number][]) {
+        const into = SUMMARY_KEY[key]
+        if (into) result[into] += n
+      }
       // Depois do commit; nunca lança (um blob que fica é órfão sem ponteiro).
       result.privateBlobsReaped += await deleteOrphanBlobsConcurrently(store, purge.blobUrls)
     } catch (err) {

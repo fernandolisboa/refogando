@@ -1,7 +1,8 @@
 import { getDb } from '@/server/deps'
 import { isAuthorizedCron } from '@/server/http/cron-auth'
 import { errorLogFields } from '@/domain/error-report'
-import { RETENTION_STEPS, retentionBudget } from '@/server/legal/data-retention'
+import { RETENTION_BUDGET_MS, RETENTION_RESERVE_MS, RETENTION_STEPS } from '@/server/legal/data-retention'
+import { timeBudget } from '@/server/time-budget'
 
 /**
  * Cron de RETENÇÃO (issue #473, ADR-0049; `docs/legal/registro-de-operacoes.md`): apaga o que passou do prazo
@@ -29,15 +30,16 @@ export async function GET(request: Request): Promise<Response> {
     return new Response('Unauthorized', { status: 401 })
   }
 
+  // Um relógio só, do começo da rota: o tempo de um passo sai do que sobra para os seguintes.
+  const budget = timeBudget({ budgetMs: RETENTION_BUDGET_MS, reserveMs: RETENTION_RESERVE_MS })
   const now = new Date()
-  const budget = retentionBudget()
   const db = getDb()
   let failed = false
   let deferredSteps = 0
   const counts: Record<string, number> = {}
 
   for (const step of RETENTION_STEPS) {
-    if (budget.exhausted()) {
+    if (!budget.canStartMore()) {
       deferredSteps += 1
       continue
     }

@@ -18,7 +18,7 @@ import {
   userFollow,
 } from '@/db/schema'
 import { IMAGE_BLOB_COLS, imageRowBlobUrls } from '@/server/images/image-blobs'
-import { reapOrphanImage, type Tx } from '@/server/recipe/image'
+import type { Tx } from '@/server/recipe/image'
 
 /**
  * Conteúdo PRIVADO de uma conta eliminada (issue #473, ADR-0049; LGPD Art. 16 e Art. 18 VI;
@@ -31,15 +31,15 @@ import { reapOrphanImage, type Tx } from '@/server/recipe/image'
  *  - as Receitas PRIVADAS (ai, web_imported, playful, rascunhos) — cascateiam tradução, ingredientes, tags,
  *    embedding e, se a Receita já foi pública, saves/avaliações/denúncias de TERCEIROS (mesmo efeito do
  *    `deleteOwnRecipe`; as fotos dessas avaliações são coletadas antes e apagadas com o resto);
- *  - a face delas, pelo ref-count de sempre (`reapOrphanImage`: a imagem compartilhada com uma versão
- *    pública por carry-forward FICA) e as imagens de galeria sem referência do titular (`orphanGalleryImage`);
+ *  - a face delas, pelo ref-count de sempre (a imagem compartilhada com uma versão pública por carry-forward
+ *    FICA) e as imagens de galeria sem referência do titular (`orphanGalleryImage`);
  *  - coleções, saves, listas de compras, follows (nos dois sentidos), notificações recebidas, Plano de
  *    refeições e Despensa.
  *
  * As sessões de criação são LIMPAS, não apagadas: a Transcrição sai inteira, o texto livre, o comentário
  * consultivo e o carimbo do prompt (eixos do Perfil) viram NULL, o Briefing perde os campos e os itens.
- * Apagar a sessão não dá: `generation` é o ledger de custo do texto (#463, painel de custo do /admin), a FK
- * `generation.creation_session_id` é CASCADE (apagar a sessão apagaria o custo calado) e o CHECK
+ * Apagar a sessão não dá: `generation` é o ledger de custo do texto (#463; painel de custo do /admin, #465),
+ * a FK `generation.creation_session_id` é CASCADE (apagar a sessão apagaria o custo calado) e o CHECK
  * `creation_session_structured_briefing_chk` reprova apagar o Briefing (o SET NULL viola o CHECK, 23514).
  * Para conta eliminada, isso supera o "briefing imutável" do ADR-0006. O casco (modelo, tokens, custo) sai
  * pela retenção de 24 meses (`[retencao]`).
@@ -123,23 +123,38 @@ const briefingHasContent = or(
   sql`cardinality(${briefing.restricoes}) > 0`,
 )!
 
+/** Nenhuma Receita (de qualquer versão) usa a imagem como face. */
+const imageUnreferenced = sql`NOT EXISTS (SELECT 1 FROM ${recipe} WHERE ${recipe.imageId} = ${recipeImage.id})`
+
+/**
+ * A linhagem da imagem tem Receita de catálogo ou de OUTRO dono que `owner`: a galeria é de outra pessoa (protege
+ * a do catálogo quando um Curador elimina a conta). `owner` é o id do titular ou a coluna `recipe_image.created_by`
+ * (varredura de todas as contas).
+ */
+function lineageHasForeignRecipe(owner: string | AnyPgColumn): SQL {
+  return sql`EXISTS (SELECT 1 FROM ${recipe} WHERE ${recipe.lineageId} = ${recipeImage.lineageId} AND (${recipe.ownerId} IS NULL OR ${recipe.ownerId} <> ${owner}))`
+}
+
 /**
  * Imagem de galeria do titular SEM referência: nenhuma Receita a usa como face, é dele (`created_by`) ou
- * de uma linhagem cujas Receitas privadas acabaram de sair, e a linhagem NÃO tem Receita de catálogo nem
- * de outro dono (protege a galeria do catálogo quando um Curador elimina a conta). `owner` é o id (string)
- * na eliminação ou `users.id` (correlacionado) na varredura.
+ * de uma linhagem cujas Receitas privadas acabaram de sair, e a linhagem não tem Receita alheia
+ * (`lineageHasForeignRecipe`).
  */
-export function orphanGalleryImage(owner: string | AnyPgColumn, lineageIds: readonly string[] = []): SQL {
+export function orphanGalleryImage(owner: string, lineageIds: readonly string[] = []): SQL {
   const mine =
     lineageIds.length > 0
       ? or(eq(recipeImage.createdBy, owner), inArray(recipeImage.lineageId, [...lineageIds]))!
       : eq(recipeImage.createdBy, owner)
-  return and(
-    mine,
-    sql`NOT EXISTS (SELECT 1 FROM ${recipe} WHERE ${recipe.imageId} = ${recipeImage.id})`,
-    sql`NOT EXISTS (SELECT 1 FROM ${recipe} WHERE ${recipe.lineageId} = ${recipeImage.lineageId} AND (${recipe.ownerId} IS NULL OR ${recipe.ownerId} <> ${owner}))`,
-  )!
+  return and(mine, imageUnreferenced, sql`NOT ${lineageHasForeignRecipe(owner)}`)!
 }
+
+/**
+ * Os donos de alguma imagem de galeria sem referência: o mesmo alvo de `orphanGalleryImage`, para todas as contas
+ * de uma vez. O dono vem da própria imagem (`created_by`), então o subselect não depende da linha de fora e o
+ * Postgres o calcula uma vez por comando (hashed SubPlan). Correlacionado com `users.id`, ele varria
+ * `recipe_image` uma vez por conta (50 s com 2 mil contas anonimizadas e 100 mil imagens; assim, 0,27 s).
+ */
+const ownersOfOrphanGallery = sql`SELECT ${recipeImage.createdBy} FROM ${recipeImage} WHERE ${recipeImage.createdBy} IS NOT NULL AND ${imageUnreferenced} AND NOT ${lineageHasForeignRecipe(recipeImage.createdBy)}`
 
 function existsIn(column: AnyPgColumn, owner: string | AnyPgColumn): SQL {
   return sql`EXISTS (SELECT 1 FROM ${column.table} WHERE ${column} = ${owner})`
@@ -147,8 +162,10 @@ function existsIn(column: AnyPgColumn, owner: string | AnyPgColumn): SQL {
 
 /**
  * Sobrou conteúdo privado do titular? O OR dos mesmos alvos de `purgePrivateContentInTx` (cada EXISTS anda
- * por um índice que começa pelo dono, menos o da galeria — `recipe_image.created_by` não tem índice, FLAG 10
- * do ADR-0049). Seleciona os candidatos da varredura e é o ponto fixo dos testes: falso depois da limpeza.
+ * por um índice que começa pelo dono, menos o da galeria — `recipe_image.created_by` não tem índice (ADR-0049,
+ * Consequências; #601)). Seleciona os candidatos da varredura e é o ponto fixo dos testes: falso depois da
+ * limpeza. `owner` é o id (string) de uma conta ou `users.id` (correlacionado) na varredura; nesta, a galeria
+ * entra pelo `ownersOfOrphanGallery`, que não é calculado por conta.
  */
 export function privateLeftovers(owner: string | AnyPgColumn): SQL {
   const sessionHasText = or(
@@ -169,7 +186,9 @@ export function privateLeftovers(owner: string | AnyPgColumn): SQL {
     existsIn(notification.recipientId, owner),
     existsIn(mealPlanEntry.userId, owner),
     existsIn(pantryItem.userId, owner),
-    sql`EXISTS (SELECT 1 FROM ${recipeImage} WHERE ${orphanGalleryImage(owner)})`,
+    typeof owner === 'string'
+      ? sql`EXISTS (SELECT 1 FROM ${recipeImage} WHERE ${orphanGalleryImage(owner)})`
+      : sql`${owner} IN (${ownersOfOrphanGallery})`,
   )!
 }
 
@@ -187,7 +206,7 @@ export async function purgePrivateContentInTx(tx: Tx, userId: string, now: Date)
 
   let deleted: { id: string; imageId: string | null; lineageId: string }[] = []
   let reviewPhotos = 0
-  let reapedImages = 0
+  let faces: { blobUrl: string; thumbUrl: string | null; detailUrl: string | null }[] = []
   if (lockedIds.length > 0) {
     // 2. Fotos das avaliações nessas Receitas (inclusive de terceiros, se a Receita já foi pública): a linha
     //    cai em cascata com a Receita e o blob ficaria órfão.
@@ -204,27 +223,19 @@ export async function purgePrivateContentInTx(tx: Tx, userId: string, now: Date)
       .where(and(inArray(recipe.id, lockedIds), isMinePrivate))
       .returning({ id: recipe.id, imageId: recipe.imageId, lineageId: recipe.lineageId })
 
-    // 4. Faces pelo ref-count de sempre: a imagem que uma versão pública ainda usa (carry-forward) fica. A
-    //    face numa linhagem com Receita de catálogo ou de outro dono também fica (é galeria de outra pessoa;
-    //    desde o #222 não acontece, mas dado legado pode ter) — a mesma guarda de `orphanGalleryImage`.
+    // 4. Faces pelo ref-count de sempre, num comando só (o custo não cresce com o número de faces): a imagem
+    //    que uma versão pública ainda usa (carry-forward) fica. A face numa linhagem com Receita de catálogo ou
+    //    de outro dono também fica (é galeria de outra pessoa; desde o #222 não acontece, mas dado legado pode
+    //    ter) — a mesma guarda de `orphanGalleryImage`.
     const faceIds = [...new Set(deleted.map((r) => r.imageId).filter((id): id is string => id != null))]
-    const foreign =
-      faceIds.length > 0
-        ? await tx
-            .select({ id: recipeImage.id })
-            .from(recipeImage)
-            .where(
-              and(
-                inArray(recipeImage.id, faceIds),
-                sql`EXISTS (SELECT 1 FROM ${recipe} WHERE ${recipe.lineageId} = ${recipeImage.lineageId} AND (${recipe.ownerId} IS NULL OR ${recipe.ownerId} <> ${userId}))`,
-              ),
-            )
-        : []
-    const foreignIds = new Set(foreign.map((f) => f.id))
-    for (const imageId of faceIds.filter((id) => !foreignIds.has(id))) {
-      const urls = await reapOrphanImage(tx, imageId, null)
-      if (urls.length > 0) reapedImages += 1
-      blobUrls.push(...urls)
+    if (faceIds.length > 0) {
+      faces = await tx
+        .delete(recipeImage)
+        .where(
+          and(inArray(recipeImage.id, faceIds), imageUnreferenced, sql`NOT ${lineageHasForeignRecipe(userId)}`),
+        )
+        .returning(IMAGE_BLOB_COLS)
+      for (const row of faces) blobUrls.push(...imageRowBlobUrls(row))
     }
   }
 
@@ -290,7 +301,7 @@ export async function purgePrivateContentInTx(tx: Tx, userId: string, now: Date)
 
   const counts: PrivateContentCounts = {
     recipes: deleted.length,
-    images: reapedImages + gallery.length,
+    images: faces.length + gallery.length,
     reviewPhotos,
     transcriptMessages: transcript.length,
     sessionsScrubbed: sessions.length,

@@ -17,6 +17,7 @@ import {
 import { retentionCutoffs, type RetentionCutoffs } from '@/domain/data-retention'
 import { RESOLVED_TAKEDOWN_STATUSES } from '@/domain/dsar-sla'
 import { purgeDsarEventsBefore } from '@/server/legal/dsar-audit'
+import type { TimeBudget } from '@/server/time-budget'
 
 /**
  * Retenção: o que o app apaga sozinho quando o prazo vence (issue #473, ADR-0049; prazos em
@@ -56,20 +57,7 @@ export const RETENTION_BUDGET_MS = 40_000
 /** Não começa lote nem passo novo com menos que isto do orçamento (um lote de 5000 leva bem menos). */
 export const RETENTION_RESERVE_MS = 15_000
 
-/** Relógio da passada: o mesmo para todos os passos (o orçamento é da passada, não do passo). */
-export type RetentionBudget = { exhausted(): boolean }
-
-export function retentionBudget(
-  opts: { budgetMs?: number; reserveMs?: number; clock?: () => number } = {},
-): RetentionBudget {
-  const budgetMs = opts.budgetMs ?? RETENTION_BUDGET_MS
-  const reserveMs = opts.reserveMs ?? RETENTION_RESERVE_MS
-  const clock = opts.clock ?? Date.now
-  const startedAt = clock()
-  return { exhausted: () => clock() - startedAt > budgetMs - reserveMs }
-}
-
-export type RetentionStepOpts = { batch?: number; maxBatches?: number; budget?: RetentionBudget }
+export type RetentionStepOpts = { batch?: number; maxBatches?: number; budget?: TimeBudget }
 
 /**
  * Repete `run(limit)` enquanto o lote vier cheio, até `maxBatches` vezes, e para entre lotes quando o
@@ -83,7 +71,7 @@ export async function deleteInBatches(
   const maxBatches = opts.maxBatches ?? RETENTION_MAX_BATCHES
   let total = 0
   for (let i = 0; i < maxBatches; i++) {
-    if (i > 0 && opts.budget?.exhausted()) break
+    if (i > 0 && opts.budget && !opts.budget.canStartMore()) break
     const n = await run(batch)
     total += n
     if (n < batch) break
