@@ -356,13 +356,12 @@ export function UsersSection() {
           <div aria-busy={loading} className={cn('transition-opacity', loading && 'opacity-60')}>
             {/* Desktop/tablet: tabela (rola na horizontal se faltar largura). */}
             <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[56rem] border-collapse text-sm">
+              <table className="w-full min-w-[48rem] border-collapse text-sm">
                 <thead>
                   <tr className="text-left text-xs tracking-wider text-muted uppercase">
                     <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColUsuario}</th>
                     <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColEmail}</th>
-                    <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColPapel}</th>
-                    <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColPlano}</th>
+                    <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColPapelPlano}</th>
                     <th scope="col" className="px-4 py-2.5 text-right font-semibold">{m.usuariosColReceitas}</th>
                     <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColCadastro}</th>
                     <th scope="col" className="px-4 py-2.5 font-semibold">{m.usuariosColAcesso}</th>
@@ -377,8 +376,10 @@ export function UsersSection() {
                       )}
                     >
                       <td className="max-w-64 px-4 py-3">{nameButton(u, 'sm')}</td>
-                      <td className="px-4 py-3">
-                        <span className="block whitespace-nowrap text-fg">{u.email}</span>
+                      <td className="max-w-72 px-4 py-3">
+                        <span className="block truncate text-fg" title={u.email}>
+                          {u.email}
+                        </span>
                         <span
                           className={cn(
                             'block text-xs',
@@ -390,8 +391,8 @@ export function UsersSection() {
                       </td>
                       <td className="px-4 py-3">
                         <RolePill role={u.role} label={m[ROLE_LABEL[u.role]]} />
+                        <span className="mt-1 block text-xs text-muted">{planLabel(u)}</span>
                       </td>
-                      <td className="px-4 py-3 text-xs font-semibold text-muted">{planLabel(u)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{u.recipeCount}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <time dateTime={u.createdAt} title={formatDateTime(u.createdAt, locale)}>
