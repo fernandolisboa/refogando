@@ -30,7 +30,7 @@ import {
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
-import { ERASURE_POLICY, privateLeftovers } from '@/server/legal/private-content'
+import { ERASURE_POLICY, privateLeftovers, purgePrivateContentInTx } from '@/server/legal/private-content'
 import { persistGeneration } from '@/server/generation/persist'
 import { loadAiCostSummary } from '@/server/admin/ai-cost'
 import { promptStampFor } from '@/domain/briefing'
@@ -48,6 +48,7 @@ import {
 } from '../helpers/recipes'
 import { seedUser } from '../helpers/users'
 import { makeReceita } from '../helpers/generation'
+import { withFailingTrigger } from '../helpers/failing-trigger'
 
 /**
  * Eliminação da conta: o conteúdo PRIVADO sai, o PÚBLICO fica (#473, ADR-0049). Postgres real; o
@@ -198,6 +199,58 @@ describe('eliminação: imagens', () => {
     const [p] = await getDb().select({ imageId: recipe.imageId }).from(recipe).where(eq(recipe.id, pub))
     expect(p.imageId).toBe(shared.id)
     expect(await hasLeftovers(u)).toBe(false)
+  })
+
+  it('faces: um comando só, qualquer que seja o número de faces; as órfãs saem com os blobs, a compartilhada fica', async () => {
+    /** `n` Receitas privadas com face própria e uma privada que compartilha a face da versão pública. */
+    async function seedFaces(email: string, n: number) {
+      const u = await seedUser({ email })
+      const own: { id: string; urls: string[] }[] = []
+      for (let i = 0; i < n; i++) {
+        const r = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'private' })
+        own.push(await seedImage({ lineageId: await lineageOf(r), createdBy: u, face: r }))
+      }
+      const pub = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'public' })
+      const lineage = await lineageOf(pub)
+      const priv = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'private' })
+      await getDb().update(recipe).set({ lineageId: lineage }).where(eq(recipe.id, priv))
+      const shared = await seedImage({ lineageId: lineage, createdBy: u, face: pub })
+      await getDb().update(recipe).set({ imageId: shared.id }).where(eq(recipe.id, priv))
+      return { u, own, shared }
+    }
+    /** Roda o núcleo numa tx de verdade contando os comandos que ele monta na tx. */
+    async function purgeCounting(userId: string) {
+      let statements = 0
+      const purge = await getDb().transaction(async (tx) => {
+        const counting = new Proxy(tx, {
+          get(target, prop, receiver) {
+            const value = Reflect.get(target, prop, receiver)
+            if (typeof value !== 'function' || !['select', 'insert', 'update', 'delete', 'execute'].includes(String(prop))) {
+              return value
+            }
+            return (...args: unknown[]) => {
+              statements += 1
+              return value.apply(target, args)
+            }
+          },
+        })
+        return purgePrivateContentInTx(counting, userId, new Date())
+      })
+      return { statements, purge }
+    }
+
+    const few = await seedFaces('poucas-faces@pc.test', 1)
+    const many = await seedFaces('muitas-faces@pc.test', 25)
+
+    const a = await purgeCounting(few.u)
+    const b = await purgeCounting(many.u)
+
+    expect(b.statements).toBe(a.statements)
+    expect(b.purge.counts.images).toBe(25)
+    const left = await getDb().select({ id: recipeImage.id, createdBy: recipeImage.createdBy }).from(recipeImage)
+    expect(left.filter((r) => r.createdBy === many.u).map((r) => r.id)).toEqual([many.shared.id])
+    for (const url of many.own.flatMap((f) => f.urls)) expect(b.purge.blobUrls).toContain(url)
+    for (const url of many.shared.urls) expect(b.purge.blobUrls).not.toContain(url)
   })
 })
 
@@ -373,18 +426,12 @@ describe('eliminação: atomicidade e blobs depois do commit', () => {
     const u = await seedUser({ email: 'atomica@pc.test' })
     const r = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'private' })
     const face = await seedImage({ lineageId: await lineageOf(r), createdBy: u, face: r })
-    await getDb().execute(
-      sql.raw(`CREATE FUNCTION test_falha_follow() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'falha de teste'; END $$`),
-    )
-    await getDb().execute(
-      sql.raw('CREATE TRIGGER test_falha_follow BEFORE DELETE ON user_follow FOR EACH STATEMENT EXECUTE FUNCTION test_falha_follow()'),
-    )
-    try {
+    // O follow sai no passo 7, depois das Receitas e das imagens: o trigger nele derruba a tx no fim.
+    const t = await seedUser({ email: 'atomica-t@pc.test' })
+    await getDb().insert(userFollow).values({ followerId: u, followeeId: t })
+    await withFailingTrigger('user_follow', async () => {
       await expect(eraseOwnAccount(getDb(), { userId: u })).rejects.toThrow()
-    } finally {
-      await getDb().execute(sql.raw('DROP TRIGGER IF EXISTS test_falha_follow ON user_follow'))
-      await getDb().execute(sql.raw('DROP FUNCTION IF EXISTS test_falha_follow()'))
-    }
+    })
 
     const [row] = await getDb()
       .select({ deletedAt: users.deletedAt, anonymizedAt: users.anonymizedAt, email: users.email })

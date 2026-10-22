@@ -51,7 +51,7 @@ async function ids<T extends { id: string }>(rows: Promise<T[]>): Promise<string
 describe('registros de uso de IA (24 meses; extração, 30 dias)', () => {
   it('imageGenerations / mealPlanSuggestions: só o que é mais velho que 24 meses sai', async () => {
     const u = await seedUser({ email: 'uso@ret.test' })
-    const [keepImg, dropImg] = await getDb()
+    const [keepImg] = await getDb()
       .insert(imageGeneration)
       .values([
         { userId: u, createdAt: inside(C.usageLedger) },
@@ -70,7 +70,6 @@ describe('registros de uso de IA (24 meses; extração, 30 dias)', () => {
     expect(await run('mealPlanSuggestions')).toBe(1)
 
     expect(await ids(getDb().select({ id: imageGeneration.id }).from(imageGeneration))).toEqual([keepImg.id])
-    expect(dropImg.id).not.toBe(keepImg.id)
     expect(await ids(getDb().select({ id: mealPlanSuggestionEvent.id }).from(mealPlanSuggestionEvent))).toEqual([
       keepMenu.id,
     ])
@@ -280,6 +279,26 @@ describe('cascos de criação (24 meses)', () => {
     ])
     expect(await ids(getDb().select({ id: creationSession.id }).from(creationSession))).toEqual([s.id])
   })
+
+  it('liveGenerationCosts sozinho (sem `erasedGenerations` antes): só a conta VIVA perde tokens e custo; a da eliminada fica para o passo dela', async () => {
+    const erased = await seedUser({ email: 'eliminada-custo@ret.test' })
+    await getDb().update(users).set({ anonymizedAt: monthsAgo(30), deletedAt: monthsAgo(30) }).where(eq(users.id, erased))
+    const erasedOld = await gen((await sessionOf(erased, outside(C.usageLedger))).id, outside(C.usageLedger))
+    const live = await seedUser({ email: 'viva-custo@ret.test' })
+    const s = await sessionOf(live, outside(C.usageLedger))
+    const liveOld = await gen(s.id, outside(C.usageLedger))
+    const liveRecent = await gen(s.id, inside(C.usageLedger))
+
+    expect(await run('liveGenerationCosts')).toBe(1)
+
+    const rows = await getDb()
+      .select({ id: generation.id, i: generation.inputTokens, o: generation.outputTokens, c: generation.costUsd })
+      .from(generation)
+    const byId = new Map(rows.map(({ id, ...rest }) => [id, rest]))
+    expect(byId.get(erasedOld)).toEqual({ i: 1000, o: 500, c: '0.012345' })
+    expect(byId.get(liveOld)).toEqual({ i: null, o: null, c: null })
+    expect(byId.get(liveRecent)).toEqual({ i: 1000, o: 500, c: '0.012345' })
+  })
 })
 
 describe('lotes, orçamento e idempotência', () => {
@@ -298,7 +317,8 @@ describe('lotes, orçamento e idempotência', () => {
 
   it('orçamento esgotado: o lote em curso termina e nenhum lote novo começa', async () => {
     await seedOldImageGenerations(5)
-    expect(await run('imageGenerations', { batch: 2, budget: { exhausted: () => true } })).toBe(2)
+    const spent = { remainingMs: () => 0, canStartMore: () => false }
+    expect(await run('imageGenerations', { batch: 2, budget: spent })).toBe(2)
   })
 
   it('deleteInBatches para no lote incompleto', async () => {
@@ -364,7 +384,7 @@ describe('GET /api/cron/retention', () => {
 
     const res = await call()
     expect(res.status).toBe(500)
-    expect(error.mock.calls).toEqual([['[retencao] registros de geração de imagem falhou: erro=Error']])
+    expect(error.mock.calls).toEqual([['[retencao] expurgo dos registros de geração de imagem falhou: erro=Error']])
     expect(warn).toHaveBeenCalledWith(
       '[retencao] passada com falha: mealPlanSuggestions=0 extractionEvents=0 sessions=1 verifications=0 takedownTickets=0 dsarEvents=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
     )
