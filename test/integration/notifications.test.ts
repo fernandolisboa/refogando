@@ -13,6 +13,7 @@ import {
 import { approveCozinha, mergeCozinha, rejectCozinha } from '@/server/vocabulary/curate'
 import { applyModerationRemove, applyImageModeration, applyReviewModeration } from '@/server/recipe/moderation'
 import { applyReview } from '@/server/recipe/review'
+import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { setImageGenRestriction } from '@/server/curate/restriction'
 import { renderNotification, type NotificationType } from '@/domain/notification'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -96,15 +97,32 @@ describe('emit new_follower (#371) — fio do seguir', () => {
 describe('emitNotification (#371) — best-effort', () => {
   it('engole falha de insert e NÃO relança (a ação de origem nunca falha)', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    // Stub que rejeita no insert — determinístico (não depende de violação de FK coincidental).
+    // Stub que rejeita no insert — determinístico (não depende de violação de FK coincidental). O `select`
+    // do destinatário (#473: conta eliminada não recebe) devolve uma conta viva, para chegar ao insert.
     const brokenDb = {
-      insert: () => ({ values: () => Promise.reject(new Error('boom')) }),
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ anonymizedAt: null }]) }) }) }),
+      insert: () => ({ values: () => Promise.reject(new Error('boom com o texto da query')) }),
     } as unknown as Database
     await expect(
       emitNotification(brokenDb, { recipientId: crypto.randomUUID(), type: 'new_follower' }),
     ).resolves.toBeUndefined()
-    expect(errSpy).toHaveBeenCalled()
+    // Só nome + código (ADR-0048), sem a mensagem.
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy).toHaveBeenCalledWith('[notification] emit falhou (engolido): erro=Error')
     errSpy.mockRestore()
+  })
+
+  it('#473: destinatário com a conta ELIMINADA não recebe (a avaliação nova não recria a caixa dele)', async () => {
+    const owner = await seedUser({ email: 'eliminado@n.test' })
+    const actor = await seedUser({ email: 'ator-elim@n.test' })
+    expect((await eraseOwnAccount(getDb(), { userId: owner })).kind).toBe('erased')
+
+    await emitNotification(getDb(), { recipientId: owner, type: 'new_follower', actorId: actor })
+    expect(await countNotifs(owner)).toBe(0)
+
+    // Conta viva segue recebendo.
+    await emitNotification(getDb(), { recipientId: actor, type: 'new_follower', actorId: owner })
+    expect(await countNotifs(actor)).toBe(1)
   })
 })
 
