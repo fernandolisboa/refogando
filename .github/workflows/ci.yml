@@ -14,6 +14,13 @@
 #     migra, roda, dropa). Útil se um dia quisermos um service container.
 # Vitest seta NODE_ENV=test, e src/lib/auth.ts só exige BETTER_AUTH_SECRET fora
 # de teste — por isso o test passa sem nenhuma variável de ambiente.
+#
+# Job `e2e` (#589), PARALELO ao `checks`: E2E de fumaça com Playwright (Chromium, perfis desktop e
+# celular) contra um `next build` + `next start` de verdade, no MODO FAKE (provedores externos trocados
+# por dublês — src/server/e2e/mode.ts). O harness (e2e/harness/server.ts) sobe o próprio Postgres via
+# Testcontainers, migra, semeia, builda COM o banco (como a Vercel) e serve em localhost:3100. Nenhum
+# secret: o harness gera os seus e zera as chaves de provedor. Em falha, sobe o relatório + traces.
+# Detalhes e como rodar local: docs/e2e.md.
 name: CI
 
 # `paths-ignore`: mudança SÓ de documentação (docs/** ou qualquer .md) NÃO roda a CI —
@@ -70,3 +77,53 @@ jobs:
 
       - name: Test
         run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    # Build de produção + 2 perfis; folga para o runner frio (sem cache do browser).
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # O browser vive fora do node_modules (~/.cache/ms-playwright): cache pela versão EXATA do
+      # @playwright/test (cada versão pede a sua revisão do Chromium).
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium-shell
+
+      # Só o headless shell (o E2E roda headless): download menor que o Chromium completo.
+      - name: Install Chromium (headless shell) + OS deps
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps --only-shell chromium
+
+      # Cache do browser restaurado: as libs do SO não vêm no cache, só elas.
+      - name: Install OS deps (browser from cache)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: E2E (smoke)
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

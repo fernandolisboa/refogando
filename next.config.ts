@@ -1,4 +1,13 @@
 import type { NextConfig } from 'next'
+import { e2eFakesActive } from './src/server/e2e/mode'
+
+/**
+ * TRIPWIRE do modo fake do E2E (#589). Avaliado em TODO `next build`/`next start`: sem a flag
+ * `REFOGANDO_E2E_FAKES` é no-op; com ela fora do ambiente do harness (marcador da Vercel, banco ou URLs
+ * fora de loopback) LANÇA e derruba o build — um deploy nunca sai com os provedores trocados por dublês.
+ * O mesmo guarda roda de novo em runtime (deps.ts e instrumentation.ts).
+ */
+e2eFakesActive()
 
 /**
  * `images.remotePatterns` libera o host do Vercel Blob (#126) — onde moram os avatares e, depois,

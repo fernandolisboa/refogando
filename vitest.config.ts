@@ -26,8 +26,9 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           globals: false,
-          // Exclui os defaults do vitest + os worktrees de agente (.claude) + a suíte de UI.
-          exclude: [...configDefaults.exclude, '**/.claude/**', 'test/ui/**'],
+          // Exclui os defaults do vitest + os worktrees de agente (.claude) + a suíte de UI + o E2E do
+          // Playwright (#589: `e2e/**/*.spec.ts` casaria o include default e rodaria fora do Playwright).
+          exclude: [...configDefaults.exclude, '**/.claude/**', 'test/ui/**', 'e2e/**'],
           // Postgres real e descartável é recurso compartilhado: rodar serial.
           pool: 'forks',
           fileParallelism: false,

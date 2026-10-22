@@ -49,6 +49,12 @@ next-env.d.ts
 !.vscode/extensions.json
 Thumbs.db
 
+# playwright (E2E #589): relatórios e artefatos de falha
+/playwright-report/
+/test-results/
+/blob-report/
+/playwright/.cache/
+
 # playwright MCP scratch (snapshots/screenshots/console logs — não commitar)
 .playwright-mcp/
 
