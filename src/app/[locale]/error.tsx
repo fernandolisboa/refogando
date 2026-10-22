@@ -3,7 +3,7 @@
  * Estado global de erro (issue #54). Error boundaries do App Router DEVEM ser client
  * components e recebem { error, reset }. Renderiza messages.system.error com um botão de
  * "tentar de novo" (reset). Tom calmo e morno — coerente com a identidade não-alarmante
- * (o aviso de restrição também é âmbar, nunca vermelho-bloqueio: ADR-0004). Nome
+ * (o aviso de restrição também é âmbar, nunca vermelho-bloqueio: ADR-0004). Relata o erro (#590). Nome
  * `GlobalError` pra não sombrear o `Error` global (App Router só exige o default export).
  */
 import { useEffect } from 'react'
@@ -11,6 +11,7 @@ import { useLocale } from '@/i18n/provider'
 import { Container } from '@/components/container'
 import { Button } from '@/components/ui/button'
 import { isChunkLoadError, reloadForAppUpdate } from '@/lib/app-update-reload'
+import { reportClientError } from '@/lib/client-error-report'
 
 export default function GlobalError({
   error,
@@ -31,6 +32,10 @@ export default function GlobalError({
     // morto dentro da janela, `reloadForAppUpdate` pula → cai na UI normal (sem loop). Não
     // chamamos `reset()` no chunk error: só re-jogaria contra o chunk morto.
     if (isChunkLoadError(error, error.message)) reloadForAppUpdate()
+    // #590 (ADR-0048): erro pego por boundary explícito não vira evento de janela, então relatamos daqui.
+    // Uma linha sem dado pessoal no log do servidor; com digest (erro de Server Component), sem mensagem.
+    // Chunk velho não é bug (é atualização) e não vai. Fora de produção, `reportClientError` é no-op.
+    else reportClientError('boundary', error)
   }, [error])
   return (
     <Container as="main" className="flex flex-col items-start gap-5 py-24">

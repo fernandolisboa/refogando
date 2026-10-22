@@ -14,6 +14,7 @@ export function isChunkLoadError(err: unknown, message?: string): boolean {
   return (
     (err as { name?: string } | null)?.name === 'ChunkLoadError' ||
     /Loading chunk .* failed/i.test(msg) ||
+    /Failed to load chunk/i.test(msg) ||
     /ChunkLoadError/i.test(msg)
   )
 }

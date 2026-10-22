@@ -11,6 +11,12 @@ import {
 } from '@/i18n/locale-path'
 
 describe('splitLocalePrefix', () => {
+  it('#590: 1º segmento que é chave do Object.prototype não é locale', () => {
+    for (const seg of ['constructor', '__proto__', 'toString']) {
+      expect(splitLocalePrefix(`/${seg}/recipes/a.b`).locale).toBeNull()
+    }
+  })
+
   it('reconhece um prefixo de locale canônico e devolve o resto', () => {
     expect(splitLocalePrefix('/pt-BR/recipes')).toEqual({
       locale: 'pt-BR',

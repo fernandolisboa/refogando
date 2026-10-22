@@ -3,6 +3,7 @@ import { test as base, expect, type Locator, type Page } from '@playwright/test'
 import { ptBR } from '../../src/i18n/messages/pt-BR'
 import { tourStorageKey, type TourState } from '../../src/domain/onboarding-tour'
 import { recipeSlugBaseFromTitle } from '../../src/domain/recipe-slug'
+import { isHydrationError } from '../../src/domain/error-report'
 
 /**
  * Fixtures do E2E de fumaça (#589).
@@ -118,8 +119,6 @@ export async function planFromPopover(page: Page, slotLabel: string): Promise<vo
   await expect(page).toHaveURL(/\/pt-BR\/me\/meal-plan/)
 }
 
-const HYDRATION_ERROR = /Minified React error #(418|423|425)\b|Hydration failed|hydrat(ion|ing).*(mismatch|error)/i
-
 type Fixtures = {
   account: Account
   _consoleGuard: void
@@ -131,8 +130,10 @@ export const test = base.extend<Fixtures>({
     async ({ page }, use) => {
       const problems: string[] = []
       page.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`))
+      // O mesmo teste que classifica `hidratacao` no relato do navegador (#590), com o mesmo corte: o texto
+      // do console não tem teto e a regex é quadrática num texto grande.
       page.on('console', (msg) => {
-        if ((msg.type() === 'error' || msg.type() === 'warning') && HYDRATION_ERROR.test(msg.text())) {
+        if ((msg.type() === 'error' || msg.type() === 'warning') && isHydrationError(msg.text())) {
           problems.push(`console.${msg.type()}: ${msg.text()}`)
         }
       })
