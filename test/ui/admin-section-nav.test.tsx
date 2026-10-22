@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 
 /**
  * Navegação por seção do Console (#125) — substitui o render-por-papel do antigo
- * `AdminConsole`. A Governança (Config, Papéis) some para o Curador (AC5 — escondido, não
+ * `AdminConsole`. A Governança (Pessoas e Plataforma) some para o Curador (AC5 — escondido, não
  * desabilitado); a Curadoria aparece para curador E admin. É só afordância: o gate de
  * verdade é por rota (`admin-section-access`/`admin-routes-gate`). Seam jsdom (#54).
  */
@@ -46,7 +46,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
       A.navDescoberta,
       A.navComparador,
       A.navVocabulario,
-      A.navPapeis,
+      A.navUsuarios,
       A.navModeracao,
       A.navTraducoes,
       A.navCatalogo,
@@ -61,7 +61,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     expect(within(nav).queryByRole('link', { name: A.navDescoberta })).toBeNull() // #134: admin-only
     expect(within(nav).queryByRole('link', { name: A.navComparador })).toBeNull() // #425: admin-only
     expect(within(nav).queryByRole('link', { name: A.navVocabulario })).toBeNull() // #321: admin-only
-    expect(within(nav).queryByRole('link', { name: A.navPapeis })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: A.navUsuarios })).toBeNull()
     for (const label of [A.navModeracao, A.navTraducoes, A.navCatalogo]) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument()
     }
@@ -87,7 +87,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
 
   it('marca a rota ativa com aria-current="page"', () => {
     const nav = renderNav('admin', '/admin/users')
-    expect(within(nav).getByRole('link', { name: A.navPapeis })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: A.navUsuarios })).toHaveAttribute(
       'aria-current',
       'page',
     )
@@ -98,23 +98,32 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
     // usePathname() vem prefixado (`/pt-BR/admin/users`), mas os hrefs são nus (`/admin/users`).
     // Sem tirar o prefixo, o aria-current nunca dispara — este caso reproduz o bug.
     const nav = renderNav('admin', '/pt-BR/admin/users')
-    expect(within(nav).getByRole('link', { name: A.navPapeis })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: A.navUsuarios })).toHaveAttribute(
       'aria-current',
       'page',
     )
     expect(within(nav).getByRole('link', { name: A.navIa })).not.toHaveAttribute('aria-current')
   })
 
-  it('#162: a tira de abas é ROLÁVEL no mobile (sem quebra de linha)', () => {
+  it('barra lateral: grupo Pessoas (Usuários, Plano) antes de Plataforma; só admin o vê', () => {
     const nav = renderNav('admin')
-    // Tira horizontal com rolagem: overflow-x-auto + whitespace-nowrap; SEM flex-wrap
-    // (que quebraria as abas em várias linhas no mobile).
-    expect(nav.className).toContain('overflow-x-auto')
-    expect(nav.className).toContain('whitespace-nowrap')
-    expect(nav.className).not.toContain('flex-wrap')
-    // A aba ativa preserva o indicador border-b-2.
-    const active = within(nav).getByRole('link', { name: A.navIa })
-    expect(active.className).toContain('border-b-2')
+    const groups = within(nav).getAllByRole('group').map((g) => g.getAttribute('aria-labelledby'))
+    expect(groups).toEqual(['section-group-pessoas', 'section-group-plataforma', 'section-group-curadoria'])
+    const pessoas = within(nav).getByRole('group', { name: A.grupoPessoas })
+    expect(within(pessoas).getByRole('link', { name: A.navUsuarios })).toBeInTheDocument()
+    expect(within(pessoas).getByRole('link', { name: A.navPlano })).toBeInTheDocument()
+  })
+
+  it('curador não vê o grupo Pessoas (lista de Usuários é admin-only)', () => {
+    const nav = renderNav('curador', '/admin/moderation')
+    expect(within(nav).queryByRole('group', { name: A.grupoPessoas })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: A.navUsuarios })).toBeNull()
+    expect(within(nav).queryByRole('link', { name: A.navPlano })).toBeNull()
+  })
+
+  it('subrota de uma seção também marca a seção ativa', () => {
+    const nav = renderNav('admin', '/pt-BR/admin/catalog/algo')
+    expect(within(nav).getByRole('link', { name: A.navCatalogo })).toHaveAttribute('aria-current', 'page')
   })
 
   it('links apontam para as rotas aninhadas corretas', () => {
@@ -124,7 +133,7 @@ describe('SectionNav — links por papel (#125) + grupos rotulados (#268)', () =
       '/admin/ia',
     )
     expect(within(nav).getByRole('link', { name: A.navDescoberta })).toHaveAttribute('href', '/admin/descoberta')
-    expect(within(nav).getByRole('link', { name: A.navPapeis })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: A.navUsuarios })).toHaveAttribute(
       'href',
       '/admin/users',
     )

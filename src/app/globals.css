@@ -242,3 +242,31 @@
   white-space: nowrap;
   border-width: 0;
 }
+
+/* Console (/admin): cada `<section>` de primeiro nível de uma página vira um card (o `ConsoleShell` põe
+   `admin-panels` em volta do conteúdo). Pega a seção filha direta e a filha do wrapper `<div>` de página
+   (só esses dois níveis: um wrapper a mais tira o card), sem tocar nas seções aninhadas. Em
+   `@layer components`: um utilitário da própria seção (ex. `p-0`) vence.
+   O card tem a cor de `--color-surface`; DENTRO dele `--color-surface` é redefinida um degrau na direção
+   do texto (escurece no claro, clareia no escuro), então caixas `bg-surface`/`bg-card` e campos das seções
+   seguem se destacando do card em vez de sumirem nele. `--admin-card` é resolvida no contêiner, antes da
+   redefinição. */
+@layer components {
+  .admin-panels {
+    --admin-card: var(--color-surface);
+  }
+  .admin-panels > section,
+  .admin-panels > div > section {
+    --color-surface: color-mix(in oklch, var(--admin-card), var(--color-fg) 6%);
+    background-color: var(--admin-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+  }
+  @media (width >= 40rem) {
+    .admin-panels > section,
+    .admin-panels > div > section {
+      padding: 1.5rem;
+    }
+  }
+}

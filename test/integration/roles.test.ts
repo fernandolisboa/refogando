@@ -65,6 +65,38 @@ describe('/api/admin/roles — promover/rebaixar altera o gating', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'papel_invalido' })
   })
 
+  it('admin não muda o PRÓPRIO papel → 400 papel_proprio, papel intacto', async () => {
+    const adminS = await seedSessionHeaders({ email: 'admin4@roles.test', role: 'admin' })
+    const res = await rolesPut({ userId: adminS.userId, role: 'usuario' }, adminS.headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'papel_proprio' })
+    // Segue admin: outra chamada admin-only ainda passa.
+    const other = await seedSessionHeaders({ email: 'alvo4@roles.test', role: 'usuario' })
+    expect((await rolesPut({ userId: other.userId, role: 'curador' }, adminS.headers)).status).toBe(200)
+  })
+
+  it('o próprio id em MAIÚSCULAS também é recusado (o Postgres aceitaria o uuid)', async () => {
+    const adminS = await seedSessionHeaders({ email: 'admin5@roles.test', role: 'admin' })
+    const res = await rolesPut({ userId: adminS.userId.toUpperCase(), role: 'usuario' }, adminS.headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'papel_proprio' })
+  })
+
+  it('userId que não é uuid → 400 papel_invalido', async () => {
+    const adminS = await seedSessionHeaders({ email: 'admin6@roles.test', role: 'admin' })
+    const res = await rolesPut({ userId: 'nao-e-uuid', role: 'curador' }, adminS.headers)
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: 'papel_invalido' })
+  })
+
+  it('conta desativada → 409 papel_conta_inativa, papel intacto', async () => {
+    const adminS = await seedSessionHeaders({ email: 'admin7@roles.test', role: 'admin' })
+    const target = await seedSessionHeaders({ email: 'alvo7@roles.test', role: 'usuario', deletedAt: new Date() })
+    const res = await rolesPut({ userId: target.userId, role: 'curador' }, adminS.headers)
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: 'papel_conta_inativa' })
+  })
+
   it('não-admin (usuario) não pode chamar /api/admin/roles → 403', async () => {
     const u = await seedSessionHeaders({ email: 'naoadmin@roles.test', role: 'usuario' })
     const target = await seedSessionHeaders({ email: 'alvo3@roles.test', role: 'usuario' })

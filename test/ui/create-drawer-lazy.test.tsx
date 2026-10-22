@@ -522,8 +522,8 @@ describe('Rota /create: a gaveta do bundle da página semeia o store (handoff 70
   })
 })
 
-describe('Largura da gaveta (handoff 70)', () => {
-  it('tela cheia no celular e 512 px (sm:max-w-lg) do tablet para cima', async () => {
+describe('Largura da gaveta (handoffs 70 e 82)', () => {
+  it('tela cheia no celular, 672 px no tablet e 768 px no desktop', async () => {
     const { LocaleProvider } = await import('@/i18n/provider')
     const { CreateDrawer } = await import('@/components/recipe/create-drawer')
     render(
@@ -532,7 +532,7 @@ describe('Largura da gaveta (handoff 70)', () => {
       </LocaleProvider>,
     )
     const dialog = screen.getByRole('dialog')
-    expect(dialog).toHaveClass('w-full', 'max-w-sm', 'sm:max-w-lg')
-    expect(dialog).not.toHaveClass('sm:max-w-md')
+    expect(dialog).toHaveClass('w-full', 'max-w-sm', 'sm:max-w-2xl', 'lg:max-w-3xl')
+    expect(dialog).not.toHaveClass('sm:max-w-lg')
   })
 })
