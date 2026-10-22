@@ -2,7 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { GET } from '@/app/api/me/export/route'
 import { getDb } from '@/server/deps'
 import { eq } from 'drizzle-orm'
-import { mealPlanEntry, notification, pantryItem, shoppingList, shoppingListItem, userFollow, users } from '@/db/schema'
+import {
+  creationSession,
+  extractionEvent,
+  generation,
+  mealPlanEntry,
+  mealPlanSuggestionEvent,
+  notification,
+  pantryItem,
+  session,
+  shoppingList,
+  shoppingListItem,
+  userFollow,
+  users,
+} from '@/db/schema'
+import { promptStampFor } from '@/domain/briefing'
+import { SCHEMA_VERSION_RECEITA } from '@/domain/recipe'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import {
   seedRecipe,
@@ -11,8 +26,10 @@ import {
   seedSave,
   seedCollection,
   seedCollectionItem,
+  seedReport,
   seedReview,
   seedFeijoadaCatalog,
+  seedRecipeImage,
 } from '../helpers/recipes'
 
 /**
@@ -23,6 +40,10 @@ import {
  * terceiros (a lista de seguidores é só CONTAGEM; a de seguindo traz só HANDLE público; as
  * notificações não trazem a identidade do ator); só o conteúdo do PRÓPRIO titular (receita de
  * outro dono NÃO aparece).
+ *
+ * #595 completou o export: imagens do titular, acessos (sem o token da sessão), denúncias que ELE fez
+ * (nunca as de terceiros sobre ele), registros de uso da Extração e da Sugestão de cardápio, e tokens/custo
+ * das gerações. O arquivo baixado leva a data do `exportedAt` no nome.
  */
 
 function get(headers?: Headers): Promise<Response> {
@@ -206,5 +227,187 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     const ids = dump.recipes.map((r) => r.id)
     expect(ids).toContain(mineRecipe)
     expect(ids).not.toContain(foreignRecipe)
+  })
+
+  it('#595: imagens, acessos, denúncias feitas, registros de uso e custo das gerações — sem credencial nem terceiros', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'completo@me-export.test' })
+    const other = await seedUser({ email: 'outro@me-export.test', handle: 'outro-export' })
+    const db = getDb()
+
+    // Imagens: uma gerada pelo titular na receita dele; a de um terceiro na receita do TERCEIRO (o seed
+    // reaponta a capa da receita-alvo, então cada uma fica na sua).
+    const ownRecipe = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: userId })
+    const foreign = await seedRecipe({
+      origin: 'ai_structured',
+      originalLocale: 'pt-BR',
+      ownerId: other,
+      visibility: 'public',
+    })
+    const ownImage = await seedRecipeImage({
+      recipeId: ownRecipe,
+      provenance: 'ai_generated',
+      blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/minha.png',
+      createdBy: userId,
+    })
+    const foreignImage = await seedRecipeImage({
+      recipeId: foreign,
+      blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/de-terceiro.webp',
+      createdBy: other,
+    })
+
+    // Acesso: IP e navegador na sessão de login do titular; o token NUNCA pode sair.
+    await db
+      .update(session)
+      .set({ ipAddress: '203.0.113.7', userAgent: 'E2E-UA' })
+      .where(eq(session.userId, userId))
+    const [loginRow] = await db
+      .select({
+        token: session.token,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        expiresAt: session.expiresAt,
+      })
+      .from(session)
+      .where(eq(session.userId, userId))
+
+    // Denúncias: a que o titular fez entra; a de um terceiro sobre a receita do titular, não.
+    await seedReport({ reporterId: userId, recipeId: foreign, reason: 'Spam' })
+    await seedReport({ reporterId: other, recipeId: ownRecipe, reason: 'Denúncia de terceiro' })
+
+    // Registros de uso: duas extrações e uma sugestão de cardápio.
+    await db.insert(extractionEvent).values([{ userId }, { userId }])
+    await db.insert(mealPlanSuggestionEvent).values({
+      userId,
+      model: 'claude-sonnet-5-5',
+      inputTokens: 1200,
+      outputTokens: 300,
+      costUsd: '0.012345',
+    })
+
+    // Uma geração de texto com tokens, custo e carimbo do prompt.
+    const [cs] = await db
+      .insert(creationSession)
+      .values({ userId, mode: 'free_text', freeText: 'um bolo de cenoura' })
+      .returning({ id: creationSession.id })
+    await db.insert(generation).values({
+      creationSessionId: cs.id,
+      recipeId: ownRecipe,
+      outcome: 'success',
+      model: 'claude-opus-5-5',
+      schemaVersion: SCHEMA_VERSION_RECEITA,
+      inputTokens: 900,
+      outputTokens: 1500,
+      costUsd: '0.050000',
+      promptStamp: promptStampFor(),
+    })
+
+    const res = await get(headers)
+    expect(res.status).toBe(200)
+    const raw = await res.text()
+
+    // Credencial e conteúdo de terceiros nunca aparecem no texto do dump.
+    expect(raw).not.toContain(loginRow.token)
+    expect(raw).not.toContain('Denúncia de terceiro')
+    expect(raw).not.toContain('de-terceiro.webp')
+
+    const dump = JSON.parse(raw) as {
+      recipes: Array<{ id: string; imageId: string | null }>
+      recipeImages: Array<Record<string, unknown>>
+      loginSessions: Array<Record<string, unknown>>
+      reports: Array<Record<string, unknown>>
+      extractionEvents: Array<{ createdAt: string }>
+      mealPlanSuggestionEvents: Array<Record<string, unknown>>
+      creationSessions: Array<{ generations: Array<Record<string, unknown>> }>
+    }
+
+    // Imagens: só a do titular, com proveniência e URLs; a capa da receita dele aponta para ela.
+    expect(dump.recipeImages).toEqual([
+      {
+        id: ownImage,
+        provenance: 'ai_generated',
+        sourceImageId: null,
+        blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/minha.png',
+        detailUrl: null,
+        thumbUrl: null,
+        createdAt: expect.any(String),
+      },
+    ])
+    expect(dump.recipeImages.map((i) => i.id)).not.toContain(foreignImage)
+    expect(dump.recipes.find((r) => r.id === ownRecipe)?.imageId).toBe(ownImage)
+
+    // Acessos: ip, navegador e as três datas; sem `token` nem `id`.
+    expect(dump.loginSessions).toHaveLength(1)
+    expect(dump.loginSessions[0]).toEqual({
+      createdAt: loginRow.createdAt.toISOString(),
+      updatedAt: loginRow.updatedAt.toISOString(),
+      expiresAt: loginRow.expiresAt.toISOString(),
+      ipAddress: '203.0.113.7',
+      userAgent: 'E2E-UA',
+    })
+    expect(dump.loginSessions[0]).not.toHaveProperty('token')
+    expect(dump.loginSessions[0]).not.toHaveProperty('id')
+
+    // Denúncias: só a que o titular fez, sem o Curador que resolveria.
+    expect(dump.reports).toEqual([
+      {
+        recipeId: foreign,
+        reviewId: null,
+        reason: 'Spam',
+        status: 'pending',
+        createdAt: expect.any(String),
+        resolvedAt: null,
+      },
+    ])
+    expect(dump.reports[0]).not.toHaveProperty('resolvedBy')
+
+    // Registros de uso.
+    expect(dump.extractionEvents).toHaveLength(2)
+    expect(dump.extractionEvents[0]).toEqual({ createdAt: expect.any(String) })
+    expect(dump.mealPlanSuggestionEvents).toEqual([
+      {
+        model: 'claude-sonnet-5-5',
+        inputTokens: 1200,
+        outputTokens: 300,
+        costUsd: '0.012345',
+        createdAt: expect.any(String),
+      },
+    ])
+
+    // Geração: tokens, custo e o carimbo do prompt, junto do que já saía.
+    expect(dump.creationSessions).toHaveLength(1)
+    expect(dump.creationSessions[0].generations).toEqual([
+      expect.objectContaining({
+        recipeId: ownRecipe,
+        outcome: 'success',
+        model: 'claude-opus-5-5',
+        inputTokens: 900,
+        outputTokens: 1500,
+        costUsd: '0.050000',
+        promptStamp: promptStampFor(),
+        variantLabel: null,
+        variantChosen: null,
+      }),
+    ])
+  })
+
+  it('#595: o arquivo baixado leva a data do exportedAt no nome', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'nome-arquivo@me-export.test' })
+    const res = await get(headers)
+    expect(res.status).toBe(200)
+    const dump = (await res.json()) as { exportedAt: string }
+    expect(res.headers.get('content-disposition')).toBe(
+      `attachment; filename="refogando-meus-dados-${dump.exportedAt.slice(0, 10)}.json"`,
+    )
+  })
+
+  it('#595: conta sem nada disso → seções novas vazias (nunca ausentes)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'vazio@me-export.test' })
+    const dump = (await (await get(headers)).json()) as Record<string, unknown>
+    expect(dump.recipeImages).toEqual([])
+    expect(dump.reports).toEqual([])
+    expect(dump.extractionEvents).toEqual([])
+    expect(dump.mealPlanSuggestionEvents).toEqual([])
+    // A própria sessão do pedido conta como um acesso.
+    expect(dump.loginSessions).toHaveLength(1)
   })
 })

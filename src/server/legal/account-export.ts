@@ -6,16 +6,22 @@ import {
   collection,
   collectionItem,
   creationSession,
+  extractionEvent,
   generation,
   imageGeneration,
   mealPlanEntry,
+  mealPlanSuggestionEvent,
   pantryItem,
   notification,
   recipe,
+  recipeImage,
   recipeIngredient,
   recipeReview,
   recipeSave,
   recipeTranslation,
+  report,
+  // Alias: `sessionRows`/`creationSession` abaixo são as sessões de CRIAÇÃO; esta é a de login.
+  session as loginSession,
   shoppingList,
   shoppingListItem,
   transcriptMessage,
@@ -37,7 +43,28 @@ import {
  * identidade do ator (terceiro). Tudo o mais é conteúdo do próprio titular (receitas que ele criou,
  * suas avaliações, saves, coleções, listas de compras, plano de refeições, histórico de geração/conversa — seus prompts em texto livre).
  *
- * Portável/legível: JSON plano e versionado (`format`), pronto para o titular ler ou reimportar.
+ * #595 completou o export com o que ainda ficava de fora:
+ *  - `recipeImages`: as imagens que o titular enviou ou gerou (`recipe_image.created_by`), com as URLs.
+ *    `recipes[].imageId` é a capa de cada receita; pode apontar para uma imagem fora desta lista (de
+ *    outra pessoa da linhagem, do Curador), então não é uma chave garantida para `recipeImages[]`.
+ *  - `loginSessions`: os acessos (criação, última atividade, validade, IP e navegador).
+ *  - `reports`: as denúncias que o titular FEZ (alvo, motivo, status, datas).
+ *  - `extractionEvents` e `mealPlanSuggestionEvents`: os registros de uso da Extração de ingredientes e da
+ *    Sugestão de cardápio (data; modelo, tokens e custo). Revisa a metade "fora do export" do ADR-0036 dec.7.
+ *  - `creationSessions[].generations[]`: tokens, custo, `promptStamp` e a variação escolhida.
+ *
+ * NUNCA entra (de propósito):
+ *  - `session.token` (credencial ao portador) nem `session.id`; `account` (hash da senha, tokens OAuth);
+ *    `verification` (tokens de e-mail/senha).
+ *  - `report.resolvedBy` (id do Curador, terceiro) e as denúncias que OUTRAS pessoas fizeram sobre o conteúdo
+ *    do titular (quem denunciou é escolha de terceiro, mesma regra da lista de seguidores).
+ *  - As colunas de moderação da imagem (`moderated*`, `reviewRequired`, `derivativesAttemptedAt`) e a
+ *    `lineageId` (chave interna).
+ *  - `rate_limit` (chaveado por IP, não pelo titular) e `dsar_audit_event` (o registro de conformidade).
+ *
+ * Portável/legível: JSON plano e versionado (`format`), pronto para o titular ler ou reimportar. A versão
+ * segue `v1`: as seções novas só ACRESCENTAM chaves (nada renomeado nem com tipo trocado), como nos PRs
+ * anteriores que estenderam o export.
  */
 
 const EXPORT_FORMAT = 'refogando-account-export/v1'
@@ -54,7 +81,15 @@ function groupBy<T, K extends string>(rows: T[], key: (row: T) => K): Map<K, T[]
   return map
 }
 
-export async function buildAccountExport(db: Database, userId: string): Promise<Record<string, unknown>> {
+/**
+ * `now` vira o `exportedAt` do dump; o route usa o MESMO instante no nome do arquivo baixado
+ * (`accountExportFilename`), então as duas datas sempre batem.
+ */
+export async function buildAccountExport(
+  db: Database,
+  userId: string,
+  now: Date = new Date(),
+): Promise<Record<string, unknown>> {
   // ── Perfil (dados de conta do próprio titular) ────────────────────────────────
   const [profileRow] = await db
     .select({
@@ -98,6 +133,8 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
       tempoTotalMin: recipe.tempoTotalMin,
       sourceUrl: recipe.sourceUrl,
       sourceName: recipe.sourceName,
+      // #595: a capa (id opaco; ver o docstring sobre `recipeImages`).
+      imageId: recipe.imageId,
       createdAt: recipe.createdAt,
       updatedAt: recipe.updatedAt,
     })
@@ -301,6 +338,68 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
     .where(eq(imageGeneration.userId, userId))
     .orderBy(asc(imageGeneration.createdAt))
 
+  // ── #595: imagens, acessos, denúncias feitas e registros de uso. Consultas independentes. ──────────
+  const [recipeImages, loginSessions, reports, extractionEvents, mealPlanSuggestionEvents] = await Promise.all([
+    // Imagens que o titular enviou ou gerou. Sem as colunas de moderação nem a `lineageId`. Não há índice em
+    // `created_by`: varredura sequencial, aceitável no tamanho de hoje (o índice pede migração; follow-up).
+    db
+      .select({
+        id: recipeImage.id,
+        provenance: recipeImage.provenance,
+        sourceImageId: recipeImage.sourceImageId,
+        blobUrl: recipeImage.blobUrl,
+        detailUrl: recipeImage.detailUrl,
+        thumbUrl: recipeImage.thumbUrl,
+        createdAt: recipeImage.createdAt,
+      })
+      .from(recipeImage)
+      .where(eq(recipeImage.createdBy, userId))
+      .orderBy(asc(recipeImage.createdAt), asc(recipeImage.id)),
+    // Acessos: NUNCA o `token` (credencial ao portador) nem o `id` da sessão.
+    db
+      .select({
+        createdAt: loginSession.createdAt,
+        updatedAt: loginSession.updatedAt,
+        expiresAt: loginSession.expiresAt,
+        ipAddress: loginSession.ipAddress,
+        userAgent: loginSession.userAgent,
+      })
+      .from(loginSession)
+      .where(eq(loginSession.userId, userId))
+      .orderBy(asc(loginSession.createdAt)),
+    // Denúncias que o titular FEZ. Sem `resolvedBy` (id do Curador, terceiro).
+    db
+      .select({
+        recipeId: report.recipeId,
+        reviewId: report.reviewId,
+        reason: report.reason,
+        status: report.status,
+        createdAt: report.createdAt,
+        resolvedAt: report.resolvedAt,
+      })
+      .from(report)
+      .where(eq(report.reporterId, userId))
+      .orderBy(asc(report.createdAt)),
+    // Extração de ingredientes: só a data. Objetos (não strings soltas) para a forma poder crescer.
+    db
+      .select({ createdAt: extractionEvent.createdAt })
+      .from(extractionEvent)
+      .where(eq(extractionEvent.userId, userId))
+      .orderBy(asc(extractionEvent.createdAt)),
+    // Sugestão de cardápio: o ledger não guarda conteúdo (ADR-0036 dec.7), só modelo, tokens e custo.
+    db
+      .select({
+        model: mealPlanSuggestionEvent.model,
+        inputTokens: mealPlanSuggestionEvent.inputTokens,
+        outputTokens: mealPlanSuggestionEvent.outputTokens,
+        costUsd: mealPlanSuggestionEvent.costUsd,
+        createdAt: mealPlanSuggestionEvent.createdAt,
+      })
+      .from(mealPlanSuggestionEvent)
+      .where(eq(mealPlanSuggestionEvent.userId, userId))
+      .orderBy(asc(mealPlanSuggestionEvent.createdAt)),
+  ])
+
   // ── Histórico de criação: sessões + briefing + gerações + transcrição (dados do próprio
   //    titular — inclusive prompts em texto livre e o diálogo). ──────────────────
   const sessionRows = await db
@@ -327,6 +426,13 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
             outcome: generation.outcome,
             advisoryComment: generation.advisoryComment,
             model: generation.model,
+            // #595: o custo da geração e o que a produziu (versão do prompt, variação escolhida pelo titular).
+            inputTokens: generation.inputTokens,
+            outputTokens: generation.outputTokens,
+            costUsd: generation.costUsd,
+            promptStamp: generation.promptStamp,
+            variantLabel: generation.variantLabel,
+            variantChosen: generation.variantChosen,
             createdAt: generation.createdAt,
           })
           .from(generation)
@@ -410,6 +516,12 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
         outcome: gn.outcome,
         advisoryComment: gn.advisoryComment,
         model: gn.model,
+        inputTokens: gn.inputTokens,
+        outputTokens: gn.outputTokens,
+        costUsd: gn.costUsd,
+        promptStamp: gn.promptStamp,
+        variantLabel: gn.variantLabel,
+        variantChosen: gn.variantChosen,
         createdAt: gn.createdAt,
       })),
       transcript: (transcriptBySession.get(s.id) ?? []).map((m) => ({
@@ -423,10 +535,12 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
 
   return {
     format: EXPORT_FORMAT,
-    exportedAt: new Date().toISOString(),
+    exportedAt: now.toISOString(),
     account: profileRow ? account : null,
     recipes,
+    recipeImages,
     reviews,
+    reports,
     savedRecipes,
     collections,
     shoppingLists,
@@ -439,7 +553,10 @@ export async function buildAccountExport(db: Database, userId: string): Promise<
       following: followingRows,
     },
     notifications,
+    loginSessions,
     imageGenerations,
+    extractionEvents,
+    mealPlanSuggestionEvents,
     creationSessions,
   }
 }
