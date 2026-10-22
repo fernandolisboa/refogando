@@ -3,6 +3,7 @@ import { test as base, expect, type Locator, type Page } from '@playwright/test'
 import { ptBR } from '../../src/i18n/messages/pt-BR'
 import { tourStorageKey, type TourState } from '../../src/domain/onboarding-tour'
 import { recipeSlugBaseFromTitle } from '../../src/domain/recipe-slug'
+import { HYDRATION_ERROR_RE } from '../../src/domain/error-report'
 
 /**
  * Fixtures do E2E de fumaça (#589).
@@ -118,7 +119,8 @@ export async function planFromPopover(page: Page, slotLabel: string): Promise<vo
   await expect(page).toHaveURL(/\/pt-BR\/me\/meal-plan/)
 }
 
-const HYDRATION_ERROR = /Minified React error #(418|423|425)\b|Hydration failed|hydrat(ion|ing).*(mismatch|error)/i
+// A mesma regex que classifica `hidratacao` no relato de erro do navegador (#590): um lugar só.
+const HYDRATION_ERROR = HYDRATION_ERROR_RE
 
 type Fixtures = {
   account: Account

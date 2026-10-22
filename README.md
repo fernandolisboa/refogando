@@ -45,6 +45,7 @@ As migrações são **geradas** no repo e **aplicadas no deploy** (o `vercel.jso
 - **[`CONTEXT.md`](CONTEXT.md)** — a **linguagem ubíqua** do domínio (Receita, Proveniência, Visibilidade, Cozinha, Avaliação, Salvar…). É a fonte da verdade dos nomes; se um termo não está aqui, provavelmente não devia existir.
 - **[`docs/adr/`](docs/adr/)** — as **decisões de arquitetura**, uma por assunto, com o porquê e as alternativas rejeitadas.
 - **[`docs/handoffs/`](docs/handoffs/)** — handoffs auto-suficientes de cada fase de trabalho.
+- **[`docs/observabilidade.md`](docs/observabilidade.md)** — as linhas de log (`[erro]`, `[mail]`…) e como achá-las nos logs da Vercel.
 - **[`docs/agents/`](docs/agents/)** — as convenções pra agentes (issue tracker, triage, docs de domínio).
 
 ## Fluxo de trabalho
