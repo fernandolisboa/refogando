@@ -9,6 +9,7 @@
  */
 import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
+import { AccountDataSection } from '@/components/profile/account-data-section'
 import { AvatarUploader } from '@/components/profile/avatar-uploader'
 import { ProfileForm } from '@/components/profile/profile-form'
 import { RestricoesPerfilForm } from '@/components/profile/restricoes-perfil-form'
@@ -44,6 +45,8 @@ export default async function ProfilePage() {
       <ProfileForm />
       {/* ADR-0041: restrições alimentares salvas — seção PRIVADA, separada do perfil (público). */}
       <RestricoesPerfilForm />
+      {/* #595: Seus dados — export LGPD e exclusão da conta (Art. 18 II/V/VI). */}
+      <AccountDataSection />
     </Container>
   )
 }

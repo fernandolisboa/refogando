@@ -543,6 +543,8 @@ export const enUS: Messages = {
       'We received a request to finish creating your Refogando account. To activate it, create your password with the link below — that is your password from now on. The link is valid for 1 hour and can only be used once.',
     emailConcluirBotao: 'Create password and activate account',
     emailConcluirIgnorar: "If this wasn't you, ignore this email. No account is activated without this link.",
+    // #595: the Privacy Policy notice on sign-up (form and Google). `{link}` becomes the `privacidade.titulo` link.
+    privacidadeCadastro: 'When you create an account, we handle your data as explained in our {link}.',
   },
   // Tela CRIAR estruturada (#58), mesma substância traduzida (ADR-0001, não byte-idêntica).
   criar: {
@@ -963,6 +965,51 @@ export const enUS: Messages = {
     considerarDica: 'From your profile. Tap one to leave it out of this request.',
     buscaAviso: 'Showing only recipes that declare: {lista} (from your profile).',
     buscaMostrarTudo: 'Show all',
+  },
+  // "Your data" on /me/profile (#595, LGPD Art. 18 II/V/VI): download the account export and delete the
+  // account from the UI. The delete dialog says what is erased and what stays without the person's name (what
+  // `eraseOwnAccount` does); `excluida` is the home notice after deletion.
+  seusDados: {
+    titulo: 'Your data',
+    descricao: 'Download a copy of what Refogando keeps about you, or delete your account.',
+    baixar: 'Download my data',
+    baixando: 'Preparing the file…',
+    baixarDica:
+      'A JSON file with your profile, recipes, images, reviews, reports, saves, collections, shopping lists, meal plan, pantry, creation history, sign-ins and usage records.',
+    baixado: 'File downloaded.',
+    erroBaixar: "We couldn't download your data. Try again.",
+    excluir: 'Delete my account',
+    excluirDica: "Erases what is only yours and removes your name from what you published. This can't be undone.",
+    saibaMais: 'Learn more:',
+    dialogoTitulo: 'Delete your account?',
+    dialogoDescricao:
+      "Deletion is permanent: the account can't be recovered. You'll be signed out on every device and won't be able to sign in with it again.",
+    apagadoTitulo: 'What gets deleted',
+    apagadoItens: [
+      'Your profile: name, @username, email, photo, bio, links, language, default skill level and dietary restrictions.',
+      'Your private recipes.',
+      'Your creation history: your requests and conversations with the AI.',
+      'Your saves, collections, shopping lists, meal plan and pantry.',
+      'Who you follow, who follows you and your notifications.',
+      'Your password, Google sign-in and every open session.',
+    ],
+    mantidoTitulo: 'What stays, without your name',
+    mantidoItens: [
+      'Recipes you published and reviews you wrote stay on Refogando, but without your name: other people saved, reviewed or planned meals with them.',
+      'Your review photos are deleted 180 days later.',
+      'Reports you filed stay with moderation, without your name.',
+      'AI usage records (date, model, tokens and cost, without the text of your requests) stay on the anonymized account and are deleted after 24 months; ingredient extraction records after 30 days.',
+    ],
+    baixarAntes: 'Want to keep a copy? Download your data before deleting.',
+    entendo: "I understand that deletion is permanent and can't be undone.",
+    cancelar: 'Cancel',
+    // ≠ `excluir` (the trigger that opens the dialog): the final button is never confused with it.
+    confirmar: 'Delete permanently',
+    excluindo: 'Deleting…',
+    fechar: 'Close',
+    erroExcluir: "We couldn't delete your account. Try again.",
+    erroSessao: 'Your session expired. Sign in again to delete your account.',
+    excluida: 'Your account was deleted.',
   },
   // PUBLIC profile (#129) — the `/u/<handle>` page an anonymous Visitor sees: name, avatar, bio,
   // links, and that person's PUBLIC recipes. Distinct from `perfil` (the owner's EDIT screen at
@@ -2411,6 +2458,7 @@ export const enUS: Messages = {
     contaItens: [
       'In your account menu (your name, at the top): public profile, edit profile and this guide.',
       'In “Edit profile”, save your dietary restrictions (only you can see them). They come pre-selected when you create a recipe, ask for a menu suggestion and search — and you can change or remove them each time.',
+      'In “Edit profile”, under “Your data”, download a copy of your data or delete your account.',
       'In the footer, switch the language (Portuguese or English) and the light or dark theme.',
     ],
   },

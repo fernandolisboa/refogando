@@ -14,6 +14,7 @@ import { SiteHeader } from '@/components/site-header'
 import { SectionTabs } from '@/components/nav/section-tabs'
 import { SiteFooter } from '@/components/site-footer'
 import { GuidedTour } from '@/components/onboarding/guided-tour'
+import { AccountDeletedNotice } from '@/components/profile/account-deleted-notice'
 import { SUPPORTED_LOCALES, canonicalLocale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { DEFAULT_THEME_CLASS } from '@/lib/theme'
@@ -144,6 +145,8 @@ export default async function LocaleLayout({
               {/* ADR-0043: subabas da seção atual (Explorar, Minhas receitas, Planejar), fora do header
                   sticky; nada fora das seções. */}
               <SectionTabs />
+              {/* #595: "Sua conta foi excluída." na home, depois da exclusão (sinal no sessionStorage). */}
+              <AccountDeletedNotice />
               {/* Wrapper flex-1 (não <main>): cada página rende o seu próprio <main>,
                   então mantém um único landmark main por documento. #461: alvo do skip-link
                   (`id="conteudo"` + `tabIndex={-1}` p/ receber foco programático sem virar tab stop). */}

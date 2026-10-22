@@ -36,6 +36,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { AuthForm } from '@/components/auth/auth-form'
 import { VerifyEmailRetry } from '@/components/auth/verify-email-retry'
 import type { Locale } from '@/i18n/locale'
+import { MESSAGES } from '@/i18n/messages'
 
 type Mode = 'sign-in' | 'sign-up'
 type Handlers = {
@@ -240,6 +241,44 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     await userEvent.type(screen.getByLabelText('Senha'), 'qualquer-senha')
     await userEvent.click(screen.getByRole('button', { name: 'Entrar' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Muitas tentativas')
+  })
+})
+
+describe('AuthForm — aviso da Política de Privacidade (#595)', () => {
+  const frase = (locale: Locale) => {
+    const m = MESSAGES[locale]
+    return m.auth.privacidadeCadastro.replace('{link}', m.privacidade.titulo)
+  }
+
+  for (const googleEnabled of [false, true]) {
+    it(`criar conta (Google ${googleEnabled ? 'ligado' : 'desligado'}): linha com o link para /privacidade, sem caixa de marcar`, () => {
+      renderForm('sign-up', googleEnabled)
+      const link = screen.getByRole('link', { name: 'Política de Privacidade' })
+      expect(link).toHaveAttribute('href', '/privacidade')
+      expect(link.closest('p')).toHaveTextContent(frase('pt-BR'))
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    })
+  }
+
+  it('entrar sem Google: sem a linha', () => {
+    renderForm('sign-in', false)
+    expect(screen.queryByRole('link', { name: 'Política de Privacidade' })).not.toBeInTheDocument()
+  })
+
+  it('entrar com Google: com a linha (o Google cria a conta no primeiro acesso)', () => {
+    renderForm('sign-in', true)
+    const link = screen.getByRole('link', { name: 'Política de Privacidade' })
+    expect(link).toHaveAttribute('href', '/privacidade')
+    // Depois do botão do Google: vale para os dois jeitos de criar a conta.
+    const google = screen.getByRole('button', { name: 'Continuar com o Google' })
+    expect(google.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('en-US: "Privacy Policy"', () => {
+    renderForm('sign-up', false, 'en-US')
+    const link = screen.getByRole('link', { name: 'Privacy Policy' })
+    expect(link).toHaveAttribute('href', '/privacidade')
+    expect(link.closest('p')).toHaveTextContent(frase('en-US'))
   })
 })
 

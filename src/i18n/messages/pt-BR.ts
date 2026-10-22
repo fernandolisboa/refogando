@@ -595,6 +595,8 @@ export const ptBR = {
       'Recebemos um pedido para concluir o cadastro da sua conta no Refogando. Para ativá-la, crie sua senha pelo link abaixo — é ela que vale daqui em diante. O link vale por 1 hora e só pode ser usado uma vez.',
     emailConcluirBotao: 'Criar senha e ativar conta',
     emailConcluirIgnorar: 'Se não foi você, ignore este email. Nenhuma conta é ativada sem este link.',
+    // #595: aviso da Política no cadastro (formulário e Google). `{link}` vira o link `privacidade.titulo`.
+    privacidadeCadastro: 'Ao criar uma conta, seus dados são tratados como explicamos na {link}.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)
@@ -1036,6 +1038,51 @@ export const ptBR = {
     considerarDica: 'Do seu perfil. Toque numa para tirá-la deste pedido.',
     buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
     buscaMostrarTudo: 'Mostrar tudo',
+  },
+  // "Seus dados" no /me/profile (#595, LGPD Art. 18 II/V/VI): baixar o export da conta e excluir a conta pela
+  // interface. O diálogo de exclusão diz o que é apagado e o que fica sem o nome da pessoa (o mesmo que o
+  // `eraseOwnAccount` faz); `excluida` é o aviso da home depois da exclusão.
+  seusDados: {
+    titulo: 'Seus dados',
+    descricao: 'Baixe uma cópia do que o Refogando guarda sobre você ou exclua a sua conta.',
+    baixar: 'Baixar meus dados',
+    baixando: 'Preparando o arquivo…',
+    baixarDica:
+      'Um arquivo JSON com o seu perfil, receitas, imagens, avaliações, denúncias, salvos, coleções, listas de compras, Cardápio, Despensa, histórico de criação, acessos e registros de uso.',
+    baixado: 'Arquivo baixado.',
+    erroBaixar: 'Não foi possível baixar seus dados. Tente de novo.',
+    excluir: 'Excluir minha conta',
+    excluirDica: 'Apaga o que é só seu e tira o seu nome do que você publicou. Não dá para desfazer.',
+    saibaMais: 'Saiba mais:',
+    dialogoTitulo: 'Excluir sua conta?',
+    dialogoDescricao:
+      'A exclusão é definitiva: a conta não pode ser recuperada. Você sai em todos os aparelhos e não consegue mais entrar com ela.',
+    apagadoTitulo: 'O que é apagado',
+    apagadoItens: [
+      'Seu perfil: nome, @ de usuário, e-mail, foto, bio, links, idioma, nível padrão e restrições alimentares.',
+      'Suas receitas privadas.',
+      'Seu histórico de criação: os pedidos que você fez e as conversas com a IA.',
+      'Seus salvos, coleções, listas de compras, Cardápio e Despensa.',
+      'Quem você segue, quem segue você e as suas notificações.',
+      'Sua senha, o login com o Google e todas as sessões abertas.',
+    ],
+    mantidoTitulo: 'O que fica, sem o seu nome',
+    mantidoItens: [
+      'As receitas que você publicou e as avaliações que você escreveu continuam no Refogando, mas sem o seu nome: outras pessoas salvaram, avaliaram ou planejaram com elas.',
+      'As fotos das suas avaliações são apagadas 180 dias depois.',
+      'As denúncias que você fez continuam com a moderação, sem o seu nome.',
+      'Os registros de uso da IA (data, modelo, tokens e custo, sem o texto dos seus pedidos) ficam na conta anonimizada e são apagados depois de 24 meses; os de extração de ingredientes, depois de 30 dias.',
+    ],
+    baixarAntes: 'Quer guardar uma cópia? Baixe seus dados antes de excluir.',
+    entendo: 'Entendo que a exclusão é definitiva e não pode ser desfeita.',
+    cancelar: 'Cancelar',
+    // ≠ `excluir` (o gatilho que abre o diálogo): o botão final nunca se confunde com ele.
+    confirmar: 'Excluir definitivamente',
+    excluindo: 'Excluindo…',
+    fechar: 'Fechar',
+    erroExcluir: 'Não foi possível excluir sua conta. Tente de novo.',
+    erroSessao: 'Sua sessão expirou. Entre de novo para excluir a conta.',
+    excluida: 'Sua conta foi excluída.',
   },
   // Perfil PÚBLICO (#129) — a página `/u/<handle>` que um Visitante anônimo vê: nome, avatar,
   // bio, links e as receitas PÚBLICAS daquela pessoa. Distinto de `perfil` (a tela de EDIÇÃO do
@@ -2539,6 +2586,7 @@ export const ptBR = {
     contaItens: [
       'No menu da sua conta (seu nome, no topo): perfil público, editar perfil e este guia.',
       'Em “Editar perfil”, salve suas restrições alimentares (só você vê). Elas já vêm marcadas ao criar uma receita, ao pedir uma sugestão de cardápio e ao buscar — e dá para mudar ou tirar em cada pedido.',
+      'Em “Editar perfil”, na seção “Seus dados”, baixe uma cópia dos seus dados ou exclua a sua conta.',
       'No rodapé, troque o idioma (português ou inglês) e o tema claro ou escuro.',
     ],
   },
