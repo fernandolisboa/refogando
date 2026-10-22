@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
 /**
- * "Seus dados" no /me/profile (#595, LGPD Art. 18 II/V/VI), pelo lado da UI: o titular baixa o export
- * (`GET /api/me/export` por fetch + blob, nome datado) e exclui a conta pelo diálogo (`POST
- * /api/me/erasure`), sem usar a API na mão. `useSession`/`signOut` e o `forgetTabs` mockados; `fetch` por URL
- * e método; `URL.createObjectURL` atribuído (o jsdom não tem); o clique na âncora do download é espionado.
+ * "Seus dados" no /me/profile (#595; LGPD Art. 18, II e V; eliminação: arts. 15, III e 16 (18, VI para as
+ * restrições salvas)), pelo lado da UI: o titular baixa o export (`GET /api/me/export` por fetch + blob, nome
+ * datado) e exclui a conta pelo diálogo (`POST /api/me/erasure`), sem usar a API na mão. `useSession` é um
+ * store de verdade (dá para a sessão virar `null` no meio), `signOut`, `forgetTabs` e o sinal do aviso
+ * (`account-notice-signal`) mockados; `fetch` por URL e método; `URL.createObjectURL` atribuído (o jsdom não
+ * tem); o clique na âncora do download é espionado.
  */
 
 vi.mock('next/link', () => ({
@@ -20,21 +22,47 @@ vi.mock('next/link', () => ({
 }))
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean; isRefetching: boolean; refetch: () => void }
-let sessionState: SessionState
+const sessionStore = vi.hoisted(() => {
+  let state: unknown = null
+  const listeners = new Set<() => void>()
+  return {
+    get: () => state,
+    set(next: unknown) {
+      state = next
+      for (const l of listeners) l()
+    },
+    subscribe(l: () => void) {
+      listeners.add(l)
+      return () => {
+        listeners.delete(l)
+      }
+    },
+  }
+})
 const order = vi.hoisted(() => [] as string[])
 const signOut = vi.hoisted(() => vi.fn(async () => {}))
 const forgetTabs = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/auth-client', () => ({
-  useSession: () => sessionState,
-  signOut: () => {
-    order.push('signOut')
-    return signOut()
-  },
-}))
+const markAccountNotice = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/auth-client', async () => {
+  const { useSyncExternalStore } = await import('react')
+  return {
+    useSession: () => useSyncExternalStore(sessionStore.subscribe, sessionStore.get, sessionStore.get),
+    signOut: () => {
+      order.push('signOut')
+      return signOut()
+    },
+  }
+})
 vi.mock('@/components/nav/last-tab-store', () => ({
   forgetTabs: () => {
     order.push('forgetTabs')
     forgetTabs()
+  },
+}))
+vi.mock('@/components/profile/account-notice-signal', () => ({
+  markAccountNotice: (kind: string) => {
+    order.push(`mark:${kind}`)
+    markAccountNotice(kind)
   },
 }))
 
@@ -43,9 +71,9 @@ import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
 import { accountExportFilename } from '@/domain/account-export'
+import { tourStorageKey } from '@/domain/onboarding-tour'
 import { AccountDataSection } from '@/components/profile/account-data-section'
-import { ACCOUNT_DELETED_KEY } from '@/components/profile/account-deleted-signal'
-import { stubAssign } from './reload-stub'
+import { stubLocation } from './reload-stub'
 
 const m = ptBR.seusDados
 
@@ -63,32 +91,49 @@ function guest(): SessionState {
 }
 
 type Reply = { status: number; body?: unknown } | 'throw' | Promise<{ status: number; body?: unknown }>
-type Call = { url: string; method: string; headers: Record<string, string>; body: unknown }
+type Call = { url: string; method: string; init: RequestInit | undefined; body: unknown }
+type Route = 'export' | 'erasure' | 'session'
 
-/** fetch por rota: `export` e `erasure` respondem com a próxima resposta da fila (a última se repete). */
-function mockFetch(routes: { export?: Reply[]; erasure?: Reply[] }) {
+const ROUTES: Record<string, Route> = {
+  '/api/me/export': 'export',
+  '/api/me/erasure': 'erasure',
+  '/api/auth/get-session': 'session',
+}
+/** O get-session de quem ainda está logado (a eliminação não aconteceu). */
+const LIVE_SESSION = { status: 200, body: { session: { id: 's-1' }, user: { id: 'u-1' } } }
+/** O get-session depois da eliminação: as sessões foram apagadas. */
+const NO_SESSION = { status: 200, body: null }
+
+/** fetch por rota: cada rota responde com a próxima resposta da fila (a última se repete). */
+function mockFetch(routes: Partial<Record<Route, Reply[]>>) {
   const calls: Call[] = []
-  const queues = { export: [...(routes.export ?? [{ status: 200, body: { format: 'x' } }])], erasure: [...(routes.erasure ?? [{ status: 200, body: { ok: true } }])] }
+  const queues: Record<Route, Reply[]> = {
+    export: [...(routes.export ?? [{ status: 200, body: { format: 'x' } }])],
+    erasure: [...(routes.erasure ?? [{ status: 200, body: { ok: true } }])],
+    session: [...(routes.session ?? [LIVE_SESSION])],
+  }
   const impl = vi.fn(async (input: unknown, init?: RequestInit) => {
     const url = String(input)
     const method = (init?.method ?? 'GET').toUpperCase()
     const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
-    calls.push({ url, method, headers: (init?.headers ?? {}) as Record<string, string>, body })
-    const key = url === '/api/me/export' ? 'export' : url === '/api/me/erasure' ? 'erasure' : null
+    calls.push({ url, method, init, body })
+    const key = ROUTES[url]
     if (!key) throw new Error(`rota inesperada: ${method} ${url}`)
     const q = queues[key]
     const next = q.length > 1 ? q.shift()! : q[0]
     if (next === 'throw') throw new TypeError('Failed to fetch')
     const r = await next
+    const payload = 'body' in r ? r.body : {}
     return {
       ok: r.status >= 200 && r.status < 300,
       status: r.status,
-      json: async () => r.body ?? {},
-      blob: async () => new Blob([JSON.stringify(r.body ?? {})], { type: 'application/json' }),
+      json: async () => payload,
+      blob: async () => new Blob([JSON.stringify(payload)], { type: 'application/json' }),
     } as Response
   })
   vi.stubGlobal('fetch', impl)
-  return { impl, calls }
+  const urls = () => calls.map((c) => `${c.method} ${c.url}`)
+  return { impl, calls, urls }
 }
 
 function deferred<T>() {
@@ -108,18 +153,19 @@ function renderSection(locale: Locale = 'pt-BR') {
 }
 
 let clicks: Array<{ download: string; href: string }>
-let loc: ReturnType<typeof stubAssign>
+let loc: ReturnType<typeof stubLocation>
 const createObjectURL = vi.fn((blob: Blob) => `blob:mock/${blob.size}`)
 const revokeObjectURL = vi.fn()
 const originalCreate = URL.createObjectURL
 const originalRevoke = URL.revokeObjectURL
 
 beforeEach(() => {
-  sessionState = authed()
+  sessionStore.set(authed())
   order.length = 0
   signOut.mockReset()
   signOut.mockImplementation(async () => {})
   forgetTabs.mockReset()
+  markAccountNotice.mockReset()
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
   URL.createObjectURL = createObjectURL
@@ -128,15 +174,10 @@ beforeEach(() => {
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     clicks.push({ download: this.download, href: this.href })
   })
-  const setItem = Storage.prototype.setItem
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, k: string, v: string) {
-    if (k === ACCOUNT_DELETED_KEY) order.push('markAccountDeleted')
-    return setItem.call(this, k, v)
-  })
-  loc = stubAssign()
+  loc = stubLocation()
   loc.assign.mockImplementation(() => order.push('assign'))
   loc.reload.mockImplementation(() => order.push('reload'))
-  window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 afterEach(() => {
   loc.restore()
@@ -144,7 +185,7 @@ afterEach(() => {
   URL.revokeObjectURL = originalRevoke
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  window.sessionStorage.clear()
+  window.localStorage.clear()
 })
 
 async function openDialog(user: ReturnType<typeof userEvent.setup>) {
@@ -157,9 +198,17 @@ async function confirmErasure(user: ReturnType<typeof userEvent.setup>, dialog: 
   await user.click(within(dialog).getByRole('button', { name: m.confirmar }))
 }
 
+/** O que importa da saída: o sinal do aviso antes do `signOut`, e a navegação por último. */
+function expectExit(kind: 'excluida' | 'sessao', last: 'assign' | 'reload') {
+  expect(markAccountNotice).toHaveBeenCalledOnce()
+  expect(markAccountNotice).toHaveBeenCalledWith(kind)
+  expect(order.indexOf(`mark:${kind}`)).toBeLessThan(order.indexOf('signOut'))
+  expect(order.at(-1)).toBe(last)
+}
+
 describe('AccountDataSection — "Seus dados" (#595)', () => {
   it('Visitante: não renderiza nada', () => {
-    sessionState = guest()
+    sessionStore.set(guest())
     const { container } = renderSection()
     expect(container).toBeEmptyDOMElement()
   })
@@ -174,7 +223,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(region).getByRole('link', { name: ptBR.seusDireitos.titulo })).toHaveAttribute('href', '/seus-direitos')
   })
 
-  it('baixar: GET /api/me/export, salva o arquivo com o nome datado e anuncia "Arquivo baixado."', async () => {
+  it('baixar: GET /api/me/export, salva o arquivo com o nome datado e anuncia o download iniciado', async () => {
     const user = userEvent.setup()
     const { calls } = mockFetch({})
     renderSection()
@@ -208,18 +257,28 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
 
   it('baixar: 500 ou falha de rede mostram o erro e não salvam arquivo nenhum', async () => {
     const user = userEvent.setup()
-    mockFetch({ export: [{ status: 500, body: { error: 'x' } }, 'throw'] })
+    const { calls } = mockFetch({ export: [{ status: 500, body: { error: 'x' } }, 'throw'] })
     renderSection()
     await user.click(screen.getByRole('button', { name: m.baixar }))
     expect(await screen.findByRole('alert')).toHaveTextContent(m.erroBaixar)
     await user.click(screen.getByRole('button', { name: m.baixar }))
+    await waitFor(() => expect(calls).toHaveLength(2))
     await waitFor(() => expect(screen.getByRole('button', { name: m.baixar })).toBeEnabled())
     expect(screen.getByRole('alert')).toHaveTextContent(m.erroBaixar)
     expect(clicks).toHaveLength(0)
     expect(createObjectURL).not.toHaveBeenCalled()
   })
 
-  it('o diálogo explica o que é apagado, o que fica e oferece baixar antes', async () => {
+  it('baixar: 401 diz que a sessão expirou (tentar de novo não adianta)', async () => {
+    const user = userEvent.setup()
+    mockFetch({ export: [{ status: 401, body: { error: 'nao_autenticado' } }] })
+    renderSection()
+    await user.click(screen.getByRole('button', { name: m.baixar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(m.erroBaixarSessao)
+    expect(clicks).toHaveLength(0)
+  })
+
+  it('o diálogo explica o que é apagado, o que fica, aponta Minhas receitas e oferece baixar antes', async () => {
     const user = userEvent.setup()
     mockFetch({})
     renderSection()
@@ -230,6 +289,10 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     }
     expect(within(dialog).getByRole('heading', { name: m.apagadoTitulo })).toBeInTheDocument()
     expect(within(dialog).getByRole('heading', { name: m.mantidoTitulo })).toBeInTheDocument()
+    // Quem quer apagar uma receita publicada vai a "Minhas receitas" (o rótulo do header) antes.
+    const link = within(dialog).getByRole('link', { name: ptBR.nav.minhasReceitas })
+    expect(link).toHaveAttribute('href', '/me/recipes')
+    expect(link.parentElement).toHaveTextContent(m.apagarPublicadas.replace('{link}', ptBR.nav.minhasReceitas))
     expect(within(dialog).getByText(m.baixarAntes)).toBeInTheDocument()
     // Foco inicial na ação menos destrutiva.
     expect(within(dialog).getByRole('button', { name: m.cancelar })).toHaveFocus()
@@ -254,7 +317,7 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeDisabled()
   })
 
-  it('baixar dentro do diálogo: "Arquivo baixado." ali, e some ao fechar e reabrir', async () => {
+  it('baixar dentro do diálogo: o aviso aparece ali, e some ao fechar e reabrir', async () => {
     const user = userEvent.setup()
     mockFetch({})
     renderSection()
@@ -269,8 +332,28 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(dialog).queryByText(m.baixado)).not.toBeInTheDocument()
   })
 
-  it('confirmar: POST com {confirm:true} em JSON → marca o aviso, esquece as abas, sai e recarrega a home do idioma', async () => {
+  it('um download só: começado na seção, o diálogo mostra "Preparando…" e segura "Excluir definitivamente" até acabar', async () => {
     const user = userEvent.setup()
+    const d = deferred<{ status: number; body?: unknown }>()
+    const { calls } = mockFetch({ export: [d.promise] })
+    renderSection()
+    await user.click(screen.getByRole('button', { name: m.baixar }))
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('checkbox', { name: m.entendo }))
+
+    expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: m.baixando })).toBeDisabled()
+
+    d.resolve({ status: 200, body: {} })
+    expect(await within(dialog).findByText(m.baixado)).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeEnabled()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('confirmar: POST com {confirm:true} em JSON → sinal do aviso, abas e tour esquecidos, sai e recarrega a home do idioma', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(tourStorageKey('u-1'), 'done')
+    window.localStorage.setItem(tourStorageKey('u-outra'), 'done')
     const { calls } = mockFetch({})
     renderSection()
     const dialog = await openDialog(user)
@@ -281,81 +364,147 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
       expect.objectContaining({
         url: '/api/me/erasure',
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        init: expect.objectContaining({ headers: { 'content-type': 'application/json' } }),
         body: { confirm: true },
       }),
     ])
-    expect(order).toEqual(['markAccountDeleted', 'forgetTabs', 'signOut', 'assign'])
-    expect(window.sessionStorage.getItem(ACCOUNT_DELETED_KEY)).not.toBeNull()
+    expectExit('excluida', 'assign')
+    expect(forgetTabs).toHaveBeenCalledOnce()
+    expect(window.localStorage.getItem(tourStorageKey('u-1'))).toBeNull()
+    expect(window.localStorage.getItem(tourStorageKey('u-outra'))).toBe('done')
     expect(loc.reload).not.toHaveBeenCalled()
   })
 
   it('signOut que não responde (offline): sai mesmo assim depois de 3s', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup()
+    signOut.mockImplementation(() => new Promise<void>(() => {}))
+    mockFetch({})
+    renderSection()
+    const dialog = await openDialog(user)
+    await user.click(within(dialog).getByRole('checkbox', { name: m.entendo }))
+    const confirmar = within(dialog).getByRole('button', { name: m.confirmar })
+
+    vi.useFakeTimers()
     try {
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-      signOut.mockImplementation(() => new Promise<void>(() => {}))
-      mockFetch({})
-      renderSection()
-      const dialog = await openDialog(user)
-      await confirmErasure(user, dialog)
-      await waitFor(() => expect(order).toContain('signOut'))
+      fireEvent.click(confirmar)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(signOut).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(2_999)
       expect(loc.assign).not.toHaveBeenCalled()
-      await vi.advanceTimersByTimeAsync(3_000)
+      await vi.advanceTimersByTimeAsync(1)
       expect(loc.assign).toHaveBeenCalledWith('/pt-BR')
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('resposta perdida: o fetch lança, a nova tentativa dá 401 nao_autenticado → a conta já foi excluída, saída normal', async () => {
-    const user = userEvent.setup()
-    mockFetch({ erasure: ['throw', { status: 401, body: { error: 'nao_autenticado' } }] })
-    renderSection()
-    const dialog = await openDialog(user)
-    await confirmErasure(user, dialog)
+  describe('desfecho ambíguo: confere a sessão no get-session', () => {
+    it('o fetch lança e a sessão já não existe → a conta foi excluída, saída normal', async () => {
+      const user = userEvent.setup()
+      const { calls, urls } = mockFetch({ erasure: ['throw'], session: [NO_SESSION] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
-    expect(order).toEqual([])
-    await user.click(within(dialog).getByRole('button', { name: m.confirmar }))
+      await waitFor(() => expect(loc.assign).toHaveBeenCalledWith('/pt-BR'))
+      expect(urls()).toEqual(['POST /api/me/erasure', 'GET /api/auth/get-session'])
+      expect(calls[1].init).toMatchObject({ cache: 'no-store', credentials: 'same-origin' })
+      expectExit('excluida', 'assign')
+      expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
+    })
 
-    await waitFor(() => expect(loc.assign).toHaveBeenCalledWith('/pt-BR'))
-    expect(order).toEqual(['markAccountDeleted', 'forgetTabs', 'signOut', 'assign'])
+    it('o fetch lança e a sessão segue viva → erroExcluir, nada de sair', async () => {
+      const user = userEvent.setup()
+      const { urls } = mockFetch({ erasure: ['throw'], session: [LIVE_SESSION] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
+      expect(urls()).toEqual(['POST /api/me/erasure', 'GET /api/auth/get-session'])
+      expect(order).toEqual([])
+      expect(markAccountNotice).not.toHaveBeenCalled()
+    })
+
+    it('504 e a sessão já não existe → saída normal (o commit pode ter vindo antes do timeout)', async () => {
+      const user = userEvent.setup()
+      mockFetch({ erasure: [{ status: 504 }], session: [NO_SESSION] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
+
+      await waitFor(() => expect(loc.assign).toHaveBeenCalledWith('/pt-BR'))
+      expectExit('excluida', 'assign')
+    })
+
+    it('500 e a sessão segue viva → erroExcluir, o diálogo fica aberto, o botão volta e recebe o foco', async () => {
+      const user = userEvent.setup()
+      const d = deferred<{ status: number; body?: unknown }>()
+      const { urls } = mockFetch({ erasure: [d.promise], session: [LIVE_SESSION] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
+      await within(dialog).findByRole('button', { name: m.excluindo })
+      // O navegador tira o foco de um botão que fica desabilitado; o jsdom não (nem deixa dar `blur` nele).
+      // Tira o foco do botão à mão, para o efeito ter o que devolver.
+      act(() => dialog.focus())
+      expect(dialog).toHaveFocus()
+
+      d.resolve({ status: 500, body: { error: 'x' } })
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
+      const confirmar = within(dialog).getByRole('button', { name: m.confirmar })
+      expect(confirmar).toBeEnabled()
+      await waitFor(() => expect(confirmar).toHaveFocus())
+      expect(urls()).toEqual(['POST /api/me/erasure', 'GET /api/auth/get-session'])
+      expect(screen.getByRole('dialog', { name: m.dialogoTitulo })).toBeInTheDocument()
+      expect(signOut).not.toHaveBeenCalled()
+      expect(loc.assign).not.toHaveBeenCalled()
+      expect(loc.reload).not.toHaveBeenCalled()
+    })
+
+    it('get-session também falha → erroExcluir (sem saber, não sai)', async () => {
+      const user = userEvent.setup()
+      mockFetch({ erasure: ['throw'], session: ['throw'] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
+      expect(loc.assign).not.toHaveBeenCalled()
+    })
   })
 
-  it('401 sem resposta perdida antes (sessão morta): mostra erroSessao, sai e recarrega a página, sem o aviso de excluída', async () => {
+  it('401 (sessão morta): mostra erroSessao, deixa o aviso para depois da recarga e recarrega, sem conferir a sessão', async () => {
     const user = userEvent.setup()
-    mockFetch({ erasure: [{ status: 401, body: { error: 'nao_autenticado' } }] })
+    const { urls } = mockFetch({ erasure: [{ status: 401, body: { error: 'nao_autenticado' } }] })
     renderSection()
     const dialog = await openDialog(user)
     await confirmErasure(user, dialog)
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroSessao)
     await waitFor(() => expect(loc.reload).toHaveBeenCalledOnce())
-    expect(order).toEqual(['forgetTabs', 'signOut', 'reload'])
+    expectExit('sessao', 'reload')
+    expect(forgetTabs).toHaveBeenCalledOnce()
+    expect(urls()).toEqual(['POST /api/me/erasure'])
     expect(loc.assign).not.toHaveBeenCalled()
-    expect(window.sessionStorage.getItem(ACCOUNT_DELETED_KEY)).toBeNull()
   })
 
-  it('500: mostra erroExcluir, o diálogo fica aberto e o botão volta; nada de sair', async () => {
+  it('outro 4xx (403 da guarda de origem): erroExcluir, sem conferir a sessão', async () => {
     const user = userEvent.setup()
-    mockFetch({ erasure: [{ status: 500, body: { error: 'x' } }] })
+    const { urls } = mockFetch({ erasure: [{ status: 403, body: { error: 'origem_nao_permitida' } }] })
     renderSection()
     const dialog = await openDialog(user)
     await confirmErasure(user, dialog)
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
-    expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeEnabled()
-    expect(screen.getByRole('dialog', { name: m.dialogoTitulo })).toBeInTheDocument()
-    expect(signOut).not.toHaveBeenCalled()
-    expect(loc.assign).not.toHaveBeenCalled()
-    expect(loc.reload).not.toHaveBeenCalled()
+    expect(urls()).toEqual(['POST /api/me/erasure'])
+    expect(order).toEqual([])
   })
 
   it('enquanto exclui: Esc não fecha, o X some e o botão fica aria-busy', async () => {
     const user = userEvent.setup()
     const d = deferred<{ status: number; body?: unknown }>()
-    mockFetch({ erasure: [d.promise] })
+    mockFetch({ erasure: [d.promise], session: [LIVE_SESSION] })
     renderSection()
     const dialog = await openDialog(user)
     await confirmErasure(user, dialog)
@@ -372,6 +521,25 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(dialog).getByRole('button', { name: m.fechar })).toBeInTheDocument()
   })
 
+  it('a sessão vira null no meio do pedido (refetch ao voltar online): o diálogo fica e termina a saída', async () => {
+    const user = userEvent.setup()
+    const d = deferred<{ status: number; body?: unknown }>()
+    mockFetch({ erasure: [d.promise] })
+    renderSection()
+    const dialog = await openDialog(user)
+    await confirmErasure(user, dialog)
+    await within(dialog).findByRole('button', { name: m.excluindo })
+
+    act(() => sessionStore.set(guest()))
+    expect(screen.getByRole('dialog', { name: m.dialogoTitulo })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: m.titulo })).toBeInTheDocument()
+
+    d.resolve({ status: 200, body: { ok: true } })
+    await waitFor(() => expect(loc.assign).toHaveBeenCalledWith('/pt-BR'))
+    expectExit('excluida', 'assign')
+    expect(screen.getByRole('dialog', { name: m.dialogoTitulo })).toBeInTheDocument()
+  })
+
   it('en-US: a seção segue o idioma', async () => {
     const user = userEvent.setup()
     mockFetch({})
@@ -379,7 +547,8 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(screen.getByRole('region', { name: enUS.seusDados.titulo })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: enUS.seusDados.baixar })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: enUS.seusDados.excluir }))
-    expect(await screen.findByRole('dialog', { name: enUS.seusDados.dialogoTitulo })).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog', { name: enUS.seusDados.dialogoTitulo })
+    expect(within(dialog).getByRole('link', { name: enUS.nav.minhasReceitas })).toHaveAttribute('href', '/me/recipes')
   })
 
   it('en-US: a saída volta para a home em inglês', async () => {

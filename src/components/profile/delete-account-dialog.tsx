@@ -1,30 +1,45 @@
 'use client'
 /**
- * "Excluir minha conta" (#595, LGPD Art. 18 VI): o gatilho + o diálogo de confirmação que chama
- * `POST /api/me/erasure`. Modal centrado da casa (`Sheet side="center"`, o Radix Dialog do ADR-0018, como o
- * `follow-list-modal`): `role=dialog`, trap de foco, Esc e o foco de volta ao gatilho vêm de graça. O foco
- * inicial vai para "Cancelar", a ação menos destrutiva.
+ * "Excluir minha conta" (#595; eliminação: LGPD arts. 15, III e 16 (18, VI para as restrições salvas)): o
+ * gatilho + o diálogo de confirmação que chama `POST /api/me/erasure`. Modal centrado da casa
+ * (`Sheet side="center"`, o Radix Dialog do ADR-0018, como o `follow-list-modal`): `role=dialog`, trap de
+ * foco, Esc e o foco de volta ao gatilho vêm de graça. O foco inicial vai para "Cancelar", a ação menos
+ * destrutiva.
  *
  * O diálogo diz o que é apagado e o que fica sem o nome da pessoa (`seusDados.apagadoItens`/`mantidoItens`,
- * o mesmo que o `eraseOwnAccount` faz), oferece baixar os dados antes, e só libera "Excluir definitivamente"
- * com a caixa "Entendo…" marcada. Enquanto exclui, nada fecha o diálogo: o `open` é controlado e o `guarded`
- * ignora o fechamento, e o X some.
+ * o mesmo que o `eraseOwnAccount` faz), aponta "Minhas receitas" para quem quer apagar uma receita
+ * publicada antes, oferece baixar os dados (o MESMO download da seção, `dl`) e só libera "Excluir
+ * definitivamente" com a caixa "Entendo…" marcada e nenhum download em andamento. Enquanto exclui, nada
+ * fecha o diálogo: o `open` é controlado e o `guarded` ignora o fechamento, e o X some. `onPendingChange`
+ * avisa a seção, que fica montada mesmo se a sessão virar `null` no meio (ver `AccountDataSection`).
  *
- * Saída depois de excluir: marca o sinal do aviso da home, esquece as abas lembradas (como o "Sair"),
- * chama o `signOut` com teto de 3s (o servidor já apagou as sessões; isto limpa o cookie e o atom, e o teto
- * impede um `signOut` offline de travar a tela) e recarrega a home do idioma com `location.assign`. Recarga
- * de verdade, não `router.push`: limpa todo estado privado em memória (as restrições salvas do
+ * Desfechos do pedido:
+ *  - 2xx: saída da conta excluída (abaixo).
+ *  - 401: a sessão já tinha morrido; mostra `erroSessao`, deixa o mesmo aviso para depois da recarga e
+ *    recarrega a página deslogada.
+ *  - Ambíguo (o `fetch` lança, ou 5xx: um 504 pode ter vindo depois do commit): pergunta ao
+ *    `GET /api/auth/get-session`, sem cache. A eliminação apaga as sessões na mesma transação, e a sessão
+ *    estava viva segundos antes; sessão `null` ⇒ a conta foi excluída, saída normal. Sessão viva, ou sem
+ *    resposta ⇒ `erroExcluir`.
+ *  - Outro 4xx: `erroExcluir`.
+ * Na falha, o foco vai para "Excluir definitivamente" (ou para o alerta, se o botão estiver desabilitado),
+ * para não cair no `body`.
+ *
+ * Saída depois de excluir: deixa o sinal do aviso da home, esquece as abas lembradas (como o "Sair") e o
+ * estado do tour desta conta (`tourStorageKey`: o id é o mesmo da conta anonimizada), chama o `signOut`
+ * com teto de 3s (o servidor já apagou as sessões; isto limpa o cookie e o atom, e o teto impede um
+ * `signOut` offline de travar a tela) e recarrega a home do idioma com `location.assign`. Recarga de
+ * verdade, não `router.push`: limpa todo estado privado em memória (as restrições salvas do
  * `RestricoesPerfilProvider`, notificações, o atom da sessão).
- *
- * Resposta perdida: a eliminação apaga as sessões na mesma transação, então repetir depois de uma resposta
- * que não chegou dá 401. Com o `respostaPerdida` marcado, esse 401 quer dizer "já excluída" e segue a saída
- * normal. Um 401 sem resposta perdida antes é sessão morta: mostra `erroSessao` e recarrega deslogado.
  * ADR-0010: route handler via fetch, nunca Server Action.
  */
-import { useRef, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { signOut } from '@/lib/auth-client'
+import { tourStorageKey } from '@/domain/onboarding-tour'
 import { forgetTabs } from '@/components/nav/last-tab-store'
+import { sectionLabel } from '@/components/nav/nav-labels'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -36,14 +51,20 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { markAccountDeleted } from './account-deleted-signal'
-import { useAccountExportDownload } from './use-account-export-download'
+import { markAccountNotice } from './account-notice-signal'
+import { ExportDownloadControl } from './export-download-control'
+import type { AccountExportDownload } from './use-account-export-download'
 
 type Status = 'idle' | 'erasing' | 'leaving'
 type Erro = null | 'falha' | 'sessao'
 
 /** Teto do `signOut` na saída: a conta já foi excluída no servidor, a tela não espera a rede para sempre. */
 const SIGN_OUT_TIMEOUT_MS = 3_000
+
+/** A aba "Criações" de "Minhas receitas" (`domain/nav-sections`): onde a pessoa apaga uma receita sua. */
+const MINHAS_RECEITAS_HREF = '/me/recipes'
+
+const LINK = 'font-medium text-brand-ink hover:underline'
 
 async function signOutWithTimeout(): Promise<void> {
   await Promise.race([
@@ -52,22 +73,57 @@ async function signOutWithTimeout(): Promise<void> {
   ])
 }
 
-export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy?: string }) {
+/**
+ * Depois de um desfecho ambíguo: a sessão ainda existe? `false` = `null` do get-session (a eliminação a
+ * apagou); `true` = sessão viva; `null` = não deu para saber (rede fora, resposta fora da forma).
+ */
+async function sessaoViva(): Promise<boolean | null> {
+  try {
+    const res = await fetch('/api/auth/get-session', { cache: 'no-store', credentials: 'same-origin' })
+    if (!res.ok) return null
+    const body: unknown = await res.json()
+    if (body === null) return false
+    return typeof body === 'object' && (body as { session?: unknown }).session != null ? true : null
+  } catch {
+    return null
+  }
+}
+
+export function DeleteAccountDialog({
+  triggerDescribedBy,
+  userId,
+  dl,
+  onPendingChange,
+}: {
+  triggerDescribedBy?: string
+  /** O dono da sessão, para apagar o estado do tour dele na saída. */
+  userId: string | undefined
+  dl: AccountExportDownload
+  onPendingChange: (pending: boolean) => void
+}) {
   const { locale, messages } = useLocale()
   const m = messages.seusDados
   const [open, setOpen] = useState(false)
   const [entendo, setEntendo] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const [erro, setErro] = useState<Erro>(null)
-  // Uma tentativa anterior lançou no fetch: a eliminação pode ter acontecido sem a resposta chegar.
-  const respostaPerdida = useRef(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
-  // Instância própria: o Radix põe `aria-hidden` fora do diálogo, então a região viva da seção não seria lida.
-  const dl = useAccountExportDownload()
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const alertRef = useRef<HTMLParagraphElement>(null)
 
   const busy = status !== 'idle'
+  const baixando = dl.status === 'downloading'
   // "Excluindo…" na chamada e na saída depois de excluir; na saída por sessão morta, o rótulo de sempre.
   const excluindo = status === 'erasing' || (status === 'leaving' && erro !== 'sessao')
+  const [publicadasAntes = '', publicadasDepois = ''] = m.apagarPublicadas.split('{link}')
+
+  // A falha devolve o foco à ação (o botão ficou desabilitado durante o pedido e o foco cairia no `body`).
+  useEffect(() => {
+    if (erro !== 'falha') return
+    const confirmar = confirmRef.current
+    if (confirmar && !confirmar.disabled) confirmar.focus()
+    else alertRef.current?.focus()
+  }, [erro])
 
   function guarded(next: boolean) {
     if (busy) return
@@ -79,10 +135,17 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
     }
   }
 
-  async function sairDaContaExcluida() {
+  async function sairDaContaExcluida(uid: string | undefined) {
     setStatus('leaving')
-    markAccountDeleted()
+    markAccountNotice('excluida')
     forgetTabs()
+    if (uid) {
+      try {
+        window.localStorage.removeItem(tourStorageKey(uid))
+      } catch {
+        // Storage bloqueado: sobra só a marca do tour, sem dado pessoal.
+      }
+    }
     await signOutWithTimeout()
     window.location.assign(`/${locale}`)
   }
@@ -90,16 +153,20 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
   async function sairDaSessaoMorta() {
     setStatus('leaving')
     setErro('sessao')
+    markAccountNotice('sessao')
     forgetTabs()
     await signOutWithTimeout()
     window.location.reload()
   }
 
   async function excluir() {
-    if (!entendo || busy) return
+    if (!entendo || busy || baixando) return
+    // O `userId` deste render: a sessão pode virar `null` no meio do pedido.
+    const uid = userId
+    onPendingChange(true)
     setStatus('erasing')
     setErro(null)
-    let res: Response
+    let res: Response | null
     try {
       res = await fetch('/api/me/erasure', {
         method: 'POST',
@@ -107,15 +174,15 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
         body: JSON.stringify({ confirm: true }),
       })
     } catch {
-      respostaPerdida.current = true
-      setStatus('idle')
-      setErro('falha')
-      return
+      res = null
     }
-    if (res.ok) return sairDaContaExcluida()
-    if (res.status === 401) return respostaPerdida.current ? sairDaContaExcluida() : sairDaSessaoMorta()
+    if (res?.ok) return sairDaContaExcluida(uid)
+    if (res?.status === 401) return sairDaSessaoMorta()
+    const ambiguo = res === null || res.status >= 500
+    if (ambiguo && (await sessaoViva()) === false) return sairDaContaExcluida(uid)
     setStatus('idle')
     setErro('falha')
+    onPendingChange(false)
   }
 
   return (
@@ -157,26 +224,17 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
           </ul>
         </div>
 
+        <p className="text-sm text-muted">
+          {publicadasAntes}
+          <Link href={MINHAS_RECEITAS_HREF} className={LINK}>
+            {sectionLabel(messages, 'minhasReceitas')}
+          </Link>
+          {publicadasDepois}
+        </p>
+
         <div className="flex flex-col items-start gap-2">
           <p className="text-sm text-muted">{m.baixarAntes}</p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={dl.status === 'downloading' || busy}
-            aria-busy={dl.status === 'downloading'}
-            onClick={() => void dl.download()}
-          >
-            {dl.status === 'downloading' ? m.baixando : m.baixar}
-          </Button>
-          <div aria-live="polite" className="text-sm">
-            {dl.status === 'done' && <p className="font-medium text-fg">{m.baixado}</p>}
-            {dl.status === 'error' && (
-              <p role="alert" className="font-medium text-fg">
-                {m.erroBaixar}
-              </p>
-            )}
-          </div>
+          <ExportDownloadControl dl={dl} size="sm" disabled={busy} />
         </div>
 
         <div className="flex items-start gap-2">
@@ -193,7 +251,7 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
         </div>
 
         {erro !== null && (
-          <p role="alert" className="text-sm font-medium text-fg">
+          <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
             {erro === 'sessao' ? m.erroSessao : m.erroExcluir}
           </p>
         )}
@@ -203,9 +261,10 @@ export function DeleteAccountDialog({ triggerDescribedBy }: { triggerDescribedBy
             {m.cancelar}
           </Button>
           <Button
+            ref={confirmRef}
             type="button"
             variant="destructive"
-            disabled={!entendo || busy || dl.status === 'downloading'}
+            disabled={!entendo || busy || baixando}
             aria-busy={excluindo}
             onClick={() => void excluir()}
           >

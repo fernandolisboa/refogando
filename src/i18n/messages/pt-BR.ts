@@ -1039,18 +1039,21 @@ export const ptBR = {
     buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
     buscaMostrarTudo: 'Mostrar tudo',
   },
-  // "Seus dados" no /me/profile (#595, LGPD Art. 18 II/V/VI): baixar o export da conta e excluir a conta pela
-  // interface. O diálogo de exclusão diz o que é apagado e o que fica sem o nome da pessoa (o mesmo que o
-  // `eraseOwnAccount` faz); `excluida` é o aviso da home depois da exclusão.
+  // "Seus dados" no /me/profile (#595; LGPD Art. 18, II e V; eliminação: arts. 15, III e 16 (18, VI para as
+  // restrições salvas)): baixar o export da conta e excluir a conta pela interface. O diálogo de exclusão diz o
+  // que é apagado e o que fica sem o nome da pessoa (o mesmo que o `eraseOwnAccount` faz); `excluida` é o
+  // aviso da home depois da exclusão, e `erroSessao` também aparece no aviso depois da recarga.
   seusDados: {
     titulo: 'Seus dados',
     descricao: 'Baixe uma cópia do que o Refogando guarda sobre você ou exclua a sua conta.',
     baixar: 'Baixar meus dados',
     baixando: 'Preparando o arquivo…',
     baixarDica:
-      'Um arquivo JSON com o seu perfil, receitas, imagens, avaliações, denúncias, salvos, coleções, listas de compras, Cardápio, Despensa, histórico de criação, acessos e registros de uso.',
-    baixado: 'Arquivo baixado.',
+      'Um arquivo JSON com o seu perfil, receitas, imagens, avaliações, denúncias, salvos, coleções, listas de compras, Cardápio, Despensa, quem você segue, notificações, acessos, logins, registros de uso e histórico de criação.',
+    // O navegador só começou a salvar: quem vai excluir a conta confere o arquivo antes.
+    baixado: 'Download iniciado. Confira se o arquivo foi salvo antes de excluir a conta.',
     erroBaixar: 'Não foi possível baixar seus dados. Tente de novo.',
+    erroBaixarSessao: 'Sua sessão expirou. Entre de novo para baixar seus dados.',
     excluir: 'Excluir minha conta',
     excluirDica: 'Apaga o que é só seu e tira o seu nome do que você publicou. Não dá para desfazer.',
     saibaMais: 'Saiba mais:',
@@ -1071,8 +1074,11 @@ export const ptBR = {
       'As receitas que você publicou e as avaliações que você escreveu continuam no Refogando, mas sem o seu nome: outras pessoas salvaram, avaliaram ou planejaram com elas.',
       'As fotos das suas avaliações são apagadas 180 dias depois.',
       'As denúncias que você fez continuam com a moderação, sem o seu nome.',
-      'Os registros de uso da IA (data, modelo, tokens e custo, sem o texto dos seus pedidos) ficam na conta anonimizada e são apagados depois de 24 meses; os de extração de ingredientes, depois de 30 dias.',
+      'Os registros de uso da IA (data, modelo, tokens e custo, sem o texto dos seus pedidos) ficam na conta anonimizada e são apagados 24 meses depois de criados; os de extração de ingredientes, 30 dias depois.',
+      'Um registro de que você pediu a exclusão (data e contagens, sem os seus dados) fica guardado por 5 anos, como prova de que atendemos o pedido.',
     ],
+    // `{link}` vira o link "Minhas receitas" (o rótulo da seção do header), onde a pessoa apaga uma receita sua.
+    apagarPublicadas: 'Quer que uma receita publicada suma? Apague-a em {link} antes de excluir a conta.',
     baixarAntes: 'Quer guardar uma cópia? Baixe seus dados antes de excluir.',
     entendo: 'Entendo que a exclusão é definitiva e não pode ser desfeita.',
     cancelar: 'Cancelar',
