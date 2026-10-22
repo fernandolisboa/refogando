@@ -12,6 +12,8 @@ import { RealRecipeProbe, type RecipeProbe } from '@/server/import/recipe-probe'
 import { RealWebSearchProvider, type WebSearchProvider } from '@/server/web-search/web-search-provider'
 import { RealResendMailer, type Mailer } from '@/server/mail/mailer'
 import { FakeBillingProvider, type BillingProvider } from '@/server/billing/provider'
+import { e2eFakesActive } from '@/server/e2e/mode'
+import { e2eFakes } from '@/server/e2e/fakes'
 
 /**
  * Raiz de composição (DI) da fundação. Seams com um dono cada:
@@ -32,6 +34,12 @@ import { FakeBillingProvider, type BillingProvider } from '@/server/billing/prov
  * Produção resolve preguiçosamente a partir do ambiente. Testes injetam dublês
  * via setX() e limpam com resetDeps() entre testes. Mínimo necessário para a seam
  * travada — nada de container de DI genérico.
+ *
+ * MODO FAKE do E2E (#589): todo getter que constrói um `Real*` passa ANTES por `e2eFakesActive()`
+ * (`@/server/e2e/mode`). Sem a flag `REFOGANDO_E2E_FAKES` é `false` e nada muda; com ela, só no ambiente
+ * do harness local (loopback, sem Vercel — senão LANÇA), o getter usa o dublê de `@/server/e2e/fakes`.
+ * Os overrides setX() seguem com precedência. Invariante travada por test/unit/e2e-mode.test.ts: um
+ * `new Real*(` novo aqui sem o ramo do modo fake quebra o teste. getDb e o billing (já Fake) não mudam.
  */
 
 let dbOverride: Database | null = null
@@ -81,7 +89,7 @@ export function setDb(db: Database): void {
 
 export function getClaudeClient(): ClaudeClient {
   if (claudeOverride) return claudeOverride
-  if (!lazyClaude) lazyClaude = new RealClaudeClient()
+  if (!lazyClaude) lazyClaude = e2eFakesActive() ? e2eFakes.claude() : new RealClaudeClient()
   return lazyClaude
 }
 
@@ -92,7 +100,7 @@ export function setClaudeClient(client: ClaudeClient): void {
 export function getModelCatalog(): ModelCatalog {
   if (modelCatalogOverride) return modelCatalogOverride
   // Uma instância por processo: o cache de 1h da lista vive nela.
-  if (!lazyModelCatalog) lazyModelCatalog = new RealModelCatalog()
+  if (!lazyModelCatalog) lazyModelCatalog = e2eFakesActive() ? e2eFakes.modelCatalog() : new RealModelCatalog()
   return lazyModelCatalog
 }
 
@@ -102,7 +110,7 @@ export function setModelCatalog(catalog: ModelCatalog): void {
 
 export function getModelProbe(): ModelProbe {
   if (modelProbeOverride) return modelProbeOverride
-  if (!lazyModelProbe) lazyModelProbe = new RealModelProbe()
+  if (!lazyModelProbe) lazyModelProbe = e2eFakesActive() ? e2eFakes.modelProbe() : new RealModelProbe()
   return lazyModelProbe
 }
 
@@ -112,7 +120,7 @@ export function setModelProbe(probe: ModelProbe): void {
 
 export function getEmbedder(): Embedder {
   if (embedderOverride) return embedderOverride
-  if (!lazyEmbedder) lazyEmbedder = new RealEmbedder()
+  if (!lazyEmbedder) lazyEmbedder = e2eFakesActive() ? e2eFakes.embedder() : new RealEmbedder()
   return lazyEmbedder
 }
 
@@ -123,7 +131,11 @@ export function setEmbedder(embedder: Embedder): void {
 export function getTranslator(): Translator {
   if (translatorOverride) return translatorOverride
   // ADR-0034: modelo + ajuste da tradução vêm do admin (`app_config.ai_tasks`) a cada chamada.
-  if (!lazyTranslator) lazyTranslator = new RealTranslator(() => loadAiTask(getDb(), 'translation'))
+  if (!lazyTranslator) {
+    lazyTranslator = e2eFakesActive()
+      ? e2eFakes.translator()
+      : new RealTranslator(() => loadAiTask(getDb(), 'translation'))
+  }
   return lazyTranslator
 }
 
@@ -133,7 +145,7 @@ export function setTranslator(translator: Translator): void {
 
 export function getImageStore(): ImageStore {
   if (imageStoreOverride) return imageStoreOverride
-  if (!lazyImageStore) lazyImageStore = new RealImageStore()
+  if (!lazyImageStore) lazyImageStore = e2eFakesActive() ? e2eFakes.imageStore() : new RealImageStore()
   return lazyImageStore
 }
 
@@ -143,7 +155,9 @@ export function setImageStore(store: ImageStore): void {
 
 export function getImageGenerator(): ImageGenerator {
   if (imageGeneratorOverride) return imageGeneratorOverride
-  if (!lazyImageGenerator) lazyImageGenerator = new RealGeminiImageGenerator()
+  if (!lazyImageGenerator) {
+    lazyImageGenerator = e2eFakesActive() ? e2eFakes.imageGenerator() : new RealGeminiImageGenerator()
+  }
   return lazyImageGenerator
 }
 
@@ -153,7 +167,9 @@ export function setImageGenerator(generator: ImageGenerator): void {
 
 export function getRecipeImporter(): RecipeImporter {
   if (recipeImporterOverride) return recipeImporterOverride
-  if (!lazyRecipeImporter) lazyRecipeImporter = new RealRecipeImporter()
+  if (!lazyRecipeImporter) {
+    lazyRecipeImporter = e2eFakesActive() ? e2eFakes.recipeImporter() : new RealRecipeImporter()
+  }
   return lazyRecipeImporter
 }
 
@@ -163,7 +179,7 @@ export function setRecipeImporter(importer: RecipeImporter): void {
 
 export function getRecipeProbe(): RecipeProbe {
   if (recipeProbeOverride) return recipeProbeOverride
-  if (!lazyRecipeProbe) lazyRecipeProbe = new RealRecipeProbe()
+  if (!lazyRecipeProbe) lazyRecipeProbe = e2eFakesActive() ? e2eFakes.recipeProbe() : new RealRecipeProbe()
   return lazyRecipeProbe
 }
 
@@ -173,7 +189,9 @@ export function setRecipeProbe(probe: RecipeProbe): void {
 
 export function getWebSearchProvider(): WebSearchProvider {
   if (webSearchProviderOverride) return webSearchProviderOverride
-  if (!lazyWebSearchProvider) lazyWebSearchProvider = new RealWebSearchProvider()
+  if (!lazyWebSearchProvider) {
+    lazyWebSearchProvider = e2eFakesActive() ? e2eFakes.webSearchProvider() : new RealWebSearchProvider()
+  }
   return lazyWebSearchProvider
 }
 
@@ -183,7 +201,7 @@ export function setWebSearchProvider(provider: WebSearchProvider): void {
 
 export function getMailer(): Mailer {
   if (mailerOverride) return mailerOverride
-  if (!lazyMailer) lazyMailer = new RealResendMailer()
+  if (!lazyMailer) lazyMailer = e2eFakesActive() ? e2eFakes.mailer() : new RealResendMailer()
   return lazyMailer
 }
 

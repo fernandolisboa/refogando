@@ -13,6 +13,10 @@ const eslintConfig = [
       'build/**',
       'next-env.d.ts',
       'drizzle/**',
+      // Saídas do Playwright (#589).
+      'playwright-report/**',
+      'test-results/**',
+      'blob-report/**',
     ],
   },
   {
@@ -24,6 +28,14 @@ const eslintConfig = [
     files: ['test/**'],
     rules: {
       '@next/next/no-html-link-for-pages': 'off',
+    },
+  },
+  {
+    // E2E (#589): as fixtures do Playwright recebem um parâmetro chamado `use` (API do `test.extend`), que o
+    // `rules-of-hooks` confunde com o hook `use` do React. Não há componente React em `e2e/`.
+    files: ['e2e/**'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
     },
   },
   {

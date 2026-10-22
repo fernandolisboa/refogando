@@ -34,6 +34,7 @@ Comandos que você vai usar:
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint
 npm test             # vitest — dois projetos: "node" (Postgres real) e "ui" (jsdom)
+npm run e2e          # Playwright de fumaça (ver docs/e2e.md)
 npm run db:generate  # gera a migração Drizzle a partir do schema
 ```
 

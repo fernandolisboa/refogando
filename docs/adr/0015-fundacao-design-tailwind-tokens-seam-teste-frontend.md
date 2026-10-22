@@ -46,3 +46,7 @@ Playwright fica **deferido** como opção local/não-gating: quando o CI ganhar 
 - As telas #55–#63 herdam um sistema de tokens AA, um shell responsivo e um seam de teste de UI — e devem ser construídas com `/impeccable`.
 - Convenções pra downstream: superfícies de UI (painel/cartão visual) usam `--color-surface` + `--radius-lg` + `--shadow-sm` — componentes de **domínio** não se chamam Card/RecipeCard (usar nomes de Receita, CONTEXT.md). O **selo de proveniência** colore por **Proveniência**: `--color-accent`/`--color-accent-surface` só para `origin=catalog` (curado/editorial) vs neutro para `ai_*`/`user_edited`; **popularidade/Comunidade é eixo separado (Visibilidade) e NUNCA colore o selo de confiança**. Elevação tem dois passos (`--shadow-sm` chips/cards, `--shadow-md` popovers/menus). Estados vazios/erro usam tom morno, não alarmante.
 - Reversível: trocar Tailwind ou o seam de teste não toca domínio/seam de servidor.
+
+## Adendo (2026-10-22)
+
+O deferimento do Playwright foi realizado no ADR-0047 (#589): E2E de fumaça contra `next build` + `next start` locais, no modo fake, num job `e2e` do CI.
