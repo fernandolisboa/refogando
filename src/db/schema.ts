@@ -1124,6 +1124,8 @@ export const webSearchUsageDaily = pgTable('web_search_usage_daily', {
 // `briefing_item` é um ingrediente com `strength` (força). SEM `categoria` (CONTEXT.md
 // proíbe Categoria/Tag no Briefing). A posse vive na `creation_session` (que tem
 // `user_id`); o Briefing é pendurado na sessão via `creation_session.briefing_id`.
+// Exceção (ADR-0049): na conta ELIMINADA, campos e itens são limpos na hora, e o Briefing
+// sem sessão sai aos 24 meses.
 export const briefing = pgTable('briefing', {
   id: uuid('id').primaryKey().defaultRandom(),
   // Cozinha DATA-DRIVEN (#318, ADR-0025): espelha recipe.cozinha — `text` + FK p/
@@ -1242,6 +1244,9 @@ export const generation = pgTable(
     // TODAS NULLABLE e best-effort: linhas pré-#463 e gerações sem telemetria do provedor ficam nulas
     // (não invalidam nada). Gravar o custo (não recomputar) congela o que cada geração custou mesmo
     // quando os preços do provedor mudam. `cost_usd` é numeric → trafega string|null (precisão exata).
+    // RETENÇÃO (ADR-0049): aos 24 meses, na conta viva tokens e custo viram NULL (a linha fica: é o histórico
+    // de criação); na conta eliminada a linha sai, depois a sessão sem geração e o Briefing sem sessão. Na
+    // eliminação, `advisory_comment` e `prompt_stamp` viram NULL na hora.
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),

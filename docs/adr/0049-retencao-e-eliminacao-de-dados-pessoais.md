@@ -17,7 +17,7 @@ Issues #473 (retenção e eliminação) e #596 (EXIF/GPS no servidor). Base: o s
 
    | Destino | O quê |
    |---|---|
-   | Apaga | Receitas privadas (em cascata: traduções, ingredientes, tags, embedding e, se a Receita já foi pública, saves, avaliações e denúncias de terceiros; as fotos dessas avaliações saem junto); a face delas pelo ref-count de sempre (`reapOrphanImage`), menos a face de linhagem com Receita de catálogo ou de outro dono; as imagens de galeria da pessoa que nenhuma Receita usa, com a mesma ressalva de linhagem; coleções, salvos, Listas de compras, follows nos dois sentidos, notificações recebidas, Cardápio, Despensa, sessões, credenciais (`account`) e `verification` com `value` = id da conta. |
+   | Apaga | Receitas privadas (em cascata: traduções, ingredientes, tags, embedding e, se a Receita já foi pública, saves, avaliações e denúncias de terceiros; as fotos dessas avaliações saem junto); a face delas pelo ref-count de sempre (a que outra Receita ainda usa fica), num DELETE só para todas as faces, menos a face de linhagem com Receita de catálogo ou de outro dono; as imagens de galeria da pessoa que nenhuma Receita usa, com a mesma ressalva de linhagem; coleções, salvos, Listas de compras, follows nos dois sentidos, notificações recebidas, Cardápio, Despensa, sessões, credenciais (`account`) e `verification` com `value` = id da conta. |
    | Limpa (a linha fica) | Todas as sessões de criação: a Transcrição sai, `creation_session.free_text`, `generation.advisory_comment` e `generation.prompt_stamp` viram NULL, o Briefing perde os itens e os campos (`observacoes`, `cozinha`, `porcoes`, `dificuldade` NULL; `restricoes` vazio). O `prompt_stamp` não tem leitor no código e carrega eixos do Perfil (nível, voz), então vira NULL inteiro. |
    | Fica | Receitas públicas e avaliações, com o autor anonimizado (a foto da avaliação sai 180 dias depois, pelo `account-purge`); denúncias feitas pela pessoa e os papéis de moderação (`moderated_by`, `reviewed_by`, `resolved_by`); notificações em que ela é a autora do evento; os ledgers de uso, até o prazo da decisão 3; a auditoria DSAR. |
 
@@ -27,7 +27,9 @@ Issues #473 (retenção e eliminação) e #596 (EXIF/GPS no servidor). Base: o s
    - `emitNotification` não notifica destinatário anonimizado.
 
 2. **Varredura diária das contas já eliminadas** (cron `account-purge`, `purgeAnonymizedPrivateContent` em `src/server/legal/account-purge-scan.ts`).
-   - Candidata: conta com `anonymized_at` e alguma sobra (`privateLeftovers`), na ordem de `anonymized_at`. Lote de 25 contas e orçamento de 40 s (reserva de 15 s): sem tempo, não começa conta nova.
+   - Candidata: conta com `anonymized_at` e alguma sobra (`privateLeftovers`). A ordem muda todo dia (`md5(id || data)`). Lote de 25 contas.
+   - A seleção é um comando só para todas as contas: a sobra de galeria é calculada uma vez, com o dono tirado da própria imagem (`created_by`), e não varre `recipe_image` por conta.
+   - O orçamento (40 s, reserva de 15 s, `src/server/time-budget.ts`) é da passada inteira do cron, contado do começo da rota. A ordem das etapas é: cadastros pendentes (a promessa das 48 h, barata), fotos de avaliação com 180 dias, conteúdo privado. Antes de cada conta, inclusive a primeira, a varredura confere se ainda cabe; as que ficaram saem como `privateAccountsDeferred=N` na linha `[account-purge]`.
    - Cada conta roda na sua transação, re-checa a anonimização sob lock e usa a mesma função da decisão 1.
    - Não há prazo de espera. É a regra da decisão 1 aplicada a quem eliminou antes dela, e é também a rede das corridas: uma geração em voo que grava Receita depois do commit da eliminação.
    - Quando algo muda, grava `DSAR_FULFILLED` (`account_private_purge`, com hash, `actor_id` NULL).
@@ -45,10 +47,11 @@ Issues #473 (retenção e eliminação) e #596 (EXIF/GPS no servidor). Base: o s
    | `verification` | quando vence | Idem; a lápide do cadastro expurgado vale os 90 dias dela. |
    | Ticket de takedown encerrado | 12 meses após o encerramento (último registro de atendimento ou recusa; sem ele, o recebimento) | Sai o ticket com status resolvido, recebido antes do corte e sem `DSAR_FULFILLED`/`DSAR_REJECTED` do caso depois do corte. Não há coluna de encerramento, e o último registro da auditoria dá a data sem migração. Ticket aberto nunca sai. |
    | Auditoria DSAR | 5 anos (1827 dias) | `purgeDsarEventsBefore`, o único DELETE da trilha. |
-   | `rate_limit` (chave = IP) | até 2 horas | A limpeza (`/api/cron/rate-limit-cleanup`) passa a rodar de hora em hora: contador de 1 h mais até 1 h até a passada seguinte. |
+   | `rate_limit` (chave = IP) | até 2 horas | A limpeza (`/api/cron/rate-limit-cleanup`) passa a rodar de hora em hora (`15 * * * *`) e apaga o registro 50 minutos depois da última tentativa (a maior janela é de 60 s). Com a espera até a passada seguinte, o IP sai em até 2 horas, mesmo com a passada atrasada alguns minutos. |
 
    - Cada passo apaga em lotes de 5000, até 10 por passada, cada lote no seu autocommit. Os passos são idempotentes, então não há transação em volta.
-   - A passada tem orçamento de 40 s com reserva de 15 s. Esgotado, não começa lote nem passo novo: o passo que não começou fica para o dia seguinte, e a linha diz `deferredSteps=N`.
+   - A passada tem orçamento de 40 s com reserva de 15 s (o mesmo `timeBudget` do `account-purge`). Esgotado, não começa lote nem passo novo: o passo que não começou fica para o dia seguinte, e a linha diz `deferredSteps=N`.
+   - A data de encerramento do ticket vem do evento `DSAR_FULFILLED`/`DSAR_REJECTED`, então `resolveTakedownTicket` (`src/server/legal/takedown-resolve.ts`) tem de continuar sendo o único jeito de encerrar um ticket. Um ticket encerrado à mão no SQL, sem o evento, seria contado a partir do recebimento.
    - Falha de um passo não impede os outros e faz a passada responder 500.
    - Cada passada escreve uma linha `[retencao]`, só com contagens.
 
@@ -75,7 +78,7 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
 
 - **Hard-delete da linha `users`.** `recipe.owner_id` é RESTRICT, e as Receitas públicas servem a terceiros.
 - **Apagar `generation` e `briefing` na eliminação.**
-  - `generation` é o ledger de custo do texto (#463, painel do /admin), e `generation.creation_session_id` é CASCADE: apagar a sessão apagaria o custo calado.
+  - `generation` é o ledger de custo do texto (#463; painel de custo do /admin, #465), e `generation.creation_session_id` é CASCADE: apagar a sessão apagaria o custo calado.
   - O CHECK `creation_session_structured_briefing_chk` reprova apagar o Briefing de sessão estruturada (o SET NULL viola o CHECK, 23514).
   - Os cascos saem pela retenção de 24 meses, na ordem certa.
 - **Coluna `resolved_at` no ticket.** Exige migração. O último evento de encerramento na auditoria dá a mesma data, nunca antes.
@@ -93,10 +96,10 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
   - `session.expires_at`;
   - `created_at` de `extraction_event`, `image_generation` e `meal_plan_suggestion_event` (os compostos começam por `user_id`).
 
-  `recipe_review.recipe_id` só tem índice parcial. Isso é aceitável no volume de hoje; os índices ficam para uma migração futura. `verification.expires_at` já tem índice.
+  `recipe_review.recipe_id` só tem índice parcial. Isso é aceitável no volume de hoje; os índices ficam para uma migração futura (#601). `verification.expires_at` já tem índice.
 - **Blob depois do commit é best-effort.** Um timeout ou o Blob fora do ar deixa blob sem referência. O banco já está limpo, sem ponteiro de PII. Follow-up: varredura de órfãos pelo `list()` do `@vercel/blob`.
 - **#596 não limpa o passado.** Avatar e foto de receita enviados antes podem ter EXIF, se o cliente mandou os bytes crus. Follow-up: auditoria só de leitura (`metadata().exif`) nos blobs próprios e re-encode no lugar.
-- **Conta que falha todo dia fica no primeiro lote** (a ordem é por `anonymized_at`) e ocupa uma das 25 vagas até alguém corrigir. A linha de falha no log é o sinal.
+- **Conta que falha todo dia** volta em toda passada, mas a ordem do lote muda todo dia (hash do id com a data), então ela não segura as outras contas. A linha de falha no log é o sinal.
 - **Adiamento:** um passo com mais de 50 mil linhas vencidas leva vários dias, e o orçamento esgotado empurra passos para o dia seguinte (`deferredSteps=N`). O acúmulo inicial (sessões vencidas desde o começo) é o caso esperado.
 - **A primeira varredura é irreversível.** Ela apaga o conteúdo privado das contas eliminadas antes desta regra. Há backup do Neon antes do merge (handoff 82).
 - **Painel de custo:** as gerações das Receitas privadas apagadas perdem `recipe_id` (SET NULL), então o bloco de desfecho muda. O gasto por dia e o total não mudam.

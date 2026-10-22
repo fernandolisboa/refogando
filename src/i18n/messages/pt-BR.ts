@@ -2143,7 +2143,7 @@ export const ptBR = {
     rodapeVersaoRotulo: 'Versão',
     rodapeVersao: 'v2',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-10-13',
+    rodapeData: '2026-10-22',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão jurídica em andamento',
   },

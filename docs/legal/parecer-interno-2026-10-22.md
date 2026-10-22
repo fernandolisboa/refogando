@@ -83,7 +83,7 @@ Regra (de `docs/legal/revisao-tos-allowlist.md`): **excluir** quando os Termos v
 
 - **Eliminação da conta:** anonimiza a linha `users` e apaga na hora tudo o que é só da pessoa (receitas privadas, histórico de criação e conversas, salvos, coleções, listas de compras, Cardápio, Despensa, seguidores e seguidos, notificações, sessões e credenciais). Ficam, sem identificação, as receitas públicas e as avaliações (foto da avaliação apagada 180 dias depois) e os registros de custo. Contas já eliminadas são limpas pela passada diária. Base: art. 16 (eliminação ao fim do tratamento); o que fica é anonimizado (art. 12) e serve a terceiros que salvaram, avaliaram ou planejaram com o conteúdo público.
 - **Registros de uso de IA:** 24 meses (custo e abuso); o de extração, 30 dias (só alimenta uma cota de 24 h).
-- **Sessões:** apagadas quando vencem (o IP e o navegador vão junto). Rate limit por IP: até 2 horas (contador de 1 hora, limpeza de hora em hora).
+- **Sessões:** apagadas quando vencem (o IP e o navegador vão junto). Rate limit por IP: até 2 horas (o registro sai 50 minutos depois da última tentativa, na limpeza de hora em hora).
 - **Tickets de takedown encerrados:** 12 meses após o encerramento (o último registro de atendimento ou recusa na auditoria; sem ele, o recebimento). Abertos nunca são apagados automaticamente.
 - **Auditoria DSAR:** 5 anos (prazo da ação punitiva da administração, Lei 9.873/1999, art. 1º, e o mesmo prazo do registro de incidentes), depois apagada.
 - **Registros técnicos (logs):** não vão ao banco; ficam na Vercel pelo prazo do plano (hoje 1 dia, 30 com Observability Plus).
