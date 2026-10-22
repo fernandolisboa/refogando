@@ -34,6 +34,11 @@ describe('isCrossSiteRequest', () => {
     expect(isCrossSiteRequest(req('  Same-Origin '))).toBe(false)
     expect(isCrossSiteRequest(req('CROSS-SITE'))).toBe(true)
   })
+
+  it('cabeçalho presente mas vazio bloqueia (só a ausência passa; ≠ o intake de /api/client-errors)', () => {
+    expect(isCrossSiteRequest(req(''))).toBe(true)
+    expect(isCrossSiteRequest(req('   '))).toBe(true)
+  })
 })
 
 describe('crossSiteForbidden', () => {

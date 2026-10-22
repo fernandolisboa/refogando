@@ -3,6 +3,7 @@ import { GET } from '@/app/api/me/export/route'
 import { getDb } from '@/server/deps'
 import { eq } from 'drizzle-orm'
 import {
+  account,
   creationSession,
   extractionEvent,
   generation,
@@ -10,13 +11,14 @@ import {
   mealPlanSuggestionEvent,
   notification,
   pantryItem,
+  recipe,
   session,
   shoppingList,
   shoppingListItem,
   userFollow,
   users,
 } from '@/db/schema'
-import { promptStampFor } from '@/domain/briefing'
+import { PROMPT_VERSION, promptStampFor } from '@/domain/briefing'
 import { SCHEMA_VERSION_RECEITA } from '@/domain/recipe'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import {
@@ -41,13 +43,17 @@ import {
  * notificações não trazem a identidade do ator); só o conteúdo do PRÓPRIO titular (receita de
  * outro dono NÃO aparece).
  *
- * #595 completou o export: imagens do titular, acessos (sem o token da sessão), denúncias que ELE fez
- * (nunca as de terceiros sobre ele), registros de uso da Extração e da Sugestão de cardápio, e tokens/custo
- * das gerações. O arquivo baixado leva a data do `exportedAt` no nome.
+ * #595 completou o export: imagens do titular, acessos (sem o token da sessão), logins (sem senha nem
+ * tokens), plano e sanções da conta, moderação do conteúdo dele (sem o id do Curador), denúncias que ELE
+ * fez (nunca as de terceiros sobre ele), registros de uso da Extração e da Sugestão de cardápio, e
+ * tokens/custo das gerações (o `promptStamp` sem texto de admin). A resposta sai em streaming, só para a
+ * mesma origem ou o endereço digitado, e o `Content-Disposition` leva a data do `exportedAt` no nome.
  */
 
-function get(headers?: Headers): Promise<Response> {
-  return GET(new Request('http://localhost/api/me/export', { headers }))
+function get(headers?: Headers, site?: string): Promise<Response> {
+  const h = new Headers(headers)
+  if (site !== undefined) h.set('sec-fetch-site', site)
+  return GET(new Request('http://localhost/api/me/export', { headers: h }))
 }
 
 describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
@@ -229,13 +235,14 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     expect(ids).not.toContain(foreignRecipe)
   })
 
-  it('#595: imagens, acessos, denúncias feitas, registros de uso e custo das gerações — sem credencial nem terceiros', async () => {
+  it('#595: imagens, acessos, logins, sanções, moderação, denúncias feitas, registros de uso e custo das gerações — sem credencial nem terceiros', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'completo@me-export.test' })
     const other = await seedUser({ email: 'outro@me-export.test', handle: 'outro-export' })
+    const curator = await seedUser({ email: 'curador@me-export.test', handle: 'curador-export' })
     const db = getDb()
 
-    // Imagens: uma gerada pelo titular na receita dele; a de um terceiro na receita do TERCEIRO (o seed
-    // reaponta a capa da receita-alvo, então cada uma fica na sua).
+    // Imagens: uma gerada pelo titular na receita dele (moderada); a de um terceiro na receita do TERCEIRO
+    // (o seed reaponta a capa da receita-alvo, então cada uma fica na sua).
     const ownRecipe = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: userId })
     const foreign = await seedRecipe({
       origin: 'ai_structured',
@@ -248,11 +255,58 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       provenance: 'ai_generated',
       blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/minha.png',
       createdBy: userId,
+      moderated: { curatorId: curator, reason: 'Imagem fora do tema' },
     })
     const foreignImage = await seedRecipeImage({
       recipeId: foreign,
       blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/de-terceiro.webp',
       createdBy: other,
+    })
+
+    // Moderação do conteúdo do titular: a receita saiu do pool; a avaliação dele foi moderada.
+    await db
+      .update(recipe)
+      .set({ moderationRemovedAt: new Date(), moderatedBy: curator, moderationReason: 'Receita fora das regras' })
+      .where(eq(recipe.id, ownRecipe))
+    await seedReview({
+      userId,
+      recipeId: foreign,
+      rating: 1,
+      comment: 'Não gostei',
+      moderated: { curatorId: curator, reason: 'Avaliação ofensiva' },
+    })
+
+    // Sanções sobre a conta (depois do login: o Better Auth só barra banido ao CRIAR a sessão).
+    const banExpires = new Date('2027-01-01T00:00:00Z')
+    await db
+      .update(users)
+      .set({
+        banned: true,
+        banReason: 'Spam repetido',
+        banExpires,
+        imageGenBlockedAt: new Date(),
+        imageGenBlockedBy: curator,
+        imageGenBlockedReason: 'Abuso na geração de imagem',
+      })
+      .where(eq(users.id, userId))
+
+    // Logins: senha (hash) e Google (tokens). Nada disso pode sair, só provedor, conta, escopo e datas.
+    await db.insert(account).values({
+      userId,
+      accountId: userId,
+      providerId: 'credential',
+      password: 'HASH-DA-SENHA-SIGILOSO',
+    })
+    await db.insert(account).values({
+      userId,
+      accountId: 'google-sub-123',
+      providerId: 'google',
+      accessToken: 'ACCESS-TOKEN-SIGILOSO',
+      refreshToken: 'REFRESH-TOKEN-SIGILOSO',
+      idToken: 'ID-TOKEN-SIGILOSO',
+      accessTokenExpiresAt: new Date('2026-12-01T00:00:00Z'),
+      refreshTokenExpiresAt: new Date('2027-06-01T00:00:00Z'),
+      scope: 'openid email profile',
     })
 
     // Acesso: IP e navegador na sessão de login do titular; o token NUNCA pode sair.
@@ -284,7 +338,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       costUsd: '0.012345',
     })
 
-    // Uma geração de texto com tokens, custo e carimbo do prompt.
+    // Uma geração de texto com tokens, custo e carimbo do prompt — com texto de admin e de Curador nos eixos.
     const [cs] = await db
       .insert(creationSession)
       .values({ userId, mode: 'free_text', freeText: 'um bolo de cenoura' })
@@ -298,29 +352,59 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       inputTokens: 900,
       outputTokens: 1500,
       costUsd: '0.050000',
-      promptStamp: promptStampFor(),
+      promptStamp: promptStampFor({
+        nivelChef: 'iniciante',
+        vozCozinha: { nome: 'baiana', notaCurada: 'NOTA-CURADA-DO-CURADOR' },
+        variacaoDivergente: { poloA: 'leve', poloB: 'indulgente', instrucao: 'INSTRUCAO-DO-ADMIN' },
+      }),
     })
 
     const res = await get(headers)
     expect(res.status).toBe(200)
     const raw = await res.text()
 
-    // Credencial e conteúdo de terceiros nunca aparecem no texto do dump.
-    expect(raw).not.toContain(loginRow.token)
-    expect(raw).not.toContain('Denúncia de terceiro')
-    expect(raw).not.toContain('de-terceiro.webp')
+    // Credenciais, ids de Curador, texto de admin e conteúdo de terceiros nunca aparecem no texto do dump.
+    for (const secret of [
+      loginRow.token,
+      'HASH-DA-SENHA-SIGILOSO',
+      'ACCESS-TOKEN-SIGILOSO',
+      'REFRESH-TOKEN-SIGILOSO',
+      'ID-TOKEN-SIGILOSO',
+      curator,
+      'NOTA-CURADA-DO-CURADOR',
+      'INSTRUCAO-DO-ADMIN',
+      'Denúncia de terceiro',
+      'de-terceiro.webp',
+    ]) {
+      expect(raw).not.toContain(secret)
+    }
+    expect(raw).not.toMatch(/accessTokenExpiresAt|refreshTokenExpiresAt|"password"|"idToken"/)
 
     const dump = JSON.parse(raw) as {
-      recipes: Array<{ id: string; imageId: string | null }>
+      account: Record<string, unknown>
+      recipes: Array<{ id: string; imageId: string | null } & Record<string, unknown>>
       recipeImages: Array<Record<string, unknown>>
+      reviews: Array<Record<string, unknown>>
       loginSessions: Array<Record<string, unknown>>
+      logins: Array<Record<string, unknown>>
       reports: Array<Record<string, unknown>>
       extractionEvents: Array<{ createdAt: string }>
       mealPlanSuggestionEvents: Array<Record<string, unknown>>
       creationSessions: Array<{ generations: Array<Record<string, unknown>> }>
     }
 
-    // Imagens: só a do titular, com proveniência e URLs; a capa da receita dele aponta para ela.
+    // Plano e sanções na conta, sem quem bloqueou.
+    expect(dump.account).toMatchObject({
+      plan: 'free',
+      banned: true,
+      banReason: 'Spam repetido',
+      banExpires: banExpires.toISOString(),
+      imageGenBlockedAt: expect.any(String),
+      imageGenBlockedReason: 'Abuso na geração de imagem',
+    })
+    expect(dump.account).not.toHaveProperty('imageGenBlockedBy')
+
+    // Imagens: só a do titular, com proveniência, URLs e a moderação; a capa da receita dele aponta para ela.
     expect(dump.recipeImages).toEqual([
       {
         id: ownImage,
@@ -329,11 +413,27 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
         blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/minha.png',
         detailUrl: null,
         thumbUrl: null,
+        moderatedAt: expect.any(String),
+        moderatedReason: 'Imagem fora do tema',
         createdAt: expect.any(String),
       },
     ])
     expect(dump.recipeImages.map((i) => i.id)).not.toContain(foreignImage)
-    expect(dump.recipes.find((r) => r.id === ownRecipe)?.imageId).toBe(ownImage)
+    const own = dump.recipes.find((r) => r.id === ownRecipe)
+    expect(own?.imageId).toBe(ownImage)
+
+    // Moderação da receita e da avaliação do titular, sem o `moderatedBy`.
+    expect(own).toMatchObject({ moderationRemovedAt: expect.any(String), moderationReason: 'Receita fora das regras' })
+    expect(own).not.toHaveProperty('moderatedBy')
+    expect(dump.reviews).toEqual([
+      expect.objectContaining({
+        recipeId: foreign,
+        comment: 'Não gostei',
+        moderatedAt: expect.any(String),
+        moderatedReason: 'Avaliação ofensiva',
+      }),
+    ])
+    expect(dump.reviews[0]).not.toHaveProperty('moderatedBy')
 
     // Acessos: ip, navegador e as três datas; sem `token` nem `id`.
     expect(dump.loginSessions).toHaveLength(1)
@@ -346,6 +446,21 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     })
     expect(dump.loginSessions[0]).not.toHaveProperty('token')
     expect(dump.loginSessions[0]).not.toHaveProperty('id')
+
+    // Logins: só provedor, conta no provedor, escopo e datas (objeto exato: nenhuma chave a mais).
+    expect(dump.logins).toHaveLength(2)
+    expect(dump.logins).toEqual(
+      expect.arrayContaining([
+        { provider: 'credential', accountId: userId, scope: null, createdAt: expect.any(String), updatedAt: expect.any(String) },
+        {
+          provider: 'google',
+          accountId: 'google-sub-123',
+          scope: 'openid email profile',
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+        },
+      ]),
+    )
 
     // Denúncias: só a que o titular fez, sem o Curador que resolveria.
     expect(dump.reports).toEqual([
@@ -373,7 +488,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       },
     ])
 
-    // Geração: tokens, custo e o carimbo do prompt, junto do que já saía.
+    // Geração: tokens, custo e o carimbo do prompt só com versão e rótulos dos eixos.
     expect(dump.creationSessions).toHaveLength(1)
     expect(dump.creationSessions[0].generations).toEqual([
       expect.objectContaining({
@@ -383,14 +498,86 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
         inputTokens: 900,
         outputTokens: 1500,
         costUsd: '0.050000',
-        promptStamp: promptStampFor(),
+        promptStamp: {
+          version: PROMPT_VERSION,
+          axes: {
+            nivelChef: 'iniciante',
+            vozCozinha: { nome: 'baiana' },
+            variacaoDivergente: { poloA: 'leve', poloB: 'indulgente' },
+          },
+        },
         variantLabel: null,
         variantChosen: null,
       }),
     ])
   })
 
-  it('#595: o arquivo baixado leva a data do exportedAt no nome', async () => {
+  it('#595: Sec-Fetch-Site de outro site → 403 antes da sessão; a interface (same-origin) e o endereço digitado (none) baixam', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'origem@me-export.test' })
+    for (const site of ['cross-site', 'same-site']) {
+      const res = await get(headers, site)
+      expect(res.status).toBe(403)
+      expect(res.headers.get('cache-control')).toBe('no-store')
+      await expect(res.json()).resolves.toEqual({ error: 'origem_nao_permitida' })
+    }
+    // Sem sessão e de outro site: o 403 vem antes (não vira oráculo de "logado ou não").
+    expect((await get(undefined, 'cross-site')).status).toBe(403)
+
+    for (const site of ['same-origin', 'none']) {
+      const res = await get(headers, site)
+      expect(res.status).toBe(200)
+      await expect(res.json()).resolves.toMatchObject({ format: 'refogando-account-export/v1' })
+    }
+  })
+
+  it('#595: conta grande sai em streaming, seção por seção, acima dos 4,5 MB e com JSON válido', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'grande@me-export.test' })
+    const db = getDb()
+    const [list] = await db
+      .insert(shoppingList)
+      .values({ userId, name: 'Lista enorme' })
+      .returning({ id: shoppingList.id })
+    const ITEMS = 24_000
+    const BATCH = 8_000
+    for (let start = 0; start < ITEMS; start += BATCH) {
+      await db.insert(shoppingListItem).values(
+        Array.from({ length: BATCH }, (_, k) => ({
+          listId: list.id,
+          nome: `Item ${start + k} da feira grande`,
+          matchKey: `n:item ${start + k}`,
+          quantidade: '1',
+          unidade: 'unidade' as const,
+        })),
+      )
+    }
+
+    const res = await get(headers, 'same-origin')
+    expect(res.status).toBe(200)
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let raw = ''
+    let chunks = 0
+    let bytes = 0
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      chunks += 1
+      bytes += value.byteLength
+      raw += decoder.decode(value, { stream: true })
+    }
+    raw += decoder.decode()
+
+    // Um pedaço por seção de topo (bem mais de um), e o total passa do teto de uma resposta não transmitida.
+    expect(chunks).toBeGreaterThan(10)
+    expect(bytes).toBeGreaterThan(4.5 * 1024 * 1024)
+    const dump = JSON.parse(raw) as { shoppingLists: Array<{ items: unknown[] }> }
+    expect(dump.shoppingLists).toHaveLength(1)
+    expect(dump.shoppingLists[0].items).toHaveLength(ITEMS)
+    // O mesmo texto de um `JSON.stringify(dump, null, 2)`.
+    expect(raw).toBe(JSON.stringify(dump, null, 2))
+  })
+
+  it('#595: o Content-Disposition leva a data do exportedAt no nome', async () => {
     const { headers } = await seedSessionHeaders({ email: 'nome-arquivo@me-export.test' })
     const res = await get(headers)
     expect(res.status).toBe(200)
