@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { inArray, lt } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { dsarAuditEvent } from '@/db/schema'
 import type { DsarEventType } from '@/domain/dsar'
@@ -6,8 +7,9 @@ import type { DsarEventType } from '@/domain/dsar'
 /**
  * Gravação da trilha de auditoria DSAR — APPEND-ONLY (issue #395, GAP-5;
  * `docs/legal/takedown-e-remocao-titular.md` §5). Este módulo é a ÚNICA porta de escrita da tabela
- * `dsar_audit_event`, e expõe SÓ `recordDsarEvent` (INSERT). NÃO há — e não deve haver — nenhuma função
- * de UPDATE/DELETE de registros de auditoria: append-only é garantido pela ausência desses caminhos.
+ * `dsar_audit_event`: `recordDsarEvent` (INSERT) e `purgeDsarEventsBefore` (o ÚNICO DELETE — só registros
+ * com 5 anos ou mais, pela retenção do ADR-0049). NÃO há — e não deve haver — UPDATE nem outro DELETE: um
+ * registro nunca muda e só sai pela idade.
  *
  * `recordDsarEvent` é reutilizável pelos 4 tipos: nesta fatia SÓ `DSAR_FULFILLED` é EMITIDO (por
  * `clearSourceAttribution`, na remoção efetiva do nome); os outros 3 ficam prontos para o fluxo do
@@ -97,4 +99,23 @@ export async function recordDsarEvent(db: DsarAuditDb, input: RecordDsarEventInp
     })
     .returning({ id: dsarAuditEvent.id })
   return row.id
+}
+
+/**
+ * Apaga UM lote (até `batch`) de eventos com `created_at < cutoff` e devolve quantos saíram — o ÚNICO
+ * caminho de DELETE da auditoria (retenção de 5 anos, ADR-0049; o cron de retenção passa o corte de
+ * `retentionCutoffs(now).dsarAudit` e repete enquanto o lote vier cheio). Um lote por chamada: o chamador
+ * controla quantos e quando para.
+ */
+export async function purgeDsarEventsBefore(db: Database, cutoff: Date, batch = 5000): Promise<number> {
+  const due = db
+    .select({ id: dsarAuditEvent.id })
+    .from(dsarAuditEvent)
+    .where(lt(dsarAuditEvent.createdAt, cutoff))
+    .limit(batch)
+  const deleted = await db
+    .delete(dsarAuditEvent)
+    .where(inArray(dsarAuditEvent.id, due))
+    .returning({ id: dsarAuditEvent.id })
+  return deleted.length
 }
