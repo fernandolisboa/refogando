@@ -11,6 +11,7 @@ import {
   ERROR_MESSAGE_MAX,
   buildClientErrorReport,
   errorCodeOf,
+  errorLogFields,
   errorMessageOf,
   errorNameOf,
   formatClientErrorLine,
@@ -207,6 +208,20 @@ describe('campos curtos', () => {
     expect(errorCodeOf(Object.assign(new Error('x'), { code: 'maria@x' }))).toBeNull()
     expect(errorCodeOf(new Error('x'))).toBeNull()
     expect(errorCodeOf('x')).toBeNull()
+  })
+
+  it('errorLogFields: nome saneado e código, nunca a mensagem', () => {
+    expect(errorLogFields(new Error('segredo do usuário'))).toBe('erro=Error')
+    class DrizzleQueryError extends Error {
+      override name = 'DrizzleQueryError'
+    }
+    const drizzle = new DrizzleQueryError('Failed query: insert into "users" … params: maria@x.com', {
+      cause: { code: '23505' },
+    })
+    expect(errorLogFields(drizzle)).toBe('erro=DrizzleQueryError codigo=23505')
+    expect(errorLogFields(Object.assign(new Error('x'), { name: 'Erro de maria@x.com' }))).toBe('erro=Error')
+    expect(errorLogFields('segredo')).toBe('erro=string')
+    expect(errorLogFields(undefined)).toBe('erro=undefined')
   })
 
   it('rota do servidor: corta query/hash e troca o que não é da allowlist', () => {

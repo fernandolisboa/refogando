@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/recipes/[id]/image/generate/route'
 import { POST as selectRoute } from '@/app/api/recipes/[id]/images/[imageId]/select/route'
@@ -624,16 +624,26 @@ describe('/api/recipes/[id]/image/generate — cenário (ADR-0044)', () => {
   it('diretor que lança ⇒ regras e a imagem sai mesmo assim (falha acessória nunca derruba a geração)', async () => {
     const claude = new FakeClaudeClient()
     claude.directImageScene = async () => {
-      throw new Error('boom')
+      throw new Error('boom com o texto da receita')
     }
     setClaudeClient(claude)
     const { headers, userId } = await seedSessionHeaders({ email: 'cena-lanca@gen.test' })
     const id = await seedOwned(userId)
 
-    const res = await POST(genReq(id, headers), ctx(id))
-    expect(res.status).toBe(200)
-    expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'caseiro', fonte: 'regras' })
-    expect(gen.calls).toBe(1)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const res = await POST(genReq(id, headers), ctx(id))
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { scene: unknown }).scene).toEqual({ registro: 'caseiro', fonte: 'regras' })
+      expect(gen.calls).toBe(1)
+      // Só nome + código (ADR-0048): a mensagem do erro não vai para o log.
+      expect(warn).toHaveBeenCalledWith('[image-scene] diretor lançou, seguindo com as regras: erro=Error')
+      // A linha de antes interpolava `err.message`; agora a mensagem não aparece em nenhum argumento.
+      const logged = warn.mock.calls.flat().map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a)))
+      expect(logged.join(' ')).not.toContain('texto da receita')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('cenário inválido no corpo ⇒ ignorado (automático: o diretor decide)', async () => {
