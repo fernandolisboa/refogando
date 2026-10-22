@@ -11,7 +11,7 @@ Issue #589, decisão no [ADR-0047](adr/0047-e2e-fumaca-playwright-modo-fake.md).
 | `criar-receita` | gaveta Criar → Prompt aberto → Gerar → "Ver receita" → página da Receita, sem diálogo sobrando (#581) |
 | `cardapio-lista` | Receita do seed → Adicionar ao cardápio → Cardápio da semana → lista de compras da semana inteira |
 | `despensa` | ovo e cenoura persistem → "Falta pouco" com farinha e açúcar → "Pôr o que falta na lista" → planeja → "Cozinhei" esvazia a Despensa |
-| `seus-dados` | /me/profile → Baixar meus dados (download JSON com o e-mail da conta) → Excluir minha conta → confirma → home com "Sua conta foi excluída.", deslogado |
+| `seus-dados` | /me/profile → Baixar meus dados (download JSON com o e-mail da conta e o login, sem a senha) → Excluir minha conta → confirma → home com "Sua conta foi excluída.", deslogado |
 
 Tudo roda em dois perfis do Chromium: `desktop` e `celular` (Pixel 7, com o menu hambúrguer). `retries: 0`: teste instável é bug, não se mascara com retry.
 

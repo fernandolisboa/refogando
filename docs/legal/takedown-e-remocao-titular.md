@@ -83,7 +83,7 @@ O titular B **não tem login**, então o atendimento é **mediado pelo operador*
 5. **Escalada além do nome.** `POST /api/admin/attribution/escalate` com `url_unlink` (zera URL e nome) ou `record_deletion` (apaga a receita importada e as imagens próprias), também com prévia por padrão e auditoria com hash. **Quando** escalar continua sendo decisão do operador à luz da orientação jurídica (§4.1).
 6. **Resposta ao titular** dentro do prazo, e **encerramento** do ticket no painel de SLA (`/admin/descoberta`): "Marcar como atendido" grava `DSAR_FULFILLED`; "Recusar" exige motivo e grava `DSAR_REJECTED`. O ticket encerrado sai do painel e do cron de alertas.
 
-> Para o **titular A** (usuário logado), a remoção do nome de **suas próprias** receitas importadas já é **self-service**: o botão na tela de detalhe chama `POST /api/recipes/[id]/clear-attribution`. Esse fluxo está pronto; o que falta é o resto do DSAR de conta (§8).
+> Para o **titular A** (usuário logado), a remoção do nome de **suas próprias** receitas importadas já é **self-service**: o botão na tela de detalhe chama `POST /api/recipes/[id]/clear-attribution`. O resto do DSAR de conta também é self-service: exportação e eliminação em **Editar perfil → Seus dados** (#595; §6).
 
 ---
 
@@ -98,7 +98,7 @@ Cada pedido deve gerar entradas de auditoria (a skill DSAR e o Art. 10 da Res. C
 
 **Retenção mínima de 5 anos** dessas entradas (prova de conformidade). O log deve ser **append-only** e conter o mínimo necessário — **não** armazenar o nome removido em claro se puder ser substituído por hash (senão a auditoria vira uma cópia do dado que se pediu para remover).
 
-> **Situação atual (GAP-5 fechado, PR #402):** a tabela `dsar_audit_event` (`src/server/legal/dsar-audit.ts`) recebe só inserções; `DSAR_FULFILLED` exige hash SHA-256 (CHECK no banco) e nunca guarda o nome em claro. Ressalvas: (a) "só inserção" é garantido pelo código, não por trigger ou permissão no banco; (b) o registro é mantido por 5 anos e depois apagado pelo cron de retenção (`purgeDsarEventsBefore`, o único DELETE da tabela; ADR-0050, atualização de 2026-10-22); (c) a remoção feita pelo **dono** da receita (`clearSourceAttribution`) continua sem entrada de auditoria, porque é o próprio usuário editando a sua cópia, não um pedido de titular.
+> **Situação atual (GAP-5 fechado, PR #402):** a tabela `dsar_audit_event` (`src/server/legal/dsar-audit.ts`) recebe só inserções; `DSAR_FULFILLED` exige hash SHA-256 (CHECK no banco) e nunca guarda o nome em claro. Ressalvas: (a) "só inserção" é garantido pelo código, não por trigger ou permissão no banco; (b) o registro é mantido por 5 anos e depois apagado pelo cron de retenção (`purgeDsarEventsBefore`, o único DELETE da tabela; ADR-0050, atualização de 2026-10-22); (c) a remoção feita pelo **dono** da receita (`clearSourceAttribution`) continua sem entrada de auditoria, porque é o próprio usuário editando a sua cópia, não um pedido de titular; (d) a exportação self-service não é auditada: acesso imediato (art. 19, I).
 
 ---
 
