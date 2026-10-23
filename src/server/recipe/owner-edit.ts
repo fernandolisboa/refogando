@@ -1,12 +1,12 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
+import { recipe, recipeReview, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Cozinha, Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { ImageStore } from '@/server/images/image-store'
 import { applyEdit } from '@/server/recipe/edit'
 import { pgCode } from '@/server/recipe/visibility'
 import { reapOrphanImage } from '@/server/recipe/image'
-import { deleteOrphanBlobs } from '@/server/images/image-blobs'
+import { deleteOrphanBlobs, deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { replaceIngredients } from '@/server/recipe/ingredients'
 import { shouldSuggestNewImage, ingredientSetChanged } from '@/domain/image-review'
 import { conciliarTempoPreparo } from '@/domain/tempo'
@@ -299,6 +299,21 @@ export async function deleteOwnRecipe(
   input: { recipeId: string; viewerId: string },
 ): Promise<'ok' | 'not_found'> {
   const outcome = await db.transaction(async (tx) => {
+    // #603: as Avaliações (de qualquer pessoa) caem em cascata com a Receita, mas o blob da foto não: lê as
+    // URLs ANTES do DELETE (depois dele as linhas já sumiram), na mesma tx. Escopado ao dono pelo join (um
+    // não dono não lê nada). Uma foto gravada entre este SELECT e o DELETE fica órfã; a varredura semanal
+    // de blobs (`/api/cron/blob-sweep`) a recolhe.
+    const reviewPhotos = await tx
+      .select({ photoUrl: recipeReview.photoUrl })
+      .from(recipeReview)
+      .innerJoin(recipe, eq(recipe.id, recipeReview.recipeId))
+      .where(
+        and(
+          eq(recipeReview.recipeId, input.recipeId),
+          eq(recipe.ownerId, input.viewerId),
+          isNotNull(recipeReview.photoUrl),
+        ),
+      )
     const deleted = await tx
       .delete(recipe)
       .where(and(eq(recipe.id, input.recipeId), eq(recipe.ownerId, input.viewerId)))
@@ -308,10 +323,12 @@ export async function deleteOwnRecipe(
     // compartilham o blob (carry-forward #131). image_id null ⇒ reap no-op (Receita sem imagem).
     // Achado I (0077): o reap devolve o original E os derivados WebP da linha apagada.
     const orphanBlobUrls = await reapOrphanImage(tx, deleted[0].imageId, null)
-    return { kind: 'ok' as const, orphanBlobUrls }
+    return { kind: 'ok' as const, orphanBlobUrls, reviewPhotoUrls: reviewPhotos.map((r) => r.photoUrl) }
   })
   if (outcome.kind === 'not_found') return 'not_found'
   // Blob best-effort DEPOIS do commit (não há rollback de blob); só apaga se for NOSSO (store.owns).
   await deleteOrphanBlobs(store, outcome.orphanBlobUrls)
+  // Fotos das Avaliações: podem ser muitas (receita popular), então em paralelo limitado, como a eliminação.
+  await deleteOrphanBlobsConcurrently(store, outcome.reviewPhotoUrls)
   return 'ok'
 }
