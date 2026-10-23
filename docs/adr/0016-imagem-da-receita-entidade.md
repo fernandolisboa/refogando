@@ -43,3 +43,18 @@ Achado I da auditoria de performance (`docs/perf/2026-10-13-auditoria.md` §7): 
 A Imagem da receita enviada pelo dono ou pelo Curador e o avatar (`users.image`) passam pelo mesmo re-encode da foto da avaliação (`reencodeUserPhoto`, `src/server/images/user-photo.ts`) antes de chegar ao Blob público: formato decidido pelos bytes (só JPEG, PNG e WebP de um quadro), orientação EXIF aplicada nos pixels, maior lado limitado (2048 px na receita, 1024 px no avatar) e saída **WebP sem EXIF, ICC nem XMP** (a localização do celular não vaza). Entrada que não passa ⇒ 400 `tipo_invalido`.
 
 Para upload, o "original" (`blob_url`) da seção anterior passa a ser esse WebP re-encodado (qualidade 90, porque a edição imagem-a-imagem do Gemini lê dele), não os bytes que o cliente mandou. A imagem gerada por IA não muda. Fotos enviadas antes desta mudança não foram limpas retroativamente (ADR-0050, riscos).
+
+## Atualização (2026-10-23, #604): o avatar só é apagado se for da conta
+
+`store.owns` confere só o host (é do nosso Vercel Blob?), não de quem é o arquivo. O Better Auth aceitava qualquer string em `image` em `/update-user` e `/sign-up/email`, então uma conta podia gravar a URL de um blob alheio (avatar, foto de avaliação ou de receita) e apagá-lo ao trocar ou remover o avatar, ou ao eliminar a conta. Também podia pôr um pixel de rastreamento no próprio perfil.
+
+- **Entrada fechada:** um hook `before` em `src/lib/auth.ts` recusa `image` em `/update-user` e `/sign-up/email`, e `data.image` em `/admin/update-user` e `/admin/create-user`, com 400 `FIELD_NOT_ALLOWED` (o mesmo contrato de um campo `input:false`). O avatar só muda por `/api/me/avatar`; o Google preenche a foto pelo fluxo OAuth, que não passa por esses caminhos.
+- **Segunda barreira, no ponto de apagar** (`canDeleteAccountAvatar`, `src/server/images/avatar-blob.ts`), usada pela troca/remoção do avatar e pela eliminação da conta:
+  - O avatar novo é guardado sob `avatars/<chave>/`, em que a chave é um HMAC do id da conta com o `BETTER_AUTH_SECRET` (22 caracteres). Não é o id cru: a URL do avatar é pública e o id ligaria a pessoa às Receitas que ficam com o handle `removido-<id>` depois da eliminação. Um blob com a chave da conta é apagado direto.
+  - O avatar sem dono conhecido, isto é, o antigo (`avatars/<arquivo>`, de antes desta mudança) ou o de outra chave (o segredo foi trocado depois do upload), só é apagado se nenhuma outra conta aponta para o mesmo **caminho**, em qualquer host. Comparar o caminho, e não a URL inteira, impede que a mesma URL num outro store do Vercel drible a checagem. Com isso, trocar o segredo não deixa o avatar público depois da eliminação.
+  - A URL precisa estar na forma canônica que o store grava (https, sem query, hash, porta, credenciais nem `%`, nome de arquivo simples). Uma variante plantada antes (`…?x=1`) driblaria a comparação exata no banco.
+  - Qualquer outro caminho e URL estrangeira nunca são apagados por aí.
+- **Riscos que ficam:**
+  - Valores plantados antes de #604 continuam em `users.image` (blob alheio exibido como avatar, URL externa). A limpeza é um `UPDATE` que zera o que não é avatar nosso nem foto do Google; entra na próxima migração da fila (a de #600), porque só uma migração anda por vez.
+  - Se alguém plantou o avatar antigo de outra pessoa, a eliminação dessa pessoa não apaga o blob (outra conta ainda aponta para ele). Como o banco não diz quem é a dona, a mesma limpeza zera a URL de avatar antigo que mais de uma conta usa: a dona perde o avatar e sobe outro, e o blob vira órfão.
+  - Um avatar que a regra se recusa a apagar e que nenhuma linha referencia vira órfão no Blob; a varredura de órfãos (#603, ainda aberta) vai recolhê-lo.

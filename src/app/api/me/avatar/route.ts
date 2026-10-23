@@ -3,6 +3,8 @@ import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
 import { users } from '@/db/schema'
 import { AVATAR_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
+import { avatarPathPrefix, canDeleteAccountAvatar } from '@/server/images/avatar-blob'
+import { deleteOrphanBlob } from '@/server/images/image-blobs'
 
 /**
  * Contrato `/api/me/avatar` — avatar do logado (#126, frente Perfil + fundação do `ImageStore`).
@@ -15,12 +17,13 @@ import { AVATAR_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo
  * POST (multipart `file`): valida tipo (jpg/png/webp) e tamanho (rede do servidor; o cliente já
  * redimensiona), RE-ENCODA no servidor (#596, `reencodeUserPhoto` com `AVATAR_PHOTO_SPEC`: formato pelos
  * bytes, teto de pixels, WebP ≤1024 px SEM EXIF/GPS — o avatar é servido público; recusa ⇒ 400
- * `tipo_invalido`), guarda o WebP no `ImageStore`, grava a URL em `users.image` e — best-effort —
- * apaga o blob ANTERIOR se foi NÓS que guardamos (`store.owns`). Avatar vindo do OAuth (Google)
+ * `tipo_invalido`), guarda o WebP no `ImageStore` sob o prefixo da conta (`avatarPathPrefix`, #604), grava a URL em `users.image`
+ * e — best-effort — apaga o blob ANTERIOR só se for avatar DESTA conta (`canDeleteAccountAvatar`: nosso host E
+ * prefixo da conta, ou avatar antigo que nenhuma outra conta usa). Avatar vindo do OAuth (Google)
  * é URL ESTRANGEIRA e fica intacto. Devolve `{ image: <url> }`. Storage indisponível → 503
  * `storage_indisponivel` (degradação do seam tratada, não um 500 cru); o banco fica intacto.
  *
- * DELETE: zera `users.image` e apaga o blob anterior se foi nosso. Devolve `{ image: null }`.
+ * DELETE: zera `users.image` e apaga o blob anterior com a mesma regra. Devolve `{ image: null }`.
  */
 
 export const runtime = 'nodejs' // postgres-js + Buffer + sharp exigem Node, não Edge.
@@ -73,16 +76,16 @@ export async function POST(req: Request): Promise<Response> {
   // espelhando a convenção do repo (`{ error }`) em vez de deixar virar um 500 genérico sem corpo.
   let url: string
   try {
-    ;({ url } = await store.store({ data: clean.data, contentType: clean.contentType, pathPrefix: 'avatars' }))
+    ;({ url } = await store.store({ data: clean.data, contentType: clean.contentType, pathPrefix: avatarPathPrefix(userId) }))
   } catch {
     return Response.json({ error: 'storage_indisponivel' }, { status: 503 })
   }
 
   await db.update(users).set({ image: url, updatedAt: new Date() }).where(eq(users.id, userId))
 
-  // Best-effort: apaga o blob anterior SÓ se foi nós que guardamos (OAuth fica intacto). Uma falha
-  // aqui deixa um órfão tolerável — não falha o upload já persistido do usuário.
-  await deleteOldBlob(store, old, url)
+  // Best-effort: apaga o blob anterior SÓ se for avatar desta conta (OAuth e blob alheio ficam intactos). Uma
+  // falha aqui deixa um órfão tolerável — não falha o upload já persistido do usuário.
+  await deleteOldBlob(db, store, old, url, userId)
 
   return Response.json({ image: url })
 }
@@ -100,17 +103,18 @@ export async function DELETE(req: Request): Promise<Response> {
 
   await db.update(users).set({ image: null, updatedAt: new Date() }).where(eq(users.id, userId))
 
-  await deleteOldBlob(store, old, null)
+  await deleteOldBlob(db, store, old, null, userId)
 
   return Response.json({ image: null })
 }
 
-/** Apaga `old` se existir, for diferente do novo, e for um blob NOSSO. Best-effort (engole erros). */
-async function deleteOldBlob(store: ReturnType<typeof getImageStore>, old: string | null, next: string | null): Promise<void> {
-  if (!old || old === next || !store.owns(old)) return
-  try {
-    await store.delete(old)
-  } catch {
-    // Órfão tolerável: o avatar já foi trocado/removido; não propagamos a falha de limpeza.
-  }
+/** Apaga `old` se existir, for diferente do novo, e for avatar DESTA conta (#604). Best-effort (engole erros). */
+async function deleteOldBlob(
+  db: ReturnType<typeof getDb>,
+  store: ReturnType<typeof getImageStore>,
+  old: string | null,
+  next: string | null,
+  userId: string,
+): Promise<void> {
+  if (old && old !== next && (await canDeleteAccountAvatar(db, store, old, userId))) await deleteOrphanBlob(store, old)
 }
