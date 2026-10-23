@@ -10,7 +10,8 @@ import { createReport } from '@/server/recipe/report'
  * visível é reportável) + motivo obrigatório + INSERT na fila. Mapeia o discriminator.
  *
  * Códigos de erro são chaves (i18n visível na UI #63): `nao_autenticado`, `not_found`,
- * `dados_invalidos`.
+ * `dados_invalidos`, `limite_denuncias` (429, teto diário por conta, #605). A UI é o botão "Reportar" da
+ * página da receita (`RecipeReportButton`, #605).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -38,5 +39,7 @@ export async function POST(
       return Response.json({ error: 'dados_invalidos' }, { status: 400 })
     case 'not_found':
       return Response.json({ error: 'not_found' }, { status: 404 })
+    case 'limit':
+      return Response.json({ error: 'limite_denuncias' }, { status: 429 })
   }
 }

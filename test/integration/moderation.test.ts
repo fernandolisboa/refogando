@@ -5,6 +5,7 @@ import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
 import { recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '@/db/schema'
 import { POST as reportRoute } from '@/app/api/recipes/[id]/report/route'
+import { REPORTS_POR_DIA } from '@/server/recipe/report'
 import { GET as reportsQueueRoute } from '@/app/api/curate/reports/route'
 import { POST as removeRoute } from '@/app/api/curate/reports/[id]/remove/route'
 import { POST as keepRoute } from '@/app/api/curate/reports/[id]/keep/route'
@@ -158,6 +159,41 @@ describe('Moderação reativa (#18)', () => {
     expect(byRecipe.get(comunidade)?.resultKind).toBe('success')
     expect(byRecipe.get(catalogo)?.origin).toBe('catalog')
     expect(qb.reports.length).toBe(2)
+  })
+
+  it('#605 — a mesma pessoa reenviando com a denúncia pendente recebe a existente (sem linha nova)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'dup-owner@ex.com' })
+    const { headers: reporter } = await seedSessionHeaders({ email: 'dup-reporter@ex.com' })
+    const { headers: outra } = await seedSessionHeaders({ email: 'dup-outra@ex.com' })
+    const id = await seedPublicCommunity(owner)
+
+    const a = (await (await reportRecipe(id, { reason: 'cópia' }, reporter)).json()) as { reportId: string }
+    const b = await reportRecipe(id, { reason: 'cópia de novo' }, reporter)
+    expect(b.status).toBe(201)
+    expect(((await b.json()) as { reportId: string }).reportId).toBe(a.reportId)
+    // Outra pessoa conta à parte; depois de resolvida, a mesma pessoa pode denunciar de novo.
+    expect((await reportRecipe(id, { reason: 'ofensivo' }, outra)).status).toBe(201)
+    await getDb().update(report).set({ status: 'rejected' }).where(eq(report.id, a.reportId))
+    const c = (await (await reportRecipe(id, { reason: 'voltou' }, reporter)).json()) as { reportId: string }
+    expect(c.reportId).not.toBe(a.reportId)
+    const rows = await getDb().select({ id: report.id }).from(report).where(eq(report.recipeId, id))
+    expect(rows).toHaveLength(3)
+  })
+
+  it('#605 — teto diário: a 21ª denúncia de receita em 24 h ⇒ 429 limite_denuncias', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'cap-owner@ex.com' })
+    const { userId: reporterId, headers: reporter } = await seedSessionHeaders({ email: 'cap-reporter@ex.com' })
+    const alvo = await seedPublicCommunity(owner, 'Alvo')
+    for (let i = 0; i < REPORTS_POR_DIA; i++) {
+      await seedReport({ recipeId: await seedPublicCommunity(owner, `R${i}`), reporterId, reason: 'x' })
+    }
+    const res = await reportRecipe(alvo, { reason: 'mais uma' }, reporter)
+    expect(res.status).toBe(429)
+    await expect(res.json()).resolves.toEqual({ error: 'limite_denuncias' })
+
+    // Denúncias com mais de 24 h não contam.
+    await getDb().update(report).set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) }).where(eq(report.reporterId, reporterId))
+    expect((await reportRecipe(alvo, { reason: 'mais uma' }, reporter)).status).toBe(201)
   })
 
   it('AC1 fila lista por data ASC; seedReport pré-existente aparece com origin/result_kind', async () => {

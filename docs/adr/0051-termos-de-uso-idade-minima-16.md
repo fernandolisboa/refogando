@@ -72,3 +72,9 @@ Sem ferramenta de admin para isso (#606 automatiza P1 a P3), o operador roda um 
 - **O texto promete operações manuais** (P1 a P5). Elas valem só se o operador seguir este ADR.
 - **Gatilhos para rever:** #22 (geração para Visitante, que traria dado de quem não declarou idade); cobrança (contrato com menor e pagamento pedem 18 anos ou responsável; cláusulas de consumo do Decreto 7.962); guia da ANPD sobre verificação de idade ou sobre o art. 24; mudança legislativa no art. 24; a escada completa de sanções do ADR-0007.
 - **Follow-ups abertos:** #605 (botão Reportar na receita; aí o item 8 volta a "receita ou avaliação"); #606 (ação "Eliminar conta" no Console → Usuários, cobre P1 a P3); #609 (o motivo dentro da notificação de retirada); #610 (o crédito público na derivada); #611 (os links do rodapé prefixados com o locale, canonical e hreflang nas páginas legais).
+
+## Atualização (2026-10-23, #605): Termos v1.1, denúncia de receita pelo botão
+
+A página da receita pública ganhou o botão "Reportar" (`RecipeReportButton`, só para quem tem conta e não é o dono), no mesmo molde do das avaliações: motivo obrigatório, "Enviar denúncia" e "Cancelar". O núcleo (`createReport`) devolve a denúncia pendente da mesma pessoa para a mesma receita, sem linha nova, e limita cada conta a 20 denúncias de receita em 24 h (429 `limite_denuncias`).
+
+O item 8 dos Termos volta a "denunciar uma receita pública ou uma avaliação pelo botão Reportar"; perfil e quem não tem conta seguem pelo e-mail. A versão é a v1.1 (`DATA_TERMOS_V1_1`, nova linha em `s10Historico` e rodapé). A mudança é a favor do usuário (uma via a mais, nada retirado), então vale na publicação: sem o aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O parecer interno (§8) e o `CONTEXT.md` foram corrigidos junto.

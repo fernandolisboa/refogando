@@ -16,6 +16,13 @@
 /** Dia da publicação dos Termos v1 e da Política v3.1 (AAAA-MM-DD): o dia do merge em UTC, como as outras datas dos textos legais. */
 export const DATA_PUBLICACAO_TERMOS_V1 = '2026-10-23'
 
+/**
+ * Termos v1.1 (#605): a denúncia de receita pública passa a ser pelo botão Reportar (item 8). A mudança é a favor
+ * do usuário (uma via a mais, nada retirado), então não é "relevante" no sentido do item 10: vale na publicação, sem o
+ * aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O dia do merge em UTC; congelada depois do merge.
+ */
+export const DATA_TERMOS_V1_1 = '2026-10-23'
+
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'
 

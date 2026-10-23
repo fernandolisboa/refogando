@@ -13,7 +13,8 @@
  *    DERIVA (POST /derive — a base nunca é mutada) e navega pra nova Receita (sua, privada).
  *    Gating #22 (descope): Visitante vê um CONVITE de entrar; logado vê o gatilho de derivar.
  *    Derivar a PRÓPRIA já é impossível aqui (o dono cai no ramo `canManage`). ADR-0045: ao lado,
- *    "Clonar" faz a mesma cópia num clique, sem o modal (`RecipeCloneButton`).
+ *    "Clonar" faz a mesma cópia num clique, sem o modal (`RecipeCloneButton`). #605: logado ganha também o
+ *    "Reportar" da Receita (`RecipeReportButton`), numa linha à parte.
  *
  * `canDerive`: catálogo (origin 'catalog') OU comunidade NÃO-própria. Como a rota só expõe
  * `visibility` ao dono, no não-dono usamos a presença do detalhe + a ausência de `canManage`:
@@ -34,6 +35,7 @@ import { RecipeCloneButton } from './recipe-clone-button'
 import { LineageVersionControls } from './lineage-version-controls'
 import { RecipeDiffView } from './recipe-diff-view'
 import { ClearAttributionButton } from './clear-attribution-button'
+import { RecipeReportButton } from './recipe-report-button'
 
 export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale: string }) {
   const { messages } = useLocale()
@@ -97,10 +99,14 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
   // Receita. Toda leitura não-dono é catálogo/pública por construção do gate (privada de outro
   // é 404 e nunca chega aqui).
   // ADR-0045: "Clonar" ao lado — a mesma cópia, num clique, sem passar pelo modal.
+  // #605: "Reportar" fica numa linha à parte, discreto, longe das ações de criar.
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <RecipeEditModal view={view} mode="derive" locale={locale} />
-      <RecipeCloneButton recipeId={view.id} locale={locale} />
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <RecipeEditModal view={view} mode="derive" locale={locale} />
+        <RecipeCloneButton recipeId={view.id} locale={locale} />
+      </div>
+      <RecipeReportButton recipeId={view.id} />
     </div>
   )
 }
