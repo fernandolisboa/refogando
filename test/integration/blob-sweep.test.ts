@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import sharp from 'sharp'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
-import { avatarPathPrefix } from '@/server/images/avatar-blob'
+import { avatarPathPrefix, canDeleteAccountAvatar } from '@/server/images/avatar-blob'
 import {
   BLOB_SWEEP_PREFIXES,
   BLOB_SWEEP_RATIO_MIN_ORPHANS,
@@ -175,6 +175,7 @@ describe('sweepBlobs — fotos antigas com metadado (#603)', () => {
     }
     // #604: o avatar re-encodado mora sob o prefixo da conta, e a troca/eliminação da conta o reconhece como dela.
     expect(new URL(u.image!).pathname.startsWith(`/${avatarPathPrefix(userId)}/`)).toBe(true)
+    expect(await canDeleteAccountAvatar(getDb(), store, u.image, userId)).toBe(true)
 
     // A passada seguinte não baixa de novo o que já foi trocado (o blob novo é posterior ao corte).
     const again = await run(new Date(Date.now() + 48 * 60 * 60 * 1000))
