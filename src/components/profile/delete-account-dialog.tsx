@@ -15,6 +15,10 @@
  *
  * Desfechos do pedido:
  *  - 2xx: saída da conta excluída (abaixo).
+ *  - 403 `reautenticar` (#602): a sessão tem mais de 24 h. Nada foi apagado; o diálogo pede para entrar de novo
+ *    (link para o login, que volta a "Seus dados") e trava "Excluir definitivamente". O mesmo aviso aparece já
+ *    ao abrir o diálogo quando a data de criação da sessão (`sessionCreatedAt`) mostra que ela é antiga (mesma
+ *    regra, `isFreshSession`); o servidor continua sendo quem decide.
  *  - 401: a sessão já tinha morrido; mostra `erroSessao`, deixa o mesmo aviso para depois da recarga e
  *    recarrega a página deslogada.
  *  - Ambíguo (o `fetch` lança, ou 5xx: um 504 pode ter vindo depois do commit): pergunta ao
@@ -40,6 +44,7 @@ import { useLocale } from '@/i18n/provider'
 import { signOut } from '@/lib/auth-client'
 import { tourStorageKey } from '@/domain/onboarding-tour'
 import { avisoLegalStorageKey } from '@/domain/legal-notice'
+import { isFreshSession } from '@/domain/fresh-session'
 import { forgetTabs } from '@/components/nav/last-tab-store'
 import { sectionLabel } from '@/components/nav/nav-labels'
 import { Button } from '@/components/ui/button'
@@ -58,7 +63,7 @@ import { ExportDownloadControl } from './export-download-control'
 import type { AccountExportDownload } from './use-account-export-download'
 
 type Status = 'idle' | 'erasing' | 'leaving'
-type Erro = null | 'falha' | 'sessao'
+type Erro = null | 'falha' | 'sessao' | 'reautenticar'
 
 /** Teto do `signOut` na saída: a conta já foi excluída no servidor, a tela não espera a rede para sempre. */
 const SIGN_OUT_TIMEOUT_MS = 3_000
@@ -69,7 +74,22 @@ const SESSION_CHECK_TIMEOUT_MS = 8_000
 /** A aba "Criações" de "Minhas receitas" (`domain/nav-sections`): onde a pessoa apaga uma receita sua. */
 const MINHAS_RECEITAS_HREF = '/me/recipes'
 
+/** Entrar de novo (#602) e voltar à seção "Seus dados" do perfil (`id` da seção em `AccountDataSection`). */
+const REAUTENTICAR_HREF = `/sign-in?returnTo=${encodeURIComponent('/me/profile#seus-dados')}`
+
 const LINK = 'font-medium text-brand-ink hover:underline'
+
+/** O `error` do corpo JSON (`{ error }`), ou null se não der para ler. */
+async function errorCode(res: Response): Promise<string | null> {
+  try {
+    const body: unknown = await res.json()
+    return typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
+      ? (body as { error: string }).error
+      : null
+  } catch {
+    return null
+  }
+}
 
 async function signOutWithTimeout(): Promise<void> {
   await Promise.race([
@@ -102,12 +122,15 @@ async function sessaoViva(): Promise<boolean | null> {
 export function DeleteAccountDialog({
   triggerDescribedBy,
   userId,
+  sessionCreatedAt,
   dl,
   onPendingChange,
 }: {
   triggerDescribedBy?: string
   /** O dono da sessão, para apagar o estado do tour dele na saída. */
   userId: string | undefined
+  /** Quando a sessão foi criada: antiga (#602) ⇒ o diálogo já abre pedindo para entrar de novo. */
+  sessionCreatedAt?: Date | string | null
   dl: AccountExportDownload
   onPendingChange: (pending: boolean) => void
 }) {
@@ -138,6 +161,7 @@ export function DeleteAccountDialog({
   function guarded(next: boolean) {
     if (busy) return
     setOpen(next)
+    if (next && sessionCreatedAt != null && !isFreshSession(sessionCreatedAt)) setErro('reautenticar')
     if (!next) {
       setEntendo(false)
       setErro(null)
@@ -171,7 +195,7 @@ export function DeleteAccountDialog({
   }
 
   async function excluir() {
-    if (!entendo || busy || baixando) return
+    if (!entendo || busy || baixando || erro === 'reautenticar') return
     // O `userId` deste render: a sessão pode virar `null` no meio do pedido.
     const uid = userId
     onPendingChange(true)
@@ -189,6 +213,12 @@ export function DeleteAccountDialog({
     }
     if (res?.ok) return sairDaContaExcluida(uid)
     if (res?.status === 401) return sairDaSessaoMorta()
+    if (res?.status === 403 && (await errorCode(res)) === 'reautenticar') {
+      setStatus('idle')
+      setErro('reautenticar')
+      onPendingChange(false)
+      return
+    }
     const ambiguo = res === null || res.status >= 500
     if (ambiguo && (await sessaoViva()) === false) return sairDaContaExcluida(uid)
     setStatus('idle')
@@ -266,10 +296,19 @@ export function DeleteAccountDialog({
           </Label>
         </div>
 
-        {erro !== null && (
+        {erro === 'reautenticar' ? (
           <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
-            {erro === 'sessao' ? m.erroSessao : m.erroExcluir}
+            {m.reautenticar}{' '}
+            <Link href={REAUTENTICAR_HREF} className={LINK}>
+              {m.reautenticarLink}
+            </Link>
           </p>
+        ) : (
+          erro !== null && (
+            <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
+              {erro === 'sessao' ? m.erroSessao : m.erroExcluir}
+            </p>
+          )
         )}
 
         <div className="flex flex-wrap justify-end gap-3">
@@ -280,7 +319,7 @@ export function DeleteAccountDialog({
             ref={confirmRef}
             type="button"
             variant="destructive"
-            disabled={!entendo || busy || baixando}
+            disabled={!entendo || busy || baixando || erro === 'reautenticar'}
             aria-busy={excluindo}
             onClick={() => void excluir()}
           >

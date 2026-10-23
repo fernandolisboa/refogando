@@ -119,3 +119,11 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
 - **A primeira varredura é irreversível.** Ela apaga o conteúdo privado das contas eliminadas antes desta regra. Há backup do Neon antes do merge (handoff 83).
 - **Painel de custo:** as gerações das Receitas privadas apagadas perdem `recipe_id` (SET NULL), então o bloco de desfecho muda. O gasto por dia e o total não mudam.
 - **`[claude/*]` segue com um resíduo.** Loga a `message` do provedor (aspas trocadas por `"…"`, teto de 300) e o `valor` curto de um descarte de vocabulário. Está catalogado em `docs/observabilidade.md` e não muda aqui.
+
+## Atualização (2026-10-23, #602): a exclusão exige sessão recente
+
+As sessões duram 7 dias e são renovadas com o uso. Com um cookie roubado ou num computador compartilhado ainda logado, bastava um clique para a exclusão definitiva.
+
+- `POST /api/me/erasure` passa por `requireFreshSession` (`src/server/auth/guard.ts`): a sessão precisa ter sido **criada** há menos de 24 h (`FRESH_SESSION_MAX_AGE_MS`, `src/domain/fresh-session.ts`), no espírito do `freshAge` do Better Auth. A renovação diária (`updateAge`) não conta, porque mexe só em `expiresAt`. Sessão antiga recebe 403 `reautenticar`, e nada é apagado.
+- O diálogo "Excluir minha conta" mostra "Por segurança, entre de novo para excluir a conta" com o link para entrar, que volta a `/me/profile#seus-dados`. O aviso aparece já ao abrir o diálogo quando a data de criação da sessão mostra que ela é antiga, e também depois de um 403. O servidor continua sendo quem decide.
+- A exportação (`GET /api/me/export`) não exige sessão recente: é leitura, e a guarda de mesma origem já barra o download forçado por outro site. Quem tem o cookie já vê os mesmos dados nas telas.

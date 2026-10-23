@@ -1,4 +1,4 @@
-import { requireSession } from '@/server/auth/guard'
+import { requireFreshSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { crossSiteForbidden, isCrossSiteRequest } from '@/server/http/same-origin'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
@@ -7,13 +7,18 @@ import { eraseOwnAccount } from '@/server/legal/account-erasure'
  * POST /api/me/erasure — ELIMINAÇÃO self-service da PRÓPRIA conta (issue #401, GAP-6; #473, ADR-0050;
  * LGPD Art. 18, VI; arts. 15, III e 16; `docs/legal/takedown-e-remocao-titular.md` §6/§8).
  *
- * Owner-only via `requireSession` (ADR-0011): 401 = Visitante ou conta já soft-deletada. SEM
+ * Owner-only via `requireFreshSession` (ADR-0011): 401 = Visitante ou conta já soft-deletada. SEM
  * parâmetro de caminho / id do cliente ⇒ nenhuma superfície de IDOR — elimina SEMPRE o
  * `session.user.id`.
  *
  * Confirmação OBRIGATÓRIA (`{ "confirm": true }`): guarda contra disparo acidental de uma ação
  * consequente e (com o cookie SameSite do Better Auth) contra CSRF. Corpo ausente/`confirm` != true
  * → 400 confirmacao_necessaria, ZERO efeito colateral.
+ *
+ * Sessão RECENTE (#602, `requireFreshSession`): criada há menos de 24 h. Sessão antiga (cookie roubado,
+ * computador compartilhado ainda logado) ⇒ 403 `reautenticar`, ZERO efeito; o diálogo leva a pessoa a entrar de
+ * novo e voltar a "Seus dados". A exportação (`GET /api/me/export`) não exige: é leitura, e a guarda de mesma
+ * origem já barra o download forçado por outro site.
  *
  * Defesa em profundidade contra CSRF (#595): além do SameSite=Lax, recusa `Sec-Fetch-Site` ≠ same-origin
  * (403 origem_nao_permitida, antes de olhar a sessão; ver `server/http/same-origin.ts`).
@@ -33,7 +38,7 @@ export const maxDuration = 60
 
 export async function POST(req: Request): Promise<Response> {
   if (isCrossSiteRequest(req)) return crossSiteForbidden()
-  const g = await requireSession(req)
+  const g = await requireFreshSession(req)
   if (!g.ok) return g.response
 
   const body = (await req.json().catch(() => ({}))) as { confirm?: unknown }
