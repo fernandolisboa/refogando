@@ -1,9 +1,11 @@
+import { enUS } from '../../src/i18n/messages/en-US'
 import { SEED_RECIPE } from '../fixtures/seed-data'
 import { expect, recipePath, t, test, waitForHydration } from '../fixtures/test'
 
 /**
- * Visitante (sem conta): a porta pública do app — home com locale, Busca, detalhe da Receita pelo slug
- * e o tema escolhido sobrevivendo à hidratação (o script pré-pintura e o React não podem brigar).
+ * Visitante (sem conta): a porta pública do app — home com locale, Busca, detalhe da Receita pelo slug,
+ * o tema escolhido sobrevivendo à hidratação (o script pré-pintura e o React não podem brigar) e os Termos de
+ * Uso pelo rodapé (ADR-0051).
  */
 
 const RECIPE_PATH = recipePath(SEED_RECIPE.titulo)
@@ -57,4 +59,18 @@ test('tema escuro do cookie persiste após a hidratação; alternar para o claro
   await expect(page.getByRole('contentinfo').getByRole('button', { name: t.theme.dark })).toBeVisible()
   const theme = (await context.cookies()).find((c) => c.name === 'theme')
   expect(theme?.value).toBe('light')
+})
+
+test('o rodapé leva aos Termos de Uso; a versão en-US responde 200', async ({ page }) => {
+  await page.goto('/pt-BR')
+  await waitForHydration(page)
+  await page.getByRole('contentinfo').getByRole('link', { name: t.termos.nome }).click()
+  // O link do rodapé é sem prefixo; o proxy manda ao locale do navegador (o Playwright roda em pt-BR).
+  await expect(page).toHaveURL(/\/pt-BR\/termos$/)
+  await expect(page.getByRole('heading', { level: 1, name: t.termos.titulo })).toBeVisible()
+
+  const res = await page.goto('/en-US/termos')
+  expect(res?.status()).toBe(200)
+  await waitForHydration(page)
+  await expect(page.getByRole('heading', { level: 1, name: enUS.termos.titulo })).toBeVisible()
 })
