@@ -7,7 +7,7 @@ import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 import type { Messages } from './pt-BR'
 // Relative import (a value, not a type): the E2E imports the catalogs outside the Next bundler.
-import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1 } from '../../domain/legal-notice'
+import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
@@ -1736,7 +1736,7 @@ export const enUS: Messages = {
   revisaoImagens: {
     titulo: 'Images to review',
     descricao:
-      "AI generations with the author's refinement. The image stays visible to the public — this queue is just for monitoring. Remove it (hides it from the public) or dismiss it (keeps it visible).",
+      "AI generations with the author's refinement, from published recipes (private ones are left out). The image stays visible to the public — this queue is just for monitoring. Remove it (hides it from the public) or dismiss it (keeps it visible).",
     receita: 'Recipe',
     autor: 'Author',
     semReceita: 'No linked recipe',
@@ -1985,7 +1985,7 @@ export const enUS: Messages = {
     s33Titulo: '3.3. AI creation, images and translation',
     s33Valores: [
       'what you ask the AI for: the free text, the creation form (with the restrictions checked in the request) and the conversation; image requests and refinements and, when you ask to edit a photo, the photo itself; your request to the Menu suggestion (meals, servings and an optional free-text note), sent with the title and classification of the candidate recipes and not stored by us; usage records (date and, where applicable, model, tokens and cost, without the content); and hand-written ingredients that are not in the vocabulary: the ones that recur go, without your name, into a list the curators use to expand the vocabulary; and new cuisines you type under "Other", which go, without your name, into a curators’ queue and, if approved, become an option for everyone.',
-      'generate recipes and dish images, choose the scene of the photo, translate recipes between Portuguese and English, extract ingredients from a text, suggest a menu from existing recipes, review images generated with a style request or edited by AI, expand the ingredient and cuisine vocabulary and enforce usage and cost limits.',
+      'generate recipes and dish images, choose the scene of the photo, translate recipes between Portuguese and English, extract ingredients from a text, suggest a menu from existing recipes, review images generated with a style request or edited by AI once the recipe is published, expand the ingredient and cuisine vocabulary and enforce usage and cost limits.',
       'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control, for the curators’ review of images and for expanding the vocabulary — Art. 7, IX.',
       'text requests and conversations are kept while the account exists (you can delete the conversation of each creation) and are erased if you delete your account; image requests are not stored, only the generated image. A menu suggestion is only stored as a planned meal if you accept it. Usage records are erased after 24 months (ingredient-extraction records, after 30 days); if you delete your account before that, they remain until then with nothing that identifies you.',
     ],
@@ -2030,7 +2030,7 @@ export const enUS: Messages = {
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [
-      'How: data is processed by electronic means, on servers of contracted service providers (item 5). We apply appropriate security measures (Art. 46): access only with authentication, passwords stored as hashes, connections always encrypted (HTTPS), removal of metadata from uploaded photos, and each piece of private content is shown only to its owner, with these exceptions: images generated with a style request of yours or edited by AI go into a review queue for the curators, who see the image, the recipe title, your name and your @; and the out-of-vocabulary ingredients that recur and the new cuisines you type under "Other" reach the curators without your name (item 3.3). Images live at public addresses that are not listed and are hard to guess.',
+      'How: data is processed by electronic means, on servers of contracted service providers (item 5). We apply appropriate security measures (Art. 46): access only with authentication, passwords stored as hashes, connections always encrypted (HTTPS), removal of metadata from uploaded photos, and each piece of private content is shown only to its owner, with one exception: the out-of-vocabulary ingredients that recur and the new cuisines you type under "Other" reach the curators without your name (item 3.3). When you publish a recipe with an image generated with a style request of yours or edited by AI, the image goes into a review queue for the curators, who see the image, the recipe title, your name and your @; while the recipe is private, the image stays out of the queue. Images live at public addresses that are not listed and are hard to guess.',
       'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it or for a legal obligation. When the purpose ends, we erase or anonymize the data (Arts. 15, 16 and 12). The retention period of each processing activity is in item 3. We make a backup of the database every week and keep the three most recent: whatever is erased or anonymized leaves them within 4 weeks. Temporary copies of the database used to test changes are deleted when the test ends.',
     ],
 
@@ -2144,6 +2144,7 @@ export const enUS: Messages = {
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
+      `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only images of published recipes; those of private recipes stay out of the queue (item 3.3 and section 4).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2196,9 +2197,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.1',
+    rodapeVersao: 'v3.2',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+    rodapeData: DATA_POLITICA_V3_2,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2262,9 +2263,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.1',
+    rodapeVersao: 'v3.2',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+    rodapeData: DATA_POLITICA_V3_2,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2308,7 +2309,7 @@ export const enUS: Messages = {
     s5Titulo: '5. Your content',
     s5Corpo: [
       'What you write and the photos you upload remain yours.',
-      'While a recipe of yours is private, it does not appear to other people and we use it only to make the app work. The exceptions are in the Privacy Policy: the curators review AI images generated with a style request of yours or edited by AI, and the ingredients you type by hand and the new cuisines you type under "Other" may reach the curators, without your name, to expand the vocabulary.',
+      'While a recipe of yours is private, it does not appear to other people and we use it only to make the app work. The exception is in the Privacy Policy: the ingredients you type by hand and the new cuisines you type under "Other" may reach the curators, without your name, to expand the vocabulary.',
       'When you publish a recipe, a review or a photo, you give Refogando a free, non-exclusive, worldwide license to store that content, display and reproduce it in the app, in search engines and in share cards, translate it automatically, adapt it to the app’s formats (such as thumbnails and shopping lists) and let other people save and rate the recipe, add it to their Meal plan and make copies of its text, without your photos ("Create my version" and "Clone"), which they can edit and publish. The license lasts while the content is published, including after you delete your account.',
       'You can unpublish or delete your content at any time. Copies that other people have already made of a public recipe stay with them.',
       'If you delete your account, the recipes you published and the reviews you wrote stay on Refogando without your name, because other people rely on them. If you want a public recipe gone, delete it before deleting your account.',
@@ -2352,15 +2353,16 @@ export const enUS: Messages = {
     s10Historico: [
       `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`,
       `v1.1 — ${DATA_TERMOS_V1_1}: public recipes can now also be reported with the Report button on the recipe page (item 8).`,
+      `v1.2 — ${DATA_TERMOS_V1_2}: the curators no longer review images of private recipes (item 5).`,
     ],
 
     s11Titulo: '11. Law and venue',
     s11Corpo: ['These Terms are governed by Brazilian law. Any dispute may be brought before the courts of your place of residence.'],
 
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1.1',
+    rodapeVersao: 'v1.2',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_TERMOS_V1_1,
+    rodapeData: DATA_TERMOS_V1_2,
   },
   // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
   avisoLegal: {

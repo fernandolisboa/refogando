@@ -2,11 +2,10 @@
  * Versão publicada dos textos legais e o aviso de mudança no app (ADR-0051). PURO: sem React, sem DB.
  *
  * `DATA_PUBLICACAO_TERMOS_V1` é a FONTE ÚNICA, no código, da data em que os Termos de Uso v1 e a Política v3.1
- * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico`,
- * `privacidade.rodapeData` e a linha v3.1 de `privacidade.s10Historico`, `seusDireitos.rodapeData`), e o aviso
- * a usa para decidir o público. O rodapé dos Termos usa a constante da versão mais nova (`DATA_TERMOS_V1_1`). Se o merge escorregar de dia, troque esta constante e as datas em prosa dos docs
- * (`grep -rn 2026-10-23 docs`), só no PR que publica a v1. Depois do merge ela fica CONGELADA: a próxima versão ganha constante
- * própria.
+ * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico` e a
+ * linha v3.1 de `privacidade.s10Historico`), e o aviso a usa para decidir o público. Depois do merge ela fica
+ * CONGELADA: cada versão seguinte ganha constante própria, e os rodapés usam a da versão mais nova de cada texto
+ * (hoje `DATA_POLITICA_V3_2` e `DATA_TERMOS_V1_2`).
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -23,6 +22,16 @@ export const DATA_PUBLICACAO_TERMOS_V1 = '2026-10-23'
  * aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O dia do merge em UTC; congelada depois do merge.
  */
 export const DATA_TERMOS_V1_1 = '2026-10-23'
+
+/**
+ * Política v3.2 e Termos v1.2 (#599): a fila de revisão de imagens da curadoria passa a mostrar só imagens de receitas
+ * publicadas, então o conteúdo privado deixa de ter essa exceção (política item 3.3 e seção 4, Termos item 5). É
+ * menos tratamento, a favor da pessoa: vale na publicação, sem aviso e sem trocar `AVISO_LEGAL_VERSAO`. O dia do
+ * merge em UTC; congelada depois do merge. É a data dos rodapés da política e de Seus direitos; a dos Termos v1.2 é
+ * a mesma (`DATA_TERMOS_V1_2`), porque as duas saem no mesmo PR.
+ */
+export const DATA_POLITICA_V3_2 = '2026-10-23'
+export const DATA_TERMOS_V1_2 = DATA_POLITICA_V3_2
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'
