@@ -57,6 +57,7 @@ describe('migração 0081 — limpeza de users.image plantado (#604)', () => {
       ['barra@m81.test', `${STORE}/avatars//x.webp`, false],
       ['fundo@m81.test', `${STORE}/avatars/AbCdEfGhIjKlMnOpQrStUv/a/x.webp`, false],
       ['ext@m81.test', `${STORE}/avatars/x.svg`, false],
+      ['nl@m81.test', `${STORE}/avatars/x.webp\n`, false],
       ['outro-store@m81.test', 'https://outro999.public.blob.vercel-storage.com/avatars/x.webp', false],
     ]
     const ids = await Promise.all(casos.map(([email, image]) => seedWithImage(email, image)))
@@ -70,10 +71,14 @@ describe('migração 0081 — limpeza de users.image plantado (#604)', () => {
     const a = await seedWithImage('a@m81.test', `${STORE}/avatars/compartilhado.webp`)
     const b = await seedWithImage('b@m81.test', `${STORE}/avatars/compartilhado.webp`)
     const c = await seedWithImage('c@m81.test', `${STORE}/avatars/so-meu.webp`)
+    const d = await seedWithImage('d@m81.test', `${STORE}/avatars/AbCdEfGhIjKlMnOpQrStUv/x.webp`)
+    const e = await seedWithImage('e@m81.test', `${STORE}/avatars/AbCdEfGhIjKlMnOpQrStUv/x.webp`)
     for (const u of updates) await getDb().execute(sql.raw(u))
     expect(await imageOf(a)).toBeNull()
     expect(await imageOf(b)).toBeNull()
     expect(await imageOf(c)).toBe(`${STORE}/avatars/so-meu.webp`)
+    expect(await imageOf(d)).toBeNull()
+    expect(await imageOf(e)).toBeNull()
     // Re-rodar é no-op.
     for (const u of updates) await getDb().execute(sql.raw(u))
     expect(await imageOf(c)).toBe(`${STORE}/avatars/so-meu.webp`)
