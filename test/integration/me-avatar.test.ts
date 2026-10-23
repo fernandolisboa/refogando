@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import sharp from 'sharp'
 import { POST, DELETE } from '@/app/api/me/avatar/route'
@@ -260,6 +260,8 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
       const { userId, headers } = await seedSessionHeaders({ email: 'atacante@me-avatar.test' })
       const reviewPhoto = await otherAccountBlob('reviews')
       const otherAvatar = await otherAccountBlob(avatarPathPrefix(other.userId))
+      // O avatar da outra conta é o que ela USA (é o caso real: um avatar largado já foi apagado na troca).
+      await getDb().update(users).set({ image: otherAvatar }).where(eq(users.id, other.userId))
 
       await getDb().update(users).set({ image: reviewPhoto }).where(eq(users.id, userId))
       expect((await POST(postReq(pngFile(), headers))).status).toBe(200)
@@ -287,15 +289,20 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
       expect(await readImage(victim.userId)).toBe(shared)
     })
 
-    it('variante não canônica (query, hash) de um avatar antigo alheio nunca apaga o blob', async () => {
+    it('variante não canônica (query, hash) ou outro host com o caminho de um avatar antigo alheio nunca apaga', async () => {
       const victim = await seedSessionHeaders({ email: 'variante-dona@me-avatar.test' })
       const { userId, headers } = await seedSessionHeaders({ email: 'variante-atacante@me-avatar.test' })
       const legacy = await otherAccountBlob('avatars')
       await getDb().update(users).set({ image: legacy }).where(eq(users.id, victim.userId))
-      for (const variant of [`${legacy}?x=1`, `${legacy}#f`]) {
+      const del = vi.spyOn(store, 'delete')
+      // Variantes não canônicas e o mesmo caminho em OUTRO store do Vercel: nenhuma chega a `store.delete`.
+      const outroHost = legacy.replace('fake-blob.local', 'outro-store.local')
+      vi.spyOn(store, 'owns').mockImplementation((u) => u.startsWith('https://fake-blob.local/') || u.startsWith('https://outro-store.local/'))
+      for (const variant of [`${legacy}?x=1`, `${legacy}#f`, outroHost]) {
         await getDb().update(users).set({ image: variant }).where(eq(users.id, userId))
         expect((await DELETE(deleteReq(headers))).status).toBe(200)
       }
+      expect(del).not.toHaveBeenCalled()
       expect(store.blobs.has(legacy)).toBe(true)
     })
   })

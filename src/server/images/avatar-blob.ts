@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, ne, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { users } from '@/db/schema'
 import type { ImageStore } from '@/server/images/image-store'
@@ -15,10 +15,11 @@ import type { ImageStore } from '@/server/images/image-store'
  *
  * - Desde #604 o avatar é guardado sob `avatars/<chave da conta>/` (`avatarPathPrefix`). A chave é um HMAC do id
  *   com o segredo do Better Auth, NÃO o id: a URL do avatar é pública (perfil, busca, listas) e o id cru ligaria a
- *   pessoa às Receitas que ficam com o handle `removido-<id>` depois da eliminação. Trocar o segredo só faz os
- *   avatares antigos virarem órfãos (nunca apagados por engano).
- * - Avatar ANTIGO (`avatars/<arquivo>`, um segmento só, antes de #604) não diz de quem é: só é apagado se
- *   nenhuma OUTRA conta aponta para a mesma URL (quem plantou a URL alheia não apaga o avatar de quem ainda o usa).
+ *   pessoa às Receitas que ficam com o handle `removido-<id>` depois da eliminação.
+ * - Avatar que não traz a chave desta conta não diz de quem é: o ANTIGO (`avatars/<arquivo>`, antes de #604) e o
+ *   de outra chave (o segredo foi trocado depois do upload). Só é apagado se nenhuma OUTRA conta aponta para o
+ *   mesmo CAMINHO, em qualquer host (quem plantou a URL alheia não apaga o avatar de quem ainda o usa, nem com a
+ *   URL de outro store do Vercel). Assim a troca do segredo não deixa o avatar vivo depois da eliminação.
  * - A URL precisa estar na forma CANÔNICA que o store grava (sem query, hash, porta, credenciais nem `%`): uma
  *   variante plantada antes de #604 (`…/avatars/x.webp?1`) driblaria a comparação exata do banco e apagaria o blob
  *   canônico de outra pessoa.
@@ -29,6 +30,7 @@ import type { ImageStore } from '@/server/images/image-store'
 /** Nome de arquivo que o store grava (uuid, ou o contador do dublê) + extensão de imagem. */
 const FILE = '[A-Za-z0-9-]+\\.(?:webp|jpg|png)'
 const LEGACY_AVATAR_PATH = new RegExp(`^/avatars/${FILE}$`)
+const KEYED_AVATAR_PATH = new RegExp(`^/avatars/[A-Za-z0-9_-]{22}/${FILE}$`)
 
 function avatarSecret(): string {
   const secret = process.env.BETTER_AUTH_SECRET
@@ -61,19 +63,22 @@ function canonicalPath(url: string): string | null {
   return u.pathname
 }
 
-/** Em que forma `url` é um avatar desta conta: `conta` (prefixo dela), `antigo` (antes de #604) ou nenhuma. */
-export function avatarPathKind(url: string, userId: string): 'conta' | 'antigo' | null {
+/**
+ * Em que forma `url` é um avatar para a conta: `conta` (prefixo dela), `sem-dono` (avatar antigo ou de outra
+ * chave: só o banco diz se outra conta o usa) ou null (não é avatar apagável). Devolve também o caminho.
+ */
+export function avatarPathKind(url: string, userId: string): { kind: 'conta' | 'sem-dono'; path: string } | null {
   const path = canonicalPath(url)
   if (path === null) return null
   const prefix = `/${avatarPathPrefix(userId)}/`
-  if (path.startsWith(prefix) && new RegExp(`^${FILE}$`).test(path.slice(prefix.length))) return 'conta'
-  if (LEGACY_AVATAR_PATH.test(path)) return 'antigo'
+  if (path.startsWith(prefix) && new RegExp(`^${FILE}$`).test(path.slice(prefix.length))) return { kind: 'conta', path }
+  if (LEGACY_AVATAR_PATH.test(path) || KEYED_AVATAR_PATH.test(path)) return { kind: 'sem-dono', path }
   return null
 }
 
 /**
  * O servidor pode apagar `url`, o avatar que a conta `userId` acabou de largar? Exige que o blob seja NOSSO
- * (`store.owns`), canônico e da conta (prefixo dela, ou avatar antigo que nenhuma outra conta usa). Nunca lança:
+ * (`store.owns`), canônico e da conta (prefixo dela, ou avatar sem dono conhecido que nenhuma outra conta usa). Nunca lança:
  * na dúvida, não apaga (um órfão é tolerável; apagar o arquivo de outra pessoa, não).
  */
 export async function canDeleteAccountAvatar(
@@ -84,12 +89,15 @@ export async function canDeleteAccountAvatar(
 ): Promise<boolean> {
   try {
     if (!url || !store.owns(url)) return false
-    const kind = avatarPathKind(url, userId)
-    if (kind !== 'antigo') return kind === 'conta'
+    const found = avatarPathKind(url, userId)
+    if (found === null) return false
+    if (found.kind === 'conta') return true
+    // Pelo CAMINHO, não pela URL inteira: outro host do Vercel com o mesmo caminho não dribla a checagem. O caminho
+    // só tem `[A-Za-z0-9_./-]` (regex acima), então não há curinga do LIKE a escapar.
     const [other] = await db
       .select({ one: sql<number>`1` })
       .from(users)
-      .where(and(eq(users.image, url), ne(users.id, userId)))
+      .where(and(sql`${users.image} like ${'%' + found.path}`, ne(users.id, userId)))
       .limit(1)
     return other === undefined
   } catch {

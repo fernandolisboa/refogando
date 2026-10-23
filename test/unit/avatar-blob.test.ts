@@ -24,13 +24,13 @@ describe('avatarPathPrefix', () => {
 describe('avatarPathKind', () => {
   const mine = `${HOST}/${avatarPathPrefix(ID)}/${FILE}`
 
-  it('reconhece o avatar da conta e o avatar antigo de um segmento', () => {
-    expect(avatarPathKind(mine, ID)).toBe('conta')
-    expect(avatarPathKind(`${HOST}/avatars/${FILE}`, ID)).toBe('antigo')
+  it('reconhece o avatar da conta; o antigo e o de outra chave ficam sem dono conhecido (o banco decide)', () => {
+    expect(avatarPathKind(mine, ID)?.kind).toBe('conta')
+    expect(avatarPathKind(`${HOST}/avatars/${FILE}`, ID)).toEqual({ kind: 'sem-dono', path: `/avatars/${FILE}` })
+    expect(avatarPathKind(mine, OUTRO)?.kind).toBe('sem-dono')
   })
 
-  it('recusa o prefixo de outra conta, outros diretórios e caminho aninhado', () => {
-    expect(avatarPathKind(mine, OUTRO)).toBeNull()
+  it('recusa outros diretórios e caminho aninhado ou fora do formato', () => {
     expect(avatarPathKind(`${HOST}/reviews/${FILE}`, ID)).toBeNull()
     expect(avatarPathKind(`${HOST}/recipes/${FILE}`, ID)).toBeNull()
     expect(avatarPathKind(`${HOST}/${avatarPathPrefix(ID)}/a/${FILE}`, ID)).toBeNull()

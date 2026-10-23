@@ -504,6 +504,8 @@ describe('eliminação: avatar (#604)', () => {
   it('nunca apaga o blob de outra pessoa plantado em users.image', async () => {
     const vitima = await seedUser({ email: 'avatar-vitima@pc.test' })
     const alheios = [await blob('reviews'), await blob(avatarPathPrefix(vitima)), await blob('recipes')]
+    // O avatar da vítima é o que ela USA (um avatar largado já foi apagado na troca).
+    await getDb().update(users).set({ image: alheios[1] }).where(eq(users.id, vitima))
     for (const [i, alheio] of alheios.entries()) {
       const atacante = await seedUser({ email: `atacante-${i}@pc.test` })
       await getDb().update(users).set({ image: alheio }).where(eq(users.id, atacante))
@@ -525,6 +527,14 @@ describe('eliminação: avatar (#604)', () => {
     await getDb().update(users).set({ image: legacy }).where(inArray(users.id, [dona, atacante]))
     expect((await eraseOwnAccount(getDb(), { userId: atacante })).kind).toBe('erased')
     expect(store.blobs.has(legacy)).toBe(true)
+  })
+
+  it('avatar de outra chave (segredo trocado depois do upload) que só a conta usa sai na eliminação', async () => {
+    const dona = await seedUser({ email: 'chave-antiga@pc.test' })
+    const antiga = await blob('avatars/AAAAAAAAAAAAAAAAAAAAAA')
+    await getDb().update(users).set({ image: antiga }).where(eq(users.id, dona))
+    expect((await eraseOwnAccount(getDb(), { userId: dona })).kind).toBe('erased')
+    expect(store.blobs.has(antiga)).toBe(false)
   })
 })
 
