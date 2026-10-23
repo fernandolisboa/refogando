@@ -26,7 +26,7 @@ Perguntas de `docs/legal/pacote-consulta-juridica.md` §5 e `docs/legal/takedown
 4. **Política publicada atende o art. 9º?** Com as correções da v3 (§4), sim. Identificar o controlador como pessoa física sem CNPJ é suficiente.
 5. **Pequeno porte e encarregado.** Ver §1.
 6. **Contagem do prazo.** Corridos (§1).
-7. **Retenção.** Ver §5 e ADR-0049: (a) conteúdo privado de conta eliminada é apagado na hora, o público fica anonimizado; (b) tickets de takedown encerrados são apagados 12 meses depois do encerramento; (c) auditoria DSAR por 5 anos, depois apagada.
+7. **Retenção.** Ver §5 e ADR-0050: (a) conteúdo privado de conta eliminada é apagado na hora, o público fica anonimizado; (b) tickets de takedown encerrados são apagados 12 meses depois do encerramento; (c) auditoria DSAR por 5 anos, depois apagada.
 8. **Domínios em revisão manual.** Ver §3.
 9. **Titular estrangeiro e verificação de identidade.** Atende-se igual (a LGPD alcança o tratamento feito no Brasil qualquer que seja a nacionalidade do titular, art. 3º). O canal já é bilíngue. Verificação mínima, sem documento, como já está (art. 6º, III).
 10. **Conteúdo mínimo do canal.** O que está publicado em `/seus-direitos` basta: tipo de pedido, identificação do conteúdo, pedido, contato opcional, prazo e protocolo.
@@ -60,7 +60,7 @@ Regra (de `docs/legal/revisao-tos-allowlist.md`): **excluir** quando os Termos v
 | # | Achado | Classe | Risco | Decisão | Onde |
 |---|---|---|---|---|---|
 | 1 | Exportar e excluir a conta só existem como API; a política promete self-service. | OBRIGATÓRIO | 3×4=12 | Botões em Editar perfil → Seus dados; exportação completa. | #595 |
-| 2 | Conta eliminada mantém conteúdo privado (transcrições, pedidos, receitas privadas, listas, salvos…), em parte não divulgado. | OBRIGATÓRIO | 3×3=9 | Apagar o privado na hora; o público fica anonimizado. | #473, ADR-0049 |
+| 2 | Conta eliminada mantém conteúdo privado (transcrições, pedidos, receitas privadas, listas, salvos…), em parte não divulgado. | OBRIGATÓRIO | 3×3=9 | Apagar o privado na hora; o público fica anonimizado. | #473, ADR-0050 |
 | 3 | `session` guarda IP e navegador e sessões vencidas nunca são apagadas; política não fala de IP. | OBRIGATÓRIO | 2×4=8 | Apagar sessão vencida todo dia; divulgar. | #473, v3 |
 | 4 | Login com Google (e avatar servido pelo Google) fora da política. | OBRIGATÓRIO | 2×4=8 | Divulgar em 3.1 e §5. | v3 |
 | 5 | Gemini recebe foto do usuário no modo de edição; Anthropic também traduz e escolhe o cenário da foto; busca de visitante vira embedding no Gemini. | OBRIGATÓRIO | 2×3=6 | Divulgar finalidades e dados. | v3 |
@@ -79,7 +79,7 @@ Regra (de `docs/legal/revisao-tos-allowlist.md`): **excluir** quando os Termos v
 | 18 | Sem Termos de Uso e sem regra de idade (ECA Digital, §7). | decisão do controlador | 3×3=9 | Ver §10. | — |
 | 19 | Incidente de 09/09 sem o registro do art. 10 da Res. 15/2024. | OBRIGATÓRIO | 3×3=9 | Registro escrito; comunicação: ver §10. | `docs/incidents/` |
 
-## 5. Retenção (resumo; a regra é o ADR-0049)
+## 5. Retenção (resumo; a regra é o ADR-0050)
 
 - **Eliminação da conta:** anonimiza a linha `users` e apaga na hora tudo o que é só da pessoa (receitas privadas, histórico de criação e conversas, salvos, coleções, listas de compras, Cardápio, Despensa, seguidores e seguidos, notificações, sessões e credenciais). Ficam, sem identificação, as receitas públicas e as avaliações (foto da avaliação apagada 180 dias depois) e os registros de custo. Contas já eliminadas são limpas pela passada diária. Base: art. 16 (eliminação ao fim do tratamento); o que fica é anonimizado (art. 12) e serve a terceiros que salvaram, avaliaram ou planejaram com o conteúdo público.
 - **Registros de uso de IA:** 24 meses (custo e abuso); o de extração, 30 dias (só alimenta uma cota de 24 h).

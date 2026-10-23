@@ -7,7 +7,7 @@
  * forma ANONIMIZADA e ESTÁVEL derivada do próprio `id` interno (opaco, nunca é a PII), e a conta é
  * bloqueada (`deletedAt`) + carimbada (`anonymizedAt`). O conteúdo PÚBLICO de que terceiros dependem
  * (receitas publicadas, avaliações) fica, atribuído à identidade anonimizada; o conteúdo PRIVADO sai na
- * mesma transação (`src/server/legal/private-content.ts`; regra no ADR-0049, doc §6).
+ * mesma transação (`src/server/legal/private-content.ts`; regra no ADR-0050, doc §6).
  *
  * Por que derivar do `id`:
  *  - ESTÁVEL: o mesmo usuário sempre gera os mesmos valores (idempotente — reprocessar não muda nada).

@@ -1,6 +1,6 @@
-# Handoff 82 — Retenção e eliminação de dados pessoais (#473) e foto sem EXIF/GPS no servidor (#596)
+# Handoff 83 — Retenção e eliminação de dados pessoais (#473) e foto sem EXIF/GPS no servidor (#596)
 
-**Sessão:** 2026-10-22. **Branch:** `wip/pr-a-473` (sobre a main em `5b4580d`). **Migração:** nenhuma (só comentários no `src/db/schema.ts`; `drizzle/` intocado). Decisão no ADR-0049; base jurídica em `docs/legal/parecer-interno-2026-10-22.md` §5 e `docs/legal/registro-de-operacoes.md` (os dois entram neste PR). O PR fecha #473 e #596.
+**Sessão:** 2026-10-22. **Branch:** `claude/project-thread-yl7417` (sobre a main em `0064c91`). **Migração:** nenhuma (só comentários no `src/db/schema.ts`; `drizzle/` intocado). Decisão no ADR-0050; base jurídica em `docs/legal/parecer-interno-2026-10-22.md` §5 e `docs/legal/registro-de-operacoes.md` (os dois entram neste PR). O PR fecha #473 e #596.
 
 ## 1. O que mudou
 
@@ -11,7 +11,7 @@
   - Depois do commit, apaga os blobs com `deleteOrphanBlobsConcurrently` (`src/server/images/image-blobs.ts`, 8 por vez, nunca lança).
   - `emitNotification` não notifica conta anonimizada: a checagem vai no próprio `INSERT … SELECT … FROM users WHERE anonymized_at IS NULL`, sem ida extra ao banco.
   - O docstring da rota `POST /api/me/erasure` agora diz a verdade: a 2ª chamada recebe 401 `nao_autenticado`, porque todas as sessões saíram.
-  - O que sai, o que é limpo e o que fica está na tabela da decisão 1 do ADR-0049.
+  - O que sai, o que é limpo e o que fica está na tabela da decisão 1 do ADR-0050.
 - **Varredura diária das contas já eliminadas.**
   - `purgeAnonymizedPrivateContent` (`src/server/legal/account-purge-scan.ts`) entra no cron `account-purge`. A ordem das etapas passa a ser: cadastros pendentes (`purgeStalePendingSignups`, barata, carrega a promessa das 48 h da operação 13), fotos de avaliação com 180 dias (`purgeAnonymizedAccounts`) e, por último, o conteúdo privado.
   - Um orçamento só para a passada inteira (40 s, reserva de 15 s), contado do começo da rota: `timeBudget` (`src/server/time-budget.ts`, `remainingMs()`/`canStartMore()`), o mesmo helper do cron de retenção. Antes de cada conta, inclusive a primeira, a varredura confere `canStartMore()`; as candidatas que ficaram saem como `privateAccountsDeferred=N`, então um corte nunca aparece como zeros calados.
@@ -30,9 +30,9 @@
   - A saída é sempre WebP sem EXIF/ICC/XMP; entrada inválida dá 400 `tipo_invalido`.
   - `maxDuration = 60` nas três rotas de upload.
 - **Logs só com nome e código** (`errorLogFields` em `src/domain/error-report.ts`): `[conversations/stream]`, `[image-scene]`, `[notification]`, `[cache-tags]`, `[home]`, mais as linhas novas de `[account-purge]` e `[retencao]`. O catálogo está em `docs/observabilidade.md`.
-- **Política de privacidade:** só `s31Valores[3]`, `s32Valores[3]`, `s33Valores[3]` e a data do rodapé (`rodapeData`, `2026-10-22`, o mesmo valor do PR da v3). Em pt-BR, o texto da spec v3, palavra por palavra; em en-US, a tradução. O resto da política fica para o PR da v3 (handoff 83).
+- **Política de privacidade:** só `s31Valores[3]`, `s32Valores[3]`, `s33Valores[3]` e a data do rodapé (`rodapeData`, `2026-10-22`, o mesmo valor do PR da v3). Em pt-BR, o texto da spec v3, palavra por palavra; em en-US, a tradução. O resto da política fica para o PR da v3 (#276, handoff 84).
 - **Docs.**
-  - ADR-0049.
+  - ADR-0050.
   - Notas datadas no ADR-0006 (retenção e a exceção do Briefing), no ADR-0016 (re-encode), no ADR-0025 (a exceção do Briefing na conta eliminada) e no ADR-0036 dec.7 (prazo do ledger; a metade da exportação é do #595).
   - `docs/legal/takedown-e-remocao-titular.md` §5 (b), §6 (bullet Eliminação) e §8 (GAP-6 e Retenção).
   - `docs/legal/lia-descoberta-web.md` §4: a limitação de retenção dos tickets de takedown passa a fechada.
@@ -54,7 +54,7 @@
    - Rodar manualmente (Run, no painel de crons da Vercel) `/api/cron/account-purge` e depois `/api/cron/retention`.
    - Ler as linhas `[account-purge] passada …` (`pendingSignupsPurged`, …, `privateAccountsSwept`, `privateAccountsFailed`, `privateAccountsDeferred`, …) e `[retencao] passada …`, e conferir se alguma linha `… falhou: erro=…` apareceu.
    - Na primeira passada, `sessions` e `verifications` devem vir altos (o acúmulo desde o começo). Se aparecer `deferredSteps=N` ou `privateAccountsDeferred=N` com N > 0, o resto sai nas passadas seguintes (25 contas por dia, no máximo).
-3. **Follow-ups a abrir como issues** (riscos do ADR-0049):
+3. **Follow-ups a abrir como issues** (riscos do ADR-0050):
    - (a) `deleteOwnRecipe` não apaga o blob das fotos de avaliação da Receita apagada.
    - (b) Índices para `recipe_image.created_by`, `recipe.lineage_id`, `session.expires_at` e o `created_at` de `extraction_event`, `image_generation` e `meal_plan_suggestion_event`, numa migração quando o slot liberar; `recipe_review.recipe_id` só tem índice parcial. Os de `recipe_image` e `recipe` já estão no #601.
    - (c) Varredura de blobs órfãos pelo `list()` do `@vercel/blob`.

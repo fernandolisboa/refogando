@@ -20,7 +20,7 @@ import { purgeDsarEventsBefore } from '@/server/legal/dsar-audit'
 import type { TimeBudget } from '@/server/time-budget'
 
 /**
- * Retenção: o que o app apaga sozinho quando o prazo vence (issue #473, ADR-0049; prazos em
+ * Retenção: o que o app apaga sozinho quando o prazo vence (issue #473, ADR-0050; prazos em
  * `@/domain/data-retention`, operações em `docs/legal/registro-de-operacoes.md`). Cada passo apaga em LOTES
  * (`RETENTION_BATCH` linhas por comando, no máximo `RETENTION_MAX_BATCHES` comandos por passada), cada lote
  * no seu próprio autocommit: os passos são independentes e idempotentes, então não há transação em volta e

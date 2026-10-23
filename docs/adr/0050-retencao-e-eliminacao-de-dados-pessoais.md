@@ -1,4 +1,4 @@
-# ADR-0049 — Retenção e eliminação de dados pessoais
+# ADR-0050 — Retenção e eliminação de dados pessoais
 
 Status: aceito (2026-10-22)
 
@@ -101,6 +101,6 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
 - **#596 não limpa o passado.** Avatar e foto de receita enviados antes podem ter EXIF, se o cliente mandou os bytes crus. Follow-up: auditoria só de leitura (`metadata().exif`) nos blobs próprios e re-encode no lugar.
 - **Conta que falha todo dia** volta em toda passada, mas a ordem do lote muda todo dia (hash do id com a data), então ela não segura as outras contas. A linha de falha no log é o sinal.
 - **Adiamento:** um passo com mais de 50 mil linhas vencidas leva vários dias, e o orçamento esgotado empurra passos para o dia seguinte (`deferredSteps=N`). O acúmulo inicial (sessões vencidas desde o começo) é o caso esperado.
-- **A primeira varredura é irreversível.** Ela apaga o conteúdo privado das contas eliminadas antes desta regra. Há backup do Neon antes do merge (handoff 82).
+- **A primeira varredura é irreversível.** Ela apaga o conteúdo privado das contas eliminadas antes desta regra. Há backup do Neon antes do merge (handoff 83).
 - **Painel de custo:** as gerações das Receitas privadas apagadas perdem `recipe_id` (SET NULL), então o bloco de desfecho muda. O gasto por dia e o total não mudam.
 - **`[claude/*]` segue com um resíduo.** Loga a `message` do provedor (aspas trocadas por `"…"`, teto de 300) e o `valor` curto de um descarte de vocabulário. Está catalogado em `docs/observabilidade.md` e não muda aqui.

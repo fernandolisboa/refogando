@@ -5,7 +5,7 @@ import { RETENTION_BUDGET_MS, RETENTION_RESERVE_MS, RETENTION_STEPS } from '@/se
 import { timeBudget } from '@/server/time-budget'
 
 /**
- * Cron de RETENÇÃO (issue #473, ADR-0049; `docs/legal/registro-de-operacoes.md`): apaga o que passou do prazo
+ * Cron de RETENÇÃO (issue #473, ADR-0050; `docs/legal/registro-de-operacoes.md`): apaga o que passou do prazo
  * — registros de uso de IA (24 meses; extração, 30 dias), sessões e verificações vencidas, tickets de takedown
  * encerrados há 12 meses, auditoria DSAR com 5 anos, os cascos de criação das contas eliminadas e o custo das
  * gerações antigas de contas vivas. GET diário (Vercel Cron — `vercel.json`), depois dos demais crons.

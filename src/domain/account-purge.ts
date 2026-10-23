@@ -6,14 +6,14 @@
  * helper puro; idade em dias por ms/86_400_000.
  *
  * O expurgo NÃO é hard-delete da linha `users` (recipe.owner_id é ON DELETE RESTRICT, e as receitas
- * públicas e as avaliações ficam, anonimizadas, porque terceiros dependem delas — ADR-0049): é a remoção
+ * públicas e as avaliações ficam, anonimizadas, porque terceiros dependem delas — ADR-0050): é a remoção
  * dos BLOBS de PII residual (foto de avaliação) + nulagem dos ponteiros, depois que o prazo expira. O
  * conteúdo PRIVADO não espera prazo: sai na eliminação e na varredura diária (`account-purge-scan.ts`).
  */
 
 /**
  * Prazo de retenção (dias) a partir da anonimização antes do expurgo físico das fotos de avaliação: 180
- * (`docs/legal/parecer-interno-2026-10-22.md` §5, ADR-0049). O server pode sobrescrever via env
+ * (`docs/legal/parecer-interno-2026-10-22.md` §5, ADR-0050). O server pode sobrescrever via env
  * `ACCOUNT_PURGE_RETENTION_DAYS` (lido no ponto de uso, nunca aqui no kernel puro).
  */
 export const RETENTION_DAYS = 180

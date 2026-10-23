@@ -1,6 +1,6 @@
 # Registro das operações de tratamento (LGPD art. 37) — versão simplificada de agente de pequeno porte
 
-> Formato simplificado permitido pela Res. CD/ANPD nº 2/2022, art. 9º. Controlador: Fernando Lisboa (pessoa física). Canal do titular: `privacidade@refogando.com` (sem encarregado indicado, Res. 2/2022, art. 11). Atualizado em 2026-10-22, junto com o parecer interno (`docs/legal/parecer-interno-2026-10-22.md`) e o ADR-0049. **Atualize este arquivo no mesmo PR que mudar dado, finalidade, fornecedor ou prazo.**
+> Formato simplificado permitido pela Res. CD/ANPD nº 2/2022, art. 9º. Controlador: Fernando Lisboa (pessoa física). Canal do titular: `privacidade@refogando.com` (sem encarregado indicado, Res. 2/2022, art. 11). Atualizado em 2026-10-22, junto com o parecer interno (`docs/legal/parecer-interno-2026-10-22.md`) e o ADR-0050. **Atualize este arquivo no mesmo PR que mudar dado, finalidade, fornecedor ou prazo.**
 
 ## Operadores e onde os dados ficam
 
@@ -21,7 +21,7 @@
 |---|---|---|---|---|---|---|---|
 | 1 | Conta e autenticação | Usuários | e-mail, nome, handle, senha (hash), foto, bio, links, idioma, nível padrão; tokens do Google se usar o login do Google | Criar e manter a conta | Contrato (art. 7º, V) | Enquanto a conta existir; na eliminação, anonimização imediata | Senha com hash pelo better-auth; sessão em cookie HttpOnly |
 | 2 | Sessões e proteção contra abuso | Usuários e visitantes | IP e navegador da sessão; IP no rate limit | Segurança da conta, prevenção de abuso | Legítimo interesse (art. 7º, IX), LIA A | Sessão: até vencer (apagada todo dia). Rate limit: até 2 h (limpeza de hora em hora) | Acesso só pelo banco |
-| 3 | Conteúdo do usuário | Usuários | Receitas, traduções, imagens enviadas, avaliações e fotos, salvos, coleções, listas de compras, Cardápio (com anotações), Despensa e básicos | Entregar o app | Contrato (art. 7º, V) | Até o usuário apagar ou eliminar a conta (ADR-0049: privado apagado na hora; público anonimizado; foto de avaliação 180 dias depois) | Toda leitura escopada por dono (404 a terceiros) |
+| 3 | Conteúdo do usuário | Usuários | Receitas, traduções, imagens enviadas, avaliações e fotos, salvos, coleções, listas de compras, Cardápio (com anotações), Despensa e básicos | Entregar o app | Contrato (art. 7º, V) | Até o usuário apagar ou eliminar a conta (ADR-0050: privado apagado na hora; público anonimizado; foto de avaliação 180 dias depois) | Toda leitura escopada por dono (404 a terceiros) |
 | 4 | Criação com IA | Usuários | Pedidos (texto livre, briefing, restrições do pedido), conversa, prompts de imagem, foto-base no modo de edição | Gerar receitas e imagens | Contrato (art. 7º, V) | Enquanto a conta existir; apagado na eliminação; o usuário apaga a conversa por sessão | Prompts sem nome, e-mail ou ids; fornecedores não treinam com API |
 | 5 | Registros de uso de IA | Usuários | data, modelo, tokens, custo (sem conteúdo) | Cotas, custo, abuso | Legítimo interesse (art. 7º, IX), LIA A | 24 meses; extração 30 dias | — |
 | 6 | Restrições alimentares salvas | Usuários | Lista fixa (vegana, sem glúten…) — dado sensível | Pré-marcar os pedidos | Consentimento específico e destacado (art. 11, I); transferência pelo art. 33, VIII | Até desmarcar ou eliminar a conta | Não aparece no perfil público |

@@ -10,7 +10,7 @@ import { seedSessionHeaders, seedUser } from '../helpers/users'
 import { seedRecipe, seedReview } from '../helpers/recipes'
 
 /**
- * Eliminação self-service da própria conta (#401, GAP-6; #473, ADR-0049; LGPD Art. 18 VI + Art. 16).
+ * Eliminação self-service da própria conta (#401, GAP-6; #473, ADR-0050; LGPD Art. 18 VI + Art. 16).
  * Contrato de `POST /api/me/erasure`: anonimiza a PII + bloqueia (deletedAt) + carimba (anonymizedAt) +
  * desloga (apaga sessões) + remove credenciais (apaga account e os tokens de verification) + APAGA o
  * conteúdo PRIVADO + audita; MANTÉM o conteúdo PÚBLICO (Receitas públicas e avaliações, anonimizadas).

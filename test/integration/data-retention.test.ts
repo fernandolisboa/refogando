@@ -24,7 +24,7 @@ import { seedUser } from '../helpers/users'
 import { seedBriefing } from '../helpers/generation'
 
 /**
- * Cron de retenção (#473, ADR-0049) contra o Postgres real, com `now` INJETADO: para cada passo, uma linha
+ * Cron de retenção (#473, ADR-0050) contra o Postgres real, com `now` INJETADO: para cada passo, uma linha
  * logo DENTRO do prazo (1 s mais nova que o corte) fica e uma logo FORA (1 s mais velha) sai. Mais os casos
  * de borda do takedown, a lápide do cadastro expurgado, os cascos das contas eliminadas, lotes, orçamento,
  * idempotência e a rota (401, linha exata, 500 com warn).

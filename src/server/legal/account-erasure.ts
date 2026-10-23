@@ -8,7 +8,7 @@ import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { purgePrivateContentInTx } from '@/server/legal/private-content'
 
 /**
- * Núcleo da ELIMINAÇÃO self-service da própria conta (issue #401, GAP-6; #473, ADR-0049; LGPD Art. 18 VI +
+ * Núcleo da ELIMINAÇÃO self-service da própria conta (issue #401, GAP-6; #473, ADR-0050; LGPD Art. 18 VI +
  * Art. 16; `docs/legal/takedown-e-remocao-titular.md` §6/§8). SÓ o próprio titular (o route já passou por
  * `requireSession`; aqui só recebemos o `session.user.id` — NUNCA um id vindo do cliente ⇒ sem IDOR).
  *
@@ -35,7 +35,7 @@ import { purgePrivateContentInTx } from '@/server/legal/private-content'
  *
  * FICAM, com o autor anonimizado: as Receitas PÚBLICAS e as avaliações (terceiros dependem delas — saves,
  * avaliações e agregados de outras pessoas), as denúncias que o titular registrou (prova do processo de
- * moderação) e os ledgers de uso até a retenção deles (ADR-0049). Os blobs (avatar, imagens, fotos das
+ * moderação) e os ledgers de uso até a retenção deles (ADR-0050). Os blobs (avatar, imagens, fotos das
  * avaliações que caíram em cascata) saem DEPOIS do commit, best-effort e com concorrência limitada.
  *
  * IDEMPOTENTE: se a conta já está eliminada (`deletedAt` != null), é no-op (`kind: 'already_erased'`) —

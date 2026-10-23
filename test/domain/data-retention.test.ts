@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DATA_RETENTION_DAYS, retentionCutoffs } from '@/domain/data-retention'
 
 /**
- * Prazos de retenção (#473, ADR-0049) — PURO, datas simuladas. O que importa é nunca apagar ANTES do prazo
+ * Prazos de retenção (#473, ADR-0050) — PURO, datas simuladas. O que importa é nunca apagar ANTES do prazo
  * de calendário: para toda data de criação `t`, `t + N dias` não pode cair antes de `t + período`.
  */
 

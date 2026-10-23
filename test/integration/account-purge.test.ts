@@ -12,7 +12,7 @@ import { seedCollection, seedRecipe, seedReview } from '../helpers/recipes'
 import { withFailingTrigger } from '../helpers/failing-trigger'
 
 /**
- * Cron das contas anonimizadas (#411/#473, LGPD Art. 16; ADR-0049). Três frentes:
+ * Cron das contas anonimizadas (#411/#473, LGPD Art. 16; ADR-0050). Três frentes:
  *  - `purgeAnonymizedAccounts` com `now` INJETADO (datas simuladas): remove os blobs de PII residual
  *    (foto de avaliação) das contas anonimizadas passadas da retenção, nula os ponteiros, é IDEMPOTENTE
  *    e não toca contas dentro da retenção nem URL estrangeira.

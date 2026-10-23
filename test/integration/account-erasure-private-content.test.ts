@@ -51,7 +51,7 @@ import { makeReceita } from '../helpers/generation'
 import { withFailingTrigger } from '../helpers/failing-trigger'
 
 /**
- * Eliminação da conta: o conteúdo PRIVADO sai, o PÚBLICO fica (#473, ADR-0049). Postgres real; o
+ * Eliminação da conta: o conteúdo PRIVADO sai, o PÚBLICO fica (#473, ADR-0050). Postgres real; o
  * `FakeImageStore` guarda os blobs para provar o que foi apagado depois do commit (e o que nunca é: URL
  * estrangeira, face compartilhada, galeria do catálogo). O contrato da rota está em `me-erasure.test.ts`.
  */

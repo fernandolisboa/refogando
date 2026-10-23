@@ -10,7 +10,7 @@ import { isAuthorizedCron } from '@/server/http/cron-auth'
 import { errorLogFields } from '@/domain/error-report'
 
 /**
- * Cron das contas anonimizadas e dos cadastros abandonados (issues #411/#473, LGPD Art. 16; ADR-0049;
+ * Cron das contas anonimizadas e dos cadastros abandonados (issues #411/#473, LGPD Art. 16; ADR-0050;
  * `docs/legal/takedown-e-remocao-titular.md` §6/§8). GET diário (Vercel Cron — ver `vercel.json`), três
  * varreduras em sequência:
  *  1. `purgeStalePendingSignups` (#470 follow-up, ADR-0014): APAGA (hard-delete) os CADASTROS PENDENTES

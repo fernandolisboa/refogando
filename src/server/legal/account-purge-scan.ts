@@ -14,7 +14,7 @@ import {
 import { timeBudget, type TimeBudget } from '@/server/time-budget'
 
 /**
- * As duas varreduras das contas anonimizadas (`docs/legal/takedown-e-remocao-titular.md` §6/§8; ADR-0049).
+ * As duas varreduras das contas anonimizadas (`docs/legal/takedown-e-remocao-titular.md` §6/§8; ADR-0050).
  * A eliminação self-service (#401/#473, `eraseOwnAccount`) anonimiza a PII, carimba `anonymized_at` e, desde
  * o #473, já APAGA o conteúdo privado na mesma transação; o conteúdo PÚBLICO (Receitas públicas, avaliações)
  * fica, com o autor anonimizado (`recipe.owner_id` é ON DELETE RESTRICT e a linha `users` não é apagada).

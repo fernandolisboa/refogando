@@ -1,5 +1,5 @@
 /**
- * Prazos de retenção dos dados que o app apaga sozinho (issue #473, ADR-0049; `docs/legal/registro-de-
+ * Prazos de retenção dos dados que o app apaga sozinho (issue #473, ADR-0050; `docs/legal/registro-de-
  * operacoes.md`; `docs/legal/parecer-interno-2026-10-22.md` §5). PURO (sem DB, sem `Date.now()`): o cron de
  * retenção (`/api/cron/retention`) injeta o "agora" e apaga o que é MAIS VELHO que o corte.
  *

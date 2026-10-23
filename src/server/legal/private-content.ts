@@ -21,7 +21,7 @@ import { IMAGE_BLOB_COLS, imageRowBlobUrls } from '@/server/images/image-blobs'
 import type { Tx } from '@/server/recipe/image'
 
 /**
- * Conteúdo PRIVADO de uma conta eliminada (issue #473, ADR-0049; LGPD Art. 16 e Art. 18 VI;
+ * Conteúdo PRIVADO de uma conta eliminada (issue #473, ADR-0050; LGPD Art. 16 e Art. 18 VI;
  * `docs/legal/takedown-e-remocao-titular.md` §6). Núcleo COMPARTILHADO pela eliminação self-service
  * (`eraseOwnAccount`, na mesma tx da anonimização) e pela varredura diária das contas anonimizadas antes
  * desta regra (`purgeAnonymizedPrivateContent`). Roda DENTRO da transação de quem chama e NUNCA toca blob:
@@ -162,7 +162,7 @@ function existsIn(column: AnyPgColumn, owner: string | AnyPgColumn): SQL {
 
 /**
  * Sobrou conteúdo privado do titular? O OR dos mesmos alvos de `purgePrivateContentInTx` (cada EXISTS anda
- * por um índice que começa pelo dono, menos o da galeria — `recipe_image.created_by` não tem índice (ADR-0049,
+ * por um índice que começa pelo dono, menos o da galeria — `recipe_image.created_by` não tem índice (ADR-0050,
  * Consequências; #601)). Seleciona os candidatos da varredura e é o ponto fixo dos testes: falso depois da
  * limpeza. `owner` é o id (string) de uma conta ou `users.id` (correlacionado) na varredura; nesta, a galeria
  * entra pelo `ownersOfOrphanGallery`, que não é calculado por conta.

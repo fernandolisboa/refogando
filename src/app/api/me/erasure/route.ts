@@ -3,7 +3,7 @@ import { getDb } from '@/server/deps'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 
 /**
- * POST /api/me/erasure — ELIMINAÇÃO self-service da PRÓPRIA conta (issue #401, GAP-6; #473, ADR-0049;
+ * POST /api/me/erasure — ELIMINAÇÃO self-service da PRÓPRIA conta (issue #401, GAP-6; #473, ADR-0050;
  * LGPD Art. 18, VI; arts. 15, III e 16; `docs/legal/takedown-e-remocao-titular.md` §6/§8).
  *
  * Owner-only via `requireSession` (ADR-0011): 401 = Visitante ou conta já soft-deletada. SEM
