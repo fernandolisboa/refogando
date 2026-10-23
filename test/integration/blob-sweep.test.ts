@@ -203,6 +203,30 @@ describe('sweepBlobs — fotos antigas com metadado (#603)', () => {
     expect(store.blobs.has(withExif)).toBe(true)
   })
 
+  it('URL plantada em users.image (antes do #604) não entra na auditoria nem apaga o blob de outra pessoa', async () => {
+    // Foto de receita de outra pessoa plantada como avatar: duas referências ⇒ fora da auditoria.
+    const recipePhoto = await put('recipes', OLD, JPEG_EXIF)
+    const { imageId } = await recipeWithImage(recipePhoto, 'user_photo')
+    // Foto de avaliação plantada como avatar: uma referência só, mas fora de `avatars/`.
+    const reviewPhoto = await put('reviews', OLD, JPEG_EXIF)
+    // Avatar antigo de outra pessoa plantado numa segunda conta.
+    const sharedAvatar = await put('avatars', OLD, JPEG_EXIF)
+    const atacante = await seedUser({ email: 'plantou-receita@ex.com' })
+    const atacante2 = await seedUser({ email: 'plantou-avaliacao@ex.com' })
+    const dona = await seedUser({ email: 'avatar-dona@ex.com' })
+    const atacante3 = await seedUser({ email: 'plantou-avatar@ex.com' })
+    await getDb().update(users).set({ image: recipePhoto }).where(eq(users.id, atacante))
+    await getDb().update(users).set({ image: reviewPhoto }).where(eq(users.id, atacante2))
+    await getDb().update(users).set({ image: sharedAvatar }).where(eq(users.id, dona))
+    await getDb().update(users).set({ image: sharedAvatar }).where(eq(users.id, atacante3))
+
+    const counts = await run()
+    expect(counts).toMatchObject({ fotosVerificadas: 0, fotosReencodadas: 0, apagados: 0 })
+    for (const url of [recipePhoto, reviewPhoto, sharedAvatar]) expect(store.blobs.has(url)).toBe(true)
+    const [img] = await getDb().select({ u: recipeImage.blobUrl }).from(recipeImage).where(eq(recipeImage.id, imageId))
+    expect(img.u).toBe(recipePhoto)
+  })
+
   it('orçamento esgotado ⇒ fotos ficam para a próxima passada (fotosRestantes)', async () => {
     const a = await put('recipes', OLD, JPEG_EXIF)
     await recipeWithImage(a, 'user_photo')

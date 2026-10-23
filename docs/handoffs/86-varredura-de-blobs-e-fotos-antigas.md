@@ -36,6 +36,7 @@ Este handoff trata dos três riscos de blob que o ADR-0050 deixou como follow-up
 - **Só em produção.** A varredura roda só com `VERCEL_ENV=production`, ou em testes (`NODE_ENV=test`). Num Preview ou num `next dev` local, ela responde `{ pulada: 1 }`.
 - **A referência é a URL exata** que o `put` devolveu e o banco guarda: `users.image`, `recipe_image.blob_url`/`thumb_url`/`detail_url` e `recipe_review.photo_url`.
   - Uma coluna NOVA que guarde URL de blob TEM de entrar em `loadReferences`. Se não entrar, a varredura apaga os blobs dela depois de 24 h.
+- **Auditoria só pela linha dona.** Uma URL que o banco referencia mais de uma vez, ou que mora fora do prefixo do próprio tipo (`avatars/` para `users.image`, `recipes/` para a foto de receita), fica fora da auditoria. Antes do #604 uma conta podia plantar em `users.image` a URL da foto de outra pessoa, e re-encodar pela linha errada apagaria o blob que a linha dona ainda usa.
 - **O log leva só contagens.** Nunca URL, caminho ou id.
 
 ## 4. Auditoria de EXIF (critério da issue)

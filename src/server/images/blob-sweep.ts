@@ -115,8 +115,10 @@ async function loadReferences(db: Database): Promise<Map<string, Kind>> {
   const kinds = new Map<string, Kind>()
   const mark = (url: string | null, kind: Kind) => {
     if (!url) return
-    // Avatar e foto de receita ganham de "outra": é o que decide se a foto entra na auditoria.
-    if (!kinds.has(url) || kinds.get(url) === 'other') kinds.set(url, kind)
+    // Uma URL referenciada mais de uma vez vira "outra" e fica fora da auditoria: antes do #604 uma conta podia
+    // plantar em `users.image` a URL da foto de receita (ou do avatar) de outra pessoa, e re-encodar pela linha
+    // errada apagaria o blob que a outra linha ainda usa.
+    kinds.set(url, kinds.has(url) ? 'other' : kind)
   }
   const [images, reviews, avatars] = await Promise.all([
     db
@@ -137,7 +139,19 @@ async function loadReferences(db: Database): Promise<Map<string, Kind>> {
   for (const r of reviews) mark(r.u, 'other')
   for (const r of images) mark(r.blobUrl, r.provenance === 'user_photo' ? 'recipePhoto' : 'other')
   for (const r of avatars) mark(r.u, 'avatar')
+  // Pelo mesmo motivo, só entra na auditoria o arquivo que mora no prefixo do próprio tipo.
+  for (const [url, kind] of kinds) {
+    if (kind !== 'other' && !blobPath(url).startsWith(kind === 'avatar' ? '/avatars/' : '/recipes/')) kinds.set(url, 'other')
+  }
   return kinds
+}
+
+function blobPath(url: string): string {
+  try {
+    return new URL(url).pathname
+  } catch {
+    return ''
+  }
 }
 
 /** Ordem que gira a cada hora: hash da URL com a hora (horas desde a época). */
