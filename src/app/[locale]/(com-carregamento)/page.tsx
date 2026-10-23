@@ -137,7 +137,9 @@ export default async function Home({
 
   // #472: a faixa para quem não entrou fica acima da "Receita da semana". Vai no HTML para todos (sem salto de
   // layout para o visitante) e some no navegador quando a sessão mostra uma conta. A frase é sorteada aqui, uma
-  // vez por requisição (a home é dinâmica), e desce por prop para a hidratação pintar a mesma.
+  // vez por requisição, e desce por prop para a hidratação pintar a mesma. Landmine: a home só é dinâmica porque o
+  // `generateMetadata` lê `searchParams`; sem essa leitura, a frase congelaria no build sem aviso. (`connection()`
+  // garantiria a requisição, mas quebra quem chama `Home()` fora do Next, como test/integration/home-feed.)
   const highlight = (
     <>
       <HomeValueBanner indice={sortearFaixa(MESSAGES[locale].faixaHome.titulos.length)} />
