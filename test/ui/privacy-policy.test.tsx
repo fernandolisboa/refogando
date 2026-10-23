@@ -97,11 +97,14 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(screen.getByText(m.s7Direitos[10])).toBeInTheDocument()
   })
 
-  it('#599: a revisão de imagens da curadoria não é exceção do conteúdo privado (seção 4), só da receita publicada', () => {
+  it('#599: a revisão de imagens da curadoria não é exceção do conteúdo privado, só da foto de receita publicada', () => {
     expect(ptBR.privacidade.s4Itens[0]).toContain('com uma exceção: os ingredientes fora do vocabulário')
-    expect(ptBR.privacidade.s4Itens[0]).toContain('enquanto a receita é privada, a imagem fica fora da fila')
-    expect(enUS.privacidade.s4Itens[0]).toContain('while the recipe is private, the image stays out of the queue')
-    expect(ptBR.termos.s5Corpo[1]).not.toContain('imagens geradas por IA')
+    expect(ptBR.privacidade.s4Itens[0]).toContain('as outras imagens da galeria e as de receitas privadas ficam fora da fila')
+    expect(enUS.privacidade.s4Itens[0]).toContain('with one exception: the out-of-vocabulary ingredients')
+    expect(enUS.privacidade.s4Itens[0]).toContain('the other images in the gallery and those of private recipes stay out of the queue')
+    expect(ptBR.privacidade.s33Valores[1]).toContain('quando viram a foto de uma receita publicada')
+    expect(enUS.privacidade.s33Valores[1]).toContain('once they become the photo of a published recipe')
+    for (const m of [ptBR.privacidade, enUS.privacidade]) expect(m.rodapeData).toBe(DATA_POLITICA_V3_2)
   })
 
   it('tabelas de prestadores (item 5) e de cookies (item 8): uma linha por entrada, colunas do mesmo tamanho', () => {

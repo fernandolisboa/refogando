@@ -1731,12 +1731,13 @@ export const enUS: Messages = {
     erroSemAvaliacao: 'This report is not about a review.',
   },
   // #227 (ADR-0022 dec.3): PROACTIVE, NON-BLOCKING Curator queue — AI generations WITH the author's
-  // refinement. The image stays public (default-open, ADR-0020); the Curator only monitors and can
-  // REMOVE (moderate, hides it from the public) OR DISMISS (judged fine, keeps it public).
+  // refinement, only the photo of a published recipe (#599). The image stays public (default-open, ADR-0020);
+  // the Curator only monitors and can REMOVE (moderate, hides it from the public) OR DISMISS (judged fine, keeps
+  // it public).
   revisaoImagens: {
     titulo: 'Images to review',
     descricao:
-      "AI generations with the author's refinement, from published recipes (private ones are left out). The image stays visible to the public — this queue is just for monitoring. Remove it (hides it from the public) or dismiss it (keeps it visible).",
+      "AI generations with the author's refinement that became the photo of a published recipe. The image stays visible to the public — this queue is just for monitoring. Remove it (hides it from the public) or dismiss it (keeps it visible).",
     receita: 'Recipe',
     autor: 'Author',
     semReceita: 'No linked recipe',
@@ -1985,7 +1986,7 @@ export const enUS: Messages = {
     s33Titulo: '3.3. AI creation, images and translation',
     s33Valores: [
       'what you ask the AI for: the free text, the creation form (with the restrictions checked in the request) and the conversation; image requests and refinements and, when you ask to edit a photo, the photo itself; your request to the Menu suggestion (meals, servings and an optional free-text note), sent with the title and classification of the candidate recipes and not stored by us; usage records (date and, where applicable, model, tokens and cost, without the content); and hand-written ingredients that are not in the vocabulary: the ones that recur go, without your name, into a list the curators use to expand the vocabulary; and new cuisines you type under "Other", which go, without your name, into a curators’ queue and, if approved, become an option for everyone.',
-      'generate recipes and dish images, choose the scene of the photo, translate recipes between Portuguese and English, extract ingredients from a text, suggest a menu from existing recipes, review images generated with a style request or edited by AI once the recipe is published, expand the ingredient and cuisine vocabulary and enforce usage and cost limits.',
+      'generate recipes and dish images, choose the scene of the photo, translate recipes between Portuguese and English, extract ingredients from a text, suggest a menu from existing recipes, review images generated with a style request or edited by AI once they become the photo of a published recipe, expand the ingredient and cuisine vocabulary and enforce usage and cost limits.',
       'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control, for the curators’ review of images and for expanding the vocabulary — Art. 7, IX.',
       'text requests and conversations are kept while the account exists (you can delete the conversation of each creation) and are erased if you delete your account; image requests are not stored, only the generated image. A menu suggestion is only stored as a planned meal if you accept it. Usage records are erased after 24 months (ingredient-extraction records, after 30 days); if you delete your account before that, they remain until then with nothing that identifies you.',
     ],
@@ -2030,7 +2031,7 @@ export const enUS: Messages = {
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [
-      'How: data is processed by electronic means, on servers of contracted service providers (item 5). We apply appropriate security measures (Art. 46): access only with authentication, passwords stored as hashes, connections always encrypted (HTTPS), removal of metadata from uploaded photos, and each piece of private content is shown only to its owner, with one exception: the out-of-vocabulary ingredients that recur and the new cuisines you type under "Other" reach the curators without your name (item 3.3). When you publish a recipe with an image generated with a style request of yours or edited by AI, the image goes into a review queue for the curators, who see the image, the recipe title, your name and your @; while the recipe is private, the image stays out of the queue. Images live at public addresses that are not listed and are hard to guess.',
+      'How: data is processed by electronic means, on servers of contracted service providers (item 5). We apply appropriate security measures (Art. 46): access only with authentication, passwords stored as hashes, connections always encrypted (HTTPS), removal of metadata from uploaded photos, and each piece of private content is shown only to its owner, with one exception: the out-of-vocabulary ingredients that recur and the new cuisines you type under "Other" reach the curators without your name (item 3.3). When the photo of a published recipe is an image generated with a style request of yours or edited by AI, it goes into a review queue for the curators, who see the image, the recipe title, your name and your @; the other images in the gallery and those of private recipes stay out of the queue. Images live at public addresses that are not listed and are hard to guess.',
       'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it or for a legal obligation. When the purpose ends, we erase or anonymize the data (Arts. 15, 16 and 12). The retention period of each processing activity is in item 3. We make a backup of the database every week and keep the three most recent: whatever is erased or anonymized leaves them within 4 weeks. Temporary copies of the database used to test changes are deleted when the test ends.',
     ],
 
@@ -2144,7 +2145,7 @@ export const enUS: Messages = {
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
-      `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only images of published recipes; those of private recipes stay out of the queue (item 3.3 and section 4).`,
+      `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only the photo of published recipes; the other images in the gallery and those of private recipes stay out of the queue (item 3.3 and section 4).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',

@@ -134,6 +134,10 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     expect(ptBR.termos.s8Corpo[0]).toContain('receita pública ou uma avaliação pelo botão Reportar')
     expect(ptBR.termos.s8Corpo[0]).toContain('privacidade@refogando.com')
     expect(enUS.termos.s8Corpo[0]).toContain('public recipe or a review with the Report button')
+    // #599 (v1.2): a revisão de imagens da curadoria saiu das exceções do conteúdo privado (item 5).
+    expect(ptBR.termos.s5Corpo[1]).not.toContain('imagens geradas por IA')
+    expect(enUS.termos.s5Corpo[1]).not.toContain('AI images')
+    expect(ptBR.termos.s5Corpo[1]).toContain('A exceção está na Política de Privacidade')
     renderAt('pt-BR')
     // Match exato: distinto da linha do histórico.
     expect(screen.getByText(ptBR.termos.rodapeVersao)).toBeInTheDocument()

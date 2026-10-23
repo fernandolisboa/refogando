@@ -80,3 +80,7 @@ A página da receita pública ganhou o botão "Reportar" (`RecipeReportButton`, 
 O item 8 dos Termos passa a dizer que receita pública e avaliação se denunciam pelo botão Reportar, e o e-mail continua valendo para tudo (é o caminho para perfil e para quem não tem conta). A versão é a v1.1 (`DATA_TERMOS_V1_1`, nova linha em `s10Historico` e rodapé). O parecer interno (§8) e o `CONTEXT.md` foram corrigidos junto.
 
 **O que é "mudança relevante" (item 10).** Leva aviso de 15 dias (nova `AVISO_LEGAL_VERSAO` e/ou e-mail) a mudança que: restringe um direito ou uma via que a pessoa tinha; amplia a licença sobre o conteúdo ou cria obrigação nova para ela; ou muda sanções, idade mínima ou o que acontece com os dados ou o conteúdo na eliminação. Mudança só a favor da pessoa (uma via a mais, uma garantia nova) ou só de redação vale na publicação: ganha versão, linha no histórico e data própria, sem aviso. A v1.1 é desse segundo tipo (uma via a mais, nada retirado), então não troca `AVISO_LEGAL_VERSAO`. Na dúvida, avisar.
+
+## Atualização (2026-10-23, #599): Termos v1.2
+
+O item 5 deixa de listar a revisão de imagens pela curadoria como exceção do conteúdo privado (a fila passou a mostrar só a foto de receita publicada, ADR-0022). É menos tratamento, a favor da pessoa: pelo critério acima, vale na publicação, com versão e data próprias (`DATA_TERMOS_V1_2`, a mesma da política v3.2) e sem trocar `AVISO_LEGAL_VERSAO`.

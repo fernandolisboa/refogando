@@ -1844,12 +1844,13 @@ export const ptBR = {
     erroSemAvaliacao: 'Este report não é de uma avaliação.',
   },
   // #227 (ADR-0022 dec.3): fila PROATIVA e NÃO-BLOQUEANTE do Curador — gerações por IA COM refino.
-  // Só de receitas publicadas (#599). A imagem segue pública (default-open, ADR-0020); o Curador só monitora e pode REMOVER (moderar,
-  // esconde do público) OU DISPENSAR (julgou ok, mantém pública). Espelha a fila de moderação.
+  // Só a foto de receita publicada (#599). A imagem segue pública (default-open, ADR-0020); o Curador só
+  // monitora e pode REMOVER (moderar, esconde do público) OU DISPENSAR (julgou ok, mantém pública). Espelha a
+  // fila de moderação.
   revisaoImagens: {
     titulo: 'Imagens para revisar',
     descricao:
-      'Gerações por IA com refino do autor, de receitas publicadas (as privadas não entram). A imagem continua visível ao público — esta fila é só para monitorar. Remova (esconde do público) ou dispense (mantém visível).',
+      'Gerações por IA com refino do autor que viraram a foto de uma receita publicada. A imagem continua visível ao público — esta fila é só para monitorar. Remova (esconde do público) ou dispense (mantém visível).',
     receita: 'Receita',
     autor: 'Autor',
     semReceita: 'Sem receita vinculada',
@@ -2097,7 +2098,7 @@ export const ptBR = {
     s33Titulo: '3.3. Criação com IA, imagens e tradução',
     s33Valores: [
       'o que você pede à IA: o texto livre, o formulário de criação (com as restrições marcadas no pedido) e a conversa; os pedidos e refinos de imagem e, quando você pede para editar uma foto, a própria foto; o pedido à Sugestão de cardápio (refeições, porções e uma nota livre opcional), enviado com o título e a classificação das receitas candidatas e não guardado por nós; os registros de uso (data e, quando houver, modelo, tokens e custo, sem o conteúdo); e os ingredientes escritos à mão que não estão no vocabulário: os que se repetem entram, sem o seu nome, numa lista para a curadoria ampliar o vocabulário; e as cozinhas novas que você escreve em "Outra", que entram, sem o seu nome, numa fila da curadoria e, se aprovadas, viram opção para todos.',
-      'gerar receitas e imagens de pratos, escolher o cenário da foto, traduzir receitas entre português e inglês, extrair ingredientes de um texto, sugerir um cardápio com receitas existentes, revisar imagens geradas com um pedido de estilo ou editadas por IA quando a receita é publicada, ampliar o vocabulário de ingredientes e de cozinhas e controlar limites de uso e custo.',
+      'gerar receitas e imagens de pratos, escolher o cenário da foto, traduzir receitas entre português e inglês, extrair ingredientes de um texto, sugerir um cardápio com receitas existentes, revisar imagens geradas com um pedido de estilo ou editadas por IA quando viram a foto de uma receita publicada, ampliar o vocabulário de ingredientes e de cozinhas e controlar limites de uso e custo.',
       'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo, para a revisão das imagens pela curadoria e para ampliar o vocabulário — Art. 7º, IX.',
       'os pedidos de texto e as conversas ficam enquanto a conta existir (você pode apagar a conversa de cada criação) e são apagados se você eliminar a conta; os pedidos de imagem não são guardados, só a imagem gerada. Uma sugestão de cardápio só é guardada como refeição planejada se você a aceitar. Os registros de uso são apagados depois de 24 meses (os de extração de ingredientes, depois de 30 dias); se você eliminar a conta antes, eles ficam até lá sem nada que identifique você.',
     ],
@@ -2142,7 +2143,7 @@ export const ptBR = {
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
     s4Itens: [
-      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (item 5). Aplicamos medidas de segurança compatíveis (Art. 46): acesso só com autenticação, senhas guardadas como hash, conexões sempre cifradas (HTTPS), remoção dos metadados das fotos enviadas e cada conteúdo privado aparece só para o dono, com uma exceção: os ingredientes fora do vocabulário que se repetem e as cozinhas novas que você escreve em "Outra" chegam à curadoria sem o seu nome (item 3.3). Quando você publica uma receita com imagem gerada com um pedido de estilo seu ou editada por IA, a imagem entra numa fila de revisão da curadoria, que vê a imagem, o título da receita, o seu nome e o seu @; enquanto a receita é privada, a imagem fica fora da fila. As imagens ficam em endereços públicos que não são listados nem fáceis de adivinhar.',
+      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (item 5). Aplicamos medidas de segurança compatíveis (Art. 46): acesso só com autenticação, senhas guardadas como hash, conexões sempre cifradas (HTTPS), remoção dos metadados das fotos enviadas e cada conteúdo privado aparece só para o dono, com uma exceção: os ingredientes fora do vocabulário que se repetem e as cozinhas novas que você escreve em "Outra" chegam à curadoria sem o seu nome (item 3.3). Quando a foto de uma receita publicada é uma imagem gerada com um pedido de estilo seu ou editada por IA, ela entra numa fila de revisão da curadoria, que vê a imagem, o título da receita, o seu nome e o seu @; as outras imagens da galeria e as de receitas privadas ficam fora da fila. As imagens ficam em endereços públicos que não são listados nem fáceis de adivinhar.',
       'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Arts. 15, 16 e 12). Os prazos de cada tratamento estão no item 3. Fazemos uma cópia de segurança do banco por semana e guardamos as três mais recentes: o que é apagado ou anonimizado sai delas em até 4 semanas. Cópias temporárias do banco usadas para testar mudanças são apagadas quando o teste termina.',
     ],
 
@@ -2256,7 +2257,7 @@ export const ptBR = {
       'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
-      `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só imagens de receitas publicadas; as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
+      `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
