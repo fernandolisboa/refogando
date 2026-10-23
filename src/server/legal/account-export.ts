@@ -419,7 +419,7 @@ export async function* accountExportSections(
 
   // ── Notificações (a caixa do titular): tipo + timestamps + refs. SEM identidade do ator. ─────
   //    #609: com a categoria do motivo das retiradas (o código da lista fechada que a pessoa vê na caixa; null nos
-  //    demais tipos). Nunca o texto livre do Curador nem quem decidiu, que não estão na notificação.
+  //    demais tipos). O texto livre do Curador sai com o conteúdo (receitas/imagens/avaliações), não aqui.
   yield [
     'notifications',
     await db

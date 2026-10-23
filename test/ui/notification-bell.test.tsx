@@ -217,7 +217,7 @@ describe('NotificationBell (#371)', () => {
     })
     renderBell()
     await user.click(screen.getByRole('button', { name: /Notificações/ }))
-    const texto = `${M.receitaModerada}. Motivo: ${M.motivoDireitosAutorais}.`
+    const texto = `${M.receitaModerada}. Motivo: ${ptBR.categoriaModeracaoDono.direitos_autorais}.`
     const item = await screen.findByRole('menuitem', { name: texto })
     expect(item).toHaveAttribute('href', `/pt-BR/recipes/${rid}`)
 

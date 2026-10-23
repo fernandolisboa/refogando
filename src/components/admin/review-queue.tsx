@@ -17,7 +17,7 @@
  * neutros/brand AA — sem token destrutivo (decisão de design; espelha a fila de moderação).
  *
  * #609: remover pede também a CATEGORIA do motivo (lista fechada, `ModerationCategorySelect`), que o dono vê na
- * notificação; o texto livre vira nota interna. Vai no corpo como `category`.
+ * notificação; o texto livre fica fora dela (sai na exportação dos dados do dono). Vai no corpo como `category`.
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -79,6 +79,14 @@ export function ReviewQueue() {
     setErrorKey(null)
   }
 
+  /** Mensagem de erro da remoção: motivo vazio, categoria fora da lista (#609) ou imagem que saiu da fila. */
+  function removalErrorKey(error: string | undefined): NonNullable<typeof errorKey> {
+    if (error === 'dados_invalidos') return 'erroMotivo'
+    if (error === 'categoria_invalida') return 'erroCategoria'
+    if (error === 'not_found') return 'erroNaoEncontrada'
+    return 'erroGenerico'
+  }
+
   async function handleRemove(item: ReviewQueueItemJson) {
     const reason = (reasonDraft[item.imageId] ?? '').trim()
     const category = categoryDraft[item.imageId] ?? ''
@@ -98,15 +106,7 @@ export function ReviewQueue() {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
         setItems(snapshot)
         setErrorId(item.imageId)
-        setErrorKey(
-          body?.error === 'dados_invalidos'
-            ? 'erroMotivo'
-            : body?.error === 'categoria_invalida'
-              ? 'erroCategoria'
-              : body?.error === 'not_found'
-                ? 'erroNaoEncontrada'
-                : 'erroGenerico',
-        )
+        setErrorKey(removalErrorKey(body?.error))
       } else {
         setRemovingId(null)
       }

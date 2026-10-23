@@ -15,7 +15,7 @@
  * a Receita sai do pool de descoberta; o motivo é OBRIGATÓRIO (espelha `decideModerationReason`).
  *
  * #609: toda retirada (receita, só a imagem, avaliação) pede também a CATEGORIA do motivo, da lista fechada
- * (`ModerationCategorySelect`), que o dono vê na notificação; o texto livre vira nota interna. Uma categoria por card
+ * (`ModerationCategorySelect`), que o dono vê na notificação; o texto livre fica fora dela (sai na exportação). Uma categoria por card
  * (`categoryDraft`), compartilhada pelos botões do mesmo painel como o `reasonDraft`. Vai no corpo como `category`.
  *
  * Shape: `createdAt` chega como STRING ISO via `res.json()`; o card NÃO renderiza data, então

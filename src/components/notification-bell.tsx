@@ -91,7 +91,7 @@ export function NotificationBell() {
         ) : (
           notifications.map((n) => {
             const href = notificationHref(n.type, n.refs, locale)
-            const text = renderNotification(m, n.type, n.refs)
+            const text = renderNotification(m, n.type, n.refs, messages.categoriaModeracaoDono)
             // #609: retirada pela curadoria → link IRMÃO "Pedir nova análise" (mailto do canal de privacidade).
             const appealHref = notificationAppealHref(m, n.type, n.refs)
             const quando = formatRelativeTime(n.createdAt, now, locale)

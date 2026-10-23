@@ -27,7 +27,8 @@ import { emitNotification } from '@/server/notification'
  *
  * #609: as 3 retiradas recebem a CATEGORIA do motivo (lista fechada, já validada pela rota — 400
  * `categoria_invalida` antes de qualquer write). Ela vai só na notificação ao dono; o `reason` livre segue
- * obrigatório e é a nota interna da curadoria (colunas `moderation_reason`/`moderated_reason`).
+ * obrigatório (colunas `moderation_reason`/`moderated_reason`): fica fora da notificação, mas sai na exportação dos
+ * dados do dono (#595).
  */
 
 export type ModerationResult =

@@ -2,7 +2,7 @@ import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { applyImageModeration } from '@/server/recipe/moderation'
-import { isModerationCategory } from '@/domain/moderation-category'
+import { parseTakedownBody } from '@/server/http/takedown-body'
 
 /**
  * Curador REMOVE SÓ A IMAGEM da Receita reportada (issue #133, ADR-0016) — esconde a imagem do
@@ -23,19 +23,16 @@ export async function POST(
   const g = await requireRole(request, 'curador')
   if (!g.ok) return g.response
 
-  const body = (await request.json().catch(() => ({}))) as { reason?: unknown; category?: unknown } | null
-  const reason = typeof body?.reason === 'string' ? body.reason : ''
-  // #609: categoria do motivo, da lista fechada (vai na notificação ao dono). Ausente ou fora da lista → 400
-  // ANTES de qualquer write (o núcleo só recebe uma categoria válida).
-  const category = body?.category
-  if (!isModerationCategory(category)) return Response.json({ error: 'categoria_invalida' }, { status: 400 })
+  // #609: motivo livre + categoria da lista fechada (400 `categoria_invalida` antes de qualquer write).
+  const body = await parseTakedownBody(request)
+  if (!body.ok) return body.response
 
   const res = await applyImageModeration({
     db: getDb(),
     reportId: id,
     curatorId: g.session.user.id,
-    reason,
-    category,
+    reason: body.reason,
+    category: body.category,
   })
 
   switch (res.kind) {

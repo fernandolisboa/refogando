@@ -65,20 +65,6 @@ export function isModeratedNotificationType(type: NotificationType): type is Mod
 }
 
 /**
- * #609: rótulo de cada categoria no texto da notificação (chaves flat de `notifications`, minúsculas para caber
- * depois de "Motivo:"). `satisfies` trava drift com `MODERATION_CATEGORIES`.
- */
-const CATEGORY_KEY = {
-  direitos_autorais: 'motivoDireitosAutorais',
-  pessoa_real: 'motivoPessoaReal',
-  conteudo_ofensivo: 'motivoConteudoOfensivo',
-  sexual_ou_violento: 'motivoSexualOuViolento',
-  spam: 'motivoSpam',
-  conteudo_ilegal: 'motivoConteudoIlegal',
-  outro: 'motivoOutro',
-} as const satisfies Record<ModerationCategory, keyof Messages['notifications']>
-
-/**
  * #374: renderiza a NOTA (1–5) como número + ★ (ex.: "4★") — casa o display de estrelas da página
  * (`recipe-review-section`) sem a ambiguidade de glifos cheios/vazios num texto de uma linha. PURO e
  * defensivo: `null`/`undefined`/não-finito → string vazia (o template só mostra os parênteses vazios;
@@ -98,19 +84,21 @@ export function renderStars(rating: number | null | undefined): string {
  * `new_follower`: com nome do ator → "{name} começou a seguir você"; ator degradado (nome null/vazio)
  * → variante anônima. Tipos ainda não implementados nesta fatia → texto genérico seguro.
  *
- * #609: nas 3 retiradas, com categoria → o texto base + "Motivo: <categoria>." (`comMotivo`). Sem categoria (linha
- * antiga) ou com um código desconhecido → só o texto base, como antes. Nunca o texto livre do Curador nem quem decidiu.
+ * #609: nas 3 retiradas, com categoria → o texto base + "Motivo: <categoria>." (`comMotivo`, rótulo de `motivos` =
+ * `messages.categoriaModeracaoDono`, no mesmo locale). Sem categoria (linha antiga) ou com um código desconhecido → só
+ * o texto base, como antes. Nunca o texto livre do Curador nem quem decidiu.
  */
 export function renderNotification(
   msgs: Messages['notifications'],
   type: NotificationType,
   refs: NotificationRefs,
+  motivos: Messages['categoriaModeracaoDono'],
 ): string {
   const base = renderBase(msgs, type, refs)
   if (!isModeratedNotificationType(type) || !isModerationCategory(refs.moderationCategory)) return base
   // `{motivo}` primeiro: os dois valores são confiáveis (i18n + estrelas), mas a ordem segue a regra do
   // `review_on_recipe` (o valor interpolado por último é o que não pode carregar token).
-  return msgs.comMotivo.replace('{motivo}', msgs[CATEGORY_KEY[refs.moderationCategory]]).replace('{texto}', base)
+  return msgs.comMotivo.replace('{motivo}', motivos[refs.moderationCategory]).replace('{texto}', base)
 }
 
 function renderBase(

@@ -1,5 +1,5 @@
 {
-  "id": "54a4ab81-d2e7-44f1-b887-8e0447b56c99",
+  "id": "a01ebc8e-b580-4496-9d0f-57b2c6008f6e",
   "prevId": "aadc9c8e-37ca-4454-a662-ca205fc902ad",
   "version": "7",
   "dialect": "postgresql",
@@ -5241,7 +5241,6 @@
         "direitos_autorais",
         "pessoa_real",
         "conteudo_ofensivo",
-        "sexual_ou_violento",
         "spam",
         "conteudo_ilegal",
         "outro"

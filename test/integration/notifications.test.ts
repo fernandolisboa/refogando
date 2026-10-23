@@ -603,14 +603,18 @@ describe('emit review_on_recipe (#374) — nova avaliação → dono', () => {
     expect(page.notifications).toHaveLength(1)
     const n = page.notifications[0]
     expect(n.refs.rating).toBe(4)
-    expect(renderNotification(ptBR.notifications, n.type, n.refs)).toBe('Bia avaliou sua receita (4★)')
+    expect(renderNotification(ptBR.notifications, n.type, n.refs, ptBR.categoriaModeracaoDono)).toBe(
+      'Bia avaliou sua receita (4★)',
+    )
 
     // O avaliador EDITA a nota → o join reflete o valor novo (dado vivo, ADR-0028).
     await applyReview({ db: getDb(), id: rid, userId: reviewer, action: 'save', rating: 2 })
     const page2 = await loadNotifications(getDb(), owner)
     const n2 = page2.notifications[0]
     expect(n2.refs.rating).toBe(2)
-    expect(renderNotification(ptBR.notifications, n2.type, n2.refs)).toBe('Bia avaliou sua receita (2★)')
+    expect(renderNotification(ptBR.notifications, n2.type, n2.refs, ptBR.categoriaModeracaoDono)).toBe(
+      'Bia avaliou sua receita (2★)',
+    )
   })
 
   it('best-effort: applyReview SUCEDE e a avaliação PERSISTE mesmo se o insert da notificação falhar', async () => {
@@ -692,7 +696,7 @@ describe('emit review_moderated (#374) — moderação de avaliação → autor'
     const n = page.notifications[0]
     expect(n.refs.rating).toBe(5) // a linha moderada PERSISTE (soft-delete) → o join sobrevive
     expect(n.refs.moderationCategory).toBe('spam') // #609: o código da lista, nunca o texto do Curador ('x')
-    expect(renderNotification(ptBR.notifications, n.type, n.refs)).toBe(
+    expect(renderNotification(ptBR.notifications, n.type, n.refs, ptBR.categoriaModeracaoDono)).toBe(
       'Sua avaliação (5★) foi removida por um moderador. Motivo: spam, propaganda ou golpe.',
     )
   })

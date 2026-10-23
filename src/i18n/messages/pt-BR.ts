@@ -95,16 +95,9 @@ export const ptBR = {
     // Sua avaliação foi removida pelo Curador — impessoal (sem ator), mostra as estrelas da nota.
     avaliacaoModerada: 'Sua avaliação ({stars}) foi removida por um moderador',
     // #609: nas 3 retiradas, a CATEGORIA do motivo (lista fechada, `MODERATION_CATEGORIES`) vai depois do texto:
-    // {texto} = a frase do tipo; {motivo} = um dos rótulos abaixo (minúsculos, para caber depois de "Motivo:").
-    // Nunca o texto livre do Curador nem quem decidiu. Linha antiga, sem categoria → só a frase do tipo.
+    // {texto} = a frase do tipo; {motivo} = o rótulo da seção `categoriaModeracaoDono`. Nunca o texto livre do
+    // Curador nem quem decidiu. Linha antiga, sem categoria → só a frase do tipo.
     comMotivo: '{texto}. Motivo: {motivo}.',
-    motivoDireitosAutorais: 'direitos autorais',
-    motivoPessoaReal: 'imagem ou dados de uma pessoa real',
-    motivoConteudoOfensivo: 'conteúdo ofensivo, discriminatório ou de ódio',
-    motivoSexualOuViolento: 'conteúdo sexual ou violento',
-    motivoSpam: 'spam, propaganda ou golpe',
-    motivoConteudoIlegal: 'conteúdo ilegal',
-    motivoOutro: 'outra regra dos Termos de Uso',
     // #609: link irmão do item nas retiradas (Termos, item 8) — abre um e-mail para o canal de privacidade. O
     // assunto nomeia o conteúdo pelo id da receita ({id}); sem o id, o genérico.
     pedirNovaAnalise: 'Pedir nova análise',
@@ -162,6 +155,25 @@ export const ptBR = {
     intermediario: 'Intermediário',
     avancado: 'Avançado',
   } satisfies Record<NivelChef, string>,
+  // #609: categoria do motivo de uma retirada pela curadoria (lista fechada, `MODERATION_CATEGORIES`), em duas formas.
+  // Para o DONO, no texto da notificação depois de "Motivo:" (`notifications.comMotivo`): minúscula, sem os itens.
+  categoriaModeracaoDono: {
+    direitos_autorais: 'direitos autorais',
+    pessoa_real: 'imagem ou dados de uma pessoa real',
+    conteudo_ofensivo: 'conteúdo ofensivo, discriminatório, de assédio ou de ódio',
+    spam: 'spam, propaganda ou golpe',
+    conteudo_ilegal: 'conteúdo ilegal',
+    outro: 'outra regra dos Termos de Uso',
+  } satisfies Record<ModerationCategory, string>,
+  // Para o CURADOR, nas filas de moderação e de revisão de imagens, com o item dos Termos a que ela se refere.
+  categoriaModeracaoLabel: {
+    direitos_autorais: 'Direitos autorais (Termos, itens 4, 5 e 7)',
+    pessoa_real: 'Imagem ou dados de uma pessoa real (itens 4 e 7)',
+    conteudo_ofensivo: 'Ofensivo, discriminatório, de assédio ou de ódio (itens 4 e 7)',
+    spam: 'Spam, propaganda ou golpe (item 7)',
+    conteudo_ilegal: 'Conteúdo ilegal (itens 7 e 8)',
+    outro: 'Outra regra dos Termos',
+  } satisfies Record<ModerationCategory, string>,
   // Tela de Busca (#56): título, campo, estados (inicial/vazio), seções e selos de
   // proveniência por item. Os rótulos de SELO ("Do catálogo"/"Da comunidade") são
   // distintos dos de SEÇÃO ("Catálogo"/"Comunidade") de propósito — desambigua heading
@@ -1815,18 +1827,6 @@ export const ptBR = {
     erroNaoAplicado: 'Não foi possível aplicar o papel.',
     erroGenerico: 'Algo deu errado. Tente de novo.',
   },
-  // #609: rótulo de cada categoria do motivo de uma retirada (lista fechada, `MODERATION_CATEGORIES`) para o
-  // Curador, com o item dos Termos a que ela se refere. Compartilhado pelas filas de moderação e de revisão de
-  // imagens. O dono vê outra forma, minúscula e sem os itens, nas chaves `motivo*` de `notifications`.
-  categoriaModeracaoLabel: {
-    direitos_autorais: 'Direitos autorais (Termos, itens 4, 5 e 7)',
-    pessoa_real: 'Imagem ou dados de uma pessoa real (itens 4 e 7)',
-    conteudo_ofensivo: 'Ofensivo, discriminatório ou de ódio (itens 4 e 7)',
-    sexual_ou_violento: 'Sexual ou violento (item 4)',
-    spam: 'Spam, propaganda ou golpe (item 7)',
-    conteudo_ilegal: 'Conteúdo ilegal (itens 7 e 8)',
-    outro: 'Outra regra dos Termos',
-  } satisfies Record<ModerationCategory, string>,
   moderacao: {
     titulo: 'Fila de moderação',
     receita: 'Receita',
@@ -1848,13 +1848,13 @@ export const ptBR = {
     tipoPlayful: 'Bem-humorado',
     manter: 'Manter no pool',
     remover: 'Remover do pool',
-    motivoRemocao: 'Detalhes do motivo (só a curadoria vê)',
+    motivoRemocao: 'Detalhes do motivo (não aparecem na notificação; o dono pode vê-los na exportação dos dados dele)',
     // #609: categoria do motivo, da lista fechada (`categoriaModeracaoLabel`); o dono a vê na notificação. O texto
-    // livre (`motivoRemocao`) segue obrigatório, mas é nota interna.
+    // livre (`motivoRemocao`) segue obrigatório: fora da notificação, mas sai na exportação dos dados do dono.
     categoriaRemocao: 'Motivo mostrado ao dono',
     categoriaPlaceholder: 'Escolha um motivo',
     categoriaAjuda:
-      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes ficam só com a curadoria.',
+      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes abaixo não aparecem na notificação, mas o dono pode vê-los na exportação dos dados dele: não escreva ali dados de outras pessoas (por exemplo, quem denunciou).',
     erroCategoria: 'Escolha o motivo mostrado ao dono.',
     motivoPlaceholder: 'Explique por que esta receita sai do pool',
     confirmarRemocao: 'Confirmar remoção',
@@ -1908,13 +1908,13 @@ export const ptBR = {
     remover: 'Remover',
     removendo: 'Removendo…',
     confirmarRemocao: 'Confirmar remoção',
-    motivoRemocao: 'Detalhes do motivo (só a curadoria vê)',
+    motivoRemocao: 'Detalhes do motivo (não aparecem na notificação; o dono pode vê-los na exportação dos dados dele)',
     // #609: categoria do motivo, da lista fechada (`categoriaModeracaoLabel`); o dono a vê na notificação. O texto
-    // livre (`motivoRemocao`) segue obrigatório, mas é nota interna.
+    // livre (`motivoRemocao`) segue obrigatório: fora da notificação, mas sai na exportação dos dados do dono.
     categoriaRemocao: 'Motivo mostrado ao dono',
     categoriaPlaceholder: 'Escolha um motivo',
     categoriaAjuda:
-      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes ficam só com a curadoria.',
+      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes abaixo não aparecem na notificação, mas o dono pode vê-los na exportação dos dados dele: não escreva ali dados de outras pessoas (por exemplo, quem denunciou).',
     erroCategoria: 'Escolha o motivo mostrado ao dono.',
     motivoPlaceholder: 'Explique por que esta imagem sai do público',
     dispensar: 'Dispensar',

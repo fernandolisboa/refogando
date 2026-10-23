@@ -2,8 +2,9 @@
 
 /**
  * Escolha da CATEGORIA do motivo de uma retirada (#609) — compartilhada pela fila de moderação e pela fila de revisão
- * de imagens. Lista fechada (`MODERATION_CATEGORIES`); o dono vê a categoria escolhida na notificação, então o texto
- * de ajuda deixa claro que o motivo livre ao lado fica só com a curadoria.
+ * de imagens. Lista fechada (`MODERATION_CATEGORIES`); o dono vê a categoria escolhida na notificação. O texto de ajuda
+ * diz também que o motivo livre logo abaixo fica fora da notificação, mas sai na exportação dos dados do dono, então não
+ * deve citar terceiros (quem denunciou, por exemplo).
  *
  * `<select>` nativo, como os demais filtros do Console (users-section): acessível por teclado sem primitiva nova. A
  * opção vazia é o estado inicial; o botão de remover só habilita com uma categoria e o servidor reimpõe (400
