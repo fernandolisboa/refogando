@@ -218,7 +218,8 @@ describe('NotificationBell (#371)', () => {
     renderBell()
     await user.click(screen.getByRole('button', { name: /Notificações/ }))
     const texto = `${M.receitaModerada}. Motivo: ${ptBR.categoriaModeracaoDono.direitos_autorais}.`
-    const item = await screen.findByRole('menuitem', { name: texto })
+    // O nome acessível do item termina com o "quando" (#625); o texto da notificação vem antes.
+    const item = await screen.findByRole('menuitem', { name: new RegExp(`^${texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} `) })
     expect(item).toHaveAttribute('href', `/pt-BR/recipes/${rid}`)
 
     const appeal = screen.getByRole('menuitem', { name: M.pedirNovaAnaliseAria.replace('{texto}', texto) })
