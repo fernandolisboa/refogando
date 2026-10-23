@@ -333,9 +333,10 @@ export function SavedRecipesView() {
                       loading="lazy" // #462: lista longa de salvos — thumb baixa só ao aproximar da viewport
                       className="aspect-video w-full rounded-lg border border-border object-cover"
                     />
-                    {/* Selo da imagem gerada por IA (#132), igual ao de "Minhas receitas". */}
+                    {/* Selo da imagem gerada por IA (#132), como em "Minhas receitas", mas no canto DIREITO:
+                        o esquerdo é da caixa de seleção do card. */}
                     {item.imageAiGenerated && (
-                      <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-bg/90 px-1.5 py-0.5 text-[0.6rem] font-medium text-muted">
+                      <span className="absolute right-1.5 top-1.5 rounded-full border border-border bg-bg/90 px-1.5 py-0.5 text-[0.6rem] font-medium text-muted">
                         {messages.busca.imagemSeloIa}
                       </span>
                     )}

@@ -69,8 +69,8 @@ export type RecipeResultItemProps = {
   /** Rótulo do selo "gerada por IA", já localizado. Lido só quando `imageAiGenerated`. */
   aiLabel?: string
   /**
-   * Texto gerado por IA (#618, regra do #597)? Entra no kicker como sufixo, igual à tradução automática.
-   * Fica longe do selo da imagem: uma receita da IA com foto do dono ainda mostra o sinal.
+   * Texto gerado por IA (#618, regra do #597)? Entra no kicker como sufixo, NO LUGAR do de tradução
+   * automática. Fica longe do selo da imagem: uma receita da IA com foto do dono ainda mostra o sinal.
    */
   textAiGenerated?: boolean
   /** Rótulo "texto gerado por IA", já localizado (`busca.textoSeloIa`). Lido só quando `textAiGenerated`. */
@@ -108,18 +108,17 @@ export function RecipeResultItem({
 }: RecipeResultItemProps) {
   const section = classifySection(origin)
   // Kicker de proveniência: own ⇒ "Sua receita" (páprica); senão o selo da seção
-  // (catálogo=erva, comunidade=neutro). Tradução automática e texto da IA (#618) entram como sufixos.
+  // (catálogo=erva, comunidade=neutro). Tradução automática OU texto da IA (#618) entra como sufixo:
+  // no texto da IA o original fica `automatica_nao_revisada`, que é texto da IA e não tradução (ADR-0002),
+  // então o rótulo da IA SUBSTITUI o de tradução em vez de somar mais um pedaço ao kicker.
   const kickerLabel = isOwn ? (ownLabel ?? '') : badgeLabels[section]
   const kickerColor = isOwn
     ? 'text-brand-ink'
     : section === 'catalogo'
       ? 'text-accent-strong'
       : 'text-muted'
-  const kicker = [
-    kickerLabel,
-    autoTranslationSignal ? autoTranslationLabel : null,
-    textAiGenerated && textAiLabel ? textAiLabel : null,
-  ]
+  const suffix = textAiGenerated ? textAiLabel : autoTranslationSignal ? autoTranslationLabel : undefined
+  const kicker = [kickerLabel, suffix]
     .filter((part): part is string => part != null && part.length > 0)
     .join(' · ')
   // #129/Autoria: "por <name>". {name} interpolado por replace (folhas i18n são string).

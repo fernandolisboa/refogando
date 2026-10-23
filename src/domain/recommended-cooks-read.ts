@@ -44,6 +44,8 @@ export type RecommendedCookRecipe = {
   /** `srcset` dos derivados WebP da thumbnail (achado I, 0077). Ausente ⇒ só o `imageUrl` original. */
   imageSrcSet?: string
   imageAiGenerated?: boolean
+  /** Texto gerado por IA (#618, regra do #597, via `projectResult`). Ausente quando não. */
+  textAiGenerated?: boolean
 }
 
 /** Máximo de receitas no preview de CADA cartão (≤ por cozinheiro). Reversível — knob de produto. */

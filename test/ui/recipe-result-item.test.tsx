@@ -109,7 +109,7 @@ describe('RecipeResultItem — selo "texto gerado por IA" no kicker (#618)', () 
     textAiLabel: '✨ texto gerado por IA',
   }
 
-  it('textAiGenerated ⇒ sufixo no kicker, junto da tradução automática, mesmo com foto do dono', () => {
+  it('textAiGenerated ⇒ sufixo no kicker NO LUGAR da tradução automática, mesmo com foto do dono', () => {
     render(
       <RecipeResultItem
         {...props}
@@ -119,7 +119,8 @@ describe('RecipeResultItem — selo "texto gerado por IA" no kicker (#618)', () 
         aiLabel="✨ gerada por IA"
       />,
     )
-    expect(screen.getByText('Comunidade · tradução automática · ✨ texto gerado por IA')).toBeInTheDocument()
+    expect(screen.getByText('Comunidade · ✨ texto gerado por IA')).toBeInTheDocument()
+    expect(screen.queryByText(/tradução automática/)).not.toBeInTheDocument()
     // O selo da imagem é outro e só aparece com imagem da IA.
     expect(screen.queryByText('✨ gerada por IA')).not.toBeInTheDocument()
   })
@@ -129,9 +130,9 @@ describe('RecipeResultItem — selo "texto gerado por IA" no kicker (#618)', () 
     expect(screen.getByText('Sua receita · ✨ texto gerado por IA')).toBeInTheDocument()
   })
 
-  it('sem textAiGenerated ⇒ kicker de antes, sem o sufixo', () => {
-    render(<RecipeResultItem {...props} autoTranslationSignal={false} />)
-    expect(screen.getByText('Comunidade')).toBeInTheDocument()
+  it('sem textAiGenerated ⇒ kicker de antes (com a tradução automática quando há), sem o sufixo da IA', () => {
+    render(<RecipeResultItem {...props} autoTranslationSignal />)
+    expect(screen.getByText('Comunidade · tradução automática')).toBeInTheDocument()
     expect(screen.queryByText(/texto gerado por IA/)).not.toBeInTheDocument()
   })
 })
