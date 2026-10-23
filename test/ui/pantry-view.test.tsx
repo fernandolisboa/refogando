@@ -11,6 +11,7 @@ import type { ReactNode } from 'react'
  */
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
@@ -20,6 +21,7 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/pt-BR/me/pantry',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 const authMock = vi.hoisted(() => ({

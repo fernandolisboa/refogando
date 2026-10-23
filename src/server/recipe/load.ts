@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, getTableColumns, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import {
   recipe,
@@ -71,7 +71,20 @@ export type LoadedRecipeRows = {
 export async function loadRecipeRows(db: Database, id: string): Promise<LoadedRecipeRows | null> {
   const [row] = await db.select().from(recipe).where(eq(recipe.id, id))
   if (!row) return null
+  return loadRecipeRowsForRow(db, row)
+}
 
+/** Linha inteira de `recipe`, como `db.select().from(recipe)` devolve. */
+export type RecipeDbRow = typeof recipe.$inferSelect
+
+/**
+ * O resto de `loadRecipeRows` para quem JÁ tem a linha de `recipe` em mãos (o detalhe público lê a
+ * linha inteira junto do gate por slug): poupa a releitura da espinha, uma ida e volta serial ao banco.
+ * NÃO aplica gate nenhum: quem chama decide antes se a linha pode ser lida (no detalhe público, só a
+ * linha que passou por `eligibleForPublicRead` em `loadRecipeRowBySlug` chega aqui).
+ */
+export async function loadRecipeRowsForRow(db: Database, row: RecipeDbRow): Promise<LoadedRecipeRows> {
+  const id = row.id
   // As leituras seguintes são independentes entre si: em paralelo. A Autoria (#129) só é buscada
   // quando há dono humano (`owner_id` não-NULL); a Imagem (#130) só quando há `image_id` (FK) —
   // ambas dispensam a query no caso comum (Catálogo sem autor / Receita sem foto).
@@ -339,11 +352,11 @@ export async function resolvePublicSlugForLocale(
  *
  * Passo a passo:
  *  1. casa o `(locale, slug)` em `recipe_translation` (índice parcial `recipe_translation_locale_slug_uq`)
- *     para achar o `recipeId`. Sem casamento ⇒ `null` (404 leak-safe).
- *  2. lê a espinha (visibility/result_kind/moderation_removed_at) e aplica o gate de leitura
- *     PÚBLICA = gate de indexação default-open (`eligibleForPublicRead`): pública E não-`playful`
- *     E não-removida. Reprovou ⇒ `null` (privada/playful/removida não é leitura pública).
- *  3. aprovou ⇒ delega a `loadRecipeRows` para montar o MESMO shape que o resto da app consome
+ *     e, na MESMA query, traz a linha de `recipe`. Sem casamento ⇒ `null` (404 leak-safe).
+ *  2. aplica nessa linha o gate de leitura PÚBLICA = gate de indexação default-open
+ *     (`eligibleForPublicRead`): pública E não-`playful` E não-removida. Reprovou ⇒ `null`
+ *     (privada/playful/removida não é leitura pública). Os passos 1 e 2 são `loadPublicRecipeRowBySlug`.
+ *  3. aprovou ⇒ delega a `loadRecipeRowsForRow` para montar o MESMO shape que o resto da app consome
  *     (traduções + ingredientes + tags + autoria + imagem). Reusa o loader existente — sem
  *     duplicar a leitura nem o contrato.
  *
@@ -355,38 +368,55 @@ export async function loadPublicRecipeBySlug(
   slug: string,
   locale: string,
 ): Promise<LoadedRecipeRows | null> {
-  // 1. (locale, slug) → recipeId. Junta translation→recipe e já traz o gate barato numa query.
-  const [gate] = await db
-    .select({
-      recipeId: recipe.id,
-      ownerId: recipe.ownerId,
-      visibility: recipe.visibility,
-      resultKind: recipe.resultKind,
-      moderationRemovedAt: recipe.moderationRemovedAt,
-      curationStatus: recipe.curationStatus,
-    })
+  const row = await loadPublicRecipeRowBySlug(db, slug, locale)
+  return row == null ? null : loadRecipeRowsForRow(db, row)
+}
+// A página de detalhe não chama mais `loadPublicRecipeBySlug`: usa as duas etapas abaixo para disparar o resto
+// das leituras em paralelo (ADR-0053). Ela segue como a forma de uma chamada só, com o mesmo contrato.
+
+/**
+ * Passos 1 e 2 de `loadPublicRecipeBySlug`, numa query só: casa `(locale, slug)` e já traz a linha
+ * INTEIRA de `recipe` (não só as colunas do gate), para o passo 3 não reler a espinha, e diz se ela passa
+ * no gate de leitura PÚBLICA (= gate de indexação, ADR-0020 decisão 6). `null` = slug inexistente.
+ *
+ * `publicRead: false` (privada-não-catálogo/playful/removida) só serve ao caminho do DONO da página de
+ * detalhe, que usa SÓ o `row.id` (no lugar de `resolveRecipeIdBySlug`, a mesma busca sem gate) e passa
+ * pelo `loadRecipeDetailView`, que reimpõe a posse. Nada dessa linha pode ir para a resposta pública:
+ * quem quer a leitura pública usa `loadPublicRecipeRowBySlug`.
+ */
+export async function loadRecipeRowBySlug(
+  db: Database,
+  slug: string,
+  locale: string,
+): Promise<{ row: RecipeDbRow; publicRead: boolean } | null> {
+  const [row] = await db
+    .select(getTableColumns(recipe))
     .from(recipeTranslation)
     .innerJoin(recipe, eq(recipeTranslation.recipeId, recipe.id))
     .where(and(eq(recipeTranslation.locale, locale), eq(recipeTranslation.slug, slug)))
     .limit(1)
-  if (!gate) return null
+  if (!row) return null
+  // O eixo de comunidade (owner-NULL = Catálogo) casa o GET por uuid, então slug e uuid concordam sobre o
+  // que é público.
+  const publicRead = eligibleForPublicRead({
+    ownerId: row.ownerId,
+    visibility: row.visibility,
+    resultKind: row.resultKind,
+    moderationRemovedAt: row.moderationRemovedAt,
+    curationStatus: row.curationStatus,
+  })
+  return { row, publicRead }
+}
 
-  // 2. Gate de leitura PÚBLICA = gate de indexação (ADR-0020 decisão 6). Reprovou ⇒ não é
-  //    leitura pública (privada-não-catálogo/playful/removida): `null` leak-safe (o dono lê pelo
-  //    caminho dinâmico-com-cookie, não por aqui). O eixo de comunidade (owner-NULL = Catálogo)
-  //    casa o GET por uuid, então slug e uuid concordam sobre o que é público.
-  if (
-    !eligibleForPublicRead({
-      ownerId: gate.ownerId,
-      visibility: gate.visibility,
-      resultKind: gate.resultKind,
-      moderationRemovedAt: gate.moderationRemovedAt,
-      curationStatus: gate.curationStatus,
-    })
-  ) {
-    return null
-  }
-
-  // 3. Aprovado ⇒ monta o shape canônico via o loader existente (DRY com o GET por uuid).
-  return loadRecipeRows(db, gate.recipeId)
+/**
+ * A linha de `loadRecipeRowBySlug` só quando é leitura pública; `null` = não encontrado OU não público
+ * (leak-safe, indistinguíveis; o dono lê pelo caminho dinâmico-com-cookie, não por aqui).
+ */
+export async function loadPublicRecipeRowBySlug(
+  db: Database,
+  slug: string,
+  locale: string,
+): Promise<RecipeDbRow | null> {
+  const found = await loadRecipeRowBySlug(db, slug, locale)
+  return found?.publicRead ? found.row : null
 }

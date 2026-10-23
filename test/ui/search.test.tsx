@@ -9,6 +9,7 @@ import type { SearchResponse } from '@/domain/recipe-search-read'
 // Mockamos pra um <a> simples — aqui o que importa é o href de detalhe e o comportamento
 // da Busca, não a navegação do Next.
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

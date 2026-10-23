@@ -5,12 +5,15 @@
  * sessão traz `creditoDoAutor` (o servidor decide quem é o dono da base; o cliente nunca deduz pelo @).
  *
  * `PUT /api/recipes/[id]/credit { exibir }`. A linha de crédito do topo é da árvore pública (renderizada no
- * servidor), então só muda no próximo carregamento; aqui o texto confirma o novo estado. Controlado: `exibir` vem
- * da área de gestão, que o atualiza a cada busca da view e no `onChange`. Erro (rede, 5xx, 404 se a cópia saiu do
+ * servidor): o `router.refresh()` depois do sucesso a renderiza de novo e limpa o cache do roteador
+ * (ADR-0053, senão uma volta a esta receita nos próximos minutos mostraria o crédito antigo); aqui o texto
+ * confirma o novo estado. Controlado: `exibir` vem da área de gestão, que o atualiza a cada busca da view e no
+ * `onChange`. Erro (rede, 5xx, 404 se a cópia saiu do
  * ar ou o crédito deixou de valer) ⇒ mensagem neutra e o estado anterior; dá para tentar de novo. ADR-0010: route handler via
  * fetch, nunca Server Action.
  */
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 
@@ -25,6 +28,7 @@ export function DerivedCreditAuthorControl({
 }) {
   const { messages } = useLocale()
   const m = messages.creditoCopias
+  const router = useRouter()
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState(false)
 
@@ -43,8 +47,10 @@ export function DerivedCreditAuthorControl({
         return
       }
       const body = (await res.json()) as { exibir?: unknown }
-      if (typeof body.exibir === 'boolean') onChange(body.exibir)
-      else setErro(true)
+      if (typeof body.exibir === 'boolean') {
+        onChange(body.exibir)
+        router.refresh()
+      } else setErro(true)
     } catch {
       setErro(true)
     } finally {

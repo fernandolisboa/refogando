@@ -5,7 +5,7 @@
  * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico` e a
  * linha v3.1 de `privacidade.s10Historico`), e o aviso a usa para decidir o público. Depois do merge ela fica
  * CONGELADA: cada versão seguinte ganha constante própria, e os rodapés usam a da versão mais nova de cada texto
- * (hoje `DATA_POLITICA_V3_5` e `DATA_TERMOS_V1_4`).
+ * (hoje `DATA_POLITICA_V3_6` e `DATA_TERMOS_V1_4`).
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -71,6 +71,19 @@ export const DATA_POLITICA_V3_4 = '2026-10-23'
  */
 export const DATA_POLITICA_V3_5 = '2026-10-23'
 export const DATA_TERMOS_V1_4 = DATA_POLITICA_V3_5
+
+/**
+ * Política v3.6 (ADR-0053): as funções do app passam a rodar na Vercel em São Paulo (`gru1`), ao lado do banco, em vez
+ * de nos EUA (`iad1`); a IA continua nos EUA (itens 3.5 e 5; §6 do parecer interno). É menos transferência
+ * internacional, a favor da pessoa: vale na publicação, sem o aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O
+ * texto do consentimento das restrições salvas diz onde o app e a IA funcionam, então ganha versão nova
+ * (`RESTRICOES_CONSENTIMENTO_VERSAO`) e quem já tinha restrições salvas vê o aviso no formulário (LGPD art. 8º, §6).
+ * Para quem consentiu com o texto de 2026-10-22, o aviso só informa (o que ela autorizou não aumenta); para quem tem
+ * restrições sem versão registrada (de antes do #600), ele continua pedindo o consentimento, como já pedia. Os Termos
+ * não mudam. O dia do merge em UTC; congelada depois do merge. É a data dos rodapés da
+ * política e de Seus direitos.
+ */
+export const DATA_POLITICA_V3_6 = '2026-10-23'
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'

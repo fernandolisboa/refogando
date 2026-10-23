@@ -7,6 +7,7 @@ import type { ReactNode } from 'react'
  * Tira de subabas da seção atual (ADR-0043), montada no layout logo abaixo do header.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

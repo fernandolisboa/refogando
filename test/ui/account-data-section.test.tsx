@@ -19,6 +19,7 @@ const router = vi.hoisted(() => ({ refresh: () => {} }))
 vi.mock('next/navigation', () => ({ useRouter: () => router }))
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

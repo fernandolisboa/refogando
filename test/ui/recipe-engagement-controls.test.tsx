@@ -8,8 +8,8 @@ import type { ReactNode } from 'react'
  * Teste de COMPONENTE jsdom dos controles de Engajamento da Comunidade (#62/#362) — seam de
  * frontend (sem browser/Postgres). `fetch` é mockado no SHAPE REAL das rotas (save/unsave ⇒
  * `{viewerSaved}`; GET /social ⇒ `{viewerSaved, isOwner}`). `next/link` é mockado; o locale é
- * real (LocaleProvider). O componente NÃO usa `useRouter`: o corpo do POST é autoritativo e nada
- * na page deriva do save, então não há `router.refresh()` a mockar/assertar. Cobre o botão Salvar
+ * real (LocaleProvider). O corpo do POST é autoritativo; o `router.refresh()` só existe no caminho do DONO
+ * (estado vindo do servidor), para limpar o cache do roteador da página (ADR-0053). Cobre o botão Salvar
  * no detalhe, save-anônimo, dono-salva-a-própria, hidratação no caminho público, e a robustez
  * (otimismo → reversão no erro, sem âmbar).
  *
@@ -18,6 +18,7 @@ import type { ReactNode } from 'react'
  */
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
@@ -26,8 +27,10 @@ vi.mock('next/link', () => ({
 }))
 
 // #458: `usePathname` alimenta o `?returnTo=` do convite anônimo.
+const routerRefresh = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({
   usePathname: () => '/receitas/bolo-de-cenoura',
+  useRouter: () => ({ refresh: routerRefresh }),
 }))
 
 // `useSession` (#230 follow-up): o componente resolve o estado do viewer no cliente quando o
@@ -112,6 +115,7 @@ function semCorReservada(container: HTMLElement) {
 }
 
 beforeEach(() => {
+  routerRefresh.mockClear()
   // Default: LOGADO. Os testes de caminho do DONO (estado do viewer vem por prop ⇒ `serverResolved`)
   // não disparam fetch nem dependem disto; os de caminho público sobrescrevem por teste.
   setSession('logged-in')
@@ -159,6 +163,8 @@ describe('RecipeEngagementControls (#62/#362)', () => {
     expect(await screen.findByRole('button', { name: M.salvo })).toBeInTheDocument()
     // Nunca bateu no /social (estado veio por prop).
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/social'))).toBe(false)
+    // ADR-0053: o estado do dono vem do servidor e fica no cache do roteador; salvar o limpa.
+    expect(routerRefresh).toHaveBeenCalled()
   })
 
   it('T4 — ANÔNIMO: link /sign-in para salvar, sem botão, sem fetch', async () => {

@@ -156,6 +156,11 @@ export type TranslationRow = {
    * cru na vista. OPCIONAL no tipo (fixtures puras não precisam setá-lo; o `select().from` o traz).
    */
   ingredientes?: { ordem: number; nome: string; nomeOrigem: string }[] | null
+  /**
+   * Slug do locale (ADR-0020), `null` enquanto não congelado. Insumo do mapa de hreflang
+   * (`slugMapFromTranslations`), nunca da vista. OPCIONAL no tipo pela mesma razão de `ingredientes`.
+   */
+  slug?: string | null
 }
 
 /**

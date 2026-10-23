@@ -270,3 +270,30 @@
     }
   }
 }
+
+/* Barra de navegação pendente (`RecipeLink`): fina, no topo da tela, enquanto o clique num link de
+   receita espera o servidor. Só aparece depois de 150 ms (navegação já pré-carregada não pisca) e anda
+   devagar até 90% sem nunca "terminar": some quando a página nova chega. Com movimento reduzido, o gate
+   global zera a duração e ela fica parada em 90%. */
+@layer components {
+  .nav-pending-bar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 100;
+    height: 3px;
+    background-color: var(--color-brand);
+    transform: scaleX(0);
+    transform-origin: left;
+    pointer-events: none;
+    animation: nav-pending-bar 10s var(--ease-out) 150ms forwards;
+  }
+}
+
+@keyframes nav-pending-bar {
+  from {
+    transform: scaleX(0.05);
+  }
+  to {
+    transform: scaleX(0.9);
+  }
+}

@@ -12,3 +12,14 @@ uma seção que já existe: o teste confere cada uma contra o hash dela.
 
 - pt-BR: Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app e a IA funcionam nos Estados Unidos. Desmarque tudo e salve para apagar.
 - en-US: By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app and the AI run in the United States. Clear them all and save to delete.
+
+## 2026-10-23
+
+- pt-BR: Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app funciona no Brasil e a IA, nos Estados Unidos. Desmarque tudo e salve para apagar.
+- en-US: By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app runs in Brazil and the AI in the United States. Clear them all and save to delete.
+
+Motivo: as funções do app passaram de `iad1` (EUA) para `gru1` (São Paulo), ao lado do banco (política v3.6, ADR-0053).
+Para quem consentiu com o texto de 2026-10-22, o que a pessoa autorizou não aumenta (a IA continua a única que recebe as
+restrições fora do Brasil), então o aviso no formulário só informa a mudança (LGPD art. 8º, §6). Para quem tem restrições
+sem versão registrada (salvas antes do #600, quando o texto ainda não falava dos Estados Unidos), o aviso continua pedindo
+o consentimento ("Para mantê-las, salve de novo"), como já pedia.

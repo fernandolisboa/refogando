@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MealPlanThumb } from '@/components/meal-plan/meal-plan-thumb'
 import { PlanRecipePopoverButton } from '@/components/meal-plan/plan-recipe-panel'
+import { RecipeLink } from '@/components/recipe/recipe-link'
 
 type PantryItem = { id: string; nome: string }
 type PantryMatch = {
@@ -484,12 +485,12 @@ function MatchSection({
                 className="size-16"
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <Link
+                <RecipeLink
                   href={recipeDetailPath(locale, r.slug ?? r.id)}
                   className="truncate font-medium text-fg hover:text-brand-ink"
                 >
                   {r.name}
-                </Link>
+                </RecipeLink>
                 <p className="text-xs text-muted">
                   {m.temDeTotal.replace('{n}', String(r.covered)).replace('{total}', String(r.total))}
                 </p>

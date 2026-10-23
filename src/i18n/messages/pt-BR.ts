@@ -12,6 +12,7 @@ import {
   DATA_POLITICA_V3_3,
   DATA_POLITICA_V3_4,
   DATA_POLITICA_V3_5,
+  DATA_POLITICA_V3_6,
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
@@ -1102,10 +1103,10 @@ export const ptBR = {
     aviso: 'As receitas declaram as restrições que atendem; isso não é verificado. Em caso de alergia, confira os ingredientes.',
     legenda: 'Suas restrições',
     consentimento:
-      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app e a IA funcionam nos Estados Unidos. Desmarque tudo e salve para apagar.',
-    // Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6), só para quem já tinha restrições salvas.
-    avisoMudanca:
-      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Para mantê-las, salve de novo e o aviso some; se não concordar, desmarque tudo e salve para apagar.',
+      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app funciona no Brasil e a IA, nos Estados Unidos. Desmarque tudo e salve para apagar.',
+    // Aviso da mudança de 2026-10-23 (LGPD art. 8º, §6), só para quem tem restrições salvas com uma versão anterior
+    // do texto (inclusive de antes de 2026-10-22, quando o texto ainda não falava dos Estados Unidos).
+    avisoMudanca: `Atualizamos a Política de Privacidade em ${DATA_POLITICA_V3_6.split('-').reverse().join('/')}: o app passou a funcionar no Brasil, e a IA (Anthropic), que só recebe as suas restrições salvas quando você gera com elas marcadas, fica nos Estados Unidos. Para mantê-las, salve de novo e o aviso some; se não concordar, desmarque tudo e salve para apagar.`,
     avisoMudancaFechar: 'Entendi',
     salvar: 'Salvar restrições',
     salvando: 'Salvando…',
@@ -2192,7 +2193,7 @@ export const ptBR = {
     resumoItens: [
       'O Refogando é um app de receitas com IA.',
       'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
-      'Não vendemos seus dados nem usamos publicidade. Compartilhamos só com prestadores que fazem o app funcionar (hospedagem, banco, IA, e-mail), a maioria nos Estados Unidos.',
+      'Não vendemos seus dados nem usamos publicidade. Compartilhamos só com prestadores que fazem o app funcionar (hospedagem, banco, IA, e-mail), em sua maioria empresas dos Estados Unidos.',
       'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Você baixa seus dados e exclui sua conta em Editar perfil → Seus dados; para o resto, escreva para privacidade@refogando.com. Respondemos em até 15 dias.',
       'Este texto pode mudar: cada versão fica registrada na seção "Alterações desta política" e, se a mudança alterar algo que você autorizou com consentimento, avisamos com destaque.',
     ],
@@ -2249,7 +2250,7 @@ export const ptBR = {
     s35Valores: [
       'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público. Junto delas guardamos a data e a versão do texto com que você consentiu, como prova do consentimento (Art. 8º, §2º).',
       'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA (Anthropic, nos Estados Unidos) dentro de um pedido em que você as mantém marcadas.',
-      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão e informa que o app e a IA funcionam nos Estados Unidos, Art. 33, VIII) e revogável a qualquer momento desmarcando todas e salvando.',
+      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão e informa que o app funciona no Brasil e a IA, nos Estados Unidos, Art. 33, VIII) e revogável a qualquer momento desmarcando todas e salvando.',
       'até você desmarcá-las ou excluir a conta (a data e a versão do consentimento saem junto); entram na exportação dos seus dados e são apagadas na exclusão da conta.',
     ],
     s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
@@ -2302,7 +2303,7 @@ export const ptBR = {
       'Google (login)',
     ],
     s5ParaQue: [
-      'Hospedagem do aplicativo, armazenamento das imagens e registros técnicos',
+      'Hospedagem do aplicativo e armazenamento das imagens (em São Paulo), registros técnicos',
       'Banco de dados (em São Paulo)',
       'Geração e edição de imagens (inclusive a foto que você manda editar) e vetores de busca',
       'Geração de receitas e conversa, extração de ingredientes, Sugestão de cardápio, tradução e escolha do cenário da foto',
@@ -2324,7 +2325,7 @@ export const ptBR = {
     s5Nota:
       'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing. Se você usa o login do Google, a sua foto do Google é carregada dos servidores do Google, que recebem o IP de quem vê a sua foto no Refogando (perfil, busca e lista de cozinheiros, listas de seguidores e notificações).',
     s5Transferencia:
-      'Transferência internacional: as funções do app rodam na Vercel, nos Estados Unidos, e o banco de dados fica em São Paulo; Anthropic, Google, Brave e Resend processam nos Estados Unidos, e a caixa de e-mail fica na Suíça (Proton). Usamos o Art. 33, IX da LGPD: a transferência é necessária para executar o serviço que você pede (Art. 7º, V) ou para atender pedidos de titulares (Art. 7º, II). Com o Google (Gemini), valem também as cláusulas-padrão contratuais da ANPD que o Google incorpora ao contrato (Art. 33, II, "b"). As restrições alimentares salvas são tratadas nos Estados Unidos, pelo app e pela IA, só com o seu consentimento específico (Art. 33, VIII). Nenhum prestador de IA pode usar o seu conteúdo para treinar modelos.',
+      'Transferência internacional: as funções do app rodam na Vercel em São Paulo, onde ficam também o banco de dados (Neon) e as imagens; a Vercel e a Neon são empresas dos Estados Unidos, e o suporte e os registros técnicos delas (item 3.7) podem ser tratados lá. Anthropic, Google, Brave e Resend processam nos Estados Unidos, e a caixa de e-mail fica na Suíça (Proton). Usamos o Art. 33, IX da LGPD: a transferência é necessária para executar o serviço que você pede (Art. 7º, V) ou para atender pedidos de titulares (Art. 7º, II). Com o Google (Gemini), valem também as cláusulas-padrão contratuais da ANPD que o Google incorpora ao contrato (Art. 33, II, "b"). As restrições alimentares salvas só vão aos Estados Unidos, para a IA, com o seu consentimento específico (Art. 33, VIII). Nenhum prestador de IA pode usar o seu conteúdo para treinar modelos.',
 
     s6Titulo: '6. Responsabilidades dos agentes de tratamento — Art. 9º, VI; Arts. 37–39',
     s6Itens: [
@@ -2401,6 +2402,7 @@ export const ptBR = {
       `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se tentamos avisar a pessoa por e-mail), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a cópia que outra pessoa publica de uma receita sua mostra "Baseada na receita … de @você", com link; você pode desligar isso em Editar perfil ou retirar o seu nome de uma cópia, e guardamos essa escolha (item 3.1).`,
+      `v3.6 — ${DATA_POLITICA_V3_6}: as funções do app passaram a rodar em São Paulo, junto do banco de dados; a IA continua nos Estados Unidos, e o texto do consentimento das restrições salvas diz isso (itens 3.5 e 5).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2453,9 +2455,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.5',
+    rodapeVersao: 'v3.6',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_5,
+    rodapeData: DATA_POLITICA_V3_6,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2519,9 +2521,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.5',
+    rodapeVersao: 'v3.6',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_5,
+    rodapeData: DATA_POLITICA_V3_6,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },

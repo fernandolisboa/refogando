@@ -298,19 +298,20 @@ const REVIEW_LIST_LIMIT = 50
 
 /**
  * Leitura COOKIE-FREE do agregado + lista de Avaliações — SEM dado do viewer. Devolve `null`
- * quando fora do pool (chama `loadReviewGate` ⇒ doubles como gate leak-safe: o caller 404 sem
- * uma segunda query). O agregado é o VERDADEIRO (sobre TODAS as linhas vivas, sem LIMIT); a
- * lista é capada em `REVIEW_LIST_LIMIT`. `average` é a MÉDIA crua (NÃO Bayesiano — isso é #368).
+ * quando fora do pool (o gate de `loadReviewGate`, ou o da linha recebida, doubles como gate leak-safe:
+ * o caller 404 sem uma segunda query). O agregado é o VERDADEIRO (sobre TODAS as linhas vivas, sem
+ * LIMIT); a lista é capada em `REVIEW_LIST_LIMIT`. `average` é a MÉDIA crua (NÃO Bayesiano — isso é #368).
  */
 export async function loadRecipeReviews(
   db: Database,
-  { id }: { id: string },
+  { id, row }: { id: string; row?: Gate },
 ): Promise<{ average: number | null; count: number; reviews: ReviewView[] } | null> {
-  const gate = await loadReviewGate(db, id)
-  if (!gate) return null
-
-  // Agregado e lista são independentes (os dois só filtram por `recipe_id`): em paralelo.
-  const [agg, rows] = await Promise.all([
+  // `row`: a linha de `recipe` que o caller JÁ leu neste request (o detalhe público, ADR-0053) — o gate de
+  // pool roda em memória sobre ela, sem reler. Sem ela, gate, agregado e lista vão em paralelo (os três só
+  // filtram por `recipe_id`): o gate ainda decide, sem custar uma ida e volta serial. Fora do pool, o que as
+  // outras duas leram é descartado antes de sair daqui (`null`, leak-safe como antes).
+  const [gate, agg, rows] = await Promise.all([
+    row != null ? (eligibleForPool(row) ? row : null) : loadReviewGate(db, id),
     loadAggregate(db, id),
     db
       .select({
@@ -328,6 +329,7 @@ export async function loadRecipeReviews(
       .orderBy(desc(recipeReview.createdAt))
       .limit(REVIEW_LIST_LIMIT),
   ])
+  if (!gate) return null
 
   const reviews: ReviewView[] = rows.map((r) => ({
     id: r.id,

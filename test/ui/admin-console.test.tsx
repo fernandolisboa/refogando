@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
  * fica só a `AccessDenied` — o que o layout/page renderiza no veredito `denied`.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

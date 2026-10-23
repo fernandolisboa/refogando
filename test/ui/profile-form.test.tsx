@@ -15,6 +15,9 @@ import '@testing-library/jest-dom/vitest'
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
 let sessionState: SessionState
+// ADR-0053: salvar o perfil limpa o cache do roteador (`router.refresh()`).
+vi.mock('next/navigation', () => ({ usePathname: () => '/pt-BR/me/profile', useRouter: () => ({ refresh: vi.fn() }) }))
+
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => sessionState,
 }))

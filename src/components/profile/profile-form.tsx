@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -97,6 +97,7 @@ export function ProfileForm() {
   // Nível de habilidade padrão (#421): '' = sem preferência (o servidor guarda NULL = eixo neutro).
   const [nivelPadrao, setNivelPadrao] = useState<string>('')
   const [status, setStatus] = useState<Status>('loading')
+  const router = useRouter()
 
   // Carrega o perfil ao montar (só logado). AbortController cancela no unmount.
   useEffect(() => {
@@ -158,6 +159,8 @@ export function ProfileForm() {
         return
       }
       const p = (await res.json()) as Profile
+      // Nome e @ aparecem na autoria das receitas, que ficam 5 minutos no cache do roteador (ADR-0053): limpa.
+      router.refresh()
       // Reflete os valores canônicos retornados pelo servidor (name trimado, bio vazia → null,
       // handle normalizado pra minúsculas, links normalizados/trimados).
       setName(p.name)

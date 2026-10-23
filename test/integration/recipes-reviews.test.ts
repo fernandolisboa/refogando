@@ -14,7 +14,7 @@ import {
 } from '@/app/api/recipes/[id]/reviews/route'
 import { GET as mineGet } from '@/app/api/recipes/[id]/reviews/mine/route'
 import { POST as unpublishRoute } from '@/app/api/recipes/[id]/unpublish/route'
-import { applyReview } from '@/server/recipe/review'
+import { applyReview, loadRecipeReviews } from '@/server/recipe/review'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
 
@@ -248,6 +248,20 @@ describe('POST/PUT/DELETE/GET /api/recipes/[id]/reviews (#363)', () => {
     const del = await deleteReview(id, headers)
     expect(del.status).toBe(404) // fora do pool
     expect(await countRows(id)).toBe(1) // a linha PERSISTE
+  })
+
+  it('ADR-0053: com avaliações gravadas, despublicar ⇒ a leitura pública some (o gate roda em paralelo e ainda decide)', async () => {
+    const { userId: owner, headers: ownerHeaders } = await seedSessionHeaders({ email: 'rev-par-owner@ex.com' })
+    const { headers } = await seedSessionHeaders({ email: 'rev-par-user@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    await postReview(id, { rating: 4, comment: 'boa' }, headers)
+    expect(await loadRecipeReviews(getDb(), { id })).toMatchObject({ count: 1, average: 4 })
+
+    expect((await unpublish(id, ownerHeaders)).status).toBe(200)
+    expect(await loadRecipeReviews(getDb(), { id })).toBeNull()
+    const get = await getReviews(id)
+    expect(get.status).toBe(404)
+    expect(await get.text()).not.toContain('boa')
   })
 
   it('cross-locale: avaliação vale idêntica lida pela irmã en-US (agregado independe do locale)', async () => {

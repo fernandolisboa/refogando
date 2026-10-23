@@ -13,6 +13,7 @@ import type { ReactNode } from 'react'
  * Espelha shell.test.tsx: next/link → <a>, useSession mockável por teste (default Visitante).
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

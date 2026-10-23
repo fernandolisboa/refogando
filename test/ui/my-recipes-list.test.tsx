@@ -12,6 +12,7 @@ import type { RecipeListItem } from '@/domain/recipe-list-read'
  */
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
@@ -22,6 +23,7 @@ vi.mock('next/link', () => ({
 // #458: `usePathname` alimenta o `?returnTo=` do convite de entrar do guest.
 vi.mock('next/navigation', () => ({
   usePathname: () => '/me/recipes',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }

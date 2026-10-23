@@ -4,7 +4,10 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
 // next/link → <a> simples (sem AppRouterContext no jsdom). Espelha recipes-feed.test.tsx.
+// ADR-0053: o `RecipeLink` dos cards usa `useRouter` (pré-carregamento quando o mouse para no card).
+vi.mock('next/navigation', () => ({ useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }) }))
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

@@ -17,6 +17,7 @@ import type { FeedResponse } from '@/domain/recipe-feed-read'
  */
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
@@ -27,6 +28,7 @@ vi.mock('next/link', () => ({
 // #458: `usePathname` alimenta o `?returnTo=` do link "Entrar" do guest.
 vi.mock('next/navigation', () => ({
   usePathname: () => '/following',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }
