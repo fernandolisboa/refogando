@@ -227,7 +227,7 @@ describe('NotificationBell (#371)', () => {
     mockFetch({
       notifications: [
         { id: 'n1', type: 'new_follower', refs: { actorName: 'Ana', actorHandle: 'ana' }, actorImage: null, readAt: null, createdAt: tresHoras },
-        { id: 'n2', type: 'account_restricted', refs: {}, actorImage: null, readAt: null, createdAt: '2026-01-01T15:00:00Z' },
+        { id: 'n2', type: 'account_restricted', refs: {}, actorImage: null, readAt: null, createdAt: '2026-01-01T12:00:00Z' },
       ],
       unreadCount: 2,
       nextCursor: null,
@@ -240,7 +240,7 @@ describe('NotificationBell (#371)', () => {
     expect(recente).toHaveAttribute('title', formatDateTime(tresHoras, 'pt-BR'))
     // O menuitem anuncia o quando junto do texto (leitor de tela).
     expect(screen.getByRole('menuitem', { name: 'Ana começou a seguir você há 3 horas' })).toBeInTheDocument()
-    expect(screen.getByText('1 de jan. de 2026')).toHaveAttribute('dateTime', '2026-01-01T15:00:00Z')
+    expect(screen.getByText('1 de jan. de 2026')).toHaveAttribute('dateTime', '2026-01-01T12:00:00Z')
   })
 
   it('en-US: tempo relativo em inglês', async () => {

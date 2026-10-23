@@ -42,3 +42,16 @@ O dado já existia: `NotificationDTO.createdAt` (ISO) vem do `GET /api/notificat
 ## 5. Critério de saída
 
 `checks` e `e2e` verdes; abrir o sininho em produção mostra o tempo relativo em cada item, nos dois locales.
+
+## 6. Gotchas de ambiente
+
+- `formatDate`/`formatDateTime` usam o fuso da máquina (é o certo na interface). Nos testes, datas absolutas ficam ao
+  meio-dia UTC (`T12:00:00Z`) para darem o mesmo dia de UTC-11 a UTC+11; um fixture perto da meia-noite quebra numa
+  máquina fora de UTC.
+- A suíte de UI (`npx vitest run --project ui`) roda sem banco. O projeto `node` precisa de Docker ou de um Postgres 17
+  com pgvector em `TEST_DATABASE_URL` (o Postgres 16 recusa a migração do enum `web_imported`); nunca `export` essa
+  variável no shell.
+
+## Prompt de kickoff
+
+Leia `docs/handoffs/87-data-nas-notificacoes.md`. O sininho já mostra quando cada notificação aconteceu ("há 3 horas", "há 2 dias", e a data depois de uma semana), com as funções de data compartilhadas em `src/domain/relative-time.ts`. Confira em produção, nos dois locales, que o painel mostra o tempo relativo e que o `title` traz o instante completo. Qualquer outra tela que precise de data relativa deve reusar `formatRelativeTime` em vez de criar um formatador novo.

@@ -32,8 +32,8 @@ describe('formatRelativeTime', () => {
   it('uma semana ou mais ⇒ a data no locale', () => {
     const iso = ago(7 * 86400)
     expect(formatRelativeTime(iso, NOW, 'pt-BR')).toBe(formatDate(iso, 'pt-BR'))
-    expect(formatRelativeTime('2026-01-05T15:00:00Z', NOW, 'pt-BR')).toBe('5 de jan. de 2026')
-    expect(formatRelativeTime('2026-01-05T15:00:00Z', NOW, 'en-US')).toBe('Jan 5, 2026')
+    expect(formatRelativeTime('2026-01-05T12:00:00Z', NOW, 'pt-BR')).toBe('5 de jan. de 2026')
+    expect(formatRelativeTime('2026-01-05T12:00:00Z', NOW, 'en-US')).toBe('Jan 5, 2026')
   })
 
   it('instante no futuro (relógio do aparelho atrasado) ⇒ "agora"', () => {
