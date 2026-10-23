@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { users } from '@/db/schema'
@@ -12,45 +13,68 @@ import type { ImageStore } from '@/server/images/image-store'
  * eliminando a conta. O hook `before` de `src/lib/auth.ts` fecha a entrada; esta é a segunda barreira, no ponto
  * em que se apaga:
  *
- * - Desde #604 o avatar é guardado sob `avatars/<userId>/` (`avatarPathPrefix`). Um blob nesse prefixo é da conta.
+ * - Desde #604 o avatar é guardado sob `avatars/<chave da conta>/` (`avatarPathPrefix`). A chave é um HMAC do id
+ *   com o segredo do Better Auth, NÃO o id: a URL do avatar é pública (perfil, busca, listas) e o id cru ligaria a
+ *   pessoa às Receitas que ficam com o handle `removido-<id>` depois da eliminação. Trocar o segredo só faz os
+ *   avatares antigos virarem órfãos (nunca apagados por engano).
  * - Avatar ANTIGO (`avatars/<arquivo>`, um segmento só, antes de #604) não diz de quem é: só é apagado se
  *   nenhuma OUTRA conta aponta para a mesma URL (quem plantou a URL alheia não apaga o avatar de quem ainda o usa).
- * - Qualquer outro caminho (`recipes/`, `reviews/`, `avatars/<outra conta>/…`) e URL estrangeira (Google OAuth)
- *   nunca são apagados por aqui.
+ * - A URL precisa estar na forma CANÔNICA que o store grava (sem query, hash, porta, credenciais nem `%`): uma
+ *   variante plantada antes de #604 (`…/avatars/x.webp?1`) driblaria a comparação exata do banco e apagaria o blob
+ *   canônico de outra pessoa.
+ * - Qualquer outro caminho (`recipes/`, `reviews/`, a chave de outra conta) e URL estrangeira (Google OAuth) nunca
+ *   são apagados por aqui.
  */
+
+/** Nome de arquivo que o store grava (uuid, ou o contador do dublê) + extensão de imagem. */
+const FILE = '[A-Za-z0-9-]+\\.(?:webp|jpg|png)'
+const LEGACY_AVATAR_PATH = new RegExp(`^/avatars/${FILE}$`)
+
+function avatarSecret(): string {
+  const secret = process.env.BETTER_AUTH_SECRET
+  if (secret) return secret
+  // Mesma regra do `src/lib/auth.ts`: só o teste roda sem segredo.
+  if (process.env.NODE_ENV === 'test') return 'refogando-test-avatar-secret'
+  throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
+}
+
+/** Chave opaca e estável da conta no caminho do avatar (22 caracteres base64url, 132 bits do HMAC). */
+function avatarAccountKey(userId: string): string {
+  return createHmac('sha256', avatarSecret()).update(`avatar:${userId}`).digest('base64url').slice(0, 22)
+}
 
 /** Prefixo do blob de avatar de uma conta (`pathPrefix` do `ImageStore`). */
 export function avatarPathPrefix(userId: string): string {
-  return `avatars/${userId}`
+  return `avatars/${avatarAccountKey(userId)}`
 }
 
-/** Caminho (pathname) da URL, ou null se a string não for URL. */
-function pathnameOf(url: string): string | null {
+/** Caminho da URL se ela estiver na forma canônica que o store grava; senão null. */
+function canonicalPath(url: string): string | null {
+  let u: URL
   try {
-    return new URL(url).pathname
+    u = new URL(url)
   } catch {
     return null
   }
+  if (u.protocol !== 'https:' || u.href !== url || u.search || u.hash || u.port || u.username || u.password) return null
+  if (u.pathname.includes('%')) return null
+  return u.pathname
 }
 
-/** A URL é de um avatar gravado pelo servidor para ESTA conta (`avatars/<userId>/<arquivo>`)? */
-export function isAccountAvatarPath(url: string, userId: string): boolean {
-  const path = pathnameOf(url)
-  if (path === null) return false
+/** Em que forma `url` é um avatar desta conta: `conta` (prefixo dela), `antigo` (antes de #604) ou nenhuma. */
+export function avatarPathKind(url: string, userId: string): 'conta' | 'antigo' | null {
+  const path = canonicalPath(url)
+  if (path === null) return null
   const prefix = `/${avatarPathPrefix(userId)}/`
-  return path.startsWith(prefix) && path.length > prefix.length && !path.slice(prefix.length).includes('/')
-}
-
-/** Avatar do formato anterior a #604 (`avatars/<arquivo>`, sem a conta no caminho)? */
-function isLegacyAvatarPath(url: string): boolean {
-  const path = pathnameOf(url)
-  return path !== null && /^\/avatars\/[^/]+$/.test(path)
+  if (path.startsWith(prefix) && new RegExp(`^${FILE}$`).test(path.slice(prefix.length))) return 'conta'
+  if (LEGACY_AVATAR_PATH.test(path)) return 'antigo'
+  return null
 }
 
 /**
  * O servidor pode apagar `url`, o avatar que a conta `userId` acabou de largar? Exige que o blob seja NOSSO
- * (`store.owns`) e da conta (prefixo da conta, ou avatar antigo que nenhuma outra conta usa). Nunca lança: na
- * dúvida, não apaga (um órfão é tolerável; apagar o arquivo de outra pessoa, não).
+ * (`store.owns`), canônico e da conta (prefixo dela, ou avatar antigo que nenhuma outra conta usa). Nunca lança:
+ * na dúvida, não apaga (um órfão é tolerável; apagar o arquivo de outra pessoa, não).
  */
 export async function canDeleteAccountAvatar(
   db: Database,
@@ -60,8 +84,8 @@ export async function canDeleteAccountAvatar(
 ): Promise<boolean> {
   try {
     if (!url || !store.owns(url)) return false
-    if (isAccountAvatarPath(url, userId)) return true
-    if (!isLegacyAvatarPath(url)) return false
+    const kind = avatarPathKind(url, userId)
+    if (kind !== 'antigo') return kind === 'conta'
     const [other] = await db
       .select({ one: sql<number>`1` })
       .from(users)

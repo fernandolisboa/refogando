@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import { POST, DELETE } from '@/app/api/me/avatar/route'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
+import { avatarPathPrefix } from '@/server/images/avatar-blob'
 import { recipe, users } from '@/db/schema'
 import { seedSessionHeaders, seedDeletedSessionHeaders } from '../helpers/users'
 import { seedFeijoadaCatalog } from '../helpers/recipes'
@@ -102,8 +103,9 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { image: string }
     expect(store.owns(body.image)).toBe(true)
-    // #604: o avatar mora sob o prefixo da conta (`avatars/<userId>/`).
-    expect(body.image).toMatch(new RegExp(`/avatars/${userId}/\\d+\\.webp$`))
+    // #604: o avatar mora sob o prefixo opaco da conta (`avatars/<chave>/`), nunca com o id cru.
+    expect(body.image).toMatch(new RegExp(`/${avatarPathPrefix(userId)}/\\d+\\.webp$`))
+    expect(body.image).not.toContain(userId)
     const blob = store.blobs.get(body.image)!
     expect(blob.contentType).toBe('image/webp')
     const meta = await sharp(Buffer.from(blob.bytes)).metadata()
@@ -247,8 +249,8 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
   })
 
   describe('#604 — só apaga o avatar DESTA conta', () => {
-    /** Guarda um blob "nosso" fora do avatar da conta (como se fosse de outra pessoa) e o devolve. */
-    async function foreignOwnBlob(pathPrefix: string): Promise<string> {
+    /** Guarda um blob NOSSO (host do store) fora do avatar desta conta, como se fosse de outra pessoa. */
+    async function otherAccountBlob(pathPrefix: string): Promise<string> {
       const { url } = await store.store({ data: PNG_BYTES, contentType: 'image/png', pathPrefix })
       return url
     }
@@ -256,8 +258,8 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
     it('POST e DELETE com users.image apontando para blob de OUTRA pessoa NÃO apagam esse blob', async () => {
       const other = await seedSessionHeaders({ email: 'vitima@me-avatar.test' })
       const { userId, headers } = await seedSessionHeaders({ email: 'atacante@me-avatar.test' })
-      const reviewPhoto = await foreignOwnBlob('reviews')
-      const otherAvatar = await foreignOwnBlob(`avatars/${other.userId}`)
+      const reviewPhoto = await otherAccountBlob('reviews')
+      const otherAvatar = await otherAccountBlob(avatarPathPrefix(other.userId))
 
       await getDb().update(users).set({ image: reviewPhoto }).where(eq(users.id, userId))
       expect((await POST(postReq(pngFile(), headers))).status).toBe(200)
@@ -271,18 +273,30 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
 
     it('avatar ANTIGO (avatars/<arquivo>) só é apagado quando nenhuma outra conta aponta para ele', async () => {
       const { userId, headers } = await seedSessionHeaders({ email: 'antigo@me-avatar.test' })
-      const legacy = await foreignOwnBlob('avatars')
+      const legacy = await otherAccountBlob('avatars')
       await getDb().update(users).set({ image: legacy }).where(eq(users.id, userId))
       expect((await DELETE(deleteReq(headers))).status).toBe(200)
       expect(store.blobs.has(legacy)).toBe(false)
 
       const victim = await seedSessionHeaders({ email: 'dona@me-avatar.test' })
-      const shared = await foreignOwnBlob('avatars')
+      const shared = await otherAccountBlob('avatars')
       await getDb().update(users).set({ image: shared }).where(eq(users.id, victim.userId))
       await getDb().update(users).set({ image: shared }).where(eq(users.id, userId))
       expect((await DELETE(deleteReq(headers))).status).toBe(200)
       expect(store.blobs.has(shared)).toBe(true)
       expect(await readImage(victim.userId)).toBe(shared)
+    })
+
+    it('variante não canônica (query, hash) de um avatar antigo alheio nunca apaga o blob', async () => {
+      const victim = await seedSessionHeaders({ email: 'variante-dona@me-avatar.test' })
+      const { userId, headers } = await seedSessionHeaders({ email: 'variante-atacante@me-avatar.test' })
+      const legacy = await otherAccountBlob('avatars')
+      await getDb().update(users).set({ image: legacy }).where(eq(users.id, victim.userId))
+      for (const variant of [`${legacy}?x=1`, `${legacy}#f`]) {
+        await getDb().update(users).set({ image: variant }).where(eq(users.id, userId))
+        expect((await DELETE(deleteReq(headers))).status).toBe(200)
+      }
+      expect(store.blobs.has(legacy)).toBe(true)
     })
   })
 })

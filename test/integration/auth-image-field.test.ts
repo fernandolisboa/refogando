@@ -59,4 +59,25 @@ describe('#604 — campo image do Better Auth', () => {
     const [row] = await getDb().select({ name: users.name }).from(users).where(eq(users.id, userId))
     expect(row.name).toBe('Nome Novo')
   })
+
+  it('rotas do admin do plugin com data.image ⇒ 400; sem image seguem passando pelo hook', async () => {
+    const admin = await seedSessionHeaders({ email: 'admin@auth-image.test', role: 'admin' })
+    const alvo = await seedSessionHeaders({ email: 'alvo@auth-image.test' })
+    const upd = await post('/admin/update-user', { userId: alvo.userId, data: { image: BLOB_ALHEIO } }, admin.headers)
+    expect(upd.status).toBe(400)
+    expect(await upd.json()).toMatchObject({ code: 'FIELD_NOT_ALLOWED' })
+    expect(await imageOf({ id: alvo.userId })).toBeNull()
+
+    const email = 'criada@auth-image.test'
+    const create = await post(
+      '/admin/create-user',
+      { email, password: 'senha-super-secreta-123', name: 'Criada', data: { image: BLOB_ALHEIO } },
+      admin.headers,
+    )
+    expect(create.status).toBe(400)
+    expect(await imageOf({ email })).toBeUndefined()
+
+    const ok = await post('/admin/update-user', { userId: alvo.userId, data: { name: 'Outro Nome' } }, admin.headers)
+    expect(ok.status).toBe(200)
+  })
 })

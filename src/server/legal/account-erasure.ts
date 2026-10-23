@@ -132,8 +132,9 @@ export async function eraseOwnAccount(
     return { kind: 'erased' as const, blobUrls: purge.blobUrls }
   })
 
-  // Blobs DEPOIS do commit (best-effort; só apaga os NOSSOS — `store.owns`; nunca lança). Só quando de fato
-  // eliminamos nesta chamada (kind 'erased'): já-eliminada/não-encontrada não têm nada novo a reapear.
+  // Blobs DEPOIS do commit (best-effort; só apaga os NOSSOS — `store.owns` — e o avatar só se for da conta,
+  // `canDeleteAccountAvatar`; nunca lança). Só quando de fato eliminamos nesta chamada (kind 'erased'):
+  // já-eliminada/não-encontrada não têm nada novo a reapear.
   if (result.kind === 'erased') {
     const store = getImageStore()
     const avatar = (await canDeleteAccountAvatar(db, store, oldImageUrl, userId)) ? oldImageUrl : null

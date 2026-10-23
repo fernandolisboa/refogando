@@ -29,6 +29,7 @@ import {
 } from '@/db/schema'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
+import { avatarPathPrefix } from '@/server/images/avatar-blob'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { ERASURE_POLICY, privateLeftovers, purgePrivateContentInTx } from '@/server/legal/private-content'
 import { persistGeneration } from '@/server/generation/persist'
@@ -492,23 +493,32 @@ describe('eliminação: atomicidade e blobs depois do commit', () => {
 })
 
 describe('eliminação: avatar (#604)', () => {
-  it('apaga o avatar sob o prefixo da conta e nunca o blob de outra pessoa plantado em users.image', async () => {
+  it('apaga o avatar sob o prefixo da conta', async () => {
     const dona = await seedUser({ email: 'avatar-dona@pc.test' })
-    const own = await blob(`avatars/${dona}`)
+    const own = await blob(avatarPathPrefix(dona))
     await getDb().update(users).set({ image: own }).where(eq(users.id, dona))
     expect((await eraseOwnAccount(getDb(), { userId: dona })).kind).toBe('erased')
     expect(store.blobs.has(own)).toBe(false)
+  })
 
+  it('nunca apaga o blob de outra pessoa plantado em users.image', async () => {
     const vitima = await seedUser({ email: 'avatar-vitima@pc.test' })
-    for (const alheio of [await blob('reviews'), await blob(`avatars/${vitima}`), await blob('recipes')]) {
-      const atacante = await seedUser({ email: `atacante-${store.blobs.size}@pc.test` })
+    const alheios = [await blob('reviews'), await blob(avatarPathPrefix(vitima)), await blob('recipes')]
+    for (const [i, alheio] of alheios.entries()) {
+      const atacante = await seedUser({ email: `atacante-${i}@pc.test` })
       await getDb().update(users).set({ image: alheio }).where(eq(users.id, atacante))
       expect((await eraseOwnAccount(getDb(), { userId: atacante })).kind).toBe('erased')
       expect(store.blobs.has(alheio)).toBe(true)
     }
   })
 
-  it('avatar antigo (avatars/<arquivo>) que outra conta ainda usa fica intacto', async () => {
+  it('avatar antigo (avatars/<arquivo>) só da conta sai; o que outra conta ainda usa fica', async () => {
+    const sozinha = await seedUser({ email: 'antigo-sozinha@pc.test' })
+    const proprio = await blob('avatars')
+    await getDb().update(users).set({ image: proprio }).where(eq(users.id, sozinha))
+    expect((await eraseOwnAccount(getDb(), { userId: sozinha })).kind).toBe('erased')
+    expect(store.blobs.has(proprio)).toBe(false)
+
     const dona = await seedUser({ email: 'antigo-dona@pc.test' })
     const atacante = await seedUser({ email: 'antigo-atacante@pc.test' })
     const legacy = await blob('avatars')

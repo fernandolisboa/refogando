@@ -4,6 +4,7 @@ import { getDb, getImageStore } from '@/server/deps'
 import { users } from '@/db/schema'
 import { AVATAR_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
 import { avatarPathPrefix, canDeleteAccountAvatar } from '@/server/images/avatar-blob'
+import { deleteOrphanBlob } from '@/server/images/image-blobs'
 
 /**
  * Contrato `/api/me/avatar` — avatar do logado (#126, frente Perfil + fundação do `ImageStore`).
@@ -16,7 +17,7 @@ import { avatarPathPrefix, canDeleteAccountAvatar } from '@/server/images/avatar
  * POST (multipart `file`): valida tipo (jpg/png/webp) e tamanho (rede do servidor; o cliente já
  * redimensiona), RE-ENCODA no servidor (#596, `reencodeUserPhoto` com `AVATAR_PHOTO_SPEC`: formato pelos
  * bytes, teto de pixels, WebP ≤1024 px SEM EXIF/GPS — o avatar é servido público; recusa ⇒ 400
- * `tipo_invalido`), guarda o WebP no `ImageStore` sob `avatars/<userId>/` (#604), grava a URL em `users.image`
+ * `tipo_invalido`), guarda o WebP no `ImageStore` sob o prefixo da conta (`avatarPathPrefix`, #604), grava a URL em `users.image`
  * e — best-effort — apaga o blob ANTERIOR só se for avatar DESTA conta (`canDeleteAccountAvatar`: nosso host E
  * prefixo da conta, ou avatar antigo que nenhuma outra conta usa). Avatar vindo do OAuth (Google)
  * é URL ESTRANGEIRA e fica intacto. Devolve `{ image: <url> }`. Storage indisponível → 503
@@ -115,10 +116,5 @@ async function deleteOldBlob(
   next: string | null,
   userId: string,
 ): Promise<void> {
-  if (!old || old === next || !(await canDeleteAccountAvatar(db, store, old, userId))) return
-  try {
-    await store.delete(old)
-  } catch {
-    // Órfão tolerável: o avatar já foi trocado/removido; não propagamos a falha de limpeza.
-  }
+  if (old && old !== next && (await canDeleteAccountAvatar(db, store, old, userId))) await deleteOrphanBlob(store, old)
 }

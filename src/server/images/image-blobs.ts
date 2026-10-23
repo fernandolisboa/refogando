@@ -5,8 +5,9 @@ import type { ImageStore } from '@/server/images/image-store'
  * Blobs de uma linha `recipe_image` e a deleção best-effort deles. Lar ÚNICO do "apaga o blob se for
  * NOSSO e engole o erro": o reap do hard-delete (#146), o APAGAR da galeria (dono e catálogo), a
  * limpeza de uma tx que falhou depois do `put`, o par de derivados pela metade e o par descartado do
- * backfill passam todos por `deleteOrphanBlob(s)`. Avatar e foto da avaliação também (não são
- * `recipe_image`, mas são blobs nossos com a mesma regra de `store.owns`). A eliminação da conta e a
+ * backfill passam todos por `deleteOrphanBlob(s)`. Foto da avaliação e avatar também (não são
+ * `recipe_image`); o avatar só chega aqui depois da regra mais estrita de `canDeleteAccountAvatar`
+ * (`avatar-blob.ts`, #604: além de nosso, o blob precisa ser da conta). A eliminação da conta e a
  * varredura do conteúdo privado (#473), que apagam muitos de uma vez, usam `deleteOrphanBlobsConcurrently`.
  */
 
