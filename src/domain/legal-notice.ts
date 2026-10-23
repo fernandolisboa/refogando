@@ -1,10 +1,12 @@
 /**
  * Versão publicada dos textos legais e o aviso de mudança no app (ADR-0051). PURO: sem React, sem DB.
  *
- * `DATA_PUBLICACAO_TERMOS_V1` é a FONTE ÚNICA da data em que os Termos de Uso v1 e a Política v3.1 foram
- * publicados (o dia do merge do PR). As strings i18n a importam (`termos.rodapeData`, `termos.s10Historico`,
+ * `DATA_PUBLICACAO_TERMOS_V1` é a FONTE ÚNICA, no código, da data em que os Termos de Uso v1 e a Política v3.1
+ * foram publicados (o dia do merge do PR). As strings i18n a importam (`termos.rodapeData`, `termos.s10Historico`,
  * `privacidade.rodapeData` e a linha v3.1 de `privacidade.s10Historico`, `seusDireitos.rodapeData`), e o aviso
- * a usa para decidir o público. Se o merge escorregar de dia, troque SÓ aqui.
+ * a usa para decidir o público. Se o merge escorregar de dia, troque esta constante e as datas do ADR-0051 e do
+ * handoff 85, só no PR que publica a v1. Depois do merge ela fica CONGELADA: a próxima versão ganha constante
+ * própria.
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança nova ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -24,13 +26,16 @@ export function avisoLegalStorageKey(userId: string, versao: string = AVISO_LEGA
   return `${AVISO_LEGAL_STORAGE_PREFIX}${versao}:${userId}`
 }
 
+/** Um dia em ms. Brasília não tem horário de verão desde 2019, então o dia tem sempre 24 h em UTC−3. */
+const UM_DIA_MS = 24 * 60 * 60 * 1000
+
 /**
- * Público da v1: contas criadas ANTES do dia da publicação (meia-noite de Brasília, UTC−3). Quem se cadastrou
- * depois já viu a linha dos Termos no cadastro. As contas criadas no próprio dia, antes do deploy, ficam de
- * fora: janela de horas, aceita no ADR-0051 (a alternativa, o dia seguinte, avisaria também quem acabou de
- * aceitar os Termos).
+ * Público da v1: contas criadas ANTES do começo do dia SEGUINTE ao da publicação — meia-noite de Brasília
+ * (UTC−3, a mesma convenção da data acima) que abre o dia depois de `DATA_PUBLICACAO_TERMOS_V1`. Assim entra
+ * também quem se cadastrou no dia da publicação antes do deploy (e não viu a linha dos Termos). O custo, aceito no
+ * ADR-0051 (e): quem se cadastra nesse dia depois do deploy também vê o aviso, de algo que acabou de aceitar.
  */
-export const AVISO_LEGAL_CONTAS_ANTES_DE_MS = Date.parse(`${DATA_PUBLICACAO_TERMOS_V1}T00:00:00-03:00`)
+export const AVISO_LEGAL_CONTAS_ANTES_DE_MS = Date.parse(`${DATA_PUBLICACAO_TERMOS_V1}T00:00:00-03:00`) + UM_DIA_MS
 
 /**
  * O aviso aparece? Só com sessão, conta anterior ao corte e sem "Entendi" guardado. `dismissed` `undefined`

@@ -2,7 +2,7 @@
 /**
  * Aviso de mudança dos textos legais (ADR-0051), montado no layout `[locale]` no começo do conteúdo (o
  * skip-link não o pula). É o mecanismo do item 10 dos Termos: mudança relevante só vale 15 dias depois deste
- * aviso. Só para quem está logado e tem conta anterior à publicação (`shouldShowLegalNotice`): quem se
+ * aviso. Só para quem está logado e tem conta criada até o dia da publicação (`shouldShowLegalNotice`): quem se
  * cadastrou depois já viu os Termos na linha do cadastro. Visitante não vê nada.
  *
  * "Entendi" guarda a dispensa no localStorage, por versão e por conta (`avisoLegalStorageKey`); uma versão nova
@@ -56,10 +56,12 @@ export function LegalChangeNotice() {
   const { locale, messages } = useLocale()
   const m = messages.avisoLegal
   const session = useSession()
-  const authed = !session.isPending && !session.error && !!session.data
-  const userId = authed ? (session.data?.user.id ?? null) : null
+  // Pela presença do usuário, não pelo `error`: numa re-busca que falha (fora o 401) o better-auth mantém os
+  // dados da sessão, e o aviso não deve sumir e voltar por causa disso.
+  const user = session.isPending ? null : session.data?.user
+  const userId = user?.id ?? null
   // Em número: o `Date` da sessão muda de identidade a cada re-busca, e o efeito não precisa re-rodar por isso.
-  const createdAtRaw = authed ? session.data?.user.createdAt : undefined
+  const createdAtRaw = user?.createdAt
   const createdAtMs = createdAtRaw == null ? null : new Date(createdAtRaw).getTime()
 
   // Para quem o aviso está aberto (null = fechado). Guardar o id evita mostrar o aviso de uma conta para outra.

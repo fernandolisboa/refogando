@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeTranslation, users } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
+import { errorLogFields } from '@/domain/error-report'
 import { emitNotification } from '@/server/notification'
 
 /**
@@ -91,6 +92,8 @@ export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> 
  * como os caminhos por Report (#373): só na 1ª moderação genuína, pós-commit, best-effort. O dono é o da
  * receita representativa da linhagem, a MESMA escolha do LATERAL de `listReviewQueue` (a do criador da imagem,
  * a versão mais recente) — o Curador viu esse dono na fila. Sem receita na linhagem ou de catálogo ⇒ não notifica.
+ * A busca desse dono também roda DEPOIS do commit, num try/catch: se falhar, a moderação já valeu e só a
+ * notificação se perde (com uma linha no log).
  */
 export type ReviewImageModerationResult =
   | { kind: 'ok' } //                   200 — moderou agora
@@ -106,9 +109,9 @@ export async function applyReviewImageModeration(input: {
 }): Promise<ReviewImageModerationResult> {
   const { db, imageId, curatorId, reason } = input
 
-  const { result, ownerId, recipeId } = await db.transaction(async (tx) => {
+  const { result, lineageId, createdBy } = await db.transaction(async (tx) => {
     // Estado atual da imagem (FOR UPDATE serializa moderações concorrentes; tabela única, sem join). A linhagem
-    // e o criador resolvem o dono a notificar.
+    // e o criador resolvem, depois do commit, o dono a notificar.
     const [img] = await tx
       .select({
         moderatedAt: recipeImage.moderatedAt,
@@ -118,15 +121,15 @@ export async function applyReviewImageModeration(input: {
       .from(recipeImage)
       .where(eq(recipeImage.id, imageId))
       .for('update')
-    if (!img) return { result: { kind: 'not_found' as const }, ownerId: null, recipeId: null }
+    if (!img) return { result: { kind: 'not_found' as const }, lineageId: null, createdBy: null }
 
     // Motivo obrigatório (espelha #133/#18), após existência, antes de qualquer write.
     if (!decideModerationReason({ reason }).allowed)
-      return { result: { kind: 'invalid_reason' as const }, ownerId: null, recipeId: null }
+      return { result: { kind: 'invalid_reason' as const }, lineageId: null, createdBy: null }
 
     if (img.moderatedAt != null) {
       // Re-moderar preserva a 1ª proveniência e não re-notifica.
-      return { result: { kind: 'ok_already_moderated' as const }, ownerId: null, recipeId: null }
+      return { result: { kind: 'ok_already_moderated' as const }, lineageId: null, createdBy: null }
     }
 
     // NUNCA apaga o blob nem zera image_id (ADR-0016): só esconde do público. Owner segue vendo.
@@ -135,25 +138,27 @@ export async function applyReviewImageModeration(input: {
       .set({ moderatedAt: sql`now()`, moderatedReason: reason, moderatedBy: curatorId })
       .where(eq(recipeImage.id, imageId))
 
-    // Receita representativa da linhagem — a mesma ordem do LATERAL de `listReviewQueue`.
-    const [ctx] = await tx
-      .select({ recipeId: recipe.id, ownerId: recipe.ownerId })
-      .from(recipe)
-      .where(eq(recipe.lineageId, img.lineageId))
-      .orderBy(sql`(${recipe.ownerId} is not distinct from ${img.createdBy}) desc`, desc(recipe.createdAt))
-      .limit(1)
-
-    return {
-      result: { kind: 'ok' as const },
-      ownerId: ctx?.ownerId ?? null,
-      recipeId: ctx?.recipeId ?? null,
-    }
+    return { result: { kind: 'ok' as const }, lineageId: img.lineageId, createdBy: img.createdBy }
   })
 
   // Pós-commit, `db` de topo, best-effort (falhar a notificação nunca falha a moderação). Catálogo (owner null)
   // e imagem sem receita na linhagem → pula.
-  if (result.kind === 'ok' && ownerId != null) {
-    await emitNotification(db, { recipientId: ownerId, type: 'image_moderated', recipeId })
+  if (result.kind === 'ok' && lineageId != null) {
+    try {
+      // Receita representativa da linhagem — a mesma ordem do LATERAL de `listReviewQueue`.
+      const [ctx] = await db
+        .select({ recipeId: recipe.id, ownerId: recipe.ownerId })
+        .from(recipe)
+        .where(eq(recipe.lineageId, lineageId))
+        .orderBy(sql`(${recipe.ownerId} is not distinct from ${createdBy}) desc`, desc(recipe.createdAt))
+        .limit(1)
+      if (ctx?.ownerId != null) {
+        await emitNotification(db, { recipientId: ctx.ownerId, type: 'image_moderated', recipeId: ctx.recipeId })
+      }
+    } catch (err) {
+      // Só nome + código (ADR-0048), como o `emitNotification`: a mensagem do driver traz a query com os parâmetros.
+      console.error(`[curate/review] dono da imagem moderada não resolvido (notificação perdida): ${errorLogFields(err)}`)
+    }
   }
   return result
 }

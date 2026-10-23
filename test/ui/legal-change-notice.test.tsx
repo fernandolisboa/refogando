@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 
 /**
  * Aviso de mudança dos Termos e da Política (ADR-0051), montado no layout: só para quem tem sessão e conta
- * anterior à publicação; "Entendi" grava no localStorage (por versão e por conta) e leva o foco ao `<h1>`;
+ * criada antes do corte (o fim do dia da publicação); "Entendi" grava no localStorage (por versão e por conta) e leva o foco ao `<h1>`;
  * storage bloqueado mostra o aviso e a dispensa vale na carga; o servidor/1º render não mostram nada.
  */
 vi.mock('next/link', () => ({
@@ -43,16 +43,23 @@ function sessao(createdAt: Date | null, id = 'user-1') {
 }
 const ANON = { data: null, error: null, isPending: false, isRefetching: false, refetch: () => {} }
 
-function renderNotice(locale: Locale = 'pt-BR') {
-  return render(
+function page(locale: Locale = 'pt-BR') {
+  return (
     <LocaleProvider initialLocale={locale}>
       <LegalChangeNotice />
       <main>
         <h1>Título da página</h1>
       </main>
-    </LocaleProvider>,
+    </LocaleProvider>
   )
 }
+
+function renderNotice(locale: Locale = 'pt-BR') {
+  return render(page(locale))
+}
+
+/** Deixa o timer da montagem rodar (o aviso decide depois dele). */
+const settle = () => new Promise((r) => setTimeout(r, 10))
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -62,7 +69,7 @@ afterEach(() => {
 })
 
 describe('LegalChangeNotice (ADR-0051)', () => {
-  it('conta anterior à publicação: mostra o texto, os dois links prefixados e o "Entendi"', async () => {
+  it('conta anterior ao corte: mostra o texto, os dois links prefixados e o "Entendi"', async () => {
     auth.current = sessao(ANTES)
     renderNotice()
     expect(await screen.findByText(ptBR.avisoLegal.texto, { exact: false })).toBeInTheDocument()
@@ -100,7 +107,7 @@ describe('LegalChangeNotice (ADR-0051)', () => {
     window.localStorage.setItem(avisoLegalStorageKey('user-1'), '1')
     auth.current = sessao(ANTES)
     renderNotice()
-    await new Promise((r) => setTimeout(r, 10))
+    await settle()
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
@@ -111,14 +118,51 @@ describe('LegalChangeNotice (ADR-0051)', () => {
     expect(await screen.findByRole('note')).toBeInTheDocument()
   })
 
-  it('conta criada depois da publicação, visitante ou createdAt ausente: não aparece', async () => {
+  it('conta criada depois do corte, visitante ou createdAt ausente: não aparece', async () => {
     for (const s of [sessao(DEPOIS), ANON, sessao(null)]) {
       auth.current = s
       const { unmount } = renderNotice()
-      await new Promise((r) => setTimeout(r, 10))
+      await settle()
       expect(screen.queryByRole('note')).not.toBeInTheDocument()
       unmount()
     }
+  })
+
+  it('a sessão muda sem recarregar: entrar mostra, sair esconde, e a dispensa de A não vale para B', async () => {
+    auth.current = ANON
+    const { rerender } = renderNotice()
+    await settle()
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+
+    // Visitante → entra com a conta A.
+    auth.current = sessao(ANTES, 'conta-a')
+    rerender(page())
+    expect(await screen.findByRole('note')).toBeInTheDocument()
+
+    // Sai: o aviso some já no render, sem esperar o timer.
+    auth.current = ANON
+    rerender(page())
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+
+    // A volta e dispensa.
+    auth.current = sessao(ANTES, 'conta-a')
+    rerender(page())
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: ptBR.avisoLegal.fechar }))
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+
+    // B entra no mesmo navegador: a dispensa de A não vale para B.
+    auth.current = sessao(ANTES, 'conta-b')
+    rerender(page())
+    expect(await screen.findByRole('note')).toBeInTheDocument()
+    expect(window.localStorage.getItem(avisoLegalStorageKey('conta-a'))).toBe('1')
+    expect(window.localStorage.getItem(avisoLegalStorageKey('conta-b'))).toBeNull()
+  })
+
+  it('re-busca da sessão que falha mas mantém os dados: o aviso continua', async () => {
+    auth.current = { ...sessao(ANTES), error: new Error('rede') }
+    renderNotice()
+    expect(await screen.findByRole('note')).toBeInTheDocument()
   })
 
   it('storage bloqueado: aparece e o "Entendi" esconde nesta carga', async () => {

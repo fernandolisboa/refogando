@@ -9,8 +9,17 @@ import {
 
 /** Público e chave do aviso de mudança dos textos legais (ADR-0051). PURO. */
 describe('legal-notice', () => {
-  it('o corte é a meia-noite de Brasília do dia da publicação', () => {
-    expect(new Date(AVISO_LEGAL_CONTAS_ANTES_DE_MS).toISOString()).toBe(`${DATA_PUBLICACAO_TERMOS_V1}T03:00:00.000Z`)
+  it('o corte é a meia-noite de Brasília que abre o dia SEGUINTE ao da publicação', () => {
+    const inicioDoDia = Date.parse(`${DATA_PUBLICACAO_TERMOS_V1}T03:00:00.000Z`) // 00:00 em UTC−3
+    expect(AVISO_LEGAL_CONTAS_ANTES_DE_MS).toBe(inicioDoDia + 24 * 60 * 60 * 1000)
+    expect(new Date(AVISO_LEGAL_CONTAS_ANTES_DE_MS).toISOString().slice(11)).toBe('03:00:00.000Z')
+  })
+
+  it('conta criada no próprio dia da publicação, de manhã ou à noite (Brasília), vê o aviso; a do dia seguinte, não', () => {
+    const show = (createdAt: string) => shouldShowLegalNotice({ authed: true, createdAt, dismissed: false })
+    expect(show(`${DATA_PUBLICACAO_TERMOS_V1}T00:00:00-03:00`)).toBe(true)
+    expect(show(`${DATA_PUBLICACAO_TERMOS_V1}T23:59:59-03:00`)).toBe(true)
+    expect(show(new Date(AVISO_LEGAL_CONTAS_ANTES_DE_MS).toISOString())).toBe(false)
   })
 
   it('mostra só para conta anterior ao corte, com sessão e sem dispensa', () => {

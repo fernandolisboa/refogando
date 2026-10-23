@@ -72,6 +72,7 @@ import { enUS } from '@/i18n/messages/en-US'
 import type { Locale } from '@/i18n/locale'
 import { accountExportFilename } from '@/domain/account-export'
 import { tourStorageKey } from '@/domain/onboarding-tour'
+import { avisoLegalStorageKey } from '@/domain/legal-notice'
 import { AccountDataSection } from '@/components/profile/account-data-section'
 import { stubLocation } from './reload-stub'
 
@@ -356,10 +357,12 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(calls).toHaveLength(1)
   })
 
-  it('confirmar: POST com {confirm:true} em JSON → sinal do aviso, abas e tour esquecidos, sai e recarrega a home do idioma', async () => {
+  it('confirmar: POST com {confirm:true} em JSON → sinal do aviso, abas, tour e "Entendi" dos Termos esquecidos, sai e recarrega a home do idioma', async () => {
     const user = userEvent.setup()
     window.localStorage.setItem(tourStorageKey('u-1'), 'done')
     window.localStorage.setItem(tourStorageKey('u-outra'), 'done')
+    window.localStorage.setItem(avisoLegalStorageKey('u-1'), '1')
+    window.localStorage.setItem(avisoLegalStorageKey('u-outra'), '1')
     const { calls } = mockFetch({})
     renderSection()
     const dialog = await openDialog(user)
@@ -378,6 +381,8 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(forgetTabs).toHaveBeenCalledOnce()
     expect(window.localStorage.getItem(tourStorageKey('u-1'))).toBeNull()
     expect(window.localStorage.getItem(tourStorageKey('u-outra'))).toBe('done')
+    expect(window.localStorage.getItem(avisoLegalStorageKey('u-1'))).toBeNull()
+    expect(window.localStorage.getItem(avisoLegalStorageKey('u-outra'))).toBe('1')
     expect(loc.reload).not.toHaveBeenCalled()
   })
 

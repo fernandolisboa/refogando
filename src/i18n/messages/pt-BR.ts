@@ -2237,7 +2237,7 @@ export const ptBR = {
       'v1 — 2026-07-03: primeira versão publicada.',
       'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
-      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos e Termos de Uso.`,
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e aviso de mudança no navegador (item 8).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2433,7 +2433,7 @@ export const ptBR = {
     s8Corpo: [
       'Qualquer pessoa com conta pode denunciar uma avaliação pelo botão Reportar. Para denunciar uma receita pública ou um perfil, ou se você não tem conta, escreva para privacidade@refogando.com.',
       'Analisamos cada denúncia. Quando o conteúdo é manifestamente ilegal ou viola estes Termos, nós o retiramos do ar e registramos a decisão, com o motivo.',
-      'Se o seu conteúdo for retirado, você recebe uma notificação no app. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
+      'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app; se for o seu perfil, avisamos por e-mail. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
       'Em violações graves ou repetidas, podemos bloquear funções da conta, como a geração de imagens por IA, ou encerrar a conta. Avisamos antes, quando possível, e, salvo em caso de conteúdo ilegal, você tem 15 dias para baixar os seus dados antes do encerramento. Você pode pedir uma nova análise pelo privacidade@refogando.com.',
     ],
 

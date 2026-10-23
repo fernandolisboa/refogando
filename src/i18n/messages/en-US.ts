@@ -2117,7 +2117,7 @@ export const enUS: Messages = {
     // Section 9 (v3.1, ADR-0051): minimum age of 16. The Terms of Use say the same (item 2).
     s9Titulo: '9. Children and teenagers',
     s9Corpo:
-      'Refogando is intended for people aged 16 or older and is not directed at children. Teenagers aged 16 and 17 may have an account; for them, as for everyone, new recipes start out private, there is no advertising, profiling or location tracking, dietary restrictions are only saved with consent, and we process their data in their best interest (LGPD, Art. 14). The public profile and reviews are visible to everyone, as for any account (item 3.1). If we learn that an account belongs to someone under 16, we email the account and, if the age is not confirmed, we delete the account and what it published.',
+      'Refogando is intended for people aged 16 or older and is not directed at children. Teenagers aged 16 and 17 may have an account; for them, as for everyone, new recipes start out private, there is no advertising, profiling or location tracking, dietary restrictions are only saved with consent, and we process their data in their best interest (LGPD, Art. 14). The public profile and ratings are visible to everyone, as for any account (item 3.1). If we learn that an account belongs to someone under 16, we email the account and, if the age is not confirmed, we delete the account and what it published.',
 
     s10Titulo: '10. Changes to this policy',
     s10Corpo:
@@ -2128,7 +2128,7 @@ export const enUS: Messages = {
       'v1 — 2026-07-03: first published version.',
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
-      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 and Terms of Use.`,
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the change notice in the browser (item 8).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2318,8 +2318,8 @@ export const enUS: Messages = {
     s8Corpo: [
       'Anyone with an account can report a review with the Report button. To report a public recipe or a profile, or if you do not have an account, write to privacidade@refogando.com.',
       'We review every report. When content is clearly illegal or violates these Terms, we take it down and record the decision, with the reason.',
-      'If your content is taken down, you get a notification in the app. To learn the reason or ask for a new review, write to privacidade@refogando.com.',
-      'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask for a new review at privacidade@refogando.com.',
+      'If moderation takes down a recipe, image or review of yours, you get a notification in the app; if it is your profile, we let you know by email. To learn the reason or ask us to reconsider, write to privacidade@refogando.com.',
+      'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask us to reconsider at privacidade@refogando.com.',
     ],
 
     s9Titulo: '9. Liability',

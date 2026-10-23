@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { GET as listRoute } from '@/app/api/curate/review-images/route'
 import { POST as removeRoute } from '@/app/api/curate/review-images/[imageId]/remove/route'
@@ -6,7 +6,7 @@ import { POST as dismissRoute } from '@/app/api/curate/review-images/[imageId]/d
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
 import { notification, recipe, recipeImage } from '@/db/schema'
-import { listReviewQueue } from '@/server/curate/review'
+import { applyReviewImageModeration, listReviewQueue } from '@/server/curate/review'
 import { loadPublicRecipeBySlug } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
@@ -305,6 +305,35 @@ describe('remover da fila notifica o dono (ADR-0051: os Termos, item 8, prometem
     expect((await removeRoute(removeReq(img.id, headers, 'imagem imprópria'), ctx(img.id))).status).toBe(200)
     const after = await getDb().select({ id: notification.id }).from(notification)
     expect(after).toHaveLength(before.length)
+  })
+
+  it('falha ao buscar o dono depois do commit: a moderação vale, só a notificação se perde (com log)', async () => {
+    const curatorId = await seedUser({ email: 'notif4@review.test', role: 'curador' })
+    const owner = await seedUser({ email: 'notif4-dono@review.test' })
+    const { imageId } = await seedReviewImage({ ownerId: owner })
+    // O `select` de topo (o pós-commit) cai; a transação usa o `tx` dela e segue de verdade.
+    const real = getDb()
+    const flaky = new Proxy(real, {
+      get(target, prop) {
+        if (prop === 'select') {
+          return () => {
+            throw new Error('select caiu')
+          }
+        }
+        const v = Reflect.get(target, prop)
+        return typeof v === 'function' ? v.bind(target) : v
+      },
+    })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await applyReviewImageModeration({ db: flaky, imageId, curatorId, reason: 'imagem imprópria' })
+      expect(result).toEqual({ kind: 'ok' })
+      expect(await moderatedAtOf(imageId)).not.toBeNull()
+      expect(await notifsFor(owner)).toHaveLength(0)
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('[curate/review]'))
+    } finally {
+      log.mockRestore()
+    }
   })
 })
 

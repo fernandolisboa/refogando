@@ -54,7 +54,9 @@ Rodar `/handoff` para gerar:
 - **Termos de Uso** (seção `termos`, `/termos`, ADR-0051): mudança relevante só vale **15 dias depois** de um aviso
   no app e/ou e-mail (item 10), que o MESMO PR entrega: nova `AVISO_LEGAL_VERSAO` e o público do aviso em
   `src/domain/legal-notice.ts` (o `LegalChangeNotice` do layout volta para quem dispensou o anterior), nova linha
-  em `termos.s10Historico` + rodapé, e a data em `DATA_PUBLICACAO_TERMOS_V1`. Feature que muda o que os Termos
+  em `termos.s10Historico` + rodapé com data própria (constante nova em `src/domain/legal-notice.ts`);
+  `DATA_PUBLICACAO_TERMOS_V1` fica congelada depois do merge (data a v1, a v3.1 da política e o corte do aviso da
+  v1). Feature que muda o que os Termos
   afirmam (denúncia, moderação, sanções, importação, cópias, eliminação, notificações de retirada) atualiza o
   texto no mesmo PR. Os Termos prometem processos manuais (conta de menor de 16, encerrar conta, nova análise):
   o procedimento está no ADR-0051.
