@@ -15,7 +15,7 @@ import { legalPageAlternates } from '@/domain/legal-pages-seo'
  *     `messages.privacidade`) — o dono troca ali; o canal (e-mail + formulário) é funcional (abre ticket +
  *     grava `DSAR_RECEIVED`).
  *
- * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`; o canonical usa a origem fixa) ⇒ build-safe.
+ * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`; o canonical e o hreflang usam a origem fixa, #611) ⇒ build-safe.
  */
 export async function generateMetadata({
   params,
@@ -26,7 +26,6 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].seusDireitos.metaTitulo,
-    // #611: canonical + hreflang sobre a origem pública fixa (build-safe; `legal-pages-seo.ts`).
     alternates: legalPageAlternates(locale, 'seus-direitos'),
   }
 }
