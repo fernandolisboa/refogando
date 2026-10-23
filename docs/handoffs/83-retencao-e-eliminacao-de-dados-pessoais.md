@@ -30,7 +30,7 @@
   - A saída é sempre WebP sem EXIF/ICC/XMP; entrada inválida dá 400 `tipo_invalido`.
   - `maxDuration = 60` nas três rotas de upload.
 - **Logs só com nome e código** (`errorLogFields` em `src/domain/error-report.ts`): `[conversations/stream]`, `[image-scene]`, `[notification]`, `[cache-tags]`, `[home]`, mais as linhas novas de `[account-purge]` e `[retencao]`. O catálogo está em `docs/observabilidade.md`.
-- **Política de privacidade:** só `s31Valores[3]`, `s32Valores[3]`, `s33Valores[3]` e a data do rodapé (`rodapeData`, `2026-10-22`, o mesmo valor do PR da v3). Em pt-BR, o texto da spec v3, palavra por palavra; em en-US, a tradução. O resto da política fica para o PR da v3 (#276, handoff 84).
+- **Política de privacidade:** só `s31Valores[3]`, `s32Valores[3]`, `s33Valores[3]` e a data do rodapé (`rodapeData`, `2026-10-23`, o dia da publicação). Em pt-BR, o texto da spec v3, palavra por palavra; em en-US, a tradução. O resto da política fica para o PR da v3 (#276, handoff 84).
 - **Docs.**
   - ADR-0050.
   - Notas datadas no ADR-0006 (retenção e a exceção do Briefing), no ADR-0016 (re-encode), no ADR-0025 (a exceção do Briefing na conta eliminada) e no ADR-0036 dec.7 (prazo do ledger; a metade da exportação é do #595).
@@ -49,7 +49,7 @@
 
 ## 2. Ações do dono
 
-1. **Backup antes do merge — feito.** Em `<AAAA-MM-DD>`, o `.github/workflows/db-backup.yml` foi disparado por `workflow_dispatch` e criou o branch `backup/<AAAA-MM-DD>T<HHMM>Z` do Neon. É por ele que se volta atrás: a primeira varredura apaga, sem volta, o conteúdo privado legado das contas eliminadas, e o plano free guarda só 6 h de histórico.
+1. **Backup antes do merge — feito.** Em `2026-10-23` (00:26 UTC), o `.github/workflows/db-backup.yml` foi disparado por `workflow_dispatch` e criou o branch `backup/2026-10-23T0026Z` do Neon. É por ele que se volta atrás: a primeira varredura apaga, sem volta, o conteúdo privado legado das contas eliminadas, e o plano free guarda só 6 h de histórico.
 2. **Depois do deploy:**
    - Rodar manualmente (Run, no painel de crons da Vercel) `/api/cron/account-purge` e depois `/api/cron/retention`.
    - Ler as linhas `[account-purge] passada …` (`pendingSignupsPurged`, …, `privateAccountsSwept`, `privateAccountsFailed`, `privateAccountsDeferred`, …) e `[retencao] passada …`, e conferir se alguma linha `… falhou: erro=…` apareceu.

@@ -2034,7 +2034,7 @@ export const enUS: Messages = {
     rodapeVersaoRotulo: 'Version',
     rodapeVersao: 'v2',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-10-22',
+    rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — legal review in progress',
   },
