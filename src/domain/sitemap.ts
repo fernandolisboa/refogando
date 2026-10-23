@@ -78,12 +78,13 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
       url: `${baseUrl}/${loc}`,
       alternates: { languages },
     })),
-    // Páginas legais estáticas PUBLICADAS (parte de #276): Política de Privacidade e Seus Direitos,
-    // uma entrada por locale, com o mesmo esquema de hreflang. Diferente da home, não há redirecionador
-    // por-página na raiz sem locale — o `x-default` aponta para a versão no DEFAULT_LOCALE (padrão do
-    // detalhe #233).
+    // Páginas legais estáticas PUBLICADAS (parte de #276): Política de Privacidade, Seus Direitos e Termos de
+    // Uso (ADR-0051), uma entrada por locale, com o mesmo esquema de hreflang. Diferente da home, não há
+    // redirecionador por-página na raiz sem locale — o `x-default` aponta para a versão no DEFAULT_LOCALE
+    // (padrão do detalhe #233).
     ...buildStaticPathEntries(baseUrl, 'privacidade'),
     ...buildStaticPathEntries(baseUrl, 'seus-direitos'),
+    ...buildStaticPathEntries(baseUrl, 'termos'),
     // Placeholder de plano (Fase 2 de billing, flag-off, §6 item 5 de fase2-billing-decisao.md):
     // indexável de propósito, mesmo esquema — "em breve" sem afirmar preço/data.
     ...buildStaticPathEntries(baseUrl, 'plano'),

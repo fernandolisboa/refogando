@@ -25,8 +25,9 @@
  * Na falha, o foco vai para "Excluir definitivamente" (ou para o alerta, se o botão estiver desabilitado),
  * para não cair no `body`.
  *
- * Saída depois de excluir: deixa o sinal do aviso da home, esquece as abas lembradas (como o "Sair") e o
- * estado do tour desta conta (`tourStorageKey`: o id é o mesmo da conta anonimizada), chama o `signOut`
+ * Saída depois de excluir: deixa o sinal do aviso da home, esquece as abas lembradas (como o "Sair"), o
+ * estado do tour desta conta (`tourStorageKey`: o id é o mesmo da conta anonimizada) e o "Entendi" do aviso
+ * dos Termos e da Política (`avisoLegalStorageKey`, ADR-0051), chama o `signOut`
  * com teto de 3s (o servidor já apagou as sessões; isto limpa o cookie e o atom, e o teto impede um
  * `signOut` offline de travar a tela) e recarrega a home do idioma com `location.assign`. Recarga de
  * verdade, não `router.push`: limpa todo estado privado em memória (as restrições salvas do
@@ -38,6 +39,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { signOut } from '@/lib/auth-client'
 import { tourStorageKey } from '@/domain/onboarding-tour'
+import { avisoLegalStorageKey } from '@/domain/legal-notice'
 import { forgetTabs } from '@/components/nav/last-tab-store'
 import { sectionLabel } from '@/components/nav/nav-labels'
 import { Button } from '@/components/ui/button'
@@ -150,8 +152,9 @@ export function DeleteAccountDialog({
     if (uid) {
       try {
         window.localStorage.removeItem(tourStorageKey(uid))
+        window.localStorage.removeItem(avisoLegalStorageKey(uid))
       } catch {
-        // Storage bloqueado: sobra só a marca do tour, sem dado pessoal.
+        // Storage bloqueado: sobram só as marcas do tour e do aviso, sem dado pessoal.
       }
     }
     await signOutWithTimeout()

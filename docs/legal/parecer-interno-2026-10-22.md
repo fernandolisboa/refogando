@@ -76,7 +76,7 @@ Regra (de `docs/legal/revisao-tos-allowlist.md`): **excluir** quando os Termos v
 | 15 | Dois pontos logam o objeto de erro inteiro (pode levar texto da conversa); um loga `err.message` cru. | RECOMENDÁVEL (art. 46) | 2×2=4 | Logar só nome e código. | #473 |
 | 16 | Cadastro sem link para a política. | RECOMENDÁVEL | 1×3=3 | Linha informativa com link (sem checkbox: as bases são contrato e legítimo interesse). | #595 |
 | 17 | Receita gerada por IA publicada não leva selo de IA (imagem e tradução levam). | RECOMENDÁVEL (CDC art. 6º, III; PL 2338 se aprovado) | 1×2=2 | Issue de produto. | #597 |
-| 18 | Sem Termos de Uso e sem regra de idade (ECA Digital, §7). | decisão do controlador | 3×3=9 | Ver §10. | — |
+| 18 | Sem Termos de Uso e sem regra de idade (ECA Digital, §7). | decisão do controlador | 3×3=9 | Ver §10. | ADR-0051; Termos v1 |
 | 19 | Incidente de 09/09 sem o registro do art. 10 da Res. 15/2024. | OBRIGATÓRIO | 3×3=9 | Registro escrito; comunicação: ver §10. | `docs/incidents/` |
 | 20 | O Better Auth loga o e-mail digitado num login que falha (`"User not found"`, `"Credential account not found"` e `"Password not found"`, com `{ email }`). | OBRIGATÓRIO (art. 6º, III; art. 46) | 2×4=8 | Descartar as três linhas no logger do app (`authLog` em `src/lib/auth.ts`), como já se fazia com as do reset e do cadastro. | código, este PR |
 | 21 | Perfil público fora da política: nome, @, foto, bio, links e as listas de quem a pessoa segue e de quem a segue ficam numa página aberta e indexável, e o nome e o @ aparecem nas receitas publicadas, nas avaliações, na busca de cozinheiros e nas notificações a terceiros. | OBRIGATÓRIO | 2×4=8 | Divulgar em 3.1; registro, operação 15. | v3 |
@@ -111,29 +111,31 @@ As funções da Vercel rodam em `iad1` (EUA, configuração do projeto em 2026-1
 
 A Lei 15.211/2025 está em vigor desde 17/03/2026, com a ANPD como autoridade `[secundária]`, e alcança serviços de "acesso provável" por crianças e adolescentes, sem isenção para pessoa física. As obrigações dos arts. 7º (padrão mais protetivo), 8º (avaliação de risco e faixa etária) e 22 (vedação de perfilamento para publicidade) valem independentemente do porte `[secundária]`. Com perfil público e "seguir cozinheiros", o Refogando pode ser lido como rede social (art. 2º, III), e aí menores de 16 precisariam de conta vinculada a responsável (art. 24) `[secundária]`.
 
-O app já cumpre o que vale sem Termos: não há publicidade nem perfilamento, as restrições nascem desligadas, nada de localização, conteúdo novo nasce privado. Falta a regra de idade, que depende dos Termos de Uso: decisão do controlador (§10), que escolheu **16 anos**.
+O app já cumpre o que vale sem Termos: não há publicidade nem perfilamento, as restrições nascem desligadas, nada de localização, as receitas novas nascem privadas. Falta a regra de idade, que depende dos Termos de Uso: decisão do controlador (§10), que escolheu **16 anos**.
 
-**Com 16 anos como idade mínima.** Fica fora o art. 24 (conta vinculada a responsável, para menores de 16). Para quem tem 16 ou 17 anos valem o melhor interesse do adolescente (LGPD, art. 14, caput) e o padrão mais protetivo do ECA Digital. O app já atende a esse padrão para todos: conteúdo nasce privado, sem publicidade, perfilamento ou localização, e restrições só com consentimento. Não é preciso consentimento dos pais, que a LGPD só exige para criança (art. 14, § 1º).
+**Com 16 anos como idade mínima.** Fica fora o art. 24 (conta vinculada a responsável, para menores de 16). Para quem tem 16 ou 17 anos valem o melhor interesse do adolescente (LGPD, art. 14, caput) e o padrão mais protetivo do ECA Digital. O app já atende a esse padrão para todos: as receitas novas nascem privadas, sem publicidade, perfilamento ou localização, e restrições só com consentimento. O perfil público e as avaliações são públicos para toda conta (§11). Não é preciso consentimento dos pais, que a LGPD só exige para criança (art. 14, § 1º).
 
 O adolescente de 16 ou 17 anos é relativamente incapaz (Código Civil, art. 4º, I). O contrato que ele aceita sozinho é anulável (art. 171, I), mas o risco é baixo num serviço gratuito. Os Termos pedem que ele use o app com o conhecimento do responsável.
 
 A idade é autodeclarada no cadastro, sem data de nascimento: é a medida proporcional para um app de receitas, sem conteúdo impróprio a adolescentes `[análise]`.
 
+**Publicado em 2026-10-23 (PR C2, ADR-0051):** Termos de Uso v1 em `/termos` (seção `termos` de `src/i18n/messages/`), com a idade mínima, o pedido de conhecimento do responsável e a regra de moderação; linha de autodeclaração no cadastro e no botão do Google; Política v3.1 com a seção 9 "Crianças e adolescentes"; aviso no app para as contas anteriores. A leitura do art. 24 ("até 16 anos" como "menores de 16"), o procedimento para conta de menor de 16 e os riscos aceitos estão no ADR-0051.
+
 ## 8. Conteúdo de usuário e moderação (Marco Civil, arts. 19 e 21, após o STF)
 
 O STF declarou o art. 19 parcialmente inconstitucional (Temas 533 e 987, jun/2025; embargos em jun/2026): a regra geral passa a ser a responsabilidade após notificação extrajudicial (art. 21) para crimes e ilícitos, com dever de cuidado e obrigações de autorregulação reguladas pelo Decreto 12.975/2026 e supervisionadas pela ANPD `[secundária]`. O regime alcança provedor de aplicação pessoa física `[análise]`; a ANPD pode diferenciar plataformas pequenas `[primária]`.
 
-O app já tem denúncia de receita e de avaliação (`report`, com curadoria). Basta, para o porte atual: tratar denúncia de ilícito manifesto com remoção e decisão registrada, e publicar a regra de moderação nos Termos (§10).
+O app tem denúncia de avaliação na interface (botão Reportar) e de receita só pela API (`report`, com curadoria; botão na página da receita em #605); perfil e quem não tem conta denunciam por e-mail. Basta, para o porte atual: tratar denúncia de ilícito manifesto com remoção e decisão registrada, e publicar a regra de moderação nos Termos (§10). A regra está nos Termos, item 8: retirada com o motivo registrado, notificação no app sem o motivo (não há e-mail automático de moderação; perfil, que não tem notificação, é avisado por e-mail pelo operador, P5 do ADR-0051), motivo e nova análise a pedido pelo canal de privacidade.
 
 ## 9. Itens fora de privacidade, com efeito jurídico
 
 - **#471 (analytics):** liberado do ponto de vista jurídico para uma solução **sem cookie** (Vercel Web Analytics, já operador): legítimo interesse, uma linha na política (§3 e §5), sem banner. A escolha de fornecedor e custo segue com o produto.
-- **#467 (PF × MEI × CNPJ):** decisão fiscal do controlador, com três efeitos jurídicos a pesar: (a) sociedade ativa a guarda de 6 meses de registros de acesso (Marco Civil, art. 15); (b) a venda on-line exige nome, CPF/CNPJ e **endereço físico** em destaque (Decreto 7.962/2013, art. 2º) — CNPJ com endereço comercial evita expor o endereço residencial; (c) com cobrança, os Termos de Uso deixam de ser opcionais (CDC, Decreto 7.962) e a condição dos dois domínios mantidos (§3) precisa ser revista.
+- **#467 (PF × MEI × CNPJ):** decisão fiscal do controlador, com três efeitos jurídicos a pesar: (a) sociedade ativa a guarda de 6 meses de registros de acesso (Marco Civil, art. 15); (b) a venda on-line exige nome, CPF/CNPJ e **endereço físico** em destaque (Decreto 7.962/2013, art. 2º) — CNPJ com endereço comercial evita expor o endereço residencial; (c) com cobrança, os Termos de Uso (v1 desde 2026-10-23, ADR-0051) ganham as cláusulas de consumo (CDC, Decreto 7.962) e a condição dos dois domínios mantidos (§3) precisa ser revista.
 
 ## 10. Pontos levados ao controlador
 
 1. **Comunicar o incidente de 09/09 à ANPD?** Recomendação: não; registrar com a justificativa (Res. 15/2024, art. 10, § 1º, VIII). Registro em `docs/incidents/2026-09-09-banco-apagado-por-agente-do-feudo.md`. **Decidido pelo controlador em 2026-10-22: só registrar, sem comunicar.**
-2. **Termos de Uso com idade mínima de 18 anos?** Recomendação: sim, já. **Decidido pelo controlador em 2026-10-22: Termos de Uso com idade mínima de 16 anos** (ver §7).
+2. **Termos de Uso com idade mínima de 18 anos?** Recomendação: sim, já. **Decidido pelo controlador em 2026-10-22: Termos de Uso com idade mínima de 16 anos** (ver §7). Implementado: Termos de Uso v1 (ADR-0051).
 3. **Confirmação de fato:** a chave do Gemini está no plano pago? **Confirmado em 2026-10-22: faturamento ativo (plano pago).**
 
 Os três pontos foram respondidos pelo controlador em 2026-10-22.

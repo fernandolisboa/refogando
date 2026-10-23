@@ -22,6 +22,6 @@
 
 ## Como mudar
 
-PR que muda dado pessoal coletado, finalidade, fornecedor, prazo de retenção ou conteúdo de log atualiza no mesmo PR as strings da chave `privacidade` (com nova versão no histórico da seção 9), o `docs/legal/registro-de-operacoes.md` e, se mudar uma decisão, o parecer (regra em `CLAUDE.md`, seção "Privacidade").
+PR que muda dado pessoal coletado, finalidade, fornecedor, prazo de retenção ou conteúdo de log atualiza no mesmo PR as strings da chave `privacidade` (com nova versão no histórico da seção 10), o `docs/legal/registro-de-operacoes.md` e, se mudar uma decisão, o parecer (regra em `CLAUDE.md`, seção "Privacidade").
 
 *Documento interno do Refogando — não é aconselhamento jurídico.*

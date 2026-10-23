@@ -30,9 +30,13 @@ export function SiteFooter({
             {messages.app.name}
           </span>
           <span className="text-sm text-muted">{messages.app.tagline}</span>
-          {/* Links legais (parte de #276): Política de Privacidade + Seus Direitos. Rótulos i18n. Um
-              <div> (não <nav>) para não criar um segundo landmark de navegação além do header. */}
+          {/* Links legais (parte de #276): Termos de Uso (ADR-0051) + Política de Privacidade + Seus Direitos,
+              na ordem da linha do cadastro. Rótulos i18n. Um <div> (não <nav>) para não criar um segundo
+              landmark de navegação além do header. */}
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+            <Link href="/termos" className="hover:text-fg hover:underline">
+              {messages.termos.nome}
+            </Link>
             <Link href="/privacidade" className="hover:text-fg hover:underline">
               {messages.privacidade.titulo}
             </Link>

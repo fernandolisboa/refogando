@@ -115,9 +115,9 @@ describe('buildStaticLocaleEntries — homes + páginas legais indexáveis por l
     }
   })
 
-  // Páginas legais publicadas (parte de #276) + o placeholder de plano (Fase 2 de billing, flag-off) +
-  // o guia "Como usar" (ADR-0039).
-  for (const path of ['privacidade', 'seus-direitos', 'plano', 'guia'] as const) {
+  // Páginas legais publicadas (parte de #276; Termos de Uso, ADR-0051) + o placeholder de plano (Fase 2 de
+  // billing, flag-off) + o guia "Como usar" (ADR-0039).
+  for (const path of ['privacidade', 'seus-direitos', 'termos', 'plano', 'guia'] as const) {
     it(`inclui /${path} por locale, com hreflang + x-default → DEFAULT_LOCALE`, () => {
       const entries = buildStaticLocaleEntries(BASE)
       const urls = entries.map((e) => e.url)

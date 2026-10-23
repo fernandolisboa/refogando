@@ -187,6 +187,7 @@ export const CLIENT_ROUTE_TREE: RouteNode = {
   'seus-direitos': {},
   'sign-in': {},
   'sign-up': {},
+  termos: {},
   u: { '*': {} },
   'verify-email': {},
 }

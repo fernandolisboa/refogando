@@ -4,10 +4,11 @@ import '@testing-library/jest-dom/vitest'
 
 /**
  * Teste jsdom (sem DB) da página de Política de Privacidade PUBLICADA (#398 / parte de #276; v3, revisada
- * no parecer interno de 2026-10-22). Cobre:
+ * no parecer interno de 2026-10-22; v3.1 com a idade mínima, ADR-0051). Cobre:
  *  - render bilíngue das DUAS partes (Parte a + Parte b);
- *  - a estrutura da v3: itens 3.1 a 3.9, seção 8 (cookies, com tabela), seção 9 (alterações + histórico
- *    de versões), 11 direitos e as tabelas de prestadores e de cookies com colunas do mesmo tamanho;
+ *  - a estrutura da v3.1: itens 3.1 a 3.9, seção 8 (cookies, com tabela), seção 9 (crianças e adolescentes),
+ *    seção 10 (alterações + histórico de versões), 11 direitos e as tabelas de prestadores e de cookies com
+ *    colunas do mesmo tamanho;
  *  - PUBLICAÇÃO: nenhum placeholder/`[validar]` sobra no render (zero `[data-todo]`, zero `{`/`}`),
  *    e o e-mail real do canal (privacidade@refogando.com) aparece;
  *  - rodapé de status/versão, igual à última linha do histórico;
@@ -17,6 +18,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
+import { DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -55,7 +57,7 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(container.textContent).not.toContain('[validar')
   })
 
-  it('v3: renderiza os itens 3.1 a 3.9, as seções 8 e 9 e o histórico de versões', () => {
+  it('v3.1: itens 3.1 a 3.9, seções 8, 9 (crianças e adolescentes) e 10 (alterações + histórico)', () => {
     renderAt('pt-BR')
     const m = ptBR.privacidade
     for (const titulo of [
@@ -71,14 +73,24 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     ]) {
       expect(screen.getByRole('heading', { level: 4, name: titulo })).toBeInTheDocument()
     }
-    expect(screen.getByRole('heading', { level: 3, name: m.s8Titulo })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 3, name: m.s9Titulo })).toBeInTheDocument()
+    const s8 = screen.getByRole('heading', { level: 3, name: m.s8Titulo })
+    const s9 = screen.getByRole('heading', { level: 3, name: m.s9Titulo })
+    const s10 = screen.getByRole('heading', { level: 3, name: m.s10Titulo })
     expect(m.s8Titulo.startsWith('8.')).toBe(true)
     expect(m.s9Titulo.startsWith('9.')).toBe(true)
-    for (const versao of m.s9Historico) expect(screen.getByText(versao)).toBeInTheDocument()
-    // O rodapé repete a última versão do histórico (versão e data).
-    const ultima = m.s9Historico[m.s9Historico.length - 1]
+    expect(m.s10Titulo.startsWith('10.')).toBe(true)
+    // Na ordem: 8 → 9 → 10.
+    expect(s8.compareDocumentPosition(s9) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(s9.compareDocumentPosition(s10) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A seção 9 diz a idade mínima, a mesma dos Termos de Uso.
+    expect(screen.getByText(m.s9Corpo)).toBeInTheDocument()
+    expect(m.s9Corpo).toContain('16 anos ou mais')
+    expect(screen.getByText(m.s10Corpo)).toBeInTheDocument()
+    for (const versao of m.s10Historico) expect(screen.getByText(versao)).toBeInTheDocument()
+    // O rodapé repete a última versão do histórico (versão e data), e a data é a única da publicação.
+    const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
+    expect(m.rodapeData).toBe(DATA_PUBLICACAO_TERMOS_V1)
     // 11 direitos, o último sobre decisão automatizada (Art. 20).
     expect(m.s7Direitos).toHaveLength(11)
     expect(screen.getByText(m.s7Direitos[10])).toBeInTheDocument()

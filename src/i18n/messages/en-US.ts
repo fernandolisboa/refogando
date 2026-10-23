@@ -6,6 +6,8 @@ import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 import type { Messages } from './pt-BR'
+// Relative import (a value, not a type): the E2E imports the catalogs outside the Next bundler.
+import { DATA_PUBLICACAO_TERMOS_V1 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
@@ -543,8 +545,10 @@ export const enUS: Messages = {
       'We received a request to finish creating your Refogando account. To activate it, create your password with the link below — that is your password from now on. The link is valid for 1 hour and can only be used once.',
     emailConcluirBotao: 'Create password and activate account',
     emailConcluirIgnorar: "If this wasn't you, ignore this email. No account is activated without this link.",
-    // #595: the Privacy Policy notice on sign-up (form and Google). `{link}` becomes the `privacidade.titulo` link.
-    privacidadeCadastro: 'When you create an account, we handle your data as explained in our {link}.',
+    // Age and Terms notice on sign-up (ADR-0051; #595 created the line), on the form and on Google. `{termos}`
+    // becomes the `termos.nome` link; `{privacidade}`, the `privacidade.titulo` link. No checkbox.
+    privacidadeCadastro:
+      'By creating an account, you confirm you are 16 or older and agree to the {termos}. The {privacidade} explains how we handle your data.',
   },
   // Tela CRIAR estruturada (#58), mesma substância traduzida (ADR-0001, não byte-idêntica).
   criar: {
@@ -1910,7 +1914,7 @@ export const enUS: Messages = {
   // (this section is the single place to edit the privacy channel).
   // Reviewed in the internal opinion of 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), which closed #276.
   // Changed collected data, purpose, provider, retention or logs? The SAME PR updates this section (new line in
-  // `s9Historico` + footer) and `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
+  // `s10Historico` + footer) and `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
   privacidade: {
     metaTitulo: 'Privacy Policy — Refogando',
     titulo: 'Privacy Policy',
@@ -1927,7 +1931,7 @@ export const enUS: Messages = {
 
     s1Titulo: '1. Who we are (identification of the controller) — Art. 9, III',
     s1Corpo: [
-      'The data controller is Fernando Lisboa, an individual responsible for the Refogando app (https://refogando.com).',
+      'The data controller is Fernando Lisboa, an individual responsible for the Refogando app (https://www.refogando.com).',
       'Because Refogando is operated by an individual, there is no legal entity name or tax ID (CNPJ) associated; the official contact is the privacy e-mail indicated below.',
     ],
 
@@ -1953,7 +1957,7 @@ export const enUS: Messages = {
     s31Valores: [
       'email, display name/identifier (handle), password (stored only as a hash), profile photo, bio, links, preferred language and default skill level. If you sign in with Google, we receive your name, email and photo from Google, and we store the tokens for that sign-in.',
       'create and maintain your account, authenticate access and enable use of the app. Your name, @, photo, bio and links are on a public page (/u/your-@) that anyone can see, even without an account, and that search engines may index; it also shows who you follow and who follows you. Your name and @ also appear on the recipes you publish, on the ratings you write, in the cook search and in the notifications other people get when you follow them or rate one of their recipes. Your email, dietary restrictions and private content never appear.',
-      'performance of a contract with the data subject — Art. 7, V of the LGPD.',
+      'performance of a contract with the data subject (the Terms of Use) — Art. 7, V of the LGPD.',
       'while the account exists. If you delete your account, we immediately anonymize the identifying data and erase your password, your Google sign-in and all sessions. An email-and-password sign-up that is not confirmed is erased after 48 hours; to block abusive resends, we keep for 90 days only a code derived from the email, which cannot be used to recover it.',
     ],
     s32Titulo: '3.2. Content created in the app (recipes, collections, ratings, Meal plan, shopping lists and Pantry)',
@@ -2098,7 +2102,7 @@ export const enUS: Messages = {
       'remember the language you chose',
       'remember the light or dark theme',
       'protect Google sign-in against fraud',
-      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the notice about the change to restrictions',
+      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the change notices (the one about restrictions and the one about the Terms and the Policy)',
       'avoid repeated error reports and back-to-back reloads after an update, remember the search’s "Show all" and hold for a few seconds, until the next page, the request to replay the tour and the account-deletion notice',
     ],
     s8Duracoes: [
@@ -2110,14 +2114,21 @@ export const enUS: Messages = {
       'until you close the tab',
     ],
 
-    s9Titulo: '9. Changes to this policy',
+    // Section 9 (v3.1, ADR-0051): minimum age of 16. The Terms of Use say the same (item 2).
+    s9Titulo: '9. Children and teenagers',
     s9Corpo:
+      'Refogando is intended for people aged 16 or older and is not directed at children. Teenagers aged 16 and 17 may have an account; for them, as for everyone, new recipes start out private, there is no advertising, profiling or location tracking, dietary restrictions are only saved with consent, and we process their data in their best interest (LGPD, Art. 14). The public profile and ratings are visible to everyone, as for any account (item 3.1). If we learn that an account belongs to someone under 16, we email the account and, if the age is not confirmed, we delete the account and what it published.',
+
+    s10Titulo: '10. Changes to this policy',
+    s10Corpo:
       'We may update this policy. Each version is recorded below, with its date and what changed. If a change alters something you authorized with your consent, we notify you prominently where you gave it, and you can withdraw it there.',
-    // One line per published version (newest last); the footer repeats the latest.
-    s9Historico: [
+    // One line per published version (newest last); the footer repeats the latest. The v3.1 date comes from
+    // `DATA_PUBLICACAO_TERMOS_V1` (`src/domain/legal-notice.ts`), the same as the Terms.
+    s10Historico: [
       'v1 — 2026-07-03: first published version.',
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2170,9 +2181,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3',
+    rodapeVersao: 'v3.1',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-10-23',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2236,11 +2247,107 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3',
+    rodapeVersao: 'v3.1',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-10-23',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
+  },
+  // Terms of Use v1 (ADR-0051). Faithful translation of the pt-BR text, same keys and array lengths. See pt-BR.ts
+  // for the full note (bold clauses decided in the component; a relevant change needs a notice 15 days ahead).
+  termos: {
+    metaTitulo: 'Terms of Use — Refogando',
+    titulo: 'Refogando Terms of Use',
+    nome: 'Terms of Use',
+    intro:
+      'These Terms are the agreement between you and Refogando for using the app. They are short on purpose: read them before creating your account. How we handle your data is in the Privacy Policy (/privacidade).',
+
+    s1Titulo: '1. Who we are',
+    s1Corpo: [
+      'Refogando (https://www.refogando.com) is run by Fernando Lisboa, an individual, in Brazil. Contact: privacidade@refogando.com.',
+      'The app is free, has no advertising and may change or cease to exist. We give advance notice when a change affects what you have stored in it.',
+    ],
+
+    s2Titulo: '2. Who can use it',
+    s2Corpo: [
+      'You must be 16 or older to create an account. By creating an account, you confirm that you are.',
+      'If you are 16 or 17, use Refogando with the knowledge of your parent or guardian, and read these Terms with them. If you are the parent or guardian of someone aged 16 or 17 and want the account deleted, write to privacidade@refogando.com.',
+      'If we learn that an account belongs to someone under 16, we email the account and, if the age is not confirmed, we delete the account and what it published.',
+      'Without an account, you can read public recipes and use search.',
+    ],
+
+    s3Titulo: '3. Your account',
+    s3Corpo: [
+      'Use an email address that is yours and do not pretend to be someone else. Keep your password safe. You are responsible for what is done in your account, unless it is used through no fault of yours; in that case, let us know right away.',
+      'An account belongs to one person. Do not sell, lend or transfer your account.',
+      'You can download your data and delete your account whenever you want, in Edit profile → Your data.',
+    ],
+
+    s4Titulo: '4. AI-generated recipes and images',
+    s4Corpo: [
+      'Recipes, suggestions, translations and images generated by AI may contain errors: quantities, times, temperatures, ingredients that do not fit your restriction, unflagged allergens. Check before cooking, especially if you or whoever will eat has an allergy, an intolerance or a diet for health reasons.',
+      'Refogando does not give medical, nutritional or food-safety advice. Selecting a restriction helps the AI, but does not guarantee that the recipe is safe for you.',
+      'Do not ask the AI for images of identifiable real people, sexual, violent or hateful content, or images that imitate someone else’s brand or work as if it were yours.',
+    ],
+
+    s5Titulo: '5. Your content',
+    s5Corpo: [
+      'What you write and the photos you upload remain yours.',
+      'While a recipe of yours is private, it does not appear to other people and we use it only to make the app work. The exceptions are in the Privacy Policy: the curators review AI images generated with a style request of yours or edited by AI, and the ingredients you type by hand and the new cuisines you type under "Other" may reach the curators, without your name, to expand the vocabulary.',
+      'When you publish a recipe, a review or a photo, you give Refogando a free, non-exclusive, worldwide license to store that content, display and reproduce it in the app, in search engines and in share cards, translate it automatically, adapt it to the app’s formats (such as thumbnails and shopping lists) and let other people save and rate the recipe, add it to their Meal plan and make copies of its text, without your photos ("Create my version" and "Clone"), which they can edit and publish. The license lasts while the content is published, including after you delete your account.',
+      'You can unpublish or delete your content at any time. Copies that other people have already made of a public recipe stay with them.',
+      'If you delete your account, the recipes you published and the reviews you wrote stay on Refogando without your name, because other people rely on them. If you want a public recipe gone, delete it before deleting your account.',
+      'Only publish what is yours or what you have the right to publish. Do not copy text or photos from books, websites or other people’s profiles.',
+    ],
+
+    s6Titulo: '6. Recipes imported from the web',
+    s6Corpo: [
+      'A recipe imported through Web Discovery always stays private, for your personal use, and shows credit to the source site. It cannot be published. If the author or the owner of the site asks, we may remove the name or the link from the credit, or delete the imported recipe from your collection.',
+      'If you are the author or owner of a site and want your name or the copies removed, use the Your rights page (/seus-direitos).',
+    ],
+
+    s7Titulo: '7. What is not allowed',
+    s7Itens: [
+      'Publishing content that is illegal, that violates other people’s rights (copyright, image, privacy) or that is offensive, discriminatory, harassing or hateful.',
+      'Using the app for spam, advertising, scams or to collect other people’s data.',
+      'Accessing the app through bots, scripts or other automated means, getting around usage limits or trying to access what is not yours.',
+      'Disrupting the app’s operation or its security.',
+    ],
+
+    s8Titulo: '8. Reports and moderation',
+    s8Corpo: [
+      'Anyone with an account can report a review with the Report button. To report a public recipe or a profile, or if you do not have an account, write to privacidade@refogando.com.',
+      'We review every report. When content is clearly illegal or violates these Terms, we take it down and record the decision, with the reason.',
+      'If moderation takes down a recipe, image or review of yours, you get a notification in the app; if it is your profile, we let you know by email. To learn the reason or ask us to reconsider, write to privacidade@refogando.com.',
+      'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask us to reconsider at privacidade@refogando.com.',
+    ],
+
+    s9Titulo: '9. Liability',
+    s9Corpo: [
+      'We do our best to keep the app running and your data safe, but the app may go down or have failures.',
+      'Content published by other people is the responsibility of whoever published it. When we are notified of illegal content, we act as described in item 8, and we are liable for it in the cases provided by law.',
+      'Nothing in these Terms takes away a right that the law guarantees you.',
+    ],
+
+    s10Titulo: '10. Changes to these Terms',
+    s10Corpo: [
+      'We may update these Terms. When a change is relevant, we notify you in the app or by email at least 15 days in advance. If you do not agree, you can delete your account before the change takes effect.',
+      'Each version is recorded below, with its date.',
+    ],
+    s10Historico: [`v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`],
+
+    s11Titulo: '11. Law and venue',
+    s11Corpo: ['These Terms are governed by Brazilian law. Any dispute may be brought before the courts of your place of residence.'],
+
+    rodapeVersaoRotulo: 'Version',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Date',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+  },
+  // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
+  avisoLegal: {
+    texto: 'We have published the Terms of Use and updated the Privacy Policy. Read what changed.',
+    fechar: 'Got it',
   },
   // Quota-limit upsell card (billing Phase 2, flag-off). See pt-BR.ts for the full note.
   upsell: {

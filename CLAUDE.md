@@ -49,8 +49,16 @@ Rodar `/handoff` para gerar:
 - **A política anda junto com o código.** PR que muda dado pessoal coletado, finalidade, fornecedor, prazo de
   retenção ou conteúdo de log (este, se não couber no que a política já diz no item 3.7) atualiza **no mesmo PR**:
   a política (seção `privacidade` de `src/i18n/messages/pt-BR.ts` e `en-US.ts`, com nova versão na seção
-  Alterações (`s9Historico`) e no rodapé), `docs/legal/registro-de-operacoes.md` e, se mudar uma decisão, o parecer
+  Alterações (`s10Historico`) e no rodapé), `docs/legal/registro-de-operacoes.md` e, se mudar uma decisão, o parecer
   (`docs/legal/parecer-interno-*.md`).
+- **Termos de Uso** (seção `termos`, `/termos`, ADR-0051): mudança relevante só vale **15 dias depois** de um aviso
+  no app e/ou e-mail (item 10), que o MESMO PR entrega: nova `AVISO_LEGAL_VERSAO` e o público do aviso em
+  `src/domain/legal-notice.ts` (o `LegalChangeNotice` do layout volta para quem dispensou o anterior), nova linha
+  em `termos.s10Historico` + rodapé com data própria (constante nova em `src/domain/legal-notice.ts`);
+  `DATA_PUBLICACAO_TERMOS_V1` fica congelada depois do merge (data a v1, a v3.1 da política e o corte do aviso da
+  v1). Feature que muda o que os Termos afirmam (denúncia, moderação, sanções, importação, cópias, eliminação,
+  notificações de retirada) atualiza o texto no mesmo PR. Os Termos prometem processos manuais (conta de menor de
+  16, encerrar conta, nova análise): o procedimento está no ADR-0051.
 - **Textos que andam junto:** o rodapé de `seusDireitos` (versão, data e status) é igual ao da política, e um teste
   (`test/ui/seus-direitos.test.tsx`) reprova se divergirem; `restricoesPerfil.consentimento` (o texto junto do botão
   de salvar as restrições) nomeia o fornecedor de IA e o país onde o app e a IA funcionam, então trocar de

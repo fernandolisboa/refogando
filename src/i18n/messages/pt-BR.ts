@@ -5,6 +5,8 @@
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
+// Import relativo (valor, não tipo): o E2E (`e2e/fixtures/test.ts`) importa este catálogo fora do bundler do Next.
+import { DATA_PUBLICACAO_TERMOS_V1 } from '../../domain/legal-notice'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -595,8 +597,10 @@ export const ptBR = {
       'Recebemos um pedido para concluir o cadastro da sua conta no Refogando. Para ativá-la, crie sua senha pelo link abaixo — é ela que vale daqui em diante. O link vale por 1 hora e só pode ser usado uma vez.',
     emailConcluirBotao: 'Criar senha e ativar conta',
     emailConcluirIgnorar: 'Se não foi você, ignore este email. Nenhuma conta é ativada sem este link.',
-    // #595: aviso da Política no cadastro (formulário e Google). `{link}` vira o link `privacidade.titulo`.
-    privacidadeCadastro: 'Ao criar uma conta, seus dados são tratados como explicamos na {link}.',
+    // Aviso de idade e Termos no cadastro (ADR-0051; #595 criou a linha), no formulário e no Google. `{termos}`
+    // vira o link `termos.nome`; `{privacidade}`, o link `privacidade.titulo`. Sem caixa de marcar.
+    privacidadeCadastro:
+      'Ao criar a conta, você declara ter 16 anos ou mais e concorda com os {termos}. A {privacidade} explica como tratamos os seus dados.',
   },
   // Tela CRIAR estruturada (#58): o Briefing por campos → resultado de geração. ESTENDE
   // `system` com a taxonomia de desfecho da geração (success/degraded/playful/impossible)
@@ -2019,7 +2023,7 @@ export const ptBR = {
   // strings (esta seção é o único lugar pra editar o canal de privacidade).
   // Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o #276.
   // Mudou dado coletado, finalidade, fornecedor, prazo ou log? O MESMO PR atualiza esta seção (nova linha em
-  // `s9Historico` + rodapé) e `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
+  // `s10Historico` + rodapé) e `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
   privacidade: {
     metaTitulo: 'Política de Privacidade — Refogando',
     titulo: 'Política de Privacidade',
@@ -2036,7 +2040,7 @@ export const ptBR = {
 
     s1Titulo: '1. Quem somos (identificação do controlador) — Art. 9º, III',
     s1Corpo: [
-      'O controlador dos dados é Fernando Lisboa, pessoa física responsável pelo aplicativo Refogando (https://refogando.com).',
+      'O controlador dos dados é Fernando Lisboa, pessoa física responsável pelo aplicativo Refogando (https://www.refogando.com).',
       'Como o Refogando é operado por pessoa física, não há razão social nem CNPJ associados; o contato oficial é o e-mail de privacidade indicado abaixo.',
     ],
 
@@ -2062,7 +2066,7 @@ export const ptBR = {
     s31Valores: [
       'e-mail, nome/identificador de exibição (handle), senha (guardada só como hash), foto de perfil, biografia, links, idioma preferido e nível de habilidade padrão. Se você entra com o Google, recebemos do Google o seu nome, e-mail e foto, e guardamos os tokens desse login.',
       'criar e manter sua conta, autenticar o acesso e permitir o uso do app. O seu nome, o @, a foto, a bio e os links ficam numa página pública (/u/seu-@), que qualquer pessoa vê, mesmo sem conta, e que buscadores podem indexar; ali aparecem também quem você segue e quem segue você. O seu nome e o @ aparecem ainda nas receitas que você publica, nas avaliações que escreve, na busca de cozinheiros e nas notificações que outras pessoas recebem quando você as segue ou avalia uma receita delas. E-mail, restrições alimentares e conteúdo privado nunca aparecem.',
-      'execução de contrato com o titular — Art. 7º, V da LGPD.',
+      'execução de contrato com o titular (os Termos de Uso) — Art. 7º, V da LGPD.',
       'enquanto a conta existir. Se você eliminar a conta, anonimizamos na hora os dados de identificação e apagamos a senha, o login do Google e todas as sessões. Um cadastro com e-mail e senha que não é confirmado é apagado depois de 48 horas; para barrar reenvios abusivos, guardamos por 90 dias só um código derivado do e-mail, que não permite recuperá-lo.',
     ],
     s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações, Cardápio, listas de compras e Despensa)',
@@ -2207,7 +2211,7 @@ export const ptBR = {
       'lembrar o idioma escolhido',
       'lembrar o tema claro ou escuro',
       'proteger o login com o Google contra fraude',
-      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu o aviso de mudança das restrições',
+      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu os avisos de mudança (o das restrições e o dos Termos e da Política)',
       'evitar relatos de erro repetidos e recargas em sequência após uma atualização, lembrar o "Mostrar tudo" da busca e guardar por alguns segundos, até a página seguinte, o pedido de refazer o tour e o aviso da exclusão da conta',
     ],
     s8Duracoes: [
@@ -2219,14 +2223,21 @@ export const ptBR = {
       'até fechar a aba',
     ],
 
-    s9Titulo: '9. Alterações desta política',
+    // Seção 9 (v3.1, ADR-0051): idade mínima de 16 anos. Os Termos de Uso dizem o mesmo (item 2).
+    s9Titulo: '9. Crianças e adolescentes',
     s9Corpo:
+      'O Refogando é destinado a pessoas com 16 anos ou mais e não é dirigido a crianças. Adolescentes de 16 e 17 anos podem ter conta; para eles, como para todos, as receitas novas nascem privadas, não há publicidade, perfilamento nem localização, as restrições alimentares só são guardadas com consentimento, e tratamos os dados no melhor interesse deles (LGPD, Art. 14). O perfil público e as avaliações aparecem para todos, como em qualquer conta (item 3.1). Se soubermos que uma conta é de alguém com menos de 16 anos, avisamos pelo e-mail da conta e, se a idade não for confirmada, eliminamos a conta e o que ela publicou.',
+
+    s10Titulo: '10. Alterações desta política',
+    s10Corpo:
       'Podemos atualizar esta política. Cada versão fica registrada abaixo, com a data e o que mudou. Se a mudança alterar algo que você autorizou com consentimento, avisamos com destaque no lugar onde você o deu, e você pode revogá-lo ali.',
-    // Uma linha por versão publicada (a mais nova por último); o rodapé repete a última.
-    s9Historico: [
+    // Uma linha por versão publicada (a mais nova por último); o rodapé repete a última. A data da v3.1 vem de
+    // `DATA_PUBLICACAO_TERMOS_V1` (`src/domain/legal-notice.ts`), a mesma dos Termos.
+    s10Historico: [
       'v1 — 2026-07-03: primeira versão publicada.',
       'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2279,9 +2290,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3',
+    rodapeVersao: 'v3.1',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-10-23',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2345,11 +2356,116 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3',
+    rodapeVersao: 'v3.1',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-10-23',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
+  },
+  // Termos de Uso v1 (ADR-0051; parecer interno §7 e §8) — PUBLICADOS: indexáveis, linkados no rodapé, no sitemap
+  // e na linha do cadastro (`auth.privacidadeCadastro`). Chaves FLAT, como `privacidade`: arrays viram parágrafos
+  // (`s7Itens` e `s10Historico` viram listas). O que fica em negrito (CDC art. 54, §§ 3º e 4º) é decidido no
+  // componente (`src/components/legal/terms-of-use.tsx`), não aqui. Mudança relevante só vale 15 dias depois de
+  // avisar no app ou por e-mail (item 10): o MESMO PR troca `AVISO_LEGAL_VERSAO` (`src/domain/legal-notice.ts`) e
+  // ganha nova linha em `s10Historico` + rodapé. Feature que muda o que os Termos afirmam (denúncia, moderação,
+  // sanções, importação, cópias, eliminação) muda o texto no mesmo PR (CLAUDE.md, "Privacidade").
+  termos: {
+    metaTitulo: 'Termos de Uso — Refogando',
+    titulo: 'Termos de Uso do Refogando',
+    // Rótulo curto dos links (rodapé, cadastro, aviso de mudança).
+    nome: 'Termos de Uso',
+    intro:
+      'Estes Termos são o acordo entre você e o Refogando para usar o app. São curtos de propósito: leia antes de criar a conta. A forma como tratamos os seus dados está na Política de Privacidade (/privacidade).',
+
+    s1Titulo: '1. Quem somos',
+    s1Corpo: [
+      'O Refogando (https://www.refogando.com) é mantido por Fernando Lisboa, pessoa física, no Brasil. Contato: privacidade@refogando.com.',
+      'O app é gratuito, não tem publicidade e pode mudar ou deixar de existir. Avisamos com antecedência quando a mudança afetar o que você guardou nele.',
+    ],
+
+    s2Titulo: '2. Quem pode usar',
+    s2Corpo: [
+      'Você precisa ter 16 anos ou mais para criar uma conta. Ao criar a conta, você declara que tem.',
+      'Se você tem 16 ou 17 anos, use o Refogando com o conhecimento do seu pai, mãe ou responsável, e leia estes Termos com eles. Se você é responsável por alguém de 16 ou 17 anos e quer que a conta seja excluída, escreva para privacidade@refogando.com.',
+      'Se soubermos que uma conta é de alguém com menos de 16 anos, avisamos pelo e-mail da conta e, se a idade não for confirmada, eliminamos a conta e o que ela publicou.',
+      'Sem conta, você pode ler as receitas públicas e usar a busca.',
+    ],
+
+    s3Titulo: '3. Sua conta',
+    s3Corpo: [
+      'Use um e-mail que seja seu e não se passe por outra pessoa. Mantenha a sua senha em segurança. O que for feito na sua conta é responsabilidade sua, salvo se ela for usada sem a sua culpa; nesse caso, avise-nos logo.',
+      'Uma conta é de uma pessoa. Não venda, empreste nem transfira a sua conta.',
+      'Você pode baixar os seus dados e excluir a conta quando quiser, em Editar perfil → Seus dados.',
+    ],
+
+    s4Titulo: '4. Receitas e imagens geradas por IA',
+    s4Corpo: [
+      'As receitas, sugestões, traduções e imagens geradas por IA podem ter erros: quantidades, tempos, temperaturas, ingredientes que não combinam com a sua restrição, alergênicos não sinalizados. Confira antes de cozinhar, principalmente se você ou quem vai comer tem alergia, intolerância ou dieta por motivo de saúde.',
+      'O Refogando não dá orientação médica, nutricional nem de segurança alimentar. Marcar uma restrição ajuda a IA, mas não garante que a receita seja segura para você.',
+      'Não peça à IA imagens de pessoas reais identificáveis, conteúdo sexual, violento ou de ódio, nem imagens que imitem a marca ou o trabalho de outra pessoa como se fossem seus.',
+    ],
+
+    s5Titulo: '5. O seu conteúdo',
+    s5Corpo: [
+      'O que você escreve e as fotos que você envia continuam seus.',
+      'Enquanto uma receita sua é privada, ela não aparece para outras pessoas e nós a usamos só para fazer o app funcionar. As exceções estão na Política de Privacidade: a curadoria revisa imagens geradas por IA com um pedido de estilo seu ou editadas por IA, e os ingredientes que você escreve à mão e as cozinhas novas que você escreve em "Outra" podem chegar à curadoria, sem o seu nome, para ampliar o vocabulário.',
+      'Quando você publica uma receita, uma avaliação ou uma foto, você dá ao Refogando uma licença gratuita, não exclusiva e válida no mundo todo para guardar esse conteúdo, exibi-lo e reproduzi-lo no app, nos buscadores e nos cards de compartilhamento, traduzi-lo automaticamente, adaptá-lo aos formatos do app (como miniaturas e lista de compras) e deixar que outras pessoas salvem e avaliem a receita, a coloquem no Cardápio e façam cópias do texto dela, sem as suas fotos ("Criar minha versão" e "Clonar"), que elas podem editar e publicar. A licença vale enquanto o conteúdo estiver publicado, inclusive depois que você excluir a conta.',
+      'Você pode despublicar ou apagar o seu conteúdo a qualquer momento. As cópias que outras pessoas já fizeram de uma receita pública continuam com elas.',
+      'Se você eliminar a conta, as receitas que você publicou e as avaliações que escreveu continuam no Refogando sem o seu nome, porque outras pessoas dependem delas. Se quiser que uma receita pública suma, apague-a antes de eliminar a conta.',
+      'Só publique o que é seu ou o que você tem direito de publicar. Não copie texto nem foto de livros, sites ou perfis de outras pessoas.',
+    ],
+
+    s6Titulo: '6. Receitas importadas da web',
+    s6Corpo: [
+      'Uma receita importada pela Descoberta na web fica sempre privada, para o seu uso pessoal, e mostra o crédito ao site de origem. Ela não pode ser publicada. Se o autor ou o dono do site pedir, podemos tirar o nome ou o link do crédito, ou apagar a receita importada da sua coleção.',
+      'Se você é o autor ou o dono de um site e quer remover o seu nome ou as cópias, use a página Seus direitos (/seus-direitos).',
+    ],
+
+    s7Titulo: '7. O que não é permitido',
+    s7Itens: [
+      'Publicar conteúdo ilegal, que viole direitos de outras pessoas (autorais, de imagem, de privacidade) ou que seja ofensivo, discriminatório, de assédio ou de ódio.',
+      'Usar o app para spam, propaganda, golpes ou para coletar dados de outras pessoas.',
+      'Acessar o app por robôs, scripts ou outros meios automatizados, contornar os limites de uso ou tentar acessar o que não é seu.',
+      'Atrapalhar o funcionamento do app ou a segurança dele.',
+    ],
+
+    s8Titulo: '8. Denúncias e moderação',
+    s8Corpo: [
+      'Qualquer pessoa com conta pode denunciar uma avaliação pelo botão Reportar. Para denunciar uma receita pública ou um perfil, ou se você não tem conta, escreva para privacidade@refogando.com.',
+      'Analisamos cada denúncia. Quando o conteúdo é manifestamente ilegal ou viola estes Termos, nós o retiramos do ar e registramos a decisão, com o motivo.',
+      'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app; se for o seu perfil, avisamos por e-mail. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
+      'Em violações graves ou repetidas, podemos bloquear funções da conta, como a geração de imagens por IA, ou encerrar a conta. Avisamos antes, quando possível, e, salvo em caso de conteúdo ilegal, você tem 15 dias para baixar os seus dados antes do encerramento. Você pode pedir uma nova análise pelo privacidade@refogando.com.',
+    ],
+
+    s9Titulo: '9. Responsabilidade',
+    s9Corpo: [
+      'Fazemos o possível para manter o app funcionando e os seus dados seguros, mas o app pode ficar fora do ar ou ter falhas.',
+      'O conteúdo publicado por outras pessoas é responsabilidade de quem o publicou. Quando somos avisados de conteúdo ilegal, agimos como diz o item 8, e respondemos por ele nos casos que a lei prevê.',
+      'Nada nestes Termos tira de você um direito que a lei garante.',
+    ],
+
+    s10Titulo: '10. Mudanças nestes Termos',
+    s10Corpo: [
+      'Podemos atualizar estes Termos. Quando a mudança for relevante, avisamos no app ou por e-mail com pelo menos 15 dias de antecedência. Se você não concordar, pode excluir a sua conta antes de a mudança valer.',
+      'Cada versão fica registrada abaixo, com a data.',
+    ],
+    // Uma linha por versão (a mais nova por último); o rodapé repete a última. Data: `DATA_PUBLICACAO_TERMOS_V1`.
+    s10Historico: [`v1 — ${DATA_PUBLICACAO_TERMOS_V1}: primeira versão.`],
+
+    s11Titulo: '11. Lei e foro',
+    s11Corpo: ['Estes Termos seguem a lei brasileira. Qualquer disputa pode ser levada ao foro do seu domicílio.'],
+
+    rodapeVersaoRotulo: 'Versão',
+    rodapeVersao: 'v1',
+    rodapeDataRotulo: 'Data',
+    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+  },
+  // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta criada até o fim do dia da publicação
+  // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e
+  // `privacidade.titulo` e o botão `fechar`. Mudança nova = texto novo aqui + `AVISO_LEGAL_VERSAO` nova.
+  avisoLegal: {
+    texto: 'Publicamos os Termos de Uso e atualizamos a Política de Privacidade. Leia o que mudou.',
+    fechar: 'Entendi',
   },
   // Cartão de upsell no LIMITE de cota (Fase 2 de billing, flag-off — docs/reports/
   // fase2-billing-decisao.md §6 item 5). Aparece JUNTO da mensagem de limite já existente
