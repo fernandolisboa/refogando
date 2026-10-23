@@ -21,8 +21,10 @@ vi.mock('next/link', () => ({
 }))
 
 // #458: `usePathname` alimenta o `?returnTo=` do convite "Entrar para avaliar".
+const routerRefresh = vi.hoisted(() => vi.fn())
 vi.mock('next/navigation', () => ({
   usePathname: () => '/receitas/bolo-de-cenoura',
+  useRouter: () => ({ refresh: routerRefresh }),
 }))
 
 const authMock = vi.hoisted(() => ({
@@ -135,6 +137,7 @@ function renderSection(opts: {
 }
 
 beforeEach(() => {
+  routerRefresh.mockClear()
   setSession('anon')
   mockFetchByUrl({})
   resizeImage.mockClear()
@@ -226,6 +229,8 @@ describe('RecipeReviewSection (#363)', () => {
       ).toBe(true),
     )
     expect(await screen.findByText('★ 5,0 · 1 avaliação')).toBeInTheDocument()
+    // ADR-0053: limpa o cache do roteador, senão voltar à receita remontaria a lista de antes.
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalled())
   })
 
   it('#461 estrelas: roving tabindex + setas/Home/End (padrão APG radio group)', async () => {

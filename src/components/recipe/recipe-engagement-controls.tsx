@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Bookmark } from 'lucide-react'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
@@ -44,6 +44,7 @@ export function RecipeEngagementControls({
   const m = messages.comunidade
   const session = useSession()
   const pathname = usePathname()
+  const router = useRouter()
   const returnTo = pathname ?? '/'
 
   // O server entregou o estado do viewer? SÓ o caminho do DONO (dinâmico, com cookie) o faz; o
@@ -135,6 +136,9 @@ export function RecipeEngagementControls({
       }
       const body = (await res.json()) as { viewerSaved: boolean }
       setSaved(body.viewerSaved)
+      // Caminho do dono: o estado veio do servidor e fica 5 minutos no cache do roteador (ADR-0053). Sem limpar,
+      // voltar a esta receita mostraria o salvar de antes. No caminho público o estado é buscado ao montar.
+      if (serverResolved) router.refresh()
     } catch {
       setSaved(prevSaved)
       setSaveError(true)
@@ -155,6 +159,7 @@ export function RecipeEngagementControls({
       }
       const body = (await res.json()) as { viewerSaved: boolean }
       setSaved(!!body.viewerSaved)
+      if (serverResolved) router.refresh() // ver `handleSave`
       return !!body.viewerSaved
     } catch {
       setSaveError(true)

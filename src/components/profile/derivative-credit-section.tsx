@@ -8,6 +8,7 @@
  * nada (o `ProfileForm` acima já mostra o convite de entrar). ADR-0010: route handler via fetch.
  */
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ export function DerivativeCreditSection() {
 
   const [creditar, setCreditar] = useState(true)
   const [status, setStatus] = useState<Status>('loading')
+  const router = useRouter()
   const [tentativa, setTentativa] = useState(0)
 
   useEffect(() => {
@@ -70,6 +72,8 @@ export function DerivativeCreditSection() {
       }
       setCreditar(body.creditar)
       setStatus('saved')
+      // O crédito aparece nas receitas derivadas, que ficam 5 minutos no cache do roteador (ADR-0053): limpa.
+      router.refresh()
     } catch {
       setCreditar(anterior)
       setStatus('error')

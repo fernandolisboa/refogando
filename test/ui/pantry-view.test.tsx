@@ -21,6 +21,7 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/pt-BR/me/pantry',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 const authMock = vi.hoisted(() => ({

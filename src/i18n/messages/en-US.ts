@@ -1028,8 +1028,7 @@ export const enUS: Messages = {
       'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app runs in Brazil and the AI in the United States. Clear them all and save to delete.',
     // Notice of the 2026-10-23 change (LGPD art. 8, §6), only for people whose saved restrictions carry an older
     // version of the text (including from before 2026-10-22, when the text did not mention the United States yet).
-    avisoMudanca:
-      'We updated the Privacy Policy on October 23, 2026: the app now runs in Brazil, and the AI (Anthropic) remains in the United States; it only receives your saved restrictions when you generate with them selected. Save again to dismiss this notice; if you do not agree, clear them all and save to delete them.',
+    avisoMudanca: `We updated the Privacy Policy on ${DATA_POLITICA_V3_6}: the app now runs in Brazil, and the AI (Anthropic), which only receives your saved restrictions when you generate with them selected, is in the United States. To keep them, save again and this notice goes away; if you do not agree, clear them all and save to delete them.`,
     avisoMudancaFechar: 'Got it',
     salvar: 'Save restrictions',
     salvando: 'Saving…',
@@ -2073,7 +2072,7 @@ export const enUS: Messages = {
     resumoItens: [
       'Refogando is an AI recipe app.',
       'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
-      'We do not sell your data or use advertising. We share it only with providers that make the app work (hosting, database, AI, email), most of them in the United States.',
+      'We do not sell your data or use advertising. We share it only with providers that make the app work (hosting, database, AI, email), mostly United States companies.',
       'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). You can download your data and delete your account in Edit profile → Your data; for anything else, write to privacidade@refogando.com. We respond within 15 days.',
       'This text may change: every version is recorded in the "Changes to this policy" section and, if a change alters something you authorized with your consent, we notify you prominently.',
     ],
@@ -2282,7 +2281,7 @@ export const enUS: Messages = {
       `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: when the team closes an account, we keep a record of the decision for 5 years (reason, date, whether public content was removed and whether we tried to tell the person by email), with no other personal data (item 3.6); the account closure notice by email joins what Resend sends (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a copy someone else publishes of one of your recipes shows "Based on … by @you", with a link; you can turn this off in Edit profile or remove your name from a copy, and we keep that choice (item 3.1).`,
-      `v3.6 — ${DATA_POLITICA_V3_6}: the app’s functions now run in São Paulo, next to the database; the AI remains in the United States, and the consent text for saved restrictions says so (item 3.5 and section 6).`,
+      `v3.6 — ${DATA_POLITICA_V3_6}: the app’s functions now run in São Paulo, next to the database; the AI remains in the United States, and the consent text for saved restrictions says so (items 3.5 and 5).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',

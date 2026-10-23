@@ -3,36 +3,62 @@
 /**
  * Link para o detalhe de uma Receita, com as duas ajudas de navegação do detalhe (ADR-0053):
  *
- *  - **Pré-carregamento no hover/toque** (`unstable_dynamicOnHover`, ligado por
- *    `experimental.dynamicOnHover` no `next.config.ts`): o `<Link>` comum só pré-carrega o layout de
- *    uma rota dinâmica sem `loading.tsx` (o caso do detalhe, que fica fora do grupo de carregamento para
- *    responder 404/308 de verdade). Com isto, passar o mouse ou encostar o dedo no card busca a página
- *    INTEIRA, e o clique que vem logo depois já abre com ela no cache do roteador.
- *  - **Barra de navegação pendente**: se o clique ainda espera o servidor (sem pré-carregamento, ou ele
- *    não terminou), uma barra fina aparece no topo. O detalhe não tem esqueleto (ver acima), então sem
- *    isto o clique parecia não ter feito nada até a página nova chegar.
+ *  - **Pré-carregamento quando o mouse para no card**: o `<Link>` comum só pré-carrega o layout de uma rota
+ *    dinâmica sem `loading.tsx` (o caso do detalhe, que fica fora do grupo de carregamento para responder
+ *    404/308 de verdade). Com o mouse parado `HOVER_DWELL_MS` sobre o link, pedimos a página INTEIRA
+ *    (`router.prefetch` com `PrefetchKind.FULL`), e o clique que vem logo depois abre do cache do roteador.
+ *    De propósito NÃO usamos `unstable_dynamicOnHover`: ele também dispara no `touchstart` (toda rolagem que
+ *    começa num card no celular viraria uma renderização completa no servidor), não tem espera e deixa o link
+ *    "promovido" para sempre (volta a pré-carregar inteiro ao reaparecer na tela e depois de cada
+ *    `router.refresh()`). No toque fica o pré-carregamento padrão do `<Link>`.
+ *  - **Barra de navegação pendente**: se o clique ainda espera o servidor (sem pré-carregamento, ou ele não
+ *    terminou), uma barra fina aparece no topo. O detalhe não tem esqueleto (ver acima), então sem isto o clique
+ *    parecia não ter feito nada até a página nova chegar.
  *
  * Use em todo link de LISTA que leva ao detalhe (cards de busca/feed/perfil, Salvos, Minhas receitas,
  * Cardápio, Despensa). Links soltos de texto (ex.: "Ver receita" depois de gerar) podem seguir com `<Link>`.
  */
-import type { ComponentProps, ComponentType } from 'react'
+import { useEffect, useRef, type ComponentProps } from 'react'
 import { createPortal } from 'react-dom'
 import Link, { useLinkStatus } from 'next/link'
+import { useRouter } from 'next/navigation'
+import { PrefetchKind } from 'next/dist/client/components/router-reducer/router-reducer-types'
 
-type LinkProps = ComponentProps<typeof Link>
+/** Quanto o mouse precisa ficar sobre o link para valer o pré-carregamento (passar por cima a caminho de outro não conta). */
+export const HOVER_DWELL_MS = 100
 
-/**
- * `next/link` publica os tipos do Link do Pages Router; a prop `unstable_dynamicOnHover` só existe nos
- * tipos do Link do App Router (`next/dist/client/app-dir/link`), que é o que roda aqui.
- */
-const AppLink = Link as ComponentType<LinkProps & { unstable_dynamicOnHover?: boolean }>
+type RecipeLinkProps = Omit<ComponentProps<typeof Link>, 'href'> & { href: string }
 
-export function RecipeLink({ children, ...props }: LinkProps) {
+export function RecipeLink({ children, href, onMouseEnter, onMouseLeave, ...props }: RecipeLinkProps) {
+  const router = useRouter()
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function cancel() {
+    if (timer.current != null) clearTimeout(timer.current)
+    timer.current = null
+  }
+  useEffect(() => cancel, [])
+
   return (
-    <AppLink {...props} unstable_dynamicOnHover>
+    <Link
+      {...props}
+      href={href}
+      onMouseEnter={(e) => {
+        onMouseEnter?.(e)
+        cancel()
+        timer.current = setTimeout(() => {
+          timer.current = null
+          router.prefetch(href, { kind: PrefetchKind.FULL })
+        }, HOVER_DWELL_MS)
+      }}
+      onMouseLeave={(e) => {
+        onMouseLeave?.(e)
+        cancel()
+      }}
+    >
       {children}
       <NavigationPendingBar />
-    </AppLink>
+    </Link>
   )
 }
 

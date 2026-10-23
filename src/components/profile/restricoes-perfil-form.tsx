@@ -9,8 +9,9 @@
  * passam a pré-marcar o novo default sem recarregar. Visitante: não renderiza nada (o `ProfileForm` acima já
  * mostra o convite de entrar). ADR-0010: route handler via fetch, nunca Server Action.
  *
- * Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6; parecer interno, achado 25): a Política v3 passou a dizer
- * que as restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Desde o #600 o servidor guarda a
+ * Aviso de mudança do texto de consentimento (LGPD art. 8º, §6; parecer interno, achado 25): em 2026-10-22 a
+ * Política v3 passou a dizer que as restrições salvas são tratadas pelo app e pela IA nos Estados Unidos; em
+ * 2026-10-23 (v3.6, ADR-0053), que o app funciona no Brasil e a IA, nos Estados Unidos. Desde o #600 o servidor guarda a
  * versão do texto com que a pessoa consentiu (`consentimentoVersao`, do GET), e o aviso em destaque aparece aqui,
  * no lugar onde ela deu o consentimento, para quem tem restrições salvas com uma versão anterior (ou sem versão,
  * de antes do registro): `consentimentoRestricoesDesatualizado`. Salvar de novo é consentir com o texto novo e

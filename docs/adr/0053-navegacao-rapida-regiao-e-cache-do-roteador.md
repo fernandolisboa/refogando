@@ -31,45 +31,58 @@ ao passar o mouse. Decisão de região tomada por ele no mesmo dia ("Mover para 
    EUA (+~0,1 s por chamada, irrelevante em gerações de dezenas de segundos). Jurídico: política v3.6 (item 5,
    transferência internacional), texto do consentimento das restrições salvas versão `2026-10-23` ("o app funciona no
    Brasil e a IA, nos Estados Unidos"), registro de operações e nota no parecer. É menos transferência, a favor da
-   pessoa: vale na publicação, sem o aviso de 15 dias (critério do ADR-0051); quem já tinha restrições salvas vê o
-   aviso informativo no formulário (art. 8º, §6) e não perde nada se não salvar de novo.
-2. **Detalhe em duas etapas.** `loadPublicRecipeRowBySlug` casa `(locale, slug)` e traz a linha inteira de `recipe`
-   numa query, já com o gate público. Com a linha em mãos, a página dispara em paralelo o resto da receita
-   (`loadRecipeRowsForRow`), slugs, cozinhas ativas, avaliações, aviso de catálogo, semelhantes, crédito e o
-   vocabulário de cozinha da chrome (antes lido em série no `DetailChrome`). `loadRecipeReviews` roda o gate em
-   paralelo com o agregado e a lista e descarta as duas fora do pool (`null`, leak-safe como antes). Saída idêntica,
-   ~6 etapas seriais → 2. `generateMetadata` divide as mesmas leituras pelo `React.cache` (a linha da etapa 1 é a
-   mesma identidade nas duas chamadas).
+   pessoa: vale na publicação, sem o aviso de 15 dias (critério do ADR-0051). Quem já tinha restrições salvas vê o
+   aviso no formulário (art. 8º, §6): para quem consentiu com o texto de 2026-10-22 ele só informa (nada autorizado a
+   mais); para quem tem restrições sem versão registrada (de antes do #600) ele segue pedindo o consentimento.
+2. **Detalhe em duas etapas.** `loadRecipeRowBySlug` casa `(locale, slug)` e traz a linha inteira de `recipe` numa
+   query, com o veredito do gate público (`publicRead`). Lida a linha pública, a página dispara em paralelo o resto da
+   receita (`loadRecipeRowsForRow`), cozinhas ativas, avaliações, aviso de catálogo, semelhantes, crédito e o
+   vocabulário de cozinha da chrome (antes lido em série no `DetailChrome`). O mapa de slugs do hreflang sai das
+   traduções já carregadas (`slugMapFromTranslations`), e as avaliações recebem a linha e aplicam o gate de pool em
+   memória (`loadRecipeReviews({ id, row })`; sem a linha, o gate roda em paralelo com o agregado e a lista e o que
+   elas leram é descartado fora do pool). Slug não público: o caminho do dono usa só o `id` dessa mesma linha (antes
+   havia uma 2ª busca pelo slug, `resolveRecipeIdBySlug`) e o `loadRecipeDetailView` segue impondo a posse. Saída
+   idêntica, ~6 etapas seriais → 2 no caminho público, e ~10 consultas por renderização em vez de ~12.
+   `generateMetadata` divide as mesmas leituras pelo `React.cache` (a linha da etapa 1 é a mesma identidade nas duas
+   chamadas).
 3. **Cache do roteador só no detalhe: `export const unstable_dynamicStaleTime = 300`** na página. Por 5 minutos, voltar
    a uma receita já aberta (por link, não só pelo botão voltar) reusa a página que a aba já tem. As outras rotas não
    mudam (`staleTimes.dynamic` global continua 0). Correção:
    - É o cache de **uma aba**: nada é servido a outra pessoa, então não há o vazamento que barrou o ISR.
-   - O que a própria pessoa muda na página chama `router.refresh()`, que no Next 16 invalida o cache de segmentos e o
-     bfcache inteiros: edição, imagem, avaliação, clonar/regenerar já chamavam; o controle de crédito (#610) passou a
-     chamar. A sessão que some ou troca de conta recarrega a página (`SessionLossGuard`, ADR-0028).
-   - Fica de fora a mudança feita por **outra** pessoa nesses 5 minutos (uma avaliação nova, uma edição do autor em
-     outro aparelho): aparece na próxima busca ou num recarregar. Os controles do leitor (salvar, gestão do dono,
-     a própria avaliação) buscam o estado no cliente ao montar, então seguem frescos.
+   - O que a própria pessoa muda e aparece na página chama `router.refresh()` no sucesso, que no Next 16 invalida o
+     cache de segmentos e o bfcache inteiros. Já chamavam: edição, imagem, clonar/regenerar. Passaram a chamar: enviar
+     e apagar a avaliação (a seção remontava com a lista de antes), salvar/dessalvar no caminho do dono (o estado vem
+     do servidor), o crédito na derivada (#610), e no perfil o nome/@ (autoria) e o crédito nas cópias. A sessão que
+     some ou troca de conta recarrega a página (`SessionLossGuard`, ADR-0028).
+   - Fica de fora a mudança feita por **outra** pessoa, ou pela curadoria em outra tela, nesses 5 minutos (uma
+     avaliação nova, uma edição do autor em outro aparelho, uma moderação), inclusive um 404 visto antes de a receita
+     ser publicada: aparece na próxima busca ou num recarregar. No caminho público, os controles do leitor (salvar,
+     gestão do dono, a própria avaliação) buscam o estado no cliente ao montar, então seguem frescos.
    - **Por que não "mostra o cache e atualiza em segundo plano"**: o único jeito de o Next atualizar a página exibida
      é `router.refresh()`, que joga fora o cache de todas as rotas (inclusive o do botão voltar). Usá-lo a cada
      revisita anularia o ganho. A janela de 5 minutos com invalidação imediata nas mudanças da própria pessoa é a
      forma barata e correta do mesmo efeito.
-4. **Pré-carregamento no hover/toque: `RecipeLink`** (`src/components/recipe/recipe-link.tsx`), um `<Link>` com
-   `unstable_dynamicOnHover` (habilitado por `experimental.dynamicOnHover` no `next.config.ts`). Passar o mouse ou
-   encostar o dedo num card busca a página **inteira**, e o clique logo depois abre do cache. Usado nos cards de
-   lista (Busca/feed/perfil/semelhantes via `RecipeResultItem`, Salvos, Minhas receitas, Cardápio, Despensa); links
-   de texto soltos e o da sugestão do Cardápio (abre em nova aba) seguem com `<Link>`. Custo aceito: cada hover/toque
-   é uma renderização no servidor; numa rolagem no celular, o toque que vira rolagem também pré-carrega.
+4. **Pré-carregamento quando o mouse para no card: `RecipeLink`** (`src/components/recipe/recipe-link.tsx`). Com o
+   mouse `HOVER_DWELL_MS` (100 ms) sobre o link, `router.prefetch(href, { kind: PrefetchKind.FULL })` busca a página
+   **inteira**, e o clique logo depois abre do cache. Passar por cima a caminho de outro lugar não dispara; o toque
+   fica com o pré-carregamento padrão do `<Link>` (só o layout). Usado nos cards de lista (Busca/feed/perfil/
+   semelhantes via `RecipeResultItem`, Salvos, Minhas receitas, Cardápio, Despensa); links de texto soltos e o da
+   sugestão do Cardápio (abre em nova aba) seguem com `<Link>`. Descartado: `unstable_dynamicOnHover` (com
+   `experimental.dynamicOnHover`). Ele não tem espera, dispara também no `touchstart` (toda rolagem que começa num card
+   no celular viraria uma renderização completa, ~10 consultas, entre elas a de semelhantes, que varre os embeddings)
+   e deixa o link promovido para sempre (volta a buscar a página inteira ao reaparecer na tela e depois de cada
+   `router.refresh()`). Custo aceito: cada parada do mouse num card é uma renderização no servidor.
 5. **Retorno imediato no clique.** O `RecipeLink` mostra uma barra fina no topo (`.nav-pending-bar`, portal no
    `<body>`) enquanto `useLinkStatus().pending`; aparece só depois de 150 ms, então a navegação pré-carregada não
    pisca. Não muda o status HTTP (nada de Suspense acima do `notFound`/`permanentRedirect`).
 
 ## Consequências
 
-- Duas APIs `unstable_` do Next 16 (`unstable_dynamicStaleTime`, `unstable_dynamicOnHover`): numa atualização do
-  Next, conferir se mudaram de nome. O tipo público de `next/link` não traz a prop; o `RecipeLink` faz o cast para o
-  tipo do Link do App Router.
-- Os mocks de `next/link` nos testes de UI precisam exportar `useLinkStatus` (todos ganharam a linha).
+- Duas peças instáveis do Next 16: `unstable_dynamicStaleTime` e o `PrefetchKind` importado de
+  `next/dist/client/components/router-reducer/router-reducer-types` (o `router.prefetch` público pede esse enum).
+  Numa atualização do Next, conferir os dois.
+- Os mocks de `next/link` nos testes de UI precisam exportar `useLinkStatus` (todos ganharam a linha), e os testes que
+  renderizam um `RecipeLink` precisam de `useRouter` no mock de `next/navigation`.
 - Nova mutação na página da receita feita por quem a vê: chamar `router.refresh()` depois do sucesso, senão uma
   revisita em 5 minutos mostra o estado antigo.
 - Novo link de lista para o detalhe: usar `RecipeLink`.

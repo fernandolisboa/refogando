@@ -1106,8 +1106,7 @@ export const ptBR = {
       'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app funciona no Brasil e a IA, nos Estados Unidos. Desmarque tudo e salve para apagar.',
     // Aviso da mudança de 2026-10-23 (LGPD art. 8º, §6), só para quem tem restrições salvas com uma versão anterior
     // do texto (inclusive de antes de 2026-10-22, quando o texto ainda não falava dos Estados Unidos).
-    avisoMudanca:
-      'Atualizamos a Política de Privacidade em 23/10/2026: o app passou a funcionar no Brasil, e a IA (Anthropic) continua nos Estados Unidos; ela só recebe as suas restrições salvas quando você gera com elas marcadas. Salve de novo para o aviso sumir; se não concordar, desmarque tudo e salve para apagar.',
+    avisoMudanca: `Atualizamos a Política de Privacidade em ${DATA_POLITICA_V3_6.split('-').reverse().join('/')}: o app passou a funcionar no Brasil, e a IA (Anthropic), que só recebe as suas restrições salvas quando você gera com elas marcadas, fica nos Estados Unidos. Para mantê-las, salve de novo e o aviso some; se não concordar, desmarque tudo e salve para apagar.`,
     avisoMudancaFechar: 'Entendi',
     salvar: 'Salvar restrições',
     salvando: 'Salvando…',
@@ -2194,7 +2193,7 @@ export const ptBR = {
     resumoItens: [
       'O Refogando é um app de receitas com IA.',
       'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
-      'Não vendemos seus dados nem usamos publicidade. Compartilhamos só com prestadores que fazem o app funcionar (hospedagem, banco, IA, e-mail), a maioria nos Estados Unidos.',
+      'Não vendemos seus dados nem usamos publicidade. Compartilhamos só com prestadores que fazem o app funcionar (hospedagem, banco, IA, e-mail), em sua maioria empresas dos Estados Unidos.',
       'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Você baixa seus dados e exclui sua conta em Editar perfil → Seus dados; para o resto, escreva para privacidade@refogando.com. Respondemos em até 15 dias.',
       'Este texto pode mudar: cada versão fica registrada na seção "Alterações desta política" e, se a mudança alterar algo que você autorizou com consentimento, avisamos com destaque.',
     ],
@@ -2403,7 +2402,7 @@ export const ptBR = {
       `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se tentamos avisar a pessoa por e-mail), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a cópia que outra pessoa publica de uma receita sua mostra "Baseada na receita … de @você", com link; você pode desligar isso em Editar perfil ou retirar o seu nome de uma cópia, e guardamos essa escolha (item 3.1).`,
-      `v3.6 — ${DATA_POLITICA_V3_6}: as funções do app passaram a rodar em São Paulo, junto do banco de dados; a IA continua nos Estados Unidos, e o texto do consentimento das restrições salvas diz isso (item 3.5 e seção 6).`,
+      `v3.6 — ${DATA_POLITICA_V3_6}: as funções do app passaram a rodar em São Paulo, junto do banco de dados; a IA continua nos Estados Unidos, e o texto do consentimento das restrições salvas diz isso (itens 3.5 e 5).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',

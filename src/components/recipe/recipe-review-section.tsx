@@ -15,15 +15,16 @@
  *  - Enquanto a sessão/fetch pendem: só lista/agregado, sem piscar o widget.
  *
  * Consome os ROUTE HANDLERS via `fetch` (o servidor é a verdade — impõe sessão/gate/auto-
- * avaliação). Otimista no envio; no sucesso re-busca `GET /reviews` pra refrescar lista+agregado
- * (SEM `router.refresh()` — a página pública é cacheável). Mensagem de erro neutra única.
+ * avaliação). Otimista no envio; no sucesso re-busca `GET /reviews` pra refrescar lista+agregado e chama
+ * `router.refresh()`: a página fica 5 minutos no cache do roteador (ADR-0053), e sem limpar esse cache uma volta a
+ * esta receita remontaria a seção com a lista de antes da avaliação. Mensagem de erro neutra única.
  *
  * Cores: só tokens brand/neutros AA-verificados. SEM âmbar (`aviso-*`), SEM accent/accent-surface
  * (ADR-0015 reserva-os ao eixo catálogo/restrição) — nem nas estrelas.
  */
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
@@ -101,6 +102,7 @@ export function RecipeReviewSection({
   const m = messages.avaliacoes
   const session = useSession()
   const pathname = usePathname()
+  const router = useRouter()
   const returnTo = pathname ?? '/'
 
   const sessionSettled = !session.isPending
@@ -362,6 +364,7 @@ export function RecipeReviewSection({
       // #F3: refresca `myReviewId` (a linha recém-criada não deve oferecer "Reportar" a si mesma) +
       // #365: `existingPhotoUrl` (o preview de edição passa a refletir a foto recém-gravada).
       await refreshMine()
+      router.refresh()
     } catch {
       setError(m.erroEnviar)
     } finally {
@@ -388,6 +391,7 @@ export function RecipeReviewSection({
       await refreshList()
       // #F3: mantém `myReviewId`/`moderated` coerentes após apagar (sem reload).
       await refreshMine()
+      router.refresh()
     } catch {
       setError(m.erroApagar)
     } finally {

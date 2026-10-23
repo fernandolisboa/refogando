@@ -23,6 +23,7 @@ vi.mock('next/link', () => ({
 // #458: `usePathname` alimenta o `?returnTo=` do convite de entrar do guest.
 vi.mock('next/navigation', () => ({
   usePathname: () => '/me/recipes',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }

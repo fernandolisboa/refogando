@@ -61,12 +61,6 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Não vaza a stack usada (default do Next emite `x-powered-by: Next.js`).
   poweredByHeader: false,
-  experimental: {
-    // ADR-0053: habilita `unstable_dynamicOnHover` no `<Link>`. Só os links que pedem a prop (o
-    // `RecipeLink` dos cards de receita) passam a pré-carregar a página inteira no hover/toque; o resto
-    // segue com o pré-carregamento padrão.
-    dynamicOnHover: true,
-  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
   },

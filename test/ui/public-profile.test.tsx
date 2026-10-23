@@ -3,6 +3,12 @@ import { render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
+// ADR-0053: o `RecipeLink` dos cards usa `useRouter` (pré-carregamento quando o mouse para no card). O resto
+// do módulo segue o real (o perfil usa `usePathname`).
+vi.mock('next/navigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/navigation')>()),
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
+}))
 // next/link precisa do AppRouterContext em runtime; no jsdom mockamos pra um <a> simples.
 vi.mock('next/link', () => ({
   useLinkStatus: () => ({ pending: false }),

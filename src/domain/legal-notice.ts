@@ -74,11 +74,13 @@ export const DATA_TERMOS_V1_4 = DATA_POLITICA_V3_5
 
 /**
  * Política v3.6 (ADR-0053): as funções do app passam a rodar na Vercel em São Paulo (`gru1`), ao lado do banco, em vez
- * de nos EUA (`iad1`); a IA continua nos EUA (item 5 e seção 6). É menos transferência internacional, a favor da
- * pessoa: vale na publicação, sem o aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O texto do consentimento das
- * restrições salvas diz onde o app e a IA funcionam, então ganha versão nova (`RESTRICOES_CONSENTIMENTO_VERSAO`) e quem
- * já tinha restrições salvas vê o aviso no formulário (LGPD art. 8º, §6: informar a mudança; o que a pessoa autorizou
- * não aumenta). Os Termos não mudam. O dia do merge em UTC; congelada depois do merge. É a data dos rodapés da
+ * de nos EUA (`iad1`); a IA continua nos EUA (itens 3.5 e 5; §6 do parecer interno). É menos transferência
+ * internacional, a favor da pessoa: vale na publicação, sem o aviso de 15 dias e sem trocar `AVISO_LEGAL_VERSAO`. O
+ * texto do consentimento das restrições salvas diz onde o app e a IA funcionam, então ganha versão nova
+ * (`RESTRICOES_CONSENTIMENTO_VERSAO`) e quem já tinha restrições salvas vê o aviso no formulário (LGPD art. 8º, §6).
+ * Para quem consentiu com o texto de 2026-10-22, o aviso só informa (o que ela autorizou não aumenta); para quem tem
+ * restrições sem versão registrada (de antes do #600), ele continua pedindo o consentimento, como já pedia. Os Termos
+ * não mudam. O dia do merge em UTC; congelada depois do merge. É a data dos rodapés da
  * política e de Seus direitos.
  */
 export const DATA_POLITICA_V3_6 = '2026-10-23'

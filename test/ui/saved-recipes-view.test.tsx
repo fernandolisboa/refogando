@@ -24,6 +24,7 @@ vi.mock('next/link', () => ({
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/me/saved',
+  useRouter: () => ({ prefetch: vi.fn(), refresh: vi.fn() }),
 }))
 
 type SessionState = { data: unknown; error: unknown; isPending: boolean }

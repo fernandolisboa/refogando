@@ -31,7 +31,16 @@ export async function loadRecipeSlugMap(
     .select({ locale: recipeTranslation.locale, slug: recipeTranslation.slug })
     .from(recipeTranslation)
     .where(and(eq(recipeTranslation.recipeId, recipeId), isNotNull(recipeTranslation.slug)))
+  return slugMapFromTranslations(rows)
+}
 
+/**
+ * O mesmo mapa de `loadRecipeSlugMap`, a partir das traduções que o detalhe JÁ carregou
+ * (`loadRecipeRowsForRow` traz `recipe_translation` inteira): sem consulta nova (ADR-0053).
+ */
+export function slugMapFromTranslations(
+  rows: readonly { locale: string; slug?: string | null }[],
+): Partial<Record<Locale, string>> {
   const map: Partial<Record<Locale, string>> = {}
   for (const row of rows) {
     // Só locales SUPORTADOS pela chrome (defensivo — uma linha de locale exótico não entra no mapa).
