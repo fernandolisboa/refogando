@@ -7,6 +7,7 @@ import { recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '
 import { POST as reportRoute } from '@/app/api/recipes/[id]/report/route'
 import { REPORTS_POR_DIA } from '@/server/recipe/report'
 import { REPORT_REASON_MAX } from '@/domain/report'
+import { QUOTA_LOCK_CLASS } from '@/server/quota/atomic'
 import { GET as reportsQueueRoute } from '@/app/api/curate/reports/route'
 import { POST as removeRoute } from '@/app/api/curate/reports/[id]/remove/route'
 import { POST as keepRoute } from '@/app/api/curate/reports/[id]/keep/route'
@@ -234,6 +235,23 @@ describe('Moderação reativa (#18)', () => {
     const rows = await getDb().select({ id: report.id }).from(report).where(eq(report.recipeId, id))
     expect(rows).toHaveLength(1)
   })
+
+  it('#605 — a lock da conta presa em outra conexão: espera o teto e responde 429, não 500', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'lock-owner@ex.com' })
+    const { userId: reporterId, headers: reporter } = await seedSessionHeaders({ email: 'lock-reporter@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    let status = 0
+    await sql.begin(async (s) => {
+      await s`select pg_advisory_xact_lock(${QUOTA_LOCK_CLASS.report}::int, hashtext(${reporterId}))`
+      const res = await reportRecipe(id, { reason: 'presa' }, reporter)
+      status = res.status
+      await expect(res.json()).resolves.toEqual({ error: 'limite_denuncias' })
+    })
+    expect(status).toBe(429)
+    expect(await getDb().select({ id: report.id }).from(report).where(eq(report.recipeId, id))).toHaveLength(0)
+    // Lock solta ⇒ a próxima passa.
+    expect((await reportRecipe(id, { reason: 'solta' }, reporter)).status).toBe(201)
+  }, 20_000)
 
   it('#605 — motivo acima de REPORT_REASON_MAX ⇒ 400 dados_invalidos; no teto exato passa', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'long-owner@ex.com' })

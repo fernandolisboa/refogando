@@ -294,20 +294,29 @@ export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap:
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
 }
 
+/** A espera pela lock das denúncias estourou (#605). LANÇADA de dentro da tx: o caller a captura FORA dela. */
+export class ReportLockBusyError extends Error {
+  constructor() {
+    super('fila de denúncias da conta cheia')
+    this.name = 'ReportLockBusyError'
+  }
+}
+
 /**
  * Serializa as denúncias de receita do MESMO usuário (#605) dentro da tx de `createReport`: sem a lock, dois
  * envios simultâneos passariam juntos pela checagem de pendente (duas linhas na fila) e pelo teto diário. Mesma
- * espera com teto do derive (`DERIVE_LOCK_TIMEOUT_MS`, pra uma rajada não esgotar o pool): estourou ⇒ `false`,
- * e o caller responde o 429 do teto. Depois da lock o `lock_timeout` volta ao default da sessão.
+ * espera com teto do derive (`DERIVE_LOCK_TIMEOUT_MS`, pra uma rajada não esgotar o pool): estourou ⇒ LANÇA
+ * `ReportLockBusyError`, e o caller responde o 429 do teto. Lançar (e não devolver um booleano) é obrigatório: o
+ * 55P03 já abortou a transação no Postgres, e seguir nela faria o COMMIT relançar o erro como 500. Depois da lock
+ * o `lock_timeout` volta ao default da sessão.
  */
-export async function acquireReportLockInTx(tx: Tx, userId: string): Promise<boolean> {
+export async function acquireReportLockInTx(tx: Tx, userId: string): Promise<void> {
   await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
   try {
     await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.report, userId)
   } catch (e) {
-    if (pgCode(e) === LOCK_NOT_AVAILABLE) return false
+    if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new ReportLockBusyError()
     throw e
   }
   await tx.execute(sql`set local lock_timeout to default`)
-  return true
 }

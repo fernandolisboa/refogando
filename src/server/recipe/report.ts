@@ -3,7 +3,7 @@ import type { Database } from '@/db/client'
 import { recipe, recipeReview, report } from '@/db/schema'
 import { eligibleForPool } from '@/domain/recipe-pool'
 import { decideReportReason } from '@/domain/report'
-import { acquireReportLockInTx } from '@/server/quota/atomic'
+import { ReportLockBusyError, acquireReportLockInTx } from '@/server/quota/atomic'
 
 /**
  * Núcleo com efeito de Report (issue #18, ADR-0003). Espelha o estilo de `social.ts`:
@@ -22,8 +22,8 @@ import { acquireReportLockInTx } from '@/server/quota/atomic'
  * recebe a existente (201 idempotente, sem linha nova: o duplo envio não infla a fila), e cada conta faz no
  * máximo `REPORTS_POR_DIA` denúncias de receita em 24 h (429 `limite_denuncias`). As duas checagens e o INSERT
  * rodam numa transação sob a advisory lock da conta (`acquireReportLockInTx`), então envios simultâneos não
- * driblam nem a deduplicação nem o teto. O motivo tem teto de `REPORT_REASON_MAX` caracteres (400, receita e
- * avaliação).
+ * driblam nem a deduplicação nem o teto. O motivo tem teto de `REPORT_REASON_MAX` caracteres, na receita e na
+ * avaliação (acima dele, 400 `dados_invalidos`).
  */
 
 /** Teto de denúncias de receita por conta em 24 h (#605): folga larga para uso honesto, freia o spam da fila. */
@@ -81,9 +81,19 @@ export async function createReport(input: {
   // Motivo obrigatório (AC2 — mesmo validador puro de remover-do-pool) e com teto de tamanho (#605).
   if (!decideReportReason({ reason }).allowed) return { kind: 'invalid_reason' }
 
+  try {
+    return await insertReportLocked(db, id, userId, reason)
+  } catch (e) {
+    // #605: fila da lock cheia (a tx já reverteu) ⇒ o mesmo 429 do teto.
+    if (e instanceof ReportLockBusyError) return { kind: 'limit' }
+    throw e
+  }
+}
+
+/** Deduplicação + teto + INSERT numa transação, sob a lock da conta (#605). */
+function insertReportLocked(db: Database, id: string, userId: string, reason: string): Promise<ReportResult> {
   return db.transaction(async (tx): Promise<ReportResult> => {
-    // #605: serializa as denúncias da conta; fila da lock cheia ⇒ o mesmo 429 do teto.
-    if (!(await acquireReportLockInTx(tx, userId))) return { kind: 'limit' }
+    await acquireReportLockInTx(tx, userId)
 
     // #605: denúncia pendente da mesma pessoa para a mesma Receita ⇒ a existente (idempotente). Antes do teto:
     // quem reenvia a mesma denúncia no limite recebe 201, não 429.
