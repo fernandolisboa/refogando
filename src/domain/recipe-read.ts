@@ -106,7 +106,7 @@ export type RecipeRow = {
   derivedDiff?: DerivedDiff | null
   /**
    * Crédito retirado pelo dono da BASE (#610, ADR-0052). OPCIONAL no tipo (mesma razão do `ownerId`). Insumo do
-   * loader do crédito (`loadDerivedCredit`), que nem consulta a base quando está preenchido. NUNCA sai na vista.
+   * loader do crédito (`loadDerivedCredit`), que, sem leitor, nem consulta a base quando está preenchido. NUNCA sai na vista.
    */
   creditRemovedAt?: Date | null
   /**

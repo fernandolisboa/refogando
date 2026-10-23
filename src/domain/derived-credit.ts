@@ -19,8 +19,9 @@
  * Cadeia (D2 copiada de D1, que veio de O): credita o pai IMEDIATO. É de quem a pessoa copiou o texto.
  *
  * `creditoDoAutor` é o controle do DONO DA BASE ("Retirar meu nome" / "Mostrar meu nome de novo"), só para ele
- * (o servidor sabe quem lê pela sessão; o cliente nunca deduz). Aparece quando o nome dele está na página ou quando
- * ele o retirou desta derivada (para poder desfazer).
+ * (o servidor sabe quem lê pela sessão; o cliente nunca deduz). Aparece só quando o nome dele estaria na página se
+ * não fosse a retirada desta derivada: com o nome lá ⇒ retirar; retirado ⇒ desfazer. Base privada, opt-out global ou
+ * conta não pública ⇒ nenhum controle (desfazer não mostraria nada).
  */
 import { eligibleForPublicRead } from '@/domain/recipe-detail-route'
 import type { CurationStatus } from '@/domain/recipe-curation'

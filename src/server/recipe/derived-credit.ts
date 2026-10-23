@@ -138,7 +138,8 @@ export async function setDerivedCreditVisible(
   if (!gate || gate.ownerId === input.viewerId || !eligibleForPublicRead(gate)) return { kind: 'not_found' }
   // A mesma regra que oferece o controle na página: só quando o nome estaria lá se não fosse a retirada (base
   // pública, conta pública, crédito ligado no perfil). Senão "mostrar de novo" responderia `exibir: true` sem
-  // nada aparecer. O locale não muda essa resposta.
+  // nada aparecer. O locale não muda essa resposta (o título vem da tradução no idioma original, que toda receita
+  // tem).
   const { creditoDoAutor } = await loadDerivedCredit(db, {
     recipe: gate,
     locale: DEFAULT_LOCALE,
