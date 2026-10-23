@@ -1,6 +1,6 @@
 # Handoff 85 — Termos de Uso v1 com idade mínima de 16 anos (#276)
 
-**Sessão:** 2026-10-23. **Branch:** `wip/pr-c2-termos`, sobre os três PRs do sign-off já rebaseados na main (PR A, #473/#596, ADR-0050 e handoff 83; PR B, #595; PR C1, #276, política v3 e handoff 84). **Migração:** nenhuma. **Ordem de merge:** A → B → C1 → **C2 (este)**. A decisão e os riscos estão no **ADR-0051**; o fundamento, no parecer interno §7, §8, §10 item 2 e §11.
+**Sessão:** 2026-10-23. **Branch:** `claude/project-thread-yl7417`, sobre a main em `e1a3c37`, que já tem os três PRs do sign-off: PR A, #607 (#473/#596, ADR-0050 e handoff 83); PR B, #608 (#595); PR C1, #612 (#276, política v3 e handoff 84). **Migração:** nenhuma. **Ordem de merge:** A → B → C1 → **C2 (este)**. A decisão e os riscos estão no **ADR-0051**; o fundamento, no parecer interno §7, §8, §10 item 2 e §11.
 
 ## 1. Escopo
 
@@ -114,10 +114,8 @@ Não aberto (opcional): **notificação para retirada manual** (perfil denunciad
 ## 9. Gotchas de ambiente
 
 - Vitest: `flock /var/tmp/vitest.lock npx vitest run …` para tudo (a máquina tem 15 GB e já reiniciou por memória); o projeto node sobe Postgres pelo Testcontainers (Docker). Nunca `export` de `DATABASE_URL`/`TEST_DATABASE_URL`.
-- O `planalto.gov.br` respondeu 503 em 2026-10-22 e em 2026-10-23: o ADR-0051 cita fonte secundária para os arts. 9º e 24 do ECA Digital. Conferir o texto oficial quando o site voltar e corrigir o ADR se divergir.
+- O `planalto.gov.br` respondeu 503 em 2026-10-22 e em 2026-10-23: o ADR-0051 cita fonte secundária para todos os artigos do ECA Digital que usa (2º, III; 7º; 9º; 24). Conferir o texto oficial quando o site voltar e corrigir o ADR se divergir.
 
 ## Prompt de kickoff
 
-Leia `docs/handoffs/85-termos-de-uso-idade-minima.md` e o `docs/adr/0051-termos-de-uso-idade-minima-16.md`. A branch `wip/pr-c2-termos` traz os Termos de Uso v1 (idade mínima de 16 anos), a política v3.1, a linha do cadastro, o aviso de mudança no app e a notificação da fila de imagens da curadoria, sobre os PRs A (#473/#596), B (#595) e C1 (#276), que entram antes, nessa ordem.
-
-Siga os passos 6 a 8 do fluxo por issue do `CLAUDE.md`: code-review com subagentes especializados (correção, a11y e UI, fidelidade e paridade do i18n, aderência ao ADR-0051 e ao `CONTEXT.md`, e texto legal × código, refazendo a tabela da §5 do handoff contra as strings finais), corrigir os achados, abrir o PR com a tabela da §4 no corpo (texto aprovado × publicado), conferir a data de `DATA_PUBLICACAO_TERMOS_V1` contra o dia real do merge e mergear com "checks" e "e2e" verdes. Depois do deploy, faça as conferências da §8. As issues da §7 já estão abertas (#609, #610, #611).
+Leia `docs/handoffs/85-termos-de-uso-idade-minima.md` e o `docs/adr/0051-termos-de-uso-idade-minima-16.md`. Os Termos de Uso v1 (idade mínima de 16 anos), a política v3.1, a linha do cadastro, o aviso de mudança no app e a notificação da fila de imagens da curadoria já estão na main, depois dos PRs #607, #608 e #612 do mesmo sign-off. Faça as conferências pós-deploy da §8 em produção (`/termos` e `/en-US/termos`, rodapé, linha do cadastro, aviso para uma conta antiga e o "Entendi"). Depois, pegue as issues da §7 (#609, #610, #611) pelo fluxo de 8 passos do `CLAUDE.md`. `DATA_PUBLICACAO_TERMOS_V1` fica congelada: uma mudança relevante nos Termos ganha uma linha nova no histórico, uma constante nova e uma nova `AVISO_LEGAL_VERSAO` com 15 dias de antecedência.
