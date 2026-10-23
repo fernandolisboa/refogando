@@ -1,5 +1,7 @@
 # Briefing jurídico — Descoberta na web (issue #276)
 
+> **Status (2026-10-22): encerrado.** As perguntas deste briefing foram respondidas no sign-off interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`, §§1–3), feito pelo Claude por delegação do controlador, sem revisão de advogado(a). O texto abaixo fica como registro do que se perguntou; onde ele diverge do parecer, vale o parecer.
+
 > **Para quê serve este documento:** levar a um **advogado de PI/LGPD brasileiro** para obter o **sign-off da postura** antes de ligar a "Descoberta na web" em produção. Ele resume o que a feature faz, a postura que já adotamos (com guard-rails), e traz a **lista de perguntas** e os **materiais** para a consulta. **Não é parecer jurídico** — é o material de entrada da consulta. As referências legais abaixo são a *nossa pesquisa interna* (registrada no ADR-0019), que o advogado deve **validar ou corrigir**.
 
 ---
@@ -79,4 +81,4 @@ Só com esses quatro itens fechados a flag de produção da Descoberta na web é
 
 ---
 
-*Referências citadas são pesquisa interna (ADR-0019) a ser validada pelo advogado. Este documento não constitui aconselhamento jurídico.*
+*Referências citadas são pesquisa interna (ADR-0019), revisadas no parecer interno de 2026-10-22. Este documento não constitui aconselhamento jurídico.*

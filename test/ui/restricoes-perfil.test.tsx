@@ -37,7 +37,7 @@ import { ptBR } from '@/i18n/messages/pt-BR'
 import { COZINHA_VOCAB_PT_BR, WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { RestricoesPerfilProvider, useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
-import { RestricoesPerfilForm } from '@/components/profile/restricoes-perfil-form'
+import { RestricoesPerfilForm, AVISO_MUDANCA_STORAGE_KEY } from '@/components/profile/restricoes-perfil-form'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { CreateStructuredExperience } from '@/components/recipe/create-structured-experience'
 import { MealPlanSuggestPanel } from '@/components/meal-plan/meal-plan-suggest-panel'
@@ -262,6 +262,93 @@ describe('Seção "Restrições alimentares" do perfil', () => {
     )
     expect(screen.queryByText(R.titulo)).toBeNull()
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGPD art. 8º, §6)', () => {
+  function renderForm() {
+    return render(
+      <Providers>
+        <RestricoesPerfilForm />
+      </Providers>,
+    )
+  }
+
+  it('com restrições salvas: aviso em destaque; "Entendi" o dispensa e ele não volta', async () => {
+    const user = userEvent.setup()
+    mockFetch(['vegano'])
+    const { unmount } = renderForm()
+
+    const aviso = await screen.findByRole('note')
+    expect(aviso).toHaveTextContent(R.avisoMudanca)
+    expect(aviso).toHaveAttribute('data-slot', 'alert')
+    await user.click(within(aviso).getByRole('button', { name: R.avisoMudancaFechar }))
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+    expect(window.localStorage.getItem(AVISO_MUDANCA_STORAGE_KEY)).toBe('1')
+
+    // Voltar à tela (outra montagem, mesmo navegador): o aviso dispensado não reaparece.
+    unmount()
+    renderForm()
+    expect(await screen.findByRole('checkbox', { name: L.vegano })).toBeChecked()
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+  })
+
+  it('"Entendi" leva o foco ao título da seção (o botão some com o aviso; o foco não cai no <body>)', async () => {
+    const user = userEvent.setup()
+    mockFetch(['vegano'])
+    renderForm()
+
+    const fechar = within(await screen.findByRole('note')).getByRole('button', { name: R.avisoMudancaFechar })
+    await user.click(fechar)
+    const titulo = screen.getByRole('heading', { level: 2, name: R.titulo })
+    expect(titulo).toHaveFocus()
+    expect(titulo).toHaveAttribute('tabindex', '-1')
+    // Tab segue daí para o primeiro controle do formulário.
+    await user.tab()
+    expect(screen.getAllByRole('checkbox')[0]).toHaveFocus()
+  })
+
+  it('salvar de novo também o tira (o salvar é o consentimento com o texto novo)', async () => {
+    const user = userEvent.setup()
+    mockFetch(['vegano'])
+    renderForm()
+
+    expect(await screen.findByText(R.avisoMudanca)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: R.salvar }))
+    expect(await screen.findByText(R.salvo)).toBeInTheDocument()
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+    expect(window.localStorage.getItem(AVISO_MUDANCA_STORAGE_KEY)).toBe('1')
+  })
+
+  it('sem restrições salvas não há consentimento a avisar: nada aparece, nem ao marcar uma', async () => {
+    const user = userEvent.setup()
+    mockFetch([])
+    renderForm()
+
+    await user.click(await screen.findByRole('checkbox', { name: L.vegano }))
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+  })
+
+  it('já visto neste navegador: não aparece; storage bloqueado: aparece mesmo assim', async () => {
+    window.localStorage.setItem(AVISO_MUDANCA_STORAGE_KEY, '1')
+    mockFetch(['vegano'])
+    const { unmount } = renderForm()
+    expect(await screen.findByRole('checkbox', { name: L.vegano })).toBeChecked()
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+    unmount()
+
+    // localStorage que lança (navegação privada): o aviso aparece e dispensar não quebra a tela.
+    const user = userEvent.setup()
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('bloqueado')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('bloqueado')
+    })
+    renderForm()
+    const aviso = await screen.findByRole('note')
+    await user.click(within(aviso).getByRole('button', { name: R.avisoMudancaFechar }))
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
   })
 })
 

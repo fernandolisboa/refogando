@@ -284,7 +284,7 @@ export function OperatorAttributionSection() {
       </div>
 
       {/* Escalada além do nome (#397/GAP-3): desvincular a URL inteira ou apagar a importada. Reusa o
-          nome/URL/caseId acima. A POLÍTICA de quando usar aguarda o sign-off jurídico (aviso explícito);
+          nome/URL/caseId acima. O aviso resume quando usar (parecer interno de 2026-10-22, §2, item 2);
           a CONFIRMAÇÃO destrutiva só habilita depois de uma prévia com escopo não-vazio. */}
       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
         <div className="flex flex-col gap-1">

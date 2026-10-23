@@ -152,13 +152,15 @@ export async function operatorClearSourceAttribution(input: {
 
 /**
  * ESCALADA além do nome — #397/GAP-3 (`docs/legal/takedown-e-remocao-titular.md` §4.1). Só o MECANISMO:
- * a POLÍTICA de QUANDO escalar (a atribuição obrigatória do ADR-0019 cede? em que hipóteses?) aguarda o
- * sign-off jurídico do #276 — este código NÃO decide sozinho, só executa a ordem do operador. Duas ações:
+ * o critério de QUANDO escalar está no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-
+ * 2026-10-22.md` §2, item 2), que fechou o #276 — este código NÃO decide sozinho, só executa a ordem do
+ * operador. Duas ações:
  *  - `url_unlink`       — DESVINCULA a atribuição por completo: zera `source_url` E `source_name` (→ null)
  *                         da(s) importada(s) casada(s). Cabe quando a própria URL carrega o nome do titular
- *                         (`blog-da-maria-silva.com/...`) e "só zerar o nome" (#396) não basta.
+ *                         (`blog-da-maria-silva.com/...`) ou quando ele se opõe ao tratamento como um todo.
  *  - `record_deletion`  — APAGA a receita importada inteira (hard-delete; cascateia filhos / set-null nas
- *                         refs fracas, como `deleteOwnRecipe` #21). Cabe na eliminação integral.
+ *                         refs fracas, como `deleteOwnRecipe` #21). Cabe quando quem pede é o dono do site ou
+ *                         dos direitos (o domínio também entra na `TOS_DENYLIST`).
  *
  * Diferente do clear (#396), NÃO há distinção host×humano nem exigência de nome+url não-nulos: basta ser
  * `web_imported` e casar o critério (nome OU url). O campo casado é não-nulo por construção, então toda

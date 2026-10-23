@@ -62,4 +62,6 @@ Regra: **um desvio de vocabulário ou de formato de texto do modelo nunca falha 
 
 Todo valor que o parse leva ao fallback, ou do qual perde uma parte, é logado (`[claude/generateRecipe] valores fora do vocabulário…`: campo e valor cru quando ele tem cara de rótulo/medida, senão só o tamanho), para que os aliases que faltam apareçam. O ajuste da dificuldade e o fallback do locale não são logados. O JSON Schema enviado à Anthropic não muda. Tipos (string vs número) continuam garantidos pelo structured output; um número cru em `quantidade` é aceito como string.
 
+> **Atualização 2026-10-22:** o log passa a levar só o campo e o tamanho, nunca o valor. O valor é conteúdo de receita gerado pela IA, e a Política de Privacidade v3 (item 3.7) diz que as linhas que o app escreve não trazem conteúdo de receita (`docs/legal/parecer-interno-2026-10-22.md`). O log ainda mostra quantos valores caíram e em quais campos; para ver quais aliases faltam, reproduza a geração fora de produção.
+
 Continua **inválido**: `porcoes` fora de 1–50 (as quantidades são para N porções; trocar N falsearia a Receita), receita nula num `kind` que exige receita, e `refusal`/`max_tokens`/JSON quebrado.

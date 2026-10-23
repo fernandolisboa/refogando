@@ -241,20 +241,17 @@ function logSeamParseFailed(
 }
 
 /**
- * Loga os valores da saída que não casaram o vocabulário e caíram no fallback (campo null, restrição
- * descartada, `kind` inferido, parte da quantidade perdida). A geração segue; o log diz quais aliases
- * faltam. O valor cru pode ecoar texto do Usuário (via prompt), então só vai quando tem cara de rótulo
- * ou medida (letras, dígitos, espaço e pontuação de medida, até 32 caracteres); senão, só o tamanho.
+ * Loga quantos valores da saída não casaram o vocabulário e caíram no fallback (campo null, restrição
+ * descartada, `kind` inferido, parte da quantidade perdida), e em quais campos. A geração segue.
+ * NUNCA o valor: ele é conteúdo de receita gerado pela IA (e pode ecoar texto do Usuário via prompt),
+ * e a Política de Privacidade (item 3.7) diz que as nossas linhas não trazem conteúdo de receita.
+ * Só o campo e o tamanho.
  */
-function logDescartes(method: string, descartes: readonly CampoDescartado[]): void {
+export function logDescartes(method: string, descartes: readonly CampoDescartado[]): void {
   if (descartes.length === 0) return
   console.warn(`[claude/${method}] valores fora do vocabulário caíram no fallback:`, {
     total: descartes.length,
-    descartes: descartes.slice(0, 20).map((d) =>
-      /^[\p{L}\p{N} .,\/½⅓⅔¼¾⅕⅛⅜⅝⅞~-]{1,32}$/u.test(d.valor)
-        ? { campo: d.campo, valor: d.valor }
-        : { campo: d.campo, tamanho: d.valor.length },
-    ),
+    descartes: descartes.slice(0, 20).map((d) => ({ campo: d.campo, tamanho: d.valor.length })),
   })
 }
 

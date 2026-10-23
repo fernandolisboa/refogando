@@ -1026,7 +1026,11 @@ export const ptBR = {
     aviso: 'As receitas declaram as restrições que atendem; isso não é verificado. Em caso de alergia, confira os ingredientes.',
     legenda: 'Suas restrições',
     consentimento:
-      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos (e enviá-las à IA quando você gerar com elas marcadas). Desmarque tudo e salve para apagar.',
+      'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app e a IA funcionam nos Estados Unidos. Desmarque tudo e salve para apagar.',
+    // Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6), só para quem já tinha restrições salvas.
+    avisoMudanca:
+      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Se não concordar, desmarque tudo e salve para apagar.',
+    avisoMudancaFechar: 'Entendi',
     salvar: 'Salvar restrições',
     salvando: 'Salvando…',
     salvo: 'Restrições salvas.',
@@ -1685,10 +1689,10 @@ export const ptBR = {
     takedownCaseIdInvalido: 'ID de ticket inválido (precisa ser um uuid).',
     takedownErro: 'Não foi possível concluir. Tente de novo.',
     // Escalada além do nome (titular B) — #397/GAP-3. Desvincular a URL inteira ou apagar a importada.
-    // A POLÍTICA de quando usar aguarda o sign-off jurídico (#276); o mecanismo não decide sozinho.
+    // O critério de quando usar está no parecer interno de 2026-10-22 (§2, item 2); o mecanismo não decide sozinho.
     escalonarTitulo: 'Escalar além do nome (desvincular URL / apagar importada)',
     escalonarAviso:
-      'A POLÍTICA de QUANDO escalar (desvincular a URL ou apagar a receita) aguarda o sign-off jurídico (#276). Este mecanismo não decide sozinho — use só sob orientação. Reaproveita o nome/URL preenchidos acima.',
+      'Quando escalar (parecer interno de 2026-10-22, §2): desvincule a URL se ela identifica a pessoa ou se a pessoa se opõe ao tratamento como um todo; apague a importada se quem pede é o dono do site ou dos direitos (o domínio também entra na denylist, no código). Nos demais casos, remova só o nome. Reaproveita o nome/URL preenchidos acima.',
     escalonarAcaoLabel: 'Ação',
     escalonarAcaoUnlink: 'Desvincular URL (zera URL e nome)',
     escalonarAcaoDelete: 'Apagar receita importada (irreversível)',
@@ -1732,7 +1736,7 @@ export const ptBR = {
     slaTipoOther: 'Outro',
     slaNivelNone: 'No prazo',
     slaNivelYellow: 'Prazo se aproximando',
-    slaNivelRed: 'Escalonar ao Encarregado',
+    slaNivelRed: 'Escalonar ao controlador',
     slaNivelOverdue: 'Prazo vencido',
     // Painel de custo de IA (#465) — agrega os ledgers de texto (#463) e imagem (#224).
     custoTitulo: 'Custo de IA',
@@ -2011,9 +2015,11 @@ export const ptBR = {
   },
   // Política de Privacidade (#398 / parte de #276) — PUBLICADA (indexável, linkada no rodapé + sitemap).
   // Chaves FLAT dentro da seção (o tipo `Messages` deriva só 2 níveis): folhas string ou
-  // `readonly string[]` (listas/tabelas por índice). Os placeholders foram resolvidos com os contatos
-  // reais escritos DIRETO nestas strings (esta seção é o único lugar pra editar nome/e-mail do encarregado).
-  // Publicada por decisão do dono; o sign-off jurídico segue pendente em #276.
+  // `readonly string[]` (listas/tabelas por índice). Os contatos reais estão escritos DIRETO nestas
+  // strings (esta seção é o único lugar pra editar o canal de privacidade).
+  // Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o #276.
+  // Mudou dado coletado, finalidade, fornecedor, prazo ou log? O MESMO PR atualiza esta seção (nova linha em
+  // `s9Historico` + rodapé) e `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
   privacidade: {
     metaTitulo: 'Política de Privacidade — Refogando',
     titulo: 'Política de Privacidade',
@@ -2023,9 +2029,9 @@ export const ptBR = {
     resumoItens: [
       'O Refogando é um app de receitas com IA.',
       'Coletamos o mínimo: o necessário para você ter uma conta e usar o app e, quando você importa uma receita de um site externo, o nome do autor/site e o link de origem, só para dar o crédito.',
-      'Não vendemos seus dados. Compartilhamos apenas com prestadores de serviço que fazem o app funcionar (hospedagem, banco, IA).',
-      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Fale com nosso encarregado: privacidade@refogando.com. Respondemos em até 15 dias.',
-      'Este texto pode mudar; avisamos quando mudar.',
+      'Não vendemos seus dados nem usamos publicidade. Compartilhamos só com prestadores que fazem o app funcionar (hospedagem, banco, IA, e-mail), a maioria nos Estados Unidos.',
+      'Você tem direitos (acesso, correção, exclusão etc. — Art. 18 da LGPD). Você baixa seus dados e exclui sua conta em Editar perfil → Seus dados; para o resto, escreva para privacidade@refogando.com. Respondemos em até 15 dias.',
+      'Este texto pode mudar: cada versão fica registrada na seção "Alterações desta política" e, se a mudança alterar algo que você autorizou com consentimento, avisamos com destaque.',
     ],
 
     s1Titulo: '1. Quem somos (identificação do controlador) — Art. 9º, III',
@@ -2034,18 +2040,18 @@ export const ptBR = {
       'Como o Refogando é operado por pessoa física, não há razão social nem CNPJ associados; o contato oficial é o e-mail de privacidade indicado abaixo.',
     ],
 
-    s2Titulo: '2. Contato do controlador e do encarregado (DPO) — Art. 9º, IV; Art. 41',
+    s2Titulo: '2. Contato do controlador — Art. 9º, IV; Art. 41',
     s2Itens: [
-      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa.',
-      'E-mail de contato para assuntos de privacidade e exercício de direitos: privacidade@refogando.com.',
-      'Prazo de resposta: respondemos a pedidos dos titulares em até 15 dias (LGPD, Art. 19, II).',
+      'Canal de privacidade e exercício de direitos: privacidade@refogando.com, atendido pelo próprio controlador.',
+      'O Refogando é agente de tratamento de pequeno porte e, como permite a Resolução CD/ANPD nº 2/2022 (art. 11), não indicou encarregado (DPO); este canal cumpre essa função.',
+      'Prazo de resposta: respondemos a pedidos dos titulares em até 15 dias corridos (LGPD, Art. 19, II).',
     ],
 
     s3Titulo: '3. Para que usamos seus dados (finalidade específica) — Art. 9º, I; Art. 6º, I',
     s3Intro:
       'Tratamos dados pessoais apenas para finalidades específicas e informadas. Cada atividade segue o padrão Dados / Finalidade / Base legal / Retenção.',
     s3Nota:
-      'O inventário completo de dados de conta/uso ainda será fechado com a equipe e validado; o quadro abaixo é o esqueleto dos tratamentos confirmados. A feature de Descoberta na web está detalhada na Parte (b).',
+      'A exportação (Editar perfil → Seus dados) traz o que os itens 3.1 a 3.6 descrevem ligado à sua conta, menos as credenciais (o hash da senha e os tokens do login com o Google, que não saem por segurança) e a lista de quem segue você (vai só a contagem, porque seguir é escolha de outra pessoa). A Descoberta na web está detalhada na Parte (b).',
 
     rotuloDados: 'Dados',
     rotuloFinalidade: 'Finalidade',
@@ -2054,54 +2060,93 @@ export const ptBR = {
 
     s31Titulo: '3.1. Conta de usuário e autenticação',
     s31Valores: [
-      'e-mail, nome/identificador de exibição (handle), credenciais de login e foto de perfil, biografia, links e idioma preferido.',
-      'criar e manter sua conta, autenticar o acesso e permitir o uso do app.',
+      'e-mail, nome/identificador de exibição (handle), senha (guardada só como hash), foto de perfil, biografia, links, idioma preferido e nível de habilidade padrão. Se você entra com o Google, recebemos do Google o seu nome, e-mail e foto, e guardamos os tokens desse login.',
+      'criar e manter sua conta, autenticar o acesso e permitir o uso do app. O seu nome, o @, a foto, a bio e os links ficam numa página pública (/u/seu-@), que qualquer pessoa vê, mesmo sem conta, e que buscadores podem indexar; ali aparecem também quem você segue e quem segue você. O seu nome e o @ aparecem ainda nas receitas que você publica, nas avaliações que escreve, na busca de cozinheiros e nas notificações que outras pessoas recebem quando você as segue ou avalia uma receita delas. E-mail, restrições alimentares e conteúdo privado nunca aparecem.',
       'execução de contrato com o titular — Art. 7º, V da LGPD.',
-      'enquanto a conta existir. Se você eliminar a conta, anonimizamos na hora os dados de identificação e apagamos a senha, o login do Google e todas as sessões.',
+      'enquanto a conta existir. Se você eliminar a conta, anonimizamos na hora os dados de identificação e apagamos a senha, o login do Google e todas as sessões. Um cadastro com e-mail e senha que não é confirmado é apagado depois de 48 horas; para barrar reenvios abusivos, guardamos por 90 dias só um código derivado do e-mail, que não permite recuperá-lo.',
     ],
     s32Titulo: '3.2. Conteúdo criado no app (receitas, coleções, avaliações, Cardápio, listas de compras e Despensa)',
     s32Valores: [
-      'receitas que você cria, salva, avalia e organiza; preferências de idioma; conteúdo textual que você escreve; o seu Cardápio (as refeições planejadas por dia, com as porções e as anotações livres que você escreve, como "jantar fora"); as suas listas de compras (nome da lista e itens, com quantidade, unidade, receita de origem e a marcação de comprado); e a sua Despensa (os nomes dos itens que você diz ter em casa e, se você a editar, a sua lista de básicos, os itens que você considera sempre ter em casa).',
-      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca, planejar refeições, montar listas de compras e mostrar o que dá pra fazer com o que você tem em casa).',
+      'receitas que você cria, salva, avalia e organiza; as fotos que você envia (removemos no envio os metadados, como a localização); conteúdo textual que você escreve; o seu Cardápio (as refeições planejadas por dia, com as porções e as anotações livres que você escreve, como "jantar fora"); as suas listas de compras (nome da lista e itens, com quantidade, unidade, receita de origem e a marcação de comprado); e a sua Despensa (os nomes dos itens que você diz ter em casa e, se você a editar, a sua lista de básicos).',
+      'entregar a funcionalidade do app (guardar e exibir seu conteúdo, montar coleções, feed e busca, planejar refeições, montar listas de compras e mostrar o que dá pra fazer com o que você tem em casa). Para a busca, o título, a descrição e os ingredientes de cada receita, inclusive das privadas, vão ao Google (Gemini), que devolve um vetor de busca; para traduzir, a receita vai à Anthropic.',
       'execução de contrato — Art. 7º, V.',
       'enquanto a conta existir ou até você apagar o conteúdo. Se você eliminar a conta, apagamos na hora tudo o que é só seu: receitas privadas, salvos, coleções, listas de compras, Cardápio, Despensa, quem você segue e quem segue você, e as notificações. As receitas que você publicou e as avaliações que escreveu ficam no Refogando sem o seu nome, porque outras pessoas salvaram, avaliaram ou planejaram com elas; as fotos das avaliações são apagadas 180 dias depois. Se quiser que uma receita pública suma, apague-a antes de eliminar a conta.',
     ],
-    s33Titulo: '3.3. Imagens geradas por IA e conteúdo assistido por IA',
+    s33Titulo: '3.3. Criação com IA, imagens e tradução',
     s33Valores: [
-      'prompts e imagens que você gera; o pedido que você faz à Sugestão de cardápio (refeições, restrições e uma nota livre opcional), enviado ao provedor de IA junto com o título e a classificação das receitas candidatas e não guardado por nós; metadados de uso (para controle de custo/cota).',
-      'gerar imagens de pratos, apoiar a criação de receitas e sugerir um cardápio com receitas existentes; controlar limites de uso.',
-      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo — Art. 7º, IX.',
-      'os pedidos e as conversas ficam enquanto a conta existir (você pode apagar a conversa de cada criação) e são apagados se você eliminar a conta. Uma sugestão de cardápio só é guardada como refeição planejada se você a aceitar. Os registros de uso são apagados depois de 24 meses (os de extração de ingredientes, depois de 30 dias); se você eliminar a conta antes, eles ficam até lá sem nada que identifique você.',
+      'o que você pede à IA: o texto livre, o formulário de criação (com as restrições marcadas no pedido) e a conversa; os pedidos e refinos de imagem e, quando você pede para editar uma foto, a própria foto; o pedido à Sugestão de cardápio (refeições, porções e uma nota livre opcional), enviado com o título e a classificação das receitas candidatas e não guardado por nós; os registros de uso (data e, quando houver, modelo, tokens e custo, sem o conteúdo); e os ingredientes escritos à mão que não estão no vocabulário: os que se repetem entram, sem o seu nome, numa lista para a curadoria ampliar o vocabulário; e as cozinhas novas que você escreve em "Outra", que entram, sem o seu nome, numa fila da curadoria e, se aprovadas, viram opção para todos.',
+      'gerar receitas e imagens de pratos, escolher o cenário da foto, traduzir receitas entre português e inglês, extrair ingredientes de um texto, sugerir um cardápio com receitas existentes, revisar imagens geradas com um pedido de estilo ou editadas por IA, ampliar o vocabulário de ingredientes e de cozinhas e controlar limites de uso e custo.',
+      'execução de contrato — Art. 7º, V; e legítimo interesse para prevenção de abuso/controle de custo, para a revisão das imagens pela curadoria e para ampliar o vocabulário — Art. 7º, IX.',
+      'os pedidos de texto e as conversas ficam enquanto a conta existir (você pode apagar a conversa de cada criação) e são apagados se você eliminar a conta; os pedidos de imagem não são guardados, só a imagem gerada. Uma sugestão de cardápio só é guardada como refeição planejada se você a aceitar. Os registros de uso são apagados depois de 24 meses (os de extração de ingredientes, depois de 30 dias); se você eliminar a conta antes, eles ficam até lá sem nada que identifique você.',
     ],
     s34Titulo: '3.4. Atribuição de receitas importadas da web ("Descoberta na web")',
     s34Corpo:
-      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX (com dado manifestamente público — Art. 7º, §4º como fundamento alternativo).',
+      'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX —, com o teste de balanceamento documentado (o fato de o próprio autor ter publicado o nome pesa a favor).',
     s35Titulo: '3.5. Restrições alimentares salvas',
     s35Valores: [
       'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público.',
-      'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA dentro de um pedido em que você as mantém marcadas.',
-      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão) e revogável a qualquer momento desmarcando todas e salvando.',
+      'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA (Anthropic, nos Estados Unidos) dentro de um pedido em que você as mantém marcadas.',
+      'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão e informa que o app e a IA funcionam nos Estados Unidos, Art. 33, VIII) e revogável a qualquer momento desmarcando todas e salvando.',
       'até você desmarcá-las ou excluir a conta; entram na exportação dos seus dados e são apagadas na exclusão da conta.',
+    ],
+    s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
+    s36Valores: [
+      'o endereço IP e o navegador (user agent) de cada sessão de login; o IP nos limites de tentativas das rotas de conta (como login, cadastro e senha), apagado em até 2 horas após a última tentativa, e, só na memória, para limitar o ritmo do formulário de Seus direitos e da Descoberta; as denúncias que você faz sobre receitas ou avaliações; e as decisões de moderação sobre o seu conteúdo ou a sua conta (por exemplo, uma imagem escondida do público ou o bloqueio da geração de imagens), com o motivo.',
+      'proteger a sua conta, impedir abuso e uso excessivo de recursos pagos e moderar o conteúdo público.',
+      'legítimo interesse — Art. 7º, IX (com avaliação de legítimo interesse registrada).',
+      'a sessão vale 7 dias, renovados com o uso, e é apagada em até 1 dia depois de vencer, com o IP e o navegador; o IP dos limites de tentativas, em até 2 horas após a última tentativa; as denúncias ficam enquanto o conteúdo denunciado existir; as decisões de moderação, enquanto a conta ou o conteúdo existir (se você eliminar a conta, ficam sem nada que identifique você).',
+    ],
+    s37Titulo: '3.7. Registros técnicos',
+    s37Valores: [
+      'quando algo dá errado, registramos o formato da página (sem o endereço completo nem o que foi buscado), o método, o tipo de erro e um código técnico; se o erro aconteceu no seu navegador, também uma mensagem curta, de até 160 caracteres, em que e-mails, nomes de usuário, identificadores, endereços, tokens e números longos são mascarados. O navegador envia esse relato sem cookies; o IP de quem envia é usado só na memória, para limitar o número de relatos, e não é gravado. As linhas que nós escrevemos não trazem IP, cookies, identificador da sua conta nem o conteúdo das suas receitas. Num erro inesperado do servidor, a plataforma (Next.js) grava também a mensagem técnica e o rastro do erro, que em casos raros pode trazer um trecho do dado que estava sendo processado. A Vercel, que hospeda o app, registra por conta própria o IP, o navegador e o endereço de cada página pedida (que pode trazer o termo de uma busca).',
+      'descobrir e corrigir erros e manter o app seguro.',
+      'legítimo interesse — Art. 7º, IX.',
+      'não vão para o nosso banco de dados: ficam nos registros da Vercel por até 30 dias e são apagados por ela.',
+    ],
+    s38Titulo: '3.8. Pedidos de titulares (formulário de Seus direitos)',
+    s38Valores: [
+      'o tipo de pedido, o link ou o nome que você informa, a sua mensagem, o idioma e, se você quiser, um e-mail para resposta; e um registro de auditoria de cada pedido (datas, tipo, o canal, o motivo de uma recusa e, quando algo é removido, só um código que comprova a remoção, nunca o dado em si).',
+      'atender o seu pedido e comprovar que o atendemos.',
+      'cumprimento de obrigação legal — Art. 7º, II (Arts. 18 e 19) — e, para o registro de auditoria e a guarda dos e-mails como prova, exercício regular de direitos — Art. 7º, VI.',
+      'o pedido é apagado 12 meses depois de encerrado; o registro de auditoria, depois de 5 anos; os e-mails trocados pelo canal de privacidade ficam guardados por até 5 anos, como prova do atendimento.',
+    ],
+    s39Titulo: '3.9. Busca',
+    s39Valores: [
+      'o termo que você digita na busca, com ou sem conta.',
+      'encontrar receitas: o termo é transformado num vetor de busca pelo Google (Gemini) e, se você está conectado e a Descoberta na web está ativa, enviado à Brave restrito aos sites aprovados.',
+      'execução de contrato para quem tem conta; legítimo interesse — Art. 7º, IX — para visitantes.',
+      'não guardamos o termo (ver 3.7 sobre os registros da hospedagem).',
     ],
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
     s4Itens: [
-      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (ver item 5). Aplicamos medidas de segurança compatíveis (Art. 46), incluindo controle de acesso por autenticação e autorização por titularidade.',
-      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica (item 3) ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Art. 15/16). Os prazos específicos seguem a finalidade de cada tratamento descrita no item 3.',
+      'Como: os dados são tratados por meios eletrônicos, em servidores de prestadores de serviço contratados (item 5). Aplicamos medidas de segurança compatíveis (Art. 46): acesso só com autenticação, senhas guardadas como hash, conexões sempre cifradas (HTTPS), remoção dos metadados das fotos enviadas e cada conteúdo privado aparece só para o dono, com estas exceções: imagens geradas com um pedido de estilo seu ou editadas por IA entram numa fila de revisão da curadoria, que vê a imagem, o título da receita, o seu nome e o seu @; e os ingredientes fora do vocabulário que se repetem e as cozinhas novas que você escreve em "Outra" chegam à curadoria sem o seu nome (item 3.3). As imagens ficam em endereços públicos que não são listados nem fáceis de adivinhar.',
+      'Por quanto tempo: mantemos cada dado apenas pelo tempo necessário à finalidade que o justifica ou por obrigação legal. Ao encerrar a finalidade, eliminamos ou anonimizamos os dados (Arts. 15, 16 e 12). Os prazos de cada tratamento estão no item 3. Fazemos uma cópia de segurança do banco por semana e guardamos as três mais recentes: o que é apagado ou anonimizado sai delas em até 4 semanas. Cópias temporárias do banco usadas para testar mudanças são apagadas quando o teste termina.',
     ],
 
     s5Titulo: '5. Com quem compartilhamos (uso compartilhado) — Art. 9º, V',
     s5Intro:
-      'Não vendemos dados pessoais. Compartilhamos com operadores (prestadores de serviço que tratam dados em nosso nome, sob contrato) estritamente para operar o app:',
+      'Não vendemos dados pessoais. Compartilhamos dados só com os prestadores abaixo, estritamente para operar o app. Quase todos são operadores (tratam dados em nosso nome, sob contrato); no login com o Google, o Google é um provedor independente da sua conta Google (item 6):',
     s5Cabecalho: ['Prestador', 'Para quê', 'Categoria'],
-    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search', 'Resend'],
+    s5Prestadores: [
+      'Vercel',
+      'Neon',
+      'Google (Gemini)',
+      'Anthropic (Claude)',
+      'Brave Search',
+      'Resend',
+      'Proton',
+      'Google (login)',
+    ],
     s5ParaQue: [
-      'Hospedagem do aplicativo',
-      'Banco de dados',
-      'Geração de imagens e embeddings de busca',
-      'Geração/assistência de texto',
+      'Hospedagem do aplicativo, armazenamento das imagens e registros técnicos',
+      'Banco de dados (em São Paulo)',
+      'Geração e edição de imagens (inclusive a foto que você manda editar) e vetores de busca',
+      'Geração de receitas e conversa, extração de ingredientes, Sugestão de cardápio, tradução e escolha do cenário da foto',
       'Busca de links externos na "Descoberta na web"',
       'Envio de e-mails transacionais (confirmação de cadastro, redefinição de senha, alertas de privacidade)',
+      'Caixa de e-mail do canal de privacidade',
+      '"Continuar com o Google" (opcional) e exibição da foto do Google no perfil',
     ],
     s5Categorias: [
       'Operador de infraestrutura',
@@ -2110,15 +2155,18 @@ export const ptBR = {
       'Operador de IA',
       'Operador de busca',
       'Operador de infraestrutura',
+      'Operador de infraestrutura',
+      'Provedor de login',
     ],
-    s5Nota: 'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing.',
+    s5Nota:
+      'Finalidade do compartilhamento: exclusivamente a operação técnica das funções acima; nenhum parceiro recebe dados para finalidade própria de marketing. Se você usa o login do Google, a sua foto do Google é carregada dos servidores do Google, que recebem o IP de quem vê a sua foto no Refogando (perfil, busca e lista de cozinheiros, listas de seguidores e notificações).',
     s5Transferencia:
-      'Transferência internacional: alguns prestadores processam dados fora do Brasil, com as salvaguardas de transferência internacional previstas na LGPD (Arts. 33 a 36).',
+      'Transferência internacional: as funções do app rodam na Vercel, nos Estados Unidos, e o banco de dados fica em São Paulo; Anthropic, Google, Brave e Resend processam nos Estados Unidos, e a caixa de e-mail fica na Suíça (Proton). Usamos o Art. 33, IX da LGPD: a transferência é necessária para executar o serviço que você pede (Art. 7º, V) ou para atender pedidos de titulares (Art. 7º, II). Com o Google (Gemini), valem também as cláusulas-padrão contratuais da ANPD que o Google incorpora ao contrato (Art. 33, II, "b"). As restrições alimentares salvas são tratadas nos Estados Unidos, pelo app e pela IA, só com o seu consentimento específico (Art. 33, VIII). Nenhum prestador de IA pode usar o seu conteúdo para treinar modelos.',
 
     s6Titulo: '6. Responsabilidades dos agentes de tratamento — Art. 9º, VI; Arts. 37–39',
     s6Itens: [
       'Fernando Lisboa atua como controlador e é responsável pelas decisões sobre o tratamento.',
-      'Os prestadores do item 5 atuam como operadores, tratando dados conforme nossas instruções e sob contrato.',
+      'Os prestadores do item 5 atuam como operadores, tratando dados conforme nossas instruções e sob contrato; no login com o Google, o Google atua como provedor independente da sua conta Google.',
       'Mantemos registro das operações de tratamento (Art. 37) e adotamos medidas de segurança (Art. 46). Em caso de incidente de segurança com risco relevante, comunicamos a ANPD e os titulares (Art. 48).',
     ],
 
@@ -2136,19 +2184,56 @@ export const ptBR = {
       'Informação sobre a possibilidade de não fornecer consentimento e as consequências;',
       'Revogação do consentimento;',
       'Quando o tratamento se basear em legítimo interesse, o direito de opor-se e de solicitar informações (Art. 18, §2º, e Art. 37).',
+      'Revisão de decisões tomadas unicamente por tratamento automatizado que afetem os seus interesses (Art. 20) — fora limites automáticos iguais para todos (cotas diárias de IA, limites de tentativas, remoção de cadastro não confirmado), o Refogando não toma esse tipo de decisão; você pode pedir revisão pelo canal de privacidade.',
     ],
     s7ComoExercer:
-      'Como exercer: use a página Seus Direitos (/seus-direitos) ou escreva para privacidade@refogando.com. Respondemos em até 15 dias (Art. 19, II). Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
+      'Como exercer: baixe uma cópia dos seus dados ou exclua a sua conta em Editar perfil → Seus dados; para o resto, use a página Seus Direitos (/seus-direitos) ou escreva para privacidade@refogando.com. Respondemos em até 15 dias corridos (Art. 19, II), sem custo. Você também pode peticionar à Autoridade Nacional de Proteção de Dados (ANPD).',
 
-    s8Titulo: '8. Alterações desta política',
-    s8Corpo:
-      'Podemos atualizar esta política. Quando houver mudança relevante, avisaremos pela página Seus Direitos (/seus-direitos) e pelo e-mail privacidade@refogando.com, e registraremos a versão e a data de cada alteração.',
+    // Seção 8 (v3): tabela Nome / Para quê / Duração, linhas por índice (s8Nomes[i], s8ParaQue[i], s8Duracoes[i]).
+    s8Titulo: '8. Cookies e armazenamento no navegador',
+    s8Intro:
+      'Usamos só cookies e armazenamento estritamente necessários para o app funcionar. Não há cookies de publicidade, de análise ou de terceiros; por isso não pedimos consentimento para eles (Guia de cookies da ANPD).',
+    s8Cabecalho: ['Nome', 'Para quê', 'Duração'],
+    s8Nomes: [
+      'Cookie de sessão',
+      'locale',
+      'theme',
+      'Cookies temporários do login com o Google',
+      'localStorage',
+      'sessionStorage',
+    ],
+    s8ParaQue: [
+      'manter você conectado com segurança',
+      'lembrar o idioma escolhido',
+      'lembrar o tema claro ou escuro',
+      'proteger o login com o Google contra fraude',
+      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu o aviso de mudança das restrições',
+      'evitar relatos de erro repetidos e recargas em sequência após uma atualização, lembrar o "Mostrar tudo" da busca e guardar por alguns segundos, até a página seguinte, o pedido de refazer o tour e o aviso da exclusão da conta',
+    ],
+    s8Duracoes: [
+      'até a sessão vencer',
+      '1 ano',
+      '1 ano',
+      'minutos',
+      'a última aba, até você sair da conta; o resto, até você limpar os dados do navegador',
+      'até fechar a aba',
+    ],
+
+    s9Titulo: '9. Alterações desta política',
+    s9Corpo:
+      'Podemos atualizar esta política. Cada versão fica registrada abaixo, com a data e o que mudou. Se a mudança alterar algo que você autorizou com consentimento, avisamos com destaque no lugar onde você o deu, e você pode revogá-lo ali.',
+    // Uma linha por versão publicada (a mais nova por último); o rodapé repete a última.
+    s9Historico: [
+      'v1 — 2026-07-03: primeira versão publicada.',
+      'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
+      'v3 — 2026-10-22: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
+    ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
     resumoBTitulo: 'Resumo desta seção',
     resumoBItens: [
       'Quando você importa uma receita de um site externo, guardamos duas coisas sobre a origem: o nome do autor/site e o link (URL) — só para creditar a fonte.',
-      'Não copiamos a foto nem o texto autoral (a receita importada nasce sem imagem e sem descrição).',
+      'Não copiamos a foto nem o texto de apresentação (a receita importada nasce sem imagem e sem descrição); o modo de preparo vem como o site o publicou.',
       'A receita importada é sempre privada — você não pode publicá-la nem republicá-la.',
       'O dado pessoal aqui é o nome do autor da receita de terceiro — e você, autor, pode pedir a remoção do seu nome (o crédito passa a exibir só o site).',
     ],
@@ -2171,9 +2256,9 @@ export const ptBR = {
     b3Rotulos: ['Dados', 'O que NÃO coletamos', 'Finalidade', 'Base legal', 'Retenção'],
     b3Valores: [
       'Apenas dois campos de atribuição, gravados só em receitas importadas: o nome legível do autor/site e a URL pública de origem. Toda receita que não é importada deixa esses dois campos vazios.',
-      'Não copiamos a foto (a receita importada nasce sem imagem) nem o texto autoral / headnote. Isso reduz ao mínimo a superfície de dado de terceiros e evita copiar a camada expressiva protegida por direito autoral.',
+      'Não copiamos a foto (a receita importada nasce sem imagem) nem o texto de apresentação (headnote): da receita, trazemos só o título, os ingredientes e o modo de preparo, este com o texto como o site o publicou. A cópia fica privada, creditada e não pode ser publicada.',
       'Dar o crédito à fonte ("fonte: … (link)") — cumprindo o direito moral de atribuição (Lei 9.610/98) — e mandar tráfego de volta ao site de origem. A atribuição é obrigatória, não opcional.',
-      'Legítimo interesse — LGPD Art. 7º, IX. Fundamento alternativo/complementar: dado tornado manifestamente público pelo titular (Art. 7º, §4º).',
+      'Legítimo interesse — LGPD Art. 7º, IX —, com o teste de balanceamento documentado (Art. 10). O fato de o próprio autor ter publicado o nome com a receita pesa a favor no balanceamento (Art. 7º, §§ 3º e 4º).',
       'Enquanto a receita importada existir na coleção privada do usuário, ou até o autor pedir a remoção do nome (item b.5), ou até o usuário apagar a receita. Ao remover o nome, o crédito passa a exibir apenas o site (host) derivado da URL.',
     ],
 
@@ -2185,20 +2270,20 @@ export const ptBR = {
     b5Intro:
       'Se você é autor de uma receita que foi importada para o Refogando e quer remover o seu nome da atribuição, você tem esse direito (Art. 18, IV; e o direito de oposição ao tratamento fundado em legítimo interesse, Art. 18, §2º).',
     b5ComoFunciona: [
-      'A remoção zera apenas o nome do autor; a URL de origem permanece, porque a atribuição é obrigatória. Após a remoção, o crédito é rebaixado ao nome do site (host) derivado da URL, e o link "ver no site" continua.',
-      'A remoção só tem efeito quando há de fato um nome humano distinto do host; caso contrário é uma operação sem efeito.',
+      'A remoção padrão zera só o nome; a URL de origem permanece, porque o crédito à fonte é obrigatório, e o crédito passa a exibir o nome do site (host) derivado da URL. Se a própria URL identifica você (por exemplo, o seu nome no endereço do blog) ou se você se opõe ao tratamento como um todo, desvinculamos também a URL.',
+      'Se você é o dono do site ou dos direitos sobre o conteúdo e não quer cópias no Refogando, apagamos as receitas importadas do seu site e o tiramos da lista de sites aprovados.',
       'A remoção não é reversível para o nome original — o que é adequado ao direito de remoção.',
     ],
     b5Contato:
-      'Contato do encarregado para esta finalidade: Fernando Lisboa — privacidade@refogando.com — resposta em até 15 dias. Você também pode usar o formulário público na página Seus Direitos (/seus-direitos).',
+      'Contato para esta finalidade: privacidade@refogando.com — resposta em até 15 dias. Você também pode usar o formulário público na página Seus Direitos (/seus-direitos).',
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v2',
+    rodapeVersao: 'v3',
     rodapeDataRotulo: 'Data',
     rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'Publicada — revisão jurídica em andamento',
+    rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
 
   // Página "Seus direitos" + formulário público de intake (#399, GAP-2; parte de #276). PUBLICADA:
@@ -2211,10 +2296,10 @@ export const ptBR = {
 
     titularATitulo: 'Você tem conta no Refogando',
     titularACorpo:
-      'Se você é usuário do app, boa parte dos seus direitos é atendida direto na sua conta (perfil, receitas, coleções, Cardápio, listas de compras e Despensa). Para o que ainda não é self-service, use o formulário abaixo ou o e-mail de privacidade — sempre dentro do prazo de 15 dias.',
+      'Se você é usuário do app, baixa os seus dados e exclui a sua conta em Editar perfil → Seus dados, e corrige perfil, receitas, coleções, Cardápio, listas de compras e Despensa direto na conta. Para o que não é self-service, escreva para privacidade@refogando.com — sempre dentro do prazo de 15 dias.',
     titularBTitulo: 'Você é autor de uma receita importada da web',
     titularBCorpo:
-      'Se uma receita sua foi importada de um site externo para o Refogando, guardamos apenas o seu nome (crédito) e o link de origem — nunca a foto nem o texto autoral. Você pode pedir a remoção do seu nome (o crédito passa a exibir só o site) ou a remoção integral. Você NÃO precisa ter conta: use o formulário abaixo.',
+      'Se uma receita sua foi importada de um site externo para o Refogando, guardamos sobre você apenas o seu nome (crédito) e o link de origem; da receita, ficam só o título, os ingredientes e o modo de preparo como o site o publicou, numa cópia privada que não pode ser publicada — nunca a foto nem o texto de apresentação. Você pode pedir a remoção do seu nome (o crédito passa a exibir só o site), a remoção também do link ou, se você é o dono do site, a remoção das cópias. Você NÃO precisa ter conta: use o formulário abaixo.',
 
     fluxoTitulo: 'Como funciona o pedido',
     fluxoPassos: [
@@ -2229,14 +2314,14 @@ export const ptBR = {
 
     canalTitulo: 'Canal de contato',
     canalCorpo:
-      'Encarregado pelo tratamento de dados (DPO): Fernando Lisboa. E-mail para privacidade e exercício de direitos: privacidade@refogando.com.',
+      'Canal de privacidade e exercício de direitos: privacidade@refogando.com, atendido pelo controlador, Fernando Lisboa. Como agente de pequeno porte, o Refogando não indicou encarregado (Res. CD/ANPD nº 2/2022, art. 11).',
 
     formTitulo: 'Abrir um pedido',
     formIntro:
       'Preencha o pedido abaixo. Informe o link de origem e/ou o nome exibido para localizarmos o conteúdo, e descreva o que você deseja.',
     formTipoRotulo: 'Tipo de pedido',
     formTipoNameRemoval: 'Remover o meu nome do crédito (mantendo o link)',
-    formTipoFullRemoval: 'Remover integralmente a receita importada',
+    formTipoFullRemoval: 'Remover a receita importada ou o link',
     formTipoOther: 'Outro pedido sobre meus dados',
     formUrlRotulo: 'Link de origem (URL)',
     formUrlPlaceholder: 'https://site-de-origem.com/receita',
@@ -2247,7 +2332,7 @@ export const ptBR = {
     formPedidoPlaceholder: 'Descreva o que você deseja (ex.: remover meu nome do crédito desta receita).',
     formContatoRotulo: 'E-mail para resposta (opcional)',
     formContatoPlaceholder: 'seu@email.com',
-    formContatoDica: 'Opcional. Se informar, usamos apenas para responder a este pedido.',
+    formContatoDica: 'Opcional. Se informar, usamos apenas para responder a este pedido; o pedido é apagado 12 meses depois de encerrado.',
     formEnviar: 'Enviar pedido',
     formEnviando: 'Enviando…',
     formSucessoTitulo: 'Pedido recebido',
@@ -2260,11 +2345,11 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v2',
+    rodapeVersao: 'v3',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-10-13',
+    rodapeData: '2026-10-22',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'Publicada — revisão jurídica em andamento',
+    rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
   // Cartão de upsell no LIMITE de cota (Fase 2 de billing, flag-off — docs/reports/
   // fase2-billing-decisao.md §6 item 5). Aparece JUNTO da mensagem de limite já existente

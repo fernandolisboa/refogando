@@ -1,5 +1,4 @@
-> **Rascunho para revisão jurídica — não constitui parecer.**
-> Este documento e os demais deste pacote são **rascunhos internos do Refogando**, produzidos pela equipe de produto/engenharia com apoio de *skills* de conformidade (LGPD) ancoradas na **Lei nº 13.709/2018 (LGPD)**. Eles descrevem a postura que **já adotamos** e a fundamentam com a **nossa** pesquisa interna. **Não** são parecer, opinião legal, nem posição de advogado. Onde a lei é incerta, o texto **convida explicitamente à validação**. Nada aqui deve ser tratado como aconselhamento jurídico até a **revisão e assinatura** de advogado(a) de PI/LGPD habilitado(a).
+> **Status (2026-10-22): encerrado.** As 8 perguntas da §5 foram respondidas no sign-off interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`, §§1–3 e 5), feito pelo Claude por delegação do controlador, sem revisão de advogado(a). O controlador decidiu não esperar revisão externa. Este pacote fica como registro do que foi perguntado; onde ele diverge do parecer, vale o parecer.
 
 # Nota de capa — Consulta jurídica: Descoberta na web (Refogando, issue #276)
 
@@ -38,10 +37,10 @@ O **Refogando** é um app de receitas com IA (interface em pt-BR e en-US). A **D
 
 | Critério de aceite (#276) | Documento(s) que endereça | Status |
 |---|---|---|
-| **1. Sign-off da postura legal** (ADR-0019) | Briefing (doc 1) + ADR-0019 (doc 6) | **Pendente do advogado** — assinatura. |
-| **2. Base legal LGPD documentada** | LIA (doc 2); Política publicada, item 3.4 e Parte (b) (doc 3) | **Publicada como legítimo interesse (Art. 7º, IX), com Art. 7º, §4º como alternativa** — pendente de **confirmação** e de assinatura da LIA. |
-| **3. Contato de takedown + fluxo** | Takedown (doc 4); página `/seus-direitos` | **No ar**: formulário público + e-mail `privacidade@refogando.com` + encarregado nomeado (Fernando Lisboa) + prazo de 15 dias. Pendente de **validação** do fluxo e dos prazos. |
-| **4. Ajustes de allowlist / Política** | Revisão de ToS (doc 5) + Política (doc 3) | Os **3 domínios a excluir já estão bloqueados no código** (`TOS_DENYLIST`). Pendente: **leitura verbatim dos 7 domínios em revisão manual** e revisão do texto publicado da Política. |
+| **1. Sign-off da postura legal** (ADR-0019) | Briefing (doc 1) + ADR-0019 (doc 6) | **Concluído em 2026-10-22** (parecer interno, §2): postura aprovada, com o achado do texto dos passos. |
+| **2. Base legal LGPD documentada** | LIA (doc 2); Política publicada, item 3.4 e Parte (b) (doc 3) | **Concluído em 2026-10-22**: legítimo interesse (Art. 7º, IX), com a publicação pelo próprio titular pesando no balanceamento (não como base alternativa). LIA aprovada. |
+| **3. Contato de takedown + fluxo** | Takedown (doc 4); página `/seus-direitos` | **Concluído em 2026-10-22**: formulário público + `privacidade@refogando.com`, atendido pelo controlador, sem encarregado (pequeno porte); 15 dias corridos; critérios de escalada no parecer §2, item 2. |
+| **4. Ajustes de allowlist / Política** | Revisão de ToS (doc 5) + Política (doc 3) | **Concluído em 2026-10-22**: os 7 domínios em revisão manual foram lidos (6 vetados, tudogostoso mantido); `TOS_DENYLIST` com 9 domínios; Política v3 publicada. |
 
 ## 5. Perguntas objetivas para o(a) advogado(a)
 
@@ -68,7 +67,7 @@ A Descoberta na web **só funciona** quando os três controles abaixo estão lig
 
 | # | Gap original | Situação em 2026-09-24 |
 |---|---|---|
-| GAP-1 | Sem Política de Privacidade | **Fechado.** Publicada em `/privacidade` (PR #405, publicada no #418), indexável e no rodapé. **Sem sign-off jurídico** ainda. |
+| GAP-1 | Sem Política de Privacidade | **Fechado.** Publicada em `/privacidade` (PR #405, publicada no #418), indexável e no rodapé. Revisada no parecer interno de 2026-10-22 (v3). |
 | GAP-2 | Sem canal público nem encarregado | **Fechado.** `/seus-direitos` + `POST /api/legal/takedown` (sem login) + `privacidade@refogando.com` (PR #407). |
 | GAP-3 | Remoção só do nome | **Fechado (mecanismo).** Escalada admin: `url_unlink` (zera URL e nome) ou `record_deletion` (apaga a receita importada) (PR #409). **Quando** usar é a pergunta 2. |
 | GAP-4 | Operador não alcança receitas de terceiros | **Fechado.** Remoção de atribuição em lote por nome ou URL, alcança receitas privadas de qualquer usuário (PR #406). |
@@ -89,7 +88,7 @@ A Descoberta na web **só funciona** quando os três controles abaixo estão lig
 - **Canal público:** `src/app/[locale]/seus-direitos/page.tsx`, `src/app/api/legal/takedown/route.ts`, `src/domain/takedown.ts` (tipo do pedido, URL e/ou nome exibido, mensagem, e-mail opcional; **nenhum documento** exigido). Tabela `takedown_ticket`; `received_at` inicia o prazo.
 - **Auditoria:** `dsar_audit_event` (`src/server/legal/dsar-audit.ts`). Só inserção, garantida pelo código (não há trigger no banco).
 - **Prazo:** `src/domain/dsar-sla.ts` (10/13/15 × 24 h); cron `/api/cron/dsar-sla` em `vercel.json`.
-- **Allowlist e denylist:** `src/domain/web-search-config.ts` — `TOS_DENYLIST` (panelinha, guiadacozinha, foodnetwork e subdomínios; o admin não consegue adicioná-los) e teto de 50 domínios.
+- **Allowlist e denylist:** `src/domain/web-search-config.ts` — `TOS_DENYLIST` com 9 domínios desde 2026-10-22 (panelinha, guiadacozinha, foodnetwork, cybercook, receiteria, allrecipes, simplyrecipes, seriouseats e bbcgoodfood, com os subdomínios; o admin não consegue adicioná-los, a leitura da allowlist gravada os descarta e o guard da URL os recusa por conta própria) e teto de 50 domínios.
 
 ## 8. O que pedimos de volta
 
@@ -97,5 +96,5 @@ Para dar o go-live, precisamos de: **(a)** a **postura do ADR-0019 revisada e as
 
 ---
 
-*Rascunho — versão para revisão jurídica. Sujeito a alteração conforme o retorno do(a) advogado(a).*
+*Encerrado em 2026-10-22 pelo parecer interno (`docs/legal/parecer-interno-2026-10-22.md`). Não é aconselhamento jurídico.*
 

@@ -4,7 +4,7 @@
 >
 > **Atualização de 2026-10-13.** A §1 e a §6 passam a citar o Cardápio (com as anotações livres), as Listas de compras, a Despensa e o ledger da Sugestão de cardápio, e o que a exportação e a eliminação fazem com cada um. A Política de Privacidade (v2) foi ajustada no mesmo sentido.
 
-> **Rascunho para revisão jurídica — não constitui parecer.** Este documento foi redigido pela equipe do Refogando como material de trabalho para um(a) advogado(a) de LGPD/PI **revisar, corrigir e assinar** antes do go-live. Onde a lei é incerta ou depende de interpretação, o texto **sinaliza expressamente** o ponto para validação profissional (marcado como **[VALIDAR]**). As referências legais são a nossa pesquisa interna (registrada no ADR-0019) e podem estar erradas. Nada aqui deve ser publicado ou tratado como posição oficial sem o sign-off.
+> **Status (2026-10-22): revisado.** As perguntas da §9 e os pontos marcados **[VALIDAR]** foram respondidos no sign-off interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`, §1 e §2, itens 2, 5, 6, 7, 9 e 10), feito pelo Claude por delegação do controlador, sem revisão de advogado(a). Em resumo: o Refogando é agente de pequeno porte e não indica encarregado (o canal basta); 15 dias corridos; a URL fica por padrão e cai (`url_unlink`) quando identifica a pessoa ou quando ela se opõe ao tratamento como um todo; `record_deletion` quando quem pede é o dono do site ou dos direitos, que também entra na `TOS_DENYLIST`; titular estrangeiro é atendido igual. Onde o texto abaixo diverge do parecer, vale o parecer.
 
 ---
 
@@ -113,7 +113,7 @@ Cada pedido deve gerar entradas de auditoria (a skill DSAR e o Art. 10 da Res. C
 
 ---
 
-## 7. Base legal do dado do titular B (recap — depende do sign-off)
+## 7. Base legal do dado do titular B (recap — decidida no parecer de 2026-10-22: legítimo interesse)
 
 Para `source_name` + `source_url` de receitas `web_imported`, as bases candidatas são **legítimo interesse** (**Art. 7º, IX**) e/ou **dado comum tornado manifestamente público pelo titular** (**Art. 7º, §4º**), com **LIA documentada**. **[VALIDAR]** qual prevalece e se é preciso registrar a LIA formalmente. (Detalhamento no `docs/legal/briefing-juridico-descoberta-web.md`.)
 
@@ -123,9 +123,9 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 
 | # | Gap (versão de 2026-07-01) | Situação em 2026-09-24 |
 |---|---|---|
-| **GAP-1** | Política de Privacidade | **Fechado.** Publicada em `/privacidade` (PR #405 e #418), com a Parte (b) sobre a Descoberta na web. Sem sign-off jurídico. |
+| **GAP-1** | Política de Privacidade | **Fechado.** Publicada em `/privacidade` (PR #405 e #418), com a Parte (b) sobre a Descoberta na web. Revisada no parecer interno de 2026-10-22 (v3). |
 | **GAP-2** | Canal público + encarregado | **Fechado.** `/seus-direitos` + formulário + `privacidade@refogando.com`; encarregado nomeado (Fernando Lisboa) (PR #407). **Depende do dono:** criar o alias de e-mail (MX) que já está publicado. |
-| **GAP-3** | Remoção além do nome | **Fechado (mecanismo).** `url_unlink` / `record_deletion` (PR #409). Critério de uso pendente do advogado (§4.1). |
+| **GAP-3** | Remoção além do nome | **Fechado (mecanismo).** `url_unlink` / `record_deletion` (PR #409). Critério de uso no parecer interno de 2026-10-22, §2, item 2. |
 | **GAP-4** | Operador atender o titular B | **Fechado.** Remoção em lote por nome ou URL (PR #406). |
 | **GAP-5** | Auditoria DSAR | **Fechado.** `dsar_audit_event` com hash (PR #402). Ver ressalvas na §5. |
 | **GAP-6** | Formulário de intake + DSAR do titular A | **Fechado.** Formulário (PR #407); exportação e eliminação (PR #410), pela interface em Editar perfil → Seus dados desde #595, com a exportação completa (§6); expurgo de fotos após 180 dias (cron `account-purge`). Em 2026-10-22 (ADR-0050): a eliminação apaga na hora o conteúdo privado (§6), e a passada diária limpa as contas eliminadas antes disso. |
@@ -133,7 +133,7 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 | **Novo** | Fechamento do ticket | **Fechado.** O painel de SLA tem "Marcar como atendido" e "Recusar" (com motivo): `POST /api/admin/takedown-sla/resolve` muda o status e grava `DSAR_FULFILLED` (hash) ou `DSAR_REJECTED` (motivo). `DSAR_IDENTITY_VERIFIED` continua sem gravação (a verificação é feita fora do app). |
 | **Novo** | Retenção | **Resolvido (ADR-0050, #473; `docs/legal/parecer-interno-2026-10-22.md` §5).** Conteúdo privado de conta eliminada: apagado na hora (§6). Ticket de takedown encerrado: 12 meses após o encerramento (último registro de atendimento ou recusa; sem ele, o recebimento); ticket aberto nunca sai. Auditoria DSAR: 5 anos. Registros de uso de IA: 24 meses (extração, 30 dias). Sessões e verificações: quando vencem. Cron diário `/api/cron/retention`. Rate limit por IP: até 2 horas (limpeza de hora em hora). Histórico de criação de conta eliminada (só modelo, tokens e custo): 24 meses. |
 
-**O que ainda bloqueia ligar a Descoberta na web (#276):** o **sign-off jurídico** dos pontos **[VALIDAR]** — sobretudo §4.1 (quando a atribuição cede) e §7 (base legal) — e a configuração operacional do dono (alias de e-mail e Resend), sem a qual o canal publicado pode não receber pedidos.
+**Situação em 2026-10-22:** o sign-off dos pontos **[VALIDAR]** saiu no parecer interno (§4.1: parecer §2, item 2; §7: legítimo interesse, parecer §2, item 1), que fechou o #276. A operação por e-mail continua dependendo da configuração do dono (alias de e-mail e Resend).
 
 ---
 
@@ -162,4 +162,4 @@ Para `source_name` + `source_url` de receitas `web_imported`, as bases candidata
 ### Referências legais (nossa pesquisa — a validar)
 LGPD Arts. 6º III, 7º IX (legítimo interesse), 7º §4º (dado comum tornado manifestamente público pelo titular), 9º, 10, 16, 18 (I–IX), 19 (I, II), 20, 41; Lei 9.610/98 Art. 24, II (direito moral de atribuição — ter o nome indicado/anunciado como autor); Res. CD/ANPD 18/2024 (Encarregado); Res. CD/ANPD 15/2024 Art. 10 (retenção de registros); Res. CD/ANPD 2/2022 (ATPP — dispensa a indicação formal do Encarregado, exige canal de comunicação).
 
-*Rascunho interno do Refogando — não é aconselhamento jurídico. Depende de revisão e assinatura profissional antes de qualquer publicação ou go-live.*
+*Documento interno do Refogando — não é aconselhamento jurídico. Revisado no parecer interno de 2026-10-22, sem revisão de advogado(a).*

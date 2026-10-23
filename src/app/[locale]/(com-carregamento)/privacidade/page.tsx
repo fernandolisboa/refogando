@@ -6,12 +6,12 @@ import { MESSAGES } from '@/i18n/messages'
 /**
  * Política de Privacidade (#398 / parte de #276) — PUBLICADA.
  *
- * Por decisão do dono, a página foi ao ar SEM o sign-off jurídico (que segue PENDENTE em #276):
+ * Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o
+ * #276 (v3):
  *   • indexável (sem `robots: noindex`), listada no `sitemap.ts` e linkada no rodapé;
- *   • os placeholders foram resolvidos com os contatos reais, escritos DIRETO nas strings i18n
- *     (`messages.privacidade`) — o dono troca o encarregado/e-mail editando ali.
- * O conteúdo vem do rascunho da #276 (`docs/legal/politica-de-privacidade-secao-descoberta-web.md`);
- * a revisão jurídica formal ainda está em andamento e NÃO bloqueou a publicação.
+ *   • os contatos reais estão escritos DIRETO nas strings i18n (`messages.privacidade`) — o dono troca o
+ *     e-mail do canal editando ali.
+ * PR que muda dado, finalidade, fornecedor, prazo ou log atualiza o texto no mesmo PR (CLAUDE.md).
  *
  * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
  */

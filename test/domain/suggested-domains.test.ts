@@ -13,15 +13,14 @@ import { canonicalizeDomain } from '@/domain/web-search-config'
  */
 
 describe('SUGGESTED_DOMAINS', () => {
-  it('sugere só os domínios com ToS lido e recomendação "manter" (revisao-tos-allowlist §4.4)', () => {
-    expect(SUGGESTED_DOMAINS['pt-BR']).toEqual(['receitasnestle.com.br'])
+  it('sugere só os domínios com ToS lido e decisão "manter" (revisao-tos-allowlist §4.0, parecer §3)', () => {
+    expect(SUGGESTED_DOMAINS['pt-BR']).toEqual(['tudogostoso.com.br', 'receitasnestle.com.br'])
     expect(SUGGESTED_DOMAINS['en-US']).toEqual([])
   })
 
-  it('NÃO sugere os domínios em revisão manual de ToS (§4.5) — um clique pularia a leitura do contrato', () => {
+  it('NÃO sugere os 6 domínios vetados no parecer de 2026-10-22', () => {
     const all = [...SUGGESTED_DOMAINS['pt-BR'], ...SUGGESTED_DOMAINS['en-US']]
     for (const d of [
-      'tudogostoso.com.br',
       'cybercook.com.br',
       'receiteria.com.br',
       'allrecipes.com',

@@ -163,15 +163,16 @@ describe('WebSearchConfigSection — domínios sugeridos (#273)', () => {
     expect(present).toBeDisabled()
   })
 
-  it('não oferece domínios sem leitura de ToS e esconde o grupo vazio', async () => {
+  it('oferece só os dois domínios mantidos no parecer, nenhum vetado, e esconde o grupo vazio', async () => {
     mockFetch({
       'GET /api/admin/config': { ok: true, status: 200, body: configBody(false, []) },
     })
     renderSection()
 
     await screen.findByRole('button', { name: /receitasnestle\.com\.br/ })
-    expect(screen.queryByRole('button', { name: /tudogostoso\.com\.br/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /tudogostoso\.com\.br/ })).toBeEnabled()
     expect(screen.queryByRole('button', { name: /allrecipes\.com/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /cybercook\.com\.br/ })).toBeNull()
     expect(screen.queryByText(A.webSugeridosGrupoInternacional)).toBeNull()
   })
 

@@ -229,6 +229,28 @@ describe('POST /api/recipes/import (#165)', () => {
     expect(ok.status).toBe(201)
   })
 
+  it('allowlist gravada ANTES do veto (parecer 2026-10-22): recusa o domínio vetado e importa o mantido', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'import-legacy-allow@ex.com' })
+    // Linha de produção gravada quando cybercook ainda era aceito pelo PUT (o banco não é migrado).
+    await seedAllowlist(['cybercook.com.br', 'tudogostoso.com.br'])
+    setRecipeImporter(new FakeRecipeImporter())
+
+    const vetado = await importPost({ url: 'https://www.cybercook.com.br/receita/1' }, headers)
+    expect(vetado.status).toBe(403)
+    expect(((await vetado.json()) as { error: string }).error).toBe('dominio_nao_permitido')
+    expect(await getDb().select({ id: recipe.id }).from(recipe)).toHaveLength(0)
+
+    // O vetado sai sozinho na leitura: o resto da lista gravada segue valendo.
+    const mantido = await importPost({ url: 'https://www.tudogostoso.com.br/receita/2' }, headers)
+    expect(mantido.status).toBe(201)
+
+    // Sufixo pai gravado (`com.br`) não reabre o vetado: a denylist barra a URL por conta própria.
+    await seedAllowlist(['com.br'])
+    const sobSufixo = await importPost({ url: 'https://panelinha.com.br/receita/3' }, headers)
+    expect(sobSufixo.status).toBe(403)
+    expect(await getDb().select({ id: recipe.id }).from(recipe)).toHaveLength(1)
+  })
+
   it('SSRF guard (#164): allowlist VAZIA recusa TODA URL (fail-closed) → 403', async () => {
     const { headers } = await seedSessionHeaders({ email: 'import-emptyallow@ex.com' })
     // SEM seedAllowlist: app_config nasce vazia (allowlist []), fail-closed.
