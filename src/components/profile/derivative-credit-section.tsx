@@ -18,7 +18,7 @@ type Status = 'loading' | 'idle' | 'saving' | 'saved' | 'error' | 'load_failed'
 
 export function DerivativeCreditSection() {
   const { messages } = useLocale()
-  const m = messages.creditoVersao
+  const m = messages.creditoCopias
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
 
@@ -79,12 +79,12 @@ export function DerivativeCreditSection() {
   if (!authed) return null
 
   return (
-    <section aria-labelledby="credito-versoes-titulo" className="flex max-w-xl flex-col gap-4">
+    <section aria-labelledby="credito-copias-titulo" className="flex max-w-xl flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 id="credito-versoes-titulo" className="font-display text-xl font-semibold tracking-tight text-fg">
+        <h2 id="credito-copias-titulo" className="font-display text-xl font-semibold tracking-tight text-fg">
           {m.perfilTitulo}
         </h2>
-        <p id="credito-versoes-descricao" className="text-sm text-muted">
+        <p id="credito-copias-descricao" className="text-sm text-muted">
           {m.perfilDescricao}
         </p>
       </div>
@@ -112,14 +112,14 @@ export function DerivativeCreditSection() {
       ) : (
         <div className="flex items-start gap-2">
           <Checkbox
-            id="credito-versoes-toggle"
+            id="credito-copias-toggle"
             checked={creditar}
             onCheckedChange={(v) => void alterar(v === true)}
             disabled={status === 'saving'}
-            aria-describedby="credito-versoes-descricao"
+            aria-describedby="credito-copias-descricao"
             className="mt-0.5"
           />
-          <Label htmlFor="credito-versoes-toggle" className="font-normal leading-snug">
+          <Label htmlFor="credito-copias-toggle" className="font-normal leading-snug">
             {m.perfilToggle}
           </Label>
         </div>

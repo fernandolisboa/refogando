@@ -1027,7 +1027,7 @@ export const enUS: Messages = {
     buscaMostrarTudo: 'Show all',
   },
   // #610 (ADR-0052): credit on a derived Recipe. The title and the @ are links, so the sentence comes in pieces.
-  creditoVersao: {
+  creditoCopias: {
     baseadaEm: 'Based on',
     de: 'by',
     doCatalogo: 'from the catalog',
@@ -2432,7 +2432,7 @@ export const enUS: Messages = {
       'While a recipe of yours is private, it does not appear to other people and we use it only to make the app work. The exception is in the Privacy Policy: the ingredients you type by hand and the new cuisines you type under "Other" may reach the curators, without your name, to expand the vocabulary.',
       'When you publish a recipe, a review or a photo, you give Refogando a free, non-exclusive, worldwide license to store that content, display and reproduce it in the app, in search engines and in share cards, translate it automatically, adapt it to the app’s formats (such as thumbnails and shopping lists) and let other people save and rate the recipe, add it to their Meal plan and make copies of its text, without your photos ("Create my version" and "Clone"), which they can edit and publish. The license lasts while the content is published, including after you delete your account.',
       'You can unpublish or delete your content at any time. Copies that other people have already made of a public recipe stay with them.',
-      'A published copy shows "Based on … by @you", linking to your recipe while it stays published. If you do not want your name on copies, turn this off in Edit profile; to remove your name from a single copy, use "Remove my name" on its page.',
+      'A copy made directly from your recipe and published shows "Based on … by @you", linking to your recipe while it stays published. If you do not want your name on copies, turn this off in Edit profile; to remove your name from a single copy, use "Remove my name" on its page.',
       'If you delete your account, the recipes you published and the reviews you wrote stay on Refogando without your name, because other people rely on them. If you want a public recipe gone, delete it before deleting your account.',
       'Only publish what is yours or what you have the right to publish. Do not copy text or photos from books, websites or other people’s profiles.',
     ],

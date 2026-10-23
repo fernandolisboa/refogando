@@ -108,7 +108,7 @@ export async function loadDerivedCredit(
 /**
  * "Retirar meu nome" / "Mostrar meu nome de novo" (#610): o DONO DA BASE liga ou desliga o crédito numa derivada.
  * Autoriza pela linhagem: a receita `id` é derivada (`lineage_kind='edited'`) de uma receita cujo `owner_id` é o
- * leitor, e a derivada é leitura pública (é onde o crédito aparece). Qualquer outro caso, inclusive o dono da
+ * leitor, a derivada é leitura pública (é onde o crédito aparece) e o crédito valeria sem a retirada. Qualquer outro caso, inclusive o dono da
  * DERIVADA (o crédito não é dele para tirar), é `not_found` (404 leak-safe: não diz se a receita existe).
  *
  * Retirar de novo mantém a data da primeira retirada; mostrar zera. Não toca `updated_at` (não é edição da receita).
@@ -125,6 +125,9 @@ export async function setDerivedCreditVisible(
       resultKind: recipe.resultKind,
       moderationRemovedAt: recipe.moderationRemovedAt,
       curationStatus: recipe.curationStatus,
+      lineageKind: recipe.lineageKind,
+      parentRecipeId: recipe.parentRecipeId,
+      creditRemovedAt: recipe.creditRemovedAt,
     })
     .from(recipe)
     .innerJoin(parent, eq(parent.id, recipe.parentRecipeId))
@@ -133,6 +136,15 @@ export async function setDerivedCreditVisible(
     )
     .limit(1)
   if (!gate || gate.ownerId === input.viewerId || !eligibleForPublicRead(gate)) return { kind: 'not_found' }
+  // A mesma regra que oferece o controle na página: só quando o nome estaria lá se não fosse a retirada (base
+  // pública, conta pública, crédito ligado no perfil). Senão "mostrar de novo" responderia `exibir: true` sem
+  // nada aparecer. O locale não muda essa resposta.
+  const { creditoDoAutor } = await loadDerivedCredit(db, {
+    recipe: gate,
+    locale: DEFAULT_LOCALE,
+    viewerId: input.viewerId,
+  })
+  if (!creditoDoAutor) return { kind: 'not_found' }
 
   await db
     .update(recipe)

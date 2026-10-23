@@ -131,18 +131,15 @@ export function decideDerivedCredit(input: DerivedCreditInput): DerivedCreditDec
   if (!needsDerivedCreditLookup(derived, viewerId) || base == null || base.id !== derived.parentRecipeId) return {}
 
   const basedOn = decideBasedOn(input)
-  // Controle do dono da base: só ele, nunca o dono da derivada (o crédito não é dele para tirar). Com o nome na
-  // página ⇒ "Retirar"; retirado ⇒ "Mostrar de novo". Crédito valendo mas fora da página (base privada, opt-out
-  // global) ⇒ nada, porque não há o que retirar.
+  // Controle do dono da base: só ele, nunca o dono da derivada (o crédito não é dele para tirar). Só aparece quando
+  // o nome dele estaria na página se não fosse a retirada; aí "Retirar" (nome na página) ou "Mostrar de novo"
+  // (retirado). Base privada, opt-out global ou conta não pública ⇒ nada, porque "mostrar de novo" não mostraria.
   const isBaseAuthor =
     viewerId != null && base.ownerId != null && base.ownerId === viewerId && derived.ownerId !== viewerId
-  const creditoDoAutor: CreditoDoAutor | undefined = !isBaseAuthor
-    ? undefined
-    : derived.creditRemovedAt != null
-      ? { exibir: false }
-      : basedOn?.author != null
-        ? { exibir: true }
-        : undefined
+  const semRetirada =
+    derived.creditRemovedAt == null ? basedOn : decideBasedOn({ ...input, derived: { ...derived, creditRemovedAt: null } })
+  const creditoDoAutor: CreditoDoAutor | undefined =
+    isBaseAuthor && semRetirada?.author != null ? { exibir: derived.creditRemovedAt == null } : undefined
 
   return {
     ...(basedOn ? { basedOn } : {}),

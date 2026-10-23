@@ -4,11 +4,11 @@ import { getDb } from '@/server/deps'
 import { users } from '@/db/schema'
 
 /**
- * Crédito nas versões das minhas receitas (#610, ADR-0052) — Editar perfil.
+ * Crédito nas cópias das minhas receitas (#610, ADR-0052) — Editar perfil.
  *
  * GET → `{ creditar }`: a preferência (`users.credit_on_derivatives`) de ver "Baseada na receita … de @handle" nas
- * versões que outras pessoas publicam das receitas dela. PUT `{ creditar: boolean }` → `{ creditar }`; corpo inválido
- * → 400 `dados_invalidos`. Retirar o nome de UMA versão é na página dela (`PUT /api/recipes/[id]/credit`). Rota
+ * cópias que outras pessoas publicam das receitas dela. PUT `{ creditar: boolean }` → `{ creditar }`; corpo inválido
+ * → 400 `dados_invalidos`. Retirar o nome de UMA cópia é na página dela (`PUT /api/recipes/[id]/credit`). Rota
  * própria porque o `PATCH /api/me` exige o formulário inteiro (nome obrigatório) e esta é uma caixa que salva na hora.
  *
  * Owner-only via `requireSession` (401 = Visitante ou conta desativada); sem id no caminho ⇒ sem IDOR. Por-titular:

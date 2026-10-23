@@ -166,6 +166,26 @@ describe('PUT /api/recipes/[id]/credit — "Retirar meu nome"', () => {
     expect((await publicBasedOn(d.slug))?.author).toBeDefined()
   })
 
+  it('retirado e depois a base ficou privada ou o crédito desligado ⇒ sem controle, e "mostrar de novo" é 404', async () => {
+    const ana = await seedSessionHeaders({ email: 'ana9@credito.test' })
+    const outro = await seedSessionHeaders({ email: 'outro9@credito.test' })
+    const bia = await seedSessionHeaders({ email: 'bia9@credito.test' })
+    const baseId = await seedBase({ ownerId: ana.userId })
+    const d = await seedDerived({ ownerId: bia.userId, parentId: baseId })
+    expect((await getView(d.id, outro.headers)).creditoDoAutor).toBeUndefined()
+
+    expect((await putCredit(d.id, { exibir: false }, ana.headers)).status).toBe(200)
+    await getDb().update(recipe).set({ visibility: 'private' }).where(eq(recipe.id, baseId))
+    expect((await getView(d.id, ana.headers)).creditoDoAutor).toBeUndefined()
+    expect((await putCredit(d.id, { exibir: true }, ana.headers)).status).toBe(404)
+    expect(await creditRemovedAt(d.id)).toBeInstanceOf(Date)
+
+    await getDb().update(recipe).set({ visibility: 'public' }).where(eq(recipe.id, baseId))
+    await getDb().update(users).set({ creditOnDerivatives: false }).where(eq(users.id, ana.userId))
+    expect((await getView(d.id, ana.headers)).creditoDoAutor).toBeUndefined()
+    expect((await putCredit(d.id, { exibir: true }, ana.headers)).status).toBe(404)
+  })
+
   it('anônimo 401; corpo inválido 400; dona da derivada, terceiro, uuid ruim e derivada privada 404', async () => {
     const ana = await seedSessionHeaders({ email: 'ana6@credito.test' })
     const bia = await seedSessionHeaders({ email: 'bia6@credito.test' })

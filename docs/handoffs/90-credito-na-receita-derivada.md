@@ -4,7 +4,7 @@
 **PR:** "Crédito na receita derivada: \"Baseada na receita … de @x\" (#610)".
 **Base:** `main` depois do #629 (#606).
 **Migração:** 0084 (`recipe.credit_removed_at`, `users.credit_on_derivatives`).
-**ADR:** ADR-0052 (novo); ADR-0051 (atualização: risco (i) resolvido, Termos v1.4).
+**ADR:** ADR-0052 (novo); ADR-0051 (atualização: risco (i) reduzido, Termos v1.4).
 
 ## 1. Escopo
 
@@ -14,7 +14,7 @@ Decisão do Fernando: a derivada publicada ("Criar minha versão" ou "Clonar") m
 - **Decisão pura.** `decideDerivedCredit` (`src/domain/derived-credit.ts`). O doc do topo lista as condições: base pública e não importada, dono com conta pública (`publicAccountFilter`), crédito ligado, não retirado, dono diferente. Pai imediato.
 - **Leitura.** `loadDerivedCredit` (`src/server/recipe/derived-credit.ts`), uma query, só para derivadas. Chamado na página pública por slug e em `loadRecipeDetailView`.
 - **Opt-out global.** Editar perfil → "Crédito nas cópias" (`DerivativeCreditSection`, `GET/PUT /api/me/derivative-credit`).
-- **Retirar de uma cópia.** `PUT /api/recipes/[id]/credit { exibir }`, só o dono da base (autorização pela linhagem; o resto é 404). O controle (`DerivedCreditAuthorControl`) aparece na área de gestão da cópia quando a view buscada traz `creditoDoAutor`, que o servidor decide pela sessão.
+- **Retirar de uma cópia.** `PUT /api/recipes/[id]/credit { exibir }`, só o dono da base (autorização pela linhagem; o resto é 404). O controle (`DerivedCreditAuthorControl`) aparece na área de gestão da cópia quando a view buscada traz `creditoDoAutor`, que o servidor decide pela sessão, e só quando o nome estaria na página se não fosse a retirada (o `PUT` aplica a mesma regra). O estado mora na `RecipeManagementArea` (controle controlado), então cada busca nova da vista o sobrescreve.
 - **Legal.** Política v3.5 (item 3.1) e Termos v1.4 (item 5, novo 5[4]; destaques do CDC passam a 5[2], 5[3], 5[5]). Sem aviso de 15 dias: ADR-0052, "Por que vale na publicação". ROPA (operações 1 e 15 + atualização). Export com `account.creditOnDerivatives`.
 
 ## 2. O que ler primeiro
@@ -40,7 +40,7 @@ Decisão do Fernando: a derivada publicada ("Criar minha versão" ou "Clonar") m
 
 - JSON-LD `isBasedOn` (só se a página tiver ISR e valer para SEO).
 - Cards da Busca e do feed não mostram o crédito.
-- Não há lista, em Editar perfil, das cópias de onde a pessoa tirou o nome: o desfazer fica na página da cópia.
+- Não há lista, em Editar perfil, das cópias de onde a pessoa retirou o nome: o desfazer fica na página da cópia.
 
 ## 6. Critério de saída
 

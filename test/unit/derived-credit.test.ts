@@ -131,11 +131,15 @@ describe('decideDerivedCredit — o controle do dono da base', () => {
     expect(d).toEqual({ creditoDoAutor: { exibir: false } })
   })
 
-  it('retirado e base já privada ⇒ ainda dá para desfazer', () => {
+  it.each([
+    ['base já privada', { base: { visibility: 'private' } }],
+    ['opt-out global', { baseOwner: { creditOnDerivatives: false } }],
+    ['conta não pública', { baseOwner: { publicAccount: false } }],
+  ] as const)('retirado e %s ⇒ sem controle ("mostrar de novo" não mostraria nada)', (_nome, over) => {
     const d = decideDerivedCredit(
-      input({ viewerId: ANA, derived: { creditRemovedAt: new Date() }, base: { visibility: 'private' } }),
+      input({ viewerId: ANA, derived: { creditRemovedAt: new Date() }, ...(over as Parameters<typeof input>[0]) }),
     )
-    expect(d.creditoDoAutor).toEqual({ exibir: false })
+    expect(d).toEqual({})
   })
 
   it('crédito valendo mas fora da página (opt-out global) ⇒ nada a retirar, sem controle', () => {

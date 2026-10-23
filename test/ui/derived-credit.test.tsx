@@ -10,7 +10,7 @@ import type { RecipeView } from '@/domain/recipe-read'
  *  - a linha "Baseada na receita <título> de @handle" (ou "do catálogo") no detalhe, com os dois links;
  *  - o controle do dono da BASE na área de gestão, que só aparece quando a view buscada pela sessão traz
  *    `creditoDoAutor` (o cliente nunca deduz pelo @): retirar / mostrar de novo, e o erro;
- *  - a caixa "Mostrar meu nome nas versões das minhas receitas" em Editar perfil.
+ *  - a caixa "Mostrar meu nome nas cópias das minhas receitas" em Editar perfil.
  */
 
 vi.mock('next/navigation', () => ({
@@ -36,7 +36,7 @@ import { PortionScaleProvider } from '@/components/recipe/recipe-portion-scale-c
 import { RecipeManagementArea } from '@/components/recipe/recipe-management-area'
 import { DerivativeCreditSection } from '@/components/profile/derivative-credit-section'
 
-const C = ptBR.creditoVersao
+const C = ptBR.creditoCopias
 
 function view(over: Partial<RecipeView> = {}): RecipeView {
   return {
@@ -162,6 +162,20 @@ describe('controle do dono da base (área de gestão)', () => {
     expect(screen.getByText(C.seuNome)).toBeInTheDocument()
   })
 
+  it('nova busca da view com 404 (a cópia saiu do ar): o controle some', async () => {
+    let status = 200
+    mockFetch(() => (status === 200 ? { status, body: view({ creditoDoAutor: { exibir: true } }) } : { status, body: {} }))
+    const { rerender } = renderArea()
+    expect(await screen.findByRole('button', { name: C.retirar })).toBeInTheDocument()
+    status = 404
+    rerender(
+      <LocaleProvider initialLocale="pt-BR">
+        <RecipeManagementArea view={view()} locale="en-US" reviewImage={false} />
+      </LocaleProvider>,
+    )
+    await waitFor(() => expect(screen.queryByRole('button', { name: C.retirar })).toBeNull())
+  })
+
   it('view buscada sem creditoDoAutor: nenhum controle', async () => {
     mockFetch(() => ({ status: 200, body: view() }))
     renderArea()
@@ -170,7 +184,7 @@ describe('controle do dono da base (área de gestão)', () => {
   })
 })
 
-describe('Editar perfil — crédito nas versões', () => {
+describe('Editar perfil — crédito nas cópias', () => {
   function renderSection() {
     return render(
       <LocaleProvider initialLocale="pt-BR">

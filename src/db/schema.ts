@@ -856,7 +856,7 @@ export const users = pgTable(
     // anonymizedAt mais velho que 180 dias. NULLABLE, sem default: ADD COLUMN metadata-only (sem
     // rewrite) na tabela populada; contas existentes nascem NULL (não anonimizadas).
     anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
-    // Crédito nas derivadas (#610, ADR-0052): a pessoa quer ver "Baseada na receita … de @handle" nas versões que
+    // Crédito nas derivadas (#610, ADR-0052): a pessoa quer ver "Baseada na receita … de @handle" nas cópias que
     // outras pessoas publicam das receitas dela? Default true (o crédito é o direito do autor, Lei 9.610 art. 24,
     // II; quem não quer o vínculo desliga em Editar perfil). ADD COLUMN com default constante = metadata-only.
     creditOnDerivatives: boolean('credit_on_derivatives').notNull().default(true),

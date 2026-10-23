@@ -64,7 +64,8 @@ export function RecipeManagementArea({
   type Resolution = 'idle' | 'owner' | 'not-owner' | 'error'
   const [ownerView, setOwnerView] = useState<RecipeView | null>(null)
   // #610: a view buscada de quem NÃO é o dono pode trazer `creditoDoAutor` (o leitor é o dono da BASE desta
-  // derivada). Só esse campo é usado dela.
+  // derivada). Só esse campo é usado dela. O estado mora AQUI (o controle é controlado): cada busca nova o
+  // sobrescreve, então um blip de sessão ou um 404 não deixam um estado velho na tela.
   const [creditoDoAutor, setCreditoDoAutor] = useState<RecipeView['creditoDoAutor']>(undefined)
   const [resolution, setResolution] = useState<Resolution>('idle')
 
@@ -79,6 +80,7 @@ export function RecipeManagementArea({
         if (res.ok) {
           const v = (await res.json()) as RecipeView
           if (v?.canManage) {
+            setCreditoDoAutor(undefined)
             setOwnerView(v)
             setResolution('owner')
           } else {
@@ -86,13 +88,17 @@ export function RecipeManagementArea({
             setResolution('not-owner') // pública de outro: 200 sem canManage.
           }
         } else if (res.status === 404) {
+          setCreditoDoAutor(undefined) // #610: a derivada saiu do ar desde a última busca ⇒ sem controle.
           setResolution('not-owner') // 404 leak-safe: privada de outro / inexistente — não-gerenciável.
         } else {
+          setCreditoDoAutor(undefined)
           setResolution('error') // 5xx/401/etc: indeterminado.
         }
       })
       .catch(() => {
-        if (!cancelled) setResolution('error') // rede caiu / JSON inválido: indeterminado.
+        if (cancelled) return
+        setCreditoDoAutor(undefined)
+        setResolution('error') // rede caiu / JSON inválido: indeterminado.
       })
     return () => {
       cancelled = true
@@ -132,7 +138,13 @@ export function RecipeManagementArea({
   if (resolution === 'not-owner') {
     return (
       <>
-        {creditoDoAutor && <DerivedCreditAuthorControl recipeId={view.id} initial={creditoDoAutor} />}
+        {creditoDoAutor && (
+          <DerivedCreditAuthorControl
+            recipeId={view.id}
+            exibir={creditoDoAutor.exibir}
+            onChange={(exibir) => setCreditoDoAutor({ exibir })}
+          />
+        )}
         <RecipeDetailActions view={view} locale={locale} />
       </>
     )

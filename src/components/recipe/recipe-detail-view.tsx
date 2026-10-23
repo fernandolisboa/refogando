@@ -398,19 +398,19 @@ export function RecipeDetailView({
           de gestão (a sessão é lida no cliente, e esta árvore é a pública/cacheável). */}
       {view.basedOn && (
         <p className="text-sm text-muted">
-          {m.creditoVersao.baseadaEm}{' '}
+          {m.creditoCopias.baseadaEm}{' '}
           <Link href={view.basedOn.href} className="font-medium text-fg hover:underline">
             {view.basedOn.titulo}
           </Link>{' '}
           {view.basedOn.author ? (
             <>
-              {m.creditoVersao.de}{' '}
+              {m.creditoCopias.de}{' '}
               <Link href={`/u/${view.basedOn.author.handle}`} className="hover:text-fg hover:underline">
                 @{view.basedOn.author.handle}
               </Link>
             </>
           ) : (
-            m.creditoVersao.doCatalogo
+            m.creditoCopias.doCatalogo
           )}
         </p>
       )}

@@ -35,7 +35,7 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  */
 export async function loadRecipeDetailView(
   db: Database,
-  input: { id: string; requestLocale: string; headers: Headers },
+  input: { id: string; requestLocale: string; headers: Headers; pageLocale?: string },
 ): Promise<RecipeView | null> {
   const { id, requestLocale, headers } = input
   if (!isUuid(id)) return null
@@ -123,7 +123,9 @@ export async function loadRecipeDetailView(
     isOwner && rows.recipe.lineageId != null
       ? loadGallery(db, rows.recipe.lineageId, rows.recipe.imageId ?? null)
       : Promise.resolve(undefined),
-    loadDerivedCredit(db, { recipe: rows.recipe, locale: requestLocale, viewerId }),
+    // #610: o link "Baseada na receita" fica no idioma da INTERFACE (`pageLocale`); `?original=` só troca o
+    // texto da receita, não o prefixo dos links. Sem `pageLocale` (a rota GET), o próprio `requestLocale`.
+    loadDerivedCredit(db, { recipe: rows.recipe, locale: input.pageLocale ?? requestLocale, viewerId }),
   ])
 
   return resolveRecipeView({

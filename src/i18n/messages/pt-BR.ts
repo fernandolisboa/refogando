@@ -1104,19 +1104,19 @@ export const ptBR = {
   // #610 (ADR-0052): crédito na Receita derivada. Na página dela, "Baseada na receita <título> de @handle" (ou "do
   // catálogo"); o título e o @ são links, então a frase vem em pedaços (`baseadaEm` + título + `de` + @handle). O dono
   // da base vê "Retirar meu nome" ali mesmo. Em Editar perfil, a escolha de ser creditado nas cópias.
-  creditoVersao: {
+  creditoCopias: {
     baseadaEm: 'Baseada na receita',
     de: 'de',
     doCatalogo: 'do catálogo',
     seuNome: 'Esta é uma cópia de uma receita sua, e o seu nome aparece nela.',
     retirar: 'Retirar meu nome',
-    retirado: 'Você tirou o seu nome desta cópia da sua receita.',
+    retirado: 'Você retirou o seu nome desta cópia da sua receita.',
     mostrarDeNovo: 'Mostrar meu nome de novo',
     salvando: 'Salvando…',
     erro: 'Não foi possível salvar. Tente de novo.',
     perfilTitulo: 'Crédito nas cópias',
     perfilDescricao:
-      'Quando alguém publica uma cópia de uma receita sua ("Criar minha versão" ou "Clonar"), a página dela mostra "Baseada na receita … de @você", com link para a sua, enquanto a sua estiver publicada. Para tirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
+      'Quando alguém publica uma cópia de uma receita sua ("Criar minha versão" ou "Clonar"), a página dela mostra "Baseada na receita … de @você", com link para a sua, enquanto a sua estiver publicada. Para retirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
     perfilToggle: 'Mostrar meu nome nas cópias das minhas receitas',
     perfilSalvo: 'Preferência salva.',
     perfilErroCarregar: 'Não foi possível carregar esta preferência.',
@@ -2556,7 +2556,7 @@ export const ptBR = {
       'Enquanto uma receita sua é privada, ela não aparece para outras pessoas e nós a usamos só para fazer o app funcionar. A exceção está na Política de Privacidade: os ingredientes que você escreve à mão e as cozinhas novas que você escreve em "Outra" podem chegar à curadoria, sem o seu nome, para ampliar o vocabulário.',
       'Quando você publica uma receita, uma avaliação ou uma foto, você dá ao Refogando uma licença gratuita, não exclusiva e válida no mundo todo para guardar esse conteúdo, exibi-lo e reproduzi-lo no app, nos buscadores e nos cards de compartilhamento, traduzi-lo automaticamente, adaptá-lo aos formatos do app (como miniaturas e lista de compras) e deixar que outras pessoas salvem e avaliem a receita, a coloquem no Cardápio e façam cópias do texto dela, sem as suas fotos ("Criar minha versão" e "Clonar"), que elas podem editar e publicar. A licença vale enquanto o conteúdo estiver publicado, inclusive depois que você excluir a conta.',
       'Você pode despublicar ou apagar o seu conteúdo a qualquer momento. As cópias que outras pessoas já fizeram de uma receita pública continuam com elas.',
-      'Uma cópia publicada mostra "Baseada na receita … de @você", com link para a sua receita enquanto ela estiver publicada. Se não quiser o seu nome nas cópias, desligue isso em Editar perfil; para tirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
+      'Uma cópia feita direto da sua receita e publicada mostra "Baseada na receita … de @você", com link para a sua receita enquanto ela estiver publicada. Se não quiser o seu nome nas cópias, desligue isso em Editar perfil; para retirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
       'Se você eliminar a conta, as receitas que você publicou e as avaliações que escreveu continuam no Refogando sem o seu nome, porque outras pessoas dependem delas. Se quiser que uma receita pública suma, apague-a antes de eliminar a conta.',
       'Só publique o que é seu ou o que você tem direito de publicar. Não copie texto nem foto de livros, sites ou perfis de outras pessoas.',
     ],

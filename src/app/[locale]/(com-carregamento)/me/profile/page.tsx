@@ -46,7 +46,7 @@ export default async function ProfilePage() {
       <ProfileForm />
       {/* ADR-0041: restrições alimentares salvas — seção PRIVADA, separada do perfil (público). */}
       <RestricoesPerfilForm />
-      {/* #610 (ADR-0052): crédito nas versões que outras pessoas publicam das minhas receitas. */}
+      {/* #610 (ADR-0052): crédito nas cópias que outras pessoas publicam das minhas receitas. */}
       <DerivativeCreditSection />
       {/* #595: Seus dados — export LGPD (Art. 18, II e V) e exclusão da conta (arts. 15, III e 16; 18, VI
           para as restrições salvas). */}
