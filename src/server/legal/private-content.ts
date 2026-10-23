@@ -108,6 +108,9 @@ export const ERASURE_POLICY = {
   'report.reporter_id': 'keep',
   'report.resolved_by': 'keep',
   'dsar_audit_event.actor_id': 'keep_ledger',
+  // #606: o registro do encerramento pela equipe nasce NA eliminação e fica os 5 anos dele (retenção).
+  'account_closure.user_id': 'keep_ledger',
+  'account_closure.decided_by': 'keep',
   'shopping_list.user_id': 'delete',
   'meal_plan_entry.user_id': 'delete',
   'meal_plan_suggestion_event.user_id': 'keep_ledger',

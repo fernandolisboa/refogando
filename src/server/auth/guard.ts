@@ -20,7 +20,8 @@ import { isFreshSession } from '@/domain/fresh-session'
  */
 
 // Session/GuardResult são internos (sem consumidor externo): export removido (QM-4).
-// Os handlers só importam requireSession/requireRole, nunca esses tipos.
+// Os handlers só importam as funções `require*` (`requireSession`, `requireSessionFromHeaders`, `requireRole`,
+// `requireFreshSession`, `requireFreshRole`), nunca esses tipos.
 type Session = { user: { id: string; role: Role | null; plan: Plan; deletedAt: Date | null } }
 type GuardOk = { ok: true; session: Session }
 type GuardFail = { ok: false; response: Response }
@@ -46,6 +47,25 @@ function toSession(user: RawSessionUser): Session {
   return { user: { id: user.id, role, plan, deletedAt } }
 }
 
+/** Recusa no formato de sempre: corpo `{ error: '<chave>' }` com o status dado. */
+function deny(status: 401 | 403, error: string): GuardFail {
+  return { ok: false, response: Response.json({ error }, { status }) }
+}
+
+/**
+ * Papel abaixo do mínimo ⇒ 403 `papel_insuficiente`; senão `null`. FAIL-CLOSED (#51): só `allow` passa. Um papel
+ * `null`/desconhecido de usuário AUTENTICADO faz `decideRole` devolver `unauthenticated`/`forbidden`, e QUALQUER
+ * coisa que não seja `allow` vira 403. (Barrar só em `forbidden` era fail-OPEN: `null` → `unauthenticated` passava.)
+ */
+function roleDenial(session: Session, min: Role): GuardFail | null {
+  return decideRole(session.user.role, min) === 'allow' ? null : deny(403, 'papel_insuficiente')
+}
+
+/** #602 — sessão criada há mais de `FRESH_SESSION_MAX_AGE_MS` ⇒ 403 `reautenticar`; senão `null`. */
+function staleSessionDenial(createdAt: Date | string | null, now: Date): GuardFail | null {
+  return isFreshSession(createdAt, now) ? null : deny(403, 'reautenticar')
+}
+
 /** 401 se sem sessão ou conta soft-deletada (D4). */
 export async function requireSession(req: Request): Promise<GuardResult> {
   return requireSessionFromHeaders(req.headers)
@@ -59,18 +79,14 @@ export async function requireSessionFromHeaders(headers: Headers): Promise<Guard
   return (await resolveSession(headers)).result
 }
 
-/** O guard de `requireSession` + quando a sessão foi CRIADA (para `requireFreshSession`). */
+/** O guard de `requireSession` + quando a sessão foi CRIADA (para as variantes `requireFresh*`). */
 async function resolveSession(headers: Headers): Promise<{ result: GuardResult; createdAt: Date | string | null }> {
   const raw = await getAuth().api.getSession({ headers })
   const user = raw?.user as RawSessionUser | undefined
-  if (!user) {
-    return { result: { ok: false, response: Response.json({ error: 'nao_autenticado' }, { status: 401 }) }, createdAt: null }
-  }
+  if (!user) return { result: deny(401, 'nao_autenticado'), createdAt: null }
   // E5 — soft-delete sem seam: a sessão é válida, mas a conta foi desativada (deletedAt
   // != null). Barramos com 401 conta_desativada. cookieCache fica OFF (senão ficaria stale).
-  if (user.deletedAt != null) {
-    return { result: { ok: false, response: Response.json({ error: 'conta_desativada' }, { status: 401 }) }, createdAt: null }
-  }
+  if (user.deletedAt != null) return { result: deny(401, 'conta_desativada'), createdAt: null }
   const createdAt = (raw?.session as { createdAt?: Date | string } | undefined)?.createdAt ?? null
   return { result: { ok: true, session: toSession(user) }, createdAt }
 }
@@ -83,22 +99,23 @@ async function resolveSession(headers: Headers): Promise<{ result: GuardResult; 
 export async function requireFreshSession(req: Request, now: Date = new Date()): Promise<GuardResult> {
   const { result, createdAt } = await resolveSession(req.headers)
   if (!result.ok) return result
-  if (!isFreshSession(createdAt, now)) {
-    return { ok: false, response: Response.json({ error: 'reautenticar' }, { status: 403 }) }
-  }
-  return result
+  return staleSessionDenial(createdAt, now) ?? result
 }
 
 /** 401 sem sessão / conta desativada; 403 se papel < mínimo (fail-closed, E11). */
 export async function requireRole(req: Request, min: Role): Promise<GuardResult> {
   const r = await requireSession(req)
   if (!r.ok) return r
-  // FAIL-CLOSED (#51): só `allow` passa. `requireSession` já tratou ausência de sessão (401),
-  // então um papel `null`/desconhecido que chega aqui é um usuário AUTENTICADO com papel fora
-  // de `ROLES` → decideRole devolve `unauthenticated`/`forbidden`; QUALQUER coisa que não seja
-  // `allow` vira 403. (Barrar só em `forbidden` era fail-OPEN: `null` → `unauthenticated` passava.)
-  if (decideRole(r.session.user.role, min) !== 'allow') {
-    return { ok: false, response: Response.json({ error: 'papel_insuficiente' }, { status: 403 }) }
-  }
-  return r
+  return roleDenial(r.session, min) ?? r
+}
+
+/**
+ * #606 — `requireRole` + sessão RECENTE (`requireFreshSession`), para a ação destrutiva da equipe (eliminar a conta de
+ * outra pessoa pelo Console). O papel vem antes: quem não é admin recebe o 403 `papel_insuficiente` de sempre, nunca
+ * o convite para entrar de novo. Admin com sessão antiga ⇒ 403 `reautenticar`.
+ */
+export async function requireFreshRole(req: Request, min: Role, now: Date = new Date()): Promise<GuardResult> {
+  const { result, createdAt } = await resolveSession(req.headers)
+  if (!result.ok) return result
+  return roleDenial(result.session, min) ?? staleSessionDenial(createdAt, now) ?? result
 }

@@ -11,6 +11,7 @@ import type { Messages } from './pt-BR'
 import {
   DATA_POLITICA_V3_2,
   DATA_POLITICA_V3_3,
+  DATA_POLITICA_V3_4,
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
@@ -551,6 +552,15 @@ export const enUS: Messages = {
       'We received a request to reset the password for your Refogando account. Use the link below to create a new password. It is valid for 1 hour and can only be used once.',
     emailResetBotao: 'Create a new password',
     emailResetIgnorar: "If this wasn't you, ignore this email. Your current password still works.",
+    // Account closure email for a serious violation of the Terms (#606, Terms item 8). Sent after the team erases
+    // the account in the Console. `{nome}` interpolated on the server; the button leads to the Terms.
+    emailEncerradaAssunto: 'Your Refogando account was closed',
+    emailEncerradaSaudacao: 'Hi {nome},',
+    emailEncerradaCorpo:
+      'We closed your Refogando account for a serious violation of the Terms of Use (item 8). The account was erased: your identification data was anonymized and your private content was deleted. The public recipes and reviews that remain in the app show without your name.',
+    emailEncerradaBotao: 'Read the Terms of Use',
+    emailEncerradaRevisao:
+      'If you think this was a mistake, you can ask for an explanation or contest the decision by writing to privacidade@refogando.com.',
     // Email confirmation (#470). Sign-up does NOT sign in: the screen asks to open the link. The copy is the
     // same whether or not the email has an account (no enumeration) — hence the "already have an account" note.
     confirmeEmailTitulo: 'Check your email',
@@ -1375,6 +1385,40 @@ export const enUS: Messages = {
     usuariosPapelDescAdmin: 'Full Console access, including AI, plan and roles.',
     usuariosPapelProprio: "You can't change your own role. Ask another admin.",
     usuariosPapelContaInativa: "Account deactivated: the role can't change.",
+    // ── Erase account by the team (#606, ADR-0051 P1/P3): drawer section and confirmation dialog. ──
+    usuariosEliminarTitulo: 'Erase account',
+    usuariosEliminarDescricao:
+      'For the account of someone under 16 or closed for a serious violation of the Terms. People who want to leave erase their own account in Your data.',
+    usuariosEliminarBotao: 'Erase account',
+    usuariosEliminarTravaPropria: "You can't erase your own account here. Use Edit profile → Your data.",
+    usuariosEliminarTravaAdmin: 'Administrator account: change the role before erasing.',
+    usuariosEliminarDialogoTitulo: "Erase {nome}'s account",
+    usuariosEliminarDialogoDescricao:
+      "The identification data is anonymized and the private content is deleted now. This can't be undone.",
+    usuariosEliminarMotivoLegenda: 'Reason',
+    usuariosEliminarMotivoMenor: 'Under 16',
+    usuariosEliminarMotivoMenorAjuda:
+      "Before: we wrote to the account's email asking for the age, and it wasn't confirmed within 7 days (Terms, item 2).",
+    usuariosEliminarMotivoViolacao: 'Serious or repeated violation of the Terms',
+    usuariosEliminarMotivoViolacaoAjuda:
+      'Before: we told the person by email, with the reason, and, except for illegal content, waited 15 days for them to download their data (Terms, item 8).',
+    usuariosEliminarRemoverPublico: "The person's public recipes and reviews are removed too.",
+    usuariosEliminarRemoverPublicoAjuda:
+      'The license given by someone under 16 is void (Brazilian Civil Code, arts. 3 and 166, I), and the Terms promise to erase what the account published.',
+    usuariosEliminarAvisar: 'Tell the person by email that the account was closed',
+    usuariosEliminarAvisarAjuda: 'Uncheck only if there is a legal impediment.',
+    usuariosEliminarConfirmarLabel: "To confirm, type the account's @: {handle}",
+    usuariosEliminarCancelar: 'Cancel',
+    usuariosEliminarConfirmar: 'Erase permanently',
+    usuariosEliminarEliminando: 'Erasing…',
+    usuariosEliminarFeito: 'Account erased.',
+    usuariosEliminarEmailNaoEnviado: "The notice email didn't go out. Tell the person from privacidade@refogando.com.",
+    usuariosEliminarReautenticar: 'For security, sign in again before erasing an account.',
+    usuariosEliminarReautenticarLink: 'Sign in again',
+    usuariosEliminarErroInativa: 'This account is already deactivated or erased.',
+    usuariosEliminarErroConfirmacao: "The @ you typed doesn't match the account's.",
+    usuariosEliminarErroNaoEncontrada: 'Account not found.',
+    usuariosEliminarErro: "Couldn't erase the account. Try again.",
     papelUsuario: 'User',
     papelCurador: 'Curator',
     papelAdmin: 'Administrator',
@@ -2054,10 +2098,10 @@ export const enUS: Messages = {
     ],
     s36Titulo: '3.6. Account security and abuse prevention',
     s36Valores: [
-      'the IP address and browser (user agent) of each sign-in session; the IP address in the attempt limits of the account routes (such as sign-in, sign-up and password), erased within 2 hours after the last attempt, and, in memory only, to limit the pace of the Your Rights form and of Web Discovery; the reports you make about recipes or ratings; and moderation decisions about your content or your account (for example, an image hidden from the public or a block on image generation), with the reason.',
+      'the IP address and browser (user agent) of each sign-in session; the IP address in the attempt limits of the account routes (such as sign-in, sign-up and password), erased within 2 hours after the last attempt, and, in memory only, to limit the pace of the Your Rights form and of Web Discovery; the reports you make about recipes or ratings; moderation decisions about your content or your account (for example, an image hidden from the public or a block on image generation), with the reason; and, if the team closes your account (the account of someone under 16 or a serious violation of the Terms of Use), a record of that decision: the reason, from a closed list, the date, whether your public recipes and reviews were removed and whether we tried to tell you by email.',
       'protect your account, prevent abuse and excessive use of paid resources, and moderate public content.',
-      'legitimate interest — Art. 7, IX (with a recorded legitimate interest assessment).',
-      'a session lasts 7 days, renewed as you use the app, and is erased within 1 day after it expires, together with its IP address and browser; the IP address in attempt limits, within 2 hours after the last attempt; reports are kept while the reported content exists; moderation decisions, while the account or the content exists (if you delete your account, they remain with nothing that identifies you).',
+      'legitimate interest — Art. 7, IX (with a recorded legitimate interest assessment); for the record of an account closure, the regular exercise of rights — Art. 7, VI.',
+      'a session lasts 7 days, renewed as you use the app, and is erased within 1 day after it expires, together with its IP address and browser; the IP address in attempt limits, within 2 hours after the last attempt; reports are kept while the reported content exists; moderation decisions, while the account or the content exists (if you delete your account, they remain with nothing that identifies you); the record of an account closure by the team, for 5 years, for our defense in any legal proceeding, linked only to the already anonymized account and with no other data about you.',
     ],
     s37Titulo: '3.7. Technical logs',
     s37Valores: [
@@ -2107,7 +2151,7 @@ export const enUS: Messages = {
       'Image generation and editing (including the photo you ask to edit) and search vectors',
       'Recipe generation and conversation, ingredient extraction, Menu suggestion, translation and choice of the photo scene',
       'External link search in "Web Discovery"',
-      'Transactional email (sign-up confirmation, password reset, privacy alerts)',
+      'Transactional email (sign-up confirmation, password reset, account closure notice, privacy alerts)',
       'Mailbox of the privacy channel',
       '"Continue with Google" (optional) and display of your Google photo on your profile',
     ],
@@ -2199,6 +2243,7 @@ export const enUS: Messages = {
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only the photo of published recipes; the other images in the gallery and those of private recipes stay out of the queue (item 3.3 and section 4).`,
       `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
+      `v3.4 — ${DATA_POLITICA_V3_4}: when the team closes an account, we keep a record of the decision for 5 years (reason, date, whether public content was removed and whether we tried to tell the person by email), with no other personal data (item 3.6); the account closure notice by email joins what Resend sends (item 5).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2251,9 +2296,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.3',
+    rodapeVersao: 'v3.4',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_3,
+    rodapeData: DATA_POLITICA_V3_4,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2317,9 +2362,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.3',
+    rodapeVersao: 'v3.4',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_3,
+    rodapeData: DATA_POLITICA_V3_4,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },

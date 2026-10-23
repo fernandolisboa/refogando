@@ -79,6 +79,7 @@ import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 import { NOTIFICATION_TYPES } from '@/domain/notification'
 import { MODERATION_CATEGORIES } from '@/domain/moderation-category'
 import { DSAR_EVENT_TYPES } from '@/domain/dsar'
+import { ACCOUNT_CLOSURE_REASONS } from '@/domain/account-closure'
 
 /**
  * Dimensão do vetor de embedding da camada semântica (#14, ADR-0008). Co-locada com a
@@ -160,6 +161,9 @@ export const moderationCategoryEnum = pgEnum('moderation_category', MODERATION_C
 // Os 4 tipos do ciclo de vida do pedido do titular entram de uma vez (completude do enum); só
 // `DSAR_FULFILLED` é EMITIDO nesta fatia (por clearSourceAttribution). DB type 'dsar_event_type'.
 export const dsarEventTypeEnum = pgEnum('dsar_event_type', DSAR_EVENT_TYPES)
+// Motivo do encerramento de conta pela equipe (#606, ADR-0051 P1/P3): lista fechada, sem texto livre.
+// Fonte única: ACCOUNT_CLOSURE_REASONS de @/domain/account-closure. DB type 'account_closure_reason'.
+export const accountClosureReasonEnum = pgEnum('account_closure_reason', ACCOUNT_CLOSURE_REASONS)
 // Refeições do dia do Plano de refeições (ADR-0035 dec.1) — fonte única em `@/domain/meal-plan`.
 export const mealSlotEnum = pgEnum('meal_slot', MEAL_SLOTS)
 
@@ -1733,6 +1737,54 @@ export const dsarAuditEvent = pgTable(
     check(
       'dsar_fulfilled_hash_chk',
       sql`${t.eventType} <> 'DSAR_FULFILLED' or ${t.payloadHash} is not null`,
+    ),
+  ],
+)
+
+/**
+ * Registro do ENCERRAMENTO de conta pela equipe (#606, ADR-0051 P1 e P3) — APPEND-ONLY. Uma linha por conta que o
+ * admin eliminou pelo Console → Usuários (`closeAccountByAdmin`), gravada NA MESMA transação da eliminação
+ * (`eraseAccount` com `decision`). É a decisão do controlador registrada "com o motivo" (Termos, item 8), separada da
+ * auditoria DSAR (`dsar_audit_event`), que é para pedidos do titular.
+ *
+ * MINIMIZAÇÃO: só o fato. Motivo de lista fechada (enum, sem texto livre), se o conteúdo público saiu, se o aviso por
+ * e-mail foi tentado e quem decidiu. Nada de e-mail, nome, @ ou texto do caso: a conta já está anonimizada quando a
+ * linha nasce, e a troca de e-mails com a pessoa fica na caixa do canal de privacidade.
+ *
+ * Retenção: 5 anos (política, item 3.6; ADR-0050), depois o cron de retenção apaga (`accountClosures` em
+ * `RETENTION_STEPS`, o ÚNICO DELETE). Sem UPDATE e sem `updatedAt` (uma linha nunca muda).
+ *
+ * `user_id` é RESTRICT: a linha `users` sobrevive anonimizada (ninguém apaga conta eliminada; o expurgo de cadastro
+ * pendente pula `deleted_at` não nulo), e o RESTRICT faz o banco recusar qualquer caminho futuro que tentasse apagá-la
+ * antes de o registro vencer. `decided_by` é SET NULL: apagar o admin não apaga a prova.
+ */
+export const accountClosure = pgTable(
+  'account_closure',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    reason: accountClosureReasonEnum('reason').notNull(),
+    // As receitas públicas e as avaliações saíram junto (só no menor de 16, CHECK abaixo).
+    removedPublicContent: boolean('removed_public_content').notNull().default(false),
+    // O aviso de encerramento por e-mail foi TENTADO (decidido antes do commit; o envio é best-effort depois dele).
+    notifiedByEmail: boolean('notified_by_email').notNull(),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('account_closure_user_id_idx').on(t.userId),
+    // FK `decided_by` ON DELETE set null: sem índice, apagar um usuário varreria a tabela (#601). Parcial: esparsa.
+    index('account_closure_decided_by_idx')
+      .on(t.decidedBy)
+      .where(sql`${t.decidedBy} IS NOT NULL`),
+    // O expurgo de 5 anos lê por idade.
+    index('account_closure_created_at_idx').on(t.createdAt),
+    // Rede de banco: conteúdo público só sai no menor de 16 (`canRemovePublicContent`).
+    check(
+      'account_closure_public_content_chk',
+      sql`${t.removedPublicContent} = false or ${t.reason} = 'menor_16'`,
     ),
   ],
 )

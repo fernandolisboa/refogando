@@ -3,6 +3,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { GET } from '@/app/api/cron/retention/route'
 import { getDb } from '@/server/deps'
 import {
+  accountClosure,
   briefing,
   creationSession,
   dsarAuditEvent,
@@ -201,6 +202,23 @@ describe('auditoria DSAR (5 anos)', () => {
   })
 })
 
+describe('registro do encerramento de conta pela equipe (5 anos, #606)', () => {
+  it('accountClosures: só o registro com 5 anos ou mais sai; a conta anonimizada fica', async () => {
+    const closed = await seedUser({ email: 'encerrada@ret.test' })
+    const rows = await getDb()
+      .insert(accountClosure)
+      .values([
+        { userId: closed, reason: 'violacao_grave', notifiedByEmail: true, createdAt: inside(C.accountClosure) },
+        { userId: closed, reason: 'menor_16', removedPublicContent: true, notifiedByEmail: false, createdAt: outside(C.accountClosure) },
+      ])
+      .returning({ id: accountClosure.id })
+
+    expect(await run('accountClosures')).toBe(1)
+    expect(await ids(getDb().select({ id: accountClosure.id }).from(accountClosure))).toEqual([rows[0].id])
+    expect(await getDb().select({ id: users.id }).from(users).where(eq(users.id, closed))).toHaveLength(1)
+  })
+})
+
 describe('cascos de criação (24 meses)', () => {
   async function sessionOf(userId: string, createdAt: Date, mode: 'structured' | 'conversation' = 'structured') {
     const briefingId = mode === 'structured' ? await seedBriefing() : null
@@ -370,7 +388,7 @@ describe('GET /api/cron/retention', () => {
     expect(res.status).toBe(200)
     const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[retencao]'))
     expect(lines).toEqual([
-      '[retencao] passada concluída: imageGenerations=0 mealPlanSuggestions=0 extractionEvents=0 sessions=0 verifications=0 takedownTickets=0 dsarEvents=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
+      '[retencao] passada concluída: imageGenerations=0 mealPlanSuggestions=0 extractionEvents=0 sessions=0 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
     ])
     expect(await res.json()).toMatchObject({ sessions: 0, liveGenerationCosts: 0 })
   })
@@ -386,7 +404,7 @@ describe('GET /api/cron/retention', () => {
     expect(res.status).toBe(500)
     expect(error.mock.calls).toEqual([['[retencao] expurgo dos registros de geração de imagem falhou: erro=Error']])
     expect(warn).toHaveBeenCalledWith(
-      '[retencao] passada com falha: mealPlanSuggestions=0 extractionEvents=0 sessions=1 verifications=0 takedownTickets=0 dsarEvents=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
+      '[retencao] passada com falha: mealPlanSuggestions=0 extractionEvents=0 sessions=1 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
     )
   })
 

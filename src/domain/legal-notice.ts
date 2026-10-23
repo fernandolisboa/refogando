@@ -5,7 +5,7 @@
  * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico` e a
  * linha v3.1 de `privacidade.s10Historico`), e o aviso a usa para decidir o público. Depois do merge ela fica
  * CONGELADA: cada versão seguinte ganha constante própria, e os rodapés usam a da versão mais nova de cada texto
- * (hoje `DATA_POLITICA_V3_3` e `DATA_TERMOS_V1_3`).
+ * (hoje `DATA_POLITICA_V3_4` e `DATA_TERMOS_V1_3`).
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -49,6 +49,16 @@ export const DATA_POLITICA_V3_3 = '2026-10-23'
  * dos Termos.
  */
 export const DATA_TERMOS_V1_3 = '2026-10-23'
+
+/**
+ * Política v3.4 (#606): o registro do encerramento de uma conta pela equipe (motivo, data, se o conteúdo público saiu e
+ * se tentamos avisar a pessoa por e-mail) fica 5 anos, para a defesa num eventual processo (item 3.6), e o e-mail de
+ * encerramento entra na lista do Resend (item 5). Não muda nada que a pessoa autorizou com consentimento, então não pede
+ * aviso no lugar do consentimento nem troca `AVISO_LEGAL_VERSAO`. Os Termos não mudam: o item 8 já diz que a conta pode
+ * ser encerrada e o item 2, que a de menor de 16 é eliminada com o que publicou. O dia do merge em UTC; congelada
+ * depois do merge. É a data dos rodapés da política e de Seus direitos.
+ */
+export const DATA_POLITICA_V3_4 = '2026-10-23'
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'

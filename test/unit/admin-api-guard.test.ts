@@ -35,8 +35,8 @@ function handlers(src: string): Array<{ method: string; body: string }> {
 }
 
 // `const g = await requireRole(req, '<papel>')` seguido de `if (!g.ok) return g.response`: o resultado é
-// conferido, não só chamado.
-const GUARD = /const (\w+) = await requireRole\(\s*\w+\s*,\s*'(\w+)'\s*\)\s*\n\s*if \(!\1\.ok\) return \1\.response\b/
+// conferido, não só chamado. `requireFreshRole` (papel + sessão recente, #606) é a mesma guarda, mais estrita.
+const GUARD = /const (\w+) = await require(?:Fresh)?Role\(\s*\w+\s*,\s*'(\w+)'\s*\)\s*\n\s*if \(!\1\.ok\) return \1\.response\b/
 
 const AREAS = [
   { dir: 'admin', roles: ['admin'] },
