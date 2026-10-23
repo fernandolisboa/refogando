@@ -43,3 +43,11 @@ Achado I da auditoria de performance (`docs/perf/2026-10-13-auditoria.md` §7): 
 A Imagem da receita enviada pelo dono ou pelo Curador e o avatar (`users.image`) passam pelo mesmo re-encode da foto da avaliação (`reencodeUserPhoto`, `src/server/images/user-photo.ts`) antes de chegar ao Blob público: formato decidido pelos bytes (só JPEG, PNG e WebP de um quadro), orientação EXIF aplicada nos pixels, maior lado limitado (2048 px na receita, 1024 px no avatar) e saída **WebP sem EXIF, ICC nem XMP** (a localização do celular não vaza). Entrada que não passa ⇒ 400 `tipo_invalido`.
 
 Para upload, o "original" (`blob_url`) da seção anterior passa a ser esse WebP re-encodado (qualidade 90, porque a edição imagem-a-imagem do Gemini lê dele), não os bytes que o cliente mandou. A imagem gerada por IA não muda. Fotos enviadas antes desta mudança não foram limpas retroativamente (ADR-0050, riscos).
+
+## Atualização (2026-10-23, #604): o avatar só é apagado se for da conta
+
+`store.owns` confere só o host (é do nosso Vercel Blob?), não de quem é o arquivo. O Better Auth aceitava qualquer string em `image` em `/update-user` e `/sign-up/email`, então uma conta podia gravar a URL de um blob alheio (avatar, foto de avaliação ou de receita) e apagá-lo ao trocar ou remover o avatar, ou ao eliminar a conta. Também podia pôr um pixel de rastreamento no próprio perfil.
+
+- **Entrada fechada:** um hook `before` em `src/lib/auth.ts` recusa `image` nesses dois caminhos com 400 `FIELD_NOT_ALLOWED`, o mesmo contrato de um campo `input:false`. O avatar só muda por `/api/me/avatar`; o Google preenche a foto pelo fluxo OAuth, que não passa por eles.
+- **Segunda barreira, no ponto de apagar** (`canDeleteAccountAvatar`, `src/server/images/avatar-blob.ts`): o avatar novo é guardado sob `avatars/<userId>/`, e só um blob nosso nesse prefixo é apagado como avatar da conta. O avatar antigo (`avatars/<arquivo>`, de antes desta mudança) só é apagado se nenhuma outra conta aponta para a mesma URL. Qualquer outro caminho e URL estrangeira nunca são apagados por aí. Usam a regra a troca/remoção do avatar e a eliminação da conta.
+- Um avatar que a regra se recusa a apagar vira órfão no Blob; a varredura de órfãos (#603) o recolhe.

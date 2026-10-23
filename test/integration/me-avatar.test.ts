@@ -102,7 +102,8 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { image: string }
     expect(store.owns(body.image)).toBe(true)
-    expect(body.image).toMatch(/\/avatars\/\d+\.webp$/)
+    // #604: o avatar mora sob o prefixo da conta (`avatars/<userId>/`).
+    expect(body.image).toMatch(new RegExp(`/avatars/${userId}/\\d+\\.webp$`))
     const blob = store.blobs.get(body.image)!
     expect(blob.contentType).toBe('image/webp')
     const meta = await sharp(Buffer.from(blob.bytes)).metadata()
@@ -243,5 +244,45 @@ describe('/api/me/avatar — round-trip do avatar do logado (#126)', () => {
     expect(res.status).toBe(200)
 
     expect(await countRecipes()).toBe(before)
+  })
+
+  describe('#604 — só apaga o avatar DESTA conta', () => {
+    /** Guarda um blob "nosso" fora do avatar da conta (como se fosse de outra pessoa) e o devolve. */
+    async function foreignOwnBlob(pathPrefix: string): Promise<string> {
+      const { url } = await store.store({ data: PNG_BYTES, contentType: 'image/png', pathPrefix })
+      return url
+    }
+
+    it('POST e DELETE com users.image apontando para blob de OUTRA pessoa NÃO apagam esse blob', async () => {
+      const other = await seedSessionHeaders({ email: 'vitima@me-avatar.test' })
+      const { userId, headers } = await seedSessionHeaders({ email: 'atacante@me-avatar.test' })
+      const reviewPhoto = await foreignOwnBlob('reviews')
+      const otherAvatar = await foreignOwnBlob(`avatars/${other.userId}`)
+
+      await getDb().update(users).set({ image: reviewPhoto }).where(eq(users.id, userId))
+      expect((await POST(postReq(pngFile(), headers))).status).toBe(200)
+      expect(store.blobs.has(reviewPhoto)).toBe(true)
+
+      await getDb().update(users).set({ image: otherAvatar }).where(eq(users.id, userId))
+      expect((await DELETE(deleteReq(headers))).status).toBe(200)
+      expect(store.blobs.has(otherAvatar)).toBe(true)
+      expect(await readImage(userId)).toBeNull()
+    })
+
+    it('avatar ANTIGO (avatars/<arquivo>) só é apagado quando nenhuma outra conta aponta para ele', async () => {
+      const { userId, headers } = await seedSessionHeaders({ email: 'antigo@me-avatar.test' })
+      const legacy = await foreignOwnBlob('avatars')
+      await getDb().update(users).set({ image: legacy }).where(eq(users.id, userId))
+      expect((await DELETE(deleteReq(headers))).status).toBe(200)
+      expect(store.blobs.has(legacy)).toBe(false)
+
+      const victim = await seedSessionHeaders({ email: 'dona@me-avatar.test' })
+      const shared = await foreignOwnBlob('avatars')
+      await getDb().update(users).set({ image: shared }).where(eq(users.id, victim.userId))
+      await getDb().update(users).set({ image: shared }).where(eq(users.id, userId))
+      expect((await DELETE(deleteReq(headers))).status).toBe(200)
+      expect(store.blobs.has(shared)).toBe(true)
+      expect(await readImage(victim.userId)).toBe(shared)
+    })
   })
 })

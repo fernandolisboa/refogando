@@ -4,6 +4,7 @@ import { account, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { getImageStore } from '@/server/deps'
 import { deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
+import { canDeleteAccountAvatar } from '@/server/images/avatar-blob'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { purgePrivateContentInTx } from '@/server/legal/private-content'
 
@@ -55,9 +56,9 @@ export async function eraseOwnAccount(
   const anon = erasedIdentity(userId)
   const now = new Date()
 
-  // Captura a URL do avatar (blob NOSSO) fora da tx para reap pós-commit: o passo 1 NULA `users.image`,
-  // então sem capturá-la aqui a URL se perde e o blob fica órfão eternamente. `store.owns` protege URL
-  // estrangeira (avatar do Google OAuth NUNCA é apagado).
+  // Captura a URL do avatar fora da tx para reap pós-commit: o passo 1 NULA `users.image`, então sem capturá-la
+  // aqui a URL se perde e o blob fica órfão eternamente. Só é apagada se for avatar DESTA conta
+  // (`canDeleteAccountAvatar`, #604): URL estrangeira (Google OAuth) e blob de outra pessoa NUNCA são apagados.
   let oldImageUrl: string | null = null
 
   const result = await db.transaction(async (tx) => {
@@ -134,7 +135,9 @@ export async function eraseOwnAccount(
   // Blobs DEPOIS do commit (best-effort; só apaga os NOSSOS — `store.owns`; nunca lança). Só quando de fato
   // eliminamos nesta chamada (kind 'erased'): já-eliminada/não-encontrada não têm nada novo a reapear.
   if (result.kind === 'erased') {
-    await deleteOrphanBlobsConcurrently(getImageStore(), [oldImageUrl, ...result.blobUrls])
+    const store = getImageStore()
+    const avatar = (await canDeleteAccountAvatar(db, store, oldImageUrl, userId)) ? oldImageUrl : null
+    await deleteOrphanBlobsConcurrently(store, [avatar, ...result.blobUrls])
     return { kind: 'erased' }
   }
   return result

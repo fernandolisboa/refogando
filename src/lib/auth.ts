@@ -445,6 +445,17 @@ function buildAuth() {
       // oráculo — cadastrar X com a senha P (sempre 200) e entrar com X/P dá 403 se X era novo e 401 se X já
       // existia. Reescrito para o MESMO 401 de credencial inválida (status, corpo e headers). O link de
       // confirmação NÃO sai no login (R1, `sendOnSignIn: false`); os dois caminhos passam pelo password.verify.
+      // #604 — `image` NUNCA vem do cliente. O Better Auth aceita qualquer string nele em `/update-user` e em
+      // `/sign-up/email`; com isso uma conta gravava a URL de um blob alheio (e o apagava ao trocar o avatar ou
+      // eliminar a conta) ou um pixel de rastreamento no próprio perfil. O avatar só muda por `/api/me/avatar`,
+      // que grava a URL no servidor; o Google preenche a foto pelo fluxo OAuth, que não passa por estes caminhos.
+      // Recusado com o mesmo 400 `FIELD_NOT_ALLOWED` de um campo `input:false` (o caso do `role`).
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/update-user' && ctx.path !== '/sign-up/email') return
+        const body = ctx.body as Record<string, unknown> | undefined
+        if (!body || typeof body !== 'object' || body.image === undefined) return
+        throw APIError.from('BAD_REQUEST', { message: 'image is not allowed to be set', code: 'FIELD_NOT_ALLOWED' })
+      }),
       after: createAuthMiddleware(async (ctx) => {
         if (!verifyEmail) return
         if (ctx.path === '/sign-in/email') {

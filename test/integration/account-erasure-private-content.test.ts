@@ -491,6 +491,33 @@ describe('eliminação: atomicidade e blobs depois do commit', () => {
   })
 })
 
+describe('eliminação: avatar (#604)', () => {
+  it('apaga o avatar sob o prefixo da conta e nunca o blob de outra pessoa plantado em users.image', async () => {
+    const dona = await seedUser({ email: 'avatar-dona@pc.test' })
+    const own = await blob(`avatars/${dona}`)
+    await getDb().update(users).set({ image: own }).where(eq(users.id, dona))
+    expect((await eraseOwnAccount(getDb(), { userId: dona })).kind).toBe('erased')
+    expect(store.blobs.has(own)).toBe(false)
+
+    const vitima = await seedUser({ email: 'avatar-vitima@pc.test' })
+    for (const alheio of [await blob('reviews'), await blob(`avatars/${vitima}`), await blob('recipes')]) {
+      const atacante = await seedUser({ email: `atacante-${store.blobs.size}@pc.test` })
+      await getDb().update(users).set({ image: alheio }).where(eq(users.id, atacante))
+      expect((await eraseOwnAccount(getDb(), { userId: atacante })).kind).toBe('erased')
+      expect(store.blobs.has(alheio)).toBe(true)
+    }
+  })
+
+  it('avatar antigo (avatars/<arquivo>) que outra conta ainda usa fica intacto', async () => {
+    const dona = await seedUser({ email: 'antigo-dona@pc.test' })
+    const atacante = await seedUser({ email: 'antigo-atacante@pc.test' })
+    const legacy = await blob('avatars')
+    await getDb().update(users).set({ image: legacy }).where(inArray(users.id, [dona, atacante]))
+    expect((await eraseOwnAccount(getDb(), { userId: atacante })).kind).toBe('erased')
+    expect(store.blobs.has(legacy)).toBe(true)
+  })
+})
+
 describe('ERASURE_POLICY', () => {
   it('classifica TODA FK para users (qualquer onDelete): FK nova reprova até alguém decidir o destino dela', () => {
     const name = (t: PgTable) => getTableConfig(t).name
