@@ -20,7 +20,7 @@ import { usePathname } from 'next/navigation'
 import { Dialog } from 'radix-ui'
 import { XIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
-import { splitLocalePrefix } from '@/i18n/locale-path'
+import { localePrefixedPath, splitLocalePrefix } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -220,7 +220,7 @@ function TourCard({
   onDismiss: () => void
   onFinish: () => void
 }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const t = messages.tour
   const step = steps[index]
   const isFirst = index === 0
@@ -379,7 +379,7 @@ function TourCard({
             <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
               {isLast ? (
                 <Button asChild variant="link" size="sm" className="px-0">
-                  <Link href="/guia" onClick={onFinish}>
+                  <Link href={localePrefixedPath(locale, '/guia')} onClick={onFinish}>
                     {t.verGuia}
                   </Link>
                 </Button>

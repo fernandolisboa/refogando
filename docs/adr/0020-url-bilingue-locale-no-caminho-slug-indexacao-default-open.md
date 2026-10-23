@@ -63,3 +63,7 @@ O app é bilíngue desde o início (ADR-0001), mas o Locale vivia só no **cooki
 - **`web_imported`** é `noindex` pelo gate de **visibilidade-privada** (eixo ADR-0019), **suficiente por si**; a procedência da tradução é reforço incidental, não o gate (um curador pode promover a tradução de uma importada sem que ela vire indexável — só a visibilidade segura).
 - **ADR-0002 defasado:** o enum real (`src/domain/recipe.ts`) tem **seis** origens (inclui `ai_free_text` e `web_imported`), e os artefatos novos o citam como autoridade dos selos `ai_*` — adicionar nota de status lá confirmando que `web_imported`/`ai_free_text` já estão no enum, e que `ai_*` abrange `ai_chat`/`ai_structured`/`ai_free_text`.
 - **Não implementado** — é a direção da iniciativa de SEO/descoberta; a fatia de execução vem depois (PRD → issues).
+
+## Atualização (2026-10-23, #611) — páginas legais com canonical e hreflang
+
+`/termos`, `/privacidade` e `/seus-direitos` declaram `alternates` (canonical + `pt-BR`/`en-US`/`x-default` na versão do `DEFAULT_LOCALE`, o mesmo esquema do sitemap, `staticPathHreflang`). A origem é fixa (`https://www.refogando.com`, `src/domain/legal-pages-seo.ts`) e não a `getBaseUrlFromEnv`: as três são ISR, o `generateMetadata` roda no build, e o build do CI não tem a env. O sitemap continua pela env, que em produção dá o mesmo domínio; trocar o domínio público pede trocar os dois. Os links internos para essas páginas e para `/guia` levam o prefixo do idioma (`localePrefixedPath`).

@@ -12,6 +12,9 @@
  *
  * `APP_URL` NÃO leva o prefixo `NEXT_PUBLIC_` de propósito (consumo server-only; o repo não tem
  * nenhuma `NEXT_PUBLIC_*`, mesmo estilo de `BETTER_AUTH_URL`). PURA (sem I/O assíncrono) ⇒ síncrona.
+ *
+ * As páginas legais (ISR) não usam esta função: o canonical delas tem a origem fixa `https://www.refogando.com`
+ * (`src/domain/legal-pages-seo.ts`, #611). Se o domínio público mudar, troque lá também.
  */
 export function getBaseUrlFromEnv(): string {
   if (process.env.APP_URL) return process.env.APP_URL

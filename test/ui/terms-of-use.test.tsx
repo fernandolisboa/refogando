@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
  *  - os destaques do CDC art. 54 (negrito) nas cláusulas certas e só nelas;
  *  - rodapé igual à última linha do histórico, e a data de cada versão (`DATA_PUBLICACAO_TERMOS_V1`, `DATA_TERMOS_V1_1`, `DATA_TERMOS_V1_2`);
  *  - paridade de chaves e de tamanho dos arrays pt-BR/en-US;
- *  - o link do rodapé do site e o `generateMetadata` da página.
+ *  - os links do rodapé do site (com o prefixo do idioma) e o `generateMetadata` das 3 páginas legais (#611).
  */
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
@@ -33,6 +33,8 @@ import { enUS } from '@/i18n/messages/en-US'
 import { TermsOfUse } from '@/components/legal/terms-of-use'
 import { SiteFooter } from '@/components/site-footer'
 import { generateMetadata } from '@/app/[locale]/(com-carregamento)/termos/page'
+import { generateMetadata as privacidadeMetadata } from '@/app/[locale]/(com-carregamento)/privacidade/page'
+import { generateMetadata as seusDireitosMetadata } from '@/app/[locale]/(com-carregamento)/seus-direitos/page'
 import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
@@ -160,20 +162,40 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     ['pt-BR', ptBR],
     ['en-US', enUS],
   ] as const) {
-    it(`${locale}: o rodapé do site linka os Termos em /termos`, () => {
+    it(`${locale}: o rodapé do site linka as páginas legais e o guia com o prefixo do idioma (#611)`, () => {
       render(
         <LocaleProvider initialLocale={locale}>
           <SiteFooter />
         </LocaleProvider>,
       )
-      const link = within(screen.getByRole('contentinfo')).getByRole('link', { name: msgs.termos.nome })
-      expect(link).toHaveAttribute('href', '/termos')
+      const footer = within(screen.getByRole('contentinfo'))
+      expect(footer.getByRole('link', { name: msgs.termos.nome })).toHaveAttribute('href', `/${locale}/termos`)
+      expect(footer.getByRole('link', { name: msgs.privacidade.titulo })).toHaveAttribute('href', `/${locale}/privacidade`)
+      expect(footer.getByRole('link', { name: msgs.seusDireitos.titulo })).toHaveAttribute(
+        'href',
+        `/${locale}/seus-direitos`,
+      )
+      expect(footer.getByRole('link', { name: msgs.nav.comoUsar })).toHaveAttribute('href', `/${locale}/guia`)
     })
 
-    it(`${locale}: generateMetadata dá o título da página`, async () => {
-      await expect(generateMetadata({ params: Promise.resolve({ locale }) })).resolves.toEqual({
-        title: msgs.termos.metaTitulo,
-      })
+    it(`${locale}: generateMetadata das 3 páginas legais dá título, canonical e hreflang (#611)`, async () => {
+      for (const [path, gen, titulo] of [
+        ['termos', generateMetadata, msgs.termos.metaTitulo],
+        ['privacidade', privacidadeMetadata, msgs.privacidade.metaTitulo],
+        ['seus-direitos', seusDireitosMetadata, msgs.seusDireitos.metaTitulo],
+      ] as const) {
+        await expect(gen({ params: Promise.resolve({ locale }) })).resolves.toEqual({
+          title: titulo,
+          alternates: {
+            canonical: `https://www.refogando.com/${locale}/${path}`,
+            languages: {
+              'pt-BR': `https://www.refogando.com/pt-BR/${path}`,
+              'en-US': `https://www.refogando.com/en-US/${path}`,
+              'x-default': `https://www.refogando.com/pt-BR/${path}`,
+            },
+          },
+        })
+      }
     })
   }
 })

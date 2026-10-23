@@ -16,6 +16,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { localePrefixedPath } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { DeleteAccountDialog } from './delete-account-dialog'
 import { ExportDownloadControl } from './export-download-control'
@@ -24,7 +25,7 @@ import { useAccountExportDownload } from './use-account-export-download'
 const LINK = 'font-medium text-brand-ink hover:underline'
 
 export function AccountDataSection() {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const m = messages.seusDados
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
@@ -61,11 +62,11 @@ export function AccountDataSection() {
 
       <p className="text-sm text-muted">
         {m.saibaMais}{' '}
-        <Link href="/privacidade" className={LINK}>
+        <Link href={localePrefixedPath(locale, '/privacidade')} className={LINK}>
           {messages.privacidade.titulo}
         </Link>
         {' · '}
-        <Link href="/seus-direitos" className={LINK}>
+        <Link href={localePrefixedPath(locale, '/seus-direitos')} className={LINK}>
           {messages.seusDireitos.titulo}
         </Link>
       </p>
