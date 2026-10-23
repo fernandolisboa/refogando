@@ -34,7 +34,7 @@ Uma linha por erro que o Next entrega ao `onRequestError` (`src/instrumentation.
 
 **O mesmo digest pode aparecer em duas linhas** (o render RSC e o SSR do mesmo request reportam o mesmo erro). Para contar erros, agrupe por digest.
 
-**A resposta pode ter saído 200:** numa página com streaming (o grupo `(com-carregamento)` tem `loading.tsx`), o erro acontece depois do shell enviado; a linha sai do mesmo jeito.
+**A resposta pode ter saído 200:** numa página com streaming (o grupo `(com-carregamento)` tem `loading.tsx`), o erro acontece depois do shell enviado; a linha sai do mesmo jeito. O export da conta (`GET /api/me/export`, também em streaming, #595) escreve a mesma linha quando falha no meio do corpo, porque esse erro não chega ao `onRequestError`.
 
 `notFound()`, `redirect()` e o bailout de render dinâmico não geram linha (o Next filtra). Se o próprio formatador falhar, sai `[erro] origem=servidor formato=falhou`.
 

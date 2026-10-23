@@ -1,5 +1,6 @@
 import { requireSession } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
+import { crossSiteForbidden, isCrossSiteRequest } from '@/server/http/same-origin'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 
 /**
@@ -13,6 +14,9 @@ import { eraseOwnAccount } from '@/server/legal/account-erasure'
  * Confirmação OBRIGATÓRIA (`{ "confirm": true }`): guarda contra disparo acidental de uma ação
  * consequente e (com o cookie SameSite do Better Auth) contra CSRF. Corpo ausente/`confirm` != true
  * → 400 confirmacao_necessaria, ZERO efeito colateral.
+ *
+ * Defesa em profundidade contra CSRF (#595): além do SameSite=Lax, recusa `Sec-Fetch-Site` ≠ same-origin
+ * (403 origem_nao_permitida, antes de olhar a sessão; ver `server/http/same-origin.ts`).
  *
  * Efeito (ver `eraseOwnAccount`): anonimiza a PII + bloqueia (`deletedAt`) + carimba (`anonymizedAt`) +
  * desloga (apaga sessões) + remove credenciais (apaga `account` e os tokens de `verification`) + APAGA o
@@ -28,6 +32,7 @@ export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
 export const maxDuration = 60
 
 export async function POST(req: Request): Promise<Response> {
+  if (isCrossSiteRequest(req)) return crossSiteForbidden()
   const g = await requireSession(req)
   if (!g.ok) return g.response
 

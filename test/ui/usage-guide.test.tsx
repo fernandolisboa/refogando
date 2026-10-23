@@ -63,6 +63,8 @@ describe('UsageGuide (/guia)', () => {
     }
     for (const item of g.cardapioItens) expect(screen.getByText(item)).toBeInTheDocument()
     for (const item of g.despensaItens) expect(screen.getByText(item)).toBeInTheDocument()
+    // #595: a conta inclui "Seus dados" (baixar e excluir).
+    for (const item of g.contaItens) expect(screen.getByText(item)).toBeInTheDocument()
   })
 
   it('"Fazer o tour guiado" deixa o pedido e vai para a home', async () => {

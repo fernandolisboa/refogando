@@ -24,6 +24,11 @@
  * direto como antes. Entrar com conta não confirmada dá o MESMO 401 de senha errada (sem oráculo) e não dispara
  * e-mail: com a confirmação ligada (`emailVerification`), o erro traz a dica neutra "acabou de criar a conta?" +
  * reenvio (que manda o link "conclua seu cadastro"). O link de confirmação do cadastro loga e leva ao `returnTo`.
+ *
+ * Aviso da Política de Privacidade (#595): uma linha com o link para `/privacidade`, sem caixa de marcar (a base
+ * legal da conta na Política é a execução de contrato, não o consentimento; consentimento só nas restrições
+ * salvas no perfil). Aparece no cadastro e também no "Entrar" com Google ligado, porque o Google cria a conta
+ * no primeiro acesso.
  */
 import { useState, type FormEvent } from 'react'
 import Link from 'next/link'
@@ -83,6 +88,8 @@ export function AuthForm({
   const [sentTo, setSentTo] = useState<string | null>(null)
 
   const title = isSignUp ? messages.auth.criarConta : messages.nav.signIn
+  // `{link}` é o link da Política (mesmo split do `profile-follow-section`).
+  const [privAntes = '', privDepois = ''] = messages.auth.privacidadeCadastro.split('{link}')
   const submitLabel = isSignUp ? messages.auth.criarConta : messages.nav.signIn
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -281,6 +288,17 @@ export function AuthForm({
             {messages.auth.continuarComGoogle}
           </Button>
         </>
+      )}
+
+      {/* Depois do formulário E do Google: a linha vale para os dois jeitos de criar a conta. */}
+      {(isSignUp || googleEnabled) && (
+        <p id="auth-privacidade" className="text-xs text-muted">
+          {privAntes}
+          <Link href="/privacidade" className="font-medium text-brand-ink hover:underline">
+            {messages.privacidade.titulo}
+          </Link>
+          {privDepois}
+        </p>
       )}
 
       <p className="text-sm text-muted">
