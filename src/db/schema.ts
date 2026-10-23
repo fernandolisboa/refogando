@@ -263,6 +263,11 @@ export const recipe = pgTable(
     // espelha o tratamento de derived_diff (só `edited` o carrega, sem CHECK).
     sourceUrl: text('source_url'),
     sourceName: text('source_name'),
+    // Crédito na DERIVADA (#610, ADR-0052): quando o dono da BASE retirou o nome dele desta derivada
+    // ("Retirar meu nome"). NULL = crédito valendo. Só faz sentido em `lineage_kind='edited'`; quem grava é o
+    // dono do pai (`PUT /api/recipes/[id]/credit`), por isso a coluna não guarda quem retirou. Sem default:
+    // ADD COLUMN metadata-only na tabela populada.
+    creditRemovedAt: timestamp('credit_removed_at', { withTimezone: true }),
     // ── Estado de MODERAÇÃO (issue #18, ADR-0003/0011) ────────────────────────────
     // Remover-do-pool pelo Curador é exclusão LÓGICA de moderação, DISTINTA de
     // despublicar (que toca `visibility`, #13). As 3 colunas são a SAÍDA do pool por
@@ -851,6 +856,10 @@ export const users = pgTable(
     // anonymizedAt mais velho que 180 dias. NULLABLE, sem default: ADD COLUMN metadata-only (sem
     // rewrite) na tabela populada; contas existentes nascem NULL (não anonimizadas).
     anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
+    // Crédito nas derivadas (#610, ADR-0052): a pessoa quer ver "Baseada na receita … de @handle" nas cópias que
+    // outras pessoas publicam das receitas dela? Default true (o crédito é o direito do autor, Lei 9.610 art. 24,
+    // II; quem não quer o vínculo desliga em Editar perfil). ADD COLUMN com default constante = metadata-only.
+    creditOnDerivatives: boolean('credit_on_derivatives').notNull().default(true),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).
     // A APLICAÇÃO de ban segue deferida (ADR-0007); aqui são colunas inertes
     // (default false / null) — nada lê para gating agora.

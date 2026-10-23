@@ -18,7 +18,13 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
-import { DATA_POLITICA_V3_2, DATA_POLITICA_V3_3, DATA_POLITICA_V3_4, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
+import {
+  DATA_POLITICA_V3_2,
+  DATA_POLITICA_V3_3,
+  DATA_POLITICA_V3_4,
+  DATA_POLITICA_V3_5,
+  DATA_PUBLICACAO_TERMOS_V1,
+} from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -90,7 +96,8 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_POLITICA_V3_4)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_5)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.4 — ${DATA_POLITICA_V3_4}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.3 — ${DATA_POLITICA_V3_3}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.2 — ${DATA_POLITICA_V3_2}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}`))).toBe(true)
@@ -122,8 +129,22 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(pt.s5ParaQue[resend]).toContain('aviso de encerramento da conta')
     expect(en.s5ParaQue[resend]).toContain('account closure notice')
     for (const m of [pt, en]) {
-      expect(m.rodapeVersao).toBe('v3.4')
-      expect(m.rodapeData).toBe(DATA_POLITICA_V3_4)
+      expect(m.s10Historico.some((v) => v.startsWith(`v3.4 — ${DATA_POLITICA_V3_4}`))).toBe(true)
+    }
+  })
+
+  it('#610: o item 3.1 diz que o seu @ aparece nas cópias das suas receitas, com as duas saídas; a preferência é dado da conta', () => {
+    const pt = ptBR.privacidade
+    const en = enUS.privacidade
+    expect(pt.s31Valores[0]).toContain('se você quer o seu nome nas cópias que outras pessoas publicam das suas receitas')
+    expect(pt.s31Valores[1]).toContain('Baseada na receita … de @você')
+    expect(pt.s31Valores[1]).toContain('desligar isso em Editar perfil ou retirar o seu nome de uma cópia')
+    expect(en.s31Valores[0]).toContain('whether you want your name on the copies other people publish of your recipes')
+    expect(en.s31Valores[1]).toContain('Based on … by @you')
+    for (const m of [pt, en]) {
+      expect(m.s10Historico.some((v) => v.startsWith(`v3.5 — ${DATA_POLITICA_V3_5}`))).toBe(true)
+      expect(m.rodapeVersao).toBe('v3.5')
+      expect(m.rodapeData).toBe(DATA_POLITICA_V3_5)
     }
   })
 

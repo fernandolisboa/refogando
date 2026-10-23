@@ -30,14 +30,14 @@ type Section = {
 
 /**
  * Cláusulas em destaque, como `<chave do corpo>:<índice>`: alergênicos (4[0]), a licença, as cópias que ficam e o
- * conteúdo que fica após a eliminação (5[2–4]), as sanções (8[3]), os limites de responsabilidade (9[0–1]) e a
+ * conteúdo que fica após a eliminação (5[2], 5[3] e 5[5]; 5[4], o crédito nas cópias, #610, não limita direito), as sanções (8[3]), os limites de responsabilidade (9[0–1]) e a
  * regra de mudança (10[0]). Mudou a ordem de um corpo? Revise este conjunto junto.
  */
 const DESTAQUES: ReadonlySet<string> = new Set([
   's4Corpo:0',
   's5Corpo:2',
   's5Corpo:3',
-  's5Corpo:4',
+  's5Corpo:5',
   's8Corpo:3',
   's9Corpo:0',
   's9Corpo:1',

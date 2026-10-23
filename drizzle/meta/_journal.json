@@ -589,6 +589,13 @@
       "when": 1792758993826,
       "tag": "0083_encerramento_de_conta",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792767034772,
+      "tag": "0084_credito_derivadas",
+      "breakpoints": true
     }
   ]
 }

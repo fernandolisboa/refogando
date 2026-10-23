@@ -11,6 +11,7 @@ import { cookies, headers } from 'next/headers'
 import { Container } from '@/components/container'
 import { AccountDataSection } from '@/components/profile/account-data-section'
 import { AvatarUploader } from '@/components/profile/avatar-uploader'
+import { DerivativeCreditSection } from '@/components/profile/derivative-credit-section'
 import { ProfileForm } from '@/components/profile/profile-form'
 import { RestricoesPerfilForm } from '@/components/profile/restricoes-perfil-form'
 import { LOCALE_COOKIE } from '@/i18n/cookie'
@@ -45,6 +46,8 @@ export default async function ProfilePage() {
       <ProfileForm />
       {/* ADR-0041: restrições alimentares salvas — seção PRIVADA, separada do perfil (público). */}
       <RestricoesPerfilForm />
+      {/* #610 (ADR-0052): crédito nas cópias que outras pessoas publicam das minhas receitas. */}
+      <DerivativeCreditSection />
       {/* #595: Seus dados — export LGPD (Art. 18, II e V) e exclusão da conta (arts. 15, III e 16; 18, VI
           para as restrições salvas). */}
       <AccountDataSection />

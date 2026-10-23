@@ -76,6 +76,7 @@ import {
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
 import { loadRecipeDetailView } from '@/server/recipe/detail-view'
+import { loadDerivedCredit } from '@/server/recipe/derived-credit'
 import { loadRecipeReviews } from '@/server/recipe/review'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
@@ -178,22 +179,7 @@ export default async function RecipeDetailPage({
   if (route.kind === 'slug') {
     const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
-      // Caminho PÚBLICO anônimo/cacheável (sem cookie — não personaliza nem força dinâmico).
-      // `viewerSaved` fica AUSENTE (anônimo) — o estado do viewer é resolvido no cliente pelos
-      // controles quando logado. Mantém a rota cacheável.
-      const view = resolveRecipeView({
-        recipe: publicRows.recipe,
-        translations: publicRows.translations,
-        ingredients: publicRows.ingredients,
-        tags: publicRows.tags,
-        requestLocale: locale,
-        ...(publicRows.author ? { author: publicRows.author } : {}),
-        ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
-        ...(publicRows.imageSrcSet ? { imageSrcSet: publicRows.imageSrcSet } : {}),
-        ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
-        ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
-      })
-      // Tudo abaixo depende só do id e do `view.origin` (já resolvidos acima), então roda em PARALELO —
+      // Tudo abaixo depende só do id e da origem da receita (já lidos acima), então roda em PARALELO —
       // antes eram 4 etapas seriais (slugMap+cozinhas → avaliações → aviso de catálogo → semelhantes).
       //  - JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
       //    aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
@@ -206,13 +192,31 @@ export default async function RecipeDetailPage({
       //    ligado). NÃO toca os selos obrigatórios (proveniência/imagem ai_generated) — é puramente aditivo.
       //  - #454: trilho de semelhantes — vitrine pública não-personalizada, mesma leitura anônima
       //    cacheável (sem cookie, sem IA na hora).
-      const [slugMap, activeCozinhas, reviewData, catalogDisclosure, similar] = await Promise.all([
+      //  - #610: crédito da derivada (só consulta a base quando a receita é derivada). Sem cookie, como o resto.
+      const [slugMap, activeCozinhas, reviewData, catalogDisclosure, similar, { basedOn }] = await Promise.all([
         loadRecipeSlugMapCached(getDb(), publicRows.recipe.id),
         loadActiveCozinhaSlugsCached(getDb()),
         loadRecipeReviews(getDb(), { id: publicRows.recipe.id }),
-        resolveCatalogDisclosure(view.origin),
+        resolveCatalogDisclosure(publicRows.recipe.origin),
         loadSimilarForDetail(publicRows.recipe.id, locale),
+        loadDerivedCredit(getDb(), { recipe: publicRows.recipe, locale }),
       ])
+      // Caminho PÚBLICO anônimo/cacheável (sem cookie — não personaliza nem força dinâmico).
+      // `viewerSaved` fica AUSENTE (anônimo) — o estado do viewer é resolvido no cliente pelos
+      // controles quando logado. Mantém a rota cacheável.
+      const view = resolveRecipeView({
+        recipe: publicRows.recipe,
+        translations: publicRows.translations,
+        ingredients: publicRows.ingredients,
+        tags: publicRows.tags,
+        requestLocale: locale,
+        ...(publicRows.author ? { author: publicRows.author } : {}),
+        ...(basedOn ? { basedOn } : {}),
+        ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
+        ...(publicRows.imageSrcSet ? { imageSrcSet: publicRows.imageSrcSet } : {}),
+        ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),
+        ...(publicRows.imageModerated ? { imageModerated: publicRows.imageModerated } : {}),
+      })
       const seoInput = buildRecipeSeoInputFromRows({
         rows: publicRows,
         locale,
@@ -270,6 +274,7 @@ export default async function RecipeDetailPage({
     id: ownerUuid,
     requestLocale: contentLocale,
     headers: headerStore,
+    pageLocale: locale,
   })
   if (view == null) notFound()
   // As três leituras abaixo são independentes entre si (só pedem o id e o `view.origin`): em paralelo.
