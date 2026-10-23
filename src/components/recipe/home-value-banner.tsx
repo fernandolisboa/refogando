@@ -3,36 +3,30 @@
  * Faixa da home para quem não entrou na conta (#472): uma frase curta + botão para o cadastro, acima da
  * "Receita da semana". Montada pela home (server) dentro do `highlight`, então só aparece no REPOUSO.
  *
- * Só no navegador, de propósito: a home de repouso é anônima e cacheável (não lê cookie), então o servidor
- * não sabe quem está logado. Enquanto a sessão está pendente (SSR e hidratação, ver `useSession`) a faixa
- * não pinta nada; logado também não. Assim quem está logado nunca vê a faixa piscar e o HTML do crawler
- * fica igual ao de antes.
+ * Vem no HTML do servidor para todo mundo: a home de repouso é anônima e cacheável (não lê cookie), então o
+ * servidor não sabe quem está logado. Pintar a faixa só depois que o navegador confirmasse o visitante
+ * empurraria a receita da semana e o feed para baixo em todo carregamento (salto de layout, CLS, justamente para
+ * o público da home indexável). Assim o visitante e o crawler a veem desde o primeiro quadro, e ela some quando a
+ * sessão mostra uma conta. Na navegação dentro do app a sessão já está carregada e a faixa nem chega a pintar.
  *
- * A frase é sorteada uma vez por montagem (cada carregamento da home), entre as listas de `faixaHome` por
- * índice. Sem guardar a última no navegador: isso seria mais um item no armazenamento local que a Política
- * lista um a um (item 8), por um ganho pequeno.
+ * A frase (`indice`) é sorteada pela home no servidor, uma vez por requisição (`sortearFaixa`), e desce por prop:
+ * servidor e hidratação pintam a mesma. Sem guardar a última no navegador: seria mais um item no armazenamento
+ * local que a Política lista um a um (item 8), por um ganho pequeno.
  */
-import { useState } from 'react'
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
 import { useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 
-/** Índice sorteado em [0, total). `random` injetável para teste; fora da faixa cai no último. */
-export function sortearFaixa(total: number, random: () => number = Math.random): number {
-  return Math.min(total - 1, Math.max(0, Math.floor(random() * total)))
-}
-
-export function HomeValueBanner() {
+export function HomeValueBanner({ indice }: { indice: number }) {
   const { locale, messages } = useLocale()
   const session = useSession()
   const m = messages.faixaHome
-  // Sorteio no inicializador: roda no 1º render (inclusive o de hidratação), quando a faixa ainda não
-  // pinta, e fica fixo depois. A troca de idioma em runtime mantém a mesma frase, traduzida.
-  const [indice] = useState(() => sortearFaixa(m.titulos.length))
 
-  if (session.isPending || session.data) return null
+  // Só uma conta confirmada esconde. Pendente (SSR, hidratação, refetch) ou erro na leitura da sessão: mostra,
+  // como o resto da home trata quem não se sabe se entrou.
+  if (session.data) return null
 
   return (
     <section

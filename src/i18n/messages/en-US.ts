@@ -276,13 +276,13 @@ export const enUS: Messages = {
     titulo: 'Recipe of the week',
     subtitulo: 'A catalog highlight, chosen by the curators.',
   },
-  // Home banner for signed-out visitors (#472): one line per load, picked in the browser.
+  // Home banner for signed-out visitors (#472): one line per load, picked by the home on the server.
   faixaHome: {
     titulos: ['What are you in the mood for?', 'Got half a chicken and some leftover rice?', 'From craving to plate.'],
     textos: [
       "Tell us what's in your kitchen and out comes a recipe.",
       'Refogando turns it into dinner.',
-      'Say what you want to eat, Refogando puts the recipe together.',
+      'Tell us what you want to eat and Refogando puts the recipe together.',
     ],
     botoes: ['Get started', 'Create account', 'Try it'],
   },

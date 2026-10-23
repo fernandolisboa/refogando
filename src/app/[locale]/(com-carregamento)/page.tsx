@@ -29,12 +29,13 @@
  * slot sem quebrar a home.
  *
  * Faixa para quem não entrou (#472): `HomeValueBanner` (client) vai no mesmo `highlight`, acima da receita da
- * semana. Decide no navegador se aparece, então não muda o HTML do repouso.
+ * semana, no HTML de todos (a frase é sorteada aqui, por requisição); some no navegador para quem está logado.
  */
 import type { Metadata } from 'next'
 import { SearchExperience } from '@/components/recipe/search-experience'
 import { RecipeResultItem, type BadgeLabels } from '@/components/recipe/recipe-result-item'
 import { HomeValueBanner } from '@/components/recipe/home-value-banner'
+import { sortearFaixa } from '@/domain/faixa-home'
 import { buildHomeMetadata, isRefinedHomeParams, type RawSearchParams } from '@/domain/discovery-home'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
@@ -134,11 +135,12 @@ export default async function Home({
       </div>
     ) : null
 
-  // #472: a faixa para quem não entrou fica acima da "Receita da semana". Ela decide no navegador se aparece
-  // (a home de repouso não lê sessão), então o HTML do servidor segue o mesmo.
+  // #472: a faixa para quem não entrou fica acima da "Receita da semana". Vai no HTML para todos (sem salto de
+  // layout para o visitante) e some no navegador quando a sessão mostra uma conta. A frase é sorteada aqui, uma
+  // vez por requisição (a home é dinâmica), e desce por prop para a hidratação pintar a mesma.
   const highlight = (
     <>
-      <HomeValueBanner />
+      <HomeValueBanner indice={sortearFaixa(MESSAGES[locale].faixaHome.titulos.length)} />
       {recipeOfWeekSlot}
     </>
   )

@@ -4,8 +4,8 @@ import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
 
 /**
- * Faixa da home para quem não entrou (#472): só aparece com a sessão resolvida e sem conta, sorteia uma das
- * frases de `faixaHome` e leva ao cadastro do idioma da página.
+ * Faixa da home para quem não entrou (#472): vem no HTML de todos (pendente pinta), some só quando a sessão
+ * mostra uma conta, pinta a frase do `indice` que a home sorteou e leva ao cadastro do idioma da página.
  */
 
 vi.mock('next/link', () => ({
@@ -27,19 +27,19 @@ import { LocaleProvider } from '@/i18n/provider'
 import type { Locale } from '@/i18n/locale'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
-import { HomeValueBanner, sortearFaixa } from '@/components/recipe/home-value-banner'
+import { HomeValueBanner } from '@/components/recipe/home-value-banner'
+import { sortearFaixa } from '@/domain/faixa-home'
 
-function renderBanner(locale: Locale = 'pt-BR') {
-  return render(
+function banner(indice: number, locale: Locale = 'pt-BR') {
+  return (
     <LocaleProvider initialLocale={locale}>
-      <HomeValueBanner />
-    </LocaleProvider>,
+      <HomeValueBanner indice={indice} />
+    </LocaleProvider>
   )
 }
 
 afterEach(() => {
   cleanup()
-  vi.restoreAllMocks()
   authMock.session = { data: null, isPending: false, error: null }
 })
 
@@ -71,44 +71,37 @@ describe('sortearFaixa', () => {
 })
 
 describe('HomeValueBanner', () => {
-  it('sessão pendente (SSR e hidratação): não pinta nada', () => {
-    authMock.session = { data: null, isPending: true, error: null }
-    const { container } = renderBanner()
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('logado: não pinta nada', () => {
-    authMock.session = { data: { user: { id: 'u1' } }, isPending: false, error: null }
-    const { container } = renderBanner()
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it.each([0, 1, 2])('visitante: mostra a frase sorteada %i com o botão para o cadastro', (i) => {
-    vi.spyOn(Math, 'random').mockReturnValue((i + 0.5) / ptBR.faixaHome.titulos.length)
-    renderBanner()
+  it.each([0, 1, 2])('visitante: mostra a frase %i com o botão para o cadastro', (i) => {
+    render(banner(i))
     const faixa = screen.getByRole('region', { name: ptBR.faixaHome.titulos[i] })
     expect(faixa).toHaveTextContent(ptBR.faixaHome.textos[i]!)
     expect(screen.getByRole('link', { name: ptBR.faixaHome.botoes[i] })).toHaveAttribute('href', '/pt-BR/sign-up')
   })
 
-  it('em inglês, o texto e o link seguem o idioma da página', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0)
-    renderBanner('en-US')
-    expect(screen.getByRole('heading', { level: 2, name: enUS.faixaHome.titulos[0] })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: enUS.faixaHome.botoes[0] })).toHaveAttribute('href', '/en-US/sign-up')
+  it('sessão pendente (SSR e hidratação): mostra, igual ao HTML do servidor', () => {
+    authMock.session = { data: null, isPending: true, error: null }
+    render(banner(1))
+    expect(screen.getByRole('heading', { level: 2, name: ptBR.faixaHome.titulos[1] })).toBeInTheDocument()
   })
 
-  it('a frase não muda quando a sessão termina de carregar', () => {
+  it('erro ao ler a sessão: mostra', () => {
+    authMock.session = { data: null, isPending: false, error: new Error('rede') }
+    render(banner(0))
+    expect(screen.getByRole('heading', { level: 2, name: ptBR.faixaHome.titulos[0] })).toBeInTheDocument()
+  })
+
+  it('logado: some quando a sessão resolve com uma conta', () => {
     authMock.session = { data: null, isPending: true, error: null }
-    const random = vi.spyOn(Math, 'random').mockReturnValue(0.9)
-    const { rerender } = renderBanner()
-    random.mockReturnValue(0)
-    authMock.session = { data: null, isPending: false, error: null }
-    rerender(
-      <LocaleProvider initialLocale="pt-BR">
-        <HomeValueBanner />
-      </LocaleProvider>,
-    )
-    expect(screen.getByRole('heading', { level: 2, name: ptBR.faixaHome.titulos[2] })).toBeInTheDocument()
+    const { rerender, container } = render(banner(2))
+    expect(container).not.toBeEmptyDOMElement()
+    authMock.session = { data: { user: { id: 'u1' } }, isPending: false, error: null }
+    rerender(banner(2))
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('em inglês, o texto e o link seguem o idioma da página', () => {
+    render(banner(0, 'en-US'))
+    expect(screen.getByRole('heading', { level: 2, name: enUS.faixaHome.titulos[0] })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: enUS.faixaHome.botoes[0] })).toHaveAttribute('href', '/en-US/sign-up')
   })
 })

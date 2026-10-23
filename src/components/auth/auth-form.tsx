@@ -235,7 +235,8 @@ export function AuthForm({
       <h1 className="font-display text-3xl font-semibold text-fg">{title}</h1>
 
       {isSignUp && (
-        <ul className="flex flex-col gap-2 text-muted">
+        // `role="list"`: o reset do Tailwind tira os marcadores e o VoiceOver do Safari deixa de anunciar a lista.
+        <ul role="list" className="flex flex-col gap-2 text-muted">
           {messages.auth.vantagens.map((vantagem) => (
             <li key={vantagem} className="flex gap-2.5">
               <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-brand" />

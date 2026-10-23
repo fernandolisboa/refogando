@@ -276,15 +276,15 @@ describe('AuthForm — aviso de idade, Termos e Política (ADR-0051; #595)', () 
       renderForm('sign-up', false, locale)
       const vantagens = MESSAGES[locale].auth.vantagens
       expect(vantagens).toHaveLength(3)
-      const lista = screen.getByRole('list')
+      const lista = screen.getByRole('heading', { level: 1 }).nextElementSibling as HTMLElement
+      expect(lista).toHaveAttribute('role', 'list')
       expect(within(lista).getAllByRole('listitem').map((li) => li.textContent)).toEqual([...vantagens])
-      expect(screen.getByRole('heading', { level: 1 }).nextElementSibling).toBe(lista)
     })
   }
 
   it('entrar: sem os bullets de vantagens', () => {
     renderForm('sign-in')
-    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    for (const vantagem of MESSAGES['pt-BR'].auth.vantagens) expect(screen.queryByText(vantagem)).not.toBeInTheDocument()
   })
 
   for (const googleEnabled of [false, true]) {

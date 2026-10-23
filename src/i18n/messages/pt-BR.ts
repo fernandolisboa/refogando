@@ -307,9 +307,9 @@ export const ptBR = {
     titulo: 'Receita da semana',
     subtitulo: 'Um destaque do catálogo, escolhido pela curadoria.',
   },
-  // Faixa da home para quem não entrou na conta (#472). Uma frase por carregamento, sorteada no navegador depois
-  // que a sessão confirma o visitante. Listas por índice (titulos[i], textos[i], botoes[i]); um teste exige o
-  // mesmo tamanho nas três e nos dois idiomas. Todas levam ao cadastro.
+  // Faixa da home para quem não entrou na conta (#472). Uma frase por carregamento, sorteada pela home no
+  // servidor. Listas por índice (titulos[i], textos[i], botoes[i]); um teste exige o mesmo tamanho nas três e
+  // nos dois idiomas. Todas levam ao cadastro.
   faixaHome: {
     titulos: ['Bateu vontade de quê?', 'Sobrou meio frango e um resto de arroz?', 'Da vontade ao prato.'],
     textos: [
