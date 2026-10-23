@@ -1,6 +1,6 @@
 {
-  "id": "cea843e2-e64a-49c6-aecc-c379f3109014",
-  "prevId": "54a4ab81-d2e7-44f1-b887-8e0447b56c99",
+  "id": "0162ffbb-1a18-43ec-8255-ab73d913ba18",
+  "prevId": "a01ebc8e-b580-4496-9d0f-57b2c6008f6e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5387,7 +5387,6 @@
         "direitos_autorais",
         "pessoa_real",
         "conteudo_ofensivo",
-        "sexual_ou_violento",
         "spam",
         "conteudo_ilegal",
         "outro"
