@@ -3,6 +3,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import sharp from 'sharp'
 import type { Database } from '@/db/client'
 import { recipeImage, recipeReview, users } from '@/db/schema'
+import { avatarPathPrefix } from '@/server/images/avatar-blob'
 import { deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { IMAGE_INPUT_PIXEL_LIMIT } from '@/server/images/image-derivatives'
 import type { ImageStore, ListedBlob } from '@/server/images/image-store'
@@ -195,18 +196,26 @@ async function auditLegacyPhoto(
     const spec: UserPhotoSpec = kind === 'avatar' ? AVATAR_PHOTO_SPEC : RECIPE_PHOTO_SPEC
     const clean = await reencodeUserPhoto(got.data, spec)
     if (!clean) return { metadado, desfecho: 'falha' }
+    // O avatar novo mora sob o prefixo da conta (#604), então a conta vem antes do `store`. `loadReferences`
+    // garante uma linha só por URL; sumiu (a pessoa trocou a foto no meio) ⇒ nada a trocar.
+    let ownerId: string | null = null
+    if (kind === 'avatar') {
+      const [owner] = await db.select({ id: users.id }).from(users).where(eq(users.image, blob.url)).limit(1)
+      if (!owner) return { metadado, desfecho: 'trocada' }
+      ownerId = owner.id
+    }
     const { url: newUrl } = await store.store({
       data: clean.data,
       contentType: clean.contentType,
-      pathPrefix: kind === 'avatar' ? 'avatars' : 'recipes',
+      pathPrefix: ownerId !== null ? avatarPathPrefix(ownerId) : 'recipes',
     })
     // Troca só se o banco ainda aponta para a antiga (a pessoa pode ter trocado a foto no meio).
     const swapped =
-      kind === 'avatar'
+      ownerId !== null
         ? await db
             .update(users)
             .set({ image: newUrl, updatedAt: new Date() })
-            .where(eq(users.image, blob.url))
+            .where(and(eq(users.id, ownerId), eq(users.image, blob.url)))
             .returning({ id: users.id })
         : await db
             .update(recipeImage)

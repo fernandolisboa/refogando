@@ -57,4 +57,4 @@ Para upload, o "original" (`blob_url`) da seção anterior passa a ser esse WebP
 - **Riscos que ficam:**
   - Valores plantados antes de #604 continuam em `users.image` (blob alheio exibido como avatar, URL externa). A limpeza é um `UPDATE` que zera o que não é avatar nosso nem foto do Google; entra na próxima migração da fila (a de #600), porque só uma migração anda por vez.
   - Se alguém plantou o avatar antigo de outra pessoa, a eliminação dessa pessoa não apaga o blob (outra conta ainda aponta para ele). Como o banco não diz quem é a dona, a mesma limpeza zera a URL de avatar antigo que mais de uma conta usa: a dona perde o avatar e sobe outro, e o blob vira órfão.
-  - Um avatar que a regra se recusa a apagar e que nenhuma linha referencia vira órfão no Blob; a varredura de órfãos (#603, ainda aberta) vai recolhê-lo.
+  - Um avatar que a regra se recusa a apagar e que nenhuma linha referencia vira órfão no Blob; a varredura semanal de órfãos (#603, `/api/cron/blob-sweep`, ADR-0050) o recolhe depois de 24 h.
