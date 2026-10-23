@@ -13,7 +13,7 @@
  * localStorage muda junto, então quem dispensou o aviso anterior vê o novo) e o seu próprio público.
  */
 
-/** Dia da publicação dos Termos v1 e da Política v3.1 (AAAA-MM-DD, horário de Brasília). */
+/** Dia da publicação dos Termos v1 e da Política v3.1 (AAAA-MM-DD): o dia do merge em UTC, como as outras datas dos textos legais. */
 export const DATA_PUBLICACAO_TERMOS_V1 = '2026-10-23'
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
@@ -31,9 +31,10 @@ const UM_DIA_MS = 24 * 60 * 60 * 1000
 
 /**
  * Público da v1: contas criadas ANTES do começo do dia SEGUINTE ao da publicação — meia-noite de Brasília
- * (UTC−3, a mesma convenção da data acima) que abre o dia depois de `DATA_PUBLICACAO_TERMOS_V1`. Assim entra
- * também quem se cadastrou no dia da publicação antes do deploy (e não viu a linha dos Termos). O custo, aceito no
- * ADR-0051 (e): quem se cadastra nesse dia depois do deploy também vê o aviso, de algo que acabou de aceitar.
+ * (UTC−3) que abre o dia depois de `DATA_PUBLICACAO_TERMOS_V1`. Como a data é a do merge em UTC, esse corte cai
+ * sempre depois do deploy, e entra também quem se cadastrou antes dele no mesmo dia (e não viu a linha dos
+ * Termos). O custo, aceito no ADR-0051 (e): quem se cadastra nesse dia depois do deploy também vê o aviso, de algo
+ * que acabou de aceitar.
  */
 export const AVISO_LEGAL_CONTAS_ANTES_DE_MS = Date.parse(`${DATA_PUBLICACAO_TERMOS_V1}T00:00:00-03:00`) + UM_DIA_MS
 
