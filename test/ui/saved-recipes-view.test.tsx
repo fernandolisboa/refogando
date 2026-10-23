@@ -220,3 +220,27 @@ describe('SavedRecipesView — multi-seleção "adicionar à lista" (#530)', () 
     expect(screen.getByRole('checkbox', { name: 'Selecionar Receita A' })).not.toBeChecked()
   })
 })
+
+describe('SavedRecipesView — selos de IA nos cards (#618)', () => {
+  it('texto da IA ⇒ selo "texto gerado por IA"; imagem da IA ⇒ selo sobre a foto; cada um só onde cabe', async () => {
+    sessionState = authed()
+    mockFetch({
+      recipes: [
+        item({ id: 'r-texto', name: 'Texto da IA', textAiGenerated: true }),
+        item({
+          id: 'r-foto',
+          name: 'Foto da IA',
+          origin: 'catalog',
+          imageUrl: 'https://blob.example/ia.jpg',
+          imageAiGenerated: true,
+        }),
+        item({ id: 'r-nada', name: 'Do catálogo', origin: 'catalog' }),
+      ],
+      lists: [],
+    })
+    renderView()
+    expect(await screen.findByText('Texto da IA')).toBeInTheDocument()
+    expect(screen.getAllByText(ptBR.busca.textoSeloIa)).toHaveLength(1)
+    expect(screen.getAllByText(ptBR.busca.imagemSeloIa)).toHaveLength(1)
+  })
+})

@@ -34,7 +34,12 @@ export function CooksToFollowRail({ cooks }: { cooks: RecommendedCook[] }) {
       <ul className="flex flex-col gap-3">
         {cooks.map((cook) => (
           <li key={cook.handle}>
-            <CookCard cook={cook} labels={m} aiLabel={aiLabel} />
+            <CookCard
+              cook={cook}
+              labels={m}
+              aiLabel={aiLabel}
+              textAiLabel={messages.busca.textoSeloIa}
+            />
           </li>
         ))}
       </ul>

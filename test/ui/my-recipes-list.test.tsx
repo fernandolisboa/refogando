@@ -220,6 +220,17 @@ describe('MyRecipesList (#61)', () => {
     expect(selos).toHaveLength(1)
   })
 
+  it('T10 — #618: selo "texto gerado por IA" na receita com textAiGenerated (e só nela)', async () => {
+    sessionState = authed()
+    mockRecipes([
+      item({ id: 'r-ia', name: 'Texto da IA', textAiGenerated: true }),
+      item({ id: 'r-pessoa', name: 'Reescrita', origin: 'user_edited', lineageKind: 'edited' }),
+    ])
+    renderList()
+    expect(await screen.findByText('Texto da IA')).toBeInTheDocument()
+    expect(screen.getAllByText(ptBR.busca.textoSeloIa)).toHaveLength(1)
+  })
+
   it('T5 — en-US: título de selo traduzido + link no segmento [locale] en-US (#231)', async () => {
     sessionState = authed()
     mockRecipes([item({ name: 'My recipe', visibility: 'public' })])

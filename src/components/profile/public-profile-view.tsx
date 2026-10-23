@@ -160,6 +160,8 @@ export function PublicProfileView({
                 imageSrcSet={r.imageSrcSet}
                 imageAiGenerated={r.imageAiGenerated}
                 aiLabel={mb.imagemSeloIa}
+                textAiGenerated={r.textAiGenerated}
+                textAiLabel={mb.textoSeloIa}
               />
             ))}
           </ul>

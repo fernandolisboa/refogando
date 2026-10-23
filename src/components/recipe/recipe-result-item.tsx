@@ -7,7 +7,8 @@
  * - O KICKER deriva de `origin` via `classifySection` (NÃO re-deriva a regra), MAS `isOwn`
  *   (#116) tem PRECEDÊNCIA: own ⇒ "Sua receita" em tinta de marca. Proveniência SEMPRE visível
  *   (texto colorido em vez do selo-pílula nas listas, como no protótipo) — catálogo=erva,
- *   comunidade=neutro, minha=páprica. `autoTranslationSignal` entra no kicker (toque leve).
+ *   comunidade=neutro, minha=páprica. `autoTranslationSignal` entra no kicker (toque leve), e o
+ *   `textAiGenerated` (#618) também: o selo do TEXTO mora junto do título, o da IMAGEM sobre a foto.
  * - Thumbnail (#130): foto quando há `imageUrl`; senão um placeholder (ausente ≠ vazio na FOTO,
  *   mas o protótipo mostra sempre a moldura). Selo "✨ gerada por IA" (#132) sobre a foto gerada.
  */
@@ -68,6 +69,13 @@ export type RecipeResultItemProps = {
   /** Rótulo do selo "gerada por IA", já localizado. Lido só quando `imageAiGenerated`. */
   aiLabel?: string
   /**
+   * Texto gerado por IA (#618, regra do #597)? Entra no kicker como sufixo, NO LUGAR do de tradução
+   * automática. Fica longe do selo da imagem: uma receita da IA com foto do dono ainda mostra o sinal.
+   */
+  textAiGenerated?: boolean
+  /** Rótulo "texto gerado por IA", já localizado (`busca.textoSeloIa`). Lido só quando `textAiGenerated`. */
+  textAiLabel?: string
+  /**
    * #454: `'grid'` empilha o card (thumbnail EM CIMA, texto embaixo, borda FECHADA) — pro trilho
    * "Receitas semelhantes" (grade 2/4 colunas), onde a linha larga `'list'` padrão (thumbnail à
    * direita + `border-t`/`first:border-t-0` pensados pra PILHA vertical) ficaria com uma borda
@@ -94,18 +102,25 @@ export function RecipeResultItem({
   imageSrcSet,
   imageAiGenerated = false,
   aiLabel,
+  textAiGenerated = false,
+  textAiLabel,
   layout = 'list',
 }: RecipeResultItemProps) {
   const section = classifySection(origin)
   // Kicker de proveniência: own ⇒ "Sua receita" (páprica); senão o selo da seção
-  // (catálogo=erva, comunidade=neutro). Tradução automática entra como sufixo do kicker.
+  // (catálogo=erva, comunidade=neutro). Tradução automática OU texto da IA (#618) entra como sufixo:
+  // no texto da IA o original fica `automatica_nao_revisada`, que é texto da IA e não tradução (ADR-0002),
+  // então o rótulo da IA SUBSTITUI o de tradução em vez de somar mais um pedaço ao kicker.
   const kickerLabel = isOwn ? (ownLabel ?? '') : badgeLabels[section]
   const kickerColor = isOwn
     ? 'text-brand-ink'
     : section === 'catalogo'
       ? 'text-accent-strong'
       : 'text-muted'
-  const kicker = autoTranslationSignal ? `${kickerLabel} · ${autoTranslationLabel}` : kickerLabel
+  const suffix = textAiGenerated ? textAiLabel : autoTranslationSignal ? autoTranslationLabel : undefined
+  const kicker = [kickerLabel, suffix]
+    .filter((part): part is string => part != null && part.length > 0)
+    .join(' · ')
   // #129/Autoria: "por <name>". {name} interpolado por replace (folhas i18n são string).
   const byline =
     author !== undefined && byLabel !== undefined ? byLabel.replace('{name}', author.name) : null
@@ -147,7 +162,7 @@ export function RecipeResultItem({
     <div className="min-w-0 flex-1">
       {/* O título é o link primário pro detalhe; foco visível herda do :focus-visible global. */}
       <Link href={detailHref} className="group block rounded-sm">
-        {kickerLabel.length > 0 && (
+        {kicker.length > 0 && (
           <div className={cn('mb-1 text-xs font-semibold tracking-wide', kickerColor)}>
             {kicker}
           </div>

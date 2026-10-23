@@ -117,6 +117,22 @@ describe('CooksToFollowRail (#278) — cartão rico (apresentacional)', () => {
     expect(screen.getByText(AI)).toBeInTheDocument()
   })
 
+  it('#618: receita do preview com texto da IA mostra "texto gerado por IA" sob o título (e só ela)', () => {
+    mockFollowFetch()
+    renderRail([
+      cook('rita', 'Rita', {
+        recipeCount: 2,
+        recipes: [
+          { recipeId: 'r1', displayedTitle: 'Moqueca da IA', textAiGenerated: true },
+          { recipeId: 'r2', displayedTitle: 'Feijoada da Rita' },
+        ],
+      }),
+      cook('beto', 'Beto'),
+      cook('ana', 'Ana'),
+    ])
+    expect(screen.getAllByText(ptBR.busca.textoSeloIa)).toHaveLength(1)
+  })
+
   it('clicar Seguir: POST e flip para "Seguindo" (otimista, sem GET por item)', async () => {
     const fetchMock = mockFollowFetch()
     const user = userEvent.setup()

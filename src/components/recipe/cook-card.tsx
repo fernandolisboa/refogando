@@ -49,6 +49,7 @@ export function CookCard({
   cook,
   labels,
   aiLabel,
+  textAiLabel,
   authed = true,
   returnTo = '/cooks',
 }: {
@@ -56,6 +57,8 @@ export function CookCard({
   labels: CookCardLabels
   /** Rótulo sr-only do selo de IA das receitas embutidas. */
   aiLabel: string
+  /** Rótulo "texto gerado por IA" (#618), mostrado sob o título das receitas embutidas com texto da IA. */
+  textAiLabel?: string
   authed?: boolean
   /** Caminho interno pra onde voltar após o sign-in (anon). */
   returnTo?: string
@@ -123,7 +126,12 @@ export function CookCard({
       {recipes.length > 0 && (
         <ul className="flex flex-col">
           {recipes.map((recipe) => (
-            <CookRecipeRow key={recipe.recipeId} recipe={recipe} aiLabel={aiLabel} />
+            <CookRecipeRow
+              key={recipe.recipeId}
+              recipe={recipe}
+              aiLabel={aiLabel}
+              textAiLabel={textAiLabel}
+            />
           ))}
         </ul>
       )}
@@ -131,8 +139,19 @@ export function CookCard({
   )
 }
 
-/** Uma receita no preview do cartão (estática): thumbnail 40px (foto/moldura) + selo de IA + título serif. */
-function CookRecipeRow({ recipe, aiLabel }: { recipe: RecommendedCookRecipe; aiLabel: string }) {
+/**
+ * Uma receita no preview do cartão (estática): thumbnail 40px (foto/moldura) + selo de IA da imagem + título
+ * serif, com o "texto gerado por IA" (#618) numa linha miúda embaixo quando o texto é da IA.
+ */
+function CookRecipeRow({
+  recipe,
+  aiLabel,
+  textAiLabel,
+}: {
+  recipe: RecommendedCookRecipe
+  aiLabel: string
+  textAiLabel?: string
+}) {
   return (
     <li className="flex items-center gap-2.5 border-t border-border py-2 first:border-t-0">
       <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-border bg-brand/[0.07]">
@@ -154,9 +173,14 @@ function CookRecipeRow({ recipe, aiLabel }: { recipe: RecommendedCookRecipe; aiL
           </span>
         )}
       </div>
-      <span className="line-clamp-2 font-display text-sm font-semibold leading-snug text-fg">
-        {recipe.displayedTitle}
-      </span>
+      <div className="min-w-0">
+        <span className="line-clamp-2 font-display text-sm font-semibold leading-snug text-fg">
+          {recipe.displayedTitle}
+        </span>
+        {recipe.textAiGenerated && textAiLabel && (
+          <span className="block text-[0.65rem] text-muted">{textAiLabel}</span>
+        )}
+      </div>
     </li>
   )
 }

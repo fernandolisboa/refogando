@@ -21,7 +21,12 @@ import {
   type SearchSection,
   type TranslationProvenance,
 } from '@/domain/recipe'
-import { resolveName, type RecipeAuthor, type TranslationRow } from '@/domain/recipe-read'
+import {
+  resolveAiTextSignal,
+  resolveName,
+  type RecipeAuthor,
+  type TranslationRow,
+} from '@/domain/recipe-read'
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/i18n/locale'
 import type { Restricao } from '@/domain/vocabulary'
 import { buildImageSrcSet } from '@/domain/image-variants'
@@ -124,6 +129,12 @@ export type SearchResult = {
   imageSrcSet?: string
   /** Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto. */
   imageAiGenerated?: boolean
+  /**
+   * Texto gerado por IA (#618)? Mesma regra da página da receita (`resolveAiTextSignal`, #597) sobre a
+   * proveniência da tradução do `original_locale`. Dirige o selo "✨ texto gerado por IA" no kicker do
+   * card. AUSENTE quando não.
+   */
+  textAiGenerated?: boolean
   /**
    * Slug canônico do locale CORRENTE (#231, ADR-0020) — pro card linkar `/{locale}/recipes/<slug>`.
    * AUSENTE ("ausente ≠ vazio") quando a Receita não tem tradução COM slug no locale pedido (só o
@@ -275,6 +286,10 @@ export function projectResult(
     ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated.
     ...(hit.image_provenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
+    // #618/selo: texto gerado por IA? Mesma regra da página da receita (#597). "ausente ≠ vazio".
+    ...(resolveAiTextSignal({ origin: hit.origin, originalLocale: hit.original_locale, translations })
+      ? { textAiGenerated: true }
+      : {}),
     // #231/Slug: slug do locale CORRENTE pro link canônico. "ausente ≠ vazio": só quando o LEFT JOIN
     // do locale pedido trouxe slug (req_t.slug != null) — senão o card cai no fallback por UUID.
     ...(hit.slug != null ? { slug: hit.slug } : {}),

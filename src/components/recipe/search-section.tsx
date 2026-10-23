@@ -21,6 +21,7 @@ export function SearchSection({
   autoTranslationLabel,
   byLabel,
   aiLabel,
+  textAiLabel,
   locale,
   results,
 }: {
@@ -38,6 +39,8 @@ export function SearchSection({
   byLabel: string
   /** #132: rótulo do selo "✨ gerada por IA", localizado, repassado a cada thumbnail ai_generated. */
   aiLabel: string
+  /** #618: rótulo "✨ texto gerado por IA", localizado, repassado ao kicker de cada item com texto da IA. */
+  textAiLabel: string
   /** #231/ADR-0020: locale corrente, repassado a cada item pro link canônico `/{locale}/recipes/…`. */
   locale: string
   results: SearchResult[]
@@ -71,6 +74,8 @@ export function SearchSection({
             imageSrcSet={result.imageSrcSet}
             imageAiGenerated={result.imageAiGenerated}
             aiLabel={aiLabel}
+            textAiGenerated={result.textAiGenerated}
+            textAiLabel={textAiLabel}
           />
         ))}
       </ul>

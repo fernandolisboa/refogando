@@ -97,3 +97,42 @@ describe('RecipeResultItem — link canônico por slug (#231, ADR-0020)', () => 
     expect(href).not.toBe('/recipes/r-1')
   })
 })
+
+describe('RecipeResultItem — selo "texto gerado por IA" no kicker (#618)', () => {
+  const props = {
+    recipeId: 'r-3',
+    locale: 'pt-BR',
+    displayedTitle: 'Moqueca da IA',
+    origin: 'ai_structured' as const,
+    badgeLabels,
+    autoTranslationLabel: 'tradução automática',
+    textAiLabel: '✨ texto gerado por IA',
+  }
+
+  it('textAiGenerated ⇒ sufixo no kicker NO LUGAR da tradução automática, mesmo com foto do dono', () => {
+    render(
+      <RecipeResultItem
+        {...props}
+        autoTranslationSignal
+        textAiGenerated
+        imageUrl="https://abc.public.blob.vercel-storage.com/recipes/foto.webp"
+        aiLabel="✨ gerada por IA"
+      />,
+    )
+    expect(screen.getByText('Comunidade · ✨ texto gerado por IA')).toBeInTheDocument()
+    expect(screen.queryByText(/tradução automática/)).not.toBeInTheDocument()
+    // O selo da imagem é outro e só aparece com imagem da IA.
+    expect(screen.queryByText('✨ gerada por IA')).not.toBeInTheDocument()
+  })
+
+  it('"Sua receita" também leva o sufixo', () => {
+    render(<RecipeResultItem {...props} autoTranslationSignal={false} textAiGenerated isOwn ownLabel="Sua receita" />)
+    expect(screen.getByText('Sua receita · ✨ texto gerado por IA')).toBeInTheDocument()
+  })
+
+  it('sem textAiGenerated ⇒ kicker de antes (com a tradução automática quando há), sem o sufixo da IA', () => {
+    render(<RecipeResultItem {...props} autoTranslationSignal />)
+    expect(screen.getByText('Comunidade · tradução automática')).toBeInTheDocument()
+    expect(screen.queryByText(/texto gerado por IA/)).not.toBeInTheDocument()
+  })
+})

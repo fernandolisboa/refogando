@@ -239,7 +239,10 @@ describe('buildSearchResponse — defesas (locale, edge ambos-NULL, ts_rank)', (
     const expectedKeys = ['autoTranslationSignal', 'displayedTitle', 'isOwn', 'origin', 'recipeId']
     for (const result of [...catalogo, ...comunidade]) {
       const keys = Object.keys(result).sort()
-      expect(keys).toEqual(expectedKeys)
+      // #618: o C3 (user_edited com o original ainda da IA) leva também o selo `textAiGenerated`.
+      expect(keys).toEqual(
+        result.recipeId === 'C3' ? [...expectedKeys, 'textAiGenerated'].sort() : expectedKeys,
+      )
       expect(keys).not.toContain('rank')
       expect(keys).not.toContain('rn')
       expect(keys).not.toContain('ts_rank')

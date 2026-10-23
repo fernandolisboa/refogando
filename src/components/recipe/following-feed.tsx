@@ -213,6 +213,8 @@ export function FollowingFeed() {
               imageSrcSet={it.imageSrcSet}
               imageAiGenerated={it.imageAiGenerated}
               aiLabel={mb.imagemSeloIa}
+              textAiGenerated={it.textAiGenerated}
+              textAiLabel={mb.textoSeloIa}
             />
           ))}
         </ul>

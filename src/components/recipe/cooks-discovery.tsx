@@ -245,6 +245,7 @@ export function CooksDiscovery({
                     cook={cook}
                     labels={cardLabels}
                     aiLabel={aiLabel}
+                    textAiLabel={messages.busca.textoSeloIa}
                     authed={authed}
                     returnTo={returnTo}
                   />

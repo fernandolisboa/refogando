@@ -281,12 +281,12 @@ describe('loadRecommendedCooks (ADR-0024 emendado) — preview de receitas no ca
     expect(rico.recipes.map((r) => r.displayedTitle)).toEqual(['Mais nova', 'Receita C', 'Receita B'])
   })
 
-  it('allowlist: cada receita do preview só carrega {recipeId, displayedTitle(, slug, imageUrl, imageAiGenerated)}', async () => {
+  it('allowlist: cada receita do preview só carrega {recipeId, displayedTitle(, slug, imageUrl, imageAiGenerated, textAiGenerated)}', async () => {
     const cookId = await seedUser({ email: 'all@c.test', handle: 'allow', name: 'Allow' })
     await seedTitledRecipe({ ownerId: cookId, titulo: 'Única' })
     const { cooks } = await loadRecommendedCooks(getDb(), { limit: 50 })
     const r = cooks.find((c) => c.handle === 'allow')!.recipes[0]
-    const allowed = ['recipeId', 'displayedTitle', 'slug', 'imageUrl', 'imageAiGenerated']
+    const allowed = ['recipeId', 'displayedTitle', 'slug', 'imageUrl', 'imageSrcSet', 'imageAiGenerated', 'textAiGenerated']
     for (const k of Object.keys(r)) expect(allowed).toContain(k)
     expect(r.recipeId).toBeTruthy()
     expect(r.displayedTitle).toBe('Única')

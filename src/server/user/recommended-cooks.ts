@@ -348,6 +348,7 @@ async function loadCookRecipePreviews(
       ...(projected.imageAiGenerated !== undefined
         ? { imageAiGenerated: projected.imageAiGenerated }
         : {}),
+      ...(projected.textAiGenerated !== undefined ? { textAiGenerated: projected.textAiGenerated } : {}),
     }
     const list = byHandle.get(row.cook_handle)
     if (list) list.push(preview)
