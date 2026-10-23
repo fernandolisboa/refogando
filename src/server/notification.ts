@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { notification, notificationTypeEnum, recipeReview, users } from '@/db/schema'
+import { moderationCategoryEnum, notification, notificationTypeEnum, recipeReview, users } from '@/db/schema'
 import type { NotificationType, NotificationRefs } from '@/domain/notification'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import { errorLogFields } from '@/domain/error-report'
 
 /**
@@ -78,6 +79,9 @@ export type NotificationsPage = {
  * recriaria. A checagem vai no próprio INSERT (`INSERT … SELECT … FROM users WHERE … anonymized_at IS NULL`),
  * sem ida extra ao banco: conta eliminada (ou inexistente) ⇒ zero linha. Uma corrida com a eliminação em curso
  * é inofensiva: a varredura diária apaga a sobra.
+ *
+ * `moderationCategory` (#609): a categoria do motivo, só nos 3 tipos de retirada (o CHECK da tabela recusa nos
+ * outros; como o resto, a falha seria engolida). Código da lista fechada, nunca o texto livre do Curador.
  */
 export async function emitNotification(
   db: Database,
@@ -87,20 +91,27 @@ export async function emitNotification(
     actorId?: string | null
     recipeId?: string | null
     reviewId?: string | null
+    moderationCategory?: ModerationCategory | null
   },
 ): Promise<void> {
   try {
     // Colunas explícitas: `id`, `read_at` e `created_at` ficam com o default do banco.
     const columns = sql.join(
-      [notification.recipientId, notification.type, notification.actorId, notification.recipeId, notification.reviewId].map(
-        (c) => sql.identifier(c.name),
-      ),
+      [
+        notification.recipientId,
+        notification.type,
+        notification.actorId,
+        notification.recipeId,
+        notification.reviewId,
+        notification.moderationCategory,
+      ].map((c) => sql.identifier(c.name)),
       sql`, `,
     )
     await db.execute(sql`
       INSERT INTO ${notification} (${columns})
       SELECT ${users.id}, ${input.type}::${sql.identifier(notificationTypeEnum.enumName)},
-        ${input.actorId ?? null}::uuid, ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid
+        ${input.actorId ?? null}::uuid, ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid,
+        ${input.moderationCategory ?? null}::${sql.identifier(moderationCategoryEnum.enumName)}
       FROM ${users}
       WHERE ${users.id} = ${input.recipientId} AND ${users.anonymizedAt} IS NULL`)
   } catch (err) {
@@ -164,6 +175,8 @@ export async function loadNotifications(
       // #460: UUID da receita-sujeito (coluna existente) — alimenta o LINK do item no painel. Não é
       // capability: o GET do detalhe reimpõe os gates de leitura, sem risco de IDOR/vazamento.
       recipeId: notification.recipeId,
+      // #609: categoria do motivo da retirada (código da lista fechada; o texto vem do i18n na vista).
+      moderationCategory: notification.moderationCategory,
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       // SERVER-ONLY (nunca no DTO): alimenta só o cursor opaco da próxima página.
@@ -188,6 +201,7 @@ export async function loadNotifications(
       recipeTitle: null,
       rating: r.rating,
       recipeId: r.recipeId,
+      moderationCategory: r.moderationCategory,
     },
     actorImage: r.actorImage,
     readAt: r.readAt ? r.readAt.toISOString() : null,

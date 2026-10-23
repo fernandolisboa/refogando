@@ -5,6 +5,7 @@
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import type { Messages } from './pt-BR'
 // Relative import (a value, not a type): the E2E imports the catalogs outside the Next bundler.
 import {
@@ -13,6 +14,7 @@ import {
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
+  DATA_TERMOS_V1_3,
 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
@@ -66,7 +68,8 @@ export const enUS: Messages = {
     vazio: 'No notifications yet',
     novoSeguidor: '{name} started following you',
     novoSeguidorAnon: 'Someone started following you',
-    // N2 curation/moderation events (#373): impersonal, no actor, no free-text reason embedded.
+    // N2 curation/moderation events (#373): impersonal, no actor, no free-text reason embedded (the reason
+    // category is appended via `comMotivo`, #609).
     sugestaoCozinhaResolvida: 'Your cuisine suggestion was reviewed',
     receitaModerada: 'One of your recipes was removed from discovery by a moderator',
     imagemModerada: 'One of your images was moderated',
@@ -75,6 +78,17 @@ export const enUS: Messages = {
     avaliacaoNaReceita: '{name} rated your recipe ({stars})',
     avaliacaoNaReceitaAnon: 'Your recipe received a rating ({stars})',
     avaliacaoModerada: 'Your review ({stars}) was removed by a moderator',
+    // #609: the closed-list reason category after the takedown text ({texto} = the type's sentence; {motivo} = the
+    // label from `categoriaModeracaoDono`). Never the curator's free text nor who decided.
+    comMotivo: '{texto}. Reason: {motivo}.',
+    // #609: sibling link of a takedown item (Terms, item 8) — opens an email to the privacy channel. "Reconsider", as
+    // in the Terms: "review" is the rating a cook writes in this app.
+    pedirNovaAnalise: 'Ask us to reconsider',
+    pedirNovaAnaliseAria: 'Ask us to reconsider by email: {texto}',
+    novaAnaliseAssunto: 'Request for reconsideration of a takedown',
+    novaAnaliseAssuntoReceita: 'Request for reconsideration: recipe {id}',
+    novaAnaliseAssuntoAvaliacao: 'Request for reconsideration: review on recipe {id}',
+    novaAnaliseAssuntoImagem: 'Request for reconsideration: image of recipe {id}',
     generico: 'You have a new notification',
   },
   locale: { label: 'Language', ptBR: 'Portuguese (Brazil)', enUS: 'English (US)' },
@@ -120,6 +134,24 @@ export const enUS: Messages = {
     intermediario: 'Intermediate',
     avancado: 'Advanced',
   } satisfies Record<NivelChef, string>,
+  // #609: takedown reason category (closed list), in two forms: for the OWNER, after "Reason:" in the notification
+  // (lower case, no Terms items); for the CURATOR, in the moderation and image review queues, with the Terms items.
+  categoriaModeracaoDono: {
+    direitos_autorais: 'copyright',
+    pessoa_real: 'image or personal data of a real person',
+    conteudo_ofensivo: 'offensive, discriminatory, harassing or hateful content',
+    spam: 'spam, advertising or scam',
+    conteudo_ilegal: 'illegal content',
+    outro: 'another rule of the Terms of Use',
+  } satisfies Record<ModerationCategory, string>,
+  categoriaModeracaoLabel: {
+    direitos_autorais: 'Copyright (Terms, items 4, 5 and 7)',
+    pessoa_real: 'Image or personal data of a real person (items 4 and 7)',
+    conteudo_ofensivo: 'Offensive, discriminatory, harassing or hateful (items 4 and 7)',
+    spam: 'Spam, advertising or scam (item 7)',
+    conteudo_ilegal: 'Illegal content (items 7 and 8)',
+    outro: 'Another rule of the Terms',
+  } satisfies Record<ModerationCategory, string>,
   // Tela de Busca (#56), mesma substância traduzida (ADR-0001, não byte-idêntica).
   busca: {
     // #5 (Direção C): Search IS the discovery home (ADR-0020). `titulo` is the page IDENTITY — it is the
@@ -1701,7 +1733,13 @@ export const enUS: Messages = {
     tipoPlayful: 'Playful',
     manter: 'Keep in pool',
     remover: 'Remove from pool',
-    motivoRemocao: 'Reason for removal',
+    motivoRemocao: 'Reason details (not shown in the notification; the owner can see them in their data export)',
+    // #609: closed-list reason category (`categoriaModeracaoLabel`); the owner sees it in the notification.
+    categoriaRemocao: 'Reason shown to the owner',
+    categoriaPlaceholder: 'Choose a reason',
+    categoriaAjuda:
+      'The owner sees this reason in the notification, with a link to ask us to reconsider. The details below are not shown in the notification, but the owner can see them in their data export: do not write data about other people there (for example, who reported it).',
+    erroCategoria: 'Choose the reason shown to the owner.',
     motivoPlaceholder: 'Explain why this recipe leaves the pool',
     confirmarRemocao: 'Confirm removal',
     cancelar: 'Cancel',
@@ -1754,7 +1792,13 @@ export const enUS: Messages = {
     remover: 'Remove',
     removendo: 'Removing…',
     confirmarRemocao: 'Confirm removal',
-    motivoRemocao: 'Reason for removal',
+    motivoRemocao: 'Reason details (not shown in the notification; the owner can see them in their data export)',
+    // #609: closed-list reason category (`categoriaModeracaoLabel`); the owner sees it in the notification.
+    categoriaRemocao: 'Reason shown to the owner',
+    categoriaPlaceholder: 'Choose a reason',
+    categoriaAjuda:
+      'The owner sees this reason in the notification, with a link to ask us to reconsider. The details below are not shown in the notification, but the owner can see them in their data export: do not write data about other people there (for example, who reported it).',
+    erroCategoria: 'Choose the reason shown to the owner.',
     motivoPlaceholder: 'Explain why this image leaves the public view',
     dispensar: 'Dismiss',
     dispensando: 'Dismissing…',
@@ -2344,7 +2388,7 @@ export const enUS: Messages = {
     s8Corpo: [
       'Anyone with an account can report a public recipe or a review with the Report button. You can also write to privacidade@refogando.com, which is the way to report a profile or to report without an account.',
       'We review every report. When content is clearly illegal or violates these Terms, we take it down and record the decision, with the reason.',
-      'If moderation takes down a recipe, image or review of yours, you get a notification in the app; if it is your profile, we let you know by email. To learn the reason or ask us to reconsider, write to privacidade@refogando.com.',
+      'If moderation takes down a recipe, image or review of yours, you get a notification in the app with the reason, chosen from a closed list that follows these Terms, and a link to ask us to reconsider by email; if it is your profile, we let you know by email. To learn more about the reason or ask us to reconsider, write to privacidade@refogando.com.',
       'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask us to reconsider at privacidade@refogando.com.',
     ],
 
@@ -2364,15 +2408,16 @@ export const enUS: Messages = {
       `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`,
       `v1.1 — ${DATA_TERMOS_V1_1}: public recipes can now also be reported with the Report button on the recipe page (item 8).`,
       `v1.2 — ${DATA_TERMOS_V1_2}: the curators no longer review images of private recipes (item 5).`,
+      `v1.3 — ${DATA_TERMOS_V1_3}: the takedown notification now shows the reason, from a closed list, and a link to ask us to reconsider (item 8).`,
     ],
 
     s11Titulo: '11. Law and venue',
     s11Corpo: ['These Terms are governed by Brazilian law. Any dispute may be brought before the courts of your place of residence.'],
 
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1.2',
+    rodapeVersao: 'v1.3',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_TERMOS_V1_2,
+    rodapeData: DATA_TERMOS_V1_3,
   },
   // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
   avisoLegal: {

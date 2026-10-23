@@ -2,6 +2,7 @@ import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { applyReviewModeration } from '@/server/recipe/moderation'
+import { parseTakedownBody } from '@/server/http/takedown-body'
 
 /**
  * Curador REMOVE a AVALIAÇÃO reportada (issue #366, ADR-0027) — esconde a avaliação INTEIRA (nota +
@@ -23,14 +24,16 @@ export async function POST(
   const g = await requireRole(request, 'curador')
   if (!g.ok) return g.response
 
-  const body = (await request.json().catch(() => ({}))) as { reason?: unknown }
-  const reason = typeof body.reason === 'string' ? body.reason : ''
+  // #609: motivo livre + categoria da lista fechada (400 `categoria_invalida` antes de qualquer write).
+  const body = await parseTakedownBody(request)
+  if (!body.ok) return body.response
 
   const res = await applyReviewModeration({
     db: getDb(),
     reportId: id,
     curatorId: g.session.user.id,
-    reason,
+    reason: body.reason,
+    category: body.category,
   })
 
   switch (res.kind) {

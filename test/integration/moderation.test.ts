@@ -3,7 +3,7 @@ import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
-import { recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '@/db/schema'
+import { notification, recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '@/db/schema'
 import { POST as reportRoute } from '@/app/api/recipes/[id]/report/route'
 import { REPORTS_POR_DIA } from '@/server/recipe/report'
 import { REPORT_REASON_MAX } from '@/domain/report'
@@ -319,10 +319,10 @@ describe('Moderação reativa (#18)', () => {
     const id = await seedPublicCommunity(owner)
     const reportId = (await reportRecipe(id, { reason: 'spam' }, reporter).then((r) => r.json())) as { reportId: string }
 
-    const reasonVazio = await remove(reportId.reportId, { reason: '' }, curador)
+    const reasonVazio = await remove(reportId.reportId, { reason: '', category: 'spam' }, curador)
     expect(reasonVazio.status).toBe(400)
 
-    const res = await remove(reportId.reportId, { reason: 'viola diretrizes' }, curador)
+    const res = await remove(reportId.reportId, { reason: 'viola diretrizes', category: 'spam' }, curador)
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
 
@@ -337,6 +337,37 @@ describe('Moderação reativa (#18)', () => {
     expect(rep.status).toBe('resolved')
     expect(rep.resolvedBy).toBe(curId)
     expect(rep.resolvedAt).not.toBeNull()
+  })
+
+  it('#609: sem categoria ou fora da lista ⇒ 400 categoria_invalida sem efeito; válida ⇒ vai na notificação, 1 vez só', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'cat-owner@ex.com' })
+    const { headers: reporter } = await seedSessionHeaders({ email: 'cat-reporter@ex.com' })
+    const { headers: reporter2 } = await seedSessionHeaders({ email: 'cat-reporter2@ex.com' })
+    const { headers: curador } = await seedSessionHeaders({ email: 'cat-cur@ex.com', role: 'curador' })
+    const id = await seedPublicCommunity(owner)
+    const rA = ((await (await reportRecipe(id, { reason: 'cópia' }, reporter)).json()) as { reportId: string }).reportId
+    const rB = ((await (await reportRecipe(id, { reason: 'cópia' }, reporter2)).json()) as { reportId: string }).reportId
+    const notifs = () => getDb().select().from(notification).where(eq(notification.recipientId, owner))
+
+    for (const body of [{ reason: 'copiada de um livro' }, { reason: 'copiada de um livro', category: 'plagio' }]) {
+      const res = await remove(rA, body, curador)
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toEqual({ error: 'categoria_invalida' })
+    }
+    // Corpo que não é objeto também não passa (nem derruba a rota).
+    expect((await remove(rA, null, curador)).status).toBe(400)
+    expect((await readRecipeRow(id)).moderationRemovedAt).toBeNull()
+    expect((await readReport(rA)).status).toBe('pending')
+    expect(await notifs()).toHaveLength(0)
+
+    expect((await remove(rA, { reason: 'copiada de um livro', category: 'direitos_autorais' }, curador)).status).toBe(200)
+    const rows = await notifs()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ type: 'recipe_moderated', recipeId: id, moderationCategory: 'direitos_autorais' })
+
+    // 2ª remoção (outro report) não re-notifica.
+    expect((await remove(rB, { reason: 'de novo', category: 'spam' }, curador)).status).toBe(200)
+    expect(await notifs()).toHaveLength(1)
   })
 
   it('AC2 self-publish #13 segue SEM curadoria: uma pública SEM report aparece na busca e é legível', async () => {
@@ -408,7 +439,7 @@ describe('Moderação reativa (#18)', () => {
     const rA = ((await (await reportRecipe(id, { reason: 'rA' }, rep1)).json()) as { reportId: string }).reportId
     const rB = ((await (await reportRecipe(id, { reason: 'rB' }, rep2)).json()) as { reportId: string }).reportId
 
-    const resA = await remove(rA, { reason: 'motivo A' }, curAH)
+    const resA = await remove(rA, { reason: 'motivo A', category: 'spam' }, curAH)
     expect(resA.status).toBe(200)
     const after1 = await readRecipeRow(id)
     const tA = after1.moderationRemovedAt
@@ -416,7 +447,7 @@ describe('Moderação reativa (#18)', () => {
     expect(after1.moderationReason).toBe('motivo A')
 
     // remove via report B por outro Curador — NÃO sobrescreve a proveniência da 1ª
-    const resB = await remove(rB, { reason: 'motivo B' }, curBH)
+    const resB = await remove(rB, { reason: 'motivo B', category: 'spam' }, curBH)
     expect(resB.status).toBe(200)
     const after2 = await readRecipeRow(id)
     expect(after2.moderatedBy).toBe(curA) // INALTERADO
@@ -473,7 +504,7 @@ describe('Moderação reativa (#18)', () => {
     const before = await getDb().select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id))
     const reportId = ((await (await reportRecipe(id, { reason: 'x' }, reporter)).json()) as { reportId: string }).reportId
 
-    await remove(reportId, { reason: 'remover' }, curador)
+    await remove(reportId, { reason: 'remover', category: 'spam' }, curador)
 
     const after = await getDb().select().from(recipeTranslation).where(eq(recipeTranslation.recipeId, id))
     expect(after).toEqual(before) // conteúdo IDÊNTICO — moderação não muta a base
@@ -497,8 +528,8 @@ describe('Moderação reativa (#18)', () => {
     expect((await reportsQueue(deletedH)).status).toBe(401)
 
     // remove: anon 401, usuario 403 papel_insuficiente
-    expect((await remove(reportId, { reason: 'x' })).status).toBe(401)
-    const u403 = await remove(reportId, { reason: 'x' }, usuarioH)
+    expect((await remove(reportId, { reason: 'x', category: 'spam' })).status).toBe(401)
+    const u403 = await remove(reportId, { reason: 'x', category: 'spam' }, usuarioH)
     expect(u403.status).toBe(403)
     await expect(u403.json()).resolves.toMatchObject({ error: 'papel_insuficiente' })
 
@@ -542,20 +573,20 @@ describe('Moderação reativa (#18)', () => {
     const remId = await seedPublicCommunity(owner, 'Torta de limão')
     await seedSave({ userId: favId, recipeId: remId })
     const repRem = ((await (await reportRecipe(remId, { reason: 'x' }, reporter)).json()) as { reportId: string }).reportId
-    expect((await remove(repRem, { reason: 'fora' }, curador)).status).toBe(200)
+    expect((await remove(repRem, { reason: 'fora', category: 'spam' }, curador)).status).toBe(200)
     expect((await getDb().select().from(recipeSave).where(eq(recipeSave.recipeId, remId))).length).toBe(1)
 
     // salvar numa removida ⇒ 404 (quem salvou deixa de ver, igual despublicar)
     expect((await save(remId, saverH)).status).toBe(404)
 
     // anti-corrida: remove/keep sobre report não-pending ⇒ 409 ja_resolvido
-    const dup = await remove(repRem, { reason: 'de novo' }, curador)
+    const dup = await remove(repRem, { reason: 'de novo', category: 'spam' }, curador)
     expect(dup.status).toBe(409)
     await expect(dup.json()).resolves.toMatchObject({ error: 'ja_resolvido' })
     expect((await keep(repKeep, curador)).status).toBe(409)
 
     // report/keep em id inexistente ⇒ 404
-    expect((await remove('00000000-0000-0000-0000-000000000000', { reason: 'x' }, curador)).status).toBe(404)
+    expect((await remove('00000000-0000-0000-0000-000000000000', { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
     expect((await keep('00000000-0000-0000-0000-000000000000', curador)).status).toBe(404)
   })
 

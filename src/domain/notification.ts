@@ -1,5 +1,6 @@
 import type { Messages } from '@/i18n/messages'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
+import { isModerationCategory, type ModerationCategory } from '@/domain/moderation-category'
 
 /**
  * Kernel de domínio das Notificações (#371, ADR-0028). A Notificação guarda DADO ESTRUTURADO
@@ -48,6 +49,19 @@ export type NotificationRefs = {
   // cozinha). NUNCA vira TEXTO. Não é capability: o GET do detalhe reimpõe os gates de leitura, então
   // expor o UUID a quem já interagiu com a receita (dono, ou avaliador em `review_moderated`) não vaza.
   recipeId?: string | null
+  // #609: CATEGORIA do motivo de uma retirada (`recipe_moderated`/`review_moderated`/`image_moderated`), um código
+  // da lista fechada guardado na linha (`notification.moderation_category`). Vira TEXTO só na renderização, no
+  // locale de quem lê. `null` nas linhas anteriores ao #609 (o texto fica como antes) e nos demais tipos.
+  moderationCategory?: ModerationCategory | null
+}
+
+/** Os 3 tipos de retirada pela curadoria: levam a categoria do motivo e o link "Pedir nova análise" (#609). */
+export const MODERATED_NOTIFICATION_TYPES = ['recipe_moderated', 'review_moderated', 'image_moderated'] as const
+
+export type ModeratedNotificationType = (typeof MODERATED_NOTIFICATION_TYPES)[number]
+
+export function isModeratedNotificationType(type: NotificationType): type is ModeratedNotificationType {
+  return (MODERATED_NOTIFICATION_TYPES as readonly string[]).includes(type)
 }
 
 /**
@@ -69,8 +83,25 @@ export function renderStars(rating: number | null | undefined): string {
  *
  * `new_follower`: com nome do ator → "{name} começou a seguir você"; ator degradado (nome null/vazio)
  * → variante anônima. Tipos ainda não implementados nesta fatia → texto genérico seguro.
+ *
+ * #609: nas 3 retiradas, com categoria → o texto base + "Motivo: <categoria>." (`comMotivo`, rótulo de `motivos` =
+ * `messages.categoriaModeracaoDono`, no mesmo locale). Sem categoria (linha antiga) ou com um código desconhecido → só
+ * o texto base, como antes. Nunca o texto livre do Curador nem quem decidiu.
  */
 export function renderNotification(
+  msgs: Messages['notifications'],
+  type: NotificationType,
+  refs: NotificationRefs,
+  motivos: Messages['categoriaModeracaoDono'],
+): string {
+  const base = renderBase(msgs, type, refs)
+  if (!isModeratedNotificationType(type) || !isModerationCategory(refs.moderationCategory)) return base
+  // `{motivo}` primeiro: os dois valores são confiáveis (i18n + estrelas), mas a ordem segue a regra do
+  // `review_on_recipe` (o valor interpolado por último é o que não pode carregar token).
+  return msgs.comMotivo.replace('{motivo}', motivos[refs.moderationCategory]).replace('{texto}', base)
+}
+
+function renderBase(
   msgs: Messages['notifications'],
   type: NotificationType,
   refs: NotificationRefs,
@@ -98,7 +129,8 @@ export function renderNotification(
     case 'review_moderated':
       return msgs.avaliacaoModerada.replace('{stars}', renderStars(refs.rating))
     // Eventos N2 (#373): mensagens genéricas localizadas, impessoais (ação de Curador/sistema — sem
-    // ator interpolado) e sem o motivo livre embutido (não localizável; surfacing deferido).
+    // ator interpolado) e sem o motivo livre embutido (não localizável). A categoria do motivo (#609) é
+    // acrescentada por `renderNotification`.
     case 'cuisine_suggestion_resolved':
       return msgs.sugestaoCozinhaResolvida
     case 'recipe_moderated':
@@ -153,4 +185,31 @@ export function notificationHref(
     default:
       return null
   }
+}
+
+/** Canal de privacidade (Termos, item 8): onde o dono pede a nova análise de uma retirada (#609). */
+export const APPEAL_EMAIL = 'privacidade@refogando.com'
+
+/**
+ * #609: o link "Pedir nova análise" de uma retirada — `mailto:` para o canal de privacidade com um assunto que nomeia
+ * o conteúdo pelo id da receita (o dono já o tem: é o mesmo do link do item). PURO. `null` fora das 3 retiradas. Sem
+ * `recipeId` (dado legado) o assunto fica genérico; nada além do que o dono já sabe vai no assunto (sem e-mail,
+ * nome, categoria nem texto do Curador).
+ */
+export function notificationAppealHref(
+  msgs: Messages['notifications'],
+  type: NotificationType,
+  refs: NotificationRefs,
+): string | null {
+  if (!isModeratedNotificationType(type)) return null
+  const id = refs.recipeId?.trim()
+  const subject = !id
+    ? msgs.novaAnaliseAssunto
+    : (type === 'recipe_moderated'
+        ? msgs.novaAnaliseAssuntoReceita
+        : type === 'review_moderated'
+          ? msgs.novaAnaliseAssuntoAvaliacao
+          : msgs.novaAnaliseAssuntoImagem
+      ).replace('{id}', id)
+  return `mailto:${APPEAL_EMAIL}?subject=${encodeURIComponent(subject)}`
 }
