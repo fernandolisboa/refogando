@@ -1033,7 +1033,7 @@ export const ptBR = {
       'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app e a IA funcionam nos Estados Unidos. Desmarque tudo e salve para apagar.',
     // Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6), só para quem já tinha restrições salvas.
     avisoMudanca:
-      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Se não concordar, desmarque tudo e salve para apagar.',
+      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Para mantê-las, salve de novo e o aviso some; se não concordar, desmarque tudo e salve para apagar.',
     avisoMudancaFechar: 'Entendi',
     salvar: 'Salvar restrições',
     salvando: 'Salvando…',

@@ -6,20 +6,21 @@ ALTER TABLE "users" ADD COLUMN "restricoes_consentidas_em" timestamp with time z
 ALTER TABLE "users" ADD COLUMN "restricoes_consentimento_versao" text;--> statement-breakpoint
 -- #604 (ADR-0016, seção do #604): até o #604 o Better Auth aceitava `image` vindo do cliente em /update-user e
 -- /sign-up/email, então `users.image` pode ter um valor plantado: o blob de outra pessoa (foto de receita ou de
--- avaliação) exibido como avatar, ou uma URL externa (rastreio). Fica só o que o app grava: avatar no nosso
--- Vercel Blob, sob /avatars/, na forma canônica (sem query, hash, porta nem %), ou a foto do Google do login.
+-- avaliação) exibido como avatar, um blob de OUTRO store do Vercel (de quem plantou) ou uma URL externa
+-- (rastreio). Fica só o que o app grava: avatar no NOSSO store (`ye2pksugovlrhxoq`, o host que já aparece em toda
+-- URL de imagem pública), na forma exata que o store grava (`avatars/[<chave de 22>/]<arquivo>.<ext>`, a mesma de
+-- `src/server/images/avatar-blob.ts`: sem `..`, `//`, query, hash, porta nem %), ou a foto do Google do login.
 UPDATE "users" SET "image" = NULL
 WHERE "image" IS NOT NULL
-  AND "image" !~ '^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/avatars/[A-Za-z0-9_./-]+$'
+  AND "image" !~ '^https://ye2pksugovlrhxoq\.public\.blob\.vercel-storage\.com/avatars/([A-Za-z0-9_-]{22}/)?[A-Za-z0-9-]+\.(webp|jpg|png)$'
   AND "image" !~ '^https://lh[0-9]+\.googleusercontent\.com/';--> statement-breakpoint
--- O mesmo avatar (pelo CAMINHO, em qualquer host do Vercel Blob) em mais de uma conta: alguém plantou o avatar
--- de outra pessoa. O banco não diz quem é a dona, então todas perdem a foto (sobem outra); o blob vira órfão e a
--- varredura semanal (#603) o recolhe.
-UPDATE "users" AS u SET "image" = NULL
-WHERE u."image" ~ '^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/avatars/'
-  AND EXISTS (
-    SELECT 1 FROM "users" AS o
-    WHERE o."id" <> u."id"
-      AND o."image" ~ '^https://[a-z0-9]+\.public\.blob\.vercel-storage\.com/avatars/'
-      AND regexp_replace(o."image", '^https://[^/]+', '') = regexp_replace(u."image", '^https://[^/]+', '')
-  );
+-- O mesmo avatar em mais de uma conta (depois do UPDATE acima só resta o nosso host, então a URL inteira basta):
+-- alguém plantou o avatar de outra pessoa. O banco não diz quem é a dona, então todas perdem a foto (sobem outra);
+-- o blob vira órfão e a varredura semanal (#603) o recolhe. Uma passada (GROUP BY), sem self-join por linha.
+UPDATE "users" SET "image" = NULL
+WHERE "image" IN (
+  SELECT "image" FROM "users"
+  WHERE "image" LIKE 'https://ye2pksugovlrhxoq.public.blob.vercel-storage.com/avatars/%'
+  GROUP BY "image"
+  HAVING count(*) > 1
+);

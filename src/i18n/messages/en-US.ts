@@ -960,7 +960,7 @@ export const enUS: Messages = {
       'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app and the AI run in the United States. Clear them all and save to delete.',
     // Notice of the 2026-10-22 change (LGPD art. 8, §6), only for people who already had saved restrictions.
     avisoMudanca:
-      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. If you do not agree, clear them all and save to delete them.',
+      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. To keep them, save again and this notice goes away; if you do not agree, clear them all and save to delete them.',
     avisoMudancaFechar: 'Got it',
     salvar: 'Save restrictions',
     salvando: 'Saving…',

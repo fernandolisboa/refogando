@@ -74,14 +74,14 @@ function pronta(r: Partial<Response>): { [PRONTA]: Partial<Response> } {
   return { [PRONTA]: r }
 }
 
+/** Versão do consentimento que o GET devolve (#600); null = consentiu antes do registro. */
+let versaoGravada: string | null = null
+
 /**
  * fetch por URL: `/api/me/restricoes` devolve `salvas` (GET; pode ser uma Promise para segurar a resposta)
  * e ecoa o PUT; `/api/search?` ecoa `salvas` como `restricoesPerfil` quando vem `restricaoPerfil=1`; o resto
  * passa por `rota` (default: 200 neutro).
  */
-/** Versão do consentimento que o GET devolve (#600); null = consentiu antes do registro. */
-let versaoGravada: string | null = null
-
 function mockFetch(salvas: string[] | (() => Promise<string[]>), rota: Rota = () => ({})) {
   const calls: Call[] = []
   vi.stubGlobal(

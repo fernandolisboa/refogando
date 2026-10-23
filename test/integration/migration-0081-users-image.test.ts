@@ -22,7 +22,7 @@ const updates = migration
   )
   .filter((stmt) => stmt.startsWith('UPDATE'))
 
-const STORE = 'https://abc123.public.blob.vercel-storage.com'
+const STORE = 'https://ye2pksugovlrhxoq.public.blob.vercel-storage.com'
 
 async function seedWithImage(email: string, image: string | null): Promise<string> {
   const id = await seedUser({ email })
@@ -40,9 +40,10 @@ describe('migração 0081 — limpeza de users.image plantado (#604)', () => {
     expect(updates).toHaveLength(2)
   })
 
-  it('mantém avatar nosso (antigo e com chave) e a foto do Google; zera blob alheio, URL externa e variante', async () => {
+  it('mantém avatar nosso (antigo e com chave) e a foto do Google; zera blob alheio, outro store, URL externa e variante', async () => {
     const casos: [string, string | null, boolean][] = [
       ['antigo@m81.test', `${STORE}/avatars/3f2a-uuid.webp`, true],
+      ['jpg@m81.test', `${STORE}/avatars/3f2a-uuid.jpg`, true],
       ['chave@m81.test', `${STORE}/avatars/AbCdEfGhIjKlMnOpQrStUv/1b2c.webp`, true],
       ['google@m81.test', 'https://lh3.googleusercontent.com/a/ACg8ocK=s96-c', true],
       ['sem@m81.test', null, true],
@@ -52,6 +53,11 @@ describe('migração 0081 — limpeza de users.image plantado (#604)', () => {
       ['query@m81.test', `${STORE}/avatars/x.webp?1`, false],
       ['http@m81.test', 'http://abc123.public.blob.vercel-storage.com/avatars/x.webp', false],
       ['pct@m81.test', `${STORE}/avatars/x%2F.webp`, false],
+      ['ponto@m81.test', `${STORE}/avatars/../recipes/foto-de-outra.webp`, false],
+      ['barra@m81.test', `${STORE}/avatars//x.webp`, false],
+      ['fundo@m81.test', `${STORE}/avatars/AbCdEfGhIjKlMnOpQrStUv/a/x.webp`, false],
+      ['ext@m81.test', `${STORE}/avatars/x.svg`, false],
+      ['outro-store@m81.test', 'https://outro999.public.blob.vercel-storage.com/avatars/x.webp', false],
     ]
     const ids = await Promise.all(casos.map(([email, image]) => seedWithImage(email, image)))
     for (const u of updates) await getDb().execute(sql.raw(u))
@@ -60,9 +66,9 @@ describe('migração 0081 — limpeza de users.image plantado (#604)', () => {
     }
   })
 
-  it('o mesmo avatar (pelo caminho, em qualquer host) em duas contas: as duas perdem; o de uma só fica', async () => {
+  it('o mesmo avatar em duas contas: as duas perdem; o de uma só fica', async () => {
     const a = await seedWithImage('a@m81.test', `${STORE}/avatars/compartilhado.webp`)
-    const b = await seedWithImage('b@m81.test', 'https://outro999.public.blob.vercel-storage.com/avatars/compartilhado.webp')
+    const b = await seedWithImage('b@m81.test', `${STORE}/avatars/compartilhado.webp`)
     const c = await seedWithImage('c@m81.test', `${STORE}/avatars/so-meu.webp`)
     for (const u of updates) await getDb().execute(sql.raw(u))
     expect(await imageOf(a)).toBeNull()
