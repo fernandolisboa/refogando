@@ -561,6 +561,13 @@
       "when": 1792151084986,
       "tag": "0079_modelos_5_5",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792750013849,
+      "tag": "0080_retencao_indices",
+      "breakpoints": true
     }
   ]
 }
