@@ -6,20 +6,21 @@
  * inicial vai para "Cancelar", a ação menos destrutiva.
  *
  * O diálogo pede o MOTIVO (menos de 16 anos | violação grave), lembra o passo humano que vem antes do botão (o aviso
- * por e-mail e o prazo de cada procedimento), oferece "remover também as receitas públicas e as avaliações" só no
- * menor de 16 (marcado por padrão: os Termos prometem eliminar "o que ela publicou") e "avisar por e-mail" só na
- * violação (marcado; desmarcar só com impedimento legal), e pede o @ da conta digitado. "Eliminar definitivamente"
+ * por e-mail e o prazo de cada procedimento), avisa no menor de 16 que as receitas públicas e as avaliações saem junto
+ * (sem opção: os Termos prometem eliminar "o que ela publicou", e o servidor faz isso sempre), oferece "avisar por
+ * e-mail" só na violação (marcado; desmarcar só com impedimento legal) e pede o @ da conta digitado. "Eliminar definitivamente"
  * só libera com o motivo escolhido e o @ conferindo (`confirmsHandle`, a mesma regra do servidor).
  *
  * Enquanto elimina, nada fecha: o `open` é controlado e o `guarded` ignora o fechamento, o X some, e o
  * `onPendingChange` avisa a gaveta (que também não fecha). 403 `reautenticar`: a sessão do admin tem mais de 24 h;
  * nada foi apagado, o diálogo pede para entrar de novo (volta ao Console → Usuários) e leva o foco ao aviso. Outro
- * erro: a mensagem do código (`ERRO`), e o foco no alerta. Sucesso: fecha e devolve o resultado à gaveta, que mostra
- * o desfecho e recarrega a lista. ADR-0010: route handler via fetch, nunca Server Action.
+ * erro: a mensagem do código (`ERRO`), e o foco no alerta. Sucesso: fecha sem devolver o foco ao gatilho (ele some com
+ * a conta inativa) e entrega o resultado à gaveta, que leva o foco ao desfecho e recarrega a lista. ADR-0010: route handler via fetch, nunca Server Action.
  */
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { errorCode } from '@/lib/http-error'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -74,18 +75,6 @@ export type CloseAccountOutcome = {
   emailSent: boolean
 }
 
-/** O `error` do corpo JSON (`{ error }`), ou null se não der para ler. */
-async function errorCode(res: Response): Promise<string | null> {
-  try {
-    const body: unknown = await res.json()
-    return typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
-      ? (body as { error: string }).error
-      : null
-  } catch {
-    return null
-  }
-}
-
 export function CloseAccountDialog({
   user,
   disabled,
@@ -103,7 +92,8 @@ export function CloseAccountDialog({
   const m = messages.admin
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState<AccountClosureReason | null>(null)
-  const [removePublic, setRemovePublic] = useState(true)
+  // Sucesso: o fechamento não devolve o foco ao gatilho (some junto com a seção); a gaveta foca o desfecho.
+  const succeededRef = useRef(false)
   const [notify, setNotify] = useState(true)
   const [typed, setTyped] = useState('')
   const [busy, setBusy] = useState(false)
@@ -121,7 +111,6 @@ export function CloseAccountDialog({
 
   function reset() {
     setReason(null)
-    setRemovePublic(true)
     setNotify(true)
     setTyped('')
     setErro(null)
@@ -136,7 +125,7 @@ export function CloseAccountDialog({
   async function eliminar(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit || reason == null) return
-    const removePublicContent = canRemovePublicContent(reason) && removePublic
+    const removePublicContent = canRemovePublicContent(reason)
     const notifyRequested = closureEmailApplies(reason) && notify
     setBusy(true)
     onPendingChange(true)
@@ -155,6 +144,7 @@ export function CloseAccountDialog({
       const body = (await res.json().catch(() => null)) as { emailSent?: unknown } | null
       setBusy(false)
       onPendingChange(false)
+      succeededRef.current = true
       setOpen(false)
       reset()
       onClosed({ removedPublicContent: removePublicContent, notifyRequested, emailSent: body?.emailSent === true })
@@ -179,6 +169,11 @@ export function CloseAccountDialog({
         side="center"
         closeLabel={m.fechar}
         showClose={!busy}
+        onCloseAutoFocus={(ev) => {
+          if (!succeededRef.current) return
+          succeededRef.current = false
+          ev.preventDefault()
+        }}
         onOpenAutoFocus={(ev) => {
           ev.preventDefault()
           cancelRef.current?.focus()
@@ -223,23 +218,9 @@ export function CloseAccountDialog({
           </fieldset>
 
           {reason === 'menor_16' && (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={`eliminar-remover-publico-${user.id}`}
-                checked={removePublic}
-                onCheckedChange={(v) => setRemovePublic(v === true)}
-                disabled={busy}
-                aria-describedby={`eliminar-remover-publico-ajuda-${user.id}`}
-                className="mt-0.5"
-              />
-              <span className="flex flex-col gap-0.5">
-                <Label htmlFor={`eliminar-remover-publico-${user.id}`} className="font-normal leading-snug">
-                  {m.usuariosEliminarRemoverPublico}
-                </Label>
-                <span id={`eliminar-remover-publico-ajuda-${user.id}`} className="text-xs text-muted">
-                  {m.usuariosEliminarRemoverPublicoAjuda}
-                </span>
-              </span>
+            <div className="flex flex-col gap-0.5 rounded-md border border-border px-3 py-2.5">
+              <p className="text-sm font-medium text-fg">{m.usuariosEliminarRemoverPublico}</p>
+              <p className="text-xs text-muted">{m.usuariosEliminarRemoverPublicoAjuda}</p>
             </div>
           )}
 

@@ -112,7 +112,7 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     const pt = ptBR.privacidade
     const en = enUS.privacidade
     expect(pt.s36Valores[0]).toContain('se a equipe encerrar a sua conta')
-    expect(pt.s36Valores[0]).toContain('se você foi avisado por e-mail')
+    expect(pt.s36Valores[0]).toContain('se tentamos avisar você por e-mail')
     expect(pt.s36Valores[2]).toContain('para o registro do encerramento da conta, exercício regular de direitos — Art. 7º, VI')
     expect(pt.s36Valores[3]).toContain('o registro do encerramento da conta pela equipe, por 5 anos')
     expect(en.s36Valores[0]).toContain('if the team closes your account')

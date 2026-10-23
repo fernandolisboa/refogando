@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { account, accountClosure, session, users, verification } from '@/db/schema'
+import { account, accountClosure, recipe, recipeReview, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import type { AccountClosureReason } from '@/domain/account-closure'
 import { getImageStore } from '@/server/deps'
@@ -8,6 +8,7 @@ import { deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { canDeleteAccountAvatar } from '@/server/images/avatar-blob'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { purgePrivateContentInTx } from '@/server/legal/private-content'
+import type { Tx } from '@/server/recipe/image'
 
 /**
  * Núcleo da ELIMINAÇÃO da conta (issue #401, GAP-6; #473, ADR-0050; LGPD Art. 18 VI + Art. 16;
@@ -67,9 +68,15 @@ export type AccountClosureDecision = {
 }
 
 /** Eliminação self-service do titular: o núcleo sem decisão da equipe (passo 5 = evento DSAR `self_service`). */
-export function eraseOwnAccount(db: Database, input: { userId: string }): Promise<EraseAccountResult> {
-  return eraseAccount(db, { userId: input.userId })
+export async function eraseOwnAccount(db: Database, input: { userId: string }): Promise<EraseAccountResult> {
+  const result = await eraseAccount(db, { userId: input.userId })
+  // Sem `decision` o núcleo nunca recusa pelo papel (o titular admin também pode sair).
+  if (result.kind === 'target_admin') throw new Error('eraseOwnAccount: recusa de papel sem decisão da equipe')
+  return result
 }
+
+/** O que o núcleo devolve: o do self-service, mais a recusa de conta de admin, que só existe com `decision`. */
+export type EraseAccountCoreResult = EraseAccountResult | { kind: 'target_admin' }
 
 /**
  * O núcleo da eliminação (ver o módulo). `decision` presente = encerramento pela equipe: o passo 5 grava a linha de
@@ -78,7 +85,7 @@ export function eraseOwnAccount(db: Database, input: { userId: string }): Promis
 export async function eraseAccount(
   db: Database,
   input: { userId: string; decision?: AccountClosureDecision },
-): Promise<EraseAccountResult> {
+): Promise<EraseAccountCoreResult> {
   const { userId, decision } = input
   const anon = erasedIdentity(userId)
   const now = new Date()
@@ -91,12 +98,15 @@ export async function eraseAccount(
   const result = await db.transaction(async (tx) => {
     // Guarda a linha contra corrida e confirma o estado atual (existe? já eliminada?).
     const [current] = await tx
-      .select({ id: users.id, email: users.email, image: users.image, deletedAt: users.deletedAt })
+      .select({ id: users.id, email: users.email, image: users.image, role: users.role, deletedAt: users.deletedAt })
       .from(users)
       .where(eq(users.id, userId))
       .for('update')
     if (!current) return { kind: 'not_found' as const }
     if (current.deletedAt != null) return { kind: 'already_erased' as const }
+    // Encerramento pela equipe (#606): o papel é relido SOB o lock. A guarda do `closeAccountByAdmin` leu antes; se a
+    // conta virou admin entre ela e esta transação, nada é escrito (rebaixar antes, como a guarda diz).
+    if (decision && current.role === 'admin') return { kind: 'target_admin' as const }
 
     // Captura o e-mail REAL do titular ANTES de sobrescrevê-lo (passo 1) — é a chave para achar as
     // linhas de `verification` pendentes a expurgar (passo 3). Guarda a idempotência: só é PII a
@@ -146,6 +156,12 @@ export async function eraseAccount(
     // E os que guardam o id em `value`: tokens do link de senha e marcadores do teto de e-mails.
     await tx.delete(verification).where(eq(verification.value, userId))
 
+    // 3b. Menor de 16 com o conteúdo público removido (#606): rede de segurança da corrida com o que a pessoa publicou
+    //     ou avaliou depois da limpeza de antes da transação (`closeAccountByAdmin`, passo 2). Sob o lock da linha:
+    //     apaga as avaliações que sobraram e despublica as Receitas públicas que sobraram, que então saem como
+    //     privadas no passo 4 (com imagens e as fotos das avaliações de terceiros, pelo núcleo de sempre).
+    const lateReviewPhotos = decision?.removedPublicContent ? await removeLatePublicContentInTx(tx, userId, now) : []
+
     // 4. Conteúdo privado e sessões de criação (o núcleo compartilhado com a varredura diária).
     const purge = await purgePrivateContentInTx(tx, userId, now)
 
@@ -171,7 +187,7 @@ export async function eraseAccount(
       })
     }
 
-    return { kind: 'erased' as const, blobUrls: purge.blobUrls }
+    return { kind: 'erased' as const, blobUrls: [...purge.blobUrls, ...lateReviewPhotos] }
   })
 
   // Blobs DEPOIS do commit (best-effort; só apaga os NOSSOS — `store.owns` — e o avatar só se for da conta,
@@ -184,4 +200,20 @@ export async function eraseAccount(
     return { kind: 'erased' }
   }
   return result
+}
+
+/**
+ * Passo 3b (#606): o que sobrou de público de uma conta de menor de 16, dentro da transação da eliminação. Devolve as
+ * fotos das avaliações apagadas, para o Blob depois do commit.
+ */
+async function removeLatePublicContentInTx(tx: Tx, userId: string, now: Date): Promise<(string | null)[]> {
+  const reviews = await tx
+    .delete(recipeReview)
+    .where(eq(recipeReview.userId, userId))
+    .returning({ photoUrl: recipeReview.photoUrl })
+  await tx
+    .update(recipe)
+    .set({ visibility: 'private', updatedAt: now })
+    .where(and(eq(recipe.ownerId, userId), eq(recipe.visibility, 'public')))
+  return reviews.map((r) => r.photoUrl)
 }

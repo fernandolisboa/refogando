@@ -8,16 +8,17 @@ import { crossSiteForbidden, isCrossSiteRequest } from '@/server/http/same-origi
 /**
  * POST /api/admin/users/[id]/erasure — o admin ENCERRA a conta de outra pessoa (#606; ADR-0051 P1 e P3; Termos itens
  * 2 e 8): conta de alguém com menos de 16 anos ou violação grave dos Termos. Mesmo núcleo da eliminação self-service
- * (`eraseAccount`): o privado sai agora, o público fica anonimizado (ou sai, no menor de 16, com
- * `removePublicContent`), e a decisão vai para `account_closure`, sem dado pessoal. Ver `closeAccountByAdmin`.
+ * (`eraseAccount`): o privado sai agora, o público fica anonimizado (ou sai, sempre, no menor de 16),
+ * e a decisão vai para `account_closure`, sem dado pessoal. Ver `closeAccountByAdmin`.
  *
  * Guardas, na ordem: mesma origem (`Sec-Fetch-Site`, 403 `origem_nao_permitida`, como `/api/me/erasure`); admin com
  * sessão RECENTE (`requireFreshRole`: 401 sem sessão, 403 `papel_insuficiente`, 403 `reautenticar` com sessão de
  * mais de 24 h); id que não é uuid ⇒ 404.
  *
  * Corpo: `{ reason, removePublicContent?, notify?, confirmHandle }`. `reason` ∈ `ACCOUNT_CLOSURE_REASONS`;
- * `removePublicContent` (padrão false) só no `menor_16`; `notify` (padrão true) só vale na violação; `confirmHandle`
- * é o @ atual da conta, digitado (confirmação de uma ação que não se desfaz).
+ * `removePublicContent` é redundante no `menor_16` (o público sai sempre) e recusado na violação; `notify` (padrão
+ * true) só vale na violação; `confirmHandle` é o @ atual da conta, digitado (confirmação de uma ação que não se
+ * desfaz).
  *
  * Erros `{ error }`: 400 `dados_invalidos` (corpo fora da forma), `conteudo_publico_so_menor_16`, `conta_propria`,
  * `confirmacao_invalida`; 404 `not_found`; 409 `conta_inativa` (já desativada ou eliminada), `alvo_admin` (rebaixar

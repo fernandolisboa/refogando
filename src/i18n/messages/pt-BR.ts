@@ -614,7 +614,7 @@ export const ptBR = {
       'Encerramos a sua conta no Refogando por uma violação grave dos Termos de Uso (item 8). A conta foi eliminada: os seus dados de identificação foram anonimizados e o seu conteúdo privado foi apagado. As receitas públicas e as avaliações que ficaram no app aparecem sem o seu nome.',
     emailEncerradaBotao: 'Ler os Termos de Uso',
     emailEncerradaRevisao:
-      'Se você acha que houve um engano, pode pedir uma nova análise escrevendo para privacidade@refogando.com.',
+      'Se você acha que houve um engano, pode pedir explicações ou contestar a decisão escrevendo para privacidade@refogando.com.',
     // Confirmação de email (#470). O cadastro NÃO entra direto: a tela pede pra abrir o link. A copy é
     // igual exista ou não conta com o email (sem enumeração) — por isso o lembrete de "já tem conta".
     confirmeEmailTitulo: 'Confira seu email',
@@ -1512,9 +1512,9 @@ export const ptBR = {
     usuariosEliminarMotivoViolacao: 'Violação grave ou repetida dos Termos',
     usuariosEliminarMotivoViolacaoAjuda:
       'Antes: avisamos a pessoa por e-mail, com o motivo, e, salvo conteúdo ilegal, esperamos 15 dias para ela baixar os dados (Termos, item 8).',
-    usuariosEliminarRemoverPublico: 'Remover também as receitas públicas e as avaliações',
+    usuariosEliminarRemoverPublico: 'As receitas públicas e as avaliações da pessoa saem junto.',
     usuariosEliminarRemoverPublicoAjuda:
-      'A licença dada por quem tem menos de 16 anos não vale (Código Civil, art. 3º). Sem marcar, elas ficam sem o nome da pessoa, como em toda eliminação.',
+      'A licença dada por quem tem menos de 16 anos é nula (Código Civil, arts. 3º e 166, I), e os Termos prometem eliminar o que a conta publicou.',
     usuariosEliminarAvisar: 'Avisar por e-mail que a conta foi encerrada',
     usuariosEliminarAvisarAjuda: 'Desmarque só se houver impedimento legal.',
     usuariosEliminarConfirmarLabel: 'Para confirmar, digite o @ da conta: {handle}',
@@ -2214,7 +2214,7 @@ export const ptBR = {
     ],
     s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
     s36Valores: [
-      'o endereço IP e o navegador (user agent) de cada sessão de login; o IP nos limites de tentativas das rotas de conta (como login, cadastro e senha), apagado em até 2 horas após a última tentativa, e, só na memória, para limitar o ritmo do formulário de Seus direitos e da Descoberta; as denúncias que você faz sobre receitas ou avaliações; as decisões de moderação sobre o seu conteúdo ou a sua conta (por exemplo, uma imagem escondida do público ou o bloqueio da geração de imagens), com o motivo; e, se a equipe encerrar a sua conta (conta de alguém com menos de 16 anos ou violação grave dos Termos de Uso), um registro dessa decisão: o motivo, de uma lista fechada, a data, se as suas receitas públicas e avaliações foram removidas e se você foi avisado por e-mail.',
+      'o endereço IP e o navegador (user agent) de cada sessão de login; o IP nos limites de tentativas das rotas de conta (como login, cadastro e senha), apagado em até 2 horas após a última tentativa, e, só na memória, para limitar o ritmo do formulário de Seus direitos e da Descoberta; as denúncias que você faz sobre receitas ou avaliações; as decisões de moderação sobre o seu conteúdo ou a sua conta (por exemplo, uma imagem escondida do público ou o bloqueio da geração de imagens), com o motivo; e, se a equipe encerrar a sua conta (conta de alguém com menos de 16 anos ou violação grave dos Termos de Uso), um registro dessa decisão: o motivo, de uma lista fechada, a data, se as suas receitas públicas e avaliações foram removidas e se tentamos avisar você por e-mail.',
       'proteger a sua conta, impedir abuso e uso excessivo de recursos pagos e moderar o conteúdo público.',
       'legítimo interesse — Art. 7º, IX (com avaliação de legítimo interesse registrada); para o registro do encerramento da conta, exercício regular de direitos — Art. 7º, VI.',
       'a sessão vale 7 dias, renovados com o uso, e é apagada em até 1 dia depois de vencer, com o IP e o navegador; o IP dos limites de tentativas, em até 2 horas após a última tentativa; as denúncias ficam enquanto o conteúdo denunciado existir; as decisões de moderação, enquanto a conta ou o conteúdo existir (se você eliminar a conta, ficam sem nada que identifique você); o registro do encerramento da conta pela equipe, por 5 anos, para a nossa defesa num eventual processo, ligado só à conta já anonimizada e sem nenhum outro dado seu.',
@@ -2359,7 +2359,7 @@ export const ptBR = {
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
       `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
-      `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se a pessoa foi avisada), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
+      `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se tentamos avisar a pessoa por e-mail), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',

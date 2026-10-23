@@ -167,6 +167,11 @@ export function UsersSection() {
   // Eliminar conta (#606): pedido em voo (a gaveta não fecha) e o desfecho do último encerramento nesta gaveta.
   const [closing, setClosing] = useState(false)
   const [closed, setClosed] = useState<CloseAccountOutcome | null>(null)
+  // O desfecho recebe o foco: o gatilho do diálogo some junto com a seção (a conta ficou inativa).
+  const closedRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (closed) closedRef.current?.focus()
+  }, [closed])
 
   // Quem abriu a gaveta (a gaveta é controlada, sem SheetTrigger): o foco volta pra ele ao fechar.
   const openerRef = useRef<HTMLElement | null>(null)
@@ -669,7 +674,12 @@ export function UsersSection() {
                 </form>
 
                 {closed && (
-                  <div role="status" className="flex flex-col gap-1 text-sm font-medium text-brand-ink">
+                  <div
+                    ref={closedRef}
+                    role="status"
+                    tabIndex={-1}
+                    className="flex flex-col gap-1 text-sm font-medium text-brand-ink"
+                  >
                     <p>{m.usuariosEliminarFeito}</p>
                     {closed.notifyRequested && !closed.emailSent && (
                       <p className="text-fg">{m.usuariosEliminarEmailNaoEnviado}</p>

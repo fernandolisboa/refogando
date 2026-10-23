@@ -52,7 +52,7 @@ export const DATA_TERMOS_V1_3 = '2026-10-23'
 
 /**
  * Política v3.4 (#606): o registro do encerramento de uma conta pela equipe (motivo, data, se o conteúdo público saiu e
- * se a pessoa foi avisada por e-mail) fica 5 anos, para a defesa num eventual processo (item 3.6), e o e-mail de
+ * se tentamos avisar a pessoa por e-mail) fica 5 anos, para a defesa num eventual processo (item 3.6), e o e-mail de
  * encerramento entra na lista do Resend (item 5). Não muda nada que a pessoa autorizou com consentimento, então não pede
  * aviso no lugar do consentimento nem troca `AVISO_LEGAL_VERSAO`. Os Termos não mudam: o item 8 já diz que a conta pode
  * ser encerrada e o item 2, que a de menor de 16 é eliminada com o que publicou. O dia do merge em UTC; congelada

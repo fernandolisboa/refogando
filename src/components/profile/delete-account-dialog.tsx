@@ -44,6 +44,7 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
+import { errorCode } from '@/lib/http-error'
 import { signOut } from '@/lib/auth-client'
 import { tourStorageKey } from '@/domain/onboarding-tour'
 import { avisoLegalStorageKey } from '@/domain/legal-notice'
@@ -82,18 +83,6 @@ const MINHAS_RECEITAS_HREF = '/me/recipes'
 const REAUTENTICAR_HREF = `/sign-in?returnTo=${encodeURIComponent('/me/profile#seus-dados')}`
 
 const LINK = 'font-medium text-brand-ink hover:underline'
-
-/** O `error` do corpo JSON (`{ error }`), ou null se não der para ler. */
-async function errorCode(res: Response): Promise<string | null> {
-  try {
-    const body: unknown = await res.json()
-    return typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
-      ? (body as { error: string }).error
-      : null
-  } catch {
-    return null
-  }
-}
 
 async function signOutWithTimeout(): Promise<void> {
   await Promise.race([

@@ -15,7 +15,7 @@ import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-
 import { assignNameHandle, clearPendingSignup, isPendingHandle, pendingHandle } from '@/server/auth/pending-account'
 import { wasPendingSignupPurged } from '@/server/auth/pending-signup-purge'
 import type { MailInput } from '@/server/mail/mailer'
-import { getBaseUrlFromEnv } from '@/server/http/base-url'
+import { trustedAppOrigin } from '@/server/http/base-url'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { resolveLocale, type Locale } from '@/i18n/locale'
 import { readLocaleCookie } from '@/i18n/cookie'
@@ -81,11 +81,12 @@ const ACCOUNT_EMAIL_WINDOW_MS = 15 * 60 * 1000
 /**
  * #469 (SEGURANÇA): sem `BETTER_AUTH_URL`, o Better Auth fixa a base na origem do 1º request da instância —
  * derivada do `Host`. O link do e-mail NUNCA pode herdar um host forjado (roubo do token), então trocamos a
- * origem pela base confiável de ENV (`BETTER_AUTH_URL` → `getBaseUrlFromEnv`: APP_URL / domínio de produção).
+ * origem pela base confiável de ENV (`trustedAppOrigin`: `BETTER_AUTH_URL` → `getBaseUrlFromEnv`: APP_URL /
+ * domínio de produção).
  */
 function withTrustedOrigin(url: string): string {
   const u = new URL(url)
-  return new URL(`${u.pathname}${u.search}`, process.env.BETTER_AUTH_URL || getBaseUrlFromEnv()).toString()
+  return new URL(`${u.pathname}${u.search}`, trustedAppOrigin()).toString()
 }
 
 /** Link de confirmação vale 24h (casa a copy do e-mail). É um JWT sem estado: o teto abaixo conta envios. */

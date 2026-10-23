@@ -5,13 +5,13 @@ import { enUS } from '@/i18n/messages/en-US'
 
 /**
  * E-mail de encerramento da conta por violação grave (#606) — montagem pura. Prova: idioma pelo `users.locale`
- * (fallback pt-BR), o link dos Termos no MESMO idioma, a nova análise pelo canal de privacidade e o `name` (input
- * do Usuário) escapado no HTML. Nada do caso vai no e-mail além do fato.
+ * (fallback pt-BR), o link dos Termos no MESMO idioma, o pedido de explicações ou a contestação pelo canal de privacidade e o
+ * `name` (input do Usuário) escapado no HTML. Nada do caso vai no e-mail além do fato.
  */
 const ORIGIN = 'https://refogando.example'
 
 describe('buildAccountClosedEmail (#606)', () => {
-  it('pt-BR por padrão (locale nulo): assunto, saudação, Termos em pt-BR e o canal de nova análise', () => {
+  it('pt-BR por padrão (locale nulo): assunto, saudação, Termos em pt-BR e o canal para contestar', () => {
     const mail = buildAccountClosedEmail({ to: 'ana@x.test', name: 'Ana', locale: null, origin: ORIGIN })
     expect(mail.to).toBe('ana@x.test')
     expect(mail.subject).toBe(ptBR.auth.emailEncerradaAssunto)
@@ -19,6 +19,7 @@ describe('buildAccountClosedEmail (#606)', () => {
     expect(mail.text).toContain('violação grave dos Termos de Uso')
     expect(mail.text).toContain(`${ORIGIN}/pt-BR/termos`)
     expect(mail.text).toContain('privacidade@refogando.com')
+    expect(mail.text).toContain('pedir explicações ou contestar a decisão')
     expect(mail.html).toContain(`href="${ORIGIN}/pt-BR/termos"`)
     expect(mail.html).toContain(ptBR.auth.emailEncerradaBotao)
   })

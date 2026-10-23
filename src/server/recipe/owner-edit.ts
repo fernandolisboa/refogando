@@ -298,7 +298,25 @@ export async function deleteOwnRecipe(
   store: ImageStore,
   input: { recipeId: string; viewerId: string },
 ): Promise<'ok' | 'not_found'> {
-  const outcome = await db.transaction(async (tx) => {
+  const outcome = await deleteOwnRecipeRows(db, input)
+  if (outcome.kind === 'not_found') return 'not_found'
+  // Blob best-effort DEPOIS do commit (não há rollback de blob); só apaga se for NOSSO (store.owns).
+  await deleteOrphanBlobs(store, outcome.orphanBlobUrls)
+  // Fotos das Avaliações: podem ser muitas (receita popular), então em paralelo limitado, como a eliminação.
+  await deleteOrphanBlobsConcurrently(store, outcome.reviewPhotoUrls)
+  return 'ok'
+}
+
+/**
+ * A parte de BANCO do `deleteOwnRecipe` (a transação inteira), sem tocar o store: devolve os blobs a apagar depois do
+ * commit. Para quem apaga MUITAS receitas de uma vez (o encerramento de conta pela equipe, #606) juntar os blobs de
+ * todas e apagá-los numa leva só, com concorrência limitada, em vez de uma série por receita.
+ */
+export async function deleteOwnRecipeRows(
+  db: Database,
+  input: { recipeId: string; viewerId: string },
+): Promise<{ kind: 'ok'; orphanBlobUrls: string[]; reviewPhotoUrls: (string | null)[] } | { kind: 'not_found' }> {
+  return db.transaction(async (tx) => {
     // #603: as Avaliações (de qualquer pessoa) caem em cascata com a Receita, mas o blob da foto não: lê as
     // URLs ANTES do DELETE (depois dele as linhas já sumiram), na mesma tx. Escopado ao dono pelo join (um
     // não dono não lê nada). Uma foto gravada entre este SELECT e o DELETE fica órfã; a varredura semanal
@@ -325,10 +343,4 @@ export async function deleteOwnRecipe(
     const orphanBlobUrls = await reapOrphanImage(tx, deleted[0].imageId, null)
     return { kind: 'ok' as const, orphanBlobUrls, reviewPhotoUrls: reviewPhotos.map((r) => r.photoUrl) }
   })
-  if (outcome.kind === 'not_found') return 'not_found'
-  // Blob best-effort DEPOIS do commit (não há rollback de blob); só apaga se for NOSSO (store.owns).
-  await deleteOrphanBlobs(store, outcome.orphanBlobUrls)
-  // Fotos das Avaliações: podem ser muitas (receita popular), então em paralelo limitado, como a eliminação.
-  await deleteOrphanBlobsConcurrently(store, outcome.reviewPhotoUrls)
-  return 'ok'
 }

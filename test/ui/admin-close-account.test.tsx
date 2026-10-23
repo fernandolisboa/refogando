@@ -171,16 +171,20 @@ describe('Eliminar conta — diálogo', () => {
     await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(before + 1)) // recarregou a lista
   })
 
-  it('menor de 16: "remover o público" marcado por padrão, sem "avisar"; o e-mail que não saiu é avisado', async () => {
+  it('menor de 16: o público sai sempre (nota, sem opção), sem "avisar"; o status de sucesso recebe o foco', async () => {
     const fetchMock = mockFetch([user()], [{ ok: true, status: 200, body: { ok: true, emailSent: false } }])
     const { u, drawer, dialog } = await openCloseDialog()
     await u.click(within(dialog).getByRole('radio', { name: new RegExp(A.usuariosEliminarMotivoMenor) }))
-    expect(within(dialog).getByRole('checkbox', { name: A.usuariosEliminarRemoverPublico })).toBeChecked()
-    expect(within(dialog).queryByRole('checkbox', { name: A.usuariosEliminarAvisar })).toBeNull()
+    expect(within(dialog).getByText(A.usuariosEliminarRemoverPublico)).toBeInTheDocument()
+    expect(within(dialog).getByText(A.usuariosEliminarRemoverPublicoAjuda)).toBeInTheDocument()
+    expect(within(dialog).queryByRole('checkbox')).toBeNull()
     await u.type(within(dialog).getByRole('textbox'), '@AnaSouza')
     await u.click(within(dialog).getByRole('button', { name: A.usuariosEliminarConfirmar }))
 
-    expect(await within(drawer).findByRole('status')).toHaveTextContent(A.usuariosEliminarFeito)
+    const status = await within(drawer).findByRole('status')
+    expect(status).toHaveTextContent(A.usuariosEliminarFeito)
+    // Sem foco perdido: o diálogo fecha e o leitor de tela lê o resultado (o botão de origem sumiu).
+    await waitFor(() => expect(status).toHaveFocus())
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
     expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ reason: 'menor_16', removePublicContent: true, notify: false })
     // Não pediu aviso, então não há o que lamentar.

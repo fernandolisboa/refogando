@@ -4,6 +4,11 @@
  * decisão do controlador, não um pedido do titular: o registro vai para `account_closure` (motivo, se o conteúdo
  * público saiu, se a pessoa foi avisada por e-mail, quem decidiu), nunca para a auditoria DSAR. PURO: sem DB, sem IO.
  *
+ * NOMES: "encerramento" é a DECISÃO da equipe (Termos, item 8: "encerrar a conta"; a tabela `account_closure`, o
+ * `closeAccountByAdmin`); "eliminação" é o EFEITO, o mesmo núcleo do self-service (`eraseAccount`, LGPD art. 18, VI):
+ * anonimizar e apagar o privado. Todo encerramento elimina; nem toda eliminação é encerramento. O botão do Console
+ * diz "Eliminar conta" porque é o que o admin vê acontecer.
+ *
  * O motivo é uma LISTA FECHADA (vira o pgEnum `account_closure_reason`): nada de texto livre, para o registro não
  * guardar dado pessoal além do fato. Trocar a lista é migração e muda o diálogo do Console e os Termos.
  */
@@ -17,9 +22,10 @@ export function isAccountClosureReason(v: unknown): v is AccountClosureReason {
 }
 
 /**
- * Remover também as receitas públicas e as avaliações só vale para conta de menor de 16: a licença de quem é
- * absolutamente incapaz é nula (Código Civil, arts. 3º e 166, I). Na violação grave o conteúdo público fica
- * anonimizado, como em toda eliminação (o que foi retirado pela moderação já saiu pela fila).
+ * As receitas públicas e as avaliações saem junto só na conta de menor de 16, e SEMPRE (Termos, item 2: "eliminamos a
+ * conta e o que ela publicou"): a licença de quem é absolutamente incapaz é nula (Código Civil, arts. 3º e 166, I). Na
+ * violação grave o conteúdo público fica anonimizado, como em toda eliminação (o que foi retirado pela moderação já
+ * saiu pela fila).
  */
 export function canRemovePublicContent(reason: AccountClosureReason): boolean {
   return reason === 'menor_16'

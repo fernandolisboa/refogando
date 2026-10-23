@@ -32,3 +32,12 @@ export function getBaseUrlFromEnv(): string {
   // Dev: default estável SEM tocar `headers()` (mantém o caminho público cacheável).
   return 'http://localhost:3000'
 }
+
+/**
+ * Origem CONFIÁVEL dos links que o servidor manda por e-mail (#469, #606): `BETTER_AUTH_URL`, senão
+ * `getBaseUrlFromEnv`. Nunca o `Host` do request (forjável). Fonte única do link do Better Auth
+ * (`withTrustedOrigin`, `src/lib/auth.ts`) e do link dos Termos no e-mail de encerramento de conta.
+ */
+export function trustedAppOrigin(): string {
+  return process.env.BETTER_AUTH_URL || getBaseUrlFromEnv()
+}

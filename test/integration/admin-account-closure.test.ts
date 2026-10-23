@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { POST } from '@/app/api/admin/users/[id]/erasure/route'
 import { getDb, setImageStore, setMailer } from '@/server/deps'
-import { accountClosure, dsarAuditEvent, recipe, recipeReview, session, users } from '@/db/schema'
+import { accountClosure, dsarAuditEvent, recipe, recipeReview, session, userFollow, users } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { FakeImageStore } from '@/server/images/image-store'
-import { FakeMailer } from '@/server/mail/mailer'
-import { eraseOwnAccount } from '@/server/legal/account-erasure'
+import { FakeMailer, type Mailer } from '@/server/mail/mailer'
+import { eraseAccount, eraseOwnAccount } from '@/server/legal/account-erasure'
 import { enUS } from '@/i18n/messages/en-US'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { seedSessionHeaders, seedUser } from '../helpers/users'
 import { seedRecipe, seedRecipeImage, seedReview } from '../helpers/recipes'
+import { withFailingTrigger } from '../helpers/failing-trigger'
 
 /**
  * Encerramento de conta pela equipe (#606, ADR-0051 P1/P3) — `POST /api/admin/users/[id]/erasure` contra o Postgres
@@ -70,6 +71,13 @@ async function readUser(id: string) {
     .from(users)
     .where(eq(users.id, id))
   return row
+}
+
+/** Uma sessão viva da pessoa alvo (o encerramento a derruba antes de mexer no conteúdo). */
+async function seedTargetSession(userId: string): Promise<void> {
+  await getDb()
+    .insert(session)
+    .values({ userId, token: crypto.randomUUID(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) })
 }
 
 async function closures() {
@@ -248,7 +256,7 @@ describe('violação grave', () => {
 
     // Uma linha de log, sem id, e-mail nem nome.
     const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[admin-erasure]'))
-    expect(lines).toEqual(['[admin-erasure] concluída: motivo=violacao_grave conteudoPublicoRemovido=false avisoPorEmail=true'])
+    expect(lines).toEqual(['[admin-erasure] concluída: motivo=violacao_grave conteudoPublicoRemovido=false emailEnviado=true'])
   })
 
   it('notify=false → sem e-mail, registro com notifiedByEmail=false; conta sem idioma recebe em pt-BR', async () => {
@@ -275,6 +283,36 @@ describe('violação grave', () => {
     await expect(res.json()).resolves.toMatchObject({ notifiedByEmail: false, emailSent: false })
     expect(mailer.accountSent).toEqual([])
   })
+
+  it('o envio lança (Resend fora do ar) → o encerramento vale e fica registrado; emailSent=false e log emailEnviado=false', async () => {
+    const info = vi.spyOn(console, 'info')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const broken: Mailer = {
+      sendDpoAlert: async () => ({ sent: false }),
+      sendAccountEmail: async () => {
+        throw new Error('resend fora do ar')
+      },
+      canSendAccountEmail: () => true,
+    }
+    setMailer(broken)
+    const { userId: adminId, headers } = await admin()
+    const t = await target({ email: 'semresend@closure.test', handle: 'semresend' })
+
+    const res = await post(t.id, { reason: 'violacao_grave', confirmHandle: t.handle }, headers)
+    expect(res.status).toBe(200)
+    // `notifiedByEmail` = aviso TENTADO (a linha nasce na transação, antes do envio, e a tabela não tem UPDATE).
+    await expect(res.json()).resolves.toEqual({ ok: true, removedPublicContent: false, notifiedByEmail: true, emailSent: false })
+    expect((await readUser(t.id)).anonymizedAt).not.toBeNull()
+    const rows = await closures()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ userId: t.id, reason: 'violacao_grave', notifiedByEmail: true, decidedBy: adminId })
+
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[admin-erasure]'))
+    expect(lines).toEqual(['[admin-erasure] concluída: motivo=violacao_grave conteudoPublicoRemovido=false emailEnviado=false'])
+    const warned = warn.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(warned).toContain('[admin-erasure] e-mail de encerramento não enviado: erro=Error')
+    expect(warned).not.toContain('semresend')
+  })
 })
 
 describe('menor de 16', () => {
@@ -296,6 +334,10 @@ describe('menor de 16', () => {
     const ownReview = await reviewWithPhoto(t.id, catalog)
     const moderated = await seedReview({ userId: t.id, recipeId: catalog2, rating: 1, moderated: { curatorId: adminId } })
     const otherReviewOnCatalog = await seedReview({ userId: other, recipeId: catalog, rating: 3 })
+    // Receita PRIVADA dela, com imagem: sai pelo núcleo da eliminação (passo 4), não pelo passo 3.
+    const priv = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'private' })
+    const privImageUrl = await blob('recipes')
+    await seedRecipeImage({ recipeId: priv, blobUrl: privImageUrl, createdBy: t.id })
 
     const res = await post(t.id, { reason: 'menor_16', removePublicContent: true, notify: true, confirmHandle: 'menor-conta' }, headers)
     expect(res.status).toBe(200)
@@ -309,6 +351,8 @@ describe('menor de 16', () => {
     expect(store.blobs.has(imageUrl)).toBe(false)
     expect(store.blobs.has(thirdPartyReview.url)).toBe(false)
     expect(store.blobs.has(ownReview.url)).toBe(false)
+    expect(await recipeExists(priv)).toBe(false)
+    expect(store.blobs.has(privImageUrl)).toBe(false)
 
     expect(await recipeExists(derived)).toBe(true)
     const [d] = await getDb().select({ parent: recipe.parentRecipeId }).from(recipe).where(eq(recipe.id, derived))
@@ -321,18 +365,110 @@ describe('menor de 16', () => {
     expect(mailer.accountSent).toEqual([])
   })
 
-  it('sem removePublicContent: o público fica anonimizado, como em toda eliminação', async () => {
+  it('sem removePublicContent: o público sai do mesmo jeito (não há opção no menor de 16) e as sessões caem', async () => {
     const { headers } = await admin()
-    const t = await target({ handle: 'menor-fica' })
+    const t = await target({ handle: 'menor-sempre' })
+    await seedTargetSession(t.id)
     const pub = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'public' })
     const catalog = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
     const review = await seedReview({ userId: t.id, recipeId: catalog, rating: 4 })
 
-    const res = await post(t.id, { reason: 'menor_16', confirmHandle: 'menor-fica' }, headers)
+    const res = await post(t.id, { reason: 'menor_16', confirmHandle: 'menor-sempre' }, headers)
     expect(res.status).toBe(200)
-    expect(await recipeExists(pub)).toBe(true)
-    expect(await reviewExists(review)).toBe(true)
-    expect((await closures())[0].removedPublicContent).toBe(false)
+    await expect(res.json()).resolves.toMatchObject({ removedPublicContent: true })
+    expect(await recipeExists(pub)).toBe(false)
+    expect(await reviewExists(review)).toBe(false)
+    expect(await getDb().select().from(session).where(eq(session.userId, t.id))).toEqual([])
+    expect((await closures())[0].removedPublicContent).toBe(true)
+  })
+
+  it('falha no meio (a eliminação cai depois do passo 3) → conta ativa, nada registrado; repetir conclui, um registro só', async () => {
+    const { headers } = await admin()
+    const t = await target({ handle: 'menor-repete' })
+    await seedTargetSession(t.id)
+    const other = await seedUser({ email: 'seguido@closure.test' })
+    const pub = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'public' })
+    const imageUrl = await blob('recipes')
+    await seedRecipeImage({ recipeId: pub, blobUrl: imageUrl, createdBy: t.id })
+    const priv = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'private' })
+    // O follow sai dentro da transação da eliminação: o trigger nele derruba o passo 4, depois do passo 3.
+    await getDb().insert(userFollow).values({ followerId: t.id, followeeId: other })
+
+    const body = { reason: 'menor_16', confirmHandle: 'menor-repete' }
+    await withFailingTrigger('user_follow', async () => {
+      await expect(post(t.id, body, headers)).rejects.toThrow()
+    })
+    // Passos 2 e 3 valeram (e os blobs do passo 3 saíram mesmo com a falha); o 4 voltou atrás inteiro.
+    const u = await readUser(t.id)
+    expect(u.deletedAt).toBeNull()
+    expect(u.anonymizedAt).toBeNull()
+    expect(await recipeExists(pub)).toBe(false)
+    expect(store.blobs.has(imageUrl)).toBe(false)
+    expect(await recipeExists(priv)).toBe(true)
+    expect(await getDb().select().from(session).where(eq(session.userId, t.id))).toEqual([])
+    expect(await closures()).toEqual([])
+
+    // O admin repete: conclui, e uma terceira vez é recusada sem segundo registro.
+    const res = await post(t.id, body, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ ok: true, removedPublicContent: true })
+    expect(await recipeExists(priv)).toBe(false)
+    expect((await readUser(t.id)).anonymizedAt).not.toBeNull()
+    expect(await closures()).toHaveLength(1)
+    const again = await post(t.id, { ...body, confirmHandle: erasedIdentity(t.id).handle }, headers)
+    expect(again.status).toBe(409)
+    expect(await closures()).toHaveLength(1)
+  })
+
+  it('o store recusa apagar um blob no meio da leva → o encerramento vale e os outros blobs saem', async () => {
+    const { headers } = await admin()
+    const t = await target({ handle: 'menor-blob' })
+    const pub = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'public' })
+    const failing = await blob('recipes')
+    await seedRecipeImage({ recipeId: pub, blobUrl: failing, createdBy: t.id })
+    const catalog = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    const own = await reviewWithPhoto(t.id, catalog)
+    const realDelete = store.delete.bind(store)
+    vi.spyOn(store, 'delete').mockImplementation(async (url) => {
+      if (url === failing) throw new Error('blob fora do ar')
+      await realDelete(url)
+    })
+
+    const res = await post(t.id, { reason: 'menor_16', confirmHandle: 'menor-blob' }, headers)
+    expect(res.status).toBe(200)
+    expect(await recipeExists(pub)).toBe(false)
+    expect(store.blobs.has(failing)).toBe(true) // órfão tolerável
+    expect(store.blobs.has(own.url)).toBe(false)
+    expect(await closures()).toHaveLength(1)
+  })
+})
+
+describe('núcleo com decisão (rechecagens na transação)', () => {
+  it('a conta virou admin depois da leitura → target_admin, nada eliminado nem registrado', async () => {
+    const { userId: adminId } = await admin()
+    const other = await seedUser({ email: 'virou-admin@closure.test', handle: 'virou-admin', role: 'admin' })
+    const out = await eraseAccount(getDb(), {
+      userId: other,
+      decision: { reason: 'violacao_grave', removedPublicContent: false, notifiedByEmail: false, decidedBy: adminId },
+    })
+    expect(out).toEqual({ kind: 'target_admin' })
+    expect((await readUser(other)).deletedAt).toBeNull()
+    expect(await closures()).toEqual([])
+  })
+
+  it('menor de 16: o que ficou público depois do passo 3 (corrida) sai na própria transação', async () => {
+    const { userId: adminId } = await admin()
+    const t = await target({ handle: 'menor-corrida' })
+    const late = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: t.id, visibility: 'public' })
+    const catalog = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    const review = await seedReview({ userId: t.id, recipeId: catalog, rating: 2 })
+    const out = await eraseAccount(getDb(), {
+      userId: t.id,
+      decision: { reason: 'menor_16', removedPublicContent: true, notifiedByEmail: false, decidedBy: adminId },
+    })
+    expect(out).toEqual({ kind: 'erased' })
+    expect(await recipeExists(late)).toBe(false)
+    expect(await reviewExists(review)).toBe(false)
   })
 })
 

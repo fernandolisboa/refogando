@@ -4,6 +4,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import type { Database } from '@/db/client'
 import {
   account,
+  accountClosure,
   collection,
   creationSession,
   extractionEvent,
@@ -76,6 +77,8 @@ const PURGED_SIGNUP_PREFIX = 'pending-signup-purged:'
  * schema: FK nova para `users` com cascade/restrict precisa entrar aqui.
  */
 export const CONTENT_GUARDS: readonly AnyPgColumn[] = [
+  // #606: RESTRICT; só existe para conta eliminada, que o expurgo já pula (`deleted_at`), mas a lista é por FK.
+  accountClosure.userId,
   collection.userId,
   creationSession.userId,
   extractionEvent.userId,
