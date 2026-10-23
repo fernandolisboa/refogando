@@ -45,4 +45,5 @@ A checagem roda em três lugares: no `next.config.ts` (derruba `next build` e `n
 - Os dublês vão no bundle de produção, inertes: sem a flag, nenhum getter os alcança, e com a flag fora do harness o processo nem sobe.
 - O CI faz dois `next build` por PR (o smoke-check do `checks` e o do `e2e`, que builda com o banco, como a Vercel). Os jobs rodam em paralelo; o custo é tempo de runner, não de relógio.
 - O harness de banco do E2E duplica o do Vitest (`test/global-setup.ts`) de propósito, para não acoplar os dois agora. Unificar é o follow-up #593.
+  *Atualização (2026-10-23, #593): unificado. Os dois harnesses usam `test/helpers/throwaway-db.ts` (`createThrowawayDb`). O E2E liga `requireLoopback` e só varre órfãos com mais de 2h pelo instante no nome; o Vitest segue sem trava de loopback e varre todo órfão `refogando_test_*` sem sessão. Nos dois, a varredura só considera nomes que casam com a forma segura (`safeName`).*
 - Spec nova segue `docs/e2e.md`: rótulos do catálogo `pt-BR`, `getByRole`, nada de `waitForTimeout`/`networkidle`, nenhum dado compartilhado mutável entre workers.

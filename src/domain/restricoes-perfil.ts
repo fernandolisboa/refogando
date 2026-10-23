@@ -128,3 +128,23 @@ export function buscaUsaPerfil(sel: SelecaoRestricoes, outroCriterio: boolean): 
 export function somarRestricoes(base: readonly Restricao[], perfil: readonly Restricao[]): Restricao[] {
   return ordenarRestricoes([...base, ...perfil])
 }
+
+/**
+ * Versão do texto de consentimento das restrições salvas (#600): o `restricoesPerfil.consentimento` dos dois
+ * idiomas, junto do botão "Salvar restrições". A data em que o texto entrou. Mudar o texto OBRIGA a mudar esta
+ * versão (o teste `restricoes-consentimento-versao.test.ts` reprova se o texto mudar com a mesma versão) e
+ * acrescentar o texto novo em `docs/legal/consentimento-restricoes.md`. Quem consentiu com uma versão anterior vê
+ * o aviso em destaque no formulário até salvar de novo (LGPD art. 8º, §6).
+ */
+export const RESTRICOES_CONSENTIMENTO_VERSAO = '2026-10-22'
+
+/**
+ * O formulário mostra o aviso de mudança? Só para quem tem restrições SALVAS e consentiu com outra versão do
+ * texto (ou antes do registro, versão null). Sem restrições salvas não há consentimento a avisar.
+ */
+export function consentimentoRestricoesDesatualizado(input: {
+  temSalvas: boolean
+  versao: string | null | undefined
+}): boolean {
+  return input.temSalvas && input.versao !== RESTRICOES_CONSENTIMENTO_VERSAO
+}

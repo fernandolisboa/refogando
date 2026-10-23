@@ -80,7 +80,7 @@ describe('"Como usar" (/guia)', () => {
     render(wrap(<SiteFooter />))
     expect(within(screen.getByRole('contentinfo')).getByRole('link', { name: ptBR.nav.comoUsar })).toHaveAttribute(
       'href',
-      '/guia',
+      '/pt-BR/guia',
     )
   })
 
@@ -89,6 +89,6 @@ describe('"Como usar" (/guia)', () => {
     const user = userEvent.setup()
     render(wrap(<AuthSlot />))
     await user.click(screen.getByRole('button', { name: /Ana/ }))
-    expect(await screen.findByRole('menuitem', { name: ptBR.nav.comoUsar })).toHaveAttribute('href', '/guia')
+    expect(await screen.findByRole('menuitem', { name: ptBR.nav.comoUsar })).toHaveAttribute('href', '/pt-BR/guia')
   })
 })

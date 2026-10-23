@@ -124,6 +124,9 @@ export async function* accountExportSections(
       nivelPadrao: users.nivelPadrao,
       // Restrições salvas (ADR-0041 — dado sensível, LGPD Art. 11; o titular tem acesso a ele aqui).
       restricoes: users.restricoes,
+      // ...e quando e com qual versão do texto a pessoa consentiu (#600).
+      restricoesConsentidasEm: users.restricoesConsentidasEm,
+      restricoesConsentimentoVersao: users.restricoesConsentimentoVersao,
       image: users.image,
       role: users.role,
       // #595: o plano comercial (#466) e as sanções sobre a conta. Sem o `imageGenBlockedBy` (id do Curador).

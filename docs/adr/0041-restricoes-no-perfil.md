@@ -38,3 +38,9 @@ O dono (2026-10-13) notou que a pessoa redigita as mesmas Restrições alimentar
 - **Filtrar o feed da home pelo perfil**: o repouso é a porta indexável e igual para todos (ADR-0020); um filtro invisível esconderia receitas sem aviso.
 - **Gravar as restrições pedidas no Prompt/Conversa** (coluna em `creation_session` ou no carimbo) só para a regeneração reaplicá-las: mais dado sensível guardado para um ganho pequeno.
 - **Pôr no `PATCH /api/me`**: ver dec.2.
+
+## Atualização (2026-10-23, #600) — prova do consentimento
+
+`users` ganha `restricoes_consentidas_em` e `restricoes_consentimento_versao` (migração 0081). `PUT /api/me/restricoes` grava as duas ao salvar uma lista não vazia (salvar é consentir com o texto junto do botão) e as zera ao salvar a vazia (revogação); a eliminação também zera, e a exportação as traz. A versão é `RESTRICOES_CONSENTIMENTO_VERSAO` (`src/domain/restricoes-perfil.ts`, a data do texto `restricoesPerfil.consentimento`); um teste guarda o hash do texto de cada versão e reprova se o texto mudar sem versão nova.
+
+O aviso de mudança no formulário (LGPD art. 8º, §6) deixa de depender do localStorage: aparece para quem tem restrições salvas com versão diferente da atual, ou sem versão (consentiu antes do registro), em qualquer aparelho, até salvar de novo. "Entendi" só o esconde naquela tela. Política v3.3, item 3.5; registro de operações, operação 6.

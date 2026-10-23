@@ -11,7 +11,12 @@
  * verdade (foco/setas/Enter do Radix + fecha-no-select automático, igual ao AuthSlot); NÃO um `<a>` nu
  * (que o Radix não registra ⇒ inalcançável por teclado). Itens sem alvo (informativos/ator degradado)
  * ficam texto puro.
+ *
+ * Cada item mostra QUANDO aconteceu: "agora", "há 3 horas", "há 2 dias" até uma semana; daí para trás, a data
+ * (`formatRelativeTime`). O instante completo fica no `title` do `<time>`. O relógio é lido ao ABRIR o painel
+ * (o conteúdo só monta aberto), nunca no render: sem divergência de SSR e sem `Date.now()` impuro no corpo.
  */
+import { useState } from 'react'
 import Link from 'next/link'
 import { BellIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
@@ -24,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Avatar } from '@/components/profile/avatar'
 import { renderNotification, notificationHref } from '@/domain/notification'
+import { formatDateTime, formatRelativeTime } from '@/domain/relative-time'
 import { useNotifications } from '@/components/use-notifications'
 
 export function NotificationBell() {
@@ -31,6 +37,8 @@ export function NotificationBell() {
   const session = useSession()
   const authed = !session.isPending && !session.error && !!session.data
   const { notifications, unreadCount, markAllRead } = useNotifications()
+  // "Agora" de referência dos tempos relativos: atualizado a cada abertura do painel.
+  const [now, setNow] = useState(() => Date.now())
 
   // Modelo B: nada no SSR / anon / pendente (a chrome anon fica byte-idêntica). Os hooks acima rodam
   // sempre (ordem estável); só o RENDER é gateado.
@@ -51,7 +59,9 @@ export function NotificationBell() {
     <DropdownMenu
       modal={false}
       onOpenChange={(open) => {
-        if (open) markAllRead()
+        if (!open) return
+        setNow(Date.now())
+        markAllRead()
       }}
     >
       <DropdownMenuTrigger
@@ -77,10 +87,20 @@ export function NotificationBell() {
         ) : (
           notifications.map((n) => {
             const href = notificationHref(n.type, n.refs, locale)
+            const quando = formatRelativeTime(n.createdAt, now, locale)
             const inner = (
               <>
                 <Avatar src={n.actorImage} name={n.refs.actorName ?? ''} alt="" size="sm" />
-                <span className="text-sm text-fg">{renderNotification(m, n.type, n.refs)}</span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm text-fg">{renderNotification(m, n.type, n.refs)}</span>
+                  {/* Espaço p/ o nome acessível ("… seguir você há 3 horas"); num flex não aparece. */}
+                  {quando && ' '}
+                  {quando && (
+                    <time dateTime={n.createdAt} title={formatDateTime(n.createdAt, locale)} className="text-xs text-muted">
+                      {quando}
+                    </time>
+                  )}
+                </span>
               </>
             )
             const rowClass = 'flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0'

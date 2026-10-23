@@ -6,7 +6,13 @@ import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 // Import relativo (valor, não tipo): o E2E (`e2e/fixtures/test.ts`) importa este catálogo fora do bundler do Next.
-import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '../../domain/legal-notice'
+import {
+  DATA_POLITICA_V3_2,
+  DATA_POLITICA_V3_3,
+  DATA_PUBLICACAO_TERMOS_V1,
+  DATA_TERMOS_V1_1,
+  DATA_TERMOS_V1_2,
+} from '../../domain/legal-notice'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -1035,7 +1041,7 @@ export const ptBR = {
       'Ao salvar, você autoriza o Refogando a guardar estas restrições só para pré-marcar os seus pedidos e a enviá-las à IA (Anthropic) quando você gerar com elas marcadas. O app e a IA funcionam nos Estados Unidos. Desmarque tudo e salve para apagar.',
     // Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6), só para quem já tinha restrições salvas.
     avisoMudanca:
-      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Se não concordar, desmarque tudo e salve para apagar.',
+      'Atualizamos a Política de Privacidade em 22/10/2026: as suas restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Para mantê-las, salve de novo e o aviso some; se não concordar, desmarque tudo e salve para apagar.',
     avisoMudancaFechar: 'Entendi',
     salvar: 'Salvar restrições',
     salvando: 'Salvando…',
@@ -2109,10 +2115,10 @@ export const ptBR = {
       'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX —, com o teste de balanceamento documentado (o fato de o próprio autor ter publicado o nome pesa a favor).',
     s35Titulo: '3.5. Restrições alimentares salvas',
     s35Valores: [
-      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público.',
+      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público. Junto delas guardamos a data e a versão do texto com que você consentiu, como prova do consentimento (Art. 8º, §2º).',
       'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA (Anthropic, nos Estados Unidos) dentro de um pedido em que você as mantém marcadas.',
       'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão e informa que o app e a IA funcionam nos Estados Unidos, Art. 33, VIII) e revogável a qualquer momento desmarcando todas e salvando.',
-      'até você desmarcá-las ou excluir a conta; entram na exportação dos seus dados e são apagadas na exclusão da conta.',
+      'até você desmarcá-las ou excluir a conta (a data e a versão do consentimento saem junto); entram na exportação dos seus dados e são apagadas na exclusão da conta.',
     ],
     s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
     s36Valores: [
@@ -2232,7 +2238,7 @@ export const ptBR = {
       'lembrar o idioma escolhido',
       'lembrar o tema claro ou escuro',
       'proteger o login com o Google contra fraude',
-      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu os avisos de mudança (o das restrições e o dos Termos e da Política)',
+      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu o aviso de mudança dos Termos e da Política',
       'evitar relatos de erro repetidos e recargas em sequência após uma atualização, lembrar o "Mostrar tudo" da busca e guardar por alguns segundos, até a página seguinte, o pedido de refazer o tour e o aviso da exclusão da conta',
     ],
     s8Duracoes: [
@@ -2260,6 +2266,7 @@ export const ptBR = {
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
+      `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2312,9 +2319,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2378,9 +2385,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },

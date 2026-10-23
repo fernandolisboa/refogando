@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
+import { legalPageAlternates } from '@/domain/legal-pages-seo'
 
 /**
  * Política de Privacidade (#398 / parte de #276) — PUBLICADA.
@@ -13,7 +14,7 @@ import { MESSAGES } from '@/i18n/messages'
  *     e-mail do canal editando ali.
  * PR que muda dado, finalidade, fornecedor, prazo ou log atualiza o texto no mesmo PR (CLAUDE.md).
  *
- * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
+ * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`; o canonical e o hreflang usam a origem fixa, #611) ⇒ build-safe.
  */
 export async function generateMetadata({
   params,
@@ -24,6 +25,7 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].privacidade.metaTitulo,
+    alternates: legalPageAlternates(locale, 'privacidade'),
   }
 }
 

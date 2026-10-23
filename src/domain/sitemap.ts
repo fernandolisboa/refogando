@@ -94,14 +94,24 @@ export function buildStaticLocaleEntries(baseUrl: string): MetadataRoute.Sitemap
 }
 
 /**
- * Entradas do sitemap para uma rota estática por locale (`<base>/{locale}/{path}`). Emite UMA entrada
- * por locale suportado, todas compartilhando o mesmo mapa de hreflang (cada locale + `x-default` →
- * versão no DEFAULT_LOCALE). Sem `lastModified` (páginas estáticas sem data canônica de modificação).
+ * Mapa de hreflang de uma rota estática por locale (`<base>/{locale}/{path}`): cada locale suportado +
+ * `x-default` → versão no DEFAULT_LOCALE. Fonte única do esquema: o sitemap e o `alternates` das páginas
+ * legais (`legal-pages-seo.ts`, #611) usam este.
  */
-function buildStaticPathEntries(baseUrl: string, path: string): MetadataRoute.Sitemap {
+export function staticPathHreflang(baseUrl: string, path: string): Record<string, string> {
   const languages: Record<string, string> = {}
   for (const loc of SUPPORTED_LOCALES) languages[loc] = `${baseUrl}/${loc}/${path}`
   languages['x-default'] = `${baseUrl}/${DEFAULT_LOCALE}/${path}`
+  return languages
+}
+
+/**
+ * Entradas do sitemap para uma rota estática por locale (`<base>/{locale}/{path}`). Emite UMA entrada
+ * por locale suportado, todas compartilhando o mesmo mapa de hreflang (`staticPathHreflang`). Sem
+ * `lastModified` (páginas estáticas sem data canônica de modificação).
+ */
+function buildStaticPathEntries(baseUrl: string, path: string): MetadataRoute.Sitemap {
+  const languages = staticPathHreflang(baseUrl, path)
 
   return SUPPORTED_LOCALES.map((loc) => ({
     url: `${baseUrl}/${loc}/${path}`,

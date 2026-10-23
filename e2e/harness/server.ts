@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { parse as parseDotenv } from 'dotenv'
-import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { makeSql } from '@/db/client'
 import { runMigrations } from '@/db/migrate'
-import { isLoopbackUrl, VERCEL_MARKERS } from '@/server/e2e/mode'
+import { VERCEL_MARKERS } from '@/server/e2e/mode'
+import { createThrowawayDb, randSuffix, type ThrowawayDb } from '../../test/helpers/throwaway-db'
 import {
   E2E_AUTH_SECRET,
   E2E_BASE_URL,
@@ -21,7 +21,7 @@ import { seedE2e } from './seed'
  * `next start` em localhost:3100, no MODO FAKE (`REFOGANDO_E2E_FAKES=1`, ver src/server/e2e/mode.ts).
  * SIGTERM/SIGINT (o Playwright ao fim) ⇒ derruba o Next e apaga o banco / para o container.
  *
- * Banco (espelha test/global-setup.ts; duplicado de propósito — unificar os dois é o follow-up #593):
+ * Banco (helper `test/helpers/throwaway-db.ts`, o mesmo do test/global-setup.ts, #593):
  *  - SEM `E2E_DATABASE_URL` ⇒ Testcontainers `pgvector/pgvector:pg17` (precisa de Docker local);
  *  - COM `E2E_DATABASE_URL` (só loopback) ⇒ CREATE DATABASE refogando_e2e_<epoch>_<rand> nesse Postgres e
  *    DROP ... WITH (FORCE) no fim. Varre órfãos com mais de 2h de execuções que morreram.
@@ -33,7 +33,6 @@ import { seedE2e } from './seed'
  * faz o Next nem abrir os arquivos.
  */
 
-const IMAGE = 'pgvector/pgvector:pg17'
 const DOTENV_FILES = ['.env.production.local', '.env.local', '.env.production', '.env']
 /** Chaves de provedor/infra zeradas mesmo sem `.env*` (o shell de quem roda pode tê-las exportadas). */
 const BLANK_KEYS = [
@@ -64,95 +63,33 @@ const BLANK_KEYS = [
 
 const log = (msg: string) => console.log(`[e2e/harness] ${msg}`)
 
-function randSuffix(): string {
-  return Math.random().toString(36).slice(2, 12).replace(/[^a-z0-9]/g, '') || 'x'
-}
-
-function assertSafeDbName(name: string): void {
-  if (!E2E_DB_NAME_RE.test(name)) throw new Error(`nome de banco inseguro: ${name}`)
-}
-
 /** Instante (ms) gravado no nome do banco; `null` se o nome não é do harness. */
 function dbCreatedAtMs(name: string): number | null {
   const m = E2E_DB_NAME_RE.exec(name)
   return m ? Number(m[1]) * 1000 : null
 }
 
-function swapDbName(url: string, dbName: string): string {
-  const u = new URL(url)
-  u.pathname = `/${dbName}`
-  return u.toString()
-}
-
-type ThrowawayDb = { url: string; dbName: string; drop: () => Promise<void> }
-
-async function createThrowawayDb(): Promise<ThrowawayDb> {
-  const dbName = `refogando_e2e_${Math.floor(Date.now() / 1000)}_${randSuffix()}`
-  assertSafeDbName(dbName)
-  const external = process.env.E2E_DATABASE_URL?.trim()
-
-  if (external) {
-    if (!isLoopbackUrl(external, ['postgres:', 'postgresql:'])) {
-      throw new Error('E2E_DATABASE_URL precisa ser postgres:// em loopback (localhost/127.0.0.1/::1).')
-    }
-    const admin = makeSql(external, { max: 1 })
-    try {
-      // Órfãos de execuções que morreram (SIGKILL), pela idade gravada no nome. Só os com mais de
-      // E2E_ORPHAN_MIN_AGE_MS: outro run local concorrente fica minutos sem conexão aberta no banco dele
-      // (durante o `next build`, por exemplo), e um DROP sem FORCE o derrubaria nessa janela. Sem FORCE
-      // mesmo assim (um órfão velho ainda conectado não cai). Nome fora do padrão (inclusive o formato
-      // antigo, sem o instante) fica quieto.
-      const orphans = await admin<{ datname: string }[]>`
-        select datname from pg_database where datname like 'refogando_e2e_%'
-      `
-      const cutoff = Date.now() - E2E_ORPHAN_MIN_AGE_MS
-      for (const o of orphans) {
-        const createdAt = dbCreatedAtMs(o.datname)
-        if (createdAt === null || createdAt > cutoff) continue
-        try {
-          await admin.unsafe(`DROP DATABASE IF EXISTS "${o.datname}"`)
-          log(`órfão ${o.datname} apagado`)
-        } catch {
-          // ainda em uso: deixa quieto.
-        }
-      }
-      await admin.unsafe(`CREATE DATABASE "${dbName}"`)
-    } finally {
-      await admin.end({ timeout: 5 })
-    }
-    log(`banco ${dbName} criado em ${new URL(external).host}`)
-    return {
-      url: swapDbName(external, dbName),
-      dbName,
-      drop: async () => {
-        const a = makeSql(external, { max: 1 })
-        try {
-          await a.unsafe(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`)
-        } finally {
-          await a.end({ timeout: 5 })
-        }
-        log(`banco ${dbName} apagado`)
-      },
-    }
-  }
-
-  // Import tardio: sem Docker (caminho E2E_DATABASE_URL) nem carrega o Testcontainers.
-  const { PostgreSqlContainer } = await import('@testcontainers/postgresql')
-  log(`subindo ${IMAGE} (Testcontainers)…`)
-  const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(IMAGE).withDatabase(dbName).start()
-  const url = container.getConnectionUri()
-  if (!isLoopbackUrl(url, ['postgres:', 'postgresql:'])) {
-    await container.stop().catch(() => {})
-    throw new Error(`o Testcontainers expôs o banco fora de loopback (${container.getHost()}); use Docker local.`)
-  }
-  return {
-    url,
-    dbName,
-    drop: async () => {
-      await container.stop()
-      log('container parado')
+/**
+ * `createThrowawayDb` (#593) no modo estrito do E2E: só loopback, nos dois caminhos. Órfãos de execuções que
+ * morreram (SIGKILL) saem pela idade gravada no nome, e só os com mais de E2E_ORPHAN_MIN_AGE_MS: outro run
+ * local concorrente fica minutos sem conexão aberta no banco dele (durante o `next build`, por exemplo), e um
+ * DROP sem FORCE o derrubaria nessa janela. Nome fora do padrão (inclusive o formato antigo, sem o instante)
+ * fica quieto.
+ */
+function createE2eDb(): Promise<ThrowawayDb> {
+  const cutoff = Date.now() - E2E_ORPHAN_MIN_AGE_MS
+  return createThrowawayDb({
+    dbName: `refogando_e2e_${Math.floor(Date.now() / 1000)}_${randSuffix()}`,
+    safeName: E2E_DB_NAME_RE,
+    adminUrl: process.env.E2E_DATABASE_URL?.trim() || undefined,
+    requireLoopback: true,
+    adminUrlEnv: 'E2E_DATABASE_URL',
+    sweepOrphan: (name) => {
+      const createdAt = dbCreatedAtMs(name)
+      return createdAt !== null && createdAt <= cutoff
     },
-  }
+    log,
+  })
 }
 
 /** Env do `next build`/`next start`: o do shell, com provedores/.env* zerados e o modo fake ligado. */
@@ -226,7 +163,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', onSignal)
 
   try {
-    db = await createThrowawayDb()
+    db = await createE2eDb()
     const sql = makeSql(db.url, { max: 1 })
     try {
       await runMigrations(sql)

@@ -11,6 +11,7 @@ import {
 } from '@/server/claude/client'
 import type { GenerationOutput } from '@/domain/generation'
 import { users } from '@/db/schema'
+import { RESTRICOES_CONSENTIMENTO_VERSAO } from '@/domain/restricoes-perfil'
 import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { seedSessionHeaders } from '../helpers/users'
 import { cannedSuccess, post as postGeneration } from '../helpers/generation'
@@ -69,16 +70,16 @@ describe('/api/me/restricoes — contrato (ADR-0041)', () => {
     const res = await get(headers)
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    await expect(res.json()).resolves.toEqual({ restricoes: [] })
+    await expect(res.json()).resolves.toEqual({ restricoes: [], consentimentoVersao: null })
   })
 
   it('PUT grava a forma canônica (sem repetição, ordem do vocabulário); GET relê', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'grava@restricoes.test' })
     const res = await put({ restricoes: ['vegano', 'sem_gluten', 'vegano'] }, headers)
     expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ restricoes: ['sem_gluten', 'vegano'] })
+    await expect(res.json()).resolves.toMatchObject({ restricoes: ['sem_gluten', 'vegano'] })
     expect(await readRestricoes(userId)).toEqual(['sem_gluten', 'vegano'])
-    await expect((await get(headers)).json()).resolves.toEqual({ restricoes: ['sem_gluten', 'vegano'] })
+    await expect((await get(headers)).json()).resolves.toMatchObject({ restricoes: ['sem_gluten', 'vegano'] })
   })
 
   it('PUT [] limpa', async () => {
@@ -124,9 +125,14 @@ describe('Dados do titular (LGPD) — restrições salvas', () => {
     await put({ restricoes: ['vegetariano', 'sem_gluten'] }, headers)
     const res = await GET_EXPORT(new Request('http://localhost/api/me/export', { headers }))
     expect(res.status).toBe(200)
-    const dump = (await res.json()) as { account: { restricoes: string[]; nivelPadrao: string | null } }
+    const dump = (await res.json()) as {
+      account: { restricoes: string[]; nivelPadrao: string | null; restricoesConsentimentoVersao: string | null }
+    }
     expect(dump.account.restricoes).toEqual(['sem_gluten', 'vegetariano'])
     expect(dump.account).toHaveProperty('nivelPadrao', null)
+    // #600: a prova do consentimento também (data e versão do texto).
+    expect(dump.account.restricoesConsentimentoVersao).toBe(RESTRICOES_CONSENTIMENTO_VERSAO)
+    expect(dump.account).toHaveProperty('restricoesConsentidasEm')
   })
 
   it('são zeradas na eliminação (a linha `users` sobrevive anonimizada) — junto do Nível padrão', async () => {
@@ -137,10 +143,59 @@ describe('Dados do titular (LGPD) — restrições salvas', () => {
     const out = await eraseOwnAccount(getDb(), { userId })
     expect(out.kind).toBe('erased')
     const [row] = await getDb()
-      .select({ restricoes: users.restricoes, nivelPadrao: users.nivelPadrao })
+      .select({
+        restricoes: users.restricoes,
+        nivelPadrao: users.nivelPadrao,
+        em: users.restricoesConsentidasEm,
+        versao: users.restricoesConsentimentoVersao,
+      })
       .from(users)
       .where(eq(users.id, userId))
-    expect(row).toEqual({ restricoes: [], nivelPadrao: null })
+    expect(row).toEqual({ restricoes: [], nivelPadrao: null, em: null, versao: null })
+  })
+})
+
+describe('#600 — prova do consentimento das restrições salvas (LGPD art. 8º, §2º)', () => {
+  async function prova(id: string) {
+    const [row] = await getDb()
+      .select({ em: users.restricoesConsentidasEm, versao: users.restricoesConsentimentoVersao })
+      .from(users)
+      .where(eq(users.id, id))
+    return row
+  }
+
+  it('salvar uma lista grava data e versão; salvar de novo renova a data; a vazia (revogar) zera as duas', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'prova@restricoes.test' })
+    expect(await prova(userId)).toEqual({ em: null, versao: null })
+
+    const antes = Date.now()
+    const res = await put({ restricoes: ['vegano'] }, headers)
+    expect(await res.json()).toEqual({ restricoes: ['vegano'], consentimentoVersao: RESTRICOES_CONSENTIMENTO_VERSAO })
+    const p1 = await prova(userId)
+    expect(p1.versao).toBe(RESTRICOES_CONSENTIMENTO_VERSAO)
+    expect(p1.em!.getTime()).toBeGreaterThanOrEqual(antes - 1000)
+
+    await getDb().update(users).set({ restricoesConsentidasEm: new Date('2026-01-01T00:00:00Z') }).where(eq(users.id, userId))
+    await put({ restricoes: ['vegano', 'sem_gluten'] }, headers)
+    expect((await prova(userId)).em!.getTime()).toBeGreaterThan(new Date('2026-01-01T00:00:00Z').getTime())
+
+    const vazia = await put({ restricoes: [] }, headers)
+    expect(await vazia.json()).toEqual({ restricoes: [], consentimentoVersao: null })
+    expect(await prova(userId)).toEqual({ em: null, versao: null })
+  })
+
+  it('GET devolve a versão gravada (null para quem consentiu antes do registro); PUT inválido não toca a prova', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'versao@restricoes.test' })
+    await getDb().update(users).set({ restricoes: ['vegano'] }).where(eq(users.id, userId))
+    expect(await (await get(headers)).json()).toEqual({ restricoes: ['vegano'], consentimentoVersao: null })
+
+    await put({ restricoes: ['vegano'] }, headers)
+    expect(await (await get(headers)).json()).toEqual({
+      restricoes: ['vegano'],
+      consentimentoVersao: RESTRICOES_CONSENTIMENTO_VERSAO,
+    })
+    expect((await put({ restricoes: ['nao_existe'] }, headers)).status).toBe(400)
+    expect((await prova(userId)).versao).toBe(RESTRICOES_CONSENTIMENTO_VERSAO)
   })
 })
 

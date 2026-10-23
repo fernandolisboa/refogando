@@ -32,6 +32,8 @@ O `webServer` do Playwright é o harness `e2e/harness/server.ts`. Ele faz, em or
 
 ### Banco
 
+O banco descartável vem de `test/helpers/throwaway-db.ts`, o mesmo helper do `test/global-setup.ts` (#593); o E2E o usa no modo estrito.
+
 - **Padrão:** Testcontainers sobe `pgvector/pgvector:pg17` (precisa de Docker). O host exposto precisa ser loopback; com `DOCKER_HOST` remoto o harness recusa.
 - **Sem Docker:** aponte para um Postgres 17 + pgvector local, com a variável **inline** (nunca `export`, ver `CLAUDE.md`):
 

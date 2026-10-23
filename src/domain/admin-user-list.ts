@@ -113,29 +113,6 @@ export type AdminUserListPage = {
   counts: Record<AdminUserPreset, number>
 }
 
-/**
- * Tempo relativo curto para a tabela ("há 2 horas", "ontem"); acima de uma semana, a data. PURO: `now` e
- * `locale` entram por parâmetro (a lista carrega no cliente depois da hidratação, sem risco de divergir do SSR).
- */
-export function formatRelativeTime(iso: string, now: number, locale: string): string {
-  const diffS = Math.round((new Date(iso).getTime() - now) / 1000)
-  const abs = Math.abs(diffS)
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-  if (abs < 60) return rtf.format(0, 'second')
-  if (abs < 3600) return rtf.format(Math.round(diffS / 60), 'minute')
-  if (abs < 86400) return rtf.format(Math.round(diffS / 3600), 'hour')
-  if (abs < 7 * 86400) return rtf.format(Math.round(diffS / 86400), 'day')
-  return formatDate(iso, locale)
-}
-
-export function formatDate(iso: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso))
-}
-
-export function formatDateTime(iso: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso))
-}
-
 /** Horas inteiras (arredondadas para cima, mínimo 0) até `iso`. */
 export function hoursUntil(iso: string, now: number): number {
   return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 3_600_000))

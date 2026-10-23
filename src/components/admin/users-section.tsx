@@ -26,12 +26,10 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { ROLES, type Role } from '@/domain/user'
+import { formatDate, formatDateTime, formatRelativeTime } from '@/domain/relative-time'
 import {
   ADMIN_USER_PRESETS,
   ADMIN_USER_SORTS,
-  formatDate,
-  formatDateTime,
-  formatRelativeTime,
   hoursUntil,
   type AdminUserListItem,
   type AdminUserListPage,

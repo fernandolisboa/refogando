@@ -10,10 +10,12 @@
  * mostra o convite de entrar). ADR-0010: route handler via fetch, nunca Server Action.
  *
  * Aviso da mudança de 2026-10-22 (LGPD art. 8º, §6; parecer interno, achado 25): a Política v3 passou a dizer
- * que as restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Quem já tinha restrições salvas
- * consentiu com o texto antigo, então vê um aviso em destaque aqui, no lugar onde deu o consentimento, até
- * dispensá-lo ("Entendi", guardado no localStorage deste navegador) ou salvar de novo (o salvar já é o
- * consentimento com o texto novo). Sem restrições salvas não há consentimento a avisar: o aviso não aparece.
+ * que as restrições salvas são tratadas pelo app e pela IA nos Estados Unidos. Desde o #600 o servidor guarda a
+ * versão do texto com que a pessoa consentiu (`consentimentoVersao`, do GET), e o aviso em destaque aparece aqui,
+ * no lugar onde ela deu o consentimento, para quem tem restrições salvas com uma versão anterior (ou sem versão,
+ * de antes do registro): `consentimentoRestricoesDesatualizado`. Salvar de novo é consentir com o texto novo e
+ * tira o aviso em qualquer aparelho; "Entendi" só o esconde nesta tela (ele volta na próxima visita, até salvar).
+ * Sem restrições salvas não há consentimento a avisar: o aviso não aparece.
  */
 import { useEffect, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -22,33 +24,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { CheckboxChip } from '@/components/ui/checkbox-chip'
 import { RESTRICOES, type Restricao } from '@/domain/vocabulary'
-import { normalizarRestricoes, ordenarRestricoes } from '@/domain/restricoes-perfil'
+import {
+  consentimentoRestricoesDesatualizado,
+  normalizarRestricoes,
+  ordenarRestricoes,
+} from '@/domain/restricoes-perfil'
 import { useAtualizarRestricoesPerfil } from './restricoes-perfil-provider'
 
 type Status = 'loading' | 'idle' | 'saving' | 'saved' | 'error' | 'load_failed'
-
-/**
- * Chave do localStorage que lembra que o aviso da mudança de 2026-10-22 foi visto (dispensado ou já
- * respondido salvando de novo). A data no nome: uma mudança futura que pedir novo aviso usa outra chave.
- */
-export const AVISO_MUDANCA_STORAGE_KEY = 'refogando:restricoes:aviso-2026-10-22'
-
-function avisoMudancaJaVisto(): boolean {
-  try {
-    return window.localStorage.getItem(AVISO_MUDANCA_STORAGE_KEY) === '1'
-  } catch {
-    // Storage bloqueado (navegação privada etc.): mostra o aviso; dispensar vale só para esta tela.
-    return false
-  }
-}
-
-function marcarAvisoMudancaVisto(): void {
-  try {
-    window.localStorage.setItem(AVISO_MUDANCA_STORAGE_KEY, '1')
-  } catch {
-    // Storage bloqueado: o aviso some nesta tela e volta numa próxima visita.
-  }
-}
 
 export function RestricoesPerfilForm() {
   const { messages } = useLocale()
@@ -60,9 +43,8 @@ export function RestricoesPerfilForm() {
   const [restricoes, setRestricoes] = useState<Restricao[]>([])
   const [status, setStatus] = useState<Status>('loading')
   // O aviso da mudança só faz sentido para quem tem restrições SALVAS (as do servidor, não as marcadas agora
-  // na tela) e ainda não o viu. Lidos depois da carga: nada disso existe no HTML do servidor.
-  const [temSalvas, setTemSalvas] = useState(false)
-  const [avisoVisto, setAvisoVisto] = useState(true)
+  // na tela) com uma versão antiga do consentimento. Lidos depois da carga: nada disso existe no HTML do servidor.
+  const [avisoPendente, setAvisoPendente] = useState(false)
   const tituloRef = useRef<HTMLHeadingElement>(null)
 
   // Incrementar re-dispara a carga ("Tentar de novo" depois de uma falha).
@@ -78,11 +60,15 @@ export function RestricoesPerfilForm() {
           setStatus('load_failed')
           return
         }
-        const body = (await res.json()) as { restricoes?: unknown }
+        const body = (await res.json()) as { restricoes?: unknown; consentimentoVersao?: unknown }
         const salvas = normalizarRestricoes(body.restricoes)
         setRestricoes(salvas)
-        setTemSalvas(salvas.length > 0)
-        setAvisoVisto(avisoMudancaJaVisto())
+        setAvisoPendente(
+          consentimentoRestricoesDesatualizado({
+            temSalvas: salvas.length > 0,
+            versao: typeof body.consentimentoVersao === 'string' ? body.consentimentoVersao : null,
+          }),
+        )
         setStatus('idle')
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
@@ -120,10 +106,8 @@ export function RestricoesPerfilForm() {
       const salvas = normalizarRestricoes(body.restricoes)
       setRestricoes(salvas)
       atualizarContexto(salvas)
-      setTemSalvas(salvas.length > 0)
-      // Salvar de novo é consentir com o texto novo (que fica junto do botão): o aviso cumpriu o papel.
-      marcarAvisoMudancaVisto()
-      setAvisoVisto(true)
+      // Salvar é consentir com o texto atual (junto do botão), e o servidor gravou a versão: o aviso sai.
+      setAvisoPendente(false)
       setStatus('saved')
     } catch {
       setStatus('error')
@@ -131,15 +115,15 @@ export function RestricoesPerfilForm() {
   }
 
   function dispensarAviso() {
-    marcarAvisoMudancaVisto()
-    setAvisoVisto(true)
+    // Só nesta tela: o aviso volta na próxima visita enquanto o consentimento gravado for de versão anterior.
+    setAvisoPendente(false)
     // O botão some com o aviso: sem isto o foco cairia no <body>. Vai para o título da seção.
     tituloRef.current?.focus()
   }
 
   if (!authed) return null
 
-  const mostrarAviso = temSalvas && !avisoVisto && status !== 'loading' && status !== 'load_failed'
+  const mostrarAviso = avisoPendente && status !== 'loading' && status !== 'load_failed'
 
   return (
     <section aria-labelledby="restricoes-perfil-titulo" className="flex max-w-xl flex-col gap-4">

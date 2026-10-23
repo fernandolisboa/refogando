@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { TermsOfUse } from '@/components/legal/terms-of-use'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
+import { legalPageAlternates } from '@/domain/legal-pages-seo'
 
 /**
  * Termos de Uso v1 (ADR-0051; parecer interno §7 e §8) — PUBLICADOS:
@@ -10,7 +11,7 @@ import { MESSAGES } from '@/i18n/messages'
  *     (item 10, `src/domain/legal-notice.ts`). Segmento em português como as outras páginas legais (CONTEXT.md,
  *     "Convenção de URL").
  *
- * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe (igual a /privacidade).
+ * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`; o canonical e o hreflang usam a origem fixa, #611) ⇒ build-safe (igual a /privacidade).
  */
 export async function generateMetadata({
   params,
@@ -21,6 +22,7 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].termos.metaTitulo,
+    alternates: legalPageAlternates(locale, 'termos'),
   }
 }
 

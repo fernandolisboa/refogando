@@ -239,8 +239,8 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
     expect(within(region).getByRole('heading', { level: 2, name: m.titulo })).toBeInTheDocument()
     expect(within(region).getByRole('button', { name: m.baixar })).toHaveAccessibleDescription(m.baixarDica)
     expect(within(region).getByRole('button', { name: m.excluir })).toHaveAccessibleDescription(m.excluirDica)
-    expect(within(region).getByRole('link', { name: ptBR.privacidade.titulo })).toHaveAttribute('href', '/privacidade')
-    expect(within(region).getByRole('link', { name: ptBR.seusDireitos.titulo })).toHaveAttribute('href', '/seus-direitos')
+    expect(within(region).getByRole('link', { name: ptBR.privacidade.titulo })).toHaveAttribute('href', '/pt-BR/privacidade')
+    expect(within(region).getByRole('link', { name: ptBR.seusDireitos.titulo })).toHaveAttribute('href', '/pt-BR/seus-direitos')
   })
 
   it('baixar: GET /api/me/export, salva o arquivo com o nome datado e anuncia o download iniciado', async () => {
