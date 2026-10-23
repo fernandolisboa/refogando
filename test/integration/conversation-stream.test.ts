@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, inject, vi } from 'vitest'
 import type { Sql } from 'postgres'
 import { and, eq, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
@@ -562,6 +562,31 @@ describe('POST /api/conversations/stream — taxonomia e wire NDJSON', () => {
     expect(await counts()).toEqual({ recipe: 0, session: 0, generation: 0, transcript: 0 })
 
     await reader.cancel() // libera o lock; o request abortado não tem cliente p/ o resto.
+  })
+
+  it('seam estoura no meio do stream → loga SÓ tag + nome do erro (ADR-0048), nunca a mensagem', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'conv-falha@gen.test' })
+    const claude = new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens())
+    claude.streamConversation = async function* () {
+      yield 't1 '
+      throw new Error('segredo: a fala do usuário veio junto na mensagem do SDK')
+    }
+    setClaudeClient(claude)
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const res = await postStream({ transcript: makeTranscript() }, headers)
+      expect(res.status).toBe(200)
+      // `controller.error` derruba o corpo: a leitura rejeita depois do 1º token.
+      await res.text().catch(() => undefined)
+
+      expect(error).toHaveBeenCalledWith('[conversations/stream] falha no stream: erro=Error')
+      // Nem como 2º argumento (o `console.error(tag, err)` de antes imprimia a mensagem e a stack).
+      const logged = error.mock.calls.flat().map((a) => (a instanceof Error ? `${a.message} ${a.stack}` : String(a)))
+      expect(logged.join(' ')).not.toContain('segredo')
+    } finally {
+      error.mockRestore()
+    }
   })
 })
 

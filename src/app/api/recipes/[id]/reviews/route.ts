@@ -1,12 +1,7 @@
-import sharp from 'sharp'
 import { requireSession } from '@/server/auth/guard'
 import { getDb, getImageStore } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
-import {
-  IMAGE_INPUT_PIXEL_LIMIT,
-  PIPELINE_TIMEOUT_SECONDS,
-  classifyRasterInput,
-} from '@/server/images/image-derivatives'
+import { REVIEW_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
 import { applyReview, loadRecipeReviews, type ReviewPhoto } from '@/server/recipe/review'
 
 /**
@@ -73,44 +68,20 @@ async function parseMultipart(
     if (file.size > MAX_BYTES) {
       return { ok: false, response: Response.json({ error: 'arquivo_grande' }, { status: 400 }) }
     }
-    // C1: re-encoda pra webp com `.rotate()` (assa a orientação EXIF) — sharp DESCARTA todo o
-    // metadata (sem `.withMetadata()`), então GPS/EXIF NÃO vazam na foto pública.
-    // F1 (anti-DoS): o cap de 2 MB de BYTES não limita PIXELS — um PNG ~0.74 MB muito compressível
-    // (ex.: 16000×16000 cor sólida) decodifica p/ ~1 GB RGBA e OOMa a função (1024 MB na Vercel).
-    // `limitInputPixels` (`IMAGE_INPUT_PIXEL_LIMIT`, o mesmo dos derivados da Imagem da receita) faz o
-    // sharp LANÇAR em entrada > 24 MP (bomba de descompressão barrada; 24 MP é generoso
-    // p/ foto de celular legítima e o cliente já redimensiona p/ ~1 MP). O `.resize` com
-    // fit:inside + withoutEnlargement LIMITA a dimensão do blob GRAVADO (≤2048) mesmo com cliente
-    // hostil/burlado, sem ampliar imagem pequena. Um throw do sharp cai no catch → 400 tipo_invalido.
-    // #588 (formato pelos BYTES): o `file.type` acima é o DECLARADO pelo cliente, e o sharp decodifica
-    // pelo conteúdo — um SVG (ou GIF/TIFF/HEIF) rotulado `image/png` seria RENDERIZADO (SVG de ~1 KB com
-    // filtros custa dezenas de segundos de CPU). Então o `metadata()` (só lê o cabeçalho, sem renderizar)
-    // decide via `classifyRasterInput` (o MESMO gate dos derivados da Imagem da receita): só JPEG/PNG/WebP
-    // de UM quadro (GIF/WebP animado viraria só o 1º quadro, em silêncio) seguem; o resto ⇒ 400
-    // tipo_invalido. APNG passa (o sharp não reporta `pages` pra PNG) e é gravado só com o 1º quadro:
-    // limite aceito. O pipeline ainda leva `.timeout` (`PIPELINE_TIMEOUT_SECONDS`) como teto de CPU. Os
-    // bytes são lidos UMA vez e reusados nas duas passadas do sharp.
-    const input = { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }
-    let clean: Buffer
+    // C1 + F1 + #588: formato pelos BYTES, teto de pixels e de tempo, re-encode WebP com `.rotate()` (descarta
+    // EXIF/GPS: a foto é servida pública). O pipeline e o porquê de cada passo moram em `reencodeUserPhoto`
+    // (`@/server/images/user-photo`), compartilhado com o avatar e a Imagem da receita (#596). Recusa ⇒ 400.
+    let data: Buffer
     try {
-      const data = Buffer.from(await file.arrayBuffer())
-      const meta = await sharp(data, input).metadata()
-      if (classifyRasterInput(meta) !== 'ok') {
-        return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
-      }
-      clean = await sharp(data, input)
-        .rotate()
-        .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 82 })
-        .timeout({ seconds: PIPELINE_TIMEOUT_SECONDS })
-        .toBuffer()
+      data = Buffer.from(await file.arrayBuffer())
     } catch {
-      // Bytes que o sharp não decodifica (arquivo corrompido / não-imagem com type forjado), entrada
-      // acima do limite de pixels (bomba de descompressão) OU pipeline que estourou o timeout → 400
-      // (nunca 500/OOM).
       return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
     }
-    return { ok: true, rating, comment, photo: { kind: 'set', data: clean, contentType: 'image/webp' } }
+    const clean = await reencodeUserPhoto(data, REVIEW_PHOTO_SPEC)
+    if (!clean) {
+      return { ok: false, response: Response.json({ error: 'tipo_invalido' }, { status: 400 }) }
+    }
+    return { ok: true, rating, comment, photo: { kind: 'set', data: clean.data, contentType: clean.contentType } }
   }
 
   return { ok: true, rating, comment, photo: wantsClear ? { kind: 'clear' } : { kind: 'keep' } }

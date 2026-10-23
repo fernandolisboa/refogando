@@ -215,6 +215,10 @@ _Avoid_: UUID na URL pública; confundir handle (endereço único) com name (dis
 Relação **assimétrica e pública** entre dois Cozinheiros (ADR-0024): você segue quem quiser, **sem aprovação** — modelo Instagram, **não amigos recíprocos**. É **assinatura de descoberta, não chave de privacidade**: como perfil e receita já são públicos (ADR-0020), seguir **não dá acesso a nada** — só alimenta o **Feed Seguindo** e o trilho de recomendados ("Cozinheiros pra seguir"). Contadores (seguidores/seguindo) e listas são **públicos**; **auto-seguir é barrado**; deixar de seguir é **silencioso** (sem notificação — mas **ser seguido gera Notificação**, ADR-0028). Distinto de **Salvar** (receita-cêntrico, privado, coleções) e de **Avaliação** (nota pública da receita) — Seguir é **pessoa-cêntrico**.
 _Avoid_: amigos recíprocos / aprovação de seguidor (não há nada privado a proteger); follow como chave de acesso; confundir com Salvar (receita) ou Avaliação (nota); recomendação com boost pago (direção futura de monetização, fora do v1).
 
+**Eliminação da conta**:
+O Usuário apaga a própria conta; a linha fica **anonimizada** e tudo o que é só dele sai na hora (Receitas privadas, Salvos, Coleções, Listas de compras, Plano de refeições, Despensa, Seguir nos dois sentidos, Notificações recebidas, Transcrição e texto dos pedidos). Ficam, sem o nome, as Receitas públicas e as Avaliações (foto da avaliação sai 180 dias depois). Ver ADR-0050.
+_Avoid_: hard-delete; prometer que a Receita pública some junto.
+
 **Ingrediente** (canônico):
 Insumo reutilizável e **language-neutral** (id estável), nome/aliases traduzidos pela tabela de tradução, com dado de alérgeno **opcional**. Base da busca por ingrediente cross-locale. Distinto da ocorrência numa receita.
 _Avoid_: Insumo; Item (sozinho); tratar como texto livre.

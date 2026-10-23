@@ -11,6 +11,7 @@ import {
   ERROR_MESSAGE_MAX,
   buildClientErrorReport,
   errorCodeOf,
+  errorLogFields,
   errorMessageOf,
   errorNameOf,
   formatClientErrorLine,
@@ -207,6 +208,17 @@ describe('campos curtos', () => {
     expect(errorCodeOf(Object.assign(new Error('x'), { code: 'maria@x' }))).toBeNull()
     expect(errorCodeOf(new Error('x'))).toBeNull()
     expect(errorCodeOf('x')).toBeNull()
+  })
+
+  it('errorLogFields: nome saneado e código, nunca a mensagem', () => {
+    expect(errorLogFields(new Error('segredo do usuário'))).toBe('erro=Error')
+    // Como o erro do Drizzle chega: o `DrizzleQueryError` real não muda o `name` (fica `Error`), a mensagem traz
+    // a query com os parâmetros e o SQLSTATE vem da `cause`.
+    const drizzle = new Error('Failed query: insert into "users" … params: maria@x.com', { cause: { code: '23505' } })
+    expect(errorLogFields(drizzle)).toBe('erro=Error codigo=23505')
+    expect(errorLogFields(Object.assign(new Error('x'), { name: 'Erro de maria@x.com' }))).toBe('erro=Error')
+    expect(errorLogFields('segredo')).toBe('erro=string')
+    expect(errorLogFields(undefined)).toBe('erro=undefined')
   })
 
   it('rota do servidor: corta query/hash e troca o que não é da allowlist', () => {

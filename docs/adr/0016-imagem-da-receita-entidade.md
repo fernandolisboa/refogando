@@ -37,3 +37,9 @@ Achado I da auditoria de performance (`docs/perf/2026-10-13-auditoria.md` §7): 
 - **Best-effort:** falhar nos derivados nunca falha o upload nem a geração; as colunas ficam NULL e a tela usa o original. As imagens anteriores à 0077 (e as que falharam) são preenchidas em lotes pelo cron `/api/cron/image-derivatives`, que só lê o original e só preenche colunas NULL; uma falha sai da fila por 7 dias, e imagem moderada não entra nela.
 - **Exibição:** a `<img>` mantém `src` = original e ganha `srcset` com os derivados mais `sizes` do slot; o navegador escolhe. Slot que pode passar de 200 px CSS recebe só o `detail` (o thumb de 400 px seria ampliado em DPR 2 pelo critério de escolha do Chrome). Mesmo layout, recorte e `alt`. O `srcset` segue o mesmo gate de moderação da foto. OG/Twitter e o `image` do JSON-LD continuam no original; as telas do Curador também.
 - **Ref-count/deleção:** os derivados são parte da linha. Quem apaga a `recipe_image` (APAGAR da galeria, reap do hard-delete) apaga os três blobs depois do commit.
+
+## Atualização (2026-10-22, ADR-0050, #596): a foto enviada é re-encodada no servidor
+
+A Imagem da receita enviada pelo dono ou pelo Curador e o avatar (`users.image`) passam pelo mesmo re-encode da foto da avaliação (`reencodeUserPhoto`, `src/server/images/user-photo.ts`) antes de chegar ao Blob público: formato decidido pelos bytes (só JPEG, PNG e WebP de um quadro), orientação EXIF aplicada nos pixels, maior lado limitado (2048 px na receita, 1024 px no avatar) e saída **WebP sem EXIF, ICC nem XMP** (a localização do celular não vaza). Entrada que não passa ⇒ 400 `tipo_invalido`.
+
+Para upload, o "original" (`blob_url`) da seção anterior passa a ser esse WebP re-encodado (qualidade 90, porque a edição imagem-a-imagem do Gemini lê dele), não os bytes que o cliente mandou. A imagem gerada por IA não muda. Fotos enviadas antes desta mudança não foram limpas retroativamente (ADR-0050, riscos).

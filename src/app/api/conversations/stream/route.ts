@@ -4,6 +4,7 @@ import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
+import { errorLogFields } from '@/domain/error-report'
 import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classifyWithReason } from '@/domain/generation'
@@ -433,9 +434,10 @@ export async function POST(req: Request): Promise<Response> {
           return
         }
         // Erro durante o stream (ex.: seam estourou). Loga no servidor ANTES de errar o
-        // stream — sem isso a falha é invisível em produção. Sanitizado: tag + mensagem/stack,
-        // NUNCA a API key, nem o conteúdo da Transcrição.
-        console.error('[conversations/stream] falha no stream:', err)
+        // stream — sem isso a falha é invisível em produção. Só tag + nome + código (ADR-0048,
+        // `errorLogFields`): a mensagem e a stack de um erro do SDK ou do driver podem trazer
+        // o conteúdo da Transcrição; nada delas vai para o log.
+        console.error(`[conversations/stream] falha no stream: ${errorLogFields(err)}`)
         // Não há terminal: o cliente trata a ausência de frame terminal como aviso/retomada
         // (queda de stream). Erra o stream.
         controller.error(err)

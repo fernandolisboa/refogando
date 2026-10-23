@@ -34,6 +34,18 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/auth-client', () => ({
   useSession: () => ({ data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }),
 }))
+// Só `loadWebSearchConfig` ganha um interruptor de falha; o resto do módulo é o real.
+const webSearchConfig = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/server/app-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/server/app-config')>()
+  return {
+    ...actual,
+    loadWebSearchConfig: (db: Parameters<typeof actual.loadWebSearchConfig>[0]) =>
+      webSearchConfig.fail
+        ? Promise.reject(new Error('config ilegível de maria@exemplo.com'))
+        : actual.loadWebSearchConfig(db),
+  }
+})
 
 import Home, { generateMetadata } from '@/app/[locale]/(com-carregamento)/page'
 import { LocaleProvider } from '@/i18n/provider'
@@ -192,5 +204,23 @@ describe('Home-Descoberta — generateMetadata index vs noindex (#236)', () => {
     expect(robots.index).toBe(false)
     expect(robots.follow).toBe(false)
     expect(meta.alternates?.canonical).toBeUndefined()
+  })
+})
+
+describe('Home-Descoberta — config da descoberta na web ilegível', () => {
+  it('não derruba a home: o feed sai e o aviso [home] leva só o nome do erro (ADR-0048)', async () => {
+    const cat = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null, resultKind: 'success' })
+    await seedTranslation({ recipeId: cat, locale: 'pt-BR', titulo: 'Moqueca Sem Web', provenance: 'escrita_por_pessoa', slug: 'moqueca-sem-web' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    webSearchConfig.fail = true
+    try {
+      expect(await renderHome()).toContain('Moqueca Sem Web')
+      const home = warn.mock.calls.filter((c) => String(c[0]).startsWith('[home]'))
+      expect(home).toEqual([['[home] falha ao ler a config da descoberta na web; gatilhos escondidos: erro=Error']])
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('maria')
+    } finally {
+      webSearchConfig.fail = false
+      warn.mockRestore()
+    }
   })
 })

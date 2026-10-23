@@ -1,39 +1,42 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { account, mealPlanEntry, pantryItem, session, users, verification } from '@/db/schema'
+import { account, session, users, verification } from '@/db/schema'
 import { erasedIdentity } from '@/domain/account-erasure'
 import { getImageStore } from '@/server/deps'
-import { deleteOrphanBlob } from '@/server/images/image-blobs'
+import { deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
+import { purgePrivateContentInTx } from '@/server/legal/private-content'
 
 /**
- * Núcleo da ELIMINAÇÃO self-service da própria conta (issue #401, GAP-6; LGPD Art. 18 VI + Art. 16;
- * `docs/legal/takedown-e-remocao-titular.md` §6/§8). SÓ o próprio titular (o route já passou por
+ * Núcleo da ELIMINAÇÃO self-service da própria conta (issue #401, GAP-6; #473, ADR-0050; LGPD Art. 18 VI +
+ * Art. 16; `docs/legal/takedown-e-remocao-titular.md` §6/§8). SÓ o próprio titular (o route já passou por
  * `requireSession`; aqui só recebemos o `session.user.id` — NUNCA um id vindo do cliente ⇒ sem IDOR).
  *
- * Eliminação CONSERVADORA (bloqueio lógico + anonimização — NÃO um hard-delete afobado):
+ * Numa transação só (ou tudo, ou nada):
  *  1. ANONIMIZA a PII do usuário: email/name/handle → forma anonimizada ESTÁVEL (derivada do `id`
  *     opaco, `erasedIdentity`); avatar/bio/locale zerados; links → `[]`; as Restrições salvas (ADR-0041,
  *     dado sensível) → `[]`; o Nível de habilidade padrão (#421) → null. Irreversível (é o ponto do
  *     direito de eliminação).
  *  2. BLOQUEIA a conta: `deletedAt` (o gate de `requireSession` passa a barrar com 401) + carimba
- *     `anonymizedAt` (marca a erasure e ancora o expurgo físico pós-retenção — job FUTURO).
+ *     `anonymizedAt`. O carimbo marca a eliminação para a varredura diária do conteúdo privado (rede de
+ *     segurança das corridas, `purgeAnonymizedPrivateContent`) e ancora o expurgo das fotos das avaliações
+ *     180 dias depois (`purgeAnonymizedAccounts`).
  *  3. DESLOGA/INVALIDA: apaga TODAS as `session` do usuário (logout em todo lugar), as linhas de
  *     `account` (credenciais/tokens OAuth — remove PII de login e impede re-login) e as linhas de
- *     `verification` cujo `identifier` é o e-mail REAL do titular (tokens de reset-de-senha /
- *     verificação-de-e-mail pendentes guardam o e-mail em claro; sobreviveriam à eliminação até
- *     expirar — expurgamos essa PII residual na mesma tx). Não é gate de auth (a `account` já foi
- *     apagada), é higiene de PII no fluxo cujo propósito é justamente removê-la.
- *  4. AUDITA: grava um evento `DSAR_RECEIVED` (canal `self_service`) na MESMA transação (atomicidade:
- *     ou elimina-E-audita, ou nada — espelha `clearSourceAttribution`/`createTakedownTicket`).
+ *     `verification` do titular: as de `identifier` = e-mail REAL (verificação de e-mail pendente guarda o
+ *     e-mail em claro) e as de `value` = id (tokens do link de senha e marcadores do teto de e-mails,
+ *     como em `pending-signup-purge.ts`). Não é gate de auth (a `account` já foi apagada), é higiene de PII
+ *     no fluxo cujo propósito é justamente removê-la.
+ *  4. APAGA o conteúdo PRIVADO e limpa as sessões de criação (`purgePrivateContentInTx`, regra e motivo lá):
+ *     Receitas privadas e as imagens delas, galeria sem referência, Transcrições, texto livre, Briefings,
+ *     coleções, saves, listas de compras, follows, notificações recebidas, Plano de refeições e Despensa.
+ *  5. AUDITA: grava um evento `DSAR_RECEIVED` (canal `self_service`) com as CONTAGENS do que saiu (nunca
+ *     ids nem texto) — espelha `clearSourceAttribution`/`createTakedownTicket`.
  *
- * O Plano de refeições (ADR-0035) e a Despensa (ADR-0038, com os básicos da pessoa — ADR-0042) são APAGADOS
- * na mesma transação: são privados e nenhum terceiro depende deles.
- *
- * O CONTEÚDO do usuário (receitas, avaliações, saves) é MANTIDO (owner_id segue apontando para a linha
- * anonimizada): apagá-lo em cascata destruiria dados dos quais TERCEIROS dependem (ex.: avaliações
- * numa receita, agregados) — decisão de produto/jurídica documentada no PR (default conservador +
- * reversível-no-curto-prazo). O EXPURGO FÍSICO pós-retenção é follow-up (não há job aqui).
+ * FICAM, com o autor anonimizado: as Receitas PÚBLICAS e as avaliações (terceiros dependem delas — saves,
+ * avaliações e agregados de outras pessoas), as denúncias que o titular registrou (prova do processo de
+ * moderação) e os ledgers de uso até a retenção deles (ADR-0050). Os blobs (avatar, imagens, fotos das
+ * avaliações que caíram em cascata) saem DEPOIS do commit, best-effort e com concorrência limitada.
  *
  * IDEMPOTENTE: se a conta já está eliminada (`deletedAt` != null), é no-op (`kind: 'already_erased'`) —
  * o UPDATE tem `WHERE deletedAt IS NULL`, então re-chamar não regrava nem re-audita.
@@ -53,8 +56,8 @@ export async function eraseOwnAccount(
   const now = new Date()
 
   // Captura a URL do avatar (blob NOSSO) fora da tx para reap pós-commit: o passo 1 NULA `users.image`,
-  // então sem capturá-la aqui a URL se perde e o blob fica órfão eternamente. `deleteOrphanBlob`/
-  // `store.owns` protegem URL estrangeira (avatar do Google OAuth NUNCA é apagado).
+  // então sem capturá-la aqui a URL se perde e o blob fica órfão eternamente. `store.owns` protege URL
+  // estrangeira (avatar do Google OAuth NUNCA é apagado).
   let oldImageUrl: string | null = null
 
   const result = await db.transaction(async (tx) => {
@@ -109,30 +112,30 @@ export async function eraseOwnAccount(
     if (oldEmail !== anon.email) {
       await tx.delete(verification).where(eq(verification.identifier, oldEmail))
     }
+    // E os que guardam o id em `value`: tokens do link de senha e marcadores do teto de e-mails.
+    await tx.delete(verification).where(eq(verification.value, userId))
 
-    // O Plano de refeições é PRIVADO e ninguém mais depende dele (≠ receitas/avaliações): apaga
-    // (ADR-0035 dec.6, minimização).
-    await tx.delete(mealPlanEntry).where(eq(mealPlanEntry.userId, userId))
-    // A Despensa (ADR-0038 dec.7) também: privada, só do titular.
-    await tx.delete(pantryItem).where(eq(pantryItem.userId, userId))
+    // 4. Conteúdo privado e sessões de criação (o núcleo compartilhado com a varredura diária).
+    const purge = await purgePrivateContentInTx(tx, userId, now)
 
-    // 4. Trilha de auditoria (append-only, minimizada): só metadados NÃO-sensíveis (contagem de
-    //    sessões revogadas + o fato de anonimizar). NUNCA a PII removida em claro.
+    // 5. Trilha de auditoria (append-only, minimizada): só metadados NÃO-sensíveis (o fato de anonimizar,
+    //    sessões revogadas e as contagens do que saiu). NUNCA ids nem a PII removida em claro.
     await recordDsarEvent(tx, {
       eventType: 'DSAR_RECEIVED',
       channel: 'self_service', // titular A (dono logado) — ≠ 'web_form' do titular B
       requestType: 'account_erasure',
       actorId: userId, // FK set-null: a prova sobrevive; a linha (anonimizada) NÃO é apagada aqui
-      details: { anonymized: true, sessionsRevoked: revoked.length },
+      details: { anonymized: true, sessionsRevoked: revoked.length, ...purge.counts },
     })
 
-    return { kind: 'erased' as const }
+    return { kind: 'erased' as const, blobUrls: purge.blobUrls }
   })
 
-  // Avatar órfão DEPOIS do commit (best-effort; só apaga se for NOSSO — `store.owns`). Só quando de fato
-  // eliminamos nesta chamada (kind 'erased'): já-eliminada/não-encontrada não têm avatar novo a reapear.
+  // Blobs DEPOIS do commit (best-effort; só apaga os NOSSOS — `store.owns`; nunca lança). Só quando de fato
+  // eliminamos nesta chamada (kind 'erased'): já-eliminada/não-encontrada não têm nada novo a reapear.
   if (result.kind === 'erased') {
-    await deleteOrphanBlob(getImageStore(), oldImageUrl)
+    await deleteOrphanBlobsConcurrently(getImageStore(), [oldImageUrl, ...result.blobUrls])
+    return { kind: 'erased' }
   }
   return result
 }

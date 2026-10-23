@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache'
+import { errorLogFields } from '@/domain/error-report'
 
 /**
  * Registro ÚNICO das tags do Data Cache do Next (`unstable_cache`) e o ÚNICO jeito de expirá-las
@@ -39,13 +40,15 @@ const EXPIRE_PROFILE: Record<CacheTag, 'max' | { expire: 0 }> = {
 /**
  * Expira a tag com o perfil registrado. Chamado DEPOIS da escrita gravada: uma falha aqui só atrasa o
  * valor novo (até a revalidação por tempo de quem usa a tag), nunca transforma a escrita salva num 500.
- * Por isso engole o erro, com aviso no log. Só em Route Handler ou Server Action (o Next recusa
- * `revalidateTag` durante o render).
+ * Por isso engole o erro, com aviso no log (só nome e código do erro, ADR-0048). Só em Route Handler ou
+ * Server Action (o Next recusa `revalidateTag` durante o render).
  */
 export function expireCacheTag(tag: CacheTag): void {
   try {
     revalidateTag(tag, EXPIRE_PROFILE[tag])
   } catch (err) {
-    console.warn(`[cache-tags] falha ao expirar a tag ${tag}; o valor novo espera a revalidação por tempo`, err)
+    console.warn(
+      `[cache-tags] falha ao expirar a tag ${tag}; o valor novo espera a revalidação por tempo: ${errorLogFields(err)}`,
+    )
   }
 }

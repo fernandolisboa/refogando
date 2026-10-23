@@ -5,9 +5,9 @@
  * A eliminação self-service do titular A é CONSERVADORA (bloqueio lógico + anonimização, NÃO um
  * hard-delete): a PII do usuário (email/name/handle/avatar/bio/links/locale) é substituída por uma
  * forma ANONIMIZADA e ESTÁVEL derivada do próprio `id` interno (opaco, nunca é a PII), e a conta é
- * bloqueada (`deletedAt`) + carimbada (`anonymizedAt`). O CONTEÚDO do usuário (receitas, avaliações
- * das quais terceiros dependem) é MANTIDO, atribuído à identidade anonimizada — nunca apagado em
- * cascata (ver o PR / doc §6 para a disposição de conteúdo e alternativas).
+ * bloqueada (`deletedAt`) + carimbada (`anonymizedAt`). O conteúdo PÚBLICO de que terceiros dependem
+ * (receitas publicadas, avaliações) fica, atribuído à identidade anonimizada; o conteúdo PRIVADO sai na
+ * mesma transação (`src/server/legal/private-content.ts`; regra no ADR-0050, doc §6).
  *
  * Por que derivar do `id`:
  *  - ESTÁVEL: o mesmo usuário sempre gera os mesmos valores (idempotente — reprocessar não muda nada).

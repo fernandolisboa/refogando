@@ -12,13 +12,17 @@ import { applyRecipeImageUpload, applyRecipeImageRemoval } from '@/server/recipe
  * Ordem dos guards (load-bearing, espelha publish): `isUuid` (sem DB) → `requireSession` ANTES de
  * tocar o DB/storage (sem-sessão ⇒ zero efeito) → validação do arquivo → delega.
  *
- * POST (multipart `file`): valida tipo (jpg/png/webp) + tamanho. Acrescenta a foto à galeria e
- * AUTO-SELECIONA (vira a face). 200 com a view; 503 `storage_indisponivel` se o seam cair.
+ * POST (multipart `file`): valida tipo (jpg/png/webp) + tamanho; o núcleo RE-ENCODA a foto depois do gate
+ * de dono (#596: WebP sem EXIF/GPS, formato pelos bytes, teto de pixels) — bytes recusados ⇒ 400
+ * `tipo_invalido`. Acrescenta a foto à galeria e AUTO-SELECIONA (vira a face). 200 com a view; 503
+ * `storage_indisponivel` se o seam cair.
  * DELETE: DESELECIONA a face (#222) — volta ao placeholder, NÃO apaga (a imagem fica na galeria,
  * re-selecionável). Idempotente. 200 com a view. Para APAGAR de fato, use `DELETE .../images/[imageId]`.
  */
 
-export const runtime = 'nodejs' // postgres-js + Buffer exigem Node, não Edge.
+export const runtime = 'nodejs' // postgres-js + Buffer + sharp exigem Node, não Edge.
+// Re-encode (#596) + derivados WebP: cada passada do sharp tem teto de 10 s; 60 s cobre o pior caso.
+export const maxDuration = 60
 
 /** Cap de tamanho do upload (2 MB) — espelha o avatar; o cliente redimensiona p/ bem abaixo. */
 const MAX_BYTES = 2 * 1024 * 1024
@@ -52,7 +56,6 @@ export async function POST(
     id,
     userId: g.session.user.id,
     data,
-    contentType: file.type,
     requestLocale: parseRequestLocale(request),
   })
 
@@ -85,6 +88,8 @@ function mapResult(res: Awaited<ReturnType<typeof applyRecipeImageUpload>>): Res
   switch (res.kind) {
     case 'ok':
       return Response.json(res.view, { status: 200 })
+    case 'invalid_image':
+      return Response.json({ error: 'tipo_invalido' }, { status: 400 })
     case 'storage':
       return Response.json({ error: 'storage_indisponivel' }, { status: 503 })
     case 'not_found':

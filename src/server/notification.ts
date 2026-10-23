@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { notification, recipeReview, users } from '@/db/schema'
+import { notification, notificationTypeEnum, recipeReview, users } from '@/db/schema'
 import type { NotificationType, NotificationRefs } from '@/domain/notification'
+import { errorLogFields } from '@/domain/error-report'
 
 /**
  * Seam da Caixa de Notificações (#371, ADR-0028). Escrita = `emitNotification` (BEST-EFFORT: falhar a
@@ -71,6 +72,12 @@ export type NotificationsPage = {
  * INSERE uma linha de notificação — BEST-EFFORT (ADR-0028): o corpo inteiro é try/catch; uma falha é
  * logada e ENGOLIDA, nunca relançada, pra que a ação de origem (seguir, avaliar, moderar…) jamais falhe
  * por causa da notificação. Uma notificação por evento (v1).
+ *
+ * Destinatário com a conta ELIMINADA (`anonymized_at`, #473) não recebe: ninguém mais lê essa caixa, e a
+ * eliminação acabou de apagar as notificações dele — uma avaliação nova numa Receita pública dele as
+ * recriaria. A checagem vai no próprio INSERT (`INSERT … SELECT … FROM users WHERE … anonymized_at IS NULL`),
+ * sem ida extra ao banco: conta eliminada (ou inexistente) ⇒ zero linha. Uma corrida com a eliminação em curso
+ * é inofensiva: a varredura diária apaga a sobra.
  */
 export async function emitNotification(
   db: Database,
@@ -83,16 +90,23 @@ export async function emitNotification(
   },
 ): Promise<void> {
   try {
-    await db.insert(notification).values({
-      recipientId: input.recipientId,
-      type: input.type,
-      actorId: input.actorId ?? null,
-      recipeId: input.recipeId ?? null,
-      reviewId: input.reviewId ?? null,
-    })
+    // Colunas explícitas: `id`, `read_at` e `created_at` ficam com o default do banco.
+    const columns = sql.join(
+      [notification.recipientId, notification.type, notification.actorId, notification.recipeId, notification.reviewId].map(
+        (c) => sql.identifier(c.name),
+      ),
+      sql`, `,
+    )
+    await db.execute(sql`
+      INSERT INTO ${notification} (${columns})
+      SELECT ${users.id}, ${input.type}::${sql.identifier(notificationTypeEnum.enumName)},
+        ${input.actorId ?? null}::uuid, ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid
+      FROM ${users}
+      WHERE ${users.id} = ${input.recipientId} AND ${users.anonymizedAt} IS NULL`)
   } catch (err) {
     // Fora do caminho crítico: a caixa é conveniência, não pode derrubar a ação de origem.
-    console.error('[notification] emit falhou (engolido):', err)
+    // Só nome + código (ADR-0048): a mensagem de um erro do driver traz a query com os parâmetros.
+    console.error(`[notification] emit falhou (engolido): ${errorLogFields(err)}`)
   }
 }
 

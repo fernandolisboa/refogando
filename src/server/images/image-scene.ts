@@ -4,6 +4,7 @@ import { vocabularyTerm } from '@/db/schema'
 import type { ClaudeClient } from '@/server/claude/client'
 import type { AppConfig } from '@/server/app-config'
 import { activeSettings } from '@/domain/ai-task-config'
+import { errorLogFields } from '@/domain/error-report'
 import { buildSceneDirectorPrompt } from '@/domain/image-scene-director'
 import {
   IMAGE_SCENE_DIRECTOR_DEADLINE_MS,
@@ -70,8 +71,9 @@ export async function resolveImageScene(input: {
         `recipe=${recipeId} modelo=${task.model} in=${out.usage?.inputTokens ?? '?'} out=${out.usage?.outputTokens ?? '?'} ms=${Date.now() - startedAt}`,
     )
   } catch (err) {
-    // O seam não lança; isto é só a rede de segurança (ex.: um dublê de teste que lança).
-    console.warn(`[image-scene] diretor lançou, seguindo com as regras: ${err instanceof Error ? err.message : String(err)}`)
+    // O seam não lança; isto é só a rede de segurança (ex.: um dublê de teste que lança). Só nome +
+    // código (ADR-0048): a mensagem de um erro do SDK pode trazer o prompt, que tem o texto da receita.
+    console.warn(`[image-scene] diretor lançou, seguindo com as regras: ${errorLogFields(err)}`)
   }
   return { scene, visualNote: await notePromise }
 }

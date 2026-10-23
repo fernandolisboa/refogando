@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
+import sharp from 'sharp'
 import { POST, DELETE } from '@/app/api/recipes/[id]/image/route'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore, ThrowingImageStore } from '@/server/images/image-store'
@@ -13,9 +14,21 @@ import { seedSessionHeaders, seedDeletedSessionHeaders, seedUser } from '../help
  * injetado — NUNCA toca a rede. Cobre: upload cria recipe_image (`user_photo`) + AUTO-SELECIONA;
  * #222: TROCA ACRESCENTA à galeria e NÃO reapa (o reap-on-swap saiu de cena — DECISION 4); DELETE
  * /image agora DESSELECIONA (zera image_id, NÃO apaga: a imagem fica na galeria); degradação → 503.
+ * #596: o upload é RE-ENCODADO (WebP ≤2048 px sem EXIF/GPS); bytes que não são imagem ⇒ 400.
  */
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
+
+/** Ponteiro para o IFD de GPS (tag 0x8825) no EXIF little-endian (`II`) que o libvips escreve. */
+const hasGpsIfd = (exif: Buffer) => exif.includes(Buffer.from([0x25, 0x88]))
+
+/** PNG de verdade: desde o #596 o servidor re-encoda, e bytes que não são imagem viram 400. */
+let PNG_BYTES: Uint8Array<ArrayBuffer>
+beforeAll(async () => {
+  PNG_BYTES = new Uint8Array(
+    await sharp({ create: { width: 64, height: 48, channels: 3, background: '#c33' } }).png().toBuffer(),
+  )
+})
 
 let store: FakeImageStore
 beforeEach(() => {
@@ -23,7 +36,7 @@ beforeEach(() => {
   setImageStore(store)
 })
 
-function pngFile(bytes = new Uint8Array([1, 2, 3, 4]), name = 'p.png'): File {
+function pngFile(bytes: Uint8Array<ArrayBuffer> = PNG_BYTES, name = 'p.png'): File {
   return new File([bytes], name, { type: 'image/png' })
 }
 function postReq(id: string, file: File | null, headers?: Headers): Request {
@@ -104,7 +117,8 @@ describe('/api/recipes/[id]/image — upload/troca/remoção (#130)', () => {
     const view = (await res.json()) as { id: string; imageUrl?: string }
     expect(view.imageUrl).toBeDefined()
     expect(store.owns(view.imageUrl!)).toBe(true)
-    expect(store.blobs.has(view.imageUrl!)).toBe(true)
+    expect(view.imageUrl).toMatch(/\/recipes\/\d+\.webp$/)
+    expect(store.blobs.get(view.imageUrl!)?.contentType).toBe('image/webp')
 
     const imageId = await readImageId(id)
     expect(imageId).not.toBeNull()
@@ -113,6 +127,60 @@ describe('/api/recipes/[id]/image — upload/troca/remoção (#130)', () => {
       .from(recipeImage)
       .where(eq(recipeImage.id, imageId!))
     expect(img).toMatchObject({ blobUrl: view.imageUrl, provenance: 'user_photo', createdBy: userId })
+  })
+
+  it('#596 JPEG com EXIF/GPS → o original guardado é WebP sem EXIF, sem GPS e ≤2048 px', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'gps@ri.test' })
+    const id = await seedOwnedRecipe(userId)
+    const jpeg = await sharp({ create: { width: 3000, height: 1500, channels: 3, background: '#3a6' } })
+      .jpeg()
+      .withMetadata({
+        exif: { IFD0: { Make: 'CelularDaCozinha' }, IFD3: { GPSLatitudeRef: 'S', GPSLatitude: '23/1 33/1 0/1' } },
+      })
+      .toBuffer()
+    expect(hasGpsIfd((await sharp(jpeg).metadata()).exif!)).toBe(true)
+
+    const res = await POST(postReq(id, new File([new Uint8Array(jpeg)], 'f.jpg', { type: 'image/jpeg' }), headers), ctx(id))
+    expect(res.status).toBe(200)
+    const view = (await res.json()) as { imageUrl: string }
+    const [img] = await getDb()
+      .select({ blobUrl: recipeImage.blobUrl })
+      .from(recipeImage)
+      .where(eq(recipeImage.id, (await readImageId(id))!))
+    expect(img.blobUrl).toBe(view.imageUrl)
+    const bytes = Buffer.from(store.blobs.get(img.blobUrl)!.bytes)
+    const meta = await sharp(bytes).metadata()
+    expect([meta.format, meta.width, meta.height, meta.exif, meta.icc, meta.xmp]).toEqual([
+      'webp',
+      2048,
+      1024,
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(bytes.toString('latin1')).not.toContain('CelularDaCozinha')
+  })
+
+  it('#596 bytes que não são imagem (rótulo image/png) → 400 tipo_invalido; nada guardado nem gravado', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'lixo@ri.test' })
+    const id = await seedOwnedRecipe(userId)
+
+    const res = await POST(postReq(id, pngFile(new Uint8Array([1, 2, 3, 4])), headers), ctx(id))
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({ error: 'tipo_invalido' })
+    expect(store.blobs.size).toBe(0)
+    expect(await readImageId(id)).toBeNull()
+    expect(await countImages()).toBe(0)
+  })
+
+  it('#596 bytes que não são imagem, de um NÃO-dono → 404 (o gate de dono vem antes do re-encode)', async () => {
+    const owner = await seedUser({ email: 'owner-lixo@ri.test' })
+    const id = await seedOwnedRecipe(owner)
+    const { headers } = await seedSessionHeaders({ email: 'intruso-lixo@ri.test' })
+
+    const res = await POST(postReq(id, pngFile(new Uint8Array([1, 2, 3, 4])), headers), ctx(id))
+    expect(res.status).toBe(404)
+    expect(store.blobs.size).toBe(0)
   })
 
   it('tipo inválido → 400; oversize → 400; sem arquivo → 400 (nada gravado)', async () => {

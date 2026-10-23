@@ -7,8 +7,10 @@ import { IMAGE_DETAIL_WIDTH, IMAGE_THUMB_WIDTH } from '@/domain/image-variants'
  * Derivados WebP da Imagem da receita (achado I da auditoria de performance, migração 0077; ADR-0016,
  * atualização de 2026-10-14). O feed servia o PNG cheio do Gemini (~1,5 MB) num thumb de 128–144 px.
  * Aqui, a partir dos bytes do ORIGINAL, o sharp gera `detail` (~1280 px de largura, capa do detalhe) e
- * `thumb` (~400 px, cards) e os guarda no `ImageStore` ao lado do original, que NUNCA é tocado (a edição
- * imagem-a-imagem do Gemini, #285, lê o original; um "baixar original" futuro também).
+ * `thumb` (~400 px, cards) e os guarda no `ImageStore` ao lado do original, que esta etapa NUNCA toca (a
+ * edição imagem-a-imagem do Gemini, #285, lê o original; um "baixar original" futuro também). O original de
+ * uma `user_photo` já é o WebP re-encodado no upload (#596, `reencodeUserPhoto`: sem EXIF/GPS); o de uma
+ * `ai_generated` é o PNG do Gemini como veio.
  *
  * BEST-EFFORT, NUNCA LANÇA: falhar aqui não pode derrubar o upload nem a geração do usuário. Qualquer
  * erro (bytes que o sharp não decodifica, formato fora de JPEG/PNG/WebP, imagem animada, acima do teto
@@ -41,9 +43,9 @@ export const IMAGE_INPUT_PIXEL_LIMIT = 24_000_000
  * cliente, e o sharp decodifica pelos BYTES: um SVG (ou TIFF/GIF/HEIF) rotulado `image/png` seria
  * renderizado. Um SVG de 1,3 KB com `feTurbulence`/`feGaussianBlur` custou ~30 s de CPU. Então o formato
  * vem do `metadata()` (que só lê o cabeçalho, sem renderizar) e só JPEG, PNG e WebP seguem. Aqui, o resto
- * fica sem derivado e a tela usa o original, exatamente como antes da 0077 (o upload em si não muda: não
- * rejeitamos aqui); na foto da avaliação (`/api/recipes/[id]/reviews`, #588) o resto vira 400
- * `tipo_invalido`, porque a foto é re-encodada no upload. Os dois usam `classifyRasterInput`.
+ * fica sem derivado e a tela usa o original, exatamente como antes da 0077 (não rejeitamos aqui); no upload
+ * de foto do usuário (avaliação #588, avatar e Imagem da receita #596 — `reencodeUserPhoto`) o resto vira
+ * 400 `tipo_invalido` antes de chegar aqui, porque a foto é re-encodada. Os dois usam `classifyRasterInput`.
  */
 export const SAFE_RASTER_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 'webp'])
 

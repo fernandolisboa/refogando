@@ -113,6 +113,16 @@ export function errorCodeOf(err: unknown): string | null {
   return null
 }
 
+/**
+ * `erro=<nome saneado>[ codigo=<código>]` — o par do ADR-0048 para as linhas de log com tag própria (fora do
+ * `[erro]`: `[account-purge]`, `[retencao]`, `[notification]`…). Nunca carrega mensagem nem stack: a mensagem
+ * de um erro do driver traz a query com os parâmetros, e a do SDK pode trazer o texto do usuário.
+ */
+export function errorLogFields(err: unknown): string {
+  const code = errorCodeOf(err)
+  return [`erro=${sanitizeErrorName(errorNameOf(err))}`, ...(code ? [`codigo=${code}`] : [])].join(' ')
+}
+
 export function sanitizeMethod(method: unknown): string {
   const m = typeof method === 'string' ? method.toUpperCase() : ''
   return METHODS.has(m) ? m : 'OUTRO'
@@ -307,7 +317,6 @@ export type ServerErrorContext = {
  */
 export function formatServerErrorLine(err: unknown, method: unknown, ctx: ServerErrorContext): string {
   const reval = fromSet(REVALIDATE_REASONS, ctx.revalidateReason)
-  const code = errorCodeOf(err)
   const digest = sanitizeDigest((err as { digest?: unknown } | null)?.digest)
   return [
     ERROR_LOG_TAG,
@@ -317,8 +326,7 @@ export function formatServerErrorLine(err: unknown, method: unknown, ctx: Server
     `tipo=${fromSet(ROUTE_TYPES, ctx.routeType) ?? '-'}`,
     `fonte=${fromSet(RENDER_SOURCES, ctx.renderSource) ?? '-'}`,
     ...(reval ? [`revalidacao=${reval}`] : []),
-    `erro=${sanitizeErrorName(errorNameOf(err))}`,
-    ...(code ? [`codigo=${code}`] : []),
+    errorLogFields(err),
     `digest=${digest}`,
   ].join(' ')
 }

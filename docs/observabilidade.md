@@ -1,6 +1,6 @@
 # Observabilidade — catálogo das linhas de log
 
-O app não tem fornecedor de observabilidade (ADR-0048). O que existe são linhas curtas no log de runtime da Vercel, cada uma com uma tag `[x]` no começo e, nas mais novas, campos `chave=valor`. Nenhuma linha catalogada aqui carrega dado pessoal (e-mail, nome, handle, id de usuário, IP, cookie, query string); a exceção conhecida é o log CRU que o Next escreve por conta própria (abaixo).
+O app não tem fornecedor de observabilidade (ADR-0048). O que existe são linhas curtas no log de runtime da Vercel, cada uma com uma tag `[x]` no começo e, nas mais novas, campos `chave=valor`. Nenhuma linha catalogada aqui carrega dado pessoal (e-mail, nome, handle, id de usuário, IP, cookie, query string); as exceções conhecidas são o log CRU que o Next escreve por conta própria (abaixo) e o resíduo catalogado em `[claude/*]`.
 
 ## Como buscar
 
@@ -69,23 +69,26 @@ O endpoint passou de 60 linhas de relato no minuto nesta instância (conta só r
 |---|---|---|---|
 | `[mail]` | `src/server/mail/mailer.ts` | info/warn | `envio desligado (<tipo>): falta …`, `Resend aceitou o envio (<tipo>)`, `Resend recusou o envio (<tipo>): HTTP <status>`, `falha ao chamar o Resend (<tipo>): <nome do erro>`. |
 | `[auth]` | `src/lib/auth.ts` | warn | `e-mail de conta não enviado (<reset\|verify\|finish>)`; `<etapa> falhou: <nome do erro>` (limpeza pós-cadastro). |
-| `[account-purge]` | `src/app/api/cron/account-purge/route.ts` | info/warn/error | `passada concluída: <contagens>` ou `passada com falha`; `<etapa> falhou: <nome do erro>`. |
+| `[account-purge]` | `src/app/api/cron/account-purge/route.ts`, `src/server/legal/account-purge-scan.ts` | info/warn/error | uma linha por passada: `passada concluída: <contagens>` (info) ou `passada com falha: <contagens>` (warn, e a rota responde 500). As contagens saem na ordem das etapas: `pendingSignupsPurged` (cadastros pendentes); `scanned`, `blobsReaped`, `reviewsCleared` (fotos de avaliação com 180 dias; `scanned` conta só as contas passadas do prazo que ainda tinham foto, então fica em 0 nos dias sem nada a expurgar); e a varredura do conteúdo privado das contas eliminadas (ADR-0050): `privateAccountsSwept`, `privateAccountsFailed`, `privateAccountsDeferred` (contas do lote da passada, até 25, que o orçamento de tempo não deixou começar; voltam amanhã. Conta só as do lote, não o total de contas com sobra), `privateRecipesDeleted`, `privateImagesDeleted`, `privateBlobsReaped`, `privateRowsDeleted` (só linhas apagadas) e `privateRowsScrubbed` (linhas que ficam sem o texto: sessões de criação, gerações, Briefings). Uma etapa que lançou some da linha. `<etapa> falhou: erro=<nome> [codigo=…]` (error); `conteúdo privado de uma conta anonimizada falhou: erro=<nome> [codigo=…]` (uma por conta; a conta volta na passada seguinte — a mesma conta falhando todo dia é o sinal). |
+| `[retencao]` | `src/app/api/cron/retention/route.ts` | info/warn/error | uma linha por passada: `passada concluída: <contagens por passo>` (info) ou `passada com falha: <contagens>` (warn, e a rota responde 500), com `deferredSteps=N` quando o orçamento de tempo acabou e N passos ficaram para o dia seguinte; `<passo> falhou: erro=<nome> [codigo=…]` (error, uma por passo; o passo é o `label` de `RETENTION_STEPS`, ex. `expurgo das sessões vencidas falhou: erro=Error codigo=57014`). Prazos no ADR-0050. |
 | `[ai-models]` | `src/app/api/cron/ai-models/route.ts`, `src/server/claude/model-auto-upgrade.ts` | info/warn | passada do cron (`passada concluída: <contagens>`), troca de versão (`<tarefa>: A → B (…)`), modelo sem preço, recusas e Models API fora. |
 | `[image-derivatives]` | `src/app/api/cron/image-derivatives/route.ts`, `src/server/images/derivatives-backfill.ts` | info/warn | passada do cron de derivados; `original ilegível: <nome do erro>`. |
 | `[imagens]` | `src/server/images/image-derivatives.ts` | warn | `derivados não gerados (<etapa>): <motivo ou nome do erro>`. |
-| `[image-scene]` | `src/server/images/image-scene.ts` | info/warn | diretor de arte: `diretor <ok\|prazo\|falhou>: registro=… fonte=… recipe=<id da Receita> modelo=… in=… out=… ms=…`; `diretor lançou, seguindo com as regras: <mensagem>`. |
+| `[image-scene]` | `src/server/images/image-scene.ts` | info/warn | diretor de arte: `diretor <ok\|prazo\|falhou>: registro=… fonte=… recipe=<id da Receita> modelo=… in=… out=… ms=…`; `diretor lançou, seguindo com as regras: erro=<nome> [codigo=…]`. |
 | `[generations]` | `src/app/api/generations/route.ts` | error | geração ou lote de variações inválido (→ 502), com os motivos da classificação. |
-| `[cache-tags]` | `src/server/cache-tags.ts` | warn | falha ao expirar uma tag de cache; leva o objeto do erro. |
-| `[notification]` | `src/server/notification.ts` | error | emissão de notificação falhou (engolida); leva o objeto do erro. |
-| `[home]` | `src/app/[locale]/(com-carregamento)/page.tsx` | warn | config da descoberta na web ilegível; gatilhos escondidos; leva o objeto do erro. |
+| `[conversations/stream]` | `src/app/api/conversations/stream/route.ts` | error | `falha no stream: erro=<nome> [codigo=…]`; `destilação inválida:` + `{ reason }` (o motivo da classificação). |
+| `[claude/*]` | `src/server/claude/client.ts`, `model-probe.ts`, `model-catalog.ts` | warn/error | `[claude/<método>] falha na chamada (→ parse_failed):` + `{ name, status, type, requestID, message }`; `[claude/<método>] parse_failed (<motivo>):` + `{ id, stopReason }`; `[claude/<método>] valores fora do vocabulário caíram no fallback:` + `{ total, descartes }`; `[claude/probe] chamada de teste indisponível:` + `{ name, status }`; `[claude/models] Models API indisponível (→ lista pinada):` + `{ name, status }`. Resíduo conhecido: o `message` da falha de chamada é o do provedor, com o texto entre aspas trocado por `"…"` e teto de 300 caracteres, e o `valor` de um descarte pode ecoar uma palavra curta do pedido (até 32 caracteres com cara de rótulo). |
+| `[cache-tags]` | `src/server/cache-tags.ts` | warn | `falha ao expirar a tag <tag>; o valor novo espera a revalidação por tempo: erro=<nome> [codigo=…]`. |
+| `[notification]` | `src/server/notification.ts` | error | `emit falhou (engolido): erro=<nome> [codigo=…]`. Destinatário com a conta eliminada não recebe notificação (sem linha). |
+| `[home]` | `src/app/[locale]/(com-carregamento)/page.tsx` | warn | `falha ao ler a config da descoberta na web; gatilhos escondidos: erro=<nome> [codigo=…]`. |
 | `[e2e]` | `src/instrumentation.ts`, `src/server/e2e/fetch-guard.ts` | warn/error | só no harness do E2E: `MODO FAKE ATIVO` e `fetch RECUSADO para fora de loopback`. Em produção, nunca. |
 
-`[cache-tags]`, `[notification]` e `[home]` passam o objeto do erro inteiro ao console (mensagem e stack), anteriores ao padrão "só o nome".
+`[cache-tags]`, `[notification]`, `[home]`, `[conversations/stream]` e `[image-scene]` passavam o objeto do erro inteiro (ou a mensagem) ao console; desde 2026-10-22 (#473) logam só nome e código, por `errorLogFields` (`src/domain/error-report.ts`): o erro do Drizzle leva os parâmetros da query, que podem ter e-mail ou ids.
 
 No navegador (não chegam ao log da Vercel): `[criar]` (`src/components/recipe/create-drawer-lazy.tsx`, a gaveta não carregou) e `[conversation]` (`src/hooks/use-conversation-chat.ts`, linha NDJSON malformada).
 
 ## Linha nova
 
 - Comece com a tag entre colchetes; prefira `chave=valor` com chaves ASCII.
-- Do erro, só o `name` (e, se for o caso, um código curto de biblioteca). Nunca mensagem de erro que possa ter dado de usuário, corpo, query, cookie, e-mail, nome, handle ou IP.
+- Do erro, só nome e código, por `errorLogFields(err)` (`src/domain/error-report.ts`: `erro=<nome> [codigo=…]`). Nunca mensagem de erro que possa ter dado de usuário, corpo, query, cookie, e-mail, nome, handle ou IP.
 - Uma linha por desfecho. Registre a tag aqui.

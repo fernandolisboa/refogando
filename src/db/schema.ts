@@ -426,8 +426,10 @@ export const recipeImage = pgTable(
     // seguro na tabela populada do prod; linhas existentes ficam false.
     reviewRequired: boolean('review_required').notNull().default(false),
     // ── Derivados WebP para servir (achado I da auditoria de performance, migração 0077) ──────
-    // O `blob_url` segue sendo o ORIGINAL intocado: a edição imagem-a-imagem do Gemini (#285) lê
-    // dele, e um futuro "baixar original" também. Os derivados são cópias reduzidas, só para EXIBIR:
+    // O `blob_url` segue sendo o ORIGINAL (os derivados nunca o tocam): a edição imagem-a-imagem do Gemini
+    // (#285) lê dele, e um futuro "baixar original" também. Numa `user_photo` ele já é o WebP re-encodado
+    // no upload (#596, sem EXIF/GPS, ≤2048 px); numa `ai_generated`, o PNG do Gemini como veio. Os
+    // derivados são cópias reduzidas, só para EXIBIR:
     // `detail_url` (~1280 px de largura, capa do detalhe) e `thumb_url` (~400 px, cards e miniaturas).
     // NULL = sem derivado (falhou, ou imagem anterior à 0077 ainda não preenchida pelo backfill) ⇒ a
     // tela cai no original. Os dois andam JUNTOS (CHECK abaixo): o `srcset` nunca fica com um só
@@ -482,6 +484,9 @@ export const recipeImage = pgTable(
  * telemetria do provedor ficam nulas (não invalidam o teto, que segue por CONTAGEM — #167). Gravar o
  * custo (não recomputar) congela o que cada geração custou mesmo quando os preços do provedor mudam.
  * `cost_usd` é numeric → trafega string|null (precisão exata; OK p/ snapshot).
+ *
+ * RETENÇÃO (ADR-0050): a linha com 24 meses é apagada pelo cron diário de retenção (`/api/cron/retention`);
+ * o teto lê só 24 h. É a única saída do ledger além do cascade.
  */
 export const imageGeneration = pgTable(
   'image_generation',
@@ -510,6 +515,7 @@ export const imageGeneration = pgTable(
  * faz `COUNT WHERE user_id AND created_at > agora-24h`. IMUTÁVEL (sem "devolver slot"): o custo já foi
  * gasto. Espelha `image_generation` (mesma forma mínima: id + user_id + created_at + índice composto).
  * ON DELETE cascade: apagar o usuário limpa o ledger dele (rate-limit, não há por que reter — LGPD).
+ * RETENÇÃO (ADR-0050): a linha com 30 dias é apagada pelo cron diário de retenção (só alimenta o teto de 24 h).
  */
 export const extractionEvent = pgTable(
   'extraction_event',
@@ -801,8 +807,9 @@ export const users = pgTable(
     // (bloqueio): anonymizedAt marca que a PII do titular (email/name/handle/avatar/bio/links/locale)
     // FOI destruída/estabilizada de forma irreversível. Os dois são setados juntos na eliminação
     // self-service, mas a coluna separada (a) distingue um bloqueio simples de uma erasure de PII e
-    // (b) ancora o EXPURGO FÍSICO pós-retenção (Art. 16), um job futuro: candidatos = anonymizedAt
-    // mais velho que o prazo de retenção. NULLABLE, sem default: ADD COLUMN metadata-only (sem
+    // (b) ancora as passadas do cron `account-purge` (ADR-0050): a varredura diária do conteúdo privado
+    // que sobrou de uma conta anonimizada (na hora, sem prazo) e o expurgo das fotos de avaliação com
+    // anonymizedAt mais velho que 180 dias. NULLABLE, sem default: ADD COLUMN metadata-only (sem
     // rewrite) na tabela populada; contas existentes nascem NULL (não anonimizadas).
     anonymizedAt: timestamp('anonymized_at', { withTimezone: true }),
     // Campos do plugin admin (OBRIGATÓRIOS com o plugin ligado: o adapter os lê/escreve).
@@ -872,6 +879,10 @@ export const users = pgTable(
   ],
 )
 
+/**
+ * Sessão do better-auth (com o IP e o navegador de quem entrou). RETENÇÃO (ADR-0050): a sessão vencida é
+ * apagada pelo cron diário de retenção; a eliminação da conta apaga todas na hora.
+ */
 export const session = pgTable(
   'session',
   {
@@ -1113,6 +1124,8 @@ export const webSearchUsageDaily = pgTable('web_search_usage_daily', {
 // `briefing_item` é um ingrediente com `strength` (força). SEM `categoria` (CONTEXT.md
 // proíbe Categoria/Tag no Briefing). A posse vive na `creation_session` (que tem
 // `user_id`); o Briefing é pendurado na sessão via `creation_session.briefing_id`.
+// Exceção (ADR-0050): na conta ELIMINADA, campos e itens são limpos na hora, e o Briefing
+// sem sessão sai aos 24 meses.
 export const briefing = pgTable('briefing', {
   id: uuid('id').primaryKey().defaultRandom(),
   // Cozinha DATA-DRIVEN (#318, ADR-0025): espelha recipe.cozinha — `text` + FK p/
@@ -1231,6 +1244,9 @@ export const generation = pgTable(
     // TODAS NULLABLE e best-effort: linhas pré-#463 e gerações sem telemetria do provedor ficam nulas
     // (não invalidam nada). Gravar o custo (não recomputar) congela o que cada geração custou mesmo
     // quando os preços do provedor mudam. `cost_usd` é numeric → trafega string|null (precisão exata).
+    // RETENÇÃO (ADR-0050): aos 24 meses, na conta viva tokens e custo viram NULL (a linha fica: é o histórico
+    // de criação); na conta eliminada a linha sai, depois a sessão sem geração e o Briefing sem sessão. Na
+    // eliminação, `advisory_comment` e `prompt_stamp` viram NULL na hora.
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
@@ -1598,9 +1614,10 @@ export const vocabularyTerm = pgTable(
  * Trilha de auditoria DSAR — APPEND-ONLY (issue #395, GAP-5; `docs/legal/takedown-e-remocao-titular.md` §5).
  *
  * Prova de conformidade dos pedidos do titular (LGPD Art. 18; Res. CD/ANPD 15/2024 Art. 10). A tabela é
- * um LOG imutável: a aplicação SÓ faz INSERT/SELECT (`recordDsarEvent`/`countDsarEvents` em
- * `src/server/legal/dsar-audit.ts`) — NÃO há caminho de UPDATE nem DELETE dos registros. Não há timestamp
- * `updatedAt` de propósito (uma linha nunca muda). Retenção mínima de 5 anos (sem job de expurgo por ora).
+ * um LOG imutável: a aplicação faz INSERT/SELECT (`recordDsarEvent`/`countDsarEvents` em
+ * `src/server/legal/dsar-audit.ts`) e um ÚNICO DELETE, por idade: `purgeDsarEventsBefore` apaga o registro
+ * com 5 anos (cron de retenção, ADR-0050). NÃO há UPDATE nem outro DELETE. Não há timestamp `updatedAt` de
+ * propósito (uma linha nunca muda).
  *
  * MINIMIZAÇÃO: o `DSAR_FULFILLED` NUNCA guarda o dado removido (ex.: o `source_name` do autor) em claro —
  * senão a auditoria vira cópia do que se pediu para apagar. Guarda o `payload_hash` (SHA-256 do payload
@@ -1661,6 +1678,10 @@ export const dsarAuditEvent = pgTable(
  * `source_url` e/ou `display_name` (ao menos um; validado no domínio) + `message`. `contact_email` é
  * OPCIONAL (retorno ao titular; nunca condição). NENHUM documento é exigido. Sem `updated_at`: o `status`
  * evolui pelo fluxo do operador (fora desta fatia), mas a fatia mínima só INSERE (recebimento).
+ *
+ * RETENÇÃO (ADR-0050): o ticket ENCERRADO (`fulfilled`/`rejected`) sai 12 meses após o encerramento, pelo
+ * cron diário de retenção. Sem coluna de encerramento, a data é o último `DSAR_FULFILLED`/`DSAR_REJECTED`
+ * com este `case_id`; sem ele, a `received_at`. Ticket aberto nunca sai.
  */
 export const takedownTicket = pgTable(
   'takedown_ticket',
@@ -1825,6 +1846,7 @@ export const mealPlanEntry = pgTable(
 // o modelo, os tokens e o `cost_usd` SNAPSHOT (`computeTextCost`), pra o custo da tarefa ser medido. NÃO
 // guarda conteúdo do Usuário (nem a nota, nem a prévia): a sugestão não é persistida, só vira Refeição
 // planejada quando o Usuário aceita. `user_id` cascade (está nas CONTENT_GUARDS do expurgo de cadastro).
+// RETENÇÃO (ADR-0050): a linha com 24 meses é apagada pelo cron diário de retenção.
 export const mealPlanSuggestionEvent = pgTable(
   'meal_plan_suggestion_event',
   {

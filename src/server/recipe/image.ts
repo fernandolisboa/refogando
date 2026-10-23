@@ -26,6 +26,7 @@ import {
   type ImageDerivativeUrls,
 } from '@/server/images/image-derivatives'
 import { IMAGE_BLOB_COLS, deleteOrphanBlobs, imageRowBlobUrls } from '@/server/images/image-blobs'
+import { RECIPE_PHOTO_SPEC, reencodeUserPhoto } from '@/server/images/user-photo'
 import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
@@ -40,7 +41,8 @@ import { buildImageSrcSet } from '@/domain/image-variants'
  * a SELECIONADA (`recipe.image_id`) = a única face pública:
  *  - GERAR = PREVIEW (#222): cria uma `recipe_image` DESELECIONADA (ai_generated), grava o ledger,
  *    NÃO toca `image_id`, NÃO reapa; devolve só a imagem (a face só muda no "Usar esta"/select).
- *  - ENVIAR (upload) = deliberado: cria a `recipe_image` (user_photo) e AUTO-SELECIONA (image_id).
+ *  - ENVIAR (upload) = deliberado: RE-ENCODA a foto (#596, WebP sem EXIF/GPS), cria a `recipe_image`
+ *    (user_photo) e AUTO-SELECIONA (image_id).
  *  - SELECIONAR (#222): repointa `image_id` para uma imagem da MESMA linhagem (custo zero, sem reap).
  *  - APAGAR (#222): a ÚNICA op destrutiva — apaga a linha + reapa o blob, BLOQUEADA quando a imagem
  *    ainda é referenciada por ALGUMA versão (ref-count GLOBAL, ADR-0016).
@@ -59,6 +61,13 @@ export type RecipeImageResult =
 
 /** Resultado do gallery-delete (#222): inclui `in_use` (409) além do `ok`/`not_found`. */
 export type RecipeGalleryDeleteResult = RecipeImageResult | { kind: 'in_use' }
+
+/**
+ * Resultado do UPLOAD (#596): inclui `invalid_image` (400 `tipo_invalido`) — os bytes não passaram no
+ * re-encode (não são JPEG/PNG/WebP estático de verdade, bomba de pixels, pipeline estourou o tempo). União
+ * PRÓPRIA, como o `in_use` do gallery-delete: as demais ops seguem com `RecipeImageResult`.
+ */
+export type RecipeImageUploadResult = RecipeImageResult | { kind: 'invalid_image' }
 
 /**
  * Resultado do SELECT (#225): inclui `moderated` (409) além do `ok`/`not_found`. Uma imagem MODERADA
@@ -91,23 +100,27 @@ export async function applyRecipeImageUpload(input: {
   store: ImageStore
   id: string // já validado como uuid pelo route
   userId: string // session.user.id (route já passou pelo requireSession)
-  data: Buffer
-  contentType: string
+  data: Buffer // bytes CRUS do upload (o tipo declarado já passou pela allowlist do route)
   requestLocale: string
-}): Promise<RecipeImageResult> {
-  const { db, store, id, userId, data, contentType, requestLocale } = input
+}): Promise<RecipeImageUploadResult> {
+  const { db, store, id, userId, data, requestLocale } = input
 
   // 1. Gate barato: dono + lineage_id. Catálogo (ownerId NULL) ou dono diferente ⇒ 404.
   const gate = await loadOwnerGate(db, id)
   if (!gate || gate.ownerId == null || gate.ownerId !== userId) return { kind: 'not_found' }
 
+  // 1.5. #596: re-encode DEPOIS do gate (não-dono nunca custa CPU do sharp). O ORIGINAL guardado passa a ser
+  //      este WebP sem EXIF/GPS (o Blob é público); bytes que o sharp recusa ⇒ 400 `tipo_invalido`.
+  const clean = await reencodeUserPhoto(data, RECIPE_PHOTO_SPEC)
+  if (!clean) return { kind: 'invalid_image' }
+
   // 2. Guarda o blob ANTES de qualquer escrita no banco: se o storage falhar, nada mudou (503).
   //    Achado I (0077): os derivados WebP são reduzidos em paralelo com o `put` do original e só sobem
   //    depois dele; falha neles nunca vira erro (colunas NULL ⇒ a tela usa o original).
-  const rendering = renderImageDerivativesSafe(data)
+  const rendering = renderImageDerivativesSafe(clean.data)
   let blobUrl: string
   try {
-    ;({ url: blobUrl } = await store.store({ data, contentType, pathPrefix: 'recipes' }))
+    ;({ url: blobUrl } = await store.store({ data: clean.data, contentType: clean.contentType, pathPrefix: 'recipes' }))
   } catch {
     return { kind: 'storage' }
   }

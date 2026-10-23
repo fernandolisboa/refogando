@@ -13,6 +13,7 @@ import {
 import { approveCozinha, mergeCozinha, rejectCozinha } from '@/server/vocabulary/curate'
 import { applyModerationRemove, applyImageModeration, applyReviewModeration } from '@/server/recipe/moderation'
 import { applyReview } from '@/server/recipe/review'
+import { eraseOwnAccount } from '@/server/legal/account-erasure'
 import { setImageGenRestriction } from '@/server/curate/restriction'
 import { renderNotification, type NotificationType } from '@/domain/notification'
 import { ptBR } from '@/i18n/messages/pt-BR'
@@ -96,15 +97,31 @@ describe('emit new_follower (#371) — fio do seguir', () => {
 describe('emitNotification (#371) — best-effort', () => {
   it('engole falha de insert e NÃO relança (a ação de origem nunca falha)', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    // Stub que rejeita no insert — determinístico (não depende de violação de FK coincidental).
+    // Stub que rejeita no insert — determinístico (não depende de violação de FK coincidental). O insert é um
+    // `INSERT … SELECT` só (#473: a checagem da conta eliminada vai nele), pelo `execute`.
     const brokenDb = {
-      insert: () => ({ values: () => Promise.reject(new Error('boom')) }),
+      execute: () => Promise.reject(new Error('boom com o texto da query')),
     } as unknown as Database
     await expect(
       emitNotification(brokenDb, { recipientId: crypto.randomUUID(), type: 'new_follower' }),
     ).resolves.toBeUndefined()
-    expect(errSpy).toHaveBeenCalled()
+    // Só nome + código (ADR-0048), sem a mensagem.
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    expect(errSpy).toHaveBeenCalledWith('[notification] emit falhou (engolido): erro=Error')
     errSpy.mockRestore()
+  })
+
+  it('#473: destinatário com a conta ELIMINADA não recebe (a avaliação nova não recria a caixa dele)', async () => {
+    const owner = await seedUser({ email: 'eliminado@n.test' })
+    const actor = await seedUser({ email: 'ator-elim@n.test' })
+    expect((await eraseOwnAccount(getDb(), { userId: owner })).kind).toBe('erased')
+
+    await emitNotification(getDb(), { recipientId: owner, type: 'new_follower', actorId: actor })
+    expect(await countNotifs(owner)).toBe(0)
+
+    // Conta viva segue recebendo.
+    await emitNotification(getDb(), { recipientId: actor, type: 'new_follower', actorId: owner })
+    expect(await countNotifs(actor)).toBe(1)
   })
 })
 
@@ -465,11 +482,12 @@ describe('emit account_restricted (#373) — bloqueio de geração → usuário 
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const target = await seedUser({ email: 'be-t@n.test' })
     const curator = await seedUser({ email: 'be-c@n.test', role: 'curador' })
-    // db cujo `insert` (usado só pelo emit pós-commit) rejeita; `transaction`/`select`/`update`
-    // delegam ao db real (Object.create) → a AÇÃO roda normal, só a notificação falha.
+    // db cujo `execute` (usado só pelo emit pós-commit, o `INSERT … SELECT` da notificação) rejeita;
+    // `transaction`/`select`/`update` delegam ao db real (Object.create) → a AÇÃO roda normal, só a
+    // notificação falha.
     const realDb = getDb()
     const flakyDb = Object.assign(Object.create(realDb), {
-      insert: () => ({ values: () => Promise.reject(new Error('boom')) }),
+      execute: () => Promise.reject(new Error('boom')),
     }) as Database
 
     const res = await setImageGenRestriction({
@@ -574,16 +592,12 @@ describe('emit review_on_recipe (#374) — nova avaliação → dono', () => {
     const owner = await seedUser({ email: 'ror-be-o@n.test' })
     const reviewer = await seedUser({ email: 'ror-be-r@n.test' })
     const rid = await seedPoolRecipe(owner)
-    // Proxy que quebra SÓ `insert(notification)` (o emit pós-upsert); `insert(recipe_review)` (o
+    // Proxy que quebra SÓ o `execute` (o `INSERT … SELECT` do emit pós-upsert); `insert(recipe_review)` (o
     // upsert), select/etc. delegam ao db real → a avaliação é gravada, só a notificação falha.
     const realDb = getDb()
     const flakyDb = new Proxy(realDb, {
       get(t, p, r) {
-        if (p === 'insert')
-          return (table: unknown) =>
-            table === notification
-              ? { values: () => Promise.reject(new Error('boom')) }
-              : (t as Database).insert(table as never)
+        if (p === 'execute') return () => Promise.reject(new Error('boom'))
         return Reflect.get(t, p, r)
       },
     }) as unknown as Database
@@ -646,9 +660,9 @@ describe('emit review_moderated (#374) — moderação de avaliação → autor'
     const rid = await seedPoolRecipe(owner)
     const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 2 })
     const rep = await seedReport({ reviewId, reporterId: owner })
-    // A moderação roda em db.transaction (tx.update); o emit pós-commit usa db.insert → só ele quebra.
+    // A moderação roda em db.transaction (tx.update); o emit pós-commit usa db.execute → só ele quebra.
     const flakyDb = Object.assign(Object.create(getDb()), {
-      insert: () => ({ values: () => Promise.reject(new Error('boom')) }),
+      execute: () => Promise.reject(new Error('boom')),
     }) as Database
 
     const res = await applyReviewModeration({ db: flakyDb, reportId: rep, curatorId: curator, reason: 'removida' })

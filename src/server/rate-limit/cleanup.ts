@@ -15,11 +15,13 @@ import { rateLimit } from '@/db/schema'
 
 /**
  * Idade máxima de uma linha de `rate_limit` antes de ser expurgável. A maior janela configurada nos
- * `customRules`/default do Better Auth é 60s; 1h é uma folga ampla que garante que NUNCA apagamos um
- * contador ainda dentro da sua janela (mesmo com skew de relógio), mantendo a tabela enxuta. `lastRequest`
- * é epoch ms (bigint mode:'number'), então a comparação é em milissegundos.
+ * `customRules`/default do Better Auth é 60s; 50 min é uma folga ampla que garante que NUNCA apagamos um
+ * contador ainda dentro da sua janela (mesmo com skew de relógio), mantendo a tabela enxuta. A chave é o IP
+ * (dado pessoal, ADR-0050): com a limpeza de hora em hora (`15 * * * *`), o IP sai até 2 horas depois do último
+ * pedido mesmo se uma passada atrasar alguns minutos. `lastRequest` é epoch ms (bigint mode:'number'), então a
+ * comparação é em milissegundos.
  */
-export const RATE_LIMIT_MAX_AGE_MS = 60 * 60 * 1000
+export const RATE_LIMIT_MAX_AGE_MS = 50 * 60 * 1000
 
 /**
  * Apaga as linhas de `rate_limit` cuja `lastRequest` (epoch ms) é anterior a `now - RATE_LIMIT_MAX_AGE_MS`.
