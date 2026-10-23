@@ -56,7 +56,7 @@ export const RECIPE_GEN_KINDS = ['success', 'degraded', 'playful', 'impossible']
 /**
  * Um valor da saída do modelo que NÃO casou o vocabulário e caiu no fallback (campo null, item de
  * restrição descartado, `kind` inferido, parte da quantidade perdida). Só para log: `valor` é o
- * texto cru que o modelo emitiu.
+ * texto cru que o modelo emitiu, e o log leva só o tamanho dele, nunca o texto (Política, item 3.7).
  */
 export type CampoDescartado = {
   campo: 'kind' | 'cozinha' | 'categoria' | 'restricoes' | 'quantidade' | 'unidade'

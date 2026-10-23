@@ -108,3 +108,18 @@ Recomendado, fora deste repo:
   Um `.claude/settings.json` com `deny` para `Bash(*db:reset*)` fora do CI também ajuda.
 - Considerar um dump `pg_dump` periódico fora do Neon (artifact do GitHub ou Vercel Blob), já que
   branches do Neon morrem com o projeto.
+
+## Registro do incidente (Res. CD/ANPD nº 15/2024, art. 10)
+
+> Escrito em 2026-10-22, na revisão jurídica interna (`docs/legal/parecer-interno-2026-10-22.md`). O art. 10 manda registrar todo incidente, **inclusive o não comunicado**, e guardar o registro por no mínimo 5 anos: **manter este arquivo até pelo menos 2031-10-22.**
+
+| Item (art. 10, § 1º) | Registro |
+|---|---|
+| I. Data de conhecimento | 2026-09-18 (o controlador notou o banco fora do ar). Início real: 2026-09-09 12:43 UTC. |
+| II. Circunstâncias | Apagamento acidental: um agente de IA de outro projeto do mesmo controlador usou uma variável de ambiente global que apontava para o banco de produção e rodou o reset de schema dele. Não foi ataque (seção "Descarte de ataque"). |
+| III. Natureza e categoria dos dados | Violação de **disponibilidade** (9 dias fora do ar) e de **integridade** (perda definitiva do que foi gravado entre 2026-07-06 05:52 UTC e 2026-09-09). Categorias no banco: dados de conta (e-mail, nome, handle, hash de senha, tokens de login), perfil, receitas, avaliações e fotos, salvos, coleções, listas de compras, histórico de criação com IA. **Não havia** dado sensível (as restrições salvas só chegaram em 2026-10-13), dado financeiro nem dado de criança identificado. |
+| IV. Número de titulares | 4 contas no snapshot restaurado. Contas criadas entre 06/07 e 09/09, se houve, se perderam e não há como contá-las. |
+| V. Avaliação de risco | **Confidencialidade:** nenhum indício de leitura ou cópia dos dados; os comandos foram `DROP SCHEMA` e migrações de outro projeto, todos registrados nas transcrições locais. A connection string de produção ficou em arquivos de scratch e em transcrições de agente no computador do controlador: é credencial do sistema, não dado de autenticação do titular (art. 3º, VI), e não houve acesso indevido confirmado. **Dano:** indisponibilidade de um app gratuito de receitas por 9 dias e perda de até 2 meses de conteúdo, num serviço com 4 contas. Os hashes de senha não foram expostos. **Conclusão:** o incidente não teve potencial de **afetar significativamente** interesses e direitos fundamentais dos titulares (art. 5º, caput), embora envolvesse dado de autenticação (art. 5º, IV). |
+| VI. Medidas de correção e mitigação | Restauração em 2026-09-18 a partir de branch do Neon; backup semanal por branch (`.github/workflows/db-backup.yml`); aviso no `.env.example` e landmine no `CLAUDE.md`; a variável global foi comentada. **Pendente do controlador:** apagar a linha comentada do `~/.zshenv` e **rotacionar a senha do role `neondb_owner`**. |
+| VII. Comunicação | Não houve comunicação à ANPD nem aos titulares. |
+| VIII. Motivo da não comunicação | O critério do art. 5º exige, cumulativamente, potencial de afetar significativamente os titulares **e** uma das categorias dos incisos. Havia dado de autenticação, mas sem exposição; o efeito foi indisponibilidade temporária e perda de conteúdo de um serviço gratuito e de lazer, com 4 contas. O exemplo do § 1º ("impedir… a utilização de um serviço") foi considerado e afastado pela baixa gravidade concreta. Decisão do controlador em 2026-10-22, por recomendação do parecer interno. |

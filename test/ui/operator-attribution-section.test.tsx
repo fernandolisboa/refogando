@@ -167,7 +167,7 @@ function mockEscalateFetch(byApply: (apply: boolean) => Resp) {
 }
 
 describe('OperatorAttributionSection — escalada além do nome (#397 GAP-3)', () => {
-  it('mostra o aviso de que a POLÍTICA aguarda sign-off jurídico', () => {
+  it('mostra o aviso com o critério de quando escalar (parecer interno de 2026-10-22)', () => {
     mockFetch({ ok: true, status: 200, body: {} })
     renderSection()
     expect(screen.getByText(A.escalonarAviso)).toBeInTheDocument()

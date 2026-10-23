@@ -32,7 +32,7 @@ import {
 } from '@/domain/recipe-variant-config'
 import {
   DEFAULT_WEB_SEARCH_CONFIG,
-  parseAllowlist,
+  parseStoredAllowlist,
   type WebSearchConfig,
 } from '@/domain/web-search-config'
 import {
@@ -63,7 +63,8 @@ import {
  * O `default_model` (chat, #5), o `imageGen` (#134) e o `webSearch` (#164) coabitam a mesma linha
  * singleton. O `model` persistido é re-validado contra a allowlist (defensivo: linha legada/editada à
  * mão não quebra o tipo `ImageGenModel`); fora da allowlist ⇒ cai no default. A `webSearch.allowlist`
- * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed.
+ * também é re-validada na leitura (re-canonicaliza/descarta lixo de linha legada) — fail-closed — e perde,
+ * um a um, os domínios que entraram na `TOS_DENYLIST` depois de gravados (`parseStoredAllowlist`).
  */
 
 /**
@@ -175,8 +176,9 @@ export async function loadAppConfig(db: Database): Promise<AppConfig> {
     webSearch: {
       enabled: row.webSearchEnabled,
       // Re-valida na leitura: linha legada/editada à mão com lixo cai em `[]` (fail-closed), nunca
-      // um domínio não-canônico vaza pro guard de SSRF / endpoint.
-      allowlist: parseAllowlist(row.webSearchAllowlist) ?? [],
+      // um domínio não-canônico vaza pro guard de SSRF / endpoint. Domínio vetado por ToS depois de
+      // gravado (parecer de 2026-10-22) sai sozinho; o resto da allowlist segue valendo.
+      allowlist: parseStoredAllowlist(row.webSearchAllowlist) ?? [],
     },
     catalogDisclosure: {
       enabled: row.catalogDisclosureEnabled,

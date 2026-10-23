@@ -209,8 +209,8 @@ export const CANONICAL_WEB_RESULTS: WebSearchResult[] = [
   },
   {
     title: 'Feijoada à Brasileira',
-    url: 'https://cybercook.com.br/receita/feijoada',
-    sourceName: 'CyberCook',
+    url: 'https://www.receitasnestle.com.br/receitas/feijoada',
+    sourceName: 'Receitas Nestlé',
   },
 ]
 

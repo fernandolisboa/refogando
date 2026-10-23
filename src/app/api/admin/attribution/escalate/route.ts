@@ -18,9 +18,9 @@ const ESCALATE_ACTIONS: readonly OperatorEscalateAction[] = ['url_unlink', 'reco
  * guarda, mesma forma de validação; separada para manter o `clear` (remoção-de-nome) byte-idêntico.
  * ADMIN-ONLY (`requireRole 'admin'`; Curador/Usuário → 403, sem sessão → 401).
  *
- * O MECANISMO só: a POLÍTICA de QUANDO desvincular/apagar aguarda o sign-off jurídico do #276 — a UI
- * deixa isso explícito; a rota não decide, só executa. Recebe `{ action, sourceName?, sourceUrl?,
- * caseId?, apply? }`. `action` ∈ {'url_unlink','record_deletion'} (400 se ausente/inválida). `apply`
+ * O MECANISMO só: o critério de QUANDO desvincular/apagar está no parecer interno de 2026-10-22 (§2,
+ * item 2), que fechou o #276 — a UI o resume no aviso; a rota não decide, só executa. Recebe `{ action,
+ * sourceName?, sourceUrl?, caseId?, apply? }`. `action` ∈ {'url_unlink','record_deletion'} (400 se ausente/inválida). `apply`
  * OMITIDO/`false` = PRÉVIA (só escopo, sem efeito); `apply:true` = executa (desvincula/apaga +
  * `DSAR_FULFILLED` na MESMA transação — GAP-5). Ao menos um critério (nome OU url) é obrigatório (senão
  * 400 — nunca varre tudo). `caseId`, se informado, deve ser uuid. Idempotente (2ª execução casa 0).

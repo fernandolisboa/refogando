@@ -1,4 +1,4 @@
-> **Rascunho para revisão jurídica — não constitui parecer.** Este documento é material interno do Refogando, preparado por engenharia para servir de base à revisão e assinatura de um(a) advogado(a) de Propriedade Intelectual e LGPD. Não é opinião legal definitiva. Onde a lei é incerta ou depende de juízo jurídico (enquadramento de "fato vs. expressão", alcance de cláusulas de ToS, base legal), o texto sinaliza explicitamente **[VALIDAR COM O JURÍDICO]**. Nada aqui deve ir a produção sem a assinatura pedida no ADR-0019.
+> **Status (2026-10-22): revisado.** A allowlist foi decidida no sign-off interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`, §3), feito pelo Claude por delegação do controlador, sem revisão de advogado(a), a partir dos Termos de Uso vigentes lidos ao vivo nesse dia. A leitura e a decisão estão na **§4.0**; as §§4.1 a 4.5 ficam como registro da triagem anterior. As §§3 e 5 também foram respondidas no parecer (§2): onde divergem dele, vale o parecer.
 
 ---
 
@@ -78,9 +78,33 @@ Já implementado corretamente (coerências, para o revisor não retrabalhar): **
 
 ## 4. Revisão de ToS/robots dos domínios candidatos da allowlist
 
+### 4.0 Leitura de 2026-10-22 e decisão
+
+Os Termos de Uso vigentes dos 11 domínios foram lidos ao vivo em 2026-10-22, inclusive os 7 que estavam em revisão manual (§4.5). Regra aplicada: **excluir** quando os Termos têm cláusula literal que a importação viola (robô para copiar ou baixar, armazenar em qualquer meio, uso só para visualizar no site); **manter** quando o robots.txt libera a página de receita e os Termos não falam de automação nem de armazenamento; Termos ilegíveis ⇒ excluir.
+
+| Domínio | Termos lidos | Trecho literal decisivo | Decisão |
+|---|---|---|---|
+| tudogostoso.com.br | `/termos-de-uso` (Webedia Internet Brasil S.A., sem data) | "O uso comercial não autorizado dos conteúdos e a cópia de imagens, materiais, textos, etc., contidos na Plataforma, com a intenção de propagação na internet ou quaisquer outros meios, sem nosso prévio consentimento, são práticas expressamente vedadas". Nada sobre robôs, automação ou armazenamento. robots.txt: `User-Agent: *` bloqueia `/busca`, `/recipe/` e `*recipe_id=*`, não `/receita/`. | **Manter, condicionado** |
+| receitasnestle.com.br | `/termos-e-condicoes` (sem data) | "Você não pode usar comercialmente nenhum conteúdo da Plataforma, a menos que obtenha permissão ou que o faça por algum meio legalmente permitido." Nada sobre automação. robots.txt: `User-agent: *` não bloqueia as receitas e publica sitemaps delas. | **Manter, condicionado** |
+| cybercook.com.br | nenhum | O domínio inteiro redireciona para carrefour.com.br: não há mais receitas nem Termos de Uso do CyberCook para ler (o acesso automatizado recebeu só uma página "Acesso Bloqueado"). Termos ilegíveis ⇒ excluir. | **Excluir** |
+| receiteria.com.br | `/termos-de-uso` (Contteudo Network Ltda, publicado em 2019-03-27, modificado em 2026-07-03; lido pela API do próprio site, porque o Cloudflare bloqueia a página) | §2: os elementos do site "não podem ser utilizadas de nenhuma outra forma a não ser para visualização dentro do site. A cópia, publicação ou distribuição parcial ou integral em qualquer mídia, notadamente comercial, é estritamente proibida." | **Excluir** |
+| allrecipes.com, simplyrecipes.com, seriouseats.com | people.inc/brands-termsofservice (People Inc., ex-Dotdash Meredith; "Effective Date: July 31, 2025") | §3.3(e): "you shall not use any manual or automated software, devices, or other processes (including but not limited to spiders, robots, scrapers, crawlers, avatars, data mining tools or the like) to "scrape," harvest, or download data from the Services", com exceção só para operadores de buscador público criarem "publicly available searchable indices of the materials, but not caches or archives". | **Excluir** |
+| bbcgoodfood.com | immediate.co.uk/terms-and-conditions (Immediate Media Company Limited; "Last updated: September 2025") | §10: "you undertake not to copy, store in any medium (including on any other website), distribute, transmit, re-transmit, re-publish, broadcast, modify, or show in public any part of our Services without our prior written permission". | **Excluir** |
+| panelinha.com.br | `/termos-de-uso` ("Última atualização: 04 de Julho de 2023") | 3.3: "O Usuário se obriga a não utilizar qualquer sistema automatizado, inclusive, mas sem se limitar a "robôs", "spiders", “scripts” ou "offline readers", que acessem os Serviços e venham a utilizá-los de forma contrária ao previsto nestes Termos"; 6.2: "Toda e qualquer forma de reprodução dos Serviços e do Site, total ou parcial [...] é expressamente vedada"; 6.3: autorização só "para visualizar os conteúdos ali presentes". | **Excluir (confirmado)** |
+| guiadacozinha.com.br | `/termos-de-uso/` (meta 2025-09-18) | "É proibido que o usuário faça o download de nosso conteúdo para armazená-lo em banco de dados e/ou para oferecê-lo, no todo ou em parte, a terceiros". | **Excluir (confirmado)** |
+| foodnetwork.com | `/site/terms` + Visitor Agreement da WBD ("Last updated January 2023"), ao vivo | §3(B)(iii): não "use an automatic device (such as a robot or spider) or manual process to copy or "scrape" the Websites or Website Content for any purpose without the express written permission of Scripps Networks". | **Excluir (confirmado)** |
+
+**No código** (este PR): os 6 domínios novos entraram na `TOS_DENYLIST` (`src/domain/web-search-config.ts`, cada um com a cláusula no comentário), que agora tem 9 entradas; `tudogostoso.com.br` voltou às sugestões de um clique (`src/domain/suggested-domains.ts`), ao lado de `receitasnestle.com.br`. A leitura da allowlist gravada no banco descarta, um a um, os domínios que caíram na denylist e mantém os demais (antes, um único domínio vetado zerava a allowlist inteira e desligava a Descoberta).
+
+**Condição dos dois mantidos (tudogostoso e receitasnestle).** Os dois vedam o "uso comercial" do conteúdo sem permissão. Hoje a importação é gratuita, privada, não publicável e creditada. Se ela entrar num plano pago, uma ferramenta paga que guarda cópias para os usuários pode ser lida como uso comercial, e aí os dois caem juntos. **Antes de qualquer plano pago que inclua a importação:** reavaliar os dois, ou obter permissão escrita deles.
+
+**Achado novo: o texto dos passos é copiado literalmente.** O importador copia o texto dos passos como o site publica (`parseInstructions` em `src/domain/recipe-import-parse.ts` só achata `recipeInstructions`); a postura documentada dizia "só fatos". Avaliação do parecer (§2): risco **baixo** enquanto a cópia for privada, não publicável e creditada. Instruções funcionais têm proteção autoral fraca (Lei 9.610, art. 8º, I e VII exclui procedimentos e métodos), mas a cópia literal da redação não é "só fatos", e o argumento da cópia privada (art. 46, II) é fraco porque quem copia é o serviço. **Decisão:** aceito como está, com os documentos corrigidos. **Condição:** antes de qualquer plano pago que inclua a importação, reescrever os passos na importação (paráfrase) ou obter permissão escrita dos sites mantidos.
+
 > **Aviso de método.** A tabela abaixo resume uma **triagem automatizada** (leitura de robots.txt e, quando acessível, dos Termos de Uso). Ela **não substitui a leitura jurídica** de cada ToS: (a) fatos e cláusulas foram lidos verbatim só onde indicado; (b) o enquadramento da conduta do Refogando ("importar só fatos, para coleção privada, sem republicar") dentro ou fora de uma cláusula de reprodução/uso é **juízo jurídico**; (c) vários domínios não puderam ser lidos (bloqueio de ambiente, Cloudflare/Akamai, HTTP 402/403). Todos os "Revisar manual" **exigem** leitura humana antes de qualquer decisão de allowlist.
 
 > **Nota de rastreabilidade desta revisão.** Os **fatos verbatim de cada site** desta tabela (p.ex. a cláusula 3.3 da panelinha, o CNPJ da guiadacozinha, o snapshot Wayback 2023 do foodnetwork) provêm da **triagem automatizada original** e **não foram reauditados** nesta passada de conferência — que cobriu o aterramento no **código**, não a triagem-fonte, que não veio junto. A tabela é **internamente consistente** (3 excluir + 1 manter + 7 revisar = 11; verdito "EXCLUIR" só onde há cláusula verbatim lida; regra anti-alucinação explícita) e adequadamente hedgeada, mas cada fato por site **permanece não-auditado** e sujeito à confirmação verbatim do jurídico (Seção 4.5).
+
+> As §§4.1 a 4.5 abaixo são a triagem de 2026-07 a 2026-09, substituída pela §4.0.
 
 ### 4.1 Cobertura real desta triagem (honestidade)
 
@@ -127,6 +151,8 @@ Nota comum: o argumento de que "fatos de receita não são protegidos por direit
 ### 4.5 Domínios em REVISÃO MANUAL (não decidir sem leitura humana)
 
 > **2026-09-24:** estes sete domínios saíram das sugestões de um clique da tela de admin da allowlist (`src/domain/suggested-domains.ts`); só receitasnestle segue sugerido. O admin ainda pode digitá-los à mão: não fazer isso antes da leitura verbatim do ToS.
+>
+> **2026-10-22:** os sete foram lidos (§4.0): seis entraram na `TOS_DENYLIST` e tudogostoso foi mantido e voltou às sugestões.
 
 Sete domínios **não** têm base suficiente para excluir nem para manter, e exigem leitura jurídica do ToS (e, onde faltou, do robots) antes de qualquer decisão:
 
@@ -142,7 +168,9 @@ Sete domínios **não** têm base suficiente para excluir nem para manter, e exi
 
 ---
 
-## 5. Checkpoints em aberto para o(a) advogado(a) assinar
+## 5. Checkpoints (respondidos no parecer interno de 2026-10-22)
+
+> Os cinco checkpoints abaixo foram fechados no parecer: postura do ADR-0019 aprovada (§2); base legal = legítimo interesse, e a nuance "publisher pessoa jurídica fora da LGPD" procede (§2, item 1); Política revisada na v3 (§4); canal publicado, sem encarregado por ser agente de pequeno porte (§1); allowlist decidida (§4.0 acima).
 
 1. **Assinar a postura do ADR-0019** (allowlist + só-fatos + import privado + atribuição obrigatória) antes do go-live, conforme o próprio ADR condiciona.
 2. **Confirmar a base legal** do tratamento de `source_name` (Art. 7º, IX + LIA / Art. 10; e/ou Art. 7º, § 4º) e se a nuance "publisher pessoa jurídica fora da LGPD" procede.
@@ -159,4 +187,4 @@ Sete domínios **não** têm base suficiente para excluir nem para manter, e exi
 - LGPD (Lei 13.709/2018): Art. 5º (V titular / II sensível / VIII encarregado); Art. 6º (I finalidade, III necessidade, VI transparência); Art. 7º (IX legítimo interesse; § 4º dado manifestamente público); Art. 9º (dever de informação; IV contato do controlador); Art. 10 (LIA); Art. 16 (retenção); Art. 18 (direitos do titular; IV eliminação de dado desnecessário/em desconformidade; § 2º oposição a tratamento por dispensa de consentimento); Art. 19, II (prazo 15 dias); Art. 41 (encarregado). Lei 9.610/1998, Art. 8º (receita como fato não protegível) e direito moral de atribuição. RFC 9309 (robots.txt).
 - Skills: `lgpd-legal-basis`, `lgpd-privacy-policy`, `lgpd-dsar`.
 
-> Reiteração: **rascunho para revisão jurídica — não constitui parecer.** Todos os pontos marcados **[VALIDAR COM O JURÍDICO]** e a Seção 4.5 dependem de leitura e assinatura de advogado(a) antes de qualquer ação em produção.
+> Os pontos marcados **[VALIDAR COM O JURÍDICO]** e a Seção 4.5 foram resolvidos no parecer interno de 2026-10-22 (sem revisão de advogado(a)); a decisão vigente da allowlist é a §4.0.

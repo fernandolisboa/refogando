@@ -5,9 +5,9 @@
  * Client component (como o SiteFooter) para acompanhar o locale na troca em runtime: todo o texto vem
  * de `messages.privacidade` (i18n bilíngue pt-BR/en-US) — NADA hardcoded aqui. Sem chamadas de dados.
  *
- * Publicada por decisão do dono, SEM o sign-off jurídico (que segue pendente em #276): os placeholders
- * foram resolvidos com os contatos reais escritos DIRETO nas strings i18n (`messages.privacidade`) —
- * editar ali é como o dono troca o encarregado/e-mail.
+ * Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o
+ * #276 (v3). Os contatos reais estão escritos DIRETO nas strings i18n (`messages.privacidade`) — editar
+ * ali é como o dono troca o e-mail do canal. Versão nova entra em `s9Historico` + rodapé.
  *
  * `withPlaceholders` é mantido como rede de segurança: se algum `{...}` reaparecer numa string, ele o
  * troca por um BADGE visível (`<mark data-todo>`) em vez de publicar chaves cruas. Hoje as strings não
@@ -87,6 +87,51 @@ const List = ({
   )
 }
 
+// Tabela de colunas paralelas (prestadores do item 5, cookies do item 8): a linha i junta `colunas[c][i]`.
+// A 1ª coluna nomeia a linha (`<th scope="row">`, em destaque) e o cabeçalho nomeia as colunas
+// (`scope="col"`): o leitor de tela anuncia "Proton, Para quê: …". As colunas têm o mesmo tamanho (o teste
+// de UI trava). Toda célula passa por `withPlaceholders`, como o resto da página.
+const Tabela = ({
+  cabecalho,
+  colunas,
+  todoLabel,
+}: {
+  cabecalho: readonly string[]
+  colunas: readonly (readonly string[])[]
+  todoLabel: string
+}) => (
+  <div className="mt-3 overflow-x-auto">
+    <table className="w-full border-collapse text-left text-sm">
+      <thead>
+        <tr className="border-b border-border">
+          {cabecalho.map((h, i) => (
+            <th key={i} scope="col" className="py-2 pr-4 font-semibold text-fg">
+              {withPlaceholders(h, todoLabel)}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {(colunas[0] ?? []).map((_, row) => (
+          <tr key={row} className="border-b border-border/60">
+            {colunas.map((col, c) =>
+              c === 0 ? (
+                <th key={c} scope="row" className="py-2 pr-4 font-medium text-fg">
+                  {withPlaceholders(col[row] ?? '', todoLabel)}
+                </th>
+              ) : (
+                <td key={c} className="py-2 pr-4 text-fg">
+                  {withPlaceholders(col[row] ?? '', todoLabel)}
+                </td>
+              ),
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)
+
 // Ficha Dados/Finalidade/Base legal/Retenção (itens 3.x e b.3): rótulos + valores por índice.
 const Ficha = ({
   labels,
@@ -149,34 +194,25 @@ export function PrivacyPolicy() {
       <P>{ph(m.s34Corpo)}</P>
       <H4>{m.s35Titulo}</H4>
       <Ficha labels={defLabels} values={m.s35Valores} todoLabel={todo} />
+      <H4>{m.s36Titulo}</H4>
+      <Ficha labels={defLabels} values={m.s36Valores} todoLabel={todo} />
+      <H4>{m.s37Titulo}</H4>
+      <Ficha labels={defLabels} values={m.s37Valores} todoLabel={todo} />
+      <H4>{m.s38Titulo}</H4>
+      <Ficha labels={defLabels} values={m.s38Valores} todoLabel={todo} />
+      <H4>{m.s39Titulo}</H4>
+      <Ficha labels={defLabels} values={m.s39Valores} todoLabel={todo} />
 
       <H3>{m.s4Titulo}</H3>
       <List items={m.s4Itens} todoLabel={todo} />
 
       <H3>{m.s5Titulo}</H3>
       <P>{ph(m.s5Intro)}</P>
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              {m.s5Cabecalho.map((h, i) => (
-                <th key={i} className="py-2 pr-4 font-semibold text-fg">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {m.s5Prestadores.map((provider, i) => (
-              <tr key={i} className="border-b border-border/60">
-                <td className="py-2 pr-4 font-medium text-fg">{provider}</td>
-                <td className="py-2 pr-4 text-fg">{m.s5ParaQue[i]}</td>
-                <td className="py-2 pr-4 text-fg">{m.s5Categorias[i]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Tabela
+        cabecalho={m.s5Cabecalho}
+        colunas={[m.s5Prestadores, m.s5ParaQue, m.s5Categorias]}
+        todoLabel={todo}
+      />
       <Note>{ph(m.s5Nota)}</Note>
       <Note>{ph(m.s5Transferencia)}</Note>
 
@@ -189,7 +225,13 @@ export function PrivacyPolicy() {
       <P>{ph(m.s7ComoExercer)}</P>
 
       <H3>{m.s8Titulo}</H3>
-      <P>{ph(m.s8Corpo)}</P>
+      <P>{ph(m.s8Intro)}</P>
+      <Tabela cabecalho={m.s8Cabecalho} colunas={[m.s8Nomes, m.s8ParaQue, m.s8Duracoes]} todoLabel={todo} />
+
+      <H3>{m.s9Titulo}</H3>
+      <P>{ph(m.s9Corpo)}</P>
+      {/* Histórico de versões (a mais nova por último; o rodapé repete a última). */}
+      <List items={m.s9Historico} todoLabel={todo} />
 
       {/* ───────────────────────── Parte (b) ───────────────────────── */}
       <H2>{m.parteBTitulo}</H2>
@@ -219,7 +261,7 @@ export function PrivacyPolicy() {
       <List items={m.b5ComoFunciona} todoLabel={todo} />
       <P>{ph(m.b5Contato)}</P>
 
-      {/* Rodapé de status da PÁGINA (AC #4): versão / data / status = RASCUNHO. */}
+      {/* Rodapé de status da PÁGINA (AC #4): versão / data / status da revisão. */}
       <footer className="mt-12 border-t border-border pt-4 text-sm text-muted">
         <p>
           <span className="font-medium text-fg">{m.rodapeVersaoRotulo}:</span>{' '}
@@ -230,7 +272,7 @@ export function PrivacyPolicy() {
         </p>
         <p className="mt-1">
           <span className="font-medium text-fg">{m.rodapeStatusRotulo}:</span>{' '}
-          <span className="font-semibold text-aviso-fg">{m.rodapeStatus}</span>
+          <span className="font-semibold text-fg">{m.rodapeStatus}</span>
         </p>
       </footer>
     </Container>

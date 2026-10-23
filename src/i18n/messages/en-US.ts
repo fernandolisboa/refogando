@@ -953,7 +953,11 @@ export const enUS: Messages = {
     aviso: 'Recipes declare the restrictions they meet; this is not verified. If you have an allergy, check the ingredients.',
     legenda: 'Your restrictions',
     consentimento:
-      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests (and send them to the AI when you generate with them selected). Clear them all and save to delete.',
+      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app and the AI run in the United States. Clear them all and save to delete.',
+    // Notice of the 2026-10-22 change (LGPD art. 8, §6), only for people who already had saved restrictions.
+    avisoMudanca:
+      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. If you do not agree, clear them all and save to delete them.',
+    avisoMudancaFechar: 'Got it',
     salvar: 'Save restrictions',
     salvando: 'Saving…',
     salvo: 'Restrictions saved.',
@@ -1577,10 +1581,10 @@ export const enUS: Messages = {
     takedownCaseIdInvalido: 'Invalid ticket ID (must be a uuid).',
     takedownErro: 'Could not complete. Try again.',
     // Escalation beyond the name (subject B) — #397/GAP-3. Unlink the whole URL or delete the import.
-    // The POLICY of when to use it awaits legal sign-off (#276); the mechanism does not decide alone.
+    // The criteria for when to use it are in the internal opinion of 2026-10-22 (§2, item 2); the mechanism does not decide alone.
     escalonarTitulo: 'Escalate beyond the name (unlink URL / delete import)',
     escalonarAviso:
-      'The POLICY of WHEN to escalate (unlink the URL or delete the recipe) awaits legal sign-off (#276). This mechanism does not decide on its own — use only under guidance. It reuses the name/URL entered above.',
+      'When to escalate (internal opinion of 2026-10-22, §2): unlink the URL if it identifies the person or if the person objects to the processing as a whole; delete the import if the request comes from the site owner or the rights holder (the domain also goes into the denylist, in code). In all other cases, remove only the name. It reuses the name/URL entered above.',
     escalonarAcaoLabel: 'Action',
     escalonarAcaoUnlink: 'Unlink URL (clears URL and name)',
     escalonarAcaoDelete: 'Delete imported recipe (irreversible)',
@@ -1624,7 +1628,7 @@ export const enUS: Messages = {
     slaTipoOther: 'Other',
     slaNivelNone: 'On track',
     slaNivelYellow: 'Deadline approaching',
-    slaNivelRed: 'Escalate to the DPO',
+    slaNivelRed: 'Escalate to the controller',
     slaNivelOverdue: 'Overdue',
     // AI cost panel (#465) — aggregates the text (#463) and image (#224) ledgers.
     custoTitulo: 'AI cost',
@@ -1902,9 +1906,11 @@ export const enUS: Messages = {
   },
   // Privacy Policy (#398 / part of #276) — PUBLISHED (indexable, linked in the footer + sitemap). Keys are
   // FLAT within the section (the `Messages` type derives only 2 levels): string leaves or
-  // `readonly string[]` (lists/tables by index). The placeholders were resolved with the real contacts
-  // written DIRECTLY into these strings (this section is the single place to edit the DPO name/e-mail).
-  // Published by the owner's decision; the legal sign-off is still pending in #276.
+  // `readonly string[]` (lists/tables by index). The real contacts are written DIRECTLY into these strings
+  // (this section is the single place to edit the privacy channel).
+  // Reviewed in the internal opinion of 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), which closed #276.
+  // Changed collected data, purpose, provider, retention or logs? The SAME PR updates this section (new line in
+  // `s9Historico` + footer) and `docs/legal/registro-de-operacoes.md` (CLAUDE.md, "Privacidade").
   privacidade: {
     metaTitulo: 'Privacy Policy — Refogando',
     titulo: 'Privacy Policy',
@@ -1914,9 +1920,9 @@ export const enUS: Messages = {
     resumoItens: [
       'Refogando is an AI recipe app.',
       'We collect the minimum: what is needed for you to have an account and use the app and, when you import a recipe from an external site, the author/site name and the source link, solely to give credit.',
-      'We do not sell your data. We share it only with service providers that make the app work (hosting, database, AI).',
-      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). Contact our data protection officer: privacidade@refogando.com. We respond within 15 days.',
-      'This text may change; we notify you when it does.',
+      'We do not sell your data or use advertising. We share it only with providers that make the app work (hosting, database, AI, email), most of them in the United States.',
+      'You have rights (access, correction, deletion, etc. — Art. 18 of the LGPD). You can download your data and delete your account in Edit profile → Your data; for anything else, write to privacidade@refogando.com. We respond within 15 days.',
+      'This text may change: every version is recorded in the "Changes to this policy" section and, if a change alters something you authorized with your consent, we notify you prominently.',
     ],
 
     s1Titulo: '1. Who we are (identification of the controller) — Art. 9, III',
@@ -1925,18 +1931,18 @@ export const enUS: Messages = {
       'Because Refogando is operated by an individual, there is no legal entity name or tax ID (CNPJ) associated; the official contact is the privacy e-mail indicated below.',
     ],
 
-    s2Titulo: '2. Contact of the controller and the data protection officer (DPO) — Art. 9, IV; Art. 41',
+    s2Titulo: '2. Contact of the controller — Art. 9, IV; Art. 41',
     s2Itens: [
-      'Data protection officer (DPO): Fernando Lisboa.',
-      'Contact e-mail for privacy matters and exercising rights: privacidade@refogando.com.',
-      'Response time: we answer data subject requests within 15 days (LGPD, Art. 19, II).',
+      'Privacy and data subject rights channel: privacidade@refogando.com, handled directly by the controller.',
+      'Refogando is a small-scale processing agent and, as allowed by ANPD Resolution CD/ANPD No. 2/2022 (art. 11), has not appointed a data protection officer (DPO); this channel serves that function.',
+      'Response time: we answer data subject requests within 15 calendar days (LGPD, Art. 19, II).',
     ],
 
     s3Titulo: '3. What we use your data for (specific purpose) — Art. 9, I; Art. 6, I',
     s3Intro:
       'We process personal data only for specific, informed purposes. Each activity follows the Data / Purpose / Legal basis / Retention pattern.',
     s3Nota:
-      'The full inventory of account/usage data is still to be finalized with the team and validated; the table below is the skeleton of the confirmed processing activities. The Web Discovery feature is detailed in Part (b).',
+      'The export (Edit profile → Your data) includes what items 3.1 to 3.6 describe that is linked to your account, except credentials (the password hash and the Google sign-in tokens, which are left out for security) and the list of who follows you (only the count is included, because following is someone else’s choice). Web Discovery is detailed in Part (b).',
 
     rotuloDados: 'Data',
     rotuloFinalidade: 'Purpose',
@@ -1945,54 +1951,93 @@ export const enUS: Messages = {
 
     s31Titulo: '3.1. User account and authentication',
     s31Valores: [
-      'e-mail, display name/identifier (handle), login credentials and profile photo, bio, links and preferred language.',
-      'create and maintain your account, authenticate access and enable use of the app.',
+      'email, display name/identifier (handle), password (stored only as a hash), profile photo, bio, links, preferred language and default skill level. If you sign in with Google, we receive your name, email and photo from Google, and we store the tokens for that sign-in.',
+      'create and maintain your account, authenticate access and enable use of the app. Your name, @, photo, bio and links are on a public page (/u/your-@) that anyone can see, even without an account, and that search engines may index; it also shows who you follow and who follows you. Your name and @ also appear on the recipes you publish, on the ratings you write, in the cook search and in the notifications other people get when you follow them or rate one of their recipes. Your email, dietary restrictions and private content never appear.',
       'performance of a contract with the data subject — Art. 7, V of the LGPD.',
-      'while the account exists. If you delete your account, we immediately anonymize the identifying data and erase your password, your Google sign-in and all your sessions.',
+      'while the account exists. If you delete your account, we immediately anonymize the identifying data and erase your password, your Google sign-in and all sessions. An email-and-password sign-up that is not confirmed is erased after 48 hours; to block abusive resends, we keep for 90 days only a code derived from the email, which cannot be used to recover it.',
     ],
     s32Titulo: '3.2. Content created in the app (recipes, collections, ratings, Meal plan, shopping lists and Pantry)',
     s32Valores: [
-      'recipes you create, save, rate and organize; language preferences; text content you write; your Meal plan (the meals planned for each day, with servings and the free-text notes you write, such as "eating out"); your shopping lists (list name and items, with quantity, unit, source recipe and the bought check mark); and your Pantry (the names of the items you say you have at home and, if you edit it, your list of basics, the items you consider always at home).',
-      'deliver the app functionality (store and display your content, build collections, feed and search, plan meals, build shopping lists and show what you can cook with what you have at home).',
+      'recipes you create, save, rate and organize; the photos you upload (we remove their metadata, such as location, on upload); text content you write; your Meal plan (the meals planned for each day, with servings and the free-text notes you write, such as "eating out"); your shopping lists (list name and items, with quantity, unit, source recipe and the bought check mark); and your Pantry (the names of the items you say you have at home and, if you edit it, your list of basics).',
+      'deliver the app functionality (store and display your content, build collections, feed and search, plan meals, build shopping lists and show what you can cook with what you have at home). For search, the title, description and ingredients of each recipe, private ones included, go to Google (Gemini), which returns a search vector; for translation, the recipe goes to Anthropic.',
       'performance of a contract — Art. 7, V.',
-      'while the account exists or until you delete the content. If you delete your account, we immediately erase everything that is only yours: private recipes, saved recipes, collections, shopping lists, Meal plan, Pantry, who you follow and who follows you, and your notifications. The recipes you published and the ratings you wrote stay on Refogando without your name, because other people saved, rated or planned meals with them; rating photos are erased 180 days later. If you want a public recipe to go away, delete it before deleting your account.',
+      'while the account exists or until you delete the content. If you delete your account, we immediately erase everything that is only yours: private recipes, saved recipes, collections, shopping lists, Meal plan, Pantry, who you follow and who follows you, and notifications. The recipes you published and the ratings you wrote stay on Refogando without your name, because other people saved, rated or planned with them; rating photos are erased 180 days later. If you want a public recipe gone, delete it before deleting your account.',
     ],
-    s33Titulo: '3.3. AI-generated images and AI-assisted content',
+    s33Titulo: '3.3. AI creation, images and translation',
     s33Valores: [
-      'prompts and images you generate; what you ask the Menu suggestion for (meals, dietary restrictions and an optional free-text note), sent to the AI provider together with the title and classification of the candidate recipes and not stored by us; usage metadata (for cost/quota control).',
-      'generate dish images, support recipe creation and suggest a menu from existing recipes; enforce usage limits.',
-      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control — Art. 7, IX.',
-      'requests and conversations are kept while the account exists (you can delete the conversation of each creation) and are erased if you delete your account. A menu suggestion is only stored as a planned meal if you accept it. Usage records are erased after 24 months (ingredient extraction records, after 30 days); if you delete your account before that, they stay until then with nothing that identifies you.',
+      'what you ask the AI for: the free text, the creation form (with the restrictions checked in the request) and the conversation; image requests and refinements and, when you ask to edit a photo, the photo itself; your request to the Menu suggestion (meals, servings and an optional free-text note), sent with the title and classification of the candidate recipes and not stored by us; usage records (date and, where applicable, model, tokens and cost, without the content); and hand-written ingredients that are not in the vocabulary: the ones that recur go, without your name, into a list the curators use to expand the vocabulary; and new cuisines you type under "Other", which go, without your name, into a curators’ queue and, if approved, become an option for everyone.',
+      'generate recipes and dish images, choose the scene of the photo, translate recipes between Portuguese and English, extract ingredients from a text, suggest a menu from existing recipes, review images generated with a style request or edited by AI, expand the ingredient and cuisine vocabulary and enforce usage and cost limits.',
+      'performance of a contract — Art. 7, V; and legitimate interest for abuse prevention/cost control, for the curators’ review of images and for expanding the vocabulary — Art. 7, IX.',
+      'text requests and conversations are kept while the account exists (you can delete the conversation of each creation) and are erased if you delete your account; image requests are not stored, only the generated image. A menu suggestion is only stored as a planned meal if you accept it. Usage records are erased after 24 months (ingredient-extraction records, after 30 days); if you delete your account before that, they remain until then with nothing that identifies you.',
     ],
     s34Titulo: '3.4. Attribution of recipes imported from the web ("Web Discovery")',
     s34Corpo:
-      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX (with data made manifestly public — Art. 7, §4 as an alternative ground).',
+      'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX —, with a documented balancing test (the fact that the author published the name themselves weighs in favor).',
     s35Titulo: '3.5. Saved dietary restrictions',
     s35Valores: [
       'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile.',
-      'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider only within a request in which you keep them checked.',
-      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button) and revocable at any time by unchecking them all and saving.',
+      'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider (Anthropic, in the United States) only within a request in which you keep them checked.',
+      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button and states that the app and the AI run in the United States, Art. 33, VIII) and revocable at any time by unchecking them all and saving.',
       'until you uncheck them or delete your account; they are included in your data export and erased when the account is deleted.',
+    ],
+    s36Titulo: '3.6. Account security and abuse prevention',
+    s36Valores: [
+      'the IP address and browser (user agent) of each sign-in session; the IP address in the attempt limits of the account routes (such as sign-in, sign-up and password), erased within 2 hours after the last attempt, and, in memory only, to limit the pace of the Your Rights form and of Web Discovery; the reports you make about recipes or ratings; and moderation decisions about your content or your account (for example, an image hidden from the public or a block on image generation), with the reason.',
+      'protect your account, prevent abuse and excessive use of paid resources, and moderate public content.',
+      'legitimate interest — Art. 7, IX (with a recorded legitimate interest assessment).',
+      'a session lasts 7 days, renewed as you use the app, and is erased within 1 day after it expires, together with its IP address and browser; the IP address in attempt limits, within 2 hours after the last attempt; reports are kept while the reported content exists; moderation decisions, while the account or the content exists (if you delete your account, they remain with nothing that identifies you).',
+    ],
+    s37Titulo: '3.7. Technical logs',
+    s37Valores: [
+      'when something goes wrong, we log the shape of the page (without the full address or what was searched), the request method, the type of error and a technical code; if the error happened in your browser, also a short message of up to 160 characters in which emails, usernames, identifiers, addresses, tokens and long numbers are masked. Your browser sends this report without cookies; the sender’s IP address is used only in memory, to limit the number of reports, and is not stored. The log lines we write do not include IP addresses, cookies, your account identifier or the content of your recipes. On an unexpected server error, the platform (Next.js) also logs the technical message and the error trace, which in rare cases may include a piece of the data being processed. Vercel, which hosts the app, logs on its own the IP address, the browser and the address of each page requested (which may include a search term).',
+      'find and fix errors and keep the app secure.',
+      'legitimate interest — Art. 7, IX.',
+      'they do not go into our database: they stay in Vercel’s logs for up to 30 days and are erased by Vercel.',
+    ],
+    s38Titulo: '3.8. Data subject requests (Your rights form)',
+    s38Valores: [
+      'the type of request, the link or name you provide, your message, the language and, if you wish, an email for our reply; and an audit record of each request (dates, type, the channel, the reason for a refusal and, when something is removed, only a code that proves the removal, never the data itself).',
+      'handle your request and prove that we handled it.',
+      'compliance with a legal obligation — Art. 7, II (Arts. 18 and 19) — and, for the audit record and keeping the emails as proof, the regular exercise of rights — Art. 7, VI.',
+      'the request is erased 12 months after it is closed; the audit record, after 5 years; the emails exchanged through the privacy channel are kept for up to 5 years, as proof that we handled the request.',
+    ],
+    s39Titulo: '3.9. Search',
+    s39Valores: [
+      'the term you type in search, with or without an account.',
+      'find recipes: the term is turned into a search vector by Google (Gemini) and, if you are signed in and Web Discovery is on, sent to Brave restricted to the approved sites.',
+      'performance of a contract for account holders; legitimate interest — Art. 7, IX — for visitors.',
+      'we do not store the term (see 3.7 on the hosting logs).',
     ],
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
     s4Itens: [
-      'How: data is processed by electronic means, on servers of contracted service providers (see item 5). We apply appropriate security measures (Art. 46), including access control by authentication and authorization by ownership.',
-      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it (item 3) or for a legal obligation. When the purpose ends, we erase or anonymize the data (Art. 15/16). Specific terms follow the purpose of each processing activity described in item 3.',
+      'How: data is processed by electronic means, on servers of contracted service providers (item 5). We apply appropriate security measures (Art. 46): access only with authentication, passwords stored as hashes, connections always encrypted (HTTPS), removal of metadata from uploaded photos, and each piece of private content is shown only to its owner, with these exceptions: images generated with a style request of yours or edited by AI go into a review queue for the curators, who see the image, the recipe title, your name and your @; and the out-of-vocabulary ingredients that recur and the new cuisines you type under "Other" reach the curators without your name (item 3.3). Images live at public addresses that are not listed and are hard to guess.',
+      'For how long: we keep each piece of data only for as long as necessary for the purpose that justifies it or for a legal obligation. When the purpose ends, we erase or anonymize the data (Arts. 15, 16 and 12). The retention period of each processing activity is in item 3. We make a backup of the database every week and keep the three most recent: whatever is erased or anonymized leaves them within 4 weeks. Temporary copies of the database used to test changes are deleted when the test ends.',
     ],
 
     s5Titulo: '5. Who we share with (shared use) — Art. 9, V',
     s5Intro:
-      'We do not sell personal data. We share it with processors (service providers that process data on our behalf, under contract) strictly to operate the app:',
+      'We do not sell personal data. We share data only with the providers below, strictly to operate the app. Almost all of them are processors (they process data on our behalf, under contract); for Google sign-in, Google is an independent provider of your Google account (item 6):',
     s5Cabecalho: ['Provider', 'For what', 'Category'],
-    s5Prestadores: ['Vercel', 'Neon', 'Google (Gemini)', 'Anthropic (Claude)', 'Brave Search', 'Resend'],
+    s5Prestadores: [
+      'Vercel',
+      'Neon',
+      'Google (Gemini)',
+      'Anthropic (Claude)',
+      'Brave Search',
+      'Resend',
+      'Proton',
+      'Google (sign-in)',
+    ],
     s5ParaQue: [
-      'App hosting',
-      'Database',
-      'Image generation and search embeddings',
-      'Text generation/assistance',
+      'App hosting, image storage and technical logs',
+      'Database (in São Paulo)',
+      'Image generation and editing (including the photo you ask to edit) and search vectors',
+      'Recipe generation and conversation, ingredient extraction, Menu suggestion, translation and choice of the photo scene',
       'External link search in "Web Discovery"',
       'Transactional email (sign-up confirmation, password reset, privacy alerts)',
+      'Mailbox of the privacy channel',
+      '"Continue with Google" (optional) and display of your Google photo on your profile',
     ],
     s5Categorias: [
       'Infrastructure processor',
@@ -2001,15 +2046,18 @@ export const enUS: Messages = {
       'AI processor',
       'Search processor',
       'Infrastructure processor',
+      'Infrastructure processor',
+      'Sign-in provider',
     ],
-    s5Nota: 'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes.',
+    s5Nota:
+      'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes. If you use Google sign-in, your Google photo is loaded from Google’s servers, which receive the IP address of whoever sees your photo on Refogando (profile, cook search and list, follower lists and notifications).',
     s5Transferencia:
-      'International transfer: some providers process data outside Brazil, with the safeguards for international data transfer provided for in the LGPD (Arts. 33 to 36).',
+      'International transfer: the app’s functions run on Vercel, in the United States, and the database is in São Paulo; Anthropic, Google, Brave and Resend process data in the United States, and the mailbox is in Switzerland (Proton). We rely on Art. 33, IX of the LGPD: the transfer is necessary to perform the service you request (Art. 7, V) or to handle data subject requests (Art. 7, II). With Google (Gemini), the ANPD standard contractual clauses that Google incorporates into its contract also apply (Art. 33, II, "b"). Saved dietary restrictions are processed in the United States, by the app and the AI, only with your specific consent (Art. 33, VIII). No AI provider may use your content to train models.',
 
     s6Titulo: '6. Responsibilities of the processing agents — Art. 9, VI; Arts. 37–39',
     s6Itens: [
       'Fernando Lisboa acts as controller and is responsible for the decisions about the processing.',
-      'The providers in item 5 act as processors, processing data according to our instructions and under contract.',
+      'The providers in item 5 act as processors, processing data according to our instructions and under contract; for Google sign-in, Google acts as an independent provider of your Google account.',
       'We keep a record of processing operations (Art. 37) and adopt security measures (Art. 46). In the event of a security incident with relevant risk, we notify the ANPD and the data subjects (Art. 48).',
     ],
 
@@ -2027,19 +2075,56 @@ export const enUS: Messages = {
       'Information about the possibility of not giving consent and the consequences;',
       'Withdrawal of consent;',
       'When processing is based on legitimate interest, the right to object and to request information (Art. 18, §2, and Art. 37).',
+      'Review of decisions made solely by automated processing that affect your interests (Art. 20) — apart from automatic limits that are the same for everyone (daily AI quotas, attempt limits, removal of unconfirmed sign-ups), Refogando does not make that kind of decision; you can ask for a review through the privacy channel.',
     ],
     s7ComoExercer:
-      'How to exercise: use the Your Rights page (/seus-direitos) or write to privacidade@refogando.com. We respond within 15 days (Art. 19, II). You may also petition the National Data Protection Authority (ANPD).',
+      'How to exercise: download a copy of your data or delete your account in Edit profile → Your data; for anything else, use the Your Rights page (/seus-direitos) or write to privacidade@refogando.com. We respond within 15 calendar days (Art. 19, II), free of charge. You may also petition the National Data Protection Authority (ANPD).',
 
-    s8Titulo: '8. Changes to this policy',
-    s8Corpo:
-      'We may update this policy. When there is a relevant change, we will notify you via the Your Rights page (/seus-direitos) and the e-mail privacidade@refogando.com, and record the version and date of each change.',
+    // Section 8 (v3): Name / For what / Duration table, rows by index (s8Nomes[i], s8ParaQue[i], s8Duracoes[i]).
+    s8Titulo: '8. Cookies and browser storage',
+    s8Intro:
+      'We use only cookies and storage that are strictly necessary for the app to work. There are no advertising, analytics or third-party cookies; that is why we do not ask for consent for them (ANPD cookie guide).',
+    s8Cabecalho: ['Name', 'For what', 'Duration'],
+    s8Nomes: [
+      'Session cookie',
+      'locale',
+      'theme',
+      'Temporary Google sign-in cookies',
+      'localStorage',
+      'sessionStorage',
+    ],
+    s8ParaQue: [
+      'keep you signed in securely',
+      'remember the language you chose',
+      'remember the light or dark theme',
+      'protect Google sign-in against fraud',
+      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the notice about the change to restrictions',
+      'avoid repeated error reports and back-to-back reloads after an update, remember the search’s "Show all" and hold for a few seconds, until the next page, the request to replay the tour and the account-deletion notice',
+    ],
+    s8Duracoes: [
+      'until the session expires',
+      '1 year',
+      '1 year',
+      'minutes',
+      'the last tab, until you sign out; the rest, until you clear your browser data',
+      'until you close the tab',
+    ],
+
+    s9Titulo: '9. Changes to this policy',
+    s9Corpo:
+      'We may update this policy. Each version is recorded below, with its date and what changed. If a change alters something you authorized with your consent, we notify you prominently where you gave it, and you can withdraw it there.',
+    // One line per published version (newest last); the footer repeats the latest.
+    s9Historico: [
+      'v1 — 2026-07-03: first published version.',
+      'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
+      'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
+    ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
     resumoBTitulo: 'Summary of this section',
     resumoBItens: [
       'When you import a recipe from an external site, we keep two things about the origin: the author/site name and the link (URL) — solely to credit the source.',
-      'We do not copy the photo or the author text (an imported recipe is born without an image and without a description).',
+      'We do not copy the photo or the introductory text (an imported recipe is born without an image and without a description); the method comes as the site published it.',
       'An imported recipe is always private — you cannot publish or republish it.',
       'The personal data here is the name of the third-party recipe author — and you, the author, can request the removal of your name (the credit then shows only the site).',
     ],
@@ -2062,9 +2147,9 @@ export const enUS: Messages = {
     b3Rotulos: ['Data', 'What we do NOT collect', 'Purpose', 'Legal basis', 'Retention'],
     b3Valores: [
       'Only two attribution fields, stored solely on imported recipes: the human-readable author/site name and the public source URL. Every recipe that is not imported leaves these two fields empty.',
-      'We do not copy the photo (an imported recipe is born without an image) or the author text / headnote. This keeps the third-party data surface to a minimum and avoids copying the expressive layer protected by copyright.',
+      'We do not copy the photo (an imported recipe is born without an image) or the introductory text (headnote): from the recipe, we bring only the title, the ingredients and the method, the latter with the text as the site published it. The copy stays private, credited and cannot be published.',
       'Give credit to the source ("source: … (link)") — honoring the moral right of attribution (Law 9,610/98) — and send traffic back to the source site. Attribution is mandatory, not optional.',
-      'Legitimate interest — LGPD Art. 7, IX. Alternative/complementary ground: data made manifestly public by the data subject (Art. 7, §4).',
+      'Legitimate interest — LGPD Art. 7, IX —, with a documented balancing test (Art. 10). The fact that the author published the name with the recipe themselves weighs in favor in the balancing (Art. 7, §§3 and 4).',
       'While the imported recipe exists in the user’s private collection, or until the author requests removal of the name (item b.5), or until the user deletes the recipe. When the name is removed, the credit shows only the site (host) derived from the URL.',
     ],
 
@@ -2076,20 +2161,20 @@ export const enUS: Messages = {
     b5Intro:
       'If you are the author of a recipe that was imported into Refogando and want to remove your name from the attribution, you have that right (Art. 18, IV; and the right to object to processing based on legitimate interest, Art. 18, §2).',
     b5ComoFunciona: [
-      'Removal clears only the author name; the source URL remains, because attribution is mandatory. After removal, the credit is downgraded to the site name (host) derived from the URL, and the "view on site" link remains.',
-      'Removal only takes effect when there is in fact a human name distinct from the host; otherwise it is a no-op.',
+      'Standard removal clears only the name; the source URL remains, because crediting the source is mandatory, and the credit then shows the site name (host) derived from the URL. If the URL itself identifies you (for example, your name in the blog address) or if you object to the processing as a whole, we also unlink the URL.',
+      'If you own the site or the rights to the content and do not want copies on Refogando, we delete the recipes imported from your site and remove it from the list of approved sites.',
       'Removal is not reversible to the original name — which is appropriate for the right to removal.',
     ],
     b5Contato:
-      'Officer contact for this purpose: Fernando Lisboa — privacidade@refogando.com — response within 15 days. You can also use the public form on the Your Rights page (/seus-direitos).',
+      'Contact for this purpose: privacidade@refogando.com — response within 15 days. You can also use the public form on the Your Rights page (/seus-direitos).',
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v2',
+    rodapeVersao: 'v3',
     rodapeDataRotulo: 'Date',
     rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'Published — legal review in progress',
+    rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
 
   // "Your rights" page + public intake form (#399, GAP-2; part of #276). PUBLISHED: indexable, linked in
@@ -2102,32 +2187,32 @@ export const enUS: Messages = {
 
     titularATitulo: 'You have a Refogando account',
     titularACorpo:
-      'If you are an app user, many of your rights are handled directly in your account (profile, recipes, collections, Meal plan, shopping lists and Pantry). For anything not yet self-service, use the form below or the privacy email — always within the 15-day deadline.',
+      'If you are an app user, you download your data and delete your account in Edit profile → Your data, and you correct your profile, recipes, collections, Meal plan, shopping lists and Pantry directly in your account. For anything not self-service, write to privacidade@refogando.com — always within the 15-day deadline.',
     titularBTitulo: 'You are the author of a recipe imported from the web',
     titularBCorpo:
-      'If a recipe of yours was imported from an external site into Refogando, we keep only your name (credit) and the source link — never the photo or the authorial text. You may request removal of your name (the credit then shows only the site) or full removal. You do NOT need an account: use the form below.',
+      'If a recipe of yours was imported from an external site into Refogando, the only things we keep about you are your name (credit) and the source link; of the recipe itself, only the title, the ingredients and the method as the site published it, in a private copy that cannot be published — never the photo or the introductory text. You may request removal of your name (the credit then shows only the site), removal of the link as well or, if you own the site, removal of the copies. You do NOT need an account: use the form below.',
 
     fluxoTitulo: 'How a request works',
     fluxoPassos: [
       'You send the request via the form (or the privacy email), identifying the content (source link and/or displayed name) and what you want.',
       'We open a case and record the date of receipt — that is when the 15-day deadline starts to run (Art. 19, II).',
-      'We confirm your identity as simply as possible (usually correspondence with the contact already tied to the source). We do not require documents as a condition (Art. 6º, III).',
+      'We confirm your identity as simply as possible (usually correspondence with the contact already tied to the source). We do not require documents as a condition (Art. 6, III).',
       'We carry out the request and reply within the deadline, stating what was done — or, in case of a justified refusal, the reason.',
     ],
     prazoNota: 'Response time: up to 15 calendar days from receipt (LGPD, Art. 19, II).',
     naoExigimosDocumentos:
-      'We collect only the minimum needed to locate the content and handle the request. We do not require documents or additional personal data as a condition (Art. 6º, III — necessity).',
+      'We collect only the minimum needed to locate the content and handle the request. We do not require documents or additional personal data as a condition (Art. 6, III — necessity).',
 
     canalTitulo: 'Contact channel',
     canalCorpo:
-      'Data protection officer (DPO): Fernando Lisboa. Email for privacy and exercising your rights: privacidade@refogando.com.',
+      'Privacy and data subject rights channel: privacidade@refogando.com, handled by the controller, Fernando Lisboa. As a small-scale processing agent, Refogando has not appointed a data protection officer (CD/ANPD Resolution No. 2/2022, art. 11).',
 
     formTitulo: 'Open a request',
     formIntro:
       'Fill in your request below. Provide the source link and/or the displayed name so we can locate the content, and describe what you want.',
     formTipoRotulo: 'Request type',
     formTipoNameRemoval: 'Remove my name from the credit (keeping the link)',
-    formTipoFullRemoval: 'Fully remove the imported recipe',
+    formTipoFullRemoval: 'Remove the imported recipe or the link',
     formTipoOther: 'Another request about my data',
     formUrlRotulo: 'Source link (URL)',
     formUrlPlaceholder: 'https://source-site.com/recipe',
@@ -2138,7 +2223,7 @@ export const enUS: Messages = {
     formPedidoPlaceholder: 'Describe what you want (e.g., remove my name from the credit of this recipe).',
     formContatoRotulo: 'Email for our reply (optional)',
     formContatoPlaceholder: 'you@email.com',
-    formContatoDica: 'Optional. If provided, we use it only to reply to this request.',
+    formContatoDica: 'Optional. If provided, we use it only to reply to this request; the request is erased 12 months after it is closed.',
     formEnviar: 'Send request',
     formEnviando: 'Sending…',
     formSucessoTitulo: 'Request received',
@@ -2151,11 +2236,11 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v2',
+    rodapeVersao: 'v3',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-10-13',
+    rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
-    rodapeStatus: 'Published — legal review in progress',
+    rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
   // Quota-limit upsell card (billing Phase 2, flag-off). See pt-BR.ts for the full note.
   upsell: {

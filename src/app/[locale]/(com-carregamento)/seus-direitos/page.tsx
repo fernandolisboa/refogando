@@ -7,11 +7,12 @@ import { MESSAGES } from '@/i18n/messages'
  * Página "Seus direitos / Privacidade" + formulário público de intake (#399, GAP-2; parte de #276;
  * `docs/legal/takedown-e-remocao-titular.md` §2) — PUBLICADA.
  *
- * Por decisão do dono, a página foi ao ar SEM o sign-off jurídico (que segue PENDENTE em #276):
+ * Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o
+ * #276 (v3):
  *   • indexável (sem `robots: noindex`), listada no `sitemap.ts` e linkada no rodapé;
- *   • os placeholders (nome/e-mail do encarregado) foram resolvidos com os contatos reais, escritos
- *     DIRETO nas strings i18n (`messages.seusDireitos`/`messages.privacidade`) — o dono troca ali;
- *     o canal (e-mail + formulário) já EXISTE e é funcional (abre ticket + grava `DSAR_RECEIVED`).
+ *   • o contato do canal está escrito DIRETO nas strings i18n (`messages.seusDireitos`/
+ *     `messages.privacidade`) — o dono troca ali; o canal (e-mail + formulário) é funcional (abre ticket +
+ *     grava `DSAR_RECEIVED`).
  *
  * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
  */

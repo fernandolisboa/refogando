@@ -44,6 +44,19 @@ Rodar `/handoff` para gerar:
 - um **documento de handoff** auto-suficiente em **`docs/handoffs/`** (commitado — nunca `/tmp`), aterrado no **código/artefatos reais**: escopo, o que ler primeiro, ordem/dependências, princípios inegociáveis, landmines, critério de saída, gotchas de ambiente;
 - um **prompt de kickoff** copiável (bloco no fim da resposta, sem indentação e sem quebra de linha dentro dos parágrafos) apontando pro doc, pro usuário iniciar a próxima sessão sem re-derivar contexto.
 
+## Privacidade
+
+- **A política anda junto com o código.** PR que muda dado pessoal coletado, finalidade, fornecedor, prazo de
+  retenção ou conteúdo de log (este, se não couber no que a política já diz no item 3.7) atualiza **no mesmo PR**:
+  a política (seção `privacidade` de `src/i18n/messages/pt-BR.ts` e `en-US.ts`, com nova versão na seção
+  Alterações (`s9Historico`) e no rodapé), `docs/legal/registro-de-operacoes.md` e, se mudar uma decisão, o parecer
+  (`docs/legal/parecer-interno-*.md`).
+- **Textos que andam junto:** o rodapé de `seusDireitos` (versão, data e status) é igual ao da política, e um teste
+  (`test/ui/seus-direitos.test.tsx`) reprova se divergirem; `restricoesPerfil.consentimento` (o texto junto do botão
+  de salvar as restrições) nomeia o fornecedor de IA e o país onde o app e a IA funcionam, então trocar de
+  fornecedor ou de região muda esse texto também. Se a mudança alterar algo que a pessoa autorizou com
+  consentimento, ela precisa de aviso em destaque no lugar onde consentiu (LGPD art. 8º, §6).
+
 ## Banco de dados — landmines
 
 - **Produção é o Neon `misty-lake-71917023` (branch `main`, host `ep-gentle-morning-…`).** Nunca rode

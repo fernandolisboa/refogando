@@ -44,12 +44,23 @@ if (!authSecret && process.env.NODE_ENV !== 'test') {
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
 }
 
-const DROPPED_LOG_PREFIXES = ['Reset Password: User not found', 'Sign-up attempt for existing email']
+const DROPPED_LOG_PREFIXES = [
+  'Reset Password: User not found',
+  'Sign-up attempt for existing email',
+  // #276 (parecer interno de 2026-10-22, achado 20): o login com e-mail e senha que falha loga o e-mail digitado
+  // (`logger.error("User not found" | "Credential account not found" | "Password not found", { email })` em
+  // `better-auth/dist/api/routes/sign-in.mjs`). Os mesmos textos saem no login por username e por telefone, com
+  // o identificador digitado: plugins que o app não usa, descartados igual.
+  'User not found',
+  'Credential account not found',
+  'Password not found',
+]
 
 /**
- * Log do Better Auth (#469). Descarta as linhas que carregam um email digitado por terceiro: o do reset sem conta
- * e (#470) o da tentativa de cadastro com email já existente — que, além de PII, registraria exatamente o fato
- * que a resposta do cadastro esconde. O resto sai como antes.
+ * Log do Better Auth (#469). Descarta as linhas que carregam um email digitado por terceiro: o do reset sem conta,
+ * (#470) o da tentativa de cadastro com email já existente — que, além de PII, registraria exatamente o fato
+ * que a resposta do cadastro esconde — e (#276) as três do login que falha (conta inexistente, conta sem senha,
+ * senha ausente). O resto sai como antes.
  * `message` NÃO é sempre string: a lib passa o próprio `Error` em alguns catches (list-sessions, link de
  * conta OAuth) — tratar como string lançaria TypeError dentro do catch e engoliria o erro original.
  */

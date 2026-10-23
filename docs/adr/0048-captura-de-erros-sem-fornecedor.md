@@ -40,6 +40,8 @@ O repo já tem um estilo de log operacional: `[tag]` e `chave=valor`, uma linha 
 
 8. **Nenhuma mudança em texto legal**: as duas linhas não carregam dado pessoal. O acesso ao endpoint fica no log de requisições da Vercel com IP e user-agent, como qualquer outra requisição ao app.
 
+   > **Atualização 2026-10-22 (supera a decisão 8):** o sign-off interno (`docs/legal/parecer-interno-2026-10-22.md` §4, achado 7) pediu que os registros técnicos entrassem na política, e a Política de Privacidade v3 os descreve no item 3.7 (`privacidade.s37Valores` em `src/i18n/messages/`): legítimo interesse, campos mascarados, nenhum IP nem identificador de conta nas linhas que o app escreve, o IP do relato do navegador só em memória, até 30 dias na Vercel, e o aviso de que o log cru do Next pode trazer, em casos raros, um trecho do dado processado (achado 26). Daqui em diante, campo novo em log precisa caber no item 3.7, ou o mesmo PR muda a política (regra "Privacidade" do `CLAUDE.md`).
+
 ## Alternativas rejeitadas
 
 - **Sentry/Highlight/Datadog agora.** Exige operador novo no texto de privacidade e na lista de prestadores (#471), e manda stack e contexto para fora. A linha estruturada resolve o "o erro aparece" sem isso.

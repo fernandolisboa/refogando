@@ -5,9 +5,10 @@ import '@testing-library/jest-dom/vitest'
 
 /**
  * Teste jsdom (sem DB) da página PUBLICADA "Seus direitos" + formulário público de intake
- * (#399, GAP-2; parte de #276). Cobre:
- *  - render bilíngue (pt-BR/en-US) do fluxo (Art. 18/19) e do rodapé de status;
+ * (#399, GAP-2; parte de #276; v3, revisada no parecer interno de 2026-10-22). Cobre:
+ *  - render bilíngue (pt-BR/en-US) do fluxo (Art. 18/19) e do rodapé de status (o mesmo da política);
  *  - PUBLICAÇÃO: nenhum placeholder sobra (zero `[data-todo]`, zero `{`/`}`), e-mail real presente;
+ *  - canal sem encarregado nomeado (agente de pequeno porte);
  *  - o formulário: sucesso (POST → 201 → recibo com protocolo) e validação inline (sem round-trip);
  *  - paridade de comprimento das listas pt-BR/en-US da seção.
  */
@@ -32,7 +33,7 @@ afterEach(() => {
 })
 
 describe('SeusDireitos (#399 — página gated + intake)', () => {
-  it('pt-BR: renderiza título, fluxo e rodapé de status RASCUNHO', () => {
+  it('pt-BR: renderiza título, fluxo e rodapé de status da revisão', () => {
     renderAt('pt-BR')
     expect(screen.getByRole('heading', { level: 1, name: M.titulo })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: M.fluxoTitulo })).toBeInTheDocument()
@@ -57,9 +58,18 @@ describe('SeusDireitos (#399 — página gated + intake)', () => {
     expect(container.textContent).not.toContain('[validar')
   })
 
-  it('o e-mail real do encarregado aparece (canal publicado, não placeholder)', () => {
+  it('o e-mail real do canal aparece (canal publicado, não placeholder), sem encarregado nomeado', () => {
     const { container } = renderAt('pt-BR')
     expect(container.textContent).toContain('privacidade@refogando.com')
+    expect(container.textContent).not.toContain('Encarregado pelo tratamento de dados (DPO)')
+  })
+
+  it('rodapé igual ao da Política de Privacidade (mesma versão, data e status)', () => {
+    for (const loc of [ptBR, enUS]) {
+      expect(loc.seusDireitos.rodapeVersao).toBe(loc.privacidade.rodapeVersao)
+      expect(loc.seusDireitos.rodapeData).toBe(loc.privacidade.rodapeData)
+      expect(loc.seusDireitos.rodapeStatus).toBe(loc.privacidade.rodapeStatus)
+    }
   })
 
   it('formulário: envio válido → POST /api/legal/takedown e recibo com protocolo', async () => {

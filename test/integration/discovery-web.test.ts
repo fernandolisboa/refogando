@@ -20,7 +20,7 @@ import { seedSessionHeaders } from '../helpers/users'
  * vazio (sem tocar provedor); filtro de allowlist na SAÍDA (defesa em profundidade); teto diário; IP.
  */
 
-const DOMAINS = ['tudogostoso.com.br', 'cybercook.com.br']
+const DOMAINS = ['tudogostoso.com.br', 'receitasnestle.com.br']
 
 /** Liga a descoberta na web e define a allowlist no singleton app_config. */
 async function seedWebSearch(enabled: boolean, allowlist: string[]): Promise<void> {
@@ -131,11 +131,11 @@ describe('GET /api/discovery/web (#164)', () => {
   })
 
   it('defesa em profundidade: link cujo host saiu da allowlist é FILTRADO na saída', async () => {
-    // Allowlist só com cybercook; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
-    await seedWebSearch(true, ['cybercook.com.br'])
+    // Allowlist só com receitasnestle; o provedor (enlatado) tenta colar um link de domínio NÃO listado.
+    await seedWebSearch(true, ['receitasnestle.com.br'])
     setWebSearchProvider(
       new FakeWebSearchProvider([
-        { title: 'Bom', url: 'https://cybercook.com.br/r/1', sourceName: 'CyberCook' },
+        { title: 'Bom', url: 'https://receitasnestle.com.br/r/1', sourceName: 'Receitas Nestlé' },
         { title: 'Fora', url: 'https://evil.test/r/2', sourceName: 'Evil' },
       ]),
     )
@@ -143,7 +143,28 @@ describe('GET /api/discovery/web (#164)', () => {
     const res = await get('feijoada', { session: await authed() })
     const links = await results(res)
     // O Fake já filtra pela allowlist; o endpoint re-filtra (defesa dupla). Só o host listado sobra.
-    expect(links.map((l) => l.url)).toEqual(['https://cybercook.com.br/r/1'])
+    expect(links.map((l) => l.url)).toEqual(['https://receitasnestle.com.br/r/1'])
+  })
+
+  it('allowlist gravada ANTES do veto (parecer 2026-10-22): o domínio vetado sai na leitura, o resto segue', async () => {
+    // Linha de produção gravada quando cybercook/allrecipes ainda eram aceitos pelo PUT.
+    await seedWebSearch(true, ['tudogostoso.com.br', 'cybercook.com.br', 'www.allrecipes.com'])
+    let allowlistRecebida: string[] = []
+    setWebSearchProvider({
+      async search(_term, opts) {
+        allowlistRecebida = opts.allowlist
+        return [
+          { title: 'Mantido', url: 'https://www.tudogostoso.com.br/receita/1', sourceName: 'TudoGostoso' },
+          { title: 'Vetado', url: 'https://cybercook.com.br/receita/2', sourceName: 'CyberCook' },
+          { title: 'Vetado', url: 'https://www.allrecipes.com/recipe/3', sourceName: 'Allrecipes' },
+        ]
+      },
+    })
+
+    const res = await get('feijoada', { session: await authed() })
+    // O provedor só recebe o domínio mantido, e o filtro da saída tira os links dos vetados.
+    expect(allowlistRecebida).toEqual(['tudogostoso.com.br'])
+    expect((await results(res)).map((l) => l.url)).toEqual(['https://www.tudogostoso.com.br/receita/1'])
   })
 
   // ── Teto de GASTO diário (#464) ────────────────────────────────────────────────

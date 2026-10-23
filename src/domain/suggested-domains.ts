@@ -18,13 +18,15 @@ import { canonicalizeDomain } from '@/domain/web-search-config'
  * (#394): sugerir um host que a allowlist rejeita seria um chip morto e contradiz o guard de ToS — por
  * isso panelinha/guiadacozinha/foodnetwork saíram desta lista.
  *
- * SÓ entra aqui domínio com ToS LIDO e recomendação "manter" (`docs/legal/revisao-tos-allowlist.md` §4.4).
- * Os 7 em "revisão manual" (§4.5: tudogostoso, cybercook, receiteria, allrecipes, simplyrecipes,
- * seriouseats, bbcgoodfood) saíram: um clique os poria na allowlist sem a leitura verbatim do contrato.
- * Voltam para cá só depois dessa leitura. Um grupo vazio não é renderizado.
+ * SÓ entra aqui domínio com ToS LIDO e decisão "manter" (`docs/legal/revisao-tos-allowlist.md` §4.0,
+ * parecer interno de 2026-10-22 §3). Os 7 que estavam em "revisão manual" foram lidos ao vivo em
+ * 2026-10-22: tudogostoso voltou (mantido, como receitasnestle); cybercook, receiteria, allrecipes,
+ * simplyrecipes, seriouseats e bbcgoodfood foram para a `TOS_DENYLIST`. Os dois mantidos têm condição:
+ * reavaliar (ou pedir permissão escrita) antes de a importação entrar num plano pago. Não há domínio
+ * internacional mantido, então o grupo en-US fica vazio (e um grupo vazio não é renderizado).
  */
 export const SUGGESTED_DOMAINS: { 'pt-BR': string[]; 'en-US': string[] } = {
-  'pt-BR': ['receitasnestle.com.br'],
+  'pt-BR': ['tudogostoso.com.br', 'receitasnestle.com.br'],
   'en-US': [],
 }
 

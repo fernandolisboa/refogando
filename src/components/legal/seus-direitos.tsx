@@ -4,10 +4,10 @@
  * formulário público de intake embutido. Espelha `privacy-policy.tsx`: client component (acompanha o
  * locale em runtime), TODO o texto vem de `messages.seusDireitos` (i18n bilíngue) — nada hardcoded aqui.
  *
- * Publicada por decisão do dono, SEM o sign-off jurídico (que segue pendente em #276): os contatos
- * (nome/e-mail do encarregado) foram resolvidos com os valores reais direto nas strings i18n, e o canal
- * (e-mail + `TakedownForm`) já é funcional. `withPlaceholders` fica como rede de segurança (passthrough
- * hoje) — um teste garante que nenhum `{`/`}` sobra no render.
+ * Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o
+ * #276 (v3). O contato do canal (sem encarregado: agente de pequeno porte) está escrito direto nas strings
+ * i18n, e o canal (e-mail + `TakedownForm`) é funcional. `withPlaceholders` fica como rede de segurança
+ * (passthrough hoje) — um teste garante que nenhum `{`/`}` sobra no render.
  */
 import type { ReactNode } from 'react'
 import { useLocale } from '@/i18n/provider'
@@ -85,7 +85,7 @@ export function SeusDireitos() {
       <Note>{ph(m.prazoNota)}</Note>
       <Note>{ph(m.naoExigimosDocumentos)}</Note>
 
-      {/* Canal de contato — encarregado + e-mail de privacidade reais (publicados). */}
+      {/* Canal de contato — e-mail de privacidade real (publicado), atendido pelo controlador. */}
       <H2>{m.canalTitulo}</H2>
       <P>{ph(m.canalCorpo)}</P>
 
@@ -94,7 +94,7 @@ export function SeusDireitos() {
       <P>{ph(m.formIntro)}</P>
       <TakedownForm />
 
-      {/* Rodapé de status da PÁGINA: versão / data / status = RASCUNHO. */}
+      {/* Rodapé de status da PÁGINA: versão / data / status da revisão (o mesmo da política). */}
       <footer className="mt-12 border-t border-border pt-4 text-sm text-muted">
         <p>
           <span className="font-medium text-fg">{m.rodapeVersaoRotulo}:</span>{' '}
@@ -105,7 +105,7 @@ export function SeusDireitos() {
         </p>
         <p className="mt-1">
           <span className="font-medium text-fg">{m.rodapeStatusRotulo}:</span>{' '}
-          <span className="font-semibold text-aviso-fg">{m.rodapeStatus}</span>
+          <span className="font-semibold text-fg">{m.rodapeStatus}</span>
         </p>
       </footer>
     </Container>

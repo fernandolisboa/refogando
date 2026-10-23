@@ -353,21 +353,53 @@ describe('/api/admin/config — webSearch (#164, admin-only)', () => {
   it('PUT webSearch válido persiste (allowlist CANONICALIZADA) e GET relê (round-trip)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'ws-put@cfg.test', role: 'admin' })
     const putRes = await put(
-      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'cybercook.com.br'] } },
+      { webSearch: { enabled: true, allowlist: ['WWW.TudoGostoso.com.br', 'receitasnestle.com.br'] } },
       headers,
     )
     expect(putRes.status).toBe(200)
     const putBody = (await putRes.json()) as { webSearch: { enabled: boolean; allowlist: string[] } }
     expect(putBody.webSearch).toEqual({
       enabled: true,
-      allowlist: ['tudogostoso.com.br', 'cybercook.com.br'], // minúsculo, sem www.
+      allowlist: ['tudogostoso.com.br', 'receitasnestle.com.br'], // minúsculo, sem www.
     })
 
     const getBody = (await (await get(headers)).json()) as {
       webSearch: { enabled: boolean; allowlist: string[] }
     }
     expect(getBody.webSearch.enabled).toBe(true)
-    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'cybercook.com.br'])
+    expect(getBody.webSearch.allowlist).toEqual(['tudogostoso.com.br', 'receitasnestle.com.br'])
+  })
+
+  it('GET de linha gravada antes do veto (parecer 2026-10-22): tira só os vetados e mantém a flag e o resto', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'ws-legado@cfg.test', role: 'admin' })
+    // Grava direto no banco, como estaria em produção antes de os 6 domínios entrarem na denylist.
+    const legado = [
+      'tudogostoso.com.br',
+      'cybercook.com.br',
+      'receiteria.com.br',
+      'allrecipes.com',
+      'receitasnestle.com.br',
+      'bbcgoodfood.com',
+    ]
+    await getDb()
+      .insert(appConfig)
+      .values({ id: true, webSearchEnabled: true, webSearchAllowlist: legado })
+      .onConflictDoUpdate({
+        target: appConfig.id,
+        set: { webSearchEnabled: true, webSearchAllowlist: legado },
+      })
+    const body = (await (await get(headers)).json()) as {
+      webSearch: { enabled: boolean; allowlist: string[] }
+    }
+    expect(body.webSearch).toEqual({
+      enabled: true,
+      allowlist: ['tudogostoso.com.br', 'receitasnestle.com.br'],
+    })
+    // O loader (fonte única do endpoint e do guard de SSRF do import) vê o mesmo recorte.
+    expect((await loadAppConfig(getDb())).webSearch.allowlist).toEqual([
+      'tudogostoso.com.br',
+      'receitasnestle.com.br',
+    ])
   })
 
   it('PUT webSearch NÃO zera os outros eixos (defaultModel preservado)', async () => {
