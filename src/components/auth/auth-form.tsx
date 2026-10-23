@@ -76,6 +76,10 @@ export function AuthForm({
   // Re-sanitiza por garantia (a page já passou pela guarda anti open-redirect). Email → push; Google →
   // callbackURL do OAuth. '/' preserva o comportamento anterior quando não há returnTo.
   const dest = safeInternalPath(returnTo)
+  // #602: o `callbackURL` que vai ao Better Auth (Google, link de confirmação) sai SEM o `#…`: o originCheck dele
+  // recusa um caminho com fragmento (403 INVALID_CALLBACK_URL), e o "entrar de novo para excluir a conta" volta a
+  // `/me/profile#seus-dados`. Só a navegação do login por senha (`router.push(dest)`) leva o fragmento.
+  const callbackDest = dest.split('#')[0] || '/'
   // O link entrar↔criar-conta PROPAGA o returnTo (senão o anônimo que clicou "Seguir" o perderia ao
   // trocar pra "Criar conta"). Sem returnTo, fica o href nu de antes.
   const toggleBase = isSignUp ? '/sign-in' : '/sign-up'
@@ -141,7 +145,7 @@ export function AuthForm({
         // loga (`token: null`) → tela "confira seu email". Desligada, a resposta traz o token da sessão já
         // criada → entra direto, como antes. `callbackURL` = destino pós-confirmação (o link do e-mail).
         await signUp.email(
-          { name, email, password, callbackURL: dest },
+          { name, email, password, callbackURL: callbackDest },
           {
             onSuccess: (ctx: { data?: { token?: string | null } | null }) => {
               if (ctx.data?.token) enter()
@@ -165,7 +169,7 @@ export function AuthForm({
     setErrorKey(null)
     try {
       await signIn.social(
-        { provider: 'google', callbackURL: dest },
+        { provider: 'google', callbackURL: callbackDest },
         {
           onError: (ctx: AuthErrorCtx) => {
             setErrorKey(mapAuthError(ctx.error))
@@ -188,7 +192,7 @@ export function AuthForm({
             {messages.auth.confirmeEmailCorpo.replace('{email}', sentTo)}
           </AlertDescription>
         </Alert>
-        <ResendVerification email={sentTo} callbackURL={dest} />
+        <ResendVerification email={sentTo} callbackURL={callbackDest} />
         <p className="text-sm text-muted">
           {messages.auth.confirmeEmailJaTemConta}{' '}
           <Link href={signInHref} className="font-medium text-brand-ink hover:underline">
@@ -298,7 +302,7 @@ export function AuthForm({
         {errorKey === 'erroCredencialInvalida' && emailVerification && !isSignUp && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted">{messages.auth.dicaConfirmarEmail}</p>
-            <ResendVerification email={email} callbackURL={dest} />
+            <ResendVerification email={email} callbackURL={callbackDest} />
           </div>
         )}
 

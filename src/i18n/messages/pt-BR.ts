@@ -1096,6 +1096,9 @@ export const ptBR = {
     fechar: 'Fechar',
     erroExcluir: 'Não foi possível excluir sua conta. Tente de novo.',
     erroSessao: 'Sua sessão expirou. Entre de novo para excluir a conta.',
+    // #602: a exclusão exige ter entrado nas últimas 24 h. O link leva ao login e volta a "Seus dados".
+    reautenticar: 'Por segurança, entre de novo para excluir a conta.',
+    reautenticarLink: 'Entrar de novo',
     excluida: 'Sua conta foi excluída.',
   },
   // Perfil PÚBLICO (#129) — a página `/u/<handle>` que um Visitante anônimo vê: nome, avatar,

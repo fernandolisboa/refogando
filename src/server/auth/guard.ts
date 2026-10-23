@@ -2,6 +2,7 @@ import { getAuth } from '@/lib/auth'
 import { isRole, type Role } from '@/domain/user'
 import { DEFAULT_PLAN, isPlan, type Plan } from '@/domain/plan'
 import { decideRole } from '@/domain/access'
+import { isFreshSession } from '@/domain/fresh-session'
 
 /**
  * Gating server-side (issue #5, ADR-0011). Devolve um discriminated union
@@ -55,17 +56,37 @@ export async function requireSession(req: Request): Promise<GuardResult> {
  * `Request` (passam `await headers()` de `next/headers`). Fonte única: `requireSession` delega aqui.
  */
 export async function requireSessionFromHeaders(headers: Headers): Promise<GuardResult> {
+  return (await resolveSession(headers)).result
+}
+
+/** O guard de `requireSession` + quando a sessão foi CRIADA (para `requireFreshSession`). */
+async function resolveSession(headers: Headers): Promise<{ result: GuardResult; createdAt: Date | string | null }> {
   const raw = await getAuth().api.getSession({ headers })
   const user = raw?.user as RawSessionUser | undefined
   if (!user) {
-    return { ok: false, response: Response.json({ error: 'nao_autenticado' }, { status: 401 }) }
+    return { result: { ok: false, response: Response.json({ error: 'nao_autenticado' }, { status: 401 }) }, createdAt: null }
   }
   // E5 — soft-delete sem seam: a sessão é válida, mas a conta foi desativada (deletedAt
   // != null). Barramos com 401 conta_desativada. cookieCache fica OFF (senão ficaria stale).
   if (user.deletedAt != null) {
-    return { ok: false, response: Response.json({ error: 'conta_desativada' }, { status: 401 }) }
+    return { result: { ok: false, response: Response.json({ error: 'conta_desativada' }, { status: 401 }) }, createdAt: null }
   }
-  return { ok: true, session: toSession(user) }
+  const createdAt = (raw?.session as { createdAt?: Date | string } | undefined)?.createdAt ?? null
+  return { result: { ok: true, session: toSession(user) }, createdAt }
+}
+
+/**
+ * #602 — `requireSession` + sessão RECENTE (criada há menos de `FRESH_SESSION_MAX_AGE_MS`, `domain/fresh-session`)
+ * para ação destrutiva, como excluir a conta. Sessão antiga ⇒ 403 `reautenticar` (a pessoa entra de novo e volta).
+ * A idade conta da CRIAÇÃO: a renovação diária do Better Auth (`updateAge`) mexe só em `expiresAt`.
+ */
+export async function requireFreshSession(req: Request, now: Date = new Date()): Promise<GuardResult> {
+  const { result, createdAt } = await resolveSession(req.headers)
+  if (!result.ok) return result
+  if (!isFreshSession(createdAt, now)) {
+    return { ok: false, response: Response.json({ error: 'reautenticar' }, { status: 403 }) }
+  }
+  return result
 }
 
 /** 401 sem sessão / conta desativada; 403 se papel < mínimo (fail-closed, E11). */

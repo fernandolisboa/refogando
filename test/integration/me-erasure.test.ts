@@ -77,6 +77,28 @@ describe('/api/me/erasure — eliminação conservadora do titular (#401)', () =
     await expect(res.json()).resolves.toMatchObject({ error: 'nao_autenticado' })
   })
 
+  it('#602 — sessão criada há mais de 24 h → 403 reautenticar, nada é apagado; renovar não rejuvenesce', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'sessao-antiga@erasure.test' })
+    // Criada há 2 dias e renovada agora (`updateAge` mexe em expiresAt/updatedAt, nunca em createdAt).
+    await getDb()
+      .update(session)
+      .set({ createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), updatedAt: new Date() })
+      .where(eq(session.userId, userId))
+
+    const res = await post({ confirm: true }, headers)
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({ error: 'reautenticar' })
+    const u = await readUser(userId)
+    expect(u.email).toBe('sessao-antiga@erasure.test')
+    expect(u.deletedAt).toBeNull()
+    expect(await countSessions(userId)).toBe(1)
+
+    // Entrou de novo (sessão nova): a exclusão passa.
+    await getDb().update(session).set({ createdAt: new Date() }).where(eq(session.userId, userId))
+    expect((await post({ confirm: true }, headers)).status).toBe(200)
+    expect((await readUser(userId)).deletedAt).not.toBeNull()
+  })
+
   it('sem confirmação → 400 confirmacao_necessaria (não elimina)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'semconfirma@erasure.test' })
 

@@ -1023,6 +1023,8 @@ export const enUS: Messages = {
     fechar: 'Close',
     erroExcluir: "We couldn't delete your account. Try again.",
     erroSessao: 'Your session expired. Sign in again to delete your account.',
+    reautenticar: 'For your security, sign in again to delete your account.',
+    reautenticarLink: 'Sign in again',
     excluida: 'Your account was deleted.',
   },
   // PUBLIC profile (#129) — the `/u/<handle>` page an anonymous Visitor sees: name, avatar, bio,

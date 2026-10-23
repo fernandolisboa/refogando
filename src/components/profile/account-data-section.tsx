@@ -34,7 +34,7 @@ export function AccountDataSection() {
   if (!authed && !pendente) return null
 
   return (
-    <section aria-labelledby="seus-dados-titulo" className="flex max-w-xl flex-col gap-4 border-t border-border pt-8">
+    <section id="seus-dados" aria-labelledby="seus-dados-titulo" className="flex max-w-xl flex-col gap-4 border-t border-border pt-8">
       <div className="flex flex-col gap-1">
         <h2 id="seus-dados-titulo" className="font-display text-xl font-semibold tracking-tight text-fg">
           {m.titulo}
@@ -50,6 +50,7 @@ export function AccountDataSection() {
         <DeleteAccountDialog
           triggerDescribedBy="seus-dados-excluir-dica"
           userId={session.data?.user.id}
+          sessionCreatedAt={session.data?.session.createdAt}
           dl={dl}
           onPendingChange={setPendente}
         />
