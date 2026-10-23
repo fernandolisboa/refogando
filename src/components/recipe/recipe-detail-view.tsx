@@ -188,8 +188,10 @@ export function RecipeDetailView({
           </NameHeading>
           {/* Selo "tradução automática" (#161): toque LEVE (text-xs muted), guiado SÓ pela
               proveniência (`autoTranslationSignal`). Reusa o rótulo i18n já existente
-              (busca.traducaoAutomatica) — mesmo conceito do kicker da Busca/Feed, não duplicar. */}
-          {view.autoTranslationSignal && (
+              (busca.traducaoAutomatica) — mesmo conceito do kicker da Busca/Feed, não duplicar. Com o
+              texto da IA (#618) ele some, como no kicker: ali `automatica_nao_revisada` no original é texto da
+              IA, não tradução, e o selo "texto gerado por IA" acima já diz isso. */}
+          {view.autoTranslationSignal && !view.textAiGenerated && (
             <span className="text-xs font-medium text-muted">{m.busca.traducaoAutomatica}</span>
           )}
         </div>

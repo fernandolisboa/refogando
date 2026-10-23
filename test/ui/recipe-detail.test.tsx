@@ -396,6 +396,12 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.getByText(M.busca.seloComunidade)).toBeInTheDocument()
   })
 
+  it('T11d — #618: com textAiGenerated o "tradução automática" some (o original da IA não é tradução)', () => {
+    renderView(baseView({ origin: 'ai_chat', textAiGenerated: true, autoTranslationSignal: true }))
+    expect(screen.getByText(M.busca.textoSeloIa)).toBeInTheDocument()
+    expect(screen.queryByText(M.busca.traducaoAutomatica)).toBeNull()
+  })
+
   it('T11c — #597: sem textAiGenerated não há selo de texto (a regra por origem está em recipe-read e recipes-get)', () => {
     renderView(baseView({ origin: 'catalog' }))
     expect(screen.queryByText(M.busca.textoSeloIa)).toBeNull()
