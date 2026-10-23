@@ -2117,7 +2117,7 @@ export const enUS: Messages = {
     s9Historico: [
       'v1 — 2026-07-03: first published version.',
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
-      'v3 — 2026-10-22: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
+      'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2238,7 +2238,7 @@ export const enUS: Messages = {
     rodapeVersaoRotulo: 'Version',
     rodapeVersao: 'v3',
     rodapeDataRotulo: 'Date',
-    rodapeData: '2026-10-22',
+    rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },

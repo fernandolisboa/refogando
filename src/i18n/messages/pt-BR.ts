@@ -2226,7 +2226,7 @@ export const ptBR = {
     s9Historico: [
       'v1 — 2026-07-03: primeira versão publicada.',
       'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
-      'v3 — 2026-10-22: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
+      'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2347,7 +2347,7 @@ export const ptBR = {
     rodapeVersaoRotulo: 'Versão',
     rodapeVersao: 'v3',
     rodapeDataRotulo: 'Data',
-    rodapeData: '2026-10-22',
+    rodapeData: '2026-10-23',
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },

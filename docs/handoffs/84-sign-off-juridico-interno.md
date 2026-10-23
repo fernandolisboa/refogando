@@ -1,6 +1,6 @@
 # Handoff 84 — Sign-off jurídico interno: política v3, Seus direitos v3 e allowlist reduzida (#276)
 
-**Sessão:** 2026-10-22. **Branch:** `wip/pr-c1-276` (sobre a main em `5b4580d`). **Migração:** nenhuma neste PR. Três PRs saem do mesmo sign-off e entram nesta ordem: **PR A** (#473, #596), PR #… (preencher); **PR B** (#595), PR #… (preencher); **PR C1** (#276, este), PR #… (preencher). As decisões estão em `docs/legal/parecer-interno-2026-10-22.md`; os prazos de retenção, no ADR-0050 (vem no PR A, com o handoff 82).
+**Sessão:** 2026-10-22 e 2026-10-23. **Branch:** `claude/project-thread-yl7417` (sobre a main em `9f0281d`). **Migração:** nenhuma neste PR. Três PRs saem do mesmo sign-off e entram nesta ordem: **PR A** (#473, #596), PR #607 (mergeado); **PR B** (#595), PR #608 (mergeado); **PR C1** (#276, este PR). Depois dele vem o PR C2 (Termos de Uso e idade mínima de 16 anos, handoff 85). As decisões estão em `docs/legal/parecer-interno-2026-10-22.md`; os prazos de retenção, no ADR-0050 (veio no PR A, com o handoff 83).
 
 ## 1. O que o sign-off decidiu
 
@@ -33,9 +33,9 @@ O controlador (Fernando Lisboa) pediu que as pendências jurídicas fossem anali
 
 ## 2. O que mudou, por PR
 
-- **PR A (#473, #596), PR #… (preencher):** eliminação da conta apaga na hora o conteúdo privado e anonimiza o público; cron de retenção com os prazos do parecer §5 (rate limit limpo de hora em hora, por isso a política diz "até 2 horas"); EXIF removido no servidor do avatar e da foto de receita; ADR-0050 e handoff 82. Também traz as suas cópias do parecer e do registro; na rebase vale o que está aqui (o coordenador reconcilia). PR A mexe em `s32Valores[3]` e `s33Valores[3]`: na rebase vale o texto da v3.
-- **PR B (#595), PR #… (preencher):** "Editar perfil → Seus dados" com exportação completa e exclusão da conta (achado 1) e a linha com link para a política no cadastro (achado 16). A v3 já cita esse caminho; o rótulo en-US usado aqui é "Edit profile → Your data", o mesmo do PR B.
-- **PR C1 (#276, este), PR #… (preencher), fecha o #276:**
+- **PR A (#473, #596), PR #607:** eliminação da conta apaga na hora o conteúdo privado e anonimiza o público; cron de retenção com os prazos do parecer §5 (rate limit limpo de hora em hora, por isso a política diz "até 2 horas"); EXIF removido no servidor do avatar e da foto de receita; ADR-0050 e handoff 83. Também traz as suas cópias do parecer e do registro; na rebase vale o que está aqui (o coordenador reconcilia). PR A mexe em `s32Valores[3]` e `s33Valores[3]`: na rebase vale o texto da v3.
+- **PR B (#595), PR #608:** "Editar perfil → Seus dados" com exportação completa e exclusão da conta (achado 1) e a linha com link para a política no cadastro (achado 16). A v3 já cita esse caminho; o rótulo en-US usado aqui é "Edit profile → Your data", o mesmo do PR B.
+- **PR C1 (#276, este PR), fecha o #276:**
   - Docs: parecer e registro em `docs/legal/`; registro do incidente; status dos outros docs de `docs/legal/` trocados por linha datada apontando para o parecer; LIA aprovada; `revisao-tos-allowlist.md` §4.0; nota no ADR-0019; frase em `docs/observabilidade.md`; seção "Privacidade" no `CLAUDE.md`.
   - **Política v3:** itens 3.1 a 3.9 (novos 3.6 segurança e prevenção de abuso, 3.7 registros técnicos, 3.8 pedidos de titulares, 3.9 busca); §5 vira tabela por prestador (8 linhas, com Proton e o login do Google) e a transferência é descrita por fornecedor; §7 com 11 direitos; §8 nova de cookies e armazenamento no navegador (tabela, sem banner: só há cookies estritamente necessários); §9 "Alterações" com histórico v1/v2/v3; sem "encarregado (DPO)"; rodapé `v3`, `2026-10-22`, "Publicada — revisão interna concluída em 2026-10-22". Componente ganhou `Tabela` (linha *i* = `colunas[c][i]`).
   - **Seus direitos v3:** self-service em "Editar perfil → Seus dados"; o autor importado pede a remoção do nome, também do link ou, se é dono do site, das cópias; pedido apagado 12 meses depois de encerrado; mesmo rodapé da política.
@@ -82,7 +82,7 @@ Ligar cobrança; abrir CNPJ; ligar analytics; abrir a Descoberta para a web aber
 
 ### Frase da política → onde o código a cumpre
 
-Cada prazo ou comportamento que a v3 afirma, e o que o torna verdade. **PR A** e **PR B** marcam o que só vale depois que esses PRs entrarem na main; sem eles, a frase fica falsa. "main" = já está em `5b4580d`.
+Cada prazo ou comportamento que a v3 afirma, e o que o torna verdade. **PR A** e **PR B** marcam o que só vale depois que esses PRs entrarem na main; sem eles, a frase fica falsa. "main" = já estava em `5b4580d`, antes do PR A. PR A e PR B já estão na main (`9f0281d`), então todas as linhas valem no merge deste PR.
 
 | Frase da política (item) | Onde o código a cumpre | Vale com |
 |---|---|---|
