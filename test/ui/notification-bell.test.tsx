@@ -33,6 +33,7 @@ vi.mock('@/lib/auth-client', () => ({ useSession: () => mockSession }))
 import { LocaleProvider } from '@/i18n/provider'
 import { NotificationBell } from '@/components/notification-bell'
 import { ptBR } from '@/i18n/messages/pt-BR'
+import { formatDateTime } from '@/domain/relative-time'
 
 const authed = () => fakeSession({ data: { user: { id: 'u1' } } })
 
@@ -218,5 +219,53 @@ describe('NotificationBell (#371)', () => {
     expect(await screen.findByText(M.contaRestringida)).toBeInTheDocument()
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+  it('cada item mostra quando aconteceu: relativo até uma semana, depois a data; instante completo no title', async () => {
+    const user = userEvent.setup()
+    mockSession = authed()
+    const tresHoras = new Date(Date.now() - 3 * 3600_000 - 60_000).toISOString()
+    mockFetch({
+      notifications: [
+        { id: 'n1', type: 'new_follower', refs: { actorName: 'Ana', actorHandle: 'ana' }, actorImage: null, readAt: null, createdAt: tresHoras },
+        { id: 'n2', type: 'account_restricted', refs: {}, actorImage: null, readAt: null, createdAt: '2026-01-01T15:00:00Z' },
+      ],
+      unreadCount: 2,
+      nextCursor: null,
+    })
+    renderBell()
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
+    const recente = await screen.findByText('há 3 horas')
+    expect(recente.tagName).toBe('TIME')
+    expect(recente).toHaveAttribute('dateTime', tresHoras)
+    expect(recente).toHaveAttribute('title', formatDateTime(tresHoras, 'pt-BR'))
+    // O menuitem anuncia o quando junto do texto (leitor de tela).
+    expect(screen.getByRole('menuitem', { name: 'Ana começou a seguir você há 3 horas' })).toBeInTheDocument()
+    expect(screen.getByText('1 de jan. de 2026')).toHaveAttribute('dateTime', '2026-01-01T15:00:00Z')
+  })
+
+  it('en-US: tempo relativo em inglês', async () => {
+    const user = userEvent.setup()
+    mockSession = authed()
+    mockFetch({
+      notifications: [
+        {
+          id: 'n1',
+          type: 'new_follower',
+          refs: { actorName: 'Ana' },
+          actorImage: null,
+          readAt: null,
+          createdAt: new Date(Date.now() - 2 * 86400_000 - 60_000).toISOString(),
+        },
+      ],
+      unreadCount: 1,
+      nextCursor: null,
+    })
+    render(
+      <LocaleProvider initialLocale="en-US">
+        <NotificationBell />
+      </LocaleProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /Notifications/ }))
+    expect(await screen.findByText('2 days ago')).toBeInTheDocument()
   })
 })
