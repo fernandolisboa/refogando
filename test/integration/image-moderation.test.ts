@@ -145,7 +145,7 @@ describe('Moderar só a imagem (#133)', () => {
     const rows = await notifs()
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ type: 'image_moderated', recipeId: id, moderationCategory: 'direitos_autorais' })
-    // O texto livre do Curador fica só na imagem (nota interna); a notificação não tem coluna de texto.
+    // O texto livre do Curador fica na linha da imagem (sai na exportação do dono, não na notificação, que não tem coluna de texto).
     expect((await readImage(imageId)).moderatedReason).toBe('foto alheia')
 
     // 2ª moderação (outro report, outra categoria) não re-notifica nem troca a categoria.
