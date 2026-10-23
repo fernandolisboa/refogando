@@ -2211,7 +2211,7 @@ export const ptBR = {
       'lembrar o idioma escolhido',
       'lembrar o tema claro ou escuro',
       'proteger o login com o Google contra fraude',
-      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu o aviso de mudança das restrições',
+      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu os avisos de mudança (o das restrições e o dos Termos e da Política)',
       'evitar relatos de erro repetidos e recargas em sequência após uma atualização, lembrar o "Mostrar tudo" da busca e guardar por alguns segundos, até a página seguinte, o pedido de refazer o tour e o aviso da exclusão da conta',
     ],
     s8Duracoes: [
@@ -2459,6 +2459,13 @@ export const ptBR = {
     rodapeVersao: 'v1',
     rodapeDataRotulo: 'Data',
     rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+  },
+  // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta anterior à publicação
+  // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e
+  // `privacidade.titulo` e o botão `fechar`. Mudança nova = texto novo aqui + `AVISO_LEGAL_VERSAO` nova.
+  avisoLegal: {
+    texto: 'Publicamos os Termos de Uso e atualizamos a Política de Privacidade. Leia o que mudou.',
+    fechar: 'Entendi',
   },
   // Cartão de upsell no LIMITE de cota (Fase 2 de billing, flag-off — docs/reports/
   // fase2-billing-decisao.md §6 item 5). Aparece JUNTO da mensagem de limite já existente

@@ -2102,7 +2102,7 @@ export const enUS: Messages = {
       'remember the language you chose',
       'remember the light or dark theme',
       'protect Google sign-in against fraud',
-      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the notice about the change to restrictions',
+      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the change notices (the one about restrictions and the one about the Terms and the Policy)',
       'avoid repeated error reports and back-to-back reloads after an update, remember the search’s "Show all" and hold for a few seconds, until the next page, the request to replay the tour and the account-deletion notice',
     ],
     s8Duracoes: [
@@ -2343,6 +2343,11 @@ export const enUS: Messages = {
     rodapeVersao: 'v1',
     rodapeDataRotulo: 'Date',
     rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+  },
+  // Legal-change notice (ADR-0051), in the layout, only for accounts older than the publication. See pt-BR.ts.
+  avisoLegal: {
+    texto: 'We have published the Terms of Use and updated the Privacy Policy. Read what changed.',
+    fechar: 'Got it',
   },
   // Quota-limit upsell card (billing Phase 2, flag-off). See pt-BR.ts for the full note.
   upsell: {
