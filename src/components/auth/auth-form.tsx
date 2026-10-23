@@ -31,12 +31,13 @@
  * Google ligado (o Google cria a conta no primeiro acesso), depois do botão do Google. Os dois botões que criam
  * conta apontam para a linha (`aria-describedby`): o leitor de tela a ouve no momento de aceitar.
  */
-import { Fragment, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
 import { localePrefixedPath } from '@/i18n/locale-path'
 import { signIn, signUp } from '@/lib/auth-client'
+import { holdSessionLossReload } from '@/components/session-loss-guard'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
 import { ResendVerification } from '@/components/auth/resend-verification'
@@ -126,10 +127,25 @@ export function AuthForm({
     </p>
   )
 
+  // Entrar como OUTRA conta estando logado troca a sessão: o SessionLossGuard recarregaria a tela de login
+  // por cima do `router.push(dest)`. Segura do envio até sair desta tela (desmontar) ou o pedido não navegar;
+  // ao soltar, uma troca vista no meio recarrega o destino, limpando o estado da conta anterior.
+  const releaseRef = useRef<(() => void) | null>(null)
+  useEffect(
+    () => () => {
+      releaseRef.current?.()
+      releaseRef.current = null
+    },
+    [],
+  )
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSubmitting(true)
     setErrorKey(null)
+    releaseRef.current?.()
+    releaseRef.current = holdSessionLossReload()
+    let navigating = false
     try {
       const onError = (ctx: AuthErrorCtx) => {
         setErrorKey(mapAuthError(ctx.error))
@@ -137,6 +153,7 @@ export function AuthForm({
       // Navega só no onSuccess (depois do ciclo completo) — evita flash de "Entrar"
       // pós-login. refresh() revalida a sessão da chrome; push('/') leva pra Busca (home).
       const enter = () => {
+        navigating = true
         router.refresh()
         router.push(dest)
       }
@@ -162,6 +179,10 @@ export function AuthForm({
       setErrorKey('erroRede')
     } finally {
       setSubmitting(false)
+      if (!navigating) {
+        releaseRef.current?.()
+        releaseRef.current = null
+      }
     }
   }
 

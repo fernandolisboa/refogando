@@ -75,6 +75,23 @@ export async function waitForHydration(page: Page): Promise<void> {
   await page.locator('[data-tour="conta"] :is(a,button)').first().waitFor({ state: 'attached' })
 }
 
+type MarkedWindow = Window & { __e2eMarca?: boolean }
+
+/** Marca a página viva. Uma recarga de verdade apaga a marca; trocar só o estado do React não apaga. */
+export async function markPage(page: Page): Promise<void> {
+  await page.evaluate(() => ((window as MarkedWindow).__e2eMarca = true))
+}
+
+/**
+ * Espera a página marcada recarregar (o SessionLossGuard ao sair, ADR-0028) e hidratar de novo. No meio da
+ * recarga o contexto some e o evaluate lança: conta como "ainda não" e tenta de novo.
+ */
+export async function waitForReload(page: Page): Promise<void> {
+  const marcada = () => page.evaluate(() => (window as MarkedWindow).__e2eMarca ?? false).catch(() => true)
+  await expect.poll(marcada, { message: 'a página recarregou' }).toBe(false)
+  await waitForHydration(page)
+}
+
 /** Abre o menu hambúrguer (celular) e devolve o painel. */
 export async function openMobileMenu(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: t.nav.abrirMenu }).click()

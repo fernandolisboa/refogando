@@ -9,6 +9,7 @@ import { RecipeVariantProvider } from '@/components/recipe/recipe-variant-provid
 import { HomeSearchProvider } from '@/components/recipe/home-search-context'
 import { RestricoesPerfilProvider } from '@/components/profile/restricoes-perfil-provider'
 import { AppUpdateGuard } from '@/components/app-update-guard'
+import { SessionLossGuard } from '@/components/session-loss-guard'
 import { ThemeCookieSync } from '@/components/theme-cookie-sync'
 import { SiteHeader } from '@/components/site-header'
 import { SectionTabs } from '@/components/nav/section-tabs'
@@ -127,6 +128,9 @@ export default async function LocaleLayout({
             (retorna null), independente de provider/locale/sessão. Montado incondicionalmente ⇒
             o visitante anônimo também se beneficia do reload quieto pós-deploy. */}
         <AppUpdateGuard />
+        {/* Sair (aqui ou em outra aba) ou perder a sessão recarrega a página: telas protegidas não ficam
+            abertas com dado já carregado (ADR-0028, Adendo 2026-10-23). Sem DOM. */}
+        <SessionLossGuard />
         {/* Reaplica o tema do cookie quando o React monta o `<html>` no client sem o script do `<head>` ter
             rodado (404/500 da página da receita, erro de hidratação). Sem DOM; no caminho normal é no-op. */}
         <ThemeCookieSync />

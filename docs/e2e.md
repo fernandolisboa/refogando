@@ -7,7 +7,7 @@ Issue #589, decisão no [ADR-0047](adr/0047-e2e-fumaca-playwright-modo-fake.md).
 | Spec | Fluxo |
 | --- | --- |
 | `visitante` | home `/` → `/pt-BR`, Busca "cenoura", detalhe pelo slug, reload 200; tema escuro do cookie em receita, home e 404, troca para o claro e persiste; link "Termos de Uso" do rodapé → `/pt-BR/termos` e `/en-US/termos` 200 (ADR-0051) |
-| `conta-e-navegacao` | cadastro pela UI → tour de boas-vindas → dispensa → sai → entra; logado, cada aba de cada seção marca `aria-current`, e "Planejar" lembra a última aba |
+| `conta-e-navegacao` | cadastro pela UI → tour de boas-vindas → dispensa → sai → entra; logado, cada aba de cada seção marca `aria-current`, e "Planejar" lembra a última aba; "Sair" recarrega esta aba e outra aberta numa tela pessoal (ADR-0028, Adendo 2026-10-23) |
 | `criar-receita` | gaveta Criar → Prompt aberto → Gerar → "Ver receita" → página da Receita, sem diálogo sobrando (#581) |
 | `cardapio-lista` | Receita do seed → Adicionar ao cardápio → Cardápio da semana → lista de compras da semana inteira |
 | `despensa` | ovo e cenoura persistem → "Falta pouco" com farinha e açúcar → "Pôr o que falta na lista" → planeja → "Cozinhei" esvazia a Despensa |

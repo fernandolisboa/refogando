@@ -13,9 +13,9 @@ import { FIXED_BRIEFINGS, type ComparisonResponse } from '@/domain/prompt-compar
  * o `maxDuration` de 60s (cada lado é uma geração de ~8-15s no Opus). NÃO persiste NADA — o único toque
  * de DB é a leitura de `app_config` para resolver o modelo, igual às rotas de geração.
  *
- * SEGURANÇA: `requireRole('admin')` é a defesa de ROTA (o `SectionGate min='admin'` guarda a página). O
- * `requireRole` é fail-OPEN por bug conhecido para papel null/desconhecido, mas aqui só um AUTENTICADO
- * com papel < admin chega, e `decideRole` o barra (403). Read-only + admin-only ⇒ sem quota (como o probe).
+ * SEGURANÇA: `requireRole('admin')` é a defesa de ROTA (o `SectionGate min='admin'` guarda a página): 401 sem
+ * sessão, 403 para papel abaixo de admin ou desconhecido (fail-closed desde #51; `test/unit/admin-api-guard`
+ * reprova rota do Console sem a guarda). Read-only + admin-only ⇒ sem quota (como o probe).
  *
  * Runtime nodejs (SDK Anthropic/Gemini + postgres-js exigem Node). `maxDuration=60` dá folga para os dois
  * lados (+ imagem opcional) de uma fixture.

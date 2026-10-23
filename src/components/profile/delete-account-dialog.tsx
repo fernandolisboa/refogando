@@ -36,7 +36,9 @@
  * com teto de 3s (o servidor já apagou as sessões; isto limpa o cookie e o atom, e o teto impede um
  * `signOut` offline de travar a tela) e recarrega a home do idioma com `location.assign`. Recarga de
  * verdade, não `router.push`: limpa todo estado privado em memória (as restrições salvas do
- * `RestricoesPerfilProvider`, notificações, o atom da sessão).
+ * `RestricoesPerfilProvider`, notificações, o atom da sessão). O pedido inteiro roda sob
+ * `holdSessionLossReload()`: sem ele o `SessionLossGuard` recarregaria a página atual ao ver a sessão
+ * sumir (no `signOut` ou num refetch no meio do pedido) e a saída perderia o destino e o aviso.
  * ADR-0010: route handler via fetch, nunca Server Action.
  */
 import Link from 'next/link'
@@ -47,6 +49,7 @@ import { tourStorageKey } from '@/domain/onboarding-tour'
 import { avisoLegalStorageKey } from '@/domain/legal-notice'
 import { isFreshSession } from '@/domain/fresh-session'
 import { forgetTabs } from '@/components/nav/last-tab-store'
+import { holdSessionLossReload } from '@/components/session-loss-guard'
 import { sectionLabel } from '@/components/nav/nav-labels'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -207,6 +210,8 @@ export function DeleteAccountDialog({
     if (!entendo || busy || baixando || erro === 'reautenticar') return
     // O `userId` deste render: a sessão pode virar `null` no meio do pedido.
     const uid = userId
+    // Segura a recarga do SessionLossGuard: quem sai daqui navega por conta própria. Solta ao desistir.
+    const release = holdSessionLossReload()
     onPendingChange(true)
     setStatus('erasing')
     setErro(null)
@@ -226,6 +231,7 @@ export function DeleteAccountDialog({
       setStatus('idle')
       setErro('reautenticar')
       onPendingChange(false)
+      release()
       return
     }
     const ambiguo = res === null || res.status >= 500
@@ -233,6 +239,7 @@ export function DeleteAccountDialog({
     setStatus('idle')
     setErro('falha')
     onPendingChange(false)
+    release()
   }
 
   return (
