@@ -208,6 +208,17 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
     expect(signInSocial.mock.calls[0][0]).toMatchObject({ provider: 'google' })
   })
 
+  it('#602: returnTo com #fragmento vai ao Google sem o fragmento (o originCheck do Better Auth recusa #)', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider initialLocale="pt-BR">
+        <AuthForm mode="sign-in" googleEnabled returnTo="/me/profile#seus-dados" />
+      </LocaleProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Continuar com o Google' }))
+    expect(signInSocial.mock.calls[0][0]).toMatchObject({ provider: 'google', callbackURL: '/me/profile' })
+  })
+
   it('en-US: títulos e rótulos em inglês', () => {
     renderForm('sign-up', false, 'en-US')
     // h1 e botão de submit usam "Create account".

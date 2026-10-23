@@ -562,21 +562,44 @@ describe('AccountDataSection — "Seus dados" (#595)', () => {
       expect(alert).toHaveTextContent(m.reautenticar)
       expect(within(alert).getByRole('link', { name: m.reautenticarLink })).toHaveAttribute('href', REAUTH_HREF)
       expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeDisabled()
+      // O botão ficou travado: o foco vai ao aviso (não cai no body).
+      await waitFor(() => expect(alert).toHaveFocus())
       expect(urls()).toEqual(['POST /api/me/erasure'])
       expect(order).toEqual([])
+
+      // Fechar e reabrir limpa o aviso e destrava o botão.
+      await user.click(within(dialog).getByRole('button', { name: m.cancelar }))
+      const again = await openDialog(user)
+      expect(within(again).queryByText(m.reautenticar, { exact: false })).toBeNull()
+      await user.click(within(again).getByRole('checkbox', { name: m.entendo }))
+      expect(within(again).getByRole('button', { name: m.confirmar })).toBeEnabled()
     })
 
-    it('sessão criada há mais de 24 h: o diálogo já abre com o aviso e não chama a API', async () => {
+    it('403 com outro código (guarda de origem) segue sendo erroExcluir', async () => {
+      const user = userEvent.setup()
+      mockFetch({ erasure: [{ status: 403, body: { error: 'origem_nao_permitida' } }] })
+      renderSection()
+      const dialog = await openDialog(user)
+      await confirmErasure(user, dialog)
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.erroExcluir)
+      expect(within(dialog).queryByText(m.reautenticar, { exact: false })).toBeNull()
+    })
+
+    it('sessão antiga pelo relógio do aparelho: o diálogo já abre com o aviso, mas quem trava é o servidor', async () => {
       sessionStore.set(withSessionCreatedAt(new Date(Date.now() - 25 * 60 * 60 * 1000)))
       const user = userEvent.setup()
-      const { urls } = mockFetch({})
+      const { urls } = mockFetch({ erasure: [{ status: 403, body: { error: 'reautenticar' } }] })
       renderSection()
       const dialog = await openDialog(user)
 
-      expect(within(dialog).getByRole('alert')).toHaveTextContent(m.reautenticar)
-      await user.click(within(dialog).getByRole('checkbox', { name: m.entendo }))
+      const aviso = within(dialog).getByRole('status')
+      expect(aviso).toHaveTextContent(m.reautenticar)
+      expect(within(aviso).getByRole('link', { name: m.reautenticarLink })).toHaveAttribute('href', REAUTH_HREF)
+      // Um relógio adiantado não pode travar a exclusão: o botão segue livre até o servidor dizer 403.
+      await confirmErasure(user, dialog)
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(m.reautenticar)
       expect(within(dialog).getByRole('button', { name: m.confirmar })).toBeDisabled()
-      expect(urls()).toEqual([])
+      expect(urls()).toEqual(['POST /api/me/erasure'])
     })
 
     it('sessão recente: sem aviso, a exclusão segue normal', async () => {

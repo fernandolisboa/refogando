@@ -16,9 +16,10 @@
  * Desfechos do pedido:
  *  - 2xx: saída da conta excluída (abaixo).
  *  - 403 `reautenticar` (#602): a sessão tem mais de 24 h. Nada foi apagado; o diálogo pede para entrar de novo
- *    (link para o login, que volta a "Seus dados") e trava "Excluir definitivamente". O mesmo aviso aparece já
- *    ao abrir o diálogo quando a data de criação da sessão (`sessionCreatedAt`) mostra que ela é antiga (mesma
- *    regra, `isFreshSession`); o servidor continua sendo quem decide.
+ *    (link para o login, que volta a "Seus dados"), trava "Excluir definitivamente" e leva o foco ao aviso. O
+ *    mesmo aviso aparece já ao abrir o diálogo quando a data de criação da sessão (`sessionCreatedAt`) parece
+ *    antiga pelo relógio do aparelho (mesma regra, `isFreshSession`), mas aí o botão segue livre: um relógio
+ *    adiantado não pode travar a exclusão, e quem decide é o servidor.
  *  - 401: a sessão já tinha morrido; mostra `erroSessao`, deixa o mesmo aviso para depois da recarga e
  *    recarrega a página deslogada.
  *  - Ambíguo (o `fetch` lança, ou 5xx: um 504 pode ter vindo depois do commit): pergunta ao
@@ -140,6 +141,8 @@ export function DeleteAccountDialog({
   const [entendo, setEntendo] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const [erro, setErro] = useState<Erro>(null)
+  // #602: aviso de sessão antiga dado já ao abrir (pelo relógio do aparelho); não trava nada.
+  const [avisoSessaoAntiga, setAvisoSessaoAntiga] = useState(false)
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const alertRef = useRef<HTMLParagraphElement>(null)
@@ -150,8 +153,13 @@ export function DeleteAccountDialog({
   const excluindo = status === 'erasing' || (status === 'leaving' && erro !== 'sessao')
   const [publicadasAntes = '', publicadasDepois = ''] = m.apagarPublicadas.split('{link}')
 
-  // A falha devolve o foco à ação (o botão ficou desabilitado durante o pedido e o foco cairia no `body`).
+  // A falha devolve o foco à ação (o botão ficou desabilitado durante o pedido e o foco cairia no `body`). O 403
+  // `reautenticar` deixa o botão travado: o foco vai ao aviso, onde está o link para entrar de novo.
   useEffect(() => {
+    if (erro === 'reautenticar') {
+      alertRef.current?.focus()
+      return
+    }
     if (erro !== 'falha') return
     const confirmar = confirmRef.current
     if (confirmar && !confirmar.disabled) confirmar.focus()
@@ -161,10 +169,11 @@ export function DeleteAccountDialog({
   function guarded(next: boolean) {
     if (busy) return
     setOpen(next)
-    if (next && sessionCreatedAt != null && !isFreshSession(sessionCreatedAt)) setErro('reautenticar')
+    if (next) setAvisoSessaoAntiga(sessionCreatedAt != null && !isFreshSession(sessionCreatedAt))
     if (!next) {
       setEntendo(false)
       setErro(null)
+      setAvisoSessaoAntiga(false)
       dl.reset()
     }
   }
@@ -296,19 +305,23 @@ export function DeleteAccountDialog({
           </Label>
         </div>
 
-        {erro === 'reautenticar' ? (
-          <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
+        {erro === 'reautenticar' || avisoSessaoAntiga ? (
+          <p
+            ref={erro === 'reautenticar' ? alertRef : undefined}
+            role={erro === 'reautenticar' ? 'alert' : 'status'}
+            tabIndex={-1}
+            className="text-sm font-medium text-fg"
+          >
             {m.reautenticar}{' '}
             <Link href={REAUTENTICAR_HREF} className={LINK}>
               {m.reautenticarLink}
             </Link>
           </p>
-        ) : (
-          erro !== null && (
-            <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
-              {erro === 'sessao' ? m.erroSessao : m.erroExcluir}
-            </p>
-          )
+        ) : null}
+        {erro !== null && erro !== 'reautenticar' && (
+          <p ref={alertRef} role="alert" tabIndex={-1} className="text-sm font-medium text-fg">
+            {erro === 'sessao' ? m.erroSessao : m.erroExcluir}
+          </p>
         )}
 
         <div className="flex flex-wrap justify-end gap-3">
