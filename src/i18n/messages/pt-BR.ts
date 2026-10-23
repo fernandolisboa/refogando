@@ -2236,7 +2236,7 @@ export const ptBR = {
       'lembrar o idioma escolhido',
       'lembrar o tema claro ou escuro',
       'proteger o login com o Google contra fraude',
-      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu os avisos de mudança (o das restrições e o dos Termos e da Política)',
+      'lembrar a última aba, o tour de boas-vindas, as porções da Sugestão de cardápio e se você já viu o aviso de mudança dos Termos e da Política',
       'evitar relatos de erro repetidos e recargas em sequência após uma atualização, lembrar o "Mostrar tudo" da busca e guardar por alguns segundos, até a página seguinte, o pedido de refazer o tour e o aviso da exclusão da conta',
     ],
     s8Duracoes: [
@@ -2264,7 +2264,7 @@ export const ptBR = {
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
-      `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5).`,
+      `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',

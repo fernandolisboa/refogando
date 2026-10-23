@@ -2124,7 +2124,7 @@ export const enUS: Messages = {
       'remember the language you chose',
       'remember the light or dark theme',
       'protect Google sign-in against fraud',
-      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the change notices (the one about restrictions and the one about the Terms and the Policy)',
+      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the notice about changes to the Terms and the Policy',
       'avoid repeated error reports and back-to-back reloads after an update, remember the search’s "Show all" and hold for a few seconds, until the next page, the request to replay the tour and the account-deletion notice',
     ],
     s8Duracoes: [
@@ -2152,7 +2152,7 @@ export const enUS: Messages = {
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only the photo of published recipes; the other images in the gallery and those of private recipes stay out of the queue (item 3.3 and section 4).`,
-      `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5).`,
+      `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
