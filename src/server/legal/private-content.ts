@@ -162,8 +162,8 @@ function existsIn(column: AnyPgColumn, owner: string | AnyPgColumn): SQL {
 
 /**
  * Sobrou conteúdo privado do titular? O OR dos mesmos alvos de `purgePrivateContentInTx` (cada EXISTS anda
- * por um índice que começa pelo dono, menos o da galeria — `recipe_image.created_by` não tem índice (ADR-0050,
- * Consequências; #601)). Seleciona os candidatos da varredura e é o ponto fixo dos testes: falso depois da
+ * por um índice que começa pelo dono; o da galeria por `recipe_image_created_by_idx` e `recipe_lineage_id_idx`,
+ * #601). Seleciona os candidatos da varredura e é o ponto fixo dos testes: falso depois da
  * limpeza. `owner` é o id (string) de uma conta ou `users.id` (correlacionado) na varredura; nesta, a galeria
  * entra pelo `ownersOfOrphanGallery`, que não é calculado por conta.
  */

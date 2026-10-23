@@ -233,8 +233,7 @@ export async function* accountExportSections(
   ]
 
   // ── #595: imagens que o titular enviou ou gerou. Sem o `moderatedBy`, as colunas internas nem a
-  //    `lineageId`. Não há índice em `created_by`: varredura sequencial, aceitável no tamanho de hoje (o
-  //    índice pede migração; follow-up). ────────────────────────────────────────────────────────────────
+  //    `lineageId`. Anda por `recipe_image_created_by_idx` (#601). ─────────────────────────────────────
   yield [
     'recipeImages',
     await db

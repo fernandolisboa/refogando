@@ -365,6 +365,10 @@ export const recipe = pgTable(
     index('recipe_reviewed_by_idx')
       .on(t.reviewedBy)
       .where(sql`${t.reviewedBy} IS NOT NULL`),
+    // Linhagem (#601): o predicado da galeria órfã na eliminação e na varredura de contas eliminadas
+    // (`lineageHasForeignRecipe`, `EXISTS recipe WHERE lineage_id = imagem.lineage_id`) varria `recipe` por
+    // imagem. Coluna NOT NULL ⇒ índice completo.
+    index('recipe_lineage_id_idx').on(t.lineageId),
   ],
 )
 
@@ -465,6 +469,19 @@ export const recipeImage = pgTable(
     index('recipe_image_review_required_idx')
       .on(t.createdAt)
       .where(sql`${t.reviewRequired} AND ${t.moderatedAt} IS NULL`),
+    // FKs sem índice (#601, ADR-0050): `created_by` é lido pela exportação da conta e pelo predicado da
+    // galeria órfã, e o `ON DELETE set null` de `users` (`created_by`, `moderated_by`) e a autorreferência
+    // `source_image_id` varriam a tabela a cada linha apagada. Parciais `IS NOT NULL` (o `fk = $1` do gatilho
+    // de RI implica IS NOT NULL; `moderated_by` e `source_image_id` são esparsos).
+    index('recipe_image_created_by_idx')
+      .on(t.createdBy)
+      .where(sql`${t.createdBy} IS NOT NULL`),
+    index('recipe_image_moderated_by_idx')
+      .on(t.moderatedBy)
+      .where(sql`${t.moderatedBy} IS NOT NULL`),
+    index('recipe_image_source_image_id_idx')
+      .on(t.sourceImageId)
+      .where(sql`${t.sourceImageId} IS NOT NULL`),
   ],
 )
 
@@ -504,7 +521,11 @@ export const imageGeneration = pgTable(
     totalTokens: integer('total_tokens'),
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
   },
-  (t) => [index('image_generation_user_created_idx').on(t.userId, t.createdAt)],
+  (t) => [
+    index('image_generation_user_created_idx').on(t.userId, t.createdAt),
+    // Passo de 24 meses do cron de retenção (#601): o composto começa por `user_id` e não serve o corte global.
+    index('image_generation_created_at_idx').on(t.createdAt),
+  ],
 )
 
 /**
@@ -526,7 +547,11 @@ export const extractionEvent = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('extraction_event_user_created_idx').on(t.userId, t.createdAt)],
+  (t) => [
+    index('extraction_event_user_created_idx').on(t.userId, t.createdAt),
+    // Passo de 30 dias do cron de retenção (#601): o composto começa por `user_id` e não serve o corte global.
+    index('extraction_event_created_at_idx').on(t.createdAt),
+  ],
 )
 
 export const recipeTranslation = pgTable(
@@ -869,6 +894,11 @@ export const users = pgTable(
     index('users_pending_signup_idx')
       .on(t.pendingSignupAt)
       .where(sql`${t.pendingSignupAt} IS NOT NULL`),
+    // Autorreferência `image_gen_blocked_by` ON DELETE set null (#601): o expurgo de cadastros pendentes
+    // apaga usuários, e o gatilho de RI varria `users` por linha. Esparsa ⇒ parcial.
+    index('users_image_gen_blocked_by_idx')
+      .on(t.imageGenBlockedBy)
+      .where(sql`${t.imageGenBlockedBy} IS NOT NULL`),
     // Consistência da restrição de imagem (#226) — espelha `recipe_moderation_consistency_chk`:
     // `at` e `by` setados JUNTOS ou ambos NULL (o `reason` fica fora do CHECK — texto livre validado
     // não-vazio na borda do route ao bloquear). Garante que um bloqueio sempre carrega proveniência.
@@ -902,6 +932,8 @@ export const session = pgTable(
     // Better Auth lista/revoga sessões por usuário (`revokeSessionsOnPasswordReset`, listSessions); o
     // purge testa `NOT EXISTS (session WHERE user_id)` e o ON DELETE cascade de `users` também filtra aqui.
     index('session_user_id_idx').on(t.userId),
+    // Passo de sessões vencidas do cron de retenção (#601).
+    index('session_expires_at_idx').on(t.expiresAt),
   ],
 )
 
@@ -1202,6 +1234,11 @@ export const creationSession = pgTable(
     index('creation_session_recipe_id_idx')
       .on(t.recipeId)
       .where(sql`${t.recipeId} IS NOT NULL`),
+    // FK `briefing_id` ON DELETE set null (#601): o passo `orphanBriefings` do cron de retenção apaga Briefings,
+    // e o gatilho de RI varria a tabela a cada um. Parcial: conversa e texto livre não têm Briefing.
+    index('creation_session_briefing_id_idx')
+      .on(t.briefingId)
+      .where(sql`${t.briefingId} IS NOT NULL`),
     // mode=structured EXIGE briefing (AC2). CHECK simples na própria tabela (espelha
     // recipe_playful_private_chk); a rede de banco contra structured-sem-briefing.
     check(
@@ -1430,11 +1467,15 @@ export const recipeReview = pgTable(
     ),
     // 1 Avaliação por (user, receita) — também o backstop de concorrência do upsert.
     unique('recipe_review_user_recipe_uq').on(t.userId, t.recipeId),
-    // Índice PARCIAL cobrindo a leitura quente `WHERE recipe_id=? AND moderated_at IS NULL`
-    // (AVG/COUNT/lista). Idioma de `recipe_moderation_removed_idx`/`recipe_image_moderated_idx`.
-    index('recipe_review_recipe_id_idx')
-      .on(t.recipeId)
-      .where(sql`${t.moderatedAt} is null`),
+    // Leitura quente `WHERE recipe_id=? AND moderated_at IS NULL` (AVG/COUNT/lista) E o `ON DELETE cascade`
+    // de `recipe`. Era PARCIAL (`moderated_at is null`) até #601: o gatilho de RI (`recipe_id = $1`, sem o
+    // filtro) não podia usá-lo e varria a tabela a cada Receita apagada. Completo serve os dois (quase toda
+    // Avaliação é não moderada, então o filtro na leitura custa o mesmo).
+    index('recipe_review_recipe_id_idx').on(t.recipeId),
+    // FK `moderated_by` ON DELETE set null (#601): apagar um usuário varria a tabela. Esparsa ⇒ parcial.
+    index('recipe_review_moderated_by_idx')
+      .on(t.moderatedBy)
+      .where(sql`${t.moderatedBy} IS NOT NULL`),
   ],
 )
 
@@ -1860,7 +1901,11 @@ export const mealPlanSuggestionEvent = pgTable(
     outputTokens: integer('output_tokens'),
     costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
   },
-  (t) => [index('meal_plan_suggestion_event_user_created_idx').on(t.userId, t.createdAt)],
+  (t) => [
+    index('meal_plan_suggestion_event_user_created_idx').on(t.userId, t.createdAt),
+    // Passo de 24 meses do cron de retenção (#601): o composto começa por `user_id` e não serve o corte global.
+    index('meal_plan_suggestion_event_created_at_idx').on(t.createdAt),
+  ],
 )
 
 // ── Despensa (ADR-0038) ──────────────────────────────────────────────────────────
