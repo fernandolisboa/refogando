@@ -93,6 +93,9 @@ export async function eraseOwnAccount(
         // A linha `users` SOBREVIVE à eliminação (anonimizada), então o que não é identidade estável é
         // ZERADO aqui. Restrições salvas (ADR-0041, dado sensível — LGPD Art. 11):
         restricoes: [],
+        // ...e a prova do consentimento delas (#600): sem restrições, não há consentimento a provar.
+        restricoesConsentidasEm: null,
+        restricoesConsentimentoVersao: null,
         // Nível de habilidade padrão (#421):
         nivelPadrao: null,
         // Os básicos da Despensa (ADR-0042) somem com a Despensa: privados, só do titular.

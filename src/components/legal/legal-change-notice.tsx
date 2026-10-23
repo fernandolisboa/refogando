@@ -7,7 +7,8 @@
  *
  * "Entendi" guarda a dispensa no localStorage, por versão e por conta (`avisoLegalStorageKey`); uma versão nova
  * (`AVISO_LEGAL_VERSAO`) traz o aviso de volta. Storage bloqueado: o aviso aparece e a dispensa vale até a
- * próxima carga. Mesmo padrão do aviso das restrições (`restricoes-perfil-form.tsx`), aqui para o app todo.
+ * próxima carga. Era o padrão do aviso das restrições (`restricoes-perfil-form.tsx`) até o #600, que passou a usar a
+ * versão gravada do consentimento; aqui segue o localStorage, para o app todo.
  *
  * Sem erro de hidratação: o servidor e o 1º render do cliente não mostram nada; a decisão (sessão + storage)
  * roda num timer depois da montagem, como o `AccountNotice` e o `GuidedTour`. Ao dispensar, o foco vai para o
