@@ -14,7 +14,7 @@
  * devolver string vazia, cai no rótulo localizado `semTitulo` — o dono nunca vê um card mudo.
  */
 import type { LineageKind, Origin, ResultKind, Visibility } from '@/domain/recipe'
-import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
+import { resolveAiTextSignal, resolveName, type TranslationNameRow } from '@/domain/recipe-read'
 import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
@@ -74,6 +74,9 @@ export type RecipeListItem = {
   // Imagem gerada por IA (#216): derivado de `imageProvenance === 'ai_generated'` — a UI sobrepõe
   // o selo "✨ gerada por IA" na thumbnail (espelha `projectResult`/RecipeResultItem). Omitido se falso.
   imageAiGenerated?: boolean
+  // Texto gerado por IA (#618): `resolveAiTextSignal` (#597) sobre as traduções da linha — a UI mostra o
+  // selo "✨ texto gerado por IA" no card. Omitido se falso.
+  textAiGenerated?: boolean
   // Slug do locale CORRENTE (#231, ADR-0020) — pro card linkar `/{locale}/recipes/<slug>`. AUSENTE
   // ("ausente ≠ vazio") quando não há slug naquele locale: o card cai no fallback canônico por UUID.
   slug?: string
@@ -111,6 +114,7 @@ export function resolveRecipeListItem(
     imageUrl: row.imageUrl ?? undefined,
     ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
+    ...(resolveAiTextSignal(row) ? { textAiGenerated: true } : {}),
     // #231: slug do locale corrente pro link canônico. "ausente ≠ vazio": só quando há slug.
     ...(row.slug != null ? { slug: row.slug } : {}),
   }

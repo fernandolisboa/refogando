@@ -16,7 +16,7 @@
  */
 import type { Origin } from '@/domain/recipe'
 import type { ProfileLink } from '@/domain/links'
-import { resolveName, type TranslationNameRow } from '@/domain/recipe-read'
+import { resolveAiTextSignal, resolveName, type TranslationNameRow } from '@/domain/recipe-read'
 import { buildImageSrcSet } from '@/domain/image-variants'
 
 /**
@@ -59,6 +59,9 @@ export type ProfileRecipeItem = {
   imageSrcSet?: string
   // Imagem gerada por IA (#132)? Dirige o selo "✨ gerada por IA" no card. AUSENTE quando não/foto.
   imageAiGenerated?: boolean
+  // Texto gerado por IA (#618)? `resolveAiTextSignal` (#597), a mesma regra da página da receita. Dirige o
+  // selo "✨ texto gerado por IA" no card. AUSENTE quando não.
+  textAiGenerated?: boolean
 }
 
 /** Um Cozinheiro numa lista pública de seguir (#274) — allowlist mínima (nome/@handle/avatar). */
@@ -131,6 +134,8 @@ export function projectProfileRecipe(
     ...(imageSrcSet !== undefined ? { imageSrcSet } : {}),
     // #132/selo: imagem gerada por IA? "ausente ≠ vazio": só quando ai_generated (foto do dono NÃO).
     ...(row.imageProvenance === 'ai_generated' ? { imageAiGenerated: true } : {}),
+    // #618/selo: texto gerado por IA? "ausente ≠ vazio": só quando a regra do #597 diz que sim.
+    ...(resolveAiTextSignal(row) ? { textAiGenerated: true } : {}),
   }
 }
 

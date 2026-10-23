@@ -52,6 +52,8 @@ export function RecipeSimilarRail({
             imageSrcSet={r.imageSrcSet}
             imageAiGenerated={r.imageAiGenerated}
             aiLabel={busca.imagemSeloIa}
+            textAiGenerated={r.textAiGenerated}
+            textAiLabel={busca.textoSeloIa}
             layout="grid"
           />
         ))}

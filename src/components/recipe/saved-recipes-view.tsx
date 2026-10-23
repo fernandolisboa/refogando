@@ -333,10 +333,24 @@ export function SavedRecipesView() {
                       loading="lazy" // #462: lista longa de salvos — thumb baixa só ao aproximar da viewport
                       className="aspect-video w-full rounded-lg border border-border object-cover"
                     />
+                    {/* Selo da imagem gerada por IA (#132), igual ao de "Minhas receitas". */}
+                    {item.imageAiGenerated && (
+                      <span className="absolute left-1.5 top-1.5 rounded-full border border-border bg-bg/90 px-1.5 py-0.5 text-[0.6rem] font-medium text-muted">
+                        {messages.busca.imagemSeloIa}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="mb-3 flex aspect-video items-center justify-center rounded-lg border border-border bg-brand/[0.07] text-brand/40">
                     <ImageIcon className="size-6" strokeWidth={1.5} aria-hidden />
+                  </div>
+                )}
+                {/* #618: texto gerado por IA (regra do #597), no estilo dos selos de "Minhas receitas". */}
+                {item.textAiGenerated && (
+                  <div className="mb-2.5 flex">
+                    <span className="inline-flex items-center rounded-full border border-border bg-bg px-2.5 py-0.5 text-xs font-semibold text-fg">
+                      {messages.busca.textoSeloIa}
+                    </span>
                   </div>
                 )}
                 <span className="font-display text-lg font-semibold leading-snug text-fg">

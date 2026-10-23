@@ -89,6 +89,8 @@ export function MyRecipesList() {
     // #169/ADR-0019: marcador de proveniência da IMPORTADA da web (origin=web_imported) — PRIMEIRO,
     // como sinal de origem (a importada é privada e creditada à fonte, não criada pelo usuário).
     if (item.origin === 'web_imported') out.push(m.seloImportada)
+    // #618: texto gerado por IA (regra do #597, `textAiGenerated` do read model). Mesmo rótulo da receita.
+    if (item.textAiGenerated) out.push(messages.busca.textoSeloIa)
     if (item.resultKind === 'playful') out.push(m.seloPlayful)
     out.push(item.visibility === 'public' ? m.seloPublica : m.seloPrivada)
     // Removida-do-pool pela moderação (#18): o dono enxerga que saiu do acervo (selo NEUTRO).

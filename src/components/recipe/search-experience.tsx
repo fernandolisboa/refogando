@@ -882,7 +882,7 @@ export function SearchExperience({
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa} textAiLabel={m.textoSeloIa}
               locale={locale}
               results={data.minhas}
             />
@@ -892,7 +892,7 @@ export function SearchExperience({
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa} textAiLabel={m.textoSeloIa}
               locale={locale}
               results={data.catalogo}
             />
@@ -902,7 +902,7 @@ export function SearchExperience({
               badgeLabels={badgeLabels}
               ownLabel={ownLabel}
               autoTranslationLabel={m.traducaoAutomatica}
-              byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+              byLabel={m.porAutor} aiLabel={m.imagemSeloIa} textAiLabel={m.textoSeloIa}
               locale={locale}
               results={data.comunidade}
             />
@@ -913,7 +913,7 @@ export function SearchExperience({
                 badgeLabels={badgeLabels}
                 ownLabel={ownLabel}
                 autoTranslationLabel={m.traducaoAutomatica}
-                byLabel={m.porAutor} aiLabel={m.imagemSeloIa}
+                byLabel={m.porAutor} aiLabel={m.imagemSeloIa} textAiLabel={m.textoSeloIa}
                 locale={locale}
                 results={data.sugestoes}
               />

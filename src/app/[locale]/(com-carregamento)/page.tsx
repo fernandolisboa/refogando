@@ -125,6 +125,8 @@ export default async function Home({
             imageSrcSet={recipeOfWeek.imageSrcSet}
             imageAiGenerated={recipeOfWeek.imageAiGenerated}
             aiLabel={m.imagemSeloIa}
+            textAiGenerated={recipeOfWeek.textAiGenerated}
+            textAiLabel={m.textoSeloIa}
           />
         </ul>
       </div>

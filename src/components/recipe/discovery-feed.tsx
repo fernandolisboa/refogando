@@ -139,6 +139,8 @@ export function DiscoveryFeed({
               imageSrcSet={it.imageSrcSet}
               imageAiGenerated={it.imageAiGenerated}
               aiLabel={m.imagemSeloIa}
+              textAiGenerated={it.textAiGenerated}
+              textAiLabel={m.textoSeloIa}
             />
           ))}
         </ul>
