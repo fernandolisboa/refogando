@@ -11,7 +11,8 @@
  *
  * A11y: um único `<h1>` (título); sub-seções com `<h2>`. Selo de proveniência REUSA
  * `ProvenanceBadge` (#56) — `classifySection(origin)` decide a regra visual; os rótulos
- * vêm de `busca.seloCatalogo/seloComunidade` (mesmo conceito, não duplicar em `detalhe`).
+ * vêm de `busca.seloCatalogo/seloComunidade` (mesmo conceito, não duplicar em `detalhe`). Ao lado dele, o
+ * selo "texto gerado por IA" (#597, `view.textAiGenerated`, rótulo `busca.textoSeloIa`).
  * Cores: só tokens já AA-verificados na #54.
  *
  * Ordem ESTILO INSTAGRAM (#161, topo→baixo): FOTO em destaque → título (+selo discreto
@@ -26,6 +27,7 @@ import { isCategoria, isRestricao } from '@/domain/vocabulary'
 import { formatDuracao } from '@/domain/tempo'
 import { formatIngredientLine } from '@/domain/ingredient-line'
 import type { Messages } from '@/i18n/messages'
+import { Badge } from '@/components/ui/badge'
 import { ProvenanceBadge } from './provenance-badge'
 import { RestrictionWarning } from './restriction-warning'
 import { StaleNoticeBanner } from './stale-notice-banner'
@@ -169,12 +171,17 @@ export function RecipeDetailView({
           )}
         </div>
       )}
-      {/* Cabeçalho estilo Instagram (#161): selo de proveniência + título (já vem PRONTO da rota)
+      {/* Cabeçalho estilo Instagram (#161): selo de proveniência (+ o de texto de IA, #597) + título (já vem PRONTO da rota)
           + selo discreto "tradução automática" quando a leitura repousa numa tradução automática
           NÃO-revisada (`autoTranslationSignal`, derivado da proveniência no read model — a UI NÃO
           re-deriva a regra). Autoria NÃO mora mais aqui: o crédito "por <name>" foi p/ o FINAL. */}
       <header className="flex flex-col gap-3">
-        <ProvenanceBadge variant={section} label={badgeLabel} />
+        {/* Selo "texto gerado por IA" (#597) ao lado do de proveniência, na mesma primitiva `<Badge>` (pele
+            neutra). Guiado SÓ pelo read model (`textAiGenerated`); a UI não re-deriva a regra. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <ProvenanceBadge variant={section} label={badgeLabel} />
+          {view.textAiGenerated && <Badge>{m.busca.textoSeloIa}</Badge>}
+        </div>
         <div className="flex flex-col gap-1.5">
           <NameHeading className="font-display text-4xl font-semibold tracking-tight text-fg">
             {view.name}

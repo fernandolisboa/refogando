@@ -11,6 +11,7 @@ import {
   seedTranslation,
 } from '../helpers/recipes'
 import { seedSessionHeaders } from '../helpers/users'
+import { deriveRecipe, type DeriveEdits } from '@/server/recipe/derive'
 
 /**
  * Leitura localizada da Receita pela porta mais alta — o handler GET (issue #3).
@@ -300,5 +301,51 @@ describe('GET /api/recipes/[id] — campos de gestão gateados ao dono (#59)', (
     // Anônimo: nem o campo, nem a query de bloqueio (caminho quente não paga).
     const anon = (await (await get(id, 'pt-BR')).json()) as BlockView
     expect(anon).not.toHaveProperty('imageGenBlocked')
+  })
+
+  // ── #597: selo "texto gerado por IA" — público (qualquer visitante), herdado pela cópia fiel ─────────
+  type AiTextView = { textAiGenerated?: boolean }
+
+  it('#597: pública de IA ⇒ textAiGenerated para o anônimo; clone herda (mesmo com a base apagada); versão reescrita e catálogo não', async () => {
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'ai-text-owner@ex.com' })
+    const { userId: otherId } = await seedSessionHeaders({ email: 'ai-text-other@ex.com' })
+    const aiId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+    const passos = ['Misture tudo.', 'Asse por 40 min.']
+    await seedTranslation({ recipeId: aiId, locale: 'pt-BR', titulo: 'Bolo da IA', passos, provenance: 'automatica_nao_revisada' })
+    await seedTranslation({ recipeId: aiId, locale: 'en-US', titulo: 'AI cake', passos: ['Mix.', 'Bake.'], provenance: 'automatica_nao_revisada' })
+
+    const anon = (await (await get(aiId, 'pt-BR')).json()) as AiTextView
+    expect(anon.textAiGenerated).toBe(true)
+
+    const derive = async (edits: Partial<DeriveEdits> | null, locale = 'pt-BR') => {
+      const res = await deriveRecipe({
+        db: getDb(),
+        baseId: aiId,
+        viewerId: otherId,
+        edits: edits && { titulo: 'Bolo da IA', descricao: null, passos, notas: null, ingredientes: [], restricoes: [], ...edits },
+        locale,
+        cap: Infinity,
+      })
+      return (res as { recipeId: string }).recipeId
+    }
+    const cloneId = await derive(null)
+    // "Criar minha versão" sem mexer no texto, ou só no título: o preparo ainda é o da IA.
+    const unchangedId = await derive({ passos: ['  Misture tudo. ', 'Asse por 40 min.'] })
+    const titleOnlyId = await derive({ titulo: 'Meu bolo' })
+    const rewrittenId = await derive({ titulo: 'Meu bolo', passos: ['Bata os ovos.', 'Asse por 35 min.'] })
+    // Reescrever só OUTRO idioma: a derivada herda o original pt-BR da base, que segue o texto da IA.
+    const otherLocaleId = await derive({ titulo: 'My cake', passos: ['Beat the eggs.', 'Bake 35 min.'] }, 'en-US')
+    const ids = [cloneId, unchangedId, titleOnlyId, rewrittenId, otherLocaleId]
+    await getDb().execute(sql`UPDATE recipe SET visibility = 'public' WHERE id IN (${sql.join(ids, sql`, `)})`)
+    // A base sai: o selo da cópia não depende dela.
+    await getDb().execute(sql`DELETE FROM recipe WHERE id = ${aiId}`)
+
+    for (const id of [cloneId, unchangedId, titleOnlyId, otherLocaleId]) {
+      expect(((await (await get(id, 'pt-BR')).json()) as AiTextView).textAiGenerated, id).toBe(true)
+    }
+    expect((await (await get(rewrittenId, 'pt-BR')).json()) as AiTextView).not.toHaveProperty('textAiGenerated')
+
+    const { recipeId: catalogId } = await seedFeijoadaCatalog()
+    expect((await (await get(catalogId, 'pt-BR')).json()) as AiTextView).not.toHaveProperty('textAiGenerated')
   })
 })

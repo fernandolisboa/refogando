@@ -30,6 +30,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import type { RecipeView } from '@/domain/recipe-read'
+import { isAiOrigin } from '@/domain/recipe'
 import { RecipeEditModal } from './recipe-edit-modal'
 import { RecipeCloneButton } from './recipe-clone-button'
 import { LineageVersionControls } from './lineage-version-controls'
@@ -50,7 +51,7 @@ export function RecipeDetailActions({ view, locale }: { view: RecipeView; locale
     // 409a outras origens. A regenerabilidade é gateada DIRETO pelo grupo de origin `ai_*` (não
     // por `classifySection`, que só separa catálogo de comunidade): catalog/user_edited NÃO são
     // regeneráveis (ADR-0013).
-    const isAi = view.origin.startsWith('ai_')
+    const isAi = isAiOrigin(view.origin)
     return (
       <div className="flex flex-col gap-6">
         {/* Diff da derivada (owner-gated pelo servidor: derivedDiff só chega pro dono). */}

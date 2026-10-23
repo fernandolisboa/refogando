@@ -34,6 +34,7 @@ import {
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { classify } from '@/domain/generation'
+import { isAiOrigin } from '@/domain/recipe'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
@@ -72,9 +73,8 @@ import { QuotaExceededError } from '@/server/quota/atomic'
  * INSERT (PersistOrigin é ai_* — por isso #20 só regenera Receitas ai_*).
  */
 
-// Origins ai_* que a regeneração suporta (carregam fonte de prompt recuperável). catalog e
-// user_edited (a derivada) NÃO têm fonte → 409 sem_fonte.
-const AI_ORIGINS = new Set<string>(['ai_chat', 'ai_structured', 'ai_free_text'])
+// Só Receita ai_* (`isAiOrigin`) carrega fonte de prompt recuperável. catalog e user_edited (a derivada) NÃO têm
+// fonte → 409 sem_fonte.
 
 export type RegenerateResult =
   // `imageReviewSuggested` (#131): a nova versão HERDOU a imagem da predecessora E uma mudança
@@ -200,7 +200,7 @@ export async function regenerateRecipe(
   // Ausente OU não-própria (inclui catálogo owner_id NULL) → 404 leak-safe (NUNCA 403).
   if (!pred || pred.ownerId == null || pred.ownerId !== viewerId) return { kind: 'not_found' }
   // origin não-ai_* (catalog / user_edited) → sem prompt recuperável → 409 sem_fonte.
-  if (!AI_ORIGINS.has(pred.origin)) return { kind: 'sem_fonte' }
+  if (!isAiOrigin(pred.origin)) return { kind: 'sem_fonte' }
 
   // A creation_session que ENTREGOU esta Receita (recipe_id = predecessora) — a posse já foi
   // provada acima. Sem sessão (ex. linha órfã) → 409 sem_fonte (não 500). Escopada por user_id

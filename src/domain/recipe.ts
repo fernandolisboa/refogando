@@ -19,6 +19,14 @@
 export const ORIGENS = ['catalog', 'ai_chat', 'ai_structured', 'ai_free_text', 'user_edited', 'web_imported'] as const
 export type Origin = (typeof ORIGENS)[number]
 
+/** Origens de Receita GERADA por IA (`ai_chat`/`ai_structured`/`ai_free_text`). Fonte única do grupo `ai_*`. */
+const AI_ORIGINS: ReadonlySet<string> = new Set<Origin>(['ai_chat', 'ai_structured', 'ai_free_text'])
+
+/** A Receita foi gerada por IA (`origin` `ai_*`)? */
+export function isAiOrigin(origin: string): boolean {
+  return AI_ORIGINS.has(origin)
+}
+
 // ── Visibilidade ───────────────────────────────────────────────────────────────
 export const VISIBILIDADES = ['private', 'public'] as const
 export type Visibility = (typeof VISIBILIDADES)[number]

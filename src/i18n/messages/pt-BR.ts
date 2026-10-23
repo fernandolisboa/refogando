@@ -188,6 +188,8 @@ export const ptBR = {
     // Selo "gerada por IA" (#132, ADR-0017) — sobre imagens ai_generated no card e no detalhe.
     // O protótipo do Claude Design usa o ✨ neste selo (RefoStage "Minhas criações"/Busca).
     imagemSeloIa: '✨ gerada por IA',
+    // Selo "texto gerado por IA" (#597) no detalhe da Receita cujo texto veio da IA (`textAiGenerated`).
+    textoSeloIa: '✨ texto gerado por IA',
     // #5 (ADR-0019 emenda): "Gerar com IA" REBAIXADO do CTA permanente para o ESTADO VAZIO (cartão de
     // saída). NÃO auto-dispara (a Busca nunca cria): leva a /create?q=<termo> pré-preenchendo o texto
     // livre. Visitante vê o convite de entrar (reusa `minhasCriacoes.convidaEntrar*`). A entrada SEMPRE

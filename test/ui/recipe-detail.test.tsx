@@ -387,6 +387,20 @@ describe('RecipeDetailView (#57)', () => {
     expect(screen.queryByText(M.busca.traducaoAutomatica)).toBeNull()
   })
 
+  it('T11b — #597: selo "texto gerado por IA" aparece quando textAiGenerated=true, ao lado da proveniência', () => {
+    renderView(baseView({ origin: 'ai_chat', textAiGenerated: true }))
+    const selo = screen.getByText(M.busca.textoSeloIa)
+    expect(selo).toBeInTheDocument()
+    expect(selo.className).toMatch(/\btext-xs\b/)
+    expect(selo.closest('header')).not.toBeNull()
+    expect(screen.getByText(M.busca.seloComunidade)).toBeInTheDocument()
+  })
+
+  it('T11c — #597: sem textAiGenerated não há selo de texto (a regra por origem está em recipe-read e recipes-get)', () => {
+    renderView(baseView({ origin: 'catalog' }))
+    expect(screen.queryByText(M.busca.textoSeloIa)).toBeNull()
+  })
+
   // ── #237: aviso de catálogo AI-assistido (CORTESIA editorial) ────────────────────────────────────
   const DISCLOSURE = 'Algumas receitas são produzidas em colaboração entre curadoria e IA.'
 

@@ -3,6 +3,7 @@ import type { Database } from '@/db/client'
 import { recipe, recipeTranslation, recipeIngredient } from '@/db/schema'
 import type { Categoria, Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
 import { isRestricao } from '@/domain/vocabulary'
+import type { TranslationProvenance } from '@/domain/recipe'
 import { decideDerivedDiff, type DiffLado } from '@/domain/recipe-diff'
 import { shouldSuggestNewImage, visualChangesFromDiff } from '@/domain/image-review'
 import { loadRecipeRows } from '@/server/recipe/load'
@@ -93,6 +94,44 @@ export type DeriveResult =
  * linha + cópias numa só transação. Devolve `{recipeId}` da derivada (ou not_found se a base
  * sumiu entre o gate e a carga — corrida improvável, mantém o contrato 404).
  */
+/** Texto aparado para comparar (o form apara; um espaço a mais não é reescrita). */
+function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? '').trim() === (b ?? '').trim()
+}
+
+function samePassos(a: readonly string[] | null | undefined, b: readonly string[] | null | undefined): boolean {
+  const x = (a ?? []).map((p) => p.trim()).filter(Boolean)
+  const y = (b ?? []).map((p) => p.trim()).filter(Boolean)
+  return x.length === y.length && x.every((p, i) => p === y[i])
+}
+
+/**
+ * Proveniência da tradução do locale EDITADO num "Criar minha versão" (#597):
+ *  - texto idêntico ao da base (titulo, descricao, passos e notas, aparados) ⇒ a da base: ninguém reescreveu;
+ *  - no idioma ORIGINAL, com o texto da IA (`automatica_nao_revisada`) e o preparo (passos) intacto ⇒ segue
+ *    `automatica_nao_revisada`: trocar só o título ou a descrição não tira o selo "texto gerado por IA" de passos
+ *    que a IA escreveu. O idioma original é a FONTE da re-tradução, nunca o alvo, então nada sobrescreve o
+ *    título editado;
+ *  - qualquer outra reescrita ⇒ `escrita_por_pessoa`.
+ */
+type TranslationText = { titulo: string; descricao: string | null; passos: string[] | null; notas: string | null }
+
+function editedProvenance(
+  base: TranslationText & { provenance: TranslationProvenance },
+  edits: TranslationText,
+  isOriginalLocale: boolean,
+): TranslationProvenance {
+  const passosIntactos = samePassos(base.passos, edits.passos)
+  const textoIntacto =
+    passosIntactos &&
+    sameText(base.titulo, edits.titulo) &&
+    sameText(base.descricao, edits.descricao) &&
+    sameText(base.notas, edits.notas)
+  if (textoIntacto) return base.provenance
+  if (isOriginalLocale && passosIntactos && base.provenance === 'automatica_nao_revisada') return base.provenance
+  return 'escrita_por_pessoa'
+}
+
 export async function deriveRecipe(input: {
   db: Database
   baseId: string // já validado uuid + autorizado pelo route (NÃO-próprio, legível)
@@ -231,8 +270,9 @@ export async function deriveRecipe(input: {
 
       // Traduções: COPIA todas as da base (snapshot), MAS para o locale pedido aplica as edições
       // textuais (titulo/descricao/passos/notas do request). Provenance preservada da base; a do
-      // locale editado nasce 'escrita_por_pessoa' (o leitor escreveu/curou o texto editado).
-      // Clonar (edits null): todas copiadas como estão, provenance preservada.
+      // locale editado segue `editedProvenance` (o leitor escreveu o texto, salvo quando o preparo
+      // continua o da IA — selo "texto gerado por IA", #597). Clonar (edits null): todas copiadas como
+      // estão, provenance preservada.
       const translationsToInsert: Omit<typeof recipeTranslation.$inferInsert, 'slug'>[] =
         baseRows.translations.map((t) =>
           edits && t.locale === locale
@@ -243,7 +283,7 @@ export async function deriveRecipe(input: {
                 descricao: edits.descricao,
                 passos: edits.passos,
                 notas: edits.notas,
-                provenance: 'escrita_por_pessoa' as const,
+                provenance: editedProvenance(t, edits, locale === baseRecipe.originalLocale),
               }
             : {
                 recipeId: r.id,

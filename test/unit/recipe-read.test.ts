@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  resolveAiTextSignal,
   resolveAutoTranslationSignal,
   resolveBody,
   resolveFacets,
@@ -323,6 +324,43 @@ describe('resolveAutoTranslationSignal — selo "tradução automática" (#161)'
 })
 
 // ── resolveRecipeView ────────────────────────────────────────────────────────
+
+describe('resolveAiTextSignal — selo "texto gerado por IA" (#597)', () => {
+  const aiText: TranslationRow = { ...ptOriginal, provenance: 'automatica_nao_revisada' }
+  const humanText: TranslationRow = { ...ptOriginal, provenance: 'escrita_por_pessoa' }
+  const enAuto: TranslationRow = { ...enReliableDiffering, provenance: 'automatica_nao_revisada' }
+  const signal = (origin: RecipeRow['origin'], translations: TranslationRow[]) =>
+    resolveAiTextSignal({ origin, originalLocale: 'pt-BR', translations })
+
+  it('origin ai_* ⇒ sempre, mesmo com o texto original editado pelo dono', () => {
+    for (const origin of ['ai_chat', 'ai_structured', 'ai_free_text'] as const) {
+      expect(signal(origin, [aiText])).toBe(true)
+      expect(signal(origin, [humanText])).toBe(true)
+    }
+  })
+
+  it('derivada/clone (user_edited): herda enquanto o texto do idioma original for o da IA', () => {
+    expect(signal('user_edited', [aiText, enAuto])).toBe(true) // clone de receita de IA
+    expect(signal('user_edited', [humanText, enAuto])).toBe(false) // reescrita no original (derive)
+  })
+
+  it('a tradução automática de OUTRO idioma não liga o selo (não é texto gerado, é tradução)', () => {
+    expect(signal('user_edited', [humanText, enAuto])).toBe(false)
+    expect(resolveAiTextSignal({ origin: 'user_edited', originalLocale: 'en-US', translations: [humanText] })).toBe(false)
+  })
+
+  it('catálogo e importada da web ⇒ nunca', () => {
+    expect(signal('catalog', [aiText])).toBe(false)
+    expect(signal('web_imported', [aiText])).toBe(false)
+  })
+
+  it('na vista: `textAiGenerated` só existe quando o selo vale ("ausente ≠ vazio")', () => {
+    const ai = resolveRecipeView(input({ recipe: recipeRow({ origin: 'ai_chat' }), translations: [aiText] }))
+    expect(ai.textAiGenerated).toBe(true)
+    const catalog = resolveRecipeView(input())
+    expect('textAiGenerated' in catalog).toBe(false)
+  })
+})
 
 describe('resolveRecipeView — vista completa', () => {
   it('AC#4: a vista sempre carrega origin (selo) e schemaVersion', () => {
