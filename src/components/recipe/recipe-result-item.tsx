@@ -19,6 +19,7 @@ import type { RecipeAuthor } from '@/domain/recipe-search-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { imageSrcSetProps } from '@/domain/image-variants'
 import { cn } from '@/lib/utils'
+import { RecipeLink } from '@/components/recipe/recipe-link'
 
 /** Rótulos de selo por seção, já localizados. O item escolhe pelo seu próprio
  * `origin` (via `classifySection`) — necessário porque "Talvez você queira" mistura
@@ -161,7 +162,7 @@ export function RecipeResultItem({
   const textBlock = (
     <div className="min-w-0 flex-1">
       {/* O título é o link primário pro detalhe; foco visível herda do :focus-visible global. */}
-      <Link href={detailHref} className="group block rounded-sm">
+      <RecipeLink href={detailHref} className="group block rounded-sm">
         {kicker.length > 0 && (
           <div className={cn('mb-1 text-xs font-semibold tracking-wide', kickerColor)}>
             {kicker}
@@ -175,7 +176,7 @@ export function RecipeResultItem({
         >
           {displayedTitle}
         </h3>
-      </Link>
+      </RecipeLink>
       {/* Autoria (#129): link IRMÃO ao perfil público /u/<handle>. */}
       {byline !== null && author !== undefined && (
         <p className="mt-1 text-sm text-muted">

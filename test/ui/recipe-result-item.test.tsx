@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 
 // next/link → <a> simples (sem AppRouterContext no jsdom). Espelha recipes-feed.test.tsx.
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

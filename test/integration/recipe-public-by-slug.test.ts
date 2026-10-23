@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { eq } from 'drizzle-orm'
 import {
   loadPublicRecipeBySlug,
+  loadPublicRecipeRowBySlug,
+  loadRecipeRows,
+  loadRecipeRowsForRow,
   resolveSlugForLocale,
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
@@ -157,6 +160,44 @@ describe('loadPublicRecipeBySlug — casa (locale, slug) e aplica o gate de leit
 
     const rows = await loadPublicRecipeBySlug(db(), 'removida-do-pool', 'pt-BR')
     expect(rows).toBeNull()
+  })
+})
+
+describe('loadPublicRecipeRowBySlug + loadRecipeRowsForRow — o detalhe em duas etapas (ADR-0053)', () => {
+  it('traz a linha INTEIRA de recipe, e o resto montado a partir dela é igual ao de loadRecipeRows', async () => {
+    const recipeId = await seedRecipe({
+      origin: 'ai_chat',
+      originalLocale: 'pt-BR',
+      visibility: 'public',
+      resultKind: 'success',
+    })
+    await seedTranslation({
+      recipeId,
+      locale: 'pt-BR',
+      titulo: 'Pão de Queijo',
+      provenance: 'escrita_por_pessoa',
+      slug: 'pao-de-queijo-duas-etapas',
+    })
+
+    const row = await loadPublicRecipeRowBySlug(db(), 'pao-de-queijo-duas-etapas', 'pt-BR')
+    expect(row).not.toBeNull()
+    const [direct] = await db().select().from(recipe).where(eq(recipe.id, recipeId))
+    expect(row).toEqual(direct)
+    expect(await loadRecipeRowsForRow(db(), row!)).toEqual(await loadRecipeRows(db(), recipeId))
+  })
+
+  it('Receita PRIVADA ⇒ null já na primeira etapa', async () => {
+    // Com dono: sem dono (owner NULL) a linha conta como Catálogo, que é leitura pública.
+    const { userId } = await seedSessionHeaders({ email: 'slug-private-duas-etapas@ex.com' })
+    const recipeId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    await seedTranslation({
+      recipeId,
+      locale: 'pt-BR',
+      titulo: 'Privada',
+      provenance: 'escrita_por_pessoa',
+      slug: 'privada-duas-etapas',
+    })
+    expect(await loadPublicRecipeRowBySlug(db(), 'privada-duas-etapas', 'pt-BR')).toBeNull()
   })
 })
 

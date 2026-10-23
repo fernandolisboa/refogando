@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
  * alterna `lg:` não roda aqui); a gaveta só monta a segunda `SectionNav` quando abre.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

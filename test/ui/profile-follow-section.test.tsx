@@ -13,6 +13,7 @@ import type { ReactNode } from 'react'
  * logada, e aplica otimismo no toggle com revert no erro. Mockamos `useSession` (por teste) e `fetch`.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

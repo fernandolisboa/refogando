@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
  * página /guia (`requestTourStart`), inclusive para o Visitante (sem os passos só-logados).
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

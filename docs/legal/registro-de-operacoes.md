@@ -1,12 +1,12 @@
 # Registro das operações de tratamento (LGPD art. 37) — versão simplificada de agente de pequeno porte
 
-> Formato simplificado permitido pela Res. CD/ANPD nº 2/2022, art. 9º. Controlador: Fernando Lisboa (pessoa física). Canal do titular: `privacidade@refogando.com` (sem encarregado indicado, Res. 2/2022, art. 11). Atualizado em 2026-10-23 (ADR-0051; #599, fila da curadoria só com a foto de receita publicada; #600, prova do consentimento das restrições; #606, encerramento de conta pela equipe no Console, operação 18); antes, em 2026-10-22, junto com o parecer interno (`docs/legal/parecer-interno-2026-10-22.md`) e o ADR-0050. **Atualize este arquivo no mesmo PR que mudar dado, finalidade, fornecedor ou prazo.**
+> Formato simplificado permitido pela Res. CD/ANPD nº 2/2022, art. 9º. Controlador: Fernando Lisboa (pessoa física). Canal do titular: `privacidade@refogando.com` (sem encarregado indicado, Res. 2/2022, art. 11). Atualizado em 2026-10-23 (ADR-0051; #599, fila da curadoria só com a foto de receita publicada; #600, prova do consentimento das restrições; #606, encerramento de conta pela equipe no Console, operação 18; ADR-0053, funções da Vercel em São Paulo, política v3.6); antes, em 2026-10-22, junto com o parecer interno (`docs/legal/parecer-interno-2026-10-22.md`) e o ADR-0050. **Atualize este arquivo no mesmo PR que mudar dado, finalidade, fornecedor ou prazo.**
 
 ## Operadores e onde os dados ficam
 
 | Operador | Para quê | País | Mecanismo de transferência |
 |---|---|---|---|
-| Vercel Inc. | Hospedagem, funções (`iad1`), crons, armazenamento de imagens (Blob público com URL não listada), registros técnicos | EUA | LGPD art. 33, IX c/c art. 7º, V |
+| Vercel Inc. | Hospedagem, funções (`gru1`, São Paulo, desde a política v3.6; antes `iad1`), crons, armazenamento de imagens (Blob público com URL não listada, store em `gru1`), registros técnicos | Brasil (funções e imagens); EUA (empresa, suporte e registros técnicos) | LGPD art. 33, IX c/c art. 7º, V |
 | Neon / Databricks | Banco de dados Postgres (`sa-east-1`), cópias de segurança semanais e cópias de preview de PR (branches do mesmo projeto) | Brasil (suporte pode acessar dos EUA) | art. 33, IX, se houver acesso remoto |
 | Anthropic PBC | Geração e conversa de receitas, extração de ingredientes, Sugestão de cardápio, tradução, escolha do cenário da foto | EUA | art. 33, IX; para restrições salvas, art. 33, VIII |
 | Google LLC (Gemini API) | Geração e edição de imagens; embeddings de busca (o termo buscado e título, descrição e ingredientes de cada receita, inclusive das privadas) | EUA | Cláusulas-padrão da ANPD no DPA do Google (plano pago), art. 33, II, "b" |

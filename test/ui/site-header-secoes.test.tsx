@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
  * pessoais leva à última aba visitada. O drawer mobile é coberto em `site-header-mobile.test.tsx`.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

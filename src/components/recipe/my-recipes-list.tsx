@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button'
 import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { imageSrcSetProps } from '@/domain/image-variants'
+import { RecipeLink } from '@/components/recipe/recipe-link'
 
 type Status = 'loading' | 'idle' | 'error'
 
@@ -133,7 +134,7 @@ export function MyRecipesList() {
             const badges = selos(item)
             return (
               <li key={item.id}>
-                <Link
+                <RecipeLink
                   // #231 (ADR-0020): canônico `/{locale}/recipes/<slug>` no locale corrente; sem slug
                   // naquele locale cai no fallback `/{locale}/recipes/<uuid>` (que 308a). Nunca link nu.
                   href={recipeDetailPath(locale, item.slug ?? item.id)}
@@ -177,7 +178,7 @@ export function MyRecipesList() {
                   <span className="font-display text-lg font-semibold leading-snug text-fg">
                     {item.name}
                   </span>
-                </Link>
+                </RecipeLink>
               </li>
             )
           })}

@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
  * no menu da conta e no rodapé (este também para o Visitante).
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

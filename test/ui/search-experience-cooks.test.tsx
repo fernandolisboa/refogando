@@ -14,6 +14,7 @@ import type { ProfileFollowUser } from '@/domain/recipe-profile-read'
  */
 
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

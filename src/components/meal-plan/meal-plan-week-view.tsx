@@ -67,6 +67,7 @@ import { MealPlanThumb } from './meal-plan-thumb'
 import { MealPlanShoppingListPanel } from './meal-plan-shopping-list-panel'
 import { MealPlanSuggestPanel } from './meal-plan-suggest-panel'
 import type { MealPlanEntryView } from '@/server/meal-plan/meal-plan'
+import { RecipeLink } from '@/components/recipe/recipe-link'
 
 /** O shape que `GET /api/me/meal-plan` devolve (fonte única: o tipo do servidor). */
 export type MealPlanEntry = MealPlanEntryView
@@ -628,12 +629,12 @@ function EntryRow({
         {note != null ? (
           <span className="line-clamp-2 text-sm font-medium italic leading-snug text-fg">{note}</span>
         ) : r != null ? (
-          <Link
+          <RecipeLink
             href={recipeDetailPath(locale, r.slug ?? r.id)}
             className="line-clamp-2 text-sm font-medium leading-snug text-fg hover:text-brand-ink"
           >
             {name}
-          </Link>
+          </RecipeLink>
         ) : (
           <span className="flex flex-col text-sm font-medium text-muted">
             {name}

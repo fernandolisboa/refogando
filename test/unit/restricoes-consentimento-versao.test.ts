@@ -14,6 +14,7 @@ import { RESTRICOES_CONSENTIMENTO_VERSAO, consentimentoRestricoesDesatualizado }
  */
 const HASH_POR_VERSAO: Record<string, string> = {
   '2026-10-22': '1a890784c17f4dca123a12a405d285801cbf51b35a4700e6b0f2ca9f7ab1f761',
+  '2026-10-23': 'e9962240e7c18544a2f4f0643390a0c0dd62dc050712440454dcbe4b3eadef6f',
 }
 
 function hash(pt: string, en: string): string {

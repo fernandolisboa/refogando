@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
  * verdade é por rota (`admin-section-access`/`admin-routes-gate`). Seam jsdom (#54).
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

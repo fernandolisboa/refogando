@@ -136,7 +136,7 @@ export function somarRestricoes(base: readonly Restricao[], perfil: readonly Res
  * acrescentar o texto novo em `docs/legal/consentimento-restricoes.md`. Quem consentiu com uma versão anterior vê
  * o aviso em destaque no formulário até salvar de novo (LGPD art. 8º, §6).
  */
-export const RESTRICOES_CONSENTIMENTO_VERSAO = '2026-10-22'
+export const RESTRICOES_CONSENTIMENTO_VERSAO = '2026-10-23'
 
 /**
  * O formulário mostra o aviso de mudança? Só para quem tem restrições SALVAS e consentiu com outra versão do

@@ -13,6 +13,7 @@ import {
   DATA_POLITICA_V3_3,
   DATA_POLITICA_V3_4,
   DATA_POLITICA_V3_5,
+  DATA_POLITICA_V3_6,
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
@@ -1024,10 +1025,11 @@ export const enUS: Messages = {
     aviso: 'Recipes declare the restrictions they meet; this is not verified. If you have an allergy, check the ingredients.',
     legenda: 'Your restrictions',
     consentimento:
-      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app and the AI run in the United States. Clear them all and save to delete.',
-    // Notice of the 2026-10-22 change (LGPD art. 8, §6), only for people who already had saved restrictions.
+      'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app runs in Brazil and the AI in the United States. Clear them all and save to delete.',
+    // Notice of the 2026-10-23 change (LGPD art. 8, §6), only for people whose saved restrictions carry an older
+    // version of the text (including from before 2026-10-22, when the text did not mention the United States yet).
     avisoMudanca:
-      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. To keep them, save again and this notice goes away; if you do not agree, clear them all and save to delete them.',
+      'We updated the Privacy Policy on October 23, 2026: the app now runs in Brazil, and the AI (Anthropic) remains in the United States; it only receives your saved restrictions when you generate with them selected. Save again to dismiss this notice; if you do not agree, clear them all and save to delete them.',
     avisoMudancaFechar: 'Got it',
     salvar: 'Save restrictions',
     salvando: 'Saving…',
@@ -2128,7 +2130,7 @@ export const enUS: Messages = {
     s35Valores: [
       'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile. Along with them we keep the date and the version of the text you consented to, as proof of consent (Art. 8, §2).',
       'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider (Anthropic, in the United States) only within a request in which you keep them checked.',
-      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button and states that the app and the AI run in the United States, Art. 33, VIII) and revocable at any time by unchecking them all and saving.',
+      'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button and states that the app runs in Brazil and the AI in the United States, Art. 33, VIII) and revocable at any time by unchecking them all and saving.',
       'until you uncheck them or delete your account (the date and version of the consent go with them); they are included in your data export and erased when the account is deleted.',
     ],
     s36Titulo: '3.6. Account security and abuse prevention',
@@ -2181,7 +2183,7 @@ export const enUS: Messages = {
       'Google (sign-in)',
     ],
     s5ParaQue: [
-      'App hosting, image storage and technical logs',
+      'App hosting and image storage (in São Paulo), technical logs',
       'Database (in São Paulo)',
       'Image generation and editing (including the photo you ask to edit) and search vectors',
       'Recipe generation and conversation, ingredient extraction, Menu suggestion, translation and choice of the photo scene',
@@ -2203,7 +2205,7 @@ export const enUS: Messages = {
     s5Nota:
       'Purpose of sharing: exclusively the technical operation of the functions above; no partner receives data for its own marketing purposes. If you use Google sign-in, your Google photo is loaded from Google’s servers, which receive the IP address of whoever sees your photo on Refogando (profile, cook search and list, follower lists and notifications).',
     s5Transferencia:
-      'International transfer: the app’s functions run on Vercel, in the United States, and the database is in São Paulo; Anthropic, Google, Brave and Resend process data in the United States, and the mailbox is in Switzerland (Proton). We rely on Art. 33, IX of the LGPD: the transfer is necessary to perform the service you request (Art. 7, V) or to handle data subject requests (Art. 7, II). With Google (Gemini), the ANPD standard contractual clauses that Google incorporates into its contract also apply (Art. 33, II, "b"). Saved dietary restrictions are processed in the United States, by the app and the AI, only with your specific consent (Art. 33, VIII). No AI provider may use your content to train models.',
+      'International transfer: the app’s functions run on Vercel in São Paulo, where the database (Neon) and the images also are; Vercel and Neon are United States companies, and their support and technical logs (item 3.7) may be handled there. Anthropic, Google, Brave and Resend process data in the United States, and the mailbox is in Switzerland (Proton). We rely on Art. 33, IX of the LGPD: the transfer is necessary to perform the service you request (Art. 7, V) or to handle data subject requests (Art. 7, II). With Google (Gemini), the ANPD standard contractual clauses that Google incorporates into its contract also apply (Art. 33, II, "b"). Saved dietary restrictions only go to the United States, to the AI, with your specific consent (Art. 33, VIII). No AI provider may use your content to train models.',
 
     s6Titulo: '6. Responsibilities of the processing agents — Art. 9, VI; Arts. 37–39',
     s6Itens: [
@@ -2280,6 +2282,7 @@ export const enUS: Messages = {
       `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: when the team closes an account, we keep a record of the decision for 5 years (reason, date, whether public content was removed and whether we tried to tell the person by email), with no other personal data (item 3.6); the account closure notice by email joins what Resend sends (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a copy someone else publishes of one of your recipes shows "Based on … by @you", with a link; you can turn this off in Edit profile or remove your name from a copy, and we keep that choice (item 3.1).`,
+      `v3.6 — ${DATA_POLITICA_V3_6}: the app’s functions now run in São Paulo, next to the database; the AI remains in the United States, and the consent text for saved restrictions says so (item 3.5 and section 6).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2332,9 +2335,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.5',
+    rodapeVersao: 'v3.6',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_5,
+    rodapeData: DATA_POLITICA_V3_6,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2398,9 +2401,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.5',
+    rodapeVersao: 'v3.6',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_5,
+    rodapeData: DATA_POLITICA_V3_6,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },

@@ -13,6 +13,7 @@ import type { ReactNode } from 'react'
  * aqui só a afordância de UI. Mock de sessão por papel; default Visitante.
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

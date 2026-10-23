@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 
 // next/link precisa do AppRouterContext em runtime; no jsdom mockamos pra um <a> simples.
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

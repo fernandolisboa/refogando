@@ -21,6 +21,7 @@ import type { RecipeListItem } from '@/domain/recipe-list-read'
 import { recipeDetailPath } from '@/domain/recipe-detail-route'
 import { imageSrcSetProps } from '@/domain/image-variants'
 import { ShoppingListAddBar } from './shopping-list-add-bar'
+import { RecipeLink } from '@/components/recipe/recipe-link'
 
 type Summary = { id: string; name: string; createdAt: string; itemCount: number }
 type Selected = 'all' | string // 'all' = "Todos"; senão um collection id
@@ -318,7 +319,7 @@ export function SavedRecipesView() {
                 onClick={(e) => e.stopPropagation()}
                 className="absolute top-3 left-3 z-10 border-border bg-surface"
               />
-              <Link
+              <RecipeLink
                 href={recipeDetailPath(locale, item.slug ?? item.id)}
                 className="flex h-full flex-col rounded-xl border border-border bg-surface p-4 shadow-sm motion-safe:transition-shadow motion-safe:duration-150 motion-safe:ease-out hover:shadow-md"
               >
@@ -357,7 +358,7 @@ export function SavedRecipesView() {
                 <span className="font-display text-lg font-semibold leading-snug text-fg">
                   {item.name}
                 </span>
-              </Link>
+              </RecipeLink>
             </li>
           ))}
         </ul>

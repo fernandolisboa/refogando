@@ -12,6 +12,7 @@ import type { ReactNode } from 'react'
  * Espelha site-header-painel.test.tsx nos mocks (next/link → <a>, useSession mockável).
  */
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}

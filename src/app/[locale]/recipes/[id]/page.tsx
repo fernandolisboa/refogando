@@ -71,7 +71,8 @@ import type { Locale } from '@/i18n/locale'
 import { MESSAGES } from '@/i18n/messages'
 import { getDb } from '@/server/deps'
 import {
-  loadPublicRecipeBySlug,
+  loadPublicRecipeRowBySlug,
+  loadRecipeRowsForRow,
   resolvePublicSlugForLocale,
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
@@ -83,13 +84,31 @@ import { getBaseUrlFromEnv } from '@/server/http/base-url'
 import { resolvePageLocale, resolveContentLocale } from '@/server/http/page-locale'
 
 /**
- * Dedup por-request (React.cache) das DUAS leituras públicas que `generateMetadata` E o render fazem
+ * Cache do roteador no navegador (ADR-0053): por 5 minutos, voltar a uma receita já aberta (por link,
+ * não só pelo botão voltar) reusa a página que o navegador já tem, sem ir ao servidor. Vale só para esta
+ * rota; as outras seguem buscando a página a cada navegação (`staleTimes.dynamic` padrão, 0).
+ * O que muda a página pela mão de quem está vendo (editar, avaliar, imagem, crédito) chama
+ * `router.refresh()`, que limpa esse cache na hora. A sessão que sai ou troca recarrega a página
+ * (`SessionLossGuard`). Fica de fora só a mudança feita por OUTRA pessoa nesses 5 minutos, que aparece
+ * na próxima busca. É o cache de UMA aba: nada é servido a outra pessoa, então uma receita despublicada
+ * nunca vaza por aqui (o motivo de o ISR do detalhe não ter sido feito, docs/perf/2026-10-14-…).
+ */
+export const unstable_dynamicStaleTime = 300
+
+/**
+ * Dedup por-request (React.cache) das leituras públicas que `generateMetadata` E o render fazem
  * pelo MESMO (slug, locale)/recipeId no mesmo request — o Next não dedup raw DB sozinho. `cache()`
  * memoiza por argumentos no escopo do request: a 2ª chamada (render, depois do metadata) reusa o
- * resultado em vez de bater o banco de novo. Build-safe: nenhuma das duas toca `headers()`/`cookies()`,
+ * resultado em vez de bater o banco de novo. Build-safe: nenhuma delas toca `headers()`/`cookies()`,
  * então a memoização NÃO contamina a cacheabilidade do caminho público.
+ *
+ * A leitura pública da receita vem em DOIS passos memoizados (linha gateada por slug, depois o resto)
+ * para o render disparar o segundo em paralelo com avaliações, semelhantes e crédito, que só precisam
+ * da linha. `loadRecipeRowsForRowCached` recebe a MESMA linha (mesma identidade, vinda do cache do
+ * passo 1), então o metadata e o render dividem também o segundo passo.
  */
-const loadPublicRecipeBySlugCached = cache(loadPublicRecipeBySlug)
+const loadPublicRecipeRowBySlugCached = cache(loadPublicRecipeRowBySlug)
+const loadRecipeRowsForRowCached = cache(loadRecipeRowsForRow)
 const loadRecipeSlugMapCached = cache(loadRecipeSlugMap)
 // #319 (ADR-0025 Decisão 5): conjunto ATIVO de cozinhas, memoizado por request — o caminho de
 // metadados E o de render compartilham UMA query (espelha loadRecipeSlugMapCached). Alimenta o
@@ -118,10 +137,11 @@ export async function generateMetadata({
 
   const route = decideRecipeDetailRoute(id)
   if (route.kind === 'slug') {
-    const rows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
-    if (rows != null) {
-      const [slugMap, activeCozinhas] = await Promise.all([
-        loadRecipeSlugMapCached(getDb(), rows.recipe.id),
+    const row = await loadPublicRecipeRowBySlugCached(getDb(), route.slug, locale)
+    if (row != null) {
+      const [rows, slugMap, activeCozinhas] = await Promise.all([
+        loadRecipeRowsForRowCached(getDb(), row),
+        loadRecipeSlugMapCached(getDb(), row.id),
         loadActiveCozinhaSlugsCached(getDb()),
       ])
       const input = buildRecipeSeoInputFromRows({
@@ -177,10 +197,12 @@ export default async function RecipeDetailPage({
   // SÓ quando o `[id]` é um slug (não um UUID): o UUID público já foi 308-ado acima, então um
   // UUID que chega adiante é NÃO-público e vai direto pro caminho do dono (não paga a query pública).
   if (route.kind === 'slug') {
-    const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
-    if (publicRows != null) {
-      // Tudo abaixo depende só do id e da origem da receita (já lidos acima), então roda em PARALELO —
-      // antes eram 4 etapas seriais (slugMap+cozinhas → avaliações → aviso de catálogo → semelhantes).
+    const publicRow = await loadPublicRecipeRowBySlugCached(getDb(), route.slug, locale)
+    if (publicRow != null) {
+      // Tudo abaixo depende só da linha da receita (já lida e gateada acima), então roda em PARALELO,
+      // inclusive o resto da própria receita (traduções, itens, tags, autor, imagem). Cada ida e volta
+      // ao banco custa ~120 ms (função em iad1, banco em sa-east-1) e o postgres.js no pooler gasta duas
+      // por consulta: cada etapa serial a menos é ~0,25 s a menos na navegação.
       //  - JSON-LD Recipe (#234): emitido SÓ no caminho PÚBLICO/indexável (a Receita elegível chegou
       //    aqui). Mesmo input dos metadados; base build-safe (env, sem headers ⇒ não força dinâmico).
       //  - Avaliações (#363): leitura COOKIE-FREE (mantém o caminho público cacheável). `null` fora do
@@ -193,13 +215,25 @@ export default async function RecipeDetailPage({
       //  - #454: trilho de semelhantes — vitrine pública não-personalizada, mesma leitura anônima
       //    cacheável (sem cookie, sem IA na hora).
       //  - #610: crédito da derivada (só consulta a base quando a receita é derivada). Sem cookie, como o resto.
-      const [slugMap, activeCozinhas, reviewData, catalogDisclosure, similar, { basedOn }] = await Promise.all([
-        loadRecipeSlugMapCached(getDb(), publicRows.recipe.id),
+      //  - Rótulos de cozinha da chrome (`DetailChrome`), antes lidos em série depois de tudo isto.
+      const [
+        publicRows,
+        slugMap,
+        activeCozinhas,
+        reviewData,
+        catalogDisclosure,
+        similar,
+        { basedOn },
+        cozinhaVocab,
+      ] = await Promise.all([
+        loadRecipeRowsForRowCached(getDb(), publicRow),
+        loadRecipeSlugMapCached(getDb(), publicRow.id),
         loadActiveCozinhaSlugsCached(getDb()),
-        loadRecipeReviews(getDb(), { id: publicRows.recipe.id }),
-        resolveCatalogDisclosure(publicRows.recipe.origin),
-        loadSimilarForDetail(publicRows.recipe.id, locale),
-        loadDerivedCredit(getDb(), { recipe: publicRows.recipe, locale }),
+        loadRecipeReviews(getDb(), { id: publicRow.id }),
+        resolveCatalogDisclosure(publicRow.origin),
+        loadSimilarForDetail(publicRow.id, locale),
+        loadDerivedCredit(getDb(), { recipe: publicRow, locale }),
+        loadCozinhaVocab(locale),
       ])
       // Caminho PÚBLICO anônimo/cacheável (sem cookie — não personaliza nem força dinâmico).
       // `viewerSaved` fica AUSENTE (anônimo) — o estado do viewer é resolvido no cliente pelos
@@ -240,6 +274,7 @@ export default async function RecipeDetailPage({
           catalogDisclosure={catalogDisclosure}
           reviews={reviews}
           similar={similar}
+          cozinhaVocab={cozinhaVocab}
         />
       )
     }
@@ -286,10 +321,11 @@ export default async function RecipeDetailPage({
   //    INDEPENDENTE de pool (não passa por resolveRecipeView), reusado pelo gate de engajamento.
   //  - #454: mesmo trilho no caminho do dono — não-personalizado (sem viewerId), a mesma vitrine
   //    pública que qualquer um veria; a leitura extra não muda a natureza dinâmica deste branch.
-  const [catalogDisclosure, reviewData, similar] = await Promise.all([
+  const [catalogDisclosure, reviewData, similar, cozinhaVocab] = await Promise.all([
     resolveCatalogDisclosure(view.origin),
     loadRecipeReviews(getDb(), { id: ownerUuid }),
     loadSimilarForDetail(ownerUuid, locale),
+    loadCozinhaVocab(locale),
   ])
   const reviews = serializeReviews(reviewData)
   return (
@@ -300,8 +336,18 @@ export default async function RecipeDetailPage({
       catalogDisclosure={catalogDisclosure}
       reviews={reviews}
       similar={similar}
+      cozinhaVocab={cozinhaVocab}
     />
   )
+}
+
+/**
+ * #317 (ADR-0025): vocabulário de cozinha no escopo `display` (active + deprecated), localizado — uma
+ * cozinha já GRAVADA que depois foi depreciada ainda renderiza o rótulo no acervo (só não é mais
+ * oferecida em criações novas). Lido junto das outras leituras da página, não em série depois delas.
+ */
+async function loadCozinhaVocab(locale: Locale) {
+  return localizeCozinhaVocab(await loadVocabulary(getDb(), 'cozinha', 'display'), locale)
 }
 
 /** Reviews prontos p/ RSC → client (Dates viram ISO). `null` = fora do pool ⇒ seção oculta. */
@@ -355,7 +401,7 @@ async function loadSimilarForDetail(recipeId: string, locale: string): Promise<S
  * inclusive privada); `RecipeDetailActions` (client) resolve a afordância dono/não-dono/visitante
  * pela sessão do cliente.
  */
-async function DetailChrome({
+function DetailChrome({
   view,
   locale,
   reviewImage,
@@ -363,6 +409,7 @@ async function DetailChrome({
   catalogDisclosure,
   reviews,
   similar,
+  cozinhaVocab,
 }: {
   view: RecipeView
   locale: Locale
@@ -380,23 +427,19 @@ async function DetailChrome({
   reviews?: SerializedReviews
   /** #454: vizinhos por cosseno JÁ gateados pelo pool + projetados. `[]` ⇒ o trilho se omite. */
   similar: SearchResult[]
+  /** #317: vocabulário de cozinha (`display`) já localizado, de `loadCozinhaVocab`. */
+  cozinhaVocab: Awaited<ReturnType<typeof loadCozinhaVocab>>
 }) {
   const messages = MESSAGES[locale]
-  // #317 (ADR-0025): rótulo de cozinha resolvido no boundary pelo leitor data-driven, escopo
-  // `display` (active + deprecated) — uma cozinha já GRAVADA que depois foi depreciada ainda
-  // renderiza o rótulo no acervo (só não é mais oferecida em criações novas). null ⇒ a linha some.
-  const cozinhaVocab = localizeCozinhaVocab(
-    await loadVocabulary(getDb(), 'cozinha', 'display'),
-    locale,
-  )
+  // #317 (ADR-0025): rótulo de cozinha resolvido no boundary pelo leitor data-driven. null ⇒ a linha some.
   // #319 (ADR-0025 Decisão 5): `unknownAsAbsent` — um termo `suggested` (fora do escopo `display`)
   // renderiza AUSENTE pra TODO mundo nesta página pública (contenção). A `deprecated` segue visível
   // (está em `display`, resolve p/ rótulo). NÃO vaza o slug cru de uma cozinha pendente a terceiros.
   const cozinhaLabel = resolveCozinhaLabel(cozinhaVocab, view.facets.cozinha, {
     unknownAsAbsent: true,
   })
-  // Suspense SEM fallback, só como fronteira de hidratação: nada aqui dentro suspende (o `await` acima já
-  // rodou), então o conteúdo sai inteiro no HTML, com o status já decidido pela página. Se a hidratação
+  // Suspense SEM fallback, só como fronteira de hidratação: nada aqui dentro suspende (as leituras já
+  // rodaram na página), então o conteúdo sai inteiro no HTML, com o status já decidido pela página. Se a hidratação
   // desta árvore divergir do HTML, o React refaz só ela no client, e não o documento inteiro (o que
   // recriaria o `<html>` com o tema padrão). Antes era o Suspense do `loading.tsx` que fazia esse papel.
   // Nada aqui dentro pode chamar `useSearchParams()`: com este Suspense, o build não acusa mais o

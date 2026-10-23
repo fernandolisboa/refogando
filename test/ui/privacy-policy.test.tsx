@@ -23,6 +23,7 @@ import {
   DATA_POLITICA_V3_3,
   DATA_POLITICA_V3_4,
   DATA_POLITICA_V3_5,
+  DATA_POLITICA_V3_6,
   DATA_PUBLICACAO_TERMOS_V1,
 } from '@/domain/legal-notice'
 
@@ -96,7 +97,8 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_POLITICA_V3_5)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_6)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.5 — ${DATA_POLITICA_V3_5}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.4 — ${DATA_POLITICA_V3_4}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.3 — ${DATA_POLITICA_V3_3}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.2 — ${DATA_POLITICA_V3_2}`))).toBe(true)
@@ -143,8 +145,24 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(en.s31Valores[1]).toContain('Based on … by @you')
     for (const m of [pt, en]) {
       expect(m.s10Historico.some((v) => v.startsWith(`v3.5 — ${DATA_POLITICA_V3_5}`))).toBe(true)
-      expect(m.rodapeVersao).toBe('v3.5')
-      expect(m.rodapeData).toBe(DATA_POLITICA_V3_5)
+    }
+  })
+
+  it('ADR-0053: a transferência internacional (item 5) diz que as funções rodam em São Paulo e que só a IA recebe as restrições salvas nos EUA', () => {
+    const pt = ptBR.privacidade
+    const en = enUS.privacidade
+    const transferenciaPt = pt.s5Transferencia
+    const transferenciaEn = en.s5Transferencia
+    expect(transferenciaPt).toContain('as funções do app rodam na Vercel em São Paulo')
+    expect(transferenciaPt).toContain('só vão aos Estados Unidos, para a IA, com o seu consentimento específico')
+    expect(transferenciaEn).toContain('the app’s functions run on Vercel in São Paulo')
+    expect(transferenciaEn).toContain('only go to the United States, to the AI, with your specific consent')
+    expect(ptBR.restricoesPerfil.consentimento).toContain('O app funciona no Brasil e a IA, nos Estados Unidos.')
+    expect(enUS.restricoesPerfil.consentimento).toContain('The app runs in Brazil and the AI in the United States.')
+    for (const m of [pt, en]) {
+      expect(m.s10Historico.some((v) => v.startsWith(`v3.6 — ${DATA_POLITICA_V3_6}`))).toBe(true)
+      expect(m.rodapeVersao).toBe('v3.6')
+      expect(m.rodapeData).toBe(DATA_POLITICA_V3_6)
     }
   })
 

@@ -9,6 +9,7 @@ import type { SearchResponse } from '@/domain/recipe-search-read'
 // para um <a> simples — o que importa aqui é o href do CTA (rota /create + termo), não a
 // navegação do Next.
 vi.mock('next/link', () => ({
+  useLinkStatus: () => ({ pending: false }),
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
     <a href={typeof href === 'string' ? href : '#'} {...rest}>
       {children}
