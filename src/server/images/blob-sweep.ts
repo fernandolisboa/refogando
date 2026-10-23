@@ -3,6 +3,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import sharp from 'sharp'
 import type { Database } from '@/db/client'
 import { recipeImage, recipeReview, users } from '@/db/schema'
+import { avatarPathPrefix } from '@/server/images/avatar-blob'
 import { deleteOrphanBlobsConcurrently } from '@/server/images/image-blobs'
 import { IMAGE_INPUT_PIXEL_LIMIT } from '@/server/images/image-derivatives'
 import type { ImageStore, ListedBlob } from '@/server/images/image-store'
@@ -103,7 +104,9 @@ export type BlobSweepCounts = {
   fotosRestantes: number
 }
 
-type Kind = 'avatar' | 'recipePhoto' | 'other'
+/** Como o banco referencia uma URL. O avatar leva a conta: o re-encode grava sob o prefixo dela (#604). */
+type Ref = { kind: 'avatar'; userId: string } | { kind: 'recipePhoto' } | { kind: 'other' }
+const OTHER: Ref = { kind: 'other' }
 
 /**
  * Todas as URLs que o banco referencia, e como: avatar (`users.image`), foto de receita enviada por pessoa (o
@@ -111,14 +114,14 @@ type Kind = 'avatar' | 'recipePhoto' | 'other'
  * Lê cada tabela UMA vez (nenhuma dessas colunas tem índice, e conferir por URL varreria a tabela a cada
  * lote); são alguns MB por mil imagens, folgado na função.
  */
-async function loadReferences(db: Database): Promise<Map<string, Kind>> {
-  const kinds = new Map<string, Kind>()
-  const mark = (url: string | null, kind: Kind) => {
+async function loadReferences(db: Database): Promise<Map<string, Ref>> {
+  const kinds = new Map<string, Ref>()
+  const mark = (url: string | null, ref: Ref) => {
     if (!url) return
     // Uma URL referenciada mais de uma vez vira "outra" e fica fora da auditoria: antes do #604 uma conta podia
     // plantar em `users.image` a URL da foto de receita (ou do avatar) de outra pessoa, e re-encodar pela linha
     // errada apagaria o blob que a outra linha ainda usa.
-    kinds.set(url, kinds.has(url) ? 'other' : kind)
+    kinds.set(url, kinds.has(url) ? OTHER : ref)
   }
   const [images, reviews, avatars] = await Promise.all([
     db
@@ -130,18 +133,20 @@ async function loadReferences(db: Database): Promise<Map<string, Kind>> {
       })
       .from(recipeImage),
     db.select({ u: recipeReview.photoUrl }).from(recipeReview).where(isNotNull(recipeReview.photoUrl)),
-    db.select({ u: users.image }).from(users).where(isNotNull(users.image)),
+    db.select({ id: users.id, u: users.image }).from(users).where(isNotNull(users.image)),
   ])
   for (const r of images) {
-    mark(r.thumbUrl, 'other')
-    mark(r.detailUrl, 'other')
+    mark(r.thumbUrl, OTHER)
+    mark(r.detailUrl, OTHER)
   }
-  for (const r of reviews) mark(r.u, 'other')
-  for (const r of images) mark(r.blobUrl, r.provenance === 'user_photo' ? 'recipePhoto' : 'other')
-  for (const r of avatars) mark(r.u, 'avatar')
+  for (const r of reviews) mark(r.u, OTHER)
+  for (const r of images) mark(r.blobUrl, r.provenance === 'user_photo' ? { kind: 'recipePhoto' } : OTHER)
+  for (const r of avatars) mark(r.u, { kind: 'avatar', userId: r.id })
   // Pelo mesmo motivo, só entra na auditoria o arquivo que mora no prefixo do próprio tipo.
-  for (const [url, kind] of kinds) {
-    if (kind !== 'other' && !blobPath(url).startsWith(kind === 'avatar' ? '/avatars/' : '/recipes/')) kinds.set(url, 'other')
+  for (const [url, ref] of kinds) {
+    if (ref.kind !== 'other' && !blobPath(url).startsWith(ref.kind === 'avatar' ? '/avatars/' : '/recipes/')) {
+      kinds.set(url, OTHER)
+    }
   }
   return kinds
 }
@@ -184,7 +189,7 @@ async function auditLegacyPhoto(
   db: Database,
   store: ImageStore,
   blob: ListedBlob,
-  kind: 'avatar' | 'recipePhoto',
+  ref: Exclude<Ref, { kind: 'other' }>,
 ): Promise<LegacyPhotoOutcome> {
   let metadado = false
   try {
@@ -192,21 +197,22 @@ async function auditLegacyPhoto(
     if (!got) return { metadado, desfecho: 'falha' }
     metadado = hasPersonalMetadata(await sharp(got.data, { limitInputPixels: IMAGE_INPUT_PIXEL_LIMIT }).metadata())
     if (!metadado) return { metadado, desfecho: 'limpa' }
-    const spec: UserPhotoSpec = kind === 'avatar' ? AVATAR_PHOTO_SPEC : RECIPE_PHOTO_SPEC
+    const spec: UserPhotoSpec = ref.kind === 'avatar' ? AVATAR_PHOTO_SPEC : RECIPE_PHOTO_SPEC
     const clean = await reencodeUserPhoto(got.data, spec)
     if (!clean) return { metadado, desfecho: 'falha' }
+    // O avatar novo mora sob o prefixo da conta que `loadReferences` leu (#604).
     const { url: newUrl } = await store.store({
       data: clean.data,
       contentType: clean.contentType,
-      pathPrefix: kind === 'avatar' ? 'avatars' : 'recipes',
+      pathPrefix: ref.kind === 'avatar' ? avatarPathPrefix(ref.userId) : 'recipes',
     })
     // Troca só se o banco ainda aponta para a antiga (a pessoa pode ter trocado a foto no meio).
     const swapped =
-      kind === 'avatar'
+      ref.kind === 'avatar'
         ? await db
             .update(users)
             .set({ image: newUrl, updatedAt: new Date() })
-            .where(eq(users.image, blob.url))
+            .where(and(eq(users.id, ref.userId), eq(users.image, blob.url)))
             .returning({ id: users.id })
         : await db
             .update(recipeImage)
@@ -288,7 +294,7 @@ export async function sweepBlobs(
   if (opts.now < LEGACY_PHOTO_AUDIT_UNTIL) {
     const legacy = rotatingOrder(
       old.filter((b) => {
-        const kind = kinds.get(b.url)
+        const kind = kinds.get(b.url)?.kind
         return b.uploadedAt < LEGACY_PHOTO_CUTOFF && (kind === 'avatar' || kind === 'recipePhoto')
       }),
       opts.now,
@@ -298,7 +304,7 @@ export async function sweepBlobs(
         counts.fotosRestantes = legacy.length - i
         break
       }
-      const outcome = await auditLegacyPhoto(db, store, blob, kinds.get(blob.url) as 'avatar' | 'recipePhoto')
+      const outcome = await auditLegacyPhoto(db, store, blob, kinds.get(blob.url) as Exclude<Ref, { kind: 'other' }>)
       counts.fotosVerificadas += 1
       if (outcome.metadado) counts.fotosComMetadado += 1
       if (outcome.desfecho === 'reencodada') counts.fotosReencodadas += 1
