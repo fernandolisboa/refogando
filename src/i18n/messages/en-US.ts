@@ -165,6 +165,8 @@ export const enUS: Messages = {
     // "AI-generated" seal (#132, ADR-0017) — over ai_generated images on cards and detail.
     // The Claude Design prototype uses ✨ on this seal (RefoStage "Minhas criações"/Search).
     imagemSeloIa: '✨ AI-generated',
+    // "AI-generated text" seal (#597) on the detail of a Recipe whose text came from AI (`textAiGenerated`).
+    textoSeloIa: '✨ AI-generated text',
     // #5 (ADR-0019 amendment): "Generate with AI" DEMOTED from a permanent CTA to the EMPTY STATE (an
     // exit card). It does NOT auto-fire (Search never creates): it links to /create?q=<term> pre-filling
     // the free-text. Guests see the sign-in invite (reuses `minhasCriacoes.convidaEntrar*`). The

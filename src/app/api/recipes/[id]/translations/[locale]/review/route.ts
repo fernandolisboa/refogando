@@ -5,6 +5,7 @@ import { isUuid } from '@/server/http/params'
 import { canonicalLocale } from '@/i18n/locale'
 import { recipe, recipeTranslation } from '@/db/schema'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
+import { isAiOrigin } from '@/domain/recipe'
 
 /**
  * Curador remove a sinalização de uma tradução automática (issue #23, AC2.1):
@@ -16,6 +17,8 @@ import { isCommunityVisible } from '@/domain/recipe-visibility-check'
  * do pool SEM tocar `visibility` (AC3) — o gate de comunidade aqui exige também
  * `moderation_removed_at IS NULL`, senão o Curador poderia des-sinalizar a tradução de uma
  * Receita já moderada. Espelha a cláusula de moderação de `recipe-pool.ts` (404 leak-safe).
+ *
+ * #597: o idioma ORIGINAL de uma `ai_*` ou `user_edited` ⇒ 409 `texto_original` (não é tradução; ver o corpo).
  *
  * NÃO toca `stale` nem re-embeda (proveniência ≠ conteúdo); só bump `updatedAt`. O WHERE
  * com `provenance = 'automatica_nao_revisada'` protege contra rebaixar `escrita_por_pessoa`
@@ -47,6 +50,8 @@ export async function POST(
       visibility: recipe.visibility,
       moderationRemovedAt: recipe.moderationRemovedAt,
       curationStatus: recipe.curationStatus,
+      origin: recipe.origin,
+      originalLocale: recipe.originalLocale,
     })
     .from(recipe)
     .where(eq(recipe.id, id))
@@ -57,6 +62,12 @@ export async function POST(
     isCommunityVisible(gate.ownerId, gate.visibility, gate.curationStatus) &&
     gate.moderationRemovedAt == null
   if (!isCommunity) return Response.json({ error: 'not_found' }, { status: 404 })
+  // #597: o idioma original de uma Receita de IA ou derivada/clone não é tradução. `automatica_nao_revisada` ali quer
+  // dizer "texto da IA" e liga o selo "texto gerado por IA" (`resolveAiTextSignal`) na derivada e em toda cópia
+  // futura; revisar não o reescreve, então não pode apagar o selo. O catálogo tem o próprio fluxo (ADR-0026).
+  if ((gate.origin === 'user_edited' || isAiOrigin(gate.origin)) && locale === gate.originalLocale) {
+    return Response.json({ error: 'texto_original' }, { status: 409 })
+  }
 
   // Confirma a existência da LINHA (404 leak-safe, separado do efeito idempotente).
   const [row] = await db

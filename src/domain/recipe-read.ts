@@ -24,6 +24,7 @@
  */
 
 import {
+  isAiOrigin,
   isTranslationReliable,
   type LineageKind,
   type Origin,
@@ -369,6 +370,11 @@ export type RecipeView = {
    * SEMPRE presente (booleano de display derivado), distinto dos campos "ausente ≠ vazio".
    */
   autoTranslationSignal: boolean
+  /**
+   * Selo "texto gerado por IA" (#597): `true` quando o texto veio da IA e ninguém o reescreveu
+   * (`resolveAiTextSignal`). AUSENTE ("ausente ≠ vazio") nos outros casos. PÚBLICO (qualquer leitor vê).
+   */
+  textAiGenerated?: boolean
   /** Avisos de contradição — AUSENTE quando vazio (ausente ≠ "verificado OK"). */
   avisos?: AvisoView[]
   /** Aviso de tradução obsoleta — AUSENTE salvo quando a tradução pedida é stale e ≠ origem. */
@@ -575,6 +581,31 @@ export function resolveAutoTranslationSignal(input: {
     findTranslation(input.translations, input.originalLocale) ??
     findTranslation(input.translations, input.requestLocale)
   return base == null ? true : !isTranslationReliable(base.provenance)
+}
+
+/**
+ * Selo "texto gerado por IA" na Receita (#597, ADR-0002 atualização de 2026-10-23). `true` quando o texto da
+ * Receita veio da IA e nenhuma pessoa o reescreveu:
+ *  - `origin` `ai_*`: SEMPRE (selo obrigatório, como o da imagem `ai_generated`; o `origin` é imutável e a
+ *    edição in-place do dono não o tira — melhor sobrar selo do que faltar, CDC art. 6º, III);
+ *  - `user_edited` (derivada/clone): enquanto a tradução do `originalLocale` ainda for a da IA
+ *    (`automatica_nao_revisada`, copiada da base). O Clonar copia como está ⇒ herda; o "Criar minha versão" que
+ *    reescreve o PREPARO (passos) no idioma original grava `escrita_por_pessoa` ⇒ perde; o que não mexe no
+ *    texto, ou só no título/descrição, mantém (`editedProvenance`, derive.ts). Não depende da base existir: o
+ *    sinal mora na própria linha, então apagar a base não tira o selo da cópia. A edição in-place do dono não
+ *    toca a proveniência (fica, como no `ai_*`), e o Curador não revisa esse idioma numa `ai_*` nem numa `user_edited`
+ *    (409 `texto_original`).
+ *  - `catalog` e `web_imported`: nunca (o catálogo é assinado por um Curador, ADR-0026; a importada tem fonte).
+ * PURO; a UI só lê o booleano.
+ */
+export function resolveAiTextSignal(input: {
+  origin: Origin
+  originalLocale: string
+  translations: ReadonlyArray<Pick<TranslationRow, 'locale' | 'provenance'>>
+}): boolean {
+  if (isAiOrigin(input.origin)) return true
+  if (input.origin !== 'user_edited') return false
+  return findTranslation(input.translations, input.originalLocale)?.provenance === 'automatica_nao_revisada'
 }
 
 /**
@@ -799,6 +830,14 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     })),
     // Selo "tradução automática" (#161): SEMPRE presente (booleano de display derivado).
     autoTranslationSignal,
+    // Selo "texto gerado por IA" (#597). "ausente ≠ vazio": só sai quando o texto é da IA.
+    ...(resolveAiTextSignal({
+      origin: input.recipe.origin,
+      originalLocale: input.recipe.originalLocale,
+      translations: input.translations,
+    })
+      ? { textAiGenerated: true }
+      : {}),
     // Ausente ≠ vazio: anexa `avisos` SÓ quando há ≥ 1 (espelha `resolveFacets.restricoes`).
     ...(avisos.length > 0 ? { avisos } : {}),
     // Ausente quando a tradução pedida não é stale (ou é a origem) — espelha `avisos?`.

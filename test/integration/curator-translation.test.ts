@@ -316,4 +316,26 @@ describe('GET stale-list #23 — AC2.2 (só comunidade)', () => {
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ stale: [] })
   })
+
+  it('#597: idioma ORIGINAL de uma user_edited ou ai_* ⇒ 409 texto_original (o selo de texto da IA fica); outro locale revisa', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'curador-clone@ex.com', role: 'curador' })
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'dono-clone@ex.com' })
+    const id = await seedRecipe({ origin: 'user_edited', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Bolo copiado da IA', provenance: 'automatica_nao_revisada' })
+    await seedTranslation({ recipeId: id, locale: 'en-US', titulo: 'Cake', provenance: 'automatica_nao_revisada' })
+
+    const res = await review(id, 'pt-BR', headers)
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'texto_original' })
+    expect(await readProvenance(id, 'pt-BR')).toBe('automatica_nao_revisada')
+
+    expect((await review(id, 'en-US', headers)).status).toBe(200)
+    expect(await readProvenance(id, 'en-US')).toBe('automatica_revisada')
+
+    // ai_*: o selo da própria não depende disso, mas a cópia futura herdaria `automatica_revisada` e o perderia.
+    const aiId = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId })
+    await seedTranslation({ recipeId: aiId, locale: 'pt-BR', titulo: 'Bolo da IA', provenance: 'automatica_nao_revisada' })
+    expect((await review(aiId, 'pt-BR', headers)).status).toBe(409)
+    expect(await readProvenance(aiId, 'pt-BR')).toBe('automatica_nao_revisada')
+  })
 })
