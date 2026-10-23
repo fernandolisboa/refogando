@@ -123,16 +123,30 @@ describe('SessionLossGuard', () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
-  it('com hold ativo a perda não recarrega, e soltar depois não recarrega por ela', () => {
+  it('com hold ativo a perda não recarrega; soltar o último recarrega uma vez (quem segurou não navegou)', () => {
     mockSession = fakeSession({ data: admin() })
     const { rerender } = render(<SessionLossGuard />)
-    const release = holdSessionLossReload()
+    const a = holdSessionLossReload()
+    const b = holdSessionLossReload()
     mockSession = fakeSession({ data: null })
     rerender(<SessionLossGuard />)
     expect(reload).not.toHaveBeenCalled()
-    release()
-    release()
+    a()
+    a()
+    expect(reload).not.toHaveBeenCalled()
+    b()
+    expect(reload).toHaveBeenCalledTimes(1)
+    b()
     rerender(<SessionLossGuard />)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('soltar sem perda no meio não recarrega', () => {
+    mockSession = fakeSession({ data: admin() })
+    const { rerender } = render(<SessionLossGuard />)
+    const release = holdSessionLossReload()
+    rerender(<SessionLossGuard />)
+    release()
     expect(reload).not.toHaveBeenCalled()
   })
 

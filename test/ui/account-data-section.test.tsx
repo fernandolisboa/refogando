@@ -15,7 +15,8 @@ import type { ReactNode } from 'react'
  * cima do `location.assign` da home.
  */
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
+const router = vi.hoisted(() => ({ refresh: () => {} }))
+vi.mock('next/navigation', () => ({ useRouter: () => router }))
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (

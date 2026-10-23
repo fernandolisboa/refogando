@@ -3,9 +3,11 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Toda rota de API do Console exige papel no servidor. O gate das páginas (`admin/layout.tsx` + `SectionGate`)
- * protege a tela; o dado sai pelas rotas abaixo, então cada handler exportado chama `requireRole` (401 sem
- * sessão, 403 com papel insuficiente). `/api/admin/*` pede 'admin'; `/api/curate/*` pede 'curador' (ou mais).
+ * As rotas de `/api/admin` e `/api/curate` exigem papel no servidor. O gate das páginas (`admin/layout.tsx` +
+ * `SectionGate`) protege a tela; o dado sai pelas rotas, então cada handler exportado chama `requireRole` (401
+ * sem sessão, 403 com papel insuficiente) e devolve a resposta dele se falhar. As poucas rotas de fora usadas
+ * pelo Console (ex.: `PATCH /api/recipes/[id]/translations/[locale]`) têm a guarda própria e testes de
+ * integração; não entram aqui. `/api/admin/*` pede 'admin'; `/api/curate/*` pede 'curador' (ou mais).
  * Rota nova sem a guarda reprova aqui. Leitura do código-fonte, sem subir o app: os handlers são
  * `export async function GET|POST|…`; outra forma de exportar reprova para o teste não deixar passar nada.
  */
@@ -20,15 +22,21 @@ function routeFiles(dir: string): string[] {
   })
 }
 
-/** Corpo de cada handler: do `export … function METHOD` até o próximo handler exportado (ou o fim). */
+/**
+ * Corpo de cada handler: do `export … function METHOD` até o `}` na coluna 0 que fecha a função (o estilo
+ * do repo), para um `requireRole` num helper abaixo não contar pelo último handler.
+ */
 function handlers(src: string): Array<{ method: string; body: string }> {
   const re = new RegExp(`export\\s+(?:async\\s+)?function\\s+(${METHODS})\\b`, 'g')
-  const starts = [...src.matchAll(re)]
-  return starts.map((m, i) => ({
-    method: m[1],
-    body: src.slice(m.index, i + 1 < starts.length ? starts[i + 1].index : undefined),
-  }))
+  return [...src.matchAll(re)].map((m) => {
+    const end = src.indexOf('\n}', m.index)
+    return { method: m[1], body: src.slice(m.index, end === -1 ? undefined : end) }
+  })
 }
+
+// `const g = await requireRole(req, '<papel>')` seguido de `if (!g.ok) return g.response`: o resultado é
+// conferido, não só chamado.
+const GUARD = /const (\w+) = await requireRole\(\s*\w+\s*,\s*'(\w+)'\s*\)\s*\n\s*if \(!\1\.ok\) return \1\.response\b/
 
 const AREAS = [
   { dir: 'admin', roles: ['admin'] },
@@ -54,16 +62,13 @@ describe('rotas de API do Console exigem papel', () => {
       })
 
       for (const { method, body } of handlers(src)) {
-        it(`${rel} ${method}: requireRole com ${area.roles.join(' ou ')}`, () => {
-          const call = body.match(/requireRole\(\s*\w+\s*,\s*'(\w+)'\s*\)/)
-          expect(call, 'handler sem requireRole').not.toBeNull()
-          expect(area.roles).toContain(call?.[1])
-          // A guarda vem antes de qualquer leitura de banco ou corpo.
-          const guardAt = body.indexOf('requireRole(')
-          for (const early of ['getDb(', '.json()', 'await db']) {
-            const at = body.indexOf(early)
-            if (at !== -1) expect(at, `${early} antes da guarda`).toBeGreaterThan(guardAt)
-          }
+        it(`${rel} ${method}: requireRole com ${area.roles.join(' ou ')}, conferido antes de tudo`, () => {
+          const guard = body.match(GUARD)
+          expect(guard, 'handler sem `const g = await requireRole(…)` + `if (!g.ok) return g.response`').not.toBeNull()
+          expect(area.roles).toContain(guard?.[2])
+          // Antes da guarda, só ler os params da rota (o id da URL): nenhum outro await (banco, corpo, helper).
+          const before = body.slice(0, guard?.index ?? 0)
+          expect(before.replace(/await params\b/g, ''), 'await antes da guarda').not.toMatch(/\bawait\b/)
         })
       }
     }

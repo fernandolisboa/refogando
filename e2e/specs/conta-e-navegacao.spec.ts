@@ -3,12 +3,14 @@ import { sectionLabel, tabLabel } from '../../src/components/nav/nav-labels'
 import { TOUR_STORAGE_PREFIX, tourStorageKey, type TourState } from '../../src/domain/onboarding-tour'
 import {
   expect,
+  markPage,
   newAccountData,
   openAccountMenu,
   openMobileMenu,
   t,
   test,
   waitForHydration,
+  waitForReload,
 } from '../fixtures/test'
 
 /**
@@ -41,8 +43,11 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
   await tour.getByRole('button', { name: t.tour.agoraNao }).click()
   await expect(page.getByTestId('tour-overlay')).toHaveCount(0)
 
+  await markPage(page)
   const menu = await openAccountMenu(page, isMobile, conta.name)
   await menu.getByRole('menuitem', { name: t.nav.signOut }).click()
+  // Sair recarrega a página (ADR-0028, Adendo 2026-10-23): espera a recarga antes do próximo goto.
+  await waitForReload(page)
   await expect(page.locator('[data-tour="conta"] a[href^="/sign-in"]')).toBeAttached()
 
   // Sinal determinístico da abertura automática: registra cada leitura da chave do tour. Na home, a
@@ -143,8 +148,6 @@ test('logado percorre todas as abas das seções; Planejar lembra a última aba'
   }
 })
 
-type MarkedWindow = Window & { __e2eAntesDeSair?: boolean }
-
 test('sair recarrega esta aba e as outras abertas (nada fica na tela de quem saiu)', async ({
   page,
   isMobile,
@@ -154,21 +157,19 @@ test('sair recarrega esta aba e as outras abertas (nada fica na tela de quem sai
   const outra = await page.context().newPage()
   await outra.goto('/pt-BR/me/pantry')
   await waitForHydration(outra)
-  await expect(outra.locator('[data-tour="conta"]').getByRole('button', { name: account.name, includeHidden: true })).toBeAttached()
+  await expect(
+    outra.locator('[data-tour="conta"]').getByRole('button', { name: account.name, includeHidden: true }),
+  ).toBeAttached()
 
   await page.goto('/pt-BR/me/meal-plan')
   await waitForHydration(page)
-  // Marca a página viva: uma recarga de verdade apaga a marca; só trocar o estado do React não apaga.
-  for (const p of [page, outra]) await p.evaluate(() => ((window as MarkedWindow).__e2eAntesDeSair = true))
+  for (const p of [page, outra]) await markPage(p)
 
   const menu = await openAccountMenu(page, isMobile, account.name)
   await menu.getByRole('menuitem', { name: t.nav.signOut }).click()
 
   for (const p of [page, outra]) {
-    await expect
-      .poll(() => p.evaluate(() => (window as MarkedWindow).__e2eAntesDeSair ?? false), { message: 'a página recarregou' })
-      .toBe(false)
-    await waitForHydration(p)
+    await waitForReload(p)
     await expect(p.locator('[data-tour="conta"] a[href^="/sign-in"]').first()).toBeAttached()
   }
   await outra.close()

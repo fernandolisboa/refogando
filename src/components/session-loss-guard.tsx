@@ -3,7 +3,7 @@
  * Saída da sessão sem tela velha (ADR-0028, Adendo 2026-10-23). Componente sem DOM montado uma vez na
  * raiz, ao lado do `AppUpdateGuard`. Observa o atom de sessão do Better Auth (o mesmo do `AuthSlot`) e:
  *
- * - **a conta some** (logada → anônima: "Sair" nesta aba, "Sair" em outra aba via BroadcastChannel, sessão
+ * - **a conta some** (logada → anônima: "Sair" nesta aba, "Sair" em outra aba pelo canal do Better Auth (evento `storage`), sessão
  *   expirada ou revogada percebida num refetch) ou **troca** (conta A → conta B): recarrega a página. A
  *   recarga refaz a rota no servidor, então o gate do Console (`admin/layout.tsx`) manda para o login e
  *   as telas pessoais renderizam como visitante; e limpa o que só existia em memória (a lista de Usuários
@@ -11,26 +11,30 @@
  *   escolha da saída da exclusão de conta (`delete-account-dialog.tsx`): recarga de verdade, não `router`.
  * - **o papel muda** com a mesma conta (refetch na volta à aba ou ao navegar): `router.refresh()`. O
  *   servidor reavalia os gates com o papel vivo (cookieCache desligado) sem perder o estado do cliente;
- *   um admin rebaixado sai do Console na hora.
+ *   um admin rebaixado sai do Console no próximo refetch.
  *
- * Só age sobre um valor RESOLVIDO: `isPending` (hidratação, primeira busca) e um `error` de rede não
- * contam como "anônimo", senão uma falha de rede derrubaria a tela de quem está logado (o atom mantém o
- * `data` anterior nesse caso). O 401 é a exceção: o Better Auth zera o `data` e isso é perda de sessão.
+ * Só age sobre um valor RESOLVIDO. Sessão ausente é o `get-session` respondendo 200 `null` (ou 401).
+ * `isPending` (hidratação, primeira busca) e erro de rede ou com outro status (5xx, 429) não contam como
+ * "anônimo", mesmo quando o atom zera o `data` (o refetch ao voltar online zera): senão uma falha de rede
+ * derrubaria a tela de quem está logado.
  * Entrar (anônimo → logado) não recarrega: quem entra já navega pela tela de login.
  *
- * Fluxo que derruba a sessão e navega por conta própria (a exclusão de conta apaga as sessões no servidor e
- * vai para a home do idioma) segura a recarga com `holdSessionLossReload()` desde ANTES do pedido (um
- * refetch no meio dele já veria a sessão sumir) e solta só se desistir de sair.
+ * Fluxo que derruba ou troca a sessão e navega por conta própria segura a recarga com
+ * `holdSessionLossReload()` desde ANTES do pedido (um refetch no meio dele já veria a sessão mudar): a
+ * exclusão de conta (vai para a home do idioma; solta só se desistir de sair) e o login/cadastro (entrar como
+ * outra conta estando logado; solta ao sair da tela de login ou se o pedido falhar).
  */
 import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 
 let holds = 0
+let lostWhileHeld = false
 
 /**
  * Enquanto houver um `hold`, a perda de sessão NÃO recarrega (o chamador navega). Devolve o `release`
- * (idempotente). Uma perda vista durante o hold fica registrada: soltar depois não recarrega por ela.
+ * (idempotente). Se a sessão sumiu ou trocou durante o hold, soltar o último recarrega: quem segurou
+ * desistiu de navegar (ou já navegou), e a tela não pode ficar com o dado da conta que saiu.
  */
 export function holdSessionLossReload(): () => void {
   holds += 1
@@ -39,12 +43,17 @@ export function holdSessionLossReload(): () => void {
     if (released) return
     released = true
     holds -= 1
+    if (holds === 0 && lostWhileHeld) {
+      lostWhileHeld = false
+      window.location.reload()
+    }
   }
 }
 
 /** Só para testes: o módulo vive entre testes no jsdom. */
 export function resetSessionLossGuardForTests(): void {
   holds = 0
+  lostWhileHeld = false
 }
 
 type Identity = { userId: string; role: string | null }
@@ -71,7 +80,10 @@ export function SessionLossGuard() {
       if (role !== prev.role) router.refresh()
       return
     }
-    if (holds > 0) return
+    if (holds > 0) {
+      lostWhileHeld = true
+      return
+    }
     window.location.reload()
   }, [userId, role, isPending, transientError, router])
 
