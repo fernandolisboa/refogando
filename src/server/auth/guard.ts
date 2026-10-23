@@ -102,3 +102,20 @@ export async function requireRole(req: Request, min: Role): Promise<GuardResult>
   }
   return r
 }
+
+/**
+ * #606 — `requireRole` + sessão RECENTE (`requireFreshSession`), para a ação destrutiva da equipe (eliminar a conta de
+ * outra pessoa pelo Console). O papel vem antes: quem não é admin recebe o 403 `papel_insuficiente` de sempre, nunca
+ * o convite para entrar de novo. Admin com sessão antiga ⇒ 403 `reautenticar`.
+ */
+export async function requireFreshRole(req: Request, min: Role, now: Date = new Date()): Promise<GuardResult> {
+  const { result, createdAt } = await resolveSession(req.headers)
+  if (!result.ok) return result
+  if (decideRole(result.session.user.role, min) !== 'allow') {
+    return { ok: false, response: Response.json({ error: 'papel_insuficiente' }, { status: 403 }) }
+  }
+  if (!isFreshSession(createdAt, now)) {
+    return { ok: false, response: Response.json({ error: 'reautenticar' }, { status: 403 }) }
+  }
+  return result
+}

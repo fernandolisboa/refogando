@@ -37,6 +37,7 @@ describe('DATA_RETENTION_DAYS — nunca apaga antes do prazo de calendário', ()
     { key: 'usageLedger', months: 24, label: '24 meses' },
     { key: 'resolvedTakedown', months: 12, label: '12 meses' },
     { key: 'dsarAudit', months: 60, label: '5 anos' },
+    { key: 'accountClosure', months: 60, label: '5 anos' },
   ] as const
 
   for (const { key, months, label } of cases) {

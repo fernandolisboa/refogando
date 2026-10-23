@@ -2,6 +2,7 @@ import { and, eq, gte, inArray, isNotNull, isNull, lt, notExists, or, sql, type 
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core'
 import type { Database } from '@/db/client'
 import {
+  accountClosure,
   briefing,
   creationSession,
   dsarAuditEvent,
@@ -38,6 +39,7 @@ import type { TimeBudget } from '@/server/time-budget'
  *    de encerramento, o último registro da auditoria é a data de encerramento; sem registro, o recebimento.
  *    Ticket aberto nunca sai.
  *  - Auditoria DSAR com 5 anos (`purgeDsarEventsBefore`, o único DELETE dela).
+ *  - Registro do encerramento de conta pela equipe com 5 anos (`account_closure`, #606; o único DELETE dele).
  *  - Os cascos das sessões de criação de conta ELIMINADA (a limpeza da eliminação deixou só modelo, tokens e
  *    custo): a `generation` com 24 meses (por linha — a regeneração reusa a sessão), depois a sessão sem
  *    nenhuma geração restante (a Transcrição cai em cascata) e o Briefing que ficou sem sessão. Nessa ordem:
@@ -186,6 +188,18 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
     label: 'expurgo da auditoria DSAR',
     run: (db, now, opts = {}) =>
       deleteInBatches((limit) => purgeDsarEventsBefore(db, retentionCutoffs(now).dsarAudit, limit), opts),
+  },
+  {
+    key: 'accountClosures',
+    label: 'expurgo dos registros de encerramento de conta',
+    run: (db, now, opts = {}) =>
+      deleteWhere(
+        db,
+        accountClosure,
+        accountClosure.id,
+        lt(accountClosure.createdAt, retentionCutoffs(now).accountClosure),
+        opts,
+      ),
   },
   {
     key: 'erasedGenerations',

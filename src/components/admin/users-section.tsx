@@ -5,7 +5,9 @@
  * Lista as contas por ATALHO (Todos, Novos, Sem papel, Equipe, Cadastro pendente, Pro, Desativadas), com
  * busca por nome/@handle/email/ID, ordenação e paginação — tudo no servidor (GET /api/admin/users). Clicar
  * numa conta abre a gaveta de detalhes, onde o papel muda (PUT /api/admin/roles, ADR-0010: fetch ao route
- * handler). O servidor recusa mudar o próprio papel (`papel_proprio`); a UI já desabilita esse caso.
+ * handler). O servidor recusa mudar o próprio papel (`papel_proprio`); a UI já desabilita esse caso. A gaveta tem
+ * também "Eliminar conta" (#606, `CloseAccountDialog`): menor de 16 ou violação grave, travada para a própria conta
+ * e para conta de admin, e escondida para conta já desativada ou eliminada.
  *
  * Email é dado pessoal e só aparece aqui, para admin. Nada desta tela vai a log. Cores: só tokens AA da #54;
  * sem erva (exclusiva do selo do Catálogo) e sem âmbar (exclusivo do aviso de restrição), ADR-0015.
@@ -18,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar } from '@/components/profile/avatar'
+import { CloseAccountDialog, type CloseAccountOutcome } from '@/components/admin/close-account-dialog'
 import {
   Sheet,
   SheetContent,
@@ -26,6 +29,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { ROLES, type Role } from '@/domain/user'
+import { erasedIdentity } from '@/domain/account-erasure'
 import { formatDate, formatDateTime, formatRelativeTime } from '@/domain/relative-time'
 import {
   ADMIN_USER_PRESETS,
@@ -160,6 +164,9 @@ export function UsersSection() {
     | null
   >(null)
   const [copied, setCopied] = useState(false)
+  // Eliminar conta (#606): pedido em voo (a gaveta não fecha) e o desfecho do último encerramento nesta gaveta.
+  const [closing, setClosing] = useState(false)
+  const [closed, setClosed] = useState<CloseAccountOutcome | null>(null)
 
   // Quem abriu a gaveta (a gaveta é controlada, sem SheetTrigger): o foco volta pra ele ao fechar.
   const openerRef = useRef<HTMLElement | null>(null)
@@ -170,6 +177,32 @@ export function UsersSection() {
     setNextRole(u.role)
     setRoleStatus(null)
     setCopied(false)
+    setClosed(null)
+  }
+
+  /**
+   * A conta foi eliminada: a cópia da gaveta passa a mostrar o que sobrou (a identidade anonimizada, derivada só do id,
+   * a mesma do servidor), sem o e-mail e o nome reais, e a lista recarrega (a conta vai para "Desativadas").
+   */
+  function accountClosed(id: string, outcome: CloseAccountOutcome) {
+    const anon = erasedIdentity(id)
+    setSelected((s) =>
+      s?.id === id
+        ? {
+            ...s,
+            ...anon,
+            image: null,
+            locale: null,
+            status: 'eliminada',
+            deletedAt: new Date().toISOString(),
+            lastSeenAt: null,
+            recipeCount: outcome.removedPublicContent ? 0 : s.publicRecipeCount,
+            publicRecipeCount: outcome.removedPublicContent ? 0 : s.publicRecipeCount,
+          }
+        : s,
+    )
+    setClosed(outcome)
+    setReload((n) => n + 1)
   }
 
   async function applyRole(e: React.FormEvent) {
@@ -253,6 +286,7 @@ export function UsersSection() {
   // Sessão ainda carregando: não dá para saber se a linha é a própria conta, então o papel fica travado.
   const roleLocked = meId == null || selfSelected
   const inactiveSelected = selected != null && INACTIVE.includes(selected.status)
+  const adminSelected = selected != null && selected.role === 'admin'
 
   const nameButton = (u: AdminUserListItem, avatar: 'sm' | 'md') => (
     <button
@@ -462,8 +496,8 @@ export function UsersSection() {
         )}
       </section>
 
-      {/* Não fecha com o PUT em voo (mesmo padrão da gaveta de criar receita do Catálogo). */}
-      <Sheet open={selected != null} onOpenChange={(o) => !o && !saving && setSelected(null)}>
+      {/* Não fecha com o PUT nem a eliminação em voo (mesmo padrão da gaveta de criar receita do Catálogo). */}
+      <Sheet open={selected != null} onOpenChange={(o) => !o && !saving && !closing && setSelected(null)}>
         <SheetContent
           side="right"
           closeLabel={m.fechar}
@@ -626,13 +660,57 @@ export function UsersSection() {
                     )}
                     <Button
                       type="submit"
-                      disabled={roleLocked || inactiveSelected || saving || nextRole === selected.role}
+                      disabled={roleLocked || inactiveSelected || saving || closing || nextRole === selected.role}
                       aria-busy={saving}
                     >
                       {saving ? m.aplicandoPapel : m.aplicarPapel}
                     </Button>
                   </div>
                 </form>
+
+                {closed && (
+                  <div role="status" className="flex flex-col gap-1 text-sm font-medium text-brand-ink">
+                    <p>{m.usuariosEliminarFeito}</p>
+                    {closed.notifyRequested && !closed.emailSent && (
+                      <p className="text-fg">{m.usuariosEliminarEmailNaoEnviado}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Conta já desativada ou eliminada: não há o que eliminar. Sessão carregando: trava (pode ser a própria). */}
+                {!inactiveSelected && (
+                  <section
+                    aria-labelledby="eliminar-conta-titulo"
+                    className="flex flex-col gap-3 rounded-lg border border-border p-4"
+                  >
+                    <h3 id="eliminar-conta-titulo" className="text-sm font-semibold text-fg">
+                      {m.usuariosEliminarTitulo}
+                    </h3>
+                    <p className="text-sm text-muted">{m.usuariosEliminarDescricao}</p>
+                    {selfSelected && (
+                      <p id="eliminar-trava-propria" className="text-sm text-muted">
+                        {m.usuariosEliminarTravaPropria}
+                      </p>
+                    )}
+                    {!selfSelected && adminSelected && (
+                      <p id="eliminar-trava-admin" className="text-sm text-muted">
+                        {m.usuariosEliminarTravaAdmin}
+                      </p>
+                    )}
+                    <div>
+                      <CloseAccountDialog
+                        key={selected.id}
+                        user={selected}
+                        disabled={roleLocked || adminSelected || saving}
+                        triggerDescribedBy={
+                          selfSelected ? 'eliminar-trava-propria' : adminSelected ? 'eliminar-trava-admin' : undefined
+                        }
+                        onPendingChange={setClosing}
+                        onClosed={(outcome) => accountClosed(selected.id, outcome)}
+                      />
+                    </div>
+                  </section>
+                )}
               </div>
             </>
           )}

@@ -18,6 +18,11 @@ export const DATA_RETENTION_DAYS = {
   resolvedTakedown: 366,
   /** Auditoria DSAR: 5 anos (Lei 9.873/1999, art. 1º). */
   dsarAudit: 1827,
+  /**
+   * Registro do encerramento de conta pela equipe (`account_closure`, #606): 5 anos, para a defesa num eventual
+   * processo (o prazo da reparação do CDC, art. 27, e o da ação punitiva da administração, Lei 9.873/1999, art. 1º).
+   */
+  accountClosure: 1827,
 } as const
 
 export type RetentionCutoffs = { [K in keyof typeof DATA_RETENTION_DAYS]: Date }
@@ -32,5 +37,6 @@ export function retentionCutoffs(now: Date): RetentionCutoffs {
     extractionEvent: before(DATA_RETENTION_DAYS.extractionEvent),
     resolvedTakedown: before(DATA_RETENTION_DAYS.resolvedTakedown),
     dsarAudit: before(DATA_RETENTION_DAYS.dsarAudit),
+    accountClosure: before(DATA_RETENTION_DAYS.accountClosure),
   }
 }

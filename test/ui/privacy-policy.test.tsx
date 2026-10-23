@@ -18,7 +18,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
-import { DATA_POLITICA_V3_2, DATA_POLITICA_V3_3, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
+import { DATA_POLITICA_V3_2, DATA_POLITICA_V3_3, DATA_POLITICA_V3_4, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -90,7 +90,8 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_POLITICA_V3_3)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_4)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.3 — ${DATA_POLITICA_V3_3}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.2 — ${DATA_POLITICA_V3_2}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}`))).toBe(true)
     // 11 direitos, o último sobre decisão automatizada (Art. 20).
@@ -102,7 +103,28 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(ptBR.privacidade.s35Valores[0]).toContain('a data e a versão do texto com que você consentiu')
     expect(enUS.privacidade.s35Valores[0]).toContain('the date and the version of the text you consented to')
     expect(ptBR.privacidade.s35Valores[3]).toContain('a data e a versão do consentimento saem junto')
-    for (const m of [ptBR.privacidade, enUS.privacidade]) expect(m.rodapeData).toBe(DATA_POLITICA_V3_3)
+    for (const m of [ptBR.privacidade, enUS.privacidade]) {
+      expect(m.s10Historico.some((v) => v.startsWith(`v3.3 — ${DATA_POLITICA_V3_3}`))).toBe(true)
+    }
+  })
+
+  it('#606: o item 3.6 diz o que fica do encerramento da conta pela equipe, por quanto tempo e com que base; o Resend manda o aviso', () => {
+    const pt = ptBR.privacidade
+    const en = enUS.privacidade
+    expect(pt.s36Valores[0]).toContain('se a equipe encerrar a sua conta')
+    expect(pt.s36Valores[0]).toContain('se você foi avisado por e-mail')
+    expect(pt.s36Valores[2]).toContain('para o registro do encerramento da conta, exercício regular de direitos — Art. 7º, VI')
+    expect(pt.s36Valores[3]).toContain('o registro do encerramento da conta pela equipe, por 5 anos')
+    expect(en.s36Valores[0]).toContain('if the team closes your account')
+    expect(en.s36Valores[2]).toContain('for the record of an account closure, the regular exercise of rights — Art. 7, VI')
+    expect(en.s36Valores[3]).toContain('the record of an account closure by the team, for 5 years')
+    const resend = pt.s5Prestadores.indexOf('Resend')
+    expect(pt.s5ParaQue[resend]).toContain('aviso de encerramento da conta')
+    expect(en.s5ParaQue[resend]).toContain('account closure notice')
+    for (const m of [pt, en]) {
+      expect(m.rodapeVersao).toBe('v3.4')
+      expect(m.rodapeData).toBe(DATA_POLITICA_V3_4)
+    }
   })
 
   it('#599: a revisão de imagens da curadoria não é exceção do conteúdo privado, só da foto de receita publicada', () => {
