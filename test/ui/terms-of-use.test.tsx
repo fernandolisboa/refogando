@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
  *  - PUBLICAÇÃO: nenhuma chave crua (`{`/`}`), o e-mail real do canal, a idade mínima, e nada de "advogado"
  *    (o sign-off é interno, nunca alegar advogado);
  *  - os destaques do CDC art. 54 (negrito) nas cláusulas certas e só nelas;
- *  - rodapé igual à última linha do histórico, e a data única (`DATA_PUBLICACAO_TERMOS_V1`);
+ *  - rodapé igual à última linha do histórico, e a data de cada versão (`DATA_PUBLICACAO_TERMOS_V1`, `DATA_TERMOS_V1_1`);
  *  - paridade de chaves e de tamanho dos arrays pt-BR/en-US;
  *  - o link do rodapé do site e o `generateMetadata` da página.
  */
@@ -33,7 +33,7 @@ import { enUS } from '@/i18n/messages/en-US'
 import { TermsOfUse } from '@/components/legal/terms-of-use'
 import { SiteFooter } from '@/components/site-footer'
 import { generateMetadata } from '@/app/[locale]/(com-carregamento)/termos/page'
-import { DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
+import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -119,13 +119,20 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     expect(screen.getByText(m.s5Corpo[0])).not.toHaveClass('font-semibold')
   })
 
-  it('rodapé repete a última linha do histórico, com a data única da publicação', () => {
+  it('rodapé repete a última linha do histórico; cada versão com a sua data (v1 congelada, v1.1 do #605)', () => {
     for (const msgs of [ptBR, enUS]) {
       const m = msgs.termos
       const ultima = m.s10Historico[m.s10Historico.length - 1]
       expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-      expect(m.rodapeData).toBe(DATA_PUBLICACAO_TERMOS_V1)
+      expect(m.s10Historico[0].startsWith(`v1 — ${DATA_PUBLICACAO_TERMOS_V1}`)).toBe(true)
+      expect(m.rodapeData).toBe(DATA_TERMOS_V1_1)
     }
+    // Cada data de versão no formato AAAA-MM-DD (o dia do merge em UTC).
+    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1]) expect(data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // #605: o item 8 cita a receita pública no botão Reportar e mantém o e-mail como via (nada retirado).
+    expect(ptBR.termos.s8Corpo[0]).toContain('receita pública ou uma avaliação pelo botão Reportar')
+    expect(ptBR.termos.s8Corpo[0]).toContain('privacidade@refogando.com')
+    expect(enUS.termos.s8Corpo[0]).toContain('public recipe or a review with the Report button')
     renderAt('pt-BR')
     // Match exato: distinto da linha do histórico.
     expect(screen.getByText(ptBR.termos.rodapeVersao)).toBeInTheDocument()

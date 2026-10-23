@@ -43,6 +43,7 @@ vi.mock('@/lib/auth-client', () => ({
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
+import { REPORT_REASON_MAX } from '@/domain/report'
 
 function ownerView(over: Partial<RecipeView> = {}): RecipeView {
   return {
@@ -237,5 +238,113 @@ describe('RecipeDetailActions — Clonar num clique (ADR-0045)', () => {
     logado()
     renderActions(ownerView())
     expect(screen.queryByRole('button', { name: ptBR.minhasCriacoes.clonar })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * #605: "Reportar" na página da Receita — só logado e não-dono. O botão revela o motivo; "Enviar denúncia" faz o
+ * POST /api/recipes/[id]/report {reason} e vira "Denúncia enviada"; 429 tem mensagem própria; falha deixa tentar.
+ */
+describe('RecipeDetailActions — Reportar a Receita (#605)', () => {
+  const d = ptBR.denunciaReceita
+  function logado() {
+    sessionState = { data: { user: { id: 'u-1' } }, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+  }
+
+  it('dono e Visitante não veem "Reportar"', () => {
+    logado()
+    const { unmount } = renderActions(ownerView())
+    expect(screen.queryByRole('button', { name: d.reportar })).not.toBeInTheDocument()
+    unmount()
+    sessionState = { data: null, error: null, isPending: false, isRefetching: false, refetch: vi.fn() }
+    renderActions(nonOwnerView())
+    expect(screen.queryByRole('button', { name: d.reportar })).not.toBeInTheDocument()
+  })
+
+  it('logado não-dono: motivo obrigatório, envia o POST e mostra "Denúncia enviada"', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ reportId: 'rep-1' }), { status: 201 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView())
+
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    const enviar = screen.getByRole('button', { name: d.enviar })
+    expect(enviar).toBeDisabled()
+    await user.type(screen.getByLabelText(d.motivo), '  cópia de um livro  ')
+    await user.click(enviar)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/recipes/r-1/report')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ reason: 'cópia de um livro' })
+    expect(await screen.findByRole('status')).toHaveTextContent(d.enviada)
+    expect(screen.queryByRole('button', { name: d.reportar })).not.toBeInTheDocument()
+  })
+
+  it('Cancelar fecha o form sem chamar nada', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.click(screen.getByRole('button', { name: d.cancelar }))
+    expect(screen.queryByLabelText(d.motivo)).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('429 ⇒ mensagem do limite; outra falha ⇒ erro neutro e dá para tentar de novo', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'limite_denuncias' }), { status: 429 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.type(screen.getByLabelText(d.motivo), 'spam')
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erroLimite)
+
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erro)
+    expect(screen.getByRole('button', { name: d.enviar })).toBeEnabled()
+  })
+
+  it('404 ⇒ "não está mais disponível"; 401 ⇒ pede para entrar de novo', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'not_found' }), { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'nao_autenticado' }), { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.type(screen.getByLabelText(d.motivo), 'spam')
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erroIndisponivel)
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erroSessao)
+  })
+
+  it('foco: Cancelar devolve ao "Reportar"; enviar leva à confirmação; motivo com teto REPORT_REASON_MAX', async () => {
+    const user = userEvent.setup()
+    logado()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ reportId: 'rep-1' }), { status: 201 })))
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    expect(screen.getByLabelText(d.motivo)).toHaveFocus()
+    expect(screen.getByLabelText(d.motivo)).toHaveAttribute('maxLength', String(REPORT_REASON_MAX))
+    await user.click(screen.getByRole('button', { name: d.cancelar }))
+    expect(screen.getByRole('button', { name: d.reportar })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.type(screen.getByLabelText(d.motivo), 'cópia')
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('status')).toHaveFocus()
   })
 })

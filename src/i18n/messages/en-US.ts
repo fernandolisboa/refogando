@@ -7,7 +7,7 @@ import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 import type { Messages } from './pt-BR'
 // Relative import (a value, not a type): the E2E imports the catalogs outside the Next bundler.
-import { DATA_PUBLICACAO_TERMOS_V1 } from '../../domain/legal-notice'
+import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
@@ -973,6 +973,19 @@ export const enUS: Messages = {
     considerarDica: 'From your profile. Tap one to leave it out of this request.',
     buscaAviso: 'Showing only recipes that declare: {lista} (from your profile).',
     buscaMostrarTudo: 'Show all',
+  },
+  denunciaReceita: {
+    reportar: 'Report',
+    motivo: 'Reason for the report',
+    dica: 'Tell us what is wrong: illegal or offensive content, copying without permission, spam or another problem. Moderators review every report.',
+    enviar: 'Send report',
+    enviando: 'Sending…',
+    cancelar: 'Cancel',
+    enviada: 'Report sent. Moderators will review it.',
+    erro: 'Could not send the report. Try again.',
+    erroLimite: 'You have reached the report limit for now. Try again later.',
+    erroIndisponivel: 'This recipe is no longer available. It may have been taken down already.',
+    erroSessao: 'Your session has expired. Sign in again to report.',
   },
   // "Your data" on /me/profile (#595; LGPD Art. 18, II and V; deletion: arts. 15, III and 16 (18, VI for the
   // saved restrictions)): download the account export and delete the account from the UI. The delete dialog says
@@ -2318,7 +2331,7 @@ export const enUS: Messages = {
 
     s8Titulo: '8. Reports and moderation',
     s8Corpo: [
-      'Anyone with an account can report a review with the Report button. To report a public recipe or a profile, or if you do not have an account, write to privacidade@refogando.com.',
+      'Anyone with an account can report a public recipe or a review with the Report button. You can also write to privacidade@refogando.com, which is the way to report a profile or to report without an account.',
       'We review every report. When content is clearly illegal or violates these Terms, we take it down and record the decision, with the reason.',
       'If moderation takes down a recipe, image or review of yours, you get a notification in the app; if it is your profile, we let you know by email. To learn the reason or ask us to reconsider, write to privacidade@refogando.com.',
       'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask us to reconsider at privacidade@refogando.com.',
@@ -2336,15 +2349,18 @@ export const enUS: Messages = {
       'We may update these Terms. When a change is relevant, we notify you in the app or by email at least 15 days in advance. If you do not agree, you can delete your account before the change takes effect.',
       'Each version is recorded below, with its date.',
     ],
-    s10Historico: [`v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`],
+    s10Historico: [
+      `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`,
+      `v1.1 — ${DATA_TERMOS_V1_1}: public recipes can now also be reported with the Report button on the recipe page (item 8).`,
+    ],
 
     s11Titulo: '11. Law and venue',
     s11Corpo: ['These Terms are governed by Brazilian law. Any dispute may be brought before the courts of your place of residence.'],
 
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v1.1',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+    rodapeData: DATA_TERMOS_V1_1,
   },
   // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
   avisoLegal: {

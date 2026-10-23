@@ -27,6 +27,7 @@ import { usePathname } from 'next/navigation'
 import { useSession } from '@/lib/auth-client'
 import { useLocale } from '@/i18n/provider'
 import { resizeImage } from '@/lib/image-resize'
+import { REPORT_REASON_MAX } from '@/domain/report'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -643,6 +644,7 @@ export function RecipeReviewSection({
                           setReportReason((prev) => ({ ...prev, [r.id]: e.target.value }))
                         }
                         rows={2}
+                        maxLength={REPORT_REASON_MAX}
                         aria-required="true"
                       />
                       <div className="flex flex-wrap items-center gap-2">

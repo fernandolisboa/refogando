@@ -6,7 +6,7 @@ import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 // Import relativo (valor, não tipo): o E2E (`e2e/fixtures/test.ts`) importa este catálogo fora do bundler do Next.
-import { DATA_PUBLICACAO_TERMOS_V1 } from '../../domain/legal-notice'
+import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1 } from '../../domain/legal-notice'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -1046,6 +1046,21 @@ export const ptBR = {
     considerarDica: 'Do seu perfil. Toque numa para tirá-la deste pedido.',
     buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
     buscaMostrarTudo: 'Mostrar tudo',
+  },
+  // #605: denúncia de uma Receita pública na página dela (`RecipeReportButton`), só para quem tem conta e não é
+  // o dono. Mesmo molde do "Reportar" das avaliações (`avaliacoes.reportar`).
+  denunciaReceita: {
+    reportar: 'Reportar',
+    motivo: 'Motivo da denúncia',
+    dica: 'Conte o que há de errado: conteúdo ilegal, ofensivo, cópia sem autorização, spam ou outro problema. A moderação analisa cada denúncia.',
+    enviar: 'Enviar denúncia',
+    enviando: 'Enviando…',
+    cancelar: 'Cancelar',
+    enviada: 'Denúncia enviada. A moderação vai analisar.',
+    erro: 'Não foi possível enviar a denúncia. Tente de novo.',
+    erroLimite: 'Você chegou ao limite de denúncias por agora. Tente de novo mais tarde.',
+    erroIndisponivel: 'Esta receita não está mais disponível. Talvez já tenha sido retirada.',
+    erroSessao: 'A sua sessão expirou. Entre de novo para denunciar.',
   },
   // "Seus dados" no /me/profile (#595; LGPD Art. 18, II e V; eliminação: arts. 15, III e 16 (18, VI para as
   // restrições salvas)): baixar o export da conta e excluir a conta pela interface. O diálogo de exclusão diz o
@@ -2434,7 +2449,7 @@ export const ptBR = {
 
     s8Titulo: '8. Denúncias e moderação',
     s8Corpo: [
-      'Qualquer pessoa com conta pode denunciar uma avaliação pelo botão Reportar. Para denunciar uma receita pública ou um perfil, ou se você não tem conta, escreva para privacidade@refogando.com.',
+      'Qualquer pessoa com conta pode denunciar uma receita pública ou uma avaliação pelo botão Reportar. Você também pode escrever para privacidade@refogando.com, que é o caminho para denunciar um perfil ou para quem não tem conta.',
       'Analisamos cada denúncia. Quando o conteúdo é manifestamente ilegal ou viola estes Termos, nós o retiramos do ar e registramos a decisão, com o motivo.',
       'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app; se for o seu perfil, avisamos por e-mail. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
       'Em violações graves ou repetidas, podemos bloquear funções da conta, como a geração de imagens por IA, ou encerrar a conta. Avisamos antes, quando possível, e, salvo em caso de conteúdo ilegal, você tem 15 dias para baixar os seus dados antes do encerramento. Você pode pedir uma nova análise pelo privacidade@refogando.com.',
@@ -2452,16 +2467,20 @@ export const ptBR = {
       'Podemos atualizar estes Termos. Quando a mudança for relevante, avisamos no app ou por e-mail com pelo menos 15 dias de antecedência. Se você não concordar, pode excluir a sua conta antes de a mudança valer.',
       'Cada versão fica registrada abaixo, com a data.',
     ],
-    // Uma linha por versão (a mais nova por último); o rodapé repete a última. Data: `DATA_PUBLICACAO_TERMOS_V1`.
-    s10Historico: [`v1 — ${DATA_PUBLICACAO_TERMOS_V1}: primeira versão.`],
+    // Uma linha por versão (a mais nova por último); o rodapé repete a última. Cada versão tem a sua constante de
+    // data em `src/domain/legal-notice.ts`.
+    s10Historico: [
+      `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: primeira versão.`,
+      `v1.1 — ${DATA_TERMOS_V1_1}: receitas públicas também podem ser denunciadas pelo botão Reportar, na página da receita (item 8).`,
+    ],
 
     s11Titulo: '11. Lei e foro',
     s11Corpo: ['Estes Termos seguem a lei brasileira. Qualquer disputa pode ser levada ao foro do seu domicílio.'],
 
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v1',
+    rodapeVersao: 'v1.1',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_PUBLICACAO_TERMOS_V1,
+    rodapeData: DATA_TERMOS_V1_1,
   },
   // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta criada até o fim do dia da publicação
   // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e

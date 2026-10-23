@@ -1559,7 +1559,8 @@ export const notification = pgTable(
 // recipe/users), mas COM payload (reason/status/resolução) — não é relação pura.
 //
 // MÚLTIPLOS reports por Receita são permitidos (a fila agrega; a 1ª remoção preserva a
-// proveniência — ver moderation.ts). Dedup por (recipe,reporter) é followup, não-AC.
+// proveniência — ver moderation.ts). Denúncia pendente repetida da mesma pessoa e teto diário: no
+// núcleo (`createReport`, #605).
 //
 // POLIMORFISMO DE ALVO (#366): o Report deixa de mirar SÓ a Receita — passa a poder mirar
 // UMA Avaliação (`review_id`). `recipe_id` vira NULLABLE e um CHECK exige EXATAMENTE UM alvo
