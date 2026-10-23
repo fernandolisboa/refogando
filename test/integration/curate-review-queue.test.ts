@@ -39,6 +39,8 @@ async function seedReviewImage(input: {
   slug?: string
   visibility?: 'public' | 'private'
   blobUrl?: string
+  /** A imagem é a face da receita (`recipe.image_id`, padrão true). A fila só mostra a face de receita do pool (#599). */
+  selected?: boolean
 }): Promise<{ imageId: string; recipeId: string; lineageId: string }> {
   const recipeId = await seedRecipe({
     origin: 'ai_chat',
@@ -64,6 +66,7 @@ async function seedReviewImage(input: {
       reviewRequired: true,
     })
     .returning({ id: recipeImage.id })
+  if (input.selected ?? true) await getDb().update(recipe).set({ imageId: img.id }).where(eq(recipe.id, recipeId))
   return { imageId: img.id, recipeId, lineageId: r.lineageId }
 }
 
@@ -108,6 +111,79 @@ describe('listReviewQueue (núcleo) — contexto via linhagem', () => {
     expect(mine!.recipeTitle).toBe('Risoto refinado')
     expect(mine!.ownerName).toBe('Dona Cozinha')
     expect(mine!.url).toContain('refined.webp')
+  })
+
+  it('#599 — imagem de receita PRIVADA não aparece; ao publicar, entra (e a imagem segue com o gate de sempre)', async () => {
+    const owner = await seedUser({ email: 'privada@review.test', name: 'Dona Privada' })
+    const curator = await seedUser({ email: 'privada-cur@review.test', role: 'curador' })
+    const { imageId, recipeId } = await seedReviewImage({ ownerId: owner, visibility: 'private', titulo: 'Segredo' })
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)).toBeUndefined()
+
+    await getDb().update(recipe).set({ visibility: 'public' }).where(eq(recipe.id, recipeId))
+    const item = (await listReviewQueue(getDb())).find((i) => i.imageId === imageId)
+    expect(item?.recipeId).toBe(recipeId)
+    expect(item?.recipeTitle).toBe('Segredo')
+
+    // Despublicar tira de novo; receita removida do pool também não conta.
+    await getDb().update(recipe).set({ visibility: 'private' }).where(eq(recipe.id, recipeId))
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)).toBeUndefined()
+    await getDb()
+      .update(recipe)
+      .set({ visibility: 'public', moderationRemovedAt: new Date(), moderationReason: 'x', moderatedBy: curator })
+      .where(eq(recipe.id, recipeId))
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)).toBeUndefined()
+  })
+
+  it('#599 — linhagem com versão privada e pública: o contexto é a pública (título da privada nunca aparece)', async () => {
+    const owner = await seedUser({ email: 'versoes@review.test' })
+    const { imageId, recipeId, lineageId } = await seedReviewImage({ ownerId: owner, titulo: 'Versão pública' })
+    // Versão mais nova da mesma linhagem, privada (seria a escolhida antes do #599: criador + mais recente).
+    const privada = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: owner, visibility: 'private' })
+    await getDb().update(recipe).set({ lineageId, createdAt: new Date(Date.now() + 60_000) }).where(eq(recipe.id, privada))
+    await seedTranslation({ recipeId: privada, locale: 'pt-BR', titulo: 'Rascunho secreto', provenance: 'automatica_nao_revisada' })
+
+    const item = (await listReviewQueue(getDb())).find((i) => i.imageId === imageId)
+    expect(item?.recipeId).toBe(recipeId)
+    expect(item?.recipeTitle).toBe('Versão pública')
+  })
+
+  it('#599 — prévia da Galeria nunca escolhida não aparece, mesmo com a receita publicada; escolher a põe na fila', async () => {
+    const owner = await seedUser({ email: 'previa@review.test' })
+    const { imageId, recipeId } = await seedReviewImage({ ownerId: owner, selected: false, titulo: 'Com prévia' })
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)).toBeUndefined()
+
+    await getDb().update(recipe).set({ imageId }).where(eq(recipe.id, recipeId))
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)?.recipeTitle).toBe('Com prévia')
+
+    // Trocar a face por outra imagem tira a anterior da fila.
+    await getDb().update(recipe).set({ imageId: null }).where(eq(recipe.id, recipeId))
+    expect((await listReviewQueue(getDb())).find((i) => i.imageId === imageId)).toBeUndefined()
+  })
+
+  it('#599 — catálogo: aprovado entra (sem dono); rascunho pendente não', async () => {
+    for (const [status, entra] of [
+      ['approved', true],
+      ['pending', false],
+    ] as const) {
+      const catalogId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+      await getDb().update(recipe).set({ curationStatus: status }).where(eq(recipe.id, catalogId))
+      const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, catalogId))
+      const [img] = await getDb()
+        .insert(recipeImage)
+        .values({
+          blobUrl: `https://abc.public.blob.vercel-storage.com/recipes/catalog-${status}.webp`,
+          provenance: 'ai_generated',
+          lineageId: r.lineageId,
+          reviewRequired: true,
+        })
+        .returning({ id: recipeImage.id })
+      await getDb().update(recipe).set({ imageId: img.id }).where(eq(recipe.id, catalogId))
+      const item = (await listReviewQueue(getDb())).find((i) => i.imageId === img.id)
+      if (entra) {
+        expect(item?.recipeId).toBe(catalogId)
+        expect(item?.ownerName).toBeNull()
+      } else expect(item).toBeUndefined()
+    }
   })
 
   it('NÃO lista imagens já moderadas (saíram da fila)', async () => {
@@ -268,9 +344,12 @@ describe('remover da fila notifica o dono (ADR-0051: os Termos, item 8, prometem
     const { headers } = await seedSessionHeaders({ email: 'notif2@review.test', role: 'curador' })
     const owner = await seedUser({ email: 'notif2-dono@review.test' })
     const { imageId, lineageId } = await seedReviewImage({ ownerId: owner })
-    // Uma versão mais nova na MESMA linhagem (regeneração same-owner).
-    const newer = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: owner })
-    await getDb().update(recipe).set({ lineageId, createdAt: new Date(Date.now() + 60_000) }).where(eq(recipe.id, newer))
+    // Uma versão mais nova e pública na MESMA linhagem (regeneração same-owner).
+    const newer = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: owner, visibility: 'public' })
+    await getDb()
+      .update(recipe)
+      .set({ lineageId, imageId, createdAt: new Date(Date.now() + 60_000) })
+      .where(eq(recipe.id, newer))
 
     const fila = (await listReviewQueue(getDb())).find((i) => i.imageId === imageId)
     expect(fila?.recipeId).toBe(newer)

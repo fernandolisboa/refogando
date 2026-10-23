@@ -18,7 +18,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
-import { DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
+import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -87,13 +87,24 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(m.s9Corpo).toContain('16 anos ou mais')
     expect(screen.getByText(m.s10Corpo)).toBeInTheDocument()
     for (const versao of m.s10Historico) expect(screen.getByText(versao)).toBeInTheDocument()
-    // O rodapé repete a última versão do histórico (versão e data), e a data é a única da publicação.
+    // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_PUBLICACAO_TERMOS_V1)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_2)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}`))).toBe(true)
     // 11 direitos, o último sobre decisão automatizada (Art. 20).
     expect(m.s7Direitos).toHaveLength(11)
     expect(screen.getByText(m.s7Direitos[10])).toBeInTheDocument()
+  })
+
+  it('#599: a revisão de imagens da curadoria não é exceção do conteúdo privado, só da foto de receita publicada', () => {
+    expect(ptBR.privacidade.s4Itens[0]).toContain('com uma exceção: os ingredientes fora do vocabulário')
+    expect(ptBR.privacidade.s4Itens[0]).toContain('as outras imagens da galeria e as de receitas privadas ficam fora da fila')
+    expect(enUS.privacidade.s4Itens[0]).toContain('with one exception: the out-of-vocabulary ingredients')
+    expect(enUS.privacidade.s4Itens[0]).toContain('the other images in the gallery and those of private recipes stay out of the queue')
+    expect(ptBR.privacidade.s33Valores[1]).toContain('quando viram a foto de uma receita publicada')
+    expect(enUS.privacidade.s33Valores[1]).toContain('once they become the photo of a published recipe')
+    for (const m of [ptBR.privacidade, enUS.privacidade]) expect(m.rodapeData).toBe(DATA_POLITICA_V3_2)
   })
 
   it('tabelas de prestadores (item 5) e de cookies (item 8): uma linha por entrada, colunas do mesmo tamanho', () => {

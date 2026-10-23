@@ -4,6 +4,7 @@ import { recipe, recipeImage, recipeTranslation, users } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
 import { errorLogFields } from '@/domain/error-report'
 import { emitNotification } from '@/server/notification'
+import { communityVisibleSqlFragment, poolBarriersSqlFragment } from '@/server/recipe/visibility-sql'
 
 /**
  * Fila PROATIVA do Curador (#227, ADR-0022 dec.3) — o sinal de revisão que o ADR-0020 antecipou.
@@ -18,19 +19,27 @@ import { emitNotification } from '@/server/notification'
  *  - DISPENSAR (`dismissReviewImage`): o Curador julgou OK ⇒ zera `review_required`. A imagem fica
  *    pública (NÃO modera). review_required=false ⇒ sai da fila. Mantém a fila enxuta/acionável.
  *
- * O contexto receita↔imagem (#227 sutileza): uma imagem `review_required` é DESELECIONADA (geração =
- * preview, #222) ⇒ `recipe.image_id` NÃO aponta para ela. O elo é a LINHAGEM: `recipe.lineage_id =
- * recipe_image.lineage_id`. Resolvemos UMA receita representativa por imagem via LATERAL: preferimos
- * a do criador (`created_by`) e a versão mais recente — pro Curador ter título/owner/link funcional.
- * Sem receita na linhagem (raro) ⇒ a imagem ainda aparece, só com contexto mínimo (campos null).
+ * O contexto receita↔imagem: uma imagem `review_required` nasce DESELECIONADA (geração = preview, #222). Até o
+ * #599 o elo era a LINHAGEM (a fila mostrava a imagem já ao gerar, mesmo sem ninguém a escolher); desde então é
+ * a seleção, `recipe.image_id`: a imagem só entra quando o dono a escolhe como face de uma receita do pool.
+ *
+ * #599 (minimização, LGPD art. 6º, III): a fila só mostra a imagem que o PÚBLICO vê, isto é, a selecionada
+ * (`recipe.image_id`) numa receita do pool (`POOL_RECIPE_SQL`, o mesmo predicado de `eligibleForPool`). O resto da
+ * Galeria é privado do dono (CONTEXT.md), mesmo de uma receita publicada: as prévias nunca escolhidas e as
+ * imagens de uma versão privada nunca chegam à curadoria. O predicado é avaliado a cada leitura, então a imagem
+ * entra na fila quando passa a ser a face de uma receita publicada (publicar, ou trocar a foto de uma já pública)
+ * e sai se deixar de ser. A receita representativa é sempre a que mostra a imagem, para o Curador nunca ver o
+ * título de uma versão privada. A exibição pública não muda: a imagem `review_required` segue pública/selecionável
+ * até moderada (default-open, ADR-0020). Remover e dispensar seguem pelo id (uma aba aberta antes de a imagem
+ * sair da fila ainda age sobre ela; o Curador já a tinha visto).
  */
 export type ReviewQueueItem = {
   imageId: string
   url: string
   createdAt: Date
-  /** A receita representativa da linhagem (null se nenhuma resolver — a imagem ainda surfa). */
+  /** A receita do pool que mostra a imagem (#599: nunca null; sem ela a imagem não entra na fila). */
   recipeId: string | null
-  /** Título da receita no locale original (null se não houver receita/tradução). */
+  /** Título da receita no locale original (null se faltar a tradução). */
   recipeTitle: string | null
   /** Nome de exibição do dono da receita (null para Catálogo/sem dono ou sem receita). */
   ownerName: string | null
@@ -38,10 +47,17 @@ export type ReviewQueueItem = {
   ownerHandle: string | null
 }
 
+/**
+ * A receita `r` está no pool (#599): visível à comunidade e sem as barreiras do pool (playful, removida,
+ * importada da web) — os fragmentos de `visibility-sql.ts`, o mesmo predicado de `eligibleForPool`.
+ */
+const POOL_RECIPE_SQL = sql`${communityVisibleSqlFragment('r')} and ${poolBarriersSqlFragment('r')}`
+
 export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> {
-  // LATERAL: por imagem, escolhe UMA receita da MESMA linhagem — preferindo a do criador da imagem
-  // (created_by) e a versão mais recente — deterministicamente (ORDER BY ... LIMIT 1). LEFT JOIN ⇒
-  // a imagem aparece mesmo sem receita na linhagem (contexto null). Junta o dono (LEFT) p/ nome/handle.
+  // LATERAL: por imagem, escolhe UMA receita do POOL que a mostra (`r.image_id`, #599; o índice parcial de
+  // `image_id` atende) — preferindo a do criador da imagem (created_by) e a versão mais recente (versões da
+  // linhagem podem herdar a mesma face) — deterministicamente (ORDER BY ... LIMIT 1). Nenhuma receita do pool a
+  // mostra ⇒ a imagem fica fora da fila (`ctx.recipe_id is not null`). Junta o dono (LEFT) p/ nome/handle.
   const rows = await db
     .select({
       imageId: recipeImage.id,
@@ -59,14 +75,14 @@ export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> 
         from ${recipe} r
         left join ${recipeTranslation} t
           on t.recipe_id = r.id and t.locale = r.original_locale
-        where r.lineage_id = ${recipeImage.lineageId}
+        where r.image_id = ${recipeImage.id} and ${POOL_RECIPE_SQL}
         order by (r.owner_id is not distinct from ${recipeImage.createdBy}) desc, r.created_at desc
         limit 1
       ) ctx`,
       sql`true`,
     )
     .leftJoin(users, sql`${users.id} = ctx.owner_id`)
-    .where(and(eq(recipeImage.reviewRequired, true), isNull(recipeImage.moderatedAt)))
+    .where(and(eq(recipeImage.reviewRequired, true), isNull(recipeImage.moderatedAt), sql`ctx.recipe_id is not null`))
     .orderBy(recipeImage.createdAt, recipeImage.id)
 
   return rows.map((r) => ({
@@ -90,8 +106,10 @@ export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> 
  *
  * Notifica o dono (`image_moderated`, ADR-0051: os Termos, item 8, prometem a notificação em toda retirada),
  * como os caminhos por Report (#373): só na 1ª moderação genuína, pós-commit, best-effort. O dono é o da
- * receita representativa da linhagem, a MESMA escolha do LATERAL de `listReviewQueue` (a do criador da imagem,
- * a versão mais recente) — o Curador viu esse dono na fila. Sem receita na linhagem ou de catálogo ⇒ não notifica.
+ * receita representativa, a MESMA escolha do LATERAL de `listReviewQueue` (a receita do pool que mostra a imagem,
+ * #599; entre elas a do criador e a mais recente) — o Curador viu esse dono na fila. Se nenhuma a mostra mais (a
+ * receita saiu do pool entre a fila e a remoção), cai para qualquer versão da linhagem: o dono é o mesmo, e os
+ * Termos prometem o aviso em toda retirada. Sem receita na linhagem ou de catálogo ⇒ não notifica.
  * A busca desse dono também roda DEPOIS do commit, num try/catch: se falhar, a moderação já valeu e só a
  * notificação se perde (com uma linha no log).
  */
@@ -145,12 +163,17 @@ export async function applyReviewImageModeration(input: {
   // e imagem sem receita na linhagem → pula.
   if (result.kind === 'ok' && lineageId != null) {
     try {
-      // Receita representativa da linhagem — a mesma ordem do LATERAL de `listReviewQueue`.
+      // Receita representativa — a mesma escolha do LATERAL de `listReviewQueue` (a do pool que mostra a imagem,
+      // #599); se nenhuma a mostra mais, cai para qualquer versão da linhagem (mesmo dono).
       const [ctx] = await db
         .select({ recipeId: recipe.id, ownerId: recipe.ownerId })
         .from(recipe)
         .where(eq(recipe.lineageId, lineageId))
-        .orderBy(sql`(${recipe.ownerId} is not distinct from ${createdBy}) desc`, desc(recipe.createdAt))
+        .orderBy(
+          sql`(${recipe.imageId} = ${imageId} and ${communityVisibleSqlFragment('recipe')} and ${poolBarriersSqlFragment('recipe')}) desc`,
+          sql`(${recipe.ownerId} is not distinct from ${createdBy}) desc`,
+          desc(recipe.createdAt),
+        )
         .limit(1)
       if (ctx?.ownerId != null) {
         await emitNotification(db, { recipientId: ctx.ownerId, type: 'image_moderated', recipeId: ctx.recipeId })
