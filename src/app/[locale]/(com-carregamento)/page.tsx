@@ -27,10 +27,15 @@
  * Montada AQUI (server) e passada como `highlight` (ReactNode) pro `<SearchExperience>` client — que
  * a renderiza só no repouso, acima do `<DiscoveryFeed>`. `null` (catálogo aprovado vazio) ⇒ omite o
  * slot sem quebrar a home.
+ *
+ * Faixa para quem não entrou (#472): `HomeValueBanner` (client) vai no mesmo `highlight`, acima da receita da
+ * semana, no HTML de todos (a frase é sorteada aqui, por requisição); some no navegador para quem está logado.
  */
 import type { Metadata } from 'next'
 import { SearchExperience } from '@/components/recipe/search-experience'
 import { RecipeResultItem, type BadgeLabels } from '@/components/recipe/recipe-result-item'
+import { HomeValueBanner } from '@/components/recipe/home-value-banner'
+import { sortearFaixa } from '@/domain/faixa-home'
 import { buildHomeMetadata, isRefinedHomeParams, type RawSearchParams } from '@/domain/discovery-home'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
@@ -104,7 +109,7 @@ export default async function Home({
   const mw = MESSAGES[locale].receitaDaSemana
   const badgeLabels: BadgeLabels = { catalogo: m.seloCatalogo, comunidade: m.seloComunidade }
 
-  const highlight =
+  const recipeOfWeekSlot =
     recipeOfWeek !== null ? (
       <div className="flex flex-col gap-1">
         <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{mw.titulo}</h2>
@@ -131,6 +136,18 @@ export default async function Home({
         </ul>
       </div>
     ) : null
+
+  // #472: a faixa para quem não entrou fica acima da "Receita da semana". Vai no HTML para todos (sem salto de
+  // layout para o visitante) e some no navegador quando a sessão mostra uma conta. A frase é sorteada aqui, uma
+  // vez por requisição, e desce por prop para a hidratação pintar a mesma. Landmine: a home só é dinâmica porque o
+  // `generateMetadata` lê `searchParams`; sem essa leitura, a frase congelaria no build sem aviso. (`connection()`
+  // garantiria a requisição, mas quebra quem chama `Home()` fora do Next, como test/integration/home-feed.)
+  const highlight = (
+    <>
+      <HomeValueBanner indice={sortearFaixa(MESSAGES[locale].faixaHome.titulos.length)} />
+      {recipeOfWeekSlot}
+    </>
+  )
 
   return (
     <SearchExperience

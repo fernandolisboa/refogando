@@ -14,9 +14,14 @@ test('busca "cenoura", abre a Receita do seed pelo slug e recarrega', async ({ p
   await page.goto('/')
   await expect(page).toHaveURL(/\/pt-BR$/)
   await waitForHydration(page)
+  // Faixa para visitantes (#472): uma das frases, com o botão para o cadastro; some ao buscar (só no repouso).
+  const faixa = page.locator('#faixa-home-titulo')
+  await expect(faixa).toBeVisible()
+  expect(t.faixaHome.titulos).toContain(await faixa.textContent())
 
   await page.getByRole('searchbox', { name: t.busca.buscarLabel }).fill('cenoura')
   await expect(page).toHaveURL(/[?&]q=cenoura/)
+  await expect(faixa).toHaveCount(0)
   const catalogo = page.getByRole('region', { name: t.busca.secaoCatalogo })
   await catalogo.getByRole('link', { name: SEED_RECIPE.titulo }).click()
 

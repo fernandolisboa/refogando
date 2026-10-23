@@ -309,6 +309,18 @@ export const ptBR = {
     titulo: 'Receita da semana',
     subtitulo: 'Um destaque do catálogo, escolhido pela curadoria.',
   },
+  // Faixa da home para quem não entrou na conta (#472). Uma frase por carregamento, sorteada pela home no
+  // servidor. Listas por índice (titulos[i], textos[i], botoes[i]); um teste exige o mesmo tamanho nas três e
+  // nos dois idiomas. Todas levam ao cadastro.
+  faixaHome: {
+    titulos: ['Bateu vontade de quê?', 'Sobrou meio frango e um resto de arroz?', 'Da vontade ao prato.'],
+    textos: [
+      'Diga o que tem em casa e sai uma receita.',
+      'O Refogando transforma isso no jantar.',
+      'Você diz o que quer comer, o Refogando monta a receita.',
+    ],
+    botoes: ['Começar', 'Criar conta', 'Experimentar'],
+  },
   // Feed SEGUINDO (#277, ADR-0024) — superfície SÓ-LOGADA e NÃO-indexável (separada da home anon,
   // Modelo B). Reusa `feed.carregarMais`/`feed.fim` e `system.loading`/`system.error` na paginação.
   // O empty state é cause-NEUTRO (dispara em "não segue ninguém" E "seguidos sem receita pública"):
@@ -572,6 +584,12 @@ export const ptBR = {
   // status); NUNCA exibir a mensagem crua do servidor.
   auth: {
     criarConta: 'Criar conta',
+    // Por que criar conta (#472): bullets no cartão de cadastro, logo abaixo do título.
+    vantagens: [
+      'Transforme uma ideia, ou o que sobrou na geladeira, numa receita.',
+      'Guarde as receitas de que gostou e faça a sua versão delas.',
+      'Planeje a semana e saia com a lista de compras pronta.',
+    ],
     nome: 'Nome',
     email: 'Email',
     senha: 'Senha',

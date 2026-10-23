@@ -42,6 +42,8 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
   const tour = page.getByRole('dialog', { name: t.tour.boasVindasTitulo })
   await tour.getByRole('button', { name: t.tour.agoraNao }).click()
   await expect(page.getByTestId('tour-overlay')).toHaveCount(0)
+  // Logado, a faixa da home para visitantes (#472) some.
+  await expect(page.locator('#faixa-home-titulo')).toHaveCount(0)
 
   await markPage(page)
   const menu = await openAccountMenu(page, isMobile, conta.name)
@@ -49,6 +51,8 @@ test('cadastro pela UI abre o tour; dispensa, sai e entra de novo', async ({ pag
   // Sair recarrega a página (ADR-0028, Adendo 2026-10-23): espera a recarga antes do próximo goto.
   await waitForReload(page)
   await expect(page.locator('[data-tour="conta"] a[href^="/sign-in"]')).toBeAttached()
+  // Deslogado de novo, na home: a faixa volta (vem no HTML e fica).
+  await expect(page.locator('#faixa-home-titulo')).toBeVisible()
 
   // Sinal determinístico da abertura automática: registra cada leitura da chave do tour. Na home, a
   // casca só lê o storage quando o timer de AUTO_START_DELAY_MS dispara e decide abrir ou não; o login

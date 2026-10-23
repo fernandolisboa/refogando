@@ -278,6 +278,16 @@ export const enUS: Messages = {
     titulo: 'Recipe of the week',
     subtitulo: 'A catalog highlight, chosen by the curators.',
   },
+  // Home banner for signed-out visitors (#472): one line per load, picked by the home on the server.
+  faixaHome: {
+    titulos: ['What are you in the mood for?', 'Got half a chicken and some leftover rice?', 'From craving to plate.'],
+    textos: [
+      "Tell us what's in your kitchen and out comes a recipe.",
+      'Refogando turns it into dinner.',
+      'Tell us what you want to eat and Refogando puts the recipe together.',
+    ],
+    botoes: ['Get started', 'Create account', 'Try it'],
+  },
   // FOLLOWING feed (#277, ADR-0024) — logged-in-only, non-indexable surface (separate from the anon
   // home, Modelo B). Reuses feed.carregarMais/feed.fim + system.loading/system.error for pagination.
   // The empty state is cause-NEUTRAL (fires for "follows nobody" AND "followees have no public
@@ -518,6 +528,11 @@ export const enUS: Messages = {
   // Reusa nav.signIn/signOut onde idêntico ao header; aqui só o contextual das telas.
   auth: {
     criarConta: 'Create account',
+    vantagens: [
+      "Turn an idea, or whatever's left in the fridge, into a recipe.",
+      'Keep the recipes you love and make your own version of them.',
+      'Plan the week and head out with the shopping list ready.',
+    ],
     nome: 'Name',
     email: 'Email',
     senha: 'Password',
