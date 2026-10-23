@@ -22,7 +22,13 @@ import { emitNotification } from '@/server/notification'
  * preview, #222) ⇒ `recipe.image_id` NÃO aponta para ela. O elo é a LINHAGEM: `recipe.lineage_id =
  * recipe_image.lineage_id`. Resolvemos UMA receita representativa por imagem via LATERAL: preferimos
  * a do criador (`created_by`) e a versão mais recente — pro Curador ter título/owner/link funcional.
- * Sem receita na linhagem (raro) ⇒ a imagem ainda aparece, só com contexto mínimo (campos null).
+ *
+ * #599 (minimização, LGPD art. 6º, III): a fila só mostra imagens de linhagem com uma receita PÚBLICA e não
+ * removida do pool (`PUBLIC_RECIPE_SQL`): a curadoria revisa o que pode ficar público, não o conteúdo privado. A
+ * imagem de uma receita privada entra na fila no momento em que a receita é publicada (o predicado é avaliado a
+ * cada leitura), e a receita representativa é sempre uma das públicas, para o Curador nunca ver o título de uma
+ * versão privada. Sem receita pública na linhagem ⇒ a imagem não aparece. A exibição pública não muda: a imagem
+ * `review_required` segue pública/selecionável até moderada (default-open, ADR-0020).
  */
 export type ReviewQueueItem = {
   imageId: string
@@ -38,10 +44,16 @@ export type ReviewQueueItem = {
   ownerHandle: string | null
 }
 
+/**
+ * A receita `r` está à vista do público (#599): pública da comunidade ou de catálogo curada (os dois ramos de
+ * `eligibleForPool`), e não removida do pool. Só imagens de linhagem com uma dessas entram na fila.
+ */
+const PUBLIC_RECIPE_SQL = sql`(r.visibility = 'public' or (r.owner_id is null and r.curation_status = 'approved')) and r.moderation_removed_at is null`
+
 export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> {
-  // LATERAL: por imagem, escolhe UMA receita da MESMA linhagem — preferindo a do criador da imagem
-  // (created_by) e a versão mais recente — deterministicamente (ORDER BY ... LIMIT 1). LEFT JOIN ⇒
-  // a imagem aparece mesmo sem receita na linhagem (contexto null). Junta o dono (LEFT) p/ nome/handle.
+  // LATERAL: por imagem, escolhe UMA receita PÚBLICA da MESMA linhagem (#599) — preferindo a do criador da imagem
+  // (created_by) e a versão mais recente — deterministicamente (ORDER BY ... LIMIT 1). Sem receita pública na
+  // linhagem, a imagem fica fora da fila (`ctx.recipe_id is not null`). Junta o dono (LEFT) p/ nome/handle.
   const rows = await db
     .select({
       imageId: recipeImage.id,
@@ -59,14 +71,14 @@ export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> 
         from ${recipe} r
         left join ${recipeTranslation} t
           on t.recipe_id = r.id and t.locale = r.original_locale
-        where r.lineage_id = ${recipeImage.lineageId}
+        where r.lineage_id = ${recipeImage.lineageId} and ${PUBLIC_RECIPE_SQL}
         order by (r.owner_id is not distinct from ${recipeImage.createdBy}) desc, r.created_at desc
         limit 1
       ) ctx`,
       sql`true`,
     )
     .leftJoin(users, sql`${users.id} = ctx.owner_id`)
-    .where(and(eq(recipeImage.reviewRequired, true), isNull(recipeImage.moderatedAt)))
+    .where(and(eq(recipeImage.reviewRequired, true), isNull(recipeImage.moderatedAt), sql`ctx.recipe_id is not null`))
     .orderBy(recipeImage.createdAt, recipeImage.id)
 
   return rows.map((r) => ({
@@ -145,12 +157,17 @@ export async function applyReviewImageModeration(input: {
   // e imagem sem receita na linhagem → pula.
   if (result.kind === 'ok' && lineageId != null) {
     try {
-      // Receita representativa da linhagem — a mesma ordem do LATERAL de `listReviewQueue`.
+      // Receita representativa da linhagem — a mesma escolha do LATERAL de `listReviewQueue` (uma pública, #599);
+      // se a receita deixou de ser pública entre a fila e a remoção, cai para qualquer versão da linhagem.
       const [ctx] = await db
         .select({ recipeId: recipe.id, ownerId: recipe.ownerId })
         .from(recipe)
         .where(eq(recipe.lineageId, lineageId))
-        .orderBy(sql`(${recipe.ownerId} is not distinct from ${createdBy}) desc`, desc(recipe.createdAt))
+        .orderBy(
+          sql`((${recipe.visibility} = 'public' or (${recipe.ownerId} is null and ${recipe.curationStatus} = 'approved')) and ${recipe.moderationRemovedAt} is null) desc`,
+          sql`(${recipe.ownerId} is not distinct from ${createdBy}) desc`,
+          desc(recipe.createdAt),
+        )
         .limit(1)
       if (ctx?.ownerId != null) {
         await emitNotification(db, { recipientId: ctx.ownerId, type: 'image_moderated', recipeId: ctx.recipeId })
