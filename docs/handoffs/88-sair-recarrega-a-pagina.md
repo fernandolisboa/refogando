@@ -1,8 +1,8 @@
-# Handoff 87 — Sair da conta recarrega a página (Console aberto depois do logout)
+# Handoff 88 — Sair da conta recarrega a página (Console aberto depois do logout)
 
 **Data:** 2026-10-23.
 **PR:** "Sair da conta recarrega a página: Console e telas pessoais não ficam abertos depois do logout".
-**Base:** `main` depois do #622.
+**Base:** `main` depois do #625.
 **Migração:** nenhuma.
 **ADR:** ADR-0028, "Adendo (2026-10-23) — Perder a sessão recarrega a página".
 
