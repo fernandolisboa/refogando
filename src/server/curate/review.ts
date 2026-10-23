@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeTranslation, users } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import { errorLogFields } from '@/domain/error-report'
 import { emitNotification } from '@/server/notification'
 import { communityVisibleSqlFragment, poolBarriersSqlFragment } from '@/server/recipe/visibility-sql'
@@ -111,7 +112,7 @@ export async function listReviewQueue(db: Database): Promise<ReviewQueueItem[]> 
  * receita saiu do pool entre a fila e a remoção), cai para qualquer versão da linhagem: o dono é o mesmo, e os
  * Termos prometem o aviso em toda retirada. Sem receita na linhagem ou de catálogo ⇒ não notifica.
  * A busca desse dono também roda DEPOIS do commit, num try/catch: se falhar, a moderação já valeu e só a
- * notificação se perde (com uma linha no log).
+ * notificação se perde (com uma linha no log). A notificação leva a categoria do motivo (#609), como as do Report.
  */
 export type ReviewImageModerationResult =
   | { kind: 'ok' } //                   200 — moderou agora
@@ -124,8 +125,9 @@ export async function applyReviewImageModeration(input: {
   imageId: string // já validado uuid pelo route
   curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
   reason: string
+  category: ModerationCategory // #609: lista fechada, validada pela rota; vai na notificação ao dono
 }): Promise<ReviewImageModerationResult> {
-  const { db, imageId, curatorId, reason } = input
+  const { db, imageId, curatorId, reason, category } = input
 
   const { result, lineageId, createdBy } = await db.transaction(async (tx) => {
     // Estado atual da imagem (FOR UPDATE serializa moderações concorrentes; tabela única, sem join). A linhagem
@@ -176,7 +178,12 @@ export async function applyReviewImageModeration(input: {
         )
         .limit(1)
       if (ctx?.ownerId != null) {
-        await emitNotification(db, { recipientId: ctx.ownerId, type: 'image_moderated', recipeId: ctx.recipeId })
+        await emitNotification(db, {
+          recipientId: ctx.ownerId,
+          type: 'image_moderated',
+          recipeId: ctx.recipeId,
+          moderationCategory: category,
+        })
       }
     } catch (err) {
       // Só nome + código (ADR-0048), como o `emitNotification`: a mensagem do driver traz a query com os parâmetros.

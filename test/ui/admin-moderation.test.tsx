@@ -133,7 +133,7 @@ describe('ModerationQueue (#63 AC4)', () => {
     expect(screen.getByText(M.statusPendente)).toBeInTheDocument()
   })
 
-  it('remover exige motivo: campo abre, botão desabilitado vazio, envia e some', async () => {
+  it('remover exige motivo e categoria (#609): campo abre, botão desabilitado até os dois, envia e some', async () => {
     const fetchMock = mockFetch({
       'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() },
       [`POST /api/curate/reports/r1/remove`]: { ok: true, status: 200, body: { ok: true } },
@@ -146,13 +146,26 @@ describe('ModerationQueue (#63 AC4)', () => {
     expect(confirmar).toBeDisabled()
 
     const textarea = screen.getByLabelText(M.motivoRemocao)
-    await user.type(textarea, 'spam')
+    await user.type(textarea, 'copiada de um livro')
+    expect(confirmar).toBeDisabled() // falta a categoria (lista fechada, #609)
+
+    // A lista fechada, com os rótulos do Curador (nunca o código cru), e a ajuda de que o dono vê o motivo.
+    const select = screen.getByLabelText(M.categoriaRemocao)
+    expect(select).toHaveAccessibleDescription(M.categoriaAjuda)
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      M.categoriaPlaceholder,
+      ...Object.values(ptBR.categoriaModeracaoLabel),
+    ])
+    await user.selectOptions(select, 'direitos_autorais')
     expect(confirmar).toBeEnabled()
     await user.click(confirmar)
 
     const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove'))!
     expect(String(post[0])).toBe('/api/curate/reports/r1/remove')
-    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'spam' })
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({
+      reason: 'copiada de um livro',
+      category: 'direitos_autorais',
+    })
     expect(screen.queryByText('conteúdo impróprio')).toBeNull() // card some
   })
 
@@ -168,6 +181,7 @@ describe('ModerationQueue (#63 AC4)', () => {
     const user = userEvent.setup()
     renderQueue()
     await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
     await user.type(screen.getByLabelText(M.motivoRemocao), 'spam')
     await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
 
@@ -187,10 +201,31 @@ describe('ModerationQueue (#63 AC4)', () => {
     const user = userEvent.setup()
     renderQueue()
     await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
     await user.type(screen.getByLabelText(M.motivoRemocao), '   x') // não-vazio na UI
     await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroMotivo)
+    expect(screen.getByText('conteúdo impróprio')).toBeInTheDocument()
+  })
+
+  it('#609 400 categoria_invalida na remoção: card volta + mensagem da categoria', async () => {
+    mockFetch({
+      'GET /api/curate/reports': { ok: true, status: 200, body: oneReport() },
+      [`POST /api/curate/reports/r1/remove`]: {
+        ok: false,
+        status: 400,
+        body: { error: 'categoria_invalida' },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+    await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'x')
+    await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroCategoria)
     expect(screen.getByText('conteúdo impróprio')).toBeInTheDocument()
   })
 
@@ -206,6 +241,8 @@ describe('ModerationQueue (#63 AC4)', () => {
     const removerImagem = screen.getByRole('button', { name: M.removerImagem })
     expect(removerImagem).toBeDisabled() // motivo OBRIGATÓRIO também na imagem
 
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
+    expect(removerImagem).toBeDisabled() // só a categoria não basta
     await user.type(screen.getByLabelText(M.motivoRemocao), 'foto imprópria')
     expect(removerImagem).toBeEnabled()
     await user.click(removerImagem)
@@ -213,7 +250,7 @@ describe('ModerationQueue (#63 AC4)', () => {
     const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove-image'))!
     expect(String(post[0])).toBe('/api/curate/reports/r1/remove-image')
     expect((post[1] as RequestInit).method).toBe('POST')
-    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'foto imprópria' })
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'foto imprópria', category: 'spam' })
     expect(screen.queryByText('conteúdo impróprio')).toBeNull() // report resolvido ⇒ card some
   })
 
@@ -229,6 +266,7 @@ describe('ModerationQueue (#63 AC4)', () => {
     const user = userEvent.setup()
     renderQueue()
     await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
     await user.type(screen.getByLabelText(M.motivoRemocao), 'foto')
     await user.click(screen.getByRole('button', { name: M.removerImagem }))
 
@@ -383,13 +421,15 @@ describe('ModerationQueue (#63 AC4)', () => {
     const confirmar = screen.getByRole('button', { name: M.confirmarRemocao })
     expect(confirmar).toBeDisabled() // motivo OBRIGATÓRIO
     await user.type(screen.getByLabelText(M.motivoRemocao), 'viola diretrizes')
+    expect(confirmar).toBeDisabled() // e a categoria também (#609)
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
     expect(confirmar).toBeEnabled()
     await user.click(confirmar)
 
     const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove-review'))!
     expect(String(post[0])).toBe('/api/curate/reports/r1/remove-review')
     expect((post[1] as RequestInit).method).toBe('POST')
-    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'viola diretrizes' })
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'viola diretrizes', category: 'spam' })
     expect(screen.queryByText('texto abusivo da avaliação')).toBeNull() // card some
   })
 
@@ -405,6 +445,7 @@ describe('ModerationQueue (#63 AC4)', () => {
     const user = userEvent.setup()
     renderQueue()
     await user.click(await screen.findByRole('button', { name: M.removerAvaliacao }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'spam')
     await user.type(screen.getByLabelText(M.motivoRemocao), 'x')
     await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
 

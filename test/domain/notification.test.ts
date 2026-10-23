@@ -3,9 +3,12 @@ import {
   isNotificationType,
   renderNotification,
   notificationHref,
+  notificationAppealHref,
   renderStars,
   NOTIFICATION_TYPES,
+  MODERATED_NOTIFICATION_TYPES,
 } from '@/domain/notification'
+import { MODERATION_CATEGORIES, isModerationCategory } from '@/domain/moderation-category'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 
@@ -165,5 +168,80 @@ describe('notificationHref (#460) — alvo clicável por tipo', () => {
   it('tipos informativos (sugestão de cozinha / conta restringida) → SEM link', () => {
     expect(notificationHref('cuisine_suggestion_resolved', { recipeId: RID }, 'pt-BR')).toBeNull()
     expect(notificationHref('account_restricted', {}, 'pt-BR')).toBeNull()
+  })
+})
+
+/**
+ * #609: a categoria do motivo (lista fechada) nas 3 retiradas e o link "Pedir nova análise". A categoria é um
+ * código guardado na linha; o texto sai do i18n no locale de quem lê. Linha antiga (sem categoria) = texto de antes.
+ */
+describe('categoria do motivo e nova análise (#609)', () => {
+  const RID = '11111111-1111-4111-8111-111111111111'
+
+  it('isModerationCategory aceita só os códigos da lista (o último é `outro`)', () => {
+    for (const c of MODERATION_CATEGORIES) expect(isModerationCategory(c)).toBe(true)
+    expect(MODERATION_CATEGORIES.at(-1)).toBe('outro')
+    expect(MODERATION_CATEGORIES.length).toBeLessThanOrEqual(7)
+    for (const v of ['', 'Spam', 'plagio', ' spam', null, undefined, 3, {}]) expect(isModerationCategory(v)).toBe(false)
+  })
+
+  it('com categoria: o texto do tipo + "Motivo: <categoria>." nos dois locales', () => {
+    expect(
+      renderNotification(ptBR.notifications, 'recipe_moderated', { moderationCategory: 'direitos_autorais' }),
+    ).toBe('Uma receita sua foi removida da descoberta por um moderador. Motivo: direitos autorais.')
+    expect(
+      renderNotification(enUS.notifications, 'recipe_moderated', { moderationCategory: 'direitos_autorais' }),
+    ).toBe('One of your recipes was removed from discovery by a moderator. Reason: copyright.')
+    expect(
+      renderNotification(ptBR.notifications, 'review_moderated', { rating: 2, moderationCategory: 'conteudo_ofensivo' }),
+    ).toBe('Sua avaliação (2★) foi removida por um moderador. Motivo: conteúdo ofensivo, discriminatório ou de ódio.')
+    expect(renderNotification(enUS.notifications, 'image_moderated', { moderationCategory: 'pessoa_real' })).toBe(
+      'One of your images was moderated. Reason: image or personal data of a real person.',
+    )
+  })
+
+  it('toda categoria tem rótulo nos dois locales (nunca o código cru)', () => {
+    for (const msgs of [ptBR.notifications, enUS.notifications]) {
+      for (const c of MODERATION_CATEGORIES) {
+        const text = renderNotification(msgs, 'image_moderated', { moderationCategory: c })
+        expect(text).not.toMatch(/_/) // nenhum código snake_case vazou
+        expect(text).not.toMatch(/[{}]/)
+        expect(text).not.toBe(msgs.imagemModerada)
+      }
+    }
+  })
+
+  it('sem categoria (linha anterior ao #609) ou código desconhecido → o texto de antes', () => {
+    for (const refs of [{}, { moderationCategory: null }, { moderationCategory: 'inventada' as never }]) {
+      expect(renderNotification(ptBR.notifications, 'recipe_moderated', refs)).toBe(ptBR.notifications.receitaModerada)
+      expect(renderNotification(enUS.notifications, 'image_moderated', refs)).toBe(enUS.notifications.imagemModerada)
+    }
+  })
+
+  it('fora das retiradas a categoria é ignorada', () => {
+    expect(
+      renderNotification(ptBR.notifications, 'account_restricted', { moderationCategory: 'spam' }),
+    ).toBe(ptBR.notifications.contaRestringida)
+  })
+
+  it('notificationAppealHref: mailto do canal de privacidade com o assunto codificado, só nas retiradas', () => {
+    const href = notificationAppealHref(ptBR.notifications, 'recipe_moderated', { recipeId: RID })
+    expect(href).toBe(
+      `mailto:privacidade@refogando.com?subject=${encodeURIComponent(`Pedido de nova análise: receita ${RID}`)}`,
+    )
+    expect(decodeURIComponent(notificationAppealHref(enUS.notifications, 'review_moderated', { recipeId: RID })!)).toBe(
+      `mailto:privacidade@refogando.com?subject=Request for a new review: review on recipe ${RID}`,
+    )
+    expect(
+      decodeURIComponent(notificationAppealHref(ptBR.notifications, 'image_moderated', { recipeId: RID })!),
+    ).toContain(`imagem da receita ${RID}`)
+    // Sem id (legado) → assunto genérico; a categoria e o ator nunca entram no assunto.
+    expect(notificationAppealHref(ptBR.notifications, 'image_moderated', { moderationCategory: 'spam' })).toBe(
+      `mailto:privacidade@refogando.com?subject=${encodeURIComponent(ptBR.notifications.novaAnaliseAssunto)}`,
+    )
+    for (const t of NOTIFICATION_TYPES) {
+      const isModerated = (MODERATED_NOTIFICATION_TYPES as readonly string[]).includes(t)
+      expect(notificationAppealHref(ptBR.notifications, t, { recipeId: RID }) !== null).toBe(isModerated)
+    }
   })
 })

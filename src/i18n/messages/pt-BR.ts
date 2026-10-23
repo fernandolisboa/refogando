@@ -5,6 +5,7 @@
 import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
+import type { ModerationCategory } from '@/domain/moderation-category'
 // Import relativo (valor, não tipo): o E2E (`e2e/fixtures/test.ts`) importa este catálogo fora do bundler do Next.
 import {
   DATA_POLITICA_V3_2,
@@ -12,6 +13,7 @@ import {
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
+  DATA_TERMOS_V1_3,
 } from '../../domain/legal-notice'
 
 export const ptBR = {
@@ -80,7 +82,7 @@ export const ptBR = {
     // Ator soft-deletado (nome degradado a null) — variante sem nome, a notificação NÃO some.
     novoSeguidorAnon: 'Alguém começou a seguir você',
     // Eventos N2 de curadoria/moderação (#373, ADR-0028): ações impessoais (Curador/sistema),
-    // SEM interpolação de ator e SEM o motivo livre embutido (surfacing do motivo é refino deferido).
+    // SEM interpolação de ator e SEM o motivo livre embutido (a categoria do motivo entra por `comMotivo`, #609).
     sugestaoCozinhaResolvida: 'Sua sugestão de cozinha foi analisada',
     receitaModerada: 'Uma receita sua foi removida da descoberta por um moderador',
     imagemModerada: 'Uma imagem sua foi moderada',
@@ -92,6 +94,26 @@ export const ptBR = {
     avaliacaoNaReceitaAnon: 'Sua receita recebeu uma avaliação ({stars})',
     // Sua avaliação foi removida pelo Curador — impessoal (sem ator), mostra as estrelas da nota.
     avaliacaoModerada: 'Sua avaliação ({stars}) foi removida por um moderador',
+    // #609: nas 3 retiradas, a CATEGORIA do motivo (lista fechada, `MODERATION_CATEGORIES`) vai depois do texto:
+    // {texto} = a frase do tipo; {motivo} = um dos rótulos abaixo (minúsculos, para caber depois de "Motivo:").
+    // Nunca o texto livre do Curador nem quem decidiu. Linha antiga, sem categoria → só a frase do tipo.
+    comMotivo: '{texto}. Motivo: {motivo}.',
+    motivoDireitosAutorais: 'direitos autorais',
+    motivoPessoaReal: 'imagem ou dados de uma pessoa real',
+    motivoConteudoOfensivo: 'conteúdo ofensivo, discriminatório ou de ódio',
+    motivoSexualOuViolento: 'conteúdo sexual ou violento',
+    motivoSpam: 'spam, propaganda ou golpe',
+    motivoConteudoIlegal: 'conteúdo ilegal',
+    motivoOutro: 'outra regra dos Termos de Uso',
+    // #609: link irmão do item nas retiradas (Termos, item 8) — abre um e-mail para o canal de privacidade. O
+    // assunto nomeia o conteúdo pelo id da receita ({id}); sem o id, o genérico.
+    pedirNovaAnalise: 'Pedir nova análise',
+    // Nome acessível do link: diz a que item ele se refere e que abre o e-mail. {texto} = a frase da notificação.
+    pedirNovaAnaliseAria: 'Pedir nova análise por e-mail: {texto}',
+    novaAnaliseAssunto: 'Pedido de nova análise de uma retirada',
+    novaAnaliseAssuntoReceita: 'Pedido de nova análise: receita {id}',
+    novaAnaliseAssuntoAvaliacao: 'Pedido de nova análise: avaliação na receita {id}',
+    novaAnaliseAssuntoImagem: 'Pedido de nova análise: imagem da receita {id}',
     // Fallback dos tipos ainda não ligados nesta fatia (tracer bullet).
     generico: 'Você tem uma nova notificação',
   },
@@ -1793,6 +1815,18 @@ export const ptBR = {
     erroNaoAplicado: 'Não foi possível aplicar o papel.',
     erroGenerico: 'Algo deu errado. Tente de novo.',
   },
+  // #609: rótulo de cada categoria do motivo de uma retirada (lista fechada, `MODERATION_CATEGORIES`) para o
+  // Curador, com o item dos Termos a que ela se refere. Compartilhado pelas filas de moderação e de revisão de
+  // imagens. O dono vê outra forma, minúscula e sem os itens, nas chaves `motivo*` de `notifications`.
+  categoriaModeracaoLabel: {
+    direitos_autorais: 'Direitos autorais (Termos, itens 4, 5 e 7)',
+    pessoa_real: 'Imagem ou dados de uma pessoa real (itens 4 e 7)',
+    conteudo_ofensivo: 'Ofensivo, discriminatório ou de ódio (itens 4 e 7)',
+    sexual_ou_violento: 'Sexual ou violento (item 4)',
+    spam: 'Spam, propaganda ou golpe (item 7)',
+    conteudo_ilegal: 'Conteúdo ilegal (itens 7 e 8)',
+    outro: 'Outra regra dos Termos',
+  } satisfies Record<ModerationCategory, string>,
   moderacao: {
     titulo: 'Fila de moderação',
     receita: 'Receita',
@@ -1814,7 +1848,14 @@ export const ptBR = {
     tipoPlayful: 'Bem-humorado',
     manter: 'Manter no pool',
     remover: 'Remover do pool',
-    motivoRemocao: 'Motivo da remoção',
+    motivoRemocao: 'Detalhes do motivo (só a curadoria vê)',
+    // #609: categoria do motivo, da lista fechada (`categoriaModeracaoLabel`); o dono a vê na notificação. O texto
+    // livre (`motivoRemocao`) segue obrigatório, mas é nota interna.
+    categoriaRemocao: 'Motivo mostrado ao dono',
+    categoriaPlaceholder: 'Escolha um motivo',
+    categoriaAjuda:
+      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes ficam só com a curadoria.',
+    erroCategoria: 'Escolha o motivo mostrado ao dono.',
     motivoPlaceholder: 'Explique por que esta receita sai do pool',
     confirmarRemocao: 'Confirmar remoção',
     cancelar: 'Cancelar',
@@ -1867,7 +1908,14 @@ export const ptBR = {
     remover: 'Remover',
     removendo: 'Removendo…',
     confirmarRemocao: 'Confirmar remoção',
-    motivoRemocao: 'Motivo da remoção',
+    motivoRemocao: 'Detalhes do motivo (só a curadoria vê)',
+    // #609: categoria do motivo, da lista fechada (`categoriaModeracaoLabel`); o dono a vê na notificação. O texto
+    // livre (`motivoRemocao`) segue obrigatório, mas é nota interna.
+    categoriaRemocao: 'Motivo mostrado ao dono',
+    categoriaPlaceholder: 'Escolha um motivo',
+    categoriaAjuda:
+      'O dono vê este motivo na notificação, com um link para pedir nova análise. Os detalhes ficam só com a curadoria.',
+    erroCategoria: 'Escolha o motivo mostrado ao dono.',
     motivoPlaceholder: 'Explique por que esta imagem sai do público',
     dispensar: 'Dispensar',
     dispensando: 'Dispensando…',
@@ -2462,7 +2510,7 @@ export const ptBR = {
     s8Corpo: [
       'Qualquer pessoa com conta pode denunciar uma receita pública ou uma avaliação pelo botão Reportar. Você também pode escrever para privacidade@refogando.com, que é o caminho para denunciar um perfil ou para quem não tem conta.',
       'Analisamos cada denúncia. Quando o conteúdo é manifestamente ilegal ou viola estes Termos, nós o retiramos do ar e registramos a decisão, com o motivo.',
-      'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app; se for o seu perfil, avisamos por e-mail. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
+      'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app com o motivo, escolhido de uma lista fechada que segue estes Termos, e um link para pedir uma nova análise por e-mail; se for o seu perfil, avisamos por e-mail. Para saber mais sobre o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
       'Em violações graves ou repetidas, podemos bloquear funções da conta, como a geração de imagens por IA, ou encerrar a conta. Avisamos antes, quando possível, e, salvo em caso de conteúdo ilegal, você tem 15 dias para baixar os seus dados antes do encerramento. Você pode pedir uma nova análise pelo privacidade@refogando.com.',
     ],
 
@@ -2484,15 +2532,16 @@ export const ptBR = {
       `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: primeira versão.`,
       `v1.1 — ${DATA_TERMOS_V1_1}: receitas públicas também podem ser denunciadas pelo botão Reportar, na página da receita (item 8).`,
       `v1.2 — ${DATA_TERMOS_V1_2}: a curadoria deixa de revisar imagens de receitas privadas (item 5).`,
+      `v1.3 — ${DATA_TERMOS_V1_3}: a notificação de retirada passa a mostrar o motivo, de uma lista fechada, e um link para pedir uma nova análise (item 8).`,
     ],
 
     s11Titulo: '11. Lei e foro',
     s11Corpo: ['Estes Termos seguem a lei brasileira. Qualquer disputa pode ser levada ao foro do seu domicílio.'],
 
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v1.2',
+    rodapeVersao: 'v1.3',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_TERMOS_V1_2,
+    rodapeData: DATA_TERMOS_V1_3,
   },
   // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta criada até o fim do dia da publicação
   // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e

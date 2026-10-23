@@ -15,6 +15,10 @@
  * Cada item mostra QUANDO aconteceu: "agora", "há 3 horas", "há 2 dias" até uma semana; daí para trás, a data
  * (`formatRelativeTime`). O instante completo fica no `title` do `<time>`. O relógio é lido ao ABRIR o painel
  * (o conteúdo só monta aberto), nunca no render: sem divergência de SSR e sem `Date.now()` impuro no corpo.
+ *
+ * #609: nas retiradas pela curadoria, o texto já traz a categoria do motivo (`renderNotification`) e, ABAIXO do item,
+ * vem um segundo menuitem "Pedir nova análise" (`mailto:` do canal de privacidade, `notificationAppealHref`). É irmão
+ * do link do item, nunca aninhado (link dentro de link é HTML inválido e confunde o leitor de tela).
  */
 import { useState } from 'react'
 import Link from 'next/link'
@@ -28,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Avatar } from '@/components/profile/avatar'
-import { renderNotification, notificationHref } from '@/domain/notification'
+import { renderNotification, notificationHref, notificationAppealHref } from '@/domain/notification'
 import { formatDateTime, formatRelativeTime } from '@/domain/relative-time'
 import { useNotifications } from '@/components/use-notifications'
 
@@ -87,12 +91,15 @@ export function NotificationBell() {
         ) : (
           notifications.map((n) => {
             const href = notificationHref(n.type, n.refs, locale)
+            const text = renderNotification(m, n.type, n.refs)
+            // #609: retirada pela curadoria → link IRMÃO "Pedir nova análise" (mailto do canal de privacidade).
+            const appealHref = notificationAppealHref(m, n.type, n.refs)
             const quando = formatRelativeTime(n.createdAt, now, locale)
             const inner = (
               <>
                 <Avatar src={n.actorImage} name={n.refs.actorName ?? ''} alt="" size="sm" />
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm text-fg">{renderNotification(m, n.type, n.refs)}</span>
+                  <span className="text-sm text-fg">{text}</span>
                   {/* Espaço p/ o nome acessível ("… seguir você há 3 horas"); num flex não aparece. */}
                   {quando && ' '}
                   {quando && (
@@ -103,22 +110,34 @@ export function NotificationBell() {
                 </span>
               </>
             )
-            const rowClass = 'flex items-start gap-3 border-b border-border/60 px-3 py-2.5 last:border-b-0'
+            const rowClass = 'flex items-start gap-3 px-3 py-2.5'
+            const itemClass = 'rounded-none focus:bg-brand/[0.06] data-[highlighted]:bg-brand/[0.06]'
             // #460: com alvo → MENUITEM navegável (asChild <Link>): o Radix registra p/ setas/Enter e
             // FECHA a caixa no select (mesmo padrão do AuthSlot). O detalhe já vem `/{locale}/recipes/…`
             // de `notificationHref`; o perfil é `/u/<handle>` (o proxy prefixa o locale). Sem alvo
             // (informativo/ator degradado) → linha estática, texto puro (não é ação, não é foco).
-            return href ? (
-              <DropdownMenuItem
-                key={n.id}
-                asChild
-                className={`${rowClass} rounded-none focus:bg-brand/[0.06] data-[highlighted]:bg-brand/[0.06]`}
-              >
+            const main = href ? (
+              <DropdownMenuItem asChild className={`${rowClass} ${itemClass}`}>
                 <Link href={href}>{inner}</Link>
               </DropdownMenuItem>
             ) : (
-              <div key={n.id} className={rowClass}>
-                {inner}
+              <div className={rowClass}>{inner}</div>
+            )
+            // #609: o link de nova análise é OUTRO menuitem, ao lado do item (nunca um link dentro do link):
+            // setas/Enter iguais aos demais itens. O nome acessível repete a frase, para distinguir vários.
+            return (
+              <div key={n.id} className="border-b border-border/60 last:border-b-0">
+                {main}
+                {appealHref && (
+                  <DropdownMenuItem
+                    asChild
+                    className={`${itemClass} -mt-1 pt-0 pb-2.5 pr-3 pl-14 text-xs font-medium text-fg underline underline-offset-2`}
+                  >
+                    <a href={appealHref} aria-label={m.pedirNovaAnaliseAria.replace('{texto}', text)}>
+                      {m.pedirNovaAnalise}
+                    </a>
+                  </DropdownMenuItem>
+                )}
               </div>
             )
           })

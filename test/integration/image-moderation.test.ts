@@ -3,7 +3,7 @@ import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
-import { recipe, recipeImage, report } from '@/db/schema'
+import { notification, recipe, recipeImage, report } from '@/db/schema'
 import { POST as removeImageRoute } from '@/app/api/curate/reports/[id]/remove-image/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
 import { GET as feedGet } from '@/app/api/feed/route'
@@ -92,12 +92,12 @@ describe('Moderar só a imagem (#133)', () => {
     const reportId = await seedReport({ recipeId: id, reporterId, reason: 'foto imprópria' })
 
     // motivo vazio ⇒ 400, sem efeito
-    const vazio = await removeImage(reportId, { reason: '   ' }, curador)
+    const vazio = await removeImage(reportId, { reason: '   ', category: 'spam' }, curador)
     expect(vazio.status).toBe(400)
     expect((await readImage(imageId)).moderatedAt).toBeNull()
     expect((await readReport(reportId)).status).toBe('pending')
 
-    const res = await removeImage(reportId, { reason: 'viola diretrizes' }, curador)
+    const res = await removeImage(reportId, { reason: 'viola diretrizes', category: 'spam' }, curador)
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
 
@@ -121,6 +121,40 @@ describe('Moderar só a imagem (#133)', () => {
     expect(s.comunidade.map((r) => r.recipeId)).toContain(id)
   })
 
+  // ── #609: categoria do motivo (lista fechada) obrigatória; vai na notificação ao dono ─────────
+  it('#609: sem categoria ou fora da lista ⇒ 400 categoria_invalida sem efeito; válida ⇒ vai na notificação, 1 vez só', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'imcat-owner@ex.com' })
+    const { userId: reporterId } = await seedSessionHeaders({ email: 'imcat-reporter@ex.com' })
+    const { headers: curador } = await seedSessionHeaders({ email: 'imcat-cur@ex.com', role: 'curador' })
+    const id = await seedPublicCommunity(owner, 'Pudim fotografado')
+    const imageId = await seedRecipeImage({ recipeId: id })
+    const rA = await seedReport({ recipeId: id, reporterId, reason: 'rA' })
+    const rB = await seedReport({ recipeId: id, reporterId, reason: 'rB' })
+    const notifs = () => getDb().select().from(notification).where(eq(notification.recipientId, owner))
+
+    for (const body of [{ reason: 'foto alheia' }, { reason: 'foto alheia', category: 'inventada' }, { reason: 'foto alheia', category: 7 }]) {
+      const res = await removeImage(rA, body, curador)
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toEqual({ error: 'categoria_invalida' })
+    }
+    expect((await readImage(imageId)).moderatedAt).toBeNull()
+    expect((await readReport(rA)).status).toBe('pending')
+    expect(await notifs()).toHaveLength(0)
+
+    expect((await removeImage(rA, { reason: 'foto alheia', category: 'direitos_autorais' }, curador)).status).toBe(200)
+    const rows = await notifs()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ type: 'image_moderated', recipeId: id, moderationCategory: 'direitos_autorais' })
+    // O texto livre do Curador fica só na imagem (nota interna); a notificação não tem coluna de texto.
+    expect((await readImage(imageId)).moderatedReason).toBe('foto alheia')
+
+    // 2ª moderação (outro report, outra categoria) não re-notifica nem troca a categoria.
+    expect((await removeImage(rB, { reason: 'de novo', category: 'spam' }, curador)).status).toBe(200)
+    const again = await notifs()
+    expect(again).toHaveLength(1)
+    expect(again[0].moderationCategory).toBe('direitos_autorais')
+  })
+
   it('role-gating fail-closed: anon 401, usuario 403 papel_insuficiente, curador/admin 200', async () => {
     const { userId: owner } = await seedSessionHeaders({ email: 'imrg-owner@ex.com' })
     const { userId: reporterId } = await seedSessionHeaders({ email: 'imrg-reporter@ex.com' })
@@ -131,17 +165,17 @@ describe('Moderar só a imagem (#133)', () => {
     await seedRecipeImage({ recipeId: id })
 
     const rep1 = await seedReport({ recipeId: id, reporterId, reason: 'a' })
-    expect((await removeImage(rep1, { reason: 'x' })).status).toBe(401)
-    const u403 = await removeImage(rep1, { reason: 'x' }, usuarioH)
+    expect((await removeImage(rep1, { reason: 'x', category: 'spam' })).status).toBe(401)
+    const u403 = await removeImage(rep1, { reason: 'x', category: 'spam' }, usuarioH)
     expect(u403.status).toBe(403)
     await expect(u403.json()).resolves.toMatchObject({ error: 'papel_insuficiente' })
     // report intacto após as tentativas negadas
     expect((await readReport(rep1)).status).toBe('pending')
 
     // curador resolve rep1; admin resolve um segundo report (admin passa o gate 'curador')
-    expect((await removeImage(rep1, { reason: 'ok' }, curadorH)).status).toBe(200)
+    expect((await removeImage(rep1, { reason: 'ok', category: 'spam' }, curadorH)).status).toBe(200)
     const rep2 = await seedReport({ recipeId: id, reporterId, reason: 'b' })
-    expect((await removeImage(rep2, { reason: 'ok' }, adminH)).status).toBe(200)
+    expect((await removeImage(rep2, { reason: 'ok', category: 'spam' }, adminH)).status).toBe(200)
   })
 
   // ── no_image 422: a Receita reportada não tem imagem a remover (report NÃO é resolvido) ──
@@ -151,14 +185,14 @@ describe('Moderar só a imagem (#133)', () => {
     const id = await seedCatalog('Sopa sem foto alguma')
     const reportId = await seedReport({ recipeId: id, reporterId, reason: 'sem foto' })
 
-    const res = await removeImage(reportId, { reason: 'tentando' }, curador)
+    const res = await removeImage(reportId, { reason: 'tentando', category: 'spam' }, curador)
     expect(res.status).toBe(422)
     await expect(res.json()).resolves.toMatchObject({ error: 'sem_imagem' })
     expect((await readReport(reportId)).status).toBe('pending') // 422 NÃO resolve o report
 
     // report inexistente (uuid válido) ⇒ 404; id malformado ⇒ 404
-    expect((await removeImage('00000000-0000-0000-0000-000000000000', { reason: 'x' }, curador)).status).toBe(404)
-    expect((await removeImage('not-a-uuid', { reason: 'x' }, curador)).status).toBe(404)
+    expect((await removeImage('00000000-0000-0000-0000-000000000000', { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
+    expect((await removeImage('not-a-uuid', { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
   })
 
   // ── Proveniência da 1ª moderação preservada + anti-corrida ────────────────────────
@@ -172,14 +206,14 @@ describe('Moderar só a imagem (#133)', () => {
     const rA = await seedReport({ recipeId: id, reporterId, reason: 'rA' })
     const rB = await seedReport({ recipeId: id, reporterId, reason: 'rB' })
 
-    expect((await removeImage(rA, { reason: 'motivo A' }, curAH)).status).toBe(200)
+    expect((await removeImage(rA, { reason: 'motivo A', category: 'spam' }, curAH)).status).toBe(200)
     const after1 = await readImage(imageId)
     const tA = after1.moderatedAt
     expect(after1.moderatedBy).toBe(curA)
     expect(after1.moderatedReason).toBe('motivo A')
 
     // 2º curador modera via report B ⇒ resolve B, mas NÃO sobrescreve a proveniência da 1ª
-    expect((await removeImage(rB, { reason: 'motivo B' }, curBH)).status).toBe(200)
+    expect((await removeImage(rB, { reason: 'motivo B', category: 'spam' }, curBH)).status).toBe(200)
     const after2 = await readImage(imageId)
     expect(after2.moderatedBy).toBe(curA) // INALTERADO
     expect(after2.moderatedReason).toBe('motivo A') // INALTERADO
@@ -187,7 +221,7 @@ describe('Moderar só a imagem (#133)', () => {
     expect((await readReport(rB)).status).toBe('resolved')
 
     // anti-corrida: re-moderar via report A (já resolvido) ⇒ 409 ja_resolvido
-    const dup = await removeImage(rA, { reason: 'de novo' }, curAH)
+    const dup = await removeImage(rA, { reason: 'de novo', category: 'spam' }, curAH)
     expect(dup.status).toBe(409)
     await expect(dup.json()).resolves.toMatchObject({ error: 'ja_resolvido' })
 

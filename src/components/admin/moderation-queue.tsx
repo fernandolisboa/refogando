@@ -14,6 +14,10 @@
  * descoberta, não etiqueta de fila admin (ADR-0015). Remover-do-pool ≠ despublicar (ADR-0003):
  * a Receita sai do pool de descoberta; o motivo é OBRIGATÓRIO (espelha `decideModerationReason`).
  *
+ * #609: toda retirada (receita, só a imagem, avaliação) pede também a CATEGORIA do motivo, da lista fechada
+ * (`ModerationCategorySelect`), que o dono vê na notificação; o texto livre vira nota interna. Uma categoria por card
+ * (`categoryDraft`), compartilhada pelos botões do mesmo painel como o `reasonDraft`. Vai no corpo como `category`.
+ *
  * Shape: `createdAt` chega como STRING ISO via `res.json()`; o card NÃO renderiza data, então
  * nunca chamamos método de `Date`. Cores: só neutros/brand AA-verificados; sem âmbar/accent.
  */
@@ -21,6 +25,8 @@ import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { ModerationCategorySelect } from '@/components/admin/moderation-category-select'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import { ORIGENS, RESULT_KINDS, type Origin, type ResultKind } from '@/domain/recipe'
 import type { ReportQueueItem } from '@/server/curate/reports'
 
@@ -44,6 +50,7 @@ export function ModerationQueue() {
   const [errorKey, setErrorKey] = useState<
     | 'erroJaResolvido'
     | 'erroMotivo'
+    | 'erroCategoria'
     | 'erroSemImagem'
     | 'erroSemAvaliacao'
     | 'erroGenerico'
@@ -52,6 +59,8 @@ export function ModerationQueue() {
   >(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [reasonDraft, setReasonDraft] = useState<Record<string, string>>({})
+  // #609: categoria do motivo por card (lista fechada; '' = nenhuma escolhida ainda).
+  const [categoryDraft, setCategoryDraft] = useState<Record<string, ModerationCategory | ''>>({})
   // #226: motivo do BLOQUEIO da geração-de-imagem do autor (eixo separado do motivo de remoção do
   // pool). Painel revelado por `blockingId`; só quando a receita tem dono (Catálogo → sem ação).
   const [blockingId, setBlockingId] = useState<string | null>(null)
@@ -115,6 +124,27 @@ export function ModerationQueue() {
     setErrorKey(null)
   }
 
+  /** O painel de retirada deste card está completo (motivo livre + categoria, #609)? */
+  function canRemove(id: string): boolean {
+    return (reasonDraft[id] ?? '').trim().length > 0 && (categoryDraft[id] ?? '') !== ''
+  }
+
+  /**
+   * Mensagem de erro das 3 retiradas: corrida, o 422 próprio do endpoint (`specific`), motivo vazio ou categoria
+   * fora da lista (#609). Mesma ordem dos ternários que cada handler tinha.
+   */
+  function removalErrorKey(
+    error: string | undefined,
+    specific: Partial<Record<string, 'erroSemImagem' | 'erroSemAvaliacao'>> = {},
+  ): NonNullable<typeof errorKey> {
+    if (error === 'ja_resolvido') return 'erroJaResolvido'
+    const own = error ? specific[error] : undefined
+    if (own) return own
+    if (error === 'dados_invalidos') return 'erroMotivo'
+    if (error === 'categoria_invalida') return 'erroCategoria'
+    return 'erroGenerico'
+  }
+
   async function handleKeep(item: ReportQueueItem) {
     if (busyId) return
     setBusyId(item.id)
@@ -141,7 +171,8 @@ export function ModerationQueue() {
 
   async function handleRemove(item: ReportQueueItem) {
     const reason = (reasonDraft[item.id] ?? '').trim()
-    if (busyId || reason.length === 0) return
+    const category = categoryDraft[item.id] ?? ''
+    if (busyId || reason.length === 0 || category === '') return
     setBusyId(item.id)
     setBusyAction('remove')
     clearError()
@@ -151,19 +182,13 @@ export function ModerationQueue() {
       const res = await fetch(`/api/curate/reports/${item.id}/remove`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, category }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
         setItems(snapshot)
         setErrorId(item.id)
-        setErrorKey(
-          body?.error === 'ja_resolvido'
-            ? 'erroJaResolvido'
-            : body?.error === 'dados_invalidos'
-              ? 'erroMotivo'
-              : 'erroGenerico',
-        )
+        setErrorKey(removalErrorKey(body?.error))
       } else {
         setRemovingId(null)
       }
@@ -185,7 +210,8 @@ export function ModerationQueue() {
    */
   async function handleRemoveImage(item: ReportQueueItem) {
     const reason = (reasonDraft[item.id] ?? '').trim()
-    if (busyId || reason.length === 0) return
+    const category = categoryDraft[item.id] ?? ''
+    if (busyId || reason.length === 0 || category === '') return
     setBusyId(item.id)
     setBusyAction('image')
     clearError()
@@ -195,21 +221,13 @@ export function ModerationQueue() {
       const res = await fetch(`/api/curate/reports/${item.id}/remove-image`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, category }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
         setItems(snapshot)
         setErrorId(item.id)
-        setErrorKey(
-          body?.error === 'ja_resolvido'
-            ? 'erroJaResolvido'
-            : body?.error === 'sem_imagem'
-              ? 'erroSemImagem'
-              : body?.error === 'dados_invalidos'
-                ? 'erroMotivo'
-                : 'erroGenerico',
-        )
+        setErrorKey(removalErrorKey(body?.error, { sem_imagem: 'erroSemImagem' }))
       } else {
         setRemovingId(null)
       }
@@ -231,7 +249,8 @@ export function ModerationQueue() {
    */
   async function handleRemoveReview(item: ReportQueueItem) {
     const reason = (reasonDraft[item.id] ?? '').trim()
-    if (busyId || reason.length === 0) return
+    const category = categoryDraft[item.id] ?? ''
+    if (busyId || reason.length === 0 || category === '') return
     setBusyId(item.id)
     setBusyAction('review')
     clearError()
@@ -241,21 +260,13 @@ export function ModerationQueue() {
       const res = await fetch(`/api/curate/reports/${item.id}/remove-review`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, category }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
         setItems(snapshot)
         setErrorId(item.id)
-        setErrorKey(
-          body?.error === 'ja_resolvido'
-            ? 'erroJaResolvido'
-            : body?.error === 'sem_avaliacao'
-              ? 'erroSemAvaliacao'
-              : body?.error === 'dados_invalidos'
-                ? 'erroMotivo'
-                : 'erroGenerico',
-        )
+        setErrorKey(removalErrorKey(body?.error, { sem_avaliacao: 'erroSemAvaliacao' }))
       } else {
         setRemovingId(null)
       }
@@ -425,6 +436,14 @@ export function ModerationQueue() {
 
                   {removingId === item.id && (
                     <div className="flex flex-col gap-2">
+                      <ModerationCategorySelect
+                        id={`moderacao-${item.id}`}
+                        value={categoryDraft[item.id] ?? ''}
+                        onChange={(v) => setCategoryDraft((prev) => ({ ...prev, [item.id]: v }))}
+                        label={m.categoriaRemocao}
+                        placeholder={m.categoriaPlaceholder}
+                        hint={m.categoriaAjuda}
+                      />
                       <label className="flex flex-col gap-1 text-sm font-medium text-fg">
                         {m.motivoRemocao}
                         <Textarea
@@ -442,9 +461,7 @@ export function ModerationQueue() {
                           type="button"
                           size="sm"
                           onClick={() => void handleRemoveReview(item)}
-                          disabled={
-                            busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
-                          }
+                          disabled={busyId === item.id || !canRemove(item.id)}
                           aria-busy={busyId === item.id && busyAction === 'review'}
                           className="disabled:opacity-70"
                         >
@@ -610,6 +627,14 @@ export function ModerationQueue() {
 
                 {removingId === item.id && (
                   <div className="flex flex-col gap-2">
+                    <ModerationCategorySelect
+                      id={`moderacao-${item.id}`}
+                      value={categoryDraft[item.id] ?? ''}
+                      onChange={(v) => setCategoryDraft((prev) => ({ ...prev, [item.id]: v }))}
+                      label={m.categoriaRemocao}
+                      placeholder={m.categoriaPlaceholder}
+                      hint={m.categoriaAjuda}
+                    />
                     <label className="flex flex-col gap-1 text-sm font-medium text-fg">
                       {m.motivoRemocao}
                       <Textarea
@@ -627,9 +652,7 @@ export function ModerationQueue() {
                         type="button"
                         size="sm"
                         onClick={() => void handleRemove(item)}
-                        disabled={
-                          busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
-                        }
+                        disabled={busyId === item.id || !canRemove(item.id)}
                         aria-busy={busyId === item.id && busyAction === 'remove'}
                         className="disabled:opacity-70"
                       >
@@ -644,9 +667,7 @@ export function ModerationQueue() {
                         variant="secondary"
                         size="sm"
                         onClick={() => void handleRemoveImage(item)}
-                        disabled={
-                          busyId === item.id || (reasonDraft[item.id] ?? '').trim().length === 0
-                        }
+                        disabled={busyId === item.id || !canRemove(item.id)}
                         aria-busy={busyId === item.id && busyAction === 'image'}
                         className="disabled:opacity-70"
                       >

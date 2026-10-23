@@ -204,6 +204,62 @@ describe('NotificationBell (#371)', () => {
     expect(item).toHaveAttribute('href', `/pt-BR/recipes/${rid}`)
   })
 
+  it('#609 retirada com categoria: o motivo no texto e "Pedir nova análise" como menuitem IRMÃO (mailto)', async () => {
+    const user = userEvent.setup()
+    const rid = '11111111-1111-4111-8111-111111111111'
+    mockSession = authed()
+    mockFetch({
+      notifications: [
+        { id: 'n4', type: 'recipe_moderated', refs: { recipeId: rid, moderationCategory: 'direitos_autorais' }, actorImage: null, readAt: null, createdAt: '2026-01-01T00:00:00Z' },
+      ],
+      unreadCount: 1,
+      nextCursor: null,
+    })
+    renderBell()
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
+    const texto = `${M.receitaModerada}. Motivo: ${M.motivoDireitosAutorais}.`
+    const item = await screen.findByRole('menuitem', { name: texto })
+    expect(item).toHaveAttribute('href', `/pt-BR/recipes/${rid}`)
+
+    const appeal = screen.getByRole('menuitem', { name: M.pedirNovaAnaliseAria.replace('{texto}', texto) })
+    expect(appeal).toHaveTextContent(M.pedirNovaAnalise)
+    expect(appeal).toHaveAttribute(
+      'href',
+      `mailto:privacidade@refogando.com?subject=${encodeURIComponent(`Pedido de nova análise: receita ${rid}`)}`,
+    )
+    // Irmãos, nunca aninhados (link dentro de link).
+    expect(item.contains(appeal)).toBe(false)
+    expect(appeal.contains(item)).toBe(false)
+    expect(item.querySelector('a')).toBeNull()
+
+    // Teclado: o link de nova análise é alcançável pelas setas, como os demais itens.
+    item.focus()
+    await user.keyboard('{ArrowDown}')
+    expect(appeal).toHaveFocus()
+  })
+
+  it('#609 retirada antiga (sem categoria): texto de antes, ainda com o link de nova análise', async () => {
+    const user = userEvent.setup()
+    mockSession = authed()
+    mockFetch({
+      notifications: [
+        { id: 'n5', type: 'image_moderated', refs: { recipeId: null }, actorImage: null, readAt: null, createdAt: '2026-01-01T00:00:00Z' },
+      ],
+      unreadCount: 1,
+      nextCursor: null,
+    })
+    renderBell()
+    await user.click(screen.getByRole('button', { name: /Notificações/ }))
+    expect(await screen.findByText(M.imagemModerada)).toBeInTheDocument()
+    // Sem recipeId o item é texto puro; o único menuitem é o de nova análise (assunto genérico).
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveAttribute(
+      'href',
+      `mailto:privacidade@refogando.com?subject=${encodeURIComponent(M.novaAnaliseAssunto)}`,
+    )
+  })
+
   it('tipo informativo (account_restricted): texto puro, SEM menuitem/link', async () => {
     const user = userEvent.setup()
     mockSession = authed()

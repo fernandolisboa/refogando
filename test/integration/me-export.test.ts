@@ -212,6 +212,21 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     expect(notif).not.toHaveProperty('actorHandle')
   })
 
+  it('#609: a notificação de retirada vai com a categoria do motivo (o código que a pessoa vê na caixa)', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'cat@me-export.test' })
+    await getDb().insert(notification).values([
+      { recipientId: userId, type: 'recipe_moderated', moderationCategory: 'direitos_autorais' },
+      { recipientId: userId, type: 'image_moderated' }, // linha anterior ao #609: sem categoria
+    ])
+
+    const res = await get(headers)
+    expect(res.status).toBe(200)
+    const dump = (await res.json()) as { notifications: Array<{ type: string; moderationCategory: unknown }> }
+    expect(dump.notifications.find((n) => n.type === 'recipe_moderated')?.moderationCategory).toBe('direitos_autorais')
+    const antiga = dump.notifications.find((n) => n.type === 'image_moderated')
+    expect(antiga).toHaveProperty('moderationCategory', null)
+  })
+
   it('só o conteúdo do PRÓPRIO titular: receita de outro dono NÃO aparece (sem IDOR)', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'dono-a@me-export.test' })
     const other = await seedUser({ email: 'dono-b@me-export.test', handle: 'dono-b' })

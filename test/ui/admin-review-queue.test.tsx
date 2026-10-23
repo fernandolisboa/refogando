@@ -82,7 +82,7 @@ describe('ReviewQueue (#227)', () => {
     expect(link).toHaveAttribute('href', `/pt-BR/recipes/${RID}`)
   })
 
-  it('remover exige motivo: campo abre, botão desabilitado vazio, POSTa remove e o card some', async () => {
+  it('remover exige motivo e categoria (#609): campo abre, botão desabilitado até os dois, POSTa remove e o card some', async () => {
     const fetchMock = mockFetch({
       'GET /api/curate/review-images': { ok: true, status: 200, body: oneImage() },
       [`POST /api/curate/review-images/${IMG}/remove`]: { ok: true, status: 200, body: { ok: true } },
@@ -95,13 +95,20 @@ describe('ReviewQueue (#227)', () => {
     expect(confirmar).toBeDisabled()
 
     await user.type(screen.getByLabelText(M.motivoRemocao), 'imagem imprópria')
+    expect(confirmar).toBeDisabled() // falta a categoria (lista fechada, #609)
+    const select = screen.getByLabelText(M.categoriaRemocao)
+    expect(select).toHaveAccessibleDescription(M.categoriaAjuda)
+    await user.selectOptions(select, 'pessoa_real')
     expect(confirmar).toBeEnabled()
     await user.click(confirmar)
 
     const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/remove'))!
     expect(String(post[0])).toBe(`/api/curate/review-images/${IMG}/remove`)
     expect((post[1] as RequestInit).method).toBe('POST')
-    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ reason: 'imagem imprópria' })
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({
+      reason: 'imagem imprópria',
+      category: 'pessoa_real',
+    })
     expect(screen.queryByText('Risoto refinado')).toBeNull() // card some
   })
 
@@ -134,10 +141,31 @@ describe('ReviewQueue (#227)', () => {
     const user = userEvent.setup()
     renderQueue()
     await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'pessoa_real')
     await user.type(screen.getByLabelText(M.motivoRemocao), '   x')
     await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(M.erroMotivo)
+    expect(screen.getByText('Risoto refinado')).toBeInTheDocument() // voltou
+  })
+
+  it('#609 400 categoria_invalida na remoção: card VOLTA + mensagem da categoria', async () => {
+    mockFetch({
+      'GET /api/curate/review-images': { ok: true, status: 200, body: oneImage() },
+      [`POST /api/curate/review-images/${IMG}/remove`]: {
+        ok: false,
+        status: 400,
+        body: { error: 'categoria_invalida' },
+      },
+    })
+    const user = userEvent.setup()
+    renderQueue()
+    await user.click(await screen.findByRole('button', { name: M.remover }))
+    await user.selectOptions(screen.getByLabelText(M.categoriaRemocao), 'pessoa_real')
+    await user.type(screen.getByLabelText(M.motivoRemocao), 'x')
+    await user.click(screen.getByRole('button', { name: M.confirmarRemocao }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(M.erroCategoria)
     expect(screen.getByText('Risoto refinado')).toBeInTheDocument() // voltou
   })
 

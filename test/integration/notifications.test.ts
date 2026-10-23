@@ -123,6 +123,27 @@ describe('emitNotification (#371) — best-effort', () => {
     await emitNotification(getDb(), { recipientId: actor, type: 'new_follower', actorId: owner })
     expect(await countNotifs(actor)).toBe(1)
   })
+
+  it('#609: a categoria do motivo só cabe nas retiradas (CHECK; a falha é engolida) e volta nas refs', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const rec = await seedUser({ email: 'cat-chk@n.test' })
+    const actor = await seedUser({ email: 'cat-chk-a@n.test' })
+    await emitNotification(getDb(), {
+      recipientId: rec,
+      type: 'new_follower',
+      actorId: actor,
+      moderationCategory: 'spam',
+    })
+    expect(await countNotifs(rec)).toBe(0)
+    expect(errSpy).toHaveBeenCalledTimes(1)
+    errSpy.mockRestore()
+
+    await emitNotification(getDb(), { recipientId: rec, type: 'recipe_moderated', moderationCategory: 'direitos_autorais' })
+    await emitNotification(getDb(), { recipientId: rec, type: 'new_follower', actorId: actor })
+    const page = await loadNotifications(getDb(), rec)
+    const byType = Object.fromEntries(page.notifications.map((n) => [n.type, n.refs.moderationCategory]))
+    expect(byType).toEqual({ recipe_moderated: 'direitos_autorais', new_follower: null })
+  })
 })
 
 describe('loadNotifications (#371) — leitura', () => {
@@ -373,11 +394,13 @@ describe('emit recipe_moderated (#373) — remoção do pool → dono', () => {
       reportId: rep1,
       curatorId: curator,
       reason: 'conteúdo impróprio',
+      category: 'spam',
     })
     expect(res.kind).toBe('ok')
     const rows = await notifsFor(owner)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ type: 'recipe_moderated', actorId: null, recipeId: rid })
+    // #609: a categoria do motivo vai na linha (o texto livre do Curador não).
+    expect(rows[0]).toMatchObject({ type: 'recipe_moderated', actorId: null, recipeId: rid, moderationCategory: 'spam' })
 
     // 2ª remoção (outro report) → ok_already_removed → NÃO emite 2ª.
     const rep2 = await seedReport({ recipeId: rid, reporterId: reporter })
@@ -386,6 +409,7 @@ describe('emit recipe_moderated (#373) — remoção do pool → dono', () => {
       reportId: rep2,
       curatorId: curator,
       reason: 'de novo',
+      category: 'spam',
     })
     expect(res2.kind).toBe('ok_already_removed')
     expect(await notifsFor(owner)).toHaveLength(1)
@@ -401,6 +425,7 @@ describe('emit recipe_moderated (#373) — remoção do pool → dono', () => {
       reportId: rep,
       curatorId: curator,
       reason: 'x',
+      category: 'spam',
     })
     expect(res.kind).toBe('ok')
     expect(await countByType('recipe_moderated')).toBe(0)
@@ -426,11 +451,12 @@ describe('emit image_moderated (#373) — moderação de imagem → dono da rece
       reportId: rep,
       curatorId: curator,
       reason: 'imagem imprópria',
+      category: 'spam',
     })
     expect(res.kind).toBe('ok')
     const rows = await notifsFor(owner)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ type: 'image_moderated', actorId: null, recipeId: rid })
+    expect(rows[0]).toMatchObject({ type: 'image_moderated', actorId: null, recipeId: rid, moderationCategory: 'spam' })
   })
 })
 
@@ -621,34 +647,53 @@ describe('emit review_moderated (#374) — moderação de avaliação → autor'
     const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 3, comment: 'meh' })
     const rep1 = await seedReport({ reviewId, reporterId: reporter })
 
-    const res = await applyReviewModeration({ db: getDb(), reportId: rep1, curatorId: curator, reason: 'ofensivo' })
+    const res = await applyReviewModeration({
+      db: getDb(),
+      reportId: rep1,
+      curatorId: curator,
+      reason: 'ofensivo',
+      category: 'conteudo_ofensivo',
+    })
     expect(res.kind).toBe('ok')
     const rows = await notifsFor(author)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ type: 'review_moderated', actorId: null, recipeId: rid, reviewId })
+    expect(rows[0]).toMatchObject({
+      type: 'review_moderated',
+      actorId: null,
+      recipeId: rid,
+      reviewId,
+      moderationCategory: 'conteudo_ofensivo',
+    })
 
     // 2º report da MESMA avaliação → ok_already_moderated → NÃO emite 2ª.
     const rep2 = await seedReport({ reviewId, reporterId: reporter })
-    const res2 = await applyReviewModeration({ db: getDb(), reportId: rep2, curatorId: curator, reason: 'de novo' })
+    const res2 = await applyReviewModeration({
+      db: getDb(),
+      reportId: rep2,
+      curatorId: curator,
+      reason: 'de novo',
+      category: 'spam',
+    })
     expect(res2.kind).toBe('ok_already_moderated')
     expect(await notifsFor(author)).toHaveLength(1)
   })
 
-  it('estrelas da nota removida no render (dado vivo pelo join)', async () => {
+  it('estrelas da nota removida e a categoria do motivo no render (dado vivo pelo join; #609)', async () => {
     const owner = await seedUser({ email: 'rvm-live-o@n.test' })
     const author = await seedUser({ email: 'rvm-live-a@n.test' })
     const curator = await seedUser({ email: 'rvm-live-c@n.test', role: 'curador' })
     const rid = await seedPoolRecipe(owner)
     const reviewId = await seedReview({ userId: author, recipeId: rid, rating: 5 })
     const rep = await seedReport({ reviewId, reporterId: owner })
-    await applyReviewModeration({ db: getDb(), reportId: rep, curatorId: curator, reason: 'x' })
+    await applyReviewModeration({ db: getDb(), reportId: rep, curatorId: curator, reason: 'x', category: 'spam' })
 
     const page = await loadNotifications(getDb(), author)
     expect(page.notifications).toHaveLength(1)
     const n = page.notifications[0]
     expect(n.refs.rating).toBe(5) // a linha moderada PERSISTE (soft-delete) → o join sobrevive
+    expect(n.refs.moderationCategory).toBe('spam') // #609: o código da lista, nunca o texto do Curador ('x')
     expect(renderNotification(ptBR.notifications, n.type, n.refs)).toBe(
-      'Sua avaliação (5★) foi removida por um moderador',
+      'Sua avaliação (5★) foi removida por um moderador. Motivo: spam, propaganda ou golpe.',
     )
   })
 
@@ -665,7 +710,13 @@ describe('emit review_moderated (#374) — moderação de avaliação → autor'
       execute: () => Promise.reject(new Error('boom')),
     }) as Database
 
-    const res = await applyReviewModeration({ db: flakyDb, reportId: rep, curatorId: curator, reason: 'removida' })
+    const res = await applyReviewModeration({
+      db: flakyDb,
+      reportId: rep,
+      curatorId: curator,
+      reason: 'removida',
+      category: 'spam',
+    })
     expect(res.kind).toBe('ok') // a moderação NÃO falhou
     // A avaliação foi moderada (lida pelo db real).
     const rows = await notifsFor(author)

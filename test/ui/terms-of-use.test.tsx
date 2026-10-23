@@ -9,7 +9,8 @@ import type { ReactNode } from 'react'
  *  - PUBLICAÇÃO: nenhuma chave crua (`{`/`}`), o e-mail real do canal, a idade mínima, e nada de "advogado"
  *    (o sign-off é interno, nunca alegar advogado);
  *  - os destaques do CDC art. 54 (negrito) nas cláusulas certas e só nelas;
- *  - rodapé igual à última linha do histórico, e a data de cada versão (`DATA_PUBLICACAO_TERMOS_V1`, `DATA_TERMOS_V1_1`, `DATA_TERMOS_V1_2`);
+ *  - rodapé igual à última linha do histórico, e a data de cada versão (`DATA_PUBLICACAO_TERMOS_V1`, `DATA_TERMOS_V1_1`,
+ *    `DATA_TERMOS_V1_2`, `DATA_TERMOS_V1_3`);
  *  - paridade de chaves e de tamanho dos arrays pt-BR/en-US;
  *  - os links do rodapé do site (com o prefixo do idioma) e o `generateMetadata` das 3 páginas legais (#611).
  */
@@ -35,7 +36,13 @@ import { SiteFooter } from '@/components/site-footer'
 import { generateMetadata } from '@/app/[locale]/(com-carregamento)/termos/page'
 import { generateMetadata as privacidadeMetadata } from '@/app/[locale]/(com-carregamento)/privacidade/page'
 import { generateMetadata as seusDireitosMetadata } from '@/app/[locale]/(com-carregamento)/seus-direitos/page'
-import { DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '@/domain/legal-notice'
+import {
+  AVISO_LEGAL_VERSAO,
+  DATA_PUBLICACAO_TERMOS_V1,
+  DATA_TERMOS_V1_1,
+  DATA_TERMOS_V1_2,
+  DATA_TERMOS_V1_3,
+} from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -121,17 +128,29 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     expect(screen.getByText(m.s5Corpo[0])).not.toHaveClass('font-semibold')
   })
 
-  it('rodapé repete a última linha do histórico; cada versão com a sua data (v1 congelada, v1.1 do #605, v1.2 do #599)', () => {
+  it('rodapé repete a última linha do histórico; cada versão com a sua data (v1 congelada, v1.1 do #605, v1.2 do #599, v1.3 do #609)', () => {
     for (const msgs of [ptBR, enUS]) {
       const m = msgs.termos
       const ultima = m.s10Historico[m.s10Historico.length - 1]
       expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
       expect(m.s10Historico[0].startsWith(`v1 — ${DATA_PUBLICACAO_TERMOS_V1}`)).toBe(true)
       expect(m.s10Historico[1].startsWith(`v1.1 — ${DATA_TERMOS_V1_1}`)).toBe(true)
-      expect(m.rodapeData).toBe(DATA_TERMOS_V1_2)
+      expect(m.s10Historico[2].startsWith(`v1.2 — ${DATA_TERMOS_V1_2}`)).toBe(true)
+      expect(m.s10Historico[3].startsWith(`v1.3 — ${DATA_TERMOS_V1_3}`)).toBe(true)
+      expect(m.rodapeVersao).toBe('v1.3')
+      expect(m.rodapeData).toBe(DATA_TERMOS_V1_3)
     }
     // Cada data de versão no formato AAAA-MM-DD (o dia do merge em UTC).
-    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2]) expect(data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2, DATA_TERMOS_V1_3]) {
+      expect(data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+    // #609 (v1.3): a notificação de retirada traz o motivo (lista fechada) e o link de nova análise; o e-mail segue.
+    // A favor da pessoa ⇒ sem aviso de 15 dias: o aviso em vigor continua o da v1 (ADR-0051).
+    expect(ptBR.termos.s8Corpo[2]).toContain('notificação no app com o motivo, escolhido de uma lista fechada')
+    expect(ptBR.termos.s8Corpo[2]).toContain('link para pedir uma nova análise')
+    expect(ptBR.termos.s8Corpo[2]).toContain('privacidade@refogando.com')
+    expect(enUS.termos.s8Corpo[2]).toContain('notification in the app with the reason, chosen from a closed list')
+    expect(AVISO_LEGAL_VERSAO).toBe('termos-v1+politica-v3.1')
     // #605: o item 8 cita a receita pública no botão Reportar e mantém o e-mail como via (nada retirado).
     expect(ptBR.termos.s8Corpo[0]).toContain('receita pública ou uma avaliação pelo botão Reportar')
     expect(ptBR.termos.s8Corpo[0]).toContain('privacidade@refogando.com')

@@ -85,11 +85,17 @@ function listReq(headers?: Headers): Request {
     headers: headers ? Object.fromEntries(headers) : undefined,
   })
 }
-function removeReq(imageId: string, headers: Headers | undefined, reason?: string): Request {
+// #609: a categoria do motivo é obrigatória; o padrão é uma válida, e `null` a omite do corpo.
+function removeReq(
+  imageId: string,
+  headers: Headers | undefined,
+  reason?: string,
+  category: string | null = 'pessoa_real',
+): Request {
   return new Request(`http://localhost/api/curate/review-images/${imageId}/remove`, {
     method: 'POST',
     headers: { ...(headers ? Object.fromEntries(headers) : {}), 'content-type': 'application/json' },
-    body: reason !== undefined ? JSON.stringify({ reason }) : undefined,
+    body: reason !== undefined ? JSON.stringify(category === null ? { reason } : { reason, category }) : undefined,
   })
 }
 function dismissReq(imageId: string, headers?: Headers): Request {
@@ -274,6 +280,21 @@ describe('POST /api/curate/review-images/[imageId]/remove — modera + sai da fi
     expect(await reviewRequiredOf(imageId)).toBe(true) // segue na fila
   })
 
+  it('#609: sem categoria ou fora da lista → 400 categoria_invalida; nada moderado nem notificado', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'remcat@review.test', role: 'curador' })
+    const owner = await seedUser({ email: 'remcat-dono@review.test' })
+    const { imageId } = await seedReviewImage({ ownerId: owner })
+
+    for (const category of [null, 'inventada', '']) {
+      const res = await removeRoute(removeReq(imageId, headers, 'imagem imprópria', category), ctx(imageId))
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: 'categoria_invalida' })
+    }
+    expect(await moderatedAtOf(imageId)).toBeNull()
+    expect(await reviewRequiredOf(imageId)).toBe(true) // segue na fila
+    expect(await notifsFor(owner)).toHaveLength(0)
+  })
+
   it('imagem inexistente → 404', async () => {
     const { headers } = await seedSessionHeaders({ email: 'rem3@review.test', role: 'curador' })
     const res = await removeRoute(
@@ -332,8 +353,8 @@ describe('remover da fila notifica o dono (ADR-0051: os Termos, item 8, prometem
     expect(res.status).toBe(200)
     const rows = await notifsFor(owner)
     expect(rows).toHaveLength(1)
-    // Impessoal (sem ator, não expõe o Curador) e ancorada na receita que a fila mostrou.
-    expect(rows[0]).toMatchObject({ type: 'image_moderated', actorId: null, recipeId })
+    // Impessoal (sem ator, não expõe o Curador) e ancorada na receita que a fila mostrou; #609: com a categoria.
+    expect(rows[0]).toMatchObject({ type: 'image_moderated', actorId: null, recipeId, moderationCategory: 'pessoa_real' })
 
     const again = await removeRoute(removeReq(imageId, headers, 'de novo'), ctx(imageId))
     expect(again.status).toBe(200)
@@ -405,7 +426,13 @@ describe('remover da fila notifica o dono (ADR-0051: os Termos, item 8, prometem
     })
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const result = await applyReviewImageModeration({ db: flaky, imageId, curatorId, reason: 'imagem imprópria' })
+      const result = await applyReviewImageModeration({
+        db: flaky,
+        imageId,
+        curatorId,
+        reason: 'imagem imprópria',
+        category: 'pessoa_real',
+      })
       expect(result).toEqual({ kind: 'ok' })
       expect(await moderatedAtOf(imageId)).not.toBeNull()
       expect(await notifsFor(owner)).toHaveLength(0)

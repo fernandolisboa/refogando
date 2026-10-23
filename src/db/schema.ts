@@ -77,6 +77,7 @@ import { CURATION_STATUSES } from '@/domain/recipe-curation'
 import { VOCABULARY_KINDS, VOCABULARY_TERM_STATUSES } from '@/domain/vocabulary-term'
 import { TRANSCRIPT_ROLES } from '@/domain/transcript'
 import { NOTIFICATION_TYPES } from '@/domain/notification'
+import { MODERATION_CATEGORIES } from '@/domain/moderation-category'
 import { DSAR_EVENT_TYPES } from '@/domain/dsar'
 
 /**
@@ -152,6 +153,9 @@ export const transcriptRoleEnum = pgEnum('transcript_role', TRANSCRIPT_ROLES)
 // @/domain/notification. Os 7 tipos do catálogo v1 entram de uma vez (completude do enum), mas só
 // `new_follower` é EMITIDO nesta fatia. DB type 'notification_type'.
 export const notificationTypeEnum = pgEnum('notification_type', NOTIFICATION_TYPES)
+// Categoria do motivo de uma retirada pela curadoria (#609): lista fechada, mostrada ao dono na notificação.
+// Fonte única: MODERATION_CATEGORIES de @/domain/moderation-category. DB type 'moderation_category'.
+export const moderationCategoryEnum = pgEnum('moderation_category', MODERATION_CATEGORIES)
 // Tipo do evento de auditoria DSAR (issue #395, GAP-5). Fonte única: DSAR_EVENT_TYPES de @/domain/dsar.
 // Os 4 tipos do ciclo de vida do pedido do titular entram de uma vez (completude do enum); só
 // `DSAR_FULFILLED` é EMITIDO nesta fatia (por clearSourceAttribution). DB type 'dsar_event_type'.
@@ -1525,6 +1529,9 @@ export const userFollow = pgTable(
 //  - recipe_id/review_id → ON DELETE cascade: referências do sujeito conforme o tipo (NULL p/ new_follower).
 //  - índice (recipient_id, created_at) p/ a lista paginada + parcial de NÃO-LIDAS (contador). E um índice
 //    de cobertura em actor_id: o set-null do hard-delete de um ator varreria a tabela sem ele.
+//  - moderation_category (#609): a CATEGORIA do motivo, um código da lista fechada (nunca texto: o rótulo é
+//    localizado na leitura, ADR-0028 adendo). Só nos 3 tipos de retirada (CHECK); NULL nas linhas anteriores ao #609
+//    e nos demais tipos. Fica na linha porque `image_moderated` não guarda o id da imagem (sem join possível).
 export const notification = pgTable(
   'notification',
   {
@@ -1536,6 +1543,7 @@ export const notification = pgTable(
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     recipeId: uuid('recipe_id').references(() => recipe.id, { onDelete: 'cascade' }),
     reviewId: uuid('review_id').references(() => recipeReview.id, { onDelete: 'cascade' }),
+    moderationCategory: moderationCategoryEnum('moderation_category'),
     readAt: timestamp('read_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1553,6 +1561,10 @@ export const notification = pgTable(
     index('notification_review_id_idx')
       .on(t.reviewId)
       .where(sql`${t.reviewId} IS NOT NULL`),
+    check(
+      'notification_moderation_category_type_chk',
+      sql`${t.moderationCategory} IS NULL OR ${t.type} IN ('recipe_moderated', 'review_moderated', 'image_moderated')`,
+    ),
   ],
 )
 

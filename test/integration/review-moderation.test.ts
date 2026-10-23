@@ -3,7 +3,7 @@ import type { Sql } from 'postgres'
 import { and, eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb } from '@/server/deps'
-import { recipeReview, report, users } from '@/db/schema'
+import { notification, recipeReview, report, users } from '@/db/schema'
 import { listReportQueue } from '@/server/curate/reports'
 import { POST as removeReviewRoute } from '@/app/api/curate/reports/[id]/remove-review/route'
 import { POST as reportReviewRoute } from '@/app/api/reviews/[reviewId]/report/route'
@@ -207,12 +207,12 @@ describe('Moderação de avaliação (#366)', () => {
     expect(before).toMatchObject({ count: 2, average: 3 })
 
     // motivo vazio ⇒ 400, sem efeito
-    const vazio = await removeReview(reportId, { reason: '  ' }, curador)
+    const vazio = await removeReview(reportId, { reason: '  ', category: 'spam' }, curador)
     expect(vazio.status).toBe(400)
     expect((await readReview(revA)).moderatedAt).toBeNull()
     expect((await readReport(reportId)).status).toBe('pending')
 
-    const res = await removeReview(reportId, { reason: 'viola diretrizes' }, curador)
+    const res = await removeReview(reportId, { reason: 'viola diretrizes', category: 'spam' }, curador)
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
 
@@ -234,6 +234,36 @@ describe('Moderação de avaliação (#366)', () => {
     expect(after.reviews.map((x) => x.id)).not.toContain(revA)
   })
 
+  // ── #609: categoria do motivo (lista fechada) obrigatória; vai na notificação ao autor ──────
+  it('#609: sem categoria ou fora da lista ⇒ 400 categoria_invalida sem efeito; válida ⇒ vai na notificação, 1 vez só', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'rmvcat-owner@ex.com' })
+    const { userId: author } = await seedSessionHeaders({ email: 'rmvcat-a@ex.com' })
+    const { headers: curador } = await seedSessionHeaders({ email: 'rmvcat-cur@ex.com', role: 'curador' })
+    const id = await seedPublicCommunity(owner)
+    const reviewId = await seedReview({ userId: author, recipeId: id, rating: 2, comment: 'xingamento' })
+    const rA = await seedReport({ reviewId, reporterId: owner, reason: 'rA' })
+    const rB = await seedReport({ reviewId, reporterId: owner, reason: 'rB' })
+    const notifs = () => getDb().select().from(notification).where(eq(notification.recipientId, author))
+
+    for (const body of [{ reason: 'ofende' }, { reason: 'ofende', category: 'OUTRO' }, { reason: 'ofende', category: null }]) {
+      const res = await removeReview(rA, body, curador)
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toEqual({ error: 'categoria_invalida' })
+    }
+    expect((await readReview(reviewId)).moderatedAt).toBeNull()
+    expect((await readReport(rA)).status).toBe('pending')
+    expect(await notifs()).toHaveLength(0)
+
+    expect((await removeReview(rA, { reason: 'ofende', category: 'conteudo_ofensivo' }, curador)).status).toBe(200)
+    const rows = await notifs()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ type: 'review_moderated', reviewId, moderationCategory: 'conteudo_ofensivo' })
+
+    // 2ª moderação (outro report) não re-notifica.
+    expect((await removeReview(rB, { reason: 'de novo', category: 'spam' }, curador)).status).toBe(200)
+    expect(await notifs()).toHaveLength(1)
+  })
+
   // ── Role-gating fail-closed: dono (usuario) NÃO remove ────────────────────────────
   it('role-gating: anon 401, usuario (mesmo dono da receita) 403 papel_insuficiente, curador 200, admin 200', async () => {
     const { userId: owner, headers: ownerH } = await seedSessionHeaders({ email: 'rg-owner@ex.com' })
@@ -245,16 +275,16 @@ describe('Moderação de avaliação (#366)', () => {
     const rep1 = await seedReport({ reviewId, reporterId: reviewerId, reason: 'a' })
 
     // anon 401; DONO (papel usuario) 403 — o dono NÃO remove a avaliação, só reporta
-    expect((await removeReview(rep1, { reason: 'x' })).status).toBe(401)
-    const u403 = await removeReview(rep1, { reason: 'x' }, ownerH)
+    expect((await removeReview(rep1, { reason: 'x', category: 'spam' })).status).toBe(401)
+    const u403 = await removeReview(rep1, { reason: 'x', category: 'spam' }, ownerH)
     expect(u403.status).toBe(403)
     await expect(u403.json()).resolves.toMatchObject({ error: 'papel_insuficiente' })
     expect((await readReport(rep1)).status).toBe('pending') // intacto
 
     // curador resolve rep1; admin resolve um segundo report (herda o gate 'curador')
-    expect((await removeReview(rep1, { reason: 'ok' }, curadorH)).status).toBe(200)
+    expect((await removeReview(rep1, { reason: 'ok', category: 'spam' }, curadorH)).status).toBe(200)
     const rep2 = await seedReport({ reviewId, reporterId: reviewerId, reason: 'b' })
-    expect((await removeReview(rep2, { reason: 'ok' }, adminH)).status).toBe(200)
+    expect((await removeReview(rep2, { reason: 'ok', category: 'spam' }, adminH)).status).toBe(200)
   })
 
   // ── Proveniência da 1ª moderação preservada + anti-corrida ────────────────────────
@@ -268,14 +298,14 @@ describe('Moderação de avaliação (#366)', () => {
     const rA = await seedReport({ reviewId, reporterId: reviewerId, reason: 'rA' })
     const rB = await seedReport({ reviewId, reporterId: reviewerId, reason: 'rB' })
 
-    expect((await removeReview(rA, { reason: 'motivo A' }, curAH)).status).toBe(200)
+    expect((await removeReview(rA, { reason: 'motivo A', category: 'spam' }, curAH)).status).toBe(200)
     const after1 = await readReview(reviewId)
     const tA = after1.moderatedAt
     expect(after1.moderatedBy).toBe(curA)
     expect(after1.moderatedReason).toBe('motivo A')
 
     // 2º curador via rB ⇒ resolve rB, mas NÃO sobrescreve a 1ª proveniência
-    expect((await removeReview(rB, { reason: 'motivo B' }, curBH)).status).toBe(200)
+    expect((await removeReview(rB, { reason: 'motivo B', category: 'spam' }, curBH)).status).toBe(200)
     const after2 = await readReview(reviewId)
     expect(after2.moderatedBy).toBe(curA) // INALTERADO
     expect(after2.moderatedReason).toBe('motivo A') // INALTERADO
@@ -283,7 +313,7 @@ describe('Moderação de avaliação (#366)', () => {
     expect((await readReport(rB)).status).toBe('resolved')
 
     // anti-corrida: re-moderar via rA (já resolvido) ⇒ 409 ja_resolvido
-    const dup = await removeReview(rA, { reason: 'de novo' }, curAH)
+    const dup = await removeReview(rA, { reason: 'de novo', category: 'spam' }, curAH)
     expect(dup.status).toBe(409)
     await expect(dup.json()).resolves.toMatchObject({ error: 'ja_resolvido' })
   })
@@ -296,14 +326,14 @@ describe('Moderação de avaliação (#366)', () => {
     const id = await seedPublicCommunity(owner)
     const recipeReport = await seedReport({ recipeId: id, reporterId })
 
-    const res = await removeReview(recipeReport, { reason: 'x' }, curador)
+    const res = await removeReview(recipeReport, { reason: 'x', category: 'spam' }, curador)
     expect(res.status).toBe(422)
     await expect(res.json()).resolves.toMatchObject({ error: 'sem_avaliacao' })
     expect((await readReport(recipeReport)).status).toBe('pending')
 
     // report inexistente ⇒ 404
-    expect((await removeReview('00000000-0000-0000-0000-000000000000', { reason: 'x' }, curador)).status).toBe(404)
-    expect((await removeReview('not-a-uuid', { reason: 'x' }, curador)).status).toBe(404)
+    expect((await removeReview('00000000-0000-0000-0000-000000000000', { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
+    expect((await removeReview('not-a-uuid', { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
   })
 
   // ── M2: "Manter" é o único descarte de um report de avaliação; remove/remove-image ⇒ 404 ──
@@ -326,8 +356,8 @@ describe('Moderação de avaliação (#366)', () => {
 
     // remove / remove-image sobre um report de AVALIAÇÃO ⇒ 404 (INNER JOIN recipe dropa recipeId null)
     const rep2 = await seedReport({ reviewId, reporterId: reviewerId, reason: 'de novo' })
-    expect((await removeRecipe(rep2, { reason: 'x' }, curador)).status).toBe(404)
-    expect((await removeImage(rep2, { reason: 'x' }, curador)).status).toBe(404)
+    expect((await removeRecipe(rep2, { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
+    expect((await removeImage(rep2, { reason: 'x', category: 'spam' }, curador)).status).toBe(404)
     expect((await readReport(rep2)).status).toBe('pending') // nenhum efeito
     expect((await readReview(reviewId)).moderatedAt).toBeNull()
   })
@@ -343,7 +373,7 @@ describe('Moderação de avaliação (#366)', () => {
     expect((await postReview(id, { rating: 5, comment: 'orig' }, aH)).status).toBe(200)
     const reviewId = await reviewIdOf(aId, id)
     const rep = await seedReport({ reviewId, reporterId: owner, reason: 'x' })
-    expect((await removeReview(rep, { reason: 'removida' }, curador)).status).toBe(200)
+    expect((await removeReview(rep, { reason: 'removida', category: 'spam' }, curador)).status).toBe(200)
     expect(((await (await getReviews(id)).json()) as ListBody).count).toBe(0) // some do público
 
     // autor tenta APAGAR ⇒ 200 (rota), mas é NO-OP: a linha moderada PERSISTE e segue oculta
@@ -370,7 +400,7 @@ describe('Moderação de avaliação (#366)', () => {
     expect((await postReview(id, { rating: 4, comment: 'minha' }, aH)).status).toBe(200)
     const reviewId = await reviewIdOf(aId, id)
     const rep = await seedReport({ reviewId, reporterId: owner, reason: 'x' })
-    expect((await removeReview(rep, { reason: 'removida' }, curador)).status).toBe(200)
+    expect((await removeReview(rep, { reason: 'removida', category: 'spam' }, curador)).status).toBe(200)
 
     // autor ainda vê a PRÓPRIA avaliação moderada (mine não filtra moderatedAt)
     const mine = await getMine(id, aH)

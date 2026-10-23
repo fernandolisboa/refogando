@@ -15,11 +15,16 @@
  * autoritativo (nada na árvore server deriva da fila). Espelha `moderation-queue.tsx`. `createdAt`
  * chega como STRING ISO (não renderizamos data ⇒ nunca chamamos método de Date). Cores: só
  * neutros/brand AA — sem token destrutivo (decisão de design; espelha a fila de moderação).
+ *
+ * #609: remover pede também a CATEGORIA do motivo (lista fechada, `ModerationCategorySelect`), que o dono vê na
+ * notificação; o texto livre vira nota interna. Vai no corpo como `category`.
  */
 import { useEffect, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { ModerationCategorySelect } from '@/components/admin/moderation-category-select'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import type { ReviewQueueItem } from '@/server/curate/review'
 
 /** A fila chega via `res.json()` ⇒ `createdAt` vira STRING ISO (não Date). */
@@ -36,11 +41,13 @@ export function ReviewQueue() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<'remove' | 'dismiss' | null>(null)
   const [errorId, setErrorId] = useState<string | null>(null)
-  const [errorKey, setErrorKey] = useState<'erroMotivo' | 'erroNaoEncontrada' | 'erroGenerico' | null>(
-    null,
-  )
+  const [errorKey, setErrorKey] = useState<
+    'erroMotivo' | 'erroCategoria' | 'erroNaoEncontrada' | 'erroGenerico' | null
+  >(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [reasonDraft, setReasonDraft] = useState<Record<string, string>>({})
+  // #609: categoria do motivo por imagem (lista fechada; '' = nenhuma escolhida ainda).
+  const [categoryDraft, setCategoryDraft] = useState<Record<string, ModerationCategory | ''>>({})
 
   async function load() {
     setLoading(true)
@@ -74,7 +81,8 @@ export function ReviewQueue() {
 
   async function handleRemove(item: ReviewQueueItemJson) {
     const reason = (reasonDraft[item.imageId] ?? '').trim()
-    if (busyId || reason.length === 0) return
+    const category = categoryDraft[item.imageId] ?? ''
+    if (busyId || reason.length === 0 || category === '') return
     setBusyId(item.imageId)
     setBusyAction('remove')
     clearError()
@@ -84,7 +92,7 @@ export function ReviewQueue() {
       const res = await fetch(`/api/curate/review-images/${item.imageId}/remove`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, category }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null
@@ -93,9 +101,11 @@ export function ReviewQueue() {
         setErrorKey(
           body?.error === 'dados_invalidos'
             ? 'erroMotivo'
-            : body?.error === 'not_found'
-              ? 'erroNaoEncontrada'
-              : 'erroGenerico',
+            : body?.error === 'categoria_invalida'
+              ? 'erroCategoria'
+              : body?.error === 'not_found'
+                ? 'erroNaoEncontrada'
+                : 'erroGenerico',
         )
       } else {
         setRemovingId(null)
@@ -234,6 +244,14 @@ export function ReviewQueue() {
 
                 {removingId === item.imageId && (
                   <div className="flex flex-col gap-2">
+                    <ModerationCategorySelect
+                      id={`revisao-${item.imageId}`}
+                      value={categoryDraft[item.imageId] ?? ''}
+                      onChange={(v) => setCategoryDraft((prev) => ({ ...prev, [item.imageId]: v }))}
+                      label={m.categoriaRemocao}
+                      placeholder={m.categoriaPlaceholder}
+                      hint={m.categoriaAjuda}
+                    />
                     <label className="flex flex-col gap-1 text-sm font-medium text-fg">
                       {m.motivoRemocao}
                       <Textarea
@@ -253,7 +271,8 @@ export function ReviewQueue() {
                         onClick={() => void handleRemove(item)}
                         disabled={
                           busyId === item.imageId ||
-                          (reasonDraft[item.imageId] ?? '').trim().length === 0
+                          (reasonDraft[item.imageId] ?? '').trim().length === 0 ||
+                          (categoryDraft[item.imageId] ?? '') === ''
                         }
                         aria-busy={busyId === item.imageId && busyAction === 'remove'}
                         className="disabled:opacity-70"

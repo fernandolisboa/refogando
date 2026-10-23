@@ -2,6 +2,7 @@ import { requireRole } from '@/server/auth/guard'
 import { getDb } from '@/server/deps'
 import { isUuid } from '@/server/http/params'
 import { applyModerationRemove } from '@/server/recipe/moderation'
+import { isModerationCategory } from '@/domain/moderation-category'
 
 /**
  * Curador REMOVE a Receita reportada do pool (issue #18, AC2/AC3). POST curador-only: valida
@@ -12,7 +13,7 @@ import { applyModerationRemove } from '@/server/recipe/moderation'
  * `ok` e `ok_already_removed` mapeiam ambos 200 (o cliente vê sucesso; a distinção
  * preserva a proveniência da 1ª remoção e é auditável internamente). `already_resolved` →
  * 409 (honesto sobre a corrida, não 200-noop). Códigos: `papel_insuficiente`, `not_found`,
- * `dados_invalidos`, `ja_resolvido` (i18n visível na UI #63).
+ * `dados_invalidos`, `categoria_invalida` (#609), `ja_resolvido` (i18n visível na UI #63).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -27,14 +28,19 @@ export async function POST(
   const g = await requireRole(request, 'curador')
   if (!g.ok) return g.response
 
-  const body = (await request.json().catch(() => ({}))) as { reason?: unknown }
-  const reason = typeof body.reason === 'string' ? body.reason : ''
+  const body = (await request.json().catch(() => ({}))) as { reason?: unknown; category?: unknown } | null
+  const reason = typeof body?.reason === 'string' ? body.reason : ''
+  // #609: categoria do motivo, da lista fechada (vai na notificação ao dono). Ausente ou fora da lista → 400
+  // ANTES de qualquer write (o núcleo só recebe uma categoria válida).
+  const category = body?.category
+  if (!isModerationCategory(category)) return Response.json({ error: 'categoria_invalida' }, { status: 400 })
 
   const res = await applyModerationRemove({
     db: getDb(),
     reportId: id,
     curatorId: g.session.user.id,
     reason,
+    category,
   })
 
   switch (res.kind) {

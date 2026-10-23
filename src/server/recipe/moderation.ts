@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeImage, recipeReview, report } from '@/db/schema'
 import { decideModerationReason } from '@/domain/report'
+import type { ModerationCategory } from '@/domain/moderation-category'
 import { emitNotification } from '@/server/notification'
 
 /**
@@ -23,6 +24,10 @@ import { emitNotification } from '@/server/notification'
  * a 1ª remoção grava quem/quando/por quê; um 2º remove (de outro report) NÃO sobrescreve
  * as colunas de moderação — só resolve o seu próprio report. Os caminhos de saída do pool
  * (moderação vs despublicar) são rastreáveis e independentes.
+ *
+ * #609: as 3 retiradas recebem a CATEGORIA do motivo (lista fechada, já validada pela rota — 400
+ * `categoria_invalida` antes de qualquer write). Ela vai só na notificação ao dono; o `reason` livre segue
+ * obrigatório e é a nota interna da curadoria (colunas `moderation_reason`/`moderated_reason`).
  */
 
 export type ModerationResult =
@@ -37,8 +42,9 @@ export async function applyModerationRemove(input: {
   reportId: string // já validado como uuid pelo route
   curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
   reason: string
+  category: ModerationCategory // #609: lista fechada, validada pela rota; vai na notificação ao dono
 }): Promise<ModerationResult> {
-  const { db, reportId, curatorId, reason } = input
+  const { db, reportId, curatorId, reason, category } = input
 
   const { result, ownerId, recipeId } = await db.transaction(async (tx) => {
     // Carrega o report + o estado de moderação ATUAL da Receita-alvo (necessário para
@@ -98,7 +104,12 @@ export async function applyModerationRemove(input: {
   // #373: notifica o dono na PRIMEIRA remoção genuína (kind==='ok'); pula catálogo (owner null) e o
   // `ok_already_removed` (2ª remoção não re-notifica). Pós-commit, `db` de topo, best-effort.
   if (result.kind === 'ok' && ownerId != null) {
-    await emitNotification(db, { recipientId: ownerId, type: 'recipe_moderated', recipeId })
+    await emitNotification(db, {
+      recipientId: ownerId,
+      type: 'recipe_moderated',
+      recipeId,
+      moderationCategory: category,
+    })
   }
   return result
 }
@@ -123,8 +134,9 @@ export async function applyImageModeration(input: {
   reportId: string // já validado uuid pelo route
   curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
   reason: string
+  category: ModerationCategory // #609: lista fechada, validada pela rota; vai na notificação ao dono
 }): Promise<ImageModerationResult> {
-  const { db, reportId, curatorId, reason } = input
+  const { db, reportId, curatorId, reason, category } = input
 
   const { result, ownerId, recipeId } = await db.transaction(async (tx) => {
     // Report + a imagem ATUAL da Receita-alvo. FOR UPDATE serializa (innerJoin recipe; NÃO juntar
@@ -183,7 +195,12 @@ export async function applyImageModeration(input: {
   // #373: notifica o dono da receita na PRIMEIRA moderação genuína (kind==='ok'); pula catálogo (owner
   // null) e `ok_already_moderated`. Pós-commit, `db` de topo, best-effort.
   if (result.kind === 'ok' && ownerId != null) {
-    await emitNotification(db, { recipientId: ownerId, type: 'image_moderated', recipeId })
+    await emitNotification(db, {
+      recipientId: ownerId,
+      type: 'image_moderated',
+      recipeId,
+      moderationCategory: category,
+    })
   }
   return result
 }
@@ -211,8 +228,9 @@ export async function applyReviewModeration(input: {
   reportId: string // já validado uuid pelo route
   curatorId: string // session.user.id (route já passou pelo requireRole 'curador')
   reason: string
+  category: ModerationCategory // #609: lista fechada, validada pela rota; vai na notificação ao dono
 }): Promise<ReviewModerationResult> {
-  const { db, reportId, curatorId, reason } = input
+  const { db, reportId, curatorId, reason, category } = input
 
   const { result, authorId, reviewId, recipeId } = await db.transaction(async (tx) => {
     // Report + o alvo-avaliação. FOR UPDATE single-table (SÓ report; NÃO juntar recipe_review aqui —
@@ -284,6 +302,7 @@ export async function applyReviewModeration(input: {
       actorId: null,
       recipeId,
       reviewId,
+      moderationCategory: category,
     })
   }
   return result
