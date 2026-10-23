@@ -568,6 +568,13 @@
       "when": 1792750013849,
       "tag": "0080_retencao_indices",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792753122948,
+      "tag": "0081_restricoes_consentimento",
+      "breakpoints": true
     }
   ]
 }

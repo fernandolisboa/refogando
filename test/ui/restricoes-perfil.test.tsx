@@ -37,7 +37,8 @@ import { ptBR } from '@/i18n/messages/pt-BR'
 import { COZINHA_VOCAB_PT_BR, WithCozinhaVocab } from '../helpers/cozinha-vocab'
 import { CozinhaVocabProvider } from '@/components/i18n/cozinha-vocab-provider'
 import { RestricoesPerfilProvider, useRestricoesPerfil } from '@/components/profile/restricoes-perfil-provider'
-import { RestricoesPerfilForm, AVISO_MUDANCA_STORAGE_KEY } from '@/components/profile/restricoes-perfil-form'
+import { RestricoesPerfilForm } from '@/components/profile/restricoes-perfil-form'
+import { RESTRICOES_CONSENTIMENTO_VERSAO } from '@/domain/restricoes-perfil'
 import { CreateDrawer } from '@/components/recipe/create-drawer'
 import { CreateStructuredExperience } from '@/components/recipe/create-structured-experience'
 import { MealPlanSuggestPanel } from '@/components/meal-plan/meal-plan-suggest-panel'
@@ -73,6 +74,9 @@ function pronta(r: Partial<Response>): { [PRONTA]: Partial<Response> } {
   return { [PRONTA]: r }
 }
 
+/** Versão do consentimento que o GET devolve (#600); null = consentiu antes do registro. */
+let versaoGravada: string | null = null
+
 /**
  * fetch por URL: `/api/me/restricoes` devolve `salvas` (GET; pode ser uma Promise para segurar a resposta)
  * e ecoa o PUT; `/api/search?` ecoa `salvas` como `restricoesPerfil` quando vem `restricaoPerfil=1`; o resto
@@ -90,7 +94,13 @@ function mockFetch(salvas: string[] | (() => Promise<string[]>), rota: Rota = ()
       calls.push(call)
       let payload: unknown
       if (url === '/api/me/restricoes') {
-        payload = method === 'PUT' ? { restricoes: body?.restricoes } : { restricoes: typeof salvas === 'function' ? await salvas() : salvas }
+        if (method === 'PUT') {
+          const lista = (body?.restricoes ?? []) as string[]
+          versaoGravada = lista.length > 0 ? RESTRICOES_CONSENTIMENTO_VERSAO : null
+          payload = { restricoes: lista, consentimentoVersao: versaoGravada }
+        } else {
+          payload = { restricoes: typeof salvas === 'function' ? await salvas() : salvas, consentimentoVersao: versaoGravada }
+        }
       } else if (url.includes('/api/search?')) {
         const lista = typeof salvas === 'function' ? await salvas() : salvas
         payload = {
@@ -192,6 +202,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  versaoGravada = null
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   window.localStorage.clear()
@@ -265,7 +276,7 @@ describe('Seção "Restrições alimentares" do perfil', () => {
   })
 })
 
-describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGPD art. 8º, §6)', () => {
+describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGPD art. 8º, §6; versão gravada, #600)', () => {
   function renderForm() {
     return render(
       <Providers>
@@ -273,8 +284,7 @@ describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGP
       </Providers>,
     )
   }
-
-  it('com restrições salvas: aviso em destaque; "Entendi" o dispensa e ele não volta', async () => {
+  it('restrições salvas sem versão (antes do registro): aviso em destaque; "Entendi" o esconde só nesta tela', async () => {
     const user = userEvent.setup()
     mockFetch(['vegano'])
     const { unmount } = renderForm()
@@ -284,13 +294,11 @@ describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGP
     expect(aviso).toHaveAttribute('data-slot', 'alert')
     await user.click(within(aviso).getByRole('button', { name: R.avisoMudancaFechar }))
     expect(screen.queryByText(R.avisoMudanca)).toBeNull()
-    expect(window.localStorage.getItem(AVISO_MUDANCA_STORAGE_KEY)).toBe('1')
 
-    // Voltar à tela (outra montagem, mesmo navegador): o aviso dispensado não reaparece.
+    // Voltar à tela: o consentimento gravado segue antigo, então o aviso volta (até salvar de novo).
     unmount()
     renderForm()
-    expect(await screen.findByRole('checkbox', { name: L.vegano })).toBeChecked()
-    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+    expect(await screen.findByRole('note')).toHaveTextContent(R.avisoMudanca)
   })
 
   it('"Entendi" leva o foco ao título da seção (o botão some com o aviso; o foco não cai no <body>)', async () => {
@@ -308,16 +316,20 @@ describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGP
     expect(screen.getAllByRole('checkbox')[0]).toHaveFocus()
   })
 
-  it('salvar de novo também o tira (o salvar é o consentimento com o texto novo)', async () => {
+  it('salvar de novo o tira, e ele não volta: o servidor gravou a versão atual', async () => {
     const user = userEvent.setup()
     mockFetch(['vegano'])
-    renderForm()
+    const { unmount } = renderForm()
 
     expect(await screen.findByText(R.avisoMudanca)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: R.salvar }))
     expect(await screen.findByText(R.salvo)).toBeInTheDocument()
     expect(screen.queryByText(R.avisoMudanca)).toBeNull()
-    expect(window.localStorage.getItem(AVISO_MUDANCA_STORAGE_KEY)).toBe('1')
+
+    unmount()
+    renderForm()
+    expect(await screen.findByRole('checkbox', { name: L.vegano })).toBeChecked()
+    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
   })
 
   it('sem restrições salvas não há consentimento a avisar: nada aparece, nem ao marcar uma', async () => {
@@ -329,26 +341,17 @@ describe('Aviso da mudança de 2026-10-22 no consentimento das restrições (LGP
     expect(screen.queryByText(R.avisoMudanca)).toBeNull()
   })
 
-  it('já visto neste navegador: não aparece; storage bloqueado: aparece mesmo assim', async () => {
-    window.localStorage.setItem(AVISO_MUDANCA_STORAGE_KEY, '1')
+  it('versão atual gravada: não aparece; versão anterior: aparece', async () => {
+    versaoGravada = RESTRICOES_CONSENTIMENTO_VERSAO
     mockFetch(['vegano'])
     const { unmount } = renderForm()
     expect(await screen.findByRole('checkbox', { name: L.vegano })).toBeChecked()
     expect(screen.queryByText(R.avisoMudanca)).toBeNull()
     unmount()
 
-    // localStorage que lança (navegação privada): o aviso aparece e dispensar não quebra a tela.
-    const user = userEvent.setup()
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('bloqueado')
-    })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('bloqueado')
-    })
+    versaoGravada = '2026-07-03'
     renderForm()
-    const aviso = await screen.findByRole('note')
-    await user.click(within(aviso).getByRole('button', { name: R.avisoMudancaFechar }))
-    expect(screen.queryByText(R.avisoMudanca)).toBeNull()
+    expect(await screen.findByRole('note')).toHaveTextContent(R.avisoMudanca)
   })
 })
 

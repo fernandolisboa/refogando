@@ -812,6 +812,12 @@ export const users = pgTable(
     // nunca vai à sessão do Better Auth (não é additionalField), ao perfil público nem a log; entra no export
     // e é zerado na eliminação. Só a rota owner-only `/api/me/restricoes` lê/escreve (validação na borda).
     restricoes: restricaoEnum('restricoes').array().notNull().default(sql`'{}'`),
+    // Prova do consentimento das restrições salvas (#600; LGPD art. 8º, §2º: cabe ao controlador provar). Quando
+    // a pessoa salvou uma lista NÃO vazia e com qual versão do texto (`RESTRICOES_CONSENTIMENTO_VERSAO`, junto do
+    // botão). Salvar a lista vazia (revogar) zera as duas; a eliminação também. NULL com restrições salvas = o
+    // consentimento é anterior ao registro (#600) e vale como versão antiga para o aviso de mudança.
+    restricoesConsentidasEm: timestamp('restricoes_consentidas_em', { withTimezone: true }),
+    restricoesConsentimentoVersao: text('restricoes_consentimento_versao'),
     // Bio curta do perfil (#124, frente Perfil). text livre, NULLABLE; o CAP de tamanho
     // (~280) é validado na borda do app (PATCH /api/me), não no banco — mesma tese do
     // `locale` (a coluna não restringe; a escrita do app é a fronteira intencional).

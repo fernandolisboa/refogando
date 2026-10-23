@@ -7,7 +7,13 @@ import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 import type { Messages } from './pt-BR'
 // Relative import (a value, not a type): the E2E imports the catalogs outside the Next bundler.
-import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '../../domain/legal-notice'
+import {
+  DATA_POLITICA_V3_2,
+  DATA_POLITICA_V3_3,
+  DATA_PUBLICACAO_TERMOS_V1,
+  DATA_TERMOS_V1_1,
+  DATA_TERMOS_V1_2,
+} from '../../domain/legal-notice'
 
 export const enUS: Messages = {
   app: { name: 'Refogando', tagline: 'Cook up any idea' },
@@ -962,7 +968,7 @@ export const enUS: Messages = {
       'By saving, you allow Refogando to keep these restrictions only to pre-select your requests and to send them to the AI (Anthropic) when you generate with them selected. The app and the AI run in the United States. Clear them all and save to delete.',
     // Notice of the 2026-10-22 change (LGPD art. 8, §6), only for people who already had saved restrictions.
     avisoMudanca:
-      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. If you do not agree, clear them all and save to delete them.',
+      'We updated the Privacy Policy on October 22, 2026: your saved restrictions are processed by the app and the AI in the United States. To keep them, save again and this notice goes away; if you do not agree, clear them all and save to delete them.',
     avisoMudancaFechar: 'Got it',
     salvar: 'Save restrictions',
     salvando: 'Saving…',
@@ -1997,10 +2003,10 @@ export const enUS: Messages = {
       'Detailed in Part (b). In short: we keep the author/site name and source URL, solely to give credit. Legal basis: legitimate interest — Art. 7, IX —, with a documented balancing test (the fact that the author published the name themselves weighs in favor).',
     s35Titulo: '3.5. Saved dietary restrictions',
     s35Valores: [
-      'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile.',
+      'the dietary restrictions you save on your profile (e.g. vegan, gluten-free, no seafood), chosen from a fixed list — no free text. This is sensitive personal data (LGPD Art. 5, II): it may reveal health or religious belief. Only you can see it: it does not appear on your public profile. Along with them we keep the date and the version of the text you consented to, as proof of consent (Art. 8, §2).',
       'a single one: pre-checking your own requests — recipe creation, menu suggestion and search —, always with a notice and changeable on each request. They reach the AI provider (Anthropic, in the United States) only within a request in which you keep them checked.',
       'specific and highlighted consent — Art. 11, I —, given when you save (the text sits next to the button and states that the app and the AI run in the United States, Art. 33, VIII) and revocable at any time by unchecking them all and saving.',
-      'until you uncheck them or delete your account; they are included in your data export and erased when the account is deleted.',
+      'until you uncheck them or delete your account (the date and version of the consent go with them); they are included in your data export and erased when the account is deleted.',
     ],
     s36Titulo: '3.6. Account security and abuse prevention',
     s36Valores: [
@@ -2120,7 +2126,7 @@ export const enUS: Messages = {
       'remember the language you chose',
       'remember the light or dark theme',
       'protect Google sign-in against fraud',
-      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the change notices (the one about restrictions and the one about the Terms and the Policy)',
+      'remember the last tab, the welcome tour, the Menu suggestion servings and whether you have already seen the notice about changes to the Terms and the Policy',
       'avoid repeated error reports and back-to-back reloads after an update, remember the search’s "Show all" and hold for a few seconds, until the next page, the request to replay the tour and the account-deletion notice',
     ],
     s8Duracoes: [
@@ -2148,6 +2154,7 @@ export const enUS: Messages = {
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only the photo of published recipes; the other images in the gallery and those of private recipes stay out of the queue (item 3.3 and section 4).`,
+      `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2200,9 +2207,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2266,9 +2273,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
