@@ -18,7 +18,7 @@ import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { enUS } from '@/i18n/messages/en-US'
 import { PrivacyPolicy } from '@/components/legal/privacy-policy'
-import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
+import { DATA_POLITICA_V3_2, DATA_POLITICA_V3_3, DATA_PUBLICACAO_TERMOS_V1 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
   return render(
@@ -90,11 +90,19 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_POLITICA_V3_2)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_3)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.2 — ${DATA_POLITICA_V3_2}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}`))).toBe(true)
     // 11 direitos, o último sobre decisão automatizada (Art. 20).
     expect(m.s7Direitos).toHaveLength(11)
     expect(screen.getByText(m.s7Direitos[10])).toBeInTheDocument()
+  })
+
+  it('#600: o item 3.5 diz que guardamos a data e a versão do consentimento, e que saem junto ao desmarcar', () => {
+    expect(ptBR.privacidade.s35Valores[0]).toContain('a data e a versão do texto com que você consentiu')
+    expect(enUS.privacidade.s35Valores[0]).toContain('the date and the version of the text you consented to')
+    expect(ptBR.privacidade.s35Valores[3]).toContain('a data e a versão do consentimento saem junto')
+    for (const m of [ptBR.privacidade, enUS.privacidade]) expect(m.rodapeData).toBe(DATA_POLITICA_V3_3)
   })
 
   it('#599: a revisão de imagens da curadoria não é exceção do conteúdo privado, só da foto de receita publicada', () => {
@@ -104,7 +112,6 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(enUS.privacidade.s4Itens[0]).toContain('the other images in the gallery and those of private recipes stay out of the queue')
     expect(ptBR.privacidade.s33Valores[1]).toContain('quando viram a foto de uma receita publicada')
     expect(enUS.privacidade.s33Valores[1]).toContain('once they become the photo of a published recipe')
-    for (const m of [ptBR.privacidade, enUS.privacidade]) expect(m.rodapeData).toBe(DATA_POLITICA_V3_2)
   })
 
   it('tabelas de prestadores (item 5) e de cookies (item 8): uma linha por entrada, colunas do mesmo tamanho', () => {

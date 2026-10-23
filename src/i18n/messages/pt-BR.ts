@@ -6,7 +6,13 @@ import type { Categoria, Restricao, Unidade } from '@/domain/vocabulary'
 import type { NivelChef } from '@/domain/briefing'
 import type { ImageSceneRegistro } from '@/domain/image-scene'
 // Import relativo (valor, não tipo): o E2E (`e2e/fixtures/test.ts`) importa este catálogo fora do bundler do Next.
-import { DATA_POLITICA_V3_2, DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2 } from '../../domain/legal-notice'
+import {
+  DATA_POLITICA_V3_2,
+  DATA_POLITICA_V3_3,
+  DATA_PUBLICACAO_TERMOS_V1,
+  DATA_TERMOS_V1_1,
+  DATA_TERMOS_V1_2,
+} from '../../domain/legal-notice'
 
 export const ptBR = {
   app: { name: 'Refogando', tagline: 'Cozinhe qualquer ideia' },
@@ -2107,10 +2113,10 @@ export const ptBR = {
       'Detalhada na Parte (b). Em resumo: guardamos nome do autor/site e URL de origem, só para dar crédito. Base legal: legítimo interesse — Art. 7º, IX —, com o teste de balanceamento documentado (o fato de o próprio autor ter publicado o nome pesa a favor).',
     s35Titulo: '3.5. Restrições alimentares salvas',
     s35Valores: [
-      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público.',
+      'as Restrições alimentares que você salva no perfil (ex.: vegana, sem glúten, sem frutos do mar), escolhidas de uma lista fixa — sem texto livre. É dado pessoal sensível (Art. 5º, II da LGPD): pode revelar saúde ou convicção religiosa. Só você vê: não aparece no perfil público. Junto delas guardamos a data e a versão do texto com que você consentiu, como prova do consentimento (Art. 8º, §2º).',
       'uma só: pré-marcar os seus próprios pedidos — criação de receita, Sugestão de cardápio e busca —, sempre com aviso e mudáveis em cada pedido. Elas só vão ao provedor de IA (Anthropic, nos Estados Unidos) dentro de um pedido em que você as mantém marcadas.',
       'consentimento específico e destacado — Art. 11, I —, dado ao salvar (o texto fica junto do botão e informa que o app e a IA funcionam nos Estados Unidos, Art. 33, VIII) e revogável a qualquer momento desmarcando todas e salvando.',
-      'até você desmarcá-las ou excluir a conta; entram na exportação dos seus dados e são apagadas na exclusão da conta.',
+      'até você desmarcá-las ou excluir a conta (a data e a versão do consentimento saem junto); entram na exportação dos seus dados e são apagadas na exclusão da conta.',
     ],
     s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
     s36Valores: [
@@ -2258,6 +2264,7 @@ export const ptBR = {
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
       `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
       `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
+      `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2310,9 +2317,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2376,9 +2383,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.2',
+    rodapeVersao: 'v3.3',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_2,
+    rodapeData: DATA_POLITICA_V3_3,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
