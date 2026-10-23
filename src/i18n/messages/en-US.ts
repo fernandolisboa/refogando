@@ -2128,7 +2128,7 @@ export const enUS: Messages = {
       'v1 — 2026-07-03: first published version.',
       'v2 — 2026-10-13: Meal plan, shopping lists, Pantry and saved dietary restrictions.',
       'v3 — 2026-10-23: full internal review: account deletion and retention periods, Google sign-in, public profile, search and image review by the curators, security and technical logs, backups, cookies, international transfer (saved restrictions processed in the United States), data subject requests and privacy channel.',
-      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the change notice in the browser (item 8).`,
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: minimum age of 16 (section 9), the Terms of Use as the account contract (item 3.1) and the browser remembering the change notice (item 8).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2344,7 +2344,7 @@ export const enUS: Messages = {
     rodapeDataRotulo: 'Date',
     rodapeData: DATA_PUBLICACAO_TERMOS_V1,
   },
-  // Legal-change notice (ADR-0051), in the layout, only for accounts older than the publication. See pt-BR.ts.
+  // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
   avisoLegal: {
     texto: 'We have published the Terms of Use and updated the Privacy Policy. Read what changed.',
     fechar: 'Got it',

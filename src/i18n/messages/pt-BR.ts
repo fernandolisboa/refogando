@@ -2237,7 +2237,7 @@ export const ptBR = {
       'v1 — 2026-07-03: primeira versão publicada.',
       'v2 — 2026-10-13: Cardápio, listas de compras, Despensa e restrições alimentares salvas.',
       'v3 — 2026-10-23: revisão interna completa: eliminação e prazos de retenção, login com o Google, perfil público, busca e revisão de imagens pela curadoria, segurança e registros técnicos, cópias de segurança, cookies, transferência internacional (restrições salvas tratadas nos Estados Unidos), pedidos de titulares e canal de privacidade.',
-      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e aviso de mudança no navegador (item 8).`,
+      `v3.1 — ${DATA_PUBLICACAO_TERMOS_V1}: idade mínima de 16 anos (seção 9), Termos de Uso como contrato da conta (item 3.1) e o navegador lembrar o aviso de mudança (item 8).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2460,7 +2460,7 @@ export const ptBR = {
     rodapeDataRotulo: 'Data',
     rodapeData: DATA_PUBLICACAO_TERMOS_V1,
   },
-  // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta anterior à publicação
+  // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta criada até o fim do dia da publicação
   // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e
   // `privacidade.titulo` e o botão `fechar`. Mudança nova = texto novo aqui + `AVISO_LEGAL_VERSAO` nova.
   avisoLegal: {

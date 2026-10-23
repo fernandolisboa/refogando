@@ -56,10 +56,9 @@ Rodar `/handoff` para gerar:
   `src/domain/legal-notice.ts` (o `LegalChangeNotice` do layout volta para quem dispensou o anterior), nova linha
   em `termos.s10Historico` + rodapé com data própria (constante nova em `src/domain/legal-notice.ts`);
   `DATA_PUBLICACAO_TERMOS_V1` fica congelada depois do merge (data a v1, a v3.1 da política e o corte do aviso da
-  v1). Feature que muda o que os Termos
-  afirmam (denúncia, moderação, sanções, importação, cópias, eliminação, notificações de retirada) atualiza o
-  texto no mesmo PR. Os Termos prometem processos manuais (conta de menor de 16, encerrar conta, nova análise):
-  o procedimento está no ADR-0051.
+  v1). Feature que muda o que os Termos afirmam (denúncia, moderação, sanções, importação, cópias, eliminação,
+  notificações de retirada) atualiza o texto no mesmo PR. Os Termos prometem processos manuais (conta de menor de
+  16, encerrar conta, nova análise): o procedimento está no ADR-0051.
 - **Textos que andam junto:** o rodapé de `seusDireitos` (versão, data e status) é igual ao da política, e um teste
   (`test/ui/seus-direitos.test.tsx`) reprova se divergirem; `restricoesPerfil.consentimento` (o texto junto do botão
   de salvar as restrições) nomeia o fornecedor de IA e o país onde o app e a IA funcionam, então trocar de

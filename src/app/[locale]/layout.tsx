@@ -157,7 +157,7 @@ export default async function LocaleLayout({
                 tabIndex={-1}
                 className="flex flex-1 flex-col rounded-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg"
               >
-                {/* ADR-0051: aviso de mudança dos Termos e da Política, só para conta anterior à publicação. Dentro
+                {/* ADR-0051: aviso de mudança dos Termos e da Política, só para conta criada até o fim do dia da publicação. Dentro
                     do wrapper, antes da página: o skip-link não o pula. Sem DOM quando não há aviso. */}
                 <LegalChangeNotice />
                 {children}

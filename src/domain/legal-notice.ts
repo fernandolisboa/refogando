@@ -4,8 +4,8 @@
  * `DATA_PUBLICACAO_TERMOS_V1` é a FONTE ÚNICA, no código, da data em que os Termos de Uso v1 e a Política v3.1
  * foram publicados (o dia do merge do PR). As strings i18n a importam (`termos.rodapeData`, `termos.s10Historico`,
  * `privacidade.rodapeData` e a linha v3.1 de `privacidade.s10Historico`, `seusDireitos.rodapeData`), e o aviso
- * a usa para decidir o público. Se o merge escorregar de dia, troque esta constante e as datas do ADR-0051 e do
- * handoff 85, só no PR que publica a v1. Depois do merge ela fica CONGELADA: a próxima versão ganha constante
+ * a usa para decidir o público. Se o merge escorregar de dia, troque esta constante e as datas em prosa dos docs
+ * (`grep -rn 2026-10-23 docs`), só no PR que publica a v1. Depois do merge ela fica CONGELADA: a próxima versão ganha constante
  * própria.
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
