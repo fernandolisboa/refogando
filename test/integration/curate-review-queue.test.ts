@@ -5,7 +5,7 @@ import { POST as removeRoute } from '@/app/api/curate/review-images/[imageId]/re
 import { POST as dismissRoute } from '@/app/api/curate/review-images/[imageId]/dismiss/route'
 import { getDb, setImageStore } from '@/server/deps'
 import { FakeImageStore } from '@/server/images/image-store'
-import { recipe, recipeImage } from '@/db/schema'
+import { notification, recipe, recipeImage } from '@/db/schema'
 import { listReviewQueue } from '@/server/curate/review'
 import { loadPublicRecipeBySlug } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
@@ -239,6 +239,72 @@ describe('POST /api/curate/review-images/[imageId]/remove — modera + sai da fi
     expect(second.status).toBe(200)
     // A 1ª proveniência é preservada (não sobrescreve o moderated_at).
     expect((await moderatedAtOf(imageId))!.getTime()).toBe(at1!.getTime())
+  })
+})
+
+async function notifsFor(recipientId: string) {
+  return getDb().select().from(notification).where(eq(notification.recipientId, recipientId))
+}
+
+describe('remover da fila notifica o dono (ADR-0051: os Termos, item 8, prometem a notificação)', () => {
+  it('1ª remoção → 1 `image_moderated` pro dono da receita da linhagem; re-remover não re-notifica', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'notif@review.test', role: 'curador' })
+    const owner = await seedUser({ email: 'notif-dono@review.test' })
+    const { imageId, recipeId } = await seedReviewImage({ ownerId: owner, visibility: 'private' })
+
+    const res = await removeRoute(removeReq(imageId, headers, 'imagem imprópria'), ctx(imageId))
+    expect(res.status).toBe(200)
+    const rows = await notifsFor(owner)
+    expect(rows).toHaveLength(1)
+    // Impessoal (sem ator, não expõe o Curador) e ancorada na receita que a fila mostrou.
+    expect(rows[0]).toMatchObject({ type: 'image_moderated', actorId: null, recipeId })
+
+    const again = await removeRoute(removeReq(imageId, headers, 'de novo'), ctx(imageId))
+    expect(again.status).toBe(200)
+    expect(await notifsFor(owner)).toHaveLength(1)
+  })
+
+  it('a receita notificada é a mesma da fila: a do criador da imagem, a mais recente da linhagem', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'notif2@review.test', role: 'curador' })
+    const owner = await seedUser({ email: 'notif2-dono@review.test' })
+    const { imageId, lineageId } = await seedReviewImage({ ownerId: owner })
+    // Uma versão mais nova na MESMA linhagem (regeneração same-owner).
+    const newer = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', ownerId: owner })
+    await getDb().update(recipe).set({ lineageId, createdAt: new Date(Date.now() + 60_000) }).where(eq(recipe.id, newer))
+
+    const fila = (await listReviewQueue(getDb())).find((i) => i.imageId === imageId)
+    expect(fila?.recipeId).toBe(newer)
+
+    await removeRoute(removeReq(imageId, headers, 'imagem imprópria'), ctx(imageId))
+    const rows = await notifsFor(owner)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].recipeId).toBe(newer)
+  })
+
+  it('motivo vazio, dispensar ou imagem de catálogo (sem dono) → nenhuma notificação', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'notif3@review.test', role: 'curador' })
+    const owner = await seedUser({ email: 'notif3-dono@review.test' })
+    const { imageId } = await seedReviewImage({ ownerId: owner })
+    expect((await removeRoute(removeReq(imageId, headers, '  '), ctx(imageId))).status).toBe(400)
+    expect((await dismissRoute(dismissReq(imageId, headers), ctx(imageId))).status).toBe(200)
+    expect(await notifsFor(owner)).toHaveLength(0)
+
+    // Catálogo: receita sem dono na linhagem.
+    const catalogId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR' })
+    const [r] = await getDb().select({ lineageId: recipe.lineageId }).from(recipe).where(eq(recipe.id, catalogId))
+    const [img] = await getDb()
+      .insert(recipeImage)
+      .values({
+        blobUrl: 'https://abc.public.blob.vercel-storage.com/recipes/catalog.webp',
+        provenance: 'ai_generated',
+        lineageId: r.lineageId,
+        reviewRequired: true,
+      })
+      .returning({ id: recipeImage.id })
+    const before = await getDb().select({ id: notification.id }).from(notification)
+    expect((await removeRoute(removeReq(img.id, headers, 'imagem imprópria'), ctx(img.id))).status).toBe(200)
+    const after = await getDb().select({ id: notification.id }).from(notification)
+    expect(after).toHaveLength(before.length)
   })
 })
 
