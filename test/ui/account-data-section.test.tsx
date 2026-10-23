@@ -10,8 +10,12 @@ import type { ReactNode } from 'react'
  * datado) e exclui a conta pelo diálogo (`POST /api/me/erasure`), sem usar a API na mão. `useSession` é um
  * store de verdade (dá para a sessão virar `null` no meio), `signOut`, `forgetTabs` e o sinal do aviso
  * (`account-notice-signal`) mockados; `fetch` por URL e método; `URL.createObjectURL` atribuído (o jsdom não
- * tem); o clique na âncora do download é espionado.
+ * tem); o clique na âncora do download é espionado. O `SessionLossGuard` da raiz é montado junto: a saída
+ * segura a recarga dele (`holdSessionLossReload`), senão ver a sessão sumir recarregaria a página atual por
+ * cima do `location.assign` da home.
  */
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
@@ -74,6 +78,7 @@ import { accountExportFilename } from '@/domain/account-export'
 import { tourStorageKey } from '@/domain/onboarding-tour'
 import { avisoLegalStorageKey } from '@/domain/legal-notice'
 import { AccountDataSection } from '@/components/profile/account-data-section'
+import { SessionLossGuard, resetSessionLossGuardForTests } from '@/components/session-loss-guard'
 import { stubLocation } from './reload-stub'
 
 const m = ptBR.seusDados
@@ -154,6 +159,7 @@ function deferred<T>() {
 function renderSection(locale: Locale = 'pt-BR') {
   return render(
     <LocaleProvider initialLocale={locale}>
+      <SessionLossGuard />
       <AccountDataSection />
     </LocaleProvider>,
   )
@@ -167,10 +173,14 @@ const originalCreate = URL.createObjectURL
 const originalRevoke = URL.revokeObjectURL
 
 beforeEach(() => {
+  resetSessionLossGuardForTests()
   sessionStore.set(authed())
   order.length = 0
   signOut.mockReset()
-  signOut.mockImplementation(async () => {})
+  // Como o de verdade: o `signOut` zera o atom da sessão (é o que o SessionLossGuard observa).
+  signOut.mockImplementation(async () => {
+    act(() => sessionStore.set(guest()))
+  })
   forgetTabs.mockReset()
   markAccountNotice.mockReset()
   createObjectURL.mockClear()
@@ -211,6 +221,8 @@ function expectExit(kind: 'excluida' | 'sessao', last: 'assign' | 'reload') {
   expect(markAccountNotice).toHaveBeenCalledWith(kind)
   expect(order.indexOf(`mark:${kind}`)).toBeLessThan(order.indexOf('signOut'))
   expect(order.at(-1)).toBe(last)
+  // Uma navegação só: a do diálogo. O SessionLossGuard ficou segurado (`holdSessionLossReload`).
+  expect(order.filter((o) => o === 'assign' || o === 'reload')).toEqual([last])
 }
 
 describe('AccountDataSection — "Seus dados" (#595)', () => {
