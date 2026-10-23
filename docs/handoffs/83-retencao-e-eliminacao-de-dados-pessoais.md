@@ -14,11 +14,11 @@
   - O que sai, o que é limpo e o que fica está na tabela da decisão 1 do ADR-0050.
 - **Varredura diária das contas já eliminadas.**
   - `purgeAnonymizedPrivateContent` (`src/server/legal/account-purge-scan.ts`) entra no cron `account-purge`. A ordem das etapas passa a ser: cadastros pendentes (`purgeStalePendingSignups`, barata, carrega a promessa das 48 h da operação 13), fotos de avaliação com 180 dias (`purgeAnonymizedAccounts`) e, por último, o conteúdo privado.
-  - Um orçamento só para a passada inteira (40 s, reserva de 15 s), contado do começo da rota: `timeBudget` (`src/server/time-budget.ts`, `remainingMs()`/`canStartMore()`), o mesmo helper do cron de retenção. Antes de cada conta, inclusive a primeira, a varredura confere `canStartMore()`; as candidatas que ficaram saem como `privateAccountsDeferred=N`, então um corte nunca aparece como zeros calados.
+  - Um orçamento só para a passada inteira (40 s, reserva de 15 s), contado do começo da rota: `timeBudget` (`src/server/time-budget.ts`, `remainingMs()`/`canStartMore()`), o mesmo helper do cron de retenção. Antes de cada conta, inclusive a primeira, a varredura confere `canStartMore()`; as candidatas do lote que ficaram saem como `privateAccountsDeferred=N` (só as do lote de 25, não o total de contas com sobra), então um corte nunca aparece como zeros calados.
   - Lote de 25, numa ordem que muda todo dia (`md5(id || current_date)`): uma conta que falha sempre não segura as outras. Uma transação por conta, falha isolada por conta, e `DSAR_FULFILLED` `account_private_purge` quando algo muda.
   - A seleção das candidatas calcula a sobra de galeria uma vez para todas as contas (`users.id IN (SELECT created_by …)`, com a guarda de linhagem contra o `created_by` da própria imagem). Correlacionada com `users.id`, ela varria `recipe_image` por conta: 50 s com 2 mil contas anonimizadas e 100 mil imagens (sintético), contra 0,27 s agora.
   - A linha `[account-purge]` separa `privateRowsDeleted` (só DELETE) de `privateRowsScrubbed` (UPDATE: a linha fica sem o texto); as fotos de avaliação são blobs e entram só em `privateBlobsReaped`.
-  - O loop de blobs de `purgeAnonymizedAccounts` NÃO mudou (o teste de falha dele depende do `owns` lançar fora do try). Ele não usa o orçamento: as candidatas dele são todas as contas com 180 dias, todo dia, e um corte sempre na mesma ordem deixaria as do fim para sempre.
+  - `purgeAnonymizedAccounts` só seleciona as contas passadas dos 180 dias que ainda têm foto de avaliação (`EXISTS` em `recipe_review` com `photo_url IS NOT NULL`, pelo índice `recipe_review_user_recipe_uq`, que começa por `user_id`). Antes, toda conta com 180 dias voltava todo dia, mesmo já limpa; agora `scanned` conta só as que têm o que expurgar. O loop de blobs dela NÃO mudou (o teste de falha depende do `owns` lançar fora do try), e ela não usa o orçamento: a conta limpa sai das candidatas, então o volume diário é o das contas que acabaram de passar do prazo, não o acúmulo.
 - **Cron de retenção** `/api/cron/retention` (`vercel.json`, 11:30 UTC).
   - Os prazos ficam em `src/domain/data-retention.ts`, em dias arredondados para cima.
   - Os passos ficam em `src/server/legal/data-retention.ts` (`RETENTION_STEPS`, nessa ordem): uso de IA 24 meses, extração 30 dias, sessões e verificações vencidas, takedown encerrado há 12 meses, auditoria DSAR 5 anos (`purgeDsarEventsBefore` em `dsar-audit.ts`), cascos das contas eliminadas e tokens/custo das gerações antigas de contas vivas.
@@ -40,12 +40,12 @@
   - Comentários de retenção no schema.
   - Docstrings de `src/domain/account-purge.ts` e `account-erasure.ts`.
 - **Testes novos:**
-  - `test/integration/account-erasure-private-content.test.ts`: IDOR, Receita ex-pública com terceiros, imagens compartilhadas e de catálogo, faces num comando só (1 face e 25 faces dão o mesmo número de comandos), limpeza da sessão com o painel de custo intacto, atomicidade por trigger, falhas do Blob, e o teste de FKs da `ERASURE_POLICY`.
+  - `test/integration/account-erasure-private-content.test.ts`: IDOR, Receita ex-pública com terceiros, imagens compartilhadas e de catálogo, faces num comando só (1 face e 25 faces dão o mesmo número de comandos), face legada de linhagem fora das apagadas (sai com os 3 blobs sem Receita alheia na linhagem; fica com Receita de catálogo), limpeza da sessão com o painel de custo intacto, atomicidade por trigger, falhas do Blob, e o teste de FKs da `ERASURE_POLICY`.
   - `test/integration/data-retention.test.ts`: bordas de cada prazo, takedown, lápide, cascos, `liveGenerationCosts` sozinho (a geração velha da conta eliminada fica para o passo dela), lotes, orçamento, idempotência e a rota.
   - `test/helpers/failing-trigger.ts`: `withFailingTrigger`, o trigger de falha que `account-purge` e `account-erasure-private-content` usam.
   - `test/domain/data-retention.test.ts`: todo dia de 2024 a 2032 contra o prazo de calendário.
   - `test/unit/user-photo-reencode.test.ts`.
-- **Testes alterados:** `account-purge` (varredura, candidatas da varredura = `privateLeftovers` conta a conta numa fixture mista, orçamento da rota gasto antes do privado com `privateAccountsDeferred` e o cadastro pendente saindo, falha isolada, rota 500), `me-erasure`, `notifications`, `me-avatar`, `recipe-image`, `catalog-image`, `image-derivatives`, `conversation-stream`, `recipe-image-generate`, `layout-data`, `home-feed` e `test/ui/error-report.test.ts`.
+- **Testes alterados:** `account-purge` (candidatas das fotos: conta passada do prazo sem foto não entra em `scanned`, e a 2ª passada dá `scanned: 0`; varredura, candidatas da varredura = `privateLeftovers` conta a conta numa fixture mista, orçamento da rota gasto antes do privado com `privateAccountsDeferred` e o cadastro pendente saindo, falha isolada, rota 500), `me-erasure`, `notifications`, `me-avatar`, `recipe-image`, `catalog-image`, `image-derivatives`, `conversation-stream`, `recipe-image-generate`, `layout-data`, `home-feed` e `test/ui/error-report.test.ts`.
 
 ## 2. Ações do dono
 
@@ -53,7 +53,7 @@
 2. **Depois do deploy:**
    - Rodar manualmente (Run, no painel de crons da Vercel) `/api/cron/account-purge` e depois `/api/cron/retention`.
    - Ler as linhas `[account-purge] passada …` (`pendingSignupsPurged`, …, `privateAccountsSwept`, `privateAccountsFailed`, `privateAccountsDeferred`, …) e `[retencao] passada …`, e conferir se alguma linha `… falhou: erro=…` apareceu.
-   - Na primeira passada, `sessions` e `verifications` devem vir altos (o acúmulo desde o começo). Se aparecer `deferredSteps=N` ou `privateAccountsDeferred=N` com N > 0, o resto sai nas passadas seguintes (25 contas por dia, no máximo).
+   - Na primeira passada, `sessions` e `verifications` devem vir altos (o acúmulo desde o começo). Se aparecer `deferredSteps=N` ou `privateAccountsDeferred=N` com N > 0, o resto sai nas passadas seguintes (25 contas por dia, no máximo; `privateAccountsDeferred` conta só as do lote do dia, não quantas contas ainda faltam).
 3. **Follow-ups a abrir como issues** (riscos do ADR-0050):
    - (a) `deleteOwnRecipe` não apaga o blob das fotos de avaliação da Receita apagada.
    - (b) Índices para `recipe_image.created_by`, `recipe.lineage_id`, `session.expires_at` e o `created_at` de `extraction_event`, `image_generation` e `meal_plan_suggestion_event`, numa migração quando o slot liberar; `recipe_review.recipe_id` só tem índice parcial. Os de `recipe_image` e `recipe` já estão no #601.

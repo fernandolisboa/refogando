@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
-import { notification, recipeReview, users } from '@/db/schema'
+import { notification, notificationTypeEnum, recipeReview, users } from '@/db/schema'
 import type { NotificationType, NotificationRefs } from '@/domain/notification'
 import { errorLogFields } from '@/domain/error-report'
 
@@ -99,8 +99,8 @@ export async function emitNotification(
     )
     await db.execute(sql`
       INSERT INTO ${notification} (${columns})
-      SELECT ${users.id}, ${input.type}::notification_type, ${input.actorId ?? null}::uuid,
-        ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid
+      SELECT ${users.id}, ${input.type}::${sql.identifier(notificationTypeEnum.enumName)},
+        ${input.actorId ?? null}::uuid, ${input.recipeId ?? null}::uuid, ${input.reviewId ?? null}::uuid
       FROM ${users}
       WHERE ${users.id} = ${input.recipientId} AND ${users.anonymizedAt} IS NULL`)
   } catch (err) {

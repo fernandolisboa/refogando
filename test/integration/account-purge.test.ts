@@ -110,9 +110,27 @@ describe('purgeAnonymizedAccounts (datas simuladas via now injetado)', () => {
     expect(first).toEqual({ scanned: 1, blobsReaped: 1, reviewsCleared: 1 })
 
     const second = await purgeAnonymizedAccounts(getDb(), store, NOW)
-    // Ainda é candidato (anonymized_at segue velho), mas não há mais photo_url a nular.
-    expect(second).toEqual({ scanned: 1, blobsReaped: 0, reviewsCleared: 0 })
+    // Sem photo_url, a conta deixa de ser candidata (anonymized_at segue velho, mas não há o que expurgar).
+    expect(second).toEqual({ scanned: 0, blobsReaped: 0, reviewsCleared: 0 })
     expect(await countPurgeEvents()).toBe(1) // nenhum evento novo
+  })
+
+  it('candidatas: passada da retenção SEM foto não é examinada; a COM foto, na mesma passada, é limpa', async () => {
+    const recipeId = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    // Sem foto: nem avaliação tem, ou tem avaliação sem foto. Nenhuma das duas entra em `scanned`.
+    await seedAnonymizedUser(daysBefore(400))
+    const noPhoto = await seedAnonymizedUser(daysBefore(300))
+    const plainReview = await seedReview({ userId: noPhoto, recipeId, rating: 4, comment: 'boa' })
+    const withPhoto = await seedAnonymizedUser(daysBefore(200))
+    const { reviewId, url } = await seedReviewWithPhoto(withPhoto, recipeId)
+
+    const result = await purgeAnonymizedAccounts(getDb(), store, NOW)
+
+    expect(result).toEqual({ scanned: 1, blobsReaped: 1, reviewsCleared: 1 })
+    expect(store.blobs.has(url)).toBe(false)
+    expect(await loadReviewPhoto(reviewId)).toBeNull()
+    expect(await loadReviewPhoto(plainReview)).toBeNull() // a avaliação sem foto segue igual
+    expect(await countPurgeEvents()).toBe(1) // só a conta que tinha foto é auditada
   })
 
   it('URL estrangeira: ponteiro nulado mas o blob externo NÃO é apagado (store.owns protege)', async () => {

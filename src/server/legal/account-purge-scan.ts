@@ -30,8 +30,8 @@ import { timeBudget, type TimeBudget } from '@/server/time-budget'
  *    dispositivo) — e nula os ponteiros, SEM apagar a linha `users` nem as avaliações.
  *
  * `now` é INJETADO (o kernel `@/domain/account-purge` é puro/testável com datas simuladas; o cron passa
- * `new Date()`). IDEMPOTENTES: numa 2ª passada não sobra conteúdo privado nem `photo_url` a nular → nada a
- * expurgar, nenhum evento novo. Cada expurgo é auditado (DSAR append-only) por titular efetivamente
+ * `new Date()`). IDEMPOTENTES: numa 2ª passada não sobra conteúdo privado nem `photo_url` a nular → nenhuma
+ * candidata, nenhum evento novo. Cada expurgo é auditado (DSAR append-only) por titular efetivamente
  * expurgado. O padrão de reap (coleta na tx, deleção do blob só APÓS o commit; `store.owns` protege URL
  * estrangeira) espelha `clearSourceAttribution`/`deleteOwnRecipe`.
  *
@@ -40,7 +40,7 @@ import { timeBudget, type TimeBudget } from '@/server/time-budget'
  */
 
 export type PurgeScanResult = {
-  /** Contas anonimizadas passadas da retenção examinadas nesta passada. */
+  /** Contas anonimizadas passadas da retenção que ainda tinham foto de avaliação (as examinadas nesta passada). */
   scanned: number
   /** Blobs de PII residual efetivamente apagados (só os NOSSOS — `store.owns`). */
   blobsReaped: number
@@ -68,11 +68,20 @@ export async function purgeAnonymizedAccounts(
 ): Promise<PurgeScanResult> {
   const cutoff = new Date(now.getTime() - resolveRetentionDays() * MS_PER_DAY)
 
-  // Candidatos: anonimizados (anonymized_at != null) cujo carimbo é MAIS VELHO que o prazo de retenção.
+  // Candidatos: anonimizados (anonymized_at != null) cujo carimbo é MAIS VELHO que o prazo de retenção e que
+  // ainda têm foto de avaliação. Sem o EXISTS, toda conta passada do prazo voltaria todo dia, mesmo já limpa;
+  // com ele, a passada só pega quem tem o que expurgar (o índice `recipe_review_user_recipe_uq` começa por
+  // `user_id`).
   const candidates = await db
     .select({ id: users.id })
     .from(users)
-    .where(and(isNotNull(users.anonymizedAt), lt(users.anonymizedAt, cutoff)))
+    .where(
+      and(
+        isNotNull(users.anonymizedAt),
+        lt(users.anonymizedAt, cutoff),
+        sql`EXISTS (SELECT 1 FROM ${recipeReview} WHERE ${recipeReview.userId} = ${users.id} AND ${recipeReview.photoUrl} IS NOT NULL)`,
+      ),
+    )
 
   let blobsReaped = 0
   let reviewsCleared = 0

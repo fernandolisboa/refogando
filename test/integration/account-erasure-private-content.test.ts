@@ -252,6 +252,29 @@ describe('eliminação: imagens', () => {
     for (const url of many.own.flatMap((f) => f.urls)) expect(b.purge.blobUrls).toContain(url)
     for (const url of many.shared.urls) expect(b.purge.blobUrls).not.toContain(url)
   })
+
+  it('face legada com linhagem fora das apagadas: sai com os 3 blobs se a linhagem não tem Receita alheia; fica se tem Receita de catálogo', async () => {
+    const u = await seedUser({ email: 'faces-legadas@pc.test' })
+    const other = await seedUser({ email: 'outro-dono@pc.test' })
+    // Nem `created_by` do titular nem linhagem de uma Receita apagada: a galeria (passo 5) não pega estas
+    // faces, então só o DELETE das faces decide.
+    const orphanRecipe = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'private' })
+    const orphanFace = await seedImage({ lineageId: crypto.randomUUID(), createdBy: null, face: orphanRecipe })
+    const catalog = await seedRecipe({ origin: 'catalog', originalLocale: 'pt-BR', ownerId: null })
+    const catalogRecipe = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', ownerId: u, visibility: 'private' })
+    const catalogFace = await seedImage({ lineageId: await lineageOf(catalog), createdBy: other, face: catalogRecipe })
+
+    expect((await eraseOwnAccount(getDb(), { userId: u })).kind).toBe('erased')
+
+    expect(await exists(recipe, inArray(recipe.id, [orphanRecipe, catalogRecipe]))).toBe(false)
+    expect(orphanFace.urls).toHaveLength(3)
+    expect(await exists(recipeImage, eq(recipeImage.id, orphanFace.id))).toBe(false)
+    for (const url of orphanFace.urls) expect(store.blobs.has(url)).toBe(false)
+    // Galeria do catálogo: a linha e os 3 blobs ficam, mesmo sem nenhuma Receita apontando para ela.
+    expect(await exists(recipeImage, eq(recipeImage.id, catalogFace.id))).toBe(true)
+    for (const url of catalogFace.urls) expect(store.blobs.has(url)).toBe(true)
+    expect(await hasLeftovers(u)).toBe(false)
+  })
 })
 
 describe('eliminação: sessões de criação (limpa o texto, mantém o casco do ledger)', () => {
