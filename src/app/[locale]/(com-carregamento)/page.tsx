@@ -27,10 +27,14 @@
  * Montada AQUI (server) e passada como `highlight` (ReactNode) pro `<SearchExperience>` client — que
  * a renderiza só no repouso, acima do `<DiscoveryFeed>`. `null` (catálogo aprovado vazio) ⇒ omite o
  * slot sem quebrar a home.
+ *
+ * Faixa para quem não entrou (#472): `HomeValueBanner` (client) vai no mesmo `highlight`, acima da receita da
+ * semana. Decide no navegador se aparece, então não muda o HTML do repouso.
  */
 import type { Metadata } from 'next'
 import { SearchExperience } from '@/components/recipe/search-experience'
 import { RecipeResultItem, type BadgeLabels } from '@/components/recipe/recipe-result-item'
+import { HomeValueBanner } from '@/components/recipe/home-value-banner'
 import { buildHomeMetadata, isRefinedHomeParams, type RawSearchParams } from '@/domain/discovery-home'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
@@ -104,7 +108,7 @@ export default async function Home({
   const mw = MESSAGES[locale].receitaDaSemana
   const badgeLabels: BadgeLabels = { catalogo: m.seloCatalogo, comunidade: m.seloComunidade }
 
-  const highlight =
+  const recipeOfWeekSlot =
     recipeOfWeek !== null ? (
       <div className="flex flex-col gap-1">
         <h2 className="font-display text-xl font-semibold tracking-tight text-fg">{mw.titulo}</h2>
@@ -129,6 +133,15 @@ export default async function Home({
         </ul>
       </div>
     ) : null
+
+  // #472: a faixa para quem não entrou fica acima da "Receita da semana". Ela decide no navegador se aparece
+  // (a home de repouso não lê sessão), então o HTML do servidor segue o mesmo.
+  const highlight = (
+    <>
+      <HomeValueBanner />
+      {recipeOfWeekSlot}
+    </>
+  )
 
   return (
     <SearchExperience

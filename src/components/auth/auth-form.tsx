@@ -30,6 +30,8 @@
  * considerou a autodeclaração proporcional). No cadastro, fica logo acima do "Criar conta"; no "Entrar" com
  * Google ligado (o Google cria a conta no primeiro acesso), depois do botão do Google. Os dois botões que criam
  * conta apontam para a linha (`aria-describedby`): o leitor de tela a ouve no momento de aceitar.
+ *
+ * Por que criar conta (#472): no cadastro, três bullets (`auth.vantagens`) logo abaixo do título.
  */
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
@@ -231,6 +233,17 @@ export function AuthForm({
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-display text-3xl font-semibold text-fg">{title}</h1>
+
+      {isSignUp && (
+        <ul className="flex flex-col gap-2 text-muted">
+          {messages.auth.vantagens.map((vantagem) => (
+            <li key={vantagem} className="flex gap-2.5">
+              <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-brand" />
+              {vantagem}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {emailVerified && !isSignUp && (
         <Alert variant="info" role="status">

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import type { ReactNode } from 'react'
@@ -268,6 +268,23 @@ describe('AuthForm — aviso de idade, Termos e Política (ADR-0051; #595)', () 
       expect(msg.split('{privacidade}')).toHaveLength(2)
       expect(msg).not.toContain('{link}')
     }
+  })
+
+  // #472: por que criar conta, logo abaixo do título; só no cadastro.
+  for (const locale of ['pt-BR', 'en-US'] as const) {
+    it(`criar conta (${locale}): três bullets de vantagens logo abaixo do título`, () => {
+      renderForm('sign-up', false, locale)
+      const vantagens = MESSAGES[locale].auth.vantagens
+      expect(vantagens).toHaveLength(3)
+      const lista = screen.getByRole('list')
+      expect(within(lista).getAllByRole('listitem').map((li) => li.textContent)).toEqual([...vantagens])
+      expect(screen.getByRole('heading', { level: 1 }).nextElementSibling).toBe(lista)
+    })
+  }
+
+  it('entrar: sem os bullets de vantagens', () => {
+    renderForm('sign-in')
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
   for (const googleEnabled of [false, true]) {
