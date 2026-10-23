@@ -983,7 +983,9 @@ export const enUS: Messages = {
     cancelar: 'Cancel',
     enviada: 'Report sent. Moderators will review it.',
     erro: 'Could not send the report. Try again.',
-    erroLimite: 'You have reached today’s report limit. Try again tomorrow.',
+    erroLimite: 'You have reached the report limit for now. Try again later.',
+    erroIndisponivel: 'This recipe is no longer available. It may have been taken down already.',
+    erroSessao: 'Your session has expired. Sign in again to report.',
   },
   // "Your data" on /me/profile (#595; LGPD Art. 18, II and V; deletion: arts. 15, III and 16 (18, VI for the
   // saved restrictions)): download the account export and delete the account from the UI. The delete dialog says
@@ -2329,7 +2331,7 @@ export const enUS: Messages = {
 
     s8Titulo: '8. Reports and moderation',
     s8Corpo: [
-      'Anyone with an account can report a public recipe or a review with the Report button. To report a profile, or if you do not have an account, write to privacidade@refogando.com.',
+      'Anyone with an account can report a public recipe or a review with the Report button. You can also write to privacidade@refogando.com, which is the way to report a profile or to report without an account.',
       'We review every report. When content is clearly illegal or violates these Terms, we take it down and record the decision, with the reason.',
       'If moderation takes down a recipe, image or review of yours, you get a notification in the app; if it is your profile, we let you know by email. To learn the reason or ask us to reconsider, write to privacidade@refogando.com.',
       'In serious or repeated violations, we may block features of the account, such as AI image generation, or close the account. We let you know beforehand when possible and, except in the case of illegal content, you have 15 days to download your data before the account is closed. You can ask us to reconsider at privacidade@refogando.com.',
@@ -2349,7 +2351,7 @@ export const enUS: Messages = {
     ],
     s10Historico: [
       `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: first version.`,
-      `v1.1 — ${DATA_TERMOS_V1_1}: public recipes are now reported with the Report button on the recipe page (item 8).`,
+      `v1.1 — ${DATA_TERMOS_V1_1}: public recipes can now also be reported with the Report button on the recipe page (item 8).`,
     ],
 
     s11Titulo: '11. Law and venue',

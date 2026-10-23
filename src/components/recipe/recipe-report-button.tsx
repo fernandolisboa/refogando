@@ -6,22 +6,29 @@
  * SUBSTITUI com "Enviar denúncia" + "Cancelar". Sucesso ⇒ "Denúncia enviada" fixo (a mesma pessoa reenviar devolve
  * a denúncia pendente, sem linha nova). Nenhuma ação de remover: só o Curador remove, na fila do painel.
  *
- * Desfechos: 201 ⇒ enviada; 429 `limite_denuncias` (teto diário por conta) ⇒ mensagem própria; qualquer outra
- * coisa (404 da receita que saiu do pool no meio, rede fora) ⇒ erro neutro, e dá para tentar de novo.
+ * Desfechos: 201 ⇒ enviada; 429 `limite_denuncias` (teto diário por conta) ⇒ mensagem própria; 404 (a receita
+ * saiu do pool no meio) ⇒ "não está mais disponível"; 401 (a sessão caiu) ⇒ pede para entrar de novo; qualquer
+ * outra coisa (rede fora, 5xx) ⇒ erro neutro, e dá para tentar de novo. Foco: o motivo ao abrir, o botão
+ * "Reportar" de volta ao cancelar e a confirmação ao enviar (o form some; o foco não cai no `body`).
  * ADR-0010: route handler via fetch, nunca Server Action.
  */
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useLocale } from '@/i18n/provider'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-
-/** Teto do motivo no cliente: um motivo cabe com folga; evita colar um texto enorme na fila. */
-const MOTIVO_MAX = 1000
+import { REPORT_REASON_MAX } from '@/domain/report'
 
 type Estado = 'fechado' | 'aberto' | 'enviando' | 'enviada'
-type Erro = null | 'falha' | 'limite'
+type Erro = null | 'falha' | 'limite' | 'indisponivel' | 'sessao'
+
+function erroDoStatus(status: number): Exclude<Erro, null> {
+  if (status === 429) return 'limite'
+  if (status === 404) return 'indisponivel'
+  if (status === 401) return 'sessao'
+  return 'falha'
+}
 
 export function RecipeReportButton({ recipeId }: { recipeId: string }) {
   const { messages } = useLocale()
@@ -30,6 +37,18 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
   const [estado, setEstado] = useState<Estado>('fechado')
   const [motivo, setMotivo] = useState('')
   const [erro, setErro] = useState<Erro>(null)
+  // Para onde o foco vai depois da troca de estado: o gatilho (cancelou) ou a confirmação (enviou).
+  const focoPendente = useRef<'gatilho' | 'confirmacao' | null>(null)
+  const gatilhoRef = useRef<HTMLButtonElement>(null)
+  const confirmacaoRef = useRef<HTMLParagraphElement>(null)
+
+  useEffect(() => {
+    const alvo = focoPendente.current
+    if (alvo === null) return
+    focoPendente.current = null
+    if (alvo === 'gatilho') gatilhoRef.current?.focus()
+    else confirmacaoRef.current?.focus()
+  }, [estado])
 
   async function enviar() {
     const reason = motivo.trim()
@@ -43,10 +62,11 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
         body: JSON.stringify({ reason }),
       })
       if (res.ok) {
+        focoPendente.current = 'confirmacao'
         setEstado('enviada')
         return
       }
-      setErro(res.status === 429 ? 'limite' : 'falha')
+      setErro(erroDoStatus(res.status))
     } catch {
       setErro('falha')
     }
@@ -55,7 +75,7 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
 
   if (estado === 'enviada') {
     return (
-      <p role="status" className="text-sm text-muted">
+      <p ref={confirmacaoRef} tabIndex={-1} role="status" className="text-sm text-muted outline-none">
         {m.enviada}
       </p>
     )
@@ -65,6 +85,7 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
     return (
       <div>
         <Button
+          ref={gatilhoRef}
           type="button"
           variant="ghost"
           size="sm"
@@ -91,7 +112,7 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
         value={motivo}
         onChange={(e) => setMotivo(e.target.value)}
         rows={3}
-        maxLength={MOTIVO_MAX}
+        maxLength={REPORT_REASON_MAX}
         aria-required="true"
         aria-describedby={`${id}-dica`}
         disabled={enviando}
@@ -112,6 +133,7 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
           variant="secondary"
           size="sm"
           onClick={() => {
+            focoPendente.current = 'gatilho'
             setEstado('fechado')
             setErro(null)
           }}
@@ -123,7 +145,13 @@ export function RecipeReportButton({ recipeId }: { recipeId: string }) {
       {erro !== null && (
         <Alert variant="info" role="alert">
           <AlertDescription className="font-medium text-foreground">
-            {erro === 'limite' ? m.erroLimite : m.erro}
+            {erro === 'limite'
+              ? m.erroLimite
+              : erro === 'indisponivel'
+                ? m.erroIndisponivel
+                : erro === 'sessao'
+                  ? m.erroSessao
+                  : m.erro}
           </AlertDescription>
         </Alert>
       )}

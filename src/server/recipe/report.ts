@@ -2,7 +2,8 @@ import { and, eq, gt, isNotNull, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipe, recipeReview, report } from '@/db/schema'
 import { eligibleForPool } from '@/domain/recipe-pool'
-import { decideModerationReason } from '@/domain/report'
+import { decideReportReason } from '@/domain/report'
+import { acquireReportLockInTx } from '@/server/quota/atomic'
 
 /**
  * Núcleo com efeito de Report (issue #18, ADR-0003). Espelha o estilo de `social.ts`:
@@ -19,7 +20,10 @@ import { decideModerationReason } from '@/domain/report'
  *
  * #605 (o botão "Reportar" na página da receita): a mesma pessoa com uma denúncia PENDENTE da mesma Receita
  * recebe a existente (201 idempotente, sem linha nova: o duplo envio não infla a fila), e cada conta faz no
- * máximo `REPORTS_POR_DIA` denúncias de receita em 24 h (429 `limite_denuncias`).
+ * máximo `REPORTS_POR_DIA` denúncias de receita em 24 h (429 `limite_denuncias`). As duas checagens e o INSERT
+ * rodam numa transação sob a advisory lock da conta (`acquireReportLockInTx`), então envios simultâneos não
+ * driblam nem a deduplicação nem o teto. O motivo tem teto de `REPORT_REASON_MAX` caracteres (400, receita e
+ * avaliação).
  */
 
 /** Teto de denúncias de receita por conta em 24 h (#605): folga larga para uso honesto, freia o spam da fila. */
@@ -74,36 +78,42 @@ export async function createReport(input: {
   const gate = await loadPoolGate(db, id)
   if (!gate) return { kind: 'not_found' }
 
-  // Motivo obrigatório (AC2 — mesmo validador puro de remover-do-pool).
-  if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' }
+  // Motivo obrigatório (AC2 — mesmo validador puro de remover-do-pool) e com teto de tamanho (#605).
+  if (!decideReportReason({ reason }).allowed) return { kind: 'invalid_reason' }
 
-  // #605: denúncia pendente da mesma pessoa para a mesma Receita ⇒ a existente (idempotente).
-  const [pending] = await db
-    .select({ id: report.id })
-    .from(report)
-    .where(and(eq(report.recipeId, id), eq(report.reporterId, userId), eq(report.status, 'pending')))
-    .limit(1)
-  if (pending) return { kind: 'ok', reportId: pending.id }
+  return db.transaction(async (tx): Promise<ReportResult> => {
+    // #605: serializa as denúncias da conta; fila da lock cheia ⇒ o mesmo 429 do teto.
+    if (!(await acquireReportLockInTx(tx, userId))) return { kind: 'limit' }
 
-  // #605: teto diário por conta (só denúncias de receita; as de avaliação têm a própria rota).
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(report)
-    .where(
-      and(
-        eq(report.reporterId, userId),
-        isNotNull(report.recipeId),
-        gt(report.createdAt, new Date(Date.now() - UM_DIA_MS)),
-      ),
-    )
-  if (n >= REPORTS_POR_DIA) return { kind: 'limit' }
+    // #605: denúncia pendente da mesma pessoa para a mesma Receita ⇒ a existente (idempotente). Antes do teto:
+    // quem reenvia a mesma denúncia no limite recebe 201, não 429.
+    const [pending] = await tx
+      .select({ id: report.id })
+      .from(report)
+      .where(and(eq(report.recipeId, id), eq(report.reporterId, userId), eq(report.status, 'pending')))
+      .limit(1)
+    if (pending) return { kind: 'ok', reportId: pending.id }
 
-  const [row] = await db
-    .insert(report)
-    .values({ recipeId: id, reporterId: userId, reason })
-    .returning({ id: report.id })
+    // #605: teto diário por conta (só denúncias de receita; as de avaliação têm a própria rota).
+    const [{ n }] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(report)
+      .where(
+        and(
+          eq(report.reporterId, userId),
+          isNotNull(report.recipeId),
+          gt(report.createdAt, new Date(Date.now() - UM_DIA_MS)),
+        ),
+      )
+    if (n >= REPORTS_POR_DIA) return { kind: 'limit' }
 
-  return { kind: 'ok', reportId: row.id }
+    const [row] = await tx
+      .insert(report)
+      .values({ recipeId: id, reporterId: userId, reason })
+      .returning({ id: report.id })
+
+    return { kind: 'ok', reportId: row.id }
+  })
 }
 
 export type ReviewReportResult =
@@ -113,7 +123,7 @@ export type ReviewReportResult =
 
 /**
  * Núcleo com efeito de Report de uma AVALIAÇÃO (issue #366, ADR-0027). Espelha `createReport`:
- * gate de POOL leak-safe ANTES do motivo, motivo obrigatório, INSERT na fila (agora com `review_id`).
+ * gate de POOL leak-safe ANTES do motivo, motivo obrigatório (até `REPORT_REASON_MAX`, #605), INSERT na fila (agora com `review_id`).
  *
  * O gate mira a RECEITA DONA da avaliação (`eligibleForPool`, fonte única): só se reporta avaliação de
  * receita visível no pool — fora dele ⇒ 404, sem vazar existência. E a avaliação JÁ MODERADA ⇒ 404 (M5:
@@ -148,7 +158,7 @@ export async function createReviewReport(input: {
   // Gate de pool leak-safe ANTES do motivo (receita fora do pool ⇒ 404, sem revelar validade do motivo).
   if (!eligibleForPool(row)) return { kind: 'not_found' }
 
-  if (!decideModerationReason({ reason }).allowed) return { kind: 'invalid_reason' }
+  if (!decideReportReason({ reason }).allowed) return { kind: 'invalid_reason' }
 
   const [inserted] = await db
     .insert(report)

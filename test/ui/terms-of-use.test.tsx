@@ -127,6 +127,12 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
       expect(m.s10Historico[0].startsWith(`v1 — ${DATA_PUBLICACAO_TERMOS_V1}`)).toBe(true)
       expect(m.rodapeData).toBe(DATA_TERMOS_V1_1)
     }
+    // Cada data de versão no formato AAAA-MM-DD (o dia do merge em UTC).
+    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1]) expect(data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // #605: o item 8 cita a receita pública no botão Reportar e mantém o e-mail como via (nada retirado).
+    expect(ptBR.termos.s8Corpo[0]).toContain('receita pública ou uma avaliação pelo botão Reportar')
+    expect(ptBR.termos.s8Corpo[0]).toContain('privacidade@refogando.com')
+    expect(enUS.termos.s8Corpo[0]).toContain('public recipe or a review with the Report button')
     renderAt('pt-BR')
     // Match exato: distinto da linha do histórico.
     expect(screen.getByText(ptBR.termos.rodapeVersao)).toBeInTheDocument()

@@ -6,6 +6,7 @@ import { getDb } from '@/server/deps'
 import { recipe, report, recipeTranslation, recipeEmbedding, recipeSave } from '@/db/schema'
 import { POST as reportRoute } from '@/app/api/recipes/[id]/report/route'
 import { REPORTS_POR_DIA } from '@/server/recipe/report'
+import { REPORT_REASON_MAX } from '@/domain/report'
 import { GET as reportsQueueRoute } from '@/app/api/curate/reports/route'
 import { POST as removeRoute } from '@/app/api/curate/reports/[id]/remove/route'
 import { POST as keepRoute } from '@/app/api/curate/reports/[id]/keep/route'
@@ -23,6 +24,7 @@ import {
   seedReport,
   seedRemovedFromPool,
   seedSave,
+  seedReview,
 } from '../helpers/recipes'
 
 /**
@@ -191,9 +193,56 @@ describe('Moderação reativa (#18)', () => {
     expect(res.status).toBe(429)
     await expect(res.json()).resolves.toEqual({ error: 'limite_denuncias' })
 
+    // Denúncia de AVALIAÇÃO não conta para o teto de receita (tem a própria rota).
+    await getDb().delete(report).where(eq(report.reporterId, reporterId))
+    for (let i = 0; i < REPORTS_POR_DIA; i++) {
+      const rid = await seedPublicCommunity(owner, `A${i}`)
+      await seedReport({ reviewId: await seedReview({ userId: owner, recipeId: rid, rating: 4 }), reporterId, reason: 'x' })
+    }
+    expect((await reportRecipe(alvo, { reason: 'só avaliações antes' }, reporter)).status).toBe(201)
+    await getDb().delete(report).where(eq(report.reporterId, reporterId))
+    for (let i = 0; i < REPORTS_POR_DIA; i++) {
+      await seedReport({ recipeId: await seedPublicCommunity(owner, `B${i}`), reporterId, reason: 'x' })
+    }
+
     // Denúncias com mais de 24 h não contam.
     await getDb().update(report).set({ createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) }).where(eq(report.reporterId, reporterId))
     expect((await reportRecipe(alvo, { reason: 'mais uma' }, reporter)).status).toBe(201)
+  })
+
+  it('#605 — no teto, reenviar a denúncia pendente devolve a existente (201), não 429', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'capdup-owner@ex.com' })
+    const { userId: reporterId, headers: reporter } = await seedSessionHeaders({ email: 'capdup-reporter@ex.com' })
+    const alvo = await seedPublicCommunity(owner, 'Alvo')
+    const first = (await (await reportRecipe(alvo, { reason: 'cópia' }, reporter)).json()) as { reportId: string }
+    for (let i = 1; i < REPORTS_POR_DIA; i++) {
+      await seedReport({ recipeId: await seedPublicCommunity(owner, `C${i}`), reporterId, reason: 'x' })
+    }
+    const again = await reportRecipe(alvo, { reason: 'cópia' }, reporter)
+    expect(again.status).toBe(201)
+    expect(((await again.json()) as { reportId: string }).reportId).toBe(first.reportId)
+  })
+
+  it('#605 — envios simultâneos da mesma pessoa viram UMA denúncia (lock por conta)', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'race-owner@ex.com' })
+    const { headers: reporter } = await seedSessionHeaders({ email: 'race-reporter@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    const res = await Promise.all(Array.from({ length: 5 }, () => reportRecipe(id, { reason: 'duplo clique' }, reporter)))
+    expect(res.map((r) => r.status)).toEqual([201, 201, 201, 201, 201])
+    const ids = new Set(await Promise.all(res.map(async (r) => ((await r.json()) as { reportId: string }).reportId)))
+    expect(ids.size).toBe(1)
+    const rows = await getDb().select({ id: report.id }).from(report).where(eq(report.recipeId, id))
+    expect(rows).toHaveLength(1)
+  })
+
+  it('#605 — motivo acima de REPORT_REASON_MAX ⇒ 400 dados_invalidos; no teto exato passa', async () => {
+    const { userId: owner } = await seedSessionHeaders({ email: 'long-owner@ex.com' })
+    const { headers: reporter } = await seedSessionHeaders({ email: 'long-reporter@ex.com' })
+    const id = await seedPublicCommunity(owner)
+    const longo = await reportRecipe(id, { reason: 'x'.repeat(REPORT_REASON_MAX + 1) }, reporter)
+    expect(longo.status).toBe(400)
+    await expect(longo.json()).resolves.toEqual({ error: 'dados_invalidos' })
+    expect((await reportRecipe(id, { reason: 'x'.repeat(REPORT_REASON_MAX) }, reporter)).status).toBe(201)
   })
 
   it('AC1 fila lista por data ASC; seedReport pré-existente aparece com origin/result_kind', async () => {

@@ -1058,7 +1058,9 @@ export const ptBR = {
     cancelar: 'Cancelar',
     enviada: 'Denúncia enviada. A moderação vai analisar.',
     erro: 'Não foi possível enviar a denúncia. Tente de novo.',
-    erroLimite: 'Você chegou ao limite de denúncias de hoje. Tente de novo amanhã.',
+    erroLimite: 'Você chegou ao limite de denúncias por agora. Tente de novo mais tarde.',
+    erroIndisponivel: 'Esta receita não está mais disponível. Talvez já tenha sido retirada.',
+    erroSessao: 'A sua sessão expirou. Entre de novo para denunciar.',
   },
   // "Seus dados" no /me/profile (#595; LGPD Art. 18, II e V; eliminação: arts. 15, III e 16 (18, VI para as
   // restrições salvas)): baixar o export da conta e excluir a conta pela interface. O diálogo de exclusão diz o
@@ -2447,7 +2449,7 @@ export const ptBR = {
 
     s8Titulo: '8. Denúncias e moderação',
     s8Corpo: [
-      'Qualquer pessoa com conta pode denunciar uma receita pública ou uma avaliação pelo botão Reportar. Para denunciar um perfil, ou se você não tem conta, escreva para privacidade@refogando.com.',
+      'Qualquer pessoa com conta pode denunciar uma receita pública ou uma avaliação pelo botão Reportar. Você também pode escrever para privacidade@refogando.com, que é o caminho para denunciar um perfil ou para quem não tem conta.',
       'Analisamos cada denúncia. Quando o conteúdo é manifestamente ilegal ou viola estes Termos, nós o retiramos do ar e registramos a decisão, com o motivo.',
       'Se a moderação retirar uma receita, imagem ou avaliação sua, você recebe uma notificação no app; se for o seu perfil, avisamos por e-mail. Para saber o motivo ou pedir uma nova análise, escreva para privacidade@refogando.com.',
       'Em violações graves ou repetidas, podemos bloquear funções da conta, como a geração de imagens por IA, ou encerrar a conta. Avisamos antes, quando possível, e, salvo em caso de conteúdo ilegal, você tem 15 dias para baixar os seus dados antes do encerramento. Você pode pedir uma nova análise pelo privacidade@refogando.com.',
@@ -2469,7 +2471,7 @@ export const ptBR = {
     // data em `src/domain/legal-notice.ts`.
     s10Historico: [
       `v1 — ${DATA_PUBLICACAO_TERMOS_V1}: primeira versão.`,
-      `v1.1 — ${DATA_TERMOS_V1_1}: a denúncia de receita pública passa a ser pelo botão Reportar, na página da receita (item 8).`,
+      `v1.1 — ${DATA_TERMOS_V1_1}: receitas públicas também podem ser denunciadas pelo botão Reportar, na página da receita (item 8).`,
     ],
 
     s11Titulo: '11. Lei e foro',

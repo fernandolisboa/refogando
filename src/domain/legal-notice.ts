@@ -2,15 +2,16 @@
  * Versão publicada dos textos legais e o aviso de mudança no app (ADR-0051). PURO: sem React, sem DB.
  *
  * `DATA_PUBLICACAO_TERMOS_V1` é a FONTE ÚNICA, no código, da data em que os Termos de Uso v1 e a Política v3.1
- * foram publicados (o dia do merge do PR). As strings i18n a importam (`termos.rodapeData`, `termos.s10Historico`,
+ * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico`,
  * `privacidade.rodapeData` e a linha v3.1 de `privacidade.s10Historico`, `seusDireitos.rodapeData`), e o aviso
- * a usa para decidir o público. Se o merge escorregar de dia, troque esta constante e as datas em prosa dos docs
+ * a usa para decidir o público. O rodapé dos Termos usa a constante da versão mais nova (`DATA_TERMOS_V1_1`). Se o merge escorregar de dia, troque esta constante e as datas em prosa dos docs
  * (`grep -rn 2026-10-23 docs`), só no PR que publica a v1. Depois do merge ela fica CONGELADA: a próxima versão ganha constante
  * própria.
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
- * dias depois de avisar no app. Cada mudança nova ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
- * localStorage muda junto, então quem dispensou o aviso anterior vê o novo) e o seu próprio público.
+ * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
+ * localStorage muda junto, então quem dispensou o aviso anterior vê o novo) e o seu próprio público. Mudança a
+ * favor da pessoa ou só de redação ganha versão e data próprias, mas não aviso (critério no ADR-0051, #605).
  */
 
 /** Dia da publicação dos Termos v1 e da Política v3.1 (AAAA-MM-DD): o dia do merge em UTC, como as outras datas dos textos legais. */

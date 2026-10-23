@@ -25,3 +25,15 @@ export function isReportStatus(v: string): v is ReportStatus {
 export function decideModerationReason(input: { reason: string }): { allowed: boolean } {
   return { allowed: input.reason.trim().length > 0 }
 }
+
+/**
+ * Teto do motivo de uma DENÚNCIA (receita ou avaliação, #605), em caracteres. O formulário corta no mesmo valor
+ * (`maxLength`), e o servidor reimpõe: um motivo cabe com folga, e a fila do Curador não recebe um texto enorme.
+ * Não vale para o motivo do Curador ao remover (esse é dele, curto por natureza).
+ */
+export const REPORT_REASON_MAX = 1000
+
+/** Motivo de denúncia aceitável: não vazio e até `REPORT_REASON_MAX` caracteres (#605). */
+export function decideReportReason(input: { reason: string }): { allowed: boolean } {
+  return { allowed: decideModerationReason(input).allowed && input.reason.length <= REPORT_REASON_MAX }
+}

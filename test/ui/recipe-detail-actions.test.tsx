@@ -43,6 +43,7 @@ vi.mock('@/lib/auth-client', () => ({
 import { LocaleProvider } from '@/i18n/provider'
 import { ptBR } from '@/i18n/messages/pt-BR'
 import { RecipeDetailActions } from '@/components/recipe/recipe-detail-actions'
+import { REPORT_REASON_MAX } from '@/domain/report'
 
 function ownerView(over: Partial<RecipeView> = {}): RecipeView {
   return {
@@ -311,5 +312,39 @@ describe('RecipeDetailActions — Reportar a Receita (#605)', () => {
     await user.click(screen.getByRole('button', { name: d.enviar }))
     expect(await screen.findByRole('alert')).toHaveTextContent(d.erro)
     expect(screen.getByRole('button', { name: d.enviar })).toBeEnabled()
+  })
+
+  it('404 ⇒ "não está mais disponível"; 401 ⇒ pede para entrar de novo', async () => {
+    const user = userEvent.setup()
+    logado()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'not_found' }), { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'nao_autenticado' }), { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.type(screen.getByLabelText(d.motivo), 'spam')
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erroIndisponivel)
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(d.erroSessao)
+  })
+
+  it('foco: Cancelar devolve ao "Reportar"; enviar leva à confirmação; motivo com teto REPORT_REASON_MAX', async () => {
+    const user = userEvent.setup()
+    logado()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ reportId: 'rep-1' }), { status: 201 })))
+    renderActions(nonOwnerView())
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    expect(screen.getByLabelText(d.motivo)).toHaveFocus()
+    expect(screen.getByLabelText(d.motivo)).toHaveAttribute('maxLength', String(REPORT_REASON_MAX))
+    await user.click(screen.getByRole('button', { name: d.cancelar }))
+    expect(screen.getByRole('button', { name: d.reportar })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: d.reportar }))
+    await user.type(screen.getByLabelText(d.motivo), 'cópia')
+    await user.click(screen.getByRole('button', { name: d.enviar }))
+    expect(await screen.findByRole('status')).toHaveFocus()
   })
 })

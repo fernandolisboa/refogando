@@ -7,6 +7,7 @@ import { recipeReview, report, users } from '@/db/schema'
 import { listReportQueue } from '@/server/curate/reports'
 import { POST as removeReviewRoute } from '@/app/api/curate/reports/[id]/remove-review/route'
 import { POST as reportReviewRoute } from '@/app/api/reviews/[reviewId]/report/route'
+import { REPORT_REASON_MAX } from '@/domain/report'
 import { POST as keepRoute } from '@/app/api/curate/reports/[id]/keep/route'
 import { POST as removeRoute } from '@/app/api/curate/reports/[id]/remove/route'
 import { POST as removeImageRoute } from '@/app/api/curate/reports/[id]/remove-image/route'
@@ -163,6 +164,10 @@ describe('Moderação de avaliação (#366)', () => {
     const vazio = await reportReview(reviewId, { reason: '   ' }, reporterH)
     expect(vazio.status).toBe(400)
     await expect(vazio.json()).resolves.toMatchObject({ error: 'dados_invalidos' })
+    // #605: motivo acima de REPORT_REASON_MAX ⇒ 400 (o form corta no mesmo teto)
+    const longo = await reportReview(reviewId, { reason: 'x'.repeat(REPORT_REASON_MAX + 1) }, reporterH)
+    expect(longo.status).toBe(400)
+    expect((await reportReview(reviewId, { reason: 'x'.repeat(REPORT_REASON_MAX) }, reporterH)).status).toBe(201)
 
     // avaliação de receita FORA do pool (privada de outro) ⇒ 404 leak-safe
     const priv = await seedRecipe({ origin: 'ai_structured', originalLocale: 'pt-BR', visibility: 'private', ownerId: owner })

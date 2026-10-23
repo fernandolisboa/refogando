@@ -51,6 +51,7 @@ export const QUOTA_LOCK_CLASS = {
   extraction: 4673,
   menuSuggestion: 4674,
   derive: 4675,
+  report: 4676, // #605: dedupe + teto diário de denúncias de receita (`createReport`), não é IA.
 } as const
 
 /**
@@ -291,4 +292,22 @@ export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap:
   const recentAt = await recentDerivedTimes(tx, userId, now)
   const decision = decideRecipeGenQuota({ cap, recentAt, now })
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+}
+
+/**
+ * Serializa as denúncias de receita do MESMO usuário (#605) dentro da tx de `createReport`: sem a lock, dois
+ * envios simultâneos passariam juntos pela checagem de pendente (duas linhas na fila) e pelo teto diário. Mesma
+ * espera com teto do derive (`DERIVE_LOCK_TIMEOUT_MS`, pra uma rajada não esgotar o pool): estourou ⇒ `false`,
+ * e o caller responde o 429 do teto. Depois da lock o `lock_timeout` volta ao default da sessão.
+ */
+export async function acquireReportLockInTx(tx: Tx, userId: string): Promise<boolean> {
+  await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
+  try {
+    await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.report, userId)
+  } catch (e) {
+    if (pgCode(e) === LOCK_NOT_AVAILABLE) return false
+    throw e
+  }
+  await tx.execute(sql`set local lock_timeout to default`)
+  return true
 }
