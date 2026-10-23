@@ -157,7 +157,7 @@ export async function eraseAccount(
     await tx.delete(verification).where(eq(verification.value, userId))
 
     // 3b. Menor de 16 com o conteúdo público removido (#606): rede de segurança da corrida com o que a pessoa publicou
-    //     ou avaliou depois da limpeza de antes da transação (`closeAccountByAdmin`, passo 2). Sob o lock da linha:
+    //     ou avaliou depois da limpeza de antes da transação (`closeAccountByAdmin`, passo 3). Sob o lock da linha:
     //     apaga as avaliações que sobraram e despublica as Receitas públicas que sobraram, que então saem como
     //     privadas no passo 4 (com imagens e as fotos das avaliações de terceiros, pelo núcleo de sempre).
     const lateReviewPhotos = decision?.removedPublicContent ? await removeLatePublicContentInTx(tx, userId, now) : []

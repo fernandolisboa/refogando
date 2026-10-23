@@ -110,16 +110,21 @@ export async function closeAccountByAdmin(
   if (!confirmsHandle(input.confirmHandle, target.handle)) return { kind: 'handle_mismatch' }
 
   const removePublic = canRemovePublicContent(input.reason)
-  const notify = closureEmailApplies(input.reason) && input.notify && target.emailVerified
+  // "Tentado" só se o e-mail de conta está ligado: sem Resend configurado, a linha diria que avisamos sem ter tentado.
+  const notify =
+    closureEmailApplies(input.reason) && input.notify && target.emailVerified && mailer.canSendAccountEmail()
 
   // 2. Ninguém publica no meio do processo: a pessoa sai de todo lugar já (a eliminação apaga o resto das sessões).
+  //    Se outro admin promover a pessoa enquanto os passos 2 e 3 rodam, a transação do passo 4 recusa
+  //    (`target_admin`) depois de as sessões e o público já terem saído. Aceito: promover quem está sendo encerrado é
+  //    erro de operação, e nada é registrado.
   await db.delete(session).where(eq(session.userId, userId))
 
   const blobs: (string | null)[] = []
   let erased: Awaited<ReturnType<typeof eraseAccount>>
   try {
     // 3. Conteúdo público (só no menor de 16).
-    if (removePublic) blobs.push(...(await removePublicContent(db, userId)))
+    if (removePublic) await removePublicContent(db, userId, blobs)
 
     // 4. A eliminação, com a decisão registrada na mesma transação.
     erased = await eraseAccount(db, {
@@ -153,11 +158,11 @@ export async function closeAccountByAdmin(
 }
 
 /**
- * Apaga as Receitas públicas e todas as Avaliações da pessoa (passo 3) e devolve os blobs a apagar (imagens das
- * receitas, fotos das avaliações delas e de terceiros), para a leva única do passo 5.
+ * Apaga as Receitas públicas e todas as Avaliações da pessoa (passo 3) e junta em `blobs` os arquivos a apagar
+ * (imagens das receitas, fotos das avaliações delas e de terceiros), para a leva única do passo 5. Junta a cada
+ * receita: se a receita N falhar, os blobs das que já saíram (transações confirmadas) não ficam órfãos.
  */
-async function removePublicContent(db: Database, userId: string): Promise<(string | null)[]> {
-  const blobs: (string | null)[] = []
+async function removePublicContent(db: Database, userId: string, blobs: (string | null)[]): Promise<void> {
   const publicRecipes = await db
     .select({ id: recipe.id })
     .from(recipe)
@@ -173,7 +178,6 @@ async function removePublicContent(db: Database, userId: string): Promise<(strin
     .where(eq(recipeReview.userId, userId))
     .returning({ photoUrl: recipeReview.photoUrl })
   blobs.push(...deleted.map((r) => r.photoUrl))
-  return blobs
 }
 
 /** O e-mail de encerramento (passo 6). Nunca lança: qualquer falha vira `false` (o encerramento já valeu). */

@@ -284,6 +284,17 @@ describe('violação grave', () => {
     expect(mailer.accountSent).toEqual([])
   })
 
+  it('e-mail de conta desligado (sem Resend) → não conta como tentado: notifiedByEmail=false no registro', async () => {
+    mailer.accountEmailConfigured = false
+    const { headers } = await admin()
+    const t = await target({ email: 'semconfig@closure.test', handle: 'semconfig' })
+    const res = await post(t.id, { reason: 'violacao_grave', confirmHandle: t.handle }, headers)
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ notifiedByEmail: false, emailSent: false })
+    expect(mailer.accountSent).toEqual([])
+    expect((await closures())[0].notifiedByEmail).toBe(false)
+  })
+
   it('o envio lança (Resend fora do ar) → o encerramento vale e fica registrado; emailSent=false e log emailEnviado=false', async () => {
     const info = vi.spyOn(console, 'info')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
