@@ -91,14 +91,14 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
 - **Exceção à imutabilidade do Briefing** ("o que foi pedido", ADR-0006 e ADR-0025): só para conta eliminada. Para conta viva, nada muda.
 - **Terceiros perdem dados nas Receitas privadas que já foram públicas:** saves, avaliações, denúncias e entradas de Cardápio caem em cascata. Derivadas ficam com `parent_recipe_id` NULL, e itens de lista ficam sem receita de origem. É o mesmo efeito de `deleteOwnRecipe`. Follow-up: o `deleteOwnRecipe` não apaga os blobs das fotos dessas avaliações (aqui elas saem).
 - **Expurgo de cadastro pendente:** as `CONTENT_GUARDS` de `session`, `extraction_event` e `image_generation` passam a significar "tem sessão viva" e "uso dentro do prazo". O risco é baixo: o expurgo só olha conta não confirmada e não desativada.
-- **Sem índice de apoio (seq scan).** Faltavam índice em:
+- **Sem índice de apoio (seq scan).** Faltam índice em:
   - `recipe_image.created_by` e `recipe.lineage_id`, usados no predicado da galeria;
   - `session.expires_at`;
   - `created_at` de `extraction_event`, `image_generation` e `meal_plan_suggestion_event` (os compostos começam por `user_id`).
 
-  `recipe_review.recipe_id` só tinha índice parcial. `verification.expires_at` já tinha índice.
+  `recipe_review.recipe_id` só tem índice parcial. Isso é aceitável no volume de hoje; os índices ficam para uma migração futura (#601). `verification.expires_at` já tem índice.
 
-  **Resolvido pela migração 0080 (#601, 2026-10-23).** Cada índice saiu de um EXPLAIN ANALYZE em dados sintéticos (20 mil contas, 100 mil Receitas, 110 mil imagens, 200 mil sessões, Avaliações, sessões de criação e registros de uso). A medição achou também chaves estrangeiras sem índice que os DELETEs da retenção e do expurgo de cadastros atingem pelo gatilho de RI: `creation_session.briefing_id` (passo `orphanBriefings`), `recipe_image.source_image_id` e `recipe_image.moderated_by`, `recipe_review.moderated_by` e `users.image_gen_blocked_by`. `recipe_review_recipe_id_idx` virou completo: o cascade (`recipe_id = $1`, sem `moderated_at IS NULL`) não usava o parcial, e a leitura quente usa o completo do mesmo jeito.
+  *Atualização (2026-10-23, migração 0080, #601): resolvido.* Cada índice saiu de um EXPLAIN ANALYZE em dados sintéticos (20 mil contas, 100 mil Receitas, 110 mil imagens, 200 mil sessões, Avaliações, sessões de criação e registros de uso). A medição achou também chaves estrangeiras sem índice que os DELETEs da retenção e do expurgo de cadastros atingem pelo gatilho de RI: `creation_session.briefing_id` (passo `orphanBriefings`), `recipe_image.source_image_id` e `recipe_image.moderated_by`, `recipe_review.moderated_by` e `users.image_gen_blocked_by`; e, pela leitura do código (as tabelas estavam vazias no banco sintético), `dsar_audit_event.actor_id` e `report.resolved_by`. `recipe_review_recipe_id_idx` virou completo: o cascade (`recipe_id = $1`, sem `moderated_at IS NULL`) não usava o parcial, e a leitura quente usa o completo do mesmo jeito.
 
   | Consulta | Antes | Depois |
   | --- | --- | --- |
@@ -111,7 +111,7 @@ Fundamento: arts. 15 e 16 da LGPD (o fim do tratamento leva à eliminação; o q
   | Apagar 50 imagens (SET NULL `source_image_id`) | 379 ms no gatilho | 1,0 ms |
   | Apagar 20 usuários (4 FKs SET NULL) | ~610 ms nos gatilhos | ~1,7 ms |
 
-  A varredura de todas as contas (`ownersOfOrphanGallery`) continua em Seq Scan + hash: ela lê a tabela inteira de propósito, uma vez por comando.
+  Seguem em Seq Scan, de propósito ou por ora: a varredura de todas as contas (`ownersOfOrphanGallery`, Seq Scan + hash, uma vez por comando) e os passos dos cascos de contas eliminadas (`erasedGenerations`, `erasedCreationSessions`, `orphanBriefings`, ~54 ms em 100 mil Briefings) e `liveGenerationCosts`, que leem `generation`, `creation_session` e `briefing` inteiras uma vez por dia. Um índice em `created_at` só ajuda quando poucas linhas passaram de 24 meses; rever quando essas tabelas passarem de alguns milhões de linhas.
 - **Blob depois do commit é best-effort.** Um timeout ou o Blob fora do ar deixa blob sem referência. O banco já está limpo, sem ponteiro de PII. Follow-up: varredura de órfãos pelo `list()` do `@vercel/blob`.
 - **#596 não limpa o passado.** Avatar e foto de receita enviados antes podem ter EXIF, se o cliente mandou os bytes crus. Follow-up: auditoria só de leitura (`metadata().exif`) nos blobs próprios e re-encode no lugar.
 - **Conta que falha todo dia** volta em toda passada, mas a ordem do lote muda todo dia (hash do id com a data), então ela não segura as outras contas. A linha de falha no log é o sinal.

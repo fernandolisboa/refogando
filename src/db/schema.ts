@@ -365,9 +365,9 @@ export const recipe = pgTable(
     index('recipe_reviewed_by_idx')
       .on(t.reviewedBy)
       .where(sql`${t.reviewedBy} IS NOT NULL`),
-    // Linhagem (#601): o predicado da galeria órfã na eliminação e na varredura de contas eliminadas
-    // (`lineageHasForeignRecipe`, `EXISTS recipe WHERE lineage_id = imagem.lineage_id`) varria `recipe` por
-    // imagem. Coluna NOT NULL ⇒ índice completo.
+    // Linhagem (#601): o predicado da galeria órfã de uma conta (`lineageHasForeignRecipe`, `EXISTS recipe
+    // WHERE lineage_id = imagem.lineage_id`) varria `recipe` por imagem. A varredura de todas as contas
+    // (`ownersOfOrphanGallery`) segue em hash, de propósito. Coluna NOT NULL ⇒ índice completo.
     index('recipe_lineage_id_idx').on(t.lineageId),
   ],
 )
@@ -1599,6 +1599,11 @@ export const report = pgTable(
     // FK `reporter_id` ON DELETE cascade a partir de `users` (purge de cadastros pendentes) e o NOT EXISTS
     // do candidato do purge.
     index('report_reporter_id_idx').on(t.reporterId),
+    // FK `resolved_by` ON DELETE set null (#601): o expurgo de cadastros pendentes apaga usuários, e o gatilho
+    // de RI varria a tabela por linha. Só denúncia resolvida tem ⇒ parcial.
+    index('report_resolved_by_idx')
+      .on(t.resolvedBy)
+      .where(sql`${t.resolvedBy} IS NOT NULL`),
     // #366: EXATAMENTE UM alvo — recipe XOR review (backstop de banco do polimorfismo). As linhas
     // legadas (recipe_id set, review_id null) passam: false <> true = TRUE.
     check('report_target_chk', sql`(${t.recipeId} is null) <> (${t.reviewId} is null)`),
@@ -1700,6 +1705,11 @@ export const dsarAuditEvent = pgTable(
     index('dsar_audit_event_case_idx').on(t.caseId, t.createdAt),
     // Varredura cronológica por tipo (auditoria/relatório de conformidade).
     index('dsar_audit_event_type_created_idx').on(t.eventType, t.createdAt),
+    // FK `actor_id` ON DELETE set null (#601): a auditoria fica 5 anos e o expurgo de cadastros pendentes
+    // apaga usuários; sem índice, o gatilho de RI varria a tabela por linha. Parcial: evento de sistema não tem ator.
+    index('dsar_audit_event_actor_id_idx')
+      .on(t.actorId)
+      .where(sql`${t.actorId} IS NOT NULL`),
     // Rede de banco do invariante central: todo DSAR_FULFILLED carrega um hash (nunca fica sem prova).
     check(
       'dsar_fulfilled_hash_chk',

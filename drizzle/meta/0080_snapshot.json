@@ -1,5 +1,5 @@
 {
-  "id": "db78d880-dfdb-4a5e-aa6b-f0844b954305",
+  "id": "c0aea1ca-ef61-4b7b-8582-6b6af9e663c7",
   "prevId": "d7081236-31b0-456b-ae97-d377cc16abd1",
   "version": "7",
   "dialect": "postgresql",
@@ -919,6 +919,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "dsar_audit_event_actor_id_idx": {
+          "name": "dsar_audit_event_actor_id_idx",
+          "columns": [
+            {
+              "expression": "actor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"dsar_audit_event\".\"actor_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3774,6 +3790,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "report_resolved_by_idx": {
+          "name": "report_resolved_by_idx",
+          "columns": [
+            {
+              "expression": "resolved_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"report\".\"resolved_by\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
