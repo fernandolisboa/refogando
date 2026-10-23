@@ -108,7 +108,7 @@ describe('GuidedTour — abertura automática', () => {
       await user.click(screen.getByRole('button', { name: t.proximo }))
     }
     await findTour(t.fimTitulo)
-    expect(screen.getByRole('link', { name: t.verGuia })).toHaveAttribute('href', '/guia')
+    expect(screen.getByRole('link', { name: t.verGuia })).toHaveAttribute('href', '/pt-BR/guia')
     await user.click(screen.getByRole('button', { name: t.concluir }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(window.localStorage.getItem(tourStorageKey('u1'))).toBe('done')

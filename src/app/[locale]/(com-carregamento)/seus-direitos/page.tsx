@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { SeusDireitos } from '@/components/legal/seus-direitos'
 import { resolvePageLocale } from '@/server/http/page-locale'
 import { MESSAGES } from '@/i18n/messages'
+import { legalPageAlternates } from '@/domain/legal-pages-seo'
 
 /**
  * Página "Seus direitos / Privacidade" + formulário público de intake (#399, GAP-2; parte de #276;
@@ -14,7 +15,7 @@ import { MESSAGES } from '@/i18n/messages'
  *     `messages.privacidade`) — o dono troca ali; o canal (e-mail + formulário) é funcional (abre ticket +
  *     grava `DSAR_RECEIVED`).
  *
- * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`) ⇒ build-safe.
+ * `generateMetadata` lê só `params` (sem `headers()`/DB/`getBaseUrlFromEnv`; o canonical usa a origem fixa) ⇒ build-safe.
  */
 export async function generateMetadata({
   params,
@@ -25,6 +26,8 @@ export async function generateMetadata({
   const locale = resolvePageLocale({ urlLocale })
   return {
     title: MESSAGES[locale].seusDireitos.metaTitulo,
+    // #611: canonical + hreflang sobre a origem pública fixa (build-safe; `legal-pages-seo.ts`).
+    alternates: legalPageAlternates(locale, 'seus-direitos'),
   }
 }
 

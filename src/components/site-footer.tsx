@@ -10,6 +10,7 @@
  */
 import Link from 'next/link'
 import { useLocale } from '@/i18n/provider'
+import { localePrefixedPath } from '@/i18n/locale-path'
 import { Container } from '@/components/container'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { LocaleSwitcher } from '@/i18n/locale-switcher'
@@ -21,7 +22,7 @@ export function SiteFooter({
   // #451: links de redes sociais do site, JÁ filtrados por `enabled` no servidor (layout.tsx).
   socialLinks?: SocialLink[]
 }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   return (
     <footer className="border-t border-border">
       <Container className="flex flex-col items-start gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
@@ -32,19 +33,20 @@ export function SiteFooter({
           <span className="text-sm text-muted">{messages.app.tagline}</span>
           {/* Links legais (parte de #276): Termos de Uso (ADR-0051) + Política de Privacidade + Seus Direitos,
               na ordem da linha do cadastro. Rótulos i18n. Um <div> (não <nav>) para não criar um segundo
-              landmark de navegação além do header. */}
+              landmark de navegação além do header. Links com o prefixo do idioma (#611): quem está em /en-US
+              não cai na versão pt-BR nem depende do redirecionamento. */}
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
-            <Link href="/termos" className="hover:text-fg hover:underline">
+            <Link href={localePrefixedPath(locale, '/termos')} className="hover:text-fg hover:underline">
               {messages.termos.nome}
             </Link>
-            <Link href="/privacidade" className="hover:text-fg hover:underline">
+            <Link href={localePrefixedPath(locale, '/privacidade')} className="hover:text-fg hover:underline">
               {messages.privacidade.titulo}
             </Link>
-            <Link href="/seus-direitos" className="hover:text-fg hover:underline">
+            <Link href={localePrefixedPath(locale, '/seus-direitos')} className="hover:text-fg hover:underline">
               {messages.seusDireitos.titulo}
             </Link>
             {/* ADR-0039: guia de uso, público (o Visitante também chega nele pelo rodapé). */}
-            <Link href="/guia" className="hover:text-fg hover:underline">
+            <Link href={localePrefixedPath(locale, '/guia')} className="hover:text-fg hover:underline">
               {messages.nav.comoUsar}
             </Link>
           </div>

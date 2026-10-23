@@ -28,6 +28,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ChevronDownIcon } from 'lucide-react'
 import { useLocale } from '@/i18n/provider'
+import { localePrefixedPath } from '@/i18n/locale-path'
 import { useSession, signOut } from '@/lib/auth-client'
 import { useOnTabReturn } from '@/components/use-tab-return'
 import { forgetTabs } from '@/components/nav/last-tab-store'
@@ -44,7 +45,7 @@ import { isRole } from '@/domain/user'
 import { decideRole } from '@/domain/access'
 
 export function AuthSlot() {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const { data: session, isPending, error, refetch } = useSession()
   const pathname = usePathname()
   // `firstNavRef` e os dois efeitos ficam ACIMA de todos os early returns (regra dos hooks:
@@ -148,7 +149,7 @@ export function AuthSlot() {
         {/* As Listas de compras saíram daqui (ADR-0043): são uma aba de "Planejar", no header. */}
         {/* ADR-0039: "Como usar" (/guia) — o guia de uso e o botão de refazer o tour guiado. */}
         <DropdownMenuItem asChild>
-          <Link href="/guia">{messages.nav.comoUsar}</Link>
+          <Link href={localePrefixedPath(locale, '/guia')}>{messages.nav.comoUsar}</Link>
         </DropdownMenuItem>
         {/* "Painel" (#125) só a curador+ — afordância; o /admin revalida o papel server-side. */}
         {showPainel && (
