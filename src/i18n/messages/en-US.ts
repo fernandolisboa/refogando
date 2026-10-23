@@ -12,10 +12,12 @@ import {
   DATA_POLITICA_V3_2,
   DATA_POLITICA_V3_3,
   DATA_POLITICA_V3_4,
+  DATA_POLITICA_V3_5,
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
   DATA_TERMOS_V1_3,
+  DATA_TERMOS_V1_4,
 } from '../../domain/legal-notice'
 
 export const enUS: Messages = {
@@ -1023,6 +1025,24 @@ export const enUS: Messages = {
     considerarDica: 'From your profile. Tap one to leave it out of this request.',
     buscaAviso: 'Showing only recipes that declare: {lista} (from your profile).',
     buscaMostrarTudo: 'Show all',
+  },
+  // #610 (ADR-0052): credit on a derived Recipe. The title and the @ are links, so the sentence comes in pieces.
+  creditoVersao: {
+    baseadaEm: 'Based on',
+    de: 'by',
+    doCatalogo: 'from the catalog',
+    seuNome: 'This is a copy of one of your recipes, and your name shows on it.',
+    retirar: 'Remove my name',
+    retirado: 'You removed your name from this copy of your recipe.',
+    mostrarDeNovo: 'Show my name again',
+    salvando: 'Saving…',
+    erro: "Couldn't save. Try again.",
+    perfilTitulo: 'Credit on copies',
+    perfilDescricao:
+      'When someone publishes a copy of one of your recipes ("Create my version" or "Clone"), its page shows "Based on … by @you", linking to yours while yours stays published. To remove your name from a single copy, use "Remove my name" on its page.',
+    perfilToggle: 'Show my name on copies of my recipes',
+    perfilSalvo: 'Preference saved.',
+    perfilErroCarregar: "Couldn't load this preference.",
   },
   denunciaReceita: {
     reportar: 'Report',
@@ -2067,8 +2087,8 @@ export const enUS: Messages = {
 
     s31Titulo: '3.1. User account and authentication',
     s31Valores: [
-      'email, display name/identifier (handle), password (stored only as a hash), profile photo, bio, links, preferred language and default skill level. If you sign in with Google, we receive your name, email and photo from Google, and we store the tokens for that sign-in.',
-      'create and maintain your account, authenticate access and enable use of the app. Your name, @, photo, bio and links are on a public page (/u/your-@) that anyone can see, even without an account, and that search engines may index; it also shows who you follow and who follows you. Your name and @ also appear on the recipes you publish, on the ratings you write, in the cook search and in the notifications other people get when you follow them or rate one of their recipes. Your email, dietary restrictions and private content never appear.',
+      'email, display name/identifier (handle), password (stored only as a hash), profile photo, bio, links, preferred language and default skill level; and whether you want your name on the copies other people publish of your recipes. If you sign in with Google, we receive your name, email and photo from Google, and we store the tokens for that sign-in.',
+      'create and maintain your account, authenticate access and enable use of the app. Your name, @, photo, bio and links are on a public page (/u/your-@) that anyone can see, even without an account, and that search engines may index; it also shows who you follow and who follows you. Your name and @ also appear on the recipes you publish, on the ratings you write, in the cook search and in the notifications other people get when you follow them or rate one of their recipes. When someone publishes a copy of one of your recipes ("Create my version" or "Clone"), its page shows "Based on … by @you", linking to yours while yours stays published (it is your right as the author to be named, Brazilian Law 9,610/98, art. 24, II); you can turn this off in Edit profile or remove your name from a copy on its page. Your email, dietary restrictions and private content never appear.',
       'performance of a contract with the data subject (the Terms of Use) — Art. 7, V of the LGPD.',
       'while the account exists. If you delete your account, we immediately anonymize the identifying data and erase your password, your Google sign-in and all sessions. An email-and-password sign-up that is not confirmed is erased after 48 hours; to block abusive resends, we keep for 90 days only a code derived from the email, which cannot be used to recover it.',
     ],
@@ -2244,6 +2264,7 @@ export const enUS: Messages = {
       `v3.2 — ${DATA_POLITICA_V3_2}: the curators review only the photo of published recipes; the other images in the gallery and those of private recipes stay out of the queue (item 3.3 and section 4).`,
       `v3.3 — ${DATA_POLITICA_V3_3}: we keep the date and the version of the text you consented to for your saved restrictions, as proof of consent (item 3.5); the notice about changes to your restrictions is no longer kept in the browser and shows until you save again (section 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: when the team closes an account, we keep a record of the decision for 5 years (reason, date, whether public content was removed and whether we tried to tell the person by email), with no other personal data (item 3.6); the account closure notice by email joins what Resend sends (item 5).`,
+      `v3.5 — ${DATA_POLITICA_V3_5}: a copy someone else publishes of one of your recipes shows "Based on … by @you", with a link; you can turn this off in Edit profile or remove your name from a copy, and we keep that choice (item 3.1).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2296,9 +2317,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.4',
+    rodapeVersao: 'v3.5',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_4,
+    rodapeData: DATA_POLITICA_V3_5,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2362,9 +2383,9 @@ export const enUS: Messages = {
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v3.4',
+    rodapeVersao: 'v3.5',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_POLITICA_V3_4,
+    rodapeData: DATA_POLITICA_V3_5,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Published — internal review completed on 2026-10-22',
   },
@@ -2411,6 +2432,7 @@ export const enUS: Messages = {
       'While a recipe of yours is private, it does not appear to other people and we use it only to make the app work. The exception is in the Privacy Policy: the ingredients you type by hand and the new cuisines you type under "Other" may reach the curators, without your name, to expand the vocabulary.',
       'When you publish a recipe, a review or a photo, you give Refogando a free, non-exclusive, worldwide license to store that content, display and reproduce it in the app, in search engines and in share cards, translate it automatically, adapt it to the app’s formats (such as thumbnails and shopping lists) and let other people save and rate the recipe, add it to their Meal plan and make copies of its text, without your photos ("Create my version" and "Clone"), which they can edit and publish. The license lasts while the content is published, including after you delete your account.',
       'You can unpublish or delete your content at any time. Copies that other people have already made of a public recipe stay with them.',
+      'A published copy shows "Based on … by @you", linking to your recipe while it stays published. If you do not want your name on copies, turn this off in Edit profile; to remove your name from a single copy, use "Remove my name" on its page.',
       'If you delete your account, the recipes you published and the reviews you wrote stay on Refogando without your name, because other people rely on them. If you want a public recipe gone, delete it before deleting your account.',
       'Only publish what is yours or what you have the right to publish. Do not copy text or photos from books, websites or other people’s profiles.',
     ],
@@ -2454,15 +2476,16 @@ export const enUS: Messages = {
       `v1.1 — ${DATA_TERMOS_V1_1}: public recipes can now also be reported with the Report button on the recipe page (item 8).`,
       `v1.2 — ${DATA_TERMOS_V1_2}: the curators no longer review images of private recipes (item 5).`,
       `v1.3 — ${DATA_TERMOS_V1_3}: the takedown notification now shows the reason, from a closed list, and a link to ask us to reconsider (item 8).`,
+      `v1.4 — ${DATA_TERMOS_V1_4}: a published copy of one of your recipes shows "Based on … by @you", and you can turn this off or remove your name from a copy (item 5).`,
     ],
 
     s11Titulo: '11. Law and venue',
     s11Corpo: ['These Terms are governed by Brazilian law. Any dispute may be brought before the courts of your place of residence.'],
 
     rodapeVersaoRotulo: 'Version',
-    rodapeVersao: 'v1.3',
+    rodapeVersao: 'v1.4',
     rodapeDataRotulo: 'Date',
-    rodapeData: DATA_TERMOS_V1_3,
+    rodapeData: DATA_TERMOS_V1_4,
   },
   // Legal-change notice (ADR-0051), in the layout, only for accounts created by the end of the publication day. See pt-BR.ts.
   avisoLegal: {

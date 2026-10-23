@@ -42,6 +42,7 @@ import {
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
   DATA_TERMOS_V1_3,
+  DATA_TERMOS_V1_4,
 } from '@/domain/legal-notice'
 
 function renderAt(locale: 'pt-BR' | 'en-US') {
@@ -116,7 +117,7 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
       m.s4Corpo[0],
       m.s5Corpo[2],
       m.s5Corpo[3],
-      m.s5Corpo[4],
+      m.s5Corpo[5],
       m.s8Corpo[3],
       m.s9Corpo[0],
       m.s9Corpo[1],
@@ -128,7 +129,7 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     expect(screen.getByText(m.s5Corpo[0])).not.toHaveClass('font-semibold')
   })
 
-  it('rodapé repete a última linha do histórico; cada versão com a sua data (v1 congelada, v1.1 do #605, v1.2 do #599, v1.3 do #609)', () => {
+  it('rodapé repete a última linha do histórico; cada versão com a sua data (v1 congelada, v1.1 do #605, v1.2 do #599, v1.3 do #609, v1.4 do #610)', () => {
     for (const msgs of [ptBR, enUS]) {
       const m = msgs.termos
       const ultima = m.s10Historico[m.s10Historico.length - 1]
@@ -137,11 +138,12 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
       expect(m.s10Historico[1].startsWith(`v1.1 — ${DATA_TERMOS_V1_1}`)).toBe(true)
       expect(m.s10Historico[2].startsWith(`v1.2 — ${DATA_TERMOS_V1_2}`)).toBe(true)
       expect(m.s10Historico[3].startsWith(`v1.3 — ${DATA_TERMOS_V1_3}`)).toBe(true)
-      expect(m.rodapeVersao).toBe('v1.3')
-      expect(m.rodapeData).toBe(DATA_TERMOS_V1_3)
+      expect(m.s10Historico[4].startsWith(`v1.4 — ${DATA_TERMOS_V1_4}`)).toBe(true)
+      expect(m.rodapeVersao).toBe('v1.4')
+      expect(m.rodapeData).toBe(DATA_TERMOS_V1_4)
     }
     // Cada data de versão no formato AAAA-MM-DD (o dia do merge em UTC).
-    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2, DATA_TERMOS_V1_3]) {
+    for (const data of [DATA_PUBLICACAO_TERMOS_V1, DATA_TERMOS_V1_1, DATA_TERMOS_V1_2, DATA_TERMOS_V1_3, DATA_TERMOS_V1_4]) {
       expect(data).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
     // #609 (v1.3): a notificação de retirada traz o motivo (lista fechada) e o link de nova análise; o e-mail segue.
@@ -155,6 +157,13 @@ describe('TermsOfUse (ADR-0051 — Termos de Uso v1)', () => {
     expect(ptBR.termos.s8Corpo[0]).toContain('receita pública ou uma avaliação pelo botão Reportar')
     expect(ptBR.termos.s8Corpo[0]).toContain('privacidade@refogando.com')
     expect(enUS.termos.s8Corpo[0]).toContain('public recipe or a review with the Report button')
+    // #610 (v1.4): a cópia publicada credita o autor e diz como desligar ou retirar o nome (item 5). A favor da pessoa
+    // (Lei 9.610, art. 24, II, com escolha) ⇒ sem aviso de 15 dias: o aviso em vigor segue o da v1 (ADR-0052).
+    expect(ptBR.termos.s5Corpo[4]).toContain('Baseada na receita … de @você')
+    expect(ptBR.termos.s5Corpo[4]).toContain('Editar perfil')
+    expect(ptBR.termos.s5Corpo[4]).toContain('Retirar meu nome')
+    expect(enUS.termos.s5Corpo[4]).toContain('Based on … by @you')
+    expect(enUS.termos.s5Corpo[4]).toContain('Remove my name')
     // #599 (v1.2): a revisão de imagens da curadoria saiu das exceções do conteúdo privado (item 5).
     expect(ptBR.termos.s5Corpo[1]).not.toContain('imagens geradas por IA')
     expect(enUS.termos.s5Corpo[1]).not.toContain('AI images')

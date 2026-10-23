@@ -392,6 +392,28 @@ export function RecipeDetailView({
           </p>
         )
       )}
+      {/* #610 (ADR-0052): crédito da Receita derivada, logo abaixo do byline e no mesmo tom. "Baseada na receita
+          <título> de @handle" (título → a base, @ → o perfil) ou "… do catálogo". O read-model só o traz quando a
+          base é pública e o dono dela quer o crédito; o controle "Retirar meu nome" fica com o dono da base, na área
+          de gestão (a sessão é lida no cliente, e esta árvore é a pública/cacheável). */}
+      {view.basedOn && (
+        <p className="text-sm text-muted">
+          {m.creditoVersao.baseadaEm}{' '}
+          <Link href={view.basedOn.href} className="font-medium text-fg hover:underline">
+            {view.basedOn.titulo}
+          </Link>{' '}
+          {view.basedOn.author ? (
+            <>
+              {m.creditoVersao.de}{' '}
+              <Link href={`/u/${view.basedOn.author.handle}`} className="hover:text-fg hover:underline">
+                @{view.basedOn.author.handle}
+              </Link>
+            </>
+          ) : (
+            m.creditoVersao.doCatalogo
+          )}
+        </p>
+      )}
     </article>
   )
 }

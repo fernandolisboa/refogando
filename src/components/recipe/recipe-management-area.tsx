@@ -33,6 +33,7 @@ import type { RecipeView } from '@/domain/recipe-read'
 import { RecipeStatusChip } from './recipe-status-chip'
 import { RecipeImageManager } from './recipe-image-manager'
 import { RecipeDetailActions } from './recipe-detail-actions'
+import { DerivedCreditAuthorControl } from './derived-credit-author-control'
 
 export function RecipeManagementArea({
   view,
@@ -62,6 +63,9 @@ export function RecipeManagementArea({
   //                  uma cópia em vez de editar). Recupera no reload/navegação.
   type Resolution = 'idle' | 'owner' | 'not-owner' | 'error'
   const [ownerView, setOwnerView] = useState<RecipeView | null>(null)
+  // #610: a view buscada de quem NÃO é o dono pode trazer `creditoDoAutor` (o leitor é o dono da BASE desta
+  // derivada). Só esse campo é usado dela.
+  const [creditoDoAutor, setCreditoDoAutor] = useState<RecipeView['creditoDoAutor']>(undefined)
   const [resolution, setResolution] = useState<Resolution>('idle')
 
   useEffect(() => {
@@ -78,6 +82,7 @@ export function RecipeManagementArea({
             setOwnerView(v)
             setResolution('owner')
           } else {
+            setCreditoDoAutor(v?.creditoDoAutor)
             setResolution('not-owner') // pública de outro: 200 sem canManage.
           }
         } else if (res.status === 404) {
@@ -124,7 +129,14 @@ export function RecipeManagementArea({
   // Anônimo: `RecipeDetailActions` resolve o convite pela própria sessão (sem fetch).
   if (!loggedIn) return <RecipeDetailActions view={view} locale={locale} />
   // Não-dono DEFINITIVO (pública de outro / 404): "Criar minha versão" / derivar.
-  if (resolution === 'not-owner') return <RecipeDetailActions view={view} locale={locale} />
+  if (resolution === 'not-owner') {
+    return (
+      <>
+        {creditoDoAutor && <DerivedCreditAuthorControl recipeId={view.id} initial={creditoDoAutor} />}
+        <RecipeDetailActions view={view} locale={locale} />
+      </>
+    )
+  }
   // Em voo ('idle') OU indeterminado ('error'): NADA. Evita o flash de "Criar minha versão" enquanto
   // resolve, e — no erro — evita mostrar a afordância ERRADA ao próprio dono (derivaria em vez de editar).
   // O custo é uma região vazia breve pro logado-não-dono (maioria) — preço de não piscar a afordância

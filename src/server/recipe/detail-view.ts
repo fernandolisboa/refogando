@@ -6,6 +6,7 @@ import { isUuid } from '@/server/http/params'
 import { loadRecipeRows, loadSocialState } from '@/server/recipe/load'
 import { loadImageGenConfig } from '@/server/app-config'
 import { loadGallery } from '@/server/recipe/image'
+import { loadDerivedCredit } from '@/server/recipe/derived-credit'
 import { resolveRecipeView, type RecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 
@@ -101,7 +102,9 @@ export async function loadRecipeDetailView(
   // (enabled) SÓ quando o requester é o DONO (a ação é owner-only ⇒ o tráfego anônimo/não-dono
   // NÃO paga essa query — preserva o caminho quente). As quatro leituras são independentes ⇒ paralelas.
   const isOwner = viewerId != null && rows.recipe.ownerId === viewerId
-  const [social, imageGenEnabled, imageGenBlocked, gallery] = await Promise.all([
+  // #610: o crédito da derivada é PÚBLICO (qualquer leitor) e só consulta a base quando a linha é derivada; com a
+  // sessão, também o controle do dono da base (`creditoDoAutor`).
+  const [social, imageGenEnabled, imageGenBlocked, gallery, credit] = await Promise.all([
     loadSocialState(db, { id, viewerId }),
     isOwner ? loadImageGenConfig(db).then((c) => c.enabled) : Promise.resolve(undefined),
     // #226: a restrição GRANULAR de geração-por-IA do usuário (flag por-conta do Curador), owner-gated
@@ -120,6 +123,7 @@ export async function loadRecipeDetailView(
     isOwner && rows.recipe.lineageId != null
       ? loadGallery(db, rows.recipe.lineageId, rows.recipe.imageId ?? null)
       : Promise.resolve(undefined),
+    loadDerivedCredit(db, { recipe: rows.recipe, locale: requestLocale, viewerId }),
   ])
 
   return resolveRecipeView({
@@ -130,5 +134,6 @@ export async function loadRecipeDetailView(
     imageGenEnabled,
     imageGenBlocked,
     gallery,
+    ...credit,
   })
 }

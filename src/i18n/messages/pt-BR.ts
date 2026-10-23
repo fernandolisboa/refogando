@@ -11,10 +11,12 @@ import {
   DATA_POLITICA_V3_2,
   DATA_POLITICA_V3_3,
   DATA_POLITICA_V3_4,
+  DATA_POLITICA_V3_5,
   DATA_PUBLICACAO_TERMOS_V1,
   DATA_TERMOS_V1_1,
   DATA_TERMOS_V1_2,
   DATA_TERMOS_V1_3,
+  DATA_TERMOS_V1_4,
 } from '../../domain/legal-notice'
 
 export const ptBR = {
@@ -1098,6 +1100,26 @@ export const ptBR = {
     considerarDica: 'Do seu perfil. Toque numa para tirá-la deste pedido.',
     buscaAviso: 'Mostrando só receitas que declaram: {lista} (do seu perfil).',
     buscaMostrarTudo: 'Mostrar tudo',
+  },
+  // #610 (ADR-0052): crédito na Receita derivada. Na página dela, "Baseada na receita <título> de @handle" (ou "do
+  // catálogo"); o título e o @ são links, então a frase vem em pedaços (`baseadaEm` + título + `de` + @handle). O dono
+  // da base vê "Retirar meu nome" ali mesmo. Em Editar perfil, a escolha de ser creditado nas cópias.
+  creditoVersao: {
+    baseadaEm: 'Baseada na receita',
+    de: 'de',
+    doCatalogo: 'do catálogo',
+    seuNome: 'Esta é uma cópia de uma receita sua, e o seu nome aparece nela.',
+    retirar: 'Retirar meu nome',
+    retirado: 'Você tirou o seu nome desta cópia da sua receita.',
+    mostrarDeNovo: 'Mostrar meu nome de novo',
+    salvando: 'Salvando…',
+    erro: 'Não foi possível salvar. Tente de novo.',
+    perfilTitulo: 'Crédito nas cópias',
+    perfilDescricao:
+      'Quando alguém publica uma cópia de uma receita sua ("Criar minha versão" ou "Clonar"), a página dela mostra "Baseada na receita … de @você", com link para a sua, enquanto a sua estiver publicada. Para tirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
+    perfilToggle: 'Mostrar meu nome nas cópias das minhas receitas',
+    perfilSalvo: 'Preferência salva.',
+    perfilErroCarregar: 'Não foi possível carregar esta preferência.',
   },
   // #605: denúncia de uma Receita pública na página dela (`RecipeReportButton`), só para quem tem conta e não é
   // o dono. Mesmo molde do "Reportar" das avaliações (`avaliacoes.reportar`).
@@ -2183,8 +2205,8 @@ export const ptBR = {
 
     s31Titulo: '3.1. Conta de usuário e autenticação',
     s31Valores: [
-      'e-mail, nome/identificador de exibição (handle), senha (guardada só como hash), foto de perfil, biografia, links, idioma preferido e nível de habilidade padrão. Se você entra com o Google, recebemos do Google o seu nome, e-mail e foto, e guardamos os tokens desse login.',
-      'criar e manter sua conta, autenticar o acesso e permitir o uso do app. O seu nome, o @, a foto, a bio e os links ficam numa página pública (/u/seu-@), que qualquer pessoa vê, mesmo sem conta, e que buscadores podem indexar; ali aparecem também quem você segue e quem segue você. O seu nome e o @ aparecem ainda nas receitas que você publica, nas avaliações que escreve, na busca de cozinheiros e nas notificações que outras pessoas recebem quando você as segue ou avalia uma receita delas. E-mail, restrições alimentares e conteúdo privado nunca aparecem.',
+      'e-mail, nome/identificador de exibição (handle), senha (guardada só como hash), foto de perfil, biografia, links, idioma preferido e nível de habilidade padrão; e se você quer o seu nome nas cópias que outras pessoas publicam das suas receitas. Se você entra com o Google, recebemos do Google o seu nome, e-mail e foto, e guardamos os tokens desse login.',
+      'criar e manter sua conta, autenticar o acesso e permitir o uso do app. O seu nome, o @, a foto, a bio e os links ficam numa página pública (/u/seu-@), que qualquer pessoa vê, mesmo sem conta, e que buscadores podem indexar; ali aparecem também quem você segue e quem segue você. O seu nome e o @ aparecem ainda nas receitas que você publica, nas avaliações que escreve, na busca de cozinheiros e nas notificações que outras pessoas recebem quando você as segue ou avalia uma receita delas. Quando alguém publica uma cópia de uma receita sua ("Criar minha versão" ou "Clonar"), a página dela mostra "Baseada na receita … de @você", com link para a sua, enquanto a sua estiver publicada (é o seu direito de autor de ter o nome indicado, Lei 9.610/98, art. 24, II); você pode desligar isso em Editar perfil ou retirar o seu nome de uma cópia na página dela. E-mail, restrições alimentares e conteúdo privado nunca aparecem.',
       'execução de contrato com o titular (os Termos de Uso) — Art. 7º, V da LGPD.',
       'enquanto a conta existir. Se você eliminar a conta, anonimizamos na hora os dados de identificação e apagamos a senha, o login do Google e todas as sessões. Um cadastro com e-mail e senha que não é confirmado é apagado depois de 48 horas; para barrar reenvios abusivos, guardamos por 90 dias só um código derivado do e-mail, que não permite recuperá-lo.',
     ],
@@ -2360,6 +2382,7 @@ export const ptBR = {
       `v3.2 — ${DATA_POLITICA_V3_2}: a curadoria revisa só a foto de receitas publicadas; as outras imagens da galeria e as de receitas privadas ficam fora da fila (item 3.3 e seção 4).`,
       `v3.3 — ${DATA_POLITICA_V3_3}: guardamos a data e a versão do texto com que você consentiu com as restrições salvas, como prova do consentimento (item 3.5); o aviso de mudança das restrições deixa de ficar no navegador e aparece até você salvar de novo (seção 8).`,
       `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se tentamos avisar a pessoa por e-mail), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
+      `v3.5 — ${DATA_POLITICA_V3_5}: a cópia que outra pessoa publica de uma receita sua mostra "Baseada na receita … de @você", com link; você pode desligar isso em Editar perfil ou retirar o seu nome de uma cópia, e guardamos essa escolha (item 3.1).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2412,9 +2435,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.4',
+    rodapeVersao: 'v3.5',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_4,
+    rodapeData: DATA_POLITICA_V3_5,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2478,9 +2501,9 @@ export const ptBR = {
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v3.4',
+    rodapeVersao: 'v3.5',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_POLITICA_V3_4,
+    rodapeData: DATA_POLITICA_V3_5,
     rodapeStatusRotulo: 'Status',
     rodapeStatus: 'Publicada — revisão interna concluída em 2026-10-22',
   },
@@ -2533,6 +2556,7 @@ export const ptBR = {
       'Enquanto uma receita sua é privada, ela não aparece para outras pessoas e nós a usamos só para fazer o app funcionar. A exceção está na Política de Privacidade: os ingredientes que você escreve à mão e as cozinhas novas que você escreve em "Outra" podem chegar à curadoria, sem o seu nome, para ampliar o vocabulário.',
       'Quando você publica uma receita, uma avaliação ou uma foto, você dá ao Refogando uma licença gratuita, não exclusiva e válida no mundo todo para guardar esse conteúdo, exibi-lo e reproduzi-lo no app, nos buscadores e nos cards de compartilhamento, traduzi-lo automaticamente, adaptá-lo aos formatos do app (como miniaturas e lista de compras) e deixar que outras pessoas salvem e avaliem a receita, a coloquem no Cardápio e façam cópias do texto dela, sem as suas fotos ("Criar minha versão" e "Clonar"), que elas podem editar e publicar. A licença vale enquanto o conteúdo estiver publicado, inclusive depois que você excluir a conta.',
       'Você pode despublicar ou apagar o seu conteúdo a qualquer momento. As cópias que outras pessoas já fizeram de uma receita pública continuam com elas.',
+      'Uma cópia publicada mostra "Baseada na receita … de @você", com link para a sua receita enquanto ela estiver publicada. Se não quiser o seu nome nas cópias, desligue isso em Editar perfil; para tirar o seu nome de uma cópia só, use "Retirar meu nome" na página dela.',
       'Se você eliminar a conta, as receitas que você publicou e as avaliações que escreveu continuam no Refogando sem o seu nome, porque outras pessoas dependem delas. Se quiser que uma receita pública suma, apague-a antes de eliminar a conta.',
       'Só publique o que é seu ou o que você tem direito de publicar. Não copie texto nem foto de livros, sites ou perfis de outras pessoas.',
     ],
@@ -2578,15 +2602,16 @@ export const ptBR = {
       `v1.1 — ${DATA_TERMOS_V1_1}: receitas públicas também podem ser denunciadas pelo botão Reportar, na página da receita (item 8).`,
       `v1.2 — ${DATA_TERMOS_V1_2}: a curadoria deixa de revisar imagens de receitas privadas (item 5).`,
       `v1.3 — ${DATA_TERMOS_V1_3}: a notificação de retirada passa a mostrar o motivo, de uma lista fechada, e um link para pedir uma nova análise (item 8).`,
+      `v1.4 — ${DATA_TERMOS_V1_4}: a cópia publicada de uma receita sua mostra "Baseada na receita … de @você", e você pode desligar isso ou retirar o seu nome de uma cópia (item 5).`,
     ],
 
     s11Titulo: '11. Lei e foro',
     s11Corpo: ['Estes Termos seguem a lei brasileira. Qualquer disputa pode ser levada ao foro do seu domicílio.'],
 
     rodapeVersaoRotulo: 'Versão',
-    rodapeVersao: 'v1.3',
+    rodapeVersao: 'v1.4',
     rodapeDataRotulo: 'Data',
-    rodapeData: DATA_TERMOS_V1_3,
+    rodapeData: DATA_TERMOS_V1_4,
   },
   // Aviso de mudança dos textos legais (ADR-0051), no layout, só para quem tem conta criada até o fim do dia da publicação
   // (`shouldShowLegalNotice`, `src/domain/legal-notice.ts`). Depois de `texto` vêm os links `termos.nome` e

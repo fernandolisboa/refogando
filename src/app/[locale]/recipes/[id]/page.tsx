@@ -76,6 +76,7 @@ import {
   resolveRecipeIdBySlug,
 } from '@/server/recipe/load'
 import { loadRecipeDetailView } from '@/server/recipe/detail-view'
+import { loadDerivedCredit } from '@/server/recipe/derived-credit'
 import { loadRecipeReviews } from '@/server/recipe/review'
 import { buildRecipeSeoInputFromRows, loadRecipeSlugMap } from '@/server/recipe/seo'
 import { getBaseUrlFromEnv } from '@/server/http/base-url'
@@ -178,6 +179,8 @@ export default async function RecipeDetailPage({
   if (route.kind === 'slug') {
     const publicRows = await loadPublicRecipeBySlugCached(getDb(), route.slug, locale)
     if (publicRows != null) {
+      // #610: crédito da derivada (só consulta a base quando a receita é derivada). Sem cookie, como o resto.
+      const { basedOn } = await loadDerivedCredit(getDb(), { recipe: publicRows.recipe, locale })
       // Caminho PÚBLICO anônimo/cacheável (sem cookie — não personaliza nem força dinâmico).
       // `viewerSaved` fica AUSENTE (anônimo) — o estado do viewer é resolvido no cliente pelos
       // controles quando logado. Mantém a rota cacheável.
@@ -188,6 +191,7 @@ export default async function RecipeDetailPage({
         tags: publicRows.tags,
         requestLocale: locale,
         ...(publicRows.author ? { author: publicRows.author } : {}),
+        ...(basedOn ? { basedOn } : {}),
         ...(publicRows.imageUrl ? { imageUrl: publicRows.imageUrl } : {}),
         ...(publicRows.imageSrcSet ? { imageSrcSet: publicRows.imageSrcSet } : {}),
         ...(publicRows.imageAiGenerated ? { imageAiGenerated: publicRows.imageAiGenerated } : {}),

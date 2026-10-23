@@ -127,6 +127,8 @@ export async function* accountExportSections(
       // ...e quando e com qual versão do texto a pessoa consentiu (#600).
       restricoesConsentidasEm: users.restricoesConsentidasEm,
       restricoesConsentimentoVersao: users.restricoesConsentimentoVersao,
+      // #610: quer ser creditado nas versões que outras pessoas publicam das suas receitas.
+      creditOnDerivatives: users.creditOnDerivatives,
       image: users.image,
       role: users.role,
       // #595: o plano comercial (#466) e as sanções sobre a conta. Sem o `imageGenBlockedBy` (id do Curador).

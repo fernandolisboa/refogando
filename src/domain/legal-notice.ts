@@ -5,7 +5,7 @@
  * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico` e a
  * linha v3.1 de `privacidade.s10Historico`), e o aviso a usa para decidir o público. Depois do merge ela fica
  * CONGELADA: cada versão seguinte ganha constante própria, e os rodapés usam a da versão mais nova de cada texto
- * (hoje `DATA_POLITICA_V3_4` e `DATA_TERMOS_V1_3`).
+ * (hoje `DATA_POLITICA_V3_5` e `DATA_TERMOS_V1_4`).
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -59,6 +59,18 @@ export const DATA_TERMOS_V1_3 = '2026-10-23'
  * depois do merge. É a data dos rodapés da política e de Seus direitos.
  */
 export const DATA_POLITICA_V3_4 = '2026-10-23'
+
+/**
+ * Política v3.5 e Termos v1.4 (#610, ADR-0052): a cópia que outra pessoa publica de uma receita sua ("Criar minha
+ * versão" / "Clonar") mostra "Baseada na receita … de @você", com link, e você pode desligar isso em Editar perfil ou
+ * retirar o seu nome de uma cópia (política item 3.1, Termos item 5). É o direito do autor de ter o nome indicado (Lei
+ * 9.610, art. 24, II), com a escolha de não ser nomeado: a favor da pessoa, então vale na publicação, sem o aviso de 15
+ * dias e sem trocar `AVISO_LEGAL_VERSAO` (ADR-0052 explica por que mostrar o @ por padrão conta como a favor). Não
+ * mexe em consentimento. O dia do merge em UTC; congeladas depois do merge. São as datas dos rodapés da política, de
+ * Seus direitos e dos Termos.
+ */
+export const DATA_POLITICA_V3_5 = '2026-10-23'
+export const DATA_TERMOS_V1_4 = DATA_POLITICA_V3_5
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'

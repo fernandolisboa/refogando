@@ -33,6 +33,7 @@ import {
   type Visibility,
 } from '@/domain/recipe'
 import { pruneNoopChanges, type DerivedDiff } from '@/domain/recipe-diff'
+import type { CreditoDoAutor, RecipeBasedOn } from '@/domain/derived-credit'
 import {
   decideRestrictionNotices,
   type RestrictionNotice,
@@ -103,6 +104,11 @@ export type RecipeRow = {
   parentRecipeId?: string | null
   lineageKind?: LineageKind | null
   derivedDiff?: DerivedDiff | null
+  /**
+   * Crédito retirado pelo dono da BASE (#610, ADR-0052). OPCIONAL no tipo (mesma razão do `ownerId`). Insumo do
+   * loader do crédito (`loadDerivedCredit`), que nem consulta a base quando está preenchido. NUNCA sai na vista.
+   */
+  creditRemovedAt?: Date | null
   /**
    * Imagem da receita (#130/#131) — FK para `recipe_image`. OPCIONAL no tipo (mesma razão de
    * `ownerId`: `select().from(recipe)` o traz em runtime; opcional poupa as fixtures puras). É
@@ -210,6 +216,16 @@ export type ResolveInput = {
    * `ownerId` (gestão, owner-gated): a Autoria é PÚBLICA — visível a qualquer leitor.
    */
   author?: { name: string | null; handle: string | null }
+  /**
+   * Crédito da derivada (#610, ADR-0052) — já DECIDIDO pelo server (`loadDerivedCredit` → `decideDerivedCredit`,
+   * que aplica o gate público da base e as escolhas do dono dela). A vista só repassa. `undefined` ⇒ sem crédito.
+   */
+  basedOn?: RecipeBasedOn
+  /**
+   * Controle do DONO DA BASE nesta derivada (#610) — o server só o passa quando a sessão é a dele
+   * (`decideDerivedCredit`). Repassado só com `viewerId` (estado do próprio leitor, como `viewerSaved`).
+   */
+  creditoDoAutor?: CreditoDoAutor
   /**
    * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da foto do prato (o server o carrega de
    * `recipe_image` via `recipe.image_id`). `undefined` (Receita sem imagem) ⇒ a vista OMITE
@@ -394,6 +410,16 @@ export type RecipeView = {
    * autor humano creditável).
    */
   source?: RecipeSource
+  /**
+   * Crédito da derivada (#610, ADR-0052): "Baseada na receita <titulo> de @handle" (ou "do catálogo", sem
+   * `author`). PÚBLICO (qualquer leitor vê). "ausente ≠ vazio": só existe quando o server decidiu creditar.
+   */
+  basedOn?: RecipeBasedOn
+  /**
+   * "Retirar meu nome" / "Mostrar meu nome de novo" (#610): presente SÓ para o dono da BASE desta derivada, lido
+   * pela sessão no server (nunca deduzido no cliente). `exibir=false` ⇒ ele retirou o nome. AUSENTE para todo o resto.
+   */
+  creditoDoAutor?: CreditoDoAutor
   /**
    * Imagem da receita (#130, ADR-0016) — `blob_url` PÚBLICO da foto do prato. AUSENTE
    * ("ausente ≠ vazio") quando a Receita não tem imagem (caso normal). PÚBLICO (qualquer leitor que
@@ -848,6 +874,10 @@ export function resolveRecipeView(input: ResolveInput): RecipeView {
     // Atribuição à FONTE (#169, ADR-0019): "fonte: …" da importada da web. "ausente ≠ vazio":
     // só sai p/ web_imported com sourceUrl. SUBSTITUI o byline (são mutuamente exclusivos acima).
     ...(source ? { source } : {}),
+    // Crédito da derivada (#610): decidido no server, repassado 1:1. "ausente ≠ vazio".
+    ...(input.basedOn ? { basedOn: input.basedOn } : {}),
+    // Controle do dono da base (#610): estado do PRÓPRIO leitor, então só com `viewerId`.
+    ...(input.viewerId != null && input.creditoDoAutor ? { creditoDoAutor: input.creditoDoAutor } : {}),
     // Imagem da receita (#130): foto PÚBLICA do prato. "ausente ≠ vazio": só sai quando há imagem.
     // NÃO owner-gated — qualquer leitor que vê a Receita vê a foto. Repassa 1:1 o que o server carregou.
     // #133: MODERADA esconde a foto do público (`imageModerated && !canManage`) — o Owner ainda vê.
