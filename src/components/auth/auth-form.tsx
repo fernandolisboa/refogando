@@ -25,15 +25,17 @@
  * e-mail: com a confirmação ligada (`emailVerification`), o erro traz a dica neutra "acabou de criar a conta?" +
  * reenvio (que manda o link "conclua seu cadastro"). O link de confirmação do cadastro loga e leva ao `returnTo`.
  *
- * Aviso da Política de Privacidade (#595): uma linha com o link para `/privacidade`, sem caixa de marcar (a base
- * legal da conta na Política é a execução de contrato, não o consentimento; consentimento só nas restrições
- * salvas no perfil). Aparece no cadastro e também no "Entrar" com Google ligado, porque o Google cria a conta
- * no primeiro acesso.
+ * Aviso de idade e Termos (ADR-0051; #595 criou a linha): autodeclaração de 16 anos ou mais e links para os
+ * Termos de Uso e a Política, sem caixa de marcar (a base da conta é o contrato, os Termos; o parecer §7
+ * considerou a autodeclaração proporcional). No cadastro, fica logo acima do "Criar conta"; no "Entrar" com
+ * Google ligado (o Google cria a conta no primeiro acesso), depois do botão do Google. Os dois botões que criam
+ * conta apontam para a linha (`aria-describedby`): o leitor de tela a ouve no momento de aceitar.
  */
-import { useState, type FormEvent } from 'react'
+import { Fragment, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useLocale } from '@/i18n/provider'
+import { localePrefixedPath } from '@/i18n/locale-path'
 import { signIn, signUp } from '@/lib/auth-client'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { mapAuthError, type AuthError, type AuthErrorKey } from '@/components/auth/auth-errors'
@@ -68,7 +70,7 @@ export function AuthForm({
   /** A confirmação de email está ligada no servidor (#470) — o erro de login ganha a dica + reenvio. */
   emailVerification?: boolean
 }) {
-  const { messages } = useLocale()
+  const { locale, messages } = useLocale()
   const router = useRouter()
   const isSignUp = mode === 'sign-up'
   // Re-sanitiza por garantia (a page já passou pela guarda anti open-redirect). Email → push; Google →
@@ -88,9 +90,37 @@ export function AuthForm({
   const [sentTo, setSentTo] = useState<string | null>(null)
 
   const title = isSignUp ? messages.auth.criarConta : messages.nav.signIn
-  // `{link}` é o link da Política (mesmo split do `profile-follow-section`).
-  const [privAntes = '', privDepois = ''] = messages.auth.privacidadeCadastro.split('{link}')
+  // `{termos}` e `{privacidade}` viram links (ADR-0051). Prefixados com o locale: é o aviso do contrato, e o texto
+  // aceito tem de estar no idioma que a pessoa lê (sem o 302 do proxy, que decide por cookie/Accept-Language).
+  const avisoPartes = messages.auth.privacidadeCadastro.split(/(\{termos\}|\{privacidade\})/)
   const submitLabel = isSignUp ? messages.auth.criarConta : messages.nav.signIn
+  // A linha aparece em todo modo que cria conta: o cadastro e o Google (que cria no primeiro acesso).
+  const mostraAviso = isSignUp || googleEnabled
+  const aviso = mostraAviso && (
+    <p id="auth-privacidade" className="text-sm text-muted">
+      {avisoPartes.map((parte, i) =>
+        parte === '{termos}' ? (
+          <Link
+            key={i}
+            href={localePrefixedPath(locale, '/termos')}
+            className="font-medium text-brand-ink hover:underline"
+          >
+            {messages.termos.nome}
+          </Link>
+        ) : parte === '{privacidade}' ? (
+          <Link
+            key={i}
+            href={localePrefixedPath(locale, '/privacidade')}
+            className="font-medium text-brand-ink hover:underline"
+          >
+            {messages.privacidade.titulo}
+          </Link>
+        ) : (
+          <Fragment key={i}>{parte}</Fragment>
+        ),
+      )}
+    </p>
+  )
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -272,7 +302,15 @@ export function AuthForm({
           </div>
         )}
 
-        <Button type="submit" disabled={submitting} aria-busy={submitting}>
+        {/* Cadastro: a linha logo acima do botão que cria a conta (vale também para o Google, mais abaixo). */}
+        {isSignUp && aviso}
+
+        <Button
+          type="submit"
+          disabled={submitting}
+          aria-busy={submitting}
+          aria-describedby={isSignUp ? 'auth-privacidade' : undefined}
+        >
           {submitting ? messages.auth.enviando : submitLabel}
         </Button>
       </form>
@@ -284,22 +322,14 @@ export function AuthForm({
             <span>{messages.auth.ou}</span>
             <span aria-hidden="true" className="h-px flex-1 bg-border" />
           </div>
-          <Button type="button" variant="secondary" onClick={onGoogle}>
+          <Button type="button" variant="secondary" onClick={onGoogle} aria-describedby="auth-privacidade">
             {messages.auth.continuarComGoogle}
           </Button>
         </>
       )}
 
-      {/* Depois do formulário E do Google: a linha vale para os dois jeitos de criar a conta. */}
-      {(isSignUp || googleEnabled) && (
-        <p id="auth-privacidade" className="text-xs text-muted">
-          {privAntes}
-          <Link href="/privacidade" className="font-medium text-brand-ink hover:underline">
-            {messages.privacidade.titulo}
-          </Link>
-          {privDepois}
-        </p>
-      )}
+      {/* Entrar com Google ligado: a linha depois do botão do Google (é ele que cria a conta). */}
+      {!isSignUp && aviso}
 
       <p className="text-sm text-muted">
         {isSignUp ? messages.auth.jaTemConta : messages.auth.semConta}{' '}

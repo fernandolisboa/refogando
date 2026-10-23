@@ -244,41 +244,74 @@ describe('AuthForm — entrar/criar consumindo /api/auth (#55)', () => {
   })
 })
 
-describe('AuthForm — aviso da Política de Privacidade (#595)', () => {
+describe('AuthForm — aviso de idade, Termos e Política (ADR-0051; #595)', () => {
   const frase = (locale: Locale) => {
     const m = MESSAGES[locale]
-    return m.auth.privacidadeCadastro.replace('{link}', m.privacidade.titulo)
+    return m.auth.privacidadeCadastro.replace('{termos}', m.termos.nome).replace('{privacidade}', m.privacidade.titulo)
   }
 
+  it('a mensagem tem {termos} e {privacidade} uma vez cada, e não tem mais {link}', () => {
+    for (const locale of ['pt-BR', 'en-US'] as const) {
+      const msg = MESSAGES[locale].auth.privacidadeCadastro
+      expect(msg.split('{termos}')).toHaveLength(2)
+      expect(msg.split('{privacidade}')).toHaveLength(2)
+      expect(msg).not.toContain('{link}')
+    }
+  })
+
   for (const googleEnabled of [false, true]) {
-    it(`criar conta (Google ${googleEnabled ? 'ligado' : 'desligado'}): linha com o link para /privacidade, sem caixa de marcar`, () => {
+    it(`criar conta (Google ${googleEnabled ? 'ligado' : 'desligado'}): linha com os dois links prefixados, logo acima do "Criar conta", sem caixa de marcar`, () => {
       renderForm('sign-up', googleEnabled)
-      const link = screen.getByRole('link', { name: 'Política de Privacidade' })
-      expect(link).toHaveAttribute('href', '/privacidade')
-      expect(link.closest('p')).toHaveTextContent(frase('pt-BR'))
+      const termos = screen.getByRole('link', { name: 'Termos de Uso' })
+      const politica = screen.getByRole('link', { name: 'Política de Privacidade' })
+      expect(termos).toHaveAttribute('href', '/pt-BR/termos')
+      expect(politica).toHaveAttribute('href', '/pt-BR/privacidade')
+      const linha = termos.closest('p')!
+      expect(politica.closest('p')).toBe(linha)
+      expect(linha).toHaveTextContent(frase('pt-BR'))
+      expect(linha).toHaveClass('text-sm')
+      // Logo acima do botão que cria a conta: o próximo elemento é o "Criar conta".
+      const criar = screen.getByRole('button', { name: 'Criar conta' })
+      expect(linha.nextElementSibling).toBe(criar)
+      expect(criar).toHaveAttribute('aria-describedby', 'auth-privacidade')
+      expect(linha).toHaveAttribute('id', 'auth-privacidade')
+      if (googleEnabled) {
+        expect(screen.getByRole('button', { name: 'Continuar com o Google' })).toHaveAttribute(
+          'aria-describedby',
+          'auth-privacidade',
+        )
+      }
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     })
   }
 
-  it('entrar sem Google: sem a linha', () => {
+  it('entrar sem Google: sem a linha, e o "Entrar" não aponta para ela', () => {
     renderForm('sign-in', false)
+    expect(screen.queryByRole('link', { name: 'Termos de Uso' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Política de Privacidade' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Entrar' })).not.toHaveAttribute('aria-describedby')
   })
 
-  it('entrar com Google: com a linha (o Google cria a conta no primeiro acesso)', () => {
+  it('entrar com Google: com a linha depois do botão do Google (o Google cria a conta no primeiro acesso)', () => {
     renderForm('sign-in', true)
-    const link = screen.getByRole('link', { name: 'Política de Privacidade' })
-    expect(link).toHaveAttribute('href', '/privacidade')
-    // Depois do botão do Google: vale para os dois jeitos de criar a conta.
+    const termos = screen.getByRole('link', { name: 'Termos de Uso' })
+    const politica = screen.getByRole('link', { name: 'Política de Privacidade' })
+    expect(termos).toHaveAttribute('href', '/pt-BR/termos')
+    expect(politica).toHaveAttribute('href', '/pt-BR/privacidade')
     const google = screen.getByRole('button', { name: 'Continuar com o Google' })
-    expect(google.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(google.compareDocumentPosition(termos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(google).toHaveAttribute('aria-describedby', 'auth-privacidade')
+    // O "Entrar" com e-mail não cria conta: não aponta para a linha.
+    expect(screen.getByRole('button', { name: 'Entrar' })).not.toHaveAttribute('aria-describedby')
   })
 
-  it('en-US: "Privacy Policy"', () => {
+  it('en-US: "Terms of Use" e "Privacy Policy" no idioma da página', () => {
     renderForm('sign-up', false, 'en-US')
-    const link = screen.getByRole('link', { name: 'Privacy Policy' })
-    expect(link).toHaveAttribute('href', '/privacidade')
-    expect(link.closest('p')).toHaveTextContent(frase('en-US'))
+    const termos = screen.getByRole('link', { name: 'Terms of Use' })
+    const politica = screen.getByRole('link', { name: 'Privacy Policy' })
+    expect(termos).toHaveAttribute('href', '/en-US/termos')
+    expect(politica).toHaveAttribute('href', '/en-US/privacidade')
+    expect(termos.closest('p')).toHaveTextContent(frase('en-US'))
   })
 })
 

@@ -240,6 +240,7 @@ describe('normalizeClientRoute', () => {
     ['/pt-BR/me/shopping-lists/abc', '/[locale]/me/shopping-lists/[param]'],
     ['/pt-BR/admin/users', '/[locale]/admin/users'],
     ['/pt-BR/reset-password?token=abc123#x', '/[locale]/reset-password'],
+    ['/en-US/termos', '/[locale]/termos'],
     ['/xx/recipes/a', '/[sem-locale]/recipes/[param]'],
     ['/pt-BR/maria/joao', '/[locale]/[param]/[param]'],
     ['/pt-BR/a/b/c/d/e/f/g/h/i/j', '/[locale]/[param]/[param]/[param]/[param]/[param]/[param]/[param]'],

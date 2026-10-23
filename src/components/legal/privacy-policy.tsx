@@ -7,7 +7,7 @@
  *
  * Revisada no parecer interno de 2026-10-22 (`docs/legal/parecer-interno-2026-10-22.md`), que fechou o
  * #276 (v3). Os contatos reais estão escritos DIRETO nas strings i18n (`messages.privacidade`) — editar
- * ali é como o dono troca o e-mail do canal. Versão nova entra em `s9Historico` + rodapé.
+ * ali é como o dono troca o e-mail do canal. Versão nova entra em `s10Historico` + rodapé.
  *
  * `withPlaceholders` é mantido como rede de segurança: se algum `{...}` reaparecer numa string, ele o
  * troca por um BADGE visível (`<mark data-todo>`) em vez de publicar chaves cruas. Hoje as strings não
@@ -228,10 +228,14 @@ export function PrivacyPolicy() {
       <P>{ph(m.s8Intro)}</P>
       <Tabela cabecalho={m.s8Cabecalho} colunas={[m.s8Nomes, m.s8ParaQue, m.s8Duracoes]} todoLabel={todo} />
 
+      {/* v3.1 (ADR-0051): idade mínima de 16 anos, a mesma dos Termos de Uso. */}
       <H3>{m.s9Titulo}</H3>
       <P>{ph(m.s9Corpo)}</P>
+
+      <H3>{m.s10Titulo}</H3>
+      <P>{ph(m.s10Corpo)}</P>
       {/* Histórico de versões (a mais nova por último; o rodapé repete a última). */}
-      <List items={m.s9Historico} todoLabel={todo} />
+      <List items={m.s10Historico} todoLabel={todo} />
 
       {/* ───────────────────────── Parte (b) ───────────────────────── */}
       <H2>{m.parteBTitulo}</H2>
