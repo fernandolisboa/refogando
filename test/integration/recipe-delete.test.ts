@@ -3,7 +3,7 @@ import type { Sql } from 'postgres'
 import { eq } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setImageStore } from '@/server/deps'
-import { recipe, recipeImage } from '@/db/schema'
+import { recipe, recipeImage, recipeReview } from '@/db/schema'
 import { FakeImageStore } from '@/server/images/image-store'
 import { DELETE as deleteRoute } from '@/app/api/recipes/[id]/route'
 import { GET as recipeGet } from '@/app/api/recipes/[id]/route'
@@ -18,6 +18,7 @@ import {
   seedTag,
   linkRecipeTag,
   seedSave,
+  seedReview,
 } from '../helpers/recipes'
 
 /**
@@ -252,5 +253,41 @@ describe('DELETE /api/recipes/[id] — apagar a própria receita (#21)', () => {
     expect((await del(b, headers)).status).toBe(204)
     expect(await imageExists(imageId)).toBe(false)
     expect(store.blobs.has(url)).toBe(false)
+  })
+
+  // (h) #603: as Avaliações de TERCEIROS caem em cascata com a Receita; os blobs das fotos delas saem junto
+  //     (antes ficavam no Blob público sem nenhuma linha apontando). Foto estrangeira (não é nossa) fica.
+  it('(h) #603: apagar a receita apaga os blobs das fotos das avaliações de terceiros', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'del-rev-owner@ex.com' })
+    const { userId: aId } = await seedSessionHeaders({ email: 'del-rev-a@ex.com' })
+    const { userId: bId } = await seedSessionHeaders({ email: 'del-rev-b@ex.com' })
+    const { userId: cId } = await seedSessionHeaders({ email: 'del-rev-c@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    await seedTranslation({ recipeId: id, locale: 'pt-BR', titulo: 'Avaliada', provenance: 'escrita_por_pessoa' })
+    const other = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'public', ownerId: userId })
+    await seedTranslation({ recipeId: other, locale: 'pt-BR', titulo: 'Outra', provenance: 'escrita_por_pessoa' })
+
+    const photo = async () =>
+      (await store.store({ data: Buffer.from([9, 9]), contentType: 'image/webp', pathPrefix: 'reviews' })).url
+    const [pA, pB, pOther] = [await photo(), await photo(), await photo()]
+    const foreign = 'https://lh3.googleusercontent.com/foto-estrangeira.jpg'
+    const withPhoto = async (reviewId: string, url: string) =>
+      getDb().update(recipeReview).set({ photoUrl: url }).where(eq(recipeReview.id, reviewId))
+    await withPhoto(await seedReview({ userId: aId, recipeId: id, rating: 5 }), pA)
+    await withPhoto(await seedReview({ userId: bId, recipeId: id, rating: 4 }), pB)
+    await withPhoto(await seedReview({ userId: cId, recipeId: id, rating: 3 }), foreign)
+    await withPhoto(await seedReview({ userId: aId, recipeId: other, rating: 5 }), pOther)
+
+    // Não dono: 404 e nenhum blob sai.
+    const { headers: strangerHeaders } = await seedSessionHeaders({ email: 'del-rev-stranger@ex.com' })
+    expect((await del(id, strangerHeaders)).status).toBe(404)
+    expect(store.blobs.has(pA) && store.blobs.has(pB)).toBe(true)
+
+    expect((await del(id, headers)).status).toBe(204)
+    expect(await countTable('recipe_review', id)).toBe(0)
+    expect(store.blobs.has(pA)).toBe(false)
+    expect(store.blobs.has(pB)).toBe(false)
+    // A foto da avaliação de OUTRA Receita fica.
+    expect(store.blobs.has(pOther)).toBe(true)
   })
 })

@@ -16,6 +16,10 @@
 #     https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID/branches/<id-do-main>/restore \
 #     -d '{"source_branch_id":"<id-do-backup>","preserve_under_name":"main_old_<motivo>"}'
 #   O host do endpoint de produção NÃO muda; a Vercel reconecta sozinha.
+#   ANTES de restaurar: ponha `BLOB_SWEEP_PAUSE=1` nas variáveis de Production da Vercel (e redeploy). O
+#   banco restaurado perde as linhas gravadas depois do backup, e a varredura semanal de blobs
+#   (/api/cron/blob-sweep, #603) apagaria as imagens delas como órfãs. Só tire a pausa depois de decidir
+#   o que fazer com essas imagens (handoff 86).
 #
 # Requer no repo (já existem, usados por cleanup-neon-preview-branch.yml):
 #   - secret   NEON_API_KEY

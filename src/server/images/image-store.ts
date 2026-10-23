@@ -16,7 +16,7 @@
  * `users.image` com a foto do perfil) — essa URL é ESTRANGEIRA e jamais deve ser deletada. A
  * regra é de HOST: um blob nosso mora em `*.blob.vercel-storage.com`.
  */
-import { put, del } from '@vercel/blob'
+import { put, del, list } from '@vercel/blob'
 
 /** Bytes + metadados para guardar uma imagem. `pathPrefix` agrupa logicamente (ex.: 'avatars'). */
 export type StoreImageInput = {
@@ -28,6 +28,12 @@ export type StoreImageInput = {
 
 /** Resultado do store: a URL pública, servível direto (a imagem é PUBLIC). */
 export type StoredImage = { url: string }
+
+/** Um blob listado (#603): a URL (a mesma que o banco guarda), o caminho no store e quando foi gravado. */
+export type ListedBlob = { url: string; pathname: string; uploadedAt: Date }
+
+/** Uma página da listagem (#603). `cursor` vem quando `hasMore`; passe-o de volta para a página seguinte. */
+export type BlobPage = { blobs: ListedBlob[]; cursor?: string; hasMore: boolean }
 
 export interface ImageStore {
   /** Guarda os bytes e devolve a URL pública. */
@@ -43,6 +49,11 @@ export interface ImageStore {
   delete(url: string): Promise<void>
   /** A URL aponta para um blob deste store? (só apagamos o que guardamos — OAuth fica intacto.) */
   owns(url: string): boolean
+  /**
+   * #603: uma página dos blobs cujo caminho começa por `prefix` (varredura de órfãos). Erro de rede ou de
+   * token LANÇA (quem chama decide; a varredura para sem apagar nada).
+   */
+  list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<BlobPage>
 }
 
 /**
@@ -178,6 +189,15 @@ export class RealImageStore implements ImageStore {
     const host = hostOf(url)
     return host !== null && host.endsWith(VERCEL_BLOB_HOST_SUFFIX)
   }
+
+  async list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<BlobPage> {
+    const res = await list({ prefix: opts.prefix, cursor: opts.cursor, limit: opts.limit, token: this.requireToken() })
+    return {
+      blobs: res.blobs.map((b) => ({ url: b.url, pathname: b.pathname, uploadedAt: new Date(b.uploadedAt) })),
+      cursor: res.cursor,
+      hasMore: res.hasMore,
+    }
+  }
 }
 
 /**
@@ -188,12 +208,13 @@ export class RealImageStore implements ImageStore {
 export class FakeImageStore implements ImageStore {
   /** Host fake que `owns` reconhece como "nosso" (≠ host estrangeiro como o do Google OAuth). */
   private static readonly HOST = 'fake-blob.local'
-  readonly blobs = new Map<string, { contentType: string; bytes: Uint8Array }>()
+  /** `uploadedAt` (opcional) é o que `list` devolve; sem ele, o blob conta como gravado agora. */
+  readonly blobs = new Map<string, { contentType: string; bytes: Uint8Array; uploadedAt?: Date }>()
   private seq = 0
 
   async store(input: StoreImageInput): Promise<StoredImage> {
     const url = `https://${FakeImageStore.HOST}/${input.pathPrefix}/${this.seq++}${extForContentType(input.contentType)}`
-    this.blobs.set(url, { contentType: input.contentType, bytes: toBytes(input.data) })
+    this.blobs.set(url, { contentType: input.contentType, bytes: toBytes(input.data), uploadedAt: new Date() })
     return { url }
   }
 
@@ -210,6 +231,19 @@ export class FakeImageStore implements ImageStore {
 
   owns(url: string): boolean {
     return hostOf(url) === FakeImageStore.HOST
+  }
+
+  /** Ordem de inserção; o `cursor` é o índice da próxima página (como o store real, opaco para quem chama). */
+  async list(opts: { prefix: string; cursor?: string; limit?: number }): Promise<BlobPage> {
+    const limit = opts.limit ?? 1000
+    const origin = `https://${FakeImageStore.HOST}/`
+    const all = [...this.blobs.entries()]
+      .map(([url, b]) => ({ url, pathname: url.slice(origin.length), uploadedAt: b.uploadedAt ?? new Date() }))
+      .filter((b) => b.pathname.startsWith(opts.prefix))
+    const start = opts.cursor ? Number(opts.cursor) : 0
+    const blobs = all.slice(start, start + limit)
+    const hasMore = start + limit < all.length
+    return { blobs, hasMore, cursor: hasMore ? String(start + limit) : undefined }
   }
 }
 
@@ -229,5 +263,9 @@ export class ThrowingImageStore implements ImageStore {
 
   owns(): boolean {
     return false
+  }
+
+  async list(): Promise<BlobPage> {
+    throw new Error('storage de imagem indisponível (dublê de degradação)')
   }
 }
