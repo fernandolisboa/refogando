@@ -311,6 +311,15 @@ describe('GET /api/cron/blob-sweep', () => {
 
 describe('GET /api/admin/blob-retidos (#635)', () => {
   const call = (headers?: Headers) => retidosGET(new Request('http://localhost/api/admin/blob-retidos', { headers }))
+  const prevEnv = process.env.VERCEL_ENV
+  beforeEach(() => {
+    delete process.env.VERCEL_ENV
+  })
+  afterEach(() => {
+    if (prevEnv === undefined) delete process.env.VERCEL_ENV
+    else process.env.VERCEL_ENV = prevEnv
+    delete process.env.BLOB_SWEEP_PAUSE
+  })
 
   it('anônimo ⇒ 401; usuário comum ⇒ 403', async () => {
     expect((await call()).status).toBe(401)
@@ -339,13 +348,21 @@ describe('GET /api/admin/blob-retidos (#635)', () => {
 
   it('Preview ⇒ pulada (o banco do Preview é um branch antigo)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'admin2@ex.com', role: 'admin' })
-    const prev = process.env.VERCEL_ENV
     process.env.VERCEL_ENV = 'preview'
-    try {
-      await expect((await call(headers)).json()).resolves.toEqual({ pulada: 1 })
-    } finally {
-      if (prev === undefined) delete process.env.VERCEL_ENV
-      else process.env.VERCEL_ENV = prev
-    }
+    await expect((await call(headers)).json()).resolves.toEqual({ pulada: 1 })
+  })
+
+  it('pausa (BLOB_SWEEP_PAUSE=1, banco sendo restaurado) ⇒ pulada', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'admin3@ex.com', role: 'admin' })
+    process.env.BLOB_SWEEP_PAUSE = '1'
+    await expect((await call(headers)).json()).resolves.toEqual({ pulada: 1 })
+  })
+
+  it('Blob fora do ar ⇒ 500, sem lançar', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'admin4@ex.com', role: 'admin' })
+    setImageStore(new ThrowingImageStore())
+    const res = await call(headers)
+    expect(res.status).toBe(500)
+    expect(res.headers.get('cache-control')).toBe('no-store')
   })
 })
