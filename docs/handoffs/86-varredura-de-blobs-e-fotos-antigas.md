@@ -59,7 +59,7 @@ O ambiente de desenvolvimento não tem credencial do banco nem do Blob de produ�
 
 ## 5. Landmines
 
-- **Decisão pendente do Fernando: os órfãos retidos** (issue #635, aberta depois da primeira passada: 3 órfãos, todos retidos). A pergunta é: apagar, guardar para recuperar, ou recuperar e depois apagar.
+- **Decisão pendente do Fernando: os órfãos retidos** (issue #635, aberta depois da primeira passada: 3 órfãos, todos retidos). Para ver quais são, um admin abre `GET /api/admin/blob-retidos` com a sessão no navegador: a resposta lista caminho, URL e data de cada um, sem apagar nada. A pergunta é: apagar, guardar para recuperar, ou recuperar e depois apagar.
   - Contra guardar: são arquivos públicos numa URL não listada, sem conta que os reclame, e podem ter EXIF, porque são anteriores ao #596.
   - Não mexa nas constantes para liberá-los sem essa decisão.
 - **`travada=1` em produção.** Compare `orfaos - orfaosRetidos` com `antigosNaoRetidos`: mais de 25% de órfãos apagáveis quer dizer que o banco perdeu linhas recentes (restauração, apagão), ou que uma coluna nova guarda URL de blob e não entrou em `loadReferences`. Não suba a trava; descubra qual dos dois.
