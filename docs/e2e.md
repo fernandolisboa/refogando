@@ -12,6 +12,7 @@ Issue #589, decisão no [ADR-0047](adr/0047-e2e-fumaca-playwright-modo-fake.md).
 | `cardapio-lista` | Receita do seed → Adicionar ao cardápio → Cardápio da semana → lista de compras da semana inteira |
 | `despensa` | ovo e cenoura persistem → "Falta pouco" com farinha e açúcar → "Pôr o que falta na lista" → planeja → "Cozinhei" esvazia a Despensa |
 | `seus-dados` | /me/profile → Baixar meus dados (download JSON com o e-mail da conta e o login, sem a senha) → Excluir minha conta → confirma → home com "Sua conta foi excluída.", deslogado |
+| `console-celular` | admin do seed entra por `/api/auth/sign-in/email` → `/admin` e cada seção de `CONSOLE_GROUPS`: a página nunca fica mais larga que a tela (o rascunho pendente do seed põe um card na fila do Catálogo) |
 
 Tudo roda em dois perfis do Chromium: `desktop` e `celular` (Pixel 7, com o menu hambúrguer). `retries: 0`: teste instável é bug, não se mascara com retry.
 
@@ -69,6 +70,7 @@ O job `e2e` de `.github/workflows/ci.yml` roda em paralelo ao `checks`. Ele inst
 ## Escrevendo uma spec nova
 
 - Use `test`/`expect` de `e2e/fixtures/test.ts`. A fixture `account` dá uma conta nova e logada, com o tour já dispensado.
+- Para o papel de admin, entre com `SEED_ADMIN` (`e2e/fixtures/seed-data.ts`), a única conta do seed com senha, só para leitura: sem acesso ao banco, a spec não promove uma conta nova.
 - Para o slug de uma Receita, use `recipePath(titulo)` (deriva como o write-path); para planejar pelo popover do cardápio, `planFromPopover(page, refeicao)`.
 - Pegue os rótulos de `t` (o catálogo `pt-BR`) e prefira `getByRole`. Escopo o seletor ao diálogo ou região aberta, porque vários rótulos se repetem ("Adicionar", "Adicionar ao cardápio").
 - Não use `waitForTimeout` nem `networkidle`. Espere pelo estado visível (`expect(...).toBeVisible()`), e use `waitForHydration(page)` antes de interagir com uma página recém-carregada.
