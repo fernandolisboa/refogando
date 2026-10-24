@@ -23,12 +23,9 @@ import type { TimeBudget } from '@/server/time-budget'
  *    é um banco que perdeu linhas: ali o "órfão" é a única cópia da imagem que o banco perdeu. Travas:
  *    - CARÊNCIA: só blob gravado há mais de `BLOB_SWEEP_GRACE_MS` (o upload grava o blob ANTES da linha);
  *    - prefixo desconhecido nunca é tocado (o store pode ter outra coisa);
- *    - RETIDOS: órfão gravado antes de `BLOB_SWEEP_RETAIN_BEFORE` nunca sai sozinho. São, na maioria, as imagens
- *      das linhas que o incidente de 2026-09-09 apagou (o banco voltou do backup de 06/07); o que fazer com
- *      elas é decisão do Fernando (handoff 86). Contados em `orfaosRetidos`, fora da proporção;
- *    - TRAVA de proporção (`travada=1`, a passada não apaga NADA e não mexe em foto nenhuma): os órfãos apagáveis
- *      passam de `BLOB_SWEEP_MAX_ORPHAN_RATIO` dos blobs antigos não retidos (`antigosNaoRetidos`), com pelo
- *      menos `BLOB_SWEEP_RATIO_MIN_ORPHANS`. Pega um banco que perdeu muitas linhas recentes;
+ *    - TRAVA de proporção (`travada=1`, a passada não apaga NADA e não mexe em foto nenhuma): os órfãos passam
+ *      de `BLOB_SWEEP_MAX_ORPHAN_RATIO` dos blobs antigos (`antigos`), com pelo menos `BLOB_SWEEP_RATIO_MIN_ORPHANS`.
+ *      Pega um banco que perdeu muitas linhas recentes;
  *    - PAUSA manual: `BLOB_SWEEP_PAUSE=1` (na rota). Uma restauração de backup recente perde só as linhas de
  *      poucos dias, abaixo da proporção, então quem restaura liga a pausa ANTES (roteiro em
  *      `.github/workflows/db-backup.yml`). Uma trava automática por "linha mais nova do banco" foi descartada:
@@ -55,8 +52,6 @@ import type { TimeBudget } from '@/server/time-budget'
 export const BLOB_SWEEP_PREFIXES = ['avatars/', 'recipes/', 'reviews/'] as const
 /** Idade mínima de um blob para contar como órfão: o upload grava o blob antes da linha do banco. */
 export const BLOB_SWEEP_GRACE_MS = 24 * 60 * 60 * 1000
-/** Órfão gravado antes disto nunca sai sozinho (restauração do incidente de 2026-09-09 em 2026-09-18). */
-export const BLOB_SWEEP_RETAIN_BEFORE = new Date('2026-09-19T00:00:00Z')
 /** Acima desta fração de órfãos entre os blobs antigos, a passada não apaga nada (banco errado ou restaurado). */
 export const BLOB_SWEEP_MAX_ORPHAN_RATIO = 0.25
 /** A trava de proporção só vale a partir deste número de órfãos (um store pequeno com 2 órfãos em 5 é normal). */
@@ -80,12 +75,8 @@ export type BlobSweepCounts = {
   listados: number
   /** Desses, os gravados antes da carência (candidatos). */
   antigos: number
-  /** Candidatos sem nenhuma referência no banco, retidos ou não. */
+  /** Candidatos sem nenhuma referência no banco. */
   orfaos: number
-  /** Órfãos gravados antes de `BLOB_SWEEP_RETAIN_BEFORE`: nunca saem sozinhos. */
-  orfaosRetidos: number
-  /** Blobs antigos gravados depois de `BLOB_SWEEP_RETAIN_BEFORE`: o denominador da trava de proporção. */
-  antigosNaoRetidos: number
   /** Órfãos apagados de fato. */
   apagados: number
   /** 1 quando uma trava segurou a passada (nada apagado, nenhuma foto mexida). */
@@ -226,8 +217,6 @@ async function auditLegacyPhoto(
   }
 }
 
-const retained = (b: ListedBlob) => b.uploadedAt < BLOB_SWEEP_RETAIN_BEFORE
-
 /**
  * Passos 1 e 2 da passada: lista os prefixos página a página (parando se o orçamento acabar; o que já foi listado
  * ainda conta) e lê quem o banco referencia DEPOIS da listagem, para que uma linha gravada no meio também conte.
@@ -265,25 +254,6 @@ async function findOrphans(
   return { old, kinds, orphans: old.filter((b) => !kinds.has(b.url)), listados, listagemIncompleta }
 }
 
-/**
- * Só leitura (#635): os órfãos RETIDOS (anteriores a `BLOB_SWEEP_RETAIN_BEFORE`), com caminho, URL e data, para
- * quem opera decidir o que fazer com eles. Não apaga nem re-encoda nada. `GET /api/admin/blob-retidos` devolve
- * isto na resposta, e NÃO no log, que continua só com contagens.
- */
-export async function listRetainedOrphans(
-  db: Database,
-  store: ImageStore,
-  opts: { now: Date; budget: TimeBudget },
-): Promise<{ listagemIncompleta: number; retidos: Array<{ pathname: string; url: string; uploadedAt: string }> }> {
-  const { orphans, listagemIncompleta } = await findOrphans(db, store, opts)
-  return {
-    listagemIncompleta,
-    retidos: orphans
-      .filter(retained)
-      .map((b) => ({ pathname: b.pathname, url: b.url, uploadedAt: b.uploadedAt.toISOString() })),
-  }
-}
-
 /** A passada inteira (doc do módulo). Erro de `list()` ou do banco LANÇA: a rota responde 500 sem ter apagado nada. */
 export async function sweepBlobs(
   db: Database,
@@ -294,8 +264,6 @@ export async function sweepBlobs(
     listados: 0,
     antigos: 0,
     orfaos: 0,
-    orfaosRetidos: 0,
-    antigosNaoRetidos: 0,
     apagados: 0,
     travada: 0,
     listagemIncompleta: 0,
@@ -310,23 +278,17 @@ export async function sweepBlobs(
   counts.listados = listados
   counts.listagemIncompleta = listagemIncompleta
   counts.antigos = old.length
-  const deletable = orphans.filter((b) => !retained(b))
   counts.orfaos = orphans.length
-  counts.orfaosRetidos = orphans.length - deletable.length
 
   // 3. Trava e deleção.
-  counts.antigosNaoRetidos = old.filter((b) => !retained(b)).length
-  if (
-    deletable.length >= BLOB_SWEEP_RATIO_MIN_ORPHANS &&
-    deletable.length > counts.antigosNaoRetidos * BLOB_SWEEP_MAX_ORPHAN_RATIO
-  ) {
+  if (orphans.length >= BLOB_SWEEP_RATIO_MIN_ORPHANS && orphans.length > old.length * BLOB_SWEEP_MAX_ORPHAN_RATIO) {
     counts.travada = 1
     return counts
   }
-  if (deletable.length > 0) {
+  if (orphans.length > 0) {
     counts.apagados = await deleteOrphanBlobsConcurrently(
       store,
-      deletable.slice(0, BLOB_SWEEP_MAX_DELETES).map((b) => b.url),
+      orphans.slice(0, BLOB_SWEEP_MAX_DELETES).map((b) => b.url),
     )
   }
 

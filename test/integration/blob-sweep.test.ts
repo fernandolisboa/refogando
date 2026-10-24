@@ -7,7 +7,6 @@ import { avatarPathPrefix, canDeleteAccountAvatar } from '@/server/images/avatar
 import {
   BLOB_SWEEP_PREFIXES,
   BLOB_SWEEP_RATIO_MIN_ORPHANS,
-  BLOB_SWEEP_RETAIN_BEFORE,
   LEGACY_PHOTO_AUDIT_UNTIL,
   LEGACY_PHOTO_CUTOFF,
   sweepBlobs,
@@ -15,9 +14,8 @@ import {
 import { timeBudget } from '@/server/time-budget'
 import { recipeImage, recipeReview, users } from '@/db/schema'
 import { GET as cronGET } from '@/app/api/cron/blob-sweep/route'
-import { GET as retidosGET } from '@/app/api/admin/blob-retidos/route'
 import { seedRecipe, seedRecipeImage, seedReview } from '../helpers/recipes'
-import { seedSessionHeaders, seedUser } from '../helpers/users'
+import { seedUser } from '../helpers/users'
 
 /**
  * Varredura semanal do Blob (#603): órfão antigo sai; referenciado, recente e de prefixo desconhecido ficam; a
@@ -113,17 +111,12 @@ describe('sweepBlobs — órfãos (#603)', () => {
     expect(store.blobs.has(kept)).toBe(true)
   })
 
-  it('órfão anterior à restauração de 2026-09-18 fica retido (nunca sai sozinho) e não conta na proporção', async () => {
+  it('órfão anterior à restauração de 2026-09-18 sai como qualquer outro (#635: não há mais retenção)', async () => {
     await seedUser({ email: 'alguem@ex.com' })
-    const before = new Date(BLOB_SWEEP_RETAIN_BEFORE.getTime() - 24 * 60 * 60 * 1000)
-    const retained = []
-    for (let i = 0; i < BLOB_SWEEP_RATIO_MIN_ORPHANS + 5; i++) retained.push(await put('recipes', before))
-    const orphan = await put('recipes', OLD)
-
+    const orphan = await put('recipes', new Date('2026-09-01T00:00:00Z'))
     const counts = await run()
-    expect(counts).toMatchObject({ orfaos: BLOB_SWEEP_RATIO_MIN_ORPHANS + 6, orfaosRetidos: BLOB_SWEEP_RATIO_MIN_ORPHANS + 5 })
-    expect(counts).toMatchObject({ travada: 0, apagados: 1, antigosNaoRetidos: 1 })
-    for (const url of retained) expect(store.blobs.has(url)).toBe(true)
+    expect(counts).toMatchObject({ orfaos: 1, apagados: 1, travada: 0 })
+    expect('orfaosRetidos' in counts).toBe(false)
     expect(store.blobs.has(orphan)).toBe(false)
   })
 
@@ -306,63 +299,5 @@ describe('GET /api/cron/blob-sweep', () => {
   it('Blob fora do ar ⇒ 500, sem lançar', async () => {
     setImageStore(new ThrowingImageStore())
     expect((await cronGET(authed())).status).toBe(500)
-  })
-})
-
-describe('GET /api/admin/blob-retidos (#635)', () => {
-  const call = (headers?: Headers) => retidosGET(new Request('http://localhost/api/admin/blob-retidos', { headers }))
-  const prevEnv = process.env.VERCEL_ENV
-  beforeEach(() => {
-    delete process.env.VERCEL_ENV
-  })
-  afterEach(() => {
-    if (prevEnv === undefined) delete process.env.VERCEL_ENV
-    else process.env.VERCEL_ENV = prevEnv
-    delete process.env.BLOB_SWEEP_PAUSE
-  })
-
-  it('anônimo ⇒ 401; usuário comum ⇒ 403', async () => {
-    expect((await call()).status).toBe(401)
-    const { headers } = await seedSessionHeaders({ email: 'comum@ex.com' })
-    expect((await call(headers)).status).toBe(403)
-  })
-
-  it('admin ⇒ só os órfãos retidos, com caminho e URL, sem apagar nada', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'admin@ex.com', role: 'admin' })
-    const before = new Date(BLOB_SWEEP_RETAIN_BEFORE.getTime() - 24 * 60 * 60 * 1000)
-    const retido = await put('recipes', before)
-    const referenciado = await put('recipes', before)
-    await recipeWithImage(referenciado)
-    const orfaoNovo = await put('recipes', OLD)
-
-    const res = await call(headers)
-    expect(res.status).toBe(200)
-    expect(res.headers.get('cache-control')).toBe('no-store')
-    const body = (await res.json()) as { listagemIncompleta: number; retidos: Array<{ url: string; pathname: string }> }
-    expect(body.listagemIncompleta).toBe(0)
-    expect(body.retidos.map((r) => r.url)).toEqual([retido])
-    expect(body.retidos[0].pathname).toContain('recipes/')
-    // Só leitura: nem o retido nem o órfão apagável saem.
-    for (const url of [retido, referenciado, orfaoNovo]) expect(store.blobs.has(url)).toBe(true)
-  })
-
-  it('Preview ⇒ pulada (o banco do Preview é um branch antigo)', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'admin2@ex.com', role: 'admin' })
-    process.env.VERCEL_ENV = 'preview'
-    await expect((await call(headers)).json()).resolves.toEqual({ pulada: 1 })
-  })
-
-  it('pausa (BLOB_SWEEP_PAUSE=1, banco sendo restaurado) ⇒ pulada', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'admin3@ex.com', role: 'admin' })
-    process.env.BLOB_SWEEP_PAUSE = '1'
-    await expect((await call(headers)).json()).resolves.toEqual({ pulada: 1 })
-  })
-
-  it('Blob fora do ar ⇒ 500, sem lançar', async () => {
-    const { headers } = await seedSessionHeaders({ email: 'admin4@ex.com', role: 'admin' })
-    setImageStore(new ThrowingImageStore())
-    const res = await call(headers)
-    expect(res.status).toBe(500)
-    expect(res.headers.get('cache-control')).toBe('no-store')
   })
 })
