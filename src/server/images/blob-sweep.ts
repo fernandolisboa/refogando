@@ -226,6 +226,64 @@ async function auditLegacyPhoto(
   }
 }
 
+const retained = (b: ListedBlob) => b.uploadedAt < BLOB_SWEEP_RETAIN_BEFORE
+
+/**
+ * Passos 1 e 2 da passada: lista os prefixos página a página (parando se o orçamento acabar; o que já foi listado
+ * ainda conta) e lê quem o banco referencia DEPOIS da listagem, para que uma linha gravada no meio também conte.
+ * `old` são os blobs fora da carência; `orphans`, os que nenhuma linha referencia.
+ */
+async function findOrphans(
+  db: Database,
+  store: ImageStore,
+  opts: { now: Date; budget: TimeBudget },
+): Promise<{
+  old: ListedBlob[]
+  kinds: Map<string, Ref>
+  orphans: ListedBlob[]
+  listados: number
+  listagemIncompleta: number
+}> {
+  const graceCutoff = opts.now.getTime() - BLOB_SWEEP_GRACE_MS
+  const old: ListedBlob[] = []
+  let listados = 0
+  let listagemIncompleta = 0
+  listing: for (const prefix of BLOB_SWEEP_PREFIXES) {
+    let cursor: string | undefined
+    do {
+      if (!opts.budget.canStartMore()) {
+        listagemIncompleta = 1
+        break listing
+      }
+      const page = await store.list({ prefix, cursor, limit: LIST_PAGE })
+      listados += page.blobs.length
+      for (const b of page.blobs) if (b.uploadedAt.getTime() < graceCutoff && store.owns(b.url)) old.push(b)
+      cursor = page.hasMore ? page.cursor : undefined
+    } while (cursor)
+  }
+  const kinds = await loadReferences(db)
+  return { old, kinds, orphans: old.filter((b) => !kinds.has(b.url)), listados, listagemIncompleta }
+}
+
+/**
+ * Só leitura (#635): os órfãos RETIDOS (anteriores a `BLOB_SWEEP_RETAIN_BEFORE`), com caminho, URL e data, para
+ * quem opera decidir o que fazer com eles. Não apaga nem re-encoda nada. `GET /api/admin/blob-retidos` devolve
+ * isto na resposta, e NÃO no log, que continua só com contagens.
+ */
+export async function listRetainedOrphans(
+  db: Database,
+  store: ImageStore,
+  opts: { now: Date; budget: TimeBudget },
+): Promise<{ listagemIncompleta: number; retidos: Array<{ pathname: string; url: string; uploadedAt: string }> }> {
+  const { orphans, listagemIncompleta } = await findOrphans(db, store, opts)
+  return {
+    listagemIncompleta,
+    retidos: orphans
+      .filter(retained)
+      .map((b) => ({ pathname: b.pathname, url: b.url, uploadedAt: b.uploadedAt.toISOString() })),
+  }
+}
+
 /** A passada inteira (doc do módulo). Erro de `list()` ou do banco LANÇA: a rota responde 500 sem ter apagado nada. */
 export async function sweepBlobs(
   db: Database,
@@ -247,29 +305,11 @@ export async function sweepBlobs(
     fotosFalhas: 0,
     fotosRestantes: 0,
   }
-  const graceCutoff = opts.now.getTime() - BLOB_SWEEP_GRACE_MS
-
-  // 1. Lista. Página a página, parando se o orçamento acabar (o que já foi listado ainda é varrido).
-  const old: ListedBlob[] = []
-  listing: for (const prefix of BLOB_SWEEP_PREFIXES) {
-    let cursor: string | undefined
-    do {
-      if (!opts.budget.canStartMore()) {
-        counts.listagemIncompleta = 1
-        break listing
-      }
-      const page = await store.list({ prefix, cursor, limit: LIST_PAGE })
-      counts.listados += page.blobs.length
-      for (const b of page.blobs) if (b.uploadedAt.getTime() < graceCutoff && store.owns(b.url)) old.push(b)
-      cursor = page.hasMore ? page.cursor : undefined
-    } while (cursor)
-  }
+  // 1 e 2. Lista e cruza com o banco.
+  const { old, kinds, orphans, listados, listagemIncompleta } = await findOrphans(db, store, opts)
+  counts.listados = listados
+  counts.listagemIncompleta = listagemIncompleta
   counts.antigos = old.length
-
-  // 2. Quem o banco referencia (lido DEPOIS da listagem: uma linha gravada no meio também conta).
-  const kinds = await loadReferences(db)
-  const orphans = old.filter((b) => !kinds.has(b.url))
-  const retained = (b: ListedBlob) => b.uploadedAt < BLOB_SWEEP_RETAIN_BEFORE
   const deletable = orphans.filter((b) => !retained(b))
   counts.orfaos = orphans.length
   counts.orfaosRetidos = orphans.length - deletable.length
