@@ -383,7 +383,7 @@ export function CatalogRecipeQueue() {
                       onChange={(e) => setNote(e.target.value)}
                       rows={2}
                     />
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         variant="secondary"
@@ -408,7 +408,7 @@ export function CatalogRecipeQueue() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"

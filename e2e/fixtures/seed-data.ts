@@ -18,6 +18,26 @@ export const SEED_COZINHEIRA = {
 } as const
 
 /**
+ * Admin com senha: a única conta do seed que entra. Serve à spec do Console no celular
+ * (`console-celular`), que precisa do papel e não tem acesso ao banco para promover uma conta nova.
+ * Senha descartável: só existe no banco do E2E.
+ */
+export const SEED_ADMIN = {
+  name: 'Admin da Fumaça',
+  handle: 'admin-fumaca',
+  email: 'admin@refogando.test',
+  password: 'senha-admin-fumaca',
+} as const
+
+/**
+ * Rascunho do Catálogo PENDENTE de curadoria: põe um card na fila de `/admin/catalog`, a seção onde a
+ * linha de ações estourava a largura do celular. Título longo de propósito. Não é público (fila só).
+ */
+export const SEED_PENDENTE = {
+  titulo: 'Pizza margherita de fermentação natural da fumaça',
+} as const
+
+/**
  * Receita de catálogo APROVADA (pública). `rawText` é só o nome (a medida vai em quantidade/unidade,
  * ADR-0012 Adendo) e simples de propósito: a Despensa casa por palavra do texto ("ovo" cobre "ovos",
  * "cenoura" cobre "cenouras") e o `ingredientId` nasce null no catálogo. Com a Despensa {ovo, cenoura}
