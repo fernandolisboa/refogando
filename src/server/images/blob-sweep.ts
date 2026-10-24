@@ -23,9 +23,9 @@ import type { TimeBudget } from '@/server/time-budget'
  *    é um banco que perdeu linhas: ali o "órfão" é a única cópia da imagem que o banco perdeu. Travas:
  *    - CARÊNCIA: só blob gravado há mais de `BLOB_SWEEP_GRACE_MS` (o upload grava o blob ANTES da linha);
  *    - prefixo desconhecido nunca é tocado (o store pode ter outra coisa);
- *    - TRAVA de proporção (`travada=1`, a passada não apaga NADA e não mexe em foto nenhuma): os órfãos apagáveis
- *      passam de `BLOB_SWEEP_MAX_ORPHAN_RATIO` dos blobs antigos (`antigos`), com pelo
- *      menos `BLOB_SWEEP_RATIO_MIN_ORPHANS`. Pega um banco que perdeu muitas linhas recentes;
+ *    - TRAVA de proporção (`travada=1`, a passada não apaga NADA e não mexe em foto nenhuma): os órfãos passam
+ *      de `BLOB_SWEEP_MAX_ORPHAN_RATIO` dos blobs antigos (`antigos`), com pelo menos `BLOB_SWEEP_RATIO_MIN_ORPHANS`.
+ *      Pega um banco que perdeu muitas linhas recentes;
  *    - PAUSA manual: `BLOB_SWEEP_PAUSE=1` (na rota). Uma restauração de backup recente perde só as linhas de
  *      poucos dias, abaixo da proporção, então quem restaura liga a pausa ANTES (roteiro em
  *      `.github/workflows/db-backup.yml`). Uma trava automática por "linha mais nova do banco" foi descartada:

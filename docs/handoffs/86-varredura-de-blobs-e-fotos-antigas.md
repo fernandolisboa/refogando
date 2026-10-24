@@ -55,13 +55,11 @@ O ambiente de desenvolvimento não tem credencial do banco nem do Blob de produ�
 
 - **EXIF:** `fotosVerificadas=0`. Nenhum avatar nem foto de receita enviada por pessoa, gravada antes do corte (`LEGACY_PHOTO_CUTOFF`), está referenciada hoje, então não havia foto antiga para limpar. O passo segue rodando até 2026-11-30 sem custo.
 - **Órfãos:** os 3 são anteriores a 2026-09-19 e ficaram retidos; nada foi apagado. Decisão (#635, 2026-10-24): apagar; saem na passada seguinte à remoção da retenção. Dos 19 arquivos da época do incidente (96 − 77), os outros 16 continuam referenciados.
-- **Trava:** `travada=0`. Zero órfãos apagáveis contra 77 antigos não retidos.
+- **Trava:** `travada=0`. Zero órfãos apagáveis contra 77 antigos não retidos (com a retenção de então).
 
 ## 5. Landmines
 
 - **Os 3 órfãos da época do incidente** (#635): a passada seguinte à remoção da retenção deve mostrar `orfaos=3 apagados=3` (ou menos, se algum voltou a ser referenciado). Depois disso, `orfaos` deve ficar perto de zero; um número que cresce semana a semana é delete best-effort falhando em algum fluxo.
-  - Contra guardar: são arquivos públicos numa URL não listada, sem conta que os reclame, e podem ter EXIF, porque são anteriores ao #596.
-  - Não mexa nas constantes para liberá-los sem essa decisão.
 - **`travada=1` em produção.** Compare `orfaos` com `antigos`: mais de 25% de órfãos quer dizer que o banco perdeu linhas recentes (restauração, apagão), ou que uma coluna nova guarda URL de blob e não entrou em `loadReferences`. Não suba a trava; descubra qual dos dois.
 - **Formatos fora do sharp.** O sharp só reporta o metadado que entende. HEIC nunca chega aqui, porque o upload só aceita JPEG, PNG e WebP.
 - **`fotosFalhas` diferente de zero.** A foto fica como está e volta na passada seguinte. Se a mesma falha se repetir até a data final, a foto fica com o metadado: investigue antes de 2026-11-30.
