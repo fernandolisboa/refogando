@@ -47,11 +47,19 @@ O ambiente de desenvolvimento não tem credencial do banco nem do Blob de produ�
 - **Onde ler:** nas contagens `fotos*` da linha `[blob-sweep]` dos logs da Vercel.
 - **Como registrar:** quem ler a linha registra o resultado aqui, num PR só de docs.
 
-**Resultado:** _pendente da primeira passada._
+**Resultado (primeira passada, 2026-10-24 12:00 UTC):**
+
+```
+[blob-sweep] passada concluída: listados=99 antigos=96 orfaos=3 orfaosRetidos=3 antigosNaoRetidos=77 apagados=0 travada=0 listagemIncompleta=0 fotosVerificadas=0 fotosComMetadado=0 fotosReencodadas=0 fotosFalhas=0 fotosRestantes=0
+```
+
+- **EXIF:** `fotosVerificadas=0`. Nenhum avatar nem foto de receita enviada por pessoa, gravada antes do corte (`LEGACY_PHOTO_CUTOFF`), está referenciada hoje, então não havia foto antiga para limpar. O passo segue rodando até 2026-11-30 sem custo.
+- **Órfãos:** os 3 são anteriores a 2026-09-19 e ficaram retidos; nada foi apagado. A decisão está na issue #635 (`ready-for-human`). Dos 19 arquivos da época do incidente (96 − 77), os outros 16 continuam referenciados.
+- **Trava:** `travada=0`. Zero órfãos apagáveis contra 77 antigos não retidos.
 
 ## 5. Landmines
 
-- **Decisão pendente do Fernando: os órfãos retidos.** Depois da primeira passada, abra uma issue `ready-for-human` com os números de `orfaos` e `orfaosRetidos`. A pergunta é: apagar, guardar para recuperar, ou recuperar e depois apagar.
+- **Decisão pendente do Fernando: os órfãos retidos** (issue #635, aberta depois da primeira passada: 3 órfãos, todos retidos). A pergunta é: apagar, guardar para recuperar, ou recuperar e depois apagar.
   - Contra guardar: são arquivos públicos numa URL não listada, sem conta que os reclame, e podem ter EXIF, porque são anteriores ao #596.
   - Não mexa nas constantes para liberá-los sem essa decisão.
 - **`travada=1` em produção.** Compare `orfaos - orfaosRetidos` com `antigosNaoRetidos`: mais de 25% de órfãos apagáveis quer dizer que o banco perdeu linhas recentes (restauração, apagão), ou que uma coluna nova guarda URL de blob e não entrou em `loadReferences`. Não suba a trava; descubra qual dos dois.
