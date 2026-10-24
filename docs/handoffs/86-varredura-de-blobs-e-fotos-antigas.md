@@ -28,11 +28,11 @@ Este handoff trata dos três riscos de blob que o ADR-0050 deixou como follow-up
   - **Carência:** só conta como órfão o blob gravado há mais de 24 h.
   - **Prefixos:** só olha `avatars/`, `recipes/` e `reviews/`.
   - **Teto:** apaga no máximo 500 blobs por passada.
-  - **Trava por proporção:** a passada para inteira (`travada=1`) quando os órfãos apagáveis passam de 25% dos blobs antigos não retidos (`antigosNaoRetidos`), com pelo menos 20 órfãos.
+  - **Trava por proporção:** a passada para inteira (`travada=1`) quando os órfãos passam de 25% dos blobs antigos (`antigos`), com pelo menos 20 órfãos.
   - **Passada travada:** não apaga nada e não re-encoda nada.
   - **Pausa manual:** `BLOB_SWEEP_PAUSE=1` nas variáveis de Production da Vercel. Uma restauração de backup recente perde só alguns dias de linhas, abaixo dos 25%, então quem restaura liga a pausa ANTES (roteiro no topo de `.github/workflows/db-backup.yml`).
   - **Trava descartada:** uma trava automática por "órfão mais novo que a linha mais nova do banco" foi descartada na revisão. Qualquer escrita depois da restauração a desarma, e ela travava sozinha quando um upload falhava sem outra escrita na semana.
-- **Retidos.** Um órfão gravado antes de 2026-09-19 nunca sai sozinho (`orfaosRetidos`). Em sua maioria, são as imagens das linhas que o incidente de 2026-09-09 apagou: o banco voltou do backup de 06/07 em 18/09, e essas imagens são a única cópia do que se perdeu.
+- **Sem retenção (desde 2026-10-24, #635).** A primeira versão retinha todo órfão gravado antes de 2026-09-19 (`orfaosRetidos`), por serem, em sua maioria, imagens das linhas que o incidente de 2026-09-09 apagou. Depois da primeira passada achar só 3, Fernando decidiu apagá-los: o app só tinha ele de usuário na época, e nada ali faz falta. A retenção, a contagem `orfaosRetidos`/`antigosNaoRetidos` e a consulta `GET /api/admin/blob-retidos` (#637) saíram; órfão antigo sai como qualquer outro.
 - **Só em produção.** A varredura roda só com `VERCEL_ENV=production`, ou em testes (`NODE_ENV=test`). Num Preview ou num `next dev` local, ela responde `{ pulada: 1 }`.
 - **A referência é a URL exata** que o `put` devolveu e o banco guarda: `users.image`, `recipe_image.blob_url`/`thumb_url`/`detail_url` e `recipe_review.photo_url`.
   - Uma coluna NOVA que guarde URL de blob TEM de entrar em `loadReferences`. Se não entrar, a varredura apaga os blobs dela depois de 24 h.
@@ -54,15 +54,15 @@ O ambiente de desenvolvimento não tem credencial do banco nem do Blob de produ�
 ```
 
 - **EXIF:** `fotosVerificadas=0`. Nenhum avatar nem foto de receita enviada por pessoa, gravada antes do corte (`LEGACY_PHOTO_CUTOFF`), está referenciada hoje, então não havia foto antiga para limpar. O passo segue rodando até 2026-11-30 sem custo.
-- **Órfãos:** os 3 são anteriores a 2026-09-19 e ficaram retidos; nada foi apagado. A decisão está na issue #635 (`ready-for-human`). Dos 19 arquivos da época do incidente (96 − 77), os outros 16 continuam referenciados.
+- **Órfãos:** os 3 são anteriores a 2026-09-19 e ficaram retidos; nada foi apagado. Decisão (#635, 2026-10-24): apagar; saem na passada seguinte à remoção da retenção. Dos 19 arquivos da época do incidente (96 − 77), os outros 16 continuam referenciados.
 - **Trava:** `travada=0`. Zero órfãos apagáveis contra 77 antigos não retidos.
 
 ## 5. Landmines
 
-- **Decisão pendente do Fernando: os órfãos retidos** (issue #635, aberta depois da primeira passada: 3 órfãos, todos retidos). Para ver quais são, um admin abre `GET /api/admin/blob-retidos` com a sessão no navegador: a resposta lista caminho, URL e data de cada um, sem apagar nada. Com `BLOB_SWEEP_PAUSE=1` (restauração em curso) ela não lista: com linhas faltando, imagem em uso pareceria órfã. A pergunta é: apagar, guardar para recuperar, ou recuperar e depois apagar.
+- **Os 3 órfãos da época do incidente** (#635): a passada seguinte à remoção da retenção deve mostrar `orfaos=3 apagados=3` (ou menos, se algum voltou a ser referenciado). Depois disso, `orfaos` deve ficar perto de zero; um número que cresce semana a semana é delete best-effort falhando em algum fluxo.
   - Contra guardar: são arquivos públicos numa URL não listada, sem conta que os reclame, e podem ter EXIF, porque são anteriores ao #596.
   - Não mexa nas constantes para liberá-los sem essa decisão.
-- **`travada=1` em produção.** Compare `orfaos - orfaosRetidos` com `antigosNaoRetidos`: mais de 25% de órfãos apagáveis quer dizer que o banco perdeu linhas recentes (restauração, apagão), ou que uma coluna nova guarda URL de blob e não entrou em `loadReferences`. Não suba a trava; descubra qual dos dois.
+- **`travada=1` em produção.** Compare `orfaos` com `antigos`: mais de 25% de órfãos quer dizer que o banco perdeu linhas recentes (restauração, apagão), ou que uma coluna nova guarda URL de blob e não entrou em `loadReferences`. Não suba a trava; descubra qual dos dois.
 - **Formatos fora do sharp.** O sharp só reporta o metadado que entende. HEIC nunca chega aqui, porque o upload só aceita JPEG, PNG e WebP.
 - **`fotosFalhas` diferente de zero.** A foto fica como está e volta na passada seguinte. Se a mesma falha se repetir até a data final, a foto fica com o metadado: investigue antes de 2026-11-30.
 - **Orçamento.** O orçamento é de 240 s, com `maxDuration = 300` (exige Fluid compute ou plano Pro).
