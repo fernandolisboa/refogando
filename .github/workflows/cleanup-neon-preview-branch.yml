@@ -20,11 +20,16 @@ on:
   pull_request:
     types: [closed]
 
+# A action só usa o NEON_API_KEY (passado como input); o GITHUB_TOKEN não precisa de escopo algum
+# (auditoria 2026-11-01, CFG-3). Actions fixadas por SHA pelo mesmo motivo: o job segura uma chave que
+# apaga branches do Neon, inclusive a de produção.
+permissions: {}
+
 jobs:
   delete-preview-branch:
     runs-on: ubuntu-latest
     steps:
-      - uses: neondatabase/delete-branch-action@v3
+      - uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3.2.1
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           branch: preview/${{ github.head_ref }}
