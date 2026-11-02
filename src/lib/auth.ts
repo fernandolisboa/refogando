@@ -14,7 +14,7 @@ import { buildResetPasswordEmail } from '@/server/auth/reset-password-email'
 import { buildFinishAccountEmail, buildVerifyEmail } from '@/server/auth/verify-email-email'
 import { assignNameHandle, clearPendingSignup, isPendingHandle, pendingHandle } from '@/server/auth/pending-account'
 import { wasPendingSignupPurged } from '@/server/auth/pending-signup-purge'
-import type { MailInput } from '@/server/mail/mailer'
+import { assertAccountMailInProduction, type MailInput } from '@/server/mail/mailer'
 import { trustedAppOrigin } from '@/server/http/base-url'
 import { safeInternalPath } from '@/domain/safe-redirect'
 import { resolveLocale, type Locale } from '@/i18n/locale'
@@ -43,6 +43,9 @@ const authSecret = process.env.BETTER_AUTH_SECRET
 if (!authSecret && process.env.NODE_ENV !== 'test') {
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
 }
+// #645 — fail-closed também para o e-mail de conta, só em Production (ver `assertAccountMailInProduction`): o gate
+// da confirmação de email em `buildAuth` não pode desligar sozinho porque uma env sumiu do painel.
+assertAccountMailInProduction(process.env)
 
 const DROPPED_LOG_PREFIXES = [
   'Reset Password: User not found',
@@ -209,7 +212,8 @@ function buildAuth() {
   // nova de email+senha (o link nunca chegaria) — então o cadastro segue como antes de #470: loga direto e
   // responde 200 com token. Preço consciente: enquanto o Resend não está configurado, o `/sign-up/email` ainda
   // enumera contas (422 para email existente); a correção liga sozinha quando a env entra (novo deploy — a
-  // instância é memoizada, então o gate é lido uma vez por instância, aqui).
+  // instância é memoizada, então o gate é lido uma vez por instância, aqui). Em PRODUCTION o desligado não existe
+  // mais: sem mailer o módulo nem carrega (`assertAccountMailInProduction`, #645); só dev, teste e Preview caem aqui.
   const verifyEmail = getMailer().canSendAccountEmail()
   // #470 (R3): TUDO o que é específico da confirmação só entra na config com o gate ligado — desligado, a config é
   // a de antes de #470 (sem `emailVerification`: o `/send-verification-email` responde 400

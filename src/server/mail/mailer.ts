@@ -69,13 +69,36 @@ export class RealResendMailer implements Mailer {
 
   /** Lido PREGUIÇOSAMENTE (na chamada), como os envios: mesma regra de "desligado" do `sendViaResend`. */
   canSendAccountEmail(): boolean {
-    return Boolean(process.env.RESEND_API_KEY && accountMailFrom())
+    return accountMailConfigured(process.env)
   }
 }
 
 /** Remetente dos e-mails de conta. `||` (não `??`): env vazia no painel da Vercel chega como '' e deve cair no fallback. */
-function accountMailFrom(): string | undefined {
-  return process.env.AUTH_MAIL_FROM || process.env.DSAR_MAIL_FROM || undefined
+function accountMailFrom(env: Record<string, string | undefined> = process.env): string | undefined {
+  return env.AUTH_MAIL_FROM || env.DSAR_MAIL_FROM || undefined
+}
+
+/** Credencial + remetente de conta presentes no `env` (a regra do `canSendAccountEmail` do Real, sem rede). */
+export function accountMailConfigured(env: Record<string, string | undefined>): boolean {
+  return Boolean(env.RESEND_API_KEY && accountMailFrom(env))
+}
+
+/**
+ * #645 (auditoria de segurança 2026-11-01, M-6): em PRODUCTION o e-mail de conta é OBRIGATÓRIO. O gate da confirmação
+ * de email (`src/lib/auth.ts`, #470) liga sozinho quando o mailer pode enviar, e desligava sozinho, sem alerta, se a
+ * `RESEND_API_KEY` ou o remetente sumissem do painel: voltavam a enumeração de contas no cadastro, o cadastro com
+ * email não provado (ocupar o endereço de outra pessoa) e a falta de reset de senha. Agora isso LANÇA: `auth.ts`
+ * chama no carregamento do módulo, então o `next build` da Vercel (que já lê o módulo, como no
+ * `BETTER_AUTH_SECRET`) e o boot da função falham alto. Preview, dev e teste seguem como antes (sem mailer ⇒ gate
+ * desligado), porque `VERCEL_ENV` só vale `production` no ambiente de Production da Vercel.
+ */
+export function assertAccountMailInProduction(env: Record<string, string | undefined>): void {
+  if (env.VERCEL_ENV !== 'production') return
+  if (accountMailConfigured(env)) return
+  throw new Error(
+    'RESEND_API_KEY e AUTH_MAIL_FROM (ou DSAR_MAIL_FROM) obrigatórios em Production: sem e-mail de conta, a ' +
+      'confirmação de email desligaria sozinha (#645).',
+  )
 }
 
 /** Tipo do e-mail, só para o log (`[mail] … (conta)`): diz qual fluxo enviou sem citar destinatário. */
