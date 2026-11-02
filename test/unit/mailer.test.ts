@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { RealResendMailer, FakeMailer } from '@/server/mail/mailer'
+import { RealResendMailer, FakeMailer, assertAccountMailInProduction } from '@/server/mail/mailer'
 
 /**
  * Mailer REAL Resend (#413) — caminho de REDE com `fetch` mockado (credenciais via `vi.stubEnv`). Prova:
@@ -265,6 +265,46 @@ describe('RealResendMailer.canSendAccountEmail (#470) — liga a confirmação d
     expect(m.canSendAccountEmail()).toBe(false)
     vi.stubEnv('RESEND_API_KEY', KEY)
     expect(m.canSendAccountEmail()).toBe(true)
+  })
+})
+
+describe('assertAccountMailInProduction (#645) — Production não sobe sem e-mail de conta', () => {
+  const MAIL = { RESEND_API_KEY: KEY, AUTH_MAIL_FROM: 'nao-responda@refogando.example' }
+
+  it.each([
+    ['sem chave', { AUTH_MAIL_FROM: 'nao-responda@refogando.example' }],
+    ['sem remetente', { RESEND_API_KEY: KEY }],
+    ['env vazia no painel', { RESEND_API_KEY: '', AUTH_MAIL_FROM: '', DSAR_MAIL_FROM: '' }],
+  ])('Production %s ⇒ lança', (_caso, env) => {
+    expect(() => assertAccountMailInProduction({ VERCEL_ENV: 'production', ...env })).toThrow(/#645/)
+  })
+
+  it('Production com chave e remetente (inclusive só o DSAR_MAIL_FROM) ⇒ segue', () => {
+    expect(() => assertAccountMailInProduction({ VERCEL_ENV: 'production', ...MAIL })).not.toThrow()
+    expect(() =>
+      assertAccountMailInProduction({ VERCEL_ENV: 'production', RESEND_API_KEY: KEY, DSAR_MAIL_FROM: FROM }),
+    ).not.toThrow()
+  })
+
+  it('Production com AUTH_MAIL_FROM vazio cai no DSAR_MAIL_FROM (o `||` do remetente) ⇒ segue', () => {
+    expect(() =>
+      assertAccountMailInProduction({ VERCEL_ENV: 'production', RESEND_API_KEY: KEY, AUTH_MAIL_FROM: '', DSAR_MAIL_FROM: FROM }),
+    ).not.toThrow()
+  })
+
+  // Sem isto, apagar a chamada em `src/lib/auth.ts` deixaria todos os testes verdes.
+  it('src/lib/auth.ts chama a trava no carregamento do módulo', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production')
+    vi.stubEnv('RESEND_API_KEY', '')
+    vi.stubEnv('AUTH_MAIL_FROM', '')
+    vi.stubEnv('DSAR_MAIL_FROM', '')
+    vi.resetModules()
+    await expect(import('@/lib/auth')).rejects.toThrow(/#645/)
+    vi.resetModules()
+  })
+
+  it.each([['preview'], ['development'], [undefined]])('VERCEL_ENV=%s sem mailer ⇒ segue (gate desligado)', (vercelEnv) => {
+    expect(() => assertAccountMailInProduction({ VERCEL_ENV: vercelEnv })).not.toThrow()
   })
 })
 

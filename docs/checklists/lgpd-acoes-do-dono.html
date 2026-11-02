@@ -153,7 +153,7 @@
             <li><code>RESEND_API_KEY</code> — a chave do Resend.</li>
             <li><code>DSAR_MAIL_FROM</code> — o remetente, num endereço do domínio <strong>verificado</strong> no passo anterior.</li>
             <li><code>DSAR_DPO_EMAIL</code> — para onde os alertas vão (normalmente <code>privacidade@refogando.com</code>).</li>
-            <li><code>AUTH_MAIL_FROM</code> — <em>opcional</em>: remetente dos e-mails de conta (ex.: <code>nao-responda@refogando.com</code>); vazio ⇒ usa o <code>DSAR_MAIL_FROM</code>. Com a chave + um remetente, a confirmação de email do cadastro passa a ser exigida.</li>
+            <li><code>AUTH_MAIL_FROM</code> — <em>opcional</em>: remetente dos e-mails de conta (ex.: <code>nao-responda@refogando.com</code>); vazio ⇒ usa o <code>DSAR_MAIL_FROM</code>. Com a chave + um remetente, a confirmação de email do cadastro passa a ser exigida. <strong>Em Production a chave e um remetente são obrigatórios</strong> desde o #645: sem eles o build do deploy falha (depois das migrações, que rodam antes do build).</li>
           </ul>
           <p class="validate"><b>Referência no código:</b> <code>src/server/mail/mailer.ts</code> e <code>src/server/legal/dpo-alert.ts</code>. Sem <code>RESEND_API_KEY</code>, <code>DSAR_MAIL_FROM</code> e <code>DSAR_DPO_EMAIL</code>, o mailer se comporta como <strong>desligado</strong> (no-op): os tickets ainda avançam de SLA no banco, mas ninguém é avisado por e-mail.</p>
           <p class="note">Plano grátis do Resend: <strong>100 e-mails/dia</strong> (3.000/mês), somando alertas ao Encarregado e e-mails de conta. Acima disso o envio falha até o dia seguinte — suba de plano se o cadastro crescer.</p>
