@@ -7,7 +7,9 @@
  */
 
 import { capFromRoleTable, type Role } from '@/domain/user'
-import { TRANSLATION_MAX_TOKENS } from '@/domain/translation-prompt'
+import { TRANSLATION_MAX_TOKENS, buildTranslationUserPrompt } from '@/domain/translation-prompt'
+import { retranslateFailKey } from '@/domain/translation-divergent-stale'
+import type { ModelSettings } from '@/domain/ai-task-config'
 
 /**
  * Duração do "em voo" (lease) de uma tradução por (receita, locale). Maior que o `maxDuration = 60` da rota (a
@@ -31,32 +33,83 @@ export const TRANSLATION_FAILURE_COOLDOWN_MS = 24 * 60 * 60 * 1000
 export const TRANSLATION_INFRA_FAILURE_COOLDOWN_MS = 10 * 60 * 1000
 
 /**
- * Teto do tamanho da entrada enviada ao tradutor, em caracteres (título + descrição + passos + notas + nomes de
- * ingrediente + cozinha). A saída tem o tamanho da entrada mais o JSON, e o teto de saída é
- * `TRANSLATION_MAX_TOKENS` (4096, ~3 a 4 caracteres por token): uma entrada acima disso estoura o `max_tokens` e
- * paga a chamada para nada. Fica abaixo do que caberia, com folga para o JSON.
+ * Teto do pedido enviado ao tradutor (#642, ADR-0056 dec. 6), em BYTES UTF-8 do que vai ao modelo: o `userPrompt`
+ * (`buildTranslationUserPrompt`, a fonte serializada em JSON, com aspas, vírgulas, `{"ordem":…,"nome":…}` e escapes)
+ * mais a cozinha, a única parte do system prompt que varia por receita. Medir o texto cru deixava passar o que o
+ * JSON infla: passos vazios (`""` são 3 bytes cada), milhares de ingredientes de 1 letra (~25 bytes cada) e
+ * caracteres de controle (`\u0001` vira 6 bytes).
+ *
+ * Por que 8 KiB (`TRANSLATION_MAX_TOKENS × 2`): a saída é a mesma estrutura, traduzida. Tradução pt-BR ↔ en-US muda
+ * o tamanho em até ~25%, e texto de receita em JSON fica em ~3 a 4 bytes por token. A 3 bytes/token, 8 KiB × 1,25
+ * ≈ 3,4 mil tokens, abaixo dos 4096 do `max_tokens` com ~17% de folga. A maior receita do catálogo semeado tem
+ * ~1,6 KiB de payload (5× abaixo do teto). Bytes, e não caracteres, porque o tokenizador trabalha em bytes: texto
+ * fora do alfabeto latino (2 a 4 bytes por caractere) pesa mais, como pesa em tokens.
  */
-export const TRANSLATION_MAX_INPUT_CHARS = TRANSLATION_MAX_TOKENS * 3
+export const TRANSLATION_MAX_PAYLOAD_BYTES = TRANSLATION_MAX_TOKENS * 2
 
-/** O que o tradutor recebe (mesma forma de `TranslateInput`, só o texto). */
-export type TranslationInputText = {
+/**
+ * Tetos de contagem (checados antes de serializar, baratos). Cada passo e cada ingrediente vira um item na saída, e
+ * item curto custa mais tokens por byte (estrutura JSON). O catálogo semeado tem no máximo 8 passos e 14
+ * ingredientes; os tetos ficam muito acima do uso real.
+ */
+export const TRANSLATION_MAX_STEPS = 50
+export const TRANSLATION_MAX_INGREDIENTS = 60
+
+/** O que o tradutor recebe e que cresce com a receita (mesma forma de `TranslateInput`, só o texto). */
+export type TranslationPayloadInput = {
   fields: { titulo: string; descricao?: string | null; passos?: string[] | null; notas?: string | null }
-  ingredientes?: ReadonlyArray<{ nome: string }>
+  ingredientes?: ReadonlyArray<{ ordem: number; nome: string }>
   cozinha?: string | null
 }
 
-/** Tamanho, em caracteres, do texto que iria ao tradutor. */
-export function translationInputChars(input: TranslationInputText): number {
-  const { fields } = input
-  let total = fields.titulo.length + (fields.descricao?.length ?? 0) + (fields.notas?.length ?? 0)
-  for (const p of fields.passos ?? []) total += p.length
-  for (const i of input.ingredientes ?? []) total += i.nome.length
-  return total + (input.cozinha?.length ?? 0)
+const utf8 = new TextEncoder()
+
+/** Bytes UTF-8 do que iria ao modelo e cresce com a receita: o `userPrompt` serializado + a cozinha. */
+export function translationPayloadBytes(input: TranslationPayloadInput): number {
+  const userPrompt = buildTranslationUserPrompt({ fields: input.fields, ingredientes: input.ingredientes })
+  return utf8.encode(userPrompt).length + utf8.encode(input.cozinha?.trim() ?? '').length
 }
 
-/** A entrada passa do teto ⇒ não chama o modelo (a receita fica no original, como numa falha). */
-export function isTranslationInputTooLarge(input: TranslationInputText): boolean {
-  return translationInputChars(input) > TRANSLATION_MAX_INPUT_CHARS
+/** O pedido passa de algum teto ⇒ não chama o modelo (a receita fica no original, como numa falha). */
+export function isTranslationInputTooLarge(input: TranslationPayloadInput): boolean {
+  if ((input.fields.passos?.length ?? 0) > TRANSLATION_MAX_STEPS) return true
+  if ((input.ingredientes?.length ?? 0) > TRANSLATION_MAX_INGREDIENTS) return true
+  return translationPayloadBytes(input) > TRANSLATION_MAX_PAYLOAD_BYTES
+}
+
+/**
+ * Espera máxima pela advisory lock do PAR (receita, locale) no claim. Estourou ⇒ outro pedido está decidindo esse
+ * par agora: o claim responde `in_progress` (200 no original), nunca 429 — quem espera é um terceiro, sem culpa da
+ * fila. Curta, junto com a do usuário, para as esperas somarem no máximo ~4 s antes do prazo de 50 s do tradutor,
+ * dentro do `maxDuration = 60` da rota.
+ */
+export const TRANSLATION_PAIR_LOCK_TIMEOUT_MS = 2_000
+
+/**
+ * Espera máxima pela lock de cota do USUÁRIO (4677) no claim, que acontece com a lock do par já tomada. Curta para
+ * não segurar o par (e quem espera por ele) atrás da fila de um usuário só. Estourou ⇒ 429 `limite_traducao`.
+ */
+export const TRANSLATION_USER_LOCK_TIMEOUT_MS = 2_000
+
+/**
+ * Chave do cache negativo da tradução sob demanda: a chave do circuit-breaker do #520 (`retranslateFailKey`, fonte +
+ * versão do prompt, sem mudança) acrescida do resto do que muda a saída do modelo: a cozinha (vai no system prompt)
+ * e o modelo/ajuste da tarefa escolhidos no admin (ADR-0034). Trocar o modelo para corrigir um truncamento libera
+ * na hora as receitas em cooldown. `modelConfig` nulo = tradutor sem config (dublês de teste).
+ */
+export function translationFlightFailKey(input: {
+  sourceFingerprint: string
+  promptVersion: number
+  cozinha: string | null | undefined
+  modelConfig: string | null | undefined
+}): string {
+  const base = retranslateFailKey(input.sourceFingerprint, input.promptVersion)
+  return `${base}:c=${input.cozinha?.trim() || '-'}:m=${input.modelConfig || '-'}`
+}
+
+/** O modelo e o ajuste (thinking, esforço) da tarefa `translation` como texto, para `translationFlightFailKey`. */
+export function translationModelConfigKey(task: { model: string; settings: ModelSettings }): string {
+  return `${task.model}/${task.settings.thinking}/${task.settings.effort ?? '-'}`
 }
 
 /**

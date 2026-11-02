@@ -6,8 +6,7 @@ import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
-import { retranslateFailKey } from '@/domain/translation-divergent-stale'
-import { isTranslationInputTooLarge } from '@/domain/translation-flight'
+import { isTranslationInputTooLarge, translationFlightFailKey } from '@/domain/translation-flight'
 import { isRowSpecificTranslationFailure, type TranslateOutput } from '@/server/translation/translator'
 import {
   abandonTranslationFlight,
@@ -37,9 +36,11 @@ import {
  * serviço nunca recebe locale cru. Recebe o id já validado pelo gate da rota (§5.8).
  *
  * Guardas de custo (#642, ADR-0056), entre o passo 1 e o 2:
- *  - entrada acima de `TRANSLATION_MAX_INPUT_CHARS` ⇒ `too_large`, sem chamar o modelo;
+ *  - pedido acima de `TRANSLATION_MAX_PAYLOAD_BYTES` (o JSON que iria ao modelo) ou com passos/ingredientes demais
+ *    ⇒ `too_large`, sem chamar o modelo;
  *  - `claimTranslationFlight` (tx curta sob a advisory lock do par): outro pedido em voo ⇒ `in_progress`; falha
- *    recente com a mesma fonte+versão ⇒ `cooling_down`; senão reserva a cota do usuário (`quota`, só a rota passa;
+ *    recente com a mesma chave (fonte, versão do prompt, cozinha e modelo do admin) ⇒ `cooling_down`; senão
+ *    reserva a cota do usuário (`quota`, só a rota passa;
  *    estourou ⇒ LANÇA `QuotaExceededError`) e toma o lease;
  *  - a falha do tradutor grava o cache negativo; o sucesso apaga o estado do par.
  * Os desfechos novos degradam como o `degraded` (a rota devolve a view no original).
@@ -80,16 +81,25 @@ export async function ensureTranslation(
     notas: source.notas,
   }
 
-  // #642: entrada grande demais estouraria o `max_tokens` e pagaria a chamada para nada (L-7: os campos não têm
-  // tamanho máximo). Sem lease nem cota: a checagem é pura e barata.
+  // #642: pedido grande demais estouraria o `max_tokens` e pagaria a chamada para nada (L-7: os campos não têm
+  // tamanho máximo). Mede o JSON que iria ao modelo, não o texto cru. Sem lease nem cota: a checagem é pura.
   if (isTranslationInputTooLarge({ fields, ingredientes: ctx.ingredients, cozinha: ctx.cozinha })) {
     return { kind: 'too_large' }
   }
 
-  // Fingerprints de conteúdo (#496, ADR-0031): carimbam a FONTE de onde esta MT saiu (gravado abaixo) e servem de
-  // chave do cache negativo (#642), a mesma do circuit-breaker do #520: fonte editada ou prompt novo ⇒ chave nova.
+  // Fingerprints de conteúdo (#496, ADR-0031): carimbam a FONTE de onde esta MT saiu (gravado abaixo) e entram na
+  // chave do cache negativo (#642): a do circuit-breaker do #520 (fonte + versão do prompt) mais a cozinha e o
+  // modelo/ajuste do admin (ADR-0034). Qualquer um deles mudou ⇒ chave nova ⇒ pode tentar de novo. Config ilegível
+  // ⇒ chave sem modelo: a chamada provavelmente falha igual (infraestrutura, cooldown curto).
+  const translator = getTranslator()
   const sourceFingerprint = sourceFingerprintOf(fields, ctx.ingredients)
-  const failKey = retranslateFailKey(sourceFingerprint, TRANSLATION_PROMPT_VERSION)
+  const modelConfig = (await translator.modelConfigKey?.().catch(() => null)) ?? null
+  const failKey = translationFlightFailKey({
+    sourceFingerprint,
+    promptVersion: TRANSLATION_PROMPT_VERSION,
+    cozinha: ctx.cozinha,
+    modelConfig,
+  })
 
   // Single-flight + cache negativo + cota (#642). `QuotaExceededError` sobe para a rota (429).
   const claim = await claimTranslationFlight(db, { recipeId, locale: targetLocale, failKey, quota })
@@ -101,7 +111,7 @@ export async function ensureTranslation(
   // entra no payload (Direção B).
   let translated
   try {
-    translated = await getTranslator().translate({
+    translated = await translator.translate({
       sourceLocale: ctx.originalLocale,
       targetLocale,
       fields,

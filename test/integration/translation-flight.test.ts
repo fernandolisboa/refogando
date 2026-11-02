@@ -13,13 +13,21 @@ import {
 import { FakeEmbedder } from '@/server/embedding/embedder'
 import { POST as translateRoute } from '@/app/api/recipes/[id]/translations/[locale]/route'
 import { ensureTranslation } from '@/server/recipe/translation'
-import { quotaHold, recipeTranslation, recipeTranslationAttempt } from '@/db/schema'
-import { QUOTA_LOCK_CLASS } from '@/server/quota/atomic'
+import { quotaHold, recipe, recipeIngredient, recipeTranslation, recipeTranslationAttempt } from '@/db/schema'
+import { DERIVE_LOCK_BUSY_RETRY_MS, QUOTA_LOCK_CLASS } from '@/server/quota/atomic'
+import {
+  abandonTranslationFlight,
+  claimTranslationFlight,
+  completeTranslationFlight,
+  failTranslationFlight,
+} from '@/server/translation/flight'
 import {
   TRANSLATION_CAP_BY_ROLE,
   TRANSLATION_FAILURE_COOLDOWN_MS,
   TRANSLATION_INFRA_FAILURE_COOLDOWN_MS,
-  TRANSLATION_MAX_INPUT_CHARS,
+  TRANSLATION_MAX_INGREDIENTS,
+  TRANSLATION_MAX_PAYLOAD_BYTES,
+  TRANSLATION_MAX_STEPS,
 } from '@/domain/translation-flight'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedTranslation } from '../helpers/recipes'
@@ -36,10 +44,15 @@ const DIM = 1536
 /** Conta as chamadas e responde por `mode`: identidade, falha da linha, ou falha de infraestrutura. */
 class CountingTranslator implements Translator {
   calls = 0
+  /** O modelo/ajuste do admin que o dublê diz usar (entra na chave do cache negativo). */
+  modelConfig = 'modelo-a/off/-'
   constructor(public mode: 'ok' | 'unusable' | 'infra' = 'ok') {}
   async translate(input: TranslateInput): Promise<TranslateOutput> {
     this.calls++
     return this.respond(input)
+  }
+  async modelConfigKey(): Promise<string> {
+    return this.modelConfig
   }
   protected async respond(input: TranslateInput): Promise<TranslateOutput> {
     if (this.mode === 'unusable') throw new UnusableTranslationError('tradução truncada (max_tokens)')
@@ -215,7 +228,8 @@ describe('#642 cache negativo: laço de POSTs numa tradução que falha', () => 
     const row = await attemptRow(id)
     expect(row?.failedAt).toBeInstanceOf(Date)
     expect(row!.retryAt!.getTime() - row!.failedAt!.getTime()).toBe(TRANSLATION_FAILURE_COOLDOWN_MS)
-    expect(row?.failKey).toMatch(/:v\d+$/)
+    // A chave do #520 (fonte + versão do prompt), mais a cozinha e o modelo/ajuste do admin.
+    expect(row?.failKey).toMatch(/:v\d+:c=-:m=modelo-a\/off\/-$/)
   })
 
   it('falha de INFRAESTRUTURA: laço ⇒ 1 chamada, com cooldown curto (10 min)', async () => {
@@ -297,8 +311,45 @@ describe('#642 cache negativo: laço de POSTs numa tradução que falha', () => 
     expect(await ensureTranslation(getDb(), id, 'en-US')).toEqual({ kind: 'degraded' })
     expect(await ensureTranslation(getDb(), id, 'en-US')).toEqual({ kind: 'cooling_down' })
     expect(translator.calls).toBe(1)
-    const [{ n }] = await getDb().select({ n: dsql<number>`count(*)::int` }).from(quotaHold)
-    expect(n).toBe(0)
+    expect(await translationHolds(userId)).toBe(0)
+  })
+
+  it('cozinha trocada ⇒ chave nova ⇒ tenta de novo dentro do cooldown', async () => {
+    const translator = new CountingTranslator('unusable')
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'loop-cozinha@ex.com' })
+    const id = await seedPublic(userId)
+
+    await post(id, 'en-US', headers)
+    await post(id, 'en-US', headers)
+    expect(translator.calls).toBe(1)
+
+    await getDb().update(recipe).set({ cozinha: 'brasileira' }).where(eq(recipe.id, id))
+    await post(id, 'en-US', headers)
+    expect(translator.calls).toBe(2)
+    expect((await attemptRow(id))?.failKey).toContain(':c=brasileira:')
+    await post(id, 'en-US', headers)
+    expect(translator.calls).toBe(2)
+  })
+
+  it('modelo/ajuste da tradução trocado no admin (ADR-0034) ⇒ libera a receita em cooldown', async () => {
+    const translator = new CountingTranslator('unusable')
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'loop-model@ex.com' })
+    const id = await seedPublic(userId)
+
+    await post(id, 'en-US', headers)
+    await post(id, 'en-US', headers)
+    expect(translator.calls).toBe(1)
+
+    // O admin sobe o modelo para resolver o truncamento: a tentativa nova sai na hora, e dá certo.
+    translator.modelConfig = 'modelo-b/off/-'
+    translator.mode = 'ok'
+    expect((await post(id, 'en-US', headers)).status).toBe(200)
+    expect(translator.calls).toBe(2)
+    expect(await enRows(id)).toHaveLength(1)
   })
 })
 
@@ -333,14 +384,15 @@ describe('#642 lease', () => {
     expect(await enRows(id)).toHaveLength(1)
   })
 
-  it('fila da lock do par cheia (lock_timeout) ⇒ 429 limite_traducao, nunca 500', async () => {
+  it('lock do par ocupada além do lock_timeout ⇒ 200 no original (em voo), nunca 429 nem 500', async () => {
     const translator = new CountingTranslator()
     setTranslator(translator)
     setEmbedder(new FakeEmbedder(DIM))
     const { userId, headers } = await seedSessionHeaders({ email: 'lease-lock@ex.com' })
     const id = await seedPublic(userId)
 
-    // Uma 2ª conexão segura a lock do par enquanto o POST espera (até o lock_timeout de 5 s).
+    // Uma 2ª conexão segura a lock do par enquanto o POST espera (até o lock_timeout de 2 s): é outro pedido
+    // decidindo o mesmo par, e quem espera é um terceiro.
     let releaseLock!: () => void
     const held = new Promise<void>((r) => {
       releaseLock = r
@@ -357,13 +409,119 @@ describe('#642 lease', () => {
     await isLocked
     try {
       const res = await post(id, 'en-US', headers)
-      expect(res.status).toBe(429)
-      expect(await res.json()).toMatchObject({ error: 'limite_traducao' })
+      expect(res.status).toBe(200)
+      const view = (await res.json()) as { translations: { locale: string }[] }
+      expect(view.translations.map((t) => t.locale)).toEqual(['pt-BR'])
     } finally {
       releaseLock()
       await holder
     }
     expect(translator.calls).toBe(0)
+    expect(await translationHolds(userId)).toBe(0)
+    expect(await attemptRow(id)).toBeUndefined()
+  })
+
+  it('lock de cota do USUÁRIO ocupada além do lock_timeout ⇒ 429 limite_traducao com o retryAfterMs da fila', async () => {
+    const translator = new CountingTranslator()
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId: ownerId } = await seedSessionHeaders({ email: 'user-lock-owner@ex.com' })
+    const id = await seedPublic(ownerId)
+    const { userId, headers } = await seedSessionHeaders({ email: 'user-lock@ex.com' })
+
+    let releaseLock!: () => void
+    const held = new Promise<void>((r) => {
+      releaseLock = r
+    })
+    let locked!: () => void
+    const isLocked = new Promise<void>((r) => {
+      locked = r
+    })
+    const holder = sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(${QUOTA_LOCK_CLASS.translation}::int, hashtext(${userId}))`
+      locked()
+      await held
+    })
+    await isLocked
+    try {
+      const res = await post(id, 'en-US', headers)
+      expect(res.status).toBe(429)
+      expect(await res.json()).toEqual({ error: 'limite_traducao', retryAfterMs: DERIVE_LOCK_BUSY_RETRY_MS })
+    } finally {
+      releaseLock()
+      await holder
+    }
+    expect(translator.calls).toBe(0)
+    // A tx do claim reverteu inteira: nem lease, nem reserva. A lock do par já está livre para o próximo.
+    expect(await attemptRow(id)).toBeUndefined()
+    expect(await translationHolds(userId)).toBe(0)
+    expect((await post(id, 'en-US', headers)).status).toBe(200)
+    expect(translator.calls).toBe(1)
+  })
+
+  it('fechamentos de um voo substituído (lease vencido e retomado) não tocam o lease novo', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'lease-stale@ex.com' })
+    const id = await seedPublic(userId)
+    const flight = { recipeId: id, locale: 'en-US', failKey: 'fp:v2:c=-:m=-' }
+
+    const first = await claimTranslationFlight(getDb(), flight)
+    expect(first.kind).toBe('claimed')
+    // A função do 1º voo "travou" além do lease; o 2º pedido retoma o par.
+    await getDb()
+      .update(recipeTranslationAttempt)
+      .set({ leaseUntil: dsql`now() - interval '1 second'` })
+      .where(eq(recipeTranslationAttempt.recipeId, id))
+    const second = await claimTranslationFlight(getDb(), flight)
+    expect(second.kind).toBe('claimed')
+    if (first.kind !== 'claimed' || second.kind !== 'claimed') return
+    expect(second.leaseId).not.toBe(first.leaseId)
+
+    // O 1º voo acorda e fecha com o lease_id dele: falha, abandono e sucesso são no-op.
+    const old = { recipeId: id, locale: 'en-US', leaseId: first.leaseId }
+    await failTranslationFlight(getDb(), { ...old, failKey: flight.failKey, rowSpecific: true })
+    await abandonTranslationFlight(getDb(), old)
+    await completeTranslationFlight(getDb(), old)
+    const row = await attemptRow(id)
+    expect(row?.leaseId).toBe(second.leaseId)
+    expect(row!.leaseUntil!.getTime()).toBeGreaterThan(Date.now())
+    expect(row?.retryAt).toBeNull()
+    expect(row?.failedAt).toBeNull()
+
+    // Quem fecha com o lease certo age.
+    await completeTranslationFlight(getDb(), { recipeId: id, locale: 'en-US', leaseId: second.leaseId })
+    expect(await attemptRow(id)).toBeUndefined()
+  })
+
+  it('erro inesperado depois do tradutor (INSERT) ⇒ abandona: solta o lease sem cache negativo, e o erro sobe', async () => {
+    // Título com NUL: o Postgres recusa o `text`, então o persist lança depois de a chamada (paga) voltar.
+    const translator = new CountingTranslator()
+    setTranslator({
+      translate: async (input) => {
+        await translator.translate(input)
+        return { ...input.fields, titulo: 'Corn\u0000cake' }
+      },
+      // Mesma chave do dublê de baixo: o retry não pode passar só porque a chave mudou.
+      modelConfigKey: () => translator.modelConfigKey(),
+    })
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'abandon@ex.com' })
+    const id = await seedPublic(userId)
+
+    await expect(ensureTranslation(getDb(), id, 'en-US', { userId, cap: 30 })).rejects.toThrow()
+    expect(translator.calls).toBe(1)
+    const row = await attemptRow(id)
+    expect(row?.leaseId).toBeNull()
+    expect(row?.leaseUntil).toBeNull()
+    expect(row?.retryAt).toBeNull()
+    expect(row?.failedAt).toBeNull()
+    expect(await enRows(id)).toHaveLength(0)
+    expect(await translationHolds(userId)).toBe(1) // a chamada foi paga: o slot fica
+
+    // Sem lease nem cooldown, o próximo POST tenta de novo na hora.
+    setTranslator(translator)
+    expect((await post(id, 'en-US', headers)).status).toBe(200)
+    expect(translator.calls).toBe(2)
+    expect(await enRows(id)).toHaveLength(1)
   })
 })
 
@@ -438,13 +596,8 @@ describe('#642 cota por usuário', () => {
 })
 
 describe('#642 teto da entrada', () => {
-  it('fonte acima de TRANSLATION_MAX_INPUT_CHARS ⇒ 200 no original, sem chamada, sem lease, sem slot', async () => {
-    const translator = new CountingTranslator()
-    setTranslator(translator)
-    setEmbedder(new FakeEmbedder(DIM))
-    const { userId, headers } = await seedSessionHeaders({ email: 'big@ex.com' })
-    const id = await seedPublic(userId, 'x'.repeat(TRANSLATION_MAX_INPUT_CHARS + 1))
-
+  /** POST no par grande demais: 200 no original, sem chamada, sem lease, sem slot; e o interno diz `too_large`. */
+  async function expectRefused(id: string, userId: string, headers: Headers, translator: CountingTranslator) {
     const res = await post(id, 'en-US', headers)
     expect(res.status).toBe(200)
     const view = (await res.json()) as { translations: { locale: string }[] }
@@ -453,5 +606,57 @@ describe('#642 teto da entrada', () => {
     expect(await attemptRow(id)).toBeUndefined()
     expect(await translationHolds(userId)).toBe(0)
     expect(await ensureTranslation(getDb(), id, 'en-US')).toEqual({ kind: 'too_large' })
+  }
+
+  it('payload acima de TRANSLATION_MAX_PAYLOAD_BYTES ⇒ recusado', async () => {
+    const translator = new CountingTranslator()
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'big@ex.com' })
+    const id = await seedPublic(userId, 'x'.repeat(TRANSLATION_MAX_PAYLOAD_BYTES))
+    await expectRefused(id, userId, headers, translator)
+  })
+
+  it('muitos passos vazios (0 caracteres de texto) ⇒ recusado', async () => {
+    const translator = new CountingTranslator()
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'big-steps@ex.com' })
+    const id = await seedRecipe({ origin: 'ai_chat', originalLocale: 'pt-BR', visibility: 'private', ownerId: userId })
+    await seedTranslation({
+      recipeId: id,
+      locale: 'pt-BR',
+      titulo: 'Bolo',
+      passos: Array(Math.max(5_000, TRANSLATION_MAX_STEPS + 1)).fill(''),
+      provenance: 'escrita_por_pessoa',
+    })
+    await expectRefused(id, userId, headers, translator)
+  })
+
+  it('muitos ingredientes de 1 letra ⇒ recusado', async () => {
+    const translator = new CountingTranslator()
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'big-ingredients@ex.com' })
+    const id = await seedPublic(userId)
+    await getDb()
+      .insert(recipeIngredient)
+      .values(
+        Array.from({ length: Math.max(1_000, TRANSLATION_MAX_INGREDIENTS + 1) }, (_, i) => ({
+          recipeId: id,
+          ordem: i,
+          rawText: 'a',
+        })),
+      )
+    await expectRefused(id, userId, headers, translator)
+  })
+
+  it('caracteres de controle (6 bytes cada no JSON) abaixo do teto em caracteres ⇒ recusado', async () => {
+    const translator = new CountingTranslator()
+    setTranslator(translator)
+    setEmbedder(new FakeEmbedder(DIM))
+    const { userId, headers } = await seedSessionHeaders({ email: 'big-control@ex.com' })
+    const id = await seedPublic(userId, '\u0001'.repeat(Math.ceil(TRANSLATION_MAX_PAYLOAD_BYTES / 4)))
+    await expectRefused(id, userId, headers, translator)
   })
 })

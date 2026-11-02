@@ -434,19 +434,23 @@ async function recentEventTimes(tx: Tx, userId: string, kind: QuotaHoldKind, now
 /**
  * O corpo de `reserveQuotaHold` DENTRO de uma tx do chamador: a tradução sob demanda (ADR-0056) reserva na MESMA tx
  * curta em que toma o lease do par (receita, locale), para que o lease e a reserva nasçam juntos ou nenhum dos dois.
- * Mesma ordem e mesmo `lock_timeout` da versão com tx própria; `QuotaExceededError` lançado aqui reverte a tx toda.
- * `cap` não-finito ⇒ `null`, sem lock nem linha.
+ * Mesma ordem da versão com tx própria; `QuotaExceededError` lançado aqui reverte a tx toda. `cap` não-finito ⇒
+ * `null`, sem lock nem linha.
+ *
+ * `lockTimeoutMs` (padrão `DERIVE_LOCK_TIMEOUT_MS`): a tradução passa uma espera mais curta, porque espera com a lock
+ * do par já tomada e não deve prender quem espera por ele (ADR-0056 dec. 2).
  */
 export async function reserveQuotaHoldInTx(
   tx: Tx,
-  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2 },
+  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2; lockTimeoutMs?: number },
 ): Promise<string | null> {
   const { userId, kind, cap } = input
   const slots = input.slots ?? 1
   if (!Number.isFinite(cap)) return null
   const { lockClass, windowMs } = HOLD_KIND[kind]
   const now = new Date()
-  await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
+  const lockTimeoutMs = input.lockTimeoutMs ?? DERIVE_LOCK_TIMEOUT_MS
+  await tx.execute(sql`select set_config('lock_timeout', ${`${lockTimeoutMs}ms`}, true)`)
   try {
     await acquireUserQuotaLock(tx, lockClass, userId)
   } catch (e) {

@@ -30,9 +30,10 @@ import { capForTranslation } from '@/domain/translation-flight'
  * moderado. Remover-do-pool NÃO toca `visibility` (ver recipe-pool.ts).
  *
  * #642 (ADR-0056): o POST é o único caminho que dispara a tradução por um usuário, então só ele passa a cota
- * (`capForTranslation` do papel; admin ∞). Cota estourada (ou a fila da lock cheia) ⇒ 429 `limite_traducao` com
- * `retryAfterMs`. Em voo, em cooldown de falha ou entrada grande demais ⇒ 200 com a view no original, igual à
- * degradação de sempre (AC4): só o pedido que de fato chama o modelo gasta slot.
+ * (`capForTranslation` do papel; admin ∞). Cota estourada (ou a fila da lock de cota do usuário cheia) ⇒ 429
+ * `limite_traducao` com `retryAfterMs`. Em voo (inclusive outro pedido decidindo o mesmo par, a lock do par
+ * ocupada), em cooldown de falha ou pedido grande demais ⇒ 200 com a view no original, igual à degradação de sempre
+ * (AC4): só o pedido que de fato chama o modelo gasta slot.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.

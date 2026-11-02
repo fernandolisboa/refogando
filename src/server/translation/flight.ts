@@ -2,18 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { recipeTranslation, recipeTranslationAttempt } from '@/db/schema'
-import {
-  DERIVE_LOCK_BUSY_RETRY_MS,
-  DERIVE_LOCK_TIMEOUT_MS,
-  QUOTA_LOCK_CLASS,
-  QuotaExceededError,
-  reserveQuotaHoldInTx,
-} from '@/server/quota/atomic'
+import { QUOTA_LOCK_CLASS, reserveQuotaHoldInTx } from '@/server/quota/atomic'
 import { pgCode } from '@/server/recipe/visibility'
 import {
   TRANSLATION_FAILURE_COOLDOWN_MS,
   TRANSLATION_INFRA_FAILURE_COOLDOWN_MS,
   TRANSLATION_LEASE_MS,
+  TRANSLATION_PAIR_LOCK_TIMEOUT_MS,
+  TRANSLATION_USER_LOCK_TIMEOUT_MS,
   decideTranslationFlight,
 } from '@/domain/translation-flight'
 
@@ -52,27 +48,48 @@ function msInterval(ms: number) {
   return sql`(${ms}::double precision * interval '1 millisecond')`
 }
 
+/** A espera pela lock do PAR estourou: sinal interno, lançado de dentro da tx (o 55P03 já a abortou). */
+class PairLockBusy extends Error {}
+
 /**
- * Tenta tomar o voo da tradução de (receita, locale). LANÇA `QuotaExceededError` quando a cota do usuário estourou
- * ou quando a espera por uma das locks passou de `DERIVE_LOCK_TIMEOUT_MS` (rajada): nos dois casos a tx reverte e
- * nada é gravado (nem lease, nem reserva).
+ * Tenta tomar o voo da tradução de (receita, locale).
+ *  - A espera pela lock do PAR passou de `TRANSLATION_PAIR_LOCK_TIMEOUT_MS` ⇒ `in_progress`: outro pedido está
+ *    decidindo esse par agora (quem espera é um terceiro, e o 200 no original é a resposta certa, não um 429).
+ *  - LANÇA `QuotaExceededError` quando a cota do usuário estourou ou quando a espera pela lock DO USUÁRIO passou de
+ *    `TRANSLATION_USER_LOCK_TIMEOUT_MS` (rajada do mesmo usuário). Nos dois casos a tx reverte e nada é gravado
+ *    (nem lease, nem reserva).
  *
- * Ordem das locks fixa (par → usuário), sempre a mesma em todo pedido: sem deadlock. A reserva de cota só acontece
- * quando o pedido VAI chamar o modelo (`go`): tradução já gravada, em voo ou em cooldown não gasta slot.
+ * Ordem das locks fixa (par → usuário), sempre a mesma em todo pedido: sem deadlock. As duas esperas são curtas
+ * (~2 s cada): a do usuário acontece com a lock do par tomada, e as duas somadas correm antes do prazo de 50 s do
+ * tradutor, dentro do `maxDuration = 60` da rota. A reserva de cota só acontece quando o pedido VAI chamar o modelo
+ * (`go`): tradução já gravada, em voo ou em cooldown não gasta slot.
  */
 export async function claimTranslationFlight(
   db: Database,
   input: { recipeId: string; locale: string; failKey: string; quota?: TranslationQuota },
 ): Promise<TranslationFlightClaim> {
+  try {
+    return await claimInTx(db, input)
+  } catch (e) {
+    if (e instanceof PairLockBusy) return { kind: 'in_progress' }
+    throw e
+  }
+}
+
+async function claimInTx(
+  db: Database,
+  input: { recipeId: string; locale: string; failKey: string; quota?: TranslationQuota },
+): Promise<TranslationFlightClaim> {
   const { recipeId, locale, failKey, quota } = input
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
+    await tx.execute(sql`select set_config('lock_timeout', ${`${TRANSLATION_PAIR_LOCK_TIMEOUT_MS}ms`}, true)`)
     try {
       await tx.execute(
         sql`select pg_advisory_xact_lock(${QUOTA_LOCK_CLASS.translationFlight}::int, hashtext(${`${recipeId}:${locale}`}))`,
       )
     } catch (e) {
-      if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)
+      // Lançar (e não devolver) é obrigatório: o 55P03 abortou a tx, e seguir nela faria o COMMIT falhar.
+      if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new PairLockBusy()
       throw e
     }
     await tx.execute(sql`set local lock_timeout to default`)
@@ -101,7 +118,15 @@ export async function claimTranslationFlight(
     if (decision !== 'go') return { kind: decision }
 
     // Cota do usuário (ADR-0056): a reserva nasce cobrada e nunca volta — é o registro da tradução disparada.
-    if (quota) await reserveQuotaHoldInTx(tx, { userId: quota.userId, kind: 'translation', cap: quota.cap })
+    // A espera pela lock do usuário estourada vira `QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)` lá dentro (429).
+    if (quota) {
+      await reserveQuotaHoldInTx(tx, {
+        userId: quota.userId,
+        kind: 'translation',
+        cap: quota.cap,
+        lockTimeoutMs: TRANSLATION_USER_LOCK_TIMEOUT_MS,
+      })
+    }
 
     const leaseId = randomUUID()
     const leaseUntil = sql`now() + ${msInterval(TRANSLATION_LEASE_MS)}`
