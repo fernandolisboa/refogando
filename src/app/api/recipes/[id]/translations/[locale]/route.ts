@@ -9,6 +9,8 @@ import { loadRecipeRows } from '@/server/recipe/load'
 import { resolveRecipeView } from '@/domain/recipe-read'
 import { isCommunityVisible } from '@/domain/recipe-visibility-check'
 import { editTranslatedIngredientNames } from '@/server/curate/translation-ingredient-names'
+import { QuotaExceededError } from '@/server/quota/atomic'
+import { capForTranslation } from '@/domain/translation-flight'
 
 /**
  * Tradução on-demand do 2º locale (issue #23, AC1). POST dedicado (decisão congelada —
@@ -26,6 +28,12 @@ import { editTranslatedIngredientNames } from '@/server/curate/translation-ingre
  * conteúdo moderado em outro locale, vazando a Receita em AMBOS os locales — viola AC4). O
  * dono mantém acesso à própria linha privada (AC3), mas SEM gerar tradução de conteúdo
  * moderado. Remover-do-pool NÃO toca `visibility` (ver recipe-pool.ts).
+ *
+ * #642 (ADR-0056): o POST é o único caminho que dispara a tradução por um usuário, então só ele passa a cota
+ * (`capForTranslation` do papel; admin ∞). Cota estourada (ou a fila da lock de cota do usuário cheia) ⇒ 429
+ * `limite_traducao` com `retryAfterMs`. Em voo (inclusive outro pedido decidindo o mesmo par, a lock do par
+ * ocupada), em cooldown de falha ou pedido grande demais ⇒ 200 com a view no original, igual à degradação de sempre
+ * (AC4): só o pedido que de fato chama o modelo gasta slot.
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -71,7 +79,17 @@ export async function POST(
   // Gera a tradução on-demand (idempotente; degrada graciosamente se o translator falhar).
   // #18: PULA quando a Receita está removida do pool — não gerar/embedar conteúdo moderado
   // (o dono que ainda lê recebe a view com o que já existe, sem efeito de tradução).
-  if (!removed) await ensureTranslation(db, id, locale)
+  if (!removed) {
+    const quota = { userId: g.session.user.id, cap: capForTranslation(g.session.user.role) }
+    try {
+      await ensureTranslation(db, id, locale, quota)
+    } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        return Response.json({ error: 'limite_traducao', retryAfterMs: err.retryAfterMs }, { status: 429 })
+      }
+      throw err
+    }
+  }
 
   // Devolve a view localizada no locale CANÔNICO (mesma máquina de leitura da #3).
   const rows = await loadRecipeRows(db, id)

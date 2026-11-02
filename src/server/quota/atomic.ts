@@ -59,6 +59,10 @@ export const QUOTA_LOCK_CLASS = {
   menuSuggestion: 4674,
   derive: 4675,
   report: 4676, // #605: dedupe + teto diário de denúncias de receita (`createReport`), não é IA.
+  translation: 4677, // #642: reserva da cota de tradução sob demanda, por usuário (`quota_hold` kind `translation`).
+  // #642: single-flight da tradução por (receita, locale) — a chave é `hashtext(recipe_id || ':' || locale)`, não
+  // um usuário (`claimTranslationFlight`, src/server/translation/flight.ts).
+  translationFlight: 4678,
 } as const
 
 /**
@@ -83,13 +87,17 @@ async function acquireUserQuotaLock(tx: Tx, classId: number, userId: string): Pr
   await tx.execute(sql`select pg_advisory_xact_lock(${classId}::int, hashtext(${userId}))`)
 }
 
-/** Os dois tipos de RESERVA de cota (`quota_hold.kind`, ADR-0055): geração de receita e de imagem. */
-export type QuotaHoldKind = 'recipe_gen' | 'image_gen'
+/**
+ * Os tipos de RESERVA de cota (`quota_hold.kind`): geração de receita e de imagem (ADR-0055) e tradução sob
+ * demanda (ADR-0056). A de tradução não tem evento próprio: a reserva é o registro e conta até vencer.
+ */
+export type QuotaHoldKind = 'recipe_gen' | 'image_gen' | 'translation'
 
 /** Por tipo: a classe da lock (a MESMA do gate do persist, pra serializar com ele) e a janela da cota. */
 const HOLD_KIND = {
   recipe_gen: { lockClass: QUOTA_LOCK_CLASS.recipeGen, windowMs: RECIPE_GEN_WINDOW_MS },
   image_gen: { lockClass: QUOTA_LOCK_CLASS.imageGen, windowMs: IMAGE_GEN_WINDOW_MS },
+  translation: { lockClass: QUOTA_LOCK_CLASS.translation, windowMs: RECIPE_GEN_WINDOW_MS },
 } as const satisfies Record<QuotaHoldKind, { lockClass: number; windowMs: number }>
 
 /**
@@ -412,37 +420,59 @@ export async function reserveQuotaHold(
   db: Database,
   input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2 },
 ): Promise<string | null> {
+  if (!Number.isFinite(input.cap)) return null
+  return db.transaction((tx) => reserveQuotaHoldInTx(tx, input))
+}
+
+/** Eventos já gravados que contam na cota do `kind`. A tradução (ADR-0056) não tem evento: só as reservas contam. */
+async function recentEventTimes(tx: Tx, userId: string, kind: QuotaHoldKind, now: Date): Promise<Date[]> {
+  if (kind === 'recipe_gen') return recentRecipeGenTimes(tx, userId, now)
+  if (kind === 'image_gen') return recentImageGenTimes(tx, userId, now)
+  return []
+}
+
+/**
+ * O corpo de `reserveQuotaHold` DENTRO de uma tx do chamador: a tradução sob demanda (ADR-0056) reserva na MESMA tx
+ * curta em que toma o lease do par (receita, locale), para que o lease e a reserva nasçam juntos ou nenhum dos dois.
+ * Mesma ordem da versão com tx própria; `QuotaExceededError` lançado aqui reverte a tx toda. `cap` não-finito ⇒
+ * `null`, sem lock nem linha.
+ *
+ * `lockTimeoutMs` (padrão `DERIVE_LOCK_TIMEOUT_MS`): a tradução passa uma espera mais curta, porque espera com a lock
+ * do par já tomada e não deve prender quem espera por ele (ADR-0056 dec. 2).
+ */
+export async function reserveQuotaHoldInTx(
+  tx: Tx,
+  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2; lockTimeoutMs?: number },
+): Promise<string | null> {
   const { userId, kind, cap } = input
   const slots = input.slots ?? 1
   if (!Number.isFinite(cap)) return null
   const { lockClass, windowMs } = HOLD_KIND[kind]
-  return db.transaction(async (tx) => {
-    const now = new Date()
-    await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
-    try {
-      await acquireUserQuotaLock(tx, lockClass, userId)
-    } catch (e) {
-      if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)
-      throw e
-    }
-    await tx.execute(sql`set local lock_timeout to default`)
-    const events =
-      kind === 'recipe_gen' ? await recentRecipeGenTimes(tx, userId, now) : await recentImageGenTimes(tx, userId, now)
-    const recentAt = [...events, ...(await activeHoldTimes(tx, userId, kind, now))]
-    const decide = kind === 'recipe_gen' ? decideRecipeGenQuota : decideImageQuota
-    const decision = decide({ cap: cap - (slots - 1), recentAt, now })
-    if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
-    const [row] = await tx
-      .insert(quotaHold)
-      .values({
-        userId,
-        kind,
-        slots,
-        expiresAt: sql`now() + (${windowMs}::double precision * interval '1 millisecond')`,
-      })
-      .returning({ id: quotaHold.id })
-    return row.id
-  })
+  const now = new Date()
+  const lockTimeoutMs = input.lockTimeoutMs ?? DERIVE_LOCK_TIMEOUT_MS
+  await tx.execute(sql`select set_config('lock_timeout', ${`${lockTimeoutMs}ms`}, true)`)
+  try {
+    await acquireUserQuotaLock(tx, lockClass, userId)
+  } catch (e) {
+    if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)
+    throw e
+  }
+  await tx.execute(sql`set local lock_timeout to default`)
+  const recentAt = [...(await recentEventTimes(tx, userId, kind, now)), ...(await activeHoldTimes(tx, userId, kind, now))]
+  // A tradução usa a mesma janela deslizante de 24 h da receita (fonte única do cálculo).
+  const decide = kind === 'image_gen' ? decideImageQuota : decideRecipeGenQuota
+  const decision = decide({ cap: cap - (slots - 1), recentAt, now })
+  if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+  const [row] = await tx
+    .insert(quotaHold)
+    .values({
+      userId,
+      kind,
+      slots,
+      expiresAt: sql`now() + (${windowMs}::double precision * interval '1 millisecond')`,
+    })
+    .returning({ id: quotaHold.id })
+  return row.id
 }
 
 /**

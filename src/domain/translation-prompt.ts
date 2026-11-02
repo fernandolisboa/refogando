@@ -112,7 +112,15 @@ export function buildTranslationPrompt(input: TranslationPromptInput): {
     ...(cozinha ? ['', `Cozinha do prato (contexto para desambiguar termos): ${cozinha}.`] : []),
   ].join('\n')
 
-  // Fonte como JSON delimitado (dados, não instruções). `ingredientes` só quando há (Fatia 2).
+  return { systemPrompt, userPrompt: buildTranslationUserPrompt(input) }
+}
+
+/**
+ * O `userPrompt` da tradução: a fonte como JSON delimitado (dados, não instruções). `ingredientes` só quando há
+ * (Fatia 2). Exportado à parte porque é também o que o teto da entrada mede (#642, ADR-0056 dec. 6): é a parte do
+ * pedido que cresce com a receita e que o modelo devolve traduzida.
+ */
+export function buildTranslationUserPrompt(input: Pick<TranslationPromptInput, 'fields' | 'ingredientes'>): string {
   const source: Record<string, unknown> = {
     titulo: input.fields.titulo,
     descricao: input.fields.descricao ?? null,
@@ -122,10 +130,7 @@ export function buildTranslationPrompt(input: TranslationPromptInput): {
   if (input.ingredientes && input.ingredientes.length > 0) {
     source.ingredientes = input.ingredientes.map((i) => ({ ordem: i.ordem, nome: i.nome }))
   }
-
-  const userPrompt = ['<<<RECEITA>>>', JSON.stringify(source), '<<<FIM>>>'].join('\n')
-
-  return { systemPrompt, userPrompt }
+  return ['<<<RECEITA>>>', JSON.stringify(source), '<<<FIM>>>'].join('\n')
 }
 
 /** `null`/`undefined`/vazio-após-trim ⇒ ausente (espelha `present` de recipe-read.ts). */

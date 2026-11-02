@@ -118,6 +118,7 @@ export const enUS: Messages = {
   traducao: {
     staleAviso: 'This translation may be out of date compared to the original.',
     verOriginal: 'View the original',
+    limite: "You've hit the translation limit for now. Frees up in ~{tempo}.",
   },
   // Rótulo amigável por valor do enum RESTRICOES (#7), traduzido por locale.
   // `satisfies Record<Restricao, string>` trava drift do enum no site de definição.

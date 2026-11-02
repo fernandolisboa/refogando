@@ -24,8 +24,13 @@ test('adiciona a Receita ao cardápio e gera a lista da semana inteira', async (
 
   await page.getByRole('button', { name: t.cardapio.gerarLista }).click()
   const painel = page.getByRole('region', { name: t.cardapio.gerarLista })
-  await painel.getByRole('radio', { name: t.cardapio.semanaInteira }).check()
-  await painel.getByRole('button', { name: t.cardapio.gerarLista }).click()
+  const gerar = painel.getByRole('button', { name: t.cardapio.gerarLista })
+  await expect(gerar).toBeVisible()
+  // A escolha "de hoje em diante / semana inteira" só aparece com hoje DENTRO da semana e depois da segunda
+  // (meal-plan-shopping-list-panel `canStartToday`); numa segunda-feira o painel já gera a semana inteira.
+  const semanaInteira = painel.getByRole('radio', { name: t.cardapio.semanaInteira })
+  if ((await semanaInteira.count()) > 0) await semanaInteira.check()
+  await gerar.click()
   const abrir = painel.getByRole('status').getByRole('link', { name: t.cardapio.abrirLista })
   await abrir.click()
 

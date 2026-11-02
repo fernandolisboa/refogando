@@ -20,6 +20,7 @@ import {
   buildTranslationPrompt,
   assertFaithfulTranslation,
 } from '@/domain/translation-prompt'
+import { translationModelConfigKey } from '@/domain/translation-flight'
 
 /** Campos por-locale (traduzíveis) — espelha TRANSLATABLE_FIELDS de `stale-rule.ts`. */
 export type TranslatableFields = {
@@ -49,6 +50,12 @@ export type TranslateOutput = TranslatableFields & {
 
 export interface Translator {
   translate(input: TranslateInput): Promise<TranslateOutput>
+  /**
+   * O modelo e o ajuste que a PRÓXIMA chamada usaria (`translationModelConfigKey`), para a chave do cache negativo
+   * da tradução sob demanda (#642, ADR-0056 dec. 3): trocar o modelo no admin libera as receitas em cooldown.
+   * Opcional: os dublês não têm config.
+   */
+  modelConfigKey?(): Promise<string>
 }
 
 /**
@@ -118,6 +125,10 @@ function assertUsableStop(stopReason: string | null): void {
  */
 export class RealTranslator implements Translator {
   constructor(private readonly loadTask: TranslationTaskLoader = DEFAULT_TRANSLATION_TASK) {}
+
+  async modelConfigKey(): Promise<string> {
+    return translationModelConfigKey(await this.loadTask())
+  }
 
   async translate(input: TranslateInput): Promise<TranslateOutput> {
     // Lazy: o SDK lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (injeta-se

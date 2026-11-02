@@ -66,7 +66,10 @@ import { exportablePromptStamp, type JsonObjectSection } from '@/domain/account-
  *  - `quotaHolds` (ADR-0055): as reservas de cota de geração de receita e de imagem que ainda existem (tipo,
  *    slots, criação e vencimento). A consumida é apagada (vira a geração do export); as que sobram estão em voo
  *    ou ficaram cobradas sem linha de geração (saída inválida, turno de conversa abortado, falha depois da
- *    chamada paga), então não aparecem em nenhum outro lugar do arquivo. Somem pelo cron de retenção.
+ *    chamada paga), então não aparecem em nenhum outro lugar do arquivo. Somem pelo cron de retenção. As de
+ *    tradução sob demanda (`kind: 'translation'`, ADR-0056) nunca são consumidas: são o registro de cada tradução
+ *    que o titular disparou nas últimas 24 h, sem o id da receita (ADR-0056 dec. 8: as datas podem ser
+ *    correlacionadas com a tentativa da receita enquanto ela dura).
  *  - `creationSessions[].generations[]`: tokens, custo, `promptStamp` (só versão e rótulos dos eixos, ver
  *    `exportablePromptStamp`) e a variação escolhida.
  *

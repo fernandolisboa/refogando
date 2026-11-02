@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
 import type { Sql } from 'postgres'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, sql as dsql } from 'drizzle-orm'
 import { makeSql } from '@/db/client'
 import { getDb, setClaudeClient } from '@/server/deps'
 import { FakeClaudeClient } from '@/server/claude/client'
@@ -512,10 +512,33 @@ describe('Concorrência de seq — UNIQUE(creation_session_id, seq) é a rede (2
     }
     setClaudeClient(new BarrierClient())
 
+    // A barreira acima sozinha NÃO garante a colisão: depois de soltas, uma tx pode commitar o INSERT antes de
+    // a outra ler o max (o teste falhava rodando isolado). Uma 3ª conexão segura `LOCK TABLE … IN SHARE MODE`
+    // na transcript_message: o SELECT max (ACCESS SHARE) passa, o INSERT (ROW EXCLUSIVE) espera. Só soltamos o
+    // lock quando as DUAS tx estão esperando nele, ou seja, quando ambas já leram max=−1 (next=0).
+    let lockHeld!: () => void
+    const lockAcquired = new Promise<void>((r) => {
+      lockHeld = r
+    })
+    const lockTx = getDb().transaction(async (tx) => {
+      await tx.execute(dsql`lock table transcript_message in share mode`)
+      lockHeld()
+      for (let i = 0; i < 500; i++) {
+        const rows = (await getDb().execute(
+          dsql`select count(*)::int as n from pg_locks where relation = 'transcript_message'::regclass and not granted`,
+        )) as unknown as { n: number }[]
+        if (rows[0]?.n >= 2) return
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      throw new Error('as duas tx de append não chegaram ao INSERT')
+    })
+    await lockAcquired
+
     // Duas chamadas concorrentes à MESMA Session: ambas leem max=−1 (next=0) antes de commitar.
     const [r1, r2] = await Promise.all([
       collectNdjson(await postStream({ sessionId, transcript: makeTranscript() }, headers)),
       collectNdjson(await postStream({ sessionId, transcript: makeTranscript() }, headers)),
+      lockTx,
     ])
 
     const terminals = [r1.at(-1)!, r2.at(-1)!]

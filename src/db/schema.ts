@@ -583,6 +583,10 @@ export const extractionEvent = pgTable(
  * ON DELETE cascade: apagar o usuário apaga as reservas. RETENÇÃO (ADR-0050): a vencida (`expires_at <= agora`)
  * é apagada na passada diária seguinte do cron de retenção (`quotaHolds`); vencida não conta, então a limpeza é
  * só higiene. Sem índice próprio para esse corte global: a tabela só guarda as reservas de um ou dois dias.
+ *
+ * `translation` (#642, ADR-0056): a tradução sob demanda disparada por um usuário. Não tem evento próprio, então a
+ * reserva É o registro de uso: nunca é consumida nem devolvida (o `RealTranslator` não prova "não pago") e conta
+ * até vencer, como o ledger da Extração.
  */
 export const quotaHold = pgTable(
   'quota_hold',
@@ -598,7 +602,7 @@ export const quotaHold = pgTable(
   },
   (t) => [
     index('quota_hold_user_kind_expires_idx').on(t.userId, t.kind, t.expiresAt),
-    check('quota_hold_kind_chk', sql`${t.kind} IN ('recipe_gen', 'image_gen')`),
+    check('quota_hold_kind_chk', sql`${t.kind} IN ('recipe_gen', 'image_gen', 'translation')`),
     check('quota_hold_slots_chk', sql`${t.slots} BETWEEN 1 AND 2`),
   ],
 )
@@ -673,6 +677,35 @@ export const recipeTranslation = pgTable(
       .where(sql`${t.slug} IS NOT NULL`),
     index('recipe_translation_search_vector_gin').using('gin', t.searchVector),
   ],
+)
+
+/**
+ * Estado da tradução SOB DEMANDA de uma (receita, locale) que ainda não tem linha em `recipe_translation` (#642,
+ * ADR-0056). Uma linha no máximo por par; sem usuário e sem conteúdo (a chave é um hash da fonte). Dois papéis:
+ *  - SINGLE-FLIGHT: `lease_id`/`lease_until` marcam "em voo". Tomado sob `pg_advisory_xact_lock` do par numa tx
+ *    curta (`claimTranslationFlight`), e a chamada ao modelo roda FORA da tx. Enquanto `lease_until > now()`, os
+ *    outros POSTs do par não chamam o modelo. Função morta pela Vercel não solta o lease: ele vence sozinho.
+ *  - CACHE NEGATIVO: a falha grava `failed_at`, `retry_at` (24 h para falha da linha, 10 min para infra) e
+ *    `fail_key` (a chave do circuit-breaker do #520, fonte + versão do prompt, mais a cozinha e o modelo/thinking
+ *    da tradução: `translationFlightFailKey`). Até `retry_at`, e enquanto a chave for a mesma, nenhum POST chama o
+ *    modelo.
+ * O sucesso apaga a linha (a tradução gravada passa a responder `exists`). ON DELETE cascade com a receita.
+ */
+export const recipeTranslationAttempt = pgTable(
+  'recipe_translation_attempt',
+  {
+    recipeId: uuid('recipe_id')
+      .notNull()
+      .references(() => recipe.id, { onDelete: 'cascade' }),
+    locale: text('locale').notNull(),
+    leaseId: uuid('lease_id'),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    failedAt: timestamp('failed_at', { withTimezone: true }),
+    retryAt: timestamp('retry_at', { withTimezone: true }),
+    failKey: text('fail_key'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.recipeId, t.locale] })],
 )
 
 export const ingredient = pgTable(

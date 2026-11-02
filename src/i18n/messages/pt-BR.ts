@@ -138,6 +138,8 @@ export const ptBR = {
   traducao: {
     staleAviso: 'Esta tradução pode estar desatualizada em relação ao original.',
     verOriginal: 'Ver o original',
+    // #642 (ADR-0056): 429 `limite_traducao` do POST de tradução sob demanda; `{tempo}` vem de `formatCountdown`.
+    limite: 'Você atingiu o limite de traduções por enquanto. Libera em ~{tempo}.',
   },
   // Rótulo amigável por valor do enum RESTRICOES (#7). Adjetivos no feminino concordam com
   // o sujeito "Receita" do template. `satisfies Record<Restricao, string>` trava drift do enum

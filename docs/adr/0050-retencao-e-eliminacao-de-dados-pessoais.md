@@ -57,6 +57,8 @@ Issues #473 (retenção e eliminação) e #596 (EXIF/GPS no servidor). Base: o s
 
    > **Nota (ADR-0055, 2026-11-02):** a tabela ganhou `quota_hold` (reserva de cota de geração de receita e de imagem, sem conteúdo), no passo `quotaHolds`: DELETE por `expires_at <= agora`. A reserva vence em 24 h e é apagada na passada diária seguinte, então uma linha vive uns 48 h (mais, se a passada atrasar ou adiar o passo). Vencida já não conta na cota; a limpeza é higiene. Na eliminação ela fica até lá (`keep_ledger`), e entra no export (`quotaHolds`).
 
+   > **Nota (ADR-0056, 2026-11-02):** `quota_hold` ganhou o tipo `translation` (reserva da tradução sob demanda, sem o id da receita; durante a tentativa, ≤ 90 s, ou até a próxima escrita no par após uma queda, as datas podem ser correlacionadas com a tentativa da receita, ADR-0056 dec. 8); o mesmo passo `quotaHolds` a apaga depois de vencer. A tabela nova `recipe_translation_attempt` (lease e cache de falha da tradução) não tem usuário nem conteúdo: sai em cascata com a receita e não tem passo de retenção.
+
 4. **O que fica, e por quê.**
    - As Receitas públicas e as avaliações ficam anonimizadas (art. 12), porque terceiros salvaram, avaliaram ou planejaram com elas. É risco aceito no parecer §11; quem quer que uma suma a apaga antes de eliminar a conta.
    - Os ledgers não têm conteúdo e servem a custo e abuso (legítimo interesse, art. 7º, IX, LIA A do registro); ficam 24 meses.
