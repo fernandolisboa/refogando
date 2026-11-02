@@ -3,8 +3,8 @@
  * NULL) com fallback de INICIAIS quando não há imagem. Espelha a forma visual do avatar do perfil
  * público (`public-profile-view`): círculo com borda, `object-cover`; iniciais sobre `bg-surface`.
  *
- * NÃO usa `next/image` (convenção do repo: `<img>` simples) — `images.remotePatterns` no
- * `next.config` cobre o host do blob caso um `next/image` apareça depois. `referrerPolicy` evita
+ * NÃO usa `next/image` (convenção do repo: `<img>` simples; o `next.config` não libera host remoto para o
+ * otimizador desde a auditoria de 2026-11-01). `referrerPolicy` evita
  * vazar o referer pro host da imagem (o avatar do Google pede isso). As iniciais são `aria-hidden`
  * (decorativas — o nome costuma estar ao lado/no alt).
  *

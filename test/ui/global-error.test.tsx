@@ -65,11 +65,30 @@ describe('GlobalErrorScreen', () => {
 })
 
 describe('RootGlobalError', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('pré-render usa o DEFAULT_LOCALE e traz <html>/<body> próprios', () => {
     window.history.replaceState(null, '', '/en-US')
-    const html = renderToString(<RootGlobalError error={new Error('x')} unstable_retry={() => {}} />)
+    const html = renderToString(<RootGlobalError error={new Error('x')} retry={() => {}} />)
     expect(html).toMatch(/^<html lang="pt-BR"/)
     expect(html).toContain('<body')
     expect(html).toContain(ptBR.system.error)
+  })
+
+  // Next 16.3+ passa `retry` (antes era `unstable_retry`): lendo o nome velho, o botão recarregava a página inteira.
+  it.each([
+    ['retry', (fn: () => void) => ({ retry: fn })],
+    ['unstable_retry (Next < 16.3)', (fn: () => void) => ({ unstable_retry: fn })],
+  ])('"tentar de novo" chama o %s do Next', async (_name, props) => {
+    window.history.replaceState(null, '', '/pt-BR')
+    const fn = vi.fn()
+    // O componente traz o próprio <html>; dentro de uma <div> o React só avisa do aninhamento (silenciado aqui).
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { unmount } = render(<RootGlobalError error={new Error('x')} {...props(fn)} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: ptBR.system.retry }))
+    expect(fn).toHaveBeenCalledTimes(1)
+    unmount()
   })
 })

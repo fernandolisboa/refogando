@@ -1,4 +1,4 @@
-import sharp from 'sharp'
+import sharp, { type Metadata } from 'sharp'
 import type { ImageStore } from '@/server/images/image-store'
 import { deleteOrphanBlobs } from '@/server/images/image-blobs'
 import { IMAGE_DETAIL_WIDTH, IMAGE_THUMB_WIDTH } from '@/domain/image-variants'
@@ -54,7 +54,7 @@ export const SAFE_RASTER_FORMATS: ReadonlySet<string> = new Set(['jpeg', 'png', 
  * `SAFE_RASTER_FORMATS` (ou sem formato); `'animada'` = mais de um quadro (GIF/WebP animado viraria só o
  * 1º quadro, em silêncio). Fonte ÚNICA do gate dos derivados e da foto da avaliação (#588).
  */
-export function classifyRasterInput(meta: Pick<sharp.Metadata, 'format' | 'pages'>): 'ok' | 'formato' | 'animada' {
+export function classifyRasterInput(meta: Pick<Metadata, 'format' | 'pages'>): 'ok' | 'formato' | 'animada' {
   if (!meta.format || !SAFE_RASTER_FORMATS.has(meta.format)) return 'formato'
   if ((meta.pages ?? 1) > 1) return 'animada'
   return 'ok'

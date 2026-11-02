@@ -216,6 +216,7 @@ function logSeamError(method: string, err: unknown, signal?: AbortSignal): void 
   const message = String(e.message ?? err)
     .replace(/"[^"]*"/g, '"…"')
     .slice(0, 300)
+  // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring -- `method` é constante de código
   console.error(`[claude/${method}] falha na chamada (→ parse_failed):`, {
     name: e.name,
     status: e.status,
@@ -234,6 +235,7 @@ function logSeamParseFailed(
   reason: string,
   message: { id?: string; stop_reason?: string | null },
 ): void {
+  // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring -- `method` é constante de código
   console.error(`[claude/${method}] parse_failed (${reason}):`, {
     id: message.id,
     stopReason: message.stop_reason,
@@ -249,6 +251,7 @@ function logSeamParseFailed(
  */
 export function logDescartes(method: string, descartes: readonly CampoDescartado[]): void {
   if (descartes.length === 0) return
+  // nosemgrep: javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring -- `method` é constante de código
   console.warn(`[claude/${method}] valores fora do vocabulário caíram no fallback:`, {
     total: descartes.length,
     descartes: descartes.slice(0, 20).map((d) => ({ campo: d.campo, tamanho: d.valor.length })),

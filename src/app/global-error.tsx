@@ -10,7 +10,8 @@
  * roda; o `ThemeCookieSync` reaplica o tema do cookie antes da pintura.
  *
  * Nome `RootGlobalError` (o `GlobalError` já é o da boundary de `[locale]/error.tsx`). "Tentar de novo" usa o
- * `unstable_retry` do Next 16 (re-busca e re-renderiza); sem ele, recarrega a página.
+ * `retry` do Next (re-busca e re-renderiza; estável desde a 16.3, antes `unstable_retry`, que ainda é aceito se
+ * vier); sem nenhum dos dois, recarrega a página.
  */
 import './globals.css'
 import { GlobalErrorScreen, useLocaleFromPath } from '@/components/global-error-screen'
@@ -19,13 +20,20 @@ import { DEFAULT_THEME_CLASS } from '@/lib/theme'
 
 export default function RootGlobalError({
   error,
+  retry: nextRetry,
   unstable_retry,
 }: {
   error: Error & { digest?: string }
+  retry?: () => void
   unstable_retry?: () => void
 }) {
   const locale = useLocaleFromPath()
-  const retry = typeof unstable_retry === 'function' ? unstable_retry : () => window.location.reload()
+  const retry =
+    typeof nextRetry === 'function'
+      ? nextRetry
+      : typeof unstable_retry === 'function'
+        ? unstable_retry
+        : () => window.location.reload()
   return (
     <html lang={locale} className={DEFAULT_THEME_CLASS} suppressHydrationWarning>
       <body className="flex min-h-svh flex-col">

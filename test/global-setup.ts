@@ -2,6 +2,7 @@ import type { ProvidedContext } from 'vitest'
 import { makeSql } from '../src/db/client'
 import { runMigrations } from '../src/db/migrate'
 import { createThrowawayDb, randSuffix } from './helpers/throwaway-db'
+import { assertNotProductionTestDb } from './helpers/production-db-guard'
 
 /**
  * Harness de integração — Postgres REAL e descartável, provider NEUTRO, auto-detect:
@@ -17,12 +18,13 @@ import { createThrowawayDb, randSuffix } from './helpers/throwaway-db'
 /** Forma segura do nome do banco descartável, nos dois caminhos (helper `createThrowawayDb`, #593). */
 const SAFE_DB_NAME = /^refogando_test_[a-z0-9]+$/
 
-/** Endpoint direto/unpooled para admin (CREATE/DROP DATABASE) e migrator. */
+/**
+ * Endpoint direto/unpooled para admin (CREATE/DROP DATABASE) e migrator. Só das variáveis de TESTE: até a
+ * auditoria de 2026-11-01 (H-3) caía em `DATABASE_URL_UNPOOLED`/`POSTGRES_URL_NON_POOLING`, ou seja, no banco da
+ * app, que podia ser produção mesmo com `TEST_DATABASE_URL` apontando para outro servidor.
+ */
 function pickAdminUrl(): string {
-  const direct =
-    process.env.TEST_DATABASE_URL_UNPOOLED ??
-    process.env.DATABASE_URL_UNPOOLED ??
-    process.env.POSTGRES_URL_NON_POOLING
+  const direct = process.env.TEST_DATABASE_URL_UNPOOLED
   if (direct?.trim()) return direct.trim()
   // Best-effort: derivar o host direto removendo "-pooler" (convenção Neon).
   const pooled = process.env.TEST_DATABASE_URL!.trim()
@@ -41,6 +43,9 @@ type GlobalSetupContext = {
 }
 
 export default async function setup({ provide }: GlobalSetupContext) {
+  // H-3 (auditoria 2026-11-01): recusa TEST_DATABASE_URL* apontando para produção ou para o servidor do banco da
+  // app ANTES de conectar. O `createThrowawayDb` ainda recusa o host de produção na URL que de fato vai usar.
+  assertNotProductionTestDb(process.env)
   // Mesmo padrão de nome nos dois caminhos (no container também, em vez do default "test"): testes que
   // mexem no próprio banco (ALTER DATABASE) conferem current_database() contra ele antes. Com
   // TEST_DATABASE_URL a varredura apaga todo órfão `refogando_test_*` sem sessão (sem FORCE).
@@ -48,6 +53,7 @@ export default async function setup({ provide }: GlobalSetupContext) {
     dbName: `refogando_test_${randSuffix()}`,
     safeName: SAFE_DB_NAME,
     adminUrl: process.env.TEST_DATABASE_URL?.trim() ? pickAdminUrl() : undefined,
+    adminUrlEnv: 'TEST_DATABASE_URL',
   })
   const { url: appUrl, dbName } = db
 

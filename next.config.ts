@@ -10,11 +10,11 @@ import { e2eFakesActive } from './src/server/e2e/mode'
 e2eFakesActive()
 
 /**
- * `images.remotePatterns` libera o host do Vercel Blob (#126) — onde moram os avatares e, depois,
- * as Imagens da receita (entidade `recipe_image`, #130). O store é PUBLIC, então a URL serve a
- * imagem direto; o repo renderiza com `<img>` simples (convenção), mas `remotePatterns` mantém a
- * porta aberta pra `next/image` sem retrabalho. O subdomínio do store varia (`<id>.public...`),
- * por isso o wildcard de host.
+ * Sem `images.remotePatterns` de propósito (auditoria 2026-11-01, H-1): o repo renderiza as imagens do Blob com
+ * `<img>` simples e as variantes WebP próprias (#575), nunca com `next/image`. O wildcard antigo
+ * (`**.public.blob.vercel-storage.com`, #126) deixava qualquer store do Blob, de qualquer conta, passar pelo
+ * otimizador `/_next/image` deste projeto (cota de otimização e a superfície dos advisories do otimizador).
+ * Se um dia o `next/image` entrar, libere o host EXATO do store, não o wildcard.
  */
 
 /**
@@ -63,14 +63,6 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
-  },
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '**.public.blob.vercel-storage.com',
-      },
-    ],
   },
 }
 
