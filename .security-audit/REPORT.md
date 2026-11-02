@@ -266,7 +266,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 
 | Ferramenta | Regra | Local | Motivo |
 |---|---|---|---|
-| semgrep | unsafe-formatstring (×3) | `src/server/claude/client.ts:219,237,252` | `method` é constante de código; o especificador só afeta o console. `// nosemgrep` nas 3 linhas (não desliga a regra no repo) |
+| semgrep | unsafe-formatstring (×3) | `src/server/claude/client.ts:220,239,255` | `method` é constante de código; o especificador só afeta o console. `// nosemgrep` nas 3 linhas (não desliga a regra no repo) |
 | semgrep | timeout em unknown-value-with-script-tag | `src/db/schema.ts` | A regra estourou o tempo; não gerou achado. É um arquivo de definição de tabelas do Drizzle, sem renderização. |
 | CodeQL | js/xss-through-dom | `src/components/meal-plan/meal-plan-recipe-picker.tsx:364` | `href` interno vindo de `createForMealSlotHref` (constante de i18n + dia e refeição tipados), num `Link` do React |
 | CodeQL | js/xss-through-dom | `src/components/recipe/recipe-review-section.tsx:517` | `img src` é `URL.createObjectURL` ou a URL do Blob gravada pelo servidor; não é HTML |

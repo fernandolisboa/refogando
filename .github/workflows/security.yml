@@ -97,13 +97,18 @@ jobs:
         id: bypass
         env:
           BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          TARGET: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
         run: |
           if [ -z "$BYPASS" ]; then
             echo "::notice::Sem VERCEL_AUTOMATION_BYPASS_SECRET: o ZAP só veria a tela de login da Vercel. Varredura pulada."
             echo "ok=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          # Host do Preview: o header de bypass só vai para ele (ZAP_AUTH_HEADER_SITE), nunca para terceiros.
+          host=$(printf '%s' "$TARGET" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#')
+          [[ "$host" == *.vercel.app ]] || { echo "::error::alvo inesperado: $host"; exit 1; }
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: ZAP baseline (passive) against the Preview
         if: steps.bypass.outputs.ok == 'true'
@@ -112,6 +117,7 @@ jobs:
           # Os scripts do ZAP mandam este header em toda requisição ao alvo (bypass da Deployment Protection).
           ZAP_AUTH_HEADER: x-vercel-protection-bypass
           ZAP_AUTH_HEADER_VALUE: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          ZAP_AUTH_HEADER_SITE: ${{ steps.bypass.outputs.host }}
         with:
           target: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
           allow_issue_writing: false

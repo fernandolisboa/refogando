@@ -53,4 +53,5 @@ relatório propôs um workflow de segurança contínua; o painel de revisores do
   auditoria, `.security-audit/config.md`, é o gatilho natural).
 - O semgrep vem do PyPI só com a versão fixada (sem hash das dependências) e a imagem do ZAP é `stable`. Como o job
   não tem secret nem escrita, o pior caso de um scanner adulterado é esconder achado. Aceito.
-- Teste com segredo falso fica em `test/` ou em `e2e/harness/constants.ts`; fora deles, o gitleaks reprova.
+- Teste novo com segredo falso faz o gitleaks reprovar até o arquivo entrar, pelo caminho exato, na allowlist do
+  `.gitleaks.toml` (depois de conferir que o segredo é falso). A allowlist é por arquivo, não pela pasta `test/`.
