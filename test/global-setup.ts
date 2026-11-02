@@ -2,6 +2,7 @@ import type { ProvidedContext } from 'vitest'
 import { makeSql } from '../src/db/client'
 import { runMigrations } from '../src/db/migrate'
 import { createThrowawayDb, randSuffix } from './helpers/throwaway-db'
+import { assertNotProductionTestDb } from './helpers/production-db-guard'
 
 /**
  * Harness de integração — Postgres REAL e descartável, provider NEUTRO, auto-detect:
@@ -41,6 +42,8 @@ type GlobalSetupContext = {
 }
 
 export default async function setup({ provide }: GlobalSetupContext) {
+  // ARCH-01 (auditoria 2026-11-01): recusa TEST_DATABASE_URL apontando para produção/banco da app ANTES de conectar.
+  assertNotProductionTestDb(process.env)
   // Mesmo padrão de nome nos dois caminhos (no container também, em vez do default "test"): testes que
   // mexem no próprio banco (ALTER DATABASE) conferem current_database() contra ele antes. Com
   // TEST_DATABASE_URL a varredura apaga todo órfão `refogando_test_*` sem sessão (sem FORCE).
