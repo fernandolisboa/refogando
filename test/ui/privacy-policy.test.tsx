@@ -170,12 +170,18 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     const pt = ptBR.privacidade
     const en = enUS.privacidade
     expect(pt.s36Valores[0]).toContain('nos limites do formulário de Seus direitos e do vetor da busca, um código calculado do IP')
-    expect(pt.s36Valores[0]).toContain('que não permite recuperar o IP nem a conta, apagado em até 2 horas')
+    expect(pt.s36Valores[0]).toContain('com uma chave secreta guardada fora do banco de dados (sem essa chave, não dá para recuperar o IP ou a conta a partir do código), apagado em até 2 horas')
+    expect(en.s36Valores[0]).toContain('with a secret key kept outside the database (without that key, the IP address or the account cannot be recovered from the code)')
     expect(pt.s36Valores[3]).toContain('o código dos limites do formulário de Seus direitos e da busca, em até 2 horas')
-    expect(pt.s39Valores[3]).toContain('O vetor de cada termo fica guardado por até 24 horas, sem o termo')
+    expect(pt.s39Valores[3]).toContain('O vetor de cada termo fica guardado por até 24 horas, sem guardar o termo nem quem buscou')
+    expect(pt.s39Valores[3]).toContain('arredondada para a hora cheia')
     expect(en.s36Valores[0]).toContain('in the limits of the Your Rights form and of the search vector, a code computed from the IP address')
     expect(en.s36Valores[3]).toContain('the code in the limits of the Your Rights form and of search, within 2 hours')
-    expect(en.s39Valores[3]).toContain('The vector of each term is kept for up to 24 hours, without the term')
+    expect(en.s39Valores[3]).toContain('The vector of each term is kept for up to 24 hours, without storing the term or who searched')
+    // Sem promessa de "sem ligação" nem de "não permite recuperar": o horário e a chave podem ligar (ADR-0057).
+    for (const m of [pt, en]) {
+      expect(JSON.stringify(m)).not.toMatch(/sem ligação com quem buscou|no link to who searched|não permite recuperá-los|does not allow recovering them/)
+    }
     // 3.7 não muda: o IP do relato de erro do navegador segue só na memória (o teto persistido é só global).
     expect(pt.s37Valores[0]).toContain('o IP de quem envia é usado só na memória')
     for (const m of [pt, en]) {

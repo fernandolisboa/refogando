@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDb } from '@/server/deps'
 import { rateLimitWindow, searchQueryEmbedding, rateLimit } from '@/db/schema'
 import { EMBEDDING_DIMENSIONS } from '@/db/schema'
@@ -7,7 +7,9 @@ import {
   consumeRateLimit,
   consumeRateLimits,
   deleteExpiredRateLimitWindows,
+  derivedSubkey,
   limiterKey,
+  releaseRateLimit,
 } from '@/server/rate-limit/window'
 import { SEARCH_QUERY_EMBEDDING_TTL_MS, searchQueryCacheKey } from '@/server/search/query-embedding'
 import { EMBEDDING_VERSION } from '@/server/embedding/embedder'
@@ -59,7 +61,7 @@ describe('consumeRateLimit — janela fixa com upsert atômico', () => {
   })
 
   it('a concorrência na virada não mistura janelas: cada uma conta o seu limite', async () => {
-    const rule = { bucket: 'dpo_email' as const, key: GLOBAL_LIMIT_KEY, limit: 3, windowMs: MIN }
+    const rule = { bucket: 'dpo_email_arrival' as const, key: GLOBAL_LIMIT_KEY, limit: 3, windowMs: MIN }
     const start = windowStartOf(NOW.getTime(), MIN)
     const instants = [start + MIN - 5, start + MIN + 5] // um pouco antes e um pouco depois da virada
     const results = await Promise.all(
@@ -69,7 +71,7 @@ describe('consumeRateLimit — janela fixa com upsert atômico', () => {
   })
 
   it('limite 0 bloqueia sem tocar o banco', async () => {
-    const d = await consumeRateLimit(getDb(), { bucket: 'dpo_email', key: GLOBAL_LIMIT_KEY, limit: 0 }, NOW)
+    const d = await consumeRateLimit(getDb(), { bucket: 'dpo_email_arrival', key: GLOBAL_LIMIT_KEY, limit: 0 }, NOW)
     expect(d.allowed).toBe(false)
     expect(await windows()).toHaveLength(0)
   })
@@ -85,7 +87,7 @@ describe('consumeRateLimit — janela fixa com upsert atômico', () => {
 describe('consumeRateLimits — ordem das regras', () => {
   it('para no primeiro bloqueio: quem passou do próprio limite não gasta o teto global', async () => {
     const ip = { bucket: 'search_embed_ip' as const, key: limiterKey('search_embed_ip', '192.0.2.1'), limit: 1 }
-    const global = { bucket: 'search_embed_global' as const, key: GLOBAL_LIMIT_KEY, limit: 100 }
+    const global = { bucket: 'search_embed_global_anon' as const, key: GLOBAL_LIMIT_KEY, limit: 100 }
     expect((await consumeRateLimits(getDb(), [ip, global], NOW)).allowed).toBe(true)
     for (let i = 0; i < 5; i++) {
       const d = await consumeRateLimits(getDb(), [ip, global], NOW)
@@ -93,17 +95,41 @@ describe('consumeRateLimits — ordem das regras', () => {
       if (!d.allowed) expect(d.bucket).toBe('search_embed_ip')
     }
     const rows = await windows()
-    expect(rows.find((r) => r.bucket === 'search_embed_global')?.count).toBe(1)
+    expect(rows.find((r) => r.bucket === 'search_embed_global_anon')?.count).toBe(1)
   })
 
   it('o teto global barra mesmo com IPs todos diferentes', async () => {
-    const global = { bucket: 'search_embed_global' as const, key: GLOBAL_LIMIT_KEY, limit: 3 }
+    const global = { bucket: 'search_embed_global_anon' as const, key: GLOBAL_LIMIT_KEY, limit: 3 }
     const allowed: boolean[] = []
     for (let i = 0; i < 6; i++) {
       const ip = { bucket: 'search_embed_ip' as const, key: limiterKey('search_embed_ip', `10.0.0.${i}`), limit: 5 }
       allowed.push((await consumeRateLimits(getDb(), [ip, global], NOW)).allowed)
     }
     expect(allowed).toEqual([true, true, true, false, false, false])
+  })
+
+  it('o global barrou ⇒ a unidade da regra anterior (IP) é devolvida: o pedido que não saiu não gasta a cota própria', async () => {
+    const ip = { bucket: 'search_embed_ip' as const, key: limiterKey('search_embed_ip', '192.0.2.50'), limit: 5 }
+    const global = { bucket: 'search_embed_global_anon' as const, key: GLOBAL_LIMIT_KEY, limit: 1 }
+    expect((await consumeRateLimits(getDb(), [ip, global], NOW)).allowed).toBe(true)
+    for (let i = 0; i < 4; i++) {
+      const d = await consumeRateLimits(getDb(), [ip, global], NOW)
+      expect(d.allowed).toBe(false)
+      if (!d.allowed) expect(d.bucket).toBe('search_embed_global_anon')
+    }
+    const rows = await windows()
+    expect(rows.find((r) => r.bucket === 'search_embed_ip')?.count).toBe(1) // só o que passou
+    expect(rows.find((r) => r.bucket === 'search_embed_global_anon')?.count).toBe(1)
+  })
+
+  it('releaseRateLimit não desce de 0 nem cria linha', async () => {
+    const rule = { bucket: 'takedown_ip' as const, key: limiterKey('takedown_ip', '192.0.2.60') }
+    await releaseRateLimit(getDb(), rule, NOW)
+    expect(await windows()).toHaveLength(0)
+    await consumeRateLimit(getDb(), rule, NOW)
+    await releaseRateLimit(getDb(), rule, NOW)
+    await releaseRateLimit(getDb(), rule, NOW)
+    expect((await windows())[0].count).toBe(0)
   })
 })
 
@@ -115,6 +141,14 @@ describe('limiterKey — o IP nunca vai em claro', () => {
     expect(a).toMatch(/^[A-Za-z0-9_-]{22}$/)
     await consumeRateLimit(getDb(), { bucket: 'takedown_ip', key: a }, NOW)
     expect(JSON.stringify(await windows())).not.toContain('203.0.113.9')
+  })
+
+  it('subchaves HKDF por rótulo: 32 bytes, estáveis, diferentes entre si', () => {
+    const rl = derivedSubkey('refogando/rate-limit')
+    const sq = derivedSubkey('refogando/search-query')
+    expect(rl).toHaveLength(32)
+    expect(rl.equals(derivedSubkey('refogando/rate-limit'))).toBe(true)
+    expect(rl.equals(sq)).toBe(false)
   })
 })
 
@@ -137,8 +171,8 @@ describe('limpeza das janelas e dos vetores de busca', () => {
   })
 
   it('retenção diária: os passos `rateLimitWindows` e `searchQueryEmbeddings` apagam o vencido e mantêm o resto', async () => {
-    await consumeRateLimit(getDb(), { bucket: 'dpo_email', key: GLOBAL_LIMIT_KEY }, new Date(NOW.getTime() - 3 * 60 * MIN))
-    await consumeRateLimit(getDb(), { bucket: 'dpo_email', key: GLOBAL_LIMIT_KEY }, NOW)
+    await consumeRateLimit(getDb(), { bucket: 'dpo_email_arrival', key: GLOBAL_LIMIT_KEY }, new Date(NOW.getTime() - 3 * 60 * MIN))
+    await consumeRateLimit(getDb(), { bucket: 'dpo_email_arrival', key: GLOBAL_LIMIT_KEY }, NOW)
     await seedVector('vencido', new Date(NOW.getTime() - SEARCH_QUERY_EMBEDDING_TTL_MS - 1000))
     await seedVector('valido', new Date(NOW.getTime() - SEARCH_QUERY_EMBEDDING_TTL_MS + 1000))
 
@@ -154,8 +188,13 @@ describe('limpeza das janelas e dos vetores de busca', () => {
     const original = process.env.CRON_SECRET
     beforeEach(() => {
       process.env.CRON_SECRET = 'segredo-de-teste'
+      // A rota usa `new Date()`: relógio congelado no meio das janelas, para a janela "atual" não virar no meio do
+      // teste. Só o `Date` (o postgres-js usa `setTimeout` de verdade).
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(NOW)
     })
     afterEach(() => {
+      vi.useRealTimers()
       if (original === undefined) delete process.env.CRON_SECRET
       else process.env.CRON_SECRET = original
     })

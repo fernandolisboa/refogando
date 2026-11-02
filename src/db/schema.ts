@@ -14,6 +14,7 @@ import {
   date,
   jsonb,
   vector,
+  halfvec,
   index,
   uniqueIndex,
   unique,
@@ -1126,14 +1127,17 @@ export const rateLimitWindow = pgTable(
 // ── Cache do vetor da busca (#643, ADR-0057) ────────────────────────────────────
 //
 // A consulta de busca vira um vetor no Gemini (pago, chave compartilhada com as imagens). Busca repetida reusa o
-// vetor daqui. SEM o texto buscado: `query_key` é um HMAC (segredo do auth) da consulta normalizada + versão da
-// geometria + dimensão + tarefa (`searchQueryCacheKey`). Vale `SEARCH_QUERY_EMBEDDING_TTL_MS` (lido com o corte
-// em `created_at`); a limpeza de hora em hora apaga as vencidas (política item 3.9: até 24 h).
+// vetor daqui. SEM o texto buscado: `query_key` é um HMAC (subchave do segredo do auth) da consulta normalizada +
+// versão da geometria + dimensão + tarefa (`searchQueryCacheKey`). O vetor fica em `halfvec` (meia precisão, metade
+// do `vector`: ~3 KB por linha) e a tabela tem teto de linhas (`SEARCH_QUERY_EMBEDDING_MAX_ROWS`), para um laço de
+// consultas distintas não encher o armazenamento do Neon. `created_at` é a hora cheia da gravação. Vale
+// `SEARCH_QUERY_EMBEDDING_TTL_MS` (lido com o corte em `created_at`); a limpeza de hora em hora apaga as vencidas
+// (política item 3.9: até 24 h). O loader lê o vetor como `number[]` e o manda com `::vector`, como sempre.
 export const searchQueryEmbedding = pgTable(
   'search_query_embedding',
   {
     queryKey: text('query_key').primaryKey(),
-    embedding: vector('embedding', { dimensions: EMBEDDING_DIMENSIONS }).notNull(),
+    embedding: halfvec('embedding', { dimensions: EMBEDDING_DIMENSIONS }).notNull(),
     // `EMBEDDING_VERSION` que produziu o vetor (também está dentro do HMAC; aqui para a leitura conferir e para
     // uma troca de modelo poder limpar as antigas).
     model: text('model').notNull(),

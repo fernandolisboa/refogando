@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalSearchQuery } from '@/domain/search-query-key'
+import { canonicalSearchQuery, embeddableSearchQuery } from '@/domain/search-query-key'
 
 /** Forma canônica da consulta que vira vetor e chave do cache (#643, ADR-0057). */
 describe('canonicalSearchQuery', () => {
@@ -26,5 +26,14 @@ describe('canonicalSearchQuery', () => {
 
   it('só espaço vira vazio', () => {
     expect(canonicalSearchQuery(' \n\t ', 256)).toBe('')
+  })
+})
+
+describe('embeddableSearchQuery', () => {
+  it('pelo menos 3 caracteres (code points) e uma letra ou dígito', () => {
+    for (const q of ['pão', 'abc', '42 receitas', 'ﬁgo']) expect(embeddableSearchQuery(canonicalSearchQuery(q, 256))).toBe(true)
+    for (const q of ['', 'a', 'pã', '!!!', '— . —', '...', '🍕🍕🍕']) {
+      expect(embeddableSearchQuery(canonicalSearchQuery(q, 256))).toBe(false)
+    }
   })
 })

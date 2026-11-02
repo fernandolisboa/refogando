@@ -2258,7 +2258,7 @@ export const ptBR = {
     ],
     s36Titulo: '3.6. Segurança da conta e prevenção de abuso',
     s36Valores: [
-      'o endereço IP e o navegador (user agent) de cada sessão de login; o IP nos limites de tentativas das rotas de conta (como login, cadastro e senha), apagado em até 2 horas após a última tentativa; nos limites do formulário de Seus direitos e do vetor da busca, um código calculado do IP (ou, na busca de quem está conectado, da conta) com uma chave secreta, que não permite recuperar o IP nem a conta, apagado em até 2 horas; e, só na memória, o IP para limitar o ritmo do formulário de Seus direitos e da Descoberta; as denúncias que você faz sobre receitas ou avaliações; as decisões de moderação sobre o seu conteúdo ou a sua conta (por exemplo, uma imagem escondida do público ou o bloqueio da geração de imagens), com o motivo; e, se a equipe encerrar a sua conta (conta de alguém com menos de 16 anos ou violação grave dos Termos de Uso), um registro dessa decisão: o motivo, de uma lista fechada, a data, se as suas receitas públicas e avaliações foram removidas e se tentamos avisar você por e-mail.',
+      'o endereço IP e o navegador (user agent) de cada sessão de login; o IP nos limites de tentativas das rotas de conta (como login, cadastro e senha), apagado em até 2 horas após a última tentativa; nos limites do formulário de Seus direitos e do vetor da busca, um código calculado do IP (ou, na busca de quem está conectado, da conta) com uma chave secreta guardada fora do banco de dados (sem essa chave, não dá para recuperar o IP ou a conta a partir do código), apagado em até 2 horas; e, só na memória, o IP para limitar o ritmo do formulário de Seus direitos e da Descoberta; as denúncias que você faz sobre receitas ou avaliações; as decisões de moderação sobre o seu conteúdo ou a sua conta (por exemplo, uma imagem escondida do público ou o bloqueio da geração de imagens), com o motivo; e, se a equipe encerrar a sua conta (conta de alguém com menos de 16 anos ou violação grave dos Termos de Uso), um registro dessa decisão: o motivo, de uma lista fechada, a data, se as suas receitas públicas e avaliações foram removidas e se tentamos avisar você por e-mail.',
       'proteger a sua conta, impedir abuso e uso excessivo de recursos pagos e moderar o conteúdo público.',
       'legítimo interesse — Art. 7º, IX (com avaliação de legítimo interesse registrada); para o registro do encerramento da conta, exercício regular de direitos — Art. 7º, VI.',
       'a sessão vale 7 dias, renovados com o uso, e é apagada em até 1 dia depois de vencer, com o IP e o navegador; o IP dos limites de tentativas, em até 2 horas após a última tentativa; o código dos limites do formulário de Seus direitos e da busca, em até 2 horas; as denúncias ficam enquanto o conteúdo denunciado existir; as decisões de moderação, enquanto a conta ou o conteúdo existir (se você eliminar a conta, ficam sem nada que identifique você); o registro do encerramento da conta pela equipe, por 5 anos, para a nossa defesa num eventual processo, ligado só à conta já anonimizada e sem nenhum outro dado seu.',
@@ -2282,7 +2282,7 @@ export const ptBR = {
       'o termo que você digita na busca, com ou sem conta.',
       'encontrar receitas: o termo é transformado num vetor de busca pelo Google (Gemini) e, se você está conectado e a Descoberta na web está ativa, enviado à Brave restrito aos sites aprovados. Para controlar o custo, reaproveitamos o vetor de um termo já buscado e limitamos quantos vetores novos cada IP ou conta pede em poucos minutos (item 3.6); acima do limite, a busca continua, só pelo texto.',
       'execução de contrato para quem tem conta; legítimo interesse — Art. 7º, IX — para visitantes e, para o vetor guardado e os limites, prevenção de abuso e controle de custo.',
-      'não guardamos o termo (ver 3.7 sobre os registros da hospedagem). O vetor de cada termo fica guardado por até 24 horas, sem o termo e sem ligação com quem buscou: ele é identificado por um código calculado do termo com uma chave secreta, o mesmo para todos que buscam a mesma coisa.',
+      'não guardamos o termo (ver 3.7 sobre os registros da hospedagem). O vetor de cada termo fica guardado por até 24 horas, sem guardar o termo nem quem buscou: ele é identificado por um código calculado do termo com uma chave secreta, o mesmo para todos que buscam a mesma coisa, e a hora em que foi guardado fica arredondada para a hora cheia. Como o vetor é derivado do termo, nós o tratamos como dado pessoal.',
     ],
 
     s4Titulo: '4. Como e por quanto tempo tratamos (forma e duração) — Art. 9º, II',
@@ -2406,7 +2406,7 @@ export const ptBR = {
       `v3.4 — ${DATA_POLITICA_V3_4}: quando a equipe encerra uma conta, guardamos por 5 anos um registro da decisão (motivo, data, se o conteúdo público foi removido e se tentamos avisar a pessoa por e-mail), sem outro dado pessoal (item 3.6); o aviso de encerramento por e-mail entra nos envios do Resend (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a cópia que outra pessoa publica de uma receita sua mostra "Baseada na receita … de @você", com link; você pode desligar isso em Editar perfil ou retirar o seu nome de uma cópia, e guardamos essa escolha (item 3.1).`,
       `v3.6 — ${DATA_POLITICA_V3_6}: as funções do app passaram a rodar em São Paulo, junto do banco de dados; a IA continua nos Estados Unidos, e o texto do consentimento das restrições salvas diz isso (itens 3.5 e 5).`,
-      `v3.7 — ${DATA_POLITICA_V3_7}: os limites do formulário de Seus direitos e do vetor da busca passaram a valer em todos os servidores, guardando por até 2 horas só um código calculado do IP ou da conta, que não permite recuperá-los (item 3.6); a busca guarda por até 24 horas o vetor de cada termo, sem o termo (item 3.9).`,
+      `v3.7 — ${DATA_POLITICA_V3_7}: os limites do formulário de Seus direitos e do vetor da busca passaram a valer em todos os servidores, guardando por até 2 horas só um código do IP ou da conta, calculado com uma chave secreta guardada fora do banco de dados (item 3.6); a busca guarda por até 24 horas o vetor de cada termo, sem guardar o termo nem quem buscou (item 3.9).`,
     ],
 
     parteBTitulo: 'Parte (b) — "Descoberta na web"',
@@ -2525,6 +2525,8 @@ export const ptBR = {
     // #648: 429 do limitador persistido (por IP ou o teto total do formulário). O e-mail é a via que nunca fecha.
     erroLimite:
       'Recebemos muitos pedidos agora e o formulário está pausado por alguns minutos. Tente de novo mais tarde ou escreva para privacidade@refogando.com: o prazo de 15 dias vale do mesmo jeito.',
+    // 429 do freio em memória (1 envio por segundo do mesmo IP): um clique duplo, não o limite do formulário.
+    erroRapido: 'Espere um instante e envie de novo.',
 
     todoRotulo: 'campo a preencher',
     rodapeVersaoRotulo: 'Versão',

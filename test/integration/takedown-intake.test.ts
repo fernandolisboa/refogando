@@ -161,6 +161,6 @@ describe('POST /api/legal/takedown (#399 intake público)', () => {
     expect(second.status).toBe(429) // 2º barrado
     const body = (await second.json()) as { error?: string; ticketId?: string }
     expect(body.ticketId).toBeUndefined() // não abriu ticket
-    expect(body.error).toBe('rate_limited') // chave genérica, sem SQL/stack
+    expect(body.error).toBe('muito_rapido') // chave própria do clique duplo, sem SQL/stack
   })
 })

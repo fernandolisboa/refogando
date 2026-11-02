@@ -1,5 +1,5 @@
-import { createHmac } from 'node:crypto'
-import { lte, sql } from 'drizzle-orm'
+import { createHmac, hkdfSync } from 'node:crypto'
+import { and, eq, gt, lte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { rateLimitWindow } from '@/db/schema'
 import { RATE_LIMITS, windowStartOf, type RateLimitBucket } from '@/domain/rate-limit-rules'
@@ -38,24 +38,47 @@ export type RateLimitDecision =
   | { allowed: false; bucket: RateLimitBucket; retryAfterMs: number }
 
 /**
- * Segredo do HMAC das chaves: o do Better Auth, com rótulo próprio na mensagem (`rate-limit:`), como a chave do
- * avatar (`avatar-blob.ts`) e a lápide do cadastro expurgado. Sem segredo, fail-closed fora de teste: um "HMAC" sem
- * chave seria só um hash, e o IPv4 inteiro cabe num dicionário.
+ * Segredo-base dos HMAC do app: o do Better Auth. Sem ele, fail-closed fora de teste: um "HMAC" sem chave seria só um
+ * hash, e o IPv4 inteiro cabe num dicionário.
  */
-function limiterSecret(): string {
+function baseSecret(): string {
   const secret = process.env.BETTER_AUTH_SECRET
   if (secret) return secret
   if (process.env.NODE_ENV === 'test') return 'refogando-test-rate-limit-secret'
   throw new Error('BETTER_AUTH_SECRET obrigatório (fora de teste)')
 }
 
+const subkeys = new Map<string, Buffer>()
+
 /**
- * Chave opaca de um limite: HMAC-SHA256 de `rate-limit:<escopo>:<valor>` (22 caracteres base64url, 132 bits). O
- * IP chega já reduzido por `ipRateKey` (IPv6 pela /64); a conta, pelo id. O escopo separa os buckets: a chave do
- * mesmo IP na busca e no formulário é outra, e nenhuma delas volta ao IP sem o segredo.
+ * Subchave de 32 bytes derivada do segredo do auth por HKDF-SHA256 com um rótulo (`info`) por uso, em vez do segredo
+ * cru: cada HMAC do limitador e do cache da busca usa uma chave só dele, e nenhuma delas é a que assina as sessões.
+ * Guardada em memória por (segredo, rótulo); trocar o segredo troca a subchave (e zera contadores e cache, aceito).
+ * Lança sem segredo fora de teste (ver `baseSecret`).
+ */
+export function derivedSubkey(info: string): Buffer {
+  const secret = baseSecret()
+  const id = `${info}\u0000${secret}`
+  let key = subkeys.get(id)
+  if (!key) {
+    key = Buffer.from(hkdfSync('sha256', secret, '', info, 32))
+    if (subkeys.size >= 8) subkeys.clear() // poucos rótulos; não acumula entre trocas de segredo nos testes
+    subkeys.set(id, key)
+  }
+  return key
+}
+
+/**
+ * Chave opaca de um limite: HMAC-SHA256 (subchave HKDF `refogando/rate-limit`) de `rate-limit:<escopo>:<valor>` (22
+ * caracteres base64url, 132 bits). O IP chega já reduzido por `ipRateKey` (IPv6 pela /64); a conta, pelo id. O escopo
+ * separa os buckets: a chave do mesmo IP na busca e no formulário é outra. Sem a chave (fora do banco), não dá para
+ * voltar ao IP nem à conta; com ela, o IPv4 se recupera por força bruta, então a chave nunca vai ao banco nem ao log.
  */
 export function limiterKey(scope: string, value: string): string {
-  return createHmac('sha256', limiterSecret()).update(`rate-limit:${scope}:${value}`).digest('base64url').slice(0, 22)
+  return createHmac('sha256', derivedSubkey('refogando/rate-limit'))
+    .update(`rate-limit:${scope}:${value}`)
+    .digest('base64url')
+    .slice(0, 22)
 }
 
 /** Consome UMA unidade da regra na janela atual. Lança só em erro de banco (o chamador decide fail-open/closed). */
@@ -89,18 +112,44 @@ export async function consumeRateLimit(db: Database, rule: RateLimitRule, now: D
 }
 
 /**
- * Consome as regras EM ORDEM e para no primeiro bloqueio: as seguintes não são tocadas. Ponha a mais específica
- * (IP, conta) antes da global, para quem já passou do próprio limite não gastar o teto de todo mundo. Uma regra que
- * passou antes de outra bloquear fica gasta (aceito: são tetos anti-abuso).
+ * Devolve UMA unidade de uma regra que passou na janela de `now` (o par de `consumeRateLimit` com o mesmo `now`).
+ * Não desce de 0 nem cria linha. Usado quando uma regra seguinte bloqueia: quem foi barrado pelo teto global não perde
+ * a cota própria (IP, conta) por um pedido que não saiu.
+ */
+export async function releaseRateLimit(db: Database, rule: RateLimitRule, now: Date = new Date()): Promise<void> {
+  const windowMs = rule.windowMs ?? RATE_LIMITS[rule.bucket].windowMs
+  await db
+    .update(rateLimitWindow)
+    .set({ count: sql`${rateLimitWindow.count} - 1` })
+    .where(
+      and(
+        eq(rateLimitWindow.bucket, rule.bucket),
+        eq(rateLimitWindow.key, rule.key),
+        eq(rateLimitWindow.windowStart, new Date(windowStartOf(now.getTime(), windowMs))),
+        gt(rateLimitWindow.count, 0),
+      ),
+    )
+}
+
+/**
+ * Consome as regras EM ORDEM e para no primeiro bloqueio: as seguintes não são tocadas, e as que já passaram são
+ * DEVOLVIDAS (`releaseRateLimit`, best-effort: se a devolução falhar, a unidade fica gasta, como antes). Ponha a mais
+ * específica (IP, conta) antes da global, para quem já passou do próprio limite não gastar o teto de todo mundo; a
+ * devolução cobre o caso inverso (o global barrou, e o pedido não pode custar a cota própria de ninguém).
  */
 export async function consumeRateLimits(
   db: Database,
   rules: readonly RateLimitRule[],
   now: Date = new Date(),
 ): Promise<RateLimitDecision> {
+  const passed: RateLimitRule[] = []
   for (const rule of rules) {
     const d = await consumeRateLimit(db, rule, now)
-    if (!d.allowed) return d
+    if (!d.allowed) {
+      for (const r of passed) await releaseRateLimit(db, r, now).catch(() => {})
+      return d
+    }
+    passed.push(rule)
   }
   return { allowed: true }
 }

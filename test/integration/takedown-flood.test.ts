@@ -5,7 +5,8 @@ import { GET as dsarSlaGET } from '@/app/api/cron/dsar-sla/route'
 import { getDb, setMailer } from '@/server/deps'
 import { FakeMailer } from '@/server/mail/mailer'
 import { rateLimitWindow, takedownTicket } from '@/db/schema'
-import { RATE_LIMITS } from '@/domain/rate-limit-rules'
+import { DPO_ARRIVAL_DAY_SHARE, GLOBAL_LIMIT_KEY, RATE_LIMITS } from '@/domain/rate-limit-rules'
+import { consumeRateLimit } from '@/server/rate-limit/window'
 import { DPO_DIGEST_MAX_LISTED, notifyDpoDigest, notifyDpoRedTickets } from '@/server/legal/dpo-alert'
 
 /**
@@ -78,8 +79,8 @@ describe('limitador persistido do formulário', () => {
 })
 
 describe('teto de e-mails ao Encarregado', () => {
-  it('no máximo `dpo_email` por hora; os tickets acima do teto são gravados e saem no resumo diário', async () => {
-    const cap = RATE_LIMITS.dpo_email.limit
+  it('no máximo `dpo_email_arrival` por hora; os tickets acima do teto são gravados e saem no resumo diário', async () => {
+    const cap = RATE_LIMITS.dpo_email_arrival.limit
     const total = cap + 7
     for (let i = 0; i < total; i++) expect((await post(`172.16.5.${i + 1}`)).status).toBe(201)
 
@@ -117,23 +118,12 @@ describe('teto de e-mails ao Encarregado', () => {
     expect(digest.arrivals).toBe(1)
   })
 
-  it('alertas de SLA por ticket também respeitam o teto; o resumo lista os vermelhos que sobraram, sem carimbá-los', async () => {
-    const cap = RATE_LIMITS.dpo_email.limit
+  it('alertas de SLA por ticket têm teto próprio; o resumo lista TODOS os vermelhos que sobraram, sem carimbá-los', async () => {
+    const cap = RATE_LIMITS.dpo_email_sla.limit
     const now = new Date()
     const received = new Date(now.getTime() - 13 * 86_400_000)
     const extra = DPO_DIGEST_MAX_LISTED + 5
-    await getDb()
-      .insert(takedownTicket)
-      .values(
-        Array.from({ length: cap + extra }, () => ({
-          requestType: 'other',
-          displayName: 'X',
-          message: 'm',
-          receivedAt: received,
-          slaLevel: 'red',
-          dpoArrivalNotifiedAt: received,
-        })),
-      )
+    await insertRed(cap + extra, received)
 
     const alert = await notifyDpoRedTickets(getDb(), mailer, now)
     expect(alert.notified).toBe(cap)
@@ -143,11 +133,113 @@ describe('teto de e-mails ao Encarregado', () => {
     expect(digest).toEqual({ sent: true, arrivals: 0, redPending: extra })
     const body = mailer.sent.at(-1)!.text
     expect(body).toContain(`Em escalonamento ou vencidos sem alerta individual: ${extra}`)
-    expect(body).toContain('… e mais 5 no painel.')
-    // Os vermelhos seguem sem `dpo_notified_at`: o alerta individual sai quando o teto deixar (amanhã).
-    expect(await getDb().select().from(takedownTicket).where(isNull(takedownTicket.dpoNotifiedAt))).toHaveLength(extra)
+    expect(body).not.toContain('no painel.') // vermelho nunca fica escondido atrás do corte de linhas
+    const pendingRed = await getDb().select().from(takedownTicket).where(isNull(takedownTicket.dpoNotifiedAt))
+    expect(pendingRed).toHaveLength(extra) // seguem sem `dpo_notified_at`: o alerta individual sai amanhã
+    for (const t of pendingRed) expect(body).toContain(t.id)
+  })
+
+  it('uma enxurrada de chegadas não cala o alerta de prazo: o balde por hora da chegada é outro', async () => {
+    const arrivalCap = RATE_LIMITS.dpo_email_arrival.limit
+    for (let i = 0; i < arrivalCap + 3; i++) expect((await post(`172.16.7.${i + 1}`)).status).toBe(201)
+    expect(mailer.sent).toHaveLength(arrivalCap)
+
+    await insertRed(3, new Date(Date.now() - 14 * 86_400_000))
+    const alert = await notifyDpoRedTickets(getDb(), mailer, new Date())
+    expect(alert.notified).toBe(3)
+    expect(mailer.sent.slice(arrivalCap).every((m) => m.subject.includes('Alerta de SLA'))).toBe(true)
+  })
+
+  it('teto diário: a chegada usa só a parte dela; o alerta de prazo usa o resto e para no teto do dia', async () => {
+    const now = new Date()
+    const day = { bucket: 'dpo_email_day' as const, key: GLOBAL_LIMIT_KEY }
+    // A chegada já gastou a parte dela hoje (em horas anteriores).
+    for (let i = 0; i < DPO_ARRIVAL_DAY_SHARE; i++) await consumeRateLimit(getDb(), { ...day, limit: DPO_ARRIVAL_DAY_SHARE }, now)
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    expect((await post('172.16.8.1')).status).toBe(201)
+    expect(mailer.sent).toHaveLength(0) // sem e-mail de chegada: só no resumo
+    expect(info.mock.calls.flat().join('\n')).toContain('motivo=teto_diario')
+    info.mockRestore()
+    // A unidade por hora da chegada foi devolvida (o e-mail não saiu).
+    const arrivalRow = (await getDb().select().from(rateLimitWindow)).find((w) => w.bucket === 'dpo_email_arrival')
+    expect(arrivalRow?.count).toBe(0)
+
+    // O alerta de prazo ainda tem `limite - parte da chegada` no dia.
+    const reserved = RATE_LIMITS.dpo_email_day.limit - DPO_ARRIVAL_DAY_SHARE
+    await insertRed(reserved + 4, new Date(now.getTime() - 13 * 86_400_000))
+    const first = await notifyDpoRedTickets(getDb(), mailer, now)
+    expect(first.notified).toBe(Math.min(reserved, RATE_LIMITS.dpo_email_sla.limit))
+    // Uma hora depois (balde por hora renovado), o teto DIÁRIO segura o resto.
+    const next = await notifyDpoRedTickets(getDb(), mailer, new Date(now.getTime() + 60 * 60_000))
+    expect(first.notified + next.notified).toBe(reserved)
+    const dayRow = (await getDb().select().from(rateLimitWindow)).find((w) => w.bucket === 'dpo_email_day')
+    expect(dayRow?.count).toBe(RATE_LIMITS.dpo_email_day.limit)
+  })
+
+  it('alerta de prazo: os mais antigos primeiro (o prazo mais perto recebe o e-mail individual)', async () => {
+    const now = new Date()
+    const cap = RATE_LIMITS.dpo_email_sla.limit
+    // Inseridos do mais novo para o mais antigo, para a ordem física não coincidir com a do prazo.
+    const ages = Array.from({ length: cap + 4 }, (_, i) => 13 * 86_400_000 + i * 3_600_000)
+    for (const age of ages) await insertRed(1, new Date(now.getTime() - age))
+    await notifyDpoRedTickets(getDb(), mailer, now)
+    const rows = await tickets()
+    const notified = rows.filter((t) => t.dpoNotifiedAt !== null).map((t) => t.receivedAt.getTime())
+    const oldest = [...rows].map((t) => t.receivedAt.getTime()).sort((a, b) => a - b).slice(0, cap)
+    expect(notified.sort((a, b) => a - b)).toEqual(oldest)
+  })
+
+  it('resumo: vermelhos antes das chegadas, ticket nas duas listas aparece uma vez, e o assunto conta tickets distintos', async () => {
+    const now = new Date()
+    const old = new Date(now.getTime() - 13 * 86_400_000)
+    // 1 vermelho também sem aviso de chegada (nas duas listas) e 2 só de chegada.
+    const [both] = await getDb()
+      .insert(takedownTicket)
+      .values({ requestType: 'other', displayName: 'X', message: 'm', receivedAt: old, slaLevel: 'red' })
+      .returning({ id: takedownTicket.id })
+    await getDb()
+      .insert(takedownTicket)
+      .values([
+        { requestType: 'other', displayName: 'X', message: 'm' },
+        { requestType: 'other', displayName: 'X', message: 'm' },
+      ])
+    // Mais chegadas do que o corte, para provar que o corte morde as chegadas e não os vermelhos.
+    await getDb()
+      .insert(takedownTicket)
+      .values(Array.from({ length: DPO_DIGEST_MAX_LISTED }, () => ({ requestType: 'other', displayName: 'X', message: 'm' })))
+
+    const digest = await notifyDpoDigest(getDb(), mailer, now)
+    const arrivalsOnly = DPO_DIGEST_MAX_LISTED + 2
+    expect(digest).toEqual({ sent: true, arrivals: arrivalsOnly + 1, redPending: 1 })
+    const mail = mailer.sent.at(-1)!
+    expect(mail.subject).toContain(`Resumo diário: ${arrivalsOnly + 1} pedido(s)`)
+    const body = mail.text
+    expect(body.split(both.id)).toHaveLength(2) // uma ocorrência só
+    expect(body.indexOf('Em escalonamento ou vencidos')).toBeLessThan(body.indexOf('Recebidos sem aviso de chegada'))
+    expect(body).toContain(`Recebidos sem aviso de chegada: ${arrivalsOnly}`)
+    expect(body).toContain('… e mais 2 no painel.')
+    // Todos os de chegada (inclusive o listado como vermelho) ficam carimbados; o vermelho segue sem alerta individual.
+    expect(await getDb().select().from(takedownTicket).where(isNull(takedownTicket.dpoArrivalNotifiedAt))).toHaveLength(0)
+    expect(await getDb().select().from(takedownTicket).where(isNull(takedownTicket.dpoNotifiedAt))).toHaveLength(
+      arrivalsOnly + 1,
+    )
   })
 })
+
+async function insertRed(n: number, receivedAt: Date) {
+  await getDb()
+    .insert(takedownTicket)
+    .values(
+      Array.from({ length: n }, () => ({
+        requestType: 'other',
+        displayName: 'X',
+        message: 'm',
+        receivedAt,
+        slaLevel: 'red',
+        dpoArrivalNotifiedAt: receivedAt,
+      })),
+    )
+}
 
 describe('GET /api/cron/dsar-sla', () => {
   const originalSecret = process.env.CRON_SECRET

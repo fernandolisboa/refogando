@@ -1,7 +1,9 @@
 # Handoff 97 — Limitador persistido: vetor da busca, formulário de retirada, e-mails ao canal de privacidade e relato de erro
 
 **Data:** 2026-11-02.
-**Commit:** "Limitador persistido: busca anônima e notificação de retirada (#643, #648)", no branch local `wip-643-648`.
+**Commits:** "Limitador persistido: busca anônima e notificação de retirada (#643, #648)" e, em cima, "Limitador: achados
+da revisão (#643, #648)" (painel de revisão: reserva no relato de erro, teto diário do Resend, balde próprio do alerta de
+prazo, `halfvec` e teto do cache, texto honesto da política), no branch local `wip-643-648`.
 **Base:** `e0cfb64` (`wip-642`: tradução single-flight, migração 0086, ADR-0056, handoff 96), que fica em cima do PR #651
 (reserva de cota, migração 0085). **Este trabalho depende dos dois** só pela ordem das migrações (0085 → 0086 → 0087); o
 código não toca `quota_hold` nem a tradução.
@@ -14,8 +16,9 @@ código não toca `quota_hold` nem a tradução.
 
 - **#643 (M-4):** `GET /api/search` chamava o embedding pago do Gemini em toda busca, até anônima, sem limite nem cache.
   - `resolveSearchQueryVector` (`src/server/search/query-embedding.ts`): forma canônica (NFKC, minúsculas, espaços)
-    → cache por HMAC (`search_query_embedding`, 12 h), em paralelo com a sessão → limitador (conta ou IP, depois o
-    global) → embedder → grava o cache.
+    → curta (< 3 caracteres) ou sem letra/dígito para aqui (só textual) → cache por HMAC (`search_query_embedding`,
+    `halfvec`, 6 h da hora cheia, até 5000 linhas), em paralelo com a sessão → limitador (conta e global dos logados,
+    ou IP e global dos visitantes; o global que barra devolve a unidade da conta/IP) → embedder → grava o cache.
   - Acima do limite, ou com qualquer falha, o vetor é `null` e a busca segue só textual (FTS + trigram), 200, como
     quando o Gemini falha.
 - **#648 (M-9):** `POST /api/legal/takedown` público, com só 1/s por IP em memória, e um e-mail ao canal de
@@ -23,17 +26,23 @@ código não toca `quota_hold` nem a tradução.
   - Limitador persistido por IP (5 por 30 min, IPv6 pela /64) e global (30 por hora), depois da validação e antes do
     INSERT. 429 `rate_limited` com `retryAfterMs` e `retry-after`, e o formulário mostra `seusDireitos.erroLimite`
     (manda escrever para o e-mail).
-  - Teto `dpo_email` de 10 e-mails por hora, gasto pelo aviso de chegada e pelo alerta de SLA por ticket. Acima dele, o
-    ticket é gravado e o e-mail individual vira o **resumo diário** (`notifyDpoDigest`, cron `dsar-sla`), fora do teto.
-  - `/api/client-errors`: teto global persistido de 300 linhas/min (chave `global`, sem IP), fail-open.
+  - E-mails ao canal (Resend, 100/dia no plano grátis, a cota dos e-mails de conta): chegada `dpo_email_arrival` 5/h;
+    alerta de prazo `dpo_email_sla` 10/h (balde próprio, mais antigos primeiro); teto diário `dpo_email_day` 20/24 h,
+    do qual a chegada usa só 10 (`DPO_ARRIVAL_DAY_SHARE`). Acima deles, o ticket é gravado e o e-mail individual vira o
+    **resumo diário** (`notifyDpoDigest`, cron `dsar-sla`), fora dos tetos: vermelhos primeiro e todos, depois as
+    chegadas (até 20), sem repetir ticket.
+  - `/api/client-errors`: teto global persistido de 300 linhas/min (chave `global`, sem IP), fail-open; a vaga da
+    instância é reservada antes do `await`, o global tem 750 ms, e "cheio" fica em cache até a virada do minuto.
+  - Freio de 1/s em memória: 429 `muito_rapido` → `seusDireitos.erroRapido`; teto total estourado → uma linha
+    `[takedown] limite=atingido bucket=takedown_global` por janela e instância.
 - **Um limitador só** (`src/server/rate-limit/window.ts`): janela fixa,
   `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 WHERE count < limite RETURNING count`. Chave = HMAC do IP ou da
-  conta com o segredo do auth (`limiterKey`), ou `global`.
-- **Limpeza:** a de hora em hora (`/api/cron/rate-limit-cleanup`) apaga janelas encerradas e vetores com mais de 12 h; a
+  conta com uma subchave HKDF do segredo do auth (`limiterKey`, `derivedSubkey`), ou `global`.
+- **Limpeza:** a de hora em hora (`/api/cron/rate-limit-cleanup`) apaga janelas encerradas e vetores com mais de 6 h; a
   retenção diária tem os passos `rateLimitWindows` e `searchQueryEmbeddings` como rede de segurança.
 - **Privacidade:**
   - política v3.7 nos dois idiomas, rodapé de Seus direitos igual;
-  - ROPA operações 2, 8 e 12;
+  - ROPA operações 2, 8 e 12 (a 12 na LIA A);
   - `docs/legal/takedown-e-remocao-titular.md`;
   - comentários do export e da eliminação (as tabelas novas não têm FK nem caminho de volta ao titular);
   - `docs/observabilidade.md` (tag `[takedown]`).
@@ -95,12 +104,20 @@ código não toca `quota_hold` nem a tradução.
   por teste. Para provar o limite persistido por IP sem bater no de memória, gire endereços IPv6 da mesma /64.
 - `limiterKey`/`searchQueryCacheKey` lançam sem `BETTER_AUTH_SECRET` fora de teste. Trocar o segredo zera o cache e
   os contadores (aceito).
-- O cache é lido com `model = EMBEDDING_VERSION` e o corte de 12 h; trocar a geometria do embedding troca a chave e o
+- O cache é lido com `model = EMBEDDING_VERSION` e o corte de 6 h sobre `created_at`, que é a HORA CHEIA da gravação
+  (`cacheCreatedAt`): um teste de TTL conta da hora cheia, não do instante; trocar a geometria do embedding troca a chave e o
   `model`, e as linhas antigas só saem pela limpeza.
 - A forma canônica é o texto mandado ao embedder (minúsculas). Um teste que dependa da caixa do texto da CONSULTA no
   `FakeEmbedder` vai ver minúsculas.
 - `notifyDpoRedTickets` agora para no teto (`break`) e devolve só os enviados; os que sobram voltam no resumo e amanhã.
-- O resumo diário carimba **todos** os de chegada pendentes (lista só 20); os vermelhos nunca são carimbados por ele.
+- O resumo diário carimba **todos** os de chegada pendentes (lista só 20 que não estejam em vermelho); os vermelhos são
+  todos listados e nunca carimbados por ele.
+- `dpo_email_day` é UMA linha por dia com dois limites: a chegada consome com `limit: DPO_ARRIVAL_DAY_SHARE`, o alerta de
+  prazo com o limite cheio. Trocar um sem o outro desfaz a reserva do alerta.
+- `halfvec` pede pgvector ≥ 0.7. A 0087 roda `ALTER EXTENSION vector UPDATE` só se a instalada for mais antiga; a
+  versão do Neon de produção não foi conferida (a imagem dos testes tem 0.8.7).
+- `consumeRateLimits` devolve (`releaseRateLimit`) as regras que passaram quando uma seguinte bloqueia. Uma linha pode
+  ficar com `count = 0`; a limpeza a leva junto quando a janela encerra.
 - Migração: só via `npm run db:migrate` (build da Vercel) ou `drizzle-kit migrate`. Nunca contra produção à mão.
 
 ## 6. Gotchas de ambiente
@@ -129,5 +146,5 @@ código não toca `quota_hold` nem a tradução.
 - Migração 0087 aplicada no build da Vercel; `rate_limit_window` e `search_query_embedding` crescendo e sendo limpas de
   hora em hora (o corpo do cron `rate-limit-cleanup` traz `windows` e `searchVectors`).
 - Em produção: buscas repetidas não aparecem de novo no uso do Gemini; um laço de buscas de um IP passa a responder
-  só textual depois de 30 vetores; o canal de privacidade recebe no máximo 10 e-mails por hora mais o resumo diário.
+  só textual depois de 30 vetores; o canal de privacidade recebe no máximo 20 e-mails por dia mais o resumo diário.
 - Política v3.7 publicada em `/privacidade` e o rodapé de `/seus-direitos` igual.

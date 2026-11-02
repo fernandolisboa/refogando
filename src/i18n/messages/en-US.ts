@@ -2136,7 +2136,7 @@ export const enUS: Messages = {
     ],
     s36Titulo: '3.6. Account security and abuse prevention',
     s36Valores: [
-      'the IP address and browser (user agent) of each sign-in session; the IP address in the attempt limits of the account routes (such as sign-in, sign-up and password), erased within 2 hours after the last attempt; in the limits of the Your Rights form and of the search vector, a code computed from the IP address (or, in searches by signed-in users, from the account) with a secret key, which does not allow recovering the IP address or the account, erased within 2 hours; and, in memory only, the IP address to limit the pace of the Your Rights form and of Web Discovery; the reports you make about recipes or ratings; moderation decisions about your content or your account (for example, an image hidden from the public or a block on image generation), with the reason; and, if the team closes your account (the account of someone under 16 or a serious violation of the Terms of Use), a record of that decision: the reason, from a closed list, the date, whether your public recipes and reviews were removed and whether we tried to tell you by email.',
+      'the IP address and browser (user agent) of each sign-in session; the IP address in the attempt limits of the account routes (such as sign-in, sign-up and password), erased within 2 hours after the last attempt; in the limits of the Your Rights form and of the search vector, a code computed from the IP address (or, in searches by signed-in users, from the account) with a secret key kept outside the database (without that key, the IP address or the account cannot be recovered from the code), erased within 2 hours; and, in memory only, the IP address to limit the pace of the Your Rights form and of Web Discovery; the reports you make about recipes or ratings; moderation decisions about your content or your account (for example, an image hidden from the public or a block on image generation), with the reason; and, if the team closes your account (the account of someone under 16 or a serious violation of the Terms of Use), a record of that decision: the reason, from a closed list, the date, whether your public recipes and reviews were removed and whether we tried to tell you by email.',
       'protect your account, prevent abuse and excessive use of paid resources, and moderate public content.',
       'legitimate interest — Art. 7, IX (with a recorded legitimate interest assessment); for the record of an account closure, the regular exercise of rights — Art. 7, VI.',
       'a session lasts 7 days, renewed as you use the app, and is erased within 1 day after it expires, together with its IP address and browser; the IP address in attempt limits, within 2 hours after the last attempt; the code in the limits of the Your Rights form and of search, within 2 hours; reports are kept while the reported content exists; moderation decisions, while the account or the content exists (if you delete your account, they remain with nothing that identifies you); the record of an account closure by the team, for 5 years, for our defense in any legal proceeding, linked only to the already anonymized account and with no other data about you.',
@@ -2160,7 +2160,7 @@ export const enUS: Messages = {
       'the term you type in search, with or without an account.',
       'find recipes: the term is turned into a search vector by Google (Gemini) and, if you are signed in and Web Discovery is on, sent to Brave restricted to the approved sites. To control costs, we reuse the vector of a term that was already searched and limit how many new vectors each IP address or account requests within a few minutes (item 3.6); above the limit, search keeps working, by text only.',
       'performance of a contract for account holders; legitimate interest — Art. 7, IX — for visitors and, for the stored vector and the limits, abuse prevention and cost control.',
-      'we do not store the term (see 3.7 on the hosting logs). The vector of each term is kept for up to 24 hours, without the term and with no link to who searched: it is identified by a code computed from the term with a secret key, the same for everyone who searches for the same thing.',
+      'we do not store the term (see 3.7 on the hosting logs). The vector of each term is kept for up to 24 hours, without storing the term or who searched: it is identified by a code computed from the term with a secret key, the same for everyone who searches for the same thing, and the time it was stored is rounded to the hour. Because the vector is derived from the term, we treat it as personal data.',
     ],
 
     s4Titulo: '4. How and for how long we process (means and duration) — Art. 9, II',
@@ -2284,7 +2284,7 @@ export const enUS: Messages = {
       `v3.4 — ${DATA_POLITICA_V3_4}: when the team closes an account, we keep a record of the decision for 5 years (reason, date, whether public content was removed and whether we tried to tell the person by email), with no other personal data (item 3.6); the account closure notice by email joins what Resend sends (item 5).`,
       `v3.5 — ${DATA_POLITICA_V3_5}: a copy someone else publishes of one of your recipes shows "Based on … by @you", with a link; you can turn this off in Edit profile or remove your name from a copy, and we keep that choice (item 3.1).`,
       `v3.6 — ${DATA_POLITICA_V3_6}: the app’s functions now run in São Paulo, next to the database; the AI remains in the United States, and the consent text for saved restrictions says so (items 3.5 and 5).`,
-      `v3.7 — ${DATA_POLITICA_V3_7}: the limits of the Your Rights form and of the search vector now apply across all servers, storing for up to 2 hours only a code computed from the IP address or the account, which does not allow recovering them (item 3.6); search keeps the vector of each term for up to 24 hours, without the term (item 3.9).`,
+      `v3.7 — ${DATA_POLITICA_V3_7}: the limits of the Your Rights form and of the search vector now apply across all servers, storing for up to 2 hours only a code of the IP address or the account, computed with a secret key kept outside the database (item 3.6); search keeps the vector of each term for up to 24 hours, without storing the term or who searched (item 3.9).`,
     ],
 
     parteBTitulo: 'Part (b) — "Web Discovery"',
@@ -2402,6 +2402,7 @@ export const enUS: Messages = {
     erroEnvio: 'We could not send your request right now. Please try again shortly.',
     erroLimite:
       'We are receiving too many requests right now and the form is paused for a few minutes. Please try again later or write to privacidade@refogando.com: the 15-day deadline applies all the same.',
+    erroRapido: 'Wait a moment and send it again.',
 
     todoRotulo: 'field to be filled in',
     rodapeVersaoRotulo: 'Version',

@@ -4,9 +4,9 @@ import { takedownTicket } from '@/db/schema'
 import type { NormalizedTakedown } from '@/domain/takedown'
 import { recordDsarEvent } from '@/server/legal/dsar-audit'
 import { getMailer } from '@/server/deps'
-import { GLOBAL_LIMIT_KEY } from '@/domain/rate-limit-rules'
+import { DPO_ARRIVAL_DAY_SHARE, GLOBAL_LIMIT_KEY } from '@/domain/rate-limit-rules'
 import { errorLogFields } from '@/domain/error-report'
-import { consumeRateLimit } from '@/server/rate-limit/window'
+import { consumeRateLimits } from '@/server/rate-limit/window'
 
 /**
  * Abre um ticket a partir do formulário PÚBLICO de intake (issue #399, GAP-2;
@@ -54,7 +54,8 @@ export async function createTakedownTicket(
   // à prova de falha — e-mail que não sai NÃO pode quebrar a criação do ticket (o intake já está gravado e
   // auditado). No-op sem destinatário.
   //
-  // #648 (ADR-0057): no máximo `RATE_LIMITS.dpo_email` e-mails por hora ao Encarregado, somando todas as instâncias
+  // #648 (ADR-0057): no máximo `RATE_LIMITS.dpo_email_arrival` e-mails de chegada por hora e `DPO_ARRIVAL_DAY_SHARE`
+  // por dia (do teto diário `dpo_email_day`, que guarda o resto para os alertas de prazo), somando todas as instâncias
   // (o Resend é a mesma cota dos e-mails de cadastro e de senha). Acima do teto, ou se o envio falhar, o ticket fica
   // com `dpo_arrival_notified_at` nulo e entra no RESUMO DIÁRIO do cron `dsar-sla` (`notifyDpoDigest`); ele também
   // aparece na hora no painel de SLA do /admin. Nenhum pedido fica sem aviso: só o e-mail individual é poupado.
@@ -64,13 +65,20 @@ export async function createTakedownTicket(
   return { ticketId }
 }
 
-/** E-mail individual de chegada, dentro do teto por hora; carimba `dpo_arrival_notified_at` se o provedor aceitou. */
+/**
+ * E-mail individual de chegada, dentro dos tetos (por hora e a parte da chegada no diário); carimba
+ * `dpo_arrival_notified_at` se o provedor aceitou.
+ */
 async function notifyArrival(db: Database, to: string, ticketId: string, requestType: string): Promise<void> {
   try {
-    const cap = await consumeRateLimit(db, { bucket: 'dpo_email', key: GLOBAL_LIMIT_KEY })
+    const cap = await consumeRateLimits(db, [
+      { bucket: 'dpo_email_arrival', key: GLOBAL_LIMIT_KEY },
+      { bucket: 'dpo_email_day', key: GLOBAL_LIMIT_KEY, limit: DPO_ARRIVAL_DAY_SHARE },
+    ])
     if (!cap.allowed) {
       // Sem id nem dado do titular: o ticket está no painel e no resumo diário.
-      console.info('[takedown] e-mail de chegada adiado para o resumo diário: motivo=teto_por_hora')
+      const motivo = cap.bucket === 'dpo_email_day' ? 'teto_diario' : 'teto_por_hora'
+      console.info(`[takedown] e-mail de chegada adiado para o resumo diário: motivo=${motivo}`)
       return
     }
     const { sent } = await getMailer().sendDpoAlert({

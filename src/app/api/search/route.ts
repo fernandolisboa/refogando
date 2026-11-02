@@ -172,9 +172,10 @@ export async function GET(request: Request): Promise<Response> {
 
   // #14: o vetor da consulta sai numa etapa SEPARADA, ANTES do loader, e nunca lança: embedder que falha, saída
   // malformada (dimensão errada, NaN/Infinity — que estourariam o cast `::vector` fora daqui, 500) ou limite
-  // estourado viram `null` ⇒ degradação graciosa (só-precisa, FTS + trigram). NÃO embeda q vazio (preserva o
-  // neutro) nem o caminho faceta-only (q sem letra/dígito → o loader já trata queryVector como no-op). Erro de DB do
-  // loader NÃO é capturado aqui (500).
+  // estourado viram `null` ⇒ degradação graciosa (só-precisa, FTS + trigram). NÃO embeda q vazio (o ternário abaixo
+  // preserva o neutro) nem, dentro de `resolveSearchQueryVector` (`embeddableSearchQuery`), a forma canônica com
+  // menos de 3 caracteres ou sem letra/dígito (prefixos curtos da digitação e o caminho faceta-only, em que o loader
+  // ignoraria o vetor): esses nem gastam o limite. Erro de DB do loader NÃO é capturado aqui (500).
   //
   // #643 (ADR-0057): o embedding é pago e a busca é aberta a visitante. `resolveSearchQueryVector` normaliza a
   // consulta, olha o cache (`search_query_embedding`, por HMAC da consulta) em paralelo com a sessão e, só na falta,

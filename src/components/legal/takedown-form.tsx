@@ -23,7 +23,7 @@ import {
 
 type Status = 'idle' | 'sending' | 'success' | 'error'
 /** Erro inline específico (chave de i18n) OU o genérico de envio. */
-type FormError = 'erroPedido' | 'erroIdentificacao' | 'erroEnvio' | 'erroLimite' | null
+type FormError = 'erroPedido' | 'erroIdentificacao' | 'erroEnvio' | 'erroLimite' | 'erroRapido' | null
 
 /** Rótulo i18n de cada tipo de pedido — mapa fechado sobre a allowlist do domínio (paridade no compilador). */
 function requestTypeLabel(
@@ -75,6 +75,7 @@ export function TakedownForm() {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         if (body.error === 'pedido_obrigatorio') setError('erroPedido')
         else if (body.error === 'identificacao_obrigatoria') setError('erroIdentificacao')
+        else if (body.error === 'muito_rapido') setError('erroRapido') // freio de 1/s: clique duplo
         else if (res.status === 429) setError('erroLimite') // #648: limitador; aponta o e-mail do canal
         else setError('erroEnvio')
         setStatus('error')
@@ -210,6 +211,7 @@ export function TakedownForm() {
             {error === 'erroIdentificacao' && m.erroIdentificacao}
             {error === 'erroEnvio' && m.erroEnvio}
             {error === 'erroLimite' && m.erroLimite}
+            {error === 'erroRapido' && m.erroRapido}
           </p>
         )}
       </div>

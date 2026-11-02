@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDb } from '@/server/deps'
 import { rateLimitWindow } from '@/db/schema'
 import { GLOBAL_LIMIT_KEY } from '@/domain/rate-limit-rules'
@@ -21,6 +21,16 @@ function post(ip: string): Request {
   })
 }
 
+beforeEach(() => {
+  // Relógio do app congelado no meio do minuto: a janela global de 1 min não pode virar no meio do teste. Só o `Date`
+  // (o postgres-js usa `setTimeout` de verdade).
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-02T12:00:30.000Z'))
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('client-errors — teto global persistido', () => {
   it('duas instâncias somam no mesmo teto do banco; sem IP gravado', async () => {
     const cap = async () =>
@@ -38,6 +48,18 @@ describe('client-errors — teto global persistido', () => {
     expect(lines).toHaveLength(3)
     const rows = await getDb().select().from(rateLimitWindow)
     expect(rows.map((r) => [r.bucket, r.key, r.count])).toEqual([['client_error_global', 'global', 3]])
+  })
+
+  it('pedidos concorrentes contra o banco: o teto da instância vale (a vaga é reservada antes do await)', async () => {
+    const cap = async () =>
+      (await consumeRateLimit(getDb(), { bucket: 'client_error_global', key: GLOBAL_LIMIT_KEY, limit: 100 })).allowed
+    const lines: string[] = []
+    const intake = createClientErrorIntake({ log: (l) => lines.push(l), globalCap: cap, perInstancePerMinute: 4 })
+    const statuses = await Promise.all(Array.from({ length: 12 }, (_, i) => intake(post(`11.0.2.${i + 1}`))))
+    expect(statuses.filter((r) => r.status === 204)).toHaveLength(4)
+    expect(lines.filter((l) => !l.includes('limite=atingido'))).toHaveLength(4)
+    const [row] = await getDb().select().from(rateLimitWindow)
+    expect(row.count).toBe(4) // quem a instância barrou nem foi ao banco
   })
 
   it('a rota usa o teto do banco', async () => {
