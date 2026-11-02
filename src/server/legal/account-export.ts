@@ -15,6 +15,7 @@ import {
   mealPlanSuggestionEvent,
   pantryItem,
   notification,
+  quotaHold,
   recipe,
   recipeImage,
   recipeIngredient,
@@ -62,6 +63,10 @@ import { exportablePromptStamp, type JsonObjectSection } from '@/domain/account-
  *  - `reports`: as denúncias que o titular FEZ (alvo, motivo, status, datas).
  *  - `extractionEvents` e `mealPlanSuggestionEvents`: os registros de uso da Extração de ingredientes e da
  *    Sugestão de cardápio (data; modelo, tokens e custo). Revisa a metade "fora do export" do ADR-0036 dec.7.
+ *  - `quotaHolds` (ADR-0055): as reservas de cota de geração de receita e de imagem que ainda existem (tipo,
+ *    slots, criação e vencimento). A consumida é apagada (vira a geração do export); as que sobram estão em voo
+ *    ou ficaram cobradas sem linha de geração (saída inválida, turno de conversa abortado, falha depois da
+ *    chamada paga), então não aparecem em nenhum outro lugar do arquivo. Somem pelo cron de retenção.
  *  - `creationSessions[].generations[]`: tokens, custo, `promptStamp` (só versão e rótulos dos eixos, ver
  *    `exportablePromptStamp`) e a variação escolhida.
  *
@@ -498,6 +503,20 @@ export async function* accountExportSections(
       .from(extractionEvent)
       .where(eq(extractionEvent.userId, userId))
       .orderBy(asc(extractionEvent.createdAt)),
+  ]
+  // ADR-0055: as reservas de cota que sobraram (em voo ou cobradas sem geração). Sem o `id` (chave interna).
+  yield [
+    'quotaHolds',
+    await db
+      .select({
+        kind: quotaHold.kind,
+        slots: quotaHold.slots,
+        createdAt: quotaHold.createdAt,
+        expiresAt: quotaHold.expiresAt,
+      })
+      .from(quotaHold)
+      .where(eq(quotaHold.userId, userId))
+      .orderBy(asc(quotaHold.createdAt)),
   ]
   yield [
     'mealPlanSuggestionEvents',

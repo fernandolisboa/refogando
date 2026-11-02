@@ -123,6 +123,20 @@ export function errorLogFields(err: unknown): string {
   return [`erro=${sanitizeErrorName(errorNameOf(err))}`, ...(code ? [`codigo=${code}`] : [])].join(' ')
 }
 
+/**
+ * Campos de log do erro do provedor embrulhado em `ClaudeProviderUnavailableError`: a classe
+ * (sanitizada como identificador) e o status HTTP numérico, nada da mensagem (ADR-0048).
+ */
+export function providerErrorLogFields(cause: unknown): string {
+  const ctorName =
+    cause !== null && typeof cause === 'object' ? (cause as { constructor?: { name?: unknown } }).constructor?.name : undefined
+  const status = (cause as { status?: unknown } | null)?.status
+  return [
+    `erro=${sanitizeErrorName(ctorName)}`,
+    ...(typeof status === 'number' && Number.isInteger(status) ? [`status=${status}`] : []),
+  ].join(' ')
+}
+
 export function sanitizeMethod(method: unknown): string {
   const m = typeof method === 'string' ? method.toUpperCase() : ''
   return METHODS.has(m) ? m : 'OUTRO'

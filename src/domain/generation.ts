@@ -54,7 +54,20 @@ export type GenerationOutput =
     }
   | { kind: 'refusal' }
   | { kind: 'max_tokens' }
-  | { kind: 'parse_failed' }
+  // `cause: 'provider'` (ADR-0055): a chamada provadamente NÃO foi cobrada — o provedor respondeu erro HTTP,
+  // a conexão falhou antes de o pedido sair (em TODAS as tentativas do SDK) ou falta a chave, e nenhuma chamada
+  // anterior do mesmo método voltou.
+  // Só aí a borda DEVOLVE a reserva de cota; sem `cause` (saída nula após o reparo, truncada, prazo de 50 s,
+  // abort do cliente) a reserva fica cobrada. `classify` IGNORA o campo (os dois casos são `invalid`).
+  | { kind: 'parse_failed'; cause?: 'provider' }
+
+/**
+ * A saída prova que a chamada NÃO foi cobrada (ADR-0055)? `parse_failed` com `cause: 'provider'`. Só aí a borda
+ * DEVOLVE a reserva de cota; toda outra saída inválida a deixa cobrada.
+ */
+export function isUnpaidOutput(out: GenerationOutput): boolean {
+  return out.kind === 'parse_failed' && out.cause === 'provider'
+}
 
 export type ClassifyResult =
   | { outcome: 'success' | 'degraded' | 'playful'; recipe: ReceitaGenT; advisory: string | null }

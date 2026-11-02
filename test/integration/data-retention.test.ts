@@ -11,6 +11,7 @@ import {
   generation,
   imageGeneration,
   mealPlanSuggestionEvent,
+  quotaHold,
   session,
   takedownTicket,
   users,
@@ -74,6 +75,22 @@ describe('registros de uso de IA (24 meses; extração, 30 dias)', () => {
     expect(await ids(getDb().select({ id: mealPlanSuggestionEvent.id }).from(mealPlanSuggestionEvent))).toEqual([
       keepMenu.id,
     ])
+  })
+
+  it('quotaHolds (ADR-0055): só a reserva de cota VENCIDA sai (expires_at <= agora)', async () => {
+    const u = await seedUser({ email: 'reserva@ret.test' })
+    const [keep] = await getDb()
+      .insert(quotaHold)
+      .values([
+        { userId: u, kind: 'recipe_gen', createdAt: new Date(NOW.getTime() - DAY + 1000), expiresAt: new Date(NOW.getTime() + 1000) },
+        { userId: u, kind: 'image_gen', createdAt: new Date(NOW.getTime() - DAY), expiresAt: NOW },
+        { userId: u, kind: 'recipe_gen', slots: 2, createdAt: new Date(NOW.getTime() - 2 * DAY), expiresAt: new Date(NOW.getTime() - DAY) },
+      ])
+      .returning({ id: quotaHold.id })
+
+    expect(await run('quotaHolds')).toBe(2)
+    expect(await ids(getDb().select({ id: quotaHold.id }).from(quotaHold))).toEqual([keep.id])
+    expect(await run('quotaHolds')).toBe(0) // idempotente
   })
 
   it('extractionEvents: 30 dias', async () => {
@@ -388,7 +405,7 @@ describe('GET /api/cron/retention', () => {
     expect(res.status).toBe(200)
     const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('[retencao]'))
     expect(lines).toEqual([
-      '[retencao] passada concluída: imageGenerations=0 mealPlanSuggestions=0 extractionEvents=0 sessions=0 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
+      '[retencao] passada concluída: imageGenerations=0 mealPlanSuggestions=0 extractionEvents=0 quotaHolds=0 sessions=0 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
     ])
     expect(await res.json()).toMatchObject({ sessions: 0, liveGenerationCosts: 0 })
   })
@@ -404,7 +421,7 @@ describe('GET /api/cron/retention', () => {
     expect(res.status).toBe(500)
     expect(error.mock.calls).toEqual([['[retencao] expurgo dos registros de geração de imagem falhou: erro=Error']])
     expect(warn).toHaveBeenCalledWith(
-      '[retencao] passada com falha: mealPlanSuggestions=0 extractionEvents=0 sessions=1 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
+      '[retencao] passada com falha: mealPlanSuggestions=0 extractionEvents=0 quotaHolds=0 sessions=1 verifications=0 takedownTickets=0 dsarEvents=0 accountClosures=0 erasedGenerations=0 erasedCreationSessions=0 orphanBriefings=0 liveGenerationCosts=0',
     )
   })
 

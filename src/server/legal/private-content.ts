@@ -93,6 +93,9 @@ export const ERASURE_POLICY = {
   'recipe_image.moderated_by': 'keep',
   'image_generation.user_id': 'keep_ledger',
   'extraction_event.user_id': 'keep_ledger',
+  // ADR-0055: reserva de cota (sem conteúdo) vence em 24 h; apagada na passada diária seguinte do cron de
+  // retenção (`quotaHolds`).
+  'quota_hold.user_id': 'keep_ledger',
   'users.image_gen_blocked_by': 'keep',
   'session.user_id': 'delete',
   'account.user_id': 'delete',

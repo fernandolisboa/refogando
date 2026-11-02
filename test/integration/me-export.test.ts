@@ -11,6 +11,7 @@ import {
   mealPlanSuggestionEvent,
   notification,
   pantryItem,
+  quotaHold,
   recipe,
   session,
   shoppingList,
@@ -345,6 +346,10 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
 
     // Registros de uso: duas extrações e uma sugestão de cardápio.
     await db.insert(extractionEvent).values([{ userId }, { userId }])
+    // ADR-0055: uma reserva de cota que ficou cobrada sem geração (ex. saída inválida) — não aparece em outro lugar.
+    const holdExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    await db.insert(quotaHold).values({ userId, kind: 'recipe_gen', slots: 2, expiresAt: holdExpires })
+    await db.insert(quotaHold).values({ userId: other, kind: 'image_gen', expiresAt: holdExpires }) // de terceiro
     await db.insert(mealPlanSuggestionEvent).values({
       userId,
       model: 'claude-sonnet-5-5',
@@ -404,6 +409,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
       logins: Array<Record<string, unknown>>
       reports: Array<Record<string, unknown>>
       extractionEvents: Array<{ createdAt: string }>
+      quotaHolds: Array<Record<string, unknown>>
       mealPlanSuggestionEvents: Array<Record<string, unknown>>
       creationSessions: Array<{ generations: Array<Record<string, unknown>> }>
     }
@@ -493,6 +499,10 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     // Registros de uso.
     expect(dump.extractionEvents).toHaveLength(2)
     expect(dump.extractionEvents[0]).toEqual({ createdAt: expect.any(String) })
+    // Só as reservas do titular, sem o id interno.
+    expect(dump.quotaHolds).toEqual([
+      { kind: 'recipe_gen', slots: 2, createdAt: expect.any(String), expiresAt: holdExpires.toISOString() },
+    ])
     expect(dump.mealPlanSuggestionEvents).toEqual([
       {
         model: 'claude-sonnet-5-5',
@@ -608,6 +618,7 @@ describe('/api/me/export — acesso + portabilidade do titular (#401)', () => {
     expect(dump.recipeImages).toEqual([])
     expect(dump.reports).toEqual([])
     expect(dump.extractionEvents).toEqual([])
+    expect(dump.quotaHolds).toEqual([])
     expect(dump.mealPlanSuggestionEvents).toEqual([])
     // A própria sessão do pedido conta como um acesso.
     expect(dump.loginSessions).toHaveLength(1)

@@ -2,9 +2,10 @@ import { eq, sql } from 'drizzle-orm'
 import { requireSession } from '@/server/auth/guard'
 import { pgCode } from '@/server/recipe/visibility'
 import { getDb, getClaudeClient } from '@/server/deps'
+import { ClaudeProviderUnavailableError } from '@/server/claude/client'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
-import { errorLogFields } from '@/domain/error-report'
+import { errorLogFields, providerErrorLogFields } from '@/domain/error-report'
 import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classifyWithReason } from '@/domain/generation'
@@ -33,7 +34,7 @@ import {
 } from '@/domain/recipe-gen-config'
 import { parseProCaps } from '@/domain/pro-caps'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError } from '@/server/quota/atomic'
+import { QuotaExceededError, releaseQuotaHold, tryReserveQuotaHold } from '@/server/quota/atomic'
 
 /**
  * Modo CONVERSA — streaming + destilação (issue #12, ADR-0009/0010).
@@ -77,6 +78,14 @@ import { QuotaExceededError } from '@/server/quota/atomic'
  *
  * Aviso pós-geração (ADR-0004): só decidePostGenerationRestrictionNotices(receita destilada)
  * roda — NÃO há scan pré-geração de Briefing (a conversa não tem Briefing).
+ *
+ * RESERVA de cota (#640/#641, ADR-0055): logo antes de abrir o stream, a rota RESERVA o slot do turno
+ * (`tryReserveQuotaHold`) sob a advisory lock do gate; estourou ⇒ o MESMO 429 JSON, sem tocar o Claude; o
+ * cliente já abortado não reserva. A reserva nasce cobrada: a destilação persistida a consome (a `generation`
+ * conta no lugar dela) e ela só volta quando o próprio `streamConversation` falha ANTES de qualquer evento com
+ * um erro que prova "não cobrado" (`ClaudeProviderUnavailableError`). Depois que o stream começou, toda saída
+ * fica cobrada: abort do cliente (inclusive durante a destilação), destilação inválida, 23505,
+ * `controller.error`. Um turno = um slot.
  */
 
 export const runtime = 'nodejs' // SDK Anthropic + postgres-js exigem Node, não Edge.
@@ -236,9 +245,10 @@ export async function POST(req: Request): Promise<Response> {
     g.session.user.plan,
     proCaps?.recipeGen ?? null,
   )
-  // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). A
-  // ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration na
-  // destilação (via `quotaGate` abaixo) — se a corrida for perdida lá, sai um frame terminal in-band.
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject ANTES de abrir o stream (429 JSON limpo). Quem
+  // barra é a RESERVA do turno abaixo (ADR-0055: advisory lock + recontagem de eventos e reservas, ANTES do
+  // Claude); o gate ATÔMICO DENTRO da tx de persistGeneration na destilação (via `quotaGate`) é a CONFIRMAÇÃO,
+  // que consome a reserva — se a corrida for perdida lá, sai um frame terminal in-band.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
@@ -250,15 +260,12 @@ export async function POST(req: Request): Promise<Response> {
       )
     }
   }
-  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
-  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
-  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap } : undefined
 
   // Sinal de abort do request: em disconnect do cliente HTTP, o loop de tokens para e a
-  // destilação é PULADA (não se queima quota gerando p/ um cliente que sumiu). Passa também
-  // ao seam, para cancelar a chamada do SDK em voo. Backpressure: o stream de tokens é
-  // limitado por max_tokens → não há buffering ilimitado p/ um cliente lento conectado; só o
-  // disconnect importa, e o abort acima é o conserto correto e suficiente.
+  // destilação é PULADA (não se paga uma 2ª chamada ao Claude p/ um cliente que sumiu; o slot do turno, esse,
+  // fica COBRADO desde a reserva, ADR-0055). Passa também ao seam, para cancelar a chamada do SDK em voo.
+  // Backpressure: o stream de tokens é limitado por max_tokens → não há buffering ilimitado p/ um cliente lento
+  // conectado; só o disconnect importa, e o abort acima é o conserto correto e suficiente.
   const signal = req.signal
 
   // requestLocale é lido AGORA (Request ainda disponível) — o Aviso é renderizado no locale.
@@ -278,9 +285,29 @@ export async function POST(req: Request): Promise<Response> {
   const axes: PromptAxes = { ...resolveNivelChefAxis(null, nivelPadrao) }
   const promptStamp = promptStampFor(axes)
 
+  // 4c. #640/#641 (ADR-0055): RESERVA o slot do turno IMEDIATAMENTE antes de abrir o stream — depois de tudo
+  // que pode lançar ou devolver 4xx (nada entre aqui e o `new ReadableStream` lança). Sob a advisory lock do
+  // gate: só `cap - contagem` pedidos paralelos passam; os demais levam o MESMO 429 JSON, sem tocar o Claude.
+  // cap ∞ ⇒ `null` (sem lock, sem linha).
+  // O cliente já foi embora antes da reserva? Não reserva (nada vai ser chamado) e devolve a mesma resposta de
+  // um abort no stream: NDJSON vazio, sem frame terminal (ninguém está lendo).
+  if (signal.aborted) return ndjsonResponse(null)
+  const hold = await tryReserveQuotaHold(getDb(), { userId: ownerId, kind: 'recipe_gen', cap })
+  if (!hold.allowed) {
+    return Response.json({ error: 'limite_geracao', retryAfterMs: hold.retryAfterMs }, { status: 429 })
+  }
+  const holdId = hold.holdId
+  // #446: gate ATÔMICO threado na destilação (persistGeneration). Estourou na corrida ⇒ QuotaExceededError,
+  // capturado no `catch` do stream → frame terminal {type:'error',error:'limite_geracao'} (in-band).
+  // ADR-0055: o gate CONSOME a reserva deste turno (`consumeHoldId`) antes da recontagem.
+  const quotaGate = Number.isFinite(cap) ? { userId: ownerId, cap, consumeHoldId: holdId } : undefined
+
   // 5. Abre o stream NDJSON: tokens primeiro, depois UM frame terminal, depois fecha.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // ADR-0055: o `streamConversation` ainda não rendeu nem terminou? Só nessa fase uma falha pode devolver
+      // a reserva do turno.
+      let streamPending = true
       try {
         // 1ª chamada (ADR-0009): streama texto token-a-token. Acumula a resposta do
         // Assistente p/ persistir como UMA fala (#15) depois que o stream completar.
@@ -296,12 +323,16 @@ export async function POST(req: Request): Promise<Response> {
           settings,
         })
         for await (const text of tokens) {
+          streamPending = false
           // Disconnect do cliente: para o loop ANTES de enfileirar. Sem cliente p/ receber, o
           // stream do seam é cancelado (via `signal`) e a destilação é pulada — nada persiste.
+          // ADR-0055: a reserva do turno fica COBRADA (o stream já começou a ser pago).
           if (signal.aborted) return
           assistantText += text
           controller.enqueue(ndjsonLine({ type: 'token', text }))
         }
+
+        streamPending = false
 
         // Aborts MID-stream já foram tratados pelo early-return DENTRO do loop de tokens
         // acima. Este check pós-loop guarda o que vem DEPOIS: o append da Transcrição, a
@@ -412,8 +443,14 @@ export async function POST(req: Request): Promise<Response> {
         controller.close()
       } catch (err) {
         // Abort do cliente em voo (o seam estoura com AbortError): não é falha real, é
-        // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu.
+        // disconnect — não loga como erro nem tenta sinalizar um cliente que já sumiu. ADR-0055: cobrado.
         if (signal.aborted) return
+        // ADR-0055: o provedor recusou o stream ANTES de qualquer evento, provadamente sem cobrar (HTTP de erro,
+        // falha na fase de conexão ou sem chave — o seam já classificou). ÚNICO caso que devolve a reserva do
+        // turno; o resto do `catch` (23505, cota, destilação, erro depois do 1º evento) deixa o slot cobrado.
+        if (streamPending && err instanceof ClaudeProviderUnavailableError) {
+          await releaseQuotaHold(getDb(), holdId)
+        }
         // Corrida de append na MESMA Session: dois requests concorrentes batem no UNIQUE
         // (creation_session_id, seq) → 23505. Em vez de um close MUDO (que o cliente lê como
         // queda de stream ambígua), emite um frame terminal LIMPO e determinístico e fecha.
@@ -436,8 +473,15 @@ export async function POST(req: Request): Promise<Response> {
         // Erro durante o stream (ex.: seam estourou). Loga no servidor ANTES de errar o
         // stream — sem isso a falha é invisível em produção. Só tag + nome + código (ADR-0048,
         // `errorLogFields`): a mensagem e a stack de um erro do SDK ou do driver podem trazer
-        // o conteúdo da Transcrição; nada delas vai para o log.
-        console.error(`[conversations/stream] falha no stream: ${errorLogFields(err)}`)
+        // o conteúdo da Transcrição; nada delas vai para o log. O provedor indisponível loga o erro
+        // do SDK que o seam embrulhou, não o embrulho: os erros do SDK 0.104 não definem `name`
+        // (todos dizem `Error`), então vai a classe (`constructor.name`, ex. `InternalServerError`)
+        // e o status HTTP, e marca `provedor=indisponivel` (a reserva do turno foi devolvida).
+        console.error(
+          err instanceof ClaudeProviderUnavailableError
+            ? `[conversations/stream] falha no stream: ${providerErrorLogFields(err.cause)} provedor=indisponivel`
+            : `[conversations/stream] falha no stream: ${errorLogFields(err)}`,
+        )
         // Não há terminal: o cliente trata a ausência de frame terminal como aviso/retomada
         // (queda de stream). Erra o stream.
         controller.error(err)
@@ -450,7 +494,12 @@ export async function POST(req: Request): Promise<Response> {
     },
   })
 
-  return new Response(stream, {
+  return ndjsonResponse(stream)
+}
+
+/** A resposta 200 NDJSON da conversa (o stream do turno, ou vazia quando o cliente já abortou). */
+function ndjsonResponse(body: ReadableStream<Uint8Array> | null): Response {
+  return new Response(body, {
     status: 200,
     headers: { 'content-type': 'application/x-ndjson; charset=utf-8' },
   })

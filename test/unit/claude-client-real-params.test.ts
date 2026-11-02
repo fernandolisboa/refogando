@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Parâmetros que o `RealClaudeClient` manda à Anthropic na Geração (ADR-0033 dec.5), com o SDK
@@ -21,9 +21,15 @@ function input(model: string) {
   return { model, systemPrompt: 's', userPrompt: 'u' }
 }
 
+// ADR-0055: as chamadas pagas de geração exigem a chave antes de construir o SDK (sem ela, nada sai).
+beforeEach(() => {
+  vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-teste')
+})
+
 afterEach(() => {
   parse.mockReset()
   stream.mockReset()
+  vi.unstubAllEnvs()
 })
 
 describe('RealClaudeClient.generateRecipe — parâmetros', () => {

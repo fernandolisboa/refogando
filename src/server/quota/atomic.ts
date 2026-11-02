@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gt, gte, sql } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import {
   creationSession,
@@ -6,10 +6,12 @@ import {
   generation,
   imageGeneration,
   mealPlanSuggestionEvent,
+  quotaHold,
   recipe,
 } from '@/db/schema'
 import { RECIPE_GEN_WINDOW_MS, decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
 import { IMAGE_GEN_WINDOW_MS, decideImageQuota } from '@/domain/image-quota'
+import { errorLogFields } from '@/domain/error-report'
 import { pgCode } from '@/server/recipe/visibility'
 
 /**
@@ -35,6 +37,11 @@ import { pgCode } from '@/server/recipe/visibility'
  *
  * MESMO idioma do `FOR UPDATE` já usado em moderação/curadoria/coleções — serializar o read-then-write
  * dentro de UMA transação — só que a chave é o USUÁRIO (advisory lock), não uma linha específica.
+ *
+ * #640/#641 (ADR-0055): o gate no persist sozinho fechava o TETO, mas não o CUSTO — os M pedidos paralelos já
+ * tinham pago o provedor quando chegavam a ele. Receita e imagem agora RESERVAM o slot antes da chamada paga
+ * (`reserveQuotaHold`, linha em `quota_hold` sob a mesma lock), e os gates contam as reservas ativas junto com
+ * os eventos e CONSOMEM a do próprio pedido (`consumeHoldId`).
  */
 
 /** Tipo da transação do Drizzle (mesmas APIs de query que `Database`). */
@@ -76,51 +83,114 @@ async function acquireUserQuotaLock(tx: Tx, classId: number, userId: string): Pr
   await tx.execute(sql`select pg_advisory_xact_lock(${classId}::int, hashtext(${userId}))`)
 }
 
+/** Os dois tipos de RESERVA de cota (`quota_hold.kind`, ADR-0055): geração de receita e de imagem. */
+export type QuotaHoldKind = 'recipe_gen' | 'image_gen'
+
+/** Por tipo: a classe da lock (a MESMA do gate do persist, pra serializar com ele) e a janela da cota. */
+const HOLD_KIND = {
+  recipe_gen: { lockClass: QUOTA_LOCK_CLASS.recipeGen, windowMs: RECIPE_GEN_WINDOW_MS },
+  image_gen: { lockClass: QUOTA_LOCK_CLASS.imageGen, windowMs: IMAGE_GEN_WINDOW_MS },
+} as const satisfies Record<QuotaHoldKind, { lockClass: number; windowMs: number }>
+
 /**
- * Gate ATÔMICO da cota de geração de RECEITA (#167), DENTRO da tx corrente e SOB a advisory lock do
- * usuário: reconta as `generation` na janela 24h (via `creation_session.user_id`, mesma fonte de
- * `loadRecentRecipeGenAt`) e decide por `decideRecipeGenQuota`. Estourou ⇒ LANÇA `QuotaExceededError`.
- * DEVE ser a PRIMEIRA operação da transação de persistência (antes de qualquer INSERT). `cap` não-finito
- * (papel ∞) ⇒ no-op (nem toma a lock — não serializa admin à toa).
+ * Reservas ATIVAS (`expires_at > now`) do usuário no `kind`, como instantes para a decisão pura: cada reserva
+ * entra `slots` vezes com o seu `created_at`. Como `expires_at = created_at + janela`, a reserva sai da janela
+ * da decisão exatamente quando vence — `decideRecipeGenQuota`/`decideImageQuota` calculam o `retryAfterMs`
+ * certo sem mudar. Fonte ÚNICA das reservas que contam (gates e reserva).
  */
-export async function assertRecipeGenSlotInTx(
-  tx: Tx,
-  input: { userId: string; cap: number },
-): Promise<void> {
-  const { userId, cap } = input
-  if (!Number.isFinite(cap)) return
-  const now = new Date()
-  await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.recipeGen, userId)
+async function activeHoldTimes(tx: Tx, userId: string, kind: QuotaHoldKind, now: Date): Promise<Date[]> {
+  const rows = await tx
+    .select({ createdAt: quotaHold.createdAt, slots: quotaHold.slots })
+    .from(quotaHold)
+    .where(and(eq(quotaHold.userId, userId), eq(quotaHold.kind, kind), gt(quotaHold.expiresAt, now)))
+  return rows.flatMap((r) => Array.from({ length: r.slots }, () => r.createdAt))
+}
+
+/** `generation` do usuário na janela 24h (via `creation_session.user_id`, mesma fonte de `loadRecentRecipeGenAt`). */
+async function recentRecipeGenTimes(tx: Tx, userId: string, now: Date): Promise<Date[]> {
   const since = new Date(now.getTime() - RECIPE_GEN_WINDOW_MS)
   const rows = await tx
     .select({ createdAt: generation.createdAt })
     .from(generation)
     .innerJoin(creationSession, eq(generation.creationSessionId, creationSession.id))
     .where(and(eq(creationSession.userId, userId), gte(generation.createdAt, since)))
-  const decision = decideRecipeGenQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
+  return rows.map((r) => r.createdAt)
+}
+
+/** Eventos do LEDGER imutável `image_generation` do usuário na janela 24h (mesma fonte de `loadRecentAiGenAt`). */
+async function recentImageGenTimes(tx: Tx, userId: string, now: Date): Promise<Date[]> {
+  const since = new Date(now.getTime() - IMAGE_GEN_WINDOW_MS)
+  const rows = await tx
+    .select({ createdAt: imageGeneration.createdAt })
+    .from(imageGeneration)
+    .where(and(eq(imageGeneration.userId, userId), gte(imageGeneration.createdAt, since)))
+  return rows.map((r) => r.createdAt)
+}
+
+/** Apaga a reserva `holdId` DENTRO da tx (consumo: o evento gravado nesta tx passa a contar no lugar dela). */
+async function deleteHoldInTx(tx: Tx, holdId: string): Promise<void> {
+  await tx.delete(quotaHold).where(eq(quotaHold.id, holdId))
+}
+
+/**
+ * Gate ATÔMICO da cota de geração de RECEITA (#167), DENTRO da tx corrente e SOB a advisory lock do
+ * usuário: reconta as `generation` na janela 24h (via `creation_session.user_id`, mesma fonte de
+ * `loadRecentRecipeGenAt`) MAIS as reservas ativas de OUTROS pedidos (ADR-0055) e decide por
+ * `decideRecipeGenQuota`. Estourou ⇒ LANÇA `QuotaExceededError`. DEVE ser a PRIMEIRA operação da transação
+ * de persistência (antes de qualquer INSERT). `cap` não-finito (papel ∞) ⇒ no-op (nem toma a lock — não
+ * serializa admin à toa).
+ *
+ * `consumeHoldId` (ADR-0055): a reserva que ESTE pedido tomou antes de chamar o Claude. Ordem fixa: lock
+ * PRIMEIRO, depois o DELETE da própria reserva (consumida: a `generation` desta tx conta no lugar dela), depois
+ * a recontagem. Se a decisão estourar (o teto baixou no meio), a tx reverte e a reserva VOLTA a existir —
+ * cobrada, porque a chamada foi paga. No "gerar 2" o `cap` chega já reduzido (`cap - 1`) e a reserva tem peso 2.
+ */
+export async function assertRecipeGenSlotInTx(
+  tx: Tx,
+  input: { userId: string; cap: number; consumeHoldId?: string | null },
+): Promise<void> {
+  const { userId, cap, consumeHoldId } = input
+  if (!Number.isFinite(cap)) {
+    // Papel ∞ não reserva; se o papel virou ∞ no meio do pedido, a reserva tomada antes sai mesmo assim.
+    if (consumeHoldId) await deleteHoldInTx(tx, consumeHoldId)
+    return
+  }
+  const now = new Date()
+  await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.recipeGen, userId)
+  if (consumeHoldId) await deleteHoldInTx(tx, consumeHoldId)
+  const recentAt = [
+    ...(await recentRecipeGenTimes(tx, userId, now)),
+    ...(await activeHoldTimes(tx, userId, 'recipe_gen', now)),
+  ]
+  const decision = decideRecipeGenQuota({ cap, recentAt, now })
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
 }
 
 /**
  * Gate ATÔMICO da cota de geração de IMAGEM (#132/#134), DENTRO da tx corrente e SOB a advisory lock do
  * usuário: reconta os eventos do LEDGER imutável `image_generation` na janela 24h (mesma fonte de
- * `loadRecentAiGenAt`) e decide por `decideImageQuota`. Estourou ⇒ LANÇA `QuotaExceededError`. DEVE ser
- * a PRIMEIRA operação da tx que insere a `recipe_image` + o ledger. `cap` não-finito (∞) ⇒ no-op.
+ * `loadRecentAiGenAt`) MAIS as reservas ativas de OUTROS pedidos (ADR-0055) e decide por `decideImageQuota`.
+ * Estourou ⇒ LANÇA `QuotaExceededError`. DEVE ser a PRIMEIRA operação da tx que insere a `recipe_image` + o
+ * ledger. `cap` não-finito (∞) ⇒ no-op. `consumeHoldId`: mesma ordem do gate de receita (lock → DELETE da
+ * própria reserva → recontagem).
  */
 export async function assertImageGenSlotInTx(
   tx: Tx,
-  input: { userId: string; cap: number },
+  input: { userId: string; cap: number; consumeHoldId?: string | null },
 ): Promise<void> {
-  const { userId, cap } = input
-  if (!Number.isFinite(cap)) return
+  const { userId, cap, consumeHoldId } = input
+  if (!Number.isFinite(cap)) {
+    if (consumeHoldId) await deleteHoldInTx(tx, consumeHoldId)
+    return
+  }
   const now = new Date()
   await acquireUserQuotaLock(tx, QUOTA_LOCK_CLASS.imageGen, userId)
-  const since = new Date(now.getTime() - IMAGE_GEN_WINDOW_MS)
-  const rows = await tx
-    .select({ createdAt: imageGeneration.createdAt })
-    .from(imageGeneration)
-    .where(and(eq(imageGeneration.userId, userId), gte(imageGeneration.createdAt, since)))
-  const decision = decideImageQuota({ cap, recentAt: rows.map((r) => r.createdAt), now })
+  if (consumeHoldId) await deleteHoldInTx(tx, consumeHoldId)
+  const recentAt = [
+    ...(await recentImageGenTimes(tx, userId, now)),
+    ...(await activeHoldTimes(tx, userId, 'image_gen', now)),
+  ]
+  const decision = decideImageQuota({ cap, recentAt, now })
   if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
 }
 
@@ -272,10 +342,12 @@ const LOCK_NOT_AVAILABLE = '55P03'
  * a PRIMEIRA operação da transação de `deriveRecipe` (antes do INSERT da `recipe`). `cap` não-finito
  * (admin) ⇒ no-op, sem lock.
  *
- * Só aqui a espera pela lock tem teto (`SET LOCAL lock_timeout`, `DERIVE_LOCK_TIMEOUT_MS`): estourou ⇒ o
- * Postgres cancela o statement com 55P03 e vira o MESMO `QuotaExceededError` (429 `limite_derivar`, com
- * `DERIVE_LOCK_BUSY_RETRY_MS`), nunca 500. Logo depois da lock o `lock_timeout` volta ao default da sessão,
- * pra o resto da tx do fork não herdar o teto (um 55P03 lá adiante seria outra coisa e não deve virar 429).
+ * A espera pela lock tem teto (`SET LOCAL lock_timeout`, `DERIVE_LOCK_TIMEOUT_MS`), como na lock das denúncias
+ * (`acquireReportLockInTx`) e na reserva de cota (`reserveQuotaHold`); os gates de geração no persist esperam
+ * sem teto. Estourou ⇒ o Postgres cancela o statement com 55P03 e vira o MESMO `QuotaExceededError` (429
+ * `limite_derivar`, com `DERIVE_LOCK_BUSY_RETRY_MS`), nunca 500. Logo depois da lock o `lock_timeout` volta ao
+ * default da sessão, pra o resto da tx do fork não herdar o teto (um 55P03 lá adiante seria outra coisa e não
+ * deve virar 429).
  */
 export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap: number }): Promise<void> {
   const { userId, cap } = input
@@ -319,4 +391,90 @@ export async function acquireReportLockInTx(tx: Tx, userId: string): Promise<voi
     throw e
   }
   await tx.execute(sql`set local lock_timeout to default`)
+}
+
+/**
+ * RESERVA de cota ANTES da chamada paga (#640/#641, ADR-0055) — geração de receita (`recipe_gen`) ou de imagem
+ * (`image_gen`). Antes, o gate atômico rodava só no persist, DEPOIS do provedor: M pedidos paralelos com a cota
+ * em N-1 passavam todos no pré-check (leitura) e TODOS pagavam o provedor. Agora, numa ÚNICA transação e com o
+ * idioma exato do derive: `lock_timeout` de `DERIVE_LOCK_TIMEOUT_MS` → advisory lock da MESMA classe do gate do
+ * persist (serializa com ele) → `lock_timeout` de volta ao default → reconta eventos + reservas ativas → decide
+ * com `cap - (slots - 1)` (no "gerar 2", cabem 2 ⟺ permitido sob `cap - 1`, como o pré-check) → estourou ⇒
+ * `QuotaExceededError` (a espera estourada também: 55P03 ⇒ `DERIVE_LOCK_BUSY_RETRY_MS`) → senão INSERE a reserva
+ * e devolve o id.
+ *
+ * A reserva nasce JÁ COBRADA (`expires_at = now() + janela`, o mesmo instante em que um evento gravado agora
+ * sairia da janela): função morta pelo timeout ou abort do cliente deixam o slot gasto, como deve ser. O persist
+ * a CONSOME (`consumeHoldId` no gate) e a falha provadamente não paga do provedor a DEVOLVE (`releaseQuotaHold`).
+ * `cap` não-finito (∞ / admin) ⇒ `null`: sem lock, sem linha.
+ */
+export async function reserveQuotaHold(
+  db: Database,
+  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2 },
+): Promise<string | null> {
+  const { userId, kind, cap } = input
+  const slots = input.slots ?? 1
+  if (!Number.isFinite(cap)) return null
+  const { lockClass, windowMs } = HOLD_KIND[kind]
+  return db.transaction(async (tx) => {
+    const now = new Date()
+    await tx.execute(sql`select set_config('lock_timeout', ${`${DERIVE_LOCK_TIMEOUT_MS}ms`}, true)`)
+    try {
+      await acquireUserQuotaLock(tx, lockClass, userId)
+    } catch (e) {
+      if (pgCode(e) === LOCK_NOT_AVAILABLE) throw new QuotaExceededError(DERIVE_LOCK_BUSY_RETRY_MS)
+      throw e
+    }
+    await tx.execute(sql`set local lock_timeout to default`)
+    const events =
+      kind === 'recipe_gen' ? await recentRecipeGenTimes(tx, userId, now) : await recentImageGenTimes(tx, userId, now)
+    const recentAt = [...events, ...(await activeHoldTimes(tx, userId, kind, now))]
+    const decide = kind === 'recipe_gen' ? decideRecipeGenQuota : decideImageQuota
+    const decision = decide({ cap: cap - (slots - 1), recentAt, now })
+    if (!decision.allowed) throw new QuotaExceededError(decision.retryAfterMs)
+    const [row] = await tx
+      .insert(quotaHold)
+      .values({
+        userId,
+        kind,
+        slots,
+        expiresAt: sql`now() + (${windowMs}::double precision * interval '1 millisecond')`,
+      })
+      .returning({ id: quotaHold.id })
+    return row.id
+  })
+}
+
+/**
+ * `reserveQuotaHold` na forma dos `peek*` (ADR-0055): os quatro pontos de chamada (geração, conversa, regeneração,
+ * imagem do dono) só querem saber se passou e, se não, o countdown do 429. `QuotaExceededError` (teto estourado
+ * ou fila da lock cheia) vira `{ allowed: false, retryAfterMs }`; qualquer outro erro sobe. `holdId` é `null`
+ * com cap ∞ (sem linha).
+ */
+export async function tryReserveQuotaHold(
+  db: Database,
+  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2 },
+): Promise<{ allowed: true; holdId: string | null } | { allowed: false; retryAfterMs: number }> {
+  try {
+    return { allowed: true, holdId: await reserveQuotaHold(db, input) }
+  } catch (err) {
+    if (err instanceof QuotaExceededError) return { allowed: false, retryAfterMs: err.retryAfterMs }
+    throw err
+  }
+}
+
+/**
+ * DEVOLVE a reserva (ADR-0055): só quando a chamada paga provadamente NÃO foi cobrada — o provedor respondeu
+ * erro HTTP, a conexão falhou antes de o pedido sair ou falta a chave do provedor (`cause: 'provider'` no
+ * `parse_failed`, `ClaudeProviderUnavailableError` no stream, `ImageProviderUnavailableError` na imagem).
+ * Idempotente (`null` ou reserva já apagada ⇒ no-op). Best-effort: falha do banco aqui deixa o slot cobrado (erra
+ * a favor do custo) e não derruba a resposta de erro que o pedido já ia dar.
+ */
+export async function releaseQuotaHold(db: Database, holdId: string | null): Promise<void> {
+  if (!holdId) return
+  try {
+    await db.delete(quotaHold).where(eq(quotaHold.id, holdId))
+  } catch (err) {
+    console.error(`[quota] falha ao devolver a reserva de cota: ${errorLogFields(err)}`)
+  }
 }

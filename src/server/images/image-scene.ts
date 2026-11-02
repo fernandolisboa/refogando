@@ -24,6 +24,10 @@ import {
  *
  * Custo: a chamada do diretor fica FORA do ledger de imagem (como a Extração, #463); o log abaixo traz
  * modelo e tokens para conferir no Vercel. Limite aceito no ADR-0044.
+ *
+ * `directorCalled` (ADR-0055): a chamada paga do diretor aconteceu (voltou, com qualquer desfecho, ou lançou).
+ * Com ela, a geração do dono NÃO devolve a reserva de cota de imagem nem quando o Gemini falha sem cobrar: senão
+ * o diretor rodaria de graça, e repetir o pedido viraria um laço de chamadas pagas ao Claude sem teto.
  */
 export async function resolveImageScene(input: {
   db: Database
@@ -39,14 +43,14 @@ export async function resolveImageScene(input: {
   }
   /** Registro escolhido pelo usuário no modal: pula o diretor. */
   registroFixo: ImageSceneRegistro | null
-}): Promise<{ scene: ImageScene; visualNote: string | null }> {
+}): Promise<{ scene: ImageScene; visualNote: string | null; directorCalled: boolean }> {
   const { db, claude, appCfg, recipeId, content, registroFixo } = input
 
   // A nota visual não depende do diretor: a leitura corre em paralelo com a chamada.
   const notePromise = loadVisualNote(db, content.cozinha)
   const rules = sceneFromRules({ recipeId, cozinha: content.cozinha, categoria: content.categoria, registroFixo })
   if (registroFixo || !appCfg.imageGen.sceneDirector) {
-    return { scene: rules, visualNote: await notePromise }
+    return { scene: rules, visualNote: await notePromise, directorCalled: false }
   }
 
   const task = appCfg.aiTasks.imageScene
@@ -75,7 +79,8 @@ export async function resolveImageScene(input: {
     // código (ADR-0048): a mensagem de um erro do SDK pode trazer o prompt, que tem o texto da receita.
     console.warn(`[image-scene] diretor lançou, seguindo com as regras: ${errorLogFields(err)}`)
   }
-  return { scene, visualNote: await notePromise }
+  // A chamada paga do diretor saiu (ou pode ter saído), volte ela ou lance.
+  return { scene, visualNote: await notePromise, directorCalled: true }
 }
 
 /** Nota visual da cozinha da receita, ou `null` (sem cozinha, sem nota ou leitura falhou). */

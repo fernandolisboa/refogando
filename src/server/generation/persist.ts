@@ -117,14 +117,19 @@ export type PersistGenerationInput = {
   variantLabel?: string
   // #446 (TOCTOU do teto): gate ATÔMICO de cota de geração de RECEITA. Quando presente, a PRIMEIRA
   // operação da transação de persistência toma o advisory lock do usuário, RECONTA as `generation` na
-  // janela 24h e DECIDE — estourou ⇒ LANÇA QuotaExceededError e a tx REVERTE (nada persiste), que o
-  // caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞ / callers legados sem teto). O pré-check da rota
-  // continua como otimização barata (early-reject sem tocar o Claude); ESTE é a enforcement real.
-  quota?: { userId: string; cap: number }
+  // janela 24h (MAIS as reservas ativas dos outros pedidos, ADR-0055) e DECIDE — estourou ⇒ LANÇA
+  // QuotaExceededError e a tx REVERTE (nada persiste), que o caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞
+  // / callers legados sem teto). O pré-check da rota continua como otimização barata; quem barra ANTES do Claude
+  // é a reserva (ADR-0055), e ESTE gate é a CONFIRMAÇÃO no persist, que a consome.
+  // `consumeHoldId` (ADR-0055): a reserva de cota que a borda tomou ANTES da chamada ao Claude
+  // (`tryReserveQuotaHold`). O gate a apaga sob a lock, NESTA tx, antes da recontagem: a `generation` gravada
+  // aqui passa a contar no lugar dela (se a tx reverter, a reserva volta e fica cobrada).
+  quota?: { userId: string; cap: number; consumeHoldId?: string | null }
   // #446 (variar2): transação FORNECIDA pelo caller. Presente ⇒ persiste NESTA tx (não abre a própria) —
   // usado pelo "gerar 2" p/ gravar as DUAS variações sob UM único advisory lock (o caller toma o lock +
   // reconta os 2 slots ANTES, então cada persist vai com `quota` AUSENTE aqui). Ausente ⇒ abre a própria
-  // tx (todos os demais callers) e roda o gate `quota` internamente.
+  // tx (todos os demais callers) e roda o gate `quota` internamente. ADR-0055: com `tx` fornecida a reserva
+  // é consumida UMA vez pelo gate da tx externa, nunca por variação (`quota` com `tx` é erro de chamador).
   tx?: PersistTx
   // #463: telemetria de custo (input/output tokens) da chamada que produziu esta geração, lida pela borda
   // de `out.usage` (o seam RealClaudeClient a anexa). Deriva o `cost_usd` SNAPSHOT via `computeTextCost`
@@ -231,6 +236,12 @@ export async function persistGeneration(
     throw new Error("persistGeneration: lineage inválida (só 'regenerated' com parentRecipeId)")
   }
 
+  // ADR-0055 / #446: com `tx` fornecida (variar2), o gate e o consumo da reserva rodaram UMA vez na tx externa.
+  // `quota` junto seria recontar (a 2ª variação se auto-barraria) ou consumir a reserva por variação.
+  if (providedTx && quota) {
+    throw new Error('persistGeneration: `quota` com `tx` fornecida (o gate e a reserva são da tx externa)')
+  }
+
   // Erro de sistema puro: não é episódio de criação → nada é gravado (§6). O Briefing
   // também NÃO nasce em invalid (ADR-0006).
   if (result.outcome === 'invalid') return null
@@ -242,6 +253,7 @@ export async function persistGeneration(
     // LANÇA QuotaExceededError e a tx reverte (NADA persiste). impossible TAMBÉM conta pro teto (o custo
     // do Claude já foi gasto). No caminho `providedTx` (variar2) `quota` vem AUSENTE: o caller já gateou
     // os 2 slots sob o lock ANTES de chamar — não se reconta por variação (senão a 2ª se auto-barraria).
+    // ADR-0055: `quota.consumeHoldId` faz o gate apagar a reserva deste pedido (lock → DELETE → recontagem).
     if (quota) await assertRecipeGenSlotInTx(tx, quota)
 
     if (result.outcome === 'impossible') {

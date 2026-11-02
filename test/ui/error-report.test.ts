@@ -18,6 +18,7 @@ import {
   formatServerErrorLine,
   isHydrationError,
   normalizeClientRoute,
+  providerErrorLogFields,
   parseClientErrorReport,
   sanitizeDigest,
   sanitizeErrorMessage,
@@ -219,6 +220,19 @@ describe('campos curtos', () => {
     expect(errorLogFields(Object.assign(new Error('x'), { name: 'Erro de maria@x.com' }))).toBe('erro=Error')
     expect(errorLogFields('segredo')).toBe('erro=string')
     expect(errorLogFields(undefined)).toBe('erro=undefined')
+  })
+
+  it('providerErrorLogFields: classe e status do erro do SDK, nunca a mensagem (ADR-0055)', () => {
+    // Os erros do SDK da Anthropic não definem `name` (ficam `Error`): a classe vem de `constructor.name`.
+    class InternalServerError extends Error {
+      status = 529
+    }
+    expect(providerErrorLogFields(new InternalServerError('texto da Transcrição'))).toBe(
+      'erro=InternalServerError status=529',
+    )
+    expect(providerErrorLogFields(new Error('x'))).toBe('erro=Error')
+    expect(providerErrorLogFields(Object.assign(new Error('x'), { status: '500' }))).toBe('erro=Error')
+    expect(providerErrorLogFields(undefined)).toBe('erro=Error')
   })
 
   it('rota do servidor: corta query/hash e troca o que não é da allowlist', () => {
