@@ -20,6 +20,8 @@ import { retentionCutoffs } from '@/domain/data-retention'
 import { RESOLVED_TAKEDOWN_STATUSES } from '@/domain/dsar-sla'
 import { purgeDsarEventsBefore } from '@/server/legal/dsar-audit'
 import type { TimeBudget } from '@/server/time-budget'
+import { deleteExpiredRateLimitWindows } from '@/server/rate-limit/window'
+import { deleteExpiredSearchQueryEmbeddings } from '@/server/search/query-embedding'
 
 /**
  * Retenção: o que o app apaga sozinho quando o prazo vence (issue #473, ADR-0050; prazos em
@@ -35,6 +37,9 @@ import type { TimeBudget } from '@/server/time-budget'
  *    24 h); `extraction_event` (30 dias); a reserva de cota VENCIDA (`quota_hold` com `expires_at` passado, de
  *    geração ou de tradução, ADR-0055/0056: vence em 24 h; apagada na passada diária seguinte deste cron. Vencida já não conta — a limpeza
  *    é higiene).
+ *  - Janelas encerradas do limitador do app (`rate_limit_window`, chave HMAC do IP ou da conta) e vetores de busca
+ *    vencidos (`search_query_embedding`), ADR-0057. Quem segura os prazos da política (2 h e 24 h) é a limpeza de
+ *    hora em hora (`/api/cron/rate-limit-cleanup`); aqui é a rede de segurança se ela falhar.
  *  - Sessões vencidas (o IP e o navegador vão junto) e `verification` vencida (as lápides do cadastro
  *    expurgado vencem em 90 dias e ficam até lá; toda leitura de `verification` já exige `expires_at` futuro).
  *  - Ticket de takedown ENCERRADO há 12 meses: status resolvido, recebido antes do corte e sem registro de
@@ -152,6 +157,16 @@ export const RETENTION_STEPS: readonly RetentionStep[] = [
     key: 'quotaHolds',
     label: 'expurgo das reservas de cota vencidas',
     run: (db, now, opts = {}) => deleteWhere(db, quotaHold, quotaHold.id, lte(quotaHold.expiresAt, now), opts),
+  },
+  {
+    key: 'rateLimitWindows',
+    label: 'expurgo das janelas encerradas do limitador',
+    run: (db, now, opts = {}) => deleteInBatches((limit) => deleteExpiredRateLimitWindows(db, now, limit), opts),
+  },
+  {
+    key: 'searchQueryEmbeddings',
+    label: 'expurgo dos vetores de busca vencidos',
+    run: (db, now, opts = {}) => deleteInBatches((limit) => deleteExpiredSearchQueryEmbeddings(db, now, limit), opts),
   },
   {
     key: 'sessions',

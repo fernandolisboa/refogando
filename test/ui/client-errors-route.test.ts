@@ -288,3 +288,102 @@ describe('ipRateKey', () => {
     expect(ipRateKey(ip)).toBe(key)
   })
 })
+
+describe('teto global persistido (#648, ADR-0057)', () => {
+  it('`globalCap` false ⇒ 429 sem linha; true ⇒ 204 com linha', async () => {
+    let fits = true
+    const lines: string[] = []
+    const intake = createClientErrorIntake({ log: (l) => lines.push(l), globalCap: async () => fits })
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.1' }))).status).toBe(204)
+    fits = false
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.2' }))).status).toBe(429)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('`globalCap` que lança ⇒ fail-open (os tetos em memória continuam)', async () => {
+    const lines: string[] = []
+    const intake = createClientErrorIntake({
+      log: (l) => lines.push(l),
+      globalCap: async () => {
+        throw new Error('banco fora')
+      },
+    })
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.3' }))).status).toBe(204)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('concorrência: o teto da instância vale com o `await` do global no meio (a vaga é reservada antes)', async () => {
+    const lines: string[] = []
+    let calls = 0
+    const intake = createClientErrorIntake({
+      log: (l) => lines.push(l),
+      perInstancePerMinute: 3,
+      globalCap: async () => {
+        calls++
+        await new Promise((r) => setTimeout(r, 20)) // banco lento: todos os pedidos esperam juntos
+        return true
+      },
+    })
+    const res = await Promise.all(Array.from({ length: 10 }, (_, i) => intake(post(valid, { 'x-real-ip': `9.8.0.${i + 1}` }))))
+    expect(res.filter((r) => r.status === 204)).toHaveLength(3)
+    expect(res.filter((r) => r.status === 429)).toHaveLength(7)
+    expect(calls).toBe(3)
+    expect(lines.filter((l) => !l.includes('limite=atingido'))).toHaveLength(3)
+  })
+
+  it('global cheio devolve a vaga da instância e fica em cache até a virada da janela global (sem banco)', async () => {
+    let t = 1_000_000 * 60_000 + 10_000 // 10 s depois do início de um minuto alinhado à época
+    let calls = 0
+    let fits = false
+    const lines: string[] = []
+    const intake = createClientErrorIntake({
+      now: () => t,
+      log: (l) => lines.push(l),
+      perInstancePerMinute: 2,
+      globalCap: async () => {
+        calls++
+        return fits
+      },
+    })
+    expect((await intake(post(valid, { 'x-real-ip': '9.8.1.1' }))).status).toBe(429)
+    expect(calls).toBe(1)
+    for (let i = 0; i < 5; i++) {
+      t += 1000
+      expect((await intake(post(valid, { 'x-real-ip': `9.8.1.${i + 2}` }))).status).toBe(429)
+    }
+    expect(calls).toBe(1) // o "cheio" ficou em cache: nada de banco a cada pedido
+    // Virou a janela global: consulta de novo, e as vagas da instância estão todas livres (foram devolvidas).
+    t = 1_000_001 * 60_000
+    fits = true
+    expect((await intake(post(valid, { 'x-real-ip': '9.8.1.20' }))).status).toBe(204)
+    expect((await intake(post(valid, { 'x-real-ip': '9.8.1.21' }))).status).toBe(204)
+    expect(calls).toBe(3)
+    expect(lines).toHaveLength(2)
+  })
+
+  it('global que demora mais que o timeout ⇒ fail-open', async () => {
+    const lines: string[] = []
+    const intake = createClientErrorIntake({
+      log: (l) => lines.push(l),
+      globalCapTimeoutMs: 20,
+      globalCap: () => new Promise<boolean>(() => {}), // nunca responde (banco pendurado)
+    })
+    const started = Date.now()
+    expect((await intake(post(valid, { 'x-real-ip': '9.8.2.1' }))).status).toBe(204)
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('lixo (400) não consulta o teto global', async () => {
+    let calls = 0
+    const intake = createClientErrorIntake({
+      log: () => {},
+      globalCap: async () => {
+        calls++
+        return true
+      },
+    })
+    expect((await intake(post('não é json', { 'x-real-ip': '9.9.9.4' }))).status).toBe(400)
+    expect(calls).toBe(0)
+  })
+})

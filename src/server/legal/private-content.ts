@@ -48,6 +48,9 @@ import type { Tx } from '@/server/recipe/image'
  * anonimizado), as denúncias que ele registrou e as notificações em que ele é o ator (a caixa de quem recebe
  * lê a identidade viva, que colapsa para conta desativada). `ERASURE_POLICY` classifica TODA FK para `users`
  * — FK nova reprova o teste até alguém decidir o que acontece com ela na eliminação.
+ * `rate_limit_window` (limitador do app) e `search_query_embedding` (cache do vetor da busca), ADR-0057, não têm FK
+ * para `users`: a chave do limite por conta é um HMAC do id, que vence com a janela (≤ 10 min) e sai na limpeza de hora
+ * em hora; o cache não liga a ninguém. A eliminação não precisa de passo para elas.
  *
  * Idempotente: numa conta já limpa todas as contagens dão 0 (`changed: false`) e `privateLeftovers` é falso.
  */

@@ -84,6 +84,9 @@ import { exportablePromptStamp, type JsonObjectSection } from '@/domain/account-
  *    terceiro, mesma regra da lista de seguidores).
  *  - Colunas internas da imagem (`reviewRequired`, `derivativesAttemptedAt`) e a `lineageId` (chave interna).
  *  - `rate_limit` (chaveado por IP, não pelo titular) e `dsar_audit_event` (o registro de conformidade).
+ *  - `rate_limit_window` e `search_query_embedding` (ADR-0057): a chave é um HMAC do IP, da conta ou da consulta,
+ *    sem FK nem caminho de volta para o titular (nem dá para achar as linhas dele sem refazer o HMAC), e somem em
+ *    até 2 h e 24 h.
  *
  * Portável/legível: JSON plano e versionado (`format`), pronto para o titular ler ou reimportar. A versão
  * segue `v1`: as seções novas só ACRESCENTAM chaves (nada renomeado nem com tipo trocado), como nos PRs

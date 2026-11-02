@@ -32,7 +32,8 @@ const CLIENT_IP_MAX = 64
  * escolhida à vontade ⇒ brute-force ilimitado). Já o `x-real-ip` é setado pela edge com o IP real e o
  * cliente NÃO consegue sobrescrevê-lo. Preferimos `x-real-ip`; só caímos no `x-forwarded-for` em ambientes
  * sem essa injeção (proxies fora da Vercel). Só leitura de header (sem DB, sem auth), usado como CHAVE de
- * rate-limit best-effort — nunca vai ao banco, então capamos só o comprimento (anti-chave-abusiva). `null`
+ * rate-limit. Em claro, este valor fica só na memória (limitadores por instância); o limitador persistido
+ * (ADR-0057) grava só um HMAC dele (`limiterKey`), nunca o IP. Capamos só o comprimento (anti-chave-abusiva). `null`
  * quando nenhum header traz IP (local/teste): o caller decide o fail-open. É metadado de rede confiável só
  * na medida em que o proxy da frente é.
  */
