@@ -32,8 +32,8 @@ import type { TimeBudget } from '@/server/time-budget'
  *
  * Os passos:
  *  - Registros de uso de IA (24 meses): `image_generation`, `meal_plan_suggestion_event` (as cotas leem só
- *    24 h); `extraction_event` (30 dias); a reserva de cota VENCIDA (`quota_hold` com `expires_at` passado,
- *    ADR-0055: vence em 24 h; apagada na passada diária seguinte deste cron. Vencida já não conta — a limpeza
+ *    24 h); `extraction_event` (30 dias); a reserva de cota VENCIDA (`quota_hold` com `expires_at` passado, de
+ *    geração ou de tradução, ADR-0055/0056: vence em 24 h; apagada na passada diária seguinte deste cron. Vencida já não conta — a limpeza
  *    é higiene).
  *  - Sessões vencidas (o IP e o navegador vão junto) e `verification` vencida (as lápides do cadastro
  *    expurgado vencem em 90 dias e ficam até lá; toda leitura de `verification` já exige `expires_at` futuro).

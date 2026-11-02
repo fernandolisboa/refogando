@@ -6,6 +6,16 @@ import { loadRecipeTranslationContext } from '@/server/recipe/load'
 import { slugForNewTranslation } from '@/server/recipe/slug'
 import { TRANSLATION_PROMPT_VERSION } from '@/domain/translation-prompt'
 import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fingerprint'
+import { retranslateFailKey } from '@/domain/translation-divergent-stale'
+import { isTranslationInputTooLarge } from '@/domain/translation-flight'
+import { isRowSpecificTranslationFailure, type TranslateOutput } from '@/server/translation/translator'
+import {
+  abandonTranslationFlight,
+  claimTranslationFlight,
+  completeTranslationFlight,
+  failTranslationFlight,
+  type TranslationQuota,
+} from '@/server/translation/flight'
 
 /**
  * Ciclo de vida da tradução on-demand (issue #23, AC1 + AC4). CABEIA sobre as máquinas
@@ -25,14 +35,29 @@ import { sourceFingerprintOf, mtFingerprintOfRow } from '@/domain/translation-fi
  *
  * O `targetLocale` chega CANÔNICO (a rota valida+canoniza com `canonicalLocale`); o
  * serviço nunca recebe locale cru. Recebe o id já validado pelo gate da rota (§5.8).
+ *
+ * Guardas de custo (#642, ADR-0056), entre o passo 1 e o 2:
+ *  - entrada acima de `TRANSLATION_MAX_INPUT_CHARS` ⇒ `too_large`, sem chamar o modelo;
+ *  - `claimTranslationFlight` (tx curta sob a advisory lock do par): outro pedido em voo ⇒ `in_progress`; falha
+ *    recente com a mesma fonte+versão ⇒ `cooling_down`; senão reserva a cota do usuário (`quota`, só a rota passa;
+ *    estourou ⇒ LANÇA `QuotaExceededError`) e toma o lease;
+ *  - a falha do tradutor grava o cache negativo; o sucesso apaga o estado do par.
+ * Os desfechos novos degradam como o `degraded` (a rota devolve a view no original).
  */
 
-export type EnsureResult = { kind: 'created' } | { kind: 'exists' } | { kind: 'degraded' }
+export type EnsureResult =
+  | { kind: 'created' }
+  | { kind: 'exists' }
+  | { kind: 'degraded' }
+  | { kind: 'too_large' }
+  | { kind: 'in_progress' }
+  | { kind: 'cooling_down' }
 
 export async function ensureTranslation(
   db: Database,
   recipeId: string,
   targetLocale: string,
+  quota?: TranslationQuota,
 ): Promise<EnsureResult> {
   // Loader FOCADO (#23 perf): originalLocale + cozinha + linhas de tradução + os itens de
   // ingrediente de origem (ordem+nome, #426) p/ traduzir o nome por-locale; nada de tags.
@@ -48,25 +73,81 @@ export async function ensureTranslation(
   const source = ctx.translations.find((t) => t.locale === ctx.originalLocale)
   if (!source) return { kind: 'exists' }
 
+  const fields = {
+    titulo: source.titulo,
+    descricao: source.descricao,
+    passos: source.passos,
+    notas: source.notas,
+  }
+
+  // #642: entrada grande demais estouraria o `max_tokens` e pagaria a chamada para nada (L-7: os campos não têm
+  // tamanho máximo). Sem lease nem cota: a checagem é pura e barata.
+  if (isTranslationInputTooLarge({ fields, ingredientes: ctx.ingredients, cozinha: ctx.cozinha })) {
+    return { kind: 'too_large' }
+  }
+
+  // Fingerprints de conteúdo (#496, ADR-0031): carimbam a FONTE de onde esta MT saiu (gravado abaixo) e servem de
+  // chave do cache negativo (#642), a mesma do circuit-breaker do #520: fonte editada ou prompt novo ⇒ chave nova.
+  const sourceFingerprint = sourceFingerprintOf(fields, ctx.ingredients)
+  const failKey = retranslateFailKey(sourceFingerprint, TRANSLATION_PROMPT_VERSION)
+
+  // Single-flight + cache negativo + cota (#642). `QuotaExceededError` sobe para a rota (429).
+  const claim = await claimTranslationFlight(db, { recipeId, locale: targetLocale, failKey, quota })
+  if (claim.kind !== 'claimed') return { kind: claim.kind }
+  const flight = { recipeId, locale: targetLocale, leaseId: claim.leaseId }
+
   // Traduz título/corpo + NOMES de ingrediente (#426). LANÇA (falha OU infidelidade) ⇒ degrada SEM
-  // escrever (AC4: cai pro original, sem erro técnico). A MEDIDA nunca entra no payload (Direção B).
+  // escrever a tradução (AC4: cai pro original, sem erro técnico) e grava o cache negativo (#642). A MEDIDA nunca
+  // entra no payload (Direção B).
   let translated
   try {
     translated = await getTranslator().translate({
       sourceLocale: ctx.originalLocale,
       targetLocale,
-      fields: {
-        titulo: source.titulo,
-        descricao: source.descricao,
-        passos: source.passos,
-        notas: source.notas,
-      },
+      fields,
       ingredientes: ctx.ingredients,
       contexto: { cozinha: ctx.cozinha },
     })
-  } catch {
+  } catch (err) {
+    await failTranslationFlight(db, { ...flight, failKey, rowSpecific: isRowSpecificTranslationFailure(err) })
     return { kind: 'degraded' }
   }
+
+  try {
+    await persistTranslation(db, { recipeId, targetLocale, ctx, translated, sourceFingerprint })
+  } catch (err) {
+    // Erro inesperado no slug/INSERT: solta o lease (sem cache negativo) e deixa o erro subir como antes.
+    await abandonTranslationFlight(db, flight)
+    throw err
+  }
+  await completeTranslationFlight(db, flight)
+
+  // Embeda o 2º locale (#14). A LINHA já existe (passo acima) ⇒ embedTranslation não
+  // devolve {ok:false}; se o EMBEDDER lança, o embedding é assistivo: engole e segue
+  // (a tradução já persistiu; o recompute fica pendente via stale/retry).
+  try {
+    await embedTranslation(db, recipeId, targetLocale)
+  } catch {
+    // embedding indisponível: tradeoff documentado (§5.1) — linha persiste sem vetor.
+  }
+
+  return { kind: 'created' }
+}
+
+type TranslationContext = NonNullable<Awaited<ReturnType<typeof loadRecipeTranslationContext>>>
+
+/** Grava a linha do 2º locale a partir da saída do tradutor (slug congelado + fingerprints + insert idempotente). */
+async function persistTranslation(
+  db: Database,
+  input: {
+    recipeId: string
+    targetLocale: string
+    ctx: TranslationContext
+    translated: TranslateOutput
+    sourceFingerprint: string
+  },
+): Promise<void> {
+  const { recipeId, targetLocale, ctx, translated, sourceFingerprint } = input
 
   // Monta o jsonb de nomes por-locale a partir do NOSSO conjunto de `ordem` (não do eco do LLM),
   // preenchendo com o nome traduzido (a fidelidade já garantiu que todos os `ordem` vieram). Guarda o
@@ -85,17 +166,13 @@ export async function ensureTranslation(
         }))
       : null
 
-  // Fingerprints de conteúdo (#496, ADR-0031): carimbam a FONTE de onde esta MT saiu e o que a MT
-  // PRODUZIU, no MESMO instante da escrita. O `mtFingerprint` usa EXATAMENTE os valores persistidos
+  // Fingerprints de conteúdo (#496, ADR-0031): a FONTE (`sourceFingerprint`, calculado antes da chamada) e o que
+  // a MT PRODUZIU, carimbados no MESMO instante da escrita. O `mtFingerprint` usa EXATAMENTE os valores persistidos
   // abaixo (titulo/descricao/passos/notas + o mapa ordem→nome do jsonb) — senão a comparação futura
   // "intocada" nunca bateria. A medida fica fora (Direção B). Habilita a re-tradução pull da fatia B.
   // Os dois helpers (`sourceFingerprintOf`/`mtFingerprintOfRow`, translation-fingerprint.ts) são a
   // MESMA construção que `retranslateOutdated` (#499) usa para recomputar o hash-de-comparação —
   // fonte única entre escrita e leitura, sem chance de drift.
-  const sourceFingerprint = sourceFingerprintOf(
-    { titulo: source.titulo, descricao: source.descricao, passos: source.passos, notas: source.notas },
-    ctx.ingredients,
-  )
   const mtFingerprint = mtFingerprintOfRow({
     titulo: translated.titulo,
     descricao: translated.descricao ?? null,
@@ -136,15 +213,4 @@ export async function ensureTranslation(
     .onConflictDoNothing({
       target: [recipeTranslation.recipeId, recipeTranslation.locale],
     })
-
-  // Embeda o 2º locale (#14). A LINHA já existe (passo acima) ⇒ embedTranslation não
-  // devolve {ok:false}; se o EMBEDDER lança, o embedding é assistivo: engole e segue
-  // (a tradução já persistiu; o recompute fica pendente via stale/retry).
-  try {
-    await embedTranslation(db, recipeId, targetLocale)
-  } catch {
-    // embedding indisponível: tradeoff documentado (§5.1) — linha persiste sem vetor.
-  }
-
-  return { kind: 'created' }
 }
