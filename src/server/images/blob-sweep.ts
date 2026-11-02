@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { and, eq, isNotNull } from 'drizzle-orm'
-import sharp from 'sharp'
+import sharp, { type Metadata } from 'sharp'
 import type { Database } from '@/db/client'
 import { recipeImage, recipeReview, users } from '@/db/schema'
 import { avatarPathPrefix } from '@/server/images/avatar-blob'
@@ -161,7 +161,7 @@ function rotatingOrder(blobs: ListedBlob[], now: Date): ListedBlob[] {
 }
 
 /** Os metadados que o re-encode descarta (GPS mora no EXIF ou no XMP). */
-function hasPersonalMetadata(meta: sharp.Metadata): boolean {
+function hasPersonalMetadata(meta: Metadata): boolean {
   return Boolean(meta.exif?.length || meta.xmp?.length || meta.iptc?.length)
 }
 
