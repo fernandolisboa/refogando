@@ -2,7 +2,8 @@ import { getDb, getEmbedder } from '@/server/deps'
 import { requireSession } from '@/server/auth/guard'
 import { resolveLocale } from '@/i18n/locale'
 import { searchRecipes, MAX_QUERY_LEN } from '@/server/recipe/search'
-import { EMBEDDING_DIMENSIONS } from '@/db/schema'
+import { resolveSearchQueryVector } from '@/server/search/query-embedding'
+import { clientIpFromHeaders } from '@/server/http/params'
 import {
   buildSearchResponse,
   type FacetasResolvidasDTO,
@@ -169,41 +170,28 @@ export async function GET(request: Request): Promise<Response> {
   // (ov.overlap=NULL no FULL OUTER JOIN). Forçar 'any' preserva o comportamento #6 puro.
   const effectiveMode = terms.length === 0 ? 'any' : mode
 
-  // #14: embeda o q efetivo numa etapa SEPARADA, ANTES do loader, com try/catch CIRÚRGICO
-  // só no embed. NÃO embeda q vazio (preserva o neutro byte-a-byte) nem o caminho
-  // faceta-only (q sem letra/dígito → o loader já trata queryVector como no-op). Capa q a
-  // MAX_QUERY_LEN antes do embed (custo/anti-fan-out). Embedder lança ⇒ queryVector=null
-  // ⇒ degradação graciosa (só-precisa). Erro de DB do loader NÃO é capturado aqui (500).
-  // Consequência consciente: até o cliente real plugar, getEmbedder() devolve RealEmbedder,
-  // que lança ⇒ toda Busca degrada silenciosamente pra só-precisa.
+  // #14: o vetor da consulta sai numa etapa SEPARADA, ANTES do loader, e nunca lança: embedder que falha, saída
+  // malformada (dimensão errada, NaN/Infinity — que estourariam o cast `::vector` fora daqui, 500) ou limite
+  // estourado viram `null` ⇒ degradação graciosa (só-precisa, FTS + trigram). NÃO embeda q vazio (preserva o
+  // neutro) nem o caminho faceta-only (q sem letra/dígito → o loader já trata queryVector como no-op). Erro de DB do
+  // loader NÃO é capturado aqui (500).
   //
-  // Nunca lança: o embed tem try/catch próprio e a validação zera saídas malformadas. Isso permite
-  // rodá-lo EM PARALELO com a leitura da sessão abaixo (o embed é um HTTP externo de ~100–300 ms; antes a
-  // sessão só começava depois dele).
-  async function embedQueryVector(): Promise<number[] | null> {
-    if (q.length === 0) return null
-    let queryVector: number[] | null = null
-    try {
-      // CONSULTA: `RETRIEVAL_QUERY` (par assimétrico com `RETRIEVAL_DOCUMENT` no índice).
-      queryVector = await getEmbedder().embed(q.slice(0, MAX_QUERY_LEN), 'RETRIEVAL_QUERY')
-    } catch {
-      queryVector = null
-    }
-    // #14: saída MALFORMADA do embedder (dimensão errada OU elemento não-finito —
-    // NaN/Infinity) tem o MESMO destino que o embedder lançar: degradação graciosa.
-    // Um vetor de dimensão != EMBEDDING_DIMENSIONS ou com NaN/Infinity, se bindado, faria
-    // o cast `::vector` estourar 500 FORA deste try/catch (o loader não captura) — o que
-    // quebraria o contrato AC4/US42. Validar aqui e zerar queryVector roteia pro caminho
-    // só-precisa (idêntico ao do embedder lançando). NÃO logar como erro fatal.
-    if (
-      queryVector !== null &&
-      (queryVector.length !== EMBEDDING_DIMENSIONS ||
-        !queryVector.every((x) => Number.isFinite(x)))
-    ) {
-      queryVector = null
-    }
-    return queryVector
-  }
+  // #643 (ADR-0057): o embedding é pago e a busca é aberta a visitante. `resolveSearchQueryVector` normaliza a
+  // consulta, olha o cache (`search_query_embedding`, por HMAC da consulta) em paralelo com a sessão e, só na falta,
+  // passa pelo limitador persistido (por conta ou por IP, e o teto global por minuto) antes de chamar o embedder.
+  // Acima do limite: `null`, a mesma degradação de quando o Gemini falha — sem erro para a pessoa.
+  //
+  // Paralelo com a leitura da sessão abaixo: o cache não depende dela; o limitador espera o `viewerId`.
+  const sessionP = requireSession(request)
+  const vectorP: Promise<number[] | null> =
+    q.length === 0
+      ? Promise.resolve(null)
+      : resolveSearchQueryVector(db, {
+          q,
+          ip: clientIpFromHeaders(request),
+          viewerId: sessionP.then((g) => (g.ok ? g.session.user.id : undefined)),
+          embedder: getEmbedder(),
+        })
 
   // #16: ordenacao da Comunidade. Borda PERMISSIVA (degrada p/ 'relevancia', nunca 400).
   // So afeta a chave condicional do ORDER BY na Comunidade; o Catalogo ignora (ADR-0003).
@@ -211,7 +199,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // #116: sessão OPCIONAL — anônimo (ou conta desativada) NÃO é 401 aqui, só não recebe
   // `viewerId`. LOGADO ⇒ a Busca inclui também as próprias Receitas (privadas inclusive).
-  const [queryVector, g] = await Promise.all([embedQueryVector(), requireSession(request)])
+  const [queryVector, g] = await Promise.all([vectorP, sessionP])
   const viewerId = g.ok ? g.session.user.id : undefined
 
   // ADR-0041 dec.3: `?restricaoPerfil=1` (SEM valores — a lista nunca anda em URL) pede as Restrições SALVAS

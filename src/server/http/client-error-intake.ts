@@ -22,6 +22,10 @@ import { clientIpFromHeaders } from '@/server/http/params'
  *     janela. Conta só a linha escrita: request de lixo (400/413) não gasta o teto.
  *  4. `content-length` > 2 KB ⇒ 413; e a leitura do corpo aborta ao passar de 2 KB (cobre chunked).
  *  5. JSON inválido ou fora do schema ⇒ 400 `{ error: 'dados_invalidos' }`.
+ *  6. #648 (ADR-0057): teto GLOBAL persistido (`globalCap`, o route passa o do banco): linhas por minuto somando
+ *     todas as instâncias, porque o teto da instância some num laço espalhado por muitas. A chave é só 'global' —
+ *     o IP continua só em memória (política item 3.7). Estourou ⇒ 429; o banco falhou ⇒ segue (fail-open: os tetos
+ *     em memória continuam valendo e o relato de erro não pode depender do banco estar de pé).
  * Nunca 500: qualquer falha inesperada vira 400 sem detalhe.
  */
 
@@ -33,6 +37,11 @@ export type ClientErrorIntakeOptions = {
   bodyMaxBytes?: number
   /** Saída da linha. Default `console.warn`. */
   log?: (line: string) => void
+  /**
+   * Teto global persistido: `true` = cabe (e conta). Lançar = fail-open. Ausente = sem teto global (os testes de
+   * UI, sem banco). O route passa `consumeRateLimit` no bucket `client_error_global`.
+   */
+  globalCap?: () => Promise<boolean>
 }
 
 const WINDOW_MS = 60_000
@@ -134,6 +143,15 @@ export function createClientErrorIntake(opts: ClientErrorIntakeOptions = {}): (r
       if (!parsed.ok) return invalid()
 
       if (instanceFull()) return rateLimited()
+      if (opts.globalCap) {
+        let fits = true
+        try {
+          fits = await opts.globalCap()
+        } catch {
+          fits = true // fail-open (doc do módulo, passo 6)
+        }
+        if (!fits) return rateLimited()
+      }
       windowCount += 1
       log(formatClientErrorLine(parsed.value))
       return noContent()

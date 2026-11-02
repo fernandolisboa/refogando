@@ -1,6 +1,6 @@
 import { getDb, getMailer } from '@/server/deps'
 import { scanDsarSla } from '@/server/legal/dsar-sla-scan'
-import { notifyDpoRedTickets } from '@/server/legal/dpo-alert'
+import { notifyDpoDigest, notifyDpoRedTickets } from '@/server/legal/dpo-alert'
 import { isAuthorizedCron } from '@/server/http/cron-auth'
 
 /**
@@ -29,10 +29,15 @@ export async function GET(request: Request): Promise<Response> {
   // APÓS avançar os níveis: alerta POR E-MAIL o Encarregado dos tickets já em 'red'/'overdue' e ainda não
   // notificados (idempotente por `dpo_notified_at`; no-op se faltar credencial/destinatário — gate humano).
   const alert = await notifyDpoRedTickets(getDb(), getMailer(), now)
+  // #648 (ADR-0057): DEPOIS dos alertas individuais (que têm teto por hora), UM resumo com o que ficou sem e-mail
+  // individual — tickets sem aviso de chegada e vermelhos que o teto segurou. Fora do teto: é o que garante que
+  // nenhum pedido fique sem aviso.
+  const digest = await notifyDpoDigest(getDb(), getMailer(), now)
   // Só CONTAGENS (metadado não-sensível) — nunca dado do titular no corpo/log.
   return Response.json({
     scanned: result.scanned,
     transitions: result.transitions.length,
     dpoNotified: alert.notified,
+    dpoDigest: { sent: digest.sent, arrivals: digest.arrivals, redPending: digest.redPending },
   })
 }

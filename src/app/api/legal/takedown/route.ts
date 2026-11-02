@@ -4,6 +4,9 @@ import { canonicalLocale } from '@/i18n/locale'
 import { normalizeTakedownIntake, type TakedownIntakeInput } from '@/domain/takedown'
 import { createTakedownTicket } from '@/server/legal/takedown-intake'
 import { createDomainRateLimiter } from '@/server/import/rate-limit'
+import { ipRateKey } from '@/server/http/ip-burst-limit'
+import { consumeRateLimits, limiterKey, type RateLimitRule } from '@/server/rate-limit/window'
+import { GLOBAL_LIMIT_KEY } from '@/domain/rate-limit-rules'
 
 /**
  * Intake PÚBLICO de pedidos do titular / takedown (issue #399, GAP-2; `docs/legal/takedown-e-remocao-
@@ -22,8 +25,14 @@ import { createDomainRateLimiter } from '@/server/import/rate-limit'
  *
  * Throttle (espelha o /import #272): um endpoint público, cookie-free e SEM sessão fica "destravado" —
  * cada envio válido grava um `DSAR_RECEIVED` na trilha append-only de conformidade + um ticket, então um
- * flood soterraria pedidos reais e poluiria a auditoria legal. Aplicamos ~1 envio/s POR IP (best-effort,
- * `createDomainRateLimiter`), ANTES de parsear/tocar o banco → 429 sem corpo detalhado ao exceder.
+ * flood soterraria pedidos reais e poluiria a auditoria legal. Duas camadas:
+ *  1. ~1 envio/s POR IP em memória (best-effort, `createDomainRateLimiter`), ANTES de parsear: barato, segura o
+ *     martelo de um IP só numa instância quente;
+ *  2. #648 (ADR-0057): limitador PERSISTIDO, depois da validação (lixo não grava nada, então não gasta o teto) e
+ *     antes do INSERT: por IP (`takedown_ip`, chave HMAC da /64 ou do IPv4) e no total (`takedown_global`), valendo
+ *     para todas as instâncias. Excedeu ⇒ 429 `rate_limited` com `retryAfterMs` e `retry-after`; o formulário mostra
+ *     `seusDireitos.erroLimite`, que aponta o e-mail do canal de privacidade (o pedido nunca fica sem via).
+ * O e-mail ao Encarregado tem teto próprio por hora (`createTakedownTicket`).
  */
 
 export const runtime = 'nodejs' // postgres-js exige Node, não Edge.
@@ -44,6 +53,22 @@ export async function POST(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => ({}))) as TakedownIntakeInput
   const parsed = normalizeTakedownIntake(body)
   if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 })
+
+  // Limitador persistido: IP (quando há) e depois o teto global. Erro de banco aqui ⇒ 500 genérico, como o INSERT.
+  try {
+    const rules: RateLimitRule[] = []
+    if (ip) rules.push({ bucket: 'takedown_ip', key: limiterKey('takedown_ip', ipRateKey(ip)) })
+    rules.push({ bucket: 'takedown_global', key: GLOBAL_LIMIT_KEY })
+    const decision = await consumeRateLimits(getDb(), rules)
+    if (!decision.allowed) {
+      return Response.json(
+        { error: 'rate_limited', retryAfterMs: decision.retryAfterMs },
+        { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(decision.retryAfterMs / 1000))) } },
+      )
+    }
+  } catch {
+    return Response.json({ error: 'erro' }, { status: 500 })
+  }
 
   // Locale (metadado p/ responder no idioma do titular): valida contra os locales suportados e grava a
   // forma canônica ('PT-br' → 'pt-BR') ou `null` — nunca um `?locale=` cru/ilimitado (um NUL ali estouraria

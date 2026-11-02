@@ -24,6 +24,7 @@ import {
   DATA_POLITICA_V3_4,
   DATA_POLITICA_V3_5,
   DATA_POLITICA_V3_6,
+  DATA_POLITICA_V3_7,
   DATA_PUBLICACAO_TERMOS_V1,
 } from '@/domain/legal-notice'
 
@@ -97,7 +98,8 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     // O rodapé repete a última versão do histórico (versão e data); cada versão desde a v3.1 tem a sua constante.
     const ultima = m.s10Historico[m.s10Historico.length - 1]
     expect(ultima.startsWith(`${m.rodapeVersao} — ${m.rodapeData}`)).toBe(true)
-    expect(m.rodapeData).toBe(DATA_POLITICA_V3_6)
+    expect(m.rodapeData).toBe(DATA_POLITICA_V3_7)
+    expect(m.s10Historico.some((v) => v.startsWith(`v3.6 — ${DATA_POLITICA_V3_6}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.5 — ${DATA_POLITICA_V3_5}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.4 — ${DATA_POLITICA_V3_4}`))).toBe(true)
     expect(m.s10Historico.some((v) => v.startsWith(`v3.3 — ${DATA_POLITICA_V3_3}`))).toBe(true)
@@ -161,8 +163,25 @@ describe('PrivacyPolicy (#398 — página gated de Política de Privacidade)', (
     expect(enUS.restricoesPerfil.consentimento).toContain('The app runs in Brazil and the AI in the United States.')
     for (const m of [pt, en]) {
       expect(m.s10Historico.some((v) => v.startsWith(`v3.6 — ${DATA_POLITICA_V3_6}`))).toBe(true)
-      expect(m.rodapeVersao).toBe('v3.6')
-      expect(m.rodapeData).toBe(DATA_POLITICA_V3_6)
+    }
+  })
+
+  it('#643/#648 (ADR-0057): limites persistidos com código do IP ou da conta (3.6) e vetor da busca guardado sem o termo (3.9)', () => {
+    const pt = ptBR.privacidade
+    const en = enUS.privacidade
+    expect(pt.s36Valores[0]).toContain('nos limites do formulário de Seus direitos e do vetor da busca, um código calculado do IP')
+    expect(pt.s36Valores[0]).toContain('que não permite recuperar o IP nem a conta, apagado em até 2 horas')
+    expect(pt.s36Valores[3]).toContain('o código dos limites do formulário de Seus direitos e da busca, em até 2 horas')
+    expect(pt.s39Valores[3]).toContain('O vetor de cada termo fica guardado por até 24 horas, sem o termo')
+    expect(en.s36Valores[0]).toContain('in the limits of the Your Rights form and of the search vector, a code computed from the IP address')
+    expect(en.s36Valores[3]).toContain('the code in the limits of the Your Rights form and of search, within 2 hours')
+    expect(en.s39Valores[3]).toContain('The vector of each term is kept for up to 24 hours, without the term')
+    // 3.7 não muda: o IP do relato de erro do navegador segue só na memória (o teto persistido é só global).
+    expect(pt.s37Valores[0]).toContain('o IP de quem envia é usado só na memória')
+    for (const m of [pt, en]) {
+      expect(m.s10Historico.at(-1)!.startsWith(`v3.7 — ${DATA_POLITICA_V3_7}`)).toBe(true)
+      expect(m.rodapeVersao).toBe('v3.7')
+      expect(m.rodapeData).toBe(DATA_POLITICA_V3_7)
     }
   })
 

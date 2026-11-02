@@ -610,6 +610,13 @@
       "when": 1793587816291,
       "tag": "0086_traducao_single_flight",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1793590027805,
+      "tag": "0087_limitador_persistido",
+      "breakpoints": true
     }
   ]
 }

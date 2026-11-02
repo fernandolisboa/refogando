@@ -5,7 +5,7 @@
  * foram publicados (o dia do merge do PR). As strings i18n a importam (a linha v1 de `termos.s10Historico` e a
  * linha v3.1 de `privacidade.s10Historico`), e o aviso a usa para decidir o público. Depois do merge ela fica
  * CONGELADA: cada versão seguinte ganha constante própria, e os rodapés usam a da versão mais nova de cada texto
- * (hoje `DATA_POLITICA_V3_6` e `DATA_TERMOS_V1_4`).
+ * (hoje `DATA_POLITICA_V3_7` e `DATA_TERMOS_V1_4`).
  *
  * O aviso (`LegalChangeNotice`, no layout) é o mecanismo do item 10 dos Termos: mudança relevante só vale 15
  * dias depois de avisar no app. Cada mudança RELEVANTE ganha uma `AVISO_LEGAL_VERSAO` nova (a chave do
@@ -84,6 +84,17 @@ export const DATA_TERMOS_V1_4 = DATA_POLITICA_V3_5
  * política e de Seus direitos.
  */
 export const DATA_POLITICA_V3_6 = '2026-10-23'
+
+/**
+ * Política v3.7 (#643, #648, ADR-0057): os limites do formulário de Seus direitos e do vetor da busca passam a ser
+ * guardados no banco (valendo para todas as instâncias), com um código HMAC do IP ou da conta, apagado em até 2 horas
+ * (item 3.6), e a busca guarda por até 24 horas o vetor de cada termo, sem o termo (item 3.9). Não mexe em nada que a
+ * pessoa autorizou com consentimento, então não pede aviso no lugar do consentimento nem troca `AVISO_LEGAL_VERSAO`
+ * (mesmo critério da v3.4). Os Termos não mudam: não descrevem limites nem a busca. Data de 2026-11-02, o dia do PR;
+ * se o merge escorregar de dia, troque esta constante junto com o ADR-0057 e o registro de operações. Congelada depois
+ * do merge. É a data dos rodapés da política e de Seus direitos.
+ */
+export const DATA_POLITICA_V3_7 = '2026-11-02'
 
 /** Versão do aviso em vigor: o que a pessoa precisa ler. Trocar a versão faz o aviso voltar para todos. */
 export const AVISO_LEGAL_VERSAO = 'termos-v1+politica-v3.1'

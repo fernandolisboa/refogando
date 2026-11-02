@@ -1100,6 +1100,48 @@ export const rateLimit = pgTable(
   (t) => [uniqueIndex('rate_limit_key_uq').on(t.key)],
 )
 
+// ── Limitador persistido do app (#643, #648, ADR-0057) ──────────────────────────
+//
+// Janela FIXA por (bucket, key, window_start): `consumeRateLimit` (src/server/rate-limit/window.ts) faz um upsert
+// atômico que soma 1 só enquanto `count < limite` e devolve a linha; sem linha devolvida ⇒ bloqueado. Não é a tabela
+// da Better Auth (`rate_limit` acima): lá a chave é única, sem janela na chave, e a semântica é a da lib.
+// `key` NUNCA é o IP nem o id da conta em claro: é um HMAC com o segredo do auth (`limiterKey`), ou 'global' nos
+// tetos que somam todo mundo. `expires_at` = fim da janela; a limpeza de hora em hora apaga as vencidas (o IP sai em
+// até 2 h, política item 3.6).
+export const rateLimitWindow = pgTable(
+  'rate_limit_window',
+  {
+    bucket: text('bucket').notNull(),
+    key: text('key').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bucket, t.key, t.windowStart] }),
+    index('rate_limit_window_expires_at_idx').on(t.expiresAt),
+  ],
+)
+
+// ── Cache do vetor da busca (#643, ADR-0057) ────────────────────────────────────
+//
+// A consulta de busca vira um vetor no Gemini (pago, chave compartilhada com as imagens). Busca repetida reusa o
+// vetor daqui. SEM o texto buscado: `query_key` é um HMAC (segredo do auth) da consulta normalizada + versão da
+// geometria + dimensão + tarefa (`searchQueryCacheKey`). Vale `SEARCH_QUERY_EMBEDDING_TTL_MS` (lido com o corte
+// em `created_at`); a limpeza de hora em hora apaga as vencidas (política item 3.9: até 24 h).
+export const searchQueryEmbedding = pgTable(
+  'search_query_embedding',
+  {
+    queryKey: text('query_key').primaryKey(),
+    embedding: vector('embedding', { dimensions: EMBEDDING_DIMENSIONS }).notNull(),
+    // `EMBEDDING_VERSION` que produziu o vetor (também está dentro do HMAC; aqui para a leitura conferir e para
+    // uma troca de modelo poder limpar as antigas).
+    model: text('model').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('search_query_embedding_created_at_idx').on(t.createdAt)],
+)
+
 // ── Config de aplicação (#5.AC2 — modelo default; #134 — geração de imagem) ─────
 //
 // Singleton: só pode existir a linha id=true (CHECK app_config_singleton_chk torna o
@@ -1916,6 +1958,11 @@ export const takedownTicket = pgTable(
     // envio efetivo do e-mail) — é a chave de IDEMPOTÊNCIA do mailer: só notifica quem tem isto NULO, e
     // só carimba APÓS o provedor confirmar o envio (falha ⇒ segue nulo ⇒ reenvia amanhã). Nasce nulo.
     dpoNotifiedAt: timestamp('dpo_notified_at', { withTimezone: true }),
+    // #648 (ADR-0057): quando o Encarregado foi AVISADO DA CHEGADA deste ticket — pelo e-mail individual do intake
+    // (dentro do teto de e-mails por hora e aceito pelo provedor) ou pelo resumo diário do cron `dsar-sla`. Nulo =
+    // ainda não avisado (teto estourado ou envio que falhou): o resumo diário o lista e carimba. Os tickets de antes
+    // da migração 0087 nascem carimbados com `received_at`.
+    dpoArrivalNotifiedAt: timestamp('dpo_arrival_notified_at', { withTimezone: true }),
   },
   (t) => [
     // Varredura do SLA: tickets por status em ordem de recebimento (o job de alertas 10/13/15 — GAP-7).

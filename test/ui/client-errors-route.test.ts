@@ -288,3 +288,40 @@ describe('ipRateKey', () => {
     expect(ipRateKey(ip)).toBe(key)
   })
 })
+
+describe('teto global persistido (#648, ADR-0057)', () => {
+  it('`globalCap` false ⇒ 429 sem linha; true ⇒ 204 com linha', async () => {
+    let fits = true
+    const lines: string[] = []
+    const intake = createClientErrorIntake({ log: (l) => lines.push(l), globalCap: async () => fits })
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.1' }))).status).toBe(204)
+    fits = false
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.2' }))).status).toBe(429)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('`globalCap` que lança ⇒ fail-open (os tetos em memória continuam)', async () => {
+    const lines: string[] = []
+    const intake = createClientErrorIntake({
+      log: (l) => lines.push(l),
+      globalCap: async () => {
+        throw new Error('banco fora')
+      },
+    })
+    expect((await intake(post(valid, { 'x-real-ip': '9.9.9.3' }))).status).toBe(204)
+    expect(lines).toHaveLength(1)
+  })
+
+  it('lixo (400) não consulta o teto global', async () => {
+    let calls = 0
+    const intake = createClientErrorIntake({
+      log: () => {},
+      globalCap: async () => {
+        calls++
+        return true
+      },
+    })
+    expect((await intake(post('não é json', { 'x-real-ip': '9.9.9.4' }))).status).toBe(400)
+    expect(calls).toBe(0)
+  })
+})

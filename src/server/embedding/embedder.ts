@@ -93,12 +93,16 @@ export class RealEmbedder implements Embedder {
 
 /** Dublê determinístico (vetor estável derivado do texto) para testes. */
 export class FakeEmbedder implements Embedder {
+  /** Chamadas a `embed` nesta instância (#643: prova que o cache e o limitador poupam o embedder). */
+  calls = 0
+
   constructor(
     private readonly dimensions = 8,
     private readonly impl?: (text: string, taskType?: EmbeddingTaskType) => number[],
   ) {}
 
   async embed(text: string, taskType?: EmbeddingTaskType): Promise<number[]> {
+    this.calls++
     if (this.impl) return this.impl(text, taskType)
     // Vetor determinístico e barato: hash simples por caractere.
     const vec = new Array<number>(this.dimensions).fill(0)

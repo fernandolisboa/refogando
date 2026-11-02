@@ -59,6 +59,8 @@ Issues #473 (retenção e eliminação) e #596 (EXIF/GPS no servidor). Base: o s
 
    > **Nota (ADR-0056, 2026-11-02):** `quota_hold` ganhou o tipo `translation` (reserva da tradução sob demanda, sem o id da receita; durante a tentativa, ≤ 90 s, ou até a próxima escrita no par após uma queda, as datas podem ser correlacionadas com a tentativa da receita, ADR-0056 dec. 8); o mesmo passo `quotaHolds` a apaga depois de vencer. A tabela nova `recipe_translation_attempt` (lease e cache de falha da tradução) não tem usuário nem conteúdo: sai em cascata com a receita e não tem passo de retenção.
 
+   > **Nota (ADR-0057, 2026-11-02):** duas tabelas novas, sem FK para `users`: `rate_limit_window` (limitador do app; chave HMAC do IP ou da conta, ou `global`) e `search_query_embedding` (vetor da consulta de busca por HMAC da consulta, sem o texto). Quem segura os prazos é a limpeza de hora em hora (`/api/cron/rate-limit-cleanup`): janelas encerradas (até 2 h, como o `rate_limit`) e vetores com mais de 12 h (a política diz até 24 h). A passada diária tem os passos `rateLimitWindows` e `searchQueryEmbeddings` como rede de segurança. Não entram no export nem na eliminação (não há como ligá-las ao titular sem refazer o HMAC).
+
 4. **O que fica, e por quê.**
    - As Receitas públicas e as avaliações ficam anonimizadas (art. 12), porque terceiros salvaram, avaliaram ou planejaram com elas. É risco aceito no parecer §11; quem quer que uma suma a apaga antes de eliminar a conta.
    - Os ledgers não têm conteúdo e servem a custo e abuso (legítimo interesse, art. 7º, IX, LIA A do registro); ficam 24 meses.

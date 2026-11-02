@@ -1,8 +1,10 @@
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, notInArray } from 'drizzle-orm'
 import type { Database } from '@/db/client'
 import { takedownTicket } from '@/db/schema'
 import type { Mailer } from '@/server/mail/mailer'
 import { RESOLVED_TAKEDOWN_STATUSES, ticketAgeDays } from '@/domain/dsar-sla'
+import { GLOBAL_LIMIT_KEY } from '@/domain/rate-limit-rules'
+import { consumeRateLimit } from '@/server/rate-limit/window'
 
 /**
  * Alerta POR E-MAIL ao Encarregado (DPO) dos tickets em nível CRÍTICO de SLA (#413; GAP-7,
@@ -20,6 +22,12 @@ import { RESOLVED_TAKEDOWN_STATUSES, ticketAgeDays } from '@/domain/dsar-sla'
  *
  * Destinatário = `DSAR_DPO_EMAIL` (o e-mail do Encarregado). Ausente ⇒ NO-OP (não há para quem alertar;
  * fail-closed, sem tocar o DB de escrita nem a rede).
+ *
+ * #648 (ADR-0057): cada e-mail POR TICKET gasta uma unidade do teto `dpo_email` (por hora, somando o aviso de
+ * chegada do intake). Uma enxurrada de tickets falsos chegaria ao vermelho no mesmo dia e mandaria um e-mail por
+ * ticket de uma vez, gastando a cota do Resend dos e-mails de conta. Teto estourado ⇒ para de enviar nesta passada;
+ * os que sobraram seguem com `dpo_notified_at` nulo e entram no resumo (`notifyDpoDigest`), que roda logo depois no
+ * mesmo cron, e voltam amanhã.
  */
 
 /** Níveis de SLA que disparam alerta ao Encarregado (escalonamento em diante). */
@@ -59,6 +67,8 @@ export async function notifyDpoRedTickets(
 
   let notified = 0
   for (const t of pending) {
+    const cap = await consumeRateLimit(db, { bucket: 'dpo_email', key: GLOBAL_LIMIT_KEY }, now)
+    if (!cap.allowed) break // o resumo diário lista os que ficaram
     const ageDays = ticketAgeDays(t.receivedAt, now)
     const { sent } = await mailer.sendDpoAlert({
       to,
@@ -105,4 +115,96 @@ function dpoAlertText(input: {
     '',
     'Acesse o painel administrativo para ver os detalhes e responder.',
   ].join('\n')
+}
+
+/** Quantos protocolos o resumo lista por categoria (o total vai sempre; o resto está no painel de SLA). */
+export const DPO_DIGEST_MAX_LISTED = 20
+
+export type DpoDigestResult = {
+  /** O resumo foi aceito pelo provedor nesta passada. */
+  sent: boolean
+  /** Tickets abertos ainda sem aviso de chegada (teto do intake ou envio que falhou), carimbados se `sent`. */
+  arrivals: number
+  /** Tickets em vermelho/vencido ainda sem alerta individual (teto por hora). Seguem nulos: voltam amanhã. */
+  redPending: number
+}
+
+/**
+ * RESUMO DIÁRIO ao Encarregado (#648, ADR-0057), no cron `dsar-sla`, depois de `notifyDpoRedTickets`. Um e-mail só,
+ * FORA do teto por hora, e só quando há algo que o teto (ou uma falha de envio) segurou:
+ *  - tickets ABERTOS com `dpo_arrival_notified_at` nulo (sem aviso de chegada);
+ *  - tickets ABERTOS em 'red'/'overdue' com `dpo_notified_at` nulo (sem alerta individual).
+ * Traz os totais e até `DPO_DIGEST_MAX_LISTED` protocolos de cada, os mais antigos primeiro (prazo mais curto). Aceito
+ * pelo provedor ⇒ carimba `dpo_arrival_notified_at` dos de chegada (já avisados). Os vermelhos NÃO são carimbados:
+ * o alerta individual é o deles, e enquanto ele não sai o ticket volta no resumo de amanhã. Nada aceito ⇒ nada
+ * carimbado, e tudo volta amanhã. Mesmo sem e-mail, todo ticket aberto aparece no painel de SLA do /admin.
+ *
+ * Mesma minimização do alerta: protocolo, tipo, data e nível; nunca nome, URL, mensagem ou contato do titular.
+ */
+export async function notifyDpoDigest(db: Database, mailer: Mailer, now: Date): Promise<DpoDigestResult> {
+  const to = process.env.DSAR_DPO_EMAIL
+  if (!to) return { sent: false, arrivals: 0, redPending: 0 }
+
+  const open = notInArray(takedownTicket.status, [...RESOLVED_TAKEDOWN_STATUSES])
+  const cols = {
+    id: takedownTicket.id,
+    requestType: takedownTicket.requestType,
+    receivedAt: takedownTicket.receivedAt,
+    slaLevel: takedownTicket.slaLevel,
+  }
+  const arrivals = await db
+    .select(cols)
+    .from(takedownTicket)
+    .where(and(open, isNull(takedownTicket.dpoArrivalNotifiedAt)))
+    .orderBy(asc(takedownTicket.receivedAt))
+  const red = await db
+    .select(cols)
+    .from(takedownTicket)
+    .where(
+      and(open, inArray(takedownTicket.slaLevel, [...ALERTING_SLA_LEVELS]), isNull(takedownTicket.dpoNotifiedAt)),
+    )
+    .orderBy(asc(takedownTicket.receivedAt))
+  if (arrivals.length === 0 && red.length === 0) return { sent: false, arrivals: 0, redPending: 0 }
+
+  const line = (t: (typeof arrivals)[number]) =>
+    `- ${t.id} — ${t.requestType} — recebido em ${t.receivedAt.toISOString().slice(0, 10)} (${ticketAgeDays(t.receivedAt, now)} dias) — SLA ${t.slaLevel}`
+  const section = (title: string, rows: typeof arrivals): string[] =>
+    rows.length === 0
+      ? []
+      : [
+          `${title}: ${rows.length}`,
+          ...rows.slice(0, DPO_DIGEST_MAX_LISTED).map(line),
+          ...(rows.length > DPO_DIGEST_MAX_LISTED ? [`… e mais ${rows.length - DPO_DIGEST_MAX_LISTED} no painel.`] : []),
+          '',
+        ]
+
+  const { sent } = await mailer.sendDpoAlert({
+    to,
+    subject: `[Refogando] Resumo diário: ${arrivals.length + red.length} pedido(s) de remoção sem e-mail individual`,
+    text: [
+      'Estes pedidos de remoção/DSAR não tiveram e-mail individual (teto de e-mails por hora ou falha de envio).',
+      'O prazo legal de 15 dias corre desde o recebimento.',
+      '',
+      ...section('Recebidos sem aviso de chegada', arrivals),
+      ...section('Em escalonamento ou vencidos sem alerta individual', red),
+      'Acesse o painel administrativo (SLA dos pedidos de takedown) para ver todos e responder.',
+    ].join('\n'),
+  })
+  if (!sent) return { sent: false, arrivals: arrivals.length, redPending: red.length }
+
+  if (arrivals.length > 0) {
+    await db
+      .update(takedownTicket)
+      .set({ dpoArrivalNotifiedAt: now })
+      .where(
+        and(
+          inArray(
+            takedownTicket.id,
+            arrivals.map((t) => t.id),
+          ),
+          isNull(takedownTicket.dpoArrivalNotifiedAt),
+        ),
+      )
+  }
+  return { sent: true, arrivals: arrivals.length, redPending: red.length }
 }
