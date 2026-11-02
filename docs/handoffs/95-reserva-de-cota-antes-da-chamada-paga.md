@@ -34,7 +34,7 @@ ADR-0036 e ADR-0050 (dec. 3).
   - imagem do dono: a reserva só volta se o diretor de arte **não** rodou (`resolveImageScene` devolve
     `directorCalled`).
 - **Conversa:** o cliente que já abortou antes da reserva não reserva (a rota devolve o NDJSON vazio de um abort). A
-  linha `[conversations/stream] falha no stream:` loga o erro da Anthropic embrulhado, com `provedor=indisponivel`.
+  linha `[conversations/stream] falha no stream:` loga a classe e o `status` do erro da Anthropic embrulhado (`providerErrorLogFields`), com `provedor=indisponivel`.
 - **Registros:** `ERASURE_POLICY` (`keep_ledger`), `CONTENT_GUARDS`, passo de retenção `quotaHolds`, export LGPD
   (seção `quotaHolds`: `kind`, `slots`, `createdAt`, `expiresAt`; formato segue `v1`), ROPA (operação 5),
   `docs/legal/takedown-e-remocao-titular.md` (o que o export leva), `docs/observabilidade.md` (a linha da conversa).

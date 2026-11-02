@@ -5,7 +5,7 @@ import { getDb, getClaudeClient } from '@/server/deps'
 import { ClaudeProviderUnavailableError } from '@/server/claude/client'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { DEFAULT_TEXT_MODEL } from '@/domain/claude-models'
-import { errorLogFields } from '@/domain/error-report'
+import { errorLogFields, providerErrorLogFields } from '@/domain/error-report'
 import { settingsForModel } from '@/domain/ai-task-config'
 import { appConfig, creationSession, transcriptMessage, users } from '@/db/schema'
 import { classifyWithReason } from '@/domain/generation'
@@ -474,11 +474,12 @@ export async function POST(req: Request): Promise<Response> {
         // stream — sem isso a falha é invisível em produção. Só tag + nome + código (ADR-0048,
         // `errorLogFields`): a mensagem e a stack de um erro do SDK ou do driver podem trazer
         // o conteúdo da Transcrição; nada delas vai para o log. O provedor indisponível loga o erro
-        // do SDK que o seam embrulhou (o nome da classe da Anthropic, ex. `OverloadedError`), não o
-        // embrulho, e marca `provedor=indisponivel` (a reserva do turno foi devolvida).
+        // do SDK que o seam embrulhou, não o embrulho: os erros do SDK 0.104 não definem `name`
+        // (todos dizem `Error`), então vai a classe (`constructor.name`, ex. `InternalServerError`)
+        // e o status HTTP, e marca `provedor=indisponivel` (a reserva do turno foi devolvida).
         console.error(
           err instanceof ClaudeProviderUnavailableError
-            ? `[conversations/stream] falha no stream: ${errorLogFields(err.cause)} provedor=indisponivel`
+            ? `[conversations/stream] falha no stream: ${providerErrorLogFields(err.cause)} provedor=indisponivel`
             : `[conversations/stream] falha no stream: ${errorLogFields(err)}`,
         )
         // Não há terminal: o cliente trata a ausência de frame terminal como aviso/retomada
