@@ -51,9 +51,9 @@ Todos os binários foram baixados das releases oficiais com o SHA-256 conferido.
 |---|---|---|---|
 | Critical | 0 | 0 | 0 |
 | High | 3 | 2 (+1 parcial) | 1 parcial (H-3: falta a ação manual) |
-| Medium | 9 | 0 | 9 |
+| Medium | 9 | 0 | 9 (issues #640–#648) |
 | Low | 15 | 3 | 12 |
-| Info | 7 | 0 | 7 |
+| Info | 7 | 1 | 6 |
 
 O npm audit marca a `next` e a `better-auth` como **critical**. A severidade aqui é a que vale para **este** app:
 cada advisory foi checado contra o uso real (ver H-1 e L-1).
@@ -128,7 +128,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 
 ### Medium
 
-#### M-1 — Conversa em stream: chamada paga ao Claude sem cobrança de quota se o cliente desconecta · ABERTO
+#### M-1 — Conversa em stream: chamada paga ao Claude sem cobrança de quota se o cliente desconecta · ABERTO (#640)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-770 / CWE-799 · A04:2021 Design inseguro
 - **Local:** `src/app/api/conversations/stream/route.ts:242-305`.
 - **Exploração:**
@@ -141,7 +141,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** reservar o slot de forma atômica antes da 1ª chamada, como já fazem `reserveExtractionSlot` e
   `reserveMenuSuggestionSlot`. Também cabe um limite de turnos por usuário/hora nesta rota.
 
-#### M-2 — Quota de geração (receita e imagem) checada antes, cobrada depois da chamada paga (TOCTOU) · ABERTO
+#### M-2 — Quota de geração (receita e imagem) checada antes, cobrada depois da chamada paga (TOCTOU) · ABERTO (#641)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-367 / CWE-770 · A04:2021
 - **Local:**
   - `src/app/api/generations/route.ts`: pré-check em ~364, Claude em ~410/~530, gate atômico em ~462 e em
@@ -152,7 +152,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** a mesma do M-1 (reservar antes, liberar na falha) e, se quiser, um limite de 1 requisição em voo
   por usuário.
 
-#### M-3 — Tradução de receita sem quota e repetida a cada falha · ABERTO
+#### M-3 — Tradução de receita sem quota e repetida a cada falha · ABERTO (#642)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-770 / CWE-400 · A04:2021
 - **Local:** `src/app/api/recipes/[id]/translations/[locale]/route.ts:74`, `src/server/recipe/translation.ts:45-69`.
 - **Exploração:** qualquer usuário logado dispara a tradução de qualquer receita pública. Uma tradução que falha
@@ -161,7 +161,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** quota ou cooldown por usuário e por receita, cache negativo de falha, single-flight por
   (receita, locale) e limite de tamanho da entrada.
 
-#### M-4 — Busca anônima chama o embedding pago do Gemini sem limite · ABERTO
+#### M-4 — Busca anônima chama o embedding pago do Gemini sem limite · ABERTO (#643)
 - **Severidade:** Medium, 5.3 `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L` · CWE-770 · A04:2021
 - **Local:** `src/app/api/search/route.ts:183-192,211`.
 - **Exploração:** `GET /api/search?q=<aleatório>` em loop, sem login, sem limitador e sem cache. A chave
@@ -169,7 +169,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** limitador por IP persistido no banco (o padrão da tabela de rate limit da better-auth), cache dos
   vetores de busca, ou só embedding para quem está logado.
 
-#### M-5 — A app roda como dono do banco (sem menor privilégio) · ABERTO
+#### M-5 — A app roda como dono do banco (sem menor privilégio) · ABERTO (#644)
 - **Severidade:** Medium, 5.9 `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:H/I:H/A:N` · CWE-250 / CWE-269 · A05:2021
 - **Local:** `vercel.json:5` (o build roda `db:migrate`), `drizzle.config.ts:10`, `src/server/deps.ts:77`. A
   integração Neon/Vercel entrega `neondb_owner`.
@@ -179,7 +179,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   - Criar um papel `app_rw`, só com DML em `public`, para o `DATABASE_URL` de runtime.
   - Usar o URL de dono só no passo de migrate, numa variável `MIGRATION_DATABASE_URL`.
 
-#### M-6 — A exigência de confirmar email desliga sozinha se o mailer não estiver configurado · ABERTO
+#### M-6 — A exigência de confirmar email desliga sozinha se o mailer não estiver configurado · ABERTO (#645)
 - **Severidade:** Medium, 4.8 `CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:L` · CWE-636 (fail-open) · A07:2021
 - **Local:** `src/lib/auth.ts:209,304,493,597` e `src/server/mail/mailer.ts:71-72`.
 - **Risco:** se `RESEND_API_KEY` ou o remetente sumirem ou forem renomeados em Production, três coisas voltam sem
@@ -191,7 +191,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   é feito com `BETTER_AUTH_SECRET`. Antes de ligar essa trava, confirme que Production tem as duas variáveis, senão
   o deploy cai.
 
-#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · ABERTO (PLAUSÍVEL)
+#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · ABERTO (#646) (PLAUSÍVEL)
 - **Severidade:** Medium, 6.8 `CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N` · CWE-668 / CWE-200 · A05:2021
 - **Evidência:**
   - ADR-0047:40 diz que o Preview usa uma branch do Neon criada de `main` "e as chaves de verdade".
@@ -207,7 +207,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   - Limpar as branches órfãs.
   - Este é também o bloqueio para qualquer DAST **ativo** contra o Preview (ver `.security-audit/config.md`).
 
-#### M-8 — Backups no mesmo projeto Neon da produção · ABERTO
+#### M-8 — Backups no mesmo projeto Neon da produção · ABERTO (#647)
 - **Severidade:** Medium, 4.4 `CVSS:3.1/AV:N/AC:H/PR:H/UI:N/S:U/C:N/I:N/A:H` · CWE-693 · A05:2021
 - **Local:** `.github/workflows/db-backup.yml`: branches `backup/*` dentro do mesmo projeto. O `NEON_API_KEY` está
   nos secrets do Actions e também no `.env.local`.
@@ -216,7 +216,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** `pg_dump` semanal, criptografado, para um storage fora do Neon (o doc do incidente já recomenda), e
   tirar as chaves de API do `.env.local`.
 
-#### M-9 — Formulário público de notificação de retirada pode inundar o banco e a caixa do encarregado · ABERTO
+#### M-9 — Formulário público de notificação de retirada pode inundar o banco e a caixa do encarregado · ABERTO (#648)
 - **Severidade:** Medium, 5.3 `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L` · CWE-770 · A04:2021
 - **Local:** `src/app/api/legal/takedown/route.ts:14-34`, `src/server/legal/takedown-intake.ts:49-70`.
 - **Exploração:**
@@ -254,7 +254,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 | I-2 | Apagar uma receita derivada libera o slot da quota de derivação (só o embedding custa) | `src/server/quota/atomic.ts` |
 | I-3 | O autor pode reescrever uma avaliação já moderada; a avaliação continua escondida, mas o texto que serve de evidência se perde | `src/server/recipe/review.ts:~186-205` |
 | I-4 | Curador consegue aplicar ou tirar a restrição de geração de imagem de qualquer usuário, inclusive admins e ele mesmo | `src/server/curate/restriction.ts:33-74` |
-| I-5 | A linha `.env*` acrescentada ao `.gitignore`, ainda fora de commit, anula o `!.env.example`: mudanças no `.env.example` somem do `git status`. Não entrou neste PR. | `.gitignore:62` |
+| I-5 | A linha `.env*` acrescentada ao `.gitignore` depois do `!.env.example` anulava a exceção (mudanças no `.env.example` sumiam do `git status`). **Corrigido**: `.env*` e depois `!.env.example`, no bloco de env files. | `.gitignore:31-34` |
 | I-6 | Restrição de saúde marcada num pedido avulso vai para a IA sem registro de consentimento. Está documentado como escolha no parecer de 2026-10-22; fica a confirmação jurídica. | ADR-0041 §5 |
 | I-7 | Não há Dependabot ou Renovate, nem `npm audit` no CI (o workflow `security.yml` deste PR cobre parte disso) | `.github/` |
 
@@ -323,6 +323,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 | L-2 | `zod` 4.6.6, `@vercel/blob` 2.8.1, `overrides` (undici 6.29.1 no Blob, zod no `@vercel/cli-config`) |
 | L-4 | Actions fixadas por SHA; `permissions: {}` no workflow de limpeza |
 | L-15 (parte) | `vitest` 4.1.12 |
+| I-5 | `.gitignore`: `.env*` antes de `!.env.example`, para a exceção valer |
 | §7 | `.github/workflows/security.yml` (commit separado): semgrep e gitleaks bloqueando, osv-scanner só reportando, ZAP baseline passivo no Preview |
 
 Verificação: `npm run typecheck`, `npm run lint` (0 erros), `next build` e `npm test` completo contra Postgres

@@ -28,12 +28,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (NUNCA commitar segredos)
-.env
-.env*.local
-.env.development
-.env.production
-.env.test
+# env files (NUNCA commitar segredos): todo `.env*` fica fora, menos o modelo. A exceção precisa vir DEPOIS
+# do padrão, senão o padrão a anula (auditoria 2026-11-01, I-5).
+.env*
 !.env.example
 
 # vercel
