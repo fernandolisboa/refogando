@@ -80,7 +80,8 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   `/_next/image?url=<arquivo>&w=64&q=75` sem autenticação. A complexidade é alta porque depende do exploit
   publicado para cada formato.
 - **Correção:** `next` e `eslint-config-next` 16.2.9 → **16.4.2** (publicado em 2026-10-15; a 16.4.3 tem menos de
-  14 dias). Ajuste extra recomendado: remover `images.remotePatterns`, já que o app não usa `next/image`.
+  14 dias). E `images.remotePatterns` saiu do `next.config.ts` (revisão do PR): o app não usa `next/image`, então o
+  otimizador não aceita mais URL remota nenhuma.
 
 #### H-2 — sharp 0.34.5 decodifica uploads com libvips/libheif/librsvg vulneráveis · CORRIGIDO
 - **Severidade:** High, 7.5 `CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H`
@@ -101,7 +102,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
     `blob-sweep.ts`.
   - Recomendação extra: checar os magic bytes (JPEG/PNG/WebP) antes de chamar o sharp.
 
-#### H-3 — `.env.local` aponta dev e teste para o banco de PRODUÇÃO com o papel dono · PARCIAL
+#### H-3 — `.env.local` aponta dev e teste para o banco de PRODUÇÃO com o papel dono · CORRIGIDO
 - **Severidade:** High, 8.2 `CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:H`
 - **CWE / OWASP:** CWE-1188 (default inseguro) / CWE-250 · A05:2021 Configuração incorreta
 - **Local:** `.env.local`, arquivo não versionado. `TEST_DATABASE_URL`, `DATABASE_URL`, `DATABASE_URL_UNPOOLED` e
@@ -114,17 +115,20 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   `npm test` com a variável exportada. A suíte faz `CREATE DATABASE` e varre os `refogando_test_*` **no servidor de
   produção**, e um `drizzle-kit push` ou um script de seed vai direto em produção.
 - **Correção:**
-  - **Feita neste PR:** `test/helpers/production-db-guard.ts`, chamado no começo de `test/global-setup.ts`.
-    - Recusa `TEST_DATABASE_URL` ou `TEST_DATABASE_URL_UNPOOLED` que apontem para o host de produção, ou para o
-      mesmo host do banco da app, **antes** de conectar.
+  - **Feita neste PR:** `test/helpers/production-db-guard.ts`.
+    - `assertNotProductionTestDb`, no começo de `test/global-setup.ts`: recusa `TEST_DATABASE_URL*` no host de
+      produção ou, fora de loopback, no mesmo servidor (host + porta) do banco da app, **antes** de conectar.
+    - `assertNotProductionDbUrl`, dentro de `createThrowawayDb`: recusa o host de produção na URL que o helper
+      **vai usar**, nos dois harnesses (Vitest e E2E). Na revisão do PR apareceu o furo que isso fecha: o
+      `pickAdminUrl` caía em `DATABASE_URL_UNPOOLED`/`POSTGRES_URL_NON_POOLING` quando faltava
+      `TEST_DATABASE_URL_UNPOOLED`, e com `TEST_DATABASE_URL` num servidor de teste a trava passava e o admin ia
+      para produção. O fallback saiu: o endpoint admin vem só das variáveis de teste.
     - Teste de regressão em `test/unit/production-db-guard.test.ts`.
-    - Conferido também de ponta a ponta: com `TEST_DATABASE_URL` no host de produção, a suíte aborta com a
-      mensagem da trava.
-  - **Falta (ação manual sua):**
-    1. Remover `TEST_DATABASE_URL` do `.env.local`, já que o harness sobe um Postgres via Testcontainers.
-    2. Apontar `DATABASE_URL*` locais para uma branch `dev` do Neon com papel sem DDL.
-    3. Tirar `NEON_API_KEY` e `VERCEL_TOKEN` do `.env.local` (ver M-8).
-  - O mesmo tipo de trava cabe nos scripts de `scripts/`.
+  - **Ação manual:** feita em 2026-11-01. O `.env.local` foi apagado (o app não roda mais localmente; PR #649
+    documenta os nomes no `.env.example`), então somem dele a URL de produção, o `NEON_API_KEY` e o `VERCEL_TOKEN`.
+    Se um dia voltar a existir, o banco local aponta para uma branch `dev` do Neon com papel sem DDL.
+  - Fica de sugestão: o mesmo tipo de trava nos scripts de `scripts/` (que leem `DATABASE_URL_UNPOOLED` de
+    propósito, para rodar contra produção quando o operador quer).
 
 ### Medium
 
@@ -231,20 +235,20 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 | ID | Achado | CVSS | CWE | Local | Status |
 |---|---|---|---|---|---|
 | L-1 | Advisories da better-auth 1.6.16: GHSA-965c (critical), -r4xp, -q84f e -qq9h. **Não alcançáveis**: exigem os plugins magic-link, email-OTP, oauth-proxy ou deviceAuthorization, e o app só usa `admin`. Ficou na 1.6.16 de propósito: a 1.6.17+ introduz GHSA-44jh (rate limit do Postgres furável com requisições concorrentes), que **afeta** este app, e a 1.7.x exige a coluna `session.impersonatedBy` (migração em produção, e liga a personificação do L-13). | 3.1 `AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:L` | CWE-1395 | `package.json` | Aberto, aceito. Fazer issue para a 1.7.x com migração e bloqueio da personificação. |
-| L-2 | zod 4.4.3 (GHSA-mrhx, memória esgotada com coleções grandes) e undici 6.27 dentro do `@vercel/blob` | 3.7 `AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L` | CWE-1395 | `package.json` | **Corrigido**: zod 4.6.6, `@vercel/blob` 2.8.1 e `overrides` para undici 6.29.1 e para o zod aninhado em `@vercel/cli-config` |
+| L-2 | zod 4.4.3 (GHSA-mrhx, memória esgotada com coleções grandes) e undici 6.27 dentro do `@vercel/blob` | 3.7 `AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:L` | CWE-1395 | `package.json` | **Corrigido**: zod 4.6.6, `@vercel/blob` 2.8.1 (que já resolve undici 6.29.1 pela própria faixa `^6.23.0`) e `overrides` para o zod aninhado em `@vercel/cli-config` |
 | L-3 | CSP só em Report-Only e sem `report-uri`, então ninguém vê as violações. É a única segunda linha de defesa contra XSS. | 3.7 `AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N` | CWE-693 | `next.config.ts:32-58` | Aberto: apontar `report-uri` para `/api/client-errors` e depois aplicar, com hash para o script do tema |
-| L-4 | Actions fixadas por tag (inclusive a `neondatabase/delete-branch-action`, que segura o `NEON_API_KEY`) e workflow de limpeza sem bloco `permissions:` | 4.2 `AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N` | CWE-829 | `.github/workflows/ci.yml:59,61,91,93,107,128`, `cleanup-neon-preview-branch.yml:27` | **Corrigido**: SHAs fixados e `permissions: {}` |
+| L-4 | Actions fixadas por tag (inclusive a `neondatabase/delete-branch-action`, que segura o `NEON_API_KEY`) e workflow de limpeza sem bloco `permissions:` | 4.2 `AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N` | CWE-829 | `.github/workflows/ci.yml:59,61,91,93,107,128`, `cleanup-neon-preview-branch.yml:27` | **Corrigido**: SHAs fixados e `permissions: {}`. Na revisão do PR, a `delete-branch-action` saiu de vez: mesmo fixada, ela instala `neonctl@v2` (faixa flutuante) com a chave no ambiente e interpola o nome da branch no bash (injeção via nome de branch do próprio repo). Virou chamada direta à API do Neon, com o nome por variável de ambiente |
 | L-5 | Denúncia de avaliação sem dedup e sem limite diário (a de receita tem os dois desde o #605) | 4.3 `AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N` | CWE-799 | `src/server/recipe/report.ts:~103-137` | Aberto |
 | L-6 | Seguir e deixar de seguir em loop gera uma notificação `new_follower` nova a cada vez | 4.3 `AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:N` | CWE-799 | `src/server/user/follow.ts:79-97`, `src/server/notification.ts` | Aberto |
 | L-7 | Campos de texto sem tamanho máximo: `name` em `PATCH /api/me` e `/update-user`; título, descrição, passos, notas e ingredientes em `PATCH /api/recipes/[id]` e em `derive` | 5.4 `AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:L` | CWE-1284 | `src/app/api/me/route.ts`, `src/app/api/recipes/[id]/route.ts` | Aberto |
 | L-8 | Lacunas na blocklist anti-SSRF: 192.0.0.0/24, 198.18/15, multicast, 240/4, 6to4 2002::/16 e Teredo. Mitigado: o import só busca domínios da allowlist, e o probe é só para admin. | 3.7 `AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N` | CWE-918 | `src/server/import/probe-url.ts:16-29,76-108` | Aberto: trocar por "só unicast global" |
 | L-9 | Descoberta web: o limite por IP é por instância, então uma conta sozinha esgota o orçamento mensal global do Brave | 3.1 `AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:L` | CWE-770 | `src/app/api/discovery/web/route.ts:48-77` | Aberto |
 | L-10 | O nome do cadastro vai no email de confirmação enviado a qualquer endereço, o que permite injetar texto. Mitigado: HTML escapado, 40 caracteres, 3 envios por 15 min. | 4.3 `AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N` | CWE-451 | `src/server/auth/account-email.ts:33-36` | Aberto: não usar o nome antes de o email ser confirmado |
-| L-11 | `NODE_ENV==='test'` sozinho tira a exigência de secret, desliga o rate limit, liga `testUtils`, usa um HMAC fixo e libera a varredura de blobs. Não há trava (no build da Vercel, `NODE_ENV` vira `production`). | 1.9 `AV:L/AC:H/PR:H/UI:N/S:U/C:L/I:N/A:N` | CWE-489 | `src/lib/auth.ts:43,276,575`, `avatar-blob.ts:39` | Aberto: concentrar numa guarda como `e2eFakesActive` |
+| L-11 | `NODE_ENV==='test'` sozinho tira a exigência de secret, desliga o rate limit, liga `testUtils`, usa um HMAC fixo e libera a varredura de blobs. Não há trava (no build da Vercel, `NODE_ENV` vira `production`). | 1.9 `AV:L/AC:H/PR:H/UI:N/S:U/C:L/I:N/A:N` | CWE-489 | `src/lib/auth.ts:43,282,586`, `avatar-blob.ts:39` | Aberto: concentrar numa guarda como `e2eFakesActive` |
 | L-12 | O tipo de conteúdo da imagem do Gemini é gravado como veio, sem re-encode. A checagem de mesma origem só existe em 3 rotas. Limites em memória em `/api/client-errors` e na rota de retirada. | 3.7 `AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N` | CWE-20 | `src/server/recipe/image.ts:406-410`, `same-origin.ts` | Aberto |
 | L-13 | Os endpoints do plugin admin (`/api/auth/admin/impersonate-user`, `remove-user`, `set-user-password`, `update-user`) passam por cima das salvaguardas da app: sessão recente, pipeline de eliminação e auditoria. Exige papel admin. | 2.7 `AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:N/A:L` (impacto pleno dentro de PR:H) | CWE-863 | `src/lib/auth.ts:574-584` | Aberto: bloquear `/admin/*` num `hooks.before`, menos o que a app usa |
 | L-14 | O log de erro padrão do Next pode levar PII (`DETAIL: Key (email)=(…)` do postgres-js) | 1.9 `AV:L/AC:H/PR:H/UI:N/S:U/C:L/I:N/A:N` | CWE-532 | `src/instrumentation.ts:38-48` | Aberto |
-| L-15 | Advisories que restaram só em ferramentas de dev: vite 8.0.16, esbuild (via drizzle-kit), undici 7 (jsdom/testcontainers), source-map-js, brace-expansion e minimatch. A `vitest` foi para a 4.1.12. | 2.7 `AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:N/A:L` | CWE-1395 | `package-lock.json` | Aberto, aceito: só rodam em dev e CI, não vão para o bundle |
+| L-15 | Advisories que restaram só em ferramentas de dev: vite 8.0.16, esbuild (via drizzle-kit), source-map-js, brace-expansion e minimatch. A `vitest` foi para a 4.1.12. **Correção da revisão do PR:** o undici 7 NÃO era só de dev: `src/server/import/web-fetch.ts` importa `Agent` dele (pinning de DNS do import), e ele vinha sem declaração, pelo 7.27.2 içado do jsdom/testcontainers (29 advisories no OSV; o pinning não era afetado). Agora é dependência de produção declarada, `undici` 7.30.1. | 2.7 `AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:N/A:L` | CWE-1395 | `package-lock.json` | Aberto, aceito: o que sobrou só roda em dev e CI |
 
 ### Info
 
@@ -262,13 +266,13 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 
 | Ferramenta | Regra | Local | Motivo |
 |---|---|---|---|
-| semgrep | unsafe-formatstring (×3) | `src/server/claude/client.ts:219,237,252` | `method` é constante de código; o especificador só afeta o console |
+| semgrep | unsafe-formatstring (×3) | `src/server/claude/client.ts:219,237,252` | `method` é constante de código; o especificador só afeta o console. `// nosemgrep` nas 3 linhas (não desliga a regra no repo) |
 | semgrep | timeout em unknown-value-with-script-tag | `src/db/schema.ts` | A regra estourou o tempo; não gerou achado. É um arquivo de definição de tabelas do Drizzle, sem renderização. |
 | CodeQL | js/xss-through-dom | `src/components/meal-plan/meal-plan-recipe-picker.tsx:364` | `href` interno vindo de `createForMealSlotHref` (constante de i18n + dia e refeição tipados), num `Link` do React |
 | CodeQL | js/xss-through-dom | `src/components/recipe/recipe-review-section.tsx:517` | `img src` é `URL.createObjectURL` ou a URL do Blob gravada pelo servidor; não é HTML |
 | CodeQL | js/incomplete-sanitization (×2), js/file-system-race | `scripts/restore-overstrip.ts:376`, `scripts/seed-catalog.ts:205` | Scripts offline do operador, fora do alcance da app |
 | CodeQL | js/regex/missing-regexp-anchor, js/incomplete-url-substring-sanitization, js/incomplete-sanitization (×10) | `test/**` | Asserções de teste, não guardas de runtime |
-| gitleaks | generic-api-key / jwt (×9) | `test/ui/error-report.test.ts`, `test/integration/*.test.ts`, `e2e/harness/constants.ts` | Fixtures do teste de redação, senhas de teste e o secret descartável do harness E2E (só loopback). Fingerprints em `.gitleaksignore`. |
+| gitleaks | generic-api-key / jwt (×9) | `test/ui/error-report.test.ts`, `test/integration/*.test.ts`, `e2e/harness/constants.ts` | Fixtures do teste de redação, senhas de teste e o secret descartável do harness E2E (só loopback). Allowlist por caminho em `.gitleaks.toml` (fingerprint leva o SHA do commit e quebraria com o squash-merge). |
 | trivy | jwt-token | `.env.local:42` | Arquivo local fora do git (`git log --all -- .env.local` vazio). A preocupação de verdade com esse arquivo é a H-3. |
 | trivy / osv | vários | `.claude/worktrees/**` | Worktrees antigas de agentes, fora do git |
 
@@ -309,7 +313,9 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Segredos:** não existe `NEXT_PUBLIC_*`. Componentes de cliente importam `@/server/*` só para tipos. Nenhum
   segredo verificado no histórico.
 - **CI:** só gatilhos `pull_request` e `push`, sem `pull_request_target`; nenhum `${{ github.event.* }}` dentro de
-  `run:`; `ci.yml` e `db-backup.yml` com permissões mínimas.
+  `run:` dos workflows do repo; `ci.yml` e `db-backup.yml` com permissões mínimas. A revisão do PR achou um caso
+  transitivo: a `delete-branch-action` interpolava `inputs.branch` (`preview/${{ github.head_ref }}`) no bash
+  dela. Corrigido junto com o L-4.
 - **Lockfile:** íntegro, todo do registry oficial. Na produção não há GPL nem AGPL; o LGPL da libvips é usado só no
   servidor e não é distribuído.
 
@@ -317,15 +323,37 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 
 | Achado | Mudança |
 |---|---|
-| H-1 | `next` / `eslint-config-next` 16.2.9 → 16.4.2 |
+| H-1 | `next` / `eslint-config-next` 16.2.9 → 16.4.2; `images.remotePatterns` removido; `global-error.tsx` lê o `retry` (o Next 16.3 estabilizou o nome e parou de passar `unstable_retry`) |
 | H-2 | `sharp` 0.34.5 → 0.35.5; tipos `Metadata` importados do pacote em `image-derivatives.ts` e `blob-sweep.ts` |
-| H-3 (parcial) | Trava `assertNotProductionTestDb` no harness, mais o teste `test/unit/production-db-guard.test.ts` |
-| L-2 | `zod` 4.6.6, `@vercel/blob` 2.8.1, `overrides` (undici 6.29.1 no Blob, zod no `@vercel/cli-config`) |
-| L-4 | Actions fixadas por SHA; `permissions: {}` no workflow de limpeza |
-| L-15 (parte) | `vitest` 4.1.12 |
+| H-3 | Travas `assertNotProductionTestDb` (Vitest) e `assertNotProductionDbUrl` (dentro de `createThrowawayDb`, os dois harnesses); `pickAdminUrl` sem fallback para o banco da app; teste `test/unit/production-db-guard.test.ts` |
+| L-2 | `zod` 4.6.6, `@vercel/blob` 2.8.1, `overrides` (zod no `@vercel/cli-config`) |
+| L-4 | Actions fixadas por SHA; workflow de limpeza do Neon com `permissions: {}` e chamada direta à API (sem a action de terceiro) |
+| L-15 (parte) | `vitest` 4.1.12; `undici` 7.30.1 declarado como dependência de produção |
 | I-5 | `.gitignore`: `.env*` antes de `!.env.example`, para a exceção valer |
-| §7 | `.github/workflows/security.yml` (commit separado): semgrep e gitleaks bloqueando, osv-scanner só reportando, ZAP baseline passivo no Preview |
+| §7 | `.github/workflows/security.yml` (commit separado): semgrep e gitleaks bloqueando, osv-scanner só reportando, ZAP baseline passivo no Preview (só com o secret de bypass da Deployment Protection; sem ele, pula). Decisões no ADR-0054 |
 
 Verificação: `npm run typecheck`, `npm run lint` (0 erros), `next build` e `npm test` completo contra Postgres
 descartável via Testcontainers. `npm audit --omit=dev` depois do upgrade: só restam os itens L-1 e L-15. semgrep
 e gitleaks reexecutados na branch: limpos.
+
+## Revisão do PR (painel de revisores, 2026-11-02)
+
+Três revisores independentes (correção, segurança+performance, qualidade+ADR) leram o PR antes do merge. O que
+mudou por causa deles:
+
+- **Trava do harness furável** (os três acharam): o admin podia cair no banco da app. Ver H-3.
+- **Trava recusava setup local legítimo:** comparava só o hostname. Agora compara host + porta e ignora loopback.
+- **`global-error.tsx`:** o Next 16.3 passou a mandar `retry` e parou de mandar `unstable_retry`; o "tentar de novo"
+  da tela de erro do layout raiz recarregava a página inteira em vez de re-renderizar. Corrigido, com teste.
+- **`.gitleaksignore` por fingerprint** quebraria o PR seguinte depois de cada squash-merge: virou `.gitleaks.toml`
+  com allowlist por caminho (conferido: 9 achados sem a config, 0 com ela, no histórico inteiro).
+- **ZAP:** o Preview tem Deployment Protection, então a varredura via só a tela de login da Vercel e passava. O
+  `concurrency` também cancelava varreduras entre deploys diferentes (`github.ref` vem vazio no
+  `deployment_status`). Agora o job só roda com `VERCEL_AUTOMATION_BYPASS_SECRET` e a chave inclui o id do deployment.
+- **Workflow de limpeza do Neon:** sem a action de terceiro (ver L-4).
+- **undici 7 em produção sem declaração** (ver L-15) e o override do undici 6, que não fazia nada, saiu.
+- **Scanners:** SHA-256 de gitleaks e osv-scanner fixado no workflow; checkout sem credencial persistida;
+  `// nosemgrep` por linha em vez de desligar a regra no repo.
+- **Fica para depois (anotado no handoff 94):** o semgrep vem do PyPI sem hash das dependências e as regras do
+  registry mudam sozinhas; a imagem do ZAP é `stable` (tag mutável); sem Dependabot, os SHAs fixados envelhecem; o
+  sharp 0.35 instala `@img/sharp-wasm32` (~9 MB) que pode entrar no trace das funções.

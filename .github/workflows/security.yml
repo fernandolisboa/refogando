@@ -1,15 +1,19 @@
 # Varredura de segurança contínua (proposta da auditoria 2026-11-01, `.security-audit/REPORT.md`).
 #
 #  - `sast` (todo PR pra main + semanal): semgrep, gitleaks (histórico inteiro) e osv-scanner. Os binários
-#    são baixados das releases com o SHA-256 conferido contra o arquivo de checksums da própria release;
-#    semgrep e gitleaks reprovam o job com achado novo (os falsos positivos triados ficam excluídos pela
-#    regra / pelo `.gitleaksignore`); o osv-scanner por enquanto só reporta. Nada aqui recebe secret: o job roda igual em PR de fork.
+#    são baixados das releases com o SHA-256 FIXADO aqui (o arquivo de checksums da própria release só prova
+#    integridade, não autoria); o semgrep vem do PyPI só com a versão fixada (sem hash das dependências).
+#    semgrep e gitleaks reprovam o job com achado novo (falsos positivos triados: `// nosemgrep` na linha e
+#    allowlist por caminho no `.gitleaks.toml`); o osv-scanner por enquanto só reporta. As regras do semgrep
+#    vêm do registry e mudam sozinhas: um vermelho sem mudança de código é regra nova, triar e seguir.
+#    Nada aqui recebe secret: o job roda igual em PR de fork.
 #  - `zap-baseline` (quando a Vercel publica um deploy de Preview): varredura PASSIVA do ZAP contra a URL
 #    do Preview. Passiva de propósito. A varredura ATIVA semanal contra o Preview que a skill de auditoria
 #    propõe fica DE FORA enquanto o Preview apontar para uma branch do Neon criada a partir de `main`, que é
 #    cópia dos dados reais (achado M-7 do relatório). Varredura ativa só contra `localhost` + branch vazia.
-#    Se o Preview tiver Deployment Protection, o ZAP só enxerga a tela de login da Vercel; nesse caso use um
-#    "Protection Bypass for Automation" (secret VERCEL_AUTOMATION_BYPASS_SECRET) ou desligue este job.
+#    O Preview tem Deployment Protection: sem bypass, o ZAP só enxerga a tela de login da Vercel. Por isso o
+#    job só varre com o secret VERCEL_AUTOMATION_BYPASS_SECRET (Vercel → Settings → Deployment Protection →
+#    Protection Bypass for Automation), mandado no header `x-vercel-protection-bypass`; sem ele, pula com aviso.
 #
 # A suíte de autorização (usuário B tentando ler/alterar recursos do A) roda no `npm test` do ci.yml: os
 # testes de integração dos route handlers já cobrem dono/404. Ver o relatório para os pontos sem teste.
@@ -26,8 +30,10 @@ on:
 permissions:
   contents: read
 
+# Nos eventos `deployment_status` o `github.ref` vem vazio (a Vercel cria o deployment com o SHA): sem o id do
+# deployment na chave, todo status de qualquer deploy cancelaria a varredura em andamento de outro.
 concurrency:
-  group: security-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: security-${{ github.event_name }}-${{ github.event.deployment.id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,23 +44,24 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0 # gitleaks varre o histórico inteiro
+          persist-credentials: false
 
-      - name: Install scanners (checksum-verified)
+      - name: Install scanners (pinned SHA-256)
+        # Trocar a versão = trocar o SHA-256 junto (lido do arquivo de checksums da release nova).
         env:
           GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
           OSV_VERSION: 2.7.0
+          OSV_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP"
-          gl="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          curl -fsSLO "$gl/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -fsSLO "$gl/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
-          tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -C bin gitleaks
-          osv="https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}"
-          curl -fsSLO "$osv/osv-scanner_linux_amd64"
-          curl -fsSLO "$osv/osv-scanner_SHA256SUMS"
-          grep " osv-scanner_linux_amd64\$" osv-scanner_SHA256SUMS | sha256sum -c -
+          gl="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$gl"
+          echo "$GITLEAKS_SHA256  $gl" | sha256sum -c -
+          tar -xzf "$gl" -C bin gitleaks
+          curl -fsSLO "https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "$OSV_SHA256  osv-scanner_linux_amd64" | sha256sum -c -
           install -m755 osv-scanner_linux_amd64 bin/osv-scanner
           pipx install semgrep==1.183.0
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
@@ -64,18 +71,17 @@ jobs:
           semgrep scan --error --metrics=off
           --config p/default --config p/owasp-top-ten --config p/secrets
           --config p/nextjs --config p/typescript --config p/react
-          --exclude-rule javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring
           --exclude node_modules --exclude .next .
 
       - name: Gitleaks (full history)
-        # Falsos positivos já triados (fixtures de teste, secret descartável do E2E) moram em `.gitleaksignore`.
+        # Falsos positivos já triados (fixtures de teste, secret descartável do E2E): allowlist em `.gitleaks.toml`.
         run: gitleaks detect --log-opts="--all" --redact --no-banner
 
       - name: osv-scanner (lockfile, report-only)
-        # Só o lockfile da raiz. NÃO bloqueia ainda: sobram advisories de ferramentas de dev (vite, esbuild,
-        # undici 7 do jsdom…) e os da better-auth 1.6 que dependem de plugins que o app não usa (relatório
-        # L-1/L-14). Quando a lista zerar (ou ganhar um osv-scanner.toml com cada exceção justificada),
-        # tirar o `continue-on-error` e passar a reprovar.
+        # Só o lockfile da raiz. NÃO bloqueia ainda: sobram advisories de ferramentas de dev (vite, esbuild…,
+        # relatório L-15) e os da better-auth 1.6 que dependem de plugins que o app não usa (L-1). Quando a
+        # lista zerar (ou ganhar um osv-scanner.toml com cada exceção justificada), tirar o
+        # `continue-on-error` e passar a reprovar.
         continue-on-error: true
         run: osv-scanner scan source --lockfile package-lock.json
 
@@ -83,12 +89,29 @@ jobs:
     if: >-
       github.event_name == 'deployment_status' &&
       github.event.deployment_status.state == 'success' &&
-      github.event.deployment_status.environment == 'Preview'
+      github.event.deployment_status.environment == 'Preview' &&
+      github.event.deployment.creator.login == 'vercel[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Check the Vercel protection bypass secret
+        id: bypass
+        env:
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ -z "$BYPASS" ]; then
+            echo "::notice::Sem VERCEL_AUTOMATION_BYPASS_SECRET: o ZAP só veria a tela de login da Vercel. Varredura pulada."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: ZAP baseline (passive) against the Preview
+        if: steps.bypass.outputs.ok == 'true'
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        env:
+          # Os scripts do ZAP mandam este header em toda requisição ao alvo (bypass da Deployment Protection).
+          ZAP_AUTH_HEADER: x-vercel-protection-bypass
+          ZAP_AUTH_HEADER_VALUE: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         with:
           target: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
           allow_issue_writing: false

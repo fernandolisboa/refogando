@@ -20,17 +20,33 @@ on:
   pull_request:
     types: [closed]
 
-# A action só usa o NEON_API_KEY (passado como input); o GITHUB_TOKEN não precisa de escopo algum
-# (auditoria 2026-11-01, CFG-3). Actions fixadas por SHA pelo mesmo motivo: o job segura uma chave que
-# apaga branches do Neon, inclusive a de produção.
+# Chamada direta à API do Neon, como o db-backup.yml (auditoria 2026-11-01, L-4). A
+# `neondatabase/delete-branch-action` saiu: mesmo fixada por SHA, ela instala `neonctl@v2` (faixa
+# flutuante) com o NEON_API_KEY no ambiente e interpola o nome da branch direto no bash (injeção via
+# nome de branch). Aqui o nome entra por variável de ambiente, precisa começar com `preview/` e o job só
+# roda para PR do próprio repo (PR de fork nem recebe o secret). O GITHUB_TOKEN não precisa de escopo.
 permissions: {}
 
 jobs:
   delete-preview-branch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    env:
+      NEON_API: https://console.neon.tech/api/v2
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      BRANCH: preview/${{ github.head_ref }}
     steps:
-      - uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3.2.1
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch: preview/${{ github.head_ref }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+      - name: Delete the Neon preview branch
+        run: |
+          set -euo pipefail
+          [[ "$BRANCH" == preview/* && "$BRANCH" != preview/ ]] || { echo "nome inesperado: $BRANCH"; exit 1; }
+          auth=(-H "Authorization: Bearer $NEON_API_KEY")
+          id=$(curl -fsS "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches" \
+            | jq -r --arg name "$BRANCH" '.branches[] | select(.name == $name and .default != true) | .id')
+          if [ -z "$id" ]; then
+            echo "branch $BRANCH não existe no Neon (nada a apagar)"
+            exit 0
+          fi
+          echo "apagando $BRANCH ($id)"
+          curl -fsS -X DELETE "${auth[@]}" "$NEON_API/projects/$PROJECT_ID/branches/$id" >/dev/null

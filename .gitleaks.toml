@@ -1,0 +1,18 @@
+# Config do gitleaks (job `sast` de .github/workflows/security.yml). Regras padrão + exceções POR CAMINHO, não
+# por fingerprint: o fingerprint leva o SHA do commit, e o squash-merge do repo gera SHAs novos em main, então
+# um `.gitleaksignore` reprovaria o PR seguinte por um achado que ele não trouxe (auditoria 2026-11-01).
+#
+# Exceções triadas: fixtures dos testes (senhas e chaves falsas, JWT do teste de redação) e o secret
+# descartável do harness E2E (só loopback). Nenhuma é credencial real. Segredo de verdade num teste seria
+# pego pelo revisor, não por aqui: mantenha a lista curta e explicada.
+title = "refogando"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixtures de teste e o secret descartável do harness E2E"
+paths = [
+  '''^test/''',
+  '''^e2e/harness/constants\.ts$''',
+]

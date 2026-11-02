@@ -24,8 +24,8 @@ Gerado na auditoria de 2026-11-01 (SAST apenas). Ver `REPORT.md`.
 - Ainda não existe login de teste não-interativo para DAST. O harness do E2E semeia usuários próprios (ver
   `e2e/harness/`). Reuse esse mecanismo antes de criar outro.
 - Se for criar: `audit-a@audit.test` e `audit-b@audit.test`, com senha aleatória em `.security-audit/.env.local`
-  (fora do git pelo padrão `.env*.local`) e só na base descartável. O plugin `testUtils` da better-auth já é
-  restrito a `NODE_ENV=test` (`src/lib/auth.ts:575`).
+  (fora do git pelo padrão `.env*` do `.gitignore`) e só na base descartável. O plugin `testUtils` da better-auth já é
+  restrito a `NODE_ENV=test` (`testUtils()` em `src/lib/auth.ts`).
 
 ## Ferramentas
 
@@ -37,11 +37,13 @@ osv-scanner 2.7.0, trivy 0.76.1 (todos em `~/.local/bin`, com checksum conferido
 - `.claude/worktrees/**` (worktrees antigas de agentes; aparecem no trivy e no osv como ruído), `node_modules`,
   `.next`, `.security-audit/raw`.
 - Para a suíte rodar só no Testcontainers: rode a partir de um shell **sem** `DATABASE_URL`/`TEST_DATABASE_URL`,
-  porque o `.env.local` aponta para produção (REPORT H-3). Desde esta auditoria, o harness recusa esse host.
+  porque um `.env.local` antigo apontava para produção (REPORT H-3; apagado em 2026-11-01). Desde esta auditoria,
+  os dois harnesses recusam o host de produção e o do Vitest recusa o servidor do banco da app.
 
 ## Riscos aceitos (revisar a cada rodada)
 
 - better-auth 1.6.16: os advisories GHSA-965c, -r4xp, -q84f e -qq9h dependem de plugins que o app não usa. A 1.6.17+
   traz GHSA-44jh, que afeta o app (rate limit no Postgres), e a 1.7.x exige migrar `session.impersonatedBy`
   (REPORT L-1).
-- Advisories só de ferramentas de dev (vite, esbuild, undici 7, source-map-js…) (REPORT L-15).
+- Advisories só de ferramentas de dev (vite, esbuild, source-map-js…) (REPORT L-15). O undici 7 é de produção
+  (`src/server/import/web-fetch.ts`), declarado no `package.json`: advisory nele não é risco aceito.

@@ -1,3 +1,7 @@
+# REGRA DOS WORKFLOWS (ADR-0054): todo `uses:` fixado pelo SHA do commit, com a tag num comentário
+# (`uses: dono/action@<sha40> # vX.Y.Z`). Tag é mutável; o SHA não. Para atualizar, `git ls-remote` na tag nova
+# e troque SHA e comentário juntos. Action de terceiro que segura secret: prefira a chamada direta à API.
+#
 # Roda typecheck + lint + build + test em todo PR pra main e em todo push na main.
 # O step `Build` (next build) roda com um BETTER_AUTH_SECRET DUMMY (não-secreto) só pra
 # pegar falhas que só aparecem no build — throws em import-time (ex.: a invariante de

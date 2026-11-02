@@ -1,6 +1,7 @@
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { makeSql } from '@/db/client'
 import { isLoopbackUrl } from '@/server/e2e/mode'
+import { assertNotProductionDbUrl } from './production-db-guard'
 
 /**
  * Banco Postgres descartável dos dois harnesses (#593): o do Vitest (`test/global-setup.ts`) e o do E2E
@@ -64,6 +65,8 @@ export async function createThrowawayDb(opts: ThrowawayDbOptions): Promise<Throw
   assertSafeDbName(dbName, safeName)
 
   if (adminUrl) {
+    // H-3 (auditoria 2026-11-01): nunca no banco de produção, venha a URL de que variável vier.
+    assertNotProductionDbUrl(adminUrl, adminUrlEnv)
     if (requireLoopback && !isLoopbackUrl(adminUrl, ['postgres:', 'postgresql:'])) {
       throw new Error(`${adminUrlEnv} precisa ser postgres:// em loopback (localhost/127.0.0.1/::1).`)
     }
