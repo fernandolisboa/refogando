@@ -33,14 +33,14 @@ import {
 } from '@/domain/briefing'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { Cozinha, Restricao, Unidade } from '@/domain/vocabulary'
-import { classify } from '@/domain/generation'
+import { classify, isUnpaidOutput } from '@/domain/generation'
 import { isAiOrigin } from '@/domain/recipe'
 import { persistGeneration, type PersistOrigin } from '@/server/generation/persist'
 import { embedTranslation } from '@/server/embedding/recompute'
 import { loadRecentRecipeGenAt } from '@/server/generation/quota'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { decideRecipeGenQuota } from '@/domain/recipe-gen-quota'
-import { QuotaExceededError, releaseQuotaHold, reserveQuotaHold } from '@/server/quota/atomic'
+import { QuotaExceededError, releaseQuotaHold, tryReserveQuotaHold } from '@/server/quota/atomic'
 
 /**
  * REGENERAÇÃO — nova versão IMUTÁVEL por linhagem (issue #20). O KEYSTONE de "Minhas
@@ -67,7 +67,7 @@ import { QuotaExceededError, releaseQuotaHold, reserveQuotaHold } from '@/server
  *        na Busca, #14) → { kind:'ok', outcome, recipeId, advisory }.
  *      - impossible → { kind:'impossible', advisory } (nada de Receita; persistido como episódio).
  *      - invalid → { kind:'invalid' } (erro de sistema; NADA é persistido — ADR-0006).
- *   Entre o teto e o Claude, a RESERVA do slot (#641, ADR-0055): `reserveQuotaHold` sob a advisory lock
+ *   Entre o teto e o Claude, a RESERVA do slot (#641, ADR-0055): `tryReserveQuotaHold` sob a advisory lock
  *   (estourou ⇒ limite_geracao, o Claude não é tocado); o persist a consome; invalid a deixa cobrada, salvo
  *   `parse_failed` com `cause:'provider'` (a chamada provadamente não foi cobrada), que a devolve.
  *
@@ -247,8 +247,9 @@ export async function regenerateRecipe(
   // teto p/ Receitas alheias). A regeneração persiste uma `generation` na MESMA sessão, que CONTA pro
   // teto; sem este gate o usuário furaria o cap pelo botão de regenerar. cap ∞ (admin) pula a contagem.
   // Espelha o gate de POST /api/generations e de POST /api/conversations/stream.
-  // Pré-check BARATO (otimização, NÃO-atômico): early-reject sem tocar o Claude. A ENFORCEMENT real é o
-  // gate ATÔMICO (advisory lock + recontagem) DENTRO da tx de persistGeneration (via `quotaGate` abaixo).
+  // Pré-check BARATO (otimização, NÃO-atômico): early-reject sem tocar o Claude. Quem barra é a RESERVA abaixo
+  // (ADR-0055: advisory lock + recontagem de eventos e reservas, ANTES do Claude); o gate ATÔMICO DENTRO da tx
+  // de persistGeneration (via `quotaGate`) é a CONFIRMAÇÃO, que consome a reserva.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(db, viewerId, now)
@@ -261,13 +262,9 @@ export async function regenerateRecipe(
 
   // #641 (ADR-0055): RESERVA o slot ANTES do Claude, sob a advisory lock do gate (eventos + reservas de outros
   // pedidos). Estourou ⇒ limite_geracao, o Claude NÃO é tocado. cap ∞ ⇒ `null` (sem lock, sem linha).
-  let holdId: string | null
-  try {
-    holdId = await reserveQuotaHold(db, { userId: viewerId, kind: 'recipe_gen', cap })
-  } catch (err) {
-    if (err instanceof QuotaExceededError) return { kind: 'limite_geracao', retryAfterMs: err.retryAfterMs }
-    throw err
-  }
+  const hold = await tryReserveQuotaHold(db, { userId: viewerId, kind: 'recipe_gen', cap })
+  if (!hold.allowed) return { kind: 'limite_geracao', retryAfterMs: hold.retryAfterMs }
+  const holdId = hold.holdId
   // #446: gate ATÔMICO threado em persistGeneration (reconta+decide+insere SOB a advisory lock, na MESMA
   // tx do INSERT). Estourou na corrida ⇒ QuotaExceededError, capturado abaixo → { kind:'limite_geracao' }.
   // ADR-0055: o gate CONSOME a reserva deste pedido (`consumeHoldId`) antes da recontagem.
@@ -282,7 +279,7 @@ export async function regenerateRecipe(
   // invalid: erro de sistema puro → NADA persiste (ADR-0006). ADR-0055: a reserva fica COBRADA (a chamada foi
   // paga), salvo a falha provadamente não paga do provedor, que a devolve.
   if (result.outcome === 'invalid') {
-    if (out.kind === 'parse_failed' && out.cause === 'provider') await releaseQuotaHold(db, holdId)
+    if (isUnpaidOutput(out)) await releaseQuotaHold(db, holdId)
     return { kind: 'invalid' }
   }
 

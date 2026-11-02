@@ -2,7 +2,7 @@
 
 Status: aceito
 
-> **Nota (ADR-0055, 2026-11-02):** o **Inválido** continua sem `generation` (nenhum episódio de criação nasce de erro de sistema, ADR-0006), mas agora **consome a cota**: o slot é reservado antes da chamada e fica cobrado por 24 h. Só o `parse_failed` com `cause: 'provider'` (erro HTTP ou conexão recusada, sem nenhuma resposta antes) devolve o slot.
+> **Nota (ADR-0055, 2026-11-02):** o **Inválido** continua sem `generation` (nenhum episódio de criação nasce de erro de sistema, ADR-0006), mas agora **consome a cota**: o slot é reservado antes da chamada e fica cobrado por 24 h. Só o `parse_failed` com `cause: 'provider'` (erro HTTP, falha na fase de conexão em todas as tentativas do SDK ou chave ausente, sem nenhuma resposta antes) devolve o slot.
 
 > **Nota (ADR-0046, 2026-10-16):** as famílias oferecidas passaram a Opus, Sonnet e Haiku (Fable saiu), e o modelo em uso troca sozinho para a versão nova da família depois de uma chamada de teste aceita.
 

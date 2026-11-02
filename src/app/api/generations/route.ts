@@ -8,7 +8,7 @@ import { appConfig, ingredient, users } from '@/db/schema'
 import { isCreationMode } from '@/domain/recipe'
 import { loadActiveCozinhaSlugs, loadCozinhaVoice } from '@/server/vocabulary/active-set'
 import { suggestCozinha, cozinhaSlugFromText, COZINHA_OUTRA_MAX } from '@/server/vocabulary/suggest'
-import { classifyWithReason, classifyVariants } from '@/domain/generation'
+import { classifyWithReason, classifyVariants, isUnpaidOutput } from '@/domain/generation'
 import {
   parseBriefing,
   buildBriefingPrompt,
@@ -53,7 +53,7 @@ import {
   QuotaExceededError,
   assertRecipeGenSlotInTx,
   releaseQuotaHold,
-  reserveQuotaHold,
+  tryReserveQuotaHold,
 } from '@/server/quota/atomic'
 
 /**
@@ -356,7 +356,8 @@ export async function POST(req: Request): Promise<Response> {
   const capByRole = cfg?.recipeGenCapByRole ?? DEFAULT_RECIPE_GEN_CAP_BY_ROLE
   // Fase 2 (#466): tabela pro (re-validada) da MESMA linha singleton. `plan='pro'` + bundle ⇒ teto pro;
   // `free` OU sem tabela ⇒ `null` ⇒ teto de hoje. O `cap` resolvido AQUI thread p/ o gate ATÔMICO
-  // (`quotaGate` → assertRecipeGenSlotInTx) — a enforcement real herda o mesmo teto pro.
+  // (`tryReserveQuotaHold` e `quotaGate` → assertRecipeGenSlotInTx) — a reserva e a confirmação herdam o teto
+  // pro.
   const proCaps = parseProCaps(cfg?.proCaps)
   const cap = capFromRecipeGenConfig(
     capByRole,
@@ -367,8 +368,9 @@ export async function POST(req: Request): Promise<Response> {
   // #423: "gerar 2" custa 2 SLOTS ⇒ cap efetivo `cap-1` (permitido sob cap-1 ⟺ cabem 2).
   const effectiveCap = variar2 ? cap - 1 : cap
   // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject sem tocar o Claude no caso
-  // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem) DENTRO
-  // da tx de persistGeneration (via `quotaGate` abaixo) — o pré-check sozinho tem corrida TOCTOU.
+  // claramente-acima-do-teto. Quem barra é a RESERVA abaixo (ADR-0055: advisory lock + recontagem de eventos e
+  // reservas, ANTES do Claude); o gate ATÔMICO DENTRO da tx de persistGeneration (via `quotaGate`) é a
+  // CONFIRMAÇÃO, que consome a reserva. O pré-check sozinho tem corrida TOCTOU.
   if (Number.isFinite(cap)) {
     const now = new Date()
     const recentAt = await loadRecentRecipeGenAt(getDb(), ownerId, now)
@@ -387,23 +389,19 @@ export async function POST(req: Request): Promise<Response> {
   // devolvem 4xx (daqui até o Claude não há mais 4xx). Sob a advisory lock do gate: reconta eventos + reservas
   // de outros pedidos, e só `cap - contagem` pedidos paralelos passam; os demais levam o MESMO 429 de antes, sem
   // tocar o Claude. "Gerar 2" reserva 2 slots. cap ∞ ⇒ `null` (sem lock, sem linha).
-  let holdId: string | null
-  try {
-    holdId = await reserveQuotaHold(getDb(), {
-      userId: ownerId,
-      kind: 'recipe_gen',
-      cap,
-      slots: variar2 ? 2 : 1,
-    })
-  } catch (err) {
-    if (err instanceof QuotaExceededError) {
-      return Response.json(
-        { error: variar2 ? 'limite_geracao_variacao' : 'limite_geracao', retryAfterMs: err.retryAfterMs },
-        { status: 429 },
-      )
-    }
-    throw err
+  const hold = await tryReserveQuotaHold(getDb(), {
+    userId: ownerId,
+    kind: 'recipe_gen',
+    cap,
+    slots: variar2 ? 2 : 1,
+  })
+  if (!hold.allowed) {
+    return Response.json(
+      { error: variar2 ? 'limite_geracao_variacao' : 'limite_geracao', retryAfterMs: hold.retryAfterMs },
+      { status: 429 },
+    )
   }
+  const holdId = hold.holdId
   // #446: gate ATÔMICO threado em persistGeneration — reconta+decide+insere SOB a advisory lock do
   // usuário, na MESMA tx do INSERT. Estourou (corrida) ⇒ persistGeneration LANÇA QuotaExceededError.
   // ADR-0055: o gate CONSOME a reserva deste pedido (`consumeHoldId`) sob a lock, antes da recontagem.
@@ -460,9 +458,7 @@ export async function POST(req: Request): Promise<Response> {
       })
       console.error('[generations] lote de variações inválido (→ 502):', { reasons })
       // ADR-0055: só o lote que falhou no provedor SEM cobrança devolve os 2 slots; saída inválida os consome.
-      if (outs.some((o) => o.kind === 'parse_failed' && o.cause === 'provider')) {
-        await releaseQuotaHold(getDb(), holdId)
-      }
+      if (outs.some(isUnpaidOutput)) await releaseQuotaHold(getDb(), holdId)
       return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
     }
 
@@ -481,12 +477,11 @@ export async function POST(req: Request): Promise<Response> {
       outcome: 'success' | 'degraded' | 'playful'
       advisory: string | null
     }[] = []
-    // #446: as DUAS variações persistem numa ÚNICA transação sob UM advisory lock. O gate atômico consome
-    // a reserva de 2 slots deste pedido (ADR-0055) e
-    // reconta os 2 slots (effectiveCap=cap-1 ⇒ permitido ⟺ cabem 2) ANTES de qualquer insert; estourou
-    // ⇒ QuotaExceededError, a tx REVERTE e NENHUMA das duas nasce (fecha a corrida — antes eram 2 tx
-    // separadas e o slot "reservado" pela 1ª podia ser roubado entre os commits). Os embeddings (rede)
-    // ficam FORA da tx (depois do commit), pra a lock nunca segurar I/O lento.
+    // #446: as DUAS variações persistem numa ÚNICA transação sob UM advisory lock. O gate atômico consome a
+    // reserva de 2 slots deste pedido (ADR-0055) e reconta os 2 slots (effectiveCap=cap-1 ⇒ permitido ⟺ cabem
+    // 2) ANTES de qualquer insert; estourou ⇒ QuotaExceededError, a tx REVERTE e NENHUMA das duas nasce (fecha
+    // a corrida — antes eram 2 tx separadas e o slot "reservado" pela 1ª podia ser roubado entre os commits).
+    // Os embeddings (rede) ficam FORA da tx (depois do commit), pra a lock nunca segurar I/O lento.
     let persisted: {
       recipeId: string
       slug?: string
@@ -586,7 +581,7 @@ export async function POST(req: Request): Promise<Response> {
   // ADR-0055: a reserva fica COBRADA (a chamada foi paga), salvo a falha provadamente não paga do provedor.
   if (result.outcome === 'invalid') {
     console.error('[generations] geração inválida (→ 502):', { mode, reason: invalidReason })
-    if (out.kind === 'parse_failed' && out.cause === 'provider') await releaseQuotaHold(getDb(), holdId)
+    if (isUnpaidOutput(out)) await releaseQuotaHold(getDb(), holdId)
     return Response.json({ outcome: 'invalid', error: 'geracao_invalida' }, { status: 502 })
   }
 

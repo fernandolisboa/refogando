@@ -19,7 +19,12 @@ import type { ClaudeClient } from '@/server/claude/client'
 import { getClaudeClient } from '@/server/deps'
 import { resolveImageScene } from '@/server/images/image-scene'
 import type { ImageScene, ImageSceneRegistro } from '@/domain/image-scene'
-import { assertImageGenSlotInTx, QuotaExceededError, releaseQuotaHold, reserveQuotaHold } from '@/server/quota/atomic'
+import {
+  assertImageGenSlotInTx,
+  QuotaExceededError,
+  releaseQuotaHold,
+  tryReserveQuotaHold,
+} from '@/server/quota/atomic'
 import {
   renderImageDerivativesSafe,
   storeImageDerivatives,
@@ -159,10 +164,10 @@ export async function applyRecipeImageUpload(input: {
  * ledger; ADR-0017 "não devolve slot"). Devolve só a imagem gerada (a face só muda no select).
  *
  * #640 (ADR-0055): depois de todos os gates (dono, bloqueio, config, pré-check, bytes da imagem-base), RESERVA
- * o slot (`reserveQuotaHold`) ANTES do Gemini, sob a advisory lock do gate; estourou ⇒ `quota` (429), o
+ * o slot (`tryReserveQuotaHold`) ANTES do Gemini, sob a advisory lock do gate; estourou ⇒ `quota` (429), o
  * gerador não é tocado. O núcleo consome a reserva na tx do ledger e a devolve só quando o Gemini provadamente
- * não cobrou (`ImageProviderUnavailableError`); falha de Blob, resposta sem bytes e a imagem-base sumida
- * deixam o slot cobrado.
+ * não cobrou (`ImageProviderUnavailableError`) e o diretor de arte não rodou (a chamada dele ao Claude é paga);
+ * falha de Blob, resposta sem bytes e a imagem-base sumida deixam o slot cobrado.
  */
 export async function applyRecipeImageGeneration(input: {
   db: Database
@@ -230,8 +235,9 @@ export async function applyRecipeImageGeneration(input: {
   // 3. Teto por papel, janela 24h deslizante (ADR-0017) — da CONFIG (#134). Conta os EVENTOS do
   //    ledger imutável na janela. cap ∞ pula a query. Estourou ⇒ 429 com countdown (ANTES do seam).
   // Pré-check BARATO (otimização, NÃO-atômico, #446): early-reject ANTES do Gemini no caso
-  // claramente-acima-do-teto. A ENFORCEMENT real é o gate ATÔMICO (advisory lock + recontagem do ledger)
-  // DENTRO da tx que insere a recipe_image + o ledger (via `quota` abaixo) — fecha a corrida TOCTOU.
+  // claramente-acima-do-teto. Quem barra é a RESERVA (ADR-0055, `tryReserveQuotaHold` abaixo: advisory lock +
+  // recontagem de ledger e reservas, ANTES do Gemini); o gate ATÔMICO DENTRO da tx que insere a recipe_image +
+  // o ledger (via `quota` abaixo) é a CONFIRMAÇÃO, que consome a reserva.
   // Fase 2 (#466): `plan='pro'` + tabela pro configurada ⇒ teto pro de imagem; `free` OU sem tabela ⇒
   // `null` ⇒ teto de hoje (byte-idêntico). O `cap` resolvido thread p/ o gate ATÔMICO (assertImageGenSlotInTx).
   const cap = capFromConfig(genConfig.dailyCapByRole, role, plan, appCfg.proCaps?.imageGen ?? null)
@@ -255,15 +261,11 @@ export async function applyRecipeImageGeneration(input: {
   }
 
   // #640 (ADR-0055): RESERVA o slot AGORA — depois de tudo que devolve 403/404/429/503 sem custo, logo antes do
-  // núcleo (que chama o Gemini). Sob a advisory lock do gate: só `cap - contagem` pedidos paralelos passam, os
-  // demais levam o MESMO `quota` (429) sem tocar o gerador. cap ∞ ⇒ `null` (sem lock, sem linha).
-  let holdId: string | null
-  try {
-    holdId = await reserveQuotaHold(db, { userId, kind: 'image_gen', cap })
-  } catch (err) {
-    if (err instanceof QuotaExceededError) return { kind: 'quota', retryAfterMs: err.retryAfterMs }
-    throw err
-  }
+  // núcleo (que chama o diretor de arte e o Gemini). Sob a advisory lock do gate: só `cap - contagem` pedidos
+  // paralelos passam, os demais levam o MESMO `quota` (429) sem tocar o gerador. cap ∞ ⇒ `null` (sem lock, sem
+  // linha).
+  const hold = await tryReserveQuotaHold(db, { userId, kind: 'image_gen', cap })
+  if (!hold.allowed) return { kind: 'quota', retryAfterMs: hold.retryAfterMs }
 
   // 4-7: NÚCLEO COMPARTILHADO (#238) — compõe o prompt (ancorado no prato #214) → gera → guarda →
   //       insere recipe_image + ledger numa única tx. Owner NÃO auto-seleciona (preview deselecionado
@@ -289,7 +291,7 @@ export async function applyRecipeImageGeneration(input: {
     // #446: gate ATÔMICO da cota de imagem — recontagem do ledger SOB a advisory lock, na MESMA tx do
     // INSERT recipe_image+ledger. Estourou na corrida ⇒ core devolve { kind:'quota' } (429 na borda).
     // ADR-0055: o gate consome a reserva acima (`consumeHoldId`); o núcleo a devolve se o Gemini não cobrou.
-    quota: Number.isFinite(cap) ? { userId, cap, consumeHoldId: holdId } : undefined,
+    quota: Number.isFinite(cap) ? { userId, cap, consumeHoldId: hold.holdId } : undefined,
   })
   if (core.kind !== 'ok') return core
   return { kind: 'ok', image: core.image, basePrompt: core.basePrompt, scene: core.scene }
@@ -363,7 +365,8 @@ export async function generateAndStoreGalleryImage(input: {
   // advisory lock do usuário, reconta o ledger na janela 24h e decide ANTES do insert; estourou ⇒ LANÇA
   // QuotaExceededError → mapeado p/ { kind:'quota' }. Ausente (catálogo/curador, sem teto) ⇒ sem gate.
   // `consumeHoldId` (ADR-0055): a reserva que o caller do OWNER tomou antes de chamar aqui. O gate a apaga na
-  // tx do ledger; `ImageProviderUnavailableError` do gerador a DEVOLVE; qualquer outra saída a deixa cobrada.
+  // tx do ledger; `ImageProviderUnavailableError` do gerador a DEVOLVE se o diretor de arte não rodou; qualquer
+  // outra saída a deixa cobrada.
   quota?: { userId: string; cap: number; consumeHoldId?: string | null }
 }): Promise<GenerateGalleryResult> {
   const {
@@ -415,9 +418,14 @@ export async function generateAndStoreGalleryImage(input: {
   try {
     generated = await generator.generateDishImage({ prompt, model, source })
   } catch (err) {
-    // ADR-0055: só o Gemini fora do ar (HTTP de erro / rede, sem cobrança) devolve a reserva. Outras falhas do
-    // gerador (200 sem bytes, corpo ilegível) vêm depois de uma chamada paga: a reserva fica cobrada.
-    if (err instanceof ImageProviderUnavailableError) await releaseQuotaHold(db, quota?.consumeHoldId ?? null)
+    // ADR-0055: só o Gemini fora do ar (HTTP de erro, falha na fase de conexão ou sem chave; sem cobrança) devolve
+    // a reserva. Outras falhas do gerador (ECONNRESET, 200 sem bytes, corpo ilegível) podem vir depois de uma
+    // chamada paga: a reserva fica cobrada.
+    // E só quando o diretor de arte NÃO rodou: a chamada dele ao Claude é paga, e devolver o slot a deixaria de
+    // graça (o pedido repetido viraria um laço de chamadas pagas sem teto).
+    if (err instanceof ImageProviderUnavailableError && !resolved?.directorCalled) {
+      await releaseQuotaHold(db, quota?.consumeHoldId ?? null)
+    }
     return { kind: 'generator' }
   }
 

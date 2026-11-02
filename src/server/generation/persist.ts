@@ -117,11 +117,12 @@ export type PersistGenerationInput = {
   variantLabel?: string
   // #446 (TOCTOU do teto): gate ATÔMICO de cota de geração de RECEITA. Quando presente, a PRIMEIRA
   // operação da transação de persistência toma o advisory lock do usuário, RECONTA as `generation` na
-  // janela 24h e DECIDE — estourou ⇒ LANÇA QuotaExceededError e a tx REVERTE (nada persiste), que o
-  // caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞ / callers legados sem teto). O pré-check da rota
-  // continua como otimização barata (early-reject sem tocar o Claude); ESTE é a enforcement real.
+  // janela 24h (MAIS as reservas ativas dos outros pedidos, ADR-0055) e DECIDE — estourou ⇒ LANÇA
+  // QuotaExceededError e a tx REVERTE (nada persiste), que o caller mapeia p/ 429. Ausente ⇒ sem gate (papel ∞
+  // / callers legados sem teto). O pré-check da rota continua como otimização barata; quem barra ANTES do Claude
+  // é a reserva (ADR-0055), e ESTE gate é a CONFIRMAÇÃO no persist, que a consome.
   // `consumeHoldId` (ADR-0055): a reserva de cota que a borda tomou ANTES da chamada ao Claude
-  // (`reserveQuotaHold`). O gate a apaga sob a lock, NESTA tx, antes da recontagem: a `generation` gravada
+  // (`tryReserveQuotaHold`). O gate a apaga sob a lock, NESTA tx, antes da recontagem: a `generation` gravada
   // aqui passa a contar no lugar dela (se a tx reverter, a reserva volta e fica cobrada).
   quota?: { userId: string; cap: number; consumeHoldId?: string | null }
   // #446 (variar2): transação FORNECIDA pelo caller. Presente ⇒ persiste NESTA tx (não abre a própria) —

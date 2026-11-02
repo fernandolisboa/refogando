@@ -26,7 +26,16 @@ import type { GenerationOutput } from '@/domain/generation'
 import type { RecipeGenCapByRole } from '@/domain/recipe-gen-config'
 import type { ImageGenCapByRole } from '@/domain/image-gen-config'
 import { RECIPE_GEN_WINDOW_MS } from '@/domain/recipe-gen-quota'
-import { reserveQuotaHold } from '@/server/quota/atomic'
+import {
+  DERIVE_LOCK_BUSY_RETRY_MS,
+  QUOTA_LOCK_CLASS,
+  QuotaExceededError,
+  assertImageGenSlotInTx,
+  assertRecipeGenSlotInTx,
+  reserveQuotaHold,
+} from '@/server/quota/atomic'
+import { IMAGE_GEN_WINDOW_MS } from '@/domain/image-quota'
+import { persistGeneration } from '@/server/generation/persist'
 import { seedSessionHeaders } from '../helpers/users'
 import { seedRecipe, seedRecipeIngredient, seedTranslation } from '../helpers/recipes'
 import { cannedSuccess, cannedParseFailed, cannedRefusal, makeBriefing, makeReceita, post } from '../helpers/generation'
@@ -58,11 +67,13 @@ async function setRecipeGenCap(caps: RecipeGenCapByRole, variants = false): Prom
     .onConflictDoUpdate({ target: appConfig.id, set: { recipeGenCapByRole: caps, recipeVariantConfig } })
 }
 
-async function setImageGenCap(caps: ImageGenCapByRole): Promise<void> {
+/** Teto de imagem; o diretor de arte (ADR-0044) DESLIGADO por padrão — a chamada paga dele muda a devolução. */
+async function setImageGenCap(caps: ImageGenCapByRole, sceneDirector = false): Promise<void> {
+  const set = { imageGenEnabled: true, imageGenCapByRole: caps, imageSceneDirectorEnabled: sceneDirector }
   await getDb()
     .insert(appConfig)
-    .values({ id: true, imageGenEnabled: true, imageGenCapByRole: caps })
-    .onConflictDoUpdate({ target: appConfig.id, set: { imageGenEnabled: true, imageGenCapByRole: caps } })
+    .values({ id: true, ...set })
+    .onConflictDoUpdate({ target: appConfig.id, set })
 }
 
 async function count(table: 'generation' | 'quota_hold' | 'image_generation'): Promise<number> {
@@ -361,6 +372,27 @@ describe('POST /api/recipes/[id]/image/generate — reserva antes do Gemini (#64
     expect(gen.calls).toBe(0)
   })
 
+  it('diretor de arte rodou (chamada paga ao Claude) e o Gemini caiu sem cobrar ⇒ o slot fica COBRADO', async () => {
+    const { userId, headers } = await seedSessionHeaders({ email: 'hold-img-director@q.test' })
+    await setImageGenCap({ usuario: 1, curador: 5, admin: null }, true)
+    const id = await seedOwned(userId)
+    setImageStore(new FakeImageStore())
+    const claude = new FakeClaudeClient()
+    setClaudeClient(claude)
+
+    setImageGenerator(new ThrowingImageGenerator('unavailable'))
+    expect((await imageGenerate(genReq(id, headers), ctx(id))).status).toBe(503)
+    expect(claude.sceneCalls).toBe(1)
+    // Devolver deixaria o diretor de graça: repetir o pedido viraria um laço de chamadas pagas sem teto.
+    expect(await count('quota_hold')).toBe(1)
+
+    const gen = new FakeImageGenerator()
+    setImageGenerator(gen)
+    expect((await imageGenerate(genReq(id, headers), ctx(id))).status).toBe(429)
+    expect(gen.calls).toBe(0)
+    expect(claude.sceneCalls).toBe(1) // o 429 vem antes do diretor também
+  })
+
   it('admin (∞) não cria reserva de imagem', async () => {
     const { userId, headers } = await seedSessionHeaders({ email: 'hold-img-admin@q.test', role: 'admin' })
     await setImageGenCap({ usuario: 1, curador: 5, admin: null })
@@ -437,6 +469,29 @@ describe('POST /api/conversations/stream — reserva antes de abrir o stream (#6
     expect(claude.streamCalls).toBe(0)
   })
 
+  it('cliente que já abortou ANTES da reserva ⇒ não reserva nem toca o Claude (o NDJSON vazio de um abort)', async () => {
+    const { headers } = await seedSessionHeaders({ email: 'hold-conv-preabort@q.test' })
+    await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
+    const claude = new FakeClaudeClient(undefined, cannedSuccess(), cannedTokens())
+    setClaudeClient(claude)
+
+    const controller = new AbortController()
+    controller.abort()
+    const res = await streamRoute(
+      new Request('http://localhost/api/conversations/stream', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ transcript: makeTranscript() }),
+        signal: controller.signal,
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/x-ndjson; charset=utf-8')
+    expect(await res.text()).toBe('')
+    expect(claude.streamCalls).toBe(0)
+    expect(await count('quota_hold')).toBe(0)
+  })
+
   it('ABORT depois do 1º token ⇒ nada persiste, mas o slot fica COBRADO (#640)', async () => {
     const { headers } = await seedSessionHeaders({ email: 'hold-conv-abort@q.test' })
     await setRecipeGenCap({ usuario: 1, curador: 20, admin: null })
@@ -485,5 +540,119 @@ describe('POST /api/conversations/stream — reserva antes de abrir o stream (#6
     setClaudeClient(claude)
     expect((await postStream({ transcript: makeTranscript() }, headers)).status).toBe(429)
     expect(claude.streamCalls).toBe(0)
+  })
+})
+
+describe('gates do persist e a própria reserva (ADR-0055)', () => {
+  async function insertHold(userId: string, kind: 'recipe_gen' | 'image_gen'): Promise<string> {
+    const windowMs = kind === 'recipe_gen' ? RECIPE_GEN_WINDOW_MS : IMAGE_GEN_WINDOW_MS
+    const [row] = await getDb()
+      .insert(quotaHold)
+      .values({ userId, kind, expiresAt: new Date(Date.now() + windowMs) })
+      .returning({ id: quotaHold.id })
+    return row.id
+  }
+
+  it('gate de receita conta as reservas ativas dos OUTROS pedidos (e o rollback devolve a própria)', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'gate-recipe-holds@q.test' })
+    await seedGenerations(userId, 1)
+    await insertHold(userId, 'recipe_gen') // outro pedido em voo
+    const own = await insertHold(userId, 'recipe_gen')
+
+    // cap 2: 1 generation + 1 reserva de outro pedido = 2. Sem contar a reserva alheia, passaria.
+    await expect(
+      getDb().transaction((tx) => assertRecipeGenSlotInTx(tx, { userId, cap: 2, consumeHoldId: own })),
+    ).rejects.toBeInstanceOf(QuotaExceededError)
+    // A tx reverteu: a própria reserva (apagada sob a lock) voltou, cobrada.
+    expect(await count('quota_hold')).toBe(2)
+
+    // Com folga, o gate passa e consome SÓ a própria.
+    await getDb().transaction((tx) => assertRecipeGenSlotInTx(tx, { userId, cap: 3, consumeHoldId: own }))
+    const left = await getDb().select({ id: quotaHold.id }).from(quotaHold)
+    expect(left).toHaveLength(1)
+    expect(left[0].id).not.toBe(own)
+  })
+
+  it('gate de imagem conta as reservas ativas dos OUTROS pedidos', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'gate-image-holds@q.test' })
+    await getDb().insert(imageGeneration).values({ userId })
+    await insertHold(userId, 'image_gen')
+    const own = await insertHold(userId, 'image_gen')
+
+    await expect(
+      getDb().transaction((tx) => assertImageGenSlotInTx(tx, { userId, cap: 2, consumeHoldId: own })),
+    ).rejects.toBeInstanceOf(QuotaExceededError)
+    expect(await count('quota_hold')).toBe(2)
+    await getDb().transaction((tx) => assertImageGenSlotInTx(tx, { userId, cap: 3, consumeHoldId: own }))
+    expect(await count('quota_hold')).toBe(1)
+  })
+
+  it('persistGeneration que reverte DEPOIS do gate traz a reserva de volta (cobrada) e não grava nada', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'persist-rollback@q.test' })
+    const own = await insertHold(userId, 'recipe_gen')
+
+    // Sessão inexistente: o gate consome a reserva e só então a checagem de posse lança ⇒ a tx inteira reverte.
+    await expect(
+      persistGeneration({
+        result: { outcome: 'impossible', advisory: 'não dá' },
+        mode: 'free_text',
+        origin: 'ai_free_text',
+        ownerId: userId,
+        model: 'claude-opus-5-5',
+        existingSessionId: crypto.randomUUID(),
+        quota: { userId, cap: 5, consumeHoldId: own },
+      }),
+    ).rejects.toThrow(/existingSessionId/)
+    const rows = await getDb().select({ id: quotaHold.id }).from(quotaHold)
+    expect(rows.map((r) => r.id)).toEqual([own])
+    expect(await count('generation')).toBe(0)
+  })
+
+  it('persistGeneration com `tx` fornecida E `quota` é erro de chamador (lança antes de qualquer escrita)', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'persist-tx-quota@q.test' })
+    const own = await insertHold(userId, 'recipe_gen')
+    await getDb().transaction(async (tx) => {
+      await expect(
+        persistGeneration({
+          result: { outcome: 'impossible', advisory: 'não dá' },
+          mode: 'free_text',
+          origin: 'ai_free_text',
+          ownerId: userId,
+          model: 'claude-opus-5-5',
+          tx,
+          quota: { userId, cap: 5, consumeHoldId: own },
+        }),
+      ).rejects.toThrow(/`quota` com `tx` fornecida/)
+    })
+    expect(await count('quota_hold')).toBe(1)
+    expect(await count('generation')).toBe(0)
+  })
+
+  it('lock da reserva presa além do lock_timeout (55P03) ⇒ QuotaExceededError com retry curto, sem linha', async () => {
+    const { userId } = await seedSessionHeaders({ email: 'hold-lock-busy@q.test' })
+
+    // Outra conexão segura a MESMA chave do gate de receita (classe + hashtext(userId)) até a reserva voltar.
+    let release!: () => void
+    const released = new Promise<void>((r) => (release = r))
+    let locked!: () => void
+    const isLocked = new Promise<void>((r) => (locked = r))
+    const holder = sql.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(${QUOTA_LOCK_CLASS.recipeGen}::int, hashtext(${userId}))`
+      locked()
+      await released
+    })
+    try {
+      await isLocked
+      const err = await reserveQuotaHold(getDb(), { userId, kind: 'recipe_gen', cap: 5 }).catch((e: unknown) => e)
+      expect(err).toBeInstanceOf(QuotaExceededError)
+      expect((err as QuotaExceededError).retryAfterMs).toBe(DERIVE_LOCK_BUSY_RETRY_MS)
+    } finally {
+      release()
+      await holder
+    }
+    expect(await count('quota_hold')).toBe(0)
+
+    // Lock livre ⇒ a reserva passa (o lock_timeout do SET LOCAL não vazou para a conexão do pool).
+    expect(await reserveQuotaHold(getDb(), { userId, kind: 'recipe_gen', cap: 5 })).toEqual(expect.any(String))
   })
 })

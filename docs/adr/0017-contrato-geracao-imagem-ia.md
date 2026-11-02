@@ -2,7 +2,7 @@
 
 Status: aceito
 
-> **Nota (ADR-0055, 2026-11-02):** o slot passa a ser **reservado antes do Gemini** (`quota_hold`, sob a lock do gate), não só conferido no persist; pedidos paralelos acima do teto param antes da chamada paga. O "não devolve slot" segue valendo para o que foi pago (imagem gerada, moderada ou substituída; resposta sem bytes; falha do Blob). A única devolução é o Gemini provadamente fora do ar (HTTP de erro ou falha de rede, `ImageProviderUnavailableError`), que não cobrou nada.
+> **Nota (ADR-0055, 2026-11-02):** o slot passa a ser **reservado antes do Gemini** (`quota_hold`, sob a lock do gate), não só conferido no persist; pedidos paralelos acima do teto param antes da chamada paga. O "não devolve slot" segue valendo para o que foi pago (imagem gerada, moderada ou substituída; resposta sem bytes; falha do Blob). A única devolução é o Gemini provadamente fora do ar (HTTP de erro, falha do `fetch` na fase de conexão ou chave ausente, `ImageProviderUnavailableError`), que não cobrou nada, e só quando o diretor de arte não rodou no mesmo pedido.
 
 > **Atualização (ADR-0020):** o selo "gerada por IA" da imagem vale nas superfícies **in-app**. **Exceção deliberada: o OG/social card NÃO leva o selo** — ali a imagem de IA é vitrine do recurso, não aviso, e o público costuma perceber. Decisão consciente do dono, não descuido.
 

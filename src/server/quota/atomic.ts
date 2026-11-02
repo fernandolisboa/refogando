@@ -342,10 +342,12 @@ const LOCK_NOT_AVAILABLE = '55P03'
  * a PRIMEIRA operação da transação de `deriveRecipe` (antes do INSERT da `recipe`). `cap` não-finito
  * (admin) ⇒ no-op, sem lock.
  *
- * Só aqui a espera pela lock tem teto (`SET LOCAL lock_timeout`, `DERIVE_LOCK_TIMEOUT_MS`): estourou ⇒ o
- * Postgres cancela o statement com 55P03 e vira o MESMO `QuotaExceededError` (429 `limite_derivar`, com
- * `DERIVE_LOCK_BUSY_RETRY_MS`), nunca 500. Logo depois da lock o `lock_timeout` volta ao default da sessão,
- * pra o resto da tx do fork não herdar o teto (um 55P03 lá adiante seria outra coisa e não deve virar 429).
+ * A espera pela lock tem teto (`SET LOCAL lock_timeout`, `DERIVE_LOCK_TIMEOUT_MS`), como na lock das denúncias
+ * (`acquireReportLockInTx`) e na reserva de cota (`reserveQuotaHold`); os gates de geração no persist esperam
+ * sem teto. Estourou ⇒ o Postgres cancela o statement com 55P03 e vira o MESMO `QuotaExceededError` (429
+ * `limite_derivar`, com `DERIVE_LOCK_BUSY_RETRY_MS`), nunca 500. Logo depois da lock o `lock_timeout` volta ao
+ * default da sessão, pra o resto da tx do fork não herdar o teto (um 55P03 lá adiante seria outra coisa e não
+ * deve virar 429).
  */
 export async function assertDeriveSlotInTx(tx: Tx, input: { userId: string; cap: number }): Promise<void> {
   const { userId, cap } = input
@@ -444,11 +446,29 @@ export async function reserveQuotaHold(
 }
 
 /**
+ * `reserveQuotaHold` na forma dos `peek*` (ADR-0055): os quatro pontos de chamada (geração, conversa, regeneração,
+ * imagem do dono) só querem saber se passou e, se não, o countdown do 429. `QuotaExceededError` (teto estourado
+ * ou fila da lock cheia) vira `{ allowed: false, retryAfterMs }`; qualquer outro erro sobe. `holdId` é `null`
+ * com cap ∞ (sem linha).
+ */
+export async function tryReserveQuotaHold(
+  db: Database,
+  input: { userId: string; kind: QuotaHoldKind; cap: number; slots?: 1 | 2 },
+): Promise<{ allowed: true; holdId: string | null } | { allowed: false; retryAfterMs: number }> {
+  try {
+    return { allowed: true, holdId: await reserveQuotaHold(db, input) }
+  } catch (err) {
+    if (err instanceof QuotaExceededError) return { allowed: false, retryAfterMs: err.retryAfterMs }
+    throw err
+  }
+}
+
+/**
  * DEVOLVE a reserva (ADR-0055): só quando a chamada paga provadamente NÃO foi cobrada — o provedor respondeu
- * erro HTTP ou a conexão foi recusada antes de qualquer resposta (`cause: 'provider'` no `parse_failed`,
- * `ClaudeProviderUnavailableError` no stream, `ImageProviderUnavailableError` na imagem). Idempotente (`null` ou
- * reserva já apagada ⇒ no-op). Best-effort: falha do banco aqui deixa o slot cobrado (erra a favor do custo) e
- * não derruba a resposta de erro que o pedido já ia dar.
+ * erro HTTP, a conexão falhou antes de o pedido sair ou falta a chave do provedor (`cause: 'provider'` no
+ * `parse_failed`, `ClaudeProviderUnavailableError` no stream, `ImageProviderUnavailableError` na imagem).
+ * Idempotente (`null` ou reserva já apagada ⇒ no-op). Best-effort: falha do banco aqui deixa o slot cobrado (erra
+ * a favor do custo) e não derruba a resposta de erro que o pedido já ia dar.
  */
 export async function releaseQuotaHold(db: Database, holdId: string | null): Promise<void> {
   if (!holdId) return

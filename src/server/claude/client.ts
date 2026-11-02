@@ -29,6 +29,7 @@ import type { GenerationOutput } from '@/domain/generation'
 import type { TextUsage } from '@/domain/text-cost'
 import type { TranscriptMessage } from '@/domain/transcript'
 import type { PromptAxes } from '@/domain/briefing'
+import { isConnectPhaseFailure } from '@/server/http/connect-phase'
 import {
   buildRecipeGenSchema,
   buildRecipeGenListSchema,
@@ -243,16 +244,75 @@ function logSeamParseFailed(
 }
 
 /**
- * O erro prova que a chamada NÃO foi cobrada (ADR-0055, regra estrita)? Só dois casos: (1) o provedor respondeu
- * um erro HTTP (`APIError` com `status` numérico — 4xx/5xx/529, já depois das novas tentativas do SDK), ou (2) a
- * conexão falhou antes de qualquer resposta (`APIConnectionError` que NÃO é `APIConnectionTimeoutError`: no
- * timeout o pedido pode ter sido processado). Fora disso fica cobrado: abort do cliente ou do prazo de 50 s
- * (`APIUserAbortError`, `status` undefined), erro de parse/zod dentro do `messages.parse` (a resposta veio),
- * saída truncada e o erro SSE no meio de um stream (`APIError` com `status` undefined). Quem chama ainda exige
- * que nenhuma chamada anterior do mesmo método tenha voltado (o reparo pressupõe uma 1ª chamada paga).
+ * Sem chave da Anthropic no ambiente (ADR-0055): lançado ANTES de construir o SDK, então nada foi enviado nem
+ * cobrado e a reserva de cota volta. É erro de deploy, não do usuário; o log (`logSeamError`, ou a linha da
+ * conversa) mostra este nome.
  */
-export function isUnpaidProviderError(err: unknown): boolean {
-  if (err instanceof Anthropic.APIConnectionError) return !(err instanceof Anthropic.APIConnectionTimeoutError)
+export class AnthropicKeyMissingError extends Error {
+  constructor() {
+    super('ANTHROPIC_API_KEY não definido (geração por IA não configurada).')
+    this.name = 'AnthropicKeyMissingError'
+  }
+}
+
+/**
+ * O que o `fetch` instrumentado viu nas tentativas de UMA chamada do SDK (que tenta de novo sozinho, até 3
+ * vezes: `maxRetries` 2). `maybeBilled` liga quando alguma tentativa pode ter chegado ao modelo: rejeitou fora
+ * da fase de conexão (ECONNRESET, "other side closed", "terminated", o timeout ou o abort do SDK) ou recebeu
+ * resposta 2xx. Sem isso, a 1ª tentativa resetada no meio (talvez cobrada) seguida de um 529 na 3ª pareceria
+ * "não cobrada". `lastRejection` é a última rejeição do `fetch`: o `APIConnectionTimeoutError` do SDK nasce sem
+ * `cause`, e a falha dele é essa.
+ */
+export type ProviderAttempts = { maybeBilled: boolean; lastRejection: unknown }
+
+function newProviderAttempts(): ProviderAttempts {
+  return { maybeBilled: false, lastRejection: undefined }
+}
+
+/**
+ * Cliente da Anthropic para UMA chamada paga de geração, com o `fetch` instrumentado que alimenta `attempts`.
+ * Lazy: lê a chave do ambiente só aqui, NUNCA em teste de integração (que injeta o `FakeClaudeClient`). Sem
+ * chave ⇒ `AnthropicKeyMissingError` antes de qualquer rede.
+ */
+function anthropicForPaidCall(attempts: ProviderAttempts): Anthropic {
+  if (!process.env.ANTHROPIC_API_KEY?.trim() && !process.env.ANTHROPIC_AUTH_TOKEN?.trim()) {
+    throw new AnthropicKeyMissingError()
+  }
+  const trackedFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    try {
+      const res = await globalThis.fetch(input, init)
+      if (res.ok) attempts.maybeBilled = true
+      return res
+    } catch (err) {
+      attempts.lastRejection = err
+      if (!isConnectPhaseFailure(err)) attempts.maybeBilled = true
+      throw err
+    }
+  }
+  return new Anthropic({ fetch: trackedFetch })
+}
+
+/**
+ * O erro prova que a chamada NÃO foi cobrada (ADR-0055, regra estrita)? Nunca quando `attempts.maybeBilled`
+ * (alguma tentativa do SDK pode ter chegado ao modelo). Fora isso, só três casos:
+ *  1. `AnthropicKeyMissingError`: nada saiu;
+ *  2. o provedor respondeu um erro HTTP (`APIError` com `status` numérico: 4xx/5xx/529, já depois das novas
+ *     tentativas do SDK);
+ *  3. `APIConnectionError` (inclusive o de timeout) cuja falha é da fase de CONEXÃO (`isConnectPhaseFailure`
+ *     na `cause`, ou na última rejeição do `fetch` quando o SDK não pôs `cause`): DNS, recusa, rota, prazo de
+ *     conectar, certificado. O SDK embrulha QUALQUER falha do `fetch` nessa classe, inclusive ECONNRESET e
+ *     "terminated" com o corpo já enviado; essas ficam cobradas.
+ * Também fica cobrado: abort do cliente ou do prazo de 50 s (`APIUserAbortError`, `status` undefined), erro de
+ * parse/zod dentro do `messages.parse` (a resposta veio), saída truncada e o erro SSE no meio de um stream
+ * (`APIError` com `status` undefined). Quem chama ainda exige que nenhuma chamada anterior do mesmo método tenha
+ * voltado (o reparo pressupõe uma 1ª chamada paga).
+ */
+export function isUnpaidProviderError(err: unknown, attempts?: ProviderAttempts): boolean {
+  if (err instanceof AnthropicKeyMissingError) return true
+  if (attempts?.maybeBilled) return false
+  if (err instanceof Anthropic.APIConnectionError) {
+    return isConnectPhaseFailure(err.cause ?? attempts?.lastRejection)
+  }
   return err instanceof Anthropic.APIError && typeof err.status === 'number'
 }
 
@@ -295,16 +355,18 @@ export class RealClaudeClient implements ClaudeClient {
   }
 
   async generateRecipe(input: GenerationInput): Promise<GenerationOutput> {
-    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (o teste
-    // injeta FakeClaudeClient via setClaudeClient).
-    const client = new Anthropic()
     // Valores fora do vocabulário que o parse normalizou para o fallback (log, não falha).
     const descartes: CampoDescartado[] = []
     // ADR-0055: quantas chamadas `messages.parse` já VOLTARAM (pagas). Com alguma, um erro depois não prova
     // que nada foi cobrado (o reparo vem depois de uma 1ª resposta), então o `parse_failed` vai sem `cause`.
     let returned = 0
+    // ADR-0055: o que as tentativas do SDK viram no `fetch` (alguma pode ter chegado ao modelo?).
+    const attempts = newProviderAttempts()
 
     try {
+      // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste (o teste injeta
+      // FakeClaudeClient via setClaudeClient). Sem chave ⇒ lança aqui, DENTRO do `try` (devolve a reserva).
+      const client = anthropicForPaidCall(attempts)
       // #318: schema constrito ao conjunto ATIVO de cozinhas (data-driven, ADR-0025). Vazio ⇒
       // z.string() (sem constraint). Mesmo schema p/ a chamada inicial E o reparo abaixo.
       const schema = buildRecipeGenSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
@@ -366,19 +428,22 @@ export class RealClaudeClient implements ClaudeClient {
       logSeamError('generateRecipe', err, input.signal)
       logDescartes('generateRecipe', descartes)
       // ADR-0055: só o erro que prova "não cobrado" (e nenhuma chamada paga antes) devolve a reserva de cota.
-      return returned === 0 && isUnpaidProviderError(err) ? { kind: 'parse_failed', cause: 'provider' } : { kind: 'parse_failed' }
+      return returned === 0 && isUnpaidProviderError(err, attempts)
+        ? { kind: 'parse_failed', cause: 'provider' }
+        : { kind: 'parse_failed' }
     }
   }
 
   async generateRecipeVariants(input: GenerationInput): Promise<GenerationOutput[]> {
     // Espelha `generateRecipe` (messages.parse + zodOutputFormat + reparo de UMA tentativa), mas no
     // schema-LISTA (`buildRecipeGenListSchema`) e com o teto 2×. Caminho paralelo — não toca o single.
-    const client = new Anthropic()
     const descartes: CampoDescartado[] = []
     // ADR-0055: mesma regra do single — erro depois de uma chamada que voltou não devolve a reserva.
     let returned = 0
+    const attempts = newProviderAttempts()
 
     try {
+      const client = anthropicForPaidCall(attempts)
       const schema = buildRecipeGenListSchema(input.cozinhaSlugs ?? [], (d) => descartes.push(d))
       const params = {
         model: input.model,
@@ -435,7 +500,7 @@ export class RealClaudeClient implements ClaudeClient {
       // Truncamento no meio da 2ª receita OU qualquer erro de rede/SDK/validação → parse_failed do lote.
       logSeamError('generateRecipeVariants', err, input.signal)
       logDescartes('generateRecipeVariants', descartes)
-      return returned === 0 && isUnpaidProviderError(err)
+      return returned === 0 && isUnpaidProviderError(err, attempts)
         ? [{ kind: 'parse_failed', cause: 'provider' }]
         : [{ kind: 'parse_failed' }]
     }
@@ -581,8 +646,15 @@ export class RealClaudeClient implements ClaudeClient {
     // (2ª chamada, `generateRecipe` verbatim em stream/route.ts), que JÁ carimba o `cost_usd` da destilação.
     // Medir o texto do stream exigiria uma coluna/tabela nova (fora do escopo do ledger da geração). Gap
     // conhecido e consciente (não esquecimento).
-    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste.
-    const client = new Anthropic()
+    // Lazy: lê ANTHROPIC_API_KEY do ambiente só na chamada — NUNCA em teste. Sem chave, nada saiu: sobe como
+    // `ClaudeProviderUnavailableError` (ADR-0055) e a rota devolve a reserva do turno.
+    const attempts = newProviderAttempts()
+    let client: Anthropic
+    try {
+      client = anthropicForPaidCall(attempts)
+    } catch (err) {
+      throw new ClaudeProviderUnavailableError({ cause: err })
+    }
 
     const stream = client.messages.stream(
       {
@@ -600,9 +672,10 @@ export class RealClaudeClient implements ClaudeClient {
 
     // Rende SÓ os deltas de TEXTO (content_block_delta / text_delta). A conclusão do
     // iterável é o sinal terminal — sem sentinela.
-    // ADR-0055: um erro ANTES do 1º evento do SDK que prova "não cobrado" (HTTP de erro, conexão recusada) sobe
-    // como `ClaudeProviderUnavailableError` — a rota devolve a reserva de cota só nesse caso. Depois do 1º
-    // evento (mesmo só thinking, que já é pago), o erro sobe como veio.
+    // ADR-0055: um erro ANTES do 1º evento do SDK que prova "não cobrado" (HTTP de erro, falha na fase de
+    // conexão, nenhuma tentativa do SDK que possa ter chegado ao modelo) sobe como
+    // `ClaudeProviderUnavailableError` — a rota devolve a reserva de cota só nesse caso. Depois do 1º evento
+    // (mesmo só thinking, que já é pago), o erro sobe como veio.
     let sawEvent = false
     try {
       for await (const event of stream) {
@@ -612,7 +685,7 @@ export class RealClaudeClient implements ClaudeClient {
         }
       }
     } catch (err) {
-      if (!sawEvent && !input.signal?.aborted && isUnpaidProviderError(err)) {
+      if (!sawEvent && !input.signal?.aborted && isUnpaidProviderError(err, attempts)) {
         throw new ClaudeProviderUnavailableError({ cause: err })
       }
       throw err

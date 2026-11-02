@@ -581,8 +581,8 @@ export const extractionEvent = pgTable(
  * depois da chamada (saída inválida, abort do cliente, função morta pelo timeout) fica cobrado até vencer —
  * sem linha de `generation` (ADR-0006 intacto). Sem conteúdo: só o usuário, o tipo e as datas.
  * ON DELETE cascade: apagar o usuário apaga as reservas. RETENÇÃO (ADR-0050): a vencida (`expires_at <= agora`)
- * é apagada pelo cron diário de retenção (`quotaHolds`); vencida não conta, então a limpeza é só higiene. Sem
- * índice próprio para esse corte global: a tabela só guarda as reservas das últimas 24 h.
+ * é apagada na passada diária seguinte do cron de retenção (`quotaHolds`); vencida não conta, então a limpeza é
+ * só higiene. Sem índice próprio para esse corte global: a tabela só guarda as reservas de um ou dois dias.
  */
 export const quotaHold = pgTable(
   'quota_hold',
