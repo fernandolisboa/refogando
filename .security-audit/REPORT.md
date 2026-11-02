@@ -132,7 +132,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 
 ### Medium
 
-#### M-1 — Conversa em stream: chamada paga ao Claude sem cobrança de quota se o cliente desconecta · ABERTO (#640)
+#### M-1 — Conversa em stream: chamada paga ao Claude sem cobrança de quota se o cliente desconecta · CORRIGIDO (#640, PR #651)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-770 / CWE-799 · A04:2021 Design inseguro
 - **Local:** `src/app/api/conversations/stream/route.ts:242-305`.
 - **Exploração:**
@@ -145,7 +145,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** reservar o slot de forma atômica antes da 1ª chamada, como já fazem `reserveExtractionSlot` e
   `reserveMenuSuggestionSlot`. Também cabe um limite de turnos por usuário/hora nesta rota.
 
-#### M-2 — Quota de geração (receita e imagem) checada antes, cobrada depois da chamada paga (TOCTOU) · ABERTO (#641)
+#### M-2 — Quota de geração (receita e imagem) checada antes, cobrada depois da chamada paga (TOCTOU) · CORRIGIDO (#641, PR #651)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-367 / CWE-770 · A04:2021
 - **Local:**
   - `src/app/api/generations/route.ts`: pré-check em ~364, Claude em ~410/~530, gate atômico em ~462 e em
@@ -156,7 +156,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** a mesma do M-1 (reservar antes, liberar na falha) e, se quiser, um limite de 1 requisição em voo
   por usuário.
 
-#### M-3 — Tradução de receita sem quota e repetida a cada falha · ABERTO (#642)
+#### M-3 — Tradução de receita sem quota e repetida a cada falha · CORRIGIDO (#642, PR #652)
 - **Severidade:** Medium, 4.3 `CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L` · CWE-770 / CWE-400 · A04:2021
 - **Local:** `src/app/api/recipes/[id]/translations/[locale]/route.ts:74`, `src/server/recipe/translation.ts:45-69`.
 - **Exploração:** qualquer usuário logado dispara a tradução de qualquer receita pública. Uma tradução que falha
@@ -165,7 +165,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** quota ou cooldown por usuário e por receita, cache negativo de falha, single-flight por
   (receita, locale) e limite de tamanho da entrada.
 
-#### M-4 — Busca anônima chama o embedding pago do Gemini sem limite · ABERTO (#643)
+#### M-4 — Busca anônima chama o embedding pago do Gemini sem limite · CORRIGIDO (#643, PR #653)
 - **Severidade:** Medium, 5.3 `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L` · CWE-770 · A04:2021
 - **Local:** `src/app/api/search/route.ts:183-192,211`.
 - **Exploração:** `GET /api/search?q=<aleatório>` em loop, sem login, sem limitador e sem cache. A chave
@@ -183,7 +183,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   - Criar um papel `app_rw`, só com DML em `public`, para o `DATABASE_URL` de runtime.
   - Usar o URL de dono só no passo de migrate, numa variável `MIGRATION_DATABASE_URL`.
 
-#### M-6 — A exigência de confirmar email desliga sozinha se o mailer não estiver configurado · ABERTO (#645)
+#### M-6 — A exigência de confirmar email desliga sozinha se o mailer não estiver configurado · CORRIGIDO (#645, PR #650)
 - **Severidade:** Medium, 4.8 `CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:L` · CWE-636 (fail-open) · A07:2021
 - **Local:** `src/lib/auth.ts:209,304,493,597` e `src/server/mail/mailer.ts:71-72`.
 - **Risco:** se `RESEND_API_KEY` ou o remetente sumirem ou forem renomeados em Production, três coisas voltam sem
@@ -195,7 +195,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
   é feito com `BETTER_AUTH_SECRET`. Antes de ligar essa trava, confirme que Production tem as duas variáveis, senão
   o deploy cai.
 
-#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · ABERTO (#646) (PLAUSÍVEL)
+#### M-7 — Preview recebe cópia dos dados reais e, ao que tudo indica, o token de produção do Blob · ABERTO (#646) (CONFIRMADO em 2026-11-02: Preview e Production compartilham a mesma entrada de ANTHROPIC/GEMINI/WEB_SEARCH, BLOB_*, BETTER_AUTH_SECRET, CRON_SECRET, GOOGLE_* e DATABASE_* na Vercel; só RESEND_API_KEY é separada)
 - **Severidade:** Medium, 6.8 `CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N` · CWE-668 / CWE-200 · A05:2021
 - **Evidência:**
   - ADR-0047:40 diz que o Preview usa uma branch do Neon criada de `main` "e as chaves de verdade".
@@ -220,7 +220,7 @@ cada advisory foi checado contra o uso real (ver H-1 e L-1).
 - **Correção:** `pg_dump` semanal, criptografado, para um storage fora do Neon (o doc do incidente já recomenda), e
   tirar as chaves de API do `.env.local`.
 
-#### M-9 — Formulário público de notificação de retirada pode inundar o banco e a caixa do encarregado · ABERTO (#648)
+#### M-9 — Formulário público de notificação de retirada pode inundar o banco e a caixa do encarregado · CORRIGIDO (#648, PR #653; sem captcha, decisão pendente)
 - **Severidade:** Medium, 5.3 `CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L` · CWE-770 · A04:2021
 - **Local:** `src/app/api/legal/takedown/route.ts:14-34`, `src/server/legal/takedown-intake.ts:49-70`.
 - **Exploração:**
